@@ -11,6 +11,7 @@
   },
   "scripts": {
     "lh": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx cli/index.ts",
+    "contract": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx scripts/emit-rpc-contract.ts",
     "test": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run",
     "test:watch": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest"
   },
@@ -19,5 +20,8 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0"
   }
 }

@@ -1,0 +1,383 @@
+// The JSON-RPC contract: every method's params JSON Schema, a descriptive result
+// schema, and the handler that maps to a core/service procedure. This is the single
+// language-neutral surface — clients (S4) are written against these schemas and never
+// import core types. The dispatcher (rpc.ts) compiles the params schemas with ajv and
+// validates incoming params before calling the handler.
+import * as svc from "../../core/service.ts";
+
+export const PROTOCOL_VERSION = "2025-06-18";
+export const SERVER_INFO = { name: "loophub", version: "0.0.0" } as const;
+
+// ---- reusable schema fragments ----
+const str = { type: "string" } as const;
+const strNonEmpty = { type: "string", minLength: 1 } as const;
+const sid = { type: "string", minLength: 1 } as const;
+const positiveInt = { type: "integer", minimum: 1 } as const;
+const stringArray = { type: "array", items: { type: "string" } } as const;
+const repo = strNonEmpty; // "owner/name" or bare "name"
+
+// A params schema: object, listed properties, given required keys, no extras.
+function params(
+  properties: Record<string, unknown>,
+  required: string[] = [],
+): { type: "object"; properties: Record<string, unknown>; required: string[]; additionalProperties: false } {
+  return { type: "object", properties, required, additionalProperties: false };
+}
+
+const EMPTY_PARAMS = params({});
+
+// Loose result schemas — documented in the contract, not runtime-enforced.
+const anyObject = { type: "object" } as const;
+const anyArray = { type: "array" } as const;
+
+export interface MethodDef {
+  description: string;
+  params: object;
+  result: object;
+  handler: (p: any) => unknown | Promise<unknown>;
+}
+
+export const methods: Record<string, MethodDef> = {
+  initialize: {
+    description: "Capability negotiation; returns protocol version, server info, and method list.",
+    params: params({ protocolVersion: str, clientInfo: anyObject }),
+    result: anyObject,
+    handler: () => capabilities(),
+  },
+
+  // ---- repos ----
+  "repos/create": {
+    description: "Register a local git repository.",
+    params: params({ path: strNonEmpty, name: strNonEmpty }, ["path", "name"]),
+    result: anyObject,
+    handler: (p) => svc.repos.create({ path: p.path, name: p.name }),
+  },
+  "repos/list": {
+    description: "List registered repositories.",
+    params: params({ archived: { enum: ["active", "archived", "all"] } }),
+    result: anyArray,
+    handler: (p) => svc.repos.list(p.archived ?? "active"),
+  },
+  "repos/get": {
+    description: "Get one repository by name.",
+    params: params({ name: repo }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.repos.get(p.name),
+  },
+  "repos/setArchived": {
+    description: "Archive or unarchive a repository.",
+    params: params({ name: repo, archived: { type: "boolean" }, session_id: sid }, ["name", "archived"]),
+    result: anyObject,
+    handler: (p) => svc.repos.setArchived(p.name, p.archived, p.session_id),
+  },
+  "repos/update": {
+    description: "Update a repository's default branch and/or local path.",
+    params: params({ name: repo, default_branch: strNonEmpty, local_path: strNonEmpty, session_id: sid }, ["name"]),
+    result: anyObject,
+    handler: (p) =>
+      svc.repos.update(p.name, { default_branch: p.default_branch, local_path: p.local_path }, p.session_id),
+  },
+  "repos/remove": {
+    description: "Remove a repository and its issues/PRs.",
+    params: params({ name: repo }, ["name"]),
+    result: { type: "null" },
+    handler: (p) => svc.repos.remove(p.name) ?? null,
+  },
+
+  // ---- agent sessions ----
+  "sessions/register": {
+    description: "Register (or update) an agent session.",
+    params: params({ id: sid, agent: strNonEmpty, session: strNonEmpty, name: str }, ["id", "agent", "session"]),
+    result: anyObject,
+    handler: (p) => svc.sessions.register({ id: p.id, agent: p.agent, session: p.session, name: p.name }),
+  },
+  "sessions/list": {
+    description: "List agent sessions.",
+    params: EMPTY_PARAMS,
+    result: anyArray,
+    handler: () => svc.sessions.list(),
+  },
+  "sessions/get": {
+    description: "Get one agent session by id.",
+    params: params({ id: sid }, ["id"]),
+    result: anyObject,
+    handler: (p) => svc.sessions.get(p.id),
+  },
+
+  // ---- issues ----
+  "issues/list": {
+    description: "List issues/PRs in a repository.",
+    params: params({
+      repo,
+      state: str,
+      kind: { enum: ["issue", "pull", "any"] },
+      labels: stringArray,
+      page: positiveInt,
+      perPage: positiveInt,
+    }, ["repo"]),
+    result: anyArray,
+    handler: (p) =>
+      svc.issues.list(p.repo, { state: p.state, kind: p.kind, labels: p.labels, page: p.page, perPage: p.perPage }),
+  },
+  "issues/get": {
+    description: "Get one issue by number.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.issues.get(p.repo, p.number),
+  },
+  "issues/create": {
+    description: "Open a new issue.",
+    params: params({ repo, title: strNonEmpty, body: str, labels: stringArray, session_id: sid }, ["repo", "title"]),
+    result: anyObject,
+    handler: (p) => svc.issues.create(p.repo, { title: p.title, body: p.body, labels: p.labels }, p.session_id),
+  },
+  "issues/update": {
+    description: "Edit an issue's title/body/state/labels.",
+    params: params({
+      repo,
+      number: positiveInt,
+      title: str,
+      body: str,
+      state: { enum: ["open", "closed"] },
+      labels: stringArray,
+      session_id: sid,
+    }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) =>
+      svc.issues.update(
+        p.repo,
+        p.number,
+        { title: p.title, body: p.body, state: p.state, labels: p.labels },
+        p.session_id,
+      ),
+  },
+  "issues/assign": {
+    description: "Assign an issue to an agent session.",
+    params: params({ repo, number: positiveInt, session_id: sid }, ["repo", "number", "session_id"]),
+    result: anyObject,
+    handler: (p) => svc.issues.assign(p.repo, p.number, p.session_id),
+  },
+  "issues/unassign": {
+    description: "Clear an issue's assignee.",
+    params: params({ repo, number: positiveInt, session_id: sid }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.issues.unassign(p.repo, p.number, p.session_id),
+  },
+  "issues/setStatus": {
+    description: "Set or clear an agent's working status on an issue.",
+    params: params({
+      repo,
+      number: positiveInt,
+      text: { type: ["string", "null"] },
+      session_id: sid,
+    }, ["repo", "number", "text", "session_id"]),
+    result: anyObject,
+    handler: (p) => svc.issues.setStatus(p.repo, p.number, p.text, p.session_id),
+  },
+  "issues/addLabels": {
+    description: "Add labels to an issue.",
+    params: params({ repo, number: positiveInt, labels: stringArray, session_id: sid }, ["repo", "number", "labels"]),
+    result: anyArray,
+    handler: (p) => svc.issues.addLabels(p.repo, p.number, p.labels, p.session_id),
+  },
+  "issues/removeLabel": {
+    description: "Remove a label from an issue.",
+    params: params({ repo, number: positiveInt, label: strNonEmpty, session_id: sid }, ["repo", "number", "label"]),
+    result: { type: "null" },
+    handler: (p) => svc.issues.removeLabel(p.repo, p.number, p.label, p.session_id) ?? null,
+  },
+
+  // ---- comments ----
+  "comments/list": {
+    description: "List an issue's comments.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyArray,
+    handler: (p) => svc.comments.list(p.repo, p.number),
+  },
+  "comments/create": {
+    description: "Add a comment to an issue.",
+    params: params({ repo, number: positiveInt, body: strNonEmpty, session_id: sid }, ["repo", "number", "body"]),
+    result: anyObject,
+    handler: (p) => svc.comments.create(p.repo, p.number, p.body, p.session_id),
+  },
+
+  // ---- labels ----
+  "labels/list": {
+    description: "List a repository's labels.",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.labels.list(p.repo),
+  },
+
+  // ---- pulls ----
+  "pulls/list": {
+    description: "List pull requests in a repository.",
+    params: params({
+      repo,
+      state: str,
+      merged: { enum: ["only", "exclude"] },
+      head: str,
+      base: str,
+      page: positiveInt,
+      perPage: positiveInt,
+    }, ["repo"]),
+    result: anyArray,
+    handler: (p) =>
+      svc.pulls.list(p.repo, {
+        state: p.state,
+        merged: p.merged ?? null,
+        head: p.head,
+        base: p.base,
+        page: p.page,
+        perPage: p.perPage,
+      }),
+  },
+  "pulls/get": {
+    description: "Get one pull request by number.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.get(p.repo, p.number),
+  },
+  "pulls/create": {
+    description: "Open a pull request.",
+    params: params({
+      repo,
+      title: strNonEmpty,
+      body: str,
+      head: strNonEmpty,
+      base: strNonEmpty,
+      issue: positiveInt,
+      session_id: sid,
+    }, ["repo", "title", "head", "base"]),
+    result: anyObject,
+    handler: (p) =>
+      svc.pulls.create(
+        p.repo,
+        { title: p.title, body: p.body, head: p.head, base: p.base, issue: p.issue },
+        p.session_id,
+      ),
+  },
+  "pulls/update": {
+    description: "Edit a pull request's title/body/state.",
+    params: params({
+      repo,
+      number: positiveInt,
+      state: { enum: ["open", "closed"] },
+      title: str,
+      body: str,
+      session_id: sid,
+    }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.update(p.repo, p.number, { state: p.state, title: p.title, body: p.body }, p.session_id),
+  },
+  "pulls/files": {
+    description: "List a pull request's changed files (diff).",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyArray,
+    handler: (p) => svc.pulls.files(p.repo, p.number),
+  },
+  "pulls/merge": {
+    description: "Merge a pull request.",
+    params: params({
+      repo,
+      number: positiveInt,
+      merge_method: { enum: ["squash", "merge", "rebase"] },
+      session_id: sid,
+    }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.merge(p.repo, p.number, p.merge_method ?? "squash", p.session_id),
+  },
+  "pulls/readyForReview": {
+    description: "Mark a pull request ready for re-review after addressing changes.",
+    params: params({ repo, number: positiveInt, body: str, session_id: sid }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.readyForReview(p.repo, p.number, p.body, p.session_id),
+  },
+
+  // ---- reviews ----
+  "reviews/list": {
+    description: "List a pull request's reviews.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyArray,
+    handler: (p) => svc.reviews.list(p.repo, p.number),
+  },
+  "reviews/listComments": {
+    description: "List a pull request's line comments.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyArray,
+    handler: (p) => svc.reviews.listComments(p.repo, p.number),
+  },
+  "reviews/create": {
+    description: "Submit a review (optionally with line comments).",
+    params: params({
+      repo,
+      number: positiveInt,
+      event: { enum: ["COMMENT", "APPROVE", "REQUEST_CHANGES", "comment", "approve", "request_changes"] },
+      body: str,
+      comments: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { path: strNonEmpty, line: positiveInt, side: str, body: strNonEmpty },
+          required: ["path", "body"],
+          additionalProperties: false,
+        },
+      },
+      session_id: sid,
+    }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) =>
+      svc.reviews.create(p.repo, p.number, { event: p.event, body: p.body, comments: p.comments }, p.session_id),
+  },
+
+  // ---- events ----
+  "events/list": {
+    description: "Poll events (webhook-style) by id cursor.",
+    params: params({
+      since: { type: "integer", minimum: 0 },
+      repo,
+      labels: stringArray,
+      order: { enum: ["asc", "desc"] },
+      limit: positiveInt,
+    }),
+    result: anyArray,
+    handler: (p) => svc.events.list({ since: p.since, repo: p.repo, labels: p.labels, order: p.order, limit: p.limit }),
+  },
+
+  // ---- sync ----
+  "sync/run": {
+    description: "Sweep open-PR heads and emit pull_request.updated when a head moved.",
+    params: EMPTY_PARAMS,
+    result: anyObject,
+    handler: () => svc.sync.run(),
+  },
+};
+
+export function capabilities() {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    serverInfo: SERVER_INFO,
+    capabilities: {
+      methods: Object.keys(methods).sort(),
+      notifications: ["events/notify"],
+    },
+  };
+}
+
+// Language-neutral contract document (JSON Schema based). Safe to serialize and ship to
+// non-TS clients or emit as a static artifact.
+export function contractDocument() {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    serverInfo: SERVER_INFO,
+    methods: Object.entries(methods).map(([name, m]) => ({
+      name,
+      description: m.description,
+      params: m.params,
+      result: m.result,
+    })),
+    notifications: [
+      { method: "events/notify", description: "A LoopEvent delivered to a subscriber.", params: anyObject },
+    ],
+  };
+}

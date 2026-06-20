@@ -1,0 +1,1068 @@
+{
+  "protocolVersion": "2025-06-18",
+  "serverInfo": {
+    "name": "loophub",
+    "version": "0.0.0"
+  },
+  "methods": [
+    {
+      "name": "initialize",
+      "description": "Capability negotiation; returns protocol version, server info, and method list.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "string"
+          },
+          "clientInfo": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "repos/create",
+      "description": "Register a local git repository.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "repos/list",
+      "description": "List registered repositories.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "enum": [
+              "active",
+              "archived",
+              "all"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "repos/get",
+      "description": "Get one repository by name.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "repos/setArchived",
+      "description": "Archive or unarchive a repository.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "archived"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "repos/update",
+      "description": "Update a repository's default branch and/or local path.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default_branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "local_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "repos/remove",
+      "description": "Remove a repository and its issues/PRs.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "null"
+      }
+    },
+    {
+      "name": "sessions/register",
+      "description": "Register (or update) an agent session.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "agent",
+          "session"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "sessions/list",
+      "description": "List agent sessions.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "sessions/get",
+      "description": "Get one agent session by id.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/list",
+      "description": "List issues/PRs in a repository.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "issue",
+              "pull",
+              "any"
+            ]
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "issues/get",
+      "description": "Get one issue by number.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/create",
+      "description": "Open a new issue.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/update",
+      "description": "Edit an issue's title/body/state/labels.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "closed"
+            ]
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/assign",
+      "description": "Assign an issue to an agent session.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "session_id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/unassign",
+      "description": "Clear an issue's assignee.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/setStatus",
+      "description": "Set or clear an agent's working status on an issue.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "text",
+          "session_id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "issues/addLabels",
+      "description": "Add labels to an issue.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "labels"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "issues/removeLabel",
+      "description": "Remove a label from an issue.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "label"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "null"
+      }
+    },
+    {
+      "name": "comments/list",
+      "description": "List an issue's comments.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "comments/create",
+      "description": "Add a comment to an issue.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "labels/list",
+      "description": "List a repository's labels.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "pulls/list",
+      "description": "List pull requests in a repository.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string"
+          },
+          "merged": {
+            "enum": [
+              "only",
+              "exclude"
+            ]
+          },
+          "head": {
+            "type": "string"
+          },
+          "base": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "pulls/get",
+      "description": "Get one pull request by number.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/create",
+      "description": "Open a pull request.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string"
+          },
+          "head": {
+            "type": "string",
+            "minLength": 1
+          },
+          "base": {
+            "type": "string",
+            "minLength": 1
+          },
+          "issue": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "title",
+          "head",
+          "base"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/update",
+      "description": "Edit a pull request's title/body/state.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "enum": [
+              "open",
+              "closed"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/files",
+      "description": "List a pull request's changed files (diff).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "pulls/merge",
+      "description": "Merge a pull request.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "merge_method": {
+            "enum": [
+              "squash",
+              "merge",
+              "rebase"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/readyForReview",
+      "description": "Mark a pull request ready for re-review after addressing changes.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "body": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "reviews/list",
+      "description": "List a pull request's reviews.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "reviews/listComments",
+      "description": "List a pull request's line comments.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "reviews/create",
+      "description": "Submit a review (optionally with line comments).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "event": {
+            "enum": [
+              "COMMENT",
+              "APPROVE",
+              "REQUEST_CHANGES",
+              "comment",
+              "approve",
+              "request_changes"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "side": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "path",
+                "body"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "events/list",
+      "description": "Poll events (webhook-style) by id cursor.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "order": {
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "sync/run",
+      "description": "Sweep open-PR heads and emit pull_request.updated when a head moved.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    }
+  ],
+  "notifications": [
+    {
+      "method": "events/notify",
+      "description": "A LoopEvent delivered to a subscriber.",
+      "params": {
+        "type": "object"
+      }
+    }
+  ]
+}

@@ -15,11 +15,21 @@
 ## レイアウト
 
 ```
-core/   純ドメインライブラリ（Node）: db / config / store / git / event-hub / links / watcher
-        service（手続き層）/ serialize（JSON 整形）/ errors
-cli/    lh コマンド（core/service を直 import、HTTP 非経由）
-web/    lh-web プロセス（core + JSON-RPC 2.0 + SSE）と SPA … S3/S4
+core/        純ドメインライブラリ（Node）: db / config / store / git / event-hub / links / watcher
+             service（手続き層）/ serialize（JSON 整形）/ errors
+cli/         lh コマンド（core/service を直 import、HTTP 非経由）
+web/server/  JSON-RPC 2.0 dispatcher + JSON Schema 契約 + events notification（core/service を公開）
+web/         lh-web プロセスと SPA … S3/S4
 ```
+
+## JSON-RPC 契約
+
+`web/server/` が core/service を **JSON-RPC 2.0**（単一エンドポイント `/rpc` 想定、`namespace/method`
+命名）で公開する。受信 params はメソッド毎の **JSON Schema**（ajv）で実行時検証し、`initialize` で
+capability negotiation、events は `events/notify` notification（SSE 相当）で配信する。契約は言語中立で、
+クライアントは core 型を import しない。HTTP プロセス化（lh-web）は S3。
+
+言語中立な契約ドキュメント: [`docs/rpc-contract.json`](./docs/rpc-contract.json)（`npm run contract` で再生成）。
 
 ## CLI（`lh`）
 
@@ -46,7 +56,7 @@ npm run test:watch
 ## 進捗（rearchitect S1–S7）
 
 - [x] **S1** core を Node 化（`node:sqlite` / `node:fs` / `node:child_process` / vitest）
-- [ ] **S2** MCP 流 JSON-RPC 2.0 + JSON Schema 契約 + SSE（REST 置換）
+- [x] **S2** MCP 流 JSON-RPC 2.0 + JSON Schema 契約 + events notification（`web/server/`）
 - [ ] **S3** `lh-web` 新設・`lh serve` 廃止
 - [ ] **S4** web クライアントを契約準拠 JSON-RPC 化
 - [x] **S5** `lh`(cli) を Node + core 直叩き（HTTP 廃止、service/serialize 層を新設）
