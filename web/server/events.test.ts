@@ -63,3 +63,27 @@ test("an unknown repo filter replays nothing", () => {
   unsub();
   expect(got).toEqual([]);
 });
+
+test("startEventTail forwards out-of-process DB writes to the in-process hub", async () => {
+  const { startEventTail } = await import("./events.ts");
+  const { subscribe } = await import("../../core/event-hub.ts");
+  const { db, now } = await import("../../core/db.ts");
+
+  const got: number[] = [];
+  const unsub = subscribe((e) => got.push(e.id));
+  const stop = startEventTail(20);
+
+  // Simulate another process writing an event: insert directly, bypassing publishEvent.
+  const row = db
+    .query(
+      `INSERT INTO events (repo_id, type, actor, payload, created_at)
+       VALUES (?, ?, ?, ?, ?) RETURNING id`,
+    )
+    .get(repoId, "issue.opened", "cli", JSON.stringify({ number: 99 }), now()) as { id: number };
+
+  await new Promise((r) => setTimeout(r, 80)); // let a poll tick run
+  stop();
+  unsub();
+
+  expect(got).toContain(row.id);
+});

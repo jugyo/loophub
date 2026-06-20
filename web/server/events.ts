@@ -3,10 +3,11 @@
 // event to `onNotification` as a JSON-RPC notification frame. The lh-web process (S3) binds
 // this to an SSE response; tests drive it directly. Feature parity with the prototype's
 // GET /events/stream (replay-then-subscribe, repo filter, ascending-by-id cursor).
-import { formatEvent, subscribe, type LoopEvent } from "../../core/event-hub.ts";
+import { formatEvent, publishEvent, subscribe, type LoopEvent } from "../../core/event-hub.ts";
 import * as S from "../../core/store.ts";
 
 const REPLAY_PAGE = 100;
+const DEFAULT_TAIL_POLL_MS = 1000;
 
 export interface EventNotification {
   jsonrpc: "2.0";
@@ -68,4 +69,32 @@ export function subscribeEvents(
     onNotification(eventNotification(event));
     cursor = event.id;
   });
+}
+
+// Cross-process liveness: the in-process pub/sub (event-hub) only sees events emitted in THIS
+// process, but the CLI/agents write directly to the shared SQLite DB in their own processes.
+// lh-web tails the `events` table by id cursor and republishes new rows through the pub/sub,
+// so subscribeEvents subscribers (SSE) get CLI/agent changes live (deduped by each
+// subscriber's own cursor). Starts from the current newest id; per-connection replay covers
+// history.
+export function startEventTail(pollMs = DEFAULT_TAIL_POLL_MS): () => void {
+  const newest = S.listEvents(0, null, 1, undefined, "desc");
+  let cursor = newest.length ? newest[0].id : 0;
+  let stopped = false;
+
+  const tick = () => {
+    if (stopped) return;
+    for (const row of S.listEvents(cursor, null, REPLAY_PAGE)) {
+      const repo = row.repo_id != null ? S.getRepoById(row.repo_id)?.full_name : undefined;
+      publishEvent(formatEvent(row, repo));
+      cursor = Math.max(cursor, row.id);
+    }
+  };
+
+  const timer = setInterval(tick, pollMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
 }
