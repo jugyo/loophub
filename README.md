@@ -18,8 +18,9 @@
 core/        純ドメインライブラリ（Node）: db / config / store / git / event-hub / links / watcher
              service（手続き層）/ serialize（JSON 整形）/ errors
 cli/         lh コマンド（core/service を直 import、HTTP 非経由）
-web/server/  JSON-RPC 2.0 dispatcher + JSON Schema 契約 + events notification（core/service を公開）
-web/         lh-web プロセスと SPA … S3/S4
+web/server/  lh-web: node:http サーバ（POST /rpc, GET /events SSE）+ JSON-RPC dispatcher
+             + JSON Schema 契約 + events notification（core/service を公開）+ SPA 配信
+web/         SPA（Vite）… S4
 ```
 
 ## JSON-RPC 契約
@@ -30,6 +31,17 @@ capability negotiation、events は `events/notify` notification（SSE 相当）
 クライアントは core 型を import しない。HTTP プロセス化（lh-web）は S3。
 
 言語中立な契約ドキュメント: [`docs/rpc-contract.json`](./docs/rpc-contract.json)（`npm run contract` で再生成）。
+
+## lh-web（Web サーバ）
+
+`lh-web` は web 自身の Node プロセス。常駐 daemon（旧 `lh serve` / `Bun.serve`）はなく、見ている間だけ動く。
+
+```sh
+npm run lh-web -- --port 8730   # POST /rpc, GET /events(SSE), SPA 配信
+```
+
+- **dev**: Vite dev server が HMR + `/rpc`・`/events` を lh-web へ proxy（SPA は S4）
+- **prod**: lh-web がビルド済み資産（`web/dist`）を配信。未ビルド時は静的ルートが 404 を返す
 
 ## CLI（`lh`）
 
@@ -57,7 +69,7 @@ npm run test:watch
 
 - [x] **S1** core を Node 化（`node:sqlite` / `node:fs` / `node:child_process` / vitest）
 - [x] **S2** MCP 流 JSON-RPC 2.0 + JSON Schema 契約 + events notification（`web/server/`）
-- [ ] **S3** `lh-web` 新設・`lh serve` 廃止
+- [x] **S3** `lh-web` 新設（node:http で `/rpc` + `/events` SSE + SPA 配信）・`lh serve` 廃止
 - [ ] **S4** web クライアントを契約準拠 JSON-RPC 化
 - [x] **S5** `lh`(cli) を Node + core 直叩き（HTTP 廃止、service/serialize 層を新設）
 - [ ] **S6** v1 UI 削除

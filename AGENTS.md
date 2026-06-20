@@ -40,7 +40,7 @@ web/    `lh-web` process: core + JSON-RPC 2.0 + SSE, plus the SPA
 npm install
 npm test            # vitest run (core tests)
 npm run test:watch
-npx tsc --noEmit    # typecheck
+npm run typecheck   # tsc --noEmit (uses the local typescript; avoids npx)
 ```
 
 ## Tests

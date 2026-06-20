@@ -7,11 +7,14 @@
     "node": ">=22.12.0"
   },
   "bin": {
-    "lh": "cli/index.ts"
+    "lh": "cli/index.ts",
+    "lh-web": "web/server/index.ts"
   },
   "scripts": {
     "lh": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx cli/index.ts",
+    "lh-web": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx web/server/index.ts",
     "contract": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx scripts/emit-rpc-contract.ts",
+    "typecheck": "tsc --noEmit",
     "test": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run",
     "test:watch": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest"
   },
