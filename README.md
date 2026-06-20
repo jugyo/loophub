@@ -20,7 +20,7 @@ core/        純ドメインライブラリ（Node）: db / config / store / git
 cli/         lh コマンド（core/service を直 import、HTTP 非経由）
 web/server/  lh-web: node:http サーバ（POST /rpc, GET /events SSE）+ JSON-RPC dispatcher
              + JSON Schema 契約 + events notification（core/service を公開）+ SPA 配信
-web/         SPA（Vite）… S4
+web/         SPA（Vite + React + TanStack）: api クライアントは契約準拠 JSON-RPC
 ```
 
 ## JSON-RPC 契約
@@ -70,7 +70,7 @@ npm run test:watch
 - [x] **S1** core を Node 化（`node:sqlite` / `node:fs` / `node:child_process` / vitest）
 - [x] **S2** MCP 流 JSON-RPC 2.0 + JSON Schema 契約 + events notification（`web/server/`）
 - [x] **S3** `lh-web` 新設（node:http で `/rpc` + `/events` SSE + SPA 配信）・`lh serve` 廃止
-- [ ] **S4** web クライアントを契約準拠 JSON-RPC 化
+- [x] **S4** web クライアントを契約準拠 JSON-RPC 化（REST fetch → `/rpc`、SSE は notification）
 - [x] **S5** `lh`(cli) を Node + core 直叩き（HTTP 廃止、service/serialize 層を新設）
 - [ ] **S6** v1 UI 削除
 - [ ] **S7** 再レイヤリング + docs/scripts/skills 整理

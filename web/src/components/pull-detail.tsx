@@ -1,0 +1,442 @@
+// PR detail view (/r/:owner/:repo/pulls/:number). v1 parity: title, body,
+// state + review badges, head→base, the linked issue (bidirectional with the
+// issue's linked PR), agent status, reviews, the file diff with line comments,
+// issue comments, plus the write operations — merge (when APPROVED), "mark ready
+// for re-review" (when CHANGES_REQUESTED), and close/reopen (when not merged).
+// Markdown rendering is out of scope (#130); body, reviews, and comments render
+// as plain text.
+
+import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { Loader2 } from "lucide-react";
+import type {
+  PullFile,
+  PullLineComment,
+  PullRequest,
+  PullReview,
+} from "@/api/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { AgentStatusLine } from "@/components/agent-status";
+import { assigneeBadge, reviewBadge, stateBadge } from "@/lib/badges";
+import { parsePatch, type DiffLineKind } from "@/lib/diff";
+import { relativeTime } from "@/lib/time";
+import { useIssueComments } from "@/queries/issues";
+import {
+  useMergePull,
+  usePull,
+  usePullComments,
+  usePullFiles,
+  usePullReviews,
+  useReadyForReview,
+  useSetPullState,
+} from "@/queries/pulls";
+
+const MERGE_METHODS = ["squash", "merge", "rebase"] as const;
+type MergeMethod = (typeof MERGE_METHODS)[number];
+
+export function PullDetail({
+  owner,
+  repo,
+  number,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+}) {
+  const pullQuery = usePull(owner, repo, number);
+  const filesQuery = usePullFiles(owner, repo, number);
+  const reviewsQuery = usePullReviews(owner, repo, number);
+  const lineCommentsQuery = usePullComments(owner, repo, number);
+  const commentsQuery = useIssueComments(owner, repo, number);
+
+  if (pullQuery.isLoading) {
+    return (
+      <div className="mx-auto flex max-w-content items-center gap-2 py-8 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+  if (pullQuery.isError || !pullQuery.data) {
+    return (
+      <div className="mx-auto max-w-content rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+        Failed to load PR #{number}.
+        {pullQuery.error instanceof Error
+          ? ` ${pullQuery.error.message}`
+          : null}
+      </div>
+    );
+  }
+
+  const pull = pullQuery.data;
+
+  return (
+    <div className="mx-auto flex max-w-content flex-col gap-6">
+      <PullHeader owner={owner} repo={repo} pull={pull} />
+
+      <ReviewList
+        reviews={reviewsQuery.data}
+        isLoading={reviewsQuery.isLoading}
+        isError={reviewsQuery.isError}
+      />
+
+      <FilesChanged
+        files={filesQuery.data}
+        lineComments={lineCommentsQuery.data}
+        isLoading={filesQuery.isLoading}
+        isError={filesQuery.isError}
+      />
+
+      <CommentList
+        comments={commentsQuery.data}
+        isLoading={commentsQuery.isLoading}
+        isError={commentsQuery.isError}
+      />
+    </div>
+  );
+}
+
+function PullHeader({
+  owner,
+  repo,
+  pull,
+}: {
+  owner: string;
+  repo: string;
+  pull: PullRequest;
+}) {
+  const merge = useMergePull(owner, repo, pull.number);
+  const ready = useReadyForReview(owner, repo, pull.number);
+  const setState = useSetPullState(owner, repo, pull.number);
+  const [method, setMethod] = useState<MergeMethod>("squash");
+
+  const state = stateBadge(pull, "pulls");
+  const review = reviewBadge(pull);
+  const agent = assigneeBadge(pull.assignee ?? null);
+  const linked = pull.linked_issue;
+
+  const canAct = pull.state === "open" && !pull.merged;
+  const canMerge = canAct && pull.review_state === "APPROVED";
+  const canReady = canAct && pull.review_state === "CHANGES_REQUESTED";
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {state ? <Badge tone={state.tone}>{state.label}</Badge> : null}
+        {review ? <Badge tone={review.tone}>{review.label}</Badge> : null}
+        {agent ? (
+          <Badge tone={agent.tone} title={agent.title}>
+            {agent.label}
+          </Badge>
+        ) : null}
+        <span className="text-sm text-muted-foreground">#{pull.number}</span>
+      </div>
+
+      <h1 className="text-2xl font-semibold">{pull.title}</h1>
+
+      <div className="text-sm text-muted-foreground">
+        @{pull.user.login} · opened {relativeTime(pull.created_at)} · wants to
+        merge{" "}
+        <code className="rounded bg-muted px-1 py-0.5 text-xs">
+          {pull.head.ref}
+        </code>{" "}
+        →{" "}
+        <code className="rounded bg-muted px-1 py-0.5 text-xs">
+          {pull.base.ref}
+        </code>
+      </div>
+
+      <AgentStatusLine status={pull.agent_status} detail />
+
+      {linked ? (
+        <div className="text-sm text-muted-foreground">
+          Linked issue:{" "}
+          <Link
+            to="/r/$owner/$repo/issues/$number"
+            params={{ owner, repo, number: String(linked.number) }}
+            className="font-medium text-foreground hover:underline"
+          >
+            #{linked.number}
+          </Link>{" "}
+          ({linked.state}) — {linked.title}
+        </div>
+      ) : null}
+
+      {pull.body ? (
+        <div className="whitespace-pre-wrap rounded-md border bg-muted/30 p-4 text-sm">
+          {pull.body}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No description.</p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          aria-label="Merge method"
+          value={method}
+          onChange={(e) => setMethod(e.target.value as MergeMethod)}
+          disabled={!canMerge || merge.isPending}
+          className="h-9 rounded-md border bg-background px-2 text-sm"
+        >
+          {MERGE_METHODS.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+        <Button
+          disabled={!canMerge || merge.isPending}
+          onClick={() => merge.mutate(method)}
+        >
+          {merge.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+          {pull.merged ? "Merged" : "Merge"}
+        </Button>
+        {canReady ? (
+          <Button
+            variant="secondary"
+            disabled={ready.isPending}
+            onClick={() => ready.mutate()}
+          >
+            {ready.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : null}
+            Mark ready for re-review
+          </Button>
+        ) : null}
+        {!pull.merged ? (
+          <Button
+            variant="secondary"
+            disabled={setState.isPending}
+            onClick={() =>
+              setState.mutate(pull.state === "open" ? "closed" : "open")
+            }
+          >
+            {setState.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : null}
+            {pull.state === "open" ? "Close" : "Reopen"}
+          </Button>
+        ) : null}
+        <span className="text-sm text-muted-foreground">
+          {pull.mergeable_state === "dirty"
+            ? "⚠ conflict"
+            : pull.mergeable_state === "clean"
+              ? "mergeable"
+              : ""}
+        </span>
+      </div>
+
+      {merge.isError ? (
+        <p className="text-sm text-destructive">
+          {merge.error instanceof Error
+            ? `Merge failed: ${merge.error.message}`
+            : "Merge failed."}
+        </p>
+      ) : null}
+      {ready.isError ? (
+        <p className="text-sm text-destructive">
+          {ready.error instanceof Error
+            ? `Update failed: ${ready.error.message}`
+            : "Update failed."}
+        </p>
+      ) : null}
+      {setState.isError ? (
+        <p className="text-sm text-destructive">
+          {setState.error instanceof Error
+            ? `Update failed: ${setState.error.message}`
+            : "Update failed."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+const REVIEW_VERDICT_TONE: Record<PullReview["state"], string> = {
+  APPROVE: "text-green-600 dark:text-green-400",
+  REQUEST_CHANGES: "text-destructive",
+  COMMENT: "text-muted-foreground",
+};
+
+function ReviewList({
+  reviews,
+  isLoading,
+  isError,
+}: {
+  reviews: PullReview[] | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">Reviews</h2>
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading reviews…
+        </div>
+      ) : isError ? (
+        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load reviews.
+        </div>
+      ) : !reviews || reviews.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No reviews.</p>
+      ) : (
+        reviews.map((r) => (
+          <article key={r.id} className="rounded-md border p-3">
+            <header className="mb-1 text-sm">
+              <span className={`font-medium ${REVIEW_VERDICT_TONE[r.state]}`}>
+                ● {r.state}
+              </span>{" "}
+              <span className="font-medium">@{r.user.login}</span>{" "}
+              <span className="text-xs text-muted-foreground">
+                {relativeTime(r.submitted_at)}
+              </span>
+            </header>
+            {r.body ? (
+              <div className="whitespace-pre-wrap text-sm">{r.body}</div>
+            ) : null}
+          </article>
+        ))
+      )}
+    </section>
+  );
+}
+
+const DIFF_LINE_CLASS: Record<DiffLineKind, string> = {
+  add: "bg-green-500/10 text-green-700 dark:text-green-300",
+  del: "bg-red-500/10 text-red-700 dark:text-red-300",
+  hunk: "bg-muted text-muted-foreground",
+  meta: "text-muted-foreground",
+  context: "",
+};
+
+function FilesChanged({
+  files,
+  lineComments,
+  isLoading,
+  isError,
+}: {
+  files: PullFile[] | undefined;
+  lineComments: PullLineComment[] | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  const byFile = new Map<string, PullLineComment[]>();
+  for (const c of lineComments ?? []) {
+    const list = byFile.get(c.path) ?? [];
+    list.push(c);
+    byFile.set(c.path, list);
+  }
+
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">
+        Files changed{files ? ` (${files.length})` : ""}
+      </h2>
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading diff…
+        </div>
+      ) : isError ? (
+        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load diff.
+        </div>
+      ) : !files || files.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No diff.</p>
+      ) : (
+        files.map((f) => (
+          <FileDiff
+            key={f.filename}
+            file={f}
+            comments={byFile.get(f.filename) ?? []}
+          />
+        ))
+      )}
+    </section>
+  );
+}
+
+function FileDiff({
+  file,
+  comments,
+}: {
+  file: PullFile;
+  comments: PullLineComment[];
+}) {
+  const lines = parsePatch(file.patch);
+  return (
+    <div className="overflow-hidden rounded-md border">
+      <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 text-sm">
+        <span className="font-medium">{file.filename}</span>
+        <span className="text-xs text-muted-foreground">
+          +{file.additions} -{file.deletions}
+        </span>
+      </div>
+      {lines.length > 0 ? (
+        <pre className="overflow-x-auto text-xs leading-relaxed">
+          {lines.map((l, i) => (
+            <span
+              key={i}
+              className={`block px-3 ${DIFF_LINE_CLASS[l.kind]}`}
+            >
+              {l.text || " "}
+            </span>
+          ))}
+        </pre>
+      ) : (
+        <p className="px-3 py-2 text-xs text-muted-foreground">
+          No textual diff.
+        </p>
+      )}
+      {comments.map((c) => (
+        <div key={c.id} className="m-2 rounded-md border bg-muted/20 p-2">
+          <div className="mb-1 text-xs">
+            💬 @{c.user.login}{" "}
+            <span className="text-muted-foreground">
+              {c.path}:{c.line ?? "?"}
+            </span>
+          </div>
+          <div className="whitespace-pre-wrap text-sm">{c.body}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CommentList({
+  comments,
+  isLoading,
+  isError,
+}: {
+  comments: import("@/api/types").IssueComment[] | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">Comments</h2>
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading comments…
+        </div>
+      ) : isError ? (
+        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load comments.
+        </div>
+      ) : !comments || comments.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No comments.</p>
+      ) : (
+        comments.map((c) => (
+          <article key={c.id} className="rounded-md border p-3">
+            <header className="mb-1 text-sm font-medium">
+              @{c.user.login}{" "}
+              <span className="text-xs font-normal text-muted-foreground">
+                {relativeTime(c.created_at)}
+              </span>
+            </header>
+            <div className="whitespace-pre-wrap text-sm">{c.body}</div>
+          </article>
+        ))
+      )}
+    </section>
+  );
+}

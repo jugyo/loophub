@@ -9,7 +9,9 @@ import { fileURLToPath } from "node:url";
 import { dispatchRaw } from "./rpc.ts";
 import { subscribeEvents } from "./events.ts";
 
-const DIST_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+// Built SPA assets. Defaults to web/dist; override with LOOPHUB_WEB_DIST.
+const DIST_DIR =
+  process.env.LOOPHUB_WEB_DIST ?? join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const SSE_HEARTBEAT_MS = 15_000;
 
 const CONTENT_TYPES: Record<string, string> = {

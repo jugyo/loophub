@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,10 @@ import type { Server } from "node:http";
 const HOME = mkdtempSync(join(tmpdir(), "lh-http-"));
 process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
+// Point static serving at an isolated dist dir so the test is independent of whether
+// the real web/dist has been built.
+const DIST = join(HOME, "dist");
+process.env.LOOPHUB_WEB_DIST = DIST;
 
 let server: Server;
 let base: string;
@@ -128,8 +132,17 @@ test("GET /events streams replayed then live events as SSE notifications", async
   ctrl.abort();
 });
 
-test("GET on an unknown path 404s when the SPA is not built", async () => {
+test("GET on a client route 404s when the SPA is not built", async () => {
   const res = await fetch(`${base}/`);
   expect(res.status).toBe(404);
   expect(await res.text()).toContain("Not built");
+});
+
+test("GET on a client route serves index.html when the SPA is built (fallback)", async () => {
+  mkdirSync(DIST, { recursive: true });
+  writeFileSync(join(DIST, "index.html"), "<!doctype html><title>lh</title>");
+  const res = await fetch(`${base}/r/me/proj/issues/1`);
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toContain("text/html");
+  expect(await res.text()).toContain("<!doctype html>");
 });
