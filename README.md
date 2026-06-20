@@ -72,5 +72,5 @@ npm run test:watch
 - [x] **S3** `lh-web` 新設（node:http で `/rpc` + `/events` SSE + SPA 配信）・`lh serve` 廃止
 - [x] **S4** web クライアントを契約準拠 JSON-RPC 化（REST fetch → `/rpc`、SSE は notification）
 - [x] **S5** `lh`(cli) を Node + core 直叩き（HTTP 廃止、service/serialize 層を新設）
-- [ ] **S6** v1 UI 削除
+- [x] **S6** v1 UI 削除（本リライトでは `ui.html`/`ui.ts` を最初から持ち込まず、lh-web は v2 のみ配信）
 - [ ] **S7** 再レイヤリング + docs/scripts/skills 整理
