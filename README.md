@@ -16,9 +16,24 @@
 
 ```
 core/   純ドメインライブラリ（Node）: db / config / store / git / event-hub / links / watcher
-cli/    lh コマンド（core を直 import、HTTP 非経由）
-web/    lh-web プロセス（core + JSON-RPC 2.0 + SSE）と SPA
+        service（手続き層）/ serialize（JSON 整形）/ errors
+cli/    lh コマンド（core/service を直 import、HTTP 非経由）
+web/    lh-web プロセス（core + JSON-RPC 2.0 + SSE）と SPA … S3/S4
 ```
+
+## CLI（`lh`）
+
+ビルド不要。ラッパーを一度入れると `lh` が PATH に入る:
+
+```sh
+./scripts/install-lh-wrapper.sh   # ~/.local/bin/lh を作成（node + tsx 起動）
+lh repo add . --name me/proj
+lh issue create --title "do the thing" --label ready-to-build
+lh pr create --head feature-x --base main --title "impl" --issue 5
+```
+
+別 checkout を指す場合は `LOOPHUB_ROOT=/path/to/loophub lh ...`。CLI は `core/service` を直接呼び、
+サーバープロセスは不要（同じ `LOOPHUB_HOME` の SQLite に直接読み書きする）。
 
 ## 開発
 
@@ -34,6 +49,6 @@ npm run test:watch
 - [ ] **S2** MCP 流 JSON-RPC 2.0 + JSON Schema 契約 + SSE（REST 置換）
 - [ ] **S3** `lh-web` 新設・`lh serve` 廃止
 - [ ] **S4** web クライアントを契約準拠 JSON-RPC 化
-- [ ] **S5** `lh`(cli) を Node + core 直叩き
+- [x] **S5** `lh`(cli) を Node + core 直叩き（HTTP 廃止、service/serialize 層を新設）
 - [ ] **S6** v1 UI 削除
 - [ ] **S7** 再レイヤリング + docs/scripts/skills 整理
