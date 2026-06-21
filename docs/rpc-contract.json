@@ -1006,6 +1006,19 @@
       }
     },
     {
+      "name": "dashboard/overview",
+      "description": "Cross-repo top-page overview: in-progress (agent-assigned) issues and open unmerged pull requests, each tagged with its repo.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "sync/run",
       "description": "Sweep open-PR heads and emit pull_request.updated when a head moved.",
       "params": {

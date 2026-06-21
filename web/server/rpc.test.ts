@@ -102,6 +102,46 @@ test("batch returns an array; empty batch -> -32600", async () => {
   expect(empty.error.code).toBe(ERROR_CODES.INVALID_REQUEST);
 });
 
+test("dashboard/overview lists assigned issues tagged with their repo", async () => {
+  const sid = "11111111-1111-1111-1111-111111111111";
+  await call("sessions/register", { id: sid, agent: "impl-bot", session: "wip-runtime" });
+  const wip: any = await call("issues/create", { repo: "me/proj", title: "wip" });
+  await call("issues/assign", { repo: "me/proj", number: wip.result.number, session_id: sid });
+  await call("issues/create", { repo: "me/proj", title: "idle" }); // unassigned -> excluded
+
+  const r: any = await call("dashboard/overview", {});
+  expect(Array.isArray(r.result.issues)).toBe(true);
+  expect(Array.isArray(r.result.pulls)).toBe(true);
+
+  const mine = r.result.issues.find((it: any) => it.issue.number === wip.result.number);
+  expect(mine).toBeTruthy();
+  expect(mine.repo).toEqual({ full_name: "me/proj", owner: "me", name: "proj" });
+  expect(r.result.issues.some((it: any) => it.issue.title === "idle")).toBe(false);
+});
+
+test("dashboard/overview lists open unmerged PRs tagged with their repo", async () => {
+  // A PR head must exist as a branch for pulls/create to resolve its sha.
+  git(["checkout", "-q", "-b", "feat-x"]);
+  writeFileSync(join(repoPath, "b.txt"), "y\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "feat"]);
+  git(["checkout", "-q", "main"]);
+
+  const pr: any = await call("pulls/create", {
+    repo: "me/proj",
+    title: "feature pr",
+    head: "feat-x",
+    base: "main",
+  });
+  expect(pr.result.number).toBeTypeOf("number");
+
+  const r: any = await call("dashboard/overview", {});
+  const mine = r.result.pulls.find((it: any) => it.pull.number === pr.result.number);
+  expect(mine).toBeTruthy();
+  expect(mine.repo).toEqual({ full_name: "me/proj", owner: "me", name: "proj" });
+  expect(mine.pull.merged).toBe(false);
+});
+
 test("dispatchRaw turns invalid JSON into -32700", async () => {
   const r: any = await dispatchRaw("{not json");
   expect(r.error.code).toBe(ERROR_CODES.PARSE_ERROR);

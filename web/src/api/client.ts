@@ -6,6 +6,7 @@
 // dev proxy (vite.config.ts).
 
 import type {
+  DashboardOverview,
   Issue,
   IssueComment,
   LoopEvent,
@@ -242,6 +243,11 @@ export function readyForReview(
     "pulls/readyForReview",
     clean({ repo: full(owner, repo), number, body, session_id: sessionId }),
   );
+}
+
+// --- dashboard ---
+export function getDashboardOverview() {
+  return rpc<DashboardOverview>("dashboard/overview");
 }
 
 // --- events ---

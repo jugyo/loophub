@@ -21,6 +21,20 @@ function RowBadges({ badges }: { badges: ReturnType<typeof issueBadges> }) {
   );
 }
 
+// Repo identity chip for cross-repo rows (top page). Omitted on per-repo
+// dashboards where the project is already in context.
+function RepoChip({ label }: { label?: string }) {
+  if (!label) return null;
+  return (
+    <span
+      className="shrink-0 whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
+      title={label}
+    >
+      {label}
+    </span>
+  );
+}
+
 // Label chips, sharing the issue-detail chip style (issue-detail.tsx).
 function RowLabels({ labels }: { labels: Label[] }) {
   if (labels.length === 0) return null;
@@ -42,10 +56,13 @@ export function IssueRow({
   owner,
   repo,
   issue,
+  repoLabel,
 }: {
   owner: string;
   repo: string;
   issue: Issue;
+  /** When set (cross-repo views), shows which project the issue belongs to. */
+  repoLabel?: string;
 }) {
   return (
     <Link
@@ -53,6 +70,7 @@ export function IssueRow({
       params={{ owner, repo, number: String(issue.number) }}
       className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
     >
+      <RepoChip label={repoLabel} />
       <span className="shrink-0 text-muted-foreground">#{issue.number}</span>
       <span className="min-w-0 flex-1 truncate font-medium">{issue.title}</span>
       <RowLabels labels={issue.labels} />
@@ -68,10 +86,13 @@ export function PullRow({
   owner,
   repo,
   pull,
+  repoLabel,
 }: {
   owner: string;
   repo: string;
   pull: PullRequest;
+  /** When set (cross-repo views), shows which project the PR belongs to. */
+  repoLabel?: string;
 }) {
   return (
     <Link
@@ -79,6 +100,7 @@ export function PullRow({
       params={{ owner, repo, number: String(pull.number) }}
       className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
     >
+      <RepoChip label={repoLabel} />
       <span className="shrink-0 text-muted-foreground">#{pull.number}</span>
       <span className="min-w-0 flex-1 truncate font-medium">{pull.title}</span>
       <RowBadges badges={pullBadges(pull)} />

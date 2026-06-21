@@ -333,6 +333,15 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.events.list({ since: p.since, repo: p.repo, labels: p.labels, order: p.order, limit: p.limit }),
   },
 
+  // ---- dashboard ----
+  "dashboard/overview": {
+    description:
+      "Cross-repo top-page overview: in-progress (agent-assigned) issues and open unmerged pull requests, each tagged with its repo.",
+    params: EMPTY_PARAMS,
+    result: anyObject,
+    handler: () => svc.dashboard.overview(),
+  },
+
   // ---- sync ----
   "sync/run": {
     description: "Sweep open-PR heads and emit pull_request.updated when a head moved.",

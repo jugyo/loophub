@@ -3,7 +3,7 @@
 // query-key factories so lists refetch on change.
 
 import { useQuery } from "@tanstack/react-query";
-import { listIssues, listPulls } from "@/api/client";
+import { getDashboardOverview, listIssues, listPulls } from "@/api/client";
 import { queryKeys } from "./keys";
 
 /** Max items per dashboard section (DESIGN.md: each list ~20, then "see all"). */
@@ -26,5 +26,27 @@ export function useOpenPulls(owner: string, repo: string) {
     queryKey: queryKeys.pulls(full(owner, repo)),
     queryFn: () =>
       listPulls(owner, repo, `state=open&per_page=${SECTION_LIMIT}`),
+  });
+}
+
+// --- cross-repo top page (/) ---
+// Both hooks share one query key, so the overview is fetched once and each hook
+// selects its slice. SSE invalidation keys off queryKeys.dashboard().
+
+/** In-progress (agent-assigned) issues across all active repos. */
+export function useInProgressIssues() {
+  return useQuery({
+    queryKey: queryKeys.dashboard(),
+    queryFn: getDashboardOverview,
+    select: (overview) => overview.issues,
+  });
+}
+
+/** Open, unmerged pull requests across all active repos. */
+export function useUnmergedPulls() {
+  return useQuery({
+    queryKey: queryKeys.dashboard(),
+    queryFn: getDashboardOverview,
+    select: (overview) => overview.pulls,
   });
 }

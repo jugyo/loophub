@@ -128,6 +128,31 @@ export interface PullRequest {
   linked_issue?: LinkedIssue | null;
 }
 
+/** Minimal repo identity attached to aggregated dashboard items. */
+export interface RepoRef {
+  full_name: string;
+  owner: string;
+  name: string;
+}
+
+/** One in-progress issue plus the repo it belongs to (dashboard/overview). */
+export interface DashboardIssueItem {
+  repo: RepoRef;
+  issue: Issue;
+}
+
+/** One open unmerged PR plus the repo it belongs to (dashboard/overview). */
+export interface DashboardPullItem {
+  repo: RepoRef;
+  pull: PullRequest;
+}
+
+/** Cross-repo top-page overview (dashboard/overview). */
+export interface DashboardOverview {
+  issues: DashboardIssueItem[];
+  pulls: DashboardPullItem[];
+}
+
 /** Wire format for GET /events and the /events/stream SSE feed. */
 export interface LoopEvent {
   id: number;

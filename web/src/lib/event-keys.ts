@@ -17,6 +17,7 @@ export const queryKeys = {
   pull: (full: string, number: number) => ["pull", full, number] as const,
   agentSessions: () => ["agent-sessions"] as const,
   events: () => ["events"] as const,
+  dashboard: () => ["dashboard"] as const,
 };
 
 /**
@@ -38,6 +39,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["issues"]);
       keys.push(["issue"]);
     }
+    keys.push([...queryKeys.dashboard()]); // cross-repo top page
   } else if (type.startsWith("pull_request.")) {
     if (repo) {
       keys.push([...queryKeys.pulls(repo)]);
@@ -48,6 +50,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["pulls"]);
       keys.push(["pull"]);
     }
+    keys.push([...queryKeys.dashboard()]); // cross-repo top page
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
   }
