@@ -1,7 +1,10 @@
 // lh-web HTTP binding. A plain node:http server that mounts the JSON-RPC dispatcher at
-// POST /rpc, streams events at GET /events (SSE), and serves the built SPA for everything
-// else. There is no long-running daemon equivalent to the old `lh serve` / Bun.serve — the
-// process runs only while someone is looking (dev: Vite proxies here; prod: serves web/dist).
+// POST /rpc, streams events at GET /events (SSE), and delegates everything else to a static
+// handler for the SPA. There is no long-running daemon equivalent to the old `lh serve` /
+// Bun.serve — the process runs only while someone is looking. The SPA handler is injectable:
+// `lh-web` injects a Vite dev middleware (dev.ts) so one process serves the UI with HMR; the
+// default `handleStatic` serves a built web/dist. Keeping Vite out of this file means the
+// RPC/SSE core (and its tests) never import Vite.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
@@ -110,7 +113,15 @@ function handleStatic(req: IncomingMessage, res: ServerResponse, url: URL): void
   createReadStream(filePath).pipe(res);
 }
 
-export function handleRequest(req: IncomingMessage, res: ServerResponse): void {
+// Serves GET requests that aren't /rpc or /events — i.e. the SPA. `handleStatic` (web/dist)
+// is the default; `lh-web` injects a Vite dev middleware instead (see dev.ts).
+export type StaticHandler = (req: IncomingMessage, res: ServerResponse, url: URL) => void;
+
+export function handleRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  serveStatic: StaticHandler,
+): void {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (url.pathname === "/rpc" && req.method === "POST") {
     handleRpc(req, res).catch(() => {
@@ -124,13 +135,13 @@ export function handleRequest(req: IncomingMessage, res: ServerResponse): void {
     return;
   }
   if (req.method === "GET") {
-    handleStatic(req, res, url);
+    serveStatic(req, res, url);
     return;
   }
   res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
   res.end("Not Found\n");
 }
 
-export function createLhWebServer(): Server {
-  return createServer(handleRequest);
+export function createLhWebServer(serveStatic: StaticHandler = handleStatic): Server {
+  return createServer((req, res) => handleRequest(req, res, serveStatic));
 }

@@ -1,8 +1,8 @@
 # LoopHub Web UI
 
-React SPA (Vite + TypeScript + Tailwind) for LoopHub. It runs as a separate process
-from the `lh-web` server: in dev, the Vite dev server (:5173) proxies `/rpc` and
-`/events` to `lh-web` (:8730); in prod, `lh-web` serves the built assets from `dist/`.
+React SPA (Vite + TypeScript + Tailwind) for LoopHub. `lh-web` embeds Vite in middleware
+mode, so a single process serves the API (`/rpc`, `/events`) and the SPA (with HMR) on one
+port — no separate dev server.
 
 > Note: the components use a shadcn-style design system (Tailwind + `cn`/`cva` tokens,
 > `components/ui/`) but are not yet a full shadcn install (no Radix / `components.json`).
@@ -15,40 +15,39 @@ from the `lh-web` server: in dev, the Vite dev server (:5173) proxies `/rpc` and
 - **TanStack Query** — server state
 - **TanStack Router** — routing (code-based route tree in `src/router.tsx`)
 
-## Two-process dev
+## Dev (single command)
+
+From the repo root:
 
 ```sh
-# terminal 1 — lh-web server (repo root)
-npm run lh-web          # :8730 (POST /rpc, GET /events)
-
-# terminal 2 — web UI
-cd web
-npm install
-npm run dev             # http://localhost:5173 (proxies /rpc + /events)
+npm install             # also installs web deps (root postinstall)
+npm run lh-web          # http://localhost:8730 — API + UI + HMR, one process
 ```
 
-## Scripts
+Open http://localhost:8730. Editing files under `web/src` hot-reloads the browser.
+`lh-web` mounts Vite (middleware mode) for everything except `/rpc` and `/events`.
+
+### Standalone Vite (optional)
+
+For frontend-only work you can still run Vite on its own; it proxies `/rpc` + `/events`
+to a separately running `lh-web`:
+
+```sh
+npm run lh-web          # repo root → :8730 (API)
+cd web && npm run dev   # :5173 (proxies to :8730)
+```
+
+## Scripts (in `web/`)
 
 | Script | Purpose |
 |--------|---------|
-| `npm run dev` | Vite dev server (:5173) with the `/rpc` + `/events` proxy |
+| `npm run dev` | Standalone Vite dev server (:5173) with the `/rpc` + `/events` proxy |
 | `npm run build` | Type-check + production build to `dist/` |
 | `npm run preview` | Preview the production build (:4173) |
 | `npm run test` | Vitest |
 
-## Production-like preview
-
-```sh
-# terminal 1 — lh-web (repo root)
-npm run lh-web          # :8730
-
-# terminal 2 — web UI preview
-cd web
-npm run build           # tsc --noEmit + vite build → dist/
-npm run preview         # http://localhost:4173
-```
-
-`lh-web` can also serve `dist/` directly in production (no Vite); see the repo README.
+`lh-web`'s default static handler can also serve a built `dist/` (Vite-free) as a fallback;
+the embedded Vite path is the primary dev flow.
 
 ## API client
 

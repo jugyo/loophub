@@ -37,11 +37,18 @@ capability negotiation、events は `events/notify` notification（SSE 相当）
 `lh-web` は web 自身の Node プロセス。常駐 daemon（旧 `lh serve` / `Bun.serve`）はなく、見ている間だけ動く。
 
 ```sh
-npm run lh-web -- --port 8730   # POST /rpc, GET /events(SSE), SPA 配信
+npm install                     # web の依存も postinstall で入る
+npm run lh-web                  # http://localhost:8730 — API + UI + HMR を 1 プロセスで提供
 ```
 
-- **dev**: Vite dev server が HMR + `/rpc`・`/events` を lh-web へ proxy（SPA は S4）
-- **prod**: lh-web がビルド済み資産（`web/dist`）を配信。未ビルド時は静的ルートが 404 を返す
+`lh-web` は Vite を middleware mode で内蔵し、`/rpc`・`/events` 以外を Vite に委譲する。
+単一コマンド・単一ポートで API も SPA も HMR も提供する（別プロセスの dev server は不要）。
+`--port <n>` でポート変更、`--poll-ms <ms>` でイベントポーリング間隔を指定できる。
+既定では loopback（`127.0.0.1`）にのみ bind する（内蔵 Vite が web/ のソースを配信するため）。
+LAN から開きたいときだけ `LOOPHUB_HOST=0.0.0.0` を指定する。
+
+> フロントだけを触りたいときは `cd web && npm run dev`（:5173）で Vite を単体起動も可能。
+> その場合は `/rpc`・`/events` を別起動の lh-web（:8730）へ proxy する。
 
 ## CLI（`lh`）
 

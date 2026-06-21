@@ -11,6 +11,7 @@
     "lh-web": "web/server/index.ts"
   },
   "scripts": {
+    "postinstall": "npm --prefix web install",
     "lh": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx cli/index.ts",
     "lh-web": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx web/server/index.ts",
     "contract": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx scripts/emit-rpc-contract.ts",

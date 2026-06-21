@@ -1,6 +1,9 @@
 // `lh-web` entry point: start the lh-web HTTP process. Runs only while in use (no daemon).
 //   lh-web [--port <n>] [--poll-ms <ms>]   (port: default 8730 or LOOPHUB_PORT)
+// One command, one port: this process serves the JSON-RPC API, the SSE feed, AND the SPA
+// (with HMR) by embedding Vite in middleware mode — no separate dev server.
 import { createLhWebServer } from "./http.ts";
+import { createViteDev, type ViteDev } from "./dev.ts";
 import { startEventTail } from "./events.ts";
 
 const argv = process.argv.slice(2);
@@ -14,16 +17,38 @@ for (let i = 0; i < argv.length; i++) {
 // Tail the shared DB so CLI/agent (out-of-process) writes reach SSE subscribers live.
 const stopTail = startEventTail(pollMs);
 
-const server = createLhWebServer();
-server.listen(port, () => {
+// Embed Vite so this single process serves the SPA with HMR alongside /rpc and /events.
+// `vite` is assigned before listen(), so by the time requests arrive it is always set; the
+// guard only covers the brief async startup window.
+let vite: ViteDev | undefined;
+const server = createLhWebServer((req, res, url) => {
+  if (vite) vite.serveStatic(req, res, url);
+  else res.writeHead(503).end("lh-web is starting\n");
+});
+try {
+  vite = await createViteDev(server);
+} catch (err) {
+  stopTail();
+  console.error("lh-web: failed to start the embedded Vite dev server. Are web deps installed (npm install)?");
+  console.error(err);
+  process.exit(1);
+}
+
+// Bind to loopback by default: the embedded Vite server transforms and serves web/ source,
+// so it must not be reachable off-host. Override with LOOPHUB_HOST (e.g. 0.0.0.0) only when
+// LAN access is intentional.
+const host = process.env.LOOPHUB_HOST ?? "127.0.0.1";
+server.listen(port, host, () => {
+  const shown = host === "127.0.0.1" ? "localhost" : host;
   console.error(
-    `lh-web listening on http://localhost:${port}  (POST /rpc, GET /events; events poll ${pollMs}ms)`,
+    `lh-web listening on http://${shown}:${port}  (API + UI + HMR; events poll ${pollMs}ms)`,
   );
 });
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     stopTail();
+    void vite?.close();
     server.close(() => process.exit(0));
   });
 }
