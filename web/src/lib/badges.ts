@@ -1,9 +1,9 @@
 // Pure helpers for the status badges shown on dashboard rows. Ported from the
 // v1 UI (src/ui.html) for parity: state, review state, mergeable/conflict,
-// assignee (agent), and agent working status. Kept dependency-free so the
-// badge logic is unit-testable without React.
+// and assignee (agent). Kept dependency-free so the badge logic is
+// unit-testable without React.
 
-import type { AgentSession, AgentStatus, Issue, PullRequest } from "@/api/types";
+import type { AgentSession, Issue, PullRequest } from "@/api/types";
 
 export type BadgeTone =
   | "open"
@@ -33,12 +33,6 @@ export function assigneeLabel(a: AgentSession | null | undefined): string {
 export function assigneeBadge(a: AgentSession | null | undefined): Badge | null {
   if (!a) return null;
   return { tone: "agent", label: `@${assigneeLabel(a)}`, title: a.session_id || undefined };
-}
-
-/** Display name for an agent_status author, mirroring v1 agentStatusLabel. */
-export function agentStatusLabel(st: AgentStatus | null | undefined): string {
-  if (!st?.agent) return "agent";
-  return st.agent.agent || "agent";
 }
 
 /** State badge: open/closed for issues, merged for merged PRs. Open PRs show none. */

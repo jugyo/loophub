@@ -8,12 +8,6 @@ export interface AgentSession {
   name?: string | null;
 }
 
-export interface AgentStatus {
-  text: string;
-  updated_at: string;
-  agent: { session_id: string; agent: string; session: string };
-}
-
 export interface Label {
   name: string;
   color?: string;
@@ -98,7 +92,6 @@ export interface Issue {
   body: string;
   user: UserRef;
   assignee: AgentSession | null;
-  agent_status: AgentStatus | null;
   labels: Label[];
   comments: number;
   created_at: string;
@@ -115,7 +108,6 @@ export interface PullRequest {
   body: string;
   user: UserRef;
   assignee?: AgentSession | null;
-  agent_status?: AgentStatus | null;
   head: { ref: string; sha: string };
   base: { ref: string; sha: string };
   merged: boolean;

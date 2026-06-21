@@ -201,9 +201,6 @@ tryExec(
 );
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_at TEXT");
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_by TEXT");
-tryExec("ALTER TABLE issues ADD COLUMN agent_status TEXT");
-tryExec("ALTER TABLE issues ADD COLUMN agent_status_at TEXT");
-tryExec("ALTER TABLE issues ADD COLUMN agent_status_session_id TEXT REFERENCES agent_sessions(id)");
 
 export function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "Z");

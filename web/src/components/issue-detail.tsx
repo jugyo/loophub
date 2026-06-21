@@ -9,7 +9,6 @@ import { Loader2 } from "lucide-react";
 import type { Issue, IssueComment } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AgentStatusLine } from "@/components/agent-status";
 import { assigneeBadge, stateBadge } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import {
@@ -97,8 +96,6 @@ function IssueHeader({
       <div className="text-sm text-muted-foreground">
         @{issue.user.login} · opened {relativeTime(issue.created_at)}
       </div>
-
-      <AgentStatusLine status={issue.agent_status} detail />
 
       {issue.labels.length > 0 ? (
         <div className="flex flex-wrap gap-1">

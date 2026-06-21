@@ -95,7 +95,6 @@ export function issueJSON(row: any, repo?: S.Repo) {
     body: row.body,
     user: { login: row.author },
     assignee: S.assigneeJSON(row.assignee_session_id),
-    agent_status: S.agentStatusJSON(row),
     labels: S.issueLabels(row.id).map(labelJSON),
     comments: S.countComments(row.id),
     created_at: row.created_at,

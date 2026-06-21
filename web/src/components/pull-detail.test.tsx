@@ -37,7 +37,6 @@ const pull: PullRequest = {
   body: "Render diff, reviews, comments.",
   user: { login: "impl-bot" },
   assignee: null,
-  agent_status: null,
   head: { ref: "issue-153", sha: "aaa" },
   base: { ref: "main", sha: "bbb" },
   merged: false,

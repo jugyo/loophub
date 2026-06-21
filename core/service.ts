@@ -322,26 +322,6 @@ export const issues = {
     return issueJSON(S.getIssue(r.id, row.number), r);
   },
 
-  setStatus(name: string, number: number, text: string | null, sessionId: string) {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const row = issueOr404(r, number);
-    if (text !== null && typeof text !== "string") throw new ServiceError(422, "text must be a string or null");
-    if (typeof text === "string" && text.length > S.AGENT_STATUS_MAX_LEN) {
-      throw new ServiceError(422, `text must be at most ${S.AGENT_STATUS_MAX_LEN} characters`);
-    }
-    if (!sessionId) throw new ServiceError(422, "session_id is required");
-    if (!S.getAgentSession(sessionId)) throw new ServiceError(404, "Agent session not found");
-    const normalized = text === "" ? null : text;
-    S.setIssueAgentStatus(row.id, normalized, sessionId);
-    S.emitEvent(r.id, "issue.status_updated", actorFor(sessionId), {
-      number: row.number,
-      text: normalized,
-      session_id: sessionId,
-    });
-    return issueJSON(S.getIssue(r.id, row.number), r);
-  },
-
   addLabels(name: string, number: number, names: string[], sessionId?: string | null) {
     const r = repoOr404(name);
     ensureWritable(r);

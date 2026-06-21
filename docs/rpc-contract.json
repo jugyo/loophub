@@ -451,43 +451,6 @@
       }
     },
     {
-      "name": "issues/setStatus",
-      "description": "Set or clear an agent's working status on an issue.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "text": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number",
-          "text",
-          "session_id"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "issues/addLabels",
       "description": "Add labels to an issue.",
       "params": {

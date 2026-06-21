@@ -17,7 +17,6 @@ import type {
 } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AgentStatusLine } from "@/components/agent-status";
 import { assigneeBadge, reviewBadge, stateBadge } from "@/lib/badges";
 import { parsePatch, type DiffLineKind } from "@/lib/diff";
 import { relativeTime } from "@/lib/time";
@@ -145,8 +144,6 @@ function PullHeader({
           {pull.base.ref}
         </code>
       </div>
-
-      <AgentStatusLine status={pull.agent_status} detail />
 
       {linked ? (
         <div className="text-sm text-muted-foreground">

@@ -36,11 +36,6 @@ const issue: Issue = {
     session: "run-1",
     name: "impl-bot",
   },
-  agent_status: {
-    text: "Running tests",
-    updated_at: "2026-06-17T12:00:00Z",
-    agent: { session_id: "sid-1", agent: "impl-bot", session: "run-1" },
-  },
   labels: [{ name: "ready-to-build" }],
   comments: 1,
   created_at: "2026-06-17T11:00:00Z",
@@ -104,13 +99,12 @@ function renderDetail() {
 }
 
 describe("IssueDetail", () => {
-  it("renders title, body, labels, agent status, comments, and the linked PR", async () => {
+  it("renders title, body, labels, comments, and the linked PR", async () => {
     renderDetail();
 
     expect(await screen.findByText("ui2: issue detail")).toBeTruthy();
     expect(screen.getByText("Render title, body, labels.")).toBeTruthy();
     expect(screen.getByText("ready-to-build")).toBeTruthy();
-    expect(screen.getByText("Running tests")).toBeTruthy();
     expect(screen.getByText("Looks good.")).toBeTruthy();
 
     const linked = screen.getByText("#30").closest("a");

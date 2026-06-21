@@ -50,7 +50,7 @@ export function useIssuesList(
   });
 }
 
-/** Single issue (detail), including agent_status and linked_pull_request. */
+/** Single issue (detail), including linked_pull_request. */
 export function useIssue(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: queryKeys.issue(full(owner, repo), number),

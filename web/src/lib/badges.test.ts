@@ -24,7 +24,6 @@ function issue(partial: Partial<Issue> = {}): Issue {
     body: "",
     user: { login: "me" },
     assignee: null,
-    agent_status: null,
     labels: [],
     comments: 0,
     created_at: "2026-01-01T00:00:00Z",

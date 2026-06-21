@@ -163,17 +163,6 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.issues.unassign(p.repo, p.number, p.session_id),
   },
-  "issues/setStatus": {
-    description: "Set or clear an agent's working status on an issue.",
-    params: params({
-      repo,
-      number: positiveInt,
-      text: { type: ["string", "null"] },
-      session_id: sid,
-    }, ["repo", "number", "text", "session_id"]),
-    result: anyObject,
-    handler: (p) => svc.issues.setStatus(p.repo, p.number, p.text, p.session_id),
-  },
   "issues/addLabels": {
     description: "Add labels to an issue.",
     params: params({ repo, number: positiveInt, labels: stringArray, session_id: sid }, ["repo", "number", "labels"]),

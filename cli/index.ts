@@ -238,10 +238,6 @@ async function main() {
           const pr = i.linked_pull_request;
           line += `\nlinked PR #${pr.number} (${pr.merged ? "merged" : pr.state})`;
         }
-        if (i.agent_status?.text) {
-          const who = i.agent_status.agent?.name || i.agent_status.agent?.agent || "agent";
-          line += `\nstatus (@${who}): ${i.agent_status.text}`;
-        }
         console.log(`${line}\n\n${i.body}`);
       }
     } else if (sub === "create") {
@@ -268,18 +264,6 @@ async function main() {
     } else if (sub === "unassign") {
       const i = await run(() => s.issues.unassign(repo, Number(rest[0]), SESSION_ID || null));
       console.log(`unassigned #${i.number}`);
-    } else if (sub === "status") {
-      if (!SESSION_ID) fail("--session-id is required");
-      let text: string | null;
-      if (flags.clear === "true") text = null;
-      else {
-        const t = flags.text ?? flags.body;
-        if (t === undefined) fail("--text is required (or --clear)");
-        text = t;
-      }
-      const i = await run(() => s.issues.setStatus(repo, Number(rest[0]), text, SESSION_ID));
-      out(i);
-      if (!flags.json) console.log(i.agent_status?.text ? `status: ${i.agent_status.text}` : "status cleared");
     } else if (sub === "close") {
       await run(async () => s.issues.update(repo, Number(rest[0]), { state: "closed" }, await writeSession()));
       console.log("closed");
@@ -416,7 +400,7 @@ function usage() {
   lh repo remove --repo owner/name
   lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."]
   lh session list
-  lh issue list|view|create|update|comment|status|assign|unassign|close|label  [--repo owner/repo]
+  lh issue list|view|create|update|comment|assign|unassign|close|label  [--repo owner/repo]
   lh pr list|view|diff|create|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
   lh sync                                          # detect open-PR head updates and emit events
   lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc]
@@ -428,7 +412,6 @@ function usage() {
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"
     lh issue assign 20 --session-id "$SID"
-    lh issue status 20 --text "Implementing API" --session-id "$SID"
     lh issue create --title "do the thing" --label ready-to-build
     lh pr create --head feature-x --base main --title "impl" --issue 5
     lh pr merge 3 --method squash

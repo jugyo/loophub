@@ -509,41 +509,10 @@ export function unassignIssue(issueId: number, sessionId?: string | null) {
   }
   const prev = issue.assignee_session_id;
   db.run(
-    `UPDATE issues SET assignee_session_id = NULL, agent_status = NULL, agent_status_at = NULL, agent_status_session_id = NULL, updated_at = ? WHERE id = ?`,
+    `UPDATE issues SET assignee_session_id = NULL, updated_at = ? WHERE id = ?`,
     [now(), issueId],
   );
   return prev as string;
-}
-
-export const AGENT_STATUS_MAX_LEN = 200;
-
-export function setIssueAgentStatus(issueId: number, text: string | null, sessionId: string | null) {
-  const t = now();
-  if (text == null || text === "") {
-    db.run(
-      `UPDATE issues SET agent_status = NULL, agent_status_at = NULL, agent_status_session_id = NULL, updated_at = ? WHERE id = ?`,
-      [t, issueId],
-    );
-    return;
-  }
-  db.run(
-    `UPDATE issues SET agent_status = ?, agent_status_at = ?, agent_status_session_id = ?, updated_at = ? WHERE id = ?`,
-    [text, t, sessionId, t, issueId],
-  );
-}
-
-export function agentStatusJSON(row: {
-  agent_status?: string | null;
-  agent_status_at?: string | null;
-  agent_status_session_id?: string | null;
-}): any | null {
-  if (!row.agent_status) return null;
-  const agent = assigneeJSON(row.agent_status_session_id);
-  return {
-    text: row.agent_status,
-    updated_at: row.agent_status_at,
-    agent: agent ?? { agent: "unknown" },
-  };
 }
 
 export function assigneeJSON(sessionId: string | null | undefined): any | null {
