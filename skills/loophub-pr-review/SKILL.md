@@ -1,16 +1,20 @@
 ---
 name: loophub-pr-review
 description: >-
-  Review a LoopHub PR with Bugbot and Security Review, fix findings on the head branch, and
-  re-review until approve. Use when the user runs /loophub-pr-review {pr id}, when asked to
-  review a LoopHub PR, or after issue-dev creates a PR. Posts lh pr review each round. Does not
-  merge. Add --review-only for a single review without the fix loop.
+  Review a LoopHub PR with quality and security reviewers (host-mapped subagents), fix findings
+  on the head branch, and re-review until approve. Use when the user runs /loophub-pr-review {pr
+  id}, when asked to review a LoopHub PR, or after issue-dev creates a PR. Posts lh pr review each
+  round. Does not merge. Add --review-only for a single review without the fix loop.
 ---
 
 # LoopHub PR review
 
-Review a PR with **Bugbot + Security Review**; if findings exist, **fix on head in this session
-(parent agent)** → test → **re-review** until **`approve`**. Do not merge.
+Review a PR with a **quality reviewer + a security reviewer** (run as readonly subagents, mapped to
+whatever the host provides); if findings exist, **fix on head in this session (parent agent)** → test →
+**re-review** until **`approve`**. Do not merge.
+
+Vendor-agnostic by design: the two reviewer **roles** are fixed, but their **mechanism** is resolved per
+host (Cursor, Claude Code, …). See [Reviewer roles & host mapping](#reviewer-roles--host-mapping).
 
 Distinct from Cursor's built-in `/loop` (scheduled wake). Here, "loop" means **review → fix → review**.
 
@@ -65,13 +69,45 @@ Which PR should I review? (e.g. /loophub-pr-review 42)
 | Loop control, fixes | **Parent (this session)** |
 | LoopHub context | Parent |
 | Checkout head branch | Parent |
-| Quality review (bugs, correctness) | `bugbot` subagent |
-| Security review | `security-review` subagent |
+| Quality review (bugs, correctness) | Quality reviewer subagent (host-mapped) |
+| Security review | Security reviewer subagent (host-mapped) |
 | Issue scope alignment, test check | Parent |
 | Code fixes, commits | **Parent (fix phase only)** |
 | Post `lh pr review` | Parent (**once per review round**) |
 
-Subagents are **readonly** — **no fixes**, **no posts**.
+Reviewer subagents are **readonly** — **no fixes**, **no posts**. They are launched through the host's
+subagent mechanism; the concrete `subagent_type` is chosen at runtime per
+[Reviewer roles & host mapping](#reviewer-roles--host-mapping).
+
+## Reviewer roles & host mapping
+
+Reviews are defined by **role**, never by a vendor product name. Two roles run every round:
+
+| Role | Looks for |
+|------|-----------|
+| **Quality** | correctness bugs, logic errors, regressions, missed edge cases, broken contracts |
+| **Security** | injection, auth/authz gaps, secret/credential exposure, unsafe input handling, supply-chain risk |
+
+### Capability detection (pick the best available mechanism)
+
+At launch, map each role to the **first available** mechanism for the current host, degrading left→right.
+Never hard-fail because a vendor-specific reviewer is absent — always run **both** roles via *some*
+readonly subagent.
+
+| Role | Cursor | Claude Code | Generic fallback (any host) |
+|------|--------|-------------|------------------------------|
+| Quality | `subagent_type: "bugbot"` | `subagent_type: "code-reviewer"` if present, else `general-purpose` | `general-purpose` subagent + Quality prompt |
+| Security | `subagent_type: "security-review"` | `general-purpose` running the `/security-review` skill — fall back to a `code-review` security pass only if `/security-review` is unavailable | `general-purpose` subagent + Security prompt |
+
+Detection rule: if the named subagent type is unavailable in this host, fall to the next column. The
+**prompt and expected output below are identical** regardless of which mechanism wins, so synthesis
+(A.4) does not depend on the host.
+
+**Record what actually ran.** Whichever mechanism each role resolves to, name it in the A.4 review body
+(e.g. `Security: general-purpose + Security prompt — degraded`). A degraded path is allowed (review must
+never hard-fail on a missing vendor reviewer), but it must be **visible** so a human can judge whether a
+weaker pass was acceptable. Prefer the strongest available mechanism for the Security role —
+`security-review` / `/security-review` over a generic `code-review` pass, which is correctness-focused.
 
 ## LoopHub
 
@@ -152,36 +188,55 @@ LoopHub skills are **English-only in the body** (after YAML frontmatter). CJK in
 for routing triggers. Localized issue/PR templates belong in user output, not in skill files — see
 `skills/README.md` § Authoring.
 
-### A.3 Launch subagents in parallel (parent)
+### A.3 Launch reviewers in parallel (parent)
 
-**Launch both in one message**. Each runs once per round.
+Launch the **Quality** and **Security** reviewers as **readonly subagents in one message**; each runs
+once per round. Resolve each role's `subagent_type` via
+[Reviewer roles & host mapping](#reviewer-roles--host-mapping) — e.g. on Cursor `bugbot` /
+`security-review`, on Claude Code `code-reviewer` (or `general-purpose`) / `general-purpose` running
+`/security-review`. `description: "<Quality|Security> review PR #<m> round <round>"`.
 
-#### Bugbot
-
-- `subagent_type: "bugbot"`, `readonly: true`
-- `description: "Bugbot PR #<m> round <round>"`
+**The prompt is identical across hosts** — only the chosen mechanism differs:
 
 ```text
-Full Repository Path: <worktree absolute path — cwd after A.2, not repo root>
-Diff: branch changes
-Base Branch: <base.ref from lh pr view>
-Custom Instructions: When diff includes skills/**/SKILL.md: body must be English-only (CJK only in YAML description for routing). Japanese issue/PR templates in skill bodies are violations. See skills/README.md Authoring.
+Role: <Quality | Security> reviewer (readonly — return findings only; do not edit, fix, or post)
+Repository path: <worktree absolute path — cwd after A.2, not repo root>
+Base branch: <base.ref from lh pr view>
+Scope: review ONLY the branch diff vs base; do not flag pre-existing code outside the diff.
+Custom Instructions: When the diff includes skills/**/SKILL.md, the body must be English-only (CJK only
+in the YAML description for routing). Japanese issue/PR templates in skill bodies are violations. See
+skills/README.md Authoring.
+Return findings as a JSON array (empty [] if none):
+[{ "path": "<file>", "line": <int>, "severity": "critical|high|medium|low",
+   "title": "<short summary>", "body": "<problem + concrete fix>" }]
 ```
 
-On failure: retry once. If diff unavailable, use `Diff: natural language` + `Change Description`.
+Structured JSON output keeps A.4 merge/dedupe deterministic across hosts. If the host cannot pass a
+structured diff to the subagent, substitute a natural-language change description; the JSON return shape
+is unchanged.
 
-#### Security Review
+On failure: retry once (re-resolve to the next mechanism in the mapping if the subagent type itself is
+the failure).
 
-- `subagent_type: "security-review"`, `readonly: true`
-- `description: "Security PR #<m> round <round>"`
+#### Optional: false-positive filter (high-noise diffs)
 
-Same prompt format. Retry once on failure.
+When a reviewer returns many low-confidence findings, run a brief **adversarial verify** pass before
+posting: spawn one readonly skeptic subagent (any available type) prompted to *refute* each
+borderline finding (`{ "kept": bool, "reason": "<why>" }`). Guardrails so real signal is never lost:
+
+- **Never delete.** Refuted findings are not dropped — move them to a **`suppressed (low-confidence)`**
+  list and include that list in the A.4 synthesis output so a human can still see them.
+- **Security-role findings are never suppressed** by this pass — only Quality findings are eligible.
+- **Severity is owned by the original reviewer.** The skeptic may mark `kept:false`, but may not lower a
+  finding's severity. All Critical/High stay in the active set regardless of the skeptic.
+
+Skip this pass entirely when findings are few or clearly real.
 
 ### A.4 Synthesize (parent)
 
 1. **Scope**: Does PR match issue goal?
-2. **Merge findings**: Bugbot + Security by severity
-3. **Dedupe**: Same file:line → one line comment with `[Bugbot]` / `[Security]`
+2. **Merge findings**: Quality + Security by severity
+3. **Dedupe**: Same file:line → one line comment tagged with its role source: `[Quality]` / `[Security]`
 4. **Verdict**:
    - Unresolved Critical / High → `request_changes`
    - Skills lint failed (A.2.5) → `request_changes`
@@ -197,8 +252,11 @@ Round: <n>/<max_rounds>
 ### Scope
 <1–2 sentences on issue alignment>
 
-### Bugbot
-<finding count or none>
+### Reviewers
+<mechanism each role actually ran, e.g. Quality: general-purpose · Security: /security-review — note "degraded" if a fallback was used>
+
+### Quality
+<finding count or none; note any suppressed low-confidence items>
 
 ### Security
 <finding count or none>
@@ -219,7 +277,7 @@ lh pr review <m> --repo <repo> --event approve|request_changes|comment \
 Line comments:
 
 ```sh
-echo '[{"path":"src/a.ts","line":12,"body":"[Bugbot] ..."}]' \
+echo '[{"path":"src/a.ts","line":12,"body":"[Quality] ..."}]' \
   | lh pr review <m> --repo <repo> --event request_changes \
       --body "..." --comments - --actor reviewer-bot
 ```

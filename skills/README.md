@@ -1,7 +1,9 @@
 # LoopHub agent skills
 
-Cursor skill `name` values use **lowercase letters, digits, and hyphens (`-`) only**. `name` = directory name =
-chat invocation (e.g. `/loophub-pr-review`).
+Skill `name` values use **lowercase letters, digits, and hyphens (`-`) only**. `name` = directory name =
+chat invocation (e.g. `/loophub-pr-review`). These skills are **host-agnostic**: they run under Cursor,
+Claude Code, or any agent host that supports `/name` invocation and readonly subagents (the install
+script symlinks them into `~/.claude/skills/`).
 
 | Skill `name` | Directory | Invocation |
 |--------------|-------------|------------|
@@ -22,6 +24,10 @@ Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (sc
   conversation language — do not embed localized templates in the skill body.
 - **PR evidence**: PR bodies require an **Evidence** section (test output excerpts, screenshots for UI,
   CLI snippets, or explicit N/A). See `loophub-merge-ready` §3.5.
+- **Reviewers are role-based, not vendor-based**: reference review subagents by **role** (Quality,
+  Security), never by a product name. `loophub-pr-review` § Reviewer roles & host mapping resolves each
+  role to a host mechanism (Cursor `bugbot`/`security-review`, Claude Code `code-reviewer`/`general-purpose`
+  + `/security-review`) with a `general-purpose` fallback so a missing vendor reviewer never blocks review.
 
 ## Skill chain
 
@@ -46,7 +52,8 @@ Skills that work on a PR head (pr-review, merge-ready, rebase-conflict) must **n
    - Exists → `cd .worktrees/<head.ref>`
    - Missing → `git worktree add .worktrees/<head.ref> <head.ref>` then `cd`
 4. Inside a worktree, **`--repo owner/name` is required** (`resolveRepo()` omits only when cwd is repo root)
-5. Pass **working cwd (worktree absolute path)** as Bugbot / Security Review `Full Repository Path`
+5. Pass **working cwd (worktree absolute path)** as the reviewer subagents' repository path
+   (see `loophub-pr-review` § Reviewer roles & host mapping)
 
 Shared shell snippet (substitute `local_path` and `<head.ref>`):
 

@@ -142,7 +142,8 @@ lh pr comment <m> --body "Conflict resolution complete. Please re-review." --act
 /loophub-pr-review <m>
 ```
 
-Re-review with Bugbot + Security until `approve` (follow `loophub-pr-review` SKILL).
+Re-review with the quality + security reviewers until `approve` (follow `loophub-pr-review` SKILL;
+reviewer mechanism is host-mapped there).
 
 Skip pr-review only if user said "stop at rebase".
 
