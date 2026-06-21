@@ -21,21 +21,6 @@ function HomePage() {
       </div>
 
       <DashboardSection
-        title="In progress"
-        query={issues}
-        emptyText="No issues are being worked on right now."
-        keyOf={(it) => `${it.repo.full_name}#${it.issue.number}`}
-        renderItem={(it) => (
-          <IssueRow
-            owner={it.repo.owner}
-            repo={it.repo.name}
-            issue={it.issue}
-            repoLabel={it.repo.full_name}
-          />
-        )}
-      />
-
-      <DashboardSection
         title="Open pull requests"
         query={pulls}
         emptyText="No open pull requests."
@@ -45,6 +30,21 @@ function HomePage() {
             owner={it.repo.owner}
             repo={it.repo.name}
             pull={it.pull}
+            repoLabel={it.repo.full_name}
+          />
+        )}
+      />
+
+      <DashboardSection
+        title="In progress"
+        query={issues}
+        emptyText="No issues are being worked on right now."
+        keyOf={(it) => `${it.repo.full_name}#${it.issue.number}`}
+        renderItem={(it) => (
+          <IssueRow
+            owner={it.repo.owner}
+            repo={it.repo.name}
+            issue={it.issue}
             repoLabel={it.repo.full_name}
           />
         )}
