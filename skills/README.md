@@ -66,11 +66,17 @@ rebase-conflict may reuse an existing worktree.
 
 ## Install
 
-Symlink into `~/.claude/skills/` from this repo root (adjust paths to your clone location):
+Run the install script from this repo root — it symlinks every skill into `~/.claude/skills/`:
+
+```sh
+./skills/install.sh
+```
+
+Or do it by hand (`-sfn` so an existing symlink is replaced, not nested inside a directory):
 
 ```sh
 for s in loophub-repo-add loophub-issue-create loophub-plan-to-issues \
   loophub-pr-review loophub-rebase-conflict loophub-merge-ready; do
-  ln -sf "$PWD/skills/$s" "$HOME/.claude/skills/$s"
+  ln -sfn "$PWD/skills/$s" "$HOME/.claude/skills/$s"
 done
 ```
