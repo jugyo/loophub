@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { configDir, worktreeRoot } from "../core/config.ts";
-import { buildManagedSettings, provisionWorktree } from "./dev.ts";
+import { buildClaudeArgs, buildManagedSettings, provisionWorktree } from "./dev.ts";
 
 // Lazily load the service layer (which opens the DB at import time) so DB-free commands
 // like `lh` (usage) never touch ~/.loophub.
@@ -147,8 +147,9 @@ async function main() {
       fail(e.message);
     }
     console.error(`worktree: ${worktree}`);
+    const claudeArgs = buildClaudeArgs({ sessionId, managedSettings: managed, slashCommand });
     if (flags.verbose === "true") {
-      const claudeLine = `claude --session-id ${sessionId} --managed-settings ${shQuote(managed)} ${shQuote(slashCommand)}`;
+      const claudeLine = `claude ${claudeArgs.map(shQuote).join(" ")}`;
       console.error(`exec: ${claudeLine}`);
     }
 
@@ -167,11 +168,7 @@ async function main() {
     }
 
     console.error(`session-id: ${sessionId}`);
-    const proc = spawnSync(
-      "claude",
-      ["--session-id", sessionId, "--managed-settings", managed, slashCommand],
-      { stdio: "inherit", cwd: worktree },
-    );
+    const proc = spawnSync("claude", claudeArgs, { stdio: "inherit", cwd: worktree });
     process.exit(proc.status ?? 0);
   }
 

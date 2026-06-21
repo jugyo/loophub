@@ -53,6 +53,32 @@ export function buildManagedSettings({ repo, allow }: { repo: string; allow?: st
   return { json, allowedDomains };
 }
 
+// ---- interactive launch args ----
+//
+// Build the `claude` argv for the interactive dev session. Start already in accept-edits
+// mode: the managed-settings `defaultMode: acceptEdits` does not drive the live interactive
+// permission mode, so `--permission-mode acceptEdits` must be passed explicitly. Centralized
+// here so the verbose `exec:` line and the real spawn share one source of truth.
+export function buildClaudeArgs({
+  sessionId,
+  managedSettings,
+  slashCommand,
+}: {
+  sessionId: string;
+  managedSettings: string;
+  slashCommand: string;
+}): string[] {
+  return [
+    "--session-id",
+    sessionId,
+    "--permission-mode",
+    "acceptEdits",
+    "--managed-settings",
+    managedSettings,
+    slashCommand,
+  ];
+}
+
 // ---- worktree provisioning ----
 //
 // Path and branch are deterministic from the issue number (no slug). Reuse is derived from

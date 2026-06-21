@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { git, worktreeList, branchExists } from "../core/git.ts";
 import {
+  buildClaudeArgs,
   buildManagedSettings,
   validateDomain,
   worktreeBranch,
@@ -36,6 +37,23 @@ test("invalid --allow domain is rejected (injection guard)", () => {
 
 test("invalid --repo is rejected", () => {
   expect(() => buildManagedSettings({ repo: "not-a-repo" })).toThrow(/invalid --repo/);
+});
+
+// ---- interactive launch args (pure) ----
+
+test("buildClaudeArgs starts the session in accept-edits mode", () => {
+  const args = buildClaudeArgs({ sessionId: "sid-1", managedSettings: "{}", slashCommand: "/loophub-dev 42" });
+  // accept-edits is passed explicitly (managed-settings defaultMode does not drive it).
+  const i = args.indexOf("--permission-mode");
+  expect(i).toBeGreaterThanOrEqual(0);
+  expect(args[i + 1]).toBe("acceptEdits");
+});
+
+test("buildClaudeArgs carries session id, managed settings, and the slash command", () => {
+  const args = buildClaudeArgs({ sessionId: "sid-1", managedSettings: "{}", slashCommand: "/loophub-dev 42" });
+  expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
+  expect(args[args.indexOf("--managed-settings") + 1]).toBe("{}");
+  expect(args[args.length - 1]).toBe("/loophub-dev 42");
 });
 
 // ---- worktree naming (pure) ----
