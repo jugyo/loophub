@@ -1,9 +1,15 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import animate from "tailwindcss-animate";
+
+// Absolute content globs: `lh-web` runs from the repo root, so cwd-relative globs would
+// scan the wrong tree and emit no utilities for the SPA.
+const here = dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ["class"],
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: [join(here, "index.html"), join(here, "src/**/*.{ts,tsx}")],
   theme: {
     extend: {
       borderRadius: {
