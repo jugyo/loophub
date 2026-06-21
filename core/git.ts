@@ -230,3 +230,79 @@ export async function mergePull(
 export async function branchExists(repoPath: string, ref: string): Promise<boolean> {
   return (await revParse(repoPath, ref)) !== null;
 }
+
+// ---- worktrees ----
+//
+// Generic git worktree primitives. Higher layers (cli/dev.ts) decide paths and naming;
+// these only wrap the git plumbing.
+
+export interface Worktree {
+  path: string;
+  head: string | null; // commit sha, null for a bare entry
+  branch: string | null; // short branch name, null when detached/bare
+  bare: boolean;
+  detached: boolean;
+}
+
+export interface WorktreeAddOptions {
+  existingBranch?: boolean; // check out an existing <branch> instead of creating one from <base>
+}
+
+// 新規ブランチ: git worktree add -b <branch> <path> <base>
+// 既存ブランチ: git worktree add <path> <branch>   (opts.existingBranch)
+export async function worktreeAdd(
+  repoPath: string,
+  path: string,
+  branch: string,
+  base: string,
+  opts: WorktreeAddOptions = {},
+): Promise<void> {
+  const args = opts.existingBranch
+    ? ["worktree", "add", path, branch]
+    : ["worktree", "add", "-b", branch, path, base];
+  const r = await git(repoPath, args);
+  if (r.code !== 0) {
+    throw new Error(`git worktree add failed: ${r.stderr.trim() || r.stdout.trim()}`);
+  }
+}
+
+// git worktree list --porcelain をパース。
+export async function worktreeList(repoPath: string): Promise<Worktree[]> {
+  const r = await git(repoPath, ["worktree", "list", "--porcelain"]);
+  if (r.code !== 0) return [];
+  return parseWorktreePorcelain(r.stdout);
+}
+
+function parseWorktreePorcelain(out: string): Worktree[] {
+  const wts: Worktree[] = [];
+  let cur: Worktree | null = null;
+  const flush = () => {
+    if (cur) wts.push(cur);
+    cur = null;
+  };
+  for (const line of out.split("\n")) {
+    if (line === "") {
+      flush();
+      continue;
+    }
+    const sp = line.indexOf(" ");
+    const key = sp === -1 ? line : line.slice(0, sp);
+    const val = sp === -1 ? "" : line.slice(sp + 1);
+    if (key === "worktree") {
+      flush();
+      cur = { path: val, head: null, branch: null, bare: false, detached: false };
+    } else if (!cur) {
+      continue;
+    } else if (key === "HEAD") {
+      cur.head = val;
+    } else if (key === "branch") {
+      cur.branch = val.startsWith("refs/heads/") ? val.slice("refs/heads/".length) : val;
+    } else if (key === "bare") {
+      cur.bare = true;
+    } else if (key === "detached") {
+      cur.detached = true;
+    }
+  }
+  flush();
+  return wts;
+}

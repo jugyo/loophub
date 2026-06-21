@@ -2,10 +2,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
-import { configDir } from "../core/config.ts";
+import { configDir, worktreeRoot } from "../core/config.ts";
+import { buildManagedSettings, provisionWorktree } from "./dev.ts";
 
 // Lazily load the service layer (which opens the DB at import time) so DB-free commands
-// like `lh dev --print` and `lh` (usage) never touch ~/.loophub.
+// like `lh` (usage) never touch ~/.loophub.
 type Service = typeof import("../core/service.ts");
 let _svc: Service | null = null;
 async function svc(): Promise<Service> {
@@ -98,54 +99,7 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-// ---- sandbox managed-settings (single source) ----
-//
-// `lh dev` launches an interactive Claude session with native sandbox isolation.
-// Domains from --repo/--allow are validated and JSON-serialized here (never
-// string-concatenated) so a value can never inject a sandbox key.
-const SANDBOX_DEFAULT_ALLOWED_DOMAINS = ["api.anthropic.com", "github.com"];
-
-// A DNS label plus an optional single leading `*.` wildcard. No bare `*`, no quotes/spaces.
-const DEV_DOMAIN_RE = /^(\*\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
-
-function validateDomain(raw: string): string {
-  const d = raw.trim().toLowerCase();
-  if (!d || d.length > 253 || !DEV_DOMAIN_RE.test(d)) {
-    fail(`invalid --allow domain "${raw}" (expected hostname or *.hostname)`);
-  }
-  return d;
-}
-
-function buildManagedSettings({ repo, allow }: { repo: string; allow?: string }): {
-  json: string;
-  allowedDomains: string[];
-} {
-  if (repo && !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo)) {
-    fail(`invalid --repo "${repo}" (expected owner/name)`);
-  }
-  const extra = (allow ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map(validateDomain);
-  const allowedDomains = [...new Set([...SANDBOX_DEFAULT_ALLOWED_DOMAINS, ...extra])];
-  const json = JSON.stringify({
-    sandbox: {
-      enabled: true,
-      failIfUnavailable: true,
-      allowUnsandboxedCommands: false,
-      excludedCommands: ["gh *"],
-      filesystem: {
-        denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.netrc", "~/.config/gh", "~/.kube", "~/.docker/config.json"],
-      },
-      network: { allowedDomains, allowManagedDomainsOnly: true },
-    },
-    permissions: { defaultMode: "acceptEdits" },
-  });
-  return { json, allowedDomains };
-}
-
-// Single-quote a value for a shell-pasteable line (`--print`).
+// Single-quote a value for the shell-pasteable `--verbose` exec line.
 function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
@@ -157,26 +111,66 @@ async function main() {
   if (group === "dev") {
     const issue = sub;
     if (!issue || !/^[0-9]+$/.test(issue)) {
-      fail("usage: lh dev <issue> [--repo owner/name] [--allow d1,d2] [--print] [--verbose]");
+      fail("usage: lh dev <issue> [--repo owner/name] [--allow d1,d2] [--verbose]");
     }
     const repo = await resolveRepo();
+    const n = Number(issue);
     const sessionId = randomUUID();
-    const { json: managed, allowedDomains } = buildManagedSettings({ repo, allow: flags.allow });
+    let managed: string;
+    let allowedDomains: string[];
+    try {
+      ({ json: managed, allowedDomains } = buildManagedSettings({ repo, allow: flags.allow }));
+    } catch (e: any) {
+      fail(e.message);
+    }
     const slashCommand = `/loophub-dev ${issue}`;
-    const claudeLine = `claude --session-id ${sessionId} --managed-settings ${shQuote(managed)} ${shQuote(slashCommand)}`;
-    // Sandbox context (repo + allowed domains) always to stderr; stdout reserved for --print.
+    // Sandbox context (repo + allowed domains) always to stderr.
     console.error(`repo: ${repo}`);
     console.error(`allowed-domains: ${allowedDomains.join(", ")}`);
-    if (flags.verbose === "true") console.error(`exec: ${claudeLine}`);
-    if (flags.print === "true") {
-      console.log(claudeLine);
-      return;
+
+    // Resolve the repo record + issue kind, then provision the worktree (outside the sandbox).
+    const s = await svc();
+    const r = await run(() => s.repos.get(repo));
+    const item = await run(() => s.issues.get(repo, n));
+    const headRef = item.pull_request ? (await run(() => s.pulls.get(repo, n))).head.ref : null;
+    let worktree: string;
+    try {
+      worktree = await provisionWorktree({
+        repoPath: r.local_path,
+        fullName: r.full_name,
+        defaultBranch: r.default_branch,
+        worktreeRoot: worktreeRoot(),
+        issue: n,
+        headRef,
+      });
+    } catch (e: any) {
+      fail(e.message);
     }
+    console.error(`worktree: ${worktree}`);
+    if (flags.verbose === "true") {
+      const claudeLine = `claude --session-id ${sessionId} --managed-settings ${shQuote(managed)} ${shQuote(slashCommand)}`;
+      console.error(`exec: ${claudeLine}`);
+    }
+
+    // Make the work visible: register this session and assign the issue before spawning.
+    // The runtime session id is the Claude session we are about to spawn (unique per run,
+    // so re-launching the same issue never collides on the (agent, session) pair).
+    await run(() => s.sessions.register({ id: sessionId, agent: "lh-dev", session: sessionId }));
+    try {
+      await s.issues.assign(repo, n, sessionId);
+    } catch (e: any) {
+      // A fresh session each run conflicts with a prior assignee on re-launch; reuse is
+      // still valid (same worktree), so warn and continue rather than block the dev loop.
+      if (e?.status === 409) console.error(`warning: issue #${issue} already assigned to another session; continuing`);
+      else if (typeof e?.status === "number") fail(`error ${e.status}: ${e.message}`);
+      else throw e;
+    }
+
     console.error(`session-id: ${sessionId}`);
     const proc = spawnSync(
       "claude",
       ["--session-id", sessionId, "--managed-settings", managed, slashCommand],
-      { stdio: "inherit" },
+      { stdio: "inherit", cwd: worktree },
     );
     process.exit(proc.status ?? 0);
   }
@@ -392,7 +386,7 @@ async function main() {
 function usage() {
   console.log(`lh — LoopHub CLI
 
-  lh dev <issue> [--repo owner/name] [--allow d1,d2] [--print] [--verbose]   # start one issue in an interactive Claude session
+  lh dev <issue> [--repo owner/name] [--allow d1,d2] [--verbose]   # start one issue in an interactive Claude session
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>
@@ -407,7 +401,7 @@ function usage() {
 
   common: --session-id <uuid>  --json
   examples:
-    lh dev 42 --print
+    lh dev 42
     lh repo add . --name me/proj
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"

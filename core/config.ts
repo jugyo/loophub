@@ -16,6 +16,17 @@ export function dbPath(): string {
   return process.env.LOOPHUB_DB ?? join(configDir(), "loophub.db");
 }
 
+// Root for `lh dev` worktrees. Override via LOOPHUB_WORKTREE_ROOT or config.json
+// `worktreeRoot`; default `$LOOPHUB_HOME/worktrees`.
+export function worktreeRoot(): string {
+  if (process.env.LOOPHUB_WORKTREE_ROOT) return process.env.LOOPHUB_WORKTREE_ROOT;
+  try {
+    const cfg = JSON.parse(readFileSync(join(configDir(), "config.json"), "utf8"));
+    if (cfg.worktreeRoot) return cfg.worktreeRoot;
+  } catch {}
+  return join(configDir(), "worktrees");
+}
+
 export function baseUrl(): string {
   if (process.env.LOOPHUB_URL) return process.env.LOOPHUB_URL;
   try {

@@ -2,7 +2,7 @@ import { test, expect } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { git, mergePull, isIndexLockError, sleep } from "./git.ts";
+import { git, mergePull, isIndexLockError, sleep, worktreeAdd, worktreeList } from "./git.ts";
 
 async function makeRepo(): Promise<string> {
   const p = mkdtempSync(join(tmpdir(), "lh-merge-lock-"));
@@ -33,6 +33,50 @@ test("isIndexLockError matches only lock contention, not real errors", () => {
   expect(isIndexLockError("fatal: ambiguous argument 'deadbeef': unknown revision")).toBe(false);
   expect(isIndexLockError("error: Your local changes would be overwritten")).toBe(false);
   expect(isIndexLockError("")).toBe(false);
+});
+
+// worktreeAdd で新規ブランチを切り、worktreeList が porcelain をパースして拾えることを検証。
+test("worktreeAdd creates a branch worktree that worktreeList reports", async () => {
+  const p = await makeRepo();
+  const wtPath = join(p, "..", `wt-${p.split("/").pop()}`);
+  await worktreeAdd(p, wtPath, "loophub/issue-1", "main");
+
+  expect(existsSync(join(wtPath, "f.txt"))).toBe(true);
+  const list = await worktreeList(p);
+  const wt = list.find((w) => w.branch === "loophub/issue-1");
+  expect(wt).toBeTruthy();
+  expect(existsSync(wt!.path)).toBe(true);
+  expect(wt!.bare).toBe(false);
+  // The primary checkout is also listed, on its own branch.
+  expect(list.some((w) => w.branch === "main")).toBe(true);
+
+  await git(p, ["worktree", "remove", "--force", wtPath]);
+  rmSync(p, { recursive: true, force: true });
+});
+
+// 既存ブランチを -b なしで checkout する経路（PR / 再アタッチ）。
+test("worktreeAdd checks out an existing branch with existingBranch", async () => {
+  const p = await makeRepo();
+  const wtPath = join(p, "..", `wt2-${p.split("/").pop()}`);
+  await worktreeAdd(p, wtPath, "feat", "main", { existingBranch: true });
+
+  const wt = (await worktreeList(p)).find((w) => w.path === wtPath || existsSync(wtPath));
+  expect(wt).toBeTruthy();
+  expect(readFileSync(join(wtPath, "f.txt"), "utf8")).toBe("feat\n");
+
+  await git(p, ["worktree", "remove", "--force", wtPath]);
+  rmSync(p, { recursive: true, force: true });
+});
+
+// 既に worktree が在るパスへの add は失敗し、エラーを投げる。
+test("worktreeAdd throws when the target path is already a worktree", async () => {
+  const p = await makeRepo();
+  const wtPath = join(p, "..", `wt3-${p.split("/").pop()}`);
+  await worktreeAdd(p, wtPath, "loophub/issue-2", "main");
+  await expect(worktreeAdd(p, wtPath, "loophub/issue-3", "main")).rejects.toThrow(/git worktree add failed/);
+
+  await git(p, ["worktree", "remove", "--force", wtPath]);
+  rmSync(p, { recursive: true, force: true });
 });
 
 // 一過性の index.lock 競合があっても、reset --hard のリトライで最終的に merge が成立する。
