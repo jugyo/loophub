@@ -3,8 +3,8 @@
 // issue's linked PR), agent status, reviews, the file diff with line comments,
 // issue comments, plus the write operations — merge (when APPROVED), "mark ready
 // for re-review" (when CHANGES_REQUESTED), and close/reopen (when not merged).
-// Markdown rendering is out of scope (#130); body, reviews, and comments render
-// as plain text.
+// Body, reviews, and comments are stored as plain Markdown and rendered as GFM
+// via <Markdown>.
 
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -17,6 +17,7 @@ import type {
 } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Markdown } from "@/components/markdown";
 import { assigneeBadge, reviewBadge, stateBadge } from "@/lib/badges";
 import { parsePatch, type DiffLineKind } from "@/lib/diff";
 import { relativeTime } from "@/lib/time";
@@ -160,9 +161,9 @@ function PullHeader({
       ) : null}
 
       {pull.body ? (
-        <div className="whitespace-pre-wrap rounded-md border bg-muted/30 p-4 text-sm">
+        <Markdown className="rounded-md border bg-muted/30 p-4">
           {pull.body}
-        </div>
+        </Markdown>
       ) : (
         <p className="text-sm text-muted-foreground">No description.</p>
       )}
@@ -288,9 +289,7 @@ function ReviewList({
                 {relativeTime(r.submitted_at)}
               </span>
             </header>
-            {r.body ? (
-              <div className="whitespace-pre-wrap text-sm">{r.body}</div>
-            ) : null}
+            {r.body ? <Markdown>{r.body}</Markdown> : null}
           </article>
         ))
       )}
@@ -392,7 +391,7 @@ function FileDiff({
               {c.path}:{c.line ?? "?"}
             </span>
           </div>
-          <div className="whitespace-pre-wrap text-sm">{c.body}</div>
+          <Markdown>{c.body}</Markdown>
         </div>
       ))}
     </div>
@@ -430,7 +429,7 @@ function CommentList({
                 {relativeTime(c.created_at)}
               </span>
             </header>
-            <div className="whitespace-pre-wrap text-sm">{c.body}</div>
+            <Markdown>{c.body}</Markdown>
           </article>
         ))
       )}

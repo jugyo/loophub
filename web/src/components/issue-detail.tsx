@@ -1,7 +1,7 @@
 // Issue detail view (/r/:owner/:repo/issues/:number). v1 parity: title, body,
 // labels, state, agent status, assignee, comments, the linked PR, plus the
-// write operations v1 supports — comment posting and close/reopen. Markdown
-// rendering is out of scope (#130); body and comments render as plain text.
+// write operations v1 supports — comment posting and close/reopen. Body and
+// comments are stored as plain Markdown and rendered as GFM via <Markdown>.
 
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react";
 import type { Issue, IssueComment } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Markdown } from "@/components/markdown";
 import { assigneeBadge, stateBadge } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import {
@@ -125,9 +126,9 @@ function IssueHeader({
       ) : null}
 
       {issue.body ? (
-        <div className="whitespace-pre-wrap rounded-md border bg-muted/30 p-4 text-sm">
+        <Markdown className="rounded-md border bg-muted/30 p-4">
           {issue.body}
-        </div>
+        </Markdown>
       ) : (
         <p className="text-sm text-muted-foreground">No description.</p>
       )}
@@ -186,7 +187,7 @@ function CommentList({
               {relativeTime(c.created_at)}
             </span>
           </header>
-          <div className="whitespace-pre-wrap text-sm">{c.body}</div>
+          <Markdown>{c.body}</Markdown>
         </article>
       ))}
     </div>
