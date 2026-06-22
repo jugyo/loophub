@@ -9,7 +9,6 @@ import {
   buildClaudeArgs,
   buildManagedSettings,
   formatLaunchPlan,
-  isAffirmative,
   provisionWorktree,
   resolveAllowedDomains,
   validateRepo,
@@ -115,16 +114,22 @@ function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-// Ask a y/N question on stderr (stdout is reserved for command output). Returns false on
-// anything other than an explicit yes.
+// Ask a Y/n question on stderr (stdout is reserved for command output). Returns true on
+// anything other than an explicit no.
 async function confirm(question: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    const answer = await rl.question(`${question} [y/N] `);
-    return isAffirmative(answer);
+    const answer = await rl.question(`${question} [Y/n] `);
+    const trimmed = answer.trim();
+    return trimmed === "" || !isNegative(trimmed);
   } finally {
     rl.close();
   }
+}
+
+// Whether a Y/n prompt answer is an explicit no.
+function isNegative(answer: string): boolean {
+  return /^no?$/i.test(answer);
 }
 
 // ---- commands ----
