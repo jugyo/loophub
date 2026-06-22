@@ -100,6 +100,14 @@ test("buildClaudeArgs carries session id, managed settings, and the slash comman
   expect(args[args.length - 1]).toBe("/loophub-dev 42");
 });
 
+test("buildClaudeArgs omits --managed-settings when not provided (no-sandbox mode)", () => {
+  const args = buildClaudeArgs({ sessionId: "sid-1", slashCommand: "/loophub-dev 42" });
+  expect(args.indexOf("--managed-settings")).toBe(-1);
+  expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
+  expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
+  expect(args[args.length - 1]).toBe("/loophub-dev 42");
+});
+
 // ---- launch plan (pure) ----
 
 function plan(overrides: Partial<Parameters<typeof formatLaunchPlan>[0]> = {}) {

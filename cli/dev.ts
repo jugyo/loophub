@@ -124,18 +124,20 @@ export function buildClaudeArgs({
   slashCommand,
 }: {
   sessionId: string;
-  managedSettings: string;
+  managedSettings?: string;
   slashCommand: string;
 }): string[] {
-  return [
+  const args = [
     "--session-id",
     sessionId,
     "--permission-mode",
     "acceptEdits",
-    "--managed-settings",
-    managedSettings,
-    slashCommand,
   ];
+  if (managedSettings) {
+    args.push("--managed-settings", managedSettings);
+  }
+  args.push(slashCommand);
+  return args;
 }
 
 // ---- launch plan (pure, human-readable) ----

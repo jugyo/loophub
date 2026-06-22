@@ -134,25 +134,38 @@ async function main() {
   if (group === "dev") {
     const issue = sub;
     if (!issue || !/^[0-9]+$/.test(issue)) {
-      fail("usage: lh dev <issue> [--repo owner/name] [--allow d1,d2] [--yes] [--verbose]");
+      fail("usage: lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--yes] [--verbose]");
     }
     const repo = await resolveRepo();
     const n = Number(issue);
     const sessionId = randomUUID();
     const slashCommand = `/loophub-dev ${issue}`;
 
-    // Validate --repo/--allow up front, before any side effects (provisioning a worktree), so
-    // a bad flag fails fast without leaving a stray worktree behind.
-    let allowedDomains: string[];
+    // Validate --allow vs --sandbox flag early.
+    const useSandbox = flags.sandbox === "true";
+    if (flags.allow && !useSandbox) {
+      fail("--allow can only be used with --sandbox");
+    }
+
+    // Validate --repo up front, before any side effects (provisioning a worktree).
     try {
       validateRepo(repo);
-      allowedDomains = resolveAllowedDomains(flags.allow);
     } catch (e: any) {
       fail(e.message);
     }
-    // Sandbox context (repo + allowed domains) always to stderr.
-    console.error(`repo: ${repo}`);
-    console.error(`allowed-domains: ${allowedDomains.join(", ")}`);
+
+    // When sandbox is enabled, validate --allow and log sandbox context.
+    let allowedDomains: string[] | undefined;
+    if (useSandbox) {
+      try {
+        allowedDomains = resolveAllowedDomains(flags.allow);
+      } catch (e: any) {
+        fail(e.message);
+      }
+      // Sandbox context (repo + allowed domains) to stderr only when sandbox enabled.
+      console.error(`repo: ${repo}`);
+      console.error(`allowed-domains: ${allowedDomains.join(", ")}`);
+    }
 
     // Resolve the repo record + issue kind, then provision the worktree (outside the sandbox).
     const s = await svc();
@@ -173,26 +186,28 @@ async function main() {
       fail(e.message);
     }
 
-    // Build the sandbox managed-settings now that the worktree exists: grant write access to
-    // exactly the git paths a commit on this branch needs (issue #28).
-    let managed: string;
-    try {
-      const [gitDir, worktreeGitDir] = await Promise.all([gitCommonDir(worktree), gitDirOf(worktree)]);
-      const branch = headRef ?? worktreeBranch(n);
-      ({ json: managed } = buildManagedSettings({
-        repo,
-        allow: flags.allow,
-        git: { gitDir, worktreeGitDir, branch },
-      }));
-    } catch (e: any) {
-      fail(e.message);
+    // Build the sandbox managed-settings only when --sandbox is enabled.
+    // When sandbox is disabled (default), managed will be undefined.
+    let managed: string | undefined;
+    if (useSandbox) {
+      try {
+        const [gitDir, worktreeGitDir] = await Promise.all([gitCommonDir(worktree), gitDirOf(worktree)]);
+        const branch = headRef ?? worktreeBranch(n);
+        ({ json: managed } = buildManagedSettings({
+          repo,
+          allow: flags.allow,
+          git: { gitDir, worktreeGitDir, branch },
+        }));
+      } catch (e: any) {
+        fail(e.message);
+      }
     }
     const claudeArgs = buildClaudeArgs({ sessionId, managedSettings: managed, slashCommand });
 
     // Show exactly what `claude` will receive, then ask to proceed. The plan is always
     // printed; the y/N prompt is skipped with --yes or when stdin is not a TTY (CI / piped),
     // where we launch as before to keep non-interactive runs working.
-    console.error(formatLaunchPlan({ repo, worktree, sessionId, slashCommand, managedSettings: managed, claudeArgs }));
+    console.error(formatLaunchPlan({ repo, worktree, sessionId, slashCommand, managedSettings: managed ?? "{}", claudeArgs }));
     if (flags.verbose === "true") {
       const claudeLine = `claude ${claudeArgs.map(shQuote).join(" ")}`;
       console.error(`exec: ${claudeLine}`);
@@ -434,7 +449,7 @@ async function main() {
 function usage() {
   console.log(`lh — LoopHub CLI
 
-  lh dev <issue> [--repo owner/name] [--allow d1,d2] [--yes] [--verbose]   # start one issue in an interactive Claude session
+  lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--yes] [--verbose]   # start one issue in an interactive Claude session
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>
