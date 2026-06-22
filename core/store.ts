@@ -164,7 +164,7 @@ export function listIssues(repoId: number, kind: "issue" | "pull" | "any", state
     params.push(state);
   }
   return db
-    .query(`SELECT * FROM issues WHERE ${conds.join(" AND ")} ORDER BY number DESC`)
+    .query(`SELECT * FROM issues WHERE ${conds.join(" AND ")} ORDER BY updated_at DESC, number DESC`)
     .all(...params);
 }
 

@@ -7,12 +7,11 @@ import { DashboardSection } from "@/components/dashboard-section";
 import { IssueRow, PullRow } from "@/components/dashboard-rows";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { RepoMenu } from "@/components/repo-menu";
-import { useOpenIssues, useOpenPulls, useAssignedIssues } from "@/queries/dashboard";
+import { useOpenIssues, useOpenPulls } from "@/queries/dashboard";
 
 export function RepoDashboard({ owner, repo }: { owner: string; repo: string }) {
   const issues = useOpenIssues(owner, repo);
   const pulls = useOpenPulls(owner, repo);
-  const assignedIssues = useAssignedIssues(owner, repo);
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-8">
@@ -36,14 +35,6 @@ export function RepoDashboard({ owner, repo }: { owner: string; repo: string }) 
         emptyText="No open pull requests."
         keyOf={(p) => p.number}
         renderItem={(p) => <PullRow owner={owner} repo={repo} pull={p} />}
-      />
-
-      <DashboardSection
-        title="Assigned Issues"
-        query={assignedIssues}
-        emptyText="No assigned issues."
-        keyOf={(i) => i.number}
-        renderItem={(i) => <IssueRow owner={owner} repo={repo} issue={i} />}
       />
 
       <DashboardSection

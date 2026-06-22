@@ -5,35 +5,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { getDashboardOverview, listIssues, listPulls } from "@/api/client";
 import { queryKeys } from "./keys";
-import { getSessionId } from "@/lib/session";
-import type { Issue } from "@/api/types";
 
 /** Max items per dashboard section (DESIGN.md: each list ~20, then "see all"). */
 export const SECTION_LIMIT = 20;
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
 
-/** Open issues (excludes PRs and assigned) for the dashboard's Open Issues section. */
+/** Open issues (excludes PRs) for the dashboard's Open Issues section, newest update first. */
 export function useOpenIssues(owner: string, repo: string) {
   return useQuery({
     queryKey: queryKeys.issues(full(owner, repo)),
-    queryFn: async () => {
-      const issues = await listIssues(owner, repo, `state=open&kind=issue&per_page=${SECTION_LIMIT * 3}`);
-      const sessionId = getSessionId();
-      return issues.filter((issue: Issue) => issue.assignee?.session_id !== sessionId).slice(0, SECTION_LIMIT);
-    },
-  });
-}
-
-/** Issues assigned to the current session for the dashboard's Assigned Issues section. */
-export function useAssignedIssues(owner: string, repo: string) {
-  return useQuery({
-    queryKey: [...queryKeys.issues(full(owner, repo)), "assigned"],
-    queryFn: async () => {
-      const sessionId = getSessionId();
-      const issues = await listIssues(owner, repo, `state=open&kind=issue&assignee_session_id=${sessionId}&per_page=${SECTION_LIMIT}`);
-      return issues.slice(0, SECTION_LIMIT);
-    },
+    queryFn: () =>
+      listIssues(owner, repo, `state=open&kind=issue&per_page=${SECTION_LIMIT}`),
   });
 }
 
