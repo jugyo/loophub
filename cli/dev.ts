@@ -164,6 +164,13 @@ function display(v: string): string {
   return stripVTControlCharacters(v).replace(/[\x00-\x1f\x7f]/g, "");
 }
 
+// Like display(), but for multi-line values (e.g. an issue body) where newlines carry meaning.
+// Sanitizes each line independently and rejoins with "\n", so genuine line breaks survive while
+// every other control byte (CR, BEL, backspace, …) and ANSI/VT sequence is still stripped.
+export function displayMultiline(v: string): string {
+  return v.split("\n").map(display).join("\n");
+}
+
 export function formatLaunchPlan(plan: LaunchPlan): string {
   const s = JSON.parse(plan.managedSettings) as any;
   const sandbox = s.sandbox ?? {};

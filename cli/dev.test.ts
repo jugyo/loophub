@@ -10,6 +10,7 @@ import { git, worktreeList, branchExists, gitCommonDir, gitDirOf } from "../core
 import {
   buildClaudeArgs,
   buildManagedSettings,
+  displayMultiline,
   formatLaunchPlan,
   isAffirmative,
   validateDomain,
@@ -17,6 +18,19 @@ import {
   worktreePath,
   provisionWorktree,
 } from "./dev.ts";
+
+// ---- displayMultiline (pure) ----
+
+test("displayMultiline preserves newlines in a multi-line body", () => {
+  const body = "First line\nSecond line\n\nFourth after blank";
+  expect(displayMultiline(body)).toBe("First line\nSecond line\n\nFourth after blank");
+});
+
+test("displayMultiline strips ANSI/VT sequences and other control bytes but keeps \\n", () => {
+  // \x1b[31m = red ANSI; \r and \b are line-overwriting control bytes; \n must survive.
+  const body = "line one\x1b[31m red\r\nline\btwo";
+  expect(displayMultiline(body)).toBe("line one red\nlinetwo");
+});
 
 // ---- managed settings (pure) ----
 

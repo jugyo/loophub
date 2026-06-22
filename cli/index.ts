@@ -9,6 +9,7 @@ import { gitCommonDir, gitDirOf } from "../core/git.ts";
 import {
   buildClaudeArgs,
   buildManagedSettings,
+  displayMultiline,
   formatLaunchPlan,
   provisionWorktree,
   resolveAllowedDomains,
@@ -213,7 +214,7 @@ async function main() {
         console.error(`linked PR #${pr.number} (${pr.merged ? "merged" : display(pr.state)})`);
       }
       console.error();
-      console.error(display(item.body));
+      console.error(displayMultiline(item.body));
       console.error();
     }
 
