@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { configDir, worktreeRoot } from "../core/config.ts";
@@ -120,24 +119,6 @@ function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-// Ask a Y/n question on stderr (stdout is reserved for command output). Returns true on
-// anything other than an explicit no.
-async function confirm(question: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    const answer = await rl.question(`${question} [Y/n] `);
-    const trimmed = answer.trim();
-    return trimmed === "" || !isNegative(trimmed);
-  } finally {
-    rl.close();
-  }
-}
-
-// Whether a Y/n prompt answer is an explicit no.
-function isNegative(answer: string): boolean {
-  return /^no?$/i.test(answer);
-}
-
 // ---- commands ----
 const [group, sub, ...rest] = pos;
 
@@ -145,7 +126,7 @@ async function main() {
   if (group === "dev") {
     const issue = sub;
     if (!issue || !/^[0-9]+$/.test(issue)) {
-      fail("usage: lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--yes] [--verbose]");
+      fail("usage: lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose]");
     }
     const repo = await resolveRepo();
     const n = Number(issue);
@@ -236,20 +217,12 @@ async function main() {
     }
     const claudeArgs = buildClaudeArgs({ sessionId, managedSettings: managed, slashCommand });
 
-    // Show exactly what `claude` will receive, then ask to proceed. The plan is always
-    // printed; the y/N prompt is skipped with --yes or when stdin is not a TTY (CI / piped),
-    // where we launch as before to keep non-interactive runs working.
+    // Show exactly what `claude` will receive, then launch immediately. The plan is a safety
+    // artifact (what gets handed to `claude`); there is no confirmation prompt.
     console.error(formatLaunchPlan({ repo, worktree, sessionId, slashCommand, managedSettings: managed ?? "{}", claudeArgs }));
     if (flags.verbose === "true") {
       const claudeLine = `claude ${claudeArgs.map(shQuote).join(" ")}`;
       console.error(`exec: ${claudeLine}`);
-    }
-    if (flags.yes !== "true" && !process.stdin.isTTY) {
-      // Non-interactive (CI / piped): launch as before, but make the skipped safety prompt
-      // visible so an operator can tell the confirmation gate did not run.
-      console.error("stdin is not a TTY; skipping confirmation (pass --yes to silence).");
-    } else if (flags.yes !== "true" && !(await confirm("Launch claude with these settings?"))) {
-      fail("aborted; claude not launched.");
     }
 
     // Make the work visible: register this session and assign the issue before spawning.
@@ -481,7 +454,7 @@ async function main() {
 function usage() {
   console.log(`lh — LoopHub CLI
 
-  lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--yes] [--verbose]   # start one issue in an interactive Claude session
+  lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose]   # start one issue in an interactive Claude session
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>

@@ -12,7 +12,6 @@ import {
   buildManagedSettings,
   displayMultiline,
   formatLaunchPlan,
-  isAffirmative,
   validateDomain,
   worktreeBranch,
   worktreePath,
@@ -202,13 +201,6 @@ test("formatLaunchPlan handles --permission-mode flag with no value (defensive)"
     claudeArgs: ["--session-id", "sid", "--permission-mode"], // flag, no value
   });
   expect(out).toContain("--permission-mode:  (default)");
-});
-
-// ---- confirm matcher (pure) ----
-
-test("isAffirmative accepts only an explicit yes", () => {
-  for (const yes of ["y", "Y", "yes", "YES", " y ", "Yes"]) expect(isAffirmative(yes)).toBe(true);
-  for (const no of ["", "n", "no", "nope", "yeah", "ok", "1"]) expect(isAffirmative(no)).toBe(false);
 });
 
 // ---- worktree naming (pure) ----

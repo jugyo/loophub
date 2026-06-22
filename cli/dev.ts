@@ -208,12 +208,6 @@ export function formatLaunchPlan(plan: LaunchPlan): string {
   return lines.join("\n");
 }
 
-// Whether a y/N prompt answer is an explicit yes. Pure so the confirmation gate's matcher
-// can be unit-tested without a TTY.
-export function isAffirmative(answer: string): boolean {
-  return /^y(es)?$/i.test(answer.trim());
-}
-
 // ---- worktree provisioning ----
 //
 // Path and branch are deterministic from the issue number (no slug). Reuse is derived from
