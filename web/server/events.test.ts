@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { git, revParse } from "../../core/git.ts";
 
 // Isolate the DB before store.ts -> db.ts runs its import-time setup.
 const HOME = mkdtempSync(join(tmpdir(), "lh-events-"));
@@ -86,4 +87,54 @@ test("startEventTail forwards out-of-process DB writes to the in-process hub", a
   unsub();
 
   expect(got).toContain(row.id);
+});
+
+test("startPullSweep fires pull_request.updated on head SHA change, no-ops when unchanged", async () => {
+  const { startPullSweep } = await import("./events.ts");
+
+  // Real git repo so revParse(local_path, head_ref) resolves a moving branch head.
+  const repoPath = mkdtempSync(join(tmpdir(), "lh-sweep-"));
+  await git(repoPath, ["init", "-q", "-b", "main"]);
+  await git(repoPath, ["config", "user.email", "t@t.local"]);
+  await git(repoPath, ["config", "user.name", "tester"]);
+  writeFileSync(join(repoPath, "f.txt"), "base\n");
+  await git(repoPath, ["add", "-A"]);
+  await git(repoPath, ["commit", "-qm", "base"]);
+  await git(repoPath, ["checkout", "-q", "-b", "loophub/issue-x"]);
+  writeFileSync(join(repoPath, "f.txt"), "c1\n");
+  await git(repoPath, ["commit", "-qam", "c1"]);
+
+  const repo = S.createRepo("me/sweep", repoPath);
+  const pull = S.createIssue(repo.id, "pull", "PR", "", "me");
+  S.createPull(pull.id, "loophub/issue-x", "main", null); // head_sha unset -> first sweep records it
+
+  const countUpdates = () =>
+    S.listEvents(0, repo.id, 100).filter((e: any) => e.type === "pull_request.updated").length;
+
+  const stop = startPullSweep(20);
+  try {
+    await new Promise((r) => setTimeout(r, 60)); // first tick records baseline, emits nothing
+    expect(countUpdates()).toBe(0);
+    expect(S.getPull(pull.id).head_sha).toBe(await revParse(repoPath, "loophub/issue-x"));
+
+    // New commit moves the branch head -> next sweep should emit exactly one update.
+    writeFileSync(join(repoPath, "f.txt"), "c2\n");
+    await git(repoPath, ["commit", "-qam", "c2"]);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(countUpdates()).toBe(1);
+
+    // No further commits -> unchanged head is a no-op (no new DB write).
+    await new Promise((r) => setTimeout(r, 60));
+    expect(countUpdates()).toBe(1);
+  } finally {
+    stop();
+  }
+
+  // After stop(), a moving head no longer produces events (interval cleared).
+  writeFileSync(join(repoPath, "f.txt"), "c3\n");
+  await git(repoPath, ["commit", "-qam", "c3"]);
+  await new Promise((r) => setTimeout(r, 60));
+  expect(countUpdates()).toBe(1);
+
+  rmSync(repoPath, { recursive: true, force: true });
 });

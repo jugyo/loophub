@@ -5,9 +5,11 @@
 // GET /events/stream (replay-then-subscribe, repo filter, ascending-by-id cursor).
 import { formatEvent, publishEvent, subscribe, type LoopEvent } from "../../core/event-hub.ts";
 import * as S from "../../core/store.ts";
+import { sweepPullUpdates } from "../../core/watcher.ts";
 
 const REPLAY_PAGE = 100;
 const DEFAULT_TAIL_POLL_MS = 1000;
+export const DEFAULT_SWEEP_MS = 5000;
 
 export interface EventNotification {
   jsonrpc: "2.0";
@@ -92,6 +94,37 @@ export function startEventTail(pollMs = DEFAULT_TAIL_POLL_MS): () => void {
   };
 
   const timer = setInterval(tick, pollMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// Auto-fire pull_request.updated by sweeping open PR head SHAs on the resident lh-web process.
+// Without this, pull_request.updated only fires from `lh sync` (CLI) / `sync/run` (RPC); if
+// nobody runs sync, the review cycle stalls. We poll open PR head refs on an interval and let
+// sweepPullUpdates() write pull_request.updated rows straight to the shared DB — startEventTail
+// above forwards them to SSE subscribers. Unchanged PRs are a no-op (no DB write), and `lh sync`
+// / `sync/run` remain as a manual force. The sweep does git work per PR, so it runs on its own,
+// coarser interval (not the 1s event tail) and skips a tick if a prior sweep is still running.
+export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return; // skip overlap if a prior sweep is still in flight
+    running = true;
+    try {
+      await sweepPullUpdates();
+    } catch (err) {
+      console.error(`pull sweep error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
   if (typeof timer.unref === "function") timer.unref();
   return () => {
     stopped = true;
