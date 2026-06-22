@@ -1,8 +1,8 @@
 ---
-name: loophub-pr-review
+name: lh-pr-review
 description: >-
   Review a LoopHub PR with quality and security reviewers (host-mapped subagents), fix findings
-  on the head branch, and re-review until approve. Use when the user runs /loophub-pr-review {pr
+  on the head branch, and re-review until approve. Use when the user runs /lh-pr-review {pr
   id}, when asked to review a LoopHub PR, or after issue-dev creates a PR. Posts lh pr review each
   round. Does not merge. Add --review-only for a single review without the fix loop.
 ---
@@ -21,10 +21,10 @@ Distinct from Cursor's built-in `/loop` (scheduled wake). Here, "loop" means **r
 ## Invocation
 
 ```text
-/loophub-pr-review <pr id>              # loop enabled (default)
-/loophub-pr-review <pr id> --review-only   # single review (no fix loop)
-/loophub-pr-review <pr id> --max-rounds 8  # max rounds (default 5)
-/loophub-pr-review                      # resolve PR from session context (see below)
+/lh-pr-review <pr id>              # loop enabled (default)
+/lh-pr-review <pr id> --review-only   # single review (no fix loop)
+/lh-pr-review <pr id> --max-rounds 8  # max rounds (default 5)
+/lh-pr-review                      # resolve PR from session context (see below)
 ```
 
 ### PR number resolution (when `<pr id>` omitted)
@@ -45,7 +45,7 @@ Any **one** of these alone is enough:
 | Signal | Example |
 |--------|---------|
 | Same-session issue-dev just created the PR | `lh pr create ...` returned `#42` in this chat |
-| PR already loaded in this session | `lh pr view <m>` or `/loophub-pr-review <m>` earlier in chat |
+| PR already loaded in this session | `lh pr view <m>` or `/lh-pr-review <m>` earlier in chat |
 | User named the PR in the immediately preceding message | "review this" right after posting PR #42 URL |
 | Linked issue maps to exactly one open PR | `lh issue view <n>` → `linked_pull_request`, or single open PR with `--issue <n>` |
 
@@ -59,7 +59,7 @@ If multiple signals agree on the same `<m>`, use it. If they disagree, treat as 
 - Signals point to different PR numbers
 
 ```text
-Which PR should I review? (e.g. /loophub-pr-review 42)
+Which PR should I review? (e.g. /lh-pr-review 42)
 ```
 
 ## Role split
@@ -341,7 +341,7 @@ Return to Phase A (`round += 1`). Checkout usually unnecessary (already on head)
 - Final verdict / total rounds
 - Summary of fixes per round
 - Test results
-- If `approve`, note `/loophub-merge-ready <m>` continues (human merges)
+- If `approve`, note `/lh-merge-ready <m>` continues (human merges)
 - If `max_rounds` reached, list unresolved findings
 
 ## Called from other skills
@@ -349,8 +349,8 @@ Return to Phase A (`round += 1`). Checkout usually unnecessary (already on head)
 After a PR is created, continue in the same session:
 
 ```text
-/loophub-pr-review <new PR number>
-/loophub-pr-review   # OK when the just-created PR is obvious (see PR number resolution)
+/lh-pr-review <new PR number>
+/lh-pr-review   # OK when the just-created PR is obvious (see PR number resolution)
 ```
 
 Default: run this loop in the implementation session, not a separate session.
@@ -360,15 +360,15 @@ Default: run this loop in the implementation session, not a separate session.
 After `approve`, **same session** pre-merge check:
 
 ```text
-/loophub-merge-ready <m>
+/lh-merge-ready <m>
 ```
 
-See `skills/loophub-merge-ready/SKILL.md`. Do not run `lh pr merge`.
+See `skills/lh-merge-ready/SKILL.md`. Do not run `lh pr merge`.
 
 ## Skill chain (full)
 
 ```text
-loophub-issue-create → (implementation) → loophub-pr-review → loophub-merge-ready → (human merge)
+lh-issue-create → (implementation) → lh-pr-review → lh-merge-ready → (human merge)
 ```
 
 ## Prohibited

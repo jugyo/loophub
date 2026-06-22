@@ -10,7 +10,7 @@ TARGET_DIR="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
 mkdir -p "$TARGET_DIR"
 
 count=0
-for dir in "$SKILLS_DIR"/loophub-*/; do
+for dir in "$SKILLS_DIR"/{lh-*,loophub-dev}/; do
   [ -d "$dir" ] || continue
   name="$(basename "$dir")"
   ln -sfn "${dir%/}" "$TARGET_DIR/$name"

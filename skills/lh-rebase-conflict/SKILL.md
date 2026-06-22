@@ -1,8 +1,8 @@
 ---
-name: loophub-rebase-conflict
+name: lh-rebase-conflict
 description: >-
   Resolve merge conflicts on a LoopHub PR head branch in a worktree, run tests, commit, lh sync, and
-  hand off to loophub-pr-review. Use when the user runs /loophub-rebase-conflict {pr id}, when
+  hand off to lh-pr-review. Use when the user runs /lh-rebase-conflict {pr id}, when
   pull_request.merge_conflict events fire, or when babysit/dispatch routes conflict resolution. Does
   not merge.
 ---
@@ -10,19 +10,19 @@ description: >-
 # LoopHub rebase conflict
 
 Resolve **merge conflicts on a worktree** after main moves → test → commit → `lh sync` → resume
-`loophub-pr-review` if needed. **Do not merge.**
+`lh-pr-review` if needed. **Do not merge.**
 
 ## Invocation
 
 ```text
-/loophub-rebase-conflict <pr id>
-/loophub-rebase-conflict <pr id> --repo owner/name
-/loophub-rebase-conflict                  # resolve PR from session context (see below)
+/lh-rebase-conflict <pr id>
+/lh-rebase-conflict <pr id> --repo owner/name
+/lh-rebase-conflict                  # resolve PR from session context (see below)
 ```
 
 ### PR number resolution (when `<pr id>` omitted)
 
-Same rules as `loophub-pr-review` (obvious → infer; not obvious → ask). Typical when
+Same rules as `lh-pr-review` (obvious → infer; not obvious → ask). Typical when
 `pull_request.merge_conflict` or babysit routes to a PR already named in the session.
 
 Before starting, state the chosen PR in one line:
@@ -139,10 +139,10 @@ lh pr comment <m> --body "Conflict resolution complete. Please re-review." --act
 **Continue in same session (default):**
 
 ```text
-/loophub-pr-review <m>
+/lh-pr-review <m>
 ```
 
-Re-review with the quality + security reviewers until `approve` (follow `loophub-pr-review` SKILL;
+Re-review with the quality + security reviewers until `approve` (follow `lh-pr-review` SKILL;
 reviewer mechanism is host-mapped there).
 
 Skip pr-review only if user said "stop at rebase".

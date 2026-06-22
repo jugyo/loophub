@@ -1,9 +1,9 @@
 ---
-name: loophub-plan-to-issues
+name: lh-plan-to-issues
 description: >-
   Break a plan, SPEC, or PRD into vertical-slice LoopHub issues, then STOP. Never implements,
   branches, edits code, or opens PRs unless the user explicitly asks separately. Use when the
-  user runs /loophub-plan-to-issues, wants to convert a plan into tickets or 起票/issue作成 only
+  user runs /lh-plan-to-issues, wants to convert a plan into tickets or 起票/issue作成 only
   — NOT when they ask to implement or fix.
 ---
 
@@ -33,7 +33,7 @@ LoopHub variant of the generic `to-issues` skill.
 
 ## Invocation
 
-`/loophub-plan-to-issues` — use conversation context or an issue / document from arguments.
+`/lh-plan-to-issues` — use conversation context or an issue / document from arguments.
 
 Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
 
@@ -152,7 +152,7 @@ None — can start immediately
 ## Follow-on work (user must ask explicitly)
 
 ```text
-loophub-plan-to-issues → [stop] → (separate request) implementation → ...
+lh-plan-to-issues → [stop] → (separate request) implementation → ...
 ```
 
 Do **not** auto-start implementation right after publish. Optional guidance:

@@ -1,9 +1,9 @@
 ---
-name: loophub-merge-ready
+name: lh-merge-ready
 description: >-
   Final pre-merge check for a LoopHub PR: diff vs acceptance criteria, tests, and approve status.
   Presents lh pr merge steps for a human — never merges automatically. Use when the user runs
-  /loophub-merge-ready {pr id}, or after loophub-pr-review approves.
+  /lh-merge-ready {pr id}, or after lh-pr-review approves.
 ---
 
 # LoopHub merge-ready
@@ -16,15 +16,15 @@ Final check **before a human merges**. Cross-check diff vs Acceptance criteria, 
 ## Invocation
 
 ```text
-/loophub-merge-ready <pr id>
-/loophub-merge-ready <pr id> --repo owner/name
-/loophub-merge-ready                      # resolve PR from session context (see below)
+/lh-merge-ready <pr id>
+/lh-merge-ready <pr id> --repo owner/name
+/lh-merge-ready                      # resolve PR from session context (see below)
 ```
 
 ### PR number resolution (when `<pr id>` omitted)
 
-Same rules as `loophub-pr-review` (obvious → infer; not obvious → ask). Typical after
-`loophub-pr-review` approves in the same session: the PR just reviewed is **obvious**.
+Same rules as `lh-pr-review` (obvious → infer; not obvious → ask). Typical after
+`lh-pr-review` approves in the same session: the PR just reviewed is **obvious**.
 
 Before starting, state the chosen PR in one line:
 
@@ -60,7 +60,7 @@ infer from body; ask the user if unclear.
 
 ### 2. Approve check (required)
 
-`loophub-pr-review` must have **`approve`d**.
+`lh-pr-review` must have **`approve`d**.
 
 ```sh
 lh pr view <m> --json --repo <repo>
@@ -70,9 +70,9 @@ lh pr view <m> --json --repo <repo>
 | `review_state` | Action |
 |----------------|--------|
 | `APPROVED` | Continue |
-| `CHANGES_REQUESTED` | **Stop** — suggest `/loophub-pr-review <m>` |
+| `CHANGES_REQUESTED` | **Stop** — suggest `/lh-pr-review <m>` |
 | `READY_FOR_RE_REVIEW` | **Stop** — waiting for re-review |
-| `null` / `COMMENTED` | **Stop** — review incomplete; suggest `/loophub-pr-review <m>` |
+| `null` / `COMMENTED` | **Stop** — review incomplete; suggest `/lh-pr-review <m>` |
 
 If `review_state` missing from JSON, check reviews list for latest `APPROVE`:
 
@@ -171,11 +171,11 @@ lh issue comment <n> --body "merged via PR #<m>" --repo <repo>
 
 ## Called from other skills
 
-After `loophub-pr-review` approves, continue in the same session:
+After `lh-pr-review` approves, continue in the same session:
 
 ```text
-/loophub-merge-ready <m>
-/loophub-merge-ready   # OK when the just-approved PR is obvious
+/lh-merge-ready <m>
+/lh-merge-ready   # OK when the just-approved PR is obvious
 ```
 
 Also from pr-review sessions when review approves.
@@ -183,7 +183,7 @@ Also from pr-review sessions when review approves.
 ## Skill chain (full)
 
 ```text
-loophub-issue-create → (implementation) → loophub-pr-review → loophub-merge-ready → (human merge)
+lh-issue-create → (implementation) → lh-pr-review → lh-merge-ready → (human merge)
 ```
 
 ## Prohibited

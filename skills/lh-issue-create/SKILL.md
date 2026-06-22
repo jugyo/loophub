@@ -1,9 +1,9 @@
 ---
-name: loophub-issue-create
+name: lh-issue-create
 description: >-
   Create an AFK-ready LoopHub issue from conversation or a bug report, then STOP. Never
   implements, branches, edits code, or opens PRs unless the user explicitly asks in a separate
-  message. Use when the user runs /loophub-issue-create, asks to create/file/open an issue only,
+  message. Use when the user runs /lh-issue-create, asks to create/file/open an issue only,
   起票, issue作成, or turn chat into an issue — NOT when they ask to implement or fix.
 ---
 
@@ -44,7 +44,7 @@ Stop **immediately** when all of the following are true (do not start extra work
 
 ## Invocation
 
-`/loophub-issue-create` — file an issue from conversation context. Follow any title or type the user
+`/lh-issue-create` — file an issue from conversation context. Follow any title or type the user
 specifies.
 
 Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
@@ -164,7 +164,7 @@ To implement: start implementation on issue <n> (a separate request)
 ## Follow-on work (user must ask explicitly)
 
 ```text
-loophub-issue-create → [stop] → (separate request) implementation → loophub-pr-review → ...
+lh-issue-create → [stop] → (separate request) implementation → lh-pr-review → ...
 ```
 
 Do **not** auto-chain to implementation. Only start implementing if the user asked to both

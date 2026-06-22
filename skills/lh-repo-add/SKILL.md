@@ -1,8 +1,8 @@
 ---
-name: loophub-repo-add
+name: lh-repo-add
 description: >-
   Register a local git repository with LoopHub via lh repo add, then STOP. Use when the user runs
-  /loophub-repo-add, asks to add/register a repo in LoopHub, リポジトリ追加, or onboard a local
+  /lh-repo-add, asks to add/register a repo in LoopHub, リポジトリ追加, or onboard a local
   checkout — NOT for issue creation, implementation, or repo update/archive/remove.
 ---
 
@@ -41,13 +41,13 @@ Stop **immediately** when all of the following are true:
 
 ## Invocation
 
-`/loophub-repo-add` — register from conversation context (path and optional `owner/name`).
+`/lh-repo-add` — register from conversation context (path and optional `owner/name`).
 
 Optional arguments the user may supply:
 
 ```text
-/loophub-repo-add /abs/path/to/checkout
-/loophub-repo-add /abs/path --name owner/repo
+/lh-repo-add /abs/path/to/checkout
+/lh-repo-add /abs/path --name owner/repo
 ```
 
 Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
@@ -176,7 +176,7 @@ Confirm the new row shows the expected `full_name` and `local_path`.
 Optional guidance only (do not auto-run):
 
 ```text
-To file work: /loophub-issue-create
+To file work: /lh-issue-create
 ```
 
 ## Error handling
@@ -200,6 +200,6 @@ Do not retry blindly on `already registered` — confirm intent with the user fi
 
 ## Prohibited
 
-- Do not start implementation or `loophub-issue-create` after registration
+- Do not start implementation or `lh-issue-create` after registration
 - Do not modify the target repository's source code
 - Do not merge PRs or assign issues as part of repo registration
