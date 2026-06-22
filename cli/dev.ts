@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { branchExists, worktreeAdd, worktreeList } from "../core/git.ts";
 
 // `lh dev` provisions an isolated git worktree (outside the sandbox) and launches an
@@ -77,6 +78,73 @@ export function buildClaudeArgs({
     managedSettings,
     slashCommand,
   ];
+}
+
+// ---- launch plan (pure, human-readable) ----
+//
+// Render the settings about to be handed to `claude` so a human can confirm before spawn.
+// Pure (string in, string out) so it can be unit-tested and so the formatting never depends
+// on a TTY. The managed settings are parsed from the same JSON that is passed on the wire,
+// guaranteeing what is shown is exactly what is sent (no second source of truth).
+export interface LaunchPlan {
+  repo: string;
+  worktree: string;
+  sessionId: string;
+  slashCommand: string;
+  managedSettings: string; // the JSON from buildManagedSettings
+  claudeArgs: string[]; // the argv from buildClaudeArgs
+}
+
+// Strip ANSI/terminal control sequences from any value rendered into the plan. The plan is
+// a safety artifact a human reads before launch; a value sourced from a repo's full_name
+// (not validated at registration) must not be able to forge or hide the displayed settings.
+function display(v: string): string {
+  // Remove ANSI/VT escape sequences first, then any remaining C0/C1 control bytes (CR, BEL,
+  // backspace, …) — a bare \r or \b can still overwrite the rendered line on its own.
+  return stripVTControlCharacters(v).replace(/[\x00-\x1f\x7f]/g, "");
+}
+
+export function formatLaunchPlan(plan: LaunchPlan): string {
+  const s = JSON.parse(plan.managedSettings) as any;
+  const sandbox = s.sandbox ?? {};
+  const network = sandbox.network ?? {};
+  const filesystem = sandbox.filesystem ?? {};
+  const denyRead: string[] = (filesystem.denyRead ?? []).map(display);
+  const excluded: string[] = (sandbox.excludedCommands ?? []).map(display);
+  const domains: string[] = (network.allowedDomains ?? []).map(display);
+
+  const permIdx = plan.claudeArgs.indexOf("--permission-mode");
+  const permVal = permIdx >= 0 && permIdx + 1 < plan.claudeArgs.length ? plan.claudeArgs[permIdx + 1] : undefined;
+  const permissionMode = permVal != null ? display(permVal) : "(default)";
+
+  const lines = [
+    "Review the settings to be passed to `claude` before launch:",
+    "",
+    "  Context",
+    `    repo:        ${display(plan.repo)}`,
+    `    worktree:    ${display(plan.worktree)}`,
+    `    session-id:  ${display(plan.sessionId)}`,
+    `    command:     ${display(plan.slashCommand)}`,
+    "",
+    "  Managed settings (sandbox)",
+    `    sandbox:            ${sandbox.enabled ? "enabled" : "disabled"}${sandbox.failIfUnavailable ? " (fail if unavailable)" : ""}`,
+    `    unsandboxed cmds:   ${sandbox.allowUnsandboxedCommands ? "allowed" : "denied"}`,
+    `    excluded cmds:      ${excluded.length ? excluded.join(", ") : "(none)"}`,
+    `    network domains:    ${domains.length ? domains.join(", ") : "(none)"}${network.allowManagedDomainsOnly ? " (managed only)" : ""}`,
+    `    permissions mode:   ${display(String(s.permissions?.defaultMode ?? "(default)"))}`,
+    `    filesystem denyRead:${denyRead.length ? "" : " (none)"}`,
+    ...denyRead.map((p) => `      - ${p}`),
+    "",
+    "  Command-line settings",
+    `    --permission-mode:  ${permissionMode}`,
+  ];
+  return lines.join("\n");
+}
+
+// Whether a y/N prompt answer is an explicit yes. Pure so the confirmation gate's matcher
+// can be unit-tested without a TTY.
+export function isAffirmative(answer: string): boolean {
+  return /^y(es)?$/i.test(answer.trim());
 }
 
 // ---- worktree provisioning ----

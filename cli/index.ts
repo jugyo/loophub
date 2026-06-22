@@ -1,9 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { configDir, worktreeRoot } from "../core/config.ts";
-import { buildClaudeArgs, buildManagedSettings, provisionWorktree } from "./dev.ts";
+import { buildClaudeArgs, buildManagedSettings, formatLaunchPlan, isAffirmative, provisionWorktree } from "./dev.ts";
 
 // Lazily load the service layer (which opens the DB at import time) so DB-free commands
 // like `lh` (usage) never touch ~/.loophub.
@@ -104,6 +105,18 @@ function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+// Ask a y/N question on stderr (stdout is reserved for command output). Returns false on
+// anything other than an explicit yes.
+async function confirm(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = await rl.question(`${question} [y/N] `);
+    return isAffirmative(answer);
+  } finally {
+    rl.close();
+  }
+}
+
 // ---- commands ----
 const [group, sub, ...rest] = pos;
 
@@ -111,22 +124,18 @@ async function main() {
   if (group === "dev") {
     const issue = sub;
     if (!issue || !/^[0-9]+$/.test(issue)) {
-      fail("usage: lh dev <issue> [--repo owner/name] [--allow d1,d2] [--verbose]");
+      fail("usage: lh dev <issue> [--repo owner/name] [--allow d1,d2] [--yes] [--verbose]");
     }
     const repo = await resolveRepo();
     const n = Number(issue);
     const sessionId = randomUUID();
     let managed: string;
-    let allowedDomains: string[];
     try {
-      ({ json: managed, allowedDomains } = buildManagedSettings({ repo, allow: flags.allow }));
+      ({ json: managed } = buildManagedSettings({ repo, allow: flags.allow }));
     } catch (e: any) {
       fail(e.message);
     }
     const slashCommand = `/loophub-dev ${issue}`;
-    // Sandbox context (repo + allowed domains) always to stderr.
-    console.error(`repo: ${repo}`);
-    console.error(`allowed-domains: ${allowedDomains.join(", ")}`);
 
     // Resolve the repo record + issue kind, then provision the worktree (outside the sandbox).
     const s = await svc();
@@ -146,11 +155,22 @@ async function main() {
     } catch (e: any) {
       fail(e.message);
     }
-    console.error(`worktree: ${worktree}`);
     const claudeArgs = buildClaudeArgs({ sessionId, managedSettings: managed, slashCommand });
+
+    // Show exactly what `claude` will receive, then ask to proceed. The plan is always
+    // printed; the y/N prompt is skipped with --yes or when stdin is not a TTY (CI / piped),
+    // where we launch as before to keep non-interactive runs working.
+    console.error(formatLaunchPlan({ repo, worktree, sessionId, slashCommand, managedSettings: managed, claudeArgs }));
     if (flags.verbose === "true") {
       const claudeLine = `claude ${claudeArgs.map(shQuote).join(" ")}`;
       console.error(`exec: ${claudeLine}`);
+    }
+    if (flags.yes !== "true" && !process.stdin.isTTY) {
+      // Non-interactive (CI / piped): launch as before, but make the skipped safety prompt
+      // visible so an operator can tell the confirmation gate did not run.
+      console.error("stdin is not a TTY; skipping confirmation (pass --yes to silence).");
+    } else if (flags.yes !== "true" && !(await confirm("Launch claude with these settings?"))) {
+      fail("aborted; claude not launched.");
     }
 
     // Make the work visible: register this session and assign the issue before spawning.
@@ -167,7 +187,6 @@ async function main() {
       else throw e;
     }
 
-    console.error(`session-id: ${sessionId}`);
     const proc = spawnSync("claude", claudeArgs, { stdio: "inherit", cwd: worktree });
     process.exit(proc.status ?? 0);
   }
@@ -383,7 +402,7 @@ async function main() {
 function usage() {
   console.log(`lh — LoopHub CLI
 
-  lh dev <issue> [--repo owner/name] [--allow d1,d2] [--verbose]   # start one issue in an interactive Claude session
+  lh dev <issue> [--repo owner/name] [--allow d1,d2] [--yes] [--verbose]   # start one issue in an interactive Claude session
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>

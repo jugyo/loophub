@@ -7,6 +7,8 @@ import { git, worktreeList, branchExists } from "../core/git.ts";
 import {
   buildClaudeArgs,
   buildManagedSettings,
+  formatLaunchPlan,
+  isAffirmative,
   validateDomain,
   worktreeBranch,
   worktreePath,
@@ -54,6 +56,95 @@ test("buildClaudeArgs carries session id, managed settings, and the slash comman
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
   expect(args[args.indexOf("--managed-settings") + 1]).toBe("{}");
   expect(args[args.length - 1]).toBe("/loophub-dev 42");
+});
+
+// ---- launch plan (pure) ----
+
+function plan(overrides: Partial<Parameters<typeof formatLaunchPlan>[0]> = {}) {
+  const { json } = buildManagedSettings({ repo: "me/proj", allow: "example.com" });
+  const claudeArgs = buildClaudeArgs({ sessionId: "sid-1", managedSettings: json, slashCommand: "/loophub-dev 42" });
+  return formatLaunchPlan({
+    repo: "me/proj",
+    worktree: "/root/me/proj/issue-42",
+    sessionId: "sid-1",
+    slashCommand: "/loophub-dev 42",
+    managedSettings: json,
+    claudeArgs,
+    ...overrides,
+  });
+}
+
+test("formatLaunchPlan shows context (repo / worktree / session / command)", () => {
+  const out = plan();
+  expect(out).toContain("repo:        me/proj");
+  expect(out).toContain("worktree:    /root/me/proj/issue-42");
+  expect(out).toContain("session-id:  sid-1");
+  expect(out).toContain("command:     /loophub-dev 42");
+});
+
+test("formatLaunchPlan summarizes the managed sandbox settings (not raw JSON)", () => {
+  const out = plan();
+  expect(out).toContain("sandbox:            enabled (fail if unavailable)");
+  expect(out).toContain("unsandboxed cmds:   denied");
+  expect(out).toContain("excluded cmds:      gh *");
+  expect(out).toContain("network domains:    api.anthropic.com, github.com, example.com (managed only)");
+  expect(out).toContain("permissions mode:   acceptEdits");
+  expect(out).toContain("filesystem denyRead:");
+  expect(out).toContain("- ~/.ssh");
+  // readable summary, never a raw one-line JSON blob
+  expect(out).not.toContain('{"sandbox"');
+});
+
+test("formatLaunchPlan reports the --permission-mode passed on the command line", () => {
+  const out = plan();
+  expect(out).toContain("--permission-mode:  acceptEdits");
+});
+
+test("formatLaunchPlan tolerates missing managed-settings fields without throwing", () => {
+  const out = formatLaunchPlan({
+    repo: "me/proj",
+    worktree: "/wt",
+    sessionId: "sid",
+    slashCommand: "/loophub-dev 1",
+    managedSettings: "{}",
+    claudeArgs: [], // no --permission-mode
+  });
+  expect(out).toContain("sandbox:            disabled");
+  expect(out).toContain("excluded cmds:      (none)");
+  expect(out).toContain("network domains:    (none)");
+  expect(out).toContain("permissions mode:   (default)");
+  expect(out).toContain("filesystem denyRead: (none)");
+  expect(out).toContain("--permission-mode:  (default)");
+});
+
+test("formatLaunchPlan strips terminal control sequences so a crafted name can't forge the plan", () => {
+  // A repo name carrying ANSI cursor-up + erase-line could overwrite the rendered settings.
+  const out = plan({ repo: "me/\x1b[2K\x1b[1Aevil", worktree: "/wt/\x07bell" });
+  expect(out).not.toContain("\x1b"); // no ESC byte survives
+  expect(out).not.toContain("\x07"); // no BEL byte survives
+  expect(out).toContain("repo:        me/evil"); // ESC sequences fully consumed, printable text remains
+  expect(out).toContain("worktree:    /wt/bell");
+});
+
+test("formatLaunchPlan handles --permission-mode flag with no value (defensive)", () => {
+  const { json } = buildManagedSettings({ repo: "me/proj" });
+  // Edge case: claudeArgs ends with --permission-mode and no value (buildClaudeArgs never does this, but formatLaunchPlan is pure).
+  const out = formatLaunchPlan({
+    repo: "me/proj",
+    worktree: "/wt",
+    sessionId: "sid",
+    slashCommand: "/loophub-dev 1",
+    managedSettings: json,
+    claudeArgs: ["--session-id", "sid", "--permission-mode"], // flag, no value
+  });
+  expect(out).toContain("--permission-mode:  (default)");
+});
+
+// ---- confirm matcher (pure) ----
+
+test("isAffirmative accepts only an explicit yes", () => {
+  for (const yes of ["y", "Y", "yes", "YES", " y ", "Yes"]) expect(isAffirmative(yes)).toBe(true);
+  for (const no of ["", "n", "no", "nope", "yeah", "ok", "1"]) expect(isAffirmative(no)).toBe(false);
 });
 
 // ---- worktree naming (pure) ----
