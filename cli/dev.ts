@@ -122,10 +122,15 @@ export function buildClaudeArgs({
   sessionId,
   managedSettings,
   slashCommand,
+  sessionName,
 }: {
   sessionId: string;
   managedSettings?: string;
   slashCommand: string;
+  // Display name for the session picker / terminal title (e.g. `#54 <issue title>`). Stripped
+  // of control characters before it reaches argv (see display()) so a crafted issue title can
+  // never inject escape sequences into the spawned terminal.
+  sessionName?: string;
 }): string[] {
   const args = [
     "--session-id",
@@ -133,6 +138,10 @@ export function buildClaudeArgs({
     "--permission-mode",
     "acceptEdits",
   ];
+  if (sessionName) {
+    const name = display(sessionName).trim();
+    if (name) args.push("--name", name);
+  }
   if (managedSettings) {
     args.push("--managed-settings", managedSettings);
   }
@@ -184,6 +193,9 @@ export function formatLaunchPlan(plan: LaunchPlan): string {
   const permVal = permIdx >= 0 && permIdx + 1 < plan.claudeArgs.length ? plan.claudeArgs[permIdx + 1] : undefined;
   const permissionMode = permVal != null ? display(permVal) : "(default)";
 
+  const nameIdx = plan.claudeArgs.indexOf("--name");
+  const nameVal = nameIdx >= 0 && nameIdx + 1 < plan.claudeArgs.length ? plan.claudeArgs[nameIdx + 1] : undefined;
+
   const lines = [
     "Review the settings to be passed to `claude` before launch:",
     "",
@@ -204,6 +216,7 @@ export function formatLaunchPlan(plan: LaunchPlan): string {
     "",
     "  Command-line settings",
     `    --permission-mode:  ${permissionMode}`,
+    ...(nameVal != null ? [`    --name:             ${display(nameVal)}`] : []),
   ];
   return lines.join("\n");
 }

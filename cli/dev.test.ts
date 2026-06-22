@@ -121,6 +121,33 @@ test("buildClaudeArgs omits --managed-settings when not provided (no-sandbox mod
   expect(args[args.length - 1]).toBe("/lh-dev 42");
 });
 
+test("buildClaudeArgs sets --name to the session name and keeps the slash command last", () => {
+  const args = buildClaudeArgs({ sessionId: "sid-1", slashCommand: "/loophub-dev 42", sessionName: "#42 Fix the bug" });
+  expect(args[args.indexOf("--name") + 1]).toBe("#42 Fix the bug");
+  expect(args[args.length - 1]).toBe("/loophub-dev 42");
+});
+
+test("buildClaudeArgs omits --name when no session name is provided", () => {
+  const args = buildClaudeArgs({ sessionId: "sid-1", slashCommand: "/loophub-dev 42" });
+  expect(args.indexOf("--name")).toBe(-1);
+});
+
+test("buildClaudeArgs strips control characters from the session name before argv", () => {
+  const args = buildClaudeArgs({
+    sessionId: "sid-1",
+    slashCommand: "/loophub-dev 42",
+    sessionName: "#42 \x1b[31mred\x1b[0m\r title\x07",
+  });
+  const name = args[args.indexOf("--name") + 1];
+  expect(name).toBe("#42 red title");
+  expect(name).not.toMatch(/[\x00-\x1f\x7f]/);
+});
+
+test("buildClaudeArgs omits --name when the session name is only control characters", () => {
+  const args = buildClaudeArgs({ sessionId: "sid-1", slashCommand: "/loophub-dev 42", sessionName: "\x1b[0m\r\x07" });
+  expect(args.indexOf("--name")).toBe(-1);
+});
+
 // ---- launch plan (pure) ----
 
 function plan(overrides: Partial<Parameters<typeof formatLaunchPlan>[0]> = {}) {

@@ -215,7 +215,10 @@ async function main() {
         fail(e.message);
       }
     }
-    const claudeArgs = buildClaudeArgs({ sessionId, managedSettings: managed, slashCommand });
+    // Set the session display name to the issue so the session picker / terminal title shows
+    // what's being worked on. buildClaudeArgs strips control chars from the title before argv.
+    const sessionName = `#${item.number} ${item.title}`;
+    const claudeArgs = buildClaudeArgs({ sessionId, managedSettings: managed, slashCommand, sessionName });
 
     // Show exactly what `claude` will receive, then launch immediately. The plan is a safety
     // artifact (what gets handed to `claude`); there is no confirmation prompt.
