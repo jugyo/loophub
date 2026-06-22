@@ -13,6 +13,6 @@
     "types": ["node"],
     "lib": ["ES2023"]
   },
-  "include": ["core", "cli", "scripts", "web/server"],
+  "include": ["core", "cli", "scripts", "web/server", "worker"],
   "exclude": ["node_modules", "dist"]
 }

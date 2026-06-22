@@ -21,6 +21,7 @@ cli/         lh コマンド（core/service を直 import、HTTP 非経由）
 web/server/  lh-web: node:http サーバ（POST /rpc, GET /events SSE）+ JSON-RPC dispatcher
              + JSON Schema 契約 + events notification（core/service を公開）+ SPA 配信
 web/         SPA（Vite + React + TanStack）: api クライアントは契約準拠 JSON-RPC
+worker/      lh-worker: events を tail し `.loophub/workflow.yml` の run をイベント駆動で実行
 ```
 
 ## JSON-RPC 契約
@@ -49,6 +50,43 @@ LAN から開きたいときだけ `LOOPHUB_HOST=0.0.0.0` を指定する。
 
 > フロントだけを触りたいときは `cd web && npm run dev`（:5173）で Vite を単体起動も可能。
 > その場合は `/rpc`・`/events` を別起動の lh-web（:8730）へ proxy する。
+
+## lh-worker（イベント駆動ランナー・v1）
+
+`lh-worker` は events テーブルを id cursor で tail する常駐プロセス。リポジトリルートの
+`.loophub/workflow.yml`（VCS 管理・可搬）を読み、`issue.opened` / `pull_request.opened` で
+`run` のシェルコマンドを cwd = 対象リポジトリの `local_path` で実行する。
+
+```yaml
+# .loophub/workflow.yml
+on:
+  issue.opened:
+    - run: ./scripts/triage.sh
+    - run: lh dev "$LH_ISSUE_NUMBER"
+  pull_request.opened:
+    - run: npm test
+```
+
+```sh
+npm run lh-worker               # events を tail（--poll-ms <ms> で間隔指定）
+```
+
+- run には `LH_EVENT_TYPE` / `LH_REPO` / `LH_ACTOR` / `LH_EVENT_PAYLOAD` と、issue/PR 系の
+  `LH_ISSUE_NUMBER` / `LH_PR_NUMBER`、PR 系の `LH_WORKTREE_PATH`（`git worktree list` を head_ref で
+  マッチさせたパス。無ければ空）を渡す。
+- 実行ごとに `workflow.run_started` / `workflow.run_completed` を events に emit（Web タイムラインに表示）、
+  stdout/stderr 全文を `~/.loophub/logs/<owner>/<repo>/<event>-<id>.log` に保存する。
+- cursor は DB ではなく `~/.loophub/worker-cursor.json` に atomic 保存。初回は `MAX(events.id)` から
+  =「今から」処理し、再起動は永続値から継続する。あるコマンドが失敗しても後続 run / 後続イベントは止めない。
+
+> **run は即終了する前提**。worker は run を直列・同期実行し、完了するまで次のイベントを処理しない。
+> 重い処理(`lh dev` 等)は run 内で外部アプリへ起動を依頼して即 return する設計。長時間ブロックする run は
+> 後続イベントを止めるため、自前でバックグラウンド化(`... &` / nohup)するか即終了させること。
+>
+> **run は worker の環境変数をそのまま継承する**。`workflow.yml` はリポジトリの VCS に入った任意シェルを
+> 実行するため、自分のシェルと同程度に信頼できるリポジトリでのみ使うこと(worker 起動時の env にある
+> token 等が run から読める)。`LH_ACTOR` / `LH_EVENT_PAYLOAD` など event 由来の値は信頼できない入力なので、
+> run 内では必ずクォート(`"$LH_ACTOR"`)し `eval` しないこと。
 
 ## CLI（`lh`）
 

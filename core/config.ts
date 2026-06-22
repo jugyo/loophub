@@ -27,6 +27,17 @@ export function worktreeRoot(): string {
   return join(configDir(), "worktrees");
 }
 
+// Worker consumer cursor file (see core/worker-cursor.ts). Override via LOOPHUB_WORKER_CURSOR;
+// default `$LOOPHUB_HOME/worker-cursor.json`. Kept out of the DB on purpose.
+export function workerCursorPath(): string {
+  return process.env.LOOPHUB_WORKER_CURSOR ?? join(configDir(), "worker-cursor.json");
+}
+
+// Directory for workflow run logs: `$LOOPHUB_HOME/logs/<owner>/<repo>/<event>-<id>.log`.
+export function logsDir(): string {
+  return join(configDir(), "logs");
+}
+
 export function baseUrl(): string {
   if (process.env.LOOPHUB_URL) return process.env.LOOPHUB_URL;
   try {
