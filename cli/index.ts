@@ -149,7 +149,7 @@ async function main() {
     const repo = await resolveRepo();
     const n = Number(issue);
     const sessionId = randomUUID();
-    const slashCommand = `/loophub-dev ${issue}`;
+    const slashCommand = `/lh-dev ${issue}`;
 
     // Validate --allow vs --sandbox flag early.
     const useSandbox = flags.sandbox === "true";

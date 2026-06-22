@@ -10,7 +10,7 @@ script symlinks them into `~/.claude/skills/`).
 | `lh-repo-add` | `skills/lh-repo-add/` | `/lh-repo-add` (register local git checkout) |
 | `lh-issue-create` | `skills/lh-issue-create/` | `/lh-issue-create` |
 | `lh-plan-to-issues` | `skills/lh-plan-to-issues/` | `/lh-plan-to-issues` |
-| `loophub-dev` | `skills/loophub-dev/` | `/loophub-dev {issue id}` (implement → PR → review loop; `lh dev` provisions the worktree) |
+| `lh-dev` | `skills/lh-dev/` | `/lh-dev {issue id}` (implement → PR → review loop; `lh dev` provisions the worktree) |
 | `lh-pr-review` | `skills/lh-pr-review/` | `/lh-pr-review {pr id}` (review → fix → re-review loop) |
 | `lh-rebase-conflict` | `skills/lh-rebase-conflict/` | `/lh-rebase-conflict {pr id}` (resolve conflicts → re-review) |
 | `lh-merge-ready` | `skills/lh-merge-ready/` | `/lh-merge-ready {pr id}` (pre-merge check; human merges) |
@@ -34,15 +34,14 @@ Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (sc
 
 ```text
 repo-add (one-time) → issue-create / plan-to-issues
-  → loophub-dev (implement → PR → review loop) → merge-ready → (human merge)
+  → lh-dev (implement → PR → review loop) → merge-ready → (human merge)
 
 rebase-conflict resolves conflicts on a PR head, then resumes pr-review.
 ```
 
-`loophub-dev` drives implementation (launched by `lh dev`, which provisions the issue worktree and
+`lh-dev` drives implementation (launched by `lh dev`, which provisions the issue worktree and
 assigns the issue); these skills cover registration, issue authoring, implementation, review, conflict
-resolution, and the pre-merge check. The `lh-*` prefix names are installed skills, while `loophub-dev`
-is a repo-external skill.
+resolution, and the pre-merge check.
 
 ## Head worktree bootstrap
 
@@ -85,7 +84,7 @@ Run the install script from this repo root — it symlinks every skill into `~/.
 Or do it by hand (`-sfn` so an existing symlink is replaced, not nested inside a directory):
 
 ```sh
-for s in lh-repo-add lh-issue-create lh-plan-to-issues loophub-dev \
+for s in lh-repo-add lh-issue-create lh-plan-to-issues lh-dev \
   lh-pr-review lh-rebase-conflict lh-merge-ready; do
   ln -sfn "$PWD/skills/$s" "$HOME/.claude/skills/$s"
 done

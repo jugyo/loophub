@@ -86,7 +86,7 @@ test("invalid --repo is rejected", () => {
 // ---- interactive launch args (pure) ----
 
 test("buildClaudeArgs starts the session in accept-edits mode", () => {
-  const args = buildClaudeArgs({ sessionId: "sid-1", managedSettings: "{}", slashCommand: "/loophub-dev 42" });
+  const args = buildClaudeArgs({ sessionId: "sid-1", managedSettings: "{}", slashCommand: "/lh-dev 42" });
   // accept-edits is passed explicitly (managed-settings defaultMode does not drive it).
   const i = args.indexOf("--permission-mode");
   expect(i).toBeGreaterThanOrEqual(0);
@@ -94,30 +94,30 @@ test("buildClaudeArgs starts the session in accept-edits mode", () => {
 });
 
 test("buildClaudeArgs carries session id, managed settings, and the slash command", () => {
-  const args = buildClaudeArgs({ sessionId: "sid-1", managedSettings: "{}", slashCommand: "/loophub-dev 42" });
+  const args = buildClaudeArgs({ sessionId: "sid-1", managedSettings: "{}", slashCommand: "/lh-dev 42" });
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
   expect(args[args.indexOf("--managed-settings") + 1]).toBe("{}");
-  expect(args[args.length - 1]).toBe("/loophub-dev 42");
+  expect(args[args.length - 1]).toBe("/lh-dev 42");
 });
 
 test("buildClaudeArgs omits --managed-settings when not provided (no-sandbox mode)", () => {
-  const args = buildClaudeArgs({ sessionId: "sid-1", slashCommand: "/loophub-dev 42" });
+  const args = buildClaudeArgs({ sessionId: "sid-1", slashCommand: "/lh-dev 42" });
   expect(args.indexOf("--managed-settings")).toBe(-1);
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
   expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
-  expect(args[args.length - 1]).toBe("/loophub-dev 42");
+  expect(args[args.length - 1]).toBe("/lh-dev 42");
 });
 
 // ---- launch plan (pure) ----
 
 function plan(overrides: Partial<Parameters<typeof formatLaunchPlan>[0]> = {}) {
   const { json } = buildManagedSettings({ repo: "me/proj", allow: "example.com" });
-  const claudeArgs = buildClaudeArgs({ sessionId: "sid-1", managedSettings: json, slashCommand: "/loophub-dev 42" });
+  const claudeArgs = buildClaudeArgs({ sessionId: "sid-1", managedSettings: json, slashCommand: "/lh-dev 42" });
   return formatLaunchPlan({
     repo: "me/proj",
     worktree: "/root/me/proj/issue-42",
     sessionId: "sid-1",
-    slashCommand: "/loophub-dev 42",
+    slashCommand: "/lh-dev 42",
     managedSettings: json,
     claudeArgs,
     ...overrides,
@@ -129,7 +129,7 @@ test("formatLaunchPlan shows context (repo / worktree / session / command)", () 
   expect(out).toContain("repo:        me/proj");
   expect(out).toContain("worktree:    /root/me/proj/issue-42");
   expect(out).toContain("session-id:  sid-1");
-  expect(out).toContain("command:     /loophub-dev 42");
+  expect(out).toContain("command:     /lh-dev 42");
 });
 
 test("formatLaunchPlan summarizes the managed sandbox settings (not raw JSON)", () => {
@@ -155,7 +155,7 @@ test("formatLaunchPlan tolerates missing managed-settings fields without throwin
     repo: "me/proj",
     worktree: "/wt",
     sessionId: "sid",
-    slashCommand: "/loophub-dev 1",
+    slashCommand: "/lh-dev 1",
     managedSettings: "{}",
     claudeArgs: [], // no --permission-mode
   });
@@ -183,7 +183,7 @@ test("formatLaunchPlan handles --permission-mode flag with no value (defensive)"
     repo: "me/proj",
     worktree: "/wt",
     sessionId: "sid",
-    slashCommand: "/loophub-dev 1",
+    slashCommand: "/lh-dev 1",
     managedSettings: json,
     claudeArgs: ["--session-id", "sid", "--permission-mode"], // flag, no value
   });

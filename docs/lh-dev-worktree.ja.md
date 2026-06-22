@@ -7,7 +7,7 @@ worktree 作成に関与せず、いきなり「自分専用のブランチが c
 
 > **一言で言うと:** `lh dev 42` が `loophub/issue-42` ブランチの worktree を
 > `~/.loophub/worktrees/<owner>/<repo>/issue-42` に作り（無ければ）、そこを cwd にして
-> `claude /loophub-dev 42` を spawn する。worktree は DB の `worktrees` テーブルで台帳管理し、
+> `claude /lh-dev 42` を spawn する。worktree は DB の `worktrees` テーブルで台帳管理し、
 > PR merge / issue close で自動掃除、再実行時は既存を再利用する。
 
 ---

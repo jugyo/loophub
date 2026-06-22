@@ -1,26 +1,26 @@
 ---
-name: loophub-dev
+name: lh-dev
 description: >-
   Implement or fix from a LoopHub issue, then run the PR review-fix loop in the same session.
-  Starts ONLY when the user explicitly runs /loophub-dev, asks to implement/fix, or LoopHub
+  Starts ONLY when the user explicitly runs /lh-dev, asks to implement/fix, or LoopHub
   dispatch/cron starts issue-dev — NOT after issue-create alone. Do not merge.
 ---
 
 # LoopHub issue dev
 
 Implement or fix per the issue, open a PR, then **by default** continue in the same session:
-**PR → `loophub-pr-review` → `loophub-merge-ready`** (human merge). **Do not merge.**
+**PR → `lh-pr-review` → `lh-merge-ready`** (human merge). **Do not merge.**
 
 ## Startup guard (read first)
 
 **Start only when implementation is explicitly requested.** Do **not** auto-start right after an issue
-creation skill (`loophub-issue-create`, `loophub-plan-to-issues`, `to-issues`).
+creation skill (`lh-issue-create`, `lh-plan-to-issues`, `to-issues`).
 
 ### OK to start (any one)
 
 | Condition | Example |
 |-----------|---------|
-| User runs `/loophub-dev <n>` | `/loophub-dev 42` |
+| User runs `/lh-dev <n>` | `/lh-dev 42` |
 | User explicitly asks to **implement / fix / start** | "implement this", "fix it", "continue implementation", "fix #42" |
 | LoopHub dispatch / cron starts issue-dev | `issue.labeled`, etc. |
 
@@ -39,7 +39,7 @@ Do not assign, create a worktree, or edit source until the user chooses implemen
 
 ## Invocation
 
-`/loophub-dev <issue id>` — take the number from the argument. If omitted, ask the user which issue
+`/lh-dev <issue id>` — take the number from the argument. If omitted, ask the user which issue
 to work on.
 
 **If the startup guard is not satisfied, stop here** — even if you know the issue number.
@@ -50,7 +50,7 @@ Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (sc
 
 | Caller | Continue? |
 |--------|-----------|
-| `loophub-issue-create` / `loophub-plan-to-issues` / `to-issues` | ❌ No auto-continue; separate explicit user request only |
+| `lh-issue-create` / `lh-plan-to-issues` / `to-issues` | ❌ No auto-continue; separate explicit user request only |
 | LoopHub dispatch / cron | ✅ Start issue-dev |
 
 ## LoopHub
@@ -270,31 +270,31 @@ Goal summary / changed files / test results / PR number / **PR URL** (Web URL fo
 **PR description written** (confirm non-empty body with Evidence via `lh pr view`)
 
 **Do not end the session here.** Step 6 is a checkpoint only — **step 7 (Review loop) is mandatory**
-unless the user said "stop at PR". Proceed immediately to `/loophub-pr-review <m>` without waiting
+unless the user said "stop at PR". Proceed immediately to `/lh-pr-review <m>` without waiting
 for another user message.
 
 ### 7. Review loop (default, same session)
 
-After creating the PR, **without ending this session**, continue with `loophub-pr-review`:
+After creating the PR, **without ending this session**, continue with `lh-pr-review`:
 
 ```text
-/loophub-pr-review <m>
+/lh-pr-review <m>
 ```
 
 Bugbot + Security review → fix on head in this session if needed → re-review until `approve`. See
-`skills/loophub-pr-review/SKILL.md`.
+`skills/lh-pr-review/SKILL.md`.
 
 Skip only if the user said "stop at PR".
 
 ### 8. merge-ready (after approve, same session)
 
-When `loophub-pr-review` returns `approve`, **without ending this session**, pre-merge check:
+When `lh-pr-review` returns `approve`, **without ending this session**, pre-merge check:
 
 ```text
-/loophub-merge-ready <m>
+/lh-merge-ready <m>
 ```
 
-See `skills/loophub-merge-ready/SKILL.md`. Human performs merge.
+See `skills/lh-merge-ready/SKILL.md`. Human performs merge.
 
 ### 9. Final output (always)
 
@@ -313,7 +313,7 @@ markdown link, on its own, so the human can click it immediately:
 ## Skill chain (full)
 
 ```text
-loophub-dev → loophub-pr-review → loophub-merge-ready → (human merge)
+lh-dev → lh-pr-review → lh-merge-ready → (human merge)
 ```
 
 ## PR creation outside this skill
@@ -323,7 +323,7 @@ If you create a LoopHub PR without running this skill (ad-hoc fix, exploratory b
 in the same session**:
 
 ```text
-/loophub-pr-review <m> → /loophub-merge-ready <m>
+/lh-pr-review <m> → /lh-merge-ready <m>
 ```
 
 Do not stop at commit or `lh pr create` alone. See `skills/README.md` § Skill chain.
