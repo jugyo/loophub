@@ -194,6 +194,7 @@ export const issues = {
       state?: string;
       kind?: "issue" | "pull" | "any";
       labels?: string[];
+      assignee_session_id?: string | null;
       page?: number;
       perPage?: number;
     } = {},
@@ -210,6 +211,9 @@ export const issues = {
         const names = S.issueLabels(row.id).map((l: any) => l.name);
         return labelsFilter.every((l) => names.includes(l));
       });
+    }
+    if (opts.assignee_session_id !== undefined && opts.assignee_session_id !== null) {
+      rows = rows.filter((row) => row.assignee_session_id === opts.assignee_session_id);
     }
     return paginate(rows, perPage, page).map((row) => issueJSON(row, r));
   },

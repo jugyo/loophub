@@ -116,6 +116,7 @@ export function listIssues(owner: string, repo: string, query = "") {
       state: sp.get("state") ?? undefined,
       kind: sp.get("kind") ?? undefined,
       labels: labels ? labels.split(",").filter(Boolean) : undefined,
+      assignee_session_id: sp.get("assignee_session_id") ?? undefined,
       perPage: sp.get("per_page") ? Number(sp.get("per_page")) : undefined,
       page: sp.get("page") ? Number(sp.get("page")) : undefined,
     }),

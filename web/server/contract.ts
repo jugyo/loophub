@@ -112,12 +112,13 @@ export const methods: Record<string, MethodDef> = {
       state: str,
       kind: { enum: ["issue", "pull", "any"] },
       labels: stringArray,
+      assignee_session_id: sid,
       page: positiveInt,
       perPage: positiveInt,
     }, ["repo"]),
     result: anyArray,
     handler: (p) =>
-      svc.issues.list(p.repo, { state: p.state, kind: p.kind, labels: p.labels, page: p.page, perPage: p.perPage }),
+      svc.issues.list(p.repo, { state: p.state, kind: p.kind, labels: p.labels, assignee_session_id: p.assignee_session_id, page: p.page, perPage: p.perPage }),
   },
   "issues/get": {
     description: "Get one issue by number.",
