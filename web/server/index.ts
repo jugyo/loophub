@@ -45,10 +45,34 @@ server.listen(port, host, () => {
   );
 });
 
+let isShuttingDown = false;
+
+const shutdown = async () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  stopTail();
+  if (vite) await vite.close();
+
+  // Close gracefully first, giving existing connections a moment to finish.
+  await new Promise<void>((resolve) => {
+    server.close(() => {});
+    // Force close any remaining connections after 100ms to prevent hanging.
+    setTimeout(() => {
+      server.closeAllConnections?.();
+      resolve();
+    }, 100);
+  });
+
+  process.exit(0);
+};
+
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
-    stopTail();
-    void vite?.close();
-    server.close(() => process.exit(0));
+    shutdown().catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`shutdown error: ${msg}`);
+      process.exit(1);
+    });
   });
 }
