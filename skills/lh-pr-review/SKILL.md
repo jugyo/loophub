@@ -318,13 +318,15 @@ Escalate scope-out or design-judgment findings without fixing.
 Repo standard (e.g. `bun test`). When the PR touches `skills/`, also run
 `bun test tests/skills-lint.test.ts`. **Green before next round.**
 
-### B.4 Commit and sync
+### B.4 Commit
 
 ```sh
 git add <paths>
 git commit -m "<what changed, not why>"
-lh sync   # when LoopHub reads local git
 ```
+
+LoopHub reads local git directly; lh-web sweeps open-PR head SHAs and auto-fires
+`pull_request.updated`, so no manual sync is needed.
 
 Optional visibility:
 

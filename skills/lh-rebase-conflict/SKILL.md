@@ -1,7 +1,7 @@
 ---
 name: lh-rebase-conflict
 description: >-
-  Resolve merge conflicts on a LoopHub PR head branch in a worktree, run tests, commit, lh sync, and
+  Resolve merge conflicts on a LoopHub PR head branch in a worktree, run tests, commit, and
   hand off to lh-pr-review. Use when the user runs /lh-rebase-conflict {pr id}, when
   pull_request.merge_conflict events fire, or when babysit/dispatch routes conflict resolution. Does
   not merge.
@@ -9,7 +9,7 @@ description: >-
 
 # LoopHub rebase conflict
 
-Resolve **merge conflicts on a worktree** after main moves → test → commit → `lh sync` → resume
+Resolve **merge conflicts on a worktree** after main moves → test → commit → resume
 `lh-pr-review` if needed. **Do not merge.**
 
 ## Invocation
@@ -122,15 +122,10 @@ git rebase --continue   # or git commit for merge
 
 Repo standard (e.g. `bun test`). **Green before proceeding**, same as before PR.
 
-### 6. Sync
+### 6. Report and resume review
 
-LoopHub reads the same `.git` directly (no push):
-
-```sh
-lh sync
-```
-
-### 7. Report and resume review
+LoopHub reads the same `.git` directly (no push); lh-web sweeps open-PR head SHAs and
+auto-fires `pull_request.updated`, so no manual sync is needed.
 
 ```sh
 lh pr comment <m> --body "Conflict resolution complete. Please re-review." --actor impl-bot --repo <repo>
@@ -153,11 +148,10 @@ Skip pr-review only if user said "stop at rebase".
 |------|-----------|-----------------|
 | worktree location | `.worktrees/issue-<n>` | same, or existing head worktree |
 | rebase command | `git rebase main` | same |
-| sync | `lh sync` | same |
 | merge | do not | do not |
 | review | pr-review after PR create | pr-review after resolution |
 
-If conflict occurs during an issue-dev session, apply steps 2–7 from this skill.
+If conflict occurs during an issue-dev session, apply steps 2–6 from this skill.
 
 ## Prohibited
 

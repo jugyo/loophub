@@ -330,7 +330,8 @@ Do not stop at commit or `lh pr create` alone. See `skills/README.md` § Skill c
 
 ## Conflicts
 
-On the worktree head: `git rebase main` (or `merge main`) → commit. Refresh immediately: `lh sync`.
+On the worktree head: `git rebase main` (or `merge main`) → commit. lh-web sweeps open-PR head
+SHAs and auto-fires `pull_request.updated`, so no manual sync is needed.
 
 ## Prohibited
 

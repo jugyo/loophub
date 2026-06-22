@@ -12,7 +12,7 @@ script symlinks them into `~/.claude/skills/`).
 | `lh-plan-to-issues` | `skills/lh-plan-to-issues/` | `/lh-plan-to-issues` |
 | `loophub-dev` | `skills/loophub-dev/` | `/loophub-dev {issue id}` (implement → PR → review loop; `lh dev` provisions the worktree) |
 | `lh-pr-review` | `skills/lh-pr-review/` | `/lh-pr-review {pr id}` (review → fix → re-review loop) |
-| `lh-rebase-conflict` | `skills/lh-rebase-conflict/` | `/lh-rebase-conflict {pr id}` (resolve conflicts → sync) |
+| `lh-rebase-conflict` | `skills/lh-rebase-conflict/` | `/lh-rebase-conflict {pr id}` (resolve conflicts → re-review) |
 | `lh-merge-ready` | `skills/lh-merge-ready/` | `/lh-merge-ready {pr id}` (pre-merge check; human merges) |
 
 Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
