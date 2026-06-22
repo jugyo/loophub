@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { configDir, worktreeRoot } from "../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../core/git.ts";
 import {
@@ -75,6 +76,10 @@ async function writeSession(): Promise<string> {
 function fail(message: string): never {
   console.error(message);
   process.exit(1);
+}
+
+function display(v: string): string {
+  return stripVTControlCharacters(v).replace(/[\x00-\x1f\x7f]/g, "");
 }
 
 // Run a service call, translating ServiceError (status + message) into the CLI error line.
@@ -189,6 +194,27 @@ async function main() {
       });
     } catch (e: any) {
       fail(e.message);
+    }
+
+    // Display issue content before the launch plan so the user sees what they're about to work on.
+    {
+      let line = `#${item.number} ${display(item.title)} [${item.state}] @${display(item.user.login)}`;
+      if (item.assignee) {
+        const assigneeName = display(item.assignee.name || item.assignee.agent || "");
+        line += ` (assigned: @${assigneeName})`;
+      }
+      console.error(line);
+      if (item.labels && item.labels.length > 0) {
+        const labelNames = item.labels.map((l: any) => display(l.name)).join(", ");
+        console.error(`labels: ${labelNames}`);
+      }
+      if (item.linked_pull_request) {
+        const pr = item.linked_pull_request;
+        console.error(`linked PR #${pr.number} (${pr.merged ? "merged" : display(pr.state)})`);
+      }
+      console.error();
+      console.error(display(item.body));
+      console.error();
     }
 
     // Build the sandbox managed-settings only when --sandbox is enabled.
