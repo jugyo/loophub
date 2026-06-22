@@ -60,6 +60,27 @@ export async function isGitRepo(repoPath: string): Promise<boolean> {
   return r.code === 0;
 }
 
+// Absolute path to the shared (common) git directory. For a linked worktree this is the
+// primary checkout's `.git` — where objects/refs/logs and the per-worktree gitdir live —
+// not the worktree's `.git` pointer file. `lh dev` needs it to grant the sandbox write
+// access to the real commit target (see cli/dev.ts buildManagedSettings).
+export async function gitCommonDir(repoPath: string): Promise<string> {
+  const r = await git(repoPath, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  const p = r.stdout.trim();
+  if (r.code !== 0 || !p) throw new Error(`cannot resolve git common dir for "${repoPath}": ${r.stderr.trim()}`);
+  return p;
+}
+
+// Absolute path to *this* checkout's git directory. For a linked worktree this is the
+// per-worktree `<commonDir>/worktrees/<id>` (where its index, HEAD and per-worktree reflog
+// live), not the shared common dir. `lh dev` allows the sandbox to write here.
+export async function gitDirOf(repoPath: string): Promise<string> {
+  const r = await git(repoPath, ["rev-parse", "--path-format=absolute", "--git-dir"]);
+  const p = r.stdout.trim();
+  if (r.code !== 0 || !p) throw new Error(`cannot resolve git dir for "${repoPath}": ${r.stderr.trim()}`);
+  return p;
+}
+
 export interface DiffFile {
   filename: string;
   status: string; // modified | added | removed | renamed

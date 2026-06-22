@@ -4,7 +4,17 @@ import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { join, resolve } from "node:path";
 import { configDir, worktreeRoot } from "../core/config.ts";
-import { buildClaudeArgs, buildManagedSettings, formatLaunchPlan, isAffirmative, provisionWorktree } from "./dev.ts";
+import { gitCommonDir, gitDirOf } from "../core/git.ts";
+import {
+  buildClaudeArgs,
+  buildManagedSettings,
+  formatLaunchPlan,
+  isAffirmative,
+  provisionWorktree,
+  resolveAllowedDomains,
+  validateRepo,
+  worktreeBranch,
+} from "./dev.ts";
 
 // Lazily load the service layer (which opens the DB at import time) so DB-free commands
 // like `lh` (usage) never touch ~/.loophub.
@@ -129,13 +139,20 @@ async function main() {
     const repo = await resolveRepo();
     const n = Number(issue);
     const sessionId = randomUUID();
-    let managed: string;
+    const slashCommand = `/loophub-dev ${issue}`;
+
+    // Validate --repo/--allow up front, before any side effects (provisioning a worktree), so
+    // a bad flag fails fast without leaving a stray worktree behind.
+    let allowedDomains: string[];
     try {
-      ({ json: managed } = buildManagedSettings({ repo, allow: flags.allow }));
+      validateRepo(repo);
+      allowedDomains = resolveAllowedDomains(flags.allow);
     } catch (e: any) {
       fail(e.message);
     }
-    const slashCommand = `/loophub-dev ${issue}`;
+    // Sandbox context (repo + allowed domains) always to stderr.
+    console.error(`repo: ${repo}`);
+    console.error(`allowed-domains: ${allowedDomains.join(", ")}`);
 
     // Resolve the repo record + issue kind, then provision the worktree (outside the sandbox).
     const s = await svc();
@@ -152,6 +169,21 @@ async function main() {
         issue: n,
         headRef,
       });
+    } catch (e: any) {
+      fail(e.message);
+    }
+
+    // Build the sandbox managed-settings now that the worktree exists: grant write access to
+    // exactly the git paths a commit on this branch needs (issue #28).
+    let managed: string;
+    try {
+      const [gitDir, worktreeGitDir] = await Promise.all([gitCommonDir(worktree), gitDirOf(worktree)]);
+      const branch = headRef ?? worktreeBranch(n);
+      ({ json: managed } = buildManagedSettings({
+        repo,
+        allow: flags.allow,
+        git: { gitDir, worktreeGitDir, branch },
+      }));
     } catch (e: any) {
       fail(e.message);
     }

@@ -25,28 +25,86 @@ export function validateDomain(raw: string): string {
   return d;
 }
 
-export function buildManagedSettings({ repo, allow }: { repo: string; allow?: string }): {
-  json: string;
-  allowedDomains: string[];
-} {
+export function validateRepo(repo: string): void {
   if (repo && !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo)) {
     throw new Error(`invalid --repo "${repo}" (expected owner/name)`);
   }
+}
+
+// Parse + validate the comma-separated `--allow` list and union it with the defaults.
+// Exported so the CLI can validate up front (fail fast before provisioning a worktree).
+export function resolveAllowedDomains(allow?: string): string[] {
   const extra = (allow ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
     .map(validateDomain);
-  const allowedDomains = [...new Set([...SANDBOX_DEFAULT_ALLOWED_DOMAINS, ...extra])];
+  return [...new Set([...SANDBOX_DEFAULT_ALLOWED_DOMAINS, ...extra])];
+}
+
+// The git paths a `git add` / `git commit` from inside a linked worktree must be able to
+// write. A worktree's `.git` is a pointer file; the real targets live in the *shared*
+// common dir (objects/refs/logs) and the per-worktree gitdir — both outside the sandbox's
+// default cwd write-allow. We grant exactly these, scoping refs to the issue branch, so the
+// sandboxed agent can commit its own branch but cannot rewrite other refs (e.g. `main`),
+// touch sibling worktrees, or reach `hooks`/`config` (all simply absent from the allow-list).
+export interface WorktreeGitPaths {
+  gitDir: string; // shared common dir (e.g. <repo>/.git) — core/git.ts gitCommonDir()
+  worktreeGitDir: string; // this worktree's dir (<gitDir>/worktrees/<id>) — gitDirOf()
+  branch: string | null; // checked-out branch; null when detached (no shared ref to write)
+}
+
+function gitWriteAllowList({ gitDir, worktreeGitDir, branch }: WorktreeGitPaths): string[] {
+  const allow = [
+    join(gitDir, "objects"), // new loose objects (and their tmp_obj_* / fan-out dirs)
+    worktreeGitDir, // index(.lock), HEAD, ORIG_HEAD, COMMIT_EDITMSG, logs/HEAD
+  ];
+  if (branch) {
+    const ref = join(gitDir, "refs", "heads", branch);
+    allow.push(ref, `${ref}.lock`); // loose ref update writes <ref>.lock then renames
+    allow.push(join(gitDir, "logs", "refs", "heads", branch)); // branch reflog (appended)
+  }
+  return allow;
+}
+
+export function buildManagedSettings({
+  repo,
+  allow,
+  git,
+}: {
+  repo: string;
+  allow?: string;
+  // When provided, grant the sandbox write access to exactly the git paths a worktree commit
+  // needs (see gitWriteAllowList). Omitted in non-worktree contexts (and in pure unit tests).
+  git?: WorktreeGitPaths;
+}): {
+  json: string;
+  allowedDomains: string[];
+} {
+  validateRepo(repo);
+  const allowedDomains = resolveAllowedDomains(allow);
+
+  const filesystem: {
+    denyRead: string[];
+    allowWrite?: string[];
+  } = {
+    denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.netrc", "~/.config/gh", "~/.kube", "~/.docker/config.json"],
+  };
+  if (git) {
+    filesystem.allowWrite = gitWriteAllowList(git);
+    // `hooks`/`config`/`packed-refs`/other refs/other worktrees are not in the allow-list,
+    // so they are already unwritable. The per-worktree gitdir's `config.worktree` is writable,
+    // but only recognized by git when `extensions.worktreeConfig` is explicitly enabled in
+    // the shared config (which is denied), so this is not a practical risk in default setups.
+  }
+
   const json = JSON.stringify({
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       excludedCommands: ["gh *"],
-      filesystem: {
-        denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.netrc", "~/.config/gh", "~/.kube", "~/.docker/config.json"],
-      },
+      filesystem,
       network: { allowedDomains, allowManagedDomainsOnly: true },
     },
     permissions: { defaultMode: "acceptEdits" },

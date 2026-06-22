@@ -3,7 +3,10 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { git, worktreeList, branchExists } from "../core/git.ts";
+import { readdirSync, statSync } from "node:fs";
+import { realpathSync } from "node:fs";
+import { sep } from "node:path";
+import { git, worktreeList, branchExists, gitCommonDir, gitDirOf } from "../core/git.ts";
 import {
   buildClaudeArgs,
   buildManagedSettings,
@@ -25,6 +28,45 @@ test("buildManagedSettings emits a sandboxed config with the default allow-list"
   expect(s.sandbox.allowUnsandboxedCommands).toBe(false);
   expect(s.sandbox.network.allowManagedDomainsOnly).toBe(true);
   expect(s.sandbox.network.allowedDomains).toEqual(["api.anthropic.com", "github.com"]);
+});
+
+test("git paths produce a minimal branch-scoped write allow-list (not the whole gitdir)", () => {
+  const { json } = buildManagedSettings({
+    repo: "me/proj",
+    git: { gitDir: "/repo/.git", worktreeGitDir: "/repo/.git/worktrees/issue-7", branch: "loophub/issue-7" },
+  });
+  const fs = JSON.parse(json).sandbox.filesystem;
+  expect(fs.allowWrite).toEqual([
+    "/repo/.git/objects",
+    "/repo/.git/worktrees/issue-7",
+    "/repo/.git/refs/heads/loophub/issue-7",
+    "/repo/.git/refs/heads/loophub/issue-7.lock",
+    "/repo/.git/logs/refs/heads/loophub/issue-7",
+  ]);
+  // The whole gitdir, other refs (main), hooks and config are NOT writable.
+  expect(fs.allowWrite).not.toContain("/repo/.git");
+  expect(fs.allowWrite.some((p: string) => p.includes("refs/heads/main"))).toBe(false);
+  expect(fs.allowWrite.some((p: string) => p.endsWith("/hooks") || p.endsWith("/config"))).toBe(false);
+  // denyWrite should not be present.
+  expect(fs.denyWrite).toBeUndefined();
+  // denyRead is unchanged by the gitdir grant.
+  expect(fs.denyRead).toContain("~/.ssh");
+});
+
+test("a detached worktree (no branch) grants no shared ref writes", () => {
+  const { json } = buildManagedSettings({
+    repo: "me/proj",
+    git: { gitDir: "/repo/.git", worktreeGitDir: "/repo/.git/worktrees/x", branch: null },
+  });
+  const fs = JSON.parse(json).sandbox.filesystem;
+  expect(fs.allowWrite).toEqual(["/repo/.git/objects", "/repo/.git/worktrees/x"]);
+});
+
+test("without git paths the filesystem config carries no write allow-list", () => {
+  const { json } = buildManagedSettings({ repo: "me/proj" });
+  const fs = JSON.parse(json).sandbox.filesystem;
+  expect(fs.allowWrite).toBeUndefined();
+  expect(fs.denyWrite).toBeUndefined();
 });
 
 test("--allow unions validated domains into the proxy allow-list", () => {
@@ -233,6 +275,76 @@ test("checks out an existing head branch for a PR (kind=pull) without creating a
   const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("issue-9"));
   expect(wt?.branch).toBe("feature-x");
   expect(await branchExists(repo, "loophub/issue-9")).toBe(false);
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+// ---- sandbox write-allow sufficiency + confinement (issue #28) ----
+//
+// A linked worktree's commit writes into the shared common dir and the per-worktree gitdir.
+// This proves the *minimal* allow-list is both sufficient and tight: (a) every path a real
+// `git add` + `git commit` writes is covered by the allow-list and not carved out by deny,
+// (b) the list does not grant the whole gitdir, and (c) other refs (`main`), hooks, config
+// and per-worktree config.worktree are not net-writable.
+function walkFiles(dir: string, mtimes = new Map<string, number>()): Map<string, number> {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) walkFiles(p, mtimes);
+    else if (e.isFile()) mtimes.set(p, statSync(p).mtimeMs);
+  }
+  return mtimes;
+}
+
+function isWithin(child: string, parent: string): boolean {
+  // Lexical containment (paths may not exist, e.g. transient lock files), realpath'd when possible.
+  const c = existsSync(child) ? realpathSync(child) : child;
+  const root = existsSync(parent) ? realpathSync(parent) : parent;
+  return c === root || c.startsWith(root + sep);
+}
+
+function netWritable(p: string, allow: string[], deny: string[] = []): boolean {
+  return allow.some((a) => isWithin(p, a)) && !deny.some((d) => isWithin(p, d));
+}
+
+test("worktree commit writes are all covered by the minimal allow-list, which excludes main/hooks/config", async () => {
+  const repo = await makeRepo();
+  const root = tmpRoot();
+  const worktree = await provision(repo, root, 28);
+
+  // The worktree's shared gitdir is the primary checkout's `.git`; the per-worktree dir is its child.
+  const gitDir = await gitCommonDir(worktree);
+  const worktreeGitDir = await gitDirOf(worktree);
+  expect(isWithin(gitDir, join(repo, ".git"))).toBe(true);
+  expect(isWithin(worktreeGitDir, gitDir)).toBe(true);
+  expect(await gitCommonDir(repo)).toBe(gitDir);
+
+  const { json } = buildManagedSettings({
+    repo: "me/proj",
+    git: { gitDir, worktreeGitDir, branch: "loophub/issue-28" },
+  });
+  const fs = JSON.parse(json).sandbox.filesystem;
+  const allow: string[] = fs.allowWrite;
+  const deny: string[] = fs.denyWrite;
+
+  // Snapshot the gitdir, then make a real commit from inside the worktree.
+  const before = walkFiles(gitDir);
+  writeFileSync(join(worktree, "f.txt"), "changed\n");
+  expect((await git(worktree, ["add", "-A"])).code).toBe(0);
+  expect((await git(worktree, ["commit", "-qm", "wt commit"])).code).toBe(0);
+
+  // Every newly written / modified file is net-writable under the allow-list (sufficiency).
+  const after = walkFiles(gitDir);
+  const written = [...after].filter(([p, m]) => before.get(p) !== m).map(([p]) => p);
+  expect(written.length).toBeGreaterThan(0); // the commit really touched the gitdir
+  for (const p of written) expect(netWritable(p, allow, deny)).toBe(true);
+
+  // Confinement: the dangerous paths are NOT net-writable.
+  expect(netWritable(gitDir, allow, deny)).toBe(false); // not the whole gitdir
+  expect(netWritable(join(gitDir, "refs/heads/main"), allow, deny)).toBe(false);
+  expect(netWritable(join(gitDir, "hooks/pre-commit"), allow, deny)).toBe(false);
+  expect(netWritable(join(gitDir, "config"), allow, deny)).toBe(false);
+  expect(netWritable(join(gitDir, "packed-refs"), allow, deny)).toBe(false);
+
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
