@@ -155,20 +155,19 @@ After creation:
 1. Report issue number, title, and labels
 2. Show the **issue URL** (Web URL format above) as a markdown link
 3. **Stop** — skill work is complete at this point
-4. Do **not** start implementation unless the user asked for it. Optional guidance only:
+4. Do **not** start implementation on your own. The user runs `lh dev <issue-id>` themselves
+   in a shell to begin implementation; no prompting from this skill is needed. (Only implement
+   in-skill if the user explicitly asked to both create and implement in the same message.)
+
+## Follow-on work (user-driven)
 
 ```text
-To implement: start implementation on issue <n> (a separate request)
+lh-issue-create → [stop] → user runs `lh dev <issue-id>` in a shell → lh-pr-review → ...
 ```
 
-## Follow-on work (user must ask explicitly)
-
-```text
-lh-issue-create → [stop] → (separate request) implementation → lh-pr-review → ...
-```
-
-Do **not** auto-chain to implementation. Only start implementing if the user asked to both
-create and implement in the same message.
+Do **not** auto-chain to implementation. After creating the issue, the user starts
+implementation themselves by running `lh dev <issue-id>` in a shell. Only implement inside
+this skill if the user explicitly asked to both create and implement in the same message.
 
 ## Prohibited
 
