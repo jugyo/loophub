@@ -152,18 +152,18 @@ function ConfirmArchiveDialog({
         </h2>
         <p className="mt-3 text-sm text-muted-foreground">
           {archived
-            ? "アーカイブを解除すると、このリポジトリは再びサイドバーの一覧に表示されます。"
-            : "アーカイブするとサイドバーの一覧から外れます。いつでも解除できます。"}
+            ? "Unarchiving this repository makes it appear in the sidebar list again."
+            : "Archiving removes this repository from the sidebar list. You can unarchive it anytime."}
         </p>
         {error ? (
           <p className="mt-3 text-sm text-destructive">{error}</p>
         ) : null}
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="secondary" onClick={onCancel} disabled={pending}>
-            キャンセル
+            Cancel
           </Button>
           <Button onClick={onConfirm} disabled={pending}>
-            {pending ? "実行中…" : action}
+            {pending ? "Working…" : action}
           </Button>
         </div>
       </div>
