@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getDashboardOverview, listIssues, listPulls } from "@/api/client";
 import { queryKeys } from "./keys";
 
-/** Max items per dashboard section (DESIGN.md: each list ~20, then "see all"). */
+/** Max items per dashboard section (DESIGN.md § Dashboard sections: each list ~20, then "see all"). */
 export const SECTION_LIMIT = 20;
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;

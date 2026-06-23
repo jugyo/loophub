@@ -1,5 +1,5 @@
 // Breadcrumb skeleton for the app shell. Renders path segments only; the rich
-// dropdown breadcrumb from DESIGN.md is out of scope (issue #149).
+// dropdown breadcrumb from DESIGN.md § Breadcrumbs is out of scope (issue #149).
 
 import { Link, useRouterState } from "@tanstack/react-router";
 import {

@@ -1,6 +1,7 @@
 // Derives breadcrumb segments from the current pathname. Pure + dependency-free
 // so it is unit-testable without a router. Dropdowns / rich labels are out of
-// scope for the app shell (issue #149); this returns plain label+href segments.
+// scope for the app shell (DESIGN.md § Breadcrumbs, issue #149); this returns
+// plain label+href segments.
 
 export interface Crumb {
   label: string;

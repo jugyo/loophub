@@ -1,6 +1,6 @@
 // Repo dashboard body (/r/:owner/:repo). Renders the "now" sections from
-// DESIGN.md — Open PRs, Open Issues — each capped at SECTION_LIMIT with a
-// "see all" link to the dedicated list view. Lists are TanStack Query backed
+// DESIGN.md § Dashboard sections — Open PRs, Open Issues — each capped at
+// SECTION_LIMIT with a "see all" link to the dedicated list view. Lists are TanStack Query backed
 // and refetch on SSE (root.tsx + event-keys).
 
 import { CreateIssueButton } from "@/components/create-issue-button";
