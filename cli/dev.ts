@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { branchExists, worktreeAdd, worktreeList } from "../core/git.ts";
@@ -282,6 +282,17 @@ export interface ProvisionInput {
   headRef: string | null; // non-null => kind=pull; check out this existing branch
 }
 
+// `.claude/` (settings.json / settings.local.json) is usually untracked / gitignored, so a
+// worktree built from the committed tree lacks it — project/local permission rules go missing
+// in the Claude session `lh dev` launches. Mirror it from the primary checkout. Idempotent and
+// run on every provision (including worktree reuse) so the copy stays current; skipped silently
+// when the primary has no `.claude/`. Untracked at the destination too, so nothing leaks into PRs.
+function syncClaudeDir(repoPath: string, worktreePath: string): void {
+  const src = join(repoPath, ".claude");
+  if (!existsSync(src)) return;
+  cpSync(src, join(worktreePath, ".claude"), { recursive: true });
+}
+
 // Ensure a worktree for the issue exists and return its path. Idempotent: an existing
 // worktree at the deterministic path is reused as-is.
 export async function provisionWorktree(
@@ -294,38 +305,45 @@ export async function provisionWorktree(
   // Reuse from disk truth: a registered worktree already at this path wins. `git worktree
   // list` canonicalizes paths (e.g. /var → /private/var on macOS), so compare real paths.
   const existing = await worktreeList(repoPath);
-  if (existing.some((w) => canonical(w.path) === canonical(path))) return path;
+  const provisioned = existing.some(
+    (w) => canonical(w.path) === canonical(path),
+  );
 
-  // Path occupied but not a git worktree → refuse to silently overwrite.
-  if (existsSync(path)) {
-    throw new Error(`worktree path exists but is not a git worktree: ${path}`);
+  if (!provisioned) {
+    // Path occupied but not a git worktree → refuse to silently overwrite.
+    if (existsSync(path)) {
+      throw new Error(
+        `worktree path exists but is not a git worktree: ${path}`,
+      );
+    }
+
+    mkdirSync(dirname(path), { recursive: true });
+
+    if (headRef) {
+      // PR (kind=pull): no new branch — check out the existing head branch.
+      await worktreeAdd(repoPath, path, headRef, defaultBranch, {
+        existingBranch: true,
+      });
+    } else {
+      const branch = worktreeBranch(issue);
+      if (await branchExists(repoPath, branch)) {
+        // Branch survives but its worktree was removed → re-attach without -b.
+        await worktreeAdd(repoPath, path, branch, defaultBranch, {
+          existingBranch: true,
+        });
+      } else {
+        // New branch off the local default branch's current commit (no fetch).
+        if (!(await branchExists(repoPath, defaultBranch))) {
+          throw new Error(
+            `cannot resolve default branch "${defaultBranch}" (no commits?)`,
+          );
+        }
+        await worktreeAdd(repoPath, path, branch, defaultBranch);
+      }
+    }
   }
 
-  mkdirSync(dirname(path), { recursive: true });
-
-  if (headRef) {
-    // PR (kind=pull): no new branch — check out the existing head branch.
-    await worktreeAdd(repoPath, path, headRef, defaultBranch, {
-      existingBranch: true,
-    });
-    return path;
-  }
-
-  const branch = worktreeBranch(issue);
-  if (await branchExists(repoPath, branch)) {
-    // Branch survives but its worktree was removed → re-attach without -b.
-    await worktreeAdd(repoPath, path, branch, defaultBranch, {
-      existingBranch: true,
-    });
-    return path;
-  }
-
-  // New branch off the local default branch's current commit (no fetch).
-  if (!(await branchExists(repoPath, defaultBranch))) {
-    throw new Error(
-      `cannot resolve default branch "${defaultBranch}" (no commits?)`,
-    );
-  }
-  await worktreeAdd(repoPath, path, branch, defaultBranch);
+  // Sync on every provision so reused worktrees pick up the latest settings too.
+  syncClaudeDir(repoPath, path);
   return path;
 }

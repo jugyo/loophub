@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync,
@@ -410,6 +411,50 @@ test("checks out an existing head branch for a PR (kind=pull) without creating a
   const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("issue-9"));
   expect(wt?.branch).toBe("feature-x");
   expect(await branchExists(repo, "loophub/issue-9")).toBe(false);
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("copies the primary checkout's untracked .claude/ into a fresh worktree", async () => {
+  const repo = await makeRepo();
+  mkdirSync(join(repo, ".claude"), { recursive: true });
+  writeFileSync(join(repo, ".claude/settings.json"), `{"permissions":{}}`);
+  writeFileSync(join(repo, ".claude/settings.local.json"), `{"local":true}`);
+  const root = tmpRoot();
+  const path = await provision(repo, root, 7);
+  // .claude/ is untracked, absent from the committed tree the worktree is built from,
+  // so its presence here proves the post-provision copy ran.
+  expect(existsSync(join(path, ".claude/settings.json"))).toBe(true);
+  expect(existsSync(join(path, ".claude/settings.local.json"))).toBe(true);
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("re-syncs .claude/ on worktree reuse, picking up the latest content", async () => {
+  const repo = await makeRepo();
+  mkdirSync(join(repo, ".claude"), { recursive: true });
+  writeFileSync(join(repo, ".claude/settings.json"), `{"v":1}`);
+  const root = tmpRoot();
+  const a = await provision(repo, root, 7);
+  expect(readFileSync(join(a, ".claude/settings.json"), "utf8")).toBe(
+    `{"v":1}`,
+  );
+  // Mutate the primary, re-provision (idempotent reuse path), expect the copy refreshed.
+  writeFileSync(join(repo, ".claude/settings.json"), `{"v":2}`);
+  const b = await provision(repo, root, 7);
+  expect(b).toBe(a);
+  expect(readFileSync(join(b, ".claude/settings.json"), "utf8")).toBe(
+    `{"v":2}`,
+  );
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("skips the .claude/ copy without error when the primary has none", async () => {
+  const repo = await makeRepo();
+  const root = tmpRoot();
+  const path = await provision(repo, root, 7);
+  expect(existsSync(join(path, ".claude"))).toBe(false);
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
