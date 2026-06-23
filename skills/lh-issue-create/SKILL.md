@@ -159,10 +159,17 @@ After creation:
    in a shell to begin implementation; no prompting from this skill is needed. (Only implement
    in-skill if the user explicitly asked to both create and implement in the same message.)
 
+   For unattended (AFK) runs, recommend `--sandbox` — only then does `lh dev` enable auto mode
+   (`acceptEdits`); without it the session uses Claude's normal approval mode:
+
+   ```sh
+   lh dev <issue-id> --sandbox
+   ```
+
 ## Follow-on work (user-driven)
 
 ```text
-lh-issue-create → [stop] → user runs `lh dev <issue-id>` in a shell → lh-pr-review → ...
+lh-issue-create → [stop] → user runs `lh dev <issue-id> --sandbox` in a shell → lh-pr-review → ...
 ```
 
 Do **not** auto-chain to implementation. After creating the issue, the user starts

@@ -173,6 +173,17 @@ cwd とそのサブ + `$TMPDIR` のみ）。そして **linked worktree のケ�
 `.git/hooks` `.git/config` の write 拒否は健全な制約（エージェントが repo の hook/config を
 書き換えられない）。既存 hook の **実行・読み取りは可**なので pre-commit 等は動く。
 
+### auto mode（acceptEdits）は `--sandbox` 限定
+
+- `lh dev` は **`--sandbox` を付けた時だけ** `--permission-mode acceptEdits`（auto mode）を
+  起動引数に付与する。`--sandbox` なしの起動は Claude の**通常承認モード**（人間が各操作を承認）。
+- 理由: auto mode を sandbox の保護（`denyRead` / git write allow-list / network 制限）と
+  **結合**し、「sandbox 無しの auto mode」= 承認の番人不在で無人編集が進む穴を塞ぐため。
+- 実装は `cli/dev.ts` の `buildClaudeArgs`：managed-settings（= `--sandbox` 指定時のみ生成）が
+  あるときだけ acceptEdits を付ける。
+- **将来目標**: `--sandbox` を既定にする（別 issue。本変更では既定化しない）。既定化されれば
+  無人実行は常に sandbox + auto mode になる。
+
 ### allow-list 化について
 
 - **write は既に allow-list**（上記）。「allow-list に切り替える」対象は write には**残っていない**。

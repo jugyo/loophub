@@ -147,16 +147,25 @@ test("invalid --repo is rejected", () => {
 
 // ---- interactive launch args (pure) ----
 
-test("buildClaudeArgs starts the session in accept-edits mode", () => {
-  const args = buildClaudeArgs({
+test("buildClaudeArgs adds accept-edits only when sandbox managed-settings are present", () => {
+  // --sandbox → managed-settings present → auto mode passed explicitly (managed-settings
+  // defaultMode does not drive the live interactive mode).
+  const sandboxed = buildClaudeArgs({
     sessionId: "sid-1",
     managedSettings: "{}",
     slashCommand: "/lh-dev 42",
   });
-  // accept-edits is passed explicitly (managed-settings defaultMode does not drive it).
-  const i = args.indexOf("--permission-mode");
+  const i = sandboxed.indexOf("--permission-mode");
   expect(i).toBeGreaterThanOrEqual(0);
-  expect(args[i + 1]).toBe("acceptEdits");
+  expect(sandboxed[i + 1]).toBe("acceptEdits");
+
+  // No --sandbox → no managed-settings → no --permission-mode (Claude's normal approval mode),
+  // so an unattended session never auto-edits without the sandbox guard rails.
+  const plain = buildClaudeArgs({
+    sessionId: "sid-1",
+    slashCommand: "/lh-dev 42",
+  });
+  expect(plain.indexOf("--permission-mode")).toBe(-1);
 });
 
 test("buildClaudeArgs carries session id, managed settings, and the slash command", () => {
@@ -177,7 +186,8 @@ test("buildClaudeArgs omits --managed-settings when not provided (no-sandbox mod
   });
   expect(args.indexOf("--managed-settings")).toBe(-1);
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
-  expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
+  // No sandbox → no auto mode.
+  expect(args.indexOf("--permission-mode")).toBe(-1);
   expect(args[args.length - 1]).toBe("/lh-dev 42");
 });
 
@@ -268,6 +278,26 @@ test("formatLaunchPlan summarizes the managed sandbox settings (not raw JSON)", 
 test("formatLaunchPlan reports the --permission-mode passed on the command line", () => {
   const out = plan();
   expect(out).toContain("--permission-mode:  acceptEdits");
+});
+
+test("formatLaunchPlan shows no permission mode for a no-sandbox launch", () => {
+  // No --sandbox: managed-settings empty and buildClaudeArgs omits --permission-mode, so the
+  // plan must consistently report both as (default) — Claude's normal approval mode.
+  const claudeArgs = buildClaudeArgs({
+    sessionId: "sid-1",
+    slashCommand: "/lh-dev 42",
+  });
+  const out = formatLaunchPlan({
+    repo: "me/proj",
+    worktree: "/root/me/proj/issue-42",
+    sessionId: "sid-1",
+    slashCommand: "/lh-dev 42",
+    managedSettings: "{}",
+    claudeArgs,
+  });
+  expect(out).toContain("sandbox:            disabled");
+  expect(out).toContain("permissions mode:   (default)");
+  expect(out).toContain("--permission-mode:  (default)");
 });
 
 test("formatLaunchPlan tolerates missing managed-settings fields without throwing", () => {

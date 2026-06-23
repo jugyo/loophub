@@ -132,10 +132,13 @@ export function buildManagedSettings({
 
 // ---- interactive launch args ----
 //
-// Build the `claude` argv for the interactive dev session. Start already in accept-edits
-// mode: the managed-settings `defaultMode: acceptEdits` does not drive the live interactive
-// permission mode, so `--permission-mode acceptEdits` must be passed explicitly. Centralized
-// here so the verbose `exec:` line and the real spawn share one source of truth.
+// Build the `claude` argv for the interactive dev session. Auto mode (accept-edits) is coupled
+// to the sandbox: `--permission-mode acceptEdits` is added only when managed sandbox settings
+// are present (i.e. `--sandbox`). Without the sandbox there is no managed-settings, so the
+// session starts in Claude's normal approval mode — never unattended auto-edit without the
+// sandbox guard rails. (The managed-settings `defaultMode: acceptEdits` does not drive the live
+// interactive permission mode, so it must be passed explicitly when sandboxed.) Centralized here
+// so the verbose `exec:` line and the real spawn share one source of truth.
 export function buildClaudeArgs({
   sessionId,
   managedSettings,
@@ -150,7 +153,11 @@ export function buildClaudeArgs({
   // never inject escape sequences into the spawned terminal.
   sessionName?: string;
 }): string[] {
-  const args = ["--session-id", sessionId, "--permission-mode", "acceptEdits"];
+  const args = ["--session-id", sessionId];
+  if (managedSettings) {
+    // Sandbox present → opt into auto mode (accept-edits) explicitly.
+    args.push("--permission-mode", "acceptEdits");
+  }
   if (sessionName) {
     const name = display(sessionName).trim();
     if (name) args.push("--name", name);
