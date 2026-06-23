@@ -24,7 +24,7 @@ Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (sc
 - **Issue/PR output**: Skills with a `## Language` section localize **issue and PR text** to the user's
   conversation language — do not embed localized templates in the skill body.
 - **PR evidence**: PR bodies require an **Evidence** section (test output excerpts, screenshots for UI,
-  CLI snippets, or explicit N/A). See `lh-merge-ready` §3.5.
+  CLI snippets, or explicit N/A). Enforced at PR creation — see `lh-dev` § PR (step 5).
 - **Reviewers are role-based, not vendor-based**: reference review subagents by **role** (Quality,
   Security), never by a product name. `lh-pr-review` § Reviewer roles & host mapping resolves each
   role to a host mechanism (Cursor `bugbot`/`security-review`, Claude Code `code-reviewer`/`general-purpose`
@@ -45,7 +45,7 @@ resolution, and the pre-merge check.
 
 ## Head worktree bootstrap
 
-Skills that work on a PR head (pr-review, merge-ready, rebase-conflict) must **not**
+Skills that work on a PR head (pr-review, rebase-conflict) must **not**
 `git checkout head.ref` on the repo root (main checkout). Shared procedure:
 
 1. Record `head.ref` and repo absolute path (`local_path`) from `lh pr view <m>`
