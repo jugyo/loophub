@@ -395,6 +395,14 @@ async function main() {
         ),
       );
       console.log(`created PR #${p.number}`);
+    } else if (sub === "update") {
+      const patch: { title?: string; body?: string } = {};
+      if (flags.title !== undefined) patch.title = flags.title;
+      if (flags.body !== undefined) patch.body = flags.body;
+      if (Object.keys(patch).length === 0) fail("--title and/or --body is required");
+      const p = await run(async () => s.pulls.update(repo, Number(rest[0]), patch, await writeSession()));
+      out(p);
+      if (!flags.json) console.log(`updated PR #${p.number}`);
     } else if (sub === "merge") {
       const r = await run(async () =>
         s.pulls.merge(repo, Number(rest[0]), (flags.method || "squash") as any, await writeSession()),
@@ -466,7 +474,7 @@ function usage() {
   lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."]
   lh session list
   lh issue list|view|create|update|comment|assign|unassign|close|label  [--repo owner/repo]
-  lh pr list|view|diff|create|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh pr list|view|diff|create|update|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
   lh sync                                          # detect open-PR head updates and emit events
   lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc]
 
