@@ -108,7 +108,12 @@ lh pr create --head feature-x --base main --title "impl" --issue 5
 npm install
 npm test          # vitest（core テスト）
 npm run test:watch
+npm run typecheck # tsc --noEmit（型チェック）
+npm run lint      # biome check（lint + フォーマット検査・書き込みなし）
+npm run format    # biome format --write（フォーマット適用）
 ```
+
+lint / format は [Biome](https://biomejs.dev) を使用（設定は `biome.json`）。
 
 ## 進捗（rearchitect S1–S7）
 

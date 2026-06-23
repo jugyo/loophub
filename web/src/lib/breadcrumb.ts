@@ -50,7 +50,10 @@ export function crumbsForPath(pathname: string): Crumb[] {
 
     if (section && sections[section]) {
       const sectionHref = `${repoHref}/${section}`;
-      crumbs.push({ label: sections[section], href: number ? sectionHref : undefined });
+      crumbs.push({
+        label: sections[section],
+        href: number ? sectionHref : undefined,
+      });
       if (number) crumbs.push({ label: `#${number}` });
     }
   }

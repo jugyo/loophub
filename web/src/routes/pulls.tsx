@@ -1,7 +1,7 @@
 import { createRoute } from "@tanstack/react-router";
-import { rootRoute } from "./root";
-import { PullList } from "@/components/pull-list";
 import { PullDetail } from "@/components/pull-detail";
+import { PullList } from "@/components/pull-list";
+import { rootRoute } from "./root";
 
 function PullsPage() {
   const { owner, repo } = pullsRoute.useParams();

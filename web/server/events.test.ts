@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, expect, test } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterAll, beforeAll, expect, test } from "vitest";
 import { git, revParse } from "../../core/git.ts";
 
 // Isolate the DB before store.ts -> db.ts runs its import-time setup.
@@ -52,7 +52,9 @@ test("since cursor skips already-seen events on replay", () => {
   const all = S.listEvents(0, repoId, 100);
   const lastId = all[all.length - 1].id;
   const got: number[] = [];
-  const unsub = subscribeEvents({ since: lastId, repo: "me/proj" }, (n) => got.push(n.params.id));
+  const unsub = subscribeEvents({ since: lastId, repo: "me/proj" }, (n) =>
+    got.push(n.params.id),
+  );
   unsub();
   // every replayed id is strictly greater than the cursor
   expect(got.every((id) => id > lastId)).toBe(true);
@@ -60,7 +62,9 @@ test("since cursor skips already-seen events on replay", () => {
 
 test("an unknown repo filter replays nothing", () => {
   const got: number[] = [];
-  const unsub = subscribeEvents({ since: 0, repo: "no/such" }, (n) => got.push(n.params.id));
+  const unsub = subscribeEvents({ since: 0, repo: "no/such" }, (n) =>
+    got.push(n.params.id),
+  );
   unsub();
   expect(got).toEqual([]);
 });
@@ -80,7 +84,13 @@ test("startEventTail forwards out-of-process DB writes to the in-process hub", a
       `INSERT INTO events (repo_id, type, actor, payload, created_at)
        VALUES (?, ?, ?, ?, ?) RETURNING id`,
     )
-    .get(repoId, "issue.opened", "cli", JSON.stringify({ number: 99 }), now()) as { id: number };
+    .get(
+      repoId,
+      "issue.opened",
+      "cli",
+      JSON.stringify({ number: 99 }),
+      now(),
+    ) as { id: number };
 
   await new Promise((r) => setTimeout(r, 80)); // let a poll tick run
   stop();
@@ -109,13 +119,17 @@ test("startPullSweep fires pull_request.updated on head SHA change, no-ops when 
   S.createPull(pull.id, "loophub/issue-x", "main", null); // head_sha unset -> first sweep records it
 
   const countUpdates = () =>
-    S.listEvents(0, repo.id, 100).filter((e: any) => e.type === "pull_request.updated").length;
+    S.listEvents(0, repo.id, 100).filter(
+      (e: any) => e.type === "pull_request.updated",
+    ).length;
 
   const stop = startPullSweep(20);
   try {
     await new Promise((r) => setTimeout(r, 60)); // first tick records baseline, emits nothing
     expect(countUpdates()).toBe(0);
-    expect(S.getPull(pull.id).head_sha).toBe(await revParse(repoPath, "loophub/issue-x"));
+    expect(S.getPull(pull.id).head_sha).toBe(
+      await revParse(repoPath, "loophub/issue-x"),
+    );
 
     // New commit moves the branch head -> next sweep should emit exactly one update.
     writeFileSync(join(repoPath, "f.txt"), "c2\n");

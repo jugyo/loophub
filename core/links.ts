@@ -7,7 +7,11 @@ export function parseClosingIssueNumber(body: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-export function linkedRef(repo: { owner: string; name: string }, kind: "issues" | "pulls", number: number) {
+export function linkedRef(
+  repo: { owner: string; name: string },
+  kind: "issues" | "pulls",
+  number: number,
+) {
   return {
     number,
     html_url: `/repos/${repo.owner}/${repo.name}/${kind}/${number}`,

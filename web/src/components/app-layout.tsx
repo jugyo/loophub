@@ -2,8 +2,8 @@
 // Routes render into <Outlet/>. Screen content lands in later UI issues.
 
 import { Outlet } from "@tanstack/react-router";
-import { AppSidebar } from "@/components/app-sidebar";
 import { AppBreadcrumb } from "@/components/app-breadcrumb";
+import { AppSidebar } from "@/components/app-sidebar";
 
 export function AppLayout() {
   return (

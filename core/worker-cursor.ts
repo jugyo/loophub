@@ -2,7 +2,7 @@
 // lives in a JSON file outside the SQLite schema (issue #52): a worker can be swapped or
 // re-implemented without touching the DB. Writes are atomic (temp file + rename) so a crash
 // mid-write never leaves a truncated cursor.
-import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 
 interface CursorFile {
   cursor: number;
@@ -28,7 +28,10 @@ export function writeCursor(path: string, cursor: number): void {
 // Starting cursor on worker boot: continue from the persisted value when present, otherwise
 // start from the newest event id so the backlog is skipped — the worker processes "from now
 // on", not history (issue #52).
-export function resolveStartCursor(path: string, newestEventId: number): number {
+export function resolveStartCursor(
+  path: string,
+  newestEventId: number,
+): number {
   const saved = readCursor(path);
   return saved != null ? saved : newestEventId;
 }

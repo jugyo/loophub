@@ -19,9 +19,12 @@ export function dbPath(): string {
 // Root for `lh dev` worktrees. Override via LOOPHUB_WORKTREE_ROOT or config.json
 // `worktreeRoot`; default `$LOOPHUB_HOME/worktrees`.
 export function worktreeRoot(): string {
-  if (process.env.LOOPHUB_WORKTREE_ROOT) return process.env.LOOPHUB_WORKTREE_ROOT;
+  if (process.env.LOOPHUB_WORKTREE_ROOT)
+    return process.env.LOOPHUB_WORKTREE_ROOT;
   try {
-    const cfg = JSON.parse(readFileSync(join(configDir(), "config.json"), "utf8"));
+    const cfg = JSON.parse(
+      readFileSync(join(configDir(), "config.json"), "utf8"),
+    );
     if (cfg.worktreeRoot) return cfg.worktreeRoot;
   } catch {}
   return join(configDir(), "worktrees");
@@ -30,7 +33,9 @@ export function worktreeRoot(): string {
 // Worker consumer cursor file (see core/worker-cursor.ts). Override via LOOPHUB_WORKER_CURSOR;
 // default `$LOOPHUB_HOME/worker-cursor.json`. Kept out of the DB on purpose.
 export function workerCursorPath(): string {
-  return process.env.LOOPHUB_WORKER_CURSOR ?? join(configDir(), "worker-cursor.json");
+  return (
+    process.env.LOOPHUB_WORKER_CURSOR ?? join(configDir(), "worker-cursor.json")
+  );
 }
 
 // Directory for workflow run logs: `$LOOPHUB_HOME/logs/<owner>/<repo>/<event>-<id>.log`.
@@ -41,7 +46,9 @@ export function logsDir(): string {
 export function baseUrl(): string {
   if (process.env.LOOPHUB_URL) return process.env.LOOPHUB_URL;
   try {
-    const cfg = JSON.parse(readFileSync(join(configDir(), "config.json"), "utf8"));
+    const cfg = JSON.parse(
+      readFileSync(join(configDir(), "config.json"), "utf8"),
+    );
     if (cfg.url) return cfg.url;
   } catch {}
   return `http://localhost:${port()}`;

@@ -41,7 +41,12 @@ npm install
 npm test            # vitest run (core tests)
 npm run test:watch
 npm run typecheck   # tsc --noEmit (uses the local typescript; avoids npx)
+npm run lint        # biome check (lint + format check; no writes)
+npm run format      # biome format --write (apply formatting)
 ```
+
+Lint/format use [Biome](https://biomejs.dev). Config is `biome.json`; the linter is a
+minimal recommended set (type-aware checks stay with `npm run typecheck`).
 
 ## Tests
 

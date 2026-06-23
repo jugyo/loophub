@@ -3,9 +3,9 @@
 // header. Archiving routes back home (the repo leaves the active sidebar list);
 // unarchiving stays put.
 
-import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Archive, ArchiveRestore, MoreHorizontal } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useRepo, useSetRepoArchived } from "@/queries/repos";
 

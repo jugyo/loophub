@@ -1,11 +1,7 @@
 // Repo list query hooks. The app shell uses these for the sidebar; later UI
 // issues add issue/pull hooks alongside in this directory.
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRepo, listRepos, setRepoArchived } from "@/api/client";
 import { queryKeys } from "./keys";
 

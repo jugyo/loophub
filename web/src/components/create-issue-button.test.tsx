@@ -1,5 +1,5 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { CreateIssueButton } from "./create-issue-button";
 
 afterEach(() => {
@@ -62,9 +62,7 @@ describe("CreateIssueButton", () => {
     const field = screen.getByLabelText("What do you want to do?");
     fireEvent.change(field, { target: { value: "add a dark mode toggle" } });
     expect(
-      screen.getByText(
-        'claude "/loophub-issue-create add a dark mode toggle"',
-      ),
+      screen.getByText('claude "/loophub-issue-create add a dark mode toggle"'),
     ).toBeTruthy();
   });
 

@@ -4,8 +4,8 @@
 // Claude command to paste into their agent.
 // The backend create API (useCreateIssue) stays for the skill/CLI to use.
 
+import { Check, Copy, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Plus, Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function CreateIssueButton() {

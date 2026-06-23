@@ -1,8 +1,8 @@
 import { createRoute } from "@tanstack/react-router";
-import { rootRoute } from "./root";
-import { DashboardSection } from "@/components/dashboard-section";
 import { IssueRow, PullRow } from "@/components/dashboard-rows";
+import { DashboardSection } from "@/components/dashboard-section";
 import { useInProgressIssues, useUnmergedPulls } from "@/queries/dashboard";
+import { rootRoute } from "./root";
 
 // Home (/) is a cross-project overview: issues currently being worked on and
 // pull requests still open. Each row is tagged with its repo so it's clear which
@@ -16,7 +16,8 @@ function HomePage() {
       <div>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Issues in progress and pull requests awaiting merge, across all your projects.
+          Issues in progress and pull requests awaiting merge, across all your
+          projects.
         </p>
       </div>
 

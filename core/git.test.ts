@@ -1,8 +1,21 @@
-import { test, expect } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { git, mergePull, isIndexLockError, sleep, worktreeAdd, worktreeList } from "./git.ts";
+import { expect, test } from "vitest";
+import {
+  git,
+  isIndexLockError,
+  mergePull,
+  sleep,
+  worktreeAdd,
+  worktreeList,
+} from "./git.ts";
 
 async function makeRepo(): Promise<string> {
   const p = mkdtempSync(join(tmpdir(), "lh-merge-lock-"));
@@ -22,7 +35,9 @@ async function makeRepo(): Promise<string> {
 // index.lock 競合だけをリトライ対象に分類し、本物のエラーは即失敗扱いにする。
 test("isIndexLockError matches only lock contention, not real errors", () => {
   expect(
-    isIndexLockError("fatal: Unable to create '/r/.git/index.lock': File exists."),
+    isIndexLockError(
+      "fatal: Unable to create '/r/.git/index.lock': File exists.",
+    ),
   ).toBe(true);
   expect(
     isIndexLockError(
@@ -30,8 +45,12 @@ test("isIndexLockError matches only lock contention, not real errors", () => {
     ),
   ).toBe(true);
   // 本物のエラー（lock 無関係）はリトライしない。
-  expect(isIndexLockError("fatal: ambiguous argument 'deadbeef': unknown revision")).toBe(false);
-  expect(isIndexLockError("error: Your local changes would be overwritten")).toBe(false);
+  expect(
+    isIndexLockError("fatal: ambiguous argument 'deadbeef': unknown revision"),
+  ).toBe(false);
+  expect(
+    isIndexLockError("error: Your local changes would be overwritten"),
+  ).toBe(false);
   expect(isIndexLockError("")).toBe(false);
 });
 
@@ -60,7 +79,9 @@ test("worktreeAdd checks out an existing branch with existingBranch", async () =
   const wtPath = join(p, "..", `wt2-${p.split("/").pop()}`);
   await worktreeAdd(p, wtPath, "feat", "main", { existingBranch: true });
 
-  const wt = (await worktreeList(p)).find((w) => w.path === wtPath || existsSync(wtPath));
+  const wt = (await worktreeList(p)).find(
+    (w) => w.path === wtPath || existsSync(wtPath),
+  );
   expect(wt).toBeTruthy();
   expect(readFileSync(join(wtPath, "f.txt"), "utf8")).toBe("feat\n");
 
@@ -73,7 +94,9 @@ test("worktreeAdd throws when the target path is already a worktree", async () =
   const p = await makeRepo();
   const wtPath = join(p, "..", `wt3-${p.split("/").pop()}`);
   await worktreeAdd(p, wtPath, "loophub/issue-2", "main");
-  await expect(worktreeAdd(p, wtPath, "loophub/issue-3", "main")).rejects.toThrow(/git worktree add failed/);
+  await expect(
+    worktreeAdd(p, wtPath, "loophub/issue-3", "main"),
+  ).rejects.toThrow(/git worktree add failed/);
 
   await git(p, ["worktree", "remove", "--force", wtPath]);
   rmSync(p, { recursive: true, force: true });
@@ -92,10 +115,18 @@ test("merge succeeds despite a transient index.lock held by another process", as
     if (existsSync(lock)) rmSync(lock);
   })();
 
-  const r = await mergePull(p, "main", "feat", "squash", "merge feat", "tester", {
-    resetLockRetries: 20,
-    resetLockBackoffMs: 5,
-  });
+  const r = await mergePull(
+    p,
+    "main",
+    "feat",
+    "squash",
+    "merge feat",
+    "tester",
+    {
+      resetLockRetries: 20,
+      resetLockBackoffMs: 5,
+    },
+  );
   await release;
 
   expect(r.merged).toBe(true);
@@ -111,10 +142,18 @@ test("merge rolls back when index.lock never clears", async () => {
   writeFileSync(lock, "");
 
   const baseBefore = (await git(p, ["rev-parse", "main"])).stdout.trim();
-  const r = await mergePull(p, "main", "feat", "squash", "merge feat", "tester", {
-    resetLockRetries: 3,
-    resetLockBackoffMs: 2,
-  });
+  const r = await mergePull(
+    p,
+    "main",
+    "feat",
+    "squash",
+    "merge feat",
+    "tester",
+    {
+      resetLockRetries: 3,
+      resetLockBackoffMs: 2,
+    },
+  );
 
   expect(r.merged).toBe(false);
   // base ref はロールバックされ前進していない。

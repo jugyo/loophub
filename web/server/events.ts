@@ -3,7 +3,12 @@
 // event to `onNotification` as a JSON-RPC notification frame. The lh-web process (S3) binds
 // this to an SSE response; tests drive it directly. Feature parity with the prototype's
 // GET /events/stream (replay-then-subscribe, repo filter, ascending-by-id cursor).
-import { formatEvent, publishEvent, subscribe, type LoopEvent } from "../../core/event-hub.ts";
+import {
+  formatEvent,
+  type LoopEvent,
+  publishEvent,
+  subscribe,
+} from "../../core/event-hub.ts";
 import * as S from "../../core/store.ts";
 import { sweepPullUpdates } from "../../core/watcher.ts";
 
@@ -45,7 +50,9 @@ export function subscribeEvents(
   let cursor = since;
 
   const toEvent = (row: any): LoopEvent => {
-    const repo = repoParam ?? (row.repo_id != null ? S.getRepoById(row.repo_id)?.full_name : undefined);
+    const repo =
+      repoParam ??
+      (row.repo_id != null ? S.getRepoById(row.repo_id)?.full_name : undefined);
     return formatEvent(row, repo);
   };
 
@@ -87,7 +94,8 @@ export function startEventTail(pollMs = DEFAULT_TAIL_POLL_MS): () => void {
   const tick = () => {
     if (stopped) return;
     for (const row of S.listEvents(cursor, null, REPLAY_PAGE)) {
-      const repo = row.repo_id != null ? S.getRepoById(row.repo_id)?.full_name : undefined;
+      const repo =
+        row.repo_id != null ? S.getRepoById(row.repo_id)?.full_name : undefined;
       publishEvent(formatEvent(row, repo));
       cursor = Math.max(cursor, row.id);
     }
@@ -118,7 +126,9 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
     try {
       await sweepPullUpdates();
     } catch (err) {
-      console.error(`pull sweep error: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(
+        `pull sweep error: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       running = false;
     }

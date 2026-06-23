@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { Markdown } from "./markdown";
 
 describe("Markdown", () => {
   it("renders headings, emphasis and links", () => {
     const { container } = render(
-      <Markdown>{"# Title\n\n**bold** _italic_ ~~struck~~ [link](https://example.com)"}</Markdown>,
+      <Markdown>
+        {"# Title\n\n**bold** _italic_ ~~struck~~ [link](https://example.com)"}
+      </Markdown>,
     );
     expect(container.querySelector("h1")?.textContent).toBe("Title");
     expect(container.querySelector("strong")?.textContent).toBe("bold");
@@ -47,7 +49,9 @@ describe("Markdown", () => {
 
   it("escapes embedded raw HTML instead of rendering it (XSS-safe)", () => {
     const { container } = render(
-      <Markdown>{'<img src=x onerror="alert(1)"> <script>alert(1)</script>'}</Markdown>,
+      <Markdown>
+        {'<img src=x onerror="alert(1)"> <script>alert(1)</script>'}
+      </Markdown>,
     );
     // No raw HTML is injected: the markup is escaped, so no <img>/<script> nodes.
     expect(container.querySelector("img")).toBeNull();

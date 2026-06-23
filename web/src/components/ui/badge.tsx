@@ -1,8 +1,8 @@
 // Status badge pill. Tones mirror the v1 UI badge palette (src/ui.html) for
 // state / review / conflict / agent parity.
 
-import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
@@ -13,9 +13,11 @@ const badgeVariants = cva(
         open: "border-green-600/60 text-green-600 dark:text-green-400",
         closed: "border-border text-muted-foreground",
         merged: "border-purple-600/60 text-purple-500 dark:text-purple-400",
-        "review-approved": "border-green-600/60 text-green-600 dark:text-green-400",
+        "review-approved":
+          "border-green-600/60 text-green-600 dark:text-green-400",
         "review-changes": "border-destructive/50 text-destructive",
-        "review-rereview": "border-amber-500/60 text-amber-600 dark:text-amber-400",
+        "review-rereview":
+          "border-amber-500/60 text-amber-600 dark:text-amber-400",
         "review-commented": "border-border text-muted-foreground",
         conflict: "border-destructive/50 text-destructive",
         agent:

@@ -1,7 +1,7 @@
 import { createRoute } from "@tanstack/react-router";
-import { rootRoute } from "./root";
 import { RepoList } from "@/components/repo-list";
 import { useArchivedRepos } from "@/queries/repos";
+import { rootRoute } from "./root";
 
 function ArchivedPage() {
   const query = useArchivedRepos();

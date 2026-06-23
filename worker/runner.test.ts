@@ -1,7 +1,15 @@
-import { test, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterAll, beforeAll, expect, test } from "vitest";
 import { git, worktreeAdd } from "../core/git.ts";
 import { WORKFLOW_PATH } from "../core/workflow.ts";
 
@@ -49,7 +57,9 @@ test("issue.opened runs steps in repo cwd with LH_* env; a failing step does not
   );
   const repo = S.createRepo("jugyo/wf-issue", repoPath);
   const issue = S.createIssue(repo.id, "issue", "hi", "", "me") as any;
-  const row = S.emitEvent(repo.id, "issue.opened", "me", { number: issue.number });
+  const row = S.emitEvent(repo.id, "issue.opened", "me", {
+    number: issue.number,
+  });
 
   await R.dispatchEvent(row);
 
@@ -63,7 +73,9 @@ test("issue.opened runs steps in repo cwd with LH_* env; a failing step does not
   // run_started/run_completed pairs were emitted for all three steps, with the failure recorded.
   const events = S.listEvents(row.id, repo.id, 100);
   const started = events.filter((e: any) => e.type === "workflow.run_started");
-  const completed = events.filter((e: any) => e.type === "workflow.run_completed");
+  const completed = events.filter(
+    (e: any) => e.type === "workflow.run_completed",
+  );
   expect(started.length).toBe(3);
   expect(completed.length).toBe(3);
   const codes = completed.map((e: any) => JSON.parse(e.payload).exit_code);
@@ -95,12 +107,16 @@ test("pull_request.opened sets LH_WORKTREE_PATH from git worktree list when head
 
   const pr = S.createIssue(repo.id, "pull", "feat", "", "bot") as any;
   S.createPull(pr.id, "loophub/issue-1", "main", "abc123", null);
-  const row = S.emitEvent(repo.id, "pull_request.opened", "bot", { number: pr.number });
+  const row = S.emitEvent(repo.id, "pull_request.opened", "bot", {
+    number: pr.number,
+  });
 
   await R.dispatchEvent(row);
 
   // git worktree list reports the canonical (realpath) form, so compare against that.
-  expect(readFileSync(join(repoPath, "wt.out"), "utf8")).toBe(realpathSync(wtPath));
+  expect(readFileSync(join(repoPath, "wt.out"), "utf8")).toBe(
+    realpathSync(wtPath),
+  );
 
   await git(repoPath, ["worktree", "remove", "--force", wtPath]);
   rmSync(repoPath, { recursive: true, force: true });
@@ -118,7 +134,9 @@ test("pull_request.opened sets LH_WORKTREE_PATH empty when head_ref has no workt
   const repo = S.createRepo("jugyo/wf-pr-nowt", repoPath);
   const pr = S.createIssue(repo.id, "pull", "feat", "", "bot") as any;
   S.createPull(pr.id, "regular-branch", "main", "abc123", null);
-  const row = S.emitEvent(repo.id, "pull_request.opened", "bot", { number: pr.number });
+  const row = S.emitEvent(repo.id, "pull_request.opened", "bot", {
+    number: pr.number,
+  });
 
   await R.dispatchEvent(row);
 
@@ -143,7 +161,9 @@ test("log path stays under LOOPHUB_HOME/logs even for a repo name with path sepa
   // A repo name with `..` segments must not let the log file escape the logs dir.
   const repo = S.createRepo("../evil/..", repoPath);
   const issue = S.createIssue(repo.id, "issue", "x", "", "me") as any;
-  const row = S.emitEvent(repo.id, "issue.opened", "me", { number: issue.number });
+  const row = S.emitEvent(repo.id, "issue.opened", "me", {
+    number: issue.number,
+  });
 
   await R.dispatchEvent(row);
 

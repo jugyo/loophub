@@ -5,6 +5,7 @@
 // VITE_LOOPHUB_API_URL when set, otherwise same-origin ("") so requests go through the Vite
 // dev proxy (vite.config.ts).
 
+import { getSessionId } from "@/lib/session";
 import type {
   DashboardOverview,
   Issue,
@@ -16,7 +17,6 @@ import type {
   PullReview,
   Repo,
 } from "./types";
-import { getSessionId } from "@/lib/session";
 
 /** Resolved server base. "" => same-origin (proxy). No trailing slash. */
 export const API_BASE: string = (
@@ -43,7 +43,8 @@ interface RpcError {
 // Map a JSON-RPC error to an HTTP-style status so callers keep checking err.status
 // (e.g. 409 merge conflict). ServiceError carries the real status in error.data.status.
 function statusFromError(error: RpcError): number {
-  if (error.data && typeof error.data.status === "number") return error.data.status;
+  if (error.data && typeof error.data.status === "number")
+    return error.data.status;
   switch (error.code) {
     case -32700: // parse error
     case -32600: // invalid request
@@ -60,7 +61,10 @@ function statusFromError(error: RpcError): number {
 let nextId = 1;
 
 /** Call a JSON-RPC method and return its result, throwing ApiError on transport/RPC error. */
-export async function rpc<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+export async function rpc<T>(
+  method: string,
+  params: Record<string, unknown> = {},
+): Promise<T> {
   const res = await fetch(RPC_URL, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -68,7 +72,8 @@ export async function rpc<T>(method: string, params: Record<string, unknown> = {
   });
   if (!res.ok) throw new ApiError(res.status, res.statusText);
   const body = (await res.json()) as { result?: T; error?: RpcError };
-  if (body.error) throw new ApiError(statusFromError(body.error), body.error.message);
+  if (body.error)
+    throw new ApiError(statusFromError(body.error), body.error.message);
   return body.result as T;
 }
 
@@ -102,7 +107,11 @@ export function setRepoArchived(
   archived: boolean,
   sessionId: string = getSessionId(),
 ) {
-  return rpc<Repo>("repos/setArchived", { name: full(owner, repo), archived, session_id: sessionId });
+  return rpc<Repo>("repos/setArchived", {
+    name: full(owner, repo),
+    archived,
+    session_id: sessionId,
+  });
 }
 
 // --- issues ---
@@ -140,7 +149,10 @@ export function createIssue(
 }
 
 export function listIssueComments(owner: string, repo: string, number: number) {
-  return rpc<IssueComment[]>("comments/list", { repo: full(owner, repo), number });
+  return rpc<IssueComment[]>("comments/list", {
+    repo: full(owner, repo),
+    number,
+  });
 }
 
 export function postIssueComment(
@@ -162,7 +174,12 @@ export function patchIssue(
   owner: string,
   repo: string,
   number: number,
-  patch: { state?: "open" | "closed"; title?: string; body?: string; labels?: string[] },
+  patch: {
+    state?: "open" | "closed";
+    title?: string;
+    body?: string;
+    labels?: string[];
+  },
   sessionId: string = getSessionId(),
 ) {
   return rpc<Issue>(
@@ -215,7 +232,10 @@ export function listPullReviews(owner: string, repo: string, number: number) {
 }
 
 export function listPullComments(owner: string, repo: string, number: number) {
-  return rpc<PullLineComment[]>("reviews/listComments", { repo: full(owner, repo), number });
+  return rpc<PullLineComment[]>("reviews/listComments", {
+    repo: full(owner, repo),
+    number,
+  });
 }
 
 export function mergePull(

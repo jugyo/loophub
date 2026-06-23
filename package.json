@@ -18,10 +18,13 @@
     "lh-worker": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/index.ts",
     "contract": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx scripts/emit-rpc-contract.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "biome check",
+    "format": "biome format --write",
     "test": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest run",
     "test:watch": "NODE_OPTIONS='--experimental-sqlite --disable-warning=ExperimentalWarning' vitest"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.0",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

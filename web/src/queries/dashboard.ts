@@ -16,7 +16,11 @@ export function useOpenIssues(owner: string, repo: string) {
   return useQuery({
     queryKey: queryKeys.issues(full(owner, repo)),
     queryFn: () =>
-      listIssues(owner, repo, `state=open&kind=issue&per_page=${SECTION_LIMIT}`),
+      listIssues(
+        owner,
+        repo,
+        `state=open&kind=issue&per_page=${SECTION_LIMIT}`,
+      ),
   });
 }
 

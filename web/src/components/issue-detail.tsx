@@ -3,20 +3,20 @@
 // write operations v1 supports — comment posting and close/reopen. Body and
 // comments are stored as plain Markdown and rendered as GFM via <Markdown>.
 
-import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
+import { useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
+import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Markdown } from "@/components/markdown";
 import { assigneeBadge, stateBadge } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import {
-  usePostComment,
-  useSetIssueState,
   useIssue,
   useIssueComments,
+  usePostComment,
+  useSetIssueState,
 } from "@/queries/issues";
 
 export function IssueDetail({

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { Markdown } from "./markdown";
 
 describe("Markdown edge cases", () => {
@@ -14,13 +14,15 @@ describe("Markdown edge cases", () => {
   });
 
   it("handles very long markdown without crashing", () => {
-    const longText = "# Header\n" + "paragraph\n\n".repeat(1000);
+    const longText = `# Header\n${"paragraph\n\n".repeat(1000)}`;
     const { container } = render(<Markdown>{longText}</Markdown>);
     expect(container.querySelector("h1")).not.toBeNull();
   });
 
   it("handles special unicode characters", () => {
-    const { container } = render(<Markdown>{"emoji: 🎉 unicode: 你好"}</Markdown>);
+    const { container } = render(
+      <Markdown>{"emoji: 🎉 unicode: 你好"}</Markdown>,
+    );
     expect(container.textContent).toContain("🎉");
     expect(container.textContent).toContain("你好");
   });

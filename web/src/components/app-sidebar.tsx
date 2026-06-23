@@ -3,8 +3,8 @@
 
 import { Link } from "@tanstack/react-router";
 import { Archive, Home, Loader2 } from "lucide-react";
-import { useRepos } from "@/queries/repos";
 import { cn } from "@/lib/utils";
+import { useRepos } from "@/queries/repos";
 
 export function AppSidebar() {
   const { data: repos, isLoading, isError } = useRepos();
@@ -81,7 +81,9 @@ function SidebarLink({
       className={cn(
         "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground",
       )}
-      activeProps={{ className: "bg-accent text-accent-foreground font-medium" }}
+      activeProps={{
+        className: "bg-accent text-accent-foreground font-medium",
+      }}
       activeOptions={{ exact: to === "/" }}
     >
       {icon}

@@ -6,20 +6,20 @@
 // Body, reviews, and comments are stored as plain Markdown and rendered as GFM
 // via <Markdown>.
 
-import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
+import { useState } from "react";
 import type {
   PullFile,
   PullLineComment,
   PullRequest,
   PullReview,
 } from "@/api/types";
+import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Markdown } from "@/components/markdown";
 import { assigneeBadge, reviewBadge, stateBadge } from "@/lib/badges";
-import { parsePatch, type DiffLineKind } from "@/lib/diff";
+import { type DiffLineKind, parsePatch } from "@/lib/diff";
 import { relativeTime } from "@/lib/time";
 import { useIssueComments } from "@/queries/issues";
 import {
@@ -370,10 +370,7 @@ function FileDiff({
       {lines.length > 0 ? (
         <pre className="overflow-x-auto text-xs leading-relaxed">
           {lines.map((l, i) => (
-            <span
-              key={i}
-              className={`block px-3 ${DIFF_LINE_CLASS[l.kind]}`}
-            >
+            <span key={i} className={`block px-3 ${DIFF_LINE_CLASS[l.kind]}`}>
               {l.text || " "}
             </span>
           ))}

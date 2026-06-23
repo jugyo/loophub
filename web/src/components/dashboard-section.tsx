@@ -3,10 +3,10 @@
 // optional "see all" link below the list. Each repo dashboard section (Open
 // PRs, Open Issues, etc.) renders through this.
 
-import type { ReactNode } from "react";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { Link, type LinkProps } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
-import type { UseQueryResult } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 
 export function DashboardSection<T>({
   title,

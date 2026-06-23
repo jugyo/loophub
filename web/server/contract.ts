@@ -20,7 +20,12 @@ const repo = strNonEmpty; // "owner/name" or bare "name"
 function params(
   properties: Record<string, unknown>,
   required: string[] = [],
-): { type: "object"; properties: Record<string, unknown>; required: string[]; additionalProperties: false } {
+): {
+  type: "object";
+  properties: Record<string, unknown>;
+  required: string[];
+  additionalProperties: false;
+} {
   return { type: "object", properties, required, additionalProperties: false };
 }
 
@@ -39,7 +44,8 @@ export interface MethodDef {
 
 export const methods: Record<string, MethodDef> = {
   initialize: {
-    description: "Capability negotiation; returns protocol version, server info, and method list.",
+    description:
+      "Capability negotiation; returns protocol version, server info, and method list.",
     params: params({ protocolVersion: str, clientInfo: anyObject }),
     result: anyObject,
     handler: () => capabilities(),
@@ -66,16 +72,31 @@ export const methods: Record<string, MethodDef> = {
   },
   "repos/setArchived": {
     description: "Archive or unarchive a repository.",
-    params: params({ name: repo, archived: { type: "boolean" }, session_id: sid }, ["name", "archived"]),
+    params: params(
+      { name: repo, archived: { type: "boolean" }, session_id: sid },
+      ["name", "archived"],
+    ),
     result: anyObject,
     handler: (p) => svc.repos.setArchived(p.name, p.archived, p.session_id),
   },
   "repos/update": {
     description: "Update a repository's default branch and/or local path.",
-    params: params({ name: repo, default_branch: strNonEmpty, local_path: strNonEmpty, session_id: sid }, ["name"]),
+    params: params(
+      {
+        name: repo,
+        default_branch: strNonEmpty,
+        local_path: strNonEmpty,
+        session_id: sid,
+      },
+      ["name"],
+    ),
     result: anyObject,
     handler: (p) =>
-      svc.repos.update(p.name, { default_branch: p.default_branch, local_path: p.local_path }, p.session_id),
+      svc.repos.update(
+        p.name,
+        { default_branch: p.default_branch, local_path: p.local_path },
+        p.session_id,
+      ),
   },
   "repos/remove": {
     description: "Remove a repository and its issues/PRs.",
@@ -87,9 +108,18 @@ export const methods: Record<string, MethodDef> = {
   // ---- agent sessions ----
   "sessions/register": {
     description: "Register (or update) an agent session.",
-    params: params({ id: sid, agent: strNonEmpty, session: strNonEmpty, name: str }, ["id", "agent", "session"]),
+    params: params(
+      { id: sid, agent: strNonEmpty, session: strNonEmpty, name: str },
+      ["id", "agent", "session"],
+    ),
     result: anyObject,
-    handler: (p) => svc.sessions.register({ id: p.id, agent: p.agent, session: p.session, name: p.name }),
+    handler: (p) =>
+      svc.sessions.register({
+        id: p.id,
+        agent: p.agent,
+        session: p.session,
+        name: p.name,
+      }),
   },
   "sessions/list": {
     description: "List agent sessions.",
@@ -107,18 +137,28 @@ export const methods: Record<string, MethodDef> = {
   // ---- issues ----
   "issues/list": {
     description: "List issues/PRs in a repository.",
-    params: params({
-      repo,
-      state: str,
-      kind: { enum: ["issue", "pull", "any"] },
-      labels: stringArray,
-      assignee_session_id: sid,
-      page: positiveInt,
-      perPage: positiveInt,
-    }, ["repo"]),
+    params: params(
+      {
+        repo,
+        state: str,
+        kind: { enum: ["issue", "pull", "any"] },
+        labels: stringArray,
+        assignee_session_id: sid,
+        page: positiveInt,
+        perPage: positiveInt,
+      },
+      ["repo"],
+    ),
     result: anyArray,
     handler: (p) =>
-      svc.issues.list(p.repo, { state: p.state, kind: p.kind, labels: p.labels, assignee_session_id: p.assignee_session_id, page: p.page, perPage: p.perPage }),
+      svc.issues.list(p.repo, {
+        state: p.state,
+        kind: p.kind,
+        labels: p.labels,
+        assignee_session_id: p.assignee_session_id,
+        page: p.page,
+        perPage: p.perPage,
+      }),
   },
   "issues/get": {
     description: "Get one issue by number.",
@@ -128,21 +168,38 @@ export const methods: Record<string, MethodDef> = {
   },
   "issues/create": {
     description: "Open a new issue.",
-    params: params({ repo, title: strNonEmpty, body: str, labels: stringArray, session_id: sid }, ["repo", "title"]),
+    params: params(
+      {
+        repo,
+        title: strNonEmpty,
+        body: str,
+        labels: stringArray,
+        session_id: sid,
+      },
+      ["repo", "title"],
+    ),
     result: anyObject,
-    handler: (p) => svc.issues.create(p.repo, { title: p.title, body: p.body, labels: p.labels }, p.session_id),
+    handler: (p) =>
+      svc.issues.create(
+        p.repo,
+        { title: p.title, body: p.body, labels: p.labels },
+        p.session_id,
+      ),
   },
   "issues/update": {
     description: "Edit an issue's title/body/state/labels.",
-    params: params({
-      repo,
-      number: positiveInt,
-      title: str,
-      body: str,
-      state: { enum: ["open", "closed"] },
-      labels: stringArray,
-      session_id: sid,
-    }, ["repo", "number"]),
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        title: str,
+        body: str,
+        state: { enum: ["open", "closed"] },
+        labels: stringArray,
+        session_id: sid,
+      },
+      ["repo", "number"],
+    ),
     result: anyObject,
     handler: (p) =>
       svc.issues.update(
@@ -154,27 +211,42 @@ export const methods: Record<string, MethodDef> = {
   },
   "issues/assign": {
     description: "Assign an issue to an agent session.",
-    params: params({ repo, number: positiveInt, session_id: sid }, ["repo", "number", "session_id"]),
+    params: params({ repo, number: positiveInt, session_id: sid }, [
+      "repo",
+      "number",
+      "session_id",
+    ]),
     result: anyObject,
     handler: (p) => svc.issues.assign(p.repo, p.number, p.session_id),
   },
   "issues/unassign": {
     description: "Clear an issue's assignee.",
-    params: params({ repo, number: positiveInt, session_id: sid }, ["repo", "number"]),
+    params: params({ repo, number: positiveInt, session_id: sid }, [
+      "repo",
+      "number",
+    ]),
     result: anyObject,
     handler: (p) => svc.issues.unassign(p.repo, p.number, p.session_id),
   },
   "issues/addLabels": {
     description: "Add labels to an issue.",
-    params: params({ repo, number: positiveInt, labels: stringArray, session_id: sid }, ["repo", "number", "labels"]),
+    params: params(
+      { repo, number: positiveInt, labels: stringArray, session_id: sid },
+      ["repo", "number", "labels"],
+    ),
     result: anyArray,
-    handler: (p) => svc.issues.addLabels(p.repo, p.number, p.labels, p.session_id),
+    handler: (p) =>
+      svc.issues.addLabels(p.repo, p.number, p.labels, p.session_id),
   },
   "issues/removeLabel": {
     description: "Remove a label from an issue.",
-    params: params({ repo, number: positiveInt, label: strNonEmpty, session_id: sid }, ["repo", "number", "label"]),
+    params: params(
+      { repo, number: positiveInt, label: strNonEmpty, session_id: sid },
+      ["repo", "number", "label"],
+    ),
     result: { type: "null" },
-    handler: (p) => svc.issues.removeLabel(p.repo, p.number, p.label, p.session_id) ?? null,
+    handler: (p) =>
+      svc.issues.removeLabel(p.repo, p.number, p.label, p.session_id) ?? null,
   },
 
   // ---- comments ----
@@ -186,7 +258,10 @@ export const methods: Record<string, MethodDef> = {
   },
   "comments/create": {
     description: "Add a comment to an issue.",
-    params: params({ repo, number: positiveInt, body: strNonEmpty, session_id: sid }, ["repo", "number", "body"]),
+    params: params(
+      { repo, number: positiveInt, body: strNonEmpty, session_id: sid },
+      ["repo", "number", "body"],
+    ),
     result: anyObject,
     handler: (p) => svc.comments.create(p.repo, p.number, p.body, p.session_id),
   },
@@ -202,15 +277,18 @@ export const methods: Record<string, MethodDef> = {
   // ---- pulls ----
   "pulls/list": {
     description: "List pull requests in a repository.",
-    params: params({
-      repo,
-      state: str,
-      merged: { enum: ["only", "exclude"] },
-      head: str,
-      base: str,
-      page: positiveInt,
-      perPage: positiveInt,
-    }, ["repo"]),
+    params: params(
+      {
+        repo,
+        state: str,
+        merged: { enum: ["only", "exclude"] },
+        head: str,
+        base: str,
+        page: positiveInt,
+        perPage: positiveInt,
+      },
+      ["repo"],
+    ),
     result: anyArray,
     handler: (p) =>
       svc.pulls.list(p.repo, {
@@ -230,35 +308,53 @@ export const methods: Record<string, MethodDef> = {
   },
   "pulls/create": {
     description: "Open a pull request.",
-    params: params({
-      repo,
-      title: strNonEmpty,
-      body: str,
-      head: strNonEmpty,
-      base: strNonEmpty,
-      issue: positiveInt,
-      session_id: sid,
-    }, ["repo", "title", "head", "base"]),
+    params: params(
+      {
+        repo,
+        title: strNonEmpty,
+        body: str,
+        head: strNonEmpty,
+        base: strNonEmpty,
+        issue: positiveInt,
+        session_id: sid,
+      },
+      ["repo", "title", "head", "base"],
+    ),
     result: anyObject,
     handler: (p) =>
       svc.pulls.create(
         p.repo,
-        { title: p.title, body: p.body, head: p.head, base: p.base, issue: p.issue },
+        {
+          title: p.title,
+          body: p.body,
+          head: p.head,
+          base: p.base,
+          issue: p.issue,
+        },
         p.session_id,
       ),
   },
   "pulls/update": {
     description: "Edit a pull request's title/body/state.",
-    params: params({
-      repo,
-      number: positiveInt,
-      state: { enum: ["open", "closed"] },
-      title: str,
-      body: str,
-      session_id: sid,
-    }, ["repo", "number"]),
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        state: { enum: ["open", "closed"] },
+        title: str,
+        body: str,
+        session_id: sid,
+      },
+      ["repo", "number"],
+    ),
     result: anyObject,
-    handler: (p) => svc.pulls.update(p.repo, p.number, { state: p.state, title: p.title, body: p.body }, p.session_id),
+    handler: (p) =>
+      svc.pulls.update(
+        p.repo,
+        p.number,
+        { state: p.state, title: p.title, body: p.body },
+        p.session_id,
+      ),
   },
   "pulls/files": {
     description: "List a pull request's changed files (diff).",
@@ -268,20 +364,34 @@ export const methods: Record<string, MethodDef> = {
   },
   "pulls/merge": {
     description: "Merge a pull request.",
-    params: params({
-      repo,
-      number: positiveInt,
-      merge_method: { enum: ["squash", "merge", "rebase"] },
-      session_id: sid,
-    }, ["repo", "number"]),
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        merge_method: { enum: ["squash", "merge", "rebase"] },
+        session_id: sid,
+      },
+      ["repo", "number"],
+    ),
     result: anyObject,
-    handler: (p) => svc.pulls.merge(p.repo, p.number, p.merge_method ?? "squash", p.session_id),
+    handler: (p) =>
+      svc.pulls.merge(
+        p.repo,
+        p.number,
+        p.merge_method ?? "squash",
+        p.session_id,
+      ),
   },
   "pulls/readyForReview": {
-    description: "Mark a pull request ready for re-review after addressing changes.",
-    params: params({ repo, number: positiveInt, body: str, session_id: sid }, ["repo", "number"]),
+    description:
+      "Mark a pull request ready for re-review after addressing changes.",
+    params: params({ repo, number: positiveInt, body: str, session_id: sid }, [
+      "repo",
+      "number",
+    ]),
     result: anyObject,
-    handler: (p) => svc.pulls.readyForReview(p.repo, p.number, p.body, p.session_id),
+    handler: (p) =>
+      svc.pulls.readyForReview(p.repo, p.number, p.body, p.session_id),
   },
 
   // ---- reviews ----
@@ -299,25 +409,47 @@ export const methods: Record<string, MethodDef> = {
   },
   "reviews/create": {
     description: "Submit a review (optionally with line comments).",
-    params: params({
-      repo,
-      number: positiveInt,
-      event: { enum: ["COMMENT", "APPROVE", "REQUEST_CHANGES", "comment", "approve", "request_changes"] },
-      body: str,
-      comments: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: { path: strNonEmpty, line: positiveInt, side: str, body: strNonEmpty },
-          required: ["path", "body"],
-          additionalProperties: false,
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        event: {
+          enum: [
+            "COMMENT",
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "comment",
+            "approve",
+            "request_changes",
+          ],
         },
+        body: str,
+        comments: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              path: strNonEmpty,
+              line: positiveInt,
+              side: str,
+              body: strNonEmpty,
+            },
+            required: ["path", "body"],
+            additionalProperties: false,
+          },
+        },
+        session_id: sid,
       },
-      session_id: sid,
-    }, ["repo", "number"]),
+      ["repo", "number"],
+    ),
     result: anyObject,
     handler: (p) =>
-      svc.reviews.create(p.repo, p.number, { event: p.event, body: p.body, comments: p.comments }, p.session_id),
+      svc.reviews.create(
+        p.repo,
+        p.number,
+        { event: p.event, body: p.body, comments: p.comments },
+        p.session_id,
+      ),
   },
 
   // ---- events ----
@@ -331,7 +463,14 @@ export const methods: Record<string, MethodDef> = {
       limit: positiveInt,
     }),
     result: anyArray,
-    handler: (p) => svc.events.list({ since: p.since, repo: p.repo, labels: p.labels, order: p.order, limit: p.limit }),
+    handler: (p) =>
+      svc.events.list({
+        since: p.since,
+        repo: p.repo,
+        labels: p.labels,
+        order: p.order,
+        limit: p.limit,
+      }),
   },
 
   // ---- dashboard ----
@@ -345,7 +484,8 @@ export const methods: Record<string, MethodDef> = {
 
   // ---- sync ----
   "sync/run": {
-    description: "Sweep open-PR heads and emit pull_request.updated when a head moved.",
+    description:
+      "Sweep open-PR heads and emit pull_request.updated when a head moved.",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.sync.run(),
@@ -376,7 +516,11 @@ export function contractDocument() {
       result: m.result,
     })),
     notifications: [
-      { method: "events/notify", description: "A LoopEvent delivered to a subscriber.", params: anyObject },
+      {
+        method: "events/notify",
+        description: "A LoopEvent delivered to a subscriber.",
+        params: anyObject,
+      },
     ],
   };
 }

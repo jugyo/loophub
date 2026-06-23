@@ -1,5 +1,10 @@
-import { test, expect } from "vitest";
-import { formatEvent, subscribe, publishEvent, listenerCount } from "./event-hub.ts";
+import { expect, test } from "vitest";
+import {
+  formatEvent,
+  listenerCount,
+  publishEvent,
+  subscribe,
+} from "./event-hub.ts";
 
 test("formatEvent parses the payload and attaches repo full_name", () => {
   const ev = formatEvent(
@@ -29,13 +34,37 @@ test("subscribe delivers published events until unsubscribed", () => {
   const unsub = subscribe((e) => received.push(e.id));
   expect(listenerCount()).toBe(before + 1);
 
-  publishEvent(formatEvent({ id: 1, type: "x", actor: "me", payload: "{}", created_at: "" }));
-  publishEvent(formatEvent({ id: 2, type: "x", actor: "me", payload: "{}", created_at: "" }));
+  publishEvent(
+    formatEvent({
+      id: 1,
+      type: "x",
+      actor: "me",
+      payload: "{}",
+      created_at: "",
+    }),
+  );
+  publishEvent(
+    formatEvent({
+      id: 2,
+      type: "x",
+      actor: "me",
+      payload: "{}",
+      created_at: "",
+    }),
+  );
   expect(received).toEqual([1, 2]);
 
   unsub();
   expect(listenerCount()).toBe(before);
-  publishEvent(formatEvent({ id: 3, type: "x", actor: "me", payload: "{}", created_at: "" }));
+  publishEvent(
+    formatEvent({
+      id: 3,
+      type: "x",
+      actor: "me",
+      payload: "{}",
+      created_at: "",
+    }),
+  );
   expect(received).toEqual([1, 2]);
 });
 
@@ -45,7 +74,15 @@ test("a throwing listener does not break delivery to others", () => {
     throw new Error("boom");
   });
   const unsubGood = subscribe((e) => seen.push(e.id));
-  publishEvent(formatEvent({ id: 42, type: "x", actor: "me", payload: "{}", created_at: "" }));
+  publishEvent(
+    formatEvent({
+      id: 42,
+      type: "x",
+      actor: "me",
+      payload: "{}",
+      created_at: "",
+    }),
+  );
   unsubBad();
   unsubGood();
   expect(seen).toEqual([42]);

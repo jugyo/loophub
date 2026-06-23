@@ -7,26 +7,28 @@ import { dirname, join } from "node:path";
 import { logsDir, workerCursorPath } from "../core/config.ts";
 import { worktreeList } from "../core/git.ts";
 import * as S from "../core/store.ts";
+import { resolveStartCursor, writeCursor } from "../core/worker-cursor.ts";
 import {
   buildRunEnv,
   loadWorkflow,
   matchWorktreePath,
-  stepsFor,
   SUPPORTED_EVENTS,
+  stepsFor,
   type WorkflowStep,
 } from "../core/workflow.ts";
-import { resolveStartCursor, writeCursor } from "../core/worker-cursor.ts";
 
 const DEFAULT_POLL_MS = 1000;
 const PAGE = 100;
 const ACTOR = "lh-worker";
 
-const isSupported = (type: string) => (SUPPORTED_EVENTS as readonly string[]).includes(type);
+const isSupported = (type: string) =>
+  (SUPPORTED_EVENTS as readonly string[]).includes(type);
 
 // repo owner/name come from the `--name owner/repo` flag and are not validated for path
 // components; neutralize separators / `..` before using them as log-dir segments so output
 // can never escape $LOOPHUB_HOME/logs (defense in depth — same user, but cheap to guard).
-const safeSegment = (s: string) => s.replace(/[/\\]/g, "_").replace(/\.\./g, "_") || "_";
+const safeSegment = (s: string) =>
+  s.replace(/[/\\]/g, "_").replace(/\.\./g, "_") || "_";
 
 interface EventRow {
   id: number;
@@ -61,11 +63,17 @@ function runStep(
   const startedAt = Date.now();
   appendFileSync(logFile, `\n$ ${step.run}\n`);
   return new Promise((resolve) => {
-    let child;
+    let child: ReturnType<typeof spawn>;
     try {
-      child = spawn("sh", ["-c", step.run], { cwd, env: { ...process.env, ...env } });
+      child = spawn("sh", ["-c", step.run], {
+        cwd,
+        env: { ...process.env, ...env },
+      });
     } catch (e) {
-      appendFileSync(logFile, `lh-worker: failed to spawn: ${e instanceof Error ? e.message : e}\n`);
+      appendFileSync(
+        logFile,
+        `lh-worker: failed to spawn: ${e instanceof Error ? e.message : e}\n`,
+      );
       resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
       return;
     }
@@ -107,11 +115,14 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
   if (steps.length === 0) return;
 
   const payload = parsePayload(row.payload);
-  const number = typeof payload?.number === "number" ? payload.number : undefined;
+  const number =
+    typeof payload?.number === "number" ? payload.number : undefined;
   const isPull = row.type.startsWith("pull_request.");
   const issueNumber = isPull ? undefined : number;
   const prNumber = isPull ? number : undefined;
-  const worktreePath = isPull ? await prWorktreePath(repo, prNumber ?? -1) : undefined;
+  const worktreePath = isPull
+    ? await prWorktreePath(repo, prNumber ?? -1)
+    : undefined;
 
   const env = buildRunEnv({
     event: { type: row.type, actor: row.actor, payload },
@@ -121,7 +132,12 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
     worktreePath,
   });
 
-  const logFile = join(logsDir(), safeSegment(repo.owner), safeSegment(repo.name), `${row.type}-${row.id}.log`);
+  const logFile = join(
+    logsDir(),
+    safeSegment(repo.owner),
+    safeSegment(repo.name),
+    `${row.type}-${row.id}.log`,
+  );
   mkdirSync(dirname(logFile), { recursive: true });
 
   for (const step of steps) {
@@ -156,7 +172,9 @@ export interface WorkerHandle {
 // Tail the events table by id cursor and dispatch matched events. Mirrors web/server's
 // startEventTail polling, but instead of republishing it runs workflow commands. The cursor is
 // persisted after every event so a restart resumes exactly where it left off.
-export function startWorker(opts: { pollMs?: number; cursorPath?: string } = {}): WorkerHandle {
+export function startWorker(
+  opts: { pollMs?: number; cursorPath?: string } = {},
+): WorkerHandle {
   const pollMs =
     opts.pollMs != null && Number.isFinite(opts.pollMs) && opts.pollMs > 0
       ? opts.pollMs

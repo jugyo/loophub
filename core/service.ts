@@ -4,19 +4,17 @@
 // JSON-RPC layer (S2) will wrap the same procedures. No HTTP/Request types leak in here.
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import * as S from "./store.ts";
+import { ServiceError } from "./errors.ts";
+import { formatEvent, type LoopEvent } from "./event-hub.ts";
 import {
   branchExists,
   defaultBranch,
   diffFiles,
-  isGitRepo,
   mergePull as gitMergePull,
+  isGitRepo,
   revParse,
 } from "./git.ts";
-import { sweepPullUpdates } from "./watcher.ts";
 import { parseClosingIssueNumber } from "./links.ts";
-import { formatEvent, type LoopEvent } from "./event-hub.ts";
-import { ServiceError } from "./errors.ts";
 import {
   agentSessionJSON,
   commentJSON,
@@ -27,6 +25,8 @@ import {
   reviewCommentJSON,
   reviewJSON,
 } from "./serialize.ts";
+import * as S from "./store.ts";
+import { sweepPullUpdates } from "./watcher.ts";
 
 export const MAX_EVENTS_PER_PAGE = 100;
 export const DEFAULT_LIST_PER_PAGE = 30;
@@ -50,11 +50,16 @@ function actorFor(sessionId: string | null | undefined): string {
 
 function issueOr404(r: S.Repo, number: number, kind?: "issue" | "pull"): any {
   const row = S.getIssue(r.id, number);
-  if (!row || (kind && row.kind !== kind)) throw new ServiceError(404, "Not Found");
+  if (!row || (kind && row.kind !== kind))
+    throw new ServiceError(404, "Not Found");
   return row;
 }
 
-function clampPerPage(perPage: number | undefined, def: number, max: number): number {
+function clampPerPage(
+  perPage: number | undefined,
+  def: number,
+  max: number,
+): number {
   let v = Number(perPage ?? def);
   if (!Number.isFinite(v) || v < 1) v = def;
   return Math.min(v, max);
@@ -69,12 +74,16 @@ function paginate<T>(rows: T[], perPage: number, page: number): T[] {
 export const repos = {
   async create(input: { path: string; name: string }) {
     const { path, name } = input;
-    if (!path || !name) throw new ServiceError(422, "path and name are required");
+    if (!path || !name)
+      throw new ServiceError(422, "path and name are required");
     const abs = resolve(path);
-    if (!existsSync(abs)) throw new ServiceError(422, `path does not exist: ${abs}`);
-    if (!(await isGitRepo(abs))) throw new ServiceError(422, `not a git repository: ${abs}`);
+    if (!existsSync(abs))
+      throw new ServiceError(422, `path does not exist: ${abs}`);
+    if (!(await isGitRepo(abs)))
+      throw new ServiceError(422, `not a git repository: ${abs}`);
     const [owner, rname] = S.splitName(name);
-    if (S.getRepo(owner, rname)) throw new ServiceError(422, `already registered: ${owner}/${rname}`);
+    if (S.getRepo(owner, rname))
+      throw new ServiceError(422, `already registered: ${owner}/${rname}`);
     const branch = await defaultBranch(abs);
     return repoJSON(S.createRepo(name, abs, branch));
   },
@@ -88,11 +97,14 @@ export const repos = {
   },
 
   setArchived(name: string, archived: boolean, sessionId?: string | null) {
-    if (typeof archived !== "boolean") throw new ServiceError(422, "archived must be a boolean");
+    if (typeof archived !== "boolean")
+      throw new ServiceError(422, "archived must be a boolean");
     const r = repoOr404(name);
     const actor = actorFor(sessionId);
     S.setRepoArchived(r.id, archived);
-    S.emitEvent(r.id, archived ? "repo.archived" : "repo.unarchived", actor, { full_name: r.full_name });
+    S.emitEvent(r.id, archived ? "repo.archived" : "repo.unarchived", actor, {
+      full_name: r.full_name,
+    });
     return repoJSON(repoOr404(name));
   },
 
@@ -105,7 +117,10 @@ export const repos = {
     ensureWritable(r);
     const { default_branch, local_path } = fields;
     if (default_branch === undefined && local_path === undefined) {
-      throw new ServiceError(422, "at least one of default_branch or local_path is required");
+      throw new ServiceError(
+        422,
+        "at least one of default_branch or local_path is required",
+      );
     }
 
     let resolvedPath: string | undefined;
@@ -114,14 +129,19 @@ export const repos = {
         throw new ServiceError(422, "local_path must be a non-empty string");
       }
       resolvedPath = resolve(local_path);
-      if (!existsSync(resolvedPath)) throw new ServiceError(422, `path does not exist: ${resolvedPath}`);
-      if (!(await isGitRepo(resolvedPath))) throw new ServiceError(422, `not a git repository: ${resolvedPath}`);
+      if (!existsSync(resolvedPath))
+        throw new ServiceError(422, `path does not exist: ${resolvedPath}`);
+      if (!(await isGitRepo(resolvedPath)))
+        throw new ServiceError(422, `not a git repository: ${resolvedPath}`);
     }
 
     const targetPath = resolvedPath ?? r.local_path;
     if (default_branch !== undefined) {
       if (typeof default_branch !== "string" || !default_branch.trim()) {
-        throw new ServiceError(422, "default_branch must be a non-empty string");
+        throw new ServiceError(
+          422,
+          "default_branch must be a non-empty string",
+        );
       }
       if (!(await branchExists(targetPath, default_branch))) {
         throw new ServiceError(422, `branch not found: ${default_branch}`);
@@ -136,12 +156,20 @@ export const repos = {
     if (resolvedPath !== undefined) {
       headShas = [];
       for (const p of S.listOpenPullsForRepo(r.id)) {
-        headShas.push({ issueId: p.issue_id, sha: await revParse(resolvedPath, p.head_ref) });
+        headShas.push({
+          issueId: p.issue_id,
+          sha: await revParse(resolvedPath, p.head_ref),
+        });
       }
     }
 
     const [owner, rname] = S.splitName(name);
-    const updated = S.updateRepo(owner, rname, { default_branch, local_path: resolvedPath }, headShas);
+    const updated = S.updateRepo(
+      owner,
+      rname,
+      { default_branch, local_path: resolvedPath },
+      headShas,
+    );
     if (!updated) throw new ServiceError(404, "Not Found");
     return repoJSON(updated);
   },
@@ -155,17 +183,33 @@ export const repos = {
 
 // ===== agent sessions =====
 export const sessions = {
-  register(input: { id: string; agent: string; session: string; name?: string | null }) {
+  register(input: {
+    id: string;
+    agent: string;
+    session: string;
+    name?: string | null;
+  }) {
     const { id, agent, session, name } = input;
-    if (!id || !agent || !session) throw new ServiceError(422, "id, agent, and session are required");
+    if (!id || !agent || !session)
+      throw new ServiceError(422, "id, agent, and session are required");
     try {
-      const { session: row, created } = S.registerAgentSession(id, agent, session, name ?? null);
-      S.emitEvent(null, created ? "agent_session.registered" : "agent_session.updated", agent, {
-        id: row.id,
-        agent: row.agent,
-        session: row.external_session,
-        ...(row.name ? { name: row.name } : {}),
-      });
+      const { session: row, created } = S.registerAgentSession(
+        id,
+        agent,
+        session,
+        name ?? null,
+      );
+      S.emitEvent(
+        null,
+        created ? "agent_session.registered" : "agent_session.updated",
+        agent,
+        {
+          id: row.id,
+          agent: row.agent,
+          session: row.external_session,
+          ...(row.name ? { name: row.name } : {}),
+        },
+      );
       return { session: agentSessionJSON(row), created };
     } catch (e: any) {
       if (e.message === "CONFLICT_ID" || e.message === "CONFLICT_PAIR") {
@@ -203,7 +247,11 @@ export const issues = {
     const state = opts.state ?? "open";
     const kind = opts.kind ?? "any";
     const labelsFilter = opts.labels ?? [];
-    const perPage = clampPerPage(opts.perPage, DEFAULT_LIST_PER_PAGE, MAX_LIST_PER_PAGE);
+    const perPage = clampPerPage(
+      opts.perPage,
+      DEFAULT_LIST_PER_PAGE,
+      MAX_LIST_PER_PAGE,
+    );
     const page = opts.page && opts.page >= 1 ? opts.page : 1;
     let rows = S.listIssues(r.id, kind, state);
     if (labelsFilter.length) {
@@ -212,8 +260,13 @@ export const issues = {
         return labelsFilter.every((l) => names.includes(l));
       });
     }
-    if (opts.assignee_session_id !== undefined && opts.assignee_session_id !== null) {
-      rows = rows.filter((row) => row.assignee_session_id === opts.assignee_session_id);
+    if (
+      opts.assignee_session_id !== undefined &&
+      opts.assignee_session_id !== null
+    ) {
+      rows = rows.filter(
+        (row) => row.assignee_session_id === opts.assignee_session_id,
+      );
     }
     return paginate(rows, perPage, page).map((row) => issueJSON(row, r));
   },
@@ -232,7 +285,13 @@ export const issues = {
     ensureWritable(r);
     if (!input.title) throw new ServiceError(422, "title is required");
     const actor = actorFor(sessionId);
-    const issue = S.createIssue(r.id, "issue", input.title, input.body ?? "", actor) as any;
+    const issue = S.createIssue(
+      r.id,
+      "issue",
+      input.title,
+      input.body ?? "",
+      actor,
+    ) as any;
     if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
     S.emitEvent(r.id, "issue.opened", actor, { number: issue.number });
     return issueJSON(S.getIssue(r.id, issue.number), r);
@@ -248,7 +307,11 @@ export const issues = {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number);
-    if (patch.state !== undefined && patch.state !== "open" && patch.state !== "closed") {
+    if (
+      patch.state !== undefined &&
+      patch.state !== "open" &&
+      patch.state !== "closed"
+    ) {
       throw new ServiceError(422, 'state must be "open" or "closed"');
     }
     const actor = actorFor(sessionId);
@@ -261,21 +324,39 @@ export const issues = {
     if (Object.keys(fields).length) S.updateIssue(row.id, fields);
     if (patch.labels !== undefined) {
       S.setLabels(r.id, row.id, patch.labels);
-      S.emitEvent(r.id, "issue.labeled", actor, { number: row.number, labels: patch.labels });
+      S.emitEvent(r.id, "issue.labeled", actor, {
+        number: row.number,
+        labels: patch.labels,
+      });
     }
     if (patch.state === "closed" && wasOpen) {
-      S.emitEvent(r.id, row.kind === "pull" ? "pull_request.updated" : "issue.closed", actor, {
-        number: row.number,
-      });
+      S.emitEvent(
+        r.id,
+        row.kind === "pull" ? "pull_request.updated" : "issue.closed",
+        actor,
+        {
+          number: row.number,
+        },
+      );
     } else if (patch.state === "open" && !wasOpen) {
-      S.emitEvent(r.id, row.kind === "pull" ? "pull_request.updated" : "issue.reopened", actor, {
-        number: row.number,
-      });
+      S.emitEvent(
+        r.id,
+        row.kind === "pull" ? "pull_request.updated" : "issue.reopened",
+        actor,
+        {
+          number: row.number,
+        },
+      );
     }
     if (patch.title !== undefined || patch.body !== undefined) {
-      S.emitEvent(r.id, row.kind === "pull" ? "pull_request.updated" : "issue.updated", actor, {
-        number: row.number,
-      });
+      S.emitEvent(
+        r.id,
+        row.kind === "pull" ? "pull_request.updated" : "issue.updated",
+        actor,
+        {
+          number: row.number,
+        },
+      );
     }
     return issueJSON(S.getIssue(r.id, row.number), r);
   },
@@ -289,8 +370,12 @@ export const issues = {
     try {
       S.assignIssueToSession(row.id, sessionId);
     } catch (e: any) {
-      if (e.message === "NOT_FOUND") throw new ServiceError(404, "Agent session not found");
-      if (e.message === "CONFLICT_ASSIGNED" || e.message === "CONFLICT_SESSION") {
+      if (e.message === "NOT_FOUND")
+        throw new ServiceError(404, "Agent session not found");
+      if (
+        e.message === "CONFLICT_ASSIGNED" ||
+        e.message === "CONFLICT_SESSION"
+      ) {
         throw new ServiceError(409, "Issue assignee conflict");
       }
       throw e;
@@ -320,23 +405,37 @@ export const issues = {
         });
       }
     } catch (e: any) {
-      if (e.message === "CONFLICT_ASSIGNED") throw new ServiceError(409, "Issue assignee conflict");
+      if (e.message === "CONFLICT_ASSIGNED")
+        throw new ServiceError(409, "Issue assignee conflict");
       throw e;
     }
     return issueJSON(S.getIssue(r.id, row.number), r);
   },
 
-  addLabels(name: string, number: number, names: string[], sessionId?: string | null) {
+  addLabels(
+    name: string,
+    number: number,
+    names: string[],
+    sessionId?: string | null,
+  ) {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number);
     const actor = actorFor(sessionId);
     S.addLabels(r.id, row.id, names);
-    S.emitEvent(r.id, "issue.labeled", actor, { number: row.number, labels: names });
+    S.emitEvent(r.id, "issue.labeled", actor, {
+      number: row.number,
+      labels: names,
+    });
     return S.issueLabels(row.id).map(labelJSON);
   },
 
-  removeLabel(name: string, number: number, label: string, sessionId?: string | null) {
+  removeLabel(
+    name: string,
+    number: number,
+    label: string,
+    sessionId?: string | null,
+  ) {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number);
@@ -355,7 +454,12 @@ export const comments = {
     return S.listComments(row.id).map(commentJSON);
   },
 
-  create(name: string, number: number, body: string, sessionId?: string | null) {
+  create(
+    name: string,
+    number: number,
+    body: string,
+    sessionId?: string | null,
+  ) {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number);
@@ -379,14 +483,22 @@ export const labels = {
 };
 
 // ===== pulls =====
-function resolveLinkedIssueId(r: S.Repo, body: string, explicit?: number): number | null {
+function resolveLinkedIssueId(
+  r: S.Repo,
+  body: string,
+  explicit?: number,
+): number | null {
   const linkedNumber = explicit ?? parseClosingIssueNumber(body);
   if (linkedNumber == null) return null;
   const row = S.getIssue(r.id, linkedNumber);
   if (!row) throw new ServiceError(422, `issue #${linkedNumber} not found`);
-  if (row.kind !== "issue") throw new ServiceError(422, `#${linkedNumber} is not an issue`);
+  if (row.kind !== "issue")
+    throw new ServiceError(422, `#${linkedNumber} is not an issue`);
   if (S.openPullLinkedToIssue(row.id)) {
-    throw new ServiceError(422, `issue #${linkedNumber} already has an open pull request`);
+    throw new ServiceError(
+      422,
+      `issue #${linkedNumber} already has an open pull request`,
+    );
   }
   return row.id;
 }
@@ -405,7 +517,11 @@ export const pulls = {
   ) {
     const r = repoOr404(name);
     const state = opts.state ?? "open";
-    const perPage = clampPerPage(opts.perPage, DEFAULT_LIST_PER_PAGE, MAX_LIST_PER_PAGE);
+    const perPage = clampPerPage(
+      opts.perPage,
+      DEFAULT_LIST_PER_PAGE,
+      MAX_LIST_PER_PAGE,
+    );
     const page = opts.page && opts.page >= 1 ? opts.page : 1;
     let rows = S.listPulls(r.id, state, opts.merged ?? null);
     if (opts.head || opts.base) {
@@ -417,7 +533,9 @@ export const pulls = {
         return true;
       });
     }
-    return Promise.all(paginate(rows, perPage, page).map((row) => pullJSON(r, row)));
+    return Promise.all(
+      paginate(rows, perPage, page).map((row) => pullJSON(r, row)),
+    );
   },
 
   get(name: string, number: number) {
@@ -427,13 +545,20 @@ export const pulls = {
 
   async create(
     name: string,
-    input: { title: string; body?: string; head: string; base: string; issue?: number },
+    input: {
+      title: string;
+      body?: string;
+      head: string;
+      base: string;
+      issue?: number;
+    },
     sessionId?: string | null,
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
     const { title, body = "", head, base, issue } = input;
-    if (!title || !head || !base) throw new ServiceError(422, "title, head, base are required");
+    if (!title || !head || !base)
+      throw new ServiceError(422, "title, head, base are required");
     const actor = actorFor(sessionId);
     const linkedIssueId = resolveLinkedIssueId(r, body, issue);
     const linkedNumber = issue ?? parseClosingIssueNumber(body);
@@ -456,7 +581,11 @@ export const pulls = {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
-    if (patch.state !== undefined && patch.state !== "open" && patch.state !== "closed") {
+    if (
+      patch.state !== undefined &&
+      patch.state !== "open" &&
+      patch.state !== "closed"
+    ) {
       throw new ServiceError(422, 'state must be "open" or "closed"');
     }
     const p = S.getPull(row.id);
@@ -476,7 +605,12 @@ export const pulls = {
     return diffFiles(r.local_path, p.base_ref, p.head_ref);
   },
 
-  async merge(name: string, number: number, method: "squash" | "merge" | "rebase", sessionId?: string | null) {
+  async merge(
+    name: string,
+    number: number,
+    method: "squash" | "merge" | "rebase",
+    sessionId?: string | null,
+  ) {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
@@ -484,37 +618,61 @@ export const pulls = {
     if (p.merged) throw new ServiceError(405, "Pull Request is already merged");
     const actor = actorFor(sessionId);
     const message = `${row.title} (#${row.number})`;
-    const res = await gitMergePull(r.local_path, p.base_ref, p.head_ref, method, message, actor);
+    const res = await gitMergePull(
+      r.local_path,
+      p.base_ref,
+      p.head_ref,
+      method,
+      message,
+      actor,
+    );
     if (res.conflict) {
-      S.emitEvent(r.id, "pull_request.merge_conflict", actor, { number: row.number });
+      S.emitEvent(r.id, "pull_request.merge_conflict", actor, {
+        number: row.number,
+      });
       throw new ServiceError(409, "Merge conflict");
     }
     if (!res.merged) throw new ServiceError(422, "Merge failed");
     const closedIssue = S.setMerged(row.id, res.sha!, method);
-    S.emitEvent(r.id, "pull_request.merged", actor, { number: row.number, sha: res.sha });
+    S.emitEvent(r.id, "pull_request.merged", actor, {
+      number: row.number,
+      sha: res.sha,
+    });
     if (closedIssue != null) {
-      S.emitEvent(r.id, "issue.closed", actor, { number: closedIssue, closed_by_pull: row.number });
+      S.emitEvent(r.id, "issue.closed", actor, {
+        number: closedIssue,
+        closed_by_pull: row.number,
+      });
     }
     return { merged: true, sha: res.sha };
   },
 
-  async readyForReview(name: string, number: number, body: string | undefined, sessionId?: string | null) {
+  async readyForReview(
+    name: string,
+    number: number,
+    body: string | undefined,
+    sessionId?: string | null,
+  ) {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id);
-    if (p.merged || row.state !== "open") throw new ServiceError(422, "Pull Request is not open");
+    if (p.merged || row.state !== "open")
+      throw new ServiceError(422, "Pull Request is not open");
     const latest = S.latestSubstantiveReview(row.id);
-    if (!latest || latest.event !== "REQUEST_CHANGES") {
+    if (latest?.event !== "REQUEST_CHANGES") {
       throw new ServiceError(422, "No pending change requests to address");
     }
-    if (p.changes_addressed_at) throw new ServiceError(422, "Already marked ready for re-review");
+    if (p.changes_addressed_at)
+      throw new ServiceError(422, "Already marked ready for re-review");
     const actor = actorFor(sessionId);
     S.markChangesAddressed(row.id, actor);
     const headSha = await revParse(r.local_path, p.head_ref);
     if (headSha) S.setHeadSha(row.id, headSha);
     if (body) S.createComment(row.id, actor, body);
-    S.emitEvent(r.id, "pull_request.ready_for_review", actor, { number: row.number });
+    S.emitEvent(r.id, "pull_request.ready_for_review", actor, {
+      number: row.number,
+    });
     return pullJSON(r, S.getIssue(r.id, row.number));
   },
 };
@@ -549,7 +707,8 @@ export const reviews = {
     const event = (input.event ?? "COMMENT").toUpperCase();
     const lineComments = Array.isArray(input.comments) ? input.comments : [];
     for (const cm of lineComments) {
-      if (!cm?.path || !cm?.body) throw new ServiceError(422, "each comment requires path and body");
+      if (!cm?.path || !cm?.body)
+        throw new ServiceError(422, "each comment requires path and body");
     }
     const actor = actorFor(sessionId);
     const v = S.createReview(row.id, actor, event, input.body ?? "") as any;
@@ -561,7 +720,8 @@ export const reviews = {
         body: cm.body,
       });
     }
-    if (event === "APPROVE" || event === "REQUEST_CHANGES") S.clearChangesAddressed(row.id);
+    if (event === "APPROVE" || event === "REQUEST_CHANGES")
+      S.clearChangesAddressed(row.id);
     S.emitEvent(r.id, "pull_request.review_submitted", actor, {
       number: row.number,
       state: event,
@@ -573,9 +733,21 @@ export const reviews = {
 
 // ===== events =====
 export const events = {
-  list(opts: { since?: number; repo?: string | null; labels?: string[]; order?: "asc" | "desc"; limit?: number } = {}): LoopEvent[] {
+  list(
+    opts: {
+      since?: number;
+      repo?: string | null;
+      labels?: string[];
+      order?: "asc" | "desc";
+      limit?: number;
+    } = {},
+  ): LoopEvent[] {
     const since = Number(opts.since ?? 0);
-    const limit = clampPerPage(opts.limit, MAX_EVENTS_PER_PAGE, MAX_EVENTS_PER_PAGE);
+    const limit = clampPerPage(
+      opts.limit,
+      MAX_EVENTS_PER_PAGE,
+      MAX_EVENTS_PER_PAGE,
+    );
     const labels = opts.labels ?? [];
     const order = opts.order === "desc" ? "desc" : "asc";
     let repoId: number | null = null;
@@ -587,7 +759,11 @@ export const events = {
     }
     const rows = S.listEvents(since, repoId, limit, labels, order);
     return rows.map((row: any) => {
-      const repo = opts.repo ?? (row.repo_id != null ? S.getRepoById(row.repo_id)?.full_name : undefined);
+      const repo =
+        opts.repo ??
+        (row.repo_id != null
+          ? S.getRepoById(row.repo_id)?.full_name
+          : undefined);
       return formatEvent(row, repo);
     });
   },
@@ -604,7 +780,10 @@ function repoRef(r: S.Repo): RepoRef {
   return { full_name: r.full_name, owner: r.owner, name: r.name };
 }
 
-function byUpdatedDesc(a: { updated_at: string }, b: { updated_at: string }): number {
+function byUpdatedDesc(
+  a: { updated_at: string },
+  b: { updated_at: string },
+): number {
   return a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : 0;
 }
 
@@ -635,11 +814,17 @@ export const dashboard = {
     pullRows.sort((a, b) => byUpdatedDesc(a.row, b.row));
     const issues = issueRows
       .slice(0, DASHBOARD_SECTION_LIMIT)
-      .map(({ repo, ref, row }) => ({ repo: ref, issue: issueJSON(row, repo) }));
+      .map(({ repo, ref, row }) => ({
+        repo: ref,
+        issue: issueJSON(row, repo),
+      }));
     const pulls = await Promise.all(
       pullRows
         .slice(0, DASHBOARD_SECTION_LIMIT)
-        .map(async ({ repo, ref, row }) => ({ repo: ref, pull: await pullJSON(repo, row) })),
+        .map(async ({ repo, ref, row }) => ({
+          repo: ref,
+          pull: await pullJSON(repo, row),
+        })),
     );
     return { issues, pulls };
   },
@@ -649,6 +834,9 @@ export const dashboard = {
 export const sync = {
   async run() {
     const emitted = await sweepPullUpdates();
-    return { updated: emitted.length, events: emitted.map((e: any) => ({ id: e.id, type: e.type })) };
+    return {
+      updated: emitted.length,
+      events: emitted.map((e: any) => ({ id: e.id, type: e.type })),
+    };
   },
 };

@@ -15,10 +15,17 @@ export interface Repo {
 
 // ---- repos ----
 export function splitName(fullName: string): [string, string] {
-  return (fullName.includes("/") ? fullName.split("/") : ["me", fullName]) as [string, string];
+  return (fullName.includes("/") ? fullName.split("/") : ["me", fullName]) as [
+    string,
+    string,
+  ];
 }
 
-export function createRepo(fullName: string, localPath: string, defaultBranch = "main"): Repo {
+export function createRepo(
+  fullName: string,
+  localPath: string,
+  defaultBranch = "main",
+): Repo {
   const [owner, name] = splitName(fullName);
   const full = `${owner}/${name}`; // slash 無し入力も me/<name> に正規化
   return db
@@ -29,8 +36,11 @@ export function createRepo(fullName: string, localPath: string, defaultBranch = 
     .get(full, name, owner, localPath, defaultBranch, now()) as Repo;
 }
 
-export function listRepos(archived: "active" | "archived" | "all" = "active"): Repo[] {
-  if (archived === "all") return db.query(`SELECT * FROM repos ORDER BY id`).all() as Repo[];
+export function listRepos(
+  archived: "active" | "archived" | "all" = "active",
+): Repo[] {
+  if (archived === "all")
+    return db.query(`SELECT * FROM repos ORDER BY id`).all() as Repo[];
   const flag = archived === "archived" ? 1 : 0;
   return db
     .query(`SELECT * FROM repos WHERE archived = ? ORDER BY id`)
@@ -39,7 +49,11 @@ export function listRepos(archived: "active" | "archived" | "all" = "active"): R
 
 export function setRepoArchived(id: number, archived: boolean) {
   const archivedAt = archived ? now() : null;
-  db.run(`UPDATE repos SET archived = ?, archived_at = ? WHERE id = ?`, [archived ? 1 : 0, archivedAt, id]);
+  db.run(`UPDATE repos SET archived = ?, archived_at = ? WHERE id = ?`, [
+    archived ? 1 : 0,
+    archivedAt,
+    id,
+  ]);
 }
 
 export function isArchived(repo: Repo): boolean {
@@ -51,9 +65,11 @@ export function getRepoById(id: number): Repo | null {
 }
 
 export function getRepo(owner: string, name: string): Repo | null {
-  return (db
-    .query(`SELECT * FROM repos WHERE full_name = ?`)
-    .get(`${owner}/${name}`) as Repo) ?? null;
+  return (
+    (db
+      .query(`SELECT * FROM repos WHERE full_name = ?`)
+      .get(`${owner}/${name}`) as Repo) ?? null
+  );
 }
 
 export function updateRepo(
@@ -82,7 +98,10 @@ export function updateRepo(
       db.run(`UPDATE repos SET ${sets.join(", ")} WHERE id = ?`, updateParams);
     }
     for (const h of headShas ?? []) {
-      db.run(`UPDATE pulls SET head_sha = ? WHERE issue_id = ?`, [h.sha, h.issueId]);
+      db.run(`UPDATE pulls SET head_sha = ? WHERE issue_id = ?`, [
+        h.sha,
+        h.issueId,
+      ]);
     }
   };
 
@@ -104,7 +123,9 @@ export function updateRepo(
 export function deleteRepo(owner: string, name: string): boolean {
   const repo = getRepo(owner, name);
   if (!repo) return false;
-  const issues = db.query(`SELECT id FROM issues WHERE repo_id = ?`).all(repo.id) as { id: number }[];
+  const issues = db
+    .query(`SELECT id FROM issues WHERE repo_id = ?`)
+    .all(repo.id) as { id: number }[];
   const issueIds = issues.map((i) => i.id);
   if (issueIds.length) {
     const ph = issueIds.map(() => "?").join(",");
@@ -124,7 +145,9 @@ export function deleteRepo(owner: string, name: string): boolean {
 // ---- issues / pulls ----
 export function nextNumber(repoId: number): number {
   const row = db
-    .query(`SELECT COALESCE(MAX(number), 0) + 1 AS n FROM issues WHERE repo_id = ?`)
+    .query(
+      `SELECT COALESCE(MAX(number), 0) + 1 AS n FROM issues WHERE repo_id = ?`,
+    )
     .get(repoId) as { n: number };
   return row.n;
 }
@@ -152,7 +175,11 @@ export function getIssue(repoId: number, number: number): any {
     .get(repoId, number);
 }
 
-export function listIssues(repoId: number, kind: "issue" | "pull" | "any", state: string): any[] {
+export function listIssues(
+  repoId: number,
+  kind: "issue" | "pull" | "any",
+  state: string,
+): any[] {
   const conds = ["repo_id = ?"];
   const params: any[] = [repoId];
   if (kind !== "any") {
@@ -164,7 +191,9 @@ export function listIssues(repoId: number, kind: "issue" | "pull" | "any", state
     params.push(state);
   }
   return db
-    .query(`SELECT * FROM issues WHERE ${conds.join(" AND ")} ORDER BY updated_at DESC, number DESC`)
+    .query(
+      `SELECT * FROM issues WHERE ${conds.join(" AND ")} ORDER BY updated_at DESC, number DESC`,
+    )
     .all(...params);
 }
 
@@ -297,17 +326,27 @@ export function openPulls(): any[] {
     .all();
 }
 
-export function setMerged(issueId: number, sha: string, method: string): number | null {
+export function setMerged(
+  issueId: number,
+  sha: string,
+  method: string,
+): number | null {
   const pull = getPull(issueId);
   db.run(
     `UPDATE pulls SET merged = 1, merged_at = ?, merge_commit_sha = ?, merge_method = ? WHERE issue_id = ?`,
     [now(), sha, method, issueId],
   );
-  db.run(`UPDATE issues SET state = 'closed', updated_at = ? WHERE id = ?`, [now(), issueId]);
+  db.run(`UPDATE issues SET state = 'closed', updated_at = ? WHERE id = ?`, [
+    now(),
+    issueId,
+  ]);
   if (pull?.linked_issue_id) {
     const linked = getIssueById(pull.linked_issue_id);
     if (linked?.state === "open") {
-      db.run(`UPDATE issues SET state = 'closed', updated_at = ? WHERE id = ?`, [now(), linked.id]);
+      db.run(
+        `UPDATE issues SET state = 'closed', updated_at = ? WHERE id = ?`,
+        [now(), linked.id],
+      );
       return linked.number;
     }
   }
@@ -316,9 +355,15 @@ export function setMerged(issueId: number, sha: string, method: string): number 
 
 // ---- comments ----
 export function listComments(issueId: number): any[] {
-  return db.query(`SELECT * FROM comments WHERE issue_id = ? ORDER BY created_at ASC`).all(issueId);
+  return db
+    .query(`SELECT * FROM comments WHERE issue_id = ? ORDER BY created_at ASC`)
+    .all(issueId);
 }
-export function createComment(issueId: number, author: string, body: string): any {
+export function createComment(
+  issueId: number,
+  author: string,
+  body: string,
+): any {
   const t = now();
   return db
     .query(
@@ -328,14 +373,25 @@ export function createComment(issueId: number, author: string, body: string): an
     .get(issueId, author, body, t, t);
 }
 export function countComments(issueId: number): number {
-  return (db.query(`SELECT COUNT(*) AS c FROM comments WHERE issue_id = ?`).get(issueId) as any).c;
+  return (
+    db
+      .query(`SELECT COUNT(*) AS c FROM comments WHERE issue_id = ?`)
+      .get(issueId) as any
+  ).c;
 }
 
 // ---- reviews ----
 export function listReviews(issueId: number): any[] {
-  return db.query(`SELECT * FROM reviews WHERE issue_id = ? ORDER BY created_at ASC`).all(issueId);
+  return db
+    .query(`SELECT * FROM reviews WHERE issue_id = ? ORDER BY created_at ASC`)
+    .all(issueId);
 }
-export function createReview(issueId: number, author: string, event: string, body: string): any {
+export function createReview(
+  issueId: number,
+  author: string,
+  event: string,
+  body: string,
+): any {
   return db
     .query(
       `INSERT INTO reviews (issue_id, author, event, body, created_at)
@@ -364,7 +420,9 @@ export function computeReviewState(issueId: number): ReviewState {
   const p = getPull(issueId);
   const latest = latestSubstantiveReview(issueId);
   if (!latest) {
-    return listReviews(issueId).some((r) => r.event === "COMMENT") ? "COMMENTED" : null;
+    return listReviews(issueId).some((r) => r.event === "COMMENT")
+      ? "COMMENTED"
+      : null;
   }
   if (latest.event === "APPROVE") return "APPROVED";
   if (latest.event === "REQUEST_CHANGES") {
@@ -374,18 +432,18 @@ export function computeReviewState(issueId: number): ReviewState {
 }
 
 export function markChangesAddressed(issueId: number, actor: string) {
-  db.run(`UPDATE pulls SET changes_addressed_at = ?, changes_addressed_by = ? WHERE issue_id = ?`, [
-    now(),
-    actor,
-    issueId,
-  ]);
+  db.run(
+    `UPDATE pulls SET changes_addressed_at = ?, changes_addressed_by = ? WHERE issue_id = ?`,
+    [now(), actor, issueId],
+  );
   touchIssue(issueId);
 }
 
 export function clearChangesAddressed(issueId: number) {
-  db.run(`UPDATE pulls SET changes_addressed_at = NULL, changes_addressed_by = NULL WHERE issue_id = ?`, [
-    issueId,
-  ]);
+  db.run(
+    `UPDATE pulls SET changes_addressed_at = NULL, changes_addressed_by = NULL WHERE issue_id = ?`,
+    [issueId],
+  );
 }
 
 // ---- review comments (行コメント。投稿は review に束ねる) ----
@@ -400,21 +458,41 @@ export function createReviewComment(
       `INSERT INTO review_comments (issue_id, review_id, author, body, path, line, side, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(issueId, reviewId, author, c.body, c.path, c.line ?? null, c.side ?? "RIGHT", now());
+    .get(
+      issueId,
+      reviewId,
+      author,
+      c.body,
+      c.path,
+      c.line ?? null,
+      c.side ?? "RIGHT",
+      now(),
+    );
 }
 
 export function listReviewComments(issueId: number): any[] {
-  return db.query(`SELECT * FROM review_comments WHERE issue_id = ? ORDER BY created_at ASC`).all(issueId);
+  return db
+    .query(
+      `SELECT * FROM review_comments WHERE issue_id = ? ORDER BY created_at ASC`,
+    )
+    .all(issueId);
 }
 
 // ---- labels ----
 export function ensureLabel(repoId: number, name: string): any {
-  let l = db.query(`SELECT * FROM labels WHERE repo_id = ? AND name = ?`).get(repoId, name);
-  if (!l) l = db.query(`INSERT INTO labels (repo_id, name) VALUES (?, ?) RETURNING *`).get(repoId, name);
+  let l = db
+    .query(`SELECT * FROM labels WHERE repo_id = ? AND name = ?`)
+    .get(repoId, name);
+  if (!l)
+    l = db
+      .query(`INSERT INTO labels (repo_id, name) VALUES (?, ?) RETURNING *`)
+      .get(repoId, name);
   return l;
 }
 export function listLabels(repoId: number): any[] {
-  return db.query(`SELECT * FROM labels WHERE repo_id = ? ORDER BY name`).all(repoId);
+  return db
+    .query(`SELECT * FROM labels WHERE repo_id = ? ORDER BY name`)
+    .all(repoId);
 }
 export function issueLabels(issueId: number): any[] {
   return db
@@ -427,7 +505,10 @@ export function issueLabels(issueId: number): any[] {
 export function addLabels(repoId: number, issueId: number, names: string[]) {
   for (const n of names) {
     const l = ensureLabel(repoId, n) as any;
-    db.run(`INSERT OR IGNORE INTO issue_labels (issue_id, label_id) VALUES (?, ?)`, [issueId, l.id]);
+    db.run(
+      `INSERT OR IGNORE INTO issue_labels (issue_id, label_id) VALUES (?, ?)`,
+      [issueId, l.id],
+    );
   }
 }
 export function setLabels(repoId: number, issueId: number, names: string[]) {
@@ -435,8 +516,14 @@ export function setLabels(repoId: number, issueId: number, names: string[]) {
   addLabels(repoId, issueId, names);
 }
 export function removeLabel(repoId: number, issueId: number, name: string) {
-  const l = db.query(`SELECT id FROM labels WHERE repo_id = ? AND name = ?`).get(repoId, name) as any;
-  if (l) db.run(`DELETE FROM issue_labels WHERE issue_id = ? AND label_id = ?`, [issueId, l.id]);
+  const l = db
+    .query(`SELECT id FROM labels WHERE repo_id = ? AND name = ?`)
+    .get(repoId, name) as any;
+  if (l)
+    db.run(`DELETE FROM issue_labels WHERE issue_id = ? AND label_id = ?`, [
+      issueId,
+      l.id,
+    ]);
 }
 
 // ---- events ----
@@ -446,7 +533,9 @@ export function getAgentSession(id: string): any | null {
 }
 
 export function listAgentSessions(): any[] {
-  return db.query(`SELECT * FROM agent_sessions ORDER BY updated_at DESC`).all();
+  return db
+    .query(`SELECT * FROM agent_sessions ORDER BY updated_at DESC`)
+    .all();
 }
 
 export type RegisterConflict = "CONFLICT_ID" | "CONFLICT_PAIR";
@@ -460,7 +549,10 @@ export function registerAgentSession(
   const existing = getAgentSession(id);
   const t = now();
   if (existing) {
-    if (existing.agent !== agent || existing.external_session !== externalSession) {
+    if (
+      existing.agent !== agent ||
+      existing.external_session !== externalSession
+    ) {
       throw new Error("CONFLICT_ID" satisfies RegisterConflict);
     }
     db.run(`UPDATE agent_sessions SET name = ?, updated_at = ? WHERE id = ?`, [
@@ -471,7 +563,9 @@ export function registerAgentSession(
     return { session: getAgentSession(id), created: false };
   }
   const byPair = db
-    .query(`SELECT id FROM agent_sessions WHERE agent = ? AND external_session = ?`)
+    .query(
+      `SELECT id FROM agent_sessions WHERE agent = ? AND external_session = ?`,
+    )
     .get(agent, externalSession) as { id: string } | null;
   if (byPair) throw new Error("CONFLICT_PAIR" satisfies RegisterConflict);
   db.query(
@@ -481,12 +575,17 @@ export function registerAgentSession(
   return { session: getAgentSession(id), created: true };
 }
 
-export type AssignConflict = "NOT_FOUND" | "CONFLICT_ASSIGNED" | "CONFLICT_SESSION";
+export type AssignConflict =
+  | "NOT_FOUND"
+  | "CONFLICT_ASSIGNED"
+  | "CONFLICT_SESSION";
 
 export function assignIssueToSession(issueId: number, sessionId: string) {
   const session = getAgentSession(sessionId);
   if (!session) throw new Error("NOT_FOUND" satisfies AssignConflict);
-  const issue = db.query(`SELECT * FROM issues WHERE id = ?`).get(issueId) as any;
+  const issue = db
+    .query(`SELECT * FROM issues WHERE id = ?`)
+    .get(issueId) as any;
   if (issue.assignee_session_id && issue.assignee_session_id !== sessionId) {
     throw new Error("CONFLICT_ASSIGNED" satisfies AssignConflict);
   }
@@ -494,15 +593,16 @@ export function assignIssueToSession(issueId: number, sessionId: string) {
     .query(`SELECT id FROM issues WHERE assignee_session_id = ? AND id != ?`)
     .get(sessionId, issueId) as { id: number } | null;
   if (other) throw new Error("CONFLICT_SESSION" satisfies AssignConflict);
-  db.run(`UPDATE issues SET assignee_session_id = ?, updated_at = ? WHERE id = ?`, [
-    sessionId,
-    now(),
-    issueId,
-  ]);
+  db.run(
+    `UPDATE issues SET assignee_session_id = ?, updated_at = ? WHERE id = ?`,
+    [sessionId, now(), issueId],
+  );
 }
 
 export function unassignIssue(issueId: number, sessionId?: string | null) {
-  const issue = db.query(`SELECT * FROM issues WHERE id = ?`).get(issueId) as any;
+  const issue = db
+    .query(`SELECT * FROM issues WHERE id = ?`)
+    .get(issueId) as any;
   if (!issue.assignee_session_id) return null;
   if (sessionId && issue.assignee_session_id !== sessionId) {
     throw new Error("CONFLICT_ASSIGNED" satisfies AssignConflict);
@@ -528,7 +628,9 @@ export function assigneeJSON(sessionId: string | null | undefined): any | null {
   return out;
 }
 
-export function authorFromSession(sessionId: string | null | undefined): string | null {
+export function authorFromSession(
+  sessionId: string | null | undefined,
+): string | null {
   if (!sessionId) return null;
   const s = getAgentSession(sessionId);
   if (!s) return null;
@@ -537,7 +639,12 @@ export function authorFromSession(sessionId: string | null | undefined): string 
 
 // ---- events ----
 // Persist then publish LoopEvent to in-process hub (order matters for SSE replay consistency).
-export function emitEvent(repoId: number | null, type: string, actor: string, payload: any): any {
+export function emitEvent(
+  repoId: number | null,
+  type: string,
+  actor: string,
+  payload: any,
+): any {
   const row = db
     .query(
       `INSERT INTO events (repo_id, type, actor, payload, created_at)
@@ -581,6 +688,8 @@ export function listEvents(
   params.push(limit);
   const dir = order === "desc" ? "DESC" : "ASC";
   return db
-    .query(`SELECT * FROM events WHERE ${clauses.join(" AND ")} ORDER BY id ${dir} LIMIT ?`)
+    .query(
+      `SELECT * FROM events WHERE ${clauses.join(" AND ")} ORDER BY id ${dir} LIMIT ?`,
+    )
     .all(...params);
 }

@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, expect, test } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterAll, beforeAll, expect, test } from "vitest";
 
 const CLI = join(import.meta.dirname, "index.ts");
 const REPO = "me/prupd";
@@ -14,8 +14,22 @@ let repoPath: string;
 function lh(args: string[]) {
   const r = spawnSync(
     process.execPath,
-    ["--experimental-sqlite", "--disable-warning=ExperimentalWarning", "--import", "tsx", CLI, ...args],
-    { encoding: "utf8", env: { ...process.env, LOOPHUB_HOME: home, LOOPHUB_DB: join(home, "loophub.db") } },
+    [
+      "--experimental-sqlite",
+      "--disable-warning=ExperimentalWarning",
+      "--import",
+      "tsx",
+      CLI,
+      ...args,
+    ],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LOOPHUB_HOME: home,
+        LOOPHUB_DB: join(home, "loophub.db"),
+      },
+    },
   );
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status ?? 0 };
 }
@@ -26,7 +40,18 @@ function git(args: string[]) {
 
 function createPull(title: string, body: string): number {
   const { stdout } = lh([
-    "pr", "create", "--repo", REPO, "--head", "feature", "--base", "main", "--title", title, "--body", body,
+    "pr",
+    "create",
+    "--repo",
+    REPO,
+    "--head",
+    "feature",
+    "--base",
+    "main",
+    "--title",
+    title,
+    "--body",
+    body,
   ]);
   const m = stdout.match(/created PR #(\d+)/);
   if (!m) throw new Error(`pr create failed: ${stdout}`);
@@ -34,7 +59,16 @@ function createPull(title: string, body: string): number {
 }
 
 function createIssue(title: string, body: string): number {
-  const { stdout } = lh(["issue", "create", "--repo", REPO, "--title", title, "--body", body]);
+  const { stdout } = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    title,
+    "--body",
+    body,
+  ]);
   const m = stdout.match(/created #(\d+)/);
   if (!m) throw new Error(`issue create failed: ${stdout}`);
   return Number(m[1]);
@@ -73,7 +107,15 @@ afterAll(() => {
 test("lh pr update edits both title and body", () => {
   const n = createPull("old title", "old body");
   const { stdout, exitCode } = lh([
-    "pr", "update", String(n), "--repo", REPO, "--title", "new title", "--body", "new body",
+    "pr",
+    "update",
+    String(n),
+    "--repo",
+    REPO,
+    "--title",
+    "new title",
+    "--body",
+    "new body",
   ]);
   expect(exitCode).toBe(0);
   expect(stdout).toContain(`updated PR #${n}`);
@@ -84,7 +126,10 @@ test("lh pr update edits both title and body", () => {
 
 test("lh pr update --title leaves body untouched", () => {
   const n = createPull("title only", "keep this body");
-  expect(lh(["pr", "update", String(n), "--repo", REPO, "--title", "retitled"]).exitCode).toBe(0);
+  expect(
+    lh(["pr", "update", String(n), "--repo", REPO, "--title", "retitled"])
+      .exitCode,
+  ).toBe(0);
   const p = viewJSON(n);
   expect(p.title).toBe("retitled");
   expect(p.body).toBe("keep this body");
@@ -92,7 +137,10 @@ test("lh pr update --title leaves body untouched", () => {
 
 test("lh pr update --body leaves title untouched", () => {
   const n = createPull("keep this title", "body only");
-  expect(lh(["pr", "update", String(n), "--repo", REPO, "--body", "rebodied"]).exitCode).toBe(0);
+  expect(
+    lh(["pr", "update", String(n), "--repo", REPO, "--body", "rebodied"])
+      .exitCode,
+  ).toBe(0);
   const p = viewJSON(n);
   expect(p.title).toBe("keep this title");
   expect(p.body).toBe("rebodied");
@@ -110,6 +158,14 @@ test("lh pr update without --title/--body errors", () => {
 
 test("lh pr update on an issue number errors", () => {
   const n = createIssue("an issue", "not a pr");
-  const { exitCode } = lh(["pr", "update", String(n), "--repo", REPO, "--title", "nope"]);
+  const { exitCode } = lh([
+    "pr",
+    "update",
+    String(n),
+    "--repo",
+    REPO,
+    "--title",
+    "nope",
+  ]);
   expect(exitCode).not.toBe(0);
 });

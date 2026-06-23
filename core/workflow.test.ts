@@ -1,17 +1,17 @@
-import { test, expect } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expect, test } from "vitest";
+import type { Worktree } from "./git.ts";
 import {
-  parseWorkflow,
-  normalizeWorkflow,
-  stepsFor,
-  matchWorktreePath,
   buildRunEnv,
   loadWorkflow,
+  matchWorktreePath,
+  normalizeWorkflow,
+  parseWorkflow,
+  stepsFor,
   WORKFLOW_PATH,
 } from "./workflow.ts";
-import type { Worktree } from "./git.ts";
 
 test("parseWorkflow reads the flat on.<event> -> run[] schema", () => {
   const wf = parseWorkflow(`
@@ -53,8 +53,13 @@ test("loadWorkflow returns null for a missing file and ignores invalid YAML", ()
     expect(loadWorkflow(dir)).toBeNull(); // no file
 
     mkdirSync(join(dir, ".loophub"), { recursive: true });
-    writeFileSync(join(dir, WORKFLOW_PATH), "on:\n  issue.opened:\n    - run: echo hi\n");
-    expect(stepsFor(loadWorkflow(dir)!, "issue.opened")).toEqual([{ run: "echo hi" }]);
+    writeFileSync(
+      join(dir, WORKFLOW_PATH),
+      "on:\n  issue.opened:\n    - run: echo hi\n",
+    );
+    expect(stepsFor(loadWorkflow(dir)!, "issue.opened")).toEqual([
+      { run: "echo hi" },
+    ]);
 
     // Broken YAML must not throw — loadWorkflow logs and returns null.
     writeFileSync(join(dir, WORKFLOW_PATH), "on: [this: is: invalid: yaml");
@@ -67,7 +72,13 @@ test("loadWorkflow returns null for a missing file and ignores invalid YAML", ()
 test("matchWorktreePath matches a PR head ref to a worktree path by branch", () => {
   const worktrees: Worktree[] = [
     { path: "/main", head: "a", branch: "main", bare: false, detached: false },
-    { path: "/wt/issue-52", head: "b", branch: "loophub/issue-52", bare: false, detached: false },
+    {
+      path: "/wt/issue-52",
+      head: "b",
+      branch: "loophub/issue-52",
+      bare: false,
+      detached: false,
+    },
   ];
   expect(matchWorktreePath("loophub/issue-52", worktrees)).toBe("/wt/issue-52");
   expect(matchWorktreePath("feature-x", worktrees)).toBe(""); // no checked-out worktree
@@ -92,7 +103,11 @@ test("buildRunEnv sets only the variables relevant to the event", () => {
 
   // PR event with a matched worktree.
   const prEnv = buildRunEnv({
-    event: { type: "pull_request.opened", actor: "bot", payload: { number: 3 } },
+    event: {
+      type: "pull_request.opened",
+      actor: "bot",
+      payload: { number: 3 },
+    },
     repoFullName: "jugyo/loophub",
     prNumber: 3,
     worktreePath: "/wt/issue-1",

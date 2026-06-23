@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { queryKeysForEvent } from "./event-keys";
 import type { LoopEvent } from "@/api/types";
+import { queryKeysForEvent } from "./event-keys";
 
 function ev(partial: Partial<LoopEvent>): LoopEvent {
   return {
@@ -56,7 +56,11 @@ describe("queryKeysForEvent", () => {
 
   it("invalidates the repo activity feed for repo-scoped events", () => {
     const keys = queryKeysForEvent(
-      ev({ type: "pull_request.opened", repo: "me/proj", payload: { number: 2 } }),
+      ev({
+        type: "pull_request.opened",
+        repo: "me/proj",
+        payload: { number: 2 },
+      }),
     );
     expect(keys).toContainEqual(["events", "me/proj"]);
   });

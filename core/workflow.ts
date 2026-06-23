@@ -12,7 +12,10 @@ import type { Worktree } from "./git.ts";
 export const WORKFLOW_PATH = ".loophub/workflow.yml";
 
 /** Events the worker dispatches on in v1. Other event types are read but never matched. */
-export const SUPPORTED_EVENTS = ["issue.opened", "pull_request.opened"] as const;
+export const SUPPORTED_EVENTS = [
+  "issue.opened",
+  "pull_request.opened",
+] as const;
 
 export interface WorkflowStep {
   run: string;
@@ -61,13 +64,18 @@ export function loadWorkflow(repoLocalPath: string): Workflow | null {
     return parseWorkflow(text);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`workflow: ignoring invalid ${WORKFLOW_PATH} in ${repoLocalPath}: ${msg}`);
+    console.error(
+      `workflow: ignoring invalid ${WORKFLOW_PATH} in ${repoLocalPath}: ${msg}`,
+    );
     return null;
   }
 }
 
 /** Steps configured for an event type, or [] when none. */
-export function stepsFor(workflow: Workflow, eventType: string): WorkflowStep[] {
+export function stepsFor(
+  workflow: Workflow,
+  eventType: string,
+): WorkflowStep[] {
   return workflow.on[eventType] ?? [];
 }
 
@@ -75,7 +83,10 @@ export function stepsFor(workflow: Workflow, eventType: string): WorkflowStep[] 
 // as parsed Worktree[]). The match is by branch name, not LoopHub's naming convention, so the
 // runner stays agnostic to where worktrees live (issue #52 boundary note). Returns "" when the
 // ref has no checked-out worktree (e.g. a regular branch) — callers set LH_WORKTREE_PATH="".
-export function matchWorktreePath(headRef: string | null | undefined, worktrees: Worktree[]): string {
+export function matchWorktreePath(
+  headRef: string | null | undefined,
+  worktrees: Worktree[],
+): string {
   if (!headRef) return "";
   const wt = worktrees.find((w) => w.branch === headRef);
   return wt ? wt.path : "";

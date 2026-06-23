@@ -1,10 +1,10 @@
-import { afterAll, beforeAll, expect, test } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AddressInfo } from "node:net";
-import type { Server } from "node:http";
+import { afterAll, beforeAll, expect, test } from "vitest";
 
 // Isolate the DB before http.ts -> rpc.ts -> contract.ts -> service.ts -> db.ts.
 const HOME = mkdtempSync(join(tmpdir(), "lh-http-"));
@@ -30,7 +30,10 @@ async function rpc(method: string, params?: any, id: any = 1) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
   });
-  return { status: res.status, body: (res.status === 204 ? null : await res.json()) as any };
+  return {
+    status: res.status,
+    body: (res.status === 204 ? null : await res.json()) as any,
+  };
 }
 
 beforeAll(async () => {
@@ -82,7 +85,11 @@ test("POST /rpc with only notifications returns 204", async () => {
   const res = await fetch(`${base}/rpc`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", method: "issues/create", params: { repo: "me/proj", title: "n" } }),
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "issues/create",
+      params: { repo: "me/proj", title: "n" },
+    }),
   });
   expect(res.status).toBe(204);
 });
@@ -96,7 +103,9 @@ test("GET /events streams replayed then live events as SSE notifications", async
   S.emitEvent(repo.id, "issue.opened", "me", { number: 101 });
 
   const ctrl = new AbortController();
-  const res = await fetch(`${base}/events?since=${since}&repo=me/proj`, { signal: ctrl.signal });
+  const res = await fetch(`${base}/events?since=${since}&repo=me/proj`, {
+    signal: ctrl.signal,
+  });
   const reader = res.body!.getReader();
   const dec = new TextDecoder();
   let buf = "";
@@ -110,12 +119,14 @@ test("GET /events streams replayed then live events as SSE notifications", async
         .filter((f) => f.startsWith("event: loophub"))
         .map((f) => JSON.parse(f.split("\ndata: ")[1]));
       if (frames.length >= count) return frames;
-      if (Date.now() > deadline) throw new Error(`timed out: got ${frames.length}/${count}`);
+      if (Date.now() > deadline)
+        throw new Error(`timed out: got ${frames.length}/${count}`);
       const timer = new Promise<{ value?: Uint8Array; done: boolean }>((r) =>
         setTimeout(() => r({ done: true }), deadline - Date.now()),
       );
       const { value, done } = await Promise.race([reader.read(), timer]);
-      if (done && !value) throw new Error(`timed out: got ${frames.length}/${count}`);
+      if (done && !value)
+        throw new Error(`timed out: got ${frames.length}/${count}`);
       if (value) buf += dec.decode(value, { stream: true });
     }
   }

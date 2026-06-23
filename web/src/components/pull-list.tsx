@@ -3,17 +3,17 @@
 // fixed state=closed&merged=only query with no filter. Both reuse the shared
 // PullRow. TanStack Query backed; refetches on SSE via the pulls query key.
 
-import { useState } from "react";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
+import { useState } from "react";
+import type { PullRequest } from "@/api/types";
 import { PullRow } from "@/components/dashboard-rows";
 import {
   DEFAULT_PULL_STATE,
+  type PullListState,
   useMergedPullsList,
   usePullsList,
-  type PullListState,
 } from "@/queries/pulls";
-import type { PullRequest } from "@/api/types";
-import type { UseQueryResult } from "@tanstack/react-query";
 
 const STATE_OPTIONS: { value: PullListState; label: string }[] = [
   { value: "open", label: "Open" },

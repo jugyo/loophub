@@ -2,11 +2,7 @@
 // from the shared factory (./keys), so the SSE invalidation map
 // (../lib/event-keys.ts) refetches these lists and details on change.
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createIssue,
   getIssue,
@@ -59,11 +55,7 @@ export function useIssue(owner: string, repo: string, number: number) {
 }
 
 /** Comments for an issue, oldest first (server order). */
-export function useIssueComments(
-  owner: string,
-  repo: string,
-  number: number,
-) {
+export function useIssueComments(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: [...queryKeys.issue(full(owner, repo), number), "comments"],
     queryFn: () => listIssueComments(owner, repo, number),
@@ -87,11 +79,7 @@ export function usePostComment(owner: string, repo: string, number: number) {
 }
 
 /** Toggle issue state (open <-> closed), then invalidate issue + lists. */
-export function useSetIssueState(
-  owner: string,
-  repo: string,
-  number: number,
-) {
+export function useSetIssueState(owner: string, repo: string, number: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (state: "open" | "closed") =>

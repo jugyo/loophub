@@ -2,15 +2,15 @@
 // over the shared list-row pattern (IssueRow). TanStack Query backed; refetches
 // on SSE via the issues query key (event-keys.ts).
 
-import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { IssueRow } from "@/components/dashboard-rows";
+import { useState } from "react";
 import { CreateIssueButton } from "@/components/create-issue-button";
+import { IssueRow } from "@/components/dashboard-rows";
 import { Button } from "@/components/ui/button";
 import {
   DEFAULT_ISSUE_FILTERS,
-  useIssuesList,
   type IssueListFilters,
+  useIssuesList,
 } from "@/queries/issues";
 
 const STATE_OPTIONS: { value: IssueListFilters["state"]; label: string }[] = [

@@ -1,13 +1,15 @@
-import type * as SqliteNS from "node:sqlite";
-import { createRequire } from "node:module";
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname } from "node:path";
+import type * as SqliteNS from "node:sqlite";
 import { dbPath } from "./config.ts";
 
 // node:sqlite is an experimental builtin (Node 22.x, behind --experimental-sqlite).
 // Load it through createRequire so bundler-based transformers (Vite/vitest) don't try
 // to statically resolve the `node:sqlite` specifier as a package.
-const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof SqliteNS;
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof SqliteNS;
 type DatabaseSync = SqliteNS.DatabaseSync;
 type StatementSync = SqliteNS.StatementSync;
 
@@ -56,7 +58,8 @@ class Db {
   query(sql: string): BunStyleQuery {
     const stmt = this.#prepare(sql);
     return {
-      get: (...params: Param[]) => stmt.get(...(normalize(params) as never[])) ?? null,
+      get: (...params: Param[]) =>
+        stmt.get(...(normalize(params) as never[])) ?? null,
       all: (...params: Param[]) => stmt.all(...(normalize(params) as never[])),
       run: (...params: Param[]) => {
         stmt.run(...(normalize(params) as never[]));
@@ -191,11 +194,17 @@ function tryExec(sql: string) {
 
 tryExec("ALTER TABLE pulls ADD COLUMN head_sha TEXT");
 tryExec("ALTER TABLE review_comments ADD COLUMN review_id INTEGER");
-tryExec("ALTER TABLE pulls ADD COLUMN linked_issue_id INTEGER REFERENCES issues(id)");
-tryExec("CREATE INDEX IF NOT EXISTS idx_pulls_linked_issue ON pulls(linked_issue_id)");
+tryExec(
+  "ALTER TABLE pulls ADD COLUMN linked_issue_id INTEGER REFERENCES issues(id)",
+);
+tryExec(
+  "CREATE INDEX IF NOT EXISTS idx_pulls_linked_issue ON pulls(linked_issue_id)",
+);
 tryExec("ALTER TABLE repos ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
 tryExec("ALTER TABLE repos ADD COLUMN archived_at TEXT");
-tryExec("ALTER TABLE issues ADD COLUMN assignee_session_id TEXT REFERENCES agent_sessions(id)");
+tryExec(
+  "ALTER TABLE issues ADD COLUMN assignee_session_id TEXT REFERENCES agent_sessions(id)",
+);
 tryExec(
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_issues_assignee_session ON issues(assignee_session_id) WHERE assignee_session_id IS NOT NULL",
 );

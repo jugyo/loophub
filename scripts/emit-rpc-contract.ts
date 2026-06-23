@@ -14,5 +14,5 @@ const { contractDocument } = await import("../web/server/contract.ts");
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "docs", "rpc-contract.json");
-writeFileSync(out, JSON.stringify(contractDocument(), null, 2) + "\n");
+writeFileSync(out, `${JSON.stringify(contractDocument(), null, 2)}\n`);
 console.error(`wrote ${out}`);

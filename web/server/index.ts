@@ -2,9 +2,10 @@
 //   lh-web [--port <n>] [--poll-ms <ms>] [--sweep-ms <ms>]   (port: default 8730 or LOOPHUB_PORT)
 // One command, one port: this process serves the JSON-RPC API, the SSE feed, AND the SPA
 // (with HMR) by embedding Vite in middleware mode — no separate dev server.
-import { createLhWebServer } from "./http.ts";
+
 import { createViteDev, type ViteDev } from "./dev.ts";
 import { DEFAULT_SWEEP_MS, startEventTail, startPullSweep } from "./events.ts";
+import { createLhWebServer } from "./http.ts";
 
 const argv = process.argv.slice(2);
 let port = Number(process.env.LOOPHUB_PORT ?? 8730);
@@ -40,7 +41,9 @@ try {
 } catch (err) {
   stopTail();
   stopSweep();
-  console.error("lh-web: failed to start the embedded Vite dev server. Are web deps installed (npm install)?");
+  console.error(
+    "lh-web: failed to start the embedded Vite dev server. Are web deps installed (npm install)?",
+  );
   console.error(err);
   process.exit(1);
 }

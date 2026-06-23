@@ -1,8 +1,8 @@
 // shadcn/ui Breadcrumb primitives. Dropdown affordances are out of scope for
 // the app shell (see issue #149); only segment display is wired here.
 
-import * as React from "react";
 import { ChevronRight } from "lucide-react";
+import * as React from "react";
 import { cn } from "@/lib/utils";
 
 export const Breadcrumb = React.forwardRef<

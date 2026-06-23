@@ -5,16 +5,23 @@
 // `lh-web` injects a Vite dev middleware (dev.ts) so one process serves the UI with HMR; the
 // default `handleStatic` serves a built web/dist. Keeping Vite out of this file means the
 // RPC/SSE core (and its tests) never import Vite.
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+
 import { createReadStream, existsSync, statSync } from "node:fs";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dispatchRaw } from "./rpc.ts";
 import { subscribeEvents } from "./events.ts";
+import { dispatchRaw } from "./rpc.ts";
 
 // Built SPA assets. Defaults to web/dist; override with LOOPHUB_WEB_DIST.
 const DIST_DIR =
-  process.env.LOOPHUB_WEB_DIST ?? join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+  process.env.LOOPHUB_WEB_DIST ??
+  join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const SSE_HEARTBEAT_MS = 15_000;
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -33,7 +40,9 @@ const CONTENT_TYPES: Record<string, string> = {
 
 function contentType(path: string): string {
   const dot = path.lastIndexOf(".");
-  return (dot >= 0 && CONTENT_TYPES[path.slice(dot)]) || "application/octet-stream";
+  return (
+    (dot >= 0 && CONTENT_TYPES[path.slice(dot)]) || "application/octet-stream"
+  );
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -45,7 +54,10 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-async function handleRpc(req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleRpc(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const body = await readBody(req);
   const response = await dispatchRaw(body);
   if (response === null) {
@@ -56,7 +68,11 @@ async function handleRpc(req: IncomingMessage, res: ServerResponse): Promise<voi
   res.end(JSON.stringify(response));
 }
 
-function handleEvents(req: IncomingMessage, res: ServerResponse, url: URL): void {
+function handleEvents(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): void {
   res.writeHead(200, {
     "content-type": "text/event-stream; charset=utf-8",
     "cache-control": "no-cache",
@@ -72,9 +88,14 @@ function handleEvents(req: IncomingMessage, res: ServerResponse, url: URL): void
   };
 
   // Deliver each notification as an SSE `loophub` frame carrying the JSON-RPC notification.
-  const unsub = subscribeEvents({ since, repo }, (n) => push(`event: loophub\ndata: ${JSON.stringify(n)}\n\n`));
+  const unsub = subscribeEvents({ since, repo }, (n) =>
+    push(`event: loophub\ndata: ${JSON.stringify(n)}\n\n`),
+  );
 
-  const heartbeat = setInterval(() => push(": heartbeat\n\n"), SSE_HEARTBEAT_MS);
+  const heartbeat = setInterval(
+    () => push(": heartbeat\n\n"),
+    SSE_HEARTBEAT_MS,
+  );
 
   const cleanup = () => {
     if (closed) return;
@@ -88,14 +109,21 @@ function handleEvents(req: IncomingMessage, res: ServerResponse, url: URL): void
 }
 
 // Serve a file from web/dist, falling back to index.html for SPA client routes.
-function handleStatic(req: IncomingMessage, res: ServerResponse, url: URL): void {
+function handleStatic(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): void {
   if (!existsSync(DIST_DIR)) {
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
     res.end("Not built. Run the SPA build, or use the Vite dev server.\n");
     return;
   }
 
-  const rel = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
+  const rel = normalize(decodeURIComponent(url.pathname)).replace(
+    /^(\.\.[/\\])+/,
+    "",
+  );
   let filePath = join(DIST_DIR, rel);
   // Guard against path traversal escaping the dist root.
   if (!filePath.startsWith(DIST_DIR)) {
@@ -115,7 +143,11 @@ function handleStatic(req: IncomingMessage, res: ServerResponse, url: URL): void
 
 // Serves GET requests that aren't /rpc or /events — i.e. the SPA. `handleStatic` (web/dist)
 // is the default; `lh-web` injects a Vite dev middleware instead (see dev.ts).
-export type StaticHandler = (req: IncomingMessage, res: ServerResponse, url: URL) => void;
+export type StaticHandler = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+) => void;
 
 export function handleRequest(
   req: IncomingMessage,
@@ -125,8 +157,17 @@ export function handleRequest(
   const url = new URL(req.url ?? "/", "http://localhost");
   if (url.pathname === "/rpc" && req.method === "POST") {
     handleRpc(req, res).catch(() => {
-      if (!res.headersSent) res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32603, message: "Internal error" } }));
+      if (!res.headersSent)
+        res.writeHead(500, {
+          "content-type": "application/json; charset=utf-8",
+        });
+      res.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32603, message: "Internal error" },
+        }),
+      );
     });
     return;
   }
@@ -142,6 +183,8 @@ export function handleRequest(
   res.end("Not Found\n");
 }
 
-export function createLhWebServer(serveStatic: StaticHandler = handleStatic): Server {
+export function createLhWebServer(
+  serveStatic: StaticHandler = handleStatic,
+): Server {
   return createServer((req, res) => handleRequest(req, res, serveStatic));
 }

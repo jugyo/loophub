@@ -1,7 +1,7 @@
 import { createRoute } from "@tanstack/react-router";
-import { rootRoute } from "./root";
-import { IssueList } from "@/components/issue-list";
 import { IssueDetail } from "@/components/issue-detail";
+import { IssueList } from "@/components/issue-list";
+import { rootRoute } from "./root";
 
 function IssuesPage() {
   const { owner, repo } = issuesRoute.useParams();

@@ -95,11 +95,7 @@ export function useMergePull(owner: string, repo: string, number: number) {
 }
 
 /** Mark a PR ready for re-review, then invalidate the PR + lists. */
-export function useReadyForReview(
-  owner: string,
-  repo: string,
-  number: number,
-) {
+export function useReadyForReview(owner: string, repo: string, number: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => readyForReview(owner, repo, number),

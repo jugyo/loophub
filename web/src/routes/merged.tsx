@@ -1,6 +1,6 @@
 import { createRoute } from "@tanstack/react-router";
-import { rootRoute } from "./root";
 import { MergedList } from "@/components/pull-list";
+import { rootRoute } from "./root";
 
 function MergedPage() {
   const { owner, repo } = mergedRoute.useParams();

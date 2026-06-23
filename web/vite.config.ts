@@ -1,6 +1,6 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
 import path from "node:path";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
 // lh-web server. Always a separate process from this dev server.
 const API_TARGET = process.env.VITE_LOOPHUB_API_URL ?? "http://localhost:8730";

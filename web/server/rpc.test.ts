@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, expect, test } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterAll, beforeAll, expect, test } from "vitest";
 
 // Isolate the DB before contract.ts -> service.ts -> db.ts runs its import-time setup.
 const HOME = mkdtempSync(join(tmpdir(), "lh-rpc-"));
@@ -33,7 +33,10 @@ beforeAll(async () => {
   git(["add", "-A"]);
   git(["commit", "-qm", "init"]);
 
-  const r: any = await call("repos/create", { path: repoPath, name: "me/proj" });
+  const r: any = await call("repos/create", {
+    path: repoPath,
+    name: "me/proj",
+  });
   expect(r.result.full_name).toBe("me/proj");
 });
 
@@ -51,7 +54,11 @@ test("initialize returns capabilities with the method list", async () => {
 });
 
 test("a known method routes to the service and returns a result", async () => {
-  const created: any = await call("issues/create", { repo: "me/proj", title: "hello", body: "b" });
+  const created: any = await call("issues/create", {
+    repo: "me/proj",
+    title: "hello",
+    body: "b",
+  });
   expect(created.result.number).toBe(1);
   const got: any = await call("issues/get", { repo: "me/proj", number: 1 });
   expect(got.result.title).toBe("hello");
@@ -69,12 +76,20 @@ test("invalid params -> -32602 with field details", async () => {
 });
 
 test("unknown extra param is rejected (additionalProperties: false)", async () => {
-  const r: any = await call("issues/get", { repo: "me/proj", number: 1, bogus: true });
+  const r: any = await call("issues/get", {
+    repo: "me/proj",
+    number: 1,
+    bogus: true,
+  });
   expect(r.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
 });
 
 test("malformed request (bad jsonrpc) -> -32600", async () => {
-  const r: any = await dispatch({ jsonrpc: "1.0", id: 9, method: "initialize" } as any);
+  const r: any = await dispatch({
+    jsonrpc: "1.0",
+    id: 9,
+    method: "initialize",
+  } as any);
   expect(r.error.code).toBe(ERROR_CODES.INVALID_REQUEST);
 });
 
@@ -85,15 +100,28 @@ test("ServiceError maps to -32000 carrying the HTTP-style status", async () => {
 });
 
 test("a notification (no id) produces no response", async () => {
-  const r = await dispatch({ jsonrpc: "2.0", method: "issues/create", params: { repo: "me/proj", title: "n" } });
+  const r = await dispatch({
+    jsonrpc: "2.0",
+    method: "issues/create",
+    params: { repo: "me/proj", title: "n" },
+  });
   expect(r).toBeNull();
 });
 
 test("batch returns an array; empty batch -> -32600", async () => {
   const batch: any = await dispatch([
     { jsonrpc: "2.0", id: 1, method: "initialize" },
-    { jsonrpc: "2.0", method: "issues/create", params: { repo: "me/proj", title: "notif" } }, // notification: omitted
-    { jsonrpc: "2.0", id: 2, method: "labels/list", params: { repo: "me/proj" } },
+    {
+      jsonrpc: "2.0",
+      method: "issues/create",
+      params: { repo: "me/proj", title: "notif" },
+    }, // notification: omitted
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "labels/list",
+      params: { repo: "me/proj" },
+    },
   ]);
   expect(Array.isArray(batch)).toBe(true);
   expect(batch.map((x: any) => x.id)).toEqual([1, 2]);
@@ -104,19 +132,38 @@ test("batch returns an array; empty batch -> -32600", async () => {
 
 test("dashboard/overview lists assigned issues tagged with their repo", async () => {
   const sid = "11111111-1111-1111-1111-111111111111";
-  await call("sessions/register", { id: sid, agent: "impl-bot", session: "wip-runtime" });
-  const wip: any = await call("issues/create", { repo: "me/proj", title: "wip" });
-  await call("issues/assign", { repo: "me/proj", number: wip.result.number, session_id: sid });
+  await call("sessions/register", {
+    id: sid,
+    agent: "impl-bot",
+    session: "wip-runtime",
+  });
+  const wip: any = await call("issues/create", {
+    repo: "me/proj",
+    title: "wip",
+  });
+  await call("issues/assign", {
+    repo: "me/proj",
+    number: wip.result.number,
+    session_id: sid,
+  });
   await call("issues/create", { repo: "me/proj", title: "idle" }); // unassigned -> excluded
 
   const r: any = await call("dashboard/overview", {});
   expect(Array.isArray(r.result.issues)).toBe(true);
   expect(Array.isArray(r.result.pulls)).toBe(true);
 
-  const mine = r.result.issues.find((it: any) => it.issue.number === wip.result.number);
+  const mine = r.result.issues.find(
+    (it: any) => it.issue.number === wip.result.number,
+  );
   expect(mine).toBeTruthy();
-  expect(mine.repo).toEqual({ full_name: "me/proj", owner: "me", name: "proj" });
-  expect(r.result.issues.some((it: any) => it.issue.title === "idle")).toBe(false);
+  expect(mine.repo).toEqual({
+    full_name: "me/proj",
+    owner: "me",
+    name: "proj",
+  });
+  expect(r.result.issues.some((it: any) => it.issue.title === "idle")).toBe(
+    false,
+  );
 });
 
 test("dashboard/overview lists open unmerged PRs tagged with their repo", async () => {
@@ -136,9 +183,15 @@ test("dashboard/overview lists open unmerged PRs tagged with their repo", async 
   expect(pr.result.number).toBeTypeOf("number");
 
   const r: any = await call("dashboard/overview", {});
-  const mine = r.result.pulls.find((it: any) => it.pull.number === pr.result.number);
+  const mine = r.result.pulls.find(
+    (it: any) => it.pull.number === pr.result.number,
+  );
   expect(mine).toBeTruthy();
-  expect(mine.repo).toEqual({ full_name: "me/proj", owner: "me", name: "proj" });
+  expect(mine.repo).toEqual({
+    full_name: "me/proj",
+    owner: "me",
+    name: "proj",
+  });
   expect(mine.pull.merged).toBe(false);
 });
 

@@ -1,9 +1,10 @@
 // JSON serializers: shape store rows into the stable wire objects that consumers
 // (CLI now, JSON-RPC clients later) read. Kept separate from service.ts so the
 // shaping is reusable and side-effect free.
-import * as S from "./store.ts";
+
 import { mergePreview, revParse } from "./git.ts";
 import { linkedRef } from "./links.ts";
+import * as S from "./store.ts";
 
 export function repoJSON(r: S.Repo) {
   return {
@@ -32,7 +33,12 @@ export function agentSessionJSON(row: any) {
 }
 
 export function commentJSON(m: any) {
-  return { id: m.id, user: { login: m.author }, body: m.body, created_at: m.created_at };
+  return {
+    id: m.id,
+    user: { login: m.author },
+    body: m.body,
+    created_at: m.created_at,
+  };
 }
 
 export function reviewJSON(v: any) {
@@ -66,7 +72,7 @@ function linkedIssueSummary(repo: S.Repo, pullRowId: number) {
   const p = S.getPull(pullRowId);
   if (!p?.linked_issue_id) return null;
   const linked = S.getIssueById(p.linked_issue_id);
-  if (!linked || linked.kind !== "issue") return null;
+  if (linked?.kind !== "issue") return null;
   return {
     number: linked.number,
     title: linked.title,

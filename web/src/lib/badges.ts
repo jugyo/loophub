@@ -30,9 +30,15 @@ export function assigneeLabel(a: AgentSession | null | undefined): string {
 }
 
 /** "@name" agent badge for an assigned session, or null when unassigned. */
-export function assigneeBadge(a: AgentSession | null | undefined): Badge | null {
+export function assigneeBadge(
+  a: AgentSession | null | undefined,
+): Badge | null {
   if (!a) return null;
-  return { tone: "agent", label: `@${assigneeLabel(a)}`, title: a.session_id || undefined };
+  return {
+    tone: "agent",
+    label: `@${assigneeLabel(a)}`,
+    title: a.session_id || undefined,
+  };
 }
 
 /** State badge: open/closed for issues, merged for merged PRs. Open PRs show none. */
@@ -50,7 +56,10 @@ export function stateBadge(
   return { tone: "closed", label: "closed" };
 }
 
-const REVIEW_TONE: Record<NonNullable<PullRequest["review_state"]>, BadgeTone> = {
+const REVIEW_TONE: Record<
+  NonNullable<PullRequest["review_state"]>,
+  BadgeTone
+> = {
   APPROVED: "review-approved",
   CHANGES_REQUESTED: "review-changes",
   READY_FOR_RE_REVIEW: "review-rereview",
@@ -69,7 +78,8 @@ export function reviewBadge(pr: PullRequest): Badge | null {
 /** Conflict badge for an open, unmerged PR with a dirty mergeable state. */
 export function mergeableBadge(pr: PullRequest): Badge | null {
   if (pr.merged || pr.state !== "open") return null;
-  if (pr.mergeable_state === "dirty") return { tone: "conflict", label: "conflict" };
+  if (pr.mergeable_state === "dirty")
+    return { tone: "conflict", label: "conflict" };
   return null;
 }
 

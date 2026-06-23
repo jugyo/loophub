@@ -12,15 +12,21 @@ import { branchExists, worktreeAdd, worktreeList } from "../core/git.ts";
 //
 // Domains from --repo/--allow are validated and JSON-serialized here (never
 // string-concatenated) so a value can never inject a sandbox key.
-export const SANDBOX_DEFAULT_ALLOWED_DOMAINS = ["api.anthropic.com", "github.com"];
+export const SANDBOX_DEFAULT_ALLOWED_DOMAINS = [
+  "api.anthropic.com",
+  "github.com",
+];
 
 // A DNS label plus an optional single leading `*.` wildcard. No bare `*`, no quotes/spaces.
-const DEV_DOMAIN_RE = /^(\*\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
+const DEV_DOMAIN_RE =
+  /^(\*\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
 
 export function validateDomain(raw: string): string {
   const d = raw.trim().toLowerCase();
   if (!d || d.length > 253 || !DEV_DOMAIN_RE.test(d)) {
-    throw new Error(`invalid --allow domain "${raw}" (expected hostname or *.hostname)`);
+    throw new Error(
+      `invalid --allow domain "${raw}" (expected hostname or *.hostname)`,
+    );
   }
   return d;
 }
@@ -54,7 +60,11 @@ export interface WorktreeGitPaths {
   branch: string | null; // checked-out branch; null when detached (no shared ref to write)
 }
 
-function gitWriteAllowList({ gitDir, worktreeGitDir, branch }: WorktreeGitPaths): string[] {
+function gitWriteAllowList({
+  gitDir,
+  worktreeGitDir,
+  branch,
+}: WorktreeGitPaths): string[] {
   const allow = [
     join(gitDir, "objects"), // new loose objects (and their tmp_obj_* / fan-out dirs)
     worktreeGitDir, // index(.lock), HEAD, ORIG_HEAD, COMMIT_EDITMSG, logs/HEAD
@@ -88,7 +98,15 @@ export function buildManagedSettings({
     denyRead: string[];
     allowWrite?: string[];
   } = {
-    denyRead: ["~/.ssh", "~/.aws", "~/.gnupg", "~/.netrc", "~/.config/gh", "~/.kube", "~/.docker/config.json"],
+    denyRead: [
+      "~/.ssh",
+      "~/.aws",
+      "~/.gnupg",
+      "~/.netrc",
+      "~/.config/gh",
+      "~/.kube",
+      "~/.docker/config.json",
+    ],
   };
   if (git) {
     filesystem.allowWrite = gitWriteAllowList(git);
@@ -132,12 +150,7 @@ export function buildClaudeArgs({
   // never inject escape sequences into the spawned terminal.
   sessionName?: string;
 }): string[] {
-  const args = [
-    "--session-id",
-    sessionId,
-    "--permission-mode",
-    "acceptEdits",
-  ];
+  const args = ["--session-id", sessionId, "--permission-mode", "acceptEdits"];
   if (sessionName) {
     const name = display(sessionName).trim();
     if (name) args.push("--name", name);
@@ -190,11 +203,17 @@ export function formatLaunchPlan(plan: LaunchPlan): string {
   const domains: string[] = (network.allowedDomains ?? []).map(display);
 
   const permIdx = plan.claudeArgs.indexOf("--permission-mode");
-  const permVal = permIdx >= 0 && permIdx + 1 < plan.claudeArgs.length ? plan.claudeArgs[permIdx + 1] : undefined;
+  const permVal =
+    permIdx >= 0 && permIdx + 1 < plan.claudeArgs.length
+      ? plan.claudeArgs[permIdx + 1]
+      : undefined;
   const permissionMode = permVal != null ? display(permVal) : "(default)";
 
   const nameIdx = plan.claudeArgs.indexOf("--name");
-  const nameVal = nameIdx >= 0 && nameIdx + 1 < plan.claudeArgs.length ? plan.claudeArgs[nameIdx + 1] : undefined;
+  const nameVal =
+    nameIdx >= 0 && nameIdx + 1 < plan.claudeArgs.length
+      ? plan.claudeArgs[nameIdx + 1]
+      : undefined;
 
   const lines = [
     "Review the settings to be passed to `claude` before launch:",
@@ -241,7 +260,11 @@ export function worktreeBranch(issue: number): string {
 
 // <worktreeRoot>/<owner>/<repo>/issue-<n>. fullName is the repo's "owner/name".
 // Guard every segment so a crafted repo name can't traverse out of worktreeRoot.
-export function worktreePath(worktreeRoot: string, fullName: string, issue: number): string {
+export function worktreePath(
+  worktreeRoot: string,
+  fullName: string,
+  issue: number,
+): string {
   for (const seg of fullName.split("/")) {
     if (!seg || seg === "." || seg === ".." || seg.includes("\\")) {
       throw new Error(`invalid repo name for worktree path: "${fullName}"`);
@@ -261,8 +284,11 @@ export interface ProvisionInput {
 
 // Ensure a worktree for the issue exists and return its path. Idempotent: an existing
 // worktree at the deterministic path is reused as-is.
-export async function provisionWorktree(input: ProvisionInput): Promise<string> {
-  const { repoPath, fullName, defaultBranch, worktreeRoot, issue, headRef } = input;
+export async function provisionWorktree(
+  input: ProvisionInput,
+): Promise<string> {
+  const { repoPath, fullName, defaultBranch, worktreeRoot, issue, headRef } =
+    input;
   const path = worktreePath(worktreeRoot, fullName, issue);
 
   // Reuse from disk truth: a registered worktree already at this path wins. `git worktree
@@ -279,20 +305,26 @@ export async function provisionWorktree(input: ProvisionInput): Promise<string> 
 
   if (headRef) {
     // PR (kind=pull): no new branch — check out the existing head branch.
-    await worktreeAdd(repoPath, path, headRef, defaultBranch, { existingBranch: true });
+    await worktreeAdd(repoPath, path, headRef, defaultBranch, {
+      existingBranch: true,
+    });
     return path;
   }
 
   const branch = worktreeBranch(issue);
   if (await branchExists(repoPath, branch)) {
     // Branch survives but its worktree was removed → re-attach without -b.
-    await worktreeAdd(repoPath, path, branch, defaultBranch, { existingBranch: true });
+    await worktreeAdd(repoPath, path, branch, defaultBranch, {
+      existingBranch: true,
+    });
     return path;
   }
 
   // New branch off the local default branch's current commit (no fetch).
   if (!(await branchExists(repoPath, defaultBranch))) {
-    throw new Error(`cannot resolve default branch "${defaultBranch}" (no commits?)`);
+    throw new Error(
+      `cannot resolve default branch "${defaultBranch}" (no commits?)`,
+    );
   }
   await worktreeAdd(repoPath, path, branch, defaultBranch);
   return path;

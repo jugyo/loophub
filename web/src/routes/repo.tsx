@@ -1,6 +1,6 @@
 import { createRoute } from "@tanstack/react-router";
-import { rootRoute } from "./root";
 import { RepoDashboard } from "@/components/repo-dashboard";
+import { rootRoute } from "./root";
 
 function RepoPage() {
   const { owner, repo } = repoRoute.useParams();

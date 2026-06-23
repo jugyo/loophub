@@ -1,14 +1,14 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import type { UseQueryResult } from "@tanstack/react-query";
 import {
-  RouterProvider,
+  createMemoryHistory,
   createRootRoute,
   createRoute,
   createRouter,
-  createMemoryHistory,
   Outlet,
+  RouterProvider,
 } from "@tanstack/react-router";
-import type { UseQueryResult } from "@tanstack/react-query";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import { DashboardSection } from "./dashboard-section";
 
 afterEach(cleanup);
@@ -80,6 +80,8 @@ describe("DashboardSection", () => {
         headerAction={<button>New issue</button>}
       />,
     );
-    expect(await screen.findByRole("button", { name: "New issue" })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: "New issue" }),
+    ).toBeTruthy();
   });
 });

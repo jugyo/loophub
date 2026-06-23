@@ -3,13 +3,19 @@
 // "see all" link to the dedicated list view. Lists are TanStack Query backed
 // and refetch on SSE (root.tsx + event-keys).
 
-import { DashboardSection } from "@/components/dashboard-section";
-import { IssueRow, PullRow } from "@/components/dashboard-rows";
 import { CreateIssueButton } from "@/components/create-issue-button";
+import { IssueRow, PullRow } from "@/components/dashboard-rows";
+import { DashboardSection } from "@/components/dashboard-section";
 import { RepoMenu } from "@/components/repo-menu";
 import { useOpenIssues, useOpenPulls } from "@/queries/dashboard";
 
-export function RepoDashboard({ owner, repo }: { owner: string; repo: string }) {
+export function RepoDashboard({
+  owner,
+  repo,
+}: {
+  owner: string;
+  repo: string;
+}) {
   const issues = useOpenIssues(owner, repo);
   const pulls = useOpenPulls(owner, repo);
 

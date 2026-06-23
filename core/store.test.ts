@@ -1,7 +1,7 @@
-import { test, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterAll, beforeAll, expect, test } from "vitest";
 
 // Isolate the DB before db.ts runs its import-time setup. config.ts reads env lazily,
 // but db.ts builds the connection at import time, so set env then dynamic-import store.
@@ -35,7 +35,11 @@ test("issues, labels, comments, and review state round-trip through the adapter"
 
   // run(sql, params[]) array binding + label join
   S.addLabels(repo.id, issue.id, ["ready-to-build", "bug"]);
-  expect(S.issueLabels(issue.id).map((l: any) => l.name).sort()).toEqual(["bug", "ready-to-build"]);
+  expect(
+    S.issueLabels(issue.id)
+      .map((l: any) => l.name)
+      .sort(),
+  ).toEqual(["bug", "ready-to-build"]);
 
   S.createComment(issue.id, "me", "hi");
   expect(S.countComments(issue.id)).toBe(1);
@@ -59,19 +63,28 @@ test("issues, labels, comments, and review state round-trip through the adapter"
 
 test("agent session register/assign conflicts surface as errors", () => {
   const repo = S.createRepo("me/sess", "/tmp/sess");
-  S.registerAgentSession("11111111-0000-0000-0000-000000000001", "impl-bot", "ext-1", "Impl");
+  S.registerAgentSession(
+    "11111111-0000-0000-0000-000000000001",
+    "impl-bot",
+    "ext-1",
+    "Impl",
+  );
   // same id, different pair -> CONFLICT_ID
   expect(() =>
-    S.registerAgentSession("11111111-0000-0000-0000-000000000001", "impl-bot", "ext-2"),
+    S.registerAgentSession(
+      "11111111-0000-0000-0000-000000000001",
+      "impl-bot",
+      "ext-2",
+    ),
   ).toThrow("CONFLICT_ID");
 
   const a = S.createIssue(repo.id, "issue", "a", "", "me") as any;
   const b = S.createIssue(repo.id, "issue", "b", "", "me") as any;
   S.assignIssueToSession(a.id, "11111111-0000-0000-0000-000000000001");
   // one session cannot hold two issues
-  expect(() => S.assignIssueToSession(b.id, "11111111-0000-0000-0000-000000000001")).toThrow(
-    "CONFLICT_SESSION",
-  );
+  expect(() =>
+    S.assignIssueToSession(b.id, "11111111-0000-0000-0000-000000000001"),
+  ).toThrow("CONFLICT_SESSION");
   expect(S.unassignIssue(a.id)).toBe("11111111-0000-0000-0000-000000000001");
 });
 

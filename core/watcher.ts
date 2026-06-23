@@ -1,5 +1,5 @@
-import * as S from "./store.ts";
 import { revParse } from "./git.ts";
+import * as S from "./store.ts";
 
 // open PR の head ref を走査し、前回記録した sha から動いていれば
 // pull_request.updated を発火する（GitHub の push→webhook 相当）。
@@ -17,7 +17,12 @@ export async function sweepPullUpdates(): Promise<any[]> {
       S.setHeadSha(p.issue_id, cur);
       S.clearChangesAddressed(p.issue_id);
       S.touchIssue(p.issue_id);
-      emitted.push(S.emitEvent(p.repo_id, "pull_request.updated", p.author, { number: p.number, sha: cur }));
+      emitted.push(
+        S.emitEvent(p.repo_id, "pull_request.updated", p.author, {
+          number: p.number,
+          sha: cur,
+        }),
+      );
     }
   }
   return emitted;

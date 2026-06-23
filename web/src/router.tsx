@@ -1,11 +1,11 @@
 import { createRouter } from "@tanstack/react-router";
-import { rootRoute } from "./routes/root";
-import { indexRoute } from "./routes/index";
 import { archivedRoute } from "./routes/archived";
-import { repoRoute } from "./routes/repo";
-import { issuesRoute, issueDetailRoute } from "./routes/issues";
-import { pullsRoute, pullDetailRoute } from "./routes/pulls";
+import { indexRoute } from "./routes/index";
+import { issueDetailRoute, issuesRoute } from "./routes/issues";
 import { mergedRoute } from "./routes/merged";
+import { pullDetailRoute, pullsRoute } from "./routes/pulls";
+import { repoRoute } from "./routes/repo";
+import { rootRoute } from "./routes/root";
 
 // App-shell route tree. Leaf components are placeholders; later UI issues
 // replace each screen in place without changing this tree.

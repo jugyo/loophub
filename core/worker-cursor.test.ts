@@ -1,8 +1,12 @@
-import { test, expect } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readCursor, writeCursor, resolveStartCursor } from "./worker-cursor.ts";
+import { expect, test } from "vitest";
+import {
+  readCursor,
+  resolveStartCursor,
+  writeCursor,
+} from "./worker-cursor.ts";
 
 test("writeCursor/readCursor round-trip atomically (no leftover temp file)", () => {
   const dir = mkdtempSync(join(tmpdir(), "lh-cursor-"));

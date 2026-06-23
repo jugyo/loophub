@@ -5,8 +5,8 @@
 // ({ jsonrpc, method: "events/notify", params: LoopEvent }). Reconnect resumes
 // from the last seen id.
 
-import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { eventsUrl } from "@/api/client";
 import type { LoopEvent } from "@/api/types";
 import { queryKeysForEvent } from "@/lib/event-keys";

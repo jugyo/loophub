@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AgentSession, Issue, PullRequest } from "@/api/types";
 import {
   assigneeBadge,
   issueBadges,
@@ -7,7 +8,6 @@ import {
   reviewBadge,
   stateBadge,
 } from "./badges";
-import type { AgentSession, Issue, PullRequest } from "@/api/types";
 
 const session: AgentSession = {
   session_id: "sid-1",
@@ -61,22 +61,32 @@ describe("assigneeBadge", () => {
 
   it("uses the agent name with the session id as the title", () => {
     const badge = assigneeBadge(session);
-    expect(badge).toEqual({ tone: "agent", label: "@impl-bot", title: "sid-1" });
+    expect(badge).toEqual({
+      tone: "agent",
+      label: "@impl-bot",
+      title: "sid-1",
+    });
   });
 
   it("prefers a session name when present", () => {
-    expect(assigneeBadge({ ...session, name: "Builder" })?.label).toBe("@Builder");
+    expect(assigneeBadge({ ...session, name: "Builder" })?.label).toBe(
+      "@Builder",
+    );
   });
 });
 
 describe("stateBadge", () => {
   it("marks open issues open and closed issues closed", () => {
     expect(stateBadge(issue({ state: "open" }), "issues")?.tone).toBe("open");
-    expect(stateBadge(issue({ state: "closed" }), "issues")?.tone).toBe("closed");
+    expect(stateBadge(issue({ state: "closed" }), "issues")?.tone).toBe(
+      "closed",
+    );
   });
 
   it("hides the badge on open PRs but shows merged", () => {
-    expect(stateBadge(pull({ state: "open", merged: false }), "pulls")).toBeNull();
+    expect(
+      stateBadge(pull({ state: "open", merged: false }), "pulls"),
+    ).toBeNull();
     expect(stateBadge(pull({ merged: true }), "pulls")?.tone).toBe("merged");
   });
 });
@@ -88,18 +98,25 @@ describe("reviewBadge", () => {
 
   it("humanizes the review state label", () => {
     const badge = reviewBadge(pull({ review_state: "CHANGES_REQUESTED" }));
-    expect(badge).toEqual({ tone: "review-changes", label: "changes requested" });
+    expect(badge).toEqual({
+      tone: "review-changes",
+      label: "changes requested",
+    });
   });
 });
 
 describe("mergeableBadge", () => {
   it("flags a dirty open PR as conflict", () => {
-    expect(mergeableBadge(pull({ mergeable_state: "dirty" }))?.tone).toBe("conflict");
+    expect(mergeableBadge(pull({ mergeable_state: "dirty" }))?.tone).toBe(
+      "conflict",
+    );
   });
 
   it("does not flag merged or clean PRs", () => {
     expect(mergeableBadge(pull({ mergeable_state: "clean" }))).toBeNull();
-    expect(mergeableBadge(pull({ merged: true, mergeable_state: "dirty" }))).toBeNull();
+    expect(
+      mergeableBadge(pull({ merged: true, mergeable_state: "dirty" })),
+    ).toBeNull();
   });
 });
 

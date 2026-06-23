@@ -1,6 +1,6 @@
 import { createRootRoute } from "@tanstack/react-router";
-import { useLoopHubEvents } from "@/lib/use-loophub-events";
 import { AppLayout } from "@/components/app-layout";
+import { useLoopHubEvents } from "@/lib/use-loophub-events";
 
 function RootLayout() {
   // SSE -> query invalidation lives at the root so every route stays live.

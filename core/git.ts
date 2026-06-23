@@ -27,7 +27,7 @@ export function git(
       (err, stdout, stderr) => {
         const code =
           err && typeof (err as { code?: unknown }).code === "number"
-            ? ((err as { code: number }).code)
+            ? (err as { code: number }).code
             : err
               ? 1
               : 0;
@@ -37,7 +37,10 @@ export function git(
   });
 }
 
-export async function revParse(repoPath: string, ref: string): Promise<string | null> {
+export async function revParse(
+  repoPath: string,
+  ref: string,
+): Promise<string | null> {
   const r = await git(repoPath, ["rev-parse", "--verify", "--quiet", ref]);
   const sha = r.stdout.trim();
   return sha || null;
@@ -45,10 +48,16 @@ export async function revParse(repoPath: string, ref: string): Promise<string | 
 
 export async function defaultBranch(repoPath: string): Promise<string> {
   // Prefer remote default (origin/HEAD) so feature-branch checkouts do not win at registration.
-  const origin = await git(repoPath, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  const origin = await git(repoPath, [
+    "symbolic-ref",
+    "--short",
+    "refs/remotes/origin/HEAD",
+  ]);
   if (origin.code === 0) {
     const ref = origin.stdout.trim();
-    const branch = ref.startsWith("origin/") ? ref.slice("origin/".length) : ref;
+    const branch = ref.startsWith("origin/")
+      ? ref.slice("origin/".length)
+      : ref;
     if (branch && (await revParse(repoPath, branch))) return branch;
   }
   const head = await git(repoPath, ["symbolic-ref", "--short", "HEAD"]);
@@ -65,9 +74,16 @@ export async function isGitRepo(repoPath: string): Promise<boolean> {
 // not the worktree's `.git` pointer file. `lh dev` needs it to grant the sandbox write
 // access to the real commit target (see cli/dev.ts buildManagedSettings).
 export async function gitCommonDir(repoPath: string): Promise<string> {
-  const r = await git(repoPath, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  const r = await git(repoPath, [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-common-dir",
+  ]);
   const p = r.stdout.trim();
-  if (r.code !== 0 || !p) throw new Error(`cannot resolve git common dir for "${repoPath}": ${r.stderr.trim()}`);
+  if (r.code !== 0 || !p)
+    throw new Error(
+      `cannot resolve git common dir for "${repoPath}": ${r.stderr.trim()}`,
+    );
   return p;
 }
 
@@ -75,9 +91,16 @@ export async function gitCommonDir(repoPath: string): Promise<string> {
 // per-worktree `<commonDir>/worktrees/<id>` (where its index, HEAD and per-worktree reflog
 // live), not the shared common dir. `lh dev` allows the sandbox to write here.
 export async function gitDirOf(repoPath: string): Promise<string> {
-  const r = await git(repoPath, ["rev-parse", "--path-format=absolute", "--git-dir"]);
+  const r = await git(repoPath, [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-dir",
+  ]);
   const p = r.stdout.trim();
-  if (r.code !== 0 || !p) throw new Error(`cannot resolve git dir for "${repoPath}": ${r.stderr.trim()}`);
+  if (r.code !== 0 || !p)
+    throw new Error(
+      `cannot resolve git dir for "${repoPath}": ${r.stderr.trim()}`,
+    );
   return p;
 }
 
@@ -99,7 +122,11 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 // head に固有の差分（merge-base からの変更）= base...head
-export async function diffFiles(repoPath: string, base: string, head: string): Promise<DiffFile[]> {
+export async function diffFiles(
+  repoPath: string,
+  base: string,
+  head: string,
+): Promise<DiffFile[]> {
   const range = `${base}...${head}`;
   const numstat = await git(repoPath, ["diff", "--numstat", range]);
   const namestatus = await git(repoPath, ["diff", "--name-status", range]);
@@ -143,7 +170,11 @@ export interface MergePreview {
 }
 
 // merge-tree でコンフリクト判定 + 結果ツリー算出（作業ツリー非接触）
-export async function mergePreview(repoPath: string, base: string, head: string): Promise<MergePreview> {
+export async function mergePreview(
+  repoPath: string,
+  base: string,
+  head: string,
+): Promise<MergePreview> {
   const r = await git(repoPath, ["merge-tree", "--write-tree", base, head]);
   const tree = r.stdout.split("\n")[0]?.trim() || null;
   return { conflict: r.code !== 0, tree };
@@ -158,7 +189,10 @@ export interface MergeResult {
 // .git/index.lock 競合は IDE/エディタの Git 連携など他プロセスが同じ checkout を
 // 一瞬触ると発生する一過性のエラー。本物の reset 失敗と区別してリトライ対象を絞る。
 export function isIndexLockError(stderr: string): boolean {
-  return /index\.lock/.test(stderr) && /Unable to create|File exists|another git process/i.test(stderr);
+  return (
+    /index\.lock/.test(stderr) &&
+    /Unable to create|File exists|another git process/i.test(stderr)
+  );
 }
 
 export interface MergeOptions {
@@ -216,27 +250,43 @@ export async function mergePull(
   if (method === "rebase") {
     // git replay は working tree 非接触で「update refs/heads/<head> <new> <old>」を出力。
     // コンフリクト時は exit!=0 かつ出力なし。
-    const r = await git(repoPath, ["replay", "--onto", base, `${base}..${head}`]);
+    const r = await git(repoPath, [
+      "replay",
+      "--onto",
+      base,
+      `${base}..${head}`,
+    ]);
     const line = r.stdout.trim().split("\n").pop() || "";
     const parts = line.split(" "); // [update, refs/heads/<head>, <new>, <old>]
     newSha = parts[0] === "update" ? parts[2] : "";
     if (r.code !== 0 || !newSha) return { merged: false, conflict: true };
   } else {
     const preview = await mergePreview(repoPath, base, head);
-    if (preview.conflict || !preview.tree) return { merged: false, conflict: true };
-    const parents = method === "merge" ? ["-p", baseSha, "-p", headSha] : ["-p", baseSha];
+    if (preview.conflict || !preview.tree)
+      return { merged: false, conflict: true };
+    const parents =
+      method === "merge" ? ["-p", baseSha, "-p", headSha] : ["-p", baseSha];
     const env = {
       GIT_AUTHOR_NAME: actor,
       GIT_AUTHOR_EMAIL: `${actor}@loophub.local`,
       GIT_COMMITTER_NAME: actor,
       GIT_COMMITTER_EMAIL: `${actor}@loophub.local`,
     };
-    const commit = await git(repoPath, ["commit-tree", preview.tree, ...parents, "-m", message], env);
+    const commit = await git(
+      repoPath,
+      ["commit-tree", preview.tree, ...parents, "-m", message],
+      env,
+    );
     newSha = commit.stdout.trim();
     if (commit.code !== 0 || !newSha) return { merged: false };
   }
 
-  const upd = await git(repoPath, ["update-ref", `refs/heads/${base}`, newSha, baseSha]);
+  const upd = await git(repoPath, [
+    "update-ref",
+    `refs/heads/${base}`,
+    newSha,
+    baseSha,
+  ]);
   if (upd.code !== 0) return { merged: false };
 
   const sync = await syncPrimaryCheckoutIfOnBase(repoPath, base, newSha, opts);
@@ -248,7 +298,10 @@ export async function mergePull(
   return { merged: true, sha: newSha };
 }
 
-export async function branchExists(repoPath: string, ref: string): Promise<boolean> {
+export async function branchExists(
+  repoPath: string,
+  ref: string,
+): Promise<boolean> {
   return (await revParse(repoPath, ref)) !== null;
 }
 
@@ -283,7 +336,9 @@ export async function worktreeAdd(
     : ["worktree", "add", "-b", branch, path, base];
   const r = await git(repoPath, args);
   if (r.code !== 0) {
-    throw new Error(`git worktree add failed: ${r.stderr.trim() || r.stdout.trim()}`);
+    throw new Error(
+      `git worktree add failed: ${r.stderr.trim() || r.stdout.trim()}`,
+    );
   }
 }
 
@@ -311,13 +366,20 @@ function parseWorktreePorcelain(out: string): Worktree[] {
     const val = sp === -1 ? "" : line.slice(sp + 1);
     if (key === "worktree") {
       flush();
-      cur = { path: val, head: null, branch: null, bare: false, detached: false };
+      cur = {
+        path: val,
+        head: null,
+        branch: null,
+        bare: false,
+        detached: false,
+      };
     } else if (!cur) {
-      continue;
     } else if (key === "HEAD") {
       cur.head = val;
     } else if (key === "branch") {
-      cur.branch = val.startsWith("refs/heads/") ? val.slice("refs/heads/".length) : val;
+      cur.branch = val.startsWith("refs/heads/")
+        ? val.slice("refs/heads/".length)
+        : val;
     } else if (key === "bare") {
       cur.bare = true;
     } else if (key === "detached") {

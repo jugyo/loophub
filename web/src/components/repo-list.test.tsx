@@ -1,16 +1,16 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import type { UseQueryResult } from "@tanstack/react-query";
 import {
-  RouterProvider,
+  createMemoryHistory,
   createRootRoute,
   createRoute,
   createRouter,
-  createMemoryHistory,
   Outlet,
+  RouterProvider,
 } from "@tanstack/react-router";
-import type { UseQueryResult } from "@tanstack/react-query";
-import { RepoList } from "./repo-list";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Repo } from "@/api/types";
+import { RepoList } from "./repo-list";
 
 afterEach(cleanup);
 
@@ -28,7 +28,9 @@ function repo(full_name: string, id: number): Repo {
 }
 
 // Minimal UseQueryResult shape for RepoList's reads.
-function result(partial: Partial<UseQueryResult<Repo[]>>): UseQueryResult<Repo[]> {
+function result(
+  partial: Partial<UseQueryResult<Repo[]>>,
+): UseQueryResult<Repo[]> {
   return partial as UseQueryResult<Repo[]>;
 }
 
@@ -55,7 +57,11 @@ function renderInRouter(ui: React.ReactNode) {
 describe("RepoList", () => {
   it("shows a loading indicator while fetching", async () => {
     renderInRouter(
-      <RepoList query={result({ isLoading: true })} emptyTitle="" emptyDescription="" />,
+      <RepoList
+        query={result({ isLoading: true })}
+        emptyTitle=""
+        emptyDescription=""
+      />,
     );
     expect(await screen.findByText(/Loading repositories/i)).toBeTruthy();
   });
@@ -68,7 +74,9 @@ describe("RepoList", () => {
         emptyDescription=""
       />,
     );
-    expect(await screen.findByText(/Failed to load repositories/i)).toBeTruthy();
+    expect(
+      await screen.findByText(/Failed to load repositories/i),
+    ).toBeTruthy();
     expect(screen.getByText(/boom/)).toBeTruthy();
   });
 

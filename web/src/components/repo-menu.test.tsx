@@ -1,23 +1,23 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  cleanup,
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  within,
-} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
-  RouterProvider,
+  createMemoryHistory,
   createRootRoute,
   createRoute,
   createRouter,
-  createMemoryHistory,
   Outlet,
+  RouterProvider,
 } from "@tanstack/react-router";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { Repo } from "@/api/types";
-import { mockRpcFetch, rpcCall, RpcFault } from "@/api/rpc-mock";
 import { RepoMenu } from "./repo-menu";
 
 afterEach(() => {
