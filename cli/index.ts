@@ -140,6 +140,26 @@ function display(v: string): string {
   return stripVTControlCharacters(v).replace(/[\x00-\x1f\x7f]/g, "");
 }
 
+// Compact "2h ago" / "3d ago" style relative time for human-facing list output.
+function relativeTime(iso: string): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "";
+  const sec = Math.max(0, Math.round((Date.now() - then) / 1000));
+  const units: [number, string][] = [
+    [60, "s"],
+    [60, "m"],
+    [24, "h"],
+    [7, "d"],
+    [Number.POSITIVE_INFINITY, "w"],
+  ];
+  let value = sec;
+  for (const [size, label] of units) {
+    if (value < size) return `${value}${label} ago`;
+    value = Math.floor(value / size);
+  }
+  return `${value}w ago`;
+}
+
 // Run a service call, translating ServiceError (status + message) into the CLI error line.
 async function run<T>(fn: () => Promise<T> | T): Promise<T> {
   try {
@@ -424,8 +444,12 @@ async function main() {
       out(issues);
       if (!flags.json)
         issues.forEach((i: any) => {
+          const labels = (i.labels || []).map((l: any) => l.name).join(",");
+          const assignee = i.assignee
+            ? `@${display(i.assignee.name || i.assignee.agent || "")}`
+            : "";
           console.log(
-            `#${i.number}\t${i.state}\t${i.title}\t${(i.labels || []).map((l: any) => l.name).join(",")}`,
+            `#${i.number}\t${i.state}\t${i.title}\t${labels}\t${assignee}\t${relativeTime(i.updated_at)}`,
           );
         });
     } else if (sub === "view") {
