@@ -54,7 +54,7 @@ export function AppSidebar() {
               to={`/r/${owner}/${name}`}
               title={repo.full_name}
             >
-              <span className="truncate">{repo.name}</span>
+              <span className="truncate">{repo.full_name}</span>
             </SidebarLink>
           );
         })}
