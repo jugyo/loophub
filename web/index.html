@@ -1,9 +1,29 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LoopHub</title>
+    <!--
+      FOUC guard: set the theme class before first paint. Mirrors
+      resolveInitialTheme() in src/lib/theme.ts — stored choice wins, else the
+      OS preference, else dark. Keep the two in sync.
+    -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("lh_theme");
+          if (t !== "light" && t !== "dark") {
+            t = window.matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+          }
+          document.documentElement.classList.toggle("dark", t === "dark");
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

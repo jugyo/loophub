@@ -47,9 +47,15 @@ Tailwind's built-in palette directly rather than theme tokens — see
 
 Theming is **class-based** (`darkMode: ["class"]`). The `:root` block holds the
 light values; the `.dark` block overrides them. Switching themes means toggling
-the `dark` class on a root element — the tokens cascade automatically, so
-components never branch on theme. (A user-facing theme toggle is not yet wired;
-see [Known gaps](#known-gaps).)
+the `dark` class on `<html>` — the tokens cascade automatically, so components
+never branch on theme.
+
+The header **theme toggle** (`components/theme-toggle.tsx`) flips the class via
+`lib/theme.ts`, which persists the choice in `localStorage` (`lh_theme`). On
+first visit the initial theme follows the OS `prefers-color-scheme`; an inline
+guard in `index.html` applies the class before first paint to avoid a flash of
+the wrong theme (FOUC). Keep that inline guard in sync with
+`resolveInitialTheme()`.
 
 ### Radius
 
@@ -180,8 +186,6 @@ breadcrumb primitives deliberately omit dropdown affordances for now.
 
 Deliberately not addressed yet; listed so the gap is explicit, not forgotten.
 
-- **Theme toggle** — dark tokens exist, but no UI/persistence toggles the `dark`
-  class yet.
 - **Responsive layout** — the shell assumes a desktop width; the fixed `w-64`
   sidebar has no mobile/collapsed treatment.
 - **Accessibility** — beyond breadcrumb `aria-current` and the focus ring, no
