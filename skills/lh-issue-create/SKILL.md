@@ -19,11 +19,31 @@ ticket", that does **not** include an implementation request.
 
 | Do | Do not |
 |----|--------|
-| Gather context, check duplicates, `lh issue create`, report creation | Edit source, create branches, add tests, open PRs, merge |
+| Gather context, check duplicates, `lh issue create`, report creation | **Carry out the requested change itself — whatever kind** (source, skill, config, doc, policy, …); create branches; add tests; open PRs; merge |
 | Read-only code exploration (to refine AC) | Start implementation |
 | **Suggest** the next skill in text | **Continue** to the next skill yourself |
 
 The `ready-to-build` label means "another agent can pick this up later" — not "implement now".
+
+**The output of this skill is always an issue — never the change itself, whatever the request is.**
+"Do not" covers *executing the requested change inside this skill* — not just writing source code.
+This holds **regardless of how the request reads**: the kind of change does not narrow the rule. If a
+request reads like implementation, the deliverable is still an issue that *describes* the change —
+then stop.
+
+The categories below are **non-exhaustive examples**, not the boundary — any other kind of change is
+treated the same way:
+
+- **Source code** — "fix this bug", "add this validation". File it; do **not** edit code.
+- **Operational / policy changes** — "let's stop using labels", "don't attach `ready-to-build` by
+  default". File it; do **not** apply the policy.
+- **Skill / config / doc edits** — "fix this skill so it…", "if any skill expects this, fix it too".
+  File it; do **not** edit the skill, config, or doc.
+
+If you cannot place a request into one of these buckets, that does **not** make it in scope to
+execute — when in doubt, file an issue describing the change and stop. (The only exception is when the
+user explicitly asked to both create the issue **and** implement in the same message; see
+§ Follow-on work (user-driven).)
 
 ### Done when
 
@@ -39,7 +59,10 @@ Stop **immediately** when all of the following are true (do not start extra work
 ❌ After creating an issue, "while I'm here" cut a branch and start coding
 ❌ Read code to write AC, then fix problems found on the spot
 ❌ Auto-start grab / issue-dev because you see the skill chain
+❌ "Let's stop using labels" / "fix this skill so it…" → edit the policy or skill file directly
+❌ Treat any request that "reads like implementation" as a license to apply the change here
 ✅ Create issue → report number → stop (implementation needs explicit user or separate skill)
+✅ Any change request (code, policy, skill, config, doc, …) → file an issue describing it → stop
 ```
 
 ## Invocation
@@ -180,5 +203,7 @@ this skill if the user explicitly asked to both create and implement in the same
 
 - Do not implement, open PRs, or merge inside this skill
 - Do not branch, edit source, or run tests (for fixes) after creating an issue
+- Do not carry out the requested change yourself — whatever kind it is (code, policy, skill, config,
+  doc, …) — even when the request reads like implementation; file an issue describing it instead
 - Do not skip duplicate check
 - Do not start implementation without user consent
