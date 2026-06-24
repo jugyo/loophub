@@ -147,9 +147,9 @@ test("invalid --repo is rejected", () => {
 
 // ---- interactive launch args (pure) ----
 
-test("buildClaudeArgs adds accept-edits only when sandbox managed-settings are present", () => {
-  // --sandbox → managed-settings present → auto mode passed explicitly (managed-settings
-  // defaultMode does not drive the live interactive mode).
+test("buildClaudeArgs adds auto mode only when sandbox managed-settings are present", () => {
+  // --sandbox → managed-settings present → auto mode passed explicitly so the live interactive
+  // mode is driven regardless of how the settings `defaultMode` is merged.
   const sandboxed = buildClaudeArgs({
     sessionId: "sid-1",
     managedSettings: "{}",
@@ -157,7 +157,7 @@ test("buildClaudeArgs adds accept-edits only when sandbox managed-settings are p
   });
   const i = sandboxed.indexOf("--permission-mode");
   expect(i).toBeGreaterThanOrEqual(0);
-  expect(sandboxed[i + 1]).toBe("acceptEdits");
+  expect(sandboxed[i + 1]).toBe("auto");
 
   // No --sandbox → no managed-settings → no --permission-mode (Claude's normal approval mode),
   // so an unattended session never auto-edits without the sandbox guard rails.
@@ -175,16 +175,19 @@ test("buildClaudeArgs carries session id, managed settings, and the slash comman
     slashCommand: "/lh-dev 42",
   });
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
-  expect(args[args.indexOf("--managed-settings") + 1]).toBe("{}");
+  // The settings JSON must ride on `--settings` (the real claude flag), not the long-gone
+  // `--managed-settings`, which claude silently dropped — sandbox + auto mode never applied.
+  expect(args[args.indexOf("--settings") + 1]).toBe("{}");
+  expect(args.indexOf("--managed-settings")).toBe(-1);
   expect(args[args.length - 1]).toBe("/lh-dev 42");
 });
 
-test("buildClaudeArgs omits --managed-settings when not provided (no-sandbox mode)", () => {
+test("buildClaudeArgs omits --settings when not provided (no-sandbox mode)", () => {
   const args = buildClaudeArgs({
     sessionId: "sid-1",
     slashCommand: "/lh-dev 42",
   });
-  expect(args.indexOf("--managed-settings")).toBe(-1);
+  expect(args.indexOf("--settings")).toBe(-1);
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
   // No sandbox → no auto mode.
   expect(args.indexOf("--permission-mode")).toBe(-1);
@@ -268,7 +271,7 @@ test("formatLaunchPlan summarizes the managed sandbox settings (not raw JSON)", 
   expect(out).toContain(
     "network domains:    api.anthropic.com, github.com, example.com (managed only)",
   );
-  expect(out).toContain("permissions mode:   acceptEdits");
+  expect(out).toContain("permissions mode:   auto");
   expect(out).toContain("filesystem denyRead:");
   expect(out).toContain("- ~/.ssh");
   // readable summary, never a raw one-line JSON blob
@@ -277,7 +280,7 @@ test("formatLaunchPlan summarizes the managed sandbox settings (not raw JSON)", 
 
 test("formatLaunchPlan reports the --permission-mode passed on the command line", () => {
   const out = plan();
-  expect(out).toContain("--permission-mode:  acceptEdits");
+  expect(out).toContain("--permission-mode:  auto");
 });
 
 test("formatLaunchPlan shows no permission mode for a no-sandbox launch", () => {

@@ -125,20 +125,31 @@ export function buildManagedSettings({
       filesystem,
       network: { allowedDomains, allowManagedDomainsOnly: true },
     },
-    permissions: { defaultMode: "acceptEdits" },
+    permissions: { defaultMode: "auto" },
   });
   return { json, allowedDomains };
 }
 
 // ---- interactive launch args ----
 //
-// Build the `claude` argv for the interactive dev session. Auto mode (accept-edits) is coupled
-// to the sandbox: `--permission-mode acceptEdits` is added only when managed sandbox settings
-// are present (i.e. `--sandbox`). Without the sandbox there is no managed-settings, so the
-// session starts in Claude's normal approval mode — never unattended auto-edit without the
-// sandbox guard rails. (The managed-settings `defaultMode: acceptEdits` does not drive the live
-// interactive permission mode, so it must be passed explicitly when sandboxed.) Centralized here
-// so the verbose `exec:` line and the real spawn share one source of truth.
+// Build the `claude` argv for the interactive dev session. Auto mode is coupled to the sandbox:
+// `--permission-mode auto` is added only when managed sandbox settings are present (i.e.
+// `--sandbox`). Without the sandbox there is no managed-settings, so the session starts in
+// Claude's normal approval mode — never unattended auto-run without the sandbox guard rails.
+// `auto` (vs `acceptEdits`) lets the session run Bash/network/edits without prompting — driven
+// by Claude's safety classifier, which still stops to confirm genuinely destructive actions
+// (force push, `terraform destroy`, `curl | bash`, …) — so a sandboxed dev loop is not blocked
+// on routine approvals. The OS sandbox enforces the filesystem/network boundary independently.
+// The settings JSON is handed to `claude` via `--settings <json>` (the flag that loads an inline
+// settings object — `sandbox` block + `permissions.defaultMode`); a CLI `--permission-mode auto`
+// (higher precedence than a settings file) is also passed so the live interactive mode is driven
+// explicitly regardless of how `defaultMode` is merged. `--settings` is the command-line tier
+// (above project/local/user settings) but NOT the managed/policy tier, so `sandbox.enabled` /
+// `failIfUnavailable` / `defaultMode` take effect while managed-only lockdown keys (e.g.
+// `allowManagedDomainsOnly`) are best-effort here. (Historically this used `--managed-settings`,
+// which is not a real `claude` flag — `claude` silently dropped the whole JSON, so neither the
+// sandbox nor auto mode ever took effect.) Centralized here so the verbose `exec:` line and the
+// real spawn share one source of truth.
 export function buildClaudeArgs({
   sessionId,
   managedSettings,
@@ -155,15 +166,17 @@ export function buildClaudeArgs({
 }): string[] {
   const args = ["--session-id", sessionId];
   if (managedSettings) {
-    // Sandbox present → opt into auto mode (accept-edits) explicitly.
-    args.push("--permission-mode", "acceptEdits");
+    // Sandbox present → opt into auto mode explicitly.
+    args.push("--permission-mode", "auto");
   }
   if (sessionName) {
     const name = display(sessionName).trim();
     if (name) args.push("--name", name);
   }
   if (managedSettings) {
-    args.push("--managed-settings", managedSettings);
+    // `--settings` (file-or-json) is the flag that loads an inline settings object; the
+    // long-gone `--managed-settings` was silently ignored, dropping the whole JSON.
+    args.push("--settings", managedSettings);
   }
   args.push(slashCommand);
   return args;
