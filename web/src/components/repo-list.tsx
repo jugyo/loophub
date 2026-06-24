@@ -43,9 +43,15 @@ export function RepoList({
     );
   }
 
+  // Sort by the owner/repository display string, case-insensitively, so the
+  // sidebar order is stable regardless of the API's return order.
+  const sorted = [...repos].sort((a, b) =>
+    a.full_name.localeCompare(b.full_name, undefined, { sensitivity: "base" }),
+  );
+
   return (
     <ul className="flex flex-col gap-2">
-      {repos.map((repo) => {
+      {sorted.map((repo) => {
         const [owner, name] = repo.full_name.split("/");
         return (
           <li key={repo.id}>

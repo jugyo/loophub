@@ -105,4 +105,29 @@ describe("RepoList", () => {
     expect(alpha?.getAttribute("href")).toBe("/r/me/alpha");
     expect(beta?.getAttribute("href")).toBe("/r/me/beta");
   });
+
+  it("renders repos in case-insensitive alphabetical order by full_name", async () => {
+    renderInRouter(
+      <RepoList
+        query={result({
+          data: [
+            repo("zed/gamma", 1),
+            repo("Acme/widget", 2),
+            repo("acme/Alpha", 3),
+            repo("me/beta", 4),
+          ],
+        })}
+        emptyTitle=""
+        emptyDescription=""
+      />,
+    );
+    await screen.findByText("zed/gamma");
+    const order = screen.getAllByRole("link").map((a) => a.textContent?.trim());
+    expect(order).toEqual([
+      "acme/Alpha",
+      "Acme/widget",
+      "me/beta",
+      "zed/gamma",
+    ]);
+  });
 });
