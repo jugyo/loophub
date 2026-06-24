@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { stripVTControlCharacters } from "node:util";
+import { parseArgs, stripVTControlCharacters } from "node:util";
 import { baseUrl, configDir, dbPath, worktreeRoot } from "../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../core/git.ts";
 import {
@@ -26,21 +26,75 @@ async function svc(): Promise<Service> {
 }
 
 // ---- arg parsing ----
-const argv = process.argv.slice(2);
-const flags: Record<string, string> = {};
-const pos: string[] = [];
-for (let i = 0; i < argv.length; i++) {
-  const a = argv[i];
-  if (a.startsWith("--")) {
-    const key = a.slice(2);
-    const next = argv[i + 1];
-    if (next === undefined || next.startsWith("--")) flags[key] = "true";
-    else {
-      flags[key] = next;
-      i++;
-    }
-  } else pos.push(a);
-}
+// Declare each flag's type so boolean flags (--sandbox/--verbose/--json) never swallow the
+// next token: `lh dev --sandbox 123` and `lh dev 123 --sandbox` parse identically, and
+// `--repo=me/x` works. strict:false keeps the old lenient behavior for any undeclared flag.
+type Flags = {
+  repo?: string;
+  "session-id"?: string;
+  sessionId?: string;
+  sandbox?: boolean;
+  verbose?: boolean;
+  json?: boolean;
+  allow?: string;
+  path?: string;
+  name?: string;
+  // string when a value is given (--archived all|true|false); boolean true when bare
+  // (--archived), since strict:false resolves a value-less declared flag to true.
+  archived?: string | boolean;
+  "default-branch"?: string;
+  state?: string;
+  label?: string;
+  title?: string;
+  body?: string;
+  id?: string;
+  agent?: string;
+  session?: string;
+  head?: string;
+  base?: string;
+  issue?: string;
+  method?: string;
+  comments?: string;
+  event?: string;
+  since?: string;
+  order?: string;
+  add?: string;
+};
+const { values, positionals: pos } = parseArgs({
+  args: process.argv.slice(2),
+  allowPositionals: true,
+  strict: false,
+  options: {
+    repo: { type: "string" },
+    "session-id": { type: "string" },
+    sessionId: { type: "string" },
+    sandbox: { type: "boolean" },
+    verbose: { type: "boolean" },
+    json: { type: "boolean" },
+    allow: { type: "string" },
+    path: { type: "string" },
+    name: { type: "string" },
+    archived: { type: "string" },
+    "default-branch": { type: "string" },
+    state: { type: "string" },
+    label: { type: "string" },
+    title: { type: "string" },
+    body: { type: "string" },
+    id: { type: "string" },
+    agent: { type: "string" },
+    session: { type: "string" },
+    head: { type: "string" },
+    base: { type: "string" },
+    issue: { type: "string" },
+    method: { type: "string" },
+    comments: { type: "string" },
+    event: { type: "string" },
+    since: { type: "string" },
+    order: { type: "string" },
+    add: { type: "string" },
+  },
+});
+const flags = values as Flags;
 
 // Human CLI persists a default session; agents pass --session-id explicitly.
 const SESSION_ID = flags["session-id"] || flags.sessionId;
@@ -154,7 +208,7 @@ async function main() {
     const slashCommand = `/lh-dev ${issue}`;
 
     // Validate --allow vs --sandbox flag early.
-    const useSandbox = flags.sandbox === "true";
+    const useSandbox = flags.sandbox === true;
     if (flags.allow && !useSandbox) {
       fail("--allow can only be used with --sandbox");
     }
@@ -268,7 +322,7 @@ async function main() {
         claudeArgs,
       }),
     );
-    if (flags.verbose === "true") {
+    if (flags.verbose === true) {
       const claudeLine = `claude ${claudeArgs.map(shQuote).join(" ")}`;
       console.error(`exec: ${claudeLine}`);
     }
@@ -312,8 +366,10 @@ async function main() {
       const r = await run(() => s.repos.create({ path, name }));
       console.log(`added ${r.full_name}  (${r.local_path})`);
     } else if (sub === "list") {
+      // Bare `--archived` resolves to boolean true under strict:false; treat it like the
+      // old parser's "true" so `lh repo list --archived` still lists archived repos.
       const archived =
-        flags.archived === "true"
+        flags.archived === "true" || flags.archived === true
           ? "archived"
           : flags.archived === "all"
             ? "all"
@@ -391,7 +447,7 @@ async function main() {
       const i = await run(async () =>
         s.issues.create(
           repo,
-          { title: flags.title, body: flags.body || "", labels },
+          { title: flags.title ?? "", body: flags.body || "", labels },
           await writeSession(),
         ),
       );
@@ -412,7 +468,7 @@ async function main() {
         s.comments.create(
           repo,
           Number(rest[0]),
-          flags.body,
+          flags.body ?? "",
           await writeSession(),
         ),
       );
@@ -516,9 +572,9 @@ async function main() {
         s.pulls.create(
           repo,
           {
-            title: flags.title,
+            title: flags.title ?? "",
             body: flags.body || "",
-            head: flags.head,
+            head: flags.head ?? "",
             base: flags.base || "main",
             ...(flags.issue ? { issue: Number(flags.issue) } : {}),
           },
@@ -657,6 +713,7 @@ function usage() {
   common: --session-id <uuid>  --json
   examples:
     lh dev 42
+    lh dev --sandbox 42            # boolean flags and the issue id may appear in any order
     lh repo add . --name me/proj
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"
