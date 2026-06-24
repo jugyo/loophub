@@ -69,8 +69,8 @@ Always show the user a UI URL when reporting (no CLI output changes required).
 | issue | `{baseUrl}/r/{owner}/{repo}/issues/{n}` |
 | PR | `{baseUrl}/r/{owner}/{repo}/pulls/{m}` |
 
-- **baseUrl**: `url` in `~/.loophub/config.json` → `http://localhost:${LOOPHUB_PORT:-8730}` (`LOOPHUB_URL`
-  is the CLI API target, not the user-facing UI link)
+- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
+  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` → `http://localhost:${LOOPHUB_PORT:-8730}`)
 - **owner/repo**: `--repo` or repo resolution from cwd (same as `lh issue view`)
 
 Example: `http://localhost:8730/r/jugyo/local-github/issues/73`

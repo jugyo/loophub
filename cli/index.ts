@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { configDir, worktreeRoot } from "../core/config.ts";
+import { baseUrl, configDir, dbPath, worktreeRoot } from "../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../core/git.ts";
 import {
   buildClaudeArgs,
@@ -129,6 +129,18 @@ function shQuote(s: string): string {
 const [group, sub, ...rest] = pos;
 
 async function main() {
+  if (group === "info") {
+    // DB-free: report resolved environment so skills don't read ~/.loophub/config.json directly.
+    const info = { baseUrl: baseUrl(), home: configDir(), dbPath: dbPath() };
+    if (flags.json) out(info);
+    else {
+      console.log(`baseUrl\t${info.baseUrl}`);
+      console.log(`home\t${info.home}`);
+      console.log(`dbPath\t${info.dbPath}`);
+    }
+    return;
+  }
+
   if (group === "dev") {
     const issue = sub;
     if (!issue || !/^[0-9]+$/.test(issue)) {
@@ -628,6 +640,7 @@ async function main() {
 function usage() {
   console.log(`lh — LoopHub CLI
 
+  lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
   lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose]   # start one issue in an interactive Claude session
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]

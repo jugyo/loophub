@@ -72,7 +72,8 @@ After registration, the repo appears in the LoopHub UI:
 {baseUrl}/r/{owner}/{repo}
 ```
 
-- **baseUrl**: `url` in `~/.loophub/config.json` → `http://localhost:${LOOPHUB_PORT:-8730}`
+- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
+  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` → `http://localhost:${LOOPHUB_PORT:-8730}`)
 
 Example: `http://localhost:8730/r/jugyo/my-project`
 

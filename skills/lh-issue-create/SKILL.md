@@ -70,8 +70,8 @@ Always show the user a UI URL when reporting creation (no CLI output changes req
 {baseUrl}/r/{owner}/{repo}/issues/{n}
 ```
 
-- **baseUrl**: `url` in `~/.loophub/config.json` → `http://localhost:${LOOPHUB_PORT:-8730}` (`LOOPHUB_URL`
-  is the CLI API target, not the user-facing UI link)
+- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
+  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` → `http://localhost:${LOOPHUB_PORT:-8730}`)
 - **owner/repo**: `--repo` at create time (when omitted, same resolution as `resolveRepo()` from cwd)
 
 Example: `http://localhost:8730/r/jugyo/local-github/issues/42`
