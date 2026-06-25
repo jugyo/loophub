@@ -24,6 +24,46 @@ type StatementSync = SqliteNS.StatementSync;
 
 type Param = unknown;
 
+// LoopHub shares a single LOOPHUB_DB across processes (the `lh` CLI and the resident
+// `lh-web`). With WAL, writers still serialize, so a write issued while another process
+// holds the write lock would otherwise get an immediate `SQLITE_BUSY` ("database is
+// locked"). `PRAGMA busy_timeout` makes SQLite wait (synchronously, inside the native
+// call) up to this many ms for the lock before giving up — the primary fix.
+const BUSY_TIMEOUT_MS = 5000;
+
+// busy_timeout covers the common contention case. In rare situations SQLite can still
+// return SQLITE_BUSY after the timeout elapses (e.g. a checkpoint/deadlock-prone moment),
+// so we add a small bounded retry on writes as a backstop. Reads are left to busy_timeout.
+const WRITE_RETRY_ATTEMPTS = 4;
+const SQLITE_BUSY = 5;
+
+function isBusyError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { errcode?: number; message?: string };
+  return (
+    e.errcode === SQLITE_BUSY ||
+    /database is locked|SQLITE_BUSY/i.test(e.message ?? "")
+  );
+}
+
+// Synchronous sleep (the node:sqlite surface is fully synchronous, so we cannot await).
+// Atomics.wait blocks the thread without busy-spinning the CPU.
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Retry a synchronous write on residual SQLITE_BUSY with a short exponential backoff.
+function withWriteRetry<T>(op: () => T): T {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return op();
+    } catch (err) {
+      if (!isBusyError(err) || attempt >= WRITE_RETRY_ATTEMPTS - 1) throw err;
+      sleepSync(25 * 2 ** attempt); // 25, 50, 100 ms
+    }
+  }
+}
+
 function normalize(params: Param[]): Param[] {
   return params.map((p) => (p === undefined ? null : p));
 }
@@ -52,7 +92,7 @@ class Db {
   }
 
   exec(sql: string): void {
-    this.#raw.exec(sql);
+    withWriteRetry(() => this.#raw.exec(sql));
   }
 
   query(sql: string): BunStyleQuery {
@@ -62,13 +102,15 @@ class Db {
         stmt.get(...(normalize(params) as never[])) ?? null,
       all: (...params: Param[]) => stmt.all(...(normalize(params) as never[])),
       run: (...params: Param[]) => {
-        stmt.run(...(normalize(params) as never[]));
+        withWriteRetry(() => stmt.run(...(normalize(params) as never[])));
       },
     };
   }
 
   run(sql: string, params: Param[] = []): void {
-    this.#prepare(sql).run(...(normalize(params) as never[]));
+    withWriteRetry(() =>
+      this.#prepare(sql).run(...(normalize(params) as never[])),
+    );
   }
 }
 
@@ -77,6 +119,7 @@ mkdirSync(dirname(path), { recursive: true });
 
 export const db = new Db(path);
 db.exec("PRAGMA journal_mode = WAL;");
+db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};`);
 db.exec("PRAGMA foreign_keys = ON;");
 
 db.exec(`
