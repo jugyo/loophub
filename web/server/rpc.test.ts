@@ -12,6 +12,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 let dispatch: typeof import("./rpc.ts").dispatch;
 let dispatchRaw: typeof import("./rpc.ts").dispatchRaw;
 let ERROR_CODES: typeof import("./rpc.ts").ERROR_CODES;
+let db: typeof import("../../core/db.ts").db;
 let repoPath: string;
 
 function git(args: string[]) {
@@ -24,6 +25,7 @@ async function call(method: string, params?: any, id: any = 1) {
 
 beforeAll(async () => {
   ({ dispatch, dispatchRaw, ERROR_CODES } = await import("./rpc.ts"));
+  ({ db } = await import("../../core/db.ts"));
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-rpc-repo-"));
   git(["init", "-q", "-b", "main"]);
@@ -130,30 +132,43 @@ test("batch returns an array; empty batch -> -32600", async () => {
   expect(empty.error.code).toBe(ERROR_CODES.INVALID_REQUEST);
 });
 
-test("dashboard/overview lists assigned issues tagged with their repo", async () => {
-  const sid = "11111111-1111-1111-1111-111111111111";
-  await call("sessions/register", {
-    id: sid,
-    agent: "impl-bot",
-    session: "wip-runtime",
-  });
-  const wip: any = await call("issues/create", {
+test("dashboard/overview lists recent open issues newest-created first, tagged with their repo", async () => {
+  // Lower number created first, higher number second. We then stamp created_at
+  // so the *lower-numbered* issue is the newest, which contradicts the
+  // number-DESC tie-break — so the assertion below only passes if the section
+  // is genuinely ordered by created_at (byCreatedDesc), not by number.
+  const lowNum: any = await call("issues/create", {
     repo: "me/proj",
-    title: "wip",
+    title: "stamped-newest",
   });
-  await call("issues/assign", {
+  const highNum: any = await call("issues/create", {
     repo: "me/proj",
-    number: wip.result.number,
-    session_id: sid,
+    title: "stamped-oldest",
   });
-  await call("issues/create", { repo: "me/proj", title: "idle" }); // unassigned -> excluded
+  const setCreatedAt = (title: string, createdAt: string) =>
+    db.run("UPDATE issues SET created_at = ? WHERE title = ?", [
+      createdAt,
+      title,
+    ]);
+  setCreatedAt("stamped-newest", "2025-01-02T00:00:00Z");
+  setCreatedAt("stamped-oldest", "2025-01-01T00:00:00Z");
 
   const r: any = await call("dashboard/overview", {});
   expect(Array.isArray(r.result.issues)).toBe(true);
   expect(Array.isArray(r.result.pulls)).toBe(true);
 
+  // Both open issues appear regardless of assignment.
+  const titles = r.result.issues.map((it: any) => it.issue.title);
+  expect(titles).toContain("stamped-newest");
+  expect(titles).toContain("stamped-oldest");
+
+  // Newest-created first, even though it has the lower issue number.
+  expect(titles.indexOf("stamped-newest")).toBeLessThan(
+    titles.indexOf("stamped-oldest"),
+  );
+
   const mine = r.result.issues.find(
-    (it: any) => it.issue.number === wip.result.number,
+    (it: any) => it.issue.number === lowNum.result.number,
   );
   expect(mine).toBeTruthy();
   expect(mine.repo).toEqual({
@@ -161,9 +176,17 @@ test("dashboard/overview lists assigned issues tagged with their repo", async ()
     owner: "me",
     name: "proj",
   });
-  expect(r.result.issues.some((it: any) => it.issue.title === "idle")).toBe(
-    false,
-  );
+
+  // Closed issues are excluded.
+  await call("issues/update", {
+    repo: "me/proj",
+    number: highNum.result.number,
+    state: "closed",
+  });
+  const r2: any = await call("dashboard/overview", {});
+  expect(
+    r2.result.issues.some((it: any) => it.issue.title === "stamped-oldest"),
+  ).toBe(false);
 });
 
 test("dashboard/overview lists open unmerged PRs tagged with their repo", async () => {

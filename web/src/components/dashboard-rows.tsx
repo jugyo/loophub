@@ -57,12 +57,19 @@ export function IssueRow({
   repo,
   issue,
   repoLabel,
+  showCreatedAt = false,
 }: {
   owner: string;
   repo: string;
   issue: Issue;
   /** When set (cross-repo views), shows which project the issue belongs to. */
   repoLabel?: string;
+  /**
+   * Show the creation time instead of the last-update time. Used by lists that
+   * are ordered newest-created first (the home "Recent issues" section), so the
+   * visible timestamp matches the sort order.
+   */
+  showCreatedAt?: boolean;
 }) {
   return (
     <Link
@@ -76,7 +83,7 @@ export function IssueRow({
       <RowLabels labels={issue.labels} />
       <RowBadges badges={issueBadges(issue)} />
       <span className="shrink-0 text-xs text-muted-foreground">
-        {relativeTime(issue.updated_at)}
+        {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
       </span>
     </Link>
   );

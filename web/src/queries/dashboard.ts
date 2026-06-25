@@ -37,8 +37,8 @@ export function useOpenPulls(owner: string, repo: string) {
 // Both hooks share one query key, so the overview is fetched once and each hook
 // selects its slice. SSE invalidation keys off queryKeys.dashboard().
 
-/** In-progress (agent-assigned) issues across all active repos. */
-export function useInProgressIssues() {
+/** Recently created open issues across all active repos, newest first. */
+export function useRecentOpenIssues() {
   return useQuery({
     queryKey: queryKeys.dashboard(),
     queryFn: getDashboardOverview,

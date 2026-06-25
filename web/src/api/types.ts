@@ -135,7 +135,7 @@ export interface RepoRef {
   name: string;
 }
 
-/** One in-progress issue plus the repo it belongs to (dashboard/overview). */
+/** One recently created open issue plus its repo (dashboard/overview). */
 export interface DashboardIssueItem {
   repo: RepoRef;
   issue: Issue;

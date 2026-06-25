@@ -770,10 +770,10 @@ export const events = {
 };
 
 // ===== dashboard =====
-// Cross-repo "what's in flight" view for the web top page: issues currently
-// assigned to an agent (work in progress) and pull requests that are open and
-// not yet merged. Each item carries its repo identity so the aggregated view
-// can show which project it belongs to.
+// Cross-repo overview for the web top page: the most recently created open
+// issues (newest first) and pull requests that are open and not yet merged.
+// Each item carries its repo identity so the aggregated view can show which
+// project it belongs to.
 type RepoRef = { full_name: string; owner: string; name: string };
 
 function repoRef(r: S.Repo): RepoRef {
@@ -787,11 +787,22 @@ function byUpdatedDesc(
   return a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : 0;
 }
 
-// Per-section cap for the cross-repo overview, mirroring the per-repo dashboard
+function byCreatedDesc(
+  a: { created_at: string },
+  b: { created_at: string },
+): number {
+  return a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0;
+}
+
+// Per-section cap for the open-PR list, mirroring the per-repo dashboard
 // sections. Bounds both the rendered list and the git fan-out below: rows are
 // sorted and sliced *before* serialization, so at most this many pullJSON
 // (git-spawning) calls run per request regardless of total backlog size.
 export const DASHBOARD_SECTION_LIMIT = 50;
+
+// Cap for the cross-repo "recently created open issues" list. Higher than the
+// PR cap because issues are cheap to serialize (no git fan-out).
+export const DASHBOARD_RECENT_ISSUES_LIMIT = 100;
 
 export const dashboard = {
   async overview() {
@@ -800,20 +811,19 @@ export const dashboard = {
     for (const r of S.listRepos("active")) {
       const ref = repoRef(r);
       for (const row of S.listIssues(r.id, "issue", "open")) {
-        if (!row.assignee_session_id) continue; // in progress = assigned to an agent
         issueRows.push({ repo: r, ref, row });
       }
       for (const row of S.listPulls(r.id, "open", "exclude")) {
         pullRows.push({ repo: r, ref, row });
       }
     }
-    // Sort by the row's updated_at (same value pullJSON/issueJSON expose) and cap
-    // each section before serialization, so capping keeps the most recent items
-    // and pullJSON's git fan-out stays bounded.
-    issueRows.sort((a, b) => byUpdatedDesc(a.row, b.row));
+    // Cap each section before serialization so the lists stay bounded and
+    // pullJSON's git fan-out stays bounded. Issues are ordered newest-created
+    // first; PRs keep their most-recently-updated ordering.
+    issueRows.sort((a, b) => byCreatedDesc(a.row, b.row));
     pullRows.sort((a, b) => byUpdatedDesc(a.row, b.row));
     const issues = issueRows
-      .slice(0, DASHBOARD_SECTION_LIMIT)
+      .slice(0, DASHBOARD_RECENT_ISSUES_LIMIT)
       .map(({ repo, ref, row }) => ({
         repo: ref,
         issue: issueJSON(row, repo),

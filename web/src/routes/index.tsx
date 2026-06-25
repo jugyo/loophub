@@ -1,14 +1,15 @@
 import { createRoute } from "@tanstack/react-router";
 import { IssueRow, PullRow } from "@/components/dashboard-rows";
 import { DashboardSection } from "@/components/dashboard-section";
-import { useInProgressIssues, useUnmergedPulls } from "@/queries/dashboard";
+import { useRecentOpenIssues, useUnmergedPulls } from "@/queries/dashboard";
 import { rootRoute } from "./root";
 
-// Home (/) is a cross-project overview: issues currently being worked on and
-// pull requests still open. Each row is tagged with its repo so it's clear which
-// project the work belongs to. The per-repo dashboard lives at /r/:owner/:repo.
+// Home (/) is a cross-project overview: pull requests still open and the most
+// recently created open issues. Each row is tagged with its repo so it's clear
+// which project the work belongs to. The per-repo dashboard lives at
+// /r/:owner/:repo.
 function HomePage() {
-  const issues = useInProgressIssues();
+  const issues = useRecentOpenIssues();
   const pulls = useUnmergedPulls();
 
   return (
@@ -16,7 +17,7 @@ function HomePage() {
       <div>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Issues in progress and pull requests awaiting merge, across all your
+          Open pull requests and the latest open issues, across all your
           projects.
         </p>
       </div>
@@ -37,9 +38,9 @@ function HomePage() {
       />
 
       <DashboardSection
-        title="In progress"
+        title="Recent issues"
         query={issues}
-        emptyText="No issues are being worked on right now."
+        emptyText="No open issues."
         keyOf={(it) => `${it.repo.full_name}#${it.issue.number}`}
         renderItem={(it) => (
           <IssueRow
@@ -47,6 +48,7 @@ function HomePage() {
             repo={it.repo.name}
             issue={it.issue}
             repoLabel={it.repo.full_name}
+            showCreatedAt
           />
         )}
       />
