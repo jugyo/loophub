@@ -63,6 +63,9 @@ type Flags = {
   since?: string;
   order?: string;
   add?: string;
+  kind?: string;
+  summary?: string;
+  pr?: string;
   file?: string[];
   actor?: string;
 };
@@ -99,6 +102,9 @@ const { values, positionals: pos } = parseArgs({
     since: { type: "string" },
     order: { type: "string" },
     add: { type: "string" },
+    kind: { type: "string" },
+    summary: { type: "string" },
+    pr: { type: "string" },
     file: { type: "string", multiple: true },
     actor: { type: "string" },
   },
@@ -215,6 +221,39 @@ async function main() {
       console.log(`baseUrl\t${info.baseUrl}`);
       console.log(`home\t${info.home}`);
       console.log(`dbPath\t${info.dbPath}`);
+    }
+    return;
+  }
+
+  if (group === "dev" && sub === "log") {
+    // Record a development note (decision/action/assumption/blocker) on the issue's PR.
+    const logUsage =
+      "usage: lh dev log --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]";
+    if (!flags.kind || !flags.summary) fail(logUsage);
+    if (!flags.issue && !flags.pr)
+      fail(`--issue or --pr is required\n${logUsage}`);
+    const repo = await resolveRepo();
+    const s = await svc();
+    const session = await writeSession();
+    const note = await run(() =>
+      s.dev.log(
+        repo,
+        {
+          kind: flags.kind as string,
+          summary: flags.summary as string,
+          body: flags.body,
+          issue: flags.issue ? Number(flags.issue) : undefined,
+          pr: flags.pr ? Number(flags.pr) : undefined,
+        },
+        session,
+      ),
+    );
+    if (flags.json) out(note);
+    else {
+      const target = note.pr_number
+        ? `PR #${note.pr_number}`
+        : `issue #${note.issue_number}`;
+      console.log(`recorded ${note.kind} on ${target}: ${note.summary}`);
     }
     return;
   }
@@ -428,6 +467,31 @@ async function main() {
       else if (typeof e?.status === "number")
         fail(`error ${e.status}: ${e.message}`);
       else throw e;
+    }
+
+    // Open a draft PR for the worktree branch so the agent can write its plan in the PR
+    // body and attach dev notes to it. Idempotent (skips when an open PR already exists)
+    // and best-effort: only for issues (not when working a PR), and a failure warns rather
+    // than blocks the dev loop. The dev session is the actor.
+    if (!item.pull_request) {
+      try {
+        const res = await s.dev.openPr(
+          repo,
+          {
+            issue: n,
+            head: worktreeBranch(n),
+            base: r.default_branch,
+          },
+          sessionId,
+        );
+        console.error(
+          res.created
+            ? `draft PR #${res.number} opened`
+            : `using existing PR #${res.number}`,
+        );
+      } catch (e: any) {
+        console.error(`warning: could not open draft PR: ${e.message}`);
+      }
     }
 
     const proc = spawnSync("claude", claudeArgs, {
@@ -808,6 +872,7 @@ function usage() {
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
   lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani]   # start one issue in an interactive Claude session (--kani: in a new kani terminal)
+  lh dev log --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]   # record a dev note on the issue's PR
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>

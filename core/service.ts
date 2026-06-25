@@ -677,6 +677,150 @@ export const pulls = {
   },
 };
 
+// ===== dev (issue-dev loop support) =====
+//
+// Helpers for the `lh dev` development loop: open a draft PR at the start of work so the
+// agent has a place to write its plan and attach decision/action notes, and record those
+// notes (`dev.note` events) to the shared events table.
+
+// Allowed `dev.note` kinds. An unknown kind is rejected (422) rather than stored.
+export const DEV_NOTE_KINDS = [
+  "decision",
+  "action",
+  "assumption",
+  "blocker",
+] as const;
+export type DevNoteKind = (typeof DEV_NOTE_KINDS)[number];
+
+export const dev = {
+  // Open the draft PR for an issue's worktree branch at the start of `lh dev`. Idempotent:
+  // if the issue already has an open (unmerged) linked PR, return it untouched. The PR can
+  // be opened with 0 commits — LoopHub does not require head to be ahead of base (the diff
+  // is just empty until the agent commits). The body seeds a plan placeholder the agent
+  // overwrites; `Closes #<n>` links it both ways.
+  async openPr(
+    name: string,
+    input: { issue: number; head: string; base: string; body?: string },
+    sessionId?: string | null,
+  ): Promise<{ created: boolean; number: number }> {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const issueRow = issueOr404(r, input.issue, "issue");
+    const existing = S.openPullLinkedToIssue(issueRow.id);
+    if (existing) return { created: false, number: existing.number };
+    const body = input.body ?? defaultDraftPrBody(input.issue);
+    const pr = await pulls.create(
+      name,
+      {
+        title: issueRow.title,
+        body,
+        head: input.head,
+        base: input.base,
+        issue: input.issue,
+      },
+      sessionId,
+    );
+    return { created: true, number: pr.number };
+  },
+
+  // Record a development note (decision / action / assumption / blocker) as a `dev.note`
+  // event in the shared events table. The note targets an issue and/or a PR; the missing
+  // side is resolved when possible (a PR's linked issue, or an issue's open linked PR).
+  log(
+    name: string,
+    input: {
+      kind: string;
+      summary: string;
+      body?: string;
+      issue?: number;
+      pr?: number;
+    },
+    sessionId?: string | null,
+  ): {
+    issue_number: number;
+    pr_number?: number;
+    kind: DevNoteKind;
+    summary: string;
+    body?: string;
+  } {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const summary = (input.summary ?? "").trim();
+    if (!summary) throw new ServiceError(422, "summary is required");
+    if (!DEV_NOTE_KINDS.includes(input.kind as DevNoteKind)) {
+      throw new ServiceError(
+        422,
+        `invalid kind "${input.kind}" (expected one of: ${DEV_NOTE_KINDS.join(", ")})`,
+      );
+    }
+    if (input.issue == null && input.pr == null) {
+      throw new ServiceError(422, "one of issue or pr is required");
+    }
+    const kind = input.kind as DevNoteKind;
+
+    let prNumber: number | undefined;
+    let issueNumber: number | undefined;
+    let prLinkedIssue: number | undefined;
+    if (input.pr != null) {
+      const prRow = issueOr404(r, input.pr, "pull");
+      prNumber = prRow.number;
+      const linkedId = S.getPull(prRow.id)?.linked_issue_id;
+      if (linkedId != null) {
+        prLinkedIssue = S.getIssueById(linkedId)?.number;
+        issueNumber = prLinkedIssue;
+      }
+    }
+    if (input.issue != null) {
+      const issueRow = issueOr404(r, input.issue, "issue");
+      // Both given: reject a PR whose linked issue contradicts the supplied issue,
+      // rather than silently recording a mismatched note.
+      if (
+        input.pr != null &&
+        prLinkedIssue != null &&
+        prLinkedIssue !== issueRow.number
+      ) {
+        throw new ServiceError(
+          422,
+          `issue #${issueRow.number} is not linked to PR #${input.pr}`,
+        );
+      }
+      issueNumber = issueRow.number;
+      if (prNumber == null) {
+        const open = S.openPullLinkedToIssue(issueRow.id);
+        if (open) prNumber = open.number;
+      }
+    }
+    if (issueNumber == null) {
+      throw new ServiceError(422, "could not resolve target issue");
+    }
+
+    const actor = actorFor(sessionId);
+    const body = input.body?.trim() || undefined;
+    const payload: {
+      issue_number: number;
+      pr_number?: number;
+      kind: DevNoteKind;
+      summary: string;
+      body?: string;
+    } = { issue_number: issueNumber, kind, summary };
+    if (prNumber != null) payload.pr_number = prNumber;
+    if (body) payload.body = body;
+    S.emitEvent(r.id, "dev.note", actor, payload);
+    return payload;
+  },
+};
+
+function defaultDraftPrBody(issue: number): string {
+  return [
+    "## 実装計画",
+    "",
+    "<!-- 着手時に実装計画をここへ記入してください -->",
+    "",
+    `Closes #${issue}`,
+    "",
+  ].join("\n");
+}
+
 // ===== reviews =====
 export const reviews = {
   list(name: string, number: number) {

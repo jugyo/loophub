@@ -51,6 +51,20 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["pull"]);
     }
     keys.push([...queryKeys.dashboard()]); // cross-repo top page
+  } else if (type === "dev.note") {
+    // A dev note targets a PR (and its issue). Invalidate the PR detail — the dev-note
+    // timeline is a sub-key of the pull key, so the prefix refetches it — plus the lists.
+    const prNumber = payload?.pr_number;
+    if (repo) {
+      keys.push([...queryKeys.pulls(repo)]);
+      if (typeof prNumber === "number") {
+        keys.push([...queryKeys.pull(repo, prNumber)]);
+      }
+    } else {
+      keys.push(["pulls"]);
+      keys.push(["pull"]);
+    }
+    keys.push([...queryKeys.dashboard()]);
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
   }

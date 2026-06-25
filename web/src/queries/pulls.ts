@@ -5,6 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getPull,
+  listEvents,
   listPullComments,
   listPullFiles,
   listPullReviews,
@@ -14,6 +15,16 @@ import {
   readyForReview,
 } from "@/api/client";
 import { queryKeys } from "./keys";
+
+/** A `dev.note` event projected to the fields the PR timeline renders. */
+export interface DevNote {
+  id: number;
+  actor: string;
+  created_at: string;
+  kind: string;
+  summary: string;
+  body?: string;
+}
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
 
@@ -71,6 +82,47 @@ export function usePullComments(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: [...queryKeys.pull(full(owner, repo), number), "comments"],
     queryFn: () => listPullComments(owner, repo, number),
+  });
+}
+
+/**
+ * Dev-loop notes (`dev.note` events) for a PR, oldest first. Sourced from the raw events
+ * feed (no dedicated endpoint) and filtered client-side to this PR. Keyed under the pull
+ * key so the SSE map (event-keys.ts) refetches it via the pull prefix on each new note.
+ *
+ * MVP limitation: events/list has no type filter and caps at 100 events, so this reads only
+ * the latest 100 repo events. On a very busy repo, older dev notes for a PR can fall outside
+ * that window. A type filter or dedicated endpoint would lift the cap (deferred — this is a
+ * walking-skeleton MVP).
+ */
+export function usePullDevNotes(owner: string, repo: string, number: number) {
+  const repoFull = full(owner, repo);
+  return useQuery({
+    queryKey: [...queryKeys.pull(repoFull, number), "dev-notes"],
+    queryFn: async (): Promise<DevNote[]> => {
+      const events = await listEvents(
+        `repo=${repoFull}&order=desc&per_page=100`,
+      );
+      return (
+        events
+          .filter(
+            (e) => e.type === "dev.note" && e.payload?.pr_number === number,
+          )
+          .map((e) => ({
+            id: e.id,
+            actor: e.actor,
+            created_at: e.created_at,
+            kind: String(e.payload.kind ?? ""),
+            summary: String(e.payload.summary ?? ""),
+            body:
+              typeof e.payload.body === "string" ? e.payload.body : undefined,
+          }))
+          // Oldest first; event id breaks ties (created_at is second-precision).
+          .sort(
+            (a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id,
+          )
+      );
+    },
   });
 }
 

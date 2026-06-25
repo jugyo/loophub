@@ -18,14 +18,21 @@ import type {
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { assigneeBadge, reviewBadge, stateBadge } from "@/lib/badges";
+import {
+  assigneeBadge,
+  type BadgeTone,
+  reviewBadge,
+  stateBadge,
+} from "@/lib/badges";
 import { type DiffLineKind, parsePatch } from "@/lib/diff";
 import { relativeTime } from "@/lib/time";
 import { useIssueComments } from "@/queries/issues";
 import {
+  type DevNote,
   useMergePull,
   usePull,
   usePullComments,
+  usePullDevNotes,
   usePullFiles,
   usePullReviews,
   useReadyForReview,
@@ -49,6 +56,7 @@ export function PullDetail({
   const reviewsQuery = usePullReviews(owner, repo, number);
   const lineCommentsQuery = usePullComments(owner, repo, number);
   const commentsQuery = useIssueComments(owner, repo, number);
+  const devNotesQuery = usePullDevNotes(owner, repo, number);
 
   if (pullQuery.isLoading) {
     return (
@@ -73,6 +81,12 @@ export function PullDetail({
   return (
     <div className="mx-auto flex max-w-content flex-col gap-6">
       <PullHeader owner={owner} repo={repo} pull={pull} />
+
+      <DevNoteTimeline
+        notes={devNotesQuery.data}
+        isLoading={devNotesQuery.isLoading}
+        isError={devNotesQuery.isError}
+      />
 
       <ReviewList
         reviews={reviewsQuery.data}
@@ -246,6 +260,67 @@ function PullHeader({
         </p>
       ) : null}
     </div>
+  );
+}
+
+// dev.note kind → badge tone (reuses the existing badge palette; no new CSS).
+const DEV_NOTE_TONE: Record<string, BadgeTone> = {
+  decision: "open",
+  action: "agent",
+  assumption: "unknown",
+  blocker: "conflict",
+};
+
+function DevNoteTimeline({
+  notes,
+  isLoading,
+  isError,
+}: {
+  notes: DevNote[] | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  // Hide the section entirely until there is something to show, so PRs without a dev loop
+  // (e.g. human-authored) stay uncluttered.
+  if (!isLoading && !isError && (!notes || notes.length === 0)) return null;
+
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">Dev log</h2>
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading dev log…
+        </div>
+      ) : isError ? (
+        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load dev log.
+        </div>
+      ) : (
+        <ol className="flex flex-col gap-2">
+          {(notes ?? []).map((n) => (
+            <li key={n.id} className="rounded-md border p-3">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <Badge tone={DEV_NOTE_TONE[n.kind] ?? "unknown"}>
+                  {n.kind}
+                </Badge>
+                <span className="font-medium">{n.summary}</span>
+                <span className="text-xs text-muted-foreground">
+                  @{n.actor} · {relativeTime(n.created_at)}
+                </span>
+              </div>
+              {n.body ? (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-muted-foreground">
+                    Details
+                  </summary>
+                  <Markdown className="mt-1">{n.body}</Markdown>
+                </details>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }
 

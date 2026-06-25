@@ -34,6 +34,18 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["pull", "me/proj", 13]);
   });
 
+  it("maps dev.note events to the target PR detail + pulls list", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "dev.note",
+        repo: "me/proj",
+        payload: { issue_number: 7, pr_number: 8, kind: "decision" },
+      }),
+    );
+    expect(keys).toContainEqual(["pulls", "me/proj"]);
+    expect(keys).toContainEqual(["pull", "me/proj", 8]);
+  });
+
   it("maps agent_session events to agent-sessions", () => {
     const keys = queryKeysForEvent(ev({ type: "agent_session.registered" }));
     expect(keys).toContainEqual(["agent-sessions"]);
