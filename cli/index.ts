@@ -11,6 +11,7 @@ import {
   buildManagedSettings,
   displayMultiline,
   formatLaunchPlan,
+  parseDevTarget,
   provisionWorktree,
   resolveAllowedDomains,
   validateRepo,
@@ -219,14 +220,36 @@ async function main() {
   }
 
   if (group === "dev") {
-    const issue = sub;
-    if (!issue || !/^[0-9]+$/.test(issue)) {
-      fail(
-        "usage: lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani]",
-      );
+    const target = sub;
+    const usageLine =
+      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani]";
+    if (!target) {
+      fail(usageLine);
     }
-    const repo = await resolveRepo();
-    const n = Number(issue);
+    // Parse the positional: bare <id> defers repo resolution to resolveRepo(); the
+    // <owner>/<repo>/<id> form carries the repo so `lh dev` can run from outside that repo.
+    let parsed: { repo?: string; id: number };
+    try {
+      parsed = parseDevTarget(target);
+    } catch (e: any) {
+      fail(`${e.message}\n${usageLine}`);
+    }
+    // Resolve the repo: a repo from the positional takes precedence but must not contradict an
+    // explicit --repo (a conflict is a hard error rather than a silent pick). Without a positional
+    // repo, fall back to the existing resolution (--repo, else cwd match).
+    let repo: string;
+    if (parsed.repo) {
+      if (flags.repo && flags.repo !== parsed.repo) {
+        fail(
+          `conflicting repo: positional '${parsed.repo}' vs --repo '${flags.repo}'`,
+        );
+      }
+      repo = parsed.repo;
+    } else {
+      repo = await resolveRepo();
+    }
+    const n = parsed.id;
+    const issue = String(n);
     const sessionId = randomUUID();
     const slashCommand = `/lh-dev ${issue}`;
 
@@ -271,7 +294,9 @@ async function main() {
         title: item.title,
         cwd: r.local_path,
         flags: {
-          repo: flags.repo,
+          // Forward the fully-resolved repo (not the raw --repo flag) so the inner `lh dev`
+          // gets it explicitly regardless of which positional form launched this one.
+          repo,
           sandbox: flags.sandbox,
           allow: flags.allow,
           verbose: flags.verbose,
@@ -752,7 +777,7 @@ function usage() {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani]   # start one issue in an interactive Claude session (--kani: in a new kani terminal)
+  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani]   # start one issue in an interactive Claude session (--kani: in a new kani terminal)
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>
@@ -768,6 +793,7 @@ function usage() {
   common: --session-id <uuid>  --json
   examples:
     lh dev 42
+    lh dev jugyo/loophub/42        # owner/repo/id form: start from outside the repo, no --repo needed
     lh dev --sandbox 42            # boolean flags and the issue id may appear in any order
     lh repo add . --name me/proj
     SID=$(uuidgen)

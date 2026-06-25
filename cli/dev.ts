@@ -150,6 +150,37 @@ export function buildManagedSettings({
 // which is not a real `claude` flag — `claude` silently dropped the whole JSON, so neither the
 // sandbox nor auto mode ever took effect.) Centralized here so the verbose `exec:` line and the
 // real spawn share one source of truth.
+// Parse the `lh dev` positional target. Two accepted forms:
+//   <id>                  e.g. "116"            → { id: 116 }            (repo from cwd/--repo)
+//   <owner>/<repo>/<id>   e.g. "jugyo/lh/116"   → { repo: "jugyo/lh", id: 116 }
+// The owner/repo/id form lets `lh dev` start from outside the target repo's working directory
+// without `--repo`; the bare-id form is the shorthand that defers repo resolution to the caller
+// (resolveRepo: cwd match or --repo). A malformed target (non-numeric id, wrong segment count,
+// or an empty owner/repo segment) throws a usage error. Pure so it can be unit-tested.
+export function parseDevTarget(target: string): { repo?: string; id: number } {
+  const parts = target.split("/");
+  if (parts.length === 1) {
+    if (!/^[0-9]+$/.test(parts[0])) {
+      throw new Error(
+        `invalid issue id ${JSON.stringify(target)} (expected a number)`,
+      );
+    }
+    return { id: Number(parts[0]) };
+  }
+  if (parts.length === 3) {
+    const [owner, name, id] = parts;
+    if (!owner || !name || !/^[0-9]+$/.test(id)) {
+      throw new Error(
+        `invalid target ${JSON.stringify(target)} (expected <owner>/<repo>/<id>)`,
+      );
+    }
+    return { repo: `${owner}/${name}`, id: Number(id) };
+  }
+  throw new Error(
+    `invalid target ${JSON.stringify(target)} (expected <id> or <owner>/<repo>/<id>)`,
+  );
+}
+
 export function buildClaudeArgs({
   sessionId,
   managedSettings,

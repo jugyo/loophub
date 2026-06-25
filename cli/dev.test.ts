@@ -26,11 +26,46 @@ import {
   buildManagedSettings,
   displayMultiline,
   formatLaunchPlan,
+  parseDevTarget,
   provisionWorktree,
   validateDomain,
   worktreeBranch,
   worktreePath,
 } from "./dev.ts";
+
+// ---- parseDevTarget (pure) ----
+
+test("parseDevTarget accepts a bare numeric id (repo deferred to resolveRepo)", () => {
+  expect(parseDevTarget("116")).toEqual({ id: 116 });
+});
+
+test("parseDevTarget accepts the <owner>/<repo>/<id> form", () => {
+  expect(parseDevTarget("jugyo/loophub/116")).toEqual({
+    repo: "jugyo/loophub",
+    id: 116,
+  });
+});
+
+test("parseDevTarget rejects a non-numeric bare id", () => {
+  expect(() => parseDevTarget("foo")).toThrow(/invalid issue id/);
+});
+
+test("parseDevTarget rejects a two-segment target (owner/repo with no id)", () => {
+  expect(() => parseDevTarget("jugyo/loophub")).toThrow(/invalid target/);
+});
+
+test("parseDevTarget rejects a four-segment target", () => {
+  expect(() => parseDevTarget("a/b/c/116")).toThrow(/invalid target/);
+});
+
+test("parseDevTarget rejects owner/repo/id with a non-numeric id", () => {
+  expect(() => parseDevTarget("jugyo/loophub/foo")).toThrow(/invalid target/);
+});
+
+test("parseDevTarget rejects an empty owner or repo segment", () => {
+  expect(() => parseDevTarget("/loophub/116")).toThrow(/invalid target/);
+  expect(() => parseDevTarget("jugyo//116")).toThrow(/invalid target/);
+});
 
 // ---- displayMultiline (pure) ----
 
@@ -709,9 +744,35 @@ function dev(args: string[]) {
 test("missing issue number prints usage and exits non-zero", () => {
   const { stderr, exitCode } = dev(["--repo", "me/proj"]);
   expect(exitCode).not.toBe(0);
-  expect(stderr).toContain("usage: lh dev <issue>");
+  expect(stderr).toContain("usage: lh dev");
 });
 
 test("non-numeric issue number is rejected", () => {
-  expect(dev(["foo", "--repo", "me/proj"]).exitCode).not.toBe(0);
+  const { stderr, exitCode } = dev(["foo", "--repo", "me/proj"]);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("invalid issue id");
+});
+
+test("malformed owner/repo/id target is rejected with usage", () => {
+  // two segments is neither <id> nor <owner>/<repo>/<id>
+  const { stderr, exitCode } = dev(["me/proj"]);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("invalid target");
+  expect(stderr).toContain("usage: lh dev");
+});
+
+test("owner/repo/id with non-numeric id is rejected", () => {
+  const { stderr, exitCode } = dev(["jugyo/loophub/foo"]);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("invalid target");
+});
+
+test("positional repo conflicting with --repo is a hard error (before DB access)", () => {
+  const { stderr, exitCode } = dev([
+    "jugyo/loophub/42",
+    "--repo",
+    "other/repo",
+  ]);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("conflicting repo");
 });
