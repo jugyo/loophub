@@ -22,9 +22,10 @@ import {
 import { parseClosingIssueNumber } from "./links.ts";
 import {
   decideResume,
-  isClaudeSessionId,
-  LH_DEV_SESSION_AGENT,
+  RUNTIME_CLAUDE_CODE,
+  resolveRuntimeResume,
   resumeWorktreeIssue,
+  sessionRuntime,
 } from "./resume.ts";
 import {
   isRetroStatus,
@@ -223,16 +224,21 @@ export const sessions = {
     agent: string;
     session: string;
     name?: string | null;
+    runtime?: string | null;
   }) {
-    const { id, agent, session, name } = input;
+    const { id, agent, session, name, runtime } = input;
     if (!id || !agent || !session)
       throw new ServiceError(422, "id, agent, and session are required");
     try {
+      // Pass name/runtime straight through (not `?? null`): the store INSERT path applies `?? null`
+      // for new rows, while its UPDATE path preserves the existing value when the arg is undefined.
+      // Forcing undefined → null here would defeat that preserve-on-re-register contract.
       const { session: row, created } = S.registerAgentSession(
         id,
         agent,
         session,
-        name ?? null,
+        name,
+        runtime,
       );
       S.emitEvent(
         null,
@@ -243,6 +249,7 @@ export const sessions = {
           agent: row.agent,
           session: row.external_session,
           ...(row.name ? { name: row.name } : {}),
+          ...(row.runtime ? { runtime: row.runtime } : {}),
         },
       );
       return { session: agentSessionJSON(row), created };
@@ -867,14 +874,16 @@ export interface ResumeOk {
   pr: number;
   issue: number; // issue number identifying the worktree path/branch
   branch: string; // PR head ref to check out
-  sessionId: string; // Claude session id for `claude --resume <id>`
+  runtime: string; // session runtime that selects the resume command (e.g. "claude-code")
+  sessionId: string; // runtime session id for the resume command (e.g. `claude --resume <id>`)
   restore: boolean; // true => worktree was removed; re-attach it from the branch
 }
 export interface ResumeFail {
   ok: false;
   pr: number;
-  reason: "no-session" | "unrestorable";
+  reason: "no-session" | "unrestorable" | "unknown-runtime";
   branch: string; // PR head ref (named in the "unrestorable" message)
+  runtime?: string | null; // the unsupported runtime, when reason is "unknown-runtime"
 }
 export type ResumeResolution = ResumeOk | ResumeFail;
 
@@ -895,18 +904,29 @@ export const resume = {
     const sessionRowId: string | null =
       prRow.assignee_session_id ?? linkedIssue?.assignee_session_id ?? null;
     const sessionRow = sessionRowId ? S.getAgentSession(sessionRowId) : null;
-    // A resumable Claude session must be one `lh dev` launched: it registers under LH_DEV_SESSION_AGENT
-    // and stores in external_session the exact UUID it handed to `claude --session-id`, so
-    // `claude --resume <id>` resumes it directly (no separate resumable-id storage is needed —
-    // verified against `claude --help`: `--resume` takes a session ID and `--session-id` sets it).
-    // The agent check is the provenance signal (another agent's external_session is its own runtime
-    // id, not a Claude session); the UUID check guards argv injection. Either failing → no-session.
-    const claudeSessionId: string | null =
-      sessionRow &&
-      sessionRow.agent === LH_DEV_SESSION_AGENT &&
-      isClaudeSessionId(sessionRow.external_session)
-        ? sessionRow.external_session
-        : null;
+    // The session's runtime selects how to resume it. Prefer the explicit runtime column; fall back
+    // to "lh-dev agent + no runtime → claude-code" for sessions registered before the column
+    // existed (sessionRuntime). resolveRuntimeResume then validates the stored id for that runtime —
+    // claude-code needs a UUID for `claude --resume <id>` (guards argv injection); a runtime this
+    // build cannot resume (e.g. a future codex session) is reported as unknown-runtime so the CLI
+    // can explain it rather than mislabel it "no session".
+    const runtime = sessionRuntime(sessionRow);
+    const runtimeResume = resolveRuntimeResume(
+      runtime,
+      sessionRow?.external_session ?? null,
+    );
+    if (!runtimeResume.ok && runtimeResume.reason === "unknown-runtime") {
+      return {
+        ok: false,
+        pr: prNumber,
+        reason: "unknown-runtime",
+        branch: headRef,
+        runtime,
+      };
+    }
+    const claudeSessionId: string | null = runtimeResume.ok
+      ? runtimeResume.sessionId
+      : null;
 
     const issueNumber = resumeWorktreeIssue(
       headRef,
@@ -938,6 +958,8 @@ export const resume = {
       pr: prNumber,
       issue: issueNumber,
       branch: headRef,
+      // decision.ok ⇒ claudeSessionId is non-null ⇒ runtimeResume.ok, so its runtime is set.
+      runtime: runtimeResume.ok ? runtimeResume.runtime : RUNTIME_CLAUDE_CODE,
       sessionId: claudeSessionId as string,
       restore: decision.restore,
     };

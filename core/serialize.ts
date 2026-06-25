@@ -30,6 +30,7 @@ export function agentSessionJSON(row: any) {
     updated_at: row.updated_at,
   };
   if (row.name) out.name = row.name;
+  if (row.runtime) out.runtime = row.runtime;
   return out;
 }
 

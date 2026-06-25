@@ -223,6 +223,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   agent             TEXT NOT NULL,
   external_session  TEXT NOT NULL,
   name              TEXT,
+  runtime           TEXT,
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL,
   UNIQUE (agent, external_session)
@@ -295,6 +296,11 @@ tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_by TEXT");
 // reviews.head_sha records the PR head a review was made against, so an APPROVE
 // can be marked stale once the branch advances past that commit.
 tryExec("ALTER TABLE reviews ADD COLUMN head_sha TEXT");
+// agent_sessions.runtime records which runtime launched the session (e.g. "claude-code"), so
+// `lh resume` picks the resume command by runtime instead of inferring it from the agent label.
+// Pre-existing rows get NULL and rely on the lh-dev → claude-code backward-compat fallback
+// (core/resume.ts sessionRuntime).
+tryExec("ALTER TABLE agent_sessions ADD COLUMN runtime TEXT");
 
 export function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "Z");

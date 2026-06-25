@@ -6,7 +6,7 @@ import { createInterface } from "node:readline/promises";
 import { parseArgs, stripVTControlCharacters } from "node:util";
 import { baseUrl, configDir, dbPath, worktreeRoot } from "../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../core/git.ts";
-import { LH_DEV_SESSION_AGENT } from "../core/resume.ts";
+import { LH_DEV_SESSION_AGENT, RUNTIME_CLAUDE_CODE } from "../core/resume.ts";
 import {
   acquireDevLock,
   buildClaudeArgs,
@@ -63,6 +63,7 @@ type Flags = {
   id?: string;
   agent?: string;
   session?: string;
+  runtime?: string;
   head?: string;
   base?: string;
   issue?: string;
@@ -108,6 +109,7 @@ const { values, positionals: pos } = parseArgs({
     id: { type: "string" },
     agent: { type: "string" },
     session: { type: "string" },
+    runtime: { type: "string" },
     head: { type: "string" },
     base: { type: "string" },
     issue: { type: "string" },
@@ -522,6 +524,9 @@ async function main() {
         id: sessionId,
         agent: LH_DEV_SESSION_AGENT,
         session: sessionId,
+        // The session we are about to spawn is a Claude Code session; record the runtime so
+        // `lh resume` picks `claude --resume` by runtime rather than inferring it from the agent.
+        runtime: RUNTIME_CLAUDE_CODE,
       }),
     );
     try {
@@ -619,6 +624,12 @@ async function main() {
             `resume.\n(A resumable session id is saved when work starts via \`lh dev\`.)`,
         );
       }
+      if (resolution.reason === "unknown-runtime") {
+        fail(
+          `PR #${prNumber}: its dev session uses runtime \`${resolution.runtime}\`, which this ` +
+            `version of \`lh resume\` cannot resume (only \`${RUNTIME_CLAUDE_CODE}\` is supported).`,
+        );
+      }
       fail(
         `PR #${prNumber}: cannot restore the dev worktree — its branch ` +
           `\`${resolution.branch}\` no longer exists (and no worktree remains). ` +
@@ -642,6 +653,13 @@ async function main() {
       fail(e.message);
     }
 
+    // Select the resume command by the session's runtime. resume.resolve only returns ok for a
+    // supported runtime, so claude-code is exhaustive today; a new runtime adds a branch here.
+    if (resolution.runtime !== RUNTIME_CLAUDE_CODE) {
+      fail(
+        `PR #${prNumber}: unsupported runtime \`${resolution.runtime}\` for resume.`,
+      );
+    }
     const claudeArgs = buildResumeArgs({ sessionId: resolution.sessionId });
     console.error(`resuming PR #${prNumber} (session ${resolution.sessionId})`);
     console.error(`  repo:     ${repo}`);
@@ -823,6 +841,7 @@ async function main() {
           agent,
           session,
           ...(flags.name ? { name: flags.name } : {}),
+          ...(flags.runtime ? { runtime: flags.runtime } : {}),
         }),
       );
       console.log(`registered session ${row.id} (${row.agent})`);
@@ -1206,7 +1225,7 @@ function usage() {
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>
   lh repo update --repo owner/name [--default-branch main] [--path /abs/path]
   lh repo remove --repo owner/name
-  lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."]
+  lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."] [--runtime claude-code]
   lh session list
   lh issue list|view|create|update|comment|assign|unassign|close|label  [--repo owner/repo]
   lh pr list|view|diff|create|update|merge|review|ready-for-review|close|reopen  [--repo owner/repo]

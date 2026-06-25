@@ -50,6 +50,51 @@ export function isClaudeSessionId(id: string | null | undefined): id is string {
   return typeof id === "string" && UUID_RE.test(id);
 }
 
+// ===== runtime (which agent runtime a session was launched in) =====
+//
+// A session's runtime decides how `lh resume` re-enters it. Before #164 the runtime was *inferred*
+// from the agent label (LH_DEV_SESSION_AGENT == Claude Code); sessions now carry an explicit
+// runtime so resume stays correct once `lh dev` can launch other runtimes (codex, ...). Only
+// claude-code is actually resumable today — real multi-runtime support is out of scope for #164.
+export const RUNTIME_CLAUDE_CODE = "claude-code";
+
+// The effective runtime of a session row, with backward-compat for sessions registered before the
+// runtime column existed. A null-runtime row registered under LH_DEV_SESSION_AGENT predates the
+// column and — by that era's invariant ("lh dev always launched Claude Code") — was a claude-code
+// session, so treat it as claude-code. Any other null-runtime row has unknown provenance (null).
+// An explicit runtime always wins over the fallback.
+export function sessionRuntime(
+  row: { runtime?: string | null; agent?: string | null } | null | undefined,
+): string | null {
+  if (!row) return null;
+  if (row.runtime) return row.runtime;
+  if (row.agent === LH_DEV_SESSION_AGENT) return RUNTIME_CLAUDE_CODE;
+  return null;
+}
+
+// Decide whether a session can be resumed from its runtime + stored external session id, and (when
+// it can) the validated id `lh resume` hands to that runtime's resume command:
+//   - claude-code: resumable iff the id is UUID-shaped (claude --resume <uuid>); else no-session.
+//   - null runtime: unknown provenance → nothing to resume (no-session).
+//   - any other runtime: a session this build cannot resume (e.g. a future codex session) →
+//     unknown-runtime, so the CLI explains it rather than mislabel it "no session".
+export type RuntimeResume =
+  | { ok: true; runtime: string; sessionId: string }
+  | { ok: false; reason: "no-session" | "unknown-runtime" };
+
+export function resolveRuntimeResume(
+  runtime: string | null,
+  externalSession: string | null | undefined,
+): RuntimeResume {
+  if (runtime === RUNTIME_CLAUDE_CODE) {
+    return isClaudeSessionId(externalSession)
+      ? { ok: true, runtime, sessionId: externalSession }
+      : { ok: false, reason: "no-session" };
+  }
+  if (runtime == null) return { ok: false, reason: "no-session" };
+  return { ok: false, reason: "unknown-runtime" };
+}
+
 // The issue number that identifies a PR's worktree path/branch. `lh dev <n>` names the worktree
 // after the issue and opens the PR on branch `loophub/issue-<n>`, so the head branch is the most
 // direct source; fall back to the PR's linked issue, then the PR's own number (a PR worked

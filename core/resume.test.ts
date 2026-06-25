@@ -2,7 +2,10 @@ import { expect, test } from "vitest";
 import {
   decideResume,
   isClaudeSessionId,
+  RUNTIME_CLAUDE_CODE,
+  resolveRuntimeResume,
   resumeWorktreeIssue,
+  sessionRuntime,
 } from "./resume.ts";
 
 // decideResume: the restorability judgment for `lh resume`. No session id is terminal; an
@@ -77,4 +80,60 @@ test("isClaudeSessionId rejects flag-like, malformed, and empty ids", () => {
   expect(isClaudeSessionId("")).toBe(false);
   expect(isClaudeSessionId(null)).toBe(false);
   expect(isClaudeSessionId(undefined)).toBe(false);
+});
+
+// sessionRuntime: explicit runtime wins; a runtime-less lh-dev row is the backward-compat
+// claude-code case; any other runtime-less row is unknown provenance (null).
+test("sessionRuntime prefers the explicit runtime column", () => {
+  expect(sessionRuntime({ runtime: "claude-code", agent: "lh-dev" })).toBe(
+    RUNTIME_CLAUDE_CODE,
+  );
+  // an explicit (even if unsupported) runtime is returned verbatim, not overridden by the fallback
+  expect(sessionRuntime({ runtime: "codex", agent: "lh-dev" })).toBe("codex");
+});
+
+test("sessionRuntime falls back to claude-code for a pre-runtime lh-dev session", () => {
+  expect(sessionRuntime({ runtime: null, agent: "lh-dev" })).toBe(
+    RUNTIME_CLAUDE_CODE,
+  );
+  expect(sessionRuntime({ agent: "lh-dev" })).toBe(RUNTIME_CLAUDE_CODE);
+});
+
+test("sessionRuntime is null for a runtime-less non-lh-dev session and for no row", () => {
+  expect(sessionRuntime({ runtime: null, agent: "impl-bot" })).toBeNull();
+  expect(sessionRuntime(null)).toBeNull();
+  expect(sessionRuntime(undefined)).toBeNull();
+});
+
+// resolveRuntimeResume: claude-code resumes only a UUID id; null runtime is no-session; any other
+// runtime is unknown-runtime so the CLI can explain it.
+test("resolveRuntimeResume resumes a claude-code session with a UUID id", () => {
+  const uuid = "d8a43602-f469-4b03-8fa8-0af5200f22b3";
+  expect(resolveRuntimeResume(RUNTIME_CLAUDE_CODE, uuid)).toEqual({
+    ok: true,
+    runtime: RUNTIME_CLAUDE_CODE,
+    sessionId: uuid,
+  });
+});
+
+test("resolveRuntimeResume rejects a claude-code session with a non-UUID id as no-session", () => {
+  expect(
+    resolveRuntimeResume(RUNTIME_CLAUDE_CODE, "--dangerously-skip-permissions"),
+  ).toEqual({ ok: false, reason: "no-session" });
+  expect(resolveRuntimeResume(RUNTIME_CLAUDE_CODE, null)).toEqual({
+    ok: false,
+    reason: "no-session",
+  });
+});
+
+test("resolveRuntimeResume reports no-session for a null runtime", () => {
+  expect(
+    resolveRuntimeResume(null, "d8a43602-f469-4b03-8fa8-0af5200f22b3"),
+  ).toEqual({ ok: false, reason: "no-session" });
+});
+
+test("resolveRuntimeResume reports unknown-runtime for an unsupported runtime", () => {
+  expect(
+    resolveRuntimeResume("codex", "d8a43602-f469-4b03-8fa8-0af5200f22b3"),
+  ).toEqual({ ok: false, reason: "unknown-runtime" });
 });

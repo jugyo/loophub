@@ -119,6 +119,30 @@ test("agent session register/assign conflicts surface as errors", () => {
   expect(S.unassignIssue(a.id)).toBe("11111111-0000-0000-0000-000000000001");
 });
 
+test("registerAgentSession persists and updates the runtime column", () => {
+  const id = "22222222-0000-0000-0000-000000000001";
+  // Insert with an explicit runtime.
+  const created = S.registerAgentSession(
+    id,
+    "lh-dev",
+    "ext-rt",
+    null,
+    "claude-code",
+  );
+  expect(created.created).toBe(true);
+  expect(S.getAgentSession(id).runtime).toBe("claude-code");
+
+  // Re-register the same (id, agent, external_session) without a runtime keeps the stored value
+  // (runtime === undefined preserves it, mirroring how name is preserved).
+  S.registerAgentSession(id, "lh-dev", "ext-rt");
+  expect(S.getAgentSession(id).runtime).toBe("claude-code");
+
+  // A runtime-less insert leaves the column NULL (the pre-#164 / backward-compat shape).
+  const id2 = "22222222-0000-0000-0000-000000000002";
+  S.registerAgentSession(id2, "lh-dev", "ext-rt-2");
+  expect(S.getAgentSession(id2).runtime).toBeNull();
+});
+
 test("emitEvent persists and listEvents filters by since/order", () => {
   const repo = S.createRepo("me/ev", "/tmp/ev");
   S.emitEvent(repo.id, "issue.opened", "me", { number: 1 });

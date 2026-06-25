@@ -31,7 +31,12 @@ async function makeRepo(name: string): Promise<{ id: number; path: string }> {
 // external_session, the value `claude --resume` consumes).
 async function devFlow(
   repo: { id: number; path: string },
-  opts: { withBranch: boolean; sessionId?: string | null },
+  opts: {
+    withBranch: boolean;
+    sessionId?: string | null;
+    agent?: string;
+    runtime?: string | null;
+  },
 ): Promise<{ pr: number; external: string | null }> {
   const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any;
   let external: string | null = null;
@@ -42,7 +47,15 @@ async function devFlow(
     const rowId = `row-${repo.id}-${issue.number}`;
     const tail = `${String(repo.id).padStart(6, "0")}${String(issue.number).padStart(6, "0")}`;
     external = opts.sessionId ?? `00000000-0000-4000-8000-${tail}`;
-    S.registerAgentSession(rowId, "lh-dev", external);
+    // Default agent lh-dev with no runtime mirrors a pre-#164 session (backward-compat fallback);
+    // pass agent/runtime explicitly to exercise the runtime-based path.
+    S.registerAgentSession(
+      rowId,
+      opts.agent ?? "lh-dev",
+      external,
+      null,
+      opts.runtime ?? null,
+    );
     S.assignIssueToSession(issue.id, rowId);
   }
   const branch = `loophub/issue-${issue.number}`;
@@ -73,6 +86,42 @@ test("resolve returns the linked-issue session and restores from the branch", as
   expect(res.issue).toBe(1); // worktree issue number from loophub/issue-1
   expect(res.branch).toBe("loophub/issue-1");
   expect(res.restore).toBe(true); // worktree absent, branch present → re-attach
+  // Backward-compat: this session has runtime=NULL (registered without one), so it resolves via the
+  // lh-dev → claude-code fallback and reports claude-code as the resume runtime.
+  expect(res.runtime).toBe("claude-code");
+});
+
+// An explicit runtime column drives resolution directly (the modern `lh dev` path stores it).
+test("resolve resumes a session with an explicit claude-code runtime", async () => {
+  const repo = await makeRepo("me/explicit");
+  const { pr, external } = await devFlow(repo, {
+    withBranch: true,
+    runtime: "claude-code",
+  });
+
+  const res = await svc.resume.resolve("me/explicit", pr);
+  expect(res.ok).toBe(true);
+  if (!res.ok) return;
+  expect(res.runtime).toBe("claude-code");
+  expect(res.sessionId).toBe(external);
+});
+
+// A session whose runtime this build cannot resume (e.g. a future codex session) is reported as
+// unknown-runtime — distinct from no-session — so the CLI can explain it rather than mislabel it.
+test("resolve reports unknown-runtime for an unsupported runtime", async () => {
+  const repo = await makeRepo("me/codex");
+  const { pr } = await devFlow(repo, {
+    withBranch: true,
+    agent: "lh-dev",
+    runtime: "codex",
+  });
+
+  const res = await svc.resume.resolve("me/codex", pr);
+  expect(res).toMatchObject({
+    ok: false,
+    reason: "unknown-runtime",
+    runtime: "codex",
+  });
 });
 
 // A PR with no session recorded anywhere cannot be resumed.
@@ -167,4 +216,22 @@ test("resolve rejects a session not registered by lh dev (wrong agent)", async (
 
   const res = await svc.resume.resolve("me/otheragent", pr.number);
   expect(res).toMatchObject({ ok: false, reason: "no-session" });
+});
+
+// Through the service, re-registering a session without runtime must NOT clear a previously stored
+// runtime: sessions.register passes undefined straight to the store, whose UPDATE path preserves the
+// existing value (a `?? null` here would clear it, breaking resume for that session).
+test("sessions.register preserves an existing runtime on re-register without runtime", () => {
+  const id = "33333333-3333-4333-8333-333333333333";
+  svc.sessions.register({
+    id,
+    agent: "lh-dev",
+    session: id,
+    runtime: "claude-code",
+  });
+  expect(S.getAgentSession(id).runtime).toBe("claude-code");
+
+  // Re-register the same (id, agent, session) with no runtime → existing runtime preserved.
+  svc.sessions.register({ id, agent: "lh-dev", session: id });
+  expect(S.getAgentSession(id).runtime).toBe("claude-code");
 });

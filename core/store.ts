@@ -554,6 +554,7 @@ export function registerAgentSession(
   agent: string,
   externalSession: string,
   name?: string | null,
+  runtime?: string | null,
 ): { session: any; created: boolean } {
   const existing = getAgentSession(id);
   const t = now();
@@ -564,11 +565,15 @@ export function registerAgentSession(
     ) {
       throw new Error("CONFLICT_ID" satisfies RegisterConflict);
     }
-    db.run(`UPDATE agent_sessions SET name = ?, updated_at = ? WHERE id = ?`, [
-      name !== undefined ? name : existing.name,
-      t,
-      id,
-    ]);
+    db.run(
+      `UPDATE agent_sessions SET name = ?, runtime = ?, updated_at = ? WHERE id = ?`,
+      [
+        name !== undefined ? name : existing.name,
+        runtime !== undefined ? runtime : existing.runtime,
+        t,
+        id,
+      ],
+    );
     return { session: getAgentSession(id), created: false };
   }
   const byPair = db
@@ -578,9 +583,9 @@ export function registerAgentSession(
     .get(agent, externalSession) as { id: string } | null;
   if (byPair) throw new Error("CONFLICT_PAIR" satisfies RegisterConflict);
   db.query(
-    `INSERT INTO agent_sessions (id, agent, external_session, name, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
-  ).get(id, agent, externalSession, name ?? null, t, t);
+    `INSERT INTO agent_sessions (id, agent, external_session, name, runtime, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+  ).get(id, agent, externalSession, name ?? null, runtime ?? null, t, t);
   return { session: getAgentSession(id), created: true };
 }
 
