@@ -135,6 +135,13 @@ function PullHeader({
 
   return (
     <div className="flex flex-col gap-3">
+      <h1 className="text-2xl font-semibold">
+        {pull.title}{" "}
+        <span className="font-normal text-muted-foreground">
+          #{pull.number}
+        </span>
+      </h1>
+
       <div className="flex flex-wrap items-center gap-2">
         {state ? <Badge tone={state.tone}>{state.label}</Badge> : null}
         {review ? <Badge tone={review.tone}>{review.label}</Badge> : null}
@@ -143,10 +150,7 @@ function PullHeader({
             {agent.label}
           </Badge>
         ) : null}
-        <span className="text-sm text-muted-foreground">#{pull.number}</span>
       </div>
-
-      <h1 className="text-2xl font-semibold">{pull.title}</h1>
 
       <div className="text-sm text-muted-foreground">
         @{pull.user.login} · opened {relativeTime(pull.created_at)} · wants to
