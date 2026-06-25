@@ -15,6 +15,13 @@ import {
 } from "node:http";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  blobPath,
+  getAttachment,
+  MAX_ATTACHMENT_BYTES,
+  saveAttachment,
+} from "../../core/attachments.ts";
+import { isServiceError } from "../../core/errors.ts";
 import { subscribeEvents } from "./events.ts";
 import { dispatchRaw } from "./rpc.ts";
 
@@ -52,6 +59,112 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
+}
+
+// Read a request body as binary. Once it exceeds `limit` we stop buffering (so
+// memory stays bounded to ~limit) but keep draining the stream, then report it as
+// `tooLarge` — that lets the handler reply with a clean 413 instead of resetting
+// the socket. (LoopHub is a local single-user tool, so draining an oversized body
+// is acceptable; the hard size check is also enforced in saveAttachment.)
+function readBinaryBody(
+  req: IncomingMessage,
+  limit: number,
+): Promise<{ data: Buffer; tooLarge: boolean }> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let tooLarge = false;
+    req.on("data", (c) => {
+      total += (c as Buffer).length;
+      if (total > limit) {
+        tooLarge = true;
+        return;
+      }
+      chunks.push(c as Buffer);
+    });
+    req.on("end", () => resolve({ data: Buffer.concat(chunks), tooLarge }));
+    req.on("error", reject);
+  });
+}
+
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(body));
+}
+
+// POST /attachments — upload a standalone image blob. The binary is the request
+// body; `filename` and `actor` come from the query string (or x-filename /
+// x-actor headers), MIME from content-type. Returns the stored metadata plus the
+// embed `url` and `markdown`.
+async function handleAttachmentUpload(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): Promise<void> {
+  let data: Buffer;
+  try {
+    const body = await readBinaryBody(req, MAX_ATTACHMENT_BYTES);
+    if (body.tooLarge) {
+      sendJson(res, 413, { error: "Image too large (max 10MB)" });
+      return;
+    }
+    data = body.data;
+  } catch {
+    sendJson(res, 400, { error: "Failed to read request body" });
+    return;
+  }
+  const filename =
+    url.searchParams.get("filename") ||
+    (req.headers["x-filename"] as string) ||
+    "";
+  if (!filename) {
+    sendJson(res, 400, { error: "filename is required" });
+    return;
+  }
+  const author =
+    url.searchParams.get("actor") ||
+    (req.headers["x-actor"] as string) ||
+    "unknown";
+  const mime = (req.headers["content-type"] as string) || null;
+  try {
+    const result = saveAttachment({ data, filename, mime, author });
+    sendJson(res, 201, result);
+  } catch (e) {
+    if (isServiceError(e)) sendJson(res, e.status, { error: e.message });
+    else sendJson(res, 500, { error: "Internal error" });
+  }
+}
+
+// GET /attachments/:sha256 — stream a stored blob with its recorded content-type.
+function handleAttachmentGet(res: ServerResponse, url: URL): void {
+  const sha256 = url.pathname.slice("/attachments/".length);
+  // sha256 is a fixed 64-char hex string; rejecting anything else also blocks
+  // path traversal before the value reaches blobPath().
+  if (!/^[0-9a-f]{64}$/.test(sha256)) {
+    res.writeHead(404).end();
+    return;
+  }
+  const att = getAttachment(sha256);
+  const path = blobPath(sha256);
+  if (!att || !existsSync(path)) {
+    res.writeHead(404).end();
+    return;
+  }
+  res.writeHead(200, {
+    "content-type": att.mime,
+    "cache-control": "public, max-age=31536000, immutable",
+    // Bytes aren't magic-byte-validated, so stop the browser from sniffing a
+    // served blob into something other than its recorded image content-type.
+    "x-content-type-options": "nosniff",
+  });
+  const stream = createReadStream(path);
+  // Guard the TOCTOU race (blob removed between existsSync and open): a stream
+  // error here would otherwise be unhandled and crash the process.
+  stream.on("error", () => {
+    if (!res.headersSent) res.writeHead(404);
+    res.end();
+  });
+  stream.pipe(res);
 }
 
 async function handleRpc(
@@ -173,6 +286,16 @@ export function handleRequest(
   }
   if (url.pathname === "/events" && req.method === "GET") {
     handleEvents(req, res, url);
+    return;
+  }
+  if (url.pathname === "/attachments" && req.method === "POST") {
+    handleAttachmentUpload(req, res, url).catch(() => {
+      if (!res.headersSent) sendJson(res, 500, { error: "Internal error" });
+    });
+    return;
+  }
+  if (url.pathname.startsWith("/attachments/") && req.method === "GET") {
+    handleAttachmentGet(res, url);
     return;
   }
   if (req.method === "GET") {

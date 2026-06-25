@@ -5,13 +5,14 @@
 
 import { Link } from "@tanstack/react-router";
 import { Loader2, Play } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { assigneeBadge, stateBadge } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
+import { useImageUpload } from "@/lib/use-image-upload";
 import {
   READY_TO_BUILD_LABEL,
   useAddReadyToBuild,
@@ -225,6 +226,8 @@ function CommentForm({
 }) {
   const [body, setBody] = useState("");
   const post = usePostComment(owner, repo, number);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const image = useImageUpload({ value: body, onChange: setBody, textareaRef });
 
   function submit() {
     const trimmed = body.trim();
@@ -235,13 +238,22 @@ function CommentForm({
   return (
     <div className="flex flex-col gap-2">
       <textarea
+        ref={textareaRef}
         aria-label="Add a comment"
-        placeholder="Add a comment"
+        placeholder="Add a comment (paste or drop an image to attach)"
         value={body}
         onChange={(e) => setBody(e.target.value)}
+        onPaste={image.onPaste}
+        onDrop={image.onDrop}
+        onDragOver={image.onDragOver}
         rows={4}
         className="min-h-24 rounded-md border bg-background p-3 text-sm"
       />
+      {image.uploading ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Uploading image…
+        </p>
+      ) : null}
       {post.isError ? (
         <p className="text-sm text-destructive">
           {post.error instanceof Error ? post.error.message : "Failed to post."}

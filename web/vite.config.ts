@@ -5,8 +5,9 @@ import { defineConfig } from "vite";
 // lh-web server. Always a separate process from this dev server.
 const API_TARGET = process.env.VITE_LOOPHUB_API_URL ?? "http://localhost:8730";
 
-// lh-web surface proxied to the server: JSON-RPC at /rpc and the SSE feed at /events.
-const API_PATHS = ["/rpc", "/events"];
+// lh-web surface proxied to the server: JSON-RPC at /rpc, the SSE feed at /events,
+// and the binary attachment upload/serve route at /attachments.
+const API_PATHS = ["/rpc", "/events", "/attachments"];
 
 // Shared proxy map used by both the dev server and `vite preview`. Vite's
 // `preview` command ignores `server.proxy` and reads `preview.proxy`, so the

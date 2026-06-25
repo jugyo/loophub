@@ -63,6 +63,8 @@ type Flags = {
   since?: string;
   order?: string;
   add?: string;
+  file?: string[];
+  actor?: string;
 };
 const { values, positionals: pos } = parseArgs({
   args: process.argv.slice(2),
@@ -97,6 +99,8 @@ const { values, positionals: pos } = parseArgs({
     since: { type: "string" },
     order: { type: "string" },
     add: { type: "string" },
+    file: { type: "string", multiple: true },
+    actor: { type: "string" },
   },
 });
 const flags = values as Flags;
@@ -614,6 +618,33 @@ async function main() {
     return;
   }
 
+  if (group === "attachment") {
+    if (sub === "add") {
+      // Files may be given as repeated --file flags and/or positionals.
+      const paths = [...(flags.file ?? []), ...rest];
+      if (paths.length === 0)
+        fail(
+          "usage: lh attachment add --file <path> [--file <path> ...] [--actor name]",
+        );
+      const { saveAttachment } = await import("../core/attachments.ts");
+      // Standalone blobs aren't attributed to a session; default to the human "me".
+      const author = flags.actor || "me";
+      for (const p of paths) {
+        const abs = resolve(p);
+        if (!existsSync(abs)) fail(`file not found: ${p}`);
+        const data = readFileSync(abs);
+        const filename = abs.split("/").pop() || abs;
+        const r = await run(() => saveAttachment({ data, filename, author }));
+        if (flags.json) out(r);
+        else {
+          console.log(r.markdown);
+          console.error(`uploaded ${filename} → ${r.url} (${r.size} bytes)`);
+        }
+      }
+    } else usage();
+    return;
+  }
+
   if (group === "pr") {
     const s = await svc();
     const repo = await resolveRepo();
@@ -786,6 +817,7 @@ function usage() {
   lh session list
   lh issue list|view|create|update|comment|assign|unassign|close|label  [--repo owner/repo]
   lh pr list|view|diff|create|update|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image(s), print embed markdown
   lh sync                                          # detect open-PR head updates and emit events
   lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc]
 
@@ -803,6 +835,7 @@ function usage() {
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     echo '[{"path":"a.txt","line":2,"body":"typo"}]' | lh pr review 3 --comments -
+    lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)
     lh events --since 0`);
   process.exit(group ? 1 : 0);
 }

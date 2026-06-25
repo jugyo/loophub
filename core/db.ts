@@ -226,6 +226,19 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   updated_at        TEXT NOT NULL,
   UNIQUE (agent, external_session)
 );
+
+-- Standalone image blobs embedded in markdown bodies. Metadata only; the blob
+-- itself is content-addressed on disk under $LOOPHUB_HOME/attachments/. The
+-- sha256 is both the primary key and the URL identifier; nothing references a
+-- repo/issue/PR (any body may embed any blob), and blobs are never GC'd.
+CREATE TABLE IF NOT EXISTS attachments (
+  sha256      TEXT PRIMARY KEY,
+  filename    TEXT NOT NULL,
+  mime        TEXT NOT NULL,
+  size        INTEGER NOT NULL,
+  author      TEXT NOT NULL,
+  created_at  TEXT NOT NULL
+);
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）

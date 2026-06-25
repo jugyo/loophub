@@ -143,6 +143,66 @@ test("GET /events streams replayed then live events as SSE notifications", async
   ctrl.abort();
 });
 
+// A 1x1 transparent PNG.
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+test("POST /attachments stores a blob and returns url + markdown; GET streams it", async () => {
+  const res = await fetch(`${base}/attachments?filename=shot.png&actor=me`, {
+    method: "POST",
+    headers: { "content-type": "image/png" },
+    body: PNG,
+  });
+  expect(res.status).toBe(201);
+  const body = (await res.json()) as any;
+  expect(body.sha256).toMatch(/^[0-9a-f]{64}$/);
+  expect(body.url).toBe(`/attachments/${body.sha256}`);
+  expect(body.markdown).toBe(`![shot.png](/attachments/${body.sha256})`);
+
+  // GET returns the bytes with the recorded content-type and nosniff.
+  const get = await fetch(`${base}${body.url}`);
+  expect(get.status).toBe(200);
+  expect(get.headers.get("content-type")).toBe("image/png");
+  expect(get.headers.get("x-content-type-options")).toBe("nosniff");
+  const bytes = Buffer.from(await get.arrayBuffer());
+  expect(bytes.equals(PNG)).toBe(true);
+
+  // Re-uploading the same bytes dedups to the same sha256.
+  const again = await fetch(`${base}/attachments?filename=other.png&actor=me`, {
+    method: "POST",
+    headers: { "content-type": "image/png" },
+    body: PNG,
+  });
+  expect(((await again.json()) as any).sha256).toBe(body.sha256);
+});
+
+test("POST /attachments accepts application/octet-stream for a valid extension", async () => {
+  // Mirrors a browser drop where File.type is empty -> client sends octet-stream.
+  const res = await fetch(`${base}/attachments?filename=drop.png&actor=me`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: Buffer.from([1, 2, 3, 4, 5]),
+  });
+  expect(res.status).toBe(201);
+  expect(((await res.json()) as any).mime).toBe("image/png");
+});
+
+test("POST /attachments rejects non-image MIME / extension", async () => {
+  const res = await fetch(`${base}/attachments?filename=note.txt`, {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: Buffer.from("hello"),
+  });
+  expect(res.status).toBe(415);
+});
+
+test("GET /attachments/:sha256 404s for an unknown blob", async () => {
+  const res = await fetch(`${base}/attachments/${"0".repeat(64)}`);
+  expect(res.status).toBe(404);
+});
+
 test("GET on a client route 404s when the SPA is not built", async () => {
   const res = await fetch(`${base}/`);
   expect(res.status).toBe(404);
