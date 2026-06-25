@@ -46,6 +46,13 @@ Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (sc
 - **CLI**: `lh pr view|merge`, `lh issue comment`
 - `--repo owner/name` (omit when cwd is the repo root; **required inside `.worktrees/`**)
 
+## Language
+
+This skill is English. The **merge-decision summary** (`## Report`) is user-facing output: localize its
+section headings and text to the user's conversation language. The example in `## Report` is shown in
+English; render the same blocks in the conversation language at runtime. Code, CLI, and PR/issue
+identifiers stay English.
+
 ## Procedure
 
 ### 1. PR context
@@ -98,9 +105,52 @@ lh issue comment <n> --body "merged via PR #<m>" --repo <repo>
 
 ## Report
 
-- Checklist results (approve status / conflict status)
-- If mergeable, **steps only** (human executes)
-- If not, next action (pr-review / conflict resolution)
+The final output is a **merge-decision summary**: everything a human needs to decide
+merge / no-merge at a glance, fitting on one screen. Do **not** dump long diffs or
+re-explain the whole PR — only the signal needed to decide.
+
+**Sources (no re-review):** pull from `lh pr view <m> --json` (title, `review_state`,
+`mergeable_state`, linked `--issue`), the linked issue (`lh issue view <n> --json` — purpose),
+and the **same-session** `lh-pr-review` result (findings raised / resolved). Never re-run a
+review here.
+
+### When mergeable (APPROVED and not `dirty`)
+
+Print a compact summary with these five blocks:
+
+```text
+## Merge-ready: PR #<m> — <title>
+
+**Issue:** #<n> <issue title> — <one-line purpose>
+**PR:** <PR web URL>
+
+### Changes
+- <key change 1>
+- <key change 2>
+- <key change 3>
+
+### Review
+- ✅ approved (<reviewer / round count>)
+- Findings: <raised → resolved summary; "none" if no findings>
+
+### Pre-merge check
+- review_state: APPROVED ✅
+- mergeable_state: clean ✅ (no conflict)
+
+### Merge steps (human executes)
+- Click Merge in the UI, or `lh pr merge <m> --repo <repo> --method squash`
+```
+
+Keep each block to a few lines. For localization, see [Language](#language).
+
+### When not mergeable
+
+Do **not** print merge steps. Print the blocker and the next action only:
+
+| Blocker | Next action |
+|---------|-------------|
+| Not `APPROVED` | `/lh-pr-review <m>` |
+| `mergeable_state` = `dirty` | rebase / conflict resolution |
 
 ## Called from other skills
 
