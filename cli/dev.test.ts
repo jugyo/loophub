@@ -22,6 +22,7 @@ import {
 } from "../core/git.ts";
 import {
   buildClaudeArgs,
+  buildKaniLaunch,
   buildManagedSettings,
   displayMultiline,
   formatLaunchPlan,
@@ -230,6 +231,99 @@ test("buildClaudeArgs omits --name when the session name is only control charact
     sessionName: "\x1b[0m\r\x07",
   });
   expect(args.indexOf("--name")).toBe(-1);
+});
+
+// ---- kani launch (pure) ----
+
+test("buildKaniLaunch builds the kani launch_terminal argv with cwd and name", () => {
+  const launch = buildKaniLaunch({
+    issue: 42,
+    title: "fix the thing",
+    cwd: "/repos/me/proj",
+    flags: {},
+  });
+  expect(launch.command).toBe("lh dev 42");
+  expect(launch.cwd).toBe("/repos/me/proj");
+  expect(launch.name).toBe("#42 fix the thing");
+  expect(launch.argv).toEqual([
+    "launch_terminal",
+    "--command",
+    "lh dev 42",
+    "--cwd",
+    "/repos/me/proj",
+    "--name",
+    "#42 fix the thing",
+  ]);
+});
+
+test("buildKaniLaunch forwards --repo/--sandbox/--allow/--verbose into the inner command", () => {
+  const launch = buildKaniLaunch({
+    issue: 7,
+    title: "t",
+    cwd: "/repos/me/proj",
+    flags: {
+      repo: "me/proj",
+      sandbox: true,
+      allow: "example.com,api.example.com",
+      verbose: true,
+    },
+  });
+  expect(launch.command).toBe(
+    "lh dev 7 --repo 'me/proj' --sandbox --allow 'example.com,api.example.com' --verbose",
+  );
+});
+
+test("buildKaniLaunch never forwards --kani (no recursion)", () => {
+  const launch = buildKaniLaunch({
+    issue: 7,
+    title: "t",
+    cwd: "/repos/me/proj",
+    flags: { sandbox: true },
+  });
+  expect(launch.command).not.toContain("--kani");
+});
+
+test("buildKaniLaunch omits boolean flags that are false/absent", () => {
+  const launch = buildKaniLaunch({
+    issue: 9,
+    title: "t",
+    cwd: "/c",
+    flags: { sandbox: false, verbose: false },
+  });
+  expect(launch.command).toBe("lh dev 9");
+});
+
+test("buildKaniLaunch strips control characters from the title in the terminal name", () => {
+  const launch = buildKaniLaunch({
+    issue: 3,
+    title: "evil\x1b[31m\r title",
+    cwd: "/c",
+    flags: {},
+  });
+  expect(launch.name).toBe("#3 evil title");
+  expect(launch.name).not.toMatch(/[\x00-\x1f\x7f]/);
+});
+
+test("buildKaniLaunch strips C1 control bytes (0x80-0x9f) from the terminal name", () => {
+  // A raw C1 OSC introducer (0x9d) in an attacker-controlled title must not reach the name.
+  const launch = buildKaniLaunch({
+    issue: 5,
+    title: "ok\x9d0;pwned title",
+    cwd: "/c",
+    flags: {},
+  });
+  expect(launch.name).toBe("#5 ok0;pwned title");
+  expect(launch.name).not.toMatch(/[\x7f-\x9f]/);
+});
+
+test("buildKaniLaunch shell-quotes value flags so they can't break the command string", () => {
+  const launch = buildKaniLaunch({
+    issue: 1,
+    title: "t",
+    cwd: "/c",
+    flags: { repo: "me/it's" },
+  });
+  expect(launch.command).toBe("lh dev 1 --repo 'me/it'\\''s'");
 });
 
 // ---- launch plan (pure) ----

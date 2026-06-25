@@ -7,6 +7,7 @@ import { baseUrl, configDir, dbPath, worktreeRoot } from "../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../core/git.ts";
 import {
   buildClaudeArgs,
+  buildKaniLaunch,
   buildManagedSettings,
   displayMultiline,
   formatLaunchPlan,
@@ -35,6 +36,7 @@ type Flags = {
   sessionId?: string;
   sandbox?: boolean;
   verbose?: boolean;
+  kani?: boolean;
   json?: boolean;
   allow?: string;
   path?: string;
@@ -70,6 +72,7 @@ const { values, positionals: pos } = parseArgs({
     sessionId: { type: "string" },
     sandbox: { type: "boolean" },
     verbose: { type: "boolean" },
+    kani: { type: "boolean" },
     json: { type: "boolean" },
     allow: { type: "string" },
     path: { type: "string" },
@@ -219,7 +222,7 @@ async function main() {
     const issue = sub;
     if (!issue || !/^[0-9]+$/.test(issue)) {
       fail(
-        "usage: lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose]",
+        "usage: lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani]",
       );
     }
     const repo = await resolveRepo();
@@ -257,6 +260,34 @@ async function main() {
     const s = await svc();
     const r = await run(() => s.repos.get(repo));
     const item = await run(() => s.issues.get(repo, n));
+
+    // --kani: relaunch the dev loop in a fresh kani terminal instead of the foreground. The
+    // inner `lh dev` (without --kani) provisions the worktree and spawns claude itself, so we
+    // do neither here — just launch the terminal and report its id. r.local_path is the main
+    // checkout root the inner command resolves the repo from.
+    if (flags.kani === true) {
+      const launch = buildKaniLaunch({
+        issue: n,
+        title: item.title,
+        cwd: r.local_path,
+        flags: {
+          repo: flags.repo,
+          sandbox: flags.sandbox,
+          allow: flags.allow,
+          verbose: flags.verbose,
+        },
+      });
+      const proc = spawnSync("kani", launch.argv, { stdio: "inherit" });
+      if (proc.error) {
+        const err = proc.error as NodeJS.ErrnoException;
+        if (err.code === "ENOENT") {
+          fail("failed to launch kani terminal: 'kani' not found on PATH");
+        }
+        fail(`failed to launch kani terminal: ${err.message}`);
+      }
+      process.exit(proc.status ?? 0);
+    }
+
     const headRef = item.pull_request
       ? (await run(() => s.pulls.get(repo, n))).head.ref
       : null;
@@ -721,7 +752,7 @@ function usage() {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose]   # start one issue in an interactive Claude session
+  lh dev <issue> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani]   # start one issue in an interactive Claude session (--kani: in a new kani terminal)
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>
