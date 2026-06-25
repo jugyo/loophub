@@ -148,8 +148,8 @@ export function buildManagedSettings({
 // `failIfUnavailable` / `defaultMode` take effect while managed-only lockdown keys (e.g.
 // `allowManagedDomainsOnly`) are best-effort here. (Historically this used `--managed-settings`,
 // which is not a real `claude` flag — `claude` silently dropped the whole JSON, so neither the
-// sandbox nor auto mode ever took effect.) Centralized here so the verbose `exec:` line and the
-// real spawn share one source of truth.
+// sandbox nor auto mode ever took effect.) Centralized here so the displayed spawn command line
+// (formatSpawnCommand) and the real spawn share one source of truth.
 // Parse the `lh dev` positional target. Two accepted forms:
 //   <id>                  e.g. "116"            → { id: 116 }            (repo from cwd/--repo)
 //   <owner>/<repo>/<id>   e.g. "jugyo/lh/116"   → { repo: "jugyo/lh", id: 116 }
@@ -221,12 +221,6 @@ export function buildClaudeArgs({
 // infinite recursion. Everything here is a pure argv/string builder so it can be unit-tested
 // without spawning anything (same approach as buildClaudeArgs / formatLaunchPlan).
 
-// Single-quote a value for the shell command string handed to kani. Even though --repo/--allow
-// are validated upstream, quote defensively so the pure builder is safe on any input.
-function shArg(v: string): string {
-  return `'${v.replace(/'/g, `'\\''`)}'`;
-}
-
 // Flags forwarded to the inner `lh dev`. --kani is intentionally absent (no recursion).
 export interface KaniForwardFlags {
   repo?: string;
@@ -256,9 +250,9 @@ export function buildKaniLaunch({
   // Forward every flag except --kani. Boolean flags are emitted bare; value flags are
   // shell-quoted so a value with spaces/quotes can't break the command string kani runs.
   const parts = ["lh", "dev", String(issue)];
-  if (flags.repo) parts.push("--repo", shArg(flags.repo));
+  if (flags.repo) parts.push("--repo", shQuote(flags.repo));
   if (flags.sandbox) parts.push("--sandbox");
-  if (flags.allow) parts.push("--allow", shArg(flags.allow));
+  if (flags.allow) parts.push("--allow", shQuote(flags.allow));
   if (flags.verbose) parts.push("--verbose");
   const command = parts.join(" ");
 
@@ -356,6 +350,30 @@ export function formatLaunchPlan(plan: LaunchPlan): string {
     ...(nameVal != null ? [`    --name:             ${display(nameVal)}`] : []),
   ];
   return lines.join("\n");
+}
+
+// Single-quote a value for a shell command string so it survives copy-paste / re-exec verbatim.
+// Used by both the launch command line shown to the human and the inner command handed to kani;
+// even where inputs are validated upstream, quote defensively so the pure builders are safe on
+// any input.
+export function shQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+// ANSI "dim/faint" wrapper — renders as gray on most terminals. Callers gate `color` on a TTY
+// so non-interactive output (pipes, logs, redirected stderr) stays plain, copyable text.
+const DIM = "\x1b[2m";
+const RESET = "\x1b[0m";
+
+// Render the exact `claude` command line that will be spawned. Built from the same `claudeArgs`
+// passed to spawnSync, so what the human reads is byte-for-byte what runs (single source of
+// truth). With `color`, the line is wrapped in ANSI dim for an always-on gray display.
+export function formatSpawnCommand(
+  claudeArgs: string[],
+  opts: { color?: boolean } = {},
+): string {
+  const line = `claude ${claudeArgs.map(shQuote).join(" ")}`;
+  return opts.color ? `${DIM}${line}${RESET}` : line;
 }
 
 // ---- worktree provisioning ----

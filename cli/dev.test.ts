@@ -26,6 +26,7 @@ import {
   buildManagedSettings,
   displayMultiline,
   formatLaunchPlan,
+  formatSpawnCommand,
   parseDevTarget,
   provisionWorktree,
   validateDomain,
@@ -456,6 +457,47 @@ test("formatLaunchPlan strips terminal control sequences so a crafted name can't
   expect(out).not.toContain("\x07"); // no BEL byte survives
   expect(out).toContain("repo:        me/evil"); // ESC sequences fully consumed, printable text remains
   expect(out).toContain("worktree:    /wt/bell");
+});
+
+// ---- spawn command line (pure) ----
+
+test("formatSpawnCommand renders the exact argv as a shell-pasteable `claude` line", () => {
+  const args = ["--permission-mode", "auto", "--name", "#42 fix it"];
+  // No color: plain text, every arg single-quoted so it survives copy-paste verbatim.
+  expect(formatSpawnCommand(args)).toBe(
+    "claude '--permission-mode' 'auto' '--name' '#42 fix it'",
+  );
+});
+
+test("formatSpawnCommand shell-escapes embedded single quotes", () => {
+  expect(formatSpawnCommand(["it's"])).toBe("claude 'it'\\''s'");
+});
+
+test("formatSpawnCommand wraps the line in ANSI dim only when color is requested", () => {
+  const args = ["--name", "x"];
+  const plain = formatSpawnCommand(args, { color: false });
+  const dim = formatSpawnCommand(args, { color: true });
+  expect(plain).not.toContain("\x1b"); // non-TTY: no escape bytes
+  expect(dim).toBe(`\x1b[2m${plain}\x1b[0m`); // TTY: dim wrapper around the same line
+});
+
+test("formatSpawnCommand matches the argv handed to spawnSync (single source of truth)", () => {
+  // Reuse buildClaudeArgs — the very array passed to spawnSync("claude", claudeArgs) — so the
+  // displayed command is provably what runs.
+  const { json } = buildManagedSettings({
+    repo: "me/proj",
+    allow: "example.com",
+  });
+  const claudeArgs = buildClaudeArgs({
+    sessionId: "sid-1",
+    managedSettings: json,
+    slashCommand: "/lh-dev 42",
+    sessionName: "#42 title",
+  });
+  const line = formatSpawnCommand(claudeArgs);
+  expect(line).toBe(
+    `claude ${claudeArgs.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ")}`,
+  );
 });
 
 test("formatLaunchPlan handles --permission-mode flag with no value (defensive)", () => {

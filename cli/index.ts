@@ -11,6 +11,7 @@ import {
   buildManagedSettings,
   displayMultiline,
   formatLaunchPlan,
+  formatSpawnCommand,
   parseDevTarget,
   provisionWorktree,
   resolveAllowedDomains,
@@ -196,11 +197,6 @@ async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const c of process.stdin) chunks.push(c as Buffer);
   return Buffer.concat(chunks).toString("utf8");
-}
-
-// Single-quote a value for the shell-pasteable `--verbose` exec line.
-function shQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 // ---- commands ----
@@ -398,10 +394,13 @@ async function main() {
         claudeArgs,
       }),
     );
-    if (flags.verbose === true) {
-      const claudeLine = `claude ${claudeArgs.map(shQuote).join(" ")}`;
-      console.error(`exec: ${claudeLine}`);
-    }
+    // Always show the exact command being spawned as the last line of the launch output, in
+    // dim/gray, so a normal launch (no --verbose) still reveals and lets you copy what runs.
+    // This supersedes the old --verbose-only `exec:` line — unified into one always-on display.
+    // Built from `claudeArgs` (the same argv handed to spawnSync below) for an exact match.
+    console.error(
+      formatSpawnCommand(claudeArgs, { color: process.stderr.isTTY === true }),
+    );
 
     // Make the work visible: register this session and assign the issue before spawning.
     // The runtime session id is the Claude session we are about to spawn (unique per run,
