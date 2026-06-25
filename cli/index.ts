@@ -72,6 +72,7 @@ type Flags = {
   event?: string;
   since?: string;
   order?: string;
+  follow?: boolean;
   add?: string;
   yes?: boolean;
   "dry-run"?: boolean;
@@ -118,6 +119,7 @@ const { values, positionals: pos } = parseArgs({
     event: { type: "string" },
     since: { type: "string" },
     order: { type: "string" },
+    follow: { type: "boolean", short: "f" },
     add: { type: "string" },
     yes: { type: "boolean" },
     "dry-run": { type: "boolean" },
@@ -1194,6 +1196,36 @@ async function main() {
       .split(",")
       .map((x) => x.trim())
       .filter(Boolean);
+    const printEvent = (e: {
+      id: number;
+      type: string;
+      actor: string;
+      payload: unknown;
+    }) => {
+      if (flags.json) console.log(JSON.stringify(e));
+      else
+        console.log(
+          `${e.id}\t${e.type}\t${e.actor}\t${JSON.stringify(e.payload)}`,
+        );
+    };
+    if (flags.follow) {
+      // Stream the SSE feed continuously. Order is always chronological (a live tail can't
+      // be reversed); --order applies only to the one-shot snapshot. --json emits one JSON
+      // object per line (NDJSON) rather than the snapshot's single array.
+      const controller = new AbortController();
+      process.on("SIGINT", () => controller.abort()); // Ctrl-C: stop cleanly, exit 0
+      try {
+        await s.events.follow(
+          { since: Number(flags.since || 0), repo: flags.repo || null, labels },
+          printEvent,
+          controller.signal,
+        );
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+      return;
+    }
     const evs = s.events.list({
       since: Number(flags.since || 0),
       repo: flags.repo || null,
@@ -1201,12 +1233,7 @@ async function main() {
       order: flags.order === "desc" ? "desc" : "asc",
     });
     if (flags.json) out(evs);
-    else
-      evs.forEach((e) => {
-        console.log(
-          `${e.id}\t${e.type}\t${e.actor}\t${JSON.stringify(e.payload)}`,
-        );
-      });
+    else evs.forEach(printEvent);
     return;
   }
 
@@ -1234,7 +1261,7 @@ function usage() {
   lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-dev worktrees (issue closed / PR merged, clean tree)
   lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image(s), print embed markdown
   lh sync                                          # detect open-PR head updates and emit events
-  lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc]
+  lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc] [--follow|-f]   # --follow: tail the SSE feed (replay matching, then live; Ctrl-C to stop). --order applies to the snapshot only (a live tail is always chronological)
 
   common: --session-id <uuid>  --json
   examples:
@@ -1251,7 +1278,9 @@ function usage() {
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     echo '[{"path":"a.txt","line":2,"body":"typo"}]' | lh pr review 3 --comments -
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)
-    lh events --since 0`);
+    lh events --since 0
+    lh events --follow                 # tail events live (Ctrl-C to stop)
+    lh events -f --repo me/proj --json # live NDJSON for one repo`);
   process.exit(group ? 1 : 0);
 }
 

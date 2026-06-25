@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { worktreeRoot } from "./config.ts";
 import { ServiceError } from "./errors.ts";
 import { formatEvent, type LoopEvent } from "./event-hub.ts";
+import { type FollowOptions, followEvents } from "./events-follow.ts";
 import {
   branchExists,
   defaultBranch,
@@ -1184,6 +1185,17 @@ export const events = {
           : undefined);
       return formatEvent(row, repo);
     });
+  },
+
+  // Live tail: subscribe to the web server's SSE feed (replay-then-subscribe) and invoke
+  // `onEvent` for each matching event until `signal` aborts. Unlike `list`, this needs the
+  // resident lh-web process (HTTP); see core/events-follow.ts.
+  follow(
+    opts: FollowOptions,
+    onEvent: (event: LoopEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return followEvents(opts, onEvent, signal);
   },
 };
 
