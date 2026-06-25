@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { parseArgs, stripVTControlCharacters } from "node:util";
 import { baseUrl, configDir, dbPath, worktreeRoot } from "../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../core/git.ts";
@@ -63,6 +64,8 @@ type Flags = {
   since?: string;
   order?: string;
   add?: string;
+  yes?: boolean;
+  "dry-run"?: boolean;
   kind?: string;
   summary?: string;
   pr?: string;
@@ -102,6 +105,8 @@ const { values, positionals: pos } = parseArgs({
     since: { type: "string" },
     order: { type: "string" },
     add: { type: "string" },
+    yes: { type: "boolean" },
+    "dry-run": { type: "boolean" },
     kind: { type: "string" },
     summary: { type: "string" },
     pr: { type: "string" },
@@ -207,6 +212,19 @@ async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const c of process.stdin) chunks.push(c as Buffer);
   return Buffer.concat(chunks).toString("utf8");
+}
+
+// Yes/no prompt on the TTY for destructive confirmation; defaults to no on EOF or a blank line.
+async function confirm(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question(`${question} [y/N] `))
+      .trim()
+      .toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
 }
 
 // ---- commands ----
@@ -835,6 +853,77 @@ async function main() {
     return;
   }
 
+  if (group === "worktree") {
+    if (sub !== "prune") {
+      usage();
+      return;
+    }
+    const s = await svc();
+    const dryRun = flags["dry-run"] === true;
+    const assumeYes = flags.yes === true;
+    const repoFilter = flags.repo ?? null;
+
+    // Scanning, issue/PR resolution and classification live in core (s.worktrees); the CLI only
+    // presents, confirms, and reports.
+    const entries = await run(() =>
+      s.worktrees.plan({ repo: repoFilter, cwd: process.cwd() }),
+    );
+    const candidates = entries.filter((e) => e.action === "remove");
+    const keep = entries.filter((e) => e.action === "keep");
+    const skip = entries.filter((e) => e.action === "skip");
+
+    if (flags.json) {
+      out({ candidates, keep, skip, dryRun });
+    } else {
+      const fmt = (e: (typeof entries)[number]) =>
+        `  ${e.repo}#${e.issue}\t${e.path}\t(${e.reason})`;
+      console.log(`Remove candidates (${candidates.length}):`);
+      for (const e of candidates) console.log(fmt(e));
+      if (keep.length) {
+        console.log(`\nKeep (${keep.length}):`);
+        for (const e of keep) console.log(fmt(e));
+      }
+      if (skip.length) {
+        console.log(`\nSkip (${skip.length}):`);
+        for (const e of skip) console.log(fmt(e));
+      }
+    }
+
+    if (dryRun) {
+      if (!flags.json) console.log("\ndry-run: nothing removed.");
+      return;
+    }
+
+    if (candidates.length === 0) {
+      if (!flags.json) console.log("\nNothing to prune.");
+      await s.worktrees.tidy(repoFilter); // still tidy stale admin entries
+      return;
+    }
+
+    if (!assumeYes) {
+      const ok = await confirm(`\nRemove ${candidates.length} worktree(s)?`);
+      if (!ok) {
+        if (!flags.json) console.log("aborted.");
+        return;
+      }
+    }
+
+    let removed = 0;
+    for (const e of candidates) {
+      const res = await s.worktrees.remove(e);
+      if (res.removed) {
+        removed++;
+        if (!flags.json) console.log(`removed ${e.path}`);
+      } else {
+        console.error(`failed to remove ${e.path}: ${res.reason}`);
+      }
+    }
+
+    await s.worktrees.tidy(repoFilter);
+    if (!flags.json) console.log(`\nPruned ${removed} worktree(s).`);
+    return;
+  }
+
   if (group === "sync") {
     const s = await svc();
     const r = await s.sync.run();
@@ -882,6 +971,7 @@ function usage() {
   lh session list
   lh issue list|view|create|update|comment|assign|unassign|close|label  [--repo owner/repo]
   lh pr list|view|diff|create|update|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-dev worktrees (issue closed / PR merged, clean tree)
   lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image(s), print embed markdown
   lh sync                                          # detect open-PR head updates and emit events
   lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc]

@@ -2,8 +2,8 @@
 // input (throwing ServiceError with an HTTP-style status), mutates the store, emits
 // events, and returns serialized wire objects. The CLI calls these directly (S5); the
 // JSON-RPC layer (S2) will wrap the same procedures. No HTTP/Request types leak in here.
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, lstatSync, realpathSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { ServiceError } from "./errors.ts";
 import { formatEvent, type LoopEvent } from "./event-hub.ts";
 import {
@@ -13,6 +13,10 @@ import {
   mergePull as gitMergePull,
   isGitRepo,
   revParse,
+  worktreeList,
+  worktreePrune,
+  worktreeRemove,
+  worktreeStatus,
 } from "./git.ts";
 import { parseClosingIssueNumber } from "./links.ts";
 import {
@@ -27,6 +31,11 @@ import {
 } from "./serialize.ts";
 import * as S from "./store.ts";
 import { sweepPullUpdates } from "./watcher.ts";
+import {
+  classifyWorktree,
+  issueNumberFromBranch,
+  porcelainIsDirty,
+} from "./worktree-prune.ts";
 
 export const MAX_EVENTS_PER_PAGE = 100;
 export const DEFAULT_LIST_PER_PAGE = 30;
@@ -46,6 +55,17 @@ function ensureWritable(r: S.Repo): void {
 
 function actorFor(sessionId: string | null | undefined): string {
   return S.authorFromSession(sessionId) ?? "unknown";
+}
+
+// Resolve symlinks so worktree paths from `git worktree list` (which canonicalizes, e.g.
+// /var → /private/var on macOS) compare equal to a caller's cwd. Falls back to a plain
+// absolute path when the target no longer exists.
+function canonicalPath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
 }
 
 function issueOr404(r: S.Repo, number: number, kind?: "issue" | "pull"): any {
@@ -992,5 +1012,121 @@ export const sync = {
       updated: emitted.length,
       events: emitted.map((e: any) => ({ id: e.id, type: e.type })),
     };
+  },
+};
+
+// ===== worktree housekeeping =====
+// Batch GC of stale `lh dev` worktrees (branch `loophub/issue-<n>`). The orchestration —
+// scanning git worktrees, resolving each one's issue/PR state, and the destructive removal —
+// lives here so the CLI stays a thin presenter and the logic is unit-testable. Pure decisioning
+// (clean-tree guard, keep/remove/skip classification) stays in worktree-prune.ts.
+export interface WorktreePlanEntry {
+  repo: string; // owner/name
+  repoPath: string; // primary checkout (shared .git)
+  path: string; // worktree directory
+  branch: string;
+  issue: number;
+  action: "remove" | "keep" | "skip";
+  reason: string;
+}
+
+export const worktrees = {
+  // Scan LoopHub worktrees across one repo (`repo`) or every registered repo, resolve each
+  // worktree's issue/PR state from the DB, and classify. `cwd` is the caller's working dir (the
+  // running checkout is never a removal candidate); it is canonicalized here so callers can pass
+  // a raw `process.cwd()`.
+  async plan(opts: {
+    repo?: string | null;
+    cwd: string;
+  }): Promise<WorktreePlanEntry[]> {
+    const repoRows = opts.repo ? [repoOr404(opts.repo)] : S.listRepos("all");
+    const cwd = canonicalPath(opts.cwd);
+    const entries: WorktreePlanEntry[] = [];
+    for (const r of repoRows) {
+      for (const wt of await worktreeList(r.local_path)) {
+        const n = issueNumberFromBranch(wt.branch);
+        if (n == null) continue; // primary checkout / off-convention worktrees are not ours
+
+        let issueState: "open" | "closed" | null = null;
+        let prMerged = false;
+        let prState: "open" | "closed" | null = null;
+        // Done-ness comes from the row's own state (an `lh dev` worktree branch maps to an
+        // issue, but read state for any row so a number that resolves to a pull behaves as it
+        // did pre-refactor). A merged linked PR is only meaningful for an issue row.
+        const row = S.getIssue(r.id, n);
+        if (row) {
+          issueState = row.state;
+          if (row.kind === "issue") {
+            const pr = S.linkedPullForIssue(row.id);
+            if (pr) {
+              prMerged = !!pr.merged;
+              prState = pr.state;
+            }
+          }
+        }
+
+        const st = await worktreeStatus(wt.path);
+        const dirty = st.code !== 0 || porcelainIsDirty(st.stdout);
+        const { action, reason } = classifyWorktree({
+          isCwd: canonicalPath(wt.path) === cwd,
+          dirty,
+          issueState,
+          prMerged,
+          prState,
+        });
+        entries.push({
+          repo: r.full_name,
+          repoPath: r.local_path,
+          path: wt.path,
+          branch: wt.branch ?? "",
+          issue: n,
+          action,
+          reason,
+        });
+      }
+    }
+    return entries;
+  },
+
+  // Remove one worktree after re-asserting the safety invariants right before the destructive
+  // call: it must still be a registered worktree on its `loophub/issue-<n>` branch (state may
+  // have changed since plan()). The LoopHub-injected, un-gitignored `.claude/` is dropped first
+  // (regenerated on the next `lh dev`) so the no-`--force` `git worktree remove` stays a real
+  // guard for any other change — but only when it is a real directory, never a symlink.
+  async remove(entry: {
+    repoPath: string;
+    path: string;
+    issue: number;
+  }): Promise<{ removed: boolean; reason?: string }> {
+    const fresh = await worktreeList(entry.repoPath);
+    const match = fresh.find(
+      (w) => canonicalPath(w.path) === canonicalPath(entry.path),
+    );
+    if (!match || issueNumberFromBranch(match.branch) !== entry.issue) {
+      return {
+        removed: false,
+        reason: `no longer a loophub/issue-${entry.issue} worktree`,
+      };
+    }
+    const claudeDir = join(entry.path, ".claude");
+    const claudeStat = existsSync(claudeDir) ? lstatSync(claudeDir) : null;
+    if (claudeStat?.isDirectory() && !claudeStat.isSymbolicLink()) {
+      rmSync(claudeDir, { recursive: true, force: true });
+    }
+    try {
+      await worktreeRemove(entry.repoPath, entry.path);
+    } catch (e: any) {
+      return {
+        removed: false,
+        reason: e?.message ?? "git worktree remove failed",
+      };
+    }
+    return { removed: true };
+  },
+
+  // Run `git worktree prune` (tidy stale admin entries) for one repo or every registered repo.
+  async tidy(repo?: string | null): Promise<void> {
+    const repoRows = repo ? [repoOr404(repo)] : S.listRepos("all");
+    for (const r of repoRows) await worktreePrune(r.local_path);
   },
 };

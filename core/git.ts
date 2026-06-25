@@ -342,6 +342,33 @@ export async function worktreeAdd(
   }
 }
 
+// git worktree remove <path>. Without --force git refuses a dirty or locked worktree, which
+// is an extra safety net on top of the caller's clean-tree guard; callers must have verified
+// the tree is clean and the branch matches the loophub/issue-<n> convention before calling.
+export async function worktreeRemove(
+  repoPath: string,
+  path: string,
+): Promise<void> {
+  const r = await git(repoPath, ["worktree", "remove", path]);
+  if (r.code !== 0) {
+    throw new Error(
+      `git worktree remove failed: ${r.stderr.trim() || r.stdout.trim()}`,
+    );
+  }
+}
+
+// git worktree prune: drop stale administrative entries (gitDir/worktrees/<id>) for worktrees
+// whose directories are already gone. Idempotent and safe — never touches a live worktree.
+export async function worktreePrune(repoPath: string): Promise<void> {
+  await git(repoPath, ["worktree", "prune"]);
+}
+
+// Porcelain status of a checkout, used for the clean-tree guard before removal. Callers inspect
+// both `code` and `stdout` (a non-zero exit means we could not verify cleanliness → treat dirty).
+export async function worktreeStatus(path: string): Promise<GitResult> {
+  return git(path, ["status", "--porcelain", "--untracked-files=normal"]);
+}
+
 // git worktree list --porcelain をパース。
 export async function worktreeList(repoPath: string): Promise<Worktree[]> {
   const r = await git(repoPath, ["worktree", "list", "--porcelain"]);

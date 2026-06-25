@@ -15,6 +15,9 @@ import {
   sleep,
   worktreeAdd,
   worktreeList,
+  worktreePrune,
+  worktreeRemove,
+  worktreeStatus,
 } from "./git.ts";
 
 async function makeRepo(): Promise<string> {
@@ -97,6 +100,60 @@ test("worktreeAdd throws when the target path is already a worktree", async () =
   await expect(
     worktreeAdd(p, wtPath, "loophub/issue-3", "main"),
   ).rejects.toThrow(/git worktree add failed/);
+
+  await git(p, ["worktree", "remove", "--force", wtPath]);
+  rmSync(p, { recursive: true, force: true });
+});
+
+// worktreeRemove は登録済み worktree を削除し、worktreeStatus は clean tree を空で返す。
+test("worktreeRemove removes a clean worktree and worktreeStatus reports cleanliness", async () => {
+  const p = await makeRepo();
+  const wtPath = join(p, "..", `wt-rm-${p.split("/").pop()}`);
+  await worktreeAdd(p, wtPath, "loophub/issue-4", "main");
+
+  const clean = await worktreeStatus(wtPath);
+  expect(clean.code).toBe(0);
+  expect(clean.stdout.trim()).toBe("");
+
+  await worktreeRemove(p, wtPath);
+  expect(existsSync(wtPath)).toBe(false);
+  expect(
+    (await worktreeList(p)).some((w) => w.branch === "loophub/issue-4"),
+  ).toBe(false);
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+// worktreeStatus は未追跡ファイルを porcelain 出力で報告する（dirty 判定の入力）。
+test("worktreeStatus reports untracked files", async () => {
+  const p = await makeRepo();
+  const wtPath = join(p, "..", `wt-st-${p.split("/").pop()}`);
+  await worktreeAdd(p, wtPath, "loophub/issue-5", "main");
+  writeFileSync(join(wtPath, "scratch.txt"), "wip\n");
+
+  const st = await worktreeStatus(wtPath);
+  expect(st.code).toBe(0);
+  expect(st.stdout).toContain("?? scratch.txt");
+
+  await git(p, ["worktree", "remove", "--force", wtPath]);
+  rmSync(p, { recursive: true, force: true });
+});
+
+// dirty な worktree の remove は --force 無しで失敗し、prune は live worktree を温存する。
+test("worktreeRemove refuses a dirty tree; worktreePrune keeps live worktrees", async () => {
+  const p = await makeRepo();
+  const wtPath = join(p, "..", `wt-dirty-${p.split("/").pop()}`);
+  await worktreeAdd(p, wtPath, "loophub/issue-6", "main");
+  writeFileSync(join(wtPath, "f.txt"), "uncommitted\n");
+
+  await expect(worktreeRemove(p, wtPath)).rejects.toThrow(
+    /git worktree remove failed/,
+  );
+  // prune only drops stale admin entries; the live (dirty) worktree survives.
+  await worktreePrune(p);
+  expect(
+    (await worktreeList(p)).some((w) => w.branch === "loophub/issue-6"),
+  ).toBe(true);
 
   await git(p, ["worktree", "remove", "--force", wtPath]);
   rmSync(p, { recursive: true, force: true });

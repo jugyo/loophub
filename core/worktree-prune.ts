@@ -1,0 +1,66 @@
+// Pure classification + clean-tree logic for `lh worktree prune` (cli/index.ts). Kept free of
+// git/DB side effects so the guard and the keep/remove/skip decision are unit-testable in
+// isolation; the CLI layer feeds it the resolved issue/PR state, dirtiness and cwd flag.
+
+// Branch convention created by `lh dev`: loophub/issue-<n> (see cli/dev.ts worktreeBranch).
+const LOOPHUB_BRANCH_RE = /^loophub\/issue-(\d+)$/;
+
+// Issue number for a LoopHub-managed branch, or null for anything off-convention (the primary
+// checkout's default branch, ad-hoc worktrees) which prune must ignore entirely.
+export function issueNumberFromBranch(branch: string | null): number | null {
+  if (!branch) return null;
+  const m = LOOPHUB_BRANCH_RE.exec(branch);
+  return m ? Number(m[1]) : null;
+}
+
+// `.claude/` is mirrored into every lh-dev worktree by provisionWorktree (syncClaudeDir) and is
+// not gitignored, so `git status --porcelain --untracked-files=normal` always reports it as an
+// untracked entry. It is LoopHub-injected, never user work, so it must not count toward the
+// clean-tree guard — otherwise every worktree would look dirty and prune would skip them all.
+function isInjectedArtifact(path: string): boolean {
+  return path === ".claude/" || path.startsWith(".claude/");
+}
+
+// True when the worktree has real uncommitted/untracked changes worth preserving. Input is the
+// raw `git status --porcelain` stdout; the LoopHub-injected `.claude/` artifact is filtered out.
+export function porcelainIsDirty(porcelain: string): boolean {
+  for (const line of porcelain.split("\n")) {
+    if (!line.trim()) continue;
+    const path = line.slice(3); // strip the two-char "XY " status prefix (porcelain v1)
+    if (!path) continue; // malformed/short line with no path → nothing to preserve
+    if (isInjectedArtifact(path)) continue;
+    return true;
+  }
+  return false;
+}
+
+export type PruneAction = "remove" | "keep" | "skip";
+
+export interface ClassifyInput {
+  isCwd: boolean; // the worktree is the current working directory (git would refuse to remove it)
+  dirty: boolean; // real uncommitted/untracked changes (see porcelainIsDirty)
+  issueState: "open" | "closed" | null; // null = issue not found in LoopHub for this branch
+  prMerged: boolean; // a linked PR exists and is merged
+  prState: "open" | "closed" | null; // linked PR state, null when there is no linked PR
+}
+
+export interface Classification {
+  action: PruneAction;
+  reason: string;
+}
+
+// Decide what to do with a single LoopHub worktree. Safety guards (cwd, dirty) win over the
+// done-ness check so we never remove the running checkout or lose uncommitted work; a worktree
+// is a removal candidate only when its issue is closed or its PR merged.
+export function classifyWorktree(input: ClassifyInput): Classification {
+  if (input.isCwd)
+    return { action: "skip", reason: "current working directory" };
+  if (input.dirty)
+    return { action: "skip", reason: "uncommitted or untracked changes" };
+  if (input.prMerged) return { action: "remove", reason: "PR merged" };
+  if (input.issueState === "closed")
+    return { action: "remove", reason: "issue closed" };
+  if (input.issueState === null)
+    return { action: "keep", reason: "issue not found in LoopHub" };
+  return { action: "keep", reason: "issue open, PR not merged" };
+}

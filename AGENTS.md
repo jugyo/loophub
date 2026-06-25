@@ -24,6 +24,17 @@ cli/    `lh` command — imports core directly, no HTTP
 web/    `lh-web` process: core + JSON-RPC 2.0 + SSE, plus the SPA
 ```
 
+### Responsibility split (core vs cli)
+
+Keep `cli/` thin: a command parses flags, calls a procedure on `core/service.ts`, and presents
+the result (text/JSON, prompts, exit codes). **Domain logic — orchestration across git + the DB,
+state resolution, destructive operations — belongs in `core`**, where it is reusable (CLI now,
+JSON-RPC/web later) and unit-testable without spawning the CLI. Pure, side-effect-free decisioning
+(parsing, guards, classification) goes in its own `core` module (e.g. `core/worktree-prune.ts`)
+that `service.ts` composes. When a handler starts looping over git/DB calls and branching on the
+results, that logic is a sign it should move into a `service.ts` procedure (see `worktrees.plan` /
+`worktrees.remove` for the `lh worktree prune` command).
+
 ## Runtime requirements
 
 - **Node.js >= 22.12.0.**
