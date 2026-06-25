@@ -61,6 +61,37 @@ test("issues, labels, comments, and review state round-trip through the adapter"
   expect(S.getIssueById(issue.id).state).toBe("closed");
 });
 
+test("an APPROVE goes stale once the PR head advances past the approved commit", () => {
+  const repo = S.createRepo("me/stale", "/tmp/stale");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
+  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
+
+  // approve against the current head -> APPROVED, and unchanged head keeps it
+  S.createReview(pr.id, "rev", "APPROVE", "lgtm", "sha-1");
+  expect(S.computeReviewState(pr.id)).toBe("APPROVED");
+
+  // head advances -> the approve is stale, no longer APPROVED
+  S.setHeadSha(pr.id, "sha-2");
+  expect(S.computeReviewState(pr.id)).toBe("STALE");
+
+  // re-approving against the new head restores APPROVED
+  S.createReview(pr.id, "rev", "APPROVE", "lgtm again", "sha-2");
+  expect(S.computeReviewState(pr.id)).toBe("APPROVED");
+});
+
+test("an APPROVE with no recorded head stays APPROVED (legacy approves)", () => {
+  const repo = S.createRepo("me/legacy", "/tmp/legacy");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
+  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
+
+  // approve without a head_sha (pre-tracking), then head moves -> still APPROVED
+  S.createReview(pr.id, "rev", "APPROVE", "lgtm");
+  S.setHeadSha(pr.id, "sha-2");
+  expect(S.computeReviewState(pr.id)).toBe("APPROVED");
+});
+
 test("agent session register/assign conflicts surface as errors", () => {
   const repo = S.createRepo("me/sess", "/tmp/sess");
   S.registerAgentSession(

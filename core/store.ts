@@ -391,13 +391,14 @@ export function createReview(
   author: string,
   event: string,
   body: string,
+  headSha: string | null = null,
 ): any {
   return db
     .query(
-      `INSERT INTO reviews (issue_id, author, event, body, created_at)
-       VALUES (?, ?, ?, ?, ?) RETURNING *`,
+      `INSERT INTO reviews (issue_id, author, event, body, head_sha, created_at)
+       VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(issueId, author, event, body, now());
+    .get(issueId, author, event, body, headSha, now());
 }
 
 export type ReviewState =
@@ -405,6 +406,7 @@ export type ReviewState =
   | "CHANGES_REQUESTED"
   | "READY_FOR_RE_REVIEW"
   | "COMMENTED"
+  | "STALE"
   | null;
 
 export function latestSubstantiveReview(issueId: number): any | null {
@@ -424,7 +426,14 @@ export function computeReviewState(issueId: number): ReviewState {
       ? "COMMENTED"
       : null;
   }
-  if (latest.event === "APPROVE") return "APPROVED";
+  if (latest.event === "APPROVE") {
+    // The approve is stale once the branch head advances past the commit it was
+    // made against. Approves recorded before head_sha tracking (no recorded sha)
+    // stay APPROVED, since their staleness can't be determined.
+    if (latest.head_sha && p.head_sha && latest.head_sha !== p.head_sha)
+      return "STALE";
+    return "APPROVED";
+  }
   if (latest.event === "REQUEST_CHANGES") {
     return p.changes_addressed_at ? "READY_FOR_RE_REVIEW" : "CHANGES_REQUESTED";
   }

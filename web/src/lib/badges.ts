@@ -66,6 +66,9 @@ const REVIEW_TONE: Record<
   CHANGES_REQUESTED: "review-changes",
   READY_FOR_RE_REVIEW: "review-rereview",
   COMMENTED: "review-commented",
+  // A previously-approved PR whose head advanced past the approved commit: the
+  // approval is dismissed and the PR needs another look before merging.
+  STALE: "review-rereview",
 };
 
 /** Review-state badge for a PR, or null when there is no review yet. */

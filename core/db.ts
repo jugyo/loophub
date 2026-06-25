@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   author      TEXT NOT NULL,
   event       TEXT NOT NULL,
   body        TEXT NOT NULL DEFAULT '',
+  head_sha    TEXT,
   created_at  TEXT NOT NULL
 );
 
@@ -291,6 +292,9 @@ tryExec(
 );
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_at TEXT");
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_by TEXT");
+// reviews.head_sha records the PR head a review was made against, so an APPROVE
+// can be marked stale once the branch advances past that commit.
+tryExec("ALTER TABLE reviews ADD COLUMN head_sha TEXT");
 
 export function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "Z");

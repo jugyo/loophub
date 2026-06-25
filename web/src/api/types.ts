@@ -118,6 +118,7 @@ export interface PullRequest {
     | "CHANGES_REQUESTED"
     | "READY_FOR_RE_REVIEW"
     | "COMMENTED"
+    | "STALE"
     | null;
   changes_addressed_at: string | null;
   changes_addressed_by: string | null;

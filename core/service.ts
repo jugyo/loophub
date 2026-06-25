@@ -882,7 +882,16 @@ export const reviews = {
         throw new ServiceError(422, "each comment requires path and body");
     }
     const actor = actorFor(sessionId);
-    const v = S.createReview(row.id, actor, event, input.body ?? "") as any;
+    // Bind the review to the head it was made against so an APPROVE can be
+    // marked stale once the branch advances past this commit.
+    const headSha = S.getPull(row.id)?.head_sha ?? null;
+    const v = S.createReview(
+      row.id,
+      actor,
+      event,
+      input.body ?? "",
+      headSha,
+    ) as any;
     for (const cm of lineComments) {
       S.createReviewComment(row.id, v.id, actor, {
         path: cm.path,
