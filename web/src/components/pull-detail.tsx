@@ -16,6 +16,7 @@ import type {
   PullReview,
 } from "@/api/types";
 import { useRegisterDetailTitle } from "@/components/detail-title";
+import { DiffStat } from "@/components/diff-stat";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -404,10 +405,21 @@ function FilesChanged({
     byFile.set(c.path, list);
   }
 
+  // Whole-diff totals, summed from the per-file numstat already loaded here.
+  const totalAdditions = files?.reduce((s, f) => s + f.additions, 0) ?? 0;
+  const totalDeletions = files?.reduce((s, f) => s + f.deletions, 0) ?? 0;
+
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">
+      <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
         Files changed{files ? ` (${files.length})` : ""}
+        {files && files.length > 0 ? (
+          <DiffStat
+            additions={totalAdditions}
+            deletions={totalDeletions}
+            className="text-sm font-normal"
+          />
+        ) : null}
       </h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

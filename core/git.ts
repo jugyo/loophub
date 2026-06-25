@@ -157,6 +157,35 @@ export async function diffFiles(
   return files;
 }
 
+export interface DiffStat {
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+}
+
+// Aggregate +/- line counts and changed-file count for base...head with a
+// single numstat (no per-file patch fetch). Binary files report "-" for both
+// columns: they count as a changed file but add 0 to the line totals.
+export async function diffStat(
+  repoPath: string,
+  base: string,
+  head: string,
+): Promise<DiffStat> {
+  const range = `${base}...${head}`;
+  const numstat = await git(repoPath, ["diff", "--numstat", range]);
+  let additions = 0;
+  let deletions = 0;
+  let changedFiles = 0;
+  for (const line of numstat.stdout.split("\n")) {
+    if (!line.trim()) continue;
+    const [add, del] = line.split("\t");
+    additions += add === "-" ? 0 : Number(add) || 0;
+    deletions += del === "-" ? 0 : Number(del) || 0;
+    changedFiles += 1;
+  }
+  return { additions, deletions, changedFiles };
+}
+
 function stripDiffHeader(full: string): string {
   // keep from the first @@ hunk onward, like GitHub's "patch" field
   const idx = full.indexOf("\n@@");

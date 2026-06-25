@@ -2,7 +2,7 @@
 // (CLI now, JSON-RPC clients later) read. Kept separate from service.ts so the
 // shaping is reusable and side-effect free.
 
-import { commitsAhead, mergePreview, revParse } from "./git.ts";
+import { commitsAhead, diffStat, mergePreview, revParse } from "./git.ts";
 import { linkedRef } from "./links.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import * as S from "./store.ts";
@@ -162,6 +162,25 @@ export async function pullJSON(repo: S.Repo, row: any) {
       approved: review_state === "APPROVED",
     }));
   }
+  // Diff totals (+/-, changed files) for the PR. Aggregated from numstat over
+  // base...head; left at 0 when refs can't be resolved so list/detail render
+  // gracefully. Skip merged PRs (like the mergeable fan-out above): base...head
+  // would be empty for a merge commit but show the full original diff for a
+  // squash/rebase merge whose head branch still exists — inconsistent, so don't.
+  let additions = 0;
+  let deletions = 0;
+  let changed_files = 0;
+  if (!p.merged && headSha && baseSha) {
+    try {
+      ({
+        additions,
+        deletions,
+        changedFiles: changed_files,
+      } = await diffStat(repo.local_path, p.base_ref, p.head_ref));
+    } catch {
+      // leave zeros — a diff stat failure must not break serialization
+    }
+  }
   return {
     number: row.number,
     state: row.state,
@@ -174,6 +193,9 @@ export async function pullJSON(repo: S.Repo, row: any) {
     mergeable,
     mergeable_state,
     merge_commit_sha: p.merge_commit_sha,
+    additions,
+    deletions,
+    changed_files,
     review_state,
     changes_addressed_at: p.changes_addressed_at ?? null,
     changes_addressed_by: p.changes_addressed_by ?? null,

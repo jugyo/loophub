@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
+  diffStat,
   git,
   isIndexLockError,
   mergePull,
@@ -218,5 +219,38 @@ test("merge rolls back when index.lock never clears", async () => {
   expect(baseAfter).toBe(baseBefore);
 
   rmSync(lock);
+  rmSync(p, { recursive: true, force: true });
+});
+
+// diffStat sums numstat over base...head: +/- line totals plus the changed-file
+// count, and counts binary files (numstat "-") as a changed file with 0 lines.
+test("diffStat aggregates additions, deletions and changed files", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-diffstat-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "a.txt"), "1\n2\n3\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  // a.txt: drop the last line, add two; net +2 -1.
+  writeFileSync(join(p, "a.txt"), "1\n2\nx\ny\n");
+  // new text file: +1.
+  writeFileSync(join(p, "b.txt"), "new\n");
+  // binary file: numstat reports "-" for both columns.
+  writeFileSync(join(p, "c.bin"), Buffer.from([0, 1, 2, 0, 3]));
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "feat"]);
+
+  const stat = await diffStat(p, "main", "feat");
+  expect(stat.additions).toBe(3); // 2 in a.txt + 1 in b.txt
+  expect(stat.deletions).toBe(1); // 1 in a.txt
+  expect(stat.changedFiles).toBe(3); // a.txt, b.txt, c.bin
+
+  // No diff against itself → all zeros.
+  const empty = await diffStat(p, "feat", "feat");
+  expect(empty).toEqual({ additions: 0, deletions: 0, changedFiles: 0 });
+
   rmSync(p, { recursive: true, force: true });
 });

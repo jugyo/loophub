@@ -4,6 +4,7 @@
 
 import { Link } from "@tanstack/react-router";
 import type { Issue, Label, PullRequest } from "@/api/types";
+import { DiffStat } from "@/components/diff-stat";
 import { Badge } from "@/components/ui/badge";
 import { issueBadges, pullBadges } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
@@ -110,6 +111,13 @@ export function PullRow({
       <RepoChip label={repoLabel} />
       <span className="shrink-0 text-muted-foreground">#{pull.number}</span>
       <span className="min-w-0 flex-1 truncate font-medium">{pull.title}</span>
+      {pull.changed_files > 0 ? (
+        <DiffStat
+          additions={pull.additions}
+          deletions={pull.deletions}
+          className="shrink-0 text-xs"
+        />
+      ) : null}
       <RowBadges badges={pullBadges(pull)} />
       <span className="shrink-0 text-xs text-muted-foreground">
         {relativeTime(pull.updated_at)}

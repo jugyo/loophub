@@ -123,6 +123,10 @@ export interface PullRequest {
   changes_addressed_at: string | null;
   changes_addressed_by: string | null;
   merge_commit_sha: string | null;
+  /** Diff totals for the PR (base...head), aggregated from numstat. */
+  additions: number;
+  deletions: number;
+  changed_files: number;
   created_at: string;
   updated_at: string;
   /** Set on the pull-detail response when the PR closes an issue. */

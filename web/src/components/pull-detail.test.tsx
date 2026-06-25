@@ -46,6 +46,9 @@ const pull: PullRequest = {
   changes_addressed_at: null,
   changes_addressed_by: null,
   merge_commit_sha: null,
+  additions: 1,
+  deletions: 1,
+  changed_files: 1,
   created_at: "2026-06-18T11:00:00Z",
   updated_at: "2026-06-18T12:00:00Z",
   linked_issue: {
