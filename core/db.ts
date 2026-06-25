@@ -239,6 +239,31 @@ CREATE TABLE IF NOT EXISTS attachments (
   author      TEXT NOT NULL,
   created_at  TEXT NOT NULL
 );
+
+-- Loop retrospectives (loop-retrospective-design.ja.md §4.2). One row per
+-- generated retro: rubric scores + free-form findings for a (merged) PR, stored
+-- structured for later aggregation/UI. session_id is the *implementation* session
+-- (resolved PR -> linked issue -> assignee_session_id), NULL when the PR has no
+-- link. findings_json / rubric note are sensitive at-rest; redacted/redact_ruleset
+-- record the redaction version so weakly-redacted rows can be re-processed later.
+CREATE TABLE IF NOT EXISTS retros (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id        INTEGER REFERENCES repos(id),
+  issue_id       INTEGER REFERENCES issues(id),
+  pr_id          INTEGER REFERENCES issues(id),
+  session_id     TEXT    REFERENCES agent_sessions(id),
+  rubric_json    TEXT NOT NULL DEFAULT '[]',
+  findings_json  TEXT NOT NULL DEFAULT '[]',
+  status         TEXT NOT NULL DEFAULT 'draft',
+  reviewed_by    TEXT,
+  redacted       INTEGER NOT NULL DEFAULT 0,
+  redact_ruleset TEXT,
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_retros_repo ON retros(repo_id, id);
+CREATE INDEX IF NOT EXISTS idx_retros_pr   ON retros(pr_id);
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）

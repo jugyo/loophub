@@ -112,6 +112,38 @@ export function issueJSON(row: any, repo?: S.Repo) {
   return out;
 }
 
+function safeParseArray(json: string | null | undefined): any[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+// Shape a `retros` row into the wire object the CLI (and later JSON-RPC) reads.
+// pr / issue are summarized from their issues rows so consumers see numbers, not
+// internal row ids. rubric / findings are parsed back from their JSON columns.
+export function retroJSON(row: any) {
+  const prRow = row.pr_id != null ? S.getIssueById(row.pr_id) : null;
+  const issueRow = row.issue_id != null ? S.getIssueById(row.issue_id) : null;
+  return {
+    id: row.id,
+    pr: prRow ? { number: prRow.number, title: prRow.title } : null,
+    issue: issueRow ? { number: issueRow.number, title: issueRow.title } : null,
+    session_id: row.session_id ?? null,
+    rubric: safeParseArray(row.rubric_json),
+    findings: safeParseArray(row.findings_json),
+    status: row.status,
+    reviewed_by: row.reviewed_by ?? null,
+    redacted: !!row.redacted,
+    redact_ruleset: row.redact_ruleset ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 export async function pullJSON(repo: S.Repo, row: any) {
   const p = S.getPull(row.id);
   const headSha = await revParse(repo.local_path, p.head_ref);

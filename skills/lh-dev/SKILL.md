@@ -168,6 +168,26 @@ first, so set `LOOPHUB_URL` explicitly when running in parallel.
 Match existing naming, types, tests, and style. Stay within issue scope. Commit messages: concise
 outcome only (no narrative).
 
+#### Record key decisions (optional, for later retro)
+
+When you make a judgement that won't be obvious from the diff or PR body — a scope call, a step
+deliberately skipped, a non-obvious tradeoff — record it so a later `/lh-retro` can recover the
+*why* (design §4.3.4, `docs/loop-retrospective-design.ja.md`):
+
+```sh
+lh dev log --kind decision --summary "<what you decided>" --body "<why>" --pr <m> --repo <repo>
+```
+
+`--kind` is one of `decision|action|assumption|blocker`. This emits a small `dev.note` event (stored
+in the `events` table — no transcript). **Non-blocking: a failed log must never stop implementation.**
+Don't log routinely; reserve it for judgements that won't surface in the diff/PR body. Inside a
+worktree `--repo owner/name` is required.
+
+**Redaction**: `--summary` / `--body` must hold a *redacted rationale only* — state the decision and
+why in your own words. Never paste tool output, file contents, credentials/tokens, env dumps, or
+absolute paths into them. The note is stored at-rest and is later read by `/lh-retro`, so a secret
+pasted here persists and can flow into retro findings.
+
 ### 4. Test
 
 Use the repo standard command (e.g. `npm test`). **Green before PR.**

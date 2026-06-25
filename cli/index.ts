@@ -77,6 +77,9 @@ type Flags = {
   pr?: string;
   file?: string[];
   actor?: string;
+  input?: string;
+  status?: string;
+  limit?: string;
 };
 const { values, positionals: pos } = parseArgs({
   args: process.argv.slice(2),
@@ -119,6 +122,9 @@ const { values, positionals: pos } = parseArgs({
     pr: { type: "string" },
     file: { type: "string", multiple: true },
     actor: { type: "string" },
+    input: { type: "string" },
+    status: { type: "string" },
+    limit: { type: "string" },
   },
 });
 const flags = values as Flags;
@@ -971,6 +977,105 @@ async function main() {
     return;
   }
 
+  if (group === "retro") {
+    const s = await svc();
+    const repo = await resolveRepo();
+    if (sub === "create") {
+      const usageLine =
+        "usage: lh retro create --pr <m> --input <file|-> [--status draft]";
+      if (!flags.pr) fail(usageLine);
+      if (!flags.input) fail(`--input is required\n${usageLine}`);
+      const raw =
+        flags.input === "-"
+          ? await readStdin()
+          : readFileSync(flags.input, "utf8");
+      let data: any;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        fail(
+          "--input must be JSON: { rubric: [...], findings: [...], status? }",
+        );
+      }
+      const retro = await run(async () =>
+        s.retros.create(
+          repo,
+          {
+            pr: Number(flags.pr),
+            rubric: data.rubric,
+            findings: data.findings,
+            status: flags.status ?? data.status,
+            redacted: data.redacted,
+            redact_ruleset: data.redact_ruleset,
+          },
+          await writeSession(),
+        ),
+      );
+      if (flags.json) out(retro);
+      else
+        console.log(
+          `created retro #${retro.id} for PR #${retro.pr?.number} (${retro.status})`,
+        );
+    } else if (sub === "list") {
+      const rows = await run(() =>
+        s.retros.list(repo, {
+          pr: flags.pr ? Number(flags.pr) : undefined,
+          status: flags.status,
+        }),
+      );
+      out(rows);
+      if (!flags.json)
+        rows.forEach((rt: any) => {
+          const warn = rt.rubric.filter(
+            (x: any) => x.severity === "warn",
+          ).length;
+          const bad = rt.rubric.filter((x: any) => x.severity === "bad").length;
+          console.log(
+            `#${rt.id}\tPR #${rt.pr?.number ?? "?"}\t${rt.status}\twarn:${warn} bad:${bad}\tfindings:${rt.findings.length}\t${relativeTime(rt.created_at)}`,
+          );
+        });
+    } else if (sub === "view") {
+      if (!rest[0]) fail("usage: lh retro view <id>");
+      const rt = await run(() => s.retros.get(repo, Number(rest[0])));
+      out(rt);
+      if (!flags.json) {
+        const lines: string[] = [];
+        lines.push(
+          `retro #${rt.id} [${rt.status}]  PR #${rt.pr?.number ?? "?"}${rt.pr ? ` ${rt.pr.title}` : ""}`,
+        );
+        if (rt.issue) lines.push(`linked issue #${rt.issue.number}`);
+        lines.push(`session: ${rt.session_id ?? "(none)"}`);
+        lines.push("");
+        lines.push("Rubric:");
+        for (const x of rt.rubric)
+          lines.push(
+            `  [${x.severity}] ${x.id} ${x.signal}=${x.value ?? ""}${x.note ? ` — ${x.note}` : ""}`,
+          );
+        lines.push("");
+        lines.push("Findings:");
+        for (const f of rt.findings)
+          lines.push(
+            `  [${f.severity}] (${f.category}) ${f.note}${f.evidence_ref ? ` <${f.evidence_ref}>` : ""}${f.proposed_action ? `\n    -> ${f.proposed_action}` : ""}`,
+          );
+        console.log(lines.join("\n"));
+      }
+    } else if (sub === "pending") {
+      const items = await run(() =>
+        s.retros.pending(repo, {
+          limit: flags.limit ? Number(flags.limit) : undefined,
+        }),
+      );
+      out(items);
+      if (!flags.json)
+        items.forEach((p: any) => {
+          console.log(
+            `#${p.number}\t${p.title}\tmerged ${p.merged_at ? relativeTime(p.merged_at) : "?"}`,
+          );
+        });
+    } else usage();
+    return;
+  }
+
   if (group === "sync") {
     const s = await svc();
     const r = await s.sync.run();
@@ -1018,6 +1123,8 @@ function usage() {
   lh session list
   lh issue list|view|create|update|comment|assign|unassign|close|label  [--repo owner/repo]
   lh pr list|view|diff|create|update|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR
+  lh retro list [--pr <m>] [--status draft]   lh retro view <id>   lh retro pending [--limit N]   # read retros / list merged PRs without one
   lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-dev worktrees (issue closed / PR merged, clean tree)
   lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image(s), print embed markdown
   lh sync                                          # detect open-PR head updates and emit events
