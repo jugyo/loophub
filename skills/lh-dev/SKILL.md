@@ -176,7 +176,10 @@ While testing, **capture evidence for the PR body** (step 5):
 
 - Save the command and a short excerpt of green output (pass/fail counts, key lines)
 - For UI or visual changes, take screenshots before opening the PR (browser tool, manual capture, or
-  generated assets under the repo)
+  generated assets under the repo) and save them to the **persistent evidence directory**
+  (`${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/`; see `skills/README.md` §
+  Evidence screenshots) — **not only** the session scratchpad / `$TMPDIR` or the worktree, which can be
+  cleared before `lh-merge-ready` reads them. Reference the saved path in the PR body.
 - For CLI/API fixes, paste a representative command and response snippet
 
 Do not open a PR with checkboxes only — reviewers need proof you ran the verification.

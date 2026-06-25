@@ -1,9 +1,10 @@
 ---
 name: lh-merge-ready
 description: >-
-  Final pre-merge guard for a LoopHub PR: confirm approve status and no merge conflict, then
-  present lh pr merge steps for a human — never merges automatically. Use when the user runs
-  /lh-merge-ready {pr id}, or after lh-pr-review approves.
+  Final pre-merge guard for a LoopHub PR: confirm approve status and no merge conflict, present
+  lh pr merge steps for a human, and print the change's valid evidence screenshot paths at the end
+  — never merges automatically. Use when the user runs /lh-merge-ready {pr id}, or after
+  lh-pr-review approves.
 ---
 
 # LoopHub merge-ready
@@ -14,6 +15,11 @@ Final guard **before a human merges**. Confirm `review_state == APPROVED` and no
 The preceding `lh-pr-review` (same session) already covered acceptance criteria, scope, and
 green tests; the PR Evidence section was required at creation (`lh-dev` § PR). Merge-ready does
 not re-check them.
+
+As the **last block of its report**, merge-ready also surfaces the change's **evidence
+screenshots**: it reads the persistent evidence directory (see `skills/README.md` § Evidence
+screenshots), validates each image, and prints the **paths** of the valid ones — or states there
+is none — so a human can eyeball the change before merging.
 
 **No automatic merge.** Human merges via UI or CLI.
 
@@ -116,7 +122,7 @@ review here.
 
 ### When mergeable (APPROVED and not `dirty`)
 
-Print a compact summary with these five blocks:
+Print a compact summary with these six blocks:
 
 ```text
 ## Merge-ready: PR #<m> — <title>
@@ -139,18 +145,64 @@ Print a compact summary with these five blocks:
 
 ### Merge steps (human executes)
 - Click Merge in the UI, or `lh pr merge <m> --repo <repo> --method squash`
+
+### Evidence screenshots
+- <abs path 1> — <one line: what it shows>
+- <abs path 2> — <one line: what it shows>
 ```
 
-Keep each block to a few lines. For localization, see [Language](#language).
+Keep each block to a few lines. For localization, see [Language](#language). Build the trailing
+`### Evidence screenshots` block per [Evidence screenshots](#evidence-screenshots-last-block).
 
 ### When not mergeable
 
-Do **not** print merge steps. Print the blocker and the next action only:
+Do **not** print merge steps. Print the blocker and the next action — then still append the
+trailing [Evidence screenshots](#evidence-screenshots-last-block) block:
 
 | Blocker | Next action |
 |---------|-------------|
 | Not `APPROVED` | `/lh-pr-review <m>` |
 | `mergeable_state` = `dirty` | rebase / conflict resolution |
+
+### Evidence screenshots (last block)
+
+Append this as the **last block merge-ready itself emits** — in **both** the mergeable and the
+not-mergeable case — so the change's visual evidence is grouped at the end. (When chained from
+`lh-dev`, its final PR-URL line still follows; see the closing note below.)
+
+1. **List** the persistent evidence directory for this PR:
+
+   ```sh
+   DIR="${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>"  # or .../pr-<m> if no linked issue
+   ls "$DIR" 2>/dev/null
+   ```
+
+   `<n>` is the linked issue (PR body `closes #<n>` / the `--issue` link from step 1). For a PR
+   with no linked issue, use `pr-<m>` instead. See `skills/README.md` § Evidence screenshots.
+
+2. **Validate each file — keep only valid evidence.** Open each image and keep it only when it
+   **actually shows this PR's change** and is readable. Exclude:
+   - unrelated / old / a different screen than this change
+   - blank / all-black / corrupt / failed-to-load (no usable signal)
+
+3. **Print the kept paths** (path strings — not embedded images), grouped under the heading:
+
+   ```text
+   ### Evidence screenshots
+   - <abs path> — <one line: what it shows>
+   ```
+
+4. If **no valid screenshot remains** (directory absent / empty, or every image excluded), do not
+   invent one — print the heading with an explicit "none" line instead of a path:
+
+   ```text
+   ### Evidence screenshots
+   - No valid evidence screenshot for this change.
+   ```
+
+Localize the heading and the "none" line to the conversation language (see [Language](#language));
+keep paths verbatim. When chained from `lh-dev`, its final PR-URL line (`lh-dev` § 9) still follows
+this block.
 
 ## Called from other skills
 

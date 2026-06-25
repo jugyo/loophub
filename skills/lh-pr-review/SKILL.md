@@ -358,6 +358,11 @@ Escalate scope-out or design-judgment findings without fixing.
 Repo standard (e.g. `bun test`). When the PR touches `skills/`, also run
 `bun test tests/skills-lint.test.ts`. **Green before next round.**
 
+For UI / visual fixes, save the verification screenshot to the **persistent evidence directory**
+(`${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/`; see `skills/README.md` §
+Evidence screenshots), not only the session scratchpad / `$TMPDIR` or worktree — so it is still
+present when `lh-merge-ready` reads the directory at the end of the chain.
+
 ### B.4 Commit
 
 ```sh

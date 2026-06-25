@@ -30,6 +30,26 @@ Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (sc
   role to a host mechanism (Cursor `bugbot`/`security-review`, Claude Code `code-reviewer`/`general-purpose`
   + `/security-review`) with a `general-purpose` fallback so a missing vendor reviewer never blocks review.
 
+## Evidence screenshots
+
+UI / visual evidence (screenshots) is stored in a **persistent evidence directory** so it
+survives worktree removal and session / temp cleanup — and is therefore still present when
+`lh-merge-ready` runs at the end of the chain:
+
+```text
+${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/
+```
+
+- **Key by issue number** (`issue-<n>`, from the `loophub/issue-<n>` head branch) so every step
+  in the chain — dev, review, merge-ready — resolves the same directory. For a PR with no linked
+  issue, use `pr-<m>` instead.
+- Do **not** keep UI evidence only under the session scratchpad / `$TMPDIR` or inside the
+  worktree — both can be cleared before merge-ready, losing the evidence. Copy or write it into
+  the directory above.
+- Filenames: a short descriptive slug, no spaces, `.png` (e.g. `home-recent-open-issues.png`).
+- `lh-dev` (§4) and `lh-pr-review` (Phase B) write here; `lh-merge-ready` reads the directory,
+  validates each image, and prints the valid paths at the end of its report.
+
 ## Skill chain
 
 ```text
