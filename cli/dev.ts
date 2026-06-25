@@ -10,6 +10,8 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { branchExists, worktreeAdd, worktreeList } from "../core/git.ts";
+import { isClaudeSessionId } from "../core/resume.ts";
+import { worktreeBranch, worktreePath } from "../core/worktree-path.ts";
 
 // `lh dev` provisions an isolated git worktree (outside the sandbox) and launches an
 // interactive Claude session in it. Everything here is pure CLI-side policy — it imports
@@ -221,6 +223,25 @@ export function buildClaudeArgs({
   return args;
 }
 
+// `lh resume <PR id>` re-enters an existing Claude session rather than starting a new one, so the
+// argv is just `claude --resume <session-id>` (no --session-id / slash command / sandbox settings —
+// the original session already carries its history and the worktree is reused). Pure so it can be
+// unit-tested and shares the displayed-vs-spawned single source of truth (formatSpawnCommand).
+// Asserts the id is UUID-shaped (service.resume.resolve already gates this) so a malformed/flag-like
+// value can never reach `claude --resume` as a spoofed flag — see isClaudeSessionId.
+export function buildResumeArgs({
+  sessionId,
+}: {
+  sessionId: string;
+}): string[] {
+  if (!isClaudeSessionId(sessionId)) {
+    throw new Error(
+      `invalid session id for resume: ${JSON.stringify(sessionId)}`,
+    );
+  }
+  return ["--resume", sessionId];
+}
+
 // ---- kani terminal launch (pure) ----
 //
 // `lh dev --kani` relaunches the dev loop in a fresh kani terminal instead of the foreground,
@@ -389,7 +410,10 @@ export function formatSpawnCommand(
 // ---- worktree provisioning ----
 //
 // Path and branch are deterministic from the issue number (no slug). Reuse is derived from
-// disk truth (`git worktree list` + naming convention) — there is no ledger table.
+// disk truth (`git worktree list` + naming convention) — there is no ledger table. The pure
+// path/branch helpers live in core/worktree-path.ts (shared with core/service.ts for
+// `lh resume`); re-exported here so existing cli/dev.ts callers and tests keep importing them.
+export { worktreeBranch, worktreePath };
 
 // Resolve symlinks when the path exists; fall back to lexical normalization otherwise.
 function canonical(p: string): string {
@@ -398,25 +422,6 @@ function canonical(p: string): string {
   } catch {
     return resolve(p);
   }
-}
-
-export function worktreeBranch(issue: number): string {
-  return `loophub/issue-${issue}`;
-}
-
-// <worktreeRoot>/<owner>/<repo>/issue-<n>. fullName is the repo's "owner/name".
-// Guard every segment so a crafted repo name can't traverse out of worktreeRoot.
-export function worktreePath(
-  worktreeRoot: string,
-  fullName: string,
-  issue: number,
-): string {
-  for (const seg of fullName.split("/")) {
-    if (!seg || seg === "." || seg === ".." || seg.includes("\\")) {
-      throw new Error(`invalid repo name for worktree path: "${fullName}"`);
-    }
-  }
-  return join(worktreeRoot, fullName, `issue-${issue}`);
 }
 
 // ---- dev lock (single-host duplicate-launch guard) ----

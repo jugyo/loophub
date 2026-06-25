@@ -6,11 +6,13 @@ import { createInterface } from "node:readline/promises";
 import { parseArgs, stripVTControlCharacters } from "node:util";
 import { baseUrl, configDir, dbPath, worktreeRoot } from "../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../core/git.ts";
+import { LH_DEV_SESSION_AGENT } from "../core/resume.ts";
 import {
   acquireDevLock,
   buildClaudeArgs,
   buildKaniLaunch,
   buildManagedSettings,
+  buildResumeArgs,
   devLockPath,
   displayMultiline,
   formatLaunchPlan,
@@ -518,7 +520,7 @@ async function main() {
     await run(() =>
       s.sessions.register({
         id: sessionId,
-        agent: "lh-dev",
+        agent: LH_DEV_SESSION_AGENT,
         session: sessionId,
       }),
     );
@@ -565,6 +567,90 @@ async function main() {
     // until claude exits); the exit handler releases it. Release is best-effort — if the process
     // is killed before it runs, the stale lock self-heals (its pid is gone, so the next launch
     // reclaims it).
+    const proc = spawnSync("claude", claudeArgs, {
+      stdio: "inherit",
+      cwd: worktree,
+    });
+    process.exit(proc.status ?? 0);
+  }
+
+  if (group === "resume") {
+    // `lh resume <PR id>` re-enters the Claude session a PR was developed in. Resolution
+    // (session id + worktree/branch + restorability) lives in core (service.resume.resolve);
+    // the CLI provisions the worktree (idempotent restore) and spawns `claude --resume`, mirroring
+    // the `lh dev` spawn (inherited env carries the NODE_OPTIONS conventions; cwd = worktree).
+    const target = sub;
+    const usageLine =
+      "usage: lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]";
+    if (!target) fail(usageLine);
+    // The positional accepts the same forms as `lh dev`: a bare <pr> (repo from --repo/cwd) or
+    // <owner>/<repo>/<pr> (carries the repo so resume can run from outside the checkout).
+    let parsed: { repo?: string; id: number };
+    try {
+      parsed = parseDevTarget(target);
+    } catch (e: any) {
+      fail(`${e.message}\n${usageLine}`);
+    }
+    let repo: string;
+    if (parsed.repo) {
+      if (flags.repo && flags.repo !== parsed.repo) {
+        fail(
+          `conflicting repo: positional '${parsed.repo}' vs --repo '${flags.repo}'`,
+        );
+      }
+      repo = parsed.repo;
+    } else {
+      repo = await resolveRepo();
+    }
+    const prNumber = parsed.id;
+    try {
+      validateRepo(repo);
+    } catch (e: any) {
+      fail(e.message);
+    }
+
+    const s = await svc();
+    const r = await run(() => s.repos.get(repo));
+    const resolution = await run(() => s.resume.resolve(repo, prNumber));
+    if (!resolution.ok) {
+      if (resolution.reason === "no-session") {
+        fail(
+          `PR #${prNumber}: no Claude session is recorded for this PR, so there is nothing to ` +
+            `resume.\n(A resumable session id is saved when work starts via \`lh dev\`.)`,
+        );
+      }
+      fail(
+        `PR #${prNumber}: cannot restore the dev worktree — its branch ` +
+          `\`${resolution.branch}\` no longer exists (and no worktree remains). ` +
+          `The work cannot be resumed.`,
+      );
+    }
+
+    // Idempotent worktree restore: reuse the existing worktree, or re-attach it from the surviving
+    // branch (same provisionWorktree path `lh dev` uses for a removed-but-branch-present worktree).
+    let worktree: string;
+    try {
+      worktree = await provisionWorktree({
+        repoPath: r.local_path,
+        fullName: r.full_name,
+        defaultBranch: r.default_branch,
+        worktreeRoot: worktreeRoot(),
+        issue: resolution.issue,
+        headRef: resolution.branch,
+      });
+    } catch (e: any) {
+      fail(e.message);
+    }
+
+    const claudeArgs = buildResumeArgs({ sessionId: resolution.sessionId });
+    console.error(`resuming PR #${prNumber} (session ${resolution.sessionId})`);
+    console.error(`  repo:     ${repo}`);
+    console.error(
+      `  worktree: ${worktree}${resolution.restore ? " (restored from branch)" : ""}`,
+    );
+    console.error(
+      formatSpawnCommand(claudeArgs, { color: process.stderr.isTTY === true }),
+    );
     const proc = spawnSync("claude", claudeArgs, {
       stdio: "inherit",
       cwd: worktree,
@@ -1114,6 +1200,7 @@ function usage() {
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
   lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani] [--force]   # start one issue in an interactive Claude session (--kani: in a new kani terminal; --force: launch even if another session holds it)
   lh dev log --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]   # record a dev note on the issue's PR
+  lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]   # re-enter the Claude session a PR was developed in (claude --resume in its worktree)
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>

@@ -4,6 +4,7 @@
 // JSON-RPC layer (S2) will wrap the same procedures. No HTTP/Request types leak in here.
 import { existsSync, lstatSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { worktreeRoot } from "./config.ts";
 import { ServiceError } from "./errors.ts";
 import { formatEvent, type LoopEvent } from "./event-hub.ts";
 import {
@@ -19,6 +20,12 @@ import {
   worktreeStatus,
 } from "./git.ts";
 import { parseClosingIssueNumber } from "./links.ts";
+import {
+  decideResume,
+  isClaudeSessionId,
+  LH_DEV_SESSION_AGENT,
+  resumeWorktreeIssue,
+} from "./resume.ts";
 import {
   isRetroStatus,
   RetroValidationError,
@@ -38,6 +45,7 @@ import {
 } from "./serialize.ts";
 import * as S from "./store.ts";
 import { sweepPullUpdates } from "./watcher.ts";
+import { worktreePath } from "./worktree-path.ts";
 import {
   classifyWorktree,
   issueNumberFromBranch,
@@ -847,6 +855,94 @@ function defaultDraftPrBody(issue: number): string {
     "",
   ].join("\n");
 }
+
+// ===== resume (re-enter a PR's dev session) =====
+//
+// Resolve everything `lh resume <PR id>` needs to relaunch the Claude session that was used to
+// develop a PR: the stored Claude session id and the worktree/branch to run it in. State
+// resolution (DB + git) lives here; the restorability judgment is the pure decideResume. The CLI
+// performs the actual worktree provisioning (provisionWorktree) and `claude --resume` spawn.
+export interface ResumeOk {
+  ok: true;
+  pr: number;
+  issue: number; // issue number identifying the worktree path/branch
+  branch: string; // PR head ref to check out
+  sessionId: string; // Claude session id for `claude --resume <id>`
+  restore: boolean; // true => worktree was removed; re-attach it from the branch
+}
+export interface ResumeFail {
+  ok: false;
+  pr: number;
+  reason: "no-session" | "unrestorable";
+  branch: string; // PR head ref (named in the "unrestorable" message)
+}
+export type ResumeResolution = ResumeOk | ResumeFail;
+
+export const resume = {
+  async resolve(name: string, prNumber: number): Promise<ResumeResolution> {
+    const r = repoOr404(name);
+    const prRow = issueOr404(r, prNumber, "pull");
+    const pull = S.getPull(prRow.id);
+    const headRef: string = pull.head_ref;
+    const linkedIssue =
+      pull.linked_issue_id != null
+        ? S.getIssueById(pull.linked_issue_id)
+        : null;
+    const linkedIssueNumber: number | null = linkedIssue?.number ?? null;
+
+    // Session: prefer the PR row's own assignee (a PR worked directly via `lh dev <pr>`), else the
+    // linked issue's assignee (the common `lh dev <issue>` → open PR flow).
+    const sessionRowId: string | null =
+      prRow.assignee_session_id ?? linkedIssue?.assignee_session_id ?? null;
+    const sessionRow = sessionRowId ? S.getAgentSession(sessionRowId) : null;
+    // A resumable Claude session must be one `lh dev` launched: it registers under LH_DEV_SESSION_AGENT
+    // and stores in external_session the exact UUID it handed to `claude --session-id`, so
+    // `claude --resume <id>` resumes it directly (no separate resumable-id storage is needed —
+    // verified against `claude --help`: `--resume` takes a session ID and `--session-id` sets it).
+    // The agent check is the provenance signal (another agent's external_session is its own runtime
+    // id, not a Claude session); the UUID check guards argv injection. Either failing → no-session.
+    const claudeSessionId: string | null =
+      sessionRow &&
+      sessionRow.agent === LH_DEV_SESSION_AGENT &&
+      isClaudeSessionId(sessionRow.external_session)
+        ? sessionRow.external_session
+        : null;
+
+    const issueNumber = resumeWorktreeIssue(
+      headRef,
+      linkedIssueNumber,
+      prNumber,
+    );
+    const path = worktreePath(worktreeRoot(), r.full_name, issueNumber);
+    const worktrees = await worktreeList(r.local_path);
+    const worktreeExists = worktrees.some(
+      (w) => canonicalPath(w.path) === canonicalPath(path),
+    );
+    const branchPresent = await branchExists(r.local_path, headRef);
+
+    const decision = decideResume({
+      sessionId: claudeSessionId,
+      worktreeExists,
+      branchExists: branchPresent,
+    });
+    if (!decision.ok) {
+      return {
+        ok: false,
+        pr: prNumber,
+        reason: decision.reason,
+        branch: headRef,
+      };
+    }
+    return {
+      ok: true,
+      pr: prNumber,
+      issue: issueNumber,
+      branch: headRef,
+      sessionId: claudeSessionId as string,
+      restore: decision.restore,
+    };
+  },
+};
 
 // ===== reviews =====
 export const reviews = {

@@ -25,6 +25,7 @@ import {
   buildClaudeArgs,
   buildKaniLaunch,
   buildManagedSettings,
+  buildResumeArgs,
   devLockPath,
   displayMultiline,
   formatLaunchPlan,
@@ -222,6 +223,23 @@ test("buildClaudeArgs carries session id, managed settings, and the slash comman
   expect(args[args.indexOf("--settings") + 1]).toBe("{}");
   expect(args.indexOf("--managed-settings")).toBe(-1);
   expect(args[args.length - 1]).toBe("/lh-dev 42");
+});
+
+test("buildResumeArgs resumes a UUID session id with no extra flags", () => {
+  // `lh resume` re-enters an existing session: just `claude --resume <id>`, no --session-id,
+  // slash command, or sandbox settings.
+  expect(
+    buildResumeArgs({ sessionId: "d8a43602-f469-4b03-8fa8-0af5200f22b3" }),
+  ).toEqual(["--resume", "d8a43602-f469-4b03-8fa8-0af5200f22b3"]);
+});
+
+test("buildResumeArgs rejects a flag-like / non-UUID session id (argv injection guard)", () => {
+  expect(() =>
+    buildResumeArgs({ sessionId: "--dangerously-skip-permissions" }),
+  ).toThrow(/invalid session id/);
+  expect(() => buildResumeArgs({ sessionId: "sid-9" })).toThrow(
+    /invalid session id/,
+  );
 });
 
 test("buildClaudeArgs omits --settings when not provided (no-sandbox mode)", () => {
