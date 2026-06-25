@@ -1,20 +1,21 @@
 ---
 name: lh-pr-review
 description: >-
-  Review a LoopHub PR with quality and security reviewers (host-mapped subagents), fix findings
-  on the head branch, and re-review until approve. Use when the user runs /lh-pr-review {pr
+  Review a LoopHub PR with quality, security, and acceptance reviewers (host-mapped subagents), fix
+  findings on the head branch, and re-review until approve. Use when the user runs /lh-pr-review {pr
   id}, when asked to review a LoopHub PR, or after issue-dev creates a PR. Posts lh pr review each
   round. Does not merge. Add --review-only for a single review without the fix loop.
 ---
 
 # LoopHub PR review
 
-Review a PR with a **quality reviewer + a security reviewer** (run as readonly subagents, mapped to
-whatever the host provides); if findings exist, **fix on head in this session (parent agent)** → test →
-**re-review** until **`approve`**. Do not merge.
+Review a PR with a **quality reviewer + a security reviewer + an acceptance reviewer** (run as readonly
+subagents, mapped to whatever the host provides); if findings exist, **fix on head in this session
+(parent agent)** → test → **re-review** until **`approve`**. Do not merge.
 
-Vendor-agnostic by design: the two reviewer **roles** are fixed, but their **mechanism** is resolved per
-host (Cursor, Claude Code, …). See [Reviewer roles & host mapping](#reviewer-roles--host-mapping).
+Vendor-agnostic by design: the reviewer **roles** are fixed, but their **mechanism** is resolved per
+host (Cursor, Claude Code, …). The Acceptance role runs only when the PR has a linked issue. See
+[Reviewer roles & host mapping](#reviewer-roles--host-mapping).
 
 Distinct from Cursor's built-in `/loop` (scheduled wake). Here, "loop" means **review → fix → review**.
 
@@ -71,6 +72,7 @@ Which PR should I review? (e.g. /lh-pr-review 42)
 | Checkout head branch | Parent |
 | Quality review (bugs, correctness) | Quality reviewer subagent (host-mapped) |
 | Security review | Security reviewer subagent (host-mapped) |
+| Acceptance review (issue requirement / spec / AC) | Acceptance reviewer subagent (general-purpose + Acceptance prompt) |
 | Issue scope alignment, test check | Parent |
 | Code fixes, commits | **Parent (fix phase only)** |
 | Post `lh pr review` | Parent (**once per review round**) |
@@ -81,23 +83,29 @@ subagent mechanism; the concrete `subagent_type` is chosen at runtime per
 
 ## Reviewer roles & host mapping
 
-Reviews are defined by **role**, never by a vendor product name. Two roles run every round:
+Reviews are defined by **role**, never by a vendor product name. Quality and Security run every round;
+Acceptance runs every round **when the PR has a linked issue** (skipped otherwise — see A.3 / A.4):
 
 | Role | Looks for |
 |------|-----------|
 | **Quality** | correctness bugs, logic errors, regressions, missed edge cases, broken contracts |
 | **Security** | injection, auth/authz gaps, secret/credential exposure, unsafe input handling, supply-chain risk |
+| **Acceptance** | unmet acceptance criteria, requirement/spec gaps, behavior that contradicts the linked issue |
 
 ### Capability detection (pick the best available mechanism)
 
 At launch, map each role to the **first available** mechanism for the current host, degrading left→right.
-Never hard-fail because a vendor-specific reviewer is absent — always run **both** roles via *some*
-readonly subagent.
+Never hard-fail because a vendor-specific reviewer is absent — always run **every applicable** role
+(Quality and Security every round; Acceptance whenever a linked issue exists) via *some* readonly subagent.
 
 | Role | Cursor | Claude Code | Generic fallback (any host) |
 |------|--------|-------------|------------------------------|
 | Quality | `subagent_type: "bugbot"` | `subagent_type: "code-reviewer"` if present, else `general-purpose` | `general-purpose` subagent + Quality prompt |
 | Security | `subagent_type: "security-review"` | `general-purpose` running the `/security-review` skill — fall back to a `code-review` security pass only if `/security-review` is unavailable | `general-purpose` subagent + Security prompt |
+| Acceptance | `general-purpose` + Acceptance prompt | `general-purpose` + Acceptance prompt | `general-purpose` subagent + Acceptance prompt |
+
+Acceptance is **not** a vendor product — there is no specialized reviewer for it. On every host it runs
+as a `general-purpose` subagent fed the Acceptance prompt (A.3). It runs only when a linked issue exists.
 
 Detection rule: if the named subagent type is unavailable in this host, fall to the next column. The
 **prompt and expected output below are identical** regardless of which mechanism wins, so synthesis
@@ -190,13 +198,18 @@ for routing triggers. Localized issue/PR templates belong in user output, not in
 
 ### A.3 Launch reviewers in parallel (parent)
 
-Launch the **Quality** and **Security** reviewers as **readonly subagents in one message**; each runs
-once per round. Resolve each role's `subagent_type` via
+Launch the **Quality**, **Security**, and **Acceptance** reviewers as **readonly subagents in one
+message**; each runs once per round. Resolve each role's `subagent_type` via
 [Reviewer roles & host mapping](#reviewer-roles--host-mapping) — e.g. on Cursor `bugbot` /
-`security-review`, on Claude Code `code-reviewer` (or `general-purpose`) / `general-purpose` running
-`/security-review`. `description: "<Quality|Security> review PR #<m> round <round>"`.
+`security-review` / `general-purpose`, on Claude Code `code-reviewer` (or `general-purpose`) /
+`general-purpose` running `/security-review` / `general-purpose`.
+`description: "<Quality|Security|Acceptance> review PR #<m> round <round>"`.
 
-**The prompt is identical across hosts** — only the chosen mechanism differs:
+**Skip Acceptance when there is no linked issue** (A.1 found no `linked_issue`): launch only Quality and
+Security, and record the skip for A.4. Acceptance requires the issue's Goal + AC as input, so it cannot
+run without one.
+
+**The Quality / Security prompt is identical across hosts** — only the chosen mechanism differs:
 
 ```text
 Role: <Quality | Security> reviewer (readonly — return findings only; do not edit, fix, or post)
@@ -209,6 +222,26 @@ skills/README.md Authoring.
 Return findings as a JSON array (empty [] if none):
 [{ "path": "<file>", "line": <int>, "severity": "critical|high|medium|low",
    "title": "<short summary>", "body": "<problem + concrete fix>" }]
+```
+
+**The Acceptance prompt** is fed the linked issue's Goal and acceptance criteria (from A.1
+`lh issue view <n>`). It checks each AC item against the diff and returns unmet items and contradictions
+as findings:
+
+```text
+Role: Acceptance reviewer (readonly — return findings only; do not edit, fix, or post)
+Repository path: <worktree absolute path — cwd after A.2, not repo root>
+Base branch: <base.ref from lh pr view>
+Linked issue #<n> goal: <issue Goal text from A.1>
+Acceptance criteria (verbatim from the issue):
+<paste each AC item>
+Task: check the branch diff vs base against the issue's requirement, spec, and each AC item. For every
+AC item that the diff does NOT satisfy, or any change that contradicts the issue's requirement/spec,
+return a finding. Do not flag work that is in scope and already done; do not invent criteria beyond the
+issue.
+Return findings as a JSON array (empty [] if every AC item is met):
+[{ "path": "<file>", "line": <int>, "severity": "critical|high|medium|low",
+   "title": "<unmet AC / spec gap>", "body": "<which AC item + why the diff falls short + what is needed>" }]
 ```
 
 Structured JSON output keeps A.4 merge/dedupe deterministic across hosts. If the host cannot pass a
@@ -226,7 +259,8 @@ borderline finding (`{ "kept": bool, "reason": "<why>" }`). Guardrails so real s
 
 - **Never delete.** Refuted findings are not dropped — move them to a **`suppressed (low-confidence)`**
   list and include that list in the A.4 synthesis output so a human can still see them.
-- **Security-role findings are never suppressed** by this pass — only Quality findings are eligible.
+- **Security-role and Acceptance-role findings are never suppressed** by this pass — only Quality
+  findings are eligible.
 - **Severity is owned by the original reviewer.** The skeptic may mark `kept:false`, but may not lower a
   finding's severity. All Critical/High stay in the active set regardless of the skeptic.
 
@@ -235,10 +269,13 @@ Skip this pass entirely when findings are few or clearly real.
 ### A.4 Synthesize (parent)
 
 1. **Scope**: Does PR match issue goal?
-2. **Merge findings**: Quality + Security by severity
-3. **Dedupe**: Same file:line → one line comment tagged with its role source: `[Quality]` / `[Security]`
+2. **Merge findings**: Quality + Security + Acceptance by severity. If no linked issue existed (A.3
+   skipped Acceptance), note "Acceptance: skipped (no linked issue)" and synthesize the other two.
+3. **Dedupe**: Same file:line → one line comment tagged with its role source: `[Quality]` /
+   `[Security]` / `[Acceptance]`
 4. **Verdict**:
    - Unresolved Critical / High → `request_changes`
+   - Unmet acceptance criteria or behavior contradicting the linked issue's spec → `request_changes`
    - Skills lint failed (A.2.5) → `request_changes`
    - Medium only → `comment` or `approve` (if scope and tests OK)
    - No findings + scope OK + tests sufficient → `approve`
@@ -260,6 +297,9 @@ Round: <n>/<max_rounds>
 
 ### Security
 <finding count or none>
+
+### Acceptance
+<per-AC pass/fail against the issue, or "skipped (no linked issue)">
 
 ### Tests
 <commands run and results; include skills-lint when skills/ changed>

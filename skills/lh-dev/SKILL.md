@@ -93,6 +93,7 @@ lh issue view <n> --repo <repo>
 
 - **#n** — title
 - **Goal**: done criteria (1–3 sentences)
+- **Acceptance criteria**: pull in the issue's AC (the checklist mirrored into the PR body at step 5)
 - **Out of scope**: if any
 - **Issue URL** — Web URL format above as a markdown link for the user
 
@@ -189,8 +190,8 @@ forbidden).
 
 #### Body template (required sections)
 
-Match heading language to the conversation (localized Summary / Test plan / Evidence headings; see
-`skills/_shared/human-language.md` when present). Pass the body via HEREDOC:
+Match heading language to the conversation (localized Summary / Acceptance criteria / Test plan /
+Evidence headings; see `skills/_shared/human-language.md` when present). Pass the body via HEREDOC:
 
 ```sh
 lh pr create --repo <repo> --head loophub/issue-<n> --base main \
@@ -198,6 +199,10 @@ lh pr create --repo <repo> --head loophub/issue-<n> --base main \
   --body "$(cat <<'EOF'
 ## Summary
 - <1–3 bullets: what changed and why>
+
+## Acceptance criteria
+- [x] <AC item satisfied by this PR — mirror from the issue>
+- [ ] <AC item not yet met / out of scope> — <one-line reason>
 
 ## Test plan
 - [x] <how you verified — e.g. npm test>
@@ -222,6 +227,10 @@ LOOPHUB_URL=http://localhost:8731 lh pr create --repo <repo> --head loophub/issu
 ## Summary
 - <1–3 bullets: what changed and why>
 
+## Acceptance criteria
+- [x] <AC item satisfied by this PR — mirror from the issue>
+- [ ] <AC item not yet met / out of scope> — <one-line reason>
+
 ## Test plan
 - [x] <how you verified — e.g. npm test>
 
@@ -239,9 +248,15 @@ EOF
 | Required | Content |
 |----------|---------|
 | Summary | What changed and why (1–3 bullets) |
+| Acceptance criteria | Mirror the issue's AC as a checklist; check **only** items this PR actually satisfies (unmet / out-of-scope stay unchecked with a one-line reason) |
 | Test plan | Verification performed (checked items you actually ran) |
 | Evidence | Concrete proof from step 4 — test output excerpt, screenshots, CLI snippets, or explicit N/A |
 | `Closes #<n>` | Issue number (use with `--issue`; merge-ready can also parse body) |
+
+The **Acceptance criteria** section mirrors the issue's AC verbatim as a checklist. Tick an item only
+when the PR genuinely meets it; leave anything unmet or out of scope unchecked and append a one-line
+reason. This is the human- and reviewer-facing record that the PR satisfies the issue — `lh-pr-review`
+runs an Acceptance reviewer against the same AC.
 
 `--issue` stores the link in the DB; UI/API show it both ways. `Closes #<n>` helps merge-ready find
 the issue from body. No manual issue comment needed.
@@ -249,7 +264,7 @@ the issue from body. No manual issue comment needed.
 After create, confirm the body is non-empty:
 
 ```sh
-lh pr view <m> --repo <repo>   # body must include Summary, Test plan, and Evidence
+lh pr view <m> --repo <repo>   # body must include Summary, Acceptance criteria, Test plan, and Evidence
 ```
 
 #### Evidence rules
