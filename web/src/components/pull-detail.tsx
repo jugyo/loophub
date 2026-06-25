@@ -168,7 +168,40 @@ function PullHeader({
         <p className="text-sm text-muted-foreground">No description.</p>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {!pull.merged ? (
+          <Button
+            variant="secondary"
+            disabled={setState.isPending}
+            onClick={() =>
+              setState.mutate(pull.state === "open" ? "closed" : "open")
+            }
+          >
+            {setState.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : null}
+            {pull.state === "open" ? "Close" : "Reopen"}
+          </Button>
+        ) : null}
+        {canReady ? (
+          <Button
+            variant="secondary"
+            disabled={ready.isPending}
+            onClick={() => ready.mutate()}
+          >
+            {ready.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : null}
+            Mark ready for re-review
+          </Button>
+        ) : null}
+        <span className="text-sm text-muted-foreground">
+          {pull.mergeable_state === "dirty"
+            ? "⚠ conflict"
+            : pull.mergeable_state === "clean"
+              ? "mergeable"
+              : ""}
+        </span>
         <select
           aria-label="Merge method"
           value={method}
@@ -189,39 +222,6 @@ function PullHeader({
           {merge.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
           {pull.merged ? "Merged" : "Merge"}
         </Button>
-        {canReady ? (
-          <Button
-            variant="secondary"
-            disabled={ready.isPending}
-            onClick={() => ready.mutate()}
-          >
-            {ready.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : null}
-            Mark ready for re-review
-          </Button>
-        ) : null}
-        {!pull.merged ? (
-          <Button
-            variant="secondary"
-            disabled={setState.isPending}
-            onClick={() =>
-              setState.mutate(pull.state === "open" ? "closed" : "open")
-            }
-          >
-            {setState.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : null}
-            {pull.state === "open" ? "Close" : "Reopen"}
-          </Button>
-        ) : null}
-        <span className="text-sm text-muted-foreground">
-          {pull.mergeable_state === "dirty"
-            ? "⚠ conflict"
-            : pull.mergeable_state === "clean"
-              ? "mergeable"
-              : ""}
-        </span>
       </div>
 
       {merge.isError ? (

@@ -57,9 +57,9 @@ const comments: IssueComment[] = [
   },
 ];
 
-function mockFetch() {
+function mockFetch(getIssue: () => Issue = () => issue) {
   return mockRpcFetch({
-    "issues/get": () => issue,
+    "issues/get": getIssue,
     "comments/list": () => comments,
     "comments/create": (p) => ({
       id: 2,
@@ -67,11 +67,12 @@ function mockFetch() {
       body: p.body,
       created_at: "2026-06-17T12:30:00Z",
     }),
+    "issues/addLabels": (p) => p.labels.map((name: string) => ({ name })),
   });
 }
 
-function renderDetail() {
-  vi.stubGlobal("fetch", mockFetch());
+function renderDetail(getIssue?: () => Issue) {
+  vi.stubGlobal("fetch", mockFetch(getIssue));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -129,5 +130,27 @@ describe("IssueDetail", () => {
     });
 
     await waitFor(() => expect(textarea.value).toBe(""));
+  });
+
+  it("hides the Build button when ready-to-build is already present", async () => {
+    renderDetail();
+
+    // Close renders, so the header is mounted — Build must be absent.
+    await screen.findByRole("button", { name: /close/i });
+    expect(screen.queryByRole("button", { name: /build/i })).toBeNull();
+  });
+
+  it("adds ready-to-build when the Build button is clicked", async () => {
+    const unlabeled: Issue = { ...issue, labels: [] };
+    renderDetail(() => unlabeled);
+
+    const button = await screen.findByRole("button", { name: /build/i });
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      const call = rpcCall("issues/addLabels");
+      expect(call).toBeTruthy();
+      expect(call!.params.labels).toEqual(["ready-to-build"]);
+    });
   });
 });

@@ -4,7 +4,7 @@
 // comments are stored as plain Markdown and rendered as GFM via <Markdown>.
 
 import { Link } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { Loader2, Play } from "lucide-react";
 import { useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
 import { Markdown } from "@/components/markdown";
@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { assigneeBadge, stateBadge } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import {
+  READY_TO_BUILD_LABEL,
+  useAddReadyToBuild,
   useIssue,
   useIssueComments,
   usePostComment,
@@ -76,6 +78,10 @@ function IssueHeader({
   issue: Issue;
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
+  const addReady = useAddReadyToBuild(owner, repo, issue.number);
+  const readyToBuild = issue.labels.some(
+    (l) => l.name === READY_TO_BUILD_LABEL,
+  );
   const state = stateBadge(issue, "issues");
   const agent = assigneeBadge(issue.assignee);
   const linked = issue.linked_pull_request;
@@ -133,7 +139,7 @@ function IssueHeader({
         <p className="text-sm text-muted-foreground">No description.</p>
       )}
 
-      <div>
+      <div className="flex flex-wrap justify-end gap-2">
         <Button
           variant="secondary"
           disabled={setState.isPending}
@@ -146,6 +152,20 @@ function IssueHeader({
           ) : null}
           {issue.state === "open" ? "Close" : "Reopen"}
         </Button>
+        {readyToBuild ? null : (
+          <Button
+            disabled={addReady.isPending}
+            title="Mark this issue ready for an AFK agent to start"
+            onClick={() => addReady.mutate()}
+          >
+            {addReady.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Play className="size-4" />
+            )}
+            Build
+          </Button>
+        )}
       </div>
     </div>
   );

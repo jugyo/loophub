@@ -188,6 +188,21 @@ export function patchIssue(
   );
 }
 
+export function addIssueLabels(
+  owner: string,
+  repo: string,
+  number: number,
+  labels: string[],
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ name: string; color?: string }[]>("issues/addLabels", {
+    repo: full(owner, repo),
+    number,
+    labels,
+    session_id: sessionId,
+  });
+}
+
 // --- pulls ---
 export function listPulls(owner: string, repo: string, query = "") {
   const sp = new URLSearchParams(query);
