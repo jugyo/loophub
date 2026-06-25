@@ -7,6 +7,7 @@ import { Link } from "@tanstack/react-router";
 import { Loader2, Play } from "lucide-react";
 import { useRef, useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
+import { useRegisterDetailTitle } from "@/components/detail-title";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -86,6 +87,7 @@ function IssueHeader({
   const state = stateBadge(issue, "issues");
   const agent = assigneeBadge(issue.assignee);
   const linked = issue.linked_pull_request;
+  const titleRef = useRegisterDetailTitle(issue.title);
 
   return (
     <div className="flex flex-col gap-3">
@@ -99,7 +101,9 @@ function IssueHeader({
         <span className="text-sm text-muted-foreground">#{issue.number}</span>
       </div>
 
-      <h1 className="text-2xl font-semibold">{issue.title}</h1>
+      <h1 ref={titleRef} className="text-2xl font-semibold">
+        {issue.title}
+      </h1>
 
       <div className="text-sm text-muted-foreground">
         @{issue.user.login} · opened {relativeTime(issue.created_at)}

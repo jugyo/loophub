@@ -15,6 +15,7 @@ import type {
   PullRequest,
   PullReview,
 } from "@/api/types";
+import { useRegisterDetailTitle } from "@/components/detail-title";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -123,6 +124,7 @@ function PullHeader({
   const ready = useReadyForReview(owner, repo, pull.number);
   const setState = useSetPullState(owner, repo, pull.number);
   const [method, setMethod] = useState<MergeMethod>("squash");
+  const titleRef = useRegisterDetailTitle(pull.title);
 
   const state = stateBadge(pull, "pulls");
   const review = reviewBadge(pull);
@@ -135,7 +137,7 @@ function PullHeader({
 
   return (
     <div className="flex flex-col gap-3">
-      <h1 className="text-2xl font-semibold">
+      <h1 ref={titleRef} className="text-2xl font-semibold">
         {pull.title}{" "}
         <span className="font-normal text-muted-foreground">
           #{pull.number}
