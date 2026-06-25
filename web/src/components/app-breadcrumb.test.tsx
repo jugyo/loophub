@@ -69,9 +69,12 @@ describe("AppBreadcrumb", () => {
     const item = title.closest("li");
     expect(item?.getAttribute("data-state")).toBe("visible");
     expect(item?.getAttribute("aria-hidden")).toBe("false");
-    // Long titles are width-capped and ellipsised within the breadcrumb.
+    // The title crumb grows to fill the remaining row width (flex-1) and
+    // ellipsises only once it hits the container edge; min-w-0 lets it shrink
+    // first so it never pushes out the leading crumbs.
     expect(title.className).toContain("truncate");
-    expect(item?.className).toContain("max-w-");
+    expect(item?.className).toContain("flex-1");
+    expect(item?.className).toContain("min-w-0");
   });
 
   it("renders no title crumb when there is no detail title", async () => {
