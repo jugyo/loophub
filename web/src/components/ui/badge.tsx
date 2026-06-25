@@ -19,7 +19,9 @@ const badgeVariants = cva(
         "review-rereview":
           "border-amber-500/60 text-amber-600 dark:text-amber-400",
         "review-commented": "border-border text-muted-foreground",
+        mergeable: "border-green-600/60 text-green-600 dark:text-green-400",
         conflict: "border-destructive/50 text-destructive",
+        unknown: "border-border text-muted-foreground",
         agent:
           "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-300",
       },

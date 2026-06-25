@@ -13,7 +13,9 @@ export type BadgeTone =
   | "review-changes"
   | "review-rereview"
   | "review-commented"
+  | "mergeable"
   | "conflict"
+  | "unknown"
   | "agent";
 
 export interface Badge {
@@ -75,12 +77,26 @@ export function reviewBadge(pr: PullRequest): Badge | null {
   };
 }
 
-/** Conflict badge for an open, unmerged PR with a dirty mergeable state. */
+/**
+ * Mergeable-state badge for an open, unmerged PR: a green "mergeable" when the
+ * head merges cleanly into base, a red "conflict" on a dirty tree, and a muted
+ * "checking…" while the state is still unknown (not yet computed). Returns null
+ * for merged or non-open PRs, where merge state no longer applies.
+ */
 export function mergeableBadge(pr: PullRequest): Badge | null {
   if (pr.merged || pr.state !== "open") return null;
-  if (pr.mergeable_state === "dirty")
-    return { tone: "conflict", label: "conflict" };
-  return null;
+  switch (pr.mergeable_state) {
+    case "clean":
+      return { tone: "mergeable", label: "mergeable" };
+    case "dirty":
+      return { tone: "conflict", label: "conflict" };
+    default:
+      return {
+        tone: "unknown",
+        label: "checking…",
+        title: "Mergeable state not yet determined",
+      };
+  }
 }
 
 /** All badges for an issue row (v1 parity ordering: agent, state). */

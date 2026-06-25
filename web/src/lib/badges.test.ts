@@ -112,10 +112,23 @@ describe("mergeableBadge", () => {
     );
   });
 
-  it("does not flag merged or clean PRs", () => {
-    expect(mergeableBadge(pull({ mergeable_state: "clean" }))).toBeNull();
+  it("marks a clean open PR as mergeable", () => {
+    const badge = mergeableBadge(pull({ mergeable_state: "clean" }));
+    expect(badge).toEqual({ tone: "mergeable", label: "mergeable" });
+  });
+
+  it("shows a muted badge while the state is unknown", () => {
+    const badge = mergeableBadge(pull({ mergeable_state: "unknown" }));
+    expect(badge?.tone).toBe("unknown");
+    expect(badge?.label).toBe("checking…");
+  });
+
+  it("does not flag merged or non-open PRs", () => {
     expect(
       mergeableBadge(pull({ merged: true, mergeable_state: "dirty" })),
+    ).toBeNull();
+    expect(
+      mergeableBadge(pull({ state: "closed", mergeable_state: "clean" })),
     ).toBeNull();
   });
 });
@@ -139,5 +152,10 @@ describe("issueBadges / pullBadges", () => {
       "review-approved",
       "conflict",
     ]);
+  });
+
+  it("shows the mergeable badge on a clean open PR", () => {
+    const badges = pullBadges(pull({ mergeable_state: "clean" }));
+    expect(badges.map((b) => b.tone)).toEqual(["mergeable"]);
   });
 });
