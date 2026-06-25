@@ -36,12 +36,17 @@ export function AppBreadcrumb() {
           </BreadcrumbItem>
         ))}
         {title != null && (
+          // Width stays reserved (max-w, no collapse) so the row never reflows;
+          // the crumb reveals by sliding up from below + fading in, and slides
+          // back down + fades out when the body heading returns into view.
           <BreadcrumbItem
             data-state={showTitle ? "visible" : "hidden"}
             aria-hidden={!showTitle}
             className={cn(
-              "min-w-0 overflow-hidden transition-all duration-300 ease-out",
-              showTitle ? "max-w-[16rem] opacity-100" : "max-w-0 opacity-0",
+              "min-w-0 max-w-[16rem] transition-[transform,opacity] duration-300 ease-out",
+              showTitle
+                ? "translate-y-0 opacity-100"
+                : "pointer-events-none translate-y-1.5 opacity-0",
             )}
           >
             <BreadcrumbSeparator />
