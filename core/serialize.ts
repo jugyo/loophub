@@ -2,8 +2,9 @@
 // (CLI now, JSON-RPC clients later) read. Kept separate from service.ts so the
 // shaping is reusable and side-effect free.
 
-import { mergePreview, revParse } from "./git.ts";
+import { commitsAhead, mergePreview, revParse } from "./git.ts";
 import { linkedRef } from "./links.ts";
+import { resolveMergeable } from "./mergeable.ts";
 import * as S from "./store.ts";
 
 export function repoJSON(r: S.Repo) {
@@ -115,12 +116,19 @@ export async function pullJSON(repo: S.Repo, row: any) {
   const p = S.getPull(row.id);
   const headSha = await revParse(repo.local_path, p.head_ref);
   const baseSha = await revParse(repo.local_path, p.base_ref);
+  const review_state = S.computeReviewState(row.id);
   let mergeable: boolean | null = null;
   let mergeable_state = "unknown";
   if (!p.merged && headSha && baseSha) {
-    const prev = await mergePreview(repo.local_path, p.base_ref, p.head_ref);
-    mergeable = !prev.conflict;
-    mergeable_state = prev.conflict ? "dirty" : "clean";
+    const [prev, ahead] = await Promise.all([
+      mergePreview(repo.local_path, p.base_ref, p.head_ref),
+      commitsAhead(repo.local_path, p.base_ref, p.head_ref),
+    ]);
+    ({ mergeable, mergeable_state } = resolveMergeable({
+      hasCommits: ahead > 0,
+      conflict: prev.conflict,
+      approved: review_state === "APPROVED",
+    }));
   }
   return {
     number: row.number,
@@ -134,7 +142,7 @@ export async function pullJSON(repo: S.Repo, row: any) {
     mergeable,
     mergeable_state,
     merge_commit_sha: p.merge_commit_sha,
-    review_state: S.computeReviewState(row.id),
+    review_state,
     changes_addressed_at: p.changes_addressed_at ?? null,
     changes_addressed_by: p.changes_addressed_by ?? null,
     labels: S.issueLabels(row.id).map(labelJSON),

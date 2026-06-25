@@ -78,10 +78,12 @@ export function reviewBadge(pr: PullRequest): Badge | null {
 }
 
 /**
- * Mergeable-state badge for an open, unmerged PR: a green "mergeable" when the
- * head merges cleanly into base, a red "conflict" on a dirty tree, and a muted
- * "checking…" while the state is still unknown (not yet computed). Returns null
- * for merged or non-open PRs, where merge state no longer applies.
+ * Mergeable-state badge for an open, unmerged PR: a green "mergeable" only when
+ * the head has commits, merges cleanly, and is approved; a red "conflict" on a
+ * dirty tree; muted badges for a diff-free PR ("no commits") or an unapproved one
+ * ("needs approval"); and a muted "checking…" while the state is still unknown
+ * (not yet computed). Returns null for merged or non-open PRs, where merge state
+ * no longer applies.
  */
 export function mergeableBadge(pr: PullRequest): Badge | null {
   if (pr.merged || pr.state !== "open") return null;
@@ -90,6 +92,18 @@ export function mergeableBadge(pr: PullRequest): Badge | null {
       return { tone: "mergeable", label: "mergeable" };
     case "dirty":
       return { tone: "conflict", label: "conflict" };
+    case "no_commits":
+      return {
+        tone: "unknown",
+        label: "no commits",
+        title: "Base and head have no differences to merge",
+      };
+    case "blocked":
+      return {
+        tone: "unknown",
+        label: "needs approval",
+        title: "Mergeable once the review is approved",
+      };
     default:
       return {
         tone: "unknown",

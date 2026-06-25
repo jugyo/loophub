@@ -123,6 +123,18 @@ describe("mergeableBadge", () => {
     expect(badge?.label).toBe("checking…");
   });
 
+  it("shows a muted 'no commits' badge for a diff-free PR", () => {
+    const badge = mergeableBadge(pull({ mergeable_state: "no_commits" }));
+    expect(badge?.tone).toBe("unknown");
+    expect(badge?.label).toBe("no commits");
+  });
+
+  it("shows a muted 'needs approval' badge for an unapproved PR", () => {
+    const badge = mergeableBadge(pull({ mergeable_state: "blocked" }));
+    expect(badge?.tone).toBe("unknown");
+    expect(badge?.label).toBe("needs approval");
+  });
+
   it("does not flag merged or non-open PRs", () => {
     expect(
       mergeableBadge(pull({ merged: true, mergeable_state: "dirty" })),

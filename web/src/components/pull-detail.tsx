@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import {
   assigneeBadge,
   type BadgeTone,
+  mergeableBadge,
   reviewBadge,
   stateBadge,
 } from "@/lib/badges";
@@ -128,6 +129,7 @@ function PullHeader({
 
   const state = stateBadge(pull, "pulls");
   const review = reviewBadge(pull);
+  const mergeable = mergeableBadge(pull);
   const agent = assigneeBadge(pull.assignee ?? null);
   const linked = pull.linked_issue;
 
@@ -147,6 +149,11 @@ function PullHeader({
       <div className="flex flex-wrap items-center gap-2">
         {state ? <Badge tone={state.tone}>{state.label}</Badge> : null}
         {review ? <Badge tone={review.tone}>{review.label}</Badge> : null}
+        {mergeable ? (
+          <Badge tone={mergeable.tone} title={mergeable.title}>
+            {mergeable.label}
+          </Badge>
+        ) : null}
         {agent ? (
           <Badge tone={agent.tone} title={agent.title}>
             {agent.label}
@@ -215,13 +222,6 @@ function PullHeader({
             Mark ready for re-review
           </Button>
         ) : null}
-        <span className="text-sm text-muted-foreground">
-          {pull.mergeable_state === "dirty"
-            ? "⚠ conflict"
-            : pull.mergeable_state === "clean"
-              ? "mergeable"
-              : ""}
-        </span>
         <select
           aria-label="Merge method"
           value={method}

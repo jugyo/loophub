@@ -164,6 +164,17 @@ function stripDiffHeader(full: string): string {
   return full.slice(idx + 1);
 }
 
+// Number of commits on head not reachable from base (base..head). 0 means head
+// adds nothing over base — a diff-free PR with no commits to merge.
+export async function commitsAhead(
+  repoPath: string,
+  base: string,
+  head: string,
+): Promise<number> {
+  const r = await git(repoPath, ["rev-list", "--count", `${base}..${head}`]);
+  return Number(r.stdout.trim()) || 0;
+}
+
 export interface MergePreview {
   conflict: boolean;
   tree: string | null;
