@@ -65,7 +65,7 @@ describe("dev.openPr", () => {
   });
 });
 
-describe("dev.log", () => {
+describe("dev.note", () => {
   test("emits dev.note resolving the PR from the issue", async () => {
     const issue = svc.issues.create("me/proj", { title: "feature B" });
     const pr = await svc.dev.openPr(
@@ -78,7 +78,7 @@ describe("dev.log", () => {
       "sess-1",
     );
 
-    const note = svc.dev.log(
+    const note = svc.dev.note(
       "me/proj",
       {
         kind: "decision",
@@ -119,7 +119,7 @@ describe("dev.log", () => {
       "sess-1",
     );
 
-    const note = svc.dev.log(
+    const note = svc.dev.note(
       "me/proj",
       { kind: "blocker", summary: "needs review", pr: pr.number },
       "sess-1",
@@ -142,7 +142,7 @@ describe("dev.log", () => {
     );
     const otherIssue = svc.issues.create("me/proj", { title: "unrelated" });
     expect(() =>
-      svc.dev.log(
+      svc.dev.note(
         "me/proj",
         {
           kind: "action",
@@ -158,7 +158,7 @@ describe("dev.log", () => {
   test("rejects an invalid kind", () => {
     const issue = svc.issues.create("me/proj", { title: "feature D" });
     expect(() =>
-      svc.dev.log(
+      svc.dev.note(
         "me/proj",
         { kind: "nope", summary: "x", issue: issue.number },
         "sess-1",
@@ -168,7 +168,7 @@ describe("dev.log", () => {
 
   test("requires a summary", () => {
     expect(() =>
-      svc.dev.log(
+      svc.dev.note(
         "me/proj",
         { kind: "action", summary: "  ", issue: 1 },
         "sess-1",
@@ -178,7 +178,7 @@ describe("dev.log", () => {
 
   test("requires one of issue or pr", () => {
     expect(() =>
-      svc.dev.log("me/proj", { kind: "action", summary: "x" }, "sess-1"),
+      svc.dev.note("me/proj", { kind: "action", summary: "x" }, "sess-1"),
     ).toThrowError(/one of issue or pr/);
   });
 });

@@ -175,12 +175,12 @@ deliberately skipped, a non-obvious tradeoff — record it so a later `/lh-retro
 *why* (design §4.3.4, `docs/loop-retrospective-design.ja.md`):
 
 ```sh
-lh dev log --kind decision --summary "<what you decided>" --body "<why>" --pr <m> --repo <repo>
+lh dev note --kind decision --summary "<what you decided>" --body "<why>" --pr <m> --repo <repo>
 ```
 
 `--kind` is one of `decision|action|assumption|blocker`. This emits a small `dev.note` event (stored
-in the `events` table — no transcript). **Non-blocking: a failed log must never stop implementation.**
-Don't log routinely; reserve it for judgements that won't surface in the diff/PR body. Inside a
+in the `events` table — no transcript). **Non-blocking: a failed note must never stop implementation.**
+Don't add notes routinely; reserve them for judgements that won't surface in the diff/PR body. Inside a
 worktree `--repo owner/name` is required.
 
 **Redaction**: `--summary` / `--body` must hold a *redacted rationale only* — state the decision and

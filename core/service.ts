@@ -768,7 +768,7 @@ export const dev = {
   // Record a development note (decision / action / assumption / blocker) as a `dev.note`
   // event in the shared events table. The note targets an issue and/or a PR; the missing
   // side is resolved when possible (a PR's linked issue, or an issue's open linked PR).
-  log(
+  note(
     name: string,
     input: {
       kind: string;

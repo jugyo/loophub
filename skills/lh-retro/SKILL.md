@@ -41,7 +41,7 @@ redaction risk this MVP structurally avoids.
 | Review rounds / change requests | `pull_request.review_submitted` events (state `REQUEST_CHANGES` / `APPROVE`) + `lh pr view <m>` |
 | Issue body / AC / scope | `lh issue view <n> --repo <repo>` (the PR's linked issue) |
 | Comments / human intervention | `issue.commented` events, `lh pr view` |
-| Recorded decisions (the "why") | `dev.note` events (kind `decision`/`assumption`/...) in `lh events`, logged by the impl session via `lh dev log` |
+| Recorded decisions (the "why") | `dev.note` events (kind `decision`/`assumption`/...) in `lh events`, recorded by the impl session via `lh dev note` |
 
 Resolve the PR's linked issue from `lh pr view <m>` (`linked issue #n`). A PR with no linked issue
 still gets a retro from event/PR data alone (`session_id` / `issue` stay null — design §4.3.1).
@@ -64,8 +64,8 @@ Plus **free-form findings** — `{ category, severity, note, evidence_ref, propo
 
 ### Decisions — the "why" (design §4.3.4)
 
-`lh events` includes any `dev.note` events the implementation session recorded via `lh dev log`
-(kind `decision` / `assumption` / ...). Use them as the **rationale behind a finding** — a logged
+`lh events` includes any `dev.note` events the implementation session recorded via `lh dev note`
+(kind `decision` / `assumption` / ...). Use them as the **rationale behind a finding** — a recorded
 "skipped X because Y" or "scoped out Z" is direct evidence for R5 / R7 / R8. Cite the source event in
 `evidence_ref` as `event#<id>`. These are small structured records (no transcript), so they stay
 within the LoopHub-data-only / no-raw-output policy. They are often **absent** — not every session

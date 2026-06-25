@@ -293,14 +293,14 @@ function DevNoteTimeline({
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Dev log</h2>
+      <h2 className="text-lg font-semibold">Dev notes</h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading dev log…
+          <Loader2 className="size-4 animate-spin" /> Loading dev notes…
         </div>
       ) : isError ? (
         <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
-          Failed to load dev log.
+          Failed to load dev notes.
         </div>
       ) : (
         <ol className="flex flex-col gap-2">
