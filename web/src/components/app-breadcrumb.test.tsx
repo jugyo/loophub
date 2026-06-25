@@ -55,9 +55,8 @@ describe("AppBreadcrumb", () => {
       bodyVisible: true,
     });
     const title = await screen.findByText("Add breadcrumb title");
-    const item = title.closest("li");
-    expect(item?.getAttribute("data-state")).toBe("hidden");
-    expect(item?.getAttribute("aria-hidden")).toBe("true");
+    expect(title.getAttribute("data-state")).toBe("hidden");
+    expect(title.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("reveals the detail title once the body heading scrolls out of view", async () => {
@@ -66,15 +65,27 @@ describe("AppBreadcrumb", () => {
       bodyVisible: false,
     });
     const title = await screen.findByText("Add breadcrumb title");
-    const item = title.closest("li");
-    expect(item?.getAttribute("data-state")).toBe("visible");
-    expect(item?.getAttribute("aria-hidden")).toBe("false");
-    // The title crumb grows to fill the remaining row width (flex-1) and
-    // ellipsises only once it hits the container edge; min-w-0 lets it shrink
-    // first so it never pushes out the leading crumbs.
+    expect(title.getAttribute("data-state")).toBe("visible");
+    expect(title.getAttribute("aria-hidden")).toBe("false");
+    // The title grows to fill the remaining row width (flex-1) and ellipsises
+    // only once it hits the container edge; min-w-0 lets it shrink first so a
+    // long title never pushes out `#id` or the leading crumbs.
     expect(title.className).toContain("truncate");
-    expect(item?.className).toContain("flex-1");
-    expect(item?.className).toContain("min-w-0");
+    expect(title.className).toContain("flex-1");
+    expect(title.className).toContain("min-w-0");
+  });
+
+  it("shares the `#id` crumb with the title and renders no separator between them", async () => {
+    renderBreadcrumb("/r/me/proj/issues/12", {
+      title: "Add breadcrumb title",
+      bodyVisible: false,
+    });
+    const title = await screen.findByText("Add breadcrumb title");
+    // `#id` and the title live in the same crumb (li); there is no chevron
+    // separator between them, so they read as one target rather than `#id > title`.
+    const item = title.closest("li");
+    expect(item?.textContent).toContain("#12");
+    expect(item?.querySelector("[role='presentation']")).toBeNull();
   });
 
   it("renders no title crumb when there is no detail title", async () => {

@@ -23,40 +23,52 @@ export function AppBreadcrumb() {
   return (
     <Breadcrumb>
       <BreadcrumbList className="flex-nowrap">
-        {crumbs.map((crumb, i) => (
-          <BreadcrumbItem key={`${crumb.label}-${i}`}>
-            {crumb.href ? (
-              <Link to={crumb.href} className="hover:text-foreground">
-                {crumb.label}
-              </Link>
-            ) : (
-              <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
-            )}
-            {i < crumbs.length - 1 && <BreadcrumbSeparator />}
-          </BreadcrumbItem>
-        ))}
-        {title != null && (
-          // The crumb grows into the remaining row width (flex-1) and the inner
-          // span truncates only once it hits the container edge; min-w-0 lets it
-          // shrink first under narrow widths so it never pushes out the leading
-          // crumbs. The crumb reveals by sliding up from below + fading in, and
-          // slides back down + fades out when the body heading returns into view.
-          <BreadcrumbItem
-            data-state={showTitle ? "visible" : "hidden"}
-            aria-hidden={!showTitle}
-            className={cn(
-              "min-w-0 flex-1 transition-[transform,opacity] duration-300 ease-out",
-              showTitle
-                ? "translate-y-0 opacity-100"
-                : "pointer-events-none translate-y-1.5 opacity-0",
-            )}
-          >
-            <BreadcrumbSeparator />
-            <BreadcrumbPage className="min-w-0 truncate" title={title}>
-              {title}
-            </BreadcrumbPage>
-          </BreadcrumbItem>
-        )}
+        {crumbs.map((crumb, i) => {
+          const isLast = i === crumbs.length - 1;
+          // On a detail page the trailing crumb is `#<number>`. The detail
+          // title shares that crumb (no separator between them) so `#id` and
+          // title read as one target rather than `#id > title`.
+          const withTitle = title != null && isLast;
+          return (
+            <BreadcrumbItem
+              key={`${crumb.label}-${i}`}
+              // The trailing crumb grows into the remaining row width (flex-1)
+              // so its title can ellipsise at the container edge; min-w-0 lets
+              // it shrink first under narrow widths so it never pushes out the
+              // leading crumbs.
+              className={cn(withTitle && "min-w-0 flex-1")}
+            >
+              {crumb.href ? (
+                <Link to={crumb.href} className="hover:text-foreground">
+                  {crumb.label}
+                </Link>
+              ) : (
+                <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+              )}
+              {withTitle && (
+                // The title reveals next to `#id` by sliding up from below +
+                // fading in once the body heading scrolls out of view, and
+                // slides back down + fades out when it returns. It truncates
+                // only at the container edge (flex-1 + min-w-0) so a long title
+                // never pushes `#id` out.
+                <BreadcrumbPage
+                  data-state={showTitle ? "visible" : "hidden"}
+                  aria-hidden={!showTitle}
+                  title={title}
+                  className={cn(
+                    "min-w-0 flex-1 truncate transition-[transform,opacity] duration-300 ease-out",
+                    showTitle
+                      ? "translate-y-0 opacity-100"
+                      : "pointer-events-none translate-y-1.5 opacity-0",
+                  )}
+                >
+                  {title}
+                </BreadcrumbPage>
+              )}
+              {!isLast && <BreadcrumbSeparator />}
+            </BreadcrumbItem>
+          );
+        })}
       </BreadcrumbList>
     </Breadcrumb>
   );
