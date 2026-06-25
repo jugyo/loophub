@@ -186,13 +186,13 @@ After creation:
    (`acceptEdits`); without it the session uses Claude's normal approval mode:
 
    ```sh
-   lh dev <issue-id> --sandbox
+   lh dev --sandbox <issue-id>
    ```
 
 ## Follow-on work (user-driven)
 
 ```text
-lh-issue-create → [stop] → user runs `lh dev <issue-id> --sandbox` in a shell → lh-pr-review → ...
+lh-issue-create → [stop] → user runs `lh dev --sandbox <issue-id>` in a shell → lh-pr-review → ...
 ```
 
 Do **not** auto-chain to implementation. After creating the issue, the user starts
