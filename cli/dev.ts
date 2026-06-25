@@ -1,4 +1,12 @@
-import { cpSync, existsSync, mkdirSync, realpathSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { branchExists, worktreeAdd, worktreeList } from "../core/git.ts";
@@ -227,6 +235,7 @@ export interface KaniForwardFlags {
   sandbox?: boolean;
   allow?: string;
   verbose?: boolean;
+  force?: boolean;
 }
 
 export interface KaniLaunch {
@@ -254,6 +263,7 @@ export function buildKaniLaunch({
   if (flags.sandbox) parts.push("--sandbox");
   if (flags.allow) parts.push("--allow", shQuote(flags.allow));
   if (flags.verbose) parts.push("--verbose");
+  if (flags.force) parts.push("--force");
   const command = parts.join(" ");
 
   // Strip control chars from the title (it reaches the terminal name and shell argv) so a
@@ -407,6 +417,118 @@ export function worktreePath(
     }
   }
   return join(worktreeRoot, fullName, `issue-${issue}`);
+}
+
+// ---- dev lock (single-host duplicate-launch guard) ----
+//
+// A `lh dev` worktree is deterministic per issue, so a second `lh dev <n>` on the same issue
+// reuses the *same* worktree — two live sessions editing one tree clobber each other. We guard
+// this with a lock file keyed by (repo, issue) under LOOPHUB_HOME recording the running `lh dev`
+// process: `lh dev` launches `claude` via a blocking `spawnSync`, so the `lh` process is alive
+// for exactly the session's lifetime, making its PID a precise liveness signal. A new launch that
+// finds a lock whose PID is still alive refuses (unless --force); one whose PID is gone (crash /
+// Ctrl-C) treats it as stale and reclaims it — so a finished/interrupted session never blocks a
+// relaunch. The lock is host-local by design (cross-host exclusion is out of scope) and lives
+// outside the worktree, so it never leaks into a PR. Pure decision logic is split from the
+// fs/PID side effects so it can be unit-tested.
+export interface DevLock {
+  pid: number;
+  issue: number;
+  worktree: string;
+  sessionId: string;
+  startedAt: string; // ISO8601
+}
+
+// Deterministic lock path: <home>/dev-locks/<owner>/<repo>/issue-<n>.json. Guards every
+// fullName segment like worktreePath so a crafted repo name can't traverse out of <home>.
+export function devLockPath(
+  home: string,
+  fullName: string,
+  issue: number,
+): string {
+  for (const seg of fullName.split("/")) {
+    if (!seg || seg === "." || seg === ".." || seg.includes("\\")) {
+      throw new Error(`invalid repo name for dev-lock path: "${fullName}"`);
+    }
+  }
+  return join(home, "dev-locks", fullName, `issue-${issue}.json`);
+}
+
+// Is a process alive? `kill(pid, 0)` sends no signal but throws ESRCH when the pid is gone;
+// EPERM means it exists but is owned by another user (still alive). Injected into acquireDevLock
+// so the branch logic stays testable.
+export function pidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e: any) {
+    return e?.code === "EPERM";
+  }
+}
+
+export type AcquireDevLock =
+  | { ok: true } // claimed: created fresh, reclaimed a stale/malformed lock, or forced
+  | { ok: false; held: DevLock }; // a live holder owns it — caller blocks unless --force
+
+// Atomically claim the lock for this launch. An exclusive create (`wx`) collapses the check and
+// the write into one filesystem operation, so two near-simultaneous launches cannot both observe
+// "free" and both win. If the file already exists, re-read it: a live holder (and not --force)
+// blocks; a stale (dead pid), malformed, or forced holder is reclaimed by overwriting. The tiny
+// window between the EEXIST re-read and the reclaim is acceptable for a host-local, single-user
+// advisory guard (cross-host exclusion is out of scope). The liveness predicate is injected so
+// the branch logic stays testable.
+export function acquireDevLock(
+  path: string,
+  lock: DevLock,
+  isAlive: (pid: number) => boolean,
+  opts: { force?: boolean } = {},
+): AcquireDevLock {
+  mkdirSync(dirname(path), { recursive: true });
+  const data = `${JSON.stringify(lock, null, 2)}\n`;
+  try {
+    writeFileSync(path, data, { flag: "wx" }); // exclusive create: EEXIST if already present
+    return { ok: true };
+  } catch (e: any) {
+    if (e?.code !== "EEXIST") throw e;
+  }
+  const existing = readDevLock(path);
+  if (!opts.force && existing && isAlive(existing.pid)) {
+    return { ok: false, held: existing };
+  }
+  writeFileSync(path, data); // reclaim a stale / malformed lock (or forced override)
+  return { ok: true };
+}
+
+// Read + parse the lock file. Missing / unreadable / malformed all collapse to null (no lock),
+// so a corrupt or partial lock never wedges `lh dev` — it's treated as free and reclaimed. The
+// full shape is validated (not just `pid`), so a truncated `{"pid":N}` doesn't slip through and
+// surface as `undefined` fields in the block message.
+export function readDevLock(path: string): DevLock | null {
+  try {
+    const v = JSON.parse(readFileSync(path, "utf8"));
+    if (
+      v &&
+      Number.isInteger(v.pid) &&
+      typeof v.issue === "number" &&
+      typeof v.worktree === "string" &&
+      typeof v.sessionId === "string" &&
+      typeof v.startedAt === "string"
+    ) {
+      return v as DevLock;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function removeDevLock(path: string): void {
+  try {
+    rmSync(path);
+  } catch {
+    // Already gone (never written, or reclaimed by another launch) — nothing to do.
+  }
 }
 
 export interface ProvisionInput {

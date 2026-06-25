@@ -21,14 +21,19 @@ import {
   worktreeList,
 } from "../core/git.ts";
 import {
+  acquireDevLock,
   buildClaudeArgs,
   buildKaniLaunch,
   buildManagedSettings,
+  devLockPath,
   displayMultiline,
   formatLaunchPlan,
   formatSpawnCommand,
   parseDevTarget,
+  pidAlive,
   provisionWorktree,
+  readDevLock,
+  removeDevLock,
   validateDomain,
   worktreeBranch,
   worktreePath,
@@ -292,7 +297,7 @@ test("buildKaniLaunch builds the kani launch_terminal argv with cwd and name", (
   ]);
 });
 
-test("buildKaniLaunch forwards --repo/--sandbox/--allow/--verbose into the inner command", () => {
+test("buildKaniLaunch forwards --repo/--sandbox/--allow/--verbose/--force into the inner command", () => {
   const launch = buildKaniLaunch({
     issue: 7,
     title: "t",
@@ -302,10 +307,11 @@ test("buildKaniLaunch forwards --repo/--sandbox/--allow/--verbose into the inner
       sandbox: true,
       allow: "example.com,api.example.com",
       verbose: true,
+      force: true,
     },
   });
   expect(launch.command).toBe(
-    "lh dev 7 --repo 'me/proj' --sandbox --allow 'example.com,api.example.com' --verbose",
+    "lh dev 7 --repo 'me/proj' --sandbox --allow 'example.com,api.example.com' --verbose --force",
   );
 });
 
@@ -817,4 +823,117 @@ test("positional repo conflicting with --repo is a hard error (before DB access)
   ]);
   expect(exitCode).not.toBe(0);
   expect(stderr).toContain("conflicting repo");
+});
+
+// ---- dev lock (pure / fs) ----
+
+test("devLockPath is deterministic per (home, repo, issue)", () => {
+  expect(devLockPath("/home", "me/proj", 42)).toBe(
+    join("/home", "dev-locks", "me", "proj", "issue-42.json"),
+  );
+});
+
+test("devLockPath rejects repo names that would traverse out of home", () => {
+  expect(() => devLockPath("/home", "../../etc", 1)).toThrow(
+    /invalid repo name/,
+  );
+  expect(() => devLockPath("/home", "..", 1)).toThrow(/invalid repo name/);
+  expect(() => devLockPath("/home", "me//proj", 1)).toThrow(
+    /invalid repo name/,
+  );
+});
+
+test("pidAlive reports the current process as alive and a free pid as dead", () => {
+  expect(pidAlive(process.pid)).toBe(true);
+  // PID 0 / negative / non-integer are never valid live targets here.
+  expect(pidAlive(0)).toBe(false);
+  expect(pidAlive(-1)).toBe(false);
+  // A very high pid is almost certainly unused → treated as dead (stale lock).
+  expect(pidAlive(2 ** 30)).toBe(false);
+});
+
+const sampleLock = (over: Partial<Record<string, unknown>> = {}) => ({
+  pid: 999,
+  issue: 1,
+  worktree: "/wt",
+  sessionId: "sid",
+  startedAt: "2026-06-25T00:00:00.000Z",
+  ...over,
+});
+
+test("acquireDevLock claims a free path and round-trips via readDevLock", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const path = join(dir, "deep", "issue-1.json"); // parent dir does not exist yet
+  const lock = sampleLock();
+  expect(acquireDevLock(path, lock, () => true)).toEqual({ ok: true }); // creates parent dirs
+  expect(readDevLock(path)).toEqual(lock);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("acquireDevLock blocks when a live holder owns the lock", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const path = join(dir, "issue-1.json");
+  const held = sampleLock({ pid: 111 });
+  expect(acquireDevLock(path, held, () => true)).toEqual({ ok: true });
+  // A second launch with a live holder is refused and the original lock is preserved.
+  const res = acquireDevLock(path, sampleLock({ pid: 222 }), () => true);
+  expect(res).toEqual({ ok: false, held });
+  expect(readDevLock(path)).toEqual(held);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("acquireDevLock reclaims a stale (dead-pid) lock", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const path = join(dir, "issue-1.json");
+  acquireDevLock(path, sampleLock({ pid: 111 }), () => true);
+  const fresh = sampleLock({ pid: 222 });
+  expect(acquireDevLock(path, fresh, () => false)).toEqual({ ok: true });
+  expect(readDevLock(path)).toEqual(fresh); // holder overwritten
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("acquireDevLock reclaims a malformed/partial lock instead of treating it as held", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const path = join(dir, "issue-1.json");
+  writeFileSync(path, JSON.stringify({ pid: 333 })); // partial: only pid, no other fields
+  const fresh = sampleLock({ pid: 444 });
+  // A live predicate must NOT keep a malformed lock alive — it reads as no-lock and is reclaimed.
+  expect(acquireDevLock(path, fresh, () => true)).toEqual({ ok: true });
+  expect(readDevLock(path)).toEqual(fresh);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("acquireDevLock with --force overrides a live holder", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const path = join(dir, "issue-1.json");
+  acquireDevLock(path, sampleLock({ pid: 111 }), () => true);
+  const fresh = sampleLock({ pid: 222 });
+  expect(acquireDevLock(path, fresh, () => true, { force: true })).toEqual({
+    ok: true,
+  });
+  expect(readDevLock(path)).toEqual(fresh);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("readDevLock: missing, malformed, and partial all read as no lock; remove is idempotent", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const path = join(dir, "issue-1.json");
+
+  // Missing file → null (no lock).
+  expect(readDevLock(join(dir, "nope.json"))).toBeNull();
+
+  // Malformed JSON / wrong shape / partial → null, so a corrupt lock never wedges `lh dev`.
+  writeFileSync(path, "not json");
+  expect(readDevLock(path)).toBeNull();
+  writeFileSync(path, JSON.stringify({ no: "pid" }));
+  expect(readDevLock(path)).toBeNull();
+  writeFileSync(path, JSON.stringify({ pid: 5 })); // pid only, other fields missing
+  expect(readDevLock(path)).toBeNull();
+
+  // Remove is idempotent (removing a gone lock does not throw).
+  removeDevLock(path);
+  expect(existsSync(path)).toBe(false);
+  removeDevLock(path);
+
+  rmSync(dir, { recursive: true, force: true });
 });

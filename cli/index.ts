@@ -7,17 +7,22 @@ import { parseArgs, stripVTControlCharacters } from "node:util";
 import { baseUrl, configDir, dbPath, worktreeRoot } from "../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../core/git.ts";
 import {
+  acquireDevLock,
   buildClaudeArgs,
   buildKaniLaunch,
   buildManagedSettings,
+  devLockPath,
   displayMultiline,
   formatLaunchPlan,
   formatSpawnCommand,
   parseDevTarget,
+  pidAlive,
   provisionWorktree,
+  removeDevLock,
   resolveAllowedDomains,
   validateRepo,
   worktreeBranch,
+  worktreePath,
 } from "./dev.ts";
 
 // Lazily load the service layer (which opens the DB at import time) so DB-free commands
@@ -40,6 +45,7 @@ type Flags = {
   sandbox?: boolean;
   verbose?: boolean;
   kani?: boolean;
+  force?: boolean;
   json?: boolean;
   allow?: string;
   path?: string;
@@ -83,6 +89,7 @@ const { values, positionals: pos } = parseArgs({
     sandbox: { type: "boolean" },
     verbose: { type: "boolean" },
     kani: { type: "boolean" },
+    force: { type: "boolean" },
     json: { type: "boolean" },
     allow: { type: "string" },
     path: { type: "string" },
@@ -279,7 +286,7 @@ async function main() {
   if (group === "dev") {
     const target = sub;
     const usageLine =
-      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani]";
+      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani] [--force]";
     if (!target) {
       fail(usageLine);
     }
@@ -357,6 +364,8 @@ async function main() {
           sandbox: flags.sandbox,
           allow: flags.allow,
           verbose: flags.verbose,
+          // Carry --force through the relaunch so the inner `lh dev` still overrides the lock.
+          force: flags.force,
         },
       });
       const proc = spawnSync("kani", launch.argv, { stdio: "inherit" });
@@ -369,6 +378,40 @@ async function main() {
       }
       process.exit(proc.status ?? 0);
     }
+
+    // Duplicate-launch guard: atomically claim this issue's worktree before any side effect
+    // (provisioning). The worktree path/branch are deterministic from the issue number, so a
+    // second concurrent `lh dev <n>` would share the same tree and clobber edits. acquireDevLock
+    // exclusively creates the lock recording this process's pid; if a *live* `lh dev` already
+    // holds it we refuse (unless --force). A stale lock (the previous session crashed / was
+    // interrupted, so its pid is gone) is reclaimed, so a finished session never blocks a
+    // relaunch. Host-local by design (cross-host exclusion is out of scope). The exit handler is
+    // registered immediately so the lock is released even if provisioning below fails.
+    const lockPath = devLockPath(configDir(), r.full_name, n);
+    const wtPath = worktreePath(worktreeRoot(), r.full_name, n);
+    const claim = acquireDevLock(
+      lockPath,
+      {
+        pid: process.pid,
+        issue: n,
+        worktree: wtPath,
+        sessionId,
+        startedAt: new Date().toISOString(),
+      },
+      pidAlive,
+      { force: flags.force === true },
+    );
+    if (!claim.ok) {
+      const l = claim.held;
+      fail(
+        `issue #${n} is already being worked on by another \`lh dev\` session ` +
+          `(pid ${l.pid}, since ${l.startedAt}).\n` +
+          `  worktree: ${wtPath}\n` +
+          `Launching a second session would share this worktree and clobber edits. ` +
+          `Wait for that session to finish, or pass --force to launch anyway.`,
+      );
+    }
+    process.on("exit", () => removeDevLock(lockPath));
 
     const headRef = item.pull_request
       ? (await run(() => s.pulls.get(repo, n))).head.ref
@@ -512,6 +555,10 @@ async function main() {
       }
     }
 
+    // The lock claimed above holds our pid for the session's lifetime (the spawnSync below blocks
+    // until claude exits); the exit handler releases it. Release is best-effort — if the process
+    // is killed before it runs, the stale lock self-heals (its pid is gone, so the next launch
+    // reclaims it).
     const proc = spawnSync("claude", claudeArgs, {
       stdio: "inherit",
       cwd: worktree,
@@ -960,7 +1007,7 @@ function usage() {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani]   # start one issue in an interactive Claude session (--kani: in a new kani terminal)
+  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani] [--force]   # start one issue in an interactive Claude session (--kani: in a new kani terminal; --force: launch even if another session holds it)
   lh dev log --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]   # record a dev note on the issue's PR
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
