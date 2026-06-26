@@ -4,6 +4,7 @@ import { indexRoute } from "./routes/index";
 import { issueDetailRoute, issuesRoute } from "./routes/issues";
 import { mergedRoute } from "./routes/merged";
 import { pullDetailRoute, pullsRoute } from "./routes/pulls";
+import { refRoute } from "./routes/ref";
 import { repoRoute } from "./routes/repo";
 import { rootRoute } from "./routes/root";
 
@@ -17,6 +18,7 @@ const routeTree = rootRoute.addChildren([
   issueDetailRoute,
   pullsRoute,
   pullDetailRoute,
+  refRoute,
   mergedRoute,
 ]);
 

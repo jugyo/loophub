@@ -60,6 +60,8 @@ export function IssueDetail({
       <IssueHeader owner={owner} repo={repo} issue={issue} />
 
       <CommentList
+        owner={owner}
+        repo={repo}
         comments={commentsQuery.data}
         isLoading={commentsQuery.isLoading}
         isError={commentsQuery.isError}
@@ -137,7 +139,11 @@ function IssueHeader({
       ) : null}
 
       {issue.body ? (
-        <Markdown className="rounded-md border bg-muted/30 p-4">
+        <Markdown
+          owner={owner}
+          repo={repo}
+          className="rounded-md border bg-muted/30 p-4"
+        >
           {issue.body}
         </Markdown>
       ) : (
@@ -177,10 +183,14 @@ function IssueHeader({
 }
 
 function CommentList({
+  owner,
+  repo,
   comments,
   isLoading,
   isError,
 }: {
+  owner: string;
+  repo: string;
   comments: IssueComment[] | undefined;
   isLoading: boolean;
   isError: boolean;
@@ -212,7 +222,9 @@ function CommentList({
               {relativeTime(c.created_at)}
             </span>
           </header>
-          <Markdown>{c.body}</Markdown>
+          <Markdown owner={owner} repo={repo}>
+            {c.body}
+          </Markdown>
         </article>
       ))}
     </div>

@@ -86,18 +86,24 @@ export function PullDetail({
       <PullHeader owner={owner} repo={repo} pull={pull} />
 
       <DevNoteTimeline
+        owner={owner}
+        repo={repo}
         notes={devNotesQuery.data}
         isLoading={devNotesQuery.isLoading}
         isError={devNotesQuery.isError}
       />
 
       <ReviewList
+        owner={owner}
+        repo={repo}
         reviews={reviewsQuery.data}
         isLoading={reviewsQuery.isLoading}
         isError={reviewsQuery.isError}
       />
 
       <FilesChanged
+        owner={owner}
+        repo={repo}
         files={filesQuery.data}
         lineComments={lineCommentsQuery.data}
         isLoading={filesQuery.isLoading}
@@ -105,6 +111,8 @@ export function PullDetail({
       />
 
       <CommentList
+        owner={owner}
+        repo={repo}
         comments={commentsQuery.data}
         isLoading={commentsQuery.isLoading}
         isError={commentsQuery.isError}
@@ -189,7 +197,11 @@ function PullHeader({
       ) : null}
 
       {pull.body ? (
-        <Markdown className="rounded-md border bg-muted/30 p-4">
+        <Markdown
+          owner={owner}
+          repo={repo}
+          className="rounded-md border bg-muted/30 p-4"
+        >
           {pull.body}
         </Markdown>
       ) : (
@@ -279,10 +291,14 @@ const DEV_NOTE_TONE: Record<string, BadgeTone> = {
 };
 
 function DevNoteTimeline({
+  owner,
+  repo,
   notes,
   isLoading,
   isError,
 }: {
+  owner: string;
+  repo: string;
   notes: DevNote[] | undefined;
   isLoading: boolean;
   isError: boolean;
@@ -320,7 +336,9 @@ function DevNoteTimeline({
                   <summary className="cursor-pointer text-xs text-muted-foreground">
                     Details
                   </summary>
-                  <Markdown className="mt-1">{n.body}</Markdown>
+                  <Markdown owner={owner} repo={repo} className="mt-1">
+                    {n.body}
+                  </Markdown>
                 </details>
               ) : null}
             </li>
@@ -338,10 +356,14 @@ const REVIEW_VERDICT_TONE: Record<PullReview["state"], string> = {
 };
 
 function ReviewList({
+  owner,
+  repo,
   reviews,
   isLoading,
   isError,
 }: {
+  owner: string;
+  repo: string;
   reviews: PullReview[] | undefined;
   isLoading: boolean;
   isError: boolean;
@@ -371,7 +393,11 @@ function ReviewList({
                 {relativeTime(r.submitted_at)}
               </span>
             </header>
-            {r.body ? <Markdown>{r.body}</Markdown> : null}
+            {r.body ? (
+              <Markdown owner={owner} repo={repo}>
+                {r.body}
+              </Markdown>
+            ) : null}
           </article>
         ))
       )}
@@ -388,11 +414,15 @@ const DIFF_LINE_CLASS: Record<DiffLineKind, string> = {
 };
 
 function FilesChanged({
+  owner,
+  repo,
   files,
   lineComments,
   isLoading,
   isError,
 }: {
+  owner: string;
+  repo: string;
   files: PullFile[] | undefined;
   lineComments: PullLineComment[] | undefined;
   isLoading: boolean;
@@ -435,6 +465,8 @@ function FilesChanged({
         files.map((f) => (
           <FileDiff
             key={f.filename}
+            owner={owner}
+            repo={repo}
             file={f}
             comments={byFile.get(f.filename) ?? []}
           />
@@ -445,9 +477,13 @@ function FilesChanged({
 }
 
 function FileDiff({
+  owner,
+  repo,
   file,
   comments,
 }: {
+  owner: string;
+  repo: string;
   file: PullFile;
   comments: PullLineComment[];
 }) {
@@ -481,7 +517,9 @@ function FileDiff({
               {c.path}:{c.line ?? "?"}
             </span>
           </div>
-          <Markdown>{c.body}</Markdown>
+          <Markdown owner={owner} repo={repo}>
+            {c.body}
+          </Markdown>
         </div>
       ))}
     </div>
@@ -489,10 +527,14 @@ function FileDiff({
 }
 
 function CommentList({
+  owner,
+  repo,
   comments,
   isLoading,
   isError,
 }: {
+  owner: string;
+  repo: string;
   comments: import("@/api/types").IssueComment[] | undefined;
   isLoading: boolean;
   isError: boolean;
@@ -519,7 +561,9 @@ function CommentList({
                 {relativeTime(c.created_at)}
               </span>
             </header>
-            <Markdown>{c.body}</Markdown>
+            <Markdown owner={owner} repo={repo}>
+              {c.body}
+            </Markdown>
           </article>
         ))
       )}
