@@ -444,13 +444,7 @@ async function main() {
 
     // Display issue content before the launch plan so the user sees what they're about to work on.
     {
-      let line = `#${item.number} ${display(item.title)} [${item.state}] @${display(item.user.login)}`;
-      if (item.assignee) {
-        const assigneeName = display(
-          item.assignee.name || item.assignee.agent || "",
-        );
-        line += ` (assigned: @${assigneeName})`;
-      }
+      const line = `#${item.number} ${display(item.title)} [${item.state}] @${display(item.user.login)}`;
       console.error(line);
       if (item.labels && item.labels.length > 0) {
         const labelNames = item.labels
@@ -518,9 +512,9 @@ async function main() {
       formatSpawnCommand(claudeArgs, { color: process.stderr.isTTY === true }),
     );
 
-    // Make the work visible: register this session and assign the issue before spawning.
-    // The runtime session id is the Claude session we are about to spawn (unique per run,
-    // so re-launching the same issue never collides on the (agent, session) pair).
+    // Make the work visible: register this session before spawning. The runtime session id is the
+    // Claude session we are about to spawn (unique per run, so re-launching the same issue never
+    // collides on the (agent, session) pair).
     await run(() =>
       s.sessions.register({
         id: sessionId,
@@ -531,24 +525,11 @@ async function main() {
         runtime: RUNTIME_CLAUDE_CODE,
       }),
     );
-    try {
-      await s.issues.assign(repo, n, sessionId);
-    } catch (e: any) {
-      // A fresh session each run conflicts with a prior assignee on re-launch; reuse is
-      // still valid (same worktree), so warn and continue rather than block the dev loop.
-      if (e?.status === 409)
-        console.error(
-          `warning: issue #${issue} already assigned to another session; continuing`,
-        );
-      else if (typeof e?.status === "number")
-        fail(`error ${e.status}: ${e.message}`);
-      else throw e;
-    }
 
-    // Open a draft PR for the worktree branch so the agent can write its plan in the PR
-    // body and attach dev notes to it. Idempotent (skips when an open PR already exists)
-    // and best-effort: only for issues (not when working a PR), and a failure warns rather
-    // than blocks the dev loop. The dev session is the actor.
+    // Attribute this session to the work's PR (pulls.session_id) so `lh resume`/retro can later
+    // re-enter it (#186 — replaces the old issue-assignee path). For an issue target, open (or reuse)
+    // the draft PR so the agent has a place to write its plan and dev notes; for a PR target, point
+    // the existing PR at this session. Best-effort: a failure warns rather than blocks the dev loop.
     if (!item.pull_request) {
       try {
         const res = await s.dev.openPr(
@@ -567,6 +548,12 @@ async function main() {
         );
       } catch (e: any) {
         console.error(`warning: could not open draft PR: ${e.message}`);
+      }
+    } else {
+      try {
+        await s.dev.attachSession(repo, n, sessionId);
+      } catch (e: any) {
+        console.error(`warning: could not attach session to PR: ${e.message}`);
       }
     }
 
@@ -745,11 +732,8 @@ async function main() {
       if (!flags.json)
         issues.forEach((i: any) => {
           const labels = (i.labels || []).map((l: any) => l.name).join(",");
-          const assignee = i.assignee
-            ? `@${display(i.assignee.name || i.assignee.agent || "")}`
-            : "";
           console.log(
-            `#${i.number}\t${i.state}\t${i.title}\t${labels}\t${assignee}\t${relativeTime(i.updated_at)}`,
+            `#${i.number}\t${i.state}\t${i.title}\t${labels}\t${relativeTime(i.updated_at)}`,
           );
         });
     } else if (sub === "view") {
@@ -797,17 +781,6 @@ async function main() {
         ),
       );
       console.log("commented");
-    } else if (sub === "assign") {
-      if (!SESSION_ID) fail("--session-id is required");
-      const i = await run(() =>
-        s.issues.assign(repo, Number(rest[0]), SESSION_ID),
-      );
-      console.log(`assigned #${i.number} → ${i.assignee?.agent ?? SESSION_ID}`);
-    } else if (sub === "unassign") {
-      const i = await run(() =>
-        s.issues.unassign(repo, Number(rest[0]), SESSION_ID || null),
-      );
-      console.log(`unassigned #${i.number}`);
     } else if (sub === "close") {
       await run(async () =>
         s.issues.update(
@@ -1254,7 +1227,7 @@ function usage() {
   lh repo remove --repo owner/name
   lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."] [--runtime claude-code]
   lh session list
-  lh issue list|view|create|update|comment|assign|unassign|close|label  [--repo owner/repo]
+  lh issue list|view|create|update|comment|close|label  [--repo owner/repo]
   lh pr list|view|diff|create|update|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR
   lh retro list [--pr <m>] [--status draft]   lh retro view <id>   lh retro pending [--limit N]   # read retros / list merged PRs without one
@@ -1271,7 +1244,6 @@ function usage() {
     lh repo add . --name me/proj
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"
-    lh issue assign 20 --session-id "$SID"
     lh issue create --title "do the thing" --label ready-to-build
     lh pr create --head feature-x --base main --title "impl" --issue 5
     lh pr merge 3 --method squash

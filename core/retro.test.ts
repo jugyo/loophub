@@ -92,6 +92,7 @@ describe("retros store + service", () => {
     const r =
       S.getRepo("me", "retro-app") ?? S.createRepo(repo, "/tmp/retro-app");
     let issueId: number | null = null;
+    let sessionRowId: string | null = null;
     if (opts.link) {
       const issue = S.createIssue(
         r.id,
@@ -103,7 +104,7 @@ describe("retros store + service", () => {
       issueId = issue.id;
       if (opts.session) {
         S.registerAgentSession(opts.session, "lh-dev", opts.session);
-        S.assignIssueToSession(issue.id, opts.session);
+        sessionRowId = opts.session;
       }
     }
     const pr = S.createIssue(
@@ -113,7 +114,16 @@ describe("retros store + service", () => {
       issueId ? `Closes #${S.getIssueById(issueId).number}` : "",
       "bot",
     ) as any;
-    S.createPull(pr.id, `feat-${pr.number}`, "main", "sha", issueId);
+    // The implementation session is attributed to the PR row (pulls.session_id); retro resolves it
+    // from there (#186).
+    S.createPull(
+      pr.id,
+      `feat-${pr.number}`,
+      "main",
+      "sha",
+      issueId,
+      sessionRowId,
+    );
     S.setMerged(pr.id, `merge-${pr.number}`, "squash");
     return { repoRow: r, prNumber: pr.number, issueId };
   }

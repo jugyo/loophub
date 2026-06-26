@@ -74,6 +74,12 @@ function actorFor(sessionId: string | null | undefined): string {
   return S.authorFromSession(sessionId) ?? "unknown";
 }
 
+// node:sqlite surfaces a partial-unique-index violation as a SQLITE_CONSTRAINT error whose message
+// contains "UNIQUE constraint failed". Used as the hard backstop for the open-PR guard.
+function isUniqueConstraint(e: unknown): boolean {
+  return e instanceof Error && /UNIQUE constraint failed/i.test(e.message);
+}
+
 // Resolve symlinks so worktree paths from `git worktree list` (which canonicalizes, e.g.
 // /var → /private/var on macOS) compare equal to a caller's cwd. Falls back to a plain
 // absolute path when the target no longer exists.
@@ -281,7 +287,6 @@ export const issues = {
       state?: string;
       kind?: "issue" | "pull" | "any";
       labels?: string[];
-      assignee_session_id?: string | null;
       page?: number;
       perPage?: number;
     } = {},
@@ -302,14 +307,6 @@ export const issues = {
         const names = S.issueLabels(row.id).map((l: any) => l.name);
         return labelsFilter.every((l) => names.includes(l));
       });
-    }
-    if (
-      opts.assignee_session_id !== undefined &&
-      opts.assignee_session_id !== null
-    ) {
-      rows = rows.filter(
-        (row) => row.assignee_session_id === opts.assignee_session_id,
-      );
     }
     return paginate(rows, perPage, page).map((row) => issueJSON(row, r));
   },
@@ -400,57 +397,6 @@ export const issues = {
           number: row.number,
         },
       );
-    }
-    return issueJSON(S.getIssue(r.id, row.number), r);
-  },
-
-  assign(name: string, number: number, sessionId: string) {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const row = issueOr404(r, number);
-    if (!sessionId) throw new ServiceError(422, "session_id is required");
-    const already = row.assignee_session_id === sessionId;
-    try {
-      S.assignIssueToSession(row.id, sessionId);
-    } catch (e: any) {
-      if (e.message === "NOT_FOUND")
-        throw new ServiceError(404, "Agent session not found");
-      if (
-        e.message === "CONFLICT_ASSIGNED" ||
-        e.message === "CONFLICT_SESSION"
-      ) {
-        throw new ServiceError(409, "Issue assignee conflict");
-      }
-      throw e;
-    }
-    if (!already) {
-      S.emitEvent(r.id, "issue.assigned", actorFor(sessionId), {
-        number: row.number,
-        session_id: sessionId,
-        assignee: S.assigneeJSON(sessionId),
-      });
-    }
-    return issueJSON(S.getIssue(r.id, row.number), r);
-  },
-
-  unassign(name: string, number: number, sessionId?: string | null) {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const row = issueOr404(r, number);
-    const actor = actorFor(sessionId);
-    try {
-      const prev = S.unassignIssue(row.id, sessionId ?? undefined);
-      if (prev) {
-        S.emitEvent(r.id, "issue.unassigned", actor, {
-          number: row.number,
-          session_id: prev,
-          assignee: S.assigneeJSON(prev),
-        });
-      }
-    } catch (e: any) {
-      if (e.message === "CONFLICT_ASSIGNED")
-        throw new ServiceError(409, "Issue assignee conflict");
-      throw e;
     }
     return issueJSON(S.getIssue(r.id, row.number), r);
   },
@@ -605,9 +551,31 @@ export const pulls = {
     const actor = actorFor(sessionId);
     const linkedIssueId = resolveLinkedIssueId(r, body, issue);
     const linkedNumber = issue ?? parseClosingIssueNumber(body);
-    const row = S.createIssue(r.id, "pull", title, body, actor) as any;
+    // Resolve head SHA before the row write so the issue + pulls rows can be created atomically
+    // (no await inside the transaction). The open-PR constraint then holds for the insert.
     const headSha = await revParse(r.local_path, head);
-    S.createPull(row.id, head, base, headSha, linkedIssueId);
+    let row: any;
+    try {
+      row = S.createPullWithIssue({
+        repoId: r.id,
+        title,
+        body,
+        author: actor,
+        head,
+        base,
+        headSha,
+        linkedIssueId,
+        sessionId: sessionId ?? null,
+      });
+    } catch (e: any) {
+      if (e.message === S.CONFLICT_OPEN_PR || isUniqueConstraint(e)) {
+        throw new ServiceError(
+          422,
+          `issue #${linkedNumber} already has an open pull request`,
+        );
+      }
+      throw e;
+    }
     S.emitEvent(r.id, "pull_request.opened", actor, {
       number: row.number,
       linked_issue: linkedNumber ?? undefined,
@@ -635,8 +603,33 @@ export const pulls = {
     if (p?.merged && patch.state !== undefined) {
       throw new ServiceError(405, "Pull Request is already merged");
     }
+    // Reopening a closed PR re-claims the issue's single open-PR slot. If another open PR already
+    // holds it, refuse with a clean 422 rather than letting the open-PR unique index throw a raw
+    // error (the underlying updateIssue is transactional, so the state change rolls back either way).
+    if (
+      patch.state === "open" &&
+      row.state === "closed" &&
+      p?.linked_issue_id != null
+    ) {
+      const other = S.openPullLinkedToIssue(p.linked_issue_id);
+      if (other && other.id !== row.id) {
+        const linked = S.getIssueById(p.linked_issue_id);
+        throw new ServiceError(
+          422,
+          `issue #${linked?.number} already has an open pull request`,
+        );
+      }
+    }
     const actor = actorFor(sessionId);
-    S.updateIssue(row.id, patch);
+    try {
+      S.updateIssue(row.id, patch);
+    } catch (e) {
+      // Backstop for a concurrent reopen that slipped past the guard above.
+      if (isUniqueConstraint(e)) {
+        throw new ServiceError(422, "issue already has an open pull request");
+      }
+      throw e;
+    }
     S.emitEvent(r.id, "pull_request.updated", actor, { number: row.number });
     return pullJSON(r, S.getIssue(r.id, row.number));
   },
@@ -750,20 +743,50 @@ export const dev = {
     ensureWritable(r);
     const issueRow = issueOr404(r, input.issue, "issue");
     const existing = S.openPullLinkedToIssue(issueRow.id);
-    if (existing) return { created: false, number: existing.number };
+    if (existing) {
+      // Re-running `lh dev <issue>` reuses the open PR but must re-point it at the session it is
+      // about to spawn (latest-writer-wins), so `lh resume`/retro resolve the current session rather
+      // than a stale one. (The old model re-assigned the issue on every run.)
+      if (sessionId) S.setPullSession(existing.id, sessionId);
+      return { created: false, number: existing.number };
+    }
     const body = input.body ?? defaultDraftPrBody(input.issue);
-    const pr = await pulls.create(
-      name,
-      {
-        title: issueRow.title,
-        body,
-        head: input.head,
-        base: input.base,
-        issue: input.issue,
-      },
-      sessionId,
-    );
-    return { created: true, number: pr.number };
+    try {
+      const pr = await pulls.create(
+        name,
+        {
+          title: issueRow.title,
+          body,
+          head: input.head,
+          base: input.base,
+          issue: input.issue,
+        },
+        sessionId,
+      );
+      return { created: true, number: pr.number };
+    } catch (e: any) {
+      // Lost a concurrent race for the issue's single open-PR slot (the open-PR constraint fired
+      // between the check above and the insert). Return the PR that won — `lh dev` is idempotent.
+      if (e instanceof ServiceError && e.status === 422) {
+        const winner = S.openPullLinkedToIssue(issueRow.id);
+        if (winner) return { created: false, number: winner.number };
+      }
+      throw e;
+    }
+  },
+
+  // Attribute a dev session to an existing PR (pulls.session_id) so `lh resume`/retro can later find
+  // it. Used by `lh dev <pr>` — the direct-PR path that does not open a new PR. Latest writer wins.
+  attachSession(
+    name: string,
+    number: number,
+    sessionId: string,
+  ): { number: number } {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    if (sessionId) S.setPullSession(row.id, sessionId);
+    return { number: row.number };
   },
 
   // Record a development note (decision / action / assumption / blocker) as a `dev.note`
@@ -900,10 +923,10 @@ export const resume = {
         : null;
     const linkedIssueNumber: number | null = linkedIssue?.number ?? null;
 
-    // Session: prefer the PR row's own assignee (a PR worked directly via `lh dev <pr>`), else the
-    // linked issue's assignee (the common `lh dev <issue>` → open PR flow).
-    const sessionRowId: string | null =
-      prRow.assignee_session_id ?? linkedIssue?.assignee_session_id ?? null;
+    // Session attribution lives on the PR row (pulls.session_id): set when `lh dev` opened the PR
+    // (the `lh dev <issue>` flow) or re-entered it directly (`lh dev <pr>`). #186 removed the old
+    // issue-assignee fallback — the PR is the single source of truth.
+    const sessionRowId: string | null = pull.session_id ?? null;
     const sessionRow = sessionRowId ? S.getAgentSession(sessionRowId) : null;
     // The session's runtime selects how to resume it. Prefer the explicit runtime column; fall back
     // to "lh-dev agent + no runtime → claude-code" for sessions registered before the column
@@ -1078,13 +1101,14 @@ export const retros = {
       );
     }
 
-    // PR -> linked issue -> implementation session (design §4.3.1). Any link may be
-    // absent: a PR with no linked issue keeps issue_id / session_id NULL and the retro
-    // still stands on event/PR data alone.
+    // PR -> implementation session (design §4.3.1). The session is attributed to the PR row
+    // (pulls.session_id, set by `lh dev`); issue_id still records the linked issue for the retro.
+    // Any link may be absent: a PR with no session/link keeps those NULL and the retro still
+    // stands on event/PR data alone.
     const pull = S.getPull(prRow.id);
     const issueId: number | null = pull?.linked_issue_id ?? null;
     const linkedIssue = issueId != null ? S.getIssueById(issueId) : null;
-    const implSession: string | null = linkedIssue?.assignee_session_id ?? null;
+    const implSession: string | null = pull?.session_id ?? null;
 
     const actor = actorFor(sessionId);
     const row = S.createRetro({

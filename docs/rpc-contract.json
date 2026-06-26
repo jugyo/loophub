@@ -392,65 +392,6 @@
       }
     },
     {
-      "name": "issues/assign",
-      "description": "Assign an issue to an agent session.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number",
-          "session_id"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "issues/unassign",
-      "description": "Clear an issue's assignee.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "issues/addLabels",
       "description": "Add labels to an issue.",
       "params": {
@@ -1007,7 +948,7 @@
     },
     {
       "name": "dashboard/overview",
-      "description": "Cross-repo top-page overview: in-progress (agent-assigned) issues and open unmerged pull requests, each tagged with its repo.",
+      "description": "Cross-repo top-page overview: recently created open issues and open unmerged pull requests, each tagged with its repo.",
       "params": {
         "type": "object",
         "properties": {},

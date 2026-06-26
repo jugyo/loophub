@@ -10,14 +10,23 @@ process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
+let S: typeof import("./store.ts");
 let repoPath: string;
 
 function git(args: string[]) {
   spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
 }
 
+// Read a PR's stored dev-session attribution (pulls.session_id) by PR number.
+function prSession(prNumber: number): string | null {
+  const repoId = (S.getRepo("me", "proj") as { id: number }).id;
+  const issueId = (S.getIssue(repoId, prNumber) as { id: number }).id;
+  return S.getPull(issueId).session_id ?? null;
+}
+
 beforeAll(async () => {
   svc = await import("./service.ts");
+  S = await import("./store.ts");
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-dev-repo-"));
   git(["init", "-q", "-b", "main"]);
@@ -62,6 +71,71 @@ describe("dev.openPr", () => {
     );
     expect(second.created).toBe(false);
     expect(second.number).toBe(first.number);
+  });
+
+  test("attributes the session to the PR row and re-attaches on re-run", async () => {
+    svc.sessions.register({ id: "sess-a", agent: "lh-dev", session: "sess-a" });
+    svc.sessions.register({ id: "sess-b", agent: "lh-dev", session: "sess-b" });
+    const issue = svc.issues.create("me/proj", { title: "feature B" });
+
+    const first = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-a",
+    );
+    expect(first.created).toBe(true);
+    expect(prSession(first.number)).toBe("sess-a");
+
+    // Re-running with a fresh session reuses the open PR but re-points it (latest-writer-wins), so
+    // `lh resume`/retro resolve the current session, not a stale one.
+    const second = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-b",
+    );
+    expect(second.created).toBe(false);
+    expect(prSession(second.number)).toBe("sess-b");
+  });
+
+  test("a closed PR frees the open-PR slot; reopening it while another open PR exists is refused", async () => {
+    const issue = svc.issues.create("me/proj", { title: "feature C" });
+    const pr1 = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
+    // Close PR1 → slot freed → a second openPr creates a fresh PR.
+    svc.pulls.update("me/proj", pr1.number, { state: "closed" }, "sess-1");
+    const pr2 = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
+    expect(pr2.created).toBe(true);
+    expect(pr2.number).not.toBe(pr1.number);
+    // Reopening PR1 would give the issue two open PRs → clean 422, not a raw constraint error.
+    expect(() =>
+      svc.pulls.update("me/proj", pr1.number, { state: "open" }, "sess-1"),
+    ).toThrow(/already has an open pull request/);
+    // The refused reopen left PR1 closed (the state change rolled back).
+    const pr1View = (await svc.pulls.get("me/proj", pr1.number)) as any;
+    expect(pr1View.state).toBe("closed");
   });
 });
 

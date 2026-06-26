@@ -1,13 +1,6 @@
 // Hand-written types mirroring the LoopHub REST API (see ../../../API.md).
 // OpenAPI codegen is out of scope; keep these in sync manually.
 
-export interface AgentSession {
-  session_id: string;
-  agent: string;
-  session: string;
-  name?: string | null;
-}
-
 export interface Label {
   name: string;
   color?: string;
@@ -91,7 +84,6 @@ export interface Issue {
   title: string;
   body: string;
   user: UserRef;
-  assignee: AgentSession | null;
   labels: Label[];
   comments: number;
   created_at: string;
@@ -107,7 +99,6 @@ export interface PullRequest {
   title: string;
   body: string;
   user: UserRef;
-  assignee?: AgentSession | null;
   head: { ref: string; sha: string };
   base: { ref: string; sha: string };
   merged: boolean;

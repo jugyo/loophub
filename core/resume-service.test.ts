@@ -25,10 +25,10 @@ async function makeRepo(name: string): Promise<{ id: number; path: string }> {
   return { id: repo.id, path };
 }
 
-// Set up the canonical `lh dev <issue>` shape: an open issue assigned to a dev session, plus an
-// open PR linked to it on branch loophub/issue-<n>. Returns the PR number and the Claude session
-// id stored as the session's external_session (distinct from the row id to prove resolve returns
-// external_session, the value `claude --resume` consumes).
+// Set up the canonical `lh dev <issue>` shape: an open issue plus an open PR linked to it on branch
+// loophub/issue-<n>, with the dev session attributed to the PR row (pulls.session_id). Returns the
+// PR number and the Claude session id stored as the session's external_session (distinct from the
+// row id to prove resolve returns external_session, the value `claude --resume` consumes).
 async function devFlow(
   repo: { id: number; path: string },
   opts: {
@@ -40,28 +40,30 @@ async function devFlow(
 ): Promise<{ pr: number; external: string | null }> {
   const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any;
   let external: string | null = null;
+  let sessionRowId: string | null = null;
   if (opts.sessionId !== null) {
     // Issue numbers reset per repo, so key the (globally-unique) session ids by repo.id too. The
     // default external_session is UUID-shaped — `lh dev` stores the exact randomUUID it generates,
     // and resume.resolve only accepts UUID-shaped ids (isClaudeSessionId).
-    const rowId = `row-${repo.id}-${issue.number}`;
+    sessionRowId = `row-${repo.id}-${issue.number}`;
     const tail = `${String(repo.id).padStart(6, "0")}${String(issue.number).padStart(6, "0")}`;
     external = opts.sessionId ?? `00000000-0000-4000-8000-${tail}`;
     // Default agent lh-dev with no runtime mirrors a pre-#164 session (backward-compat fallback);
     // pass agent/runtime explicitly to exercise the runtime-based path.
     S.registerAgentSession(
-      rowId,
+      sessionRowId,
       opts.agent ?? "lh-dev",
       external,
       null,
       opts.runtime ?? null,
     );
-    S.assignIssueToSession(issue.id, rowId);
   }
   const branch = `loophub/issue-${issue.number}`;
   if (opts.withBranch) await git(repo.path, ["branch", branch, "main"]);
   const pr = S.createIssue(repo.id, "pull", "impl", "", "me") as any;
-  S.createPull(pr.id, branch, "main", null, issue.id);
+  // The dev session is attributed to the PR row (pulls.session_id) — the `lh dev <issue>` flow
+  // where openPr records the session that opened the PR (#186).
+  S.createPull(pr.id, branch, "main", null, issue.id, sessionRowId);
   return { pr: pr.number, external };
 }
 
@@ -164,9 +166,9 @@ test("resolve reuses an existing worktree", async () => {
   await git(repo.path, ["worktree", "remove", "--force", wt]);
 });
 
-// A PR worked directly via `lh dev <pr>` carries the session on the PR row itself; resolve prefers
-// it over (and without) a linked issue.
-test("resolve uses the PR row's own assignee when present", async () => {
+// A PR worked directly via `lh dev <pr>` carries the session on the PR row itself (pulls.session_id);
+// resolve uses it even without a linked issue.
+test("resolve uses the PR row's own session when present", async () => {
   const repo = await makeRepo("me/prself");
   const pr = S.createIssue(repo.id, "pull", "impl", "", "me") as any;
   S.registerAgentSession(
@@ -174,9 +176,8 @@ test("resolve uses the PR row's own assignee when present", async () => {
     "lh-dev",
     "11111111-1111-4111-8111-111111111111",
   );
-  S.assignIssueToSession(pr.id, "row-self");
   await git(repo.path, ["branch", "loophub/issue-5", "main"]);
-  S.createPull(pr.id, "loophub/issue-5", "main", null, null);
+  S.createPull(pr.id, "loophub/issue-5", "main", null, null, "row-self");
 
   const res = await svc.resume.resolve("me/prself", pr.number);
   expect(res.ok).toBe(true);
@@ -198,7 +199,7 @@ test("resolve treats a non-UUID stored session id as no-session", async () => {
   expect(res).toMatchObject({ ok: false, reason: "no-session" });
 });
 
-// A session assigned by a non-lh-dev agent (e.g. impl-bot via `lh issue assign`) is not a Claude
+// A PR whose session was attributed by a non-lh-dev agent (e.g. an impl-bot session) is not a Claude
 // session `lh dev` launched — its external_session is that agent's own runtime id, not a Claude
 // session id — so resume must not try to `claude --resume` it, even when it is UUID-shaped.
 test("resolve rejects a session not registered by lh dev (wrong agent)", async () => {
@@ -209,10 +210,9 @@ test("resolve rejects a session not registered by lh dev (wrong agent)", async (
     "impl-bot",
     "22222222-2222-4222-8222-222222222222", // valid UUID, but not lh-dev provenance
   );
-  S.assignIssueToSession(issue.id, "row-impl");
   await git(repo.path, ["branch", "loophub/issue-1", "main"]);
   const pr = S.createIssue(repo.id, "pull", "impl", "", "me") as any;
-  S.createPull(pr.id, "loophub/issue-1", "main", null, issue.id);
+  S.createPull(pr.id, "loophub/issue-1", "main", null, issue.id, "row-impl");
 
   const res = await svc.resume.resolve("me/otheragent", pr.number);
   expect(res).toMatchObject({ ok: false, reason: "no-session" });

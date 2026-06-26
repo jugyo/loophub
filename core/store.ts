@@ -1,6 +1,22 @@
 import { db, now } from "./db.ts";
 import { formatEvent, publishEvent } from "./event-hub.ts";
 
+// Run fn inside an immediate (write-locked) transaction. node:sqlite is synchronous, so fn must not
+// await; the lock is held only for the enclosed writes. Commits on success, rolls back on throw.
+export function tx<T>(fn: () => T): T {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = fn();
+    db.exec("COMMIT");
+    return result;
+  } catch (e) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {}
+    throw e;
+  }
+}
+
 export interface Repo {
   id: number;
   full_name: string;
@@ -239,7 +255,28 @@ export function updateIssue(id: number, fields: Record<string, any>) {
   sets.push("updated_at = ?");
   params.push(now());
   params.push(id);
-  db.run(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?`, params);
+  const writeIssue = () =>
+    db.run(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?`, params);
+  if (fields.state === undefined) {
+    writeIssue();
+    return;
+  }
+  // Keep the open-PR constraint column in sync with a PR row's state, atomically with the state
+  // write. For non-pull rows no pulls row matches `issue_id`, so the second write is a no-op.
+  // Closing frees the issue's open-PR slot; reopening re-claims it (restoring open_linked_issue_id
+  // from the retained linked_issue_id). Wrapping both in a transaction means a reopen that would
+  // collide with another open PR on idx_pulls_open_linked_issue rolls the state change back too,
+  // instead of leaving the PR open with a NULL slot (a broken invariant). The caller maps the
+  // surfaced UNIQUE error to 422; pulls.update also pre-guards the reopen for a clean message.
+  tx(() => {
+    writeIssue();
+    db.run(
+      `UPDATE pulls
+       SET open_linked_issue_id = CASE WHEN ? = 'open' THEN linked_issue_id ELSE NULL END
+       WHERE issue_id = ?`,
+      [fields.state, id],
+    );
+  });
 }
 
 export function createPull(
@@ -248,11 +285,61 @@ export function createPull(
   base: string,
   headSha: string | null,
   linkedIssueId: number | null = null,
+  sessionId: string | null = null,
 ) {
+  // A freshly created PR is open, so open_linked_issue_id mirrors linked_issue_id (the partial
+  // unique index then forbids a second open PR for the same issue — the double-`lh dev` guard).
   db.run(
-    `INSERT INTO pulls (issue_id, head_ref, base_ref, head_sha, linked_issue_id) VALUES (?, ?, ?, ?, ?)`,
-    [issueId, head, base, headSha, linkedIssueId],
+    `INSERT INTO pulls (issue_id, head_ref, base_ref, head_sha, linked_issue_id, session_id, open_linked_issue_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [issueId, head, base, headSha, linkedIssueId, sessionId, linkedIssueId],
   );
+}
+
+// Thrown when creating a PR would give a linked issue a second concurrently-open PR. The caller
+// (service.pulls.create) maps it to 409; service.dev.openPr treats it as "already started" and
+// returns the existing PR (idempotent).
+export const CONFLICT_OPEN_PR = "CONFLICT_OPEN_PR";
+
+// Create the PR's issue row and its pulls row atomically, enforcing the one-open-PR-per-issue
+// constraint under a write lock. BEGIN IMMEDIATE makes the re-check + insert atomic across
+// processes; on conflict the whole row creation rolls back (no orphan kind='pull' issue row), and
+// the partial unique index on open_linked_issue_id is the hard backstop if a check is ever missed.
+export function createPullWithIssue(opts: {
+  repoId: number;
+  title: string;
+  body: string;
+  author: string;
+  head: string;
+  base: string;
+  headSha: string | null;
+  linkedIssueId: number | null;
+  sessionId: string | null;
+}): any {
+  return tx(() => {
+    if (
+      opts.linkedIssueId != null &&
+      openPullLinkedToIssue(opts.linkedIssueId)
+    ) {
+      throw new Error(CONFLICT_OPEN_PR);
+    }
+    const row = createIssue(
+      opts.repoId,
+      "pull",
+      opts.title,
+      opts.body,
+      opts.author,
+    );
+    createPull(
+      row.id,
+      opts.head,
+      opts.base,
+      opts.headSha,
+      opts.linkedIssueId,
+      opts.sessionId,
+    );
+    return row;
+  });
 }
 
 export function getIssueById(id: number): any {
@@ -332,8 +419,9 @@ export function setMerged(
   method: string,
 ): number | null {
   const pull = getPull(issueId);
+  // A merged PR is no longer open: clear open_linked_issue_id so the issue's open-PR slot is freed.
   db.run(
-    `UPDATE pulls SET merged = 1, merged_at = ?, merge_commit_sha = ?, merge_method = ? WHERE issue_id = ?`,
+    `UPDATE pulls SET merged = 1, merged_at = ?, merge_commit_sha = ?, merge_method = ?, open_linked_issue_id = NULL WHERE issue_id = ?`,
     [now(), sha, method, issueId],
   );
   db.run(`UPDATE issues SET state = 'closed', updated_at = ? WHERE id = ?`, [
@@ -589,57 +677,14 @@ export function registerAgentSession(
   return { session: getAgentSession(id), created: true };
 }
 
-export type AssignConflict =
-  | "NOT_FOUND"
-  | "CONFLICT_ASSIGNED"
-  | "CONFLICT_SESSION";
-
-export function assignIssueToSession(issueId: number, sessionId: string) {
-  const session = getAgentSession(sessionId);
-  if (!session) throw new Error("NOT_FOUND" satisfies AssignConflict);
-  const issue = db
-    .query(`SELECT * FROM issues WHERE id = ?`)
-    .get(issueId) as any;
-  if (issue.assignee_session_id && issue.assignee_session_id !== sessionId) {
-    throw new Error("CONFLICT_ASSIGNED" satisfies AssignConflict);
-  }
-  const other = db
-    .query(`SELECT id FROM issues WHERE assignee_session_id = ? AND id != ?`)
-    .get(sessionId, issueId) as { id: number } | null;
-  if (other) throw new Error("CONFLICT_SESSION" satisfies AssignConflict);
-  db.run(
-    `UPDATE issues SET assignee_session_id = ?, updated_at = ? WHERE id = ?`,
-    [sessionId, now(), issueId],
-  );
-}
-
-export function unassignIssue(issueId: number, sessionId?: string | null) {
-  const issue = db
-    .query(`SELECT * FROM issues WHERE id = ?`)
-    .get(issueId) as any;
-  if (!issue.assignee_session_id) return null;
-  if (sessionId && issue.assignee_session_id !== sessionId) {
-    throw new Error("CONFLICT_ASSIGNED" satisfies AssignConflict);
-  }
-  const prev = issue.assignee_session_id;
-  db.run(
-    `UPDATE issues SET assignee_session_id = NULL, updated_at = ? WHERE id = ?`,
-    [now(), issueId],
-  );
-  return prev as string;
-}
-
-export function assigneeJSON(sessionId: string | null | undefined): any | null {
-  if (!sessionId) return null;
-  const s = getAgentSession(sessionId);
-  if (!s) return null;
-  const out: any = {
-    session_id: s.id,
-    agent: s.agent,
-    session: s.external_session,
-  };
-  if (s.name) out.name = s.name;
-  return out;
+// Set/replace the dev session attributed to a PR row (pulls.session_id). `lh resume`/retro resolve
+// the implementation session from here (#186). Latest writer wins — a fresh `lh dev <pr>` re-points
+// it at the session it is about to spawn.
+export function setPullSession(issueId: number, sessionId: string) {
+  db.run(`UPDATE pulls SET session_id = ? WHERE issue_id = ?`, [
+    sessionId,
+    issueId,
+  ]);
 }
 
 export function authorFromSession(

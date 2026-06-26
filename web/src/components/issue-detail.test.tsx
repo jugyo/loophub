@@ -30,12 +30,6 @@ const issue: Issue = {
   title: "ui2: issue detail",
   body: "Render title, body, labels.",
   user: { login: "me" },
-  assignee: {
-    session_id: "sid-1",
-    agent: "impl-bot",
-    session: "run-1",
-    name: "impl-bot",
-  },
   labels: [{ name: "ready-to-build" }],
   comments: 1,
   created_at: "2026-06-17T11:00:00Z",

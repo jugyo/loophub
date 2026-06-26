@@ -107,9 +107,10 @@ below done for you — do **not** redo it:
 
 - **Worktree**: provisioned at `~/.loophub/worktrees/<owner>/<repo>/issue-<n>` on branch
   `loophub/issue-<n>` (off `main`); the session's cwd is already there.
-- **Session**: registered (agent `lh-dev`) and the issue **already assigned** to it. On an assign 409
-  (re-launch, or another session already assignee), `lh dev` warns and continues — you do not assign
-  again.
+- **Session**: registered (agent `lh-dev`). The dev session is attributed to the **PR row**
+  (`pulls.session_id`) when `lh dev` opens or re-enters the PR — that is what `lh resume` / retro
+  resolve from. There is no issue-assignee step (removed in #186); "who is working this issue" is the
+  linked PR's existence, not a separate assignee.
 - **Draft PR**: `lh dev` **already opened a linked PR** for this issue at the start of work (idempotent;
   see `core/service.ts` `dev.openPr`). It is a normal open PR with a placeholder body (a localized
   implementation-plan heading plus `Closes #<n>`) and may have 0 commits. **A linked PR already
@@ -127,27 +128,32 @@ git rev-parse --abbrev-ref HEAD     # loophub/issue-<n>
 Inside the worktree, **`--repo owner/name` is required** for every `lh` call — the worktree lives
 outside the main checkout, so `resolveRepo()` cannot infer the repo from cwd.
 
-Progress is already visible via the assignment and (later) the PR; post `lh issue comment <n> --repo
-<repo>` only if you need to flag a blocker or hand-off for a human watching the UI.
+Progress is already visible via the linked PR; post `lh issue comment <n> --repo <repo>` only if you
+need to flag a blocker or hand-off for a human watching the UI.
 
 #### Another session already owns the issue
 
-`lh dev` assigns automatically and only warns on 409, so a duplicate assign is not your concern. But if
-you find a **different active session** is genuinely working the same issue (not just a stale re-launch
-of your own), **stop** and ask the human whether to wait, pick another issue, or take over. Do not
-overwrite assignment or edit in parallel.
+The double-`lh dev` guard is the **open-PR constraint** (at most one open PR per linked issue) plus the
+host-local dev lock — `lh dev` is idempotent and reuses the existing open PR rather than opening a
+second. But if you find a **different active session** is genuinely working the same issue (not just a
+stale re-launch of your own), **stop** and ask the human whether to wait, pick another issue, or take
+over. Do not edit in parallel.
 
 #### Manual launch (not via `lh dev`)
 
 Only if you arrived here **without** `lh dev` (ad-hoc, or a host that doesn't use the launcher): set up
-the worktree and assignment yourself first, then continue.
+the worktree and the linked draft PR yourself first, then continue. `lh dev openPr` records the session
+on the PR (`pulls.session_id`); there is no separate assign step.
 
 ```sh
 git worktree add ~/.loophub/worktrees/<owner>/<repo>/issue-<n> -b loophub/issue-<n> main
 cd ~/.loophub/worktrees/<owner>/<repo>/issue-<n>
 SID="$(uuidgen)"
 lh session register --id "$SID" --agent impl-bot --session "$SID"
-lh issue assign <n> --session-id "$SID" --repo <repo>   # stop on 409: see "Another session" above
+# Open the linked draft PR. `--session-id "$SID"` attributes the session to the PR row
+# (`pulls.session_id`) — the basis for `lh resume` / retro. The open-PR constraint makes this the
+# point at which the issue is "taken": a second open PR for the same issue is rejected.
+lh pr create --repo <repo> --head loophub/issue-<n> --base main --title "..." --issue <n> --session-id "$SID"
 ```
 
 #### Parallel LoopHub server (only when changing server code)

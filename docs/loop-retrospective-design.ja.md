@@ -157,14 +157,12 @@ transcript を抱え込まない方針とする。decision log は次の三層:
 
 #### 4.3.1 セッションの特定とアクセス
 
-- **PR → 実装セッションの紐付け**: セッションは **PR 行ではなく実装対象の issue 行**に載る
-  (`issues.assignee_session_id`、`pull_request.opened` の payload には `session_id` は無い)。
-  したがって経路は **PR → `pulls.linked_issue_id` → `issues.assignee_session_id`**。これが
-  decision log の「キー」。ただし `linked_issue_id` は PR を `--issue` か本文 `Closes #N` で
-  リンクしたときだけ埋まり、その issue が assign 済みである必要もある。**リンクの無い PR では
-  session を特定できず**、その場合 `retros.session_id` は NULL のまま(§4.2 の「判れば」)で、
-  retro はイベント/PR データのみで成立させる。session_id 自体は `issue.assigned` の payload
-  からも復元できる。
+- **PR → 実装セッションの紐付け**: セッションは **PR 行**(`pulls.session_id`)に載る。`lh dev` が
+  PR を開く / 再入する際に、起動する実装セッションを PR 行へ帰属させる(#186 で issue の assignee
+  経路から移設)。したがって経路は **PR → `pulls.session_id`** で完結し、`linked_issue_id` は
+  retro が記録する issue 番号にのみ使う。**session 帰属の無い PR では session を特定できず**、その
+  場合 `retros.session_id` は NULL のまま(§4.2 の「判れば」)で、retro はイベント/PR データのみで
+  成立させる。
 - **本文アクセスは cc-session-finder 優先**: セッション本文(transcript)は LoopHub に
   コピーせず、利用可能なら **cc-session-finder MCP**(ローカル索引、read-only)で session_id
   から引く。retro は別セッション・後追い(`pull_request.merged` 後)で実行されるが、

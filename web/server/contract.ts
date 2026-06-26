@@ -143,7 +143,6 @@ export const methods: Record<string, MethodDef> = {
         state: str,
         kind: { enum: ["issue", "pull", "any"] },
         labels: stringArray,
-        assignee_session_id: sid,
         page: positiveInt,
         perPage: positiveInt,
       },
@@ -155,7 +154,6 @@ export const methods: Record<string, MethodDef> = {
         state: p.state,
         kind: p.kind,
         labels: p.labels,
-        assignee_session_id: p.assignee_session_id,
         page: p.page,
         perPage: p.perPage,
       }),
@@ -208,25 +206,6 @@ export const methods: Record<string, MethodDef> = {
         { title: p.title, body: p.body, state: p.state, labels: p.labels },
         p.session_id,
       ),
-  },
-  "issues/assign": {
-    description: "Assign an issue to an agent session.",
-    params: params({ repo, number: positiveInt, session_id: sid }, [
-      "repo",
-      "number",
-      "session_id",
-    ]),
-    result: anyObject,
-    handler: (p) => svc.issues.assign(p.repo, p.number, p.session_id),
-  },
-  "issues/unassign": {
-    description: "Clear an issue's assignee.",
-    params: params({ repo, number: positiveInt, session_id: sid }, [
-      "repo",
-      "number",
-    ]),
-    result: anyObject,
-    handler: (p) => svc.issues.unassign(p.repo, p.number, p.session_id),
   },
   "issues/addLabels": {
     description: "Add labels to an issue.",
@@ -476,7 +455,7 @@ export const methods: Record<string, MethodDef> = {
   // ---- dashboard ----
   "dashboard/overview": {
     description:
-      "Cross-repo top-page overview: in-progress (agent-assigned) issues and open unmerged pull requests, each tagged with its repo.",
+      "Cross-repo top-page overview: recently created open issues and open unmerged pull requests, each tagged with its repo.",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.dashboard.overview(),

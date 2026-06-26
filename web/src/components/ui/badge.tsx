@@ -1,5 +1,5 @@
 // Status badge pill. Tones mirror the v1 UI badge palette (src/ui.html) for
-// state / review / conflict / agent parity.
+// state / review / conflict parity.
 
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";

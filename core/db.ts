@@ -245,8 +245,8 @@ CREATE TABLE IF NOT EXISTS attachments (
 -- Loop retrospectives (loop-retrospective-design.ja.md §4.2). One row per
 -- generated retro: rubric scores + free-form findings for a (merged) PR, stored
 -- structured for later aggregation/UI. session_id is the *implementation* session
--- (resolved PR -> linked issue -> assignee_session_id), NULL when the PR has no
--- link. findings_json / rubric note are sensitive at-rest; redacted/redact_ruleset
+-- (resolved from the PR row's own session attribution, pulls.session_id), NULL
+-- when the PR has none. findings_json / rubric note are sensitive at-rest; redacted/redact_ruleset
 -- record the redaction version so weakly-redacted rows can be re-processed later.
 CREATE TABLE IF NOT EXISTS retros (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -285,12 +285,52 @@ tryExec(
 );
 tryExec("ALTER TABLE repos ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
 tryExec("ALTER TABLE repos ADD COLUMN archived_at TEXT");
+// issue assignee (`@lh-dev`) is retired (#186): the load-bearing roles it held — the double
+// `lh dev` guard and `lh resume`/retro session resolution — moved to PR rows (the open-PR unique
+// constraint and pulls.session_id below). The migration order matters: add pulls.session_id and
+// backfill it from the retiring assignee BEFORE dropping the column, so PRs open (or pending retro)
+// at upgrade time keep their session attribution.
+//
+// pulls.session_id: the dev session that opened/worked this PR. Replaces the issue-assignee path
+// for `lh resume`/retro session resolution (#186); set by `lh dev` when it opens or re-enters a PR.
 tryExec(
-  "ALTER TABLE issues ADD COLUMN assignee_session_id TEXT REFERENCES agent_sessions(id)",
+  "ALTER TABLE pulls ADD COLUMN session_id TEXT REFERENCES agent_sessions(id)",
+);
+// Backfill from the old assignee so existing PRs stay resolvable after the column is dropped. The
+// old resolution preferred the PR's own assignee (direct `lh dev <pr>`) over the linked issue's
+// (the common `lh dev <issue>` flow), so seed the own-row value first, then the linked-issue value
+// for rows still NULL. On a fresh DB the assignee column never existed, so these throw and are
+// ignored (and there is no data to backfill anyway).
+tryExec(
+  `UPDATE pulls SET session_id = (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.issue_id)
+   WHERE session_id IS NULL
+     AND (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.issue_id) IS NOT NULL`,
 );
 tryExec(
-  "CREATE UNIQUE INDEX IF NOT EXISTS idx_issues_assignee_session ON issues(assignee_session_id) WHERE assignee_session_id IS NOT NULL",
+  `UPDATE pulls SET session_id = (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.linked_issue_id)
+   WHERE session_id IS NULL AND linked_issue_id IS NOT NULL
+     AND (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.linked_issue_id) IS NOT NULL`,
 );
+// pulls.open_linked_issue_id mirrors linked_issue_id while the PR is open (state='open' AND
+// merged=0) and is NULL otherwise; the partial unique index below makes "at most one open PR per
+// linked issue" a hard DB constraint (the double-`lh dev` guard, replacing the assignee UNIQUE
+// index). It is maintained on create (store.createPull), close/reopen (store.updateIssue), and
+// merge (store.setMerged). The backfill seeds it for existing open, unmerged, linked PRs.
+tryExec(
+  "ALTER TABLE pulls ADD COLUMN open_linked_issue_id INTEGER REFERENCES issues(id)",
+);
+tryExec(
+  `UPDATE pulls SET open_linked_issue_id = linked_issue_id
+   WHERE linked_issue_id IS NOT NULL AND merged = 0
+     AND issue_id IN (SELECT id FROM issues WHERE state = 'open')`,
+);
+tryExec(
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_pulls_open_linked_issue ON pulls(open_linked_issue_id) WHERE open_linked_issue_id IS NOT NULL",
+);
+// Now that pulls.session_id is backfilled, drop the retired assignee column and its unique index
+// (the index first, so DROP COLUMN is permitted).
+tryExec("DROP INDEX IF EXISTS idx_issues_assignee_session");
+tryExec("ALTER TABLE issues DROP COLUMN assignee_session_id");
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_at TEXT");
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_by TEXT");
 // reviews.head_sha records the PR head a review was made against, so an APPROVE

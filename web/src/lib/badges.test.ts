@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AgentSession, Issue, PullRequest } from "@/api/types";
+import type { Issue, PullRequest } from "@/api/types";
 import {
-  assigneeBadge,
   issueBadges,
   mergeableBadge,
   pullBadges,
@@ -10,13 +9,6 @@ import {
   workingBadge,
 } from "./badges";
 
-const session: AgentSession = {
-  session_id: "sid-1",
-  agent: "impl-bot",
-  session: "run-1",
-  name: null,
-};
-
 function issue(partial: Partial<Issue> = {}): Issue {
   return {
     number: 1,
@@ -24,7 +16,6 @@ function issue(partial: Partial<Issue> = {}): Issue {
     title: "An issue",
     body: "",
     user: { login: "me" },
-    assignee: null,
     labels: [],
     comments: 0,
     created_at: "2026-01-01T00:00:00Z",
@@ -57,27 +48,6 @@ function pull(partial: Partial<PullRequest> = {}): PullRequest {
     ...partial,
   };
 }
-
-describe("assigneeBadge", () => {
-  it("returns null when unassigned", () => {
-    expect(assigneeBadge(null)).toBeNull();
-  });
-
-  it("uses the agent name with the session id as the title", () => {
-    const badge = assigneeBadge(session);
-    expect(badge).toEqual({
-      tone: "agent",
-      label: "@impl-bot",
-      title: "sid-1",
-    });
-  });
-
-  it("prefers a session name when present", () => {
-    expect(assigneeBadge({ ...session, name: "Builder" })?.label).toBe(
-      "@Builder",
-    );
-  });
-});
 
 describe("stateBadge", () => {
   it("marks open issues open and closed issues closed", () => {
@@ -156,24 +126,19 @@ describe("workingBadge", () => {
 });
 
 describe("issueBadges / pullBadges", () => {
-  it("orders agent before state on issues", () => {
-    const badges = issueBadges(issue({ assignee: session, state: "closed" }));
-    expect(badges.map((b) => b.tone)).toEqual(["agent", "closed"]);
+  it("shows the state badge on a closed issue", () => {
+    const badges = issueBadges(issue({ state: "closed" }));
+    expect(badges.map((b) => b.tone)).toEqual(["closed"]);
   });
 
-  it("collects agent, review and conflict badges on a PR", () => {
+  it("collects review and conflict badges on a PR", () => {
     const badges = pullBadges(
       pull({
-        assignee: session,
         review_state: "APPROVED",
         mergeable_state: "dirty",
       }),
     );
-    expect(badges.map((b) => b.tone)).toEqual([
-      "agent",
-      "review-approved",
-      "conflict",
-    ]);
+    expect(badges.map((b) => b.tone)).toEqual(["review-approved", "conflict"]);
   });
 
   it("shows the mergeable badge on a clean open PR", () => {
@@ -181,17 +146,15 @@ describe("issueBadges / pullBadges", () => {
     expect(badges.map((b) => b.tone)).toEqual(["mergeable"]);
   });
 
-  it("places the working badge after agent and before state/review", () => {
+  it("places the working badge before state/review", () => {
     const badges = pullBadges(
       pull({
-        assignee: session,
         working: true,
         review_state: "APPROVED",
         mergeable_state: "clean",
       }),
     );
     expect(badges.map((b) => b.tone)).toEqual([
-      "agent",
       "working",
       "review-approved",
       "mergeable",

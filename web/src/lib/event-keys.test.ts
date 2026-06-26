@@ -61,7 +61,7 @@ describe("queryKeysForEvent", () => {
 
   it("includes a repo key for any repo-scoped event", () => {
     const keys = queryKeysForEvent(
-      ev({ type: "issue.assigned", repo: "me/proj", payload: { number: 1 } }),
+      ev({ type: "issue.closed", repo: "me/proj", payload: { number: 1 } }),
     );
     expect(keys).toContainEqual(["repo", "me/proj"]);
   });

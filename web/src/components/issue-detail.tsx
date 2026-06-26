@@ -1,7 +1,7 @@
 // Issue detail view (/r/:owner/:repo/issues/:number). v1 parity: title, body,
-// labels, state, agent status, assignee, comments, the linked PR, plus the
-// write operations v1 supports — comment posting and close/reopen. Body and
-// comments are stored as plain Markdown and rendered as GFM via <Markdown>.
+// labels, state, comments, the linked PR, plus the write operations v1 supports
+// — comment posting and close/reopen. Body and comments are stored as plain
+// Markdown and rendered as GFM via <Markdown>.
 
 import { Link } from "@tanstack/react-router";
 import { Loader2, Play } from "lucide-react";
@@ -12,7 +12,7 @@ import { IssueDevInfo } from "@/components/dev-info";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { assigneeBadge, stateBadge } from "@/lib/badges";
+import { stateBadge } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import { useImageUpload } from "@/lib/use-image-upload";
 import {
@@ -88,7 +88,6 @@ function IssueHeader({
     (l) => l.name === READY_TO_BUILD_LABEL,
   );
   const state = stateBadge(issue, "issues");
-  const agent = assigneeBadge(issue.assignee);
   const linked = issue.linked_pull_request;
   const titleRef = useRegisterDetailTitle(issue.title);
 
@@ -96,11 +95,6 @@ function IssueHeader({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         {state ? <Badge tone={state.tone}>{state.label}</Badge> : null}
-        {agent ? (
-          <Badge tone={agent.tone} title={agent.title}>
-            {agent.label}
-          </Badge>
-        ) : null}
         <span className="text-sm text-muted-foreground">#{issue.number}</span>
       </div>
 

@@ -36,7 +36,6 @@ const pull: PullRequest = {
   title: "ui2: PR detail",
   body: "Render diff, reviews, comments.",
   user: { login: "impl-bot" },
-  assignee: null,
   head: { ref: "issue-153", sha: "aaa" },
   base: { ref: "main", sha: "bbb" },
   merged: false,

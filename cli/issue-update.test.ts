@@ -135,17 +135,3 @@ test("lh issue update without --title/--body errors", () => {
   expect(i.title).toBe("unchanged title");
   expect(i.body).toBe("unchanged body");
 });
-
-test("lh issue update does not assign the issue", () => {
-  const n = createIssue("assign guard", "body");
-  lh([
-    "issue",
-    "update",
-    String(n),
-    "--repo",
-    REPO,
-    "--title",
-    "assign guard 2",
-  ]);
-  expect(viewJSON(n).assignee).toBeNull();
-});

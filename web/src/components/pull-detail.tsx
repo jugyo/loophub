@@ -1,6 +1,6 @@
 // PR detail view (/r/:owner/:repo/pulls/:number). v1 parity: title, body,
 // state + review badges, head→base, the linked issue (bidirectional with the
-// issue's linked PR), agent status, reviews, the file diff with line comments,
+// issue's linked PR), reviews, the file diff with line comments,
 // issue comments, plus the write operations — merge (when APPROVED), "mark ready
 // for re-review" (when CHANGES_REQUESTED), and close/reopen (when not merged).
 // Body, reviews, and comments are stored as plain Markdown and rendered as GFM
@@ -22,7 +22,6 @@ import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  assigneeBadge,
   type BadgeTone,
   mergeableBadge,
   reviewBadge,
@@ -140,7 +139,6 @@ function PullHeader({
   const state = stateBadge(pull, "pulls");
   const review = reviewBadge(pull);
   const mergeable = mergeableBadge(pull);
-  const agent = assigneeBadge(pull.assignee ?? null);
   const linked = pull.linked_issue;
 
   const canAct = pull.state === "open" && !pull.merged;
@@ -162,11 +160,6 @@ function PullHeader({
         {mergeable ? (
           <Badge tone={mergeable.tone} title={mergeable.title}>
             {mergeable.label}
-          </Badge>
-        ) : null}
-        {agent ? (
-          <Badge tone={agent.tone} title={agent.title}>
-            {agent.label}
           </Badge>
         ) : null}
       </div>

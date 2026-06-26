@@ -1,9 +1,8 @@
 // Pure helpers for the status badges shown on dashboard rows. Ported from the
-// v1 UI (src/ui.html) for parity: state, review state, mergeable/conflict,
-// and assignee (agent). Kept dependency-free so the badge logic is
-// unit-testable without React.
+// v1 UI (src/ui.html) for parity: state, review state, mergeable/conflict.
+// Kept dependency-free so the badge logic is unit-testable without React.
 
-import type { AgentSession, Issue, PullRequest } from "@/api/types";
+import type { Issue, PullRequest } from "@/api/types";
 
 export type BadgeTone =
   | "open"
@@ -17,31 +16,14 @@ export type BadgeTone =
   | "conflict"
   | "working"
   | "unknown"
+  // Violet tone, still used by the dev-note "action" badge (pull-detail.tsx).
   | "agent";
 
 export interface Badge {
   tone: BadgeTone;
   label: string;
-  /** Tooltip text (e.g. agent session id), when useful. */
+  /** Tooltip text, when useful. */
   title?: string;
-}
-
-/** Display name for an assignee/agent session, mirroring v1 assigneeLabel. */
-export function assigneeLabel(a: AgentSession | null | undefined): string {
-  if (!a) return "";
-  return a.name || a.agent || "agent";
-}
-
-/** "@name" agent badge for an assigned session, or null when unassigned. */
-export function assigneeBadge(
-  a: AgentSession | null | undefined,
-): Badge | null {
-  if (!a) return null;
-  return {
-    tone: "agent",
-    label: `@${assigneeLabel(a)}`,
-    title: a.session_id || undefined,
-  };
 }
 
 /** State badge: open/closed for issues, merged for merged PRs. Open PRs show none. */
@@ -114,21 +96,17 @@ export function workingBadge(pr: PullRequest): Badge | null {
   };
 }
 
-/** All badges for an issue row (v1 parity ordering: agent, state). */
+/** All badges for an issue row. */
 export function issueBadges(issue: Issue): Badge[] {
   const badges: Badge[] = [];
-  const agent = assigneeBadge(issue.assignee);
-  if (agent) badges.push(agent);
   const state = stateBadge(issue, "issues");
   if (state) badges.push(state);
   return badges;
 }
 
-/** All badges for a pull-request row (agent, working, state, review, conflict). */
+/** All badges for a pull-request row (working, state, review, conflict). */
 export function pullBadges(pr: PullRequest): Badge[] {
   const badges: Badge[] = [];
-  const agent = assigneeBadge(pr.assignee ?? null);
-  if (agent) badges.push(agent);
   const working = workingBadge(pr);
   if (working) badges.push(working);
   const state = stateBadge(pr, "pulls");
