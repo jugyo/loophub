@@ -8,6 +8,7 @@ import { Loader2, Play } from "lucide-react";
 import { useRef, useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
 import { useRegisterDetailTitle } from "@/components/detail-title";
+import { IssueDevInfo } from "@/components/dev-info";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -138,17 +139,16 @@ function IssueHeader({
         </div>
       ) : null}
 
-      {issue.body ? (
-        <Markdown
-          owner={owner}
-          repo={repo}
-          className="rounded-md border bg-muted/30 p-4"
-        >
-          {issue.body}
-        </Markdown>
-      ) : (
-        <p className="text-sm text-muted-foreground">No description.</p>
-      )}
+      <div className="overflow-hidden rounded-md border bg-muted/30">
+        {issue.body ? (
+          <Markdown owner={owner} repo={repo} className="p-4">
+            {issue.body}
+          </Markdown>
+        ) : (
+          <p className="p-4 text-sm text-muted-foreground">No description.</p>
+        )}
+        <IssueDevInfo owner={owner} repo={repo} number={issue.number} />
+      </div>
 
       <div className="flex flex-wrap justify-end gap-2">
         <Button

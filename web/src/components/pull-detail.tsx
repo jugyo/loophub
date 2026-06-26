@@ -16,6 +16,7 @@ import type {
   PullReview,
 } from "@/api/types";
 import { useRegisterDetailTitle } from "@/components/detail-title";
+import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
@@ -196,17 +197,16 @@ function PullHeader({
         </div>
       ) : null}
 
-      {pull.body ? (
-        <Markdown
-          owner={owner}
-          repo={repo}
-          className="rounded-md border bg-muted/30 p-4"
-        >
-          {pull.body}
-        </Markdown>
-      ) : (
-        <p className="text-sm text-muted-foreground">No description.</p>
-      )}
+      <div className="overflow-hidden rounded-md border bg-muted/30">
+        {pull.body ? (
+          <Markdown owner={owner} repo={repo} className="p-4">
+            {pull.body}
+          </Markdown>
+        ) : (
+          <p className="p-4 text-sm text-muted-foreground">No description.</p>
+        )}
+        <PullDevInfo owner={owner} repo={repo} number={pull.number} />
+      </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         {!pull.merged ? (
