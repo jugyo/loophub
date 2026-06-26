@@ -46,6 +46,15 @@ export function useRecentOpenIssues() {
   });
 }
 
+/** The cap on the recent-issues list, so the UI can note when it's reached. */
+export function useRecentIssuesLimit() {
+  return useQuery({
+    queryKey: queryKeys.dashboard(),
+    queryFn: getDashboardOverview,
+    select: (overview) => overview.recentIssuesLimit,
+  });
+}
+
 /** Open, unmerged pull requests across all active repos. */
 export function useUnmergedPulls() {
   return useQuery({

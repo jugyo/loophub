@@ -69,6 +69,36 @@ describe("DashboardSection", () => {
     expect(seeAll?.getAttribute("href")).toBe("/r/me/proj/issues");
   });
 
+  it("renders a footerNote below the list when provided", async () => {
+    renderInRouter(
+      <DashboardSection<string>
+        title="Recent issues"
+        query={result<string>({ data: ["alpha"] })}
+        emptyText="No open issues."
+        keyOf={(s) => s}
+        renderItem={(s) => <span>{s}</span>}
+        footerNote="Showing the 100 most recent."
+      />,
+    );
+    expect(
+      await screen.findByText("Showing the 100 most recent."),
+    ).toBeTruthy();
+  });
+
+  it("omits the footerNote when none is provided", async () => {
+    renderInRouter(
+      <DashboardSection<string>
+        title="Recent issues"
+        query={result<string>({ data: ["alpha"] })}
+        emptyText="No open issues."
+        keyOf={(s) => s}
+        renderItem={(s) => <span>{s}</span>}
+      />,
+    );
+    expect(await screen.findByText("alpha")).toBeTruthy();
+    expect(screen.queryByText(/most recent/)).toBeNull();
+  });
+
   it("renders a header action next to the title", async () => {
     renderInRouter(
       <DashboardSection<string>

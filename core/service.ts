@@ -1266,7 +1266,9 @@ export const dashboard = {
           pull: await pullJSON(repo, row),
         })),
     );
-    return { issues, pulls };
+    // Surface the issue cap so the UI can note "showing the N most recent"
+    // without duplicating the magic number client-side.
+    return { issues, pulls, recentIssuesLimit: DASHBOARD_RECENT_ISSUES_LIMIT };
   },
 };
 

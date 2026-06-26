@@ -156,6 +156,8 @@ test("dashboard/overview lists recent open issues newest-created first, tagged w
   const r: any = await call("dashboard/overview", {});
   expect(Array.isArray(r.result.issues)).toBe(true);
   expect(Array.isArray(r.result.pulls)).toBe(true);
+  // The cap is surfaced so the UI can note when the list is truncated.
+  expect(r.result.recentIssuesLimit).toBe(100);
 
   // Both open issues appear regardless of assignment.
   const titles = r.result.issues.map((it: any) => it.issue.title);

@@ -1,7 +1,11 @@
 import { createRoute } from "@tanstack/react-router";
 import { IssueRow, PullRow } from "@/components/dashboard-rows";
 import { DashboardSection } from "@/components/dashboard-section";
-import { useRecentOpenIssues, useUnmergedPulls } from "@/queries/dashboard";
+import {
+  useRecentIssuesLimit,
+  useRecentOpenIssues,
+  useUnmergedPulls,
+} from "@/queries/dashboard";
 import { rootRoute } from "./root";
 
 // Home (/) is a cross-project overview: pull requests still open and the most
@@ -11,6 +15,13 @@ import { rootRoute } from "./root";
 function HomePage() {
   const issues = useRecentOpenIssues();
   const pulls = useUnmergedPulls();
+  const recentIssuesLimit = useRecentIssuesLimit().data;
+
+  // Only hint at the cap once the list actually reaches it — below the cap the
+  // note would be noise (or misread as "only N issues exist").
+  const issuesCapped =
+    recentIssuesLimit != null &&
+    (issues.data?.length ?? 0) >= recentIssuesLimit;
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-8">
@@ -51,6 +62,9 @@ function HomePage() {
             showCreatedAt
           />
         )}
+        footerNote={
+          issuesCapped ? `Showing the ${recentIssuesLimit} most recent.` : null
+        }
       />
     </div>
   );

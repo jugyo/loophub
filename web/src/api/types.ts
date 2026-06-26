@@ -158,6 +158,8 @@ export interface DashboardPullItem {
 export interface DashboardOverview {
   issues: DashboardIssueItem[];
   pulls: DashboardPullItem[];
+  /** Max issues the overview returns; used to note when the list is capped. */
+  recentIssuesLimit: number;
 }
 
 /** Wire format for GET /events and the /events/stream SSE feed. */

@@ -17,6 +17,7 @@ export function DashboardSection<T>({
   renderItem,
   keyOf,
   headerAction,
+  footerNote,
 }: {
   title: string;
   query: UseQueryResult<T[]>;
@@ -28,6 +29,8 @@ export function DashboardSection<T>({
   keyOf: (item: T) => string | number;
   /** Rendered to the right of the title in the section header. */
   headerAction?: ReactNode;
+  /** Subtle muted text below the list, e.g. a note that the list is capped. */
+  footerNote?: ReactNode;
 }) {
   const { data, isLoading, isError, error } = query;
 
@@ -60,6 +63,10 @@ export function DashboardSection<T>({
           ))}
         </ul>
       )}
+
+      {footerNote ? (
+        <p className="self-end text-xs text-muted-foreground">{footerNote}</p>
+      ) : null}
 
       {seeAllTo ? (
         <Link
