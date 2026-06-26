@@ -110,6 +110,12 @@ below done for you — do **not** redo it:
 - **Session**: registered (agent `lh-dev`) and the issue **already assigned** to it. On an assign 409
   (re-launch, or another session already assignee), `lh dev` warns and continues — you do not assign
   again.
+- **Draft PR**: `lh dev` **already opened a linked PR** for this issue at the start of work (idempotent;
+  see `core/service.ts` `dev.openPr`). It is a normal open PR with a placeholder body (a localized
+  implementation-plan heading plus `Closes #<n>`) and may have 0 commits. **A linked PR already
+  existing is the expected state, not an
+  anomaly** — do not be surprised by it, do not create a second one, and do not stop to ask about it.
+  You fill in its body at §5.
 
 So skip straight to implementing (§3). Verify the setup once:
 
@@ -204,21 +210,34 @@ While testing, **capture evidence for the PR body** (step 5):
 
 Do not open a PR with checkboxes only — reviewers need proof you ran the verification.
 
-### 5. PR
+### 5. PR (fill the existing draft PR)
 
 No push required (LoopHub reads the same `.git` directly). Default uses the production server (`:8730`).
 
-**`--body` is required.** Do not create a PR with only `--title` and `--issue` (empty description is
-forbidden).
+**`lh dev` already opened a linked PR at the start of work (§2).** Your job here is **not** to create a
+PR — it is to **fill in that PR's body** with the real Summary / Acceptance criteria / Test plan /
+Evidence, replacing the placeholder implementation-plan body that `lh dev` generated. LoopHub has no
+separate "draft" flag, so the PR is
+already open and reviewable; filling the body is what readies it for review (§7). Do **not** run
+`lh pr create` on the normal path — that would create a duplicate.
+
+First get the PR number (it is shown by `lh issue view`, or list open PRs for the branch):
+
+```sh
+lh issue view <n> --repo <repo>     # header shows: linked PR #<m> (open)
+# or: lh pr list --repo <repo> | grep loophub/issue-<n>
+```
+
+**`--body` is required.** Do not leave the placeholder body — fill all required sections below.
 
 #### Body template (required sections)
 
 Match heading language to the conversation (localized Summary / Acceptance criteria / Test plan /
-Evidence headings; see `skills/_shared/human-language.md` when present). Pass the body via HEREDOC:
+Evidence headings; see `skills/_shared/human-language.md` when present). Update the existing PR's body
+via HEREDOC:
 
 ```sh
-lh pr create --repo <repo> --head loophub/issue-<n> --base main \
-  --title "..." --issue <n> --actor impl-bot \
+lh pr update <m> --repo <repo> \
   --body "$(cat <<'EOF'
 ## Summary
 - <1–3 bullets: what changed and why>
@@ -244,8 +263,7 @@ EOF
 When running a **parallel server** in the worktree (§2 `lh-web --port 8731`), set `LOOPHUB_URL`:
 
 ```sh
-LOOPHUB_URL=http://localhost:8731 lh pr create --repo <repo> --head loophub/issue-<n> --base main \
-  --title "..." --issue <n> --actor impl-bot \
+LOOPHUB_URL=http://localhost:8731 lh pr update <m> --repo <repo> \
   --body "$(cat <<'EOF'
 ## Summary
 - <1–3 bullets: what changed and why>
@@ -274,17 +292,33 @@ EOF
 | Acceptance criteria | Mirror the issue's AC as a checklist; check **only** items this PR actually satisfies (unmet / out-of-scope stay unchecked with a one-line reason) |
 | Test plan | Verification performed (checked items you actually ran) |
 | Evidence | Concrete proof from step 4 — test output excerpt, screenshots, CLI snippets, or explicit N/A |
-| `Closes #<n>` | Issue number (use with `--issue`; merge-ready can also parse body) |
+| `Closes #<n>` | Issue number — already in the placeholder body from `lh dev`; keep it |
 
 The **Acceptance criteria** section mirrors the issue's AC verbatim as a checklist. Tick an item only
 when the PR genuinely meets it; leave anything unmet or out of scope unchecked and append a one-line
 reason. This is the human- and reviewer-facing record that the PR satisfies the issue — `lh-pr-review`
 runs an Acceptance reviewer against the same AC.
 
-`--issue` stores the link in the DB; UI/API show it both ways. `Closes #<n>` helps merge-ready find
-the issue from body. No manual issue comment needed.
+The issue↔PR link and `Closes #<n>` were set when `lh dev` opened the draft PR, so you do not pass
+`--issue` to `lh pr update`. Keep `Closes #<n>` in the body. No manual issue comment needed.
 
-After create, confirm the body is non-empty:
+#### Fallback: no linked PR exists
+
+The draft PR is normally already there (§2). Only if `lh issue view <n>` shows **no linked PR** (e.g.
+`lh dev` failed before opening it, or a manual launch) do you create one yourself — this is the
+exception, not the default path:
+
+```sh
+lh pr create --repo <repo> --head loophub/issue-<n> --base main \
+  --title "..." --issue <n> --actor impl-bot \
+  --body "$(cat <<'EOF'
+... same required sections as above ...
+Closes #<n>
+EOF
+)"
+```
+
+After updating (or creating), confirm the body is non-empty:
 
 ```sh
 lh pr view <m> --repo <repo>   # body must include Summary, Acceptance criteria, Test plan, and Evidence
@@ -313,7 +347,7 @@ for another user message.
 
 ### 7. Review loop (default, same session)
 
-After creating the PR, **without ending this session**, continue with `lh-pr-review`:
+After filling in the PR body (§5), **without ending this session**, continue with `lh-pr-review`:
 
 ```text
 /lh-pr-review <m>
