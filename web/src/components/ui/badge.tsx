@@ -21,6 +21,8 @@ const badgeVariants = cva(
         "review-commented": "border-border text-muted-foreground",
         mergeable: "border-green-600/60 text-green-600 dark:text-green-400",
         conflict: "border-destructive/50 text-destructive",
+        working:
+          "border-sky-500/50 bg-sky-500/10 text-sky-600 dark:text-sky-300",
         unknown: "border-border text-muted-foreground",
         agent:
           "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-300",

@@ -7,6 +7,7 @@ import {
   pullBadges,
   reviewBadge,
   stateBadge,
+  workingBadge,
 } from "./badges";
 
 const session: AgentSession = {
@@ -148,6 +149,24 @@ describe("mergeableBadge", () => {
   });
 });
 
+describe("workingBadge", () => {
+  it("shows a working badge on an open PR with a dirty worktree", () => {
+    const badge = workingBadge(pull({ working: true }));
+    expect(badge?.tone).toBe("working");
+    expect(badge?.label).toBe("working");
+  });
+
+  it("does not show on a clean or worktree-less PR", () => {
+    expect(workingBadge(pull({ working: false }))).toBeNull();
+    expect(workingBadge(pull({}))).toBeNull();
+  });
+
+  it("does not show on merged or non-open PRs even if flagged", () => {
+    expect(workingBadge(pull({ working: true, merged: true }))).toBeNull();
+    expect(workingBadge(pull({ working: true, state: "closed" }))).toBeNull();
+  });
+});
+
 describe("issueBadges / pullBadges", () => {
   it("orders agent before state on issues", () => {
     const badges = issueBadges(issue({ assignee: session, state: "closed" }));
@@ -172,5 +191,22 @@ describe("issueBadges / pullBadges", () => {
   it("shows the mergeable badge on a clean open PR", () => {
     const badges = pullBadges(pull({ mergeable_state: "clean" }));
     expect(badges.map((b) => b.tone)).toEqual(["mergeable"]);
+  });
+
+  it("places the working badge after agent and before state/review", () => {
+    const badges = pullBadges(
+      pull({
+        assignee: session,
+        working: true,
+        review_state: "APPROVED",
+        mergeable_state: "clean",
+      }),
+    );
+    expect(badges.map((b) => b.tone)).toEqual([
+      "agent",
+      "working",
+      "review-approved",
+      "mergeable",
+    ]);
   });
 });

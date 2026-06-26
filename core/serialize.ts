@@ -5,6 +5,7 @@
 import { commitsAhead, diffStat, mergePreview, revParse } from "./git.ts";
 import { linkedRef } from "./links.ts";
 import { resolveMergeable } from "./mergeable.ts";
+import { pullWorktreeDirty } from "./pull-worktree.ts";
 import * as S from "./store.ts";
 
 export function repoJSON(r: S.Repo) {
@@ -182,6 +183,19 @@ export async function pullJSON(repo: S.Repo, row: any) {
       // leave zeros — a diff stat failure must not break serialization
     }
   }
+  // "working" badge: real uncommitted changes in this PR's lh-dev worktree. Guarded so the
+  // git status only runs for an open PR whose worktree directory actually exists (see
+  // pullWorktreeDirty); merged/closed and worktree-less PRs skip git.
+  const linked = linkedIssueSummary(repo, row.id);
+  const working = await pullWorktreeDirty({
+    fullName: repo.full_name,
+    headRef: p.head_ref,
+    linkedIssueNumber: linked?.number ?? null,
+    prNumber: row.number,
+    merged: !!p.merged,
+    state: row.state,
+  });
+
   return {
     number: row.number,
     state: row.state,
@@ -197,6 +211,7 @@ export async function pullJSON(repo: S.Repo, row: any) {
     additions,
     deletions,
     changed_files,
+    working,
     review_state,
     changes_addressed_at: p.changes_addressed_at ?? null,
     changes_addressed_by: p.changes_addressed_by ?? null,
@@ -204,6 +219,6 @@ export async function pullJSON(repo: S.Repo, row: any) {
     comments: S.countComments(row.id),
     created_at: row.created_at,
     updated_at: row.updated_at,
-    linked_issue: linkedIssueSummary(repo, row.id),
+    linked_issue: linked,
   };
 }

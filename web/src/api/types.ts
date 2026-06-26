@@ -127,6 +127,8 @@ export interface PullRequest {
   additions: number;
   deletions: number;
   changed_files: number;
+  /** True when this open PR's lh-dev worktree has real uncommitted changes. */
+  working?: boolean;
   created_at: string;
   updated_at: string;
   /** Set on the pull-detail response when the PR closes an issue. */

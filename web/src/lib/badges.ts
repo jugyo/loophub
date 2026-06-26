@@ -15,6 +15,7 @@ export type BadgeTone =
   | "review-commented"
   | "mergeable"
   | "conflict"
+  | "working"
   | "unknown"
   | "agent";
 
@@ -116,6 +117,20 @@ export function mergeableBadge(pr: PullRequest): Badge | null {
   }
 }
 
+/**
+ * "working" badge for an open PR whose lh-dev worktree has uncommitted changes — a quick
+ * "actively being worked on" cue. Null for merged/closed PRs or when the flag is absent/false
+ * (no worktree, clean tree, or an older server that doesn't send it).
+ */
+export function workingBadge(pr: PullRequest): Badge | null {
+  if (pr.merged || pr.state !== "open" || !pr.working) return null;
+  return {
+    tone: "working",
+    label: "working",
+    title: "Uncommitted changes in the PR worktree",
+  };
+}
+
 /** All badges for an issue row (v1 parity ordering: agent, state). */
 export function issueBadges(issue: Issue): Badge[] {
   const badges: Badge[] = [];
@@ -126,11 +141,13 @@ export function issueBadges(issue: Issue): Badge[] {
   return badges;
 }
 
-/** All badges for a pull-request row (agent, state, review, conflict). */
+/** All badges for a pull-request row (agent, working, state, review, conflict). */
 export function pullBadges(pr: PullRequest): Badge[] {
   const badges: Badge[] = [];
   const agent = assigneeBadge(pr.assignee ?? null);
   if (agent) badges.push(agent);
+  const working = workingBadge(pr);
+  if (working) badges.push(working);
   const state = stateBadge(pr, "pulls");
   if (state) badges.push(state);
   const review = reviewBadge(pr);
