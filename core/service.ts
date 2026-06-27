@@ -312,9 +312,17 @@ export const issues = {
     );
   },
 
+  // Issue detail. Unlike the list/summary `issueJSON` (where `comments` is just a count),
+  // the detail also carries `comment_list` — the full comment bodies (author, time, text) — so
+  // an implementation agent reading an issue via `lh issue view --json` gets the design context
+  // people leave in comments, not only the body (#231). The summary path stays a count to keep
+  // the issue list cheap.
   get(name: string, number: number) {
     const r = repoOr404(name);
-    return issueJSON(issueOr404(r, number), r);
+    const row = issueOr404(r, number);
+    const out = issueJSON(row, r);
+    out.comment_list = S.listComments(row.id).map(commentJSON);
+    return out;
   },
 
   create(

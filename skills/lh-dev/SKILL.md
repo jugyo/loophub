@@ -135,6 +135,20 @@ issue/PR text into the content input.
 lh issue view <n> --repo <repo>
 ```
 
+**Also read the issue's comments** — design memos are often left in comments, not only the body
+(#231). The plain view shows only the body, so pull the comment bodies from `--json` (`comment_list`:
+author, time, text):
+
+```sh
+lh issue view <n> --repo <repo> --json \
+  | jq -r '.comment_list[]? | "--- @\(.user.login) (\(.created_at))\n\(.body)"'
+```
+
+Treat both body **and** comments as the implementation spec. Comments may also carry progress notes or
+chatter — read for design intent (decisions, scope changes, constraints) and ignore pure status/noise;
+when a comment contradicts the body, the **later** statement wins. If body and comments conflict in a
+way you can't resolve, flag it rather than guess.
+
 **Before editing source**, show the user a short overview:
 
 - **#n** — title

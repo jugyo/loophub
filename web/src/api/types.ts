@@ -101,6 +101,12 @@ export interface Issue {
   user: UserRef;
   labels: Label[];
   comments: number;
+  /**
+   * Full comment bodies (author, time, text). Populated only on the issue-detail
+   * response (`issues/get`), not the list — so a reader gets the design context left
+   * in comments, while the list stays cheap with just the `comments` count (#231).
+   */
+  comment_list?: IssueComment[];
   created_at: string;
   updated_at: string;
   pull_request?: unknown;

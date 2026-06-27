@@ -1,0 +1,63 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, expect, test } from "vitest";
+
+// Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md).
+const HOME = mkdtempSync(join(tmpdir(), "lh-issue-svc-"));
+process.env.LOOPHUB_HOME = HOME;
+process.env.LOOPHUB_DB = join(HOME, "test.db");
+
+let svc: typeof import("./service.ts");
+let repoPath: string;
+
+function git(args: string[]) {
+  return spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
+}
+
+beforeAll(async () => {
+  svc = await import("./service.ts");
+  repoPath = mkdtempSync(join(tmpdir(), "lh-issue-repo-"));
+  git(["init", "-q", "-b", "main"]);
+  git(["config", "user.email", "t@t.local"]);
+  git(["config", "user.name", "tester"]);
+  writeFileSync(join(repoPath, "a.txt"), "x\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "init"]);
+
+  await svc.repos.create({ path: repoPath, name: "me/proj" });
+});
+
+afterAll(() => {
+  rmSync(HOME, { recursive: true, force: true });
+  rmSync(repoPath, { recursive: true, force: true });
+});
+
+test("issues.get returns comment bodies in comment_list (#231)", () => {
+  const issue = svc.issues.create("me/proj", { title: "t", body: "body" });
+  svc.comments.create("me/proj", issue.number, "first design note", "sess-a");
+  svc.comments.create("me/proj", issue.number, "second design note", "sess-b");
+
+  const detail = svc.issues.get("me/proj", issue.number) as any;
+
+  // Count stays for the cheap summary surface...
+  expect(detail.comments).toBe(2);
+  // ...and the detail also carries the full bodies (author, time, text). Assert membership, not
+  // order: comments created within the same second share a `created_at` (now() drops sub-second
+  // precision) and listComments orders by created_at with no tiebreaker, so order is not guaranteed.
+  expect(detail.comment_list).toHaveLength(2);
+  expect(detail.comment_list.map((c: any) => c.body)).toEqual(
+    expect.arrayContaining(["first design note", "second design note"]),
+  );
+  const [c0] = detail.comment_list;
+  expect(c0.user.login).toBeTruthy();
+  expect(c0.created_at).toBeTruthy();
+});
+
+test("issues.get returns an empty comment_list when there are no comments", () => {
+  const issue = svc.issues.create("me/proj", { title: "no comments" });
+  const detail = svc.issues.get("me/proj", issue.number) as any;
+  expect(detail.comments).toBe(0);
+  expect(detail.comment_list).toEqual([]);
+});
