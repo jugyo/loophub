@@ -3,6 +3,7 @@
 // (../lib/badges.ts).
 
 import { Link } from "@tanstack/react-router";
+import { Check } from "lucide-react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { Badge, badgeVariants } from "@/components/ui/badge";
@@ -153,6 +154,9 @@ function LinkedPullSubRow({
 }) {
   const status = linkedPullStatus(pull);
   const tone = status ? linkedPullDisplayTone(status.tone) : "unknown";
+  // approve 済みなら、緑にまとめられた未マージ群の中から一目で識別できるよう
+  // ステータス語にチェックアイコンを添える。他の未マージ状態には出さない。
+  const approved = status?.tone === "review-approved";
   const files = pull.changed_files ?? 0;
   return (
     <div className="flex items-center gap-2 pl-7 text-xs text-muted-foreground">
@@ -165,9 +169,18 @@ function LinkedPullSubRow({
       </Link>
       {status ? (
         <span
-          className={cn("shrink-0 font-medium", STATUS_TEXT[tone])}
+          className={cn(
+            "flex shrink-0 items-center gap-0.5 font-medium",
+            STATUS_TEXT[tone],
+          )}
           title={status.title}
         >
+          {approved ? (
+            <Check
+              className="size-3.5 text-green-600 dark:text-green-400"
+              aria-label="approved"
+            />
+          ) : null}
           {status.label}
         </span>
       ) : null}

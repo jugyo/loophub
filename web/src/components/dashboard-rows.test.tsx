@@ -122,6 +122,38 @@ describe("IssueRow", () => {
     expect(screen.getByText("merged")).toBeTruthy();
   });
 
+  it("shows a check icon on an approved linked PR", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ number: 10, review_state: "APPROVED" }),
+          ],
+        })}
+      />,
+    );
+    expect(await screen.findByText("approved")).toBeTruthy();
+    expect(screen.getByLabelText("approved")).toBeTruthy();
+  });
+
+  it("shows no check icon on a non-approved linked PR", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ number: 10, review_state: "CHANGES_REQUESTED" }),
+          ],
+        })}
+      />,
+    );
+    expect(await screen.findByText("changes")).toBeTruthy();
+    expect(screen.queryByLabelText("approved")).toBeNull();
+  });
+
   it("renders a single row (no PR sub-row) when no PR is linked", async () => {
     renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />);
     expect(await screen.findByText("Example issue")).toBeTruthy();
