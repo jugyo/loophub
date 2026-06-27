@@ -10,8 +10,11 @@ import { formatEvent, type LoopEvent } from "./event-hub.ts";
 import { type FollowOptions, followEvents } from "./events-follow.ts";
 import {
   branchExists,
+  commitLog,
+  commitsAhead,
   defaultBranch,
   diffFiles,
+  diffStat,
   mergePull as gitMergePull,
   isGitRepo,
   revParse,
@@ -808,6 +811,71 @@ export const pulls = {
       number: row.number,
     });
     return pullJSON(r, S.getIssue(r.id, row.number));
+  },
+
+  // Read-only debug dump: every piece of data a PR can be reached from, gathered into one
+  // object so a maintainer can inspect raw DB rows + git facts on a single screen (#248).
+  // Intentionally returns near-raw rows (not the trimmed wire serializers) — this is a debug
+  // surface, so more fields beat a clean shape. Git lookups degrade to nulls on a missing ref
+  // rather than throwing, so the dump still renders for a half-set-up PR.
+  async debug(name: string, number: number) {
+    const r = repoOr404(name);
+    const issueRow = issueOr404(r, number, "pull");
+    const pull = S.getPull(issueRow.id);
+    const linkedIssue =
+      pull.linked_issue_id != null
+        ? (S.getIssueById(pull.linked_issue_id) ?? null)
+        : null;
+
+    // git facts. Resolve refs first; only fan out to diff/log when both ends exist.
+    const headSha = await revParse(r.local_path, pull.head_ref);
+    const baseSha = await revParse(r.local_path, pull.base_ref);
+    const canDiff = !!headSha && !!baseSha;
+    const [stat, commits, files, commitsAheadCount] = canDiff
+      ? await Promise.all([
+          diffStat(r.local_path, pull.base_ref, pull.head_ref),
+          commitLog(r.local_path, pull.base_ref, pull.head_ref),
+          diffFiles(r.local_path, pull.base_ref, pull.head_ref),
+          commitsAhead(r.local_path, pull.base_ref, pull.head_ref),
+        ])
+      : [null, [], [], 0];
+
+    const events = S.eventsForPull(
+      r.id,
+      issueRow.number,
+      linkedIssue?.number ?? null,
+    ).map((row: any) => formatEvent(row, r.full_name));
+
+    // Serialize the session via agentSessionJSON (not the raw row) so a future secret-bearing
+    // column on agent_sessions can't silently flow into the copyable debug dump.
+    const sessionRow = pull.session_id
+      ? (S.getAgentSession(pull.session_id) ?? null)
+      : null;
+
+    return {
+      repo: repoJSON(r),
+      issue_row: issueRow,
+      pull_row: pull,
+      linked_issue_row: linkedIssue,
+      labels: S.issueLabels(issueRow.id),
+      git: {
+        head_ref: pull.head_ref,
+        base_ref: pull.base_ref,
+        head_sha: headSha,
+        base_sha: baseSha,
+        stored_head_sha: pull.head_sha ?? null,
+        commits_ahead: commitsAheadCount,
+        diffstat: stat,
+        commits,
+        files,
+      },
+      reviews: S.listReviews(issueRow.id),
+      review_comments: S.listReviewComments(issueRow.id),
+      comments: S.listComments(issueRow.id),
+      review_notes: S.listReviewNotes(r.id, { issueId: issueRow.id }),
+      events,
+      session: sessionRow ? agentSessionJSON(sessionRow) : null,
+    };
   },
 };
 

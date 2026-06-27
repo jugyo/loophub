@@ -265,6 +265,14 @@ export function listPullReviewNotes(
   });
 }
 
+/** Read-only debug dump for a PR: raw DB rows, git facts, reviews, comments, notes, events. */
+export function getPullDebug(owner: string, repo: string, number: number) {
+  return rpc<Record<string, unknown>>("pulls/debug", {
+    repo: full(owner, repo),
+    number,
+  });
+}
+
 export function mergePull(
   owner: string,
   repo: string,

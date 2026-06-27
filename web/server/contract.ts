@@ -446,6 +446,13 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) =>
       svc.pulls.readyForReview(p.repo, p.number, p.body, p.session_id),
   },
+  "pulls/debug": {
+    description:
+      "Read-only debug dump for a PR: raw DB rows (issue/pull/linked issue/labels), git facts (refs, SHAs, diffstat, commits, files), reviews, comments, review notes, related events, and the dev session.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.debug(p.repo, p.number),
+  },
 
   // ---- reviews ----
   "reviews/list": {

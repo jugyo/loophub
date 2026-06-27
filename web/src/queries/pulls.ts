@@ -5,6 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getPull,
+  getPullDebug,
   listEvents,
   listPullComments,
   listPullFiles,
@@ -59,6 +60,24 @@ export function usePull(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: queryKeys.pull(full(owner, repo), number),
     queryFn: () => getPull(owner, repo, number),
+  });
+}
+
+/**
+ * Read-only debug dump for a PR (#248): raw DB rows + git facts + reviews/comments/notes/events.
+ * `enabled` gates the fetch so the (potentially heavy, git-fanning) call only runs when the debug
+ * modal is open. Kept off the SSE invalidation map — it is a manual, on-demand inspection surface.
+ */
+export function usePullDebug(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: [...queryKeys.pull(full(owner, repo), number), "debug"],
+    queryFn: () => getPullDebug(owner, repo, number),
+    enabled,
   });
 }
 

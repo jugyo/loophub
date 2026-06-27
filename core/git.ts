@@ -204,6 +204,38 @@ export async function commitsAhead(
   return Number(r.stdout.trim()) || 0;
 }
 
+export interface CommitInfo {
+  sha: string;
+  author: string;
+  date: string; // committer date, ISO 8601
+  subject: string;
+}
+
+// Commits on head not reachable from base (base..head), newest first. Bounded by `limit`
+// so a long-lived branch can't return an unbounded log into the debug view. Fields are
+// separated by US (0x1f) and records by RS (0x1e) so subjects with tabs/newlines stay intact.
+export async function commitLog(
+  repoPath: string,
+  base: string,
+  head: string,
+  limit = 100,
+): Promise<CommitInfo[]> {
+  const r = await git(repoPath, [
+    "log",
+    `--max-count=${limit}`,
+    "--format=%H%x1f%an%x1f%cI%x1f%s%x1e",
+    `${base}..${head}`,
+  ]);
+  return r.stdout
+    .split("\x1e")
+    .map((rec) => rec.replace(/^\n/, ""))
+    .filter((rec) => rec.trim())
+    .map((rec) => {
+      const [sha, author, date, subject] = rec.split("\x1f");
+      return { sha, author, date, subject: subject ?? "" };
+    });
+}
+
 export interface MergePreview {
   conflict: boolean;
   tree: string | null;

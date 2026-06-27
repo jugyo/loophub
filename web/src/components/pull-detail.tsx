@@ -21,6 +21,7 @@ import { useRegisterDetailTitle } from "@/components/detail-title";
 import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
 import { Markdown } from "@/components/markdown";
+import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -157,12 +158,15 @@ function PullHeader({
 
   return (
     <div className="flex flex-col gap-3">
-      <h1 ref={titleRef} className="text-2xl font-semibold">
-        {pull.title}{" "}
-        <span className="font-normal text-muted-foreground">
-          #{pull.number}
-        </span>
-      </h1>
+      <div className="flex items-start justify-between gap-2">
+        <h1 ref={titleRef} className="text-2xl font-semibold">
+          {pull.title}{" "}
+          <span className="font-normal text-muted-foreground">
+            #{pull.number}
+          </span>
+        </h1>
+        <PullDebugMenu owner={owner} repo={repo} number={pull.number} />
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         {state ? <Badge tone={state.tone}>{state.label}</Badge> : null}

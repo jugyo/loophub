@@ -864,3 +864,29 @@ export function listEvents(
     )
     .all(...params);
 }
+
+// Events related to a single PR, newest first. Matches a repo's events whose payload targets
+// the PR's own number (pull_request.*), its dev-note pr_number (dev.note), or the linked issue's
+// number (issue.*) — the union of every number a PR's data is filed under. Used by the debug
+// view (service.pulls.debug), which has no id cursor to page through the global feed.
+export function eventsForPull(
+  repoId: number,
+  prNumber: number,
+  linkedIssueNumber: number | null,
+  limit = 200,
+): any[] {
+  const numbers = [prNumber];
+  if (linkedIssueNumber != null && linkedIssueNumber !== prNumber) {
+    numbers.push(linkedIssueNumber);
+  }
+  const placeholders = numbers.map(() => "?").join(", ");
+  return db
+    .query(
+      `SELECT * FROM events
+       WHERE repo_id = ?
+         AND (json_extract(payload, '$.number') IN (${placeholders})
+              OR json_extract(payload, '$.pr_number') = ?)
+       ORDER BY id DESC LIMIT ?`,
+    )
+    .all(repoId, ...numbers, prNumber, limit);
+}
