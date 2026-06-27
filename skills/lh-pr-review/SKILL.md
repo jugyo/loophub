@@ -3,8 +3,8 @@ name: lh-pr-review
 description: >-
   Review a LoopHub PR with quality, security, and acceptance reviewers (host-mapped subagents), fix
   findings on the head branch, and re-review until approve. Use when the user runs /lh-pr-review {pr
-  id}, when asked to review a LoopHub PR, or after issue-dev creates a PR. Posts lh pr review each
-  round. Does not merge. Add --review-only for a single review without the fix loop.
+  id}, when asked to review a LoopHub PR, or after issue-dev creates a PR. Posts a per-topic lh pr
+  review each round. Does not merge. Add --review-only for a single review without the fix loop.
 ---
 
 # LoopHub PR review
@@ -75,7 +75,7 @@ Which PR should I review? (e.g. /lh-pr-review 42)
 | Acceptance review (issue requirement / spec / AC) | Acceptance reviewer subagent (general-purpose + Acceptance prompt) |
 | Issue scope alignment, test check | Parent |
 | Code fixes, commits | **Parent (fix phase only)** |
-| Post `lh pr review` | Parent (**once per review round**) |
+| Post `lh pr review --topic <aspect>` | Parent (**once per topic per round** — see A.5) |
 
 Reviewer subagents are **readonly** — **no fixes**, **no posts**. They are launched through the host's
 subagent mechanism; the concrete `subagent_type` is chosen at runtime per
@@ -129,8 +129,8 @@ weaker pass was acceptable. Prefer the strongest available mechanism for the Sec
 ```text
 round = 1
 while round <= max_rounds:
-  A. Review (steps 1–6) → verdict
-  if verdict == approve:
+  A. Review (steps 1–6) → per-topic verdicts → overall verdict (A.4)
+  if overall == approve:           # only when EVERY topic that ran is approve
     report completion and exit
   if --review-only:
     report and exit (no fixes)
@@ -140,6 +140,10 @@ while round <= max_rounds:
   round += 1
 report: max_rounds reached; escalate to human
 ```
+
+Each round posts one review **per topic** (quality / security / acceptance), and aggregates them into
+a single **overall verdict** that drives the loop: `request_changes` if **any** topic requests changes,
+otherwise `approve` only when **every** topic that ran is approve (see A.4 / A.5).
 
 Default `max_rounds` **5**. Stop loop if the same finding persists two rounds in a row; escalate.
 
@@ -266,72 +270,87 @@ borderline finding (`{ "kept": bool, "reason": "<why>" }`). Guardrails so real s
 
 Skip this pass entirely when findings are few or clearly real.
 
-### A.4 Synthesize (parent)
+### A.4 Synthesize per topic (parent)
 
-1. **Scope**: Does PR match issue goal?
-2. **Merge findings**: Quality + Security + Acceptance by severity. If no linked issue existed (A.3
-   skipped Acceptance), note "Acceptance: skipped (no linked issue)" and synthesize the other two.
-3. **Dedupe**: Same file:line → one line comment tagged with its role source: `[Quality]` /
-   `[Security]` / `[Acceptance]`
-4. **Verdict**:
-   - Unresolved Critical / High → `request_changes`
-   - Unmet acceptance criteria or behavior contradicting the linked issue's spec → `request_changes`
-   - Skills lint failed (A.2.5) → `request_changes`
-   - Medium only → `comment` or `approve` (if scope and tests OK)
-   - No findings + scope OK + tests sufficient → `approve`
+Reviews are posted **per topic** (#209: `lh pr review --topic <aspect>`). Keep each role's findings in
+its **own** topic bucket — `quality`, `security`, `acceptance` — instead of merging them into one body.
 
-`--body` template (include round number):
+1. **Scope** (round-wide): Does PR match the issue goal? One or two sentences reused in each topic body.
+2. **Per-topic findings**: keep Quality / Security / Acceptance findings separate, each by severity. The
+   Quality-only false-positive filter (A.3) applies to the `quality` bucket only. Acceptance has **no**
+   bucket when A.3 skipped it (no linked issue) — that topic is simply not posted in A.5.
+3. **Per-topic verdict** — decide each topic on its **own** findings:
+
+   | Topic | `request_changes` when | `approve` when |
+   |-------|------------------------|----------------|
+   | `quality` | unresolved Critical / High, **or** skills lint failed (A.2.5) | no Critical/High and lint passed (Medium-only → `comment`) |
+   | `security` | unresolved Critical / High | none unresolved |
+   | `acceptance` | any unmet AC item or behavior contradicting the issue's spec | every AC item met |
+
+   Skills lint failure (A.2.5) belongs to the **quality** topic — it forces `quality` to
+   `request_changes`.
+4. **Overall verdict** (round-wide, drives the loop): `request_changes` if **any** topic is
+   `request_changes`; else `comment` if any topic is `comment`; else `approve` (every topic that ran is
+   approve). Only `approve` exits the loop.
+
+Per-topic `--body` template (one per topic; include round number and the same Scope line):
 
 ```markdown
-## Verdict: <approve|request_changes|comment>
+## <Quality|Security|Acceptance> — Verdict: <approve|request_changes|comment>
 Round: <n>/<max_rounds>
+Reviewer: <mechanism this role actually ran — note "degraded" if a fallback was used>
 
 ### Scope
-<1–2 sentences on issue alignment>
+<shared 1–2 sentences on issue alignment>
 
-### Reviewers
-<mechanism each role actually ran, e.g. Quality: general-purpose · Security: /security-review — note "degraded" if a fallback was used>
-
-### Quality
-<finding count or none; note any suppressed low-confidence items>
-
-### Security
-<finding count or none>
-
-### Acceptance
-<per-AC pass/fail against the issue, or "skipped (no linked issue)">
+### Findings
+<this topic's finding count + summary, or "none">
+<quality only: note any suppressed low-confidence items>
+<acceptance only: per-AC pass/fail against the issue>
 
 ### Tests
-<commands run and results; include skills-lint when skills/ changed>
+<commands run and results; the quality body includes skills-lint when skills/ changed>
 ```
 
-### A.5 Post (parent, required each round)
+### A.5 Post per topic (parent, required each round)
 
-Post **once per round** as that round's review (multiple rounds OK across the loop).
+Post **one review per topic** that ran (`quality`, `security`, and `acceptance` unless A.3 skipped it),
+each tagged with `--topic` and carrying that topic's own verdict, body, and line comments. **Once per
+topic per round** — never post the same topic twice in one round (the per-round double-post guard now
+applies per topic; multiple rounds across the loop are still fine).
+
+**Posting order matters.** A PR's resolved review state is the **latest substantive (approve /
+request_changes) review regardless of topic** (`core/store.ts` `latestSubstantiveReview` /
+`computeReviewState`). So post topics whose verdict is `approve` or `comment` **first**, and any
+`request_changes` topic **last**. This guarantees the two states that matter: a round with **any**
+`request_changes` topic ends in `CHANGES_REQUESTED`, and a round where **every** topic approves ends in
+`APPROVED`. (An overall `comment` round — Medium-only, no `request_changes` — resolves to `APPROVED`
+because `computeReviewState` surfaces a `COMMENT` only when no substantive review exists; that is
+acceptable, since the loop continues on any non-`approve` overall verdict and a `comment` topic carries
+only non-blocking findings.)
 
 ```sh
-lh pr review <m> --repo <repo> --event approve|request_changes|comment \
+# approve/comment topics first …
+lh pr review <m> --repo <repo> --topic acceptance --event approve \
   --body "..." --actor reviewer-bot
-```
-
-Line comments:
-
-```sh
-echo '[{"path":"src/a.ts","line":12,"body":"[Quality] ..."}]' \
-  | lh pr review <m> --repo <repo> --event request_changes \
+# … any request_changes topic last, with its line comments
+echo '[{"path":"src/a.ts","line":12,"body":"[security] ..."}]' \
+  | lh pr review <m> --repo <repo> --topic security --event request_changes \
       --body "..." --comments - --actor reviewer-bot
 ```
 
-- Do not leave `--body` empty
-- Do not double-post within the same round
+- Each topic's line comments go on **that topic's** post; tag each comment body with its topic
+  (`[quality]` / `[security]` / `[acceptance]`)
+- Do not leave any `--body` empty
+- Do not post the same `--topic` twice within one round
 - Each comment element requires `path` and `body`
 
 ### A.6 Round report (parent)
 
-Verdict / finding count / line comment count / `lh pr review` result. Table for major findings
-(Severity | Location | Finding | Source).
+Per-topic verdicts + overall verdict / finding count / line comment count / `lh pr review` result per
+topic. Table for major findings (Severity | Location | Finding | Topic).
 
-If `approve` or `--review-only` → full completion report. Otherwise → Phase B.
+If overall `approve` or `--review-only` → full completion report. Otherwise → Phase B.
 
 ## Phase B — Fix (parent, fix phase only)
 
