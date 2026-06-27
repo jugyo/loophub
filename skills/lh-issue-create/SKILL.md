@@ -76,15 +76,25 @@ Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (sc
 
 If the skill is invoked **without arguments and without any conversation context to draw an issue
 from** (e.g. a fresh session where the user only typed `/lh-issue-create`, with no preceding bug
-report, request, or notes), do **not** guess or fabricate an issue. Enter **question mode**: ask the
-user — in plain text is enough — for the minimum information needed to file, then proceed with the
-normal flow (§ Procedure) once you have it. At minimum, ask for:
+report, request, or notes), do **not** guess or fabricate an issue. Enter **question mode**.
+
+**First, ask one light question only** — what the user wants to file — and stop there. Do **not**
+front-load the full list of required fields; a single opener like "What do you want to file?" is enough
+(localize it to the conversation language when replying). The AFK premise is "don't overload the user
+with questions", so the opener stays a one-liner.
+
+**Then, after the user replies, fill in the rest progressively** — ask only for the fields still
+missing, and only as needed:
 
 - **Title candidate** (one line, starts with a verb)
 - **Category** (`bug` / `enhancement`)
 - **Goal** (what "done" looks like)
 - **Acceptance criteria** (verifiable bullets)
 - **Target repository** — `--repo owner/name` (only when cwd doesn't already resolve it; see § LoopHub)
+
+The user's first reply often already supplies several of these (or lets you infer them) — derive what
+you can and ask only for the genuinely missing pieces, one small follow-up at a time rather than a
+single bulk interrogation. Once you have enough to file, proceed with the normal flow (§ Procedure).
 
 When the recent conversation **does** contain material to file from (a bug report, a request, notes),
 this is the normal case — proceed straight from that context (§ Procedure step 1) and do **not** enter
