@@ -23,8 +23,17 @@ Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (sc
 
 - **Language**: SKILL.md **body** (after YAML frontmatter) is **English only**. Non-English routing
   triggers (e.g. 起票) belong in the YAML `description` field only.
-- **Issue/PR output**: Skills with a `## Language` section localize **issue and PR text** to the user's
-  conversation language — do not embed localized templates in the skill body.
+- **Issue/PR output**: Skills with a `## Language` section localize **reader-facing text** to the
+  user's language — do not embed localized templates in the skill body. For **PR-flow** output (PR
+  body, review comments, `review_notes`, hand-off summaries), the target language is the **PR's
+  language**, resolved in this order: linked issue → human-authored PR body/title → conversation →
+  English fallback. Each skill states this rule inline in its own `## Language` section so it stays
+  self-contained and host-portable (see `lh-dev` and `lh-pr-review`); keep the order consistent when
+  editing them. For **issue-only** skills with no PR yet (`lh-issue-create`, `lh-plan-to-issues`),
+  there is nothing to resolve against — localize the issue text to the **conversation language**.
+  Interactive, non-persisted reports a skill prints back to the operator (e.g. `lh-merge-ready`'s
+  pre-merge `## Report`) are session output, not a stored PR artifact, so they intentionally follow the
+  **conversation language** too — by design, not an oversight.
 - **PR evidence**: PR bodies require an **Evidence** section (test output excerpts, screenshots for UI,
   CLI snippets, or explicit N/A). Enforced at PR creation — see `lh-dev` § PR (step 5).
 - **Reviewers are role-based, not vendor-based**: reference review subagents by **role** (Quality,

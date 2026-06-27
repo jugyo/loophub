@@ -124,6 +124,18 @@ weaker pass was acceptable. Prefer the strongest available mechanism for the Sec
 - `--repo owner/name` (omit when cwd is the repo root; **required inside `.worktrees/`**)
 - `--actor reviewer-bot` (review posts) / `--actor impl-bot` (fix comments, etc.)
 
+## Language
+
+This skill is English. **Review output read by humans** — the `lh pr review` body (Verdict / Scope /
+Reviewers / per-role sections) and every line comment — must match the **PR's language**. Code, CLI,
+identifiers, and severity keywords (`approve` / `request_changes` / `comment`) stay English.
+
+Resolve the target language once in A.1 (which already reads the PR and, when linked, the issue),
+taking the first that applies: (1) the **linked issue**'s language (the primary signal); (2) the
+human-authored part of the **PR body/title** (ignore tooling boilerplate); (3) the **conversation
+language**; (4) **English** as the fallback when none is determinable. The reviewer subagents return
+structured JSON regardless; the parent localizes the prose when synthesizing (A.4) and posting (A.5).
+
 ## Full loop
 
 ```text
