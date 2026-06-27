@@ -50,7 +50,7 @@ user explicitly asked to both create the issue **and** implement in the same mes
 Stop **immediately** when all of the following are true (do not start extra work):
 
 - [ ] `lh issue create` succeeded
-- [ ] Issue number, title, and labels reported to the user
+- [ ] Issue number, title, and labels (if any) reported to the user
 - [ ] The user has **not** separately asked to "implement" or "continue"
 
 ### Common mistakes
@@ -157,25 +157,37 @@ None — can start immediately
 
 ### 4. Create
 
-For **AFK implementation**, add the `ready-to-build` label (omit if waiting on human review).
+**Do not attach labels by default.** Mechanical per-issue labels — category (`enhancement` /
+`bug`) and `ready-to-build` — have little practical value, so this skill no longer adds them
+automatically. Attach a label only when it forms a **meaningful grouping** and the user
+explicitly asks for it:
 
-CLI:
+- **Category** (`enhancement` / `bug`): omit by default. Add only if the user explicitly asks
+  to categorize.
+- **`ready-to-build`**: omit by default. It flags "an AFK agent may pick this up"; the human
+  sets it by clicking **Build** in the Web UI (shown until a PR is in progress or merged — it
+  reappears if the linked PR was closed unmerged), or you pass `--label ready-to-build` **only**
+  when the user explicitly asks to mark it ready.
+- **Theme / grouping label** (e.g. `ui-v3`): add only when the user names a theme to group a
+  set of issues under.
+
+CLI (no labels — the default):
 
 ```sh
 lh issue create --repo <repo> --title "<title>" \
   --body "$(cat <<'EOF'
 <filled template>
 EOF
-)" --label ready-to-build,bug --actor triage-bot
+)" --actor triage-bot
 ```
 
-Add category label `bug` / `enhancement` as appropriate.
+Append `--label <name>` only for an explicitly requested grouping/theme or `ready-to-build`.
 
 ### 5. Report (stop here)
 
 After creation:
 
-1. Report issue number, title, and labels
+1. Report issue number, title, and labels (usually none — see step 4)
 2. Show the **issue URL** (Web URL format above) as a markdown link
 3. **Stop** — skill work is complete at this point
 4. Do **not** start implementation on your own. The user runs `lh dev <issue-id>` themselves

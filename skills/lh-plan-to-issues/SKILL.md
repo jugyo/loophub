@@ -101,16 +101,20 @@ Iterate until approved.
 
 Publish blockers first so `Blocked by` can reference real `#n` values.
 
-AFK slices get `ready-to-build` by default. HITL gets `ready-for-human` or no label + `needs-triage`.
+**Do not attach labels by default** (category `enhancement` / `bug` and `ready-to-build` add
+little value mechanically). Mark a slice ready for an AFK agent via the Web UI **Build** button
+(shown until a PR is in progress or merged), or pass `--label ready-to-build` **only** when the user
+explicitly asks. To group the slices under a theme, pass that theme label (e.g. `ui-v3`) when the
+user names one.
 
-CLI example:
+CLI example (no labels — the default):
 
 ```sh
 lh issue create --repo <repo> --title "<slice title>" \
   --body "$(cat <<'EOF'
 <body from template>
 EOF
-)" --label ready-to-build,enhancement --actor triage-bot
+)" --actor triage-bot
 ```
 
 When a parent issue exists, link `#<parent>` in the parent section (conversation-language heading) on

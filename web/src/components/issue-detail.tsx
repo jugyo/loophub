@@ -16,7 +16,6 @@ import { stateBadge } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import { useImageUpload } from "@/lib/use-image-upload";
 import {
-  READY_TO_BUILD_LABEL,
   useAddReadyToBuild,
   useIssue,
   useIssueComments,
@@ -84,11 +83,13 @@ function IssueHeader({
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
   const addReady = useAddReadyToBuild(owner, repo, issue.number);
-  const readyToBuild = issue.labels.some(
-    (l) => l.name === READY_TO_BUILD_LABEL,
-  );
   const state = stateBadge(issue, "issues");
   const linked = issue.linked_pull_request;
+  // Build kicks off work, so show it unless a PR is actively in progress (open)
+  // or already merged (done). A closed-unmerged (rejected) linked PR should NOT
+  // hide Build — the issue still needs a fresh attempt.
+  const activePull =
+    linked != null && (linked.state === "open" || linked.merged);
   const titleRef = useRegisterDetailTitle(issue.title);
 
   return (
@@ -157,7 +158,7 @@ function IssueHeader({
           ) : null}
           {issue.state === "open" ? "Close" : "Reopen"}
         </Button>
-        {readyToBuild ? null : (
+        {activePull ? null : (
           <Button
             disabled={addReady.isPending}
             title="Mark this issue ready for an AFK agent to start"

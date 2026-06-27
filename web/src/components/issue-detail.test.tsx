@@ -126,7 +126,8 @@ describe("IssueDetail", () => {
     await waitFor(() => expect(textarea.value).toBe(""));
   });
 
-  it("hides the Build button when ready-to-build is already present", async () => {
+  it("hides the Build button when an open PR is linked", async () => {
+    // The default issue has an open linked PR (#30).
     renderDetail();
 
     // Close renders, so the header is mounted — Build must be absent.
@@ -134,9 +135,41 @@ describe("IssueDetail", () => {
     expect(screen.queryByRole("button", { name: /build/i })).toBeNull();
   });
 
+  it("hides the Build button when the linked PR is merged", async () => {
+    const merged: Issue = {
+      ...issue,
+      linked_pull_request: { ...issue.linked_pull_request!, merged: true },
+    };
+    renderDetail(() => merged);
+
+    await screen.findByRole("button", { name: /close/i });
+    expect(screen.queryByRole("button", { name: /build/i })).toBeNull();
+  });
+
+  it("shows the Build button when no PR is linked", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr);
+
+    expect(await screen.findByRole("button", { name: /build/i })).toBeTruthy();
+  });
+
+  it("shows the Build button when the only linked PR is closed-unmerged", async () => {
+    const rejected: Issue = {
+      ...issue,
+      linked_pull_request: {
+        ...issue.linked_pull_request!,
+        state: "closed",
+        merged: false,
+      },
+    };
+    renderDetail(() => rejected);
+
+    expect(await screen.findByRole("button", { name: /build/i })).toBeTruthy();
+  });
+
   it("adds ready-to-build when the Build button is clicked", async () => {
-    const unlabeled: Issue = { ...issue, labels: [] };
-    renderDetail(() => unlabeled);
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr);
 
     const button = await screen.findByRole("button", { name: /build/i });
     fireEvent.click(button);
