@@ -67,6 +67,24 @@ export function reviewCommentJSON(m: any) {
   };
 }
 
+// Shape a `review_notes` row (#204). pull_request summarizes the owning PR by number so
+// consumers see the PR, not the internal row id. base_sha/commit_sha expose the diff range the
+// note is about; a consumer compares commit_sha against the PR's live head to decide staleness.
+export function reviewNoteJSON(n: any) {
+  const prRow = S.getIssueById(n.issue_id);
+  return {
+    id: n.id,
+    pull_request: prRow ? { number: prRow.number } : null,
+    path: n.path,
+    base_sha: n.base_sha,
+    commit_sha: n.commit_sha,
+    body: n.body,
+    user: { login: n.author },
+    created_at: n.created_at,
+    updated_at: n.updated_at,
+  };
+}
+
 export function labelJSON(l: any) {
   return { name: l.name, color: l.color };
 }

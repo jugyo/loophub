@@ -69,6 +69,7 @@ type Flags = {
   issue?: string;
   method?: string;
   comments?: string;
+  commit?: string;
   event?: string;
   since?: string;
   order?: string;
@@ -116,6 +117,7 @@ const { values, positionals: pos } = parseArgs({
     issue: { type: "string" },
     method: { type: "string" },
     comments: { type: "string" },
+    commit: { type: "string" },
     event: { type: "string" },
     since: { type: "string" },
     order: { type: "string" },
@@ -950,6 +952,56 @@ async function main() {
         ),
       );
       console.log(`review submitted (${res.comments} line comment(s))`);
+    } else if (sub === "note") {
+      // Add a review note for a file on a PR's diff. Diff range defaults to the PR's base..head;
+      // pass --base/--commit to pin an explicit range.
+      if (!flags.path) fail("--path is required");
+      if (!flags.body) fail("--body is required");
+      const n = await run(async () =>
+        s.reviewNotes.create(
+          repo,
+          Number(rest[0]),
+          {
+            path: flags.path as string,
+            body: flags.body as string,
+            ...(flags.base ? { baseSha: flags.base } : {}),
+            ...(flags.commit ? { commitSha: flags.commit } : {}),
+          },
+          await writeSession(),
+        ),
+      );
+      out(n);
+      if (!flags.json)
+        console.log(`note #${n.id} added on ${n.path} (${n.commit_sha})`);
+    } else if (sub === "notes") {
+      const notes = await run(() =>
+        s.reviewNotes.list(repo, Number(rest[0]), {
+          ...(flags.path ? { path: flags.path } : {}),
+          ...(flags.commit ? { commit: flags.commit } : {}),
+        }),
+      );
+      out(notes);
+      if (!flags.json)
+        notes.forEach((n: any) => {
+          console.log(`#${n.id}\t${n.path}\t${n.commit_sha}\t${n.body}`);
+        });
+    } else if (sub === "note-edit") {
+      if (!flags.body) fail("--body is required");
+      const n = await run(async () =>
+        s.reviewNotes.update(
+          repo,
+          Number(rest[0]),
+          flags.body as string,
+          await writeSession(),
+        ),
+      );
+      out(n);
+      if (!flags.json) console.log(`note #${n.id} updated`);
+    } else if (sub === "note-rm") {
+      await run(async () =>
+        s.reviewNotes.remove(repo, Number(rest[0]), await writeSession()),
+      );
+      console.log(`note #${rest[0]} deleted`);
     } else if (sub === "ready-for-review") {
       const p = await run(async () =>
         s.pulls.readyForReview(
@@ -1229,6 +1281,8 @@ function usage() {
   lh session list
   lh issue list|view|create|update|comment|close|label  [--repo owner/repo]
   lh pr list|view|diff|create|update|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh pr note <m> --path <file> --body <text> [--base <sha>] [--commit <sha>]   # add a review note for a file on the PR's diff (range defaults to base..head)
+  lh pr notes <m> [--path <file>] [--commit <sha>]   lh pr note-edit <id> --body <text>   lh pr note-rm <id>   # list / edit / delete review notes
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR
   lh retro list [--pr <m>] [--status draft]   lh retro view <id>   lh retro pending [--limit N]   # read retros / list merged PRs without one
   lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-dev worktrees (issue closed / PR merged, clean tree)
@@ -1249,6 +1303,7 @@ function usage() {
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     echo '[{"path":"a.txt","line":2,"body":"typo"}]' | lh pr review 3 --comments -
+    lh pr note 3 --path src/app.ts --body "entry point; added auth guard. review: token refresh path"
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)
     lh events --since 0
     lh events --follow                 # tail events live (Ctrl-C to stop)

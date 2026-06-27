@@ -129,6 +129,7 @@ export function deleteRepo(owner: string, name: string): boolean {
   const issueIds = issues.map((i) => i.id);
   if (issueIds.length) {
     const ph = issueIds.map(() => "?").join(",");
+    db.run(`DELETE FROM review_notes WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM review_comments WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM reviews WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM comments WHERE issue_id IN (${ph})`, issueIds);
@@ -710,6 +711,82 @@ export function mergedPullsWithoutRetro(repoId: number, limit: number): any[] {
        LIMIT ?`,
     )
     .all(repoId, limit);
+}
+
+// ---- review notes (#204) ----
+// A note attaches a short description to one file's diff (base_sha -> commit_sha) inside a
+// PR (issue_id is the kind='pull' issues row). The diff range lives on the row, so the note's
+// identity is the range, not the PR's current refs. Multiple notes per file are allowed.
+export interface ReviewNoteInput {
+  repoId: number;
+  issueId: number;
+  baseSha: string;
+  commitSha: string;
+  path: string;
+  body: string;
+  author: string;
+}
+
+export function createReviewNote(input: ReviewNoteInput): any {
+  const t = now();
+  return db
+    .query(
+      `INSERT INTO review_notes
+        (repo_id, issue_id, base_sha, commit_sha, path, body, author, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    )
+    .get(
+      input.repoId,
+      input.issueId,
+      input.baseSha,
+      input.commitSha,
+      input.path,
+      input.body,
+      input.author,
+      t,
+      t,
+    );
+}
+
+export function getReviewNoteById(id: number): any {
+  return db.query(`SELECT * FROM review_notes WHERE id = ?`).get(id);
+}
+
+// List a PR's notes, newest first. Optional filters narrow to a single file (path) and/or a
+// single target commit (commitSha) — the latter is how a consumer fetches notes for one diff.
+export function listReviewNotes(
+  issueId: number,
+  opts: { path?: string; commitSha?: string } = {},
+): any[] {
+  const conds = ["issue_id = ?"];
+  const params: any[] = [issueId];
+  if (opts.path !== undefined) {
+    conds.push("path = ?");
+    params.push(opts.path);
+  }
+  if (opts.commitSha !== undefined) {
+    conds.push("commit_sha = ?");
+    params.push(opts.commitSha);
+  }
+  return db
+    .query(
+      `SELECT * FROM review_notes WHERE ${conds.join(" AND ")}
+       ORDER BY created_at DESC, id DESC`,
+    )
+    .all(...params);
+}
+
+export function updateReviewNote(id: number, body: string): any {
+  db.run(`UPDATE review_notes SET body = ?, updated_at = ? WHERE id = ?`, [
+    body,
+    now(),
+    id,
+  ]);
+  return getReviewNoteById(id);
+}
+
+export function deleteReviewNote(id: number): void {
+  db.run(`DELETE FROM review_notes WHERE id = ?`, [id]);
 }
 
 // ---- events ----

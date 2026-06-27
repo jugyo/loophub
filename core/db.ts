@@ -266,6 +266,31 @@ CREATE TABLE IF NOT EXISTS retros (
 
 CREATE INDEX IF NOT EXISTS idx_retros_repo ON retros(repo_id, id);
 CREATE INDEX IF NOT EXISTS idx_retros_pr   ON retros(pr_id);
+
+-- Review notes (#204). A short human-written description attached to a single file
+-- inside a PR's review, to help a reviewer (what the file is, what changed, what to
+-- look at). The note is bound to a *diff range*: base_sha -> commit_sha. Storing both
+-- shas on the row makes "the note is about the base->target diff" explicit in the model
+-- rather than implied by the PR's current refs. issue_id is the PR (an issues row with
+-- kind='pull'); a note therefore always belongs to a PR and to a concrete commit range.
+-- Notes are never auto-migrated when the head advances: a note whose commit_sha no longer
+-- matches the PR head is simply "stale" (still retrievable; staleness is a consumer call).
+-- Multiple notes per file are allowed (no UNIQUE on path) — like review_comments.
+CREATE TABLE IF NOT EXISTS review_notes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id     INTEGER NOT NULL REFERENCES repos(id),
+  issue_id    INTEGER NOT NULL REFERENCES issues(id),
+  base_sha    TEXT NOT NULL,
+  commit_sha  TEXT NOT NULL,
+  path        TEXT NOT NULL,
+  body        TEXT NOT NULL,
+  author      TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_notes_pr        ON review_notes(issue_id);
+CREATE INDEX IF NOT EXISTS idx_review_notes_pr_commit ON review_notes(issue_id, commit_sha);
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）

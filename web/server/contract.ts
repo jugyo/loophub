@@ -245,6 +245,72 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.comments.create(p.repo, p.number, p.body, p.session_id),
   },
 
+  // ---- review notes (#204) ----
+  "reviewNotes/list": {
+    description:
+      "List a PR's review notes (per-file diff descriptions), newest first; optionally filter by path and/or target commit.",
+    params: params({ repo, number: positiveInt, path: str, commit: str }, [
+      "repo",
+      "number",
+    ]),
+    result: anyArray,
+    handler: (p) =>
+      svc.reviewNotes.list(p.repo, p.number, {
+        path: p.path,
+        commit: p.commit,
+      }),
+  },
+  "reviewNotes/get": {
+    description: "Get a single review note by id.",
+    params: params({ repo, id: positiveInt }, ["repo", "id"]),
+    result: anyObject,
+    handler: (p) => svc.reviewNotes.get(p.repo, p.id),
+  },
+  "reviewNotes/create": {
+    description:
+      "Create a review note for a file on a PR's diff. The diff range defaults to the PR's base..head; pass base_sha/commit_sha to pin an explicit range.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        path: strNonEmpty,
+        body: strNonEmpty,
+        base_sha: str,
+        commit_sha: str,
+        session_id: sid,
+      },
+      ["repo", "number", "path", "body"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.reviewNotes.create(
+        p.repo,
+        p.number,
+        {
+          path: p.path,
+          body: p.body,
+          baseSha: p.base_sha,
+          commitSha: p.commit_sha,
+        },
+        p.session_id,
+      ),
+  },
+  "reviewNotes/update": {
+    description: "Edit a review note's body.",
+    params: params(
+      { repo, id: positiveInt, body: strNonEmpty, session_id: sid },
+      ["repo", "id", "body"],
+    ),
+    result: anyObject,
+    handler: (p) => svc.reviewNotes.update(p.repo, p.id, p.body, p.session_id),
+  },
+  "reviewNotes/delete": {
+    description: "Delete a review note.",
+    params: params({ repo, id: positiveInt, session_id: sid }, ["repo", "id"]),
+    result: anyObject,
+    handler: (p) => svc.reviewNotes.remove(p.repo, p.id, p.session_id),
+  },
+
   // ---- labels ----
   "labels/list": {
     description: "List a repository's labels.",

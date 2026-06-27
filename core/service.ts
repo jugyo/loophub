@@ -45,6 +45,7 @@ import {
   retroJSON,
   reviewCommentJSON,
   reviewJSON,
+  reviewNoteJSON,
 } from "./serialize.ts";
 import * as S from "./store.ts";
 import { sweepPullUpdates } from "./watcher.ts";
@@ -468,6 +469,110 @@ export const labels = {
   list(name: string) {
     const r = repoOr404(name);
     return S.listLabels(r.id).map(labelJSON);
+  },
+};
+
+// ===== review notes (#204) =====
+// A review note is a short, human-written description of one file's diff inside a PR — what the
+// file is, what changed, what to look at — to orient a reviewer. Each note is bound to a diff
+// range (base_sha -> commit_sha): by default the PR's current base/head, but a caller may pin an
+// explicit range. The note belongs to the PR (resolved by PR number) and a concrete file path.
+function reviewNoteOr404(r: S.Repo, id: number): any {
+  const n = S.getReviewNoteById(id);
+  if (!n || n.repo_id !== r.id) throw new ServiceError(404, "Not Found");
+  return n;
+}
+
+export const reviewNotes = {
+  // List a PR's notes (newest first), optionally narrowed to one file (path) and/or one target
+  // commit (commit). Filtering by commit is how a consumer fetches the notes for a single diff.
+  list(
+    name: string,
+    number: number,
+    opts: { path?: string; commit?: string } = {},
+  ) {
+    const r = repoOr404(name);
+    const pr = issueOr404(r, number, "pull");
+    return S.listReviewNotes(pr.id, {
+      path: opts.path,
+      commitSha: opts.commit,
+    }).map(reviewNoteJSON);
+  },
+
+  get(name: string, id: number) {
+    const r = repoOr404(name);
+    return reviewNoteJSON(reviewNoteOr404(r, id));
+  },
+
+  async create(
+    name: string,
+    number: number,
+    input: { path: string; body: string; baseSha?: string; commitSha?: string },
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const pr = issueOr404(r, number, "pull");
+    if (!input.path) throw new ServiceError(422, "path is required");
+    if (!input.body) throw new ServiceError(422, "body is required");
+    // Default the diff range to the PR's current base/head; a caller may pin an explicit range
+    // (e.g. to annotate a past commit). Resolve refs to concrete SHAs so the note records the
+    // exact range, not a moving ref.
+    const p = S.getPull(pr.id);
+    const baseSha =
+      input.baseSha ?? (await revParse(r.local_path, p.base_ref)) ?? null;
+    const commitSha =
+      input.commitSha ?? (await revParse(r.local_path, p.head_ref)) ?? null;
+    if (!baseSha || !commitSha)
+      throw new ServiceError(
+        422,
+        "could not resolve base/commit SHA for the diff range",
+      );
+    const actor = actorFor(sessionId);
+    const row = S.createReviewNote({
+      repoId: r.id,
+      issueId: pr.id,
+      baseSha,
+      commitSha,
+      path: input.path,
+      body: input.body,
+      author: actor,
+    });
+    S.emitEvent(r.id, "pull_request.review_note_created", actor, {
+      number: pr.number,
+      path: input.path,
+      ...(sessionId ? { session_id: sessionId } : {}),
+    });
+    return reviewNoteJSON(row);
+  },
+
+  update(name: string, id: number, body: string, sessionId?: string | null) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const n = reviewNoteOr404(r, id);
+    if (!body) throw new ServiceError(422, "body is required");
+    const actor = actorFor(sessionId);
+    const row = S.updateReviewNote(n.id, body);
+    const pr = S.getIssueById(n.issue_id);
+    S.emitEvent(r.id, "pull_request.review_note_updated", actor, {
+      number: pr?.number,
+      path: n.path,
+    });
+    return reviewNoteJSON(row);
+  },
+
+  remove(name: string, id: number, sessionId?: string | null) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const n = reviewNoteOr404(r, id);
+    const actor = actorFor(sessionId);
+    S.deleteReviewNote(n.id);
+    const pr = S.getIssueById(n.issue_id);
+    S.emitEvent(r.id, "pull_request.review_note_deleted", actor, {
+      number: pr?.number,
+      path: n.path,
+    });
+    return { deleted: true, id };
   },
 };
 
