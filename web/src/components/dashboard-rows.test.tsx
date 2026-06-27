@@ -178,4 +178,61 @@ describe("IssueRow", () => {
     );
     expect(await screen.findByText("closed")).toBeTruthy();
   });
+
+  // The Build button mirrors the issue-detail Build trigger: visible unless a
+  // linked PR is actively in progress (open) or already merged (done).
+  it("shows the Build button when no PR is linked", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
+    );
+    expect(
+      await screen.findByRole("button", { name: "Build issue #7" }),
+    ).toBeTruthy();
+  });
+
+  it("shows the Build button when the linked PR is closed unmerged (rejected)", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          number: 7,
+          linked_pull_requests: [makePull({ state: "closed", merged: false })],
+        })}
+      />,
+    );
+    expect(
+      await screen.findByRole("button", { name: "Build issue #7" }),
+    ).toBeTruthy();
+  });
+
+  it("hides the Build button while a linked PR is open", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          number: 7,
+          linked_pull_requests: [makePull({ state: "open", merged: false })],
+        })}
+      />,
+    );
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
+  });
+
+  it("hides the Build button once a linked PR is merged", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          number: 7,
+          linked_pull_requests: [makePull({ state: "closed", merged: true })],
+        })}
+      />,
+    );
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
+  });
 });

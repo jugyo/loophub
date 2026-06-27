@@ -3,9 +3,10 @@
 // (../lib/badges.ts).
 
 import { Link } from "@tanstack/react-router";
-import { Check } from "lucide-react";
+import { Check, Play } from "lucide-react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
+import { useTerminal } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
   type Badge as BadgeData,
@@ -93,7 +94,7 @@ export function IssueRow({
     issue.linked_pull_requests ??
     (issue.linked_pull_request ? [issue.linked_pull_request] : []);
   return (
-    <div className="flex flex-col gap-1 px-3 py-2 text-sm hover:bg-accent">
+    <div className="group flex flex-col gap-1 px-3 py-2 text-sm hover:bg-accent">
       <div className="flex items-center gap-2">
         <RepoChip label={repoLabel} />
         <span className="shrink-0 text-muted-foreground">#{issue.number}</span>
@@ -106,6 +107,7 @@ export function IssueRow({
         </Link>
         <RowLabels labels={issue.labels} />
         {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
+        <RowBuildButton owner={owner} repo={repo} issue={issue} pulls={pulls} />
         <span className="shrink-0 text-xs text-muted-foreground">
           {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
         </span>
@@ -125,6 +127,46 @@ export function IssueRow({
         </div>
       ) : null}
     </div>
+  );
+}
+
+// Hover-revealed Build button for an issue row: starts `lh dev <n>` in a
+// terminal, the same action as the issue-detail Build button (issue-detail.tsx).
+// Hidden whenever a linked PR is actively in progress (open) or already merged
+// (done) — mirroring `activePull` there; a closed-unmerged (rejected) PR does
+// NOT hide it, since the issue still needs a fresh attempt. The button reserves
+// its slot (opacity, not display) so the row layout does not shift on hover, and
+// stays visible on keyboard focus for accessibility.
+function RowBuildButton({
+  owner,
+  repo,
+  issue,
+  pulls,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+  pulls: LinkedPull[];
+}) {
+  const { openTerminal } = useTerminal();
+  const activePull = pulls.some((p) => p.state === "open" || p.merged);
+  if (activePull) return null;
+  return (
+    <button
+      type="button"
+      title={`Start \`lh dev ${issue.number}\` in a terminal`}
+      aria-label={`Build issue #${issue.number}`}
+      onClick={() =>
+        openTerminal({
+          command: `lh dev ${issue.number}`,
+          repo: `${owner}/${repo}`,
+          label: `dev #${issue.number}`,
+        })
+      }
+      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+    >
+      <Play className="size-4" />
+    </button>
   );
 }
 
