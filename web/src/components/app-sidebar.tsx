@@ -30,7 +30,8 @@ export function AppSidebar() {
         Repositories
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-4">
+      {/* pb clears the fixed terminal bar (h-9) overlaid along the bottom. */}
+      <div className="flex-1 overflow-y-auto px-2 pb-12">
         {isLoading && (
           <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" /> Loading…

@@ -5,10 +5,14 @@ import { Outlet } from "@tanstack/react-router";
 import { AppBreadcrumb } from "@/components/app-breadcrumb";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DetailTitleProvider } from "@/components/detail-title";
+import { TerminalPane } from "@/components/terminal-pane";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export function AppLayout() {
   return (
+    // The terminal is a fixed full-width overlay along the bottom (see terminal-pane.tsx), so
+    // expanding it never reflows the page. The sidebar + content fill the viewport; both reserve
+    // bottom space (pb-12) so the always-present collapsed bar (h-9) doesn't cover their content.
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
       <AppSidebar />
       <DetailTitleProvider>
@@ -19,11 +23,12 @@ export function AppLayout() {
               <ThemeToggle />
             </div>
           </header>
-          <main className="min-h-0 flex-1 overflow-y-auto p-6">
+          <main className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-12">
             <Outlet />
           </main>
         </div>
       </DetailTitleProvider>
+      <TerminalPane />
     </div>
   );
 }
