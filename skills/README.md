@@ -60,9 +60,10 @@ repo-add (one-time) → issue-create / plan-to-issues
 rebase-conflict resolves conflicts on a PR head, then resumes pr-review.
 ```
 
-`lh-dev` drives implementation (launched by `lh dev`, which provisions the issue worktree and
-assigns the issue); these skills cover registration, issue authoring, implementation, review, conflict
-resolution, and the pre-merge check.
+`lh-dev` drives implementation (launched by `lh dev`, which provisions the issue worktree and opens the
+linked PR — the PR's existence is the "taken" signal, the session is attributed to the PR row); these
+skills cover registration, issue authoring, implementation, review, conflict resolution, and the
+pre-merge check.
 
 ## Head worktree bootstrap
 

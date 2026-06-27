@@ -35,7 +35,8 @@ creation skill (`lh-issue-create`, `lh-plan-to-issues`, `to-issues`).
 
 **Stop and confirm:** "Should I implement #n? If you only wanted filing, I'll stop here."
 
-Do not assign, create a worktree, or edit source until the user chooses implementation.
+Do not take ownership of the issue (open the linked PR), create a worktree, or edit source until the
+user chooses implementation.
 
 ## Invocation
 
@@ -58,7 +59,7 @@ Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (sc
 - Server: default `http://localhost:8730` (`~/.loophub/config.json`)
 - CLI: `lh` (on PATH)
 - `--repo owner/name` (omit only when cwd is the repo root; **required inside a worktree**)
-- `--session-id` — attribution for comments and other writes (`lh dev` assigns the issue for you)
+- `--session-id` — attribution for comments and other writes (`lh dev` attributes the session to the linked PR row for you)
 
 ### Web URL (for reporting)
 

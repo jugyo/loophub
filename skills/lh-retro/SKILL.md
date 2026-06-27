@@ -56,7 +56,7 @@ Score this small set; each item is `{ id, signal, value, severity, note }` with
 | R1 | human-cost | amount of human intervention | user turns / `issue.commented` count |
 | R3 | quality | review round-trips | `REQUEST_CHANGES` count / ready-for-review cycles |
 | R5 | quality | skipped steps | PR body has Evidence / Test plan; test-run trace present |
-| R8 | human-cost | elapsed / rework | `issue.assigned` → `pull_request.merged` span; any `merge_conflict` |
+| R8 | human-cost | elapsed / rework | `pull_request.opened` → `pull_request.merged` span; any `merge_conflict` |
 
 Plus **free-form findings** — `{ category, severity, note, evidence_ref, proposed_action? }`.
 `category` is free vocabulary (normalization is Phase 2). `evidence_ref` points at the source
@@ -99,7 +99,7 @@ cat > "$TMPDIR/retro.json" <<'EOF'
     { "id": "R1", "signal": "user turns", "value": 2, "severity": "ok", "note": "minimal intervention" },
     { "id": "R3", "signal": "review rounds", "value": 1, "severity": "ok", "note": "" },
     { "id": "R5", "signal": "evidence present", "value": true, "severity": "warn", "note": "test plan thin" },
-    { "id": "R8", "signal": "assigned→merged", "value": "3h", "severity": "ok", "note": "no conflicts" }
+    { "id": "R8", "signal": "opened→merged", "value": "3h", "severity": "ok", "note": "no conflicts" }
   ],
   "findings": [
     { "category": "process", "severity": "warn", "note": "Evidence lacked a test-output excerpt",

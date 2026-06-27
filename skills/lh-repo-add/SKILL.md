@@ -203,4 +203,4 @@ Do not retry blindly on `already registered` — confirm intent with the user fi
 
 - Do not start implementation or `lh-issue-create` after registration
 - Do not modify the target repository's source code
-- Do not merge PRs or assign issues as part of repo registration
+- Do not merge PRs or start work on issues as part of repo registration

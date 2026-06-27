@@ -33,7 +33,7 @@ PRD §4 の各観点を**どう観測するか**。各観点に「LoopHub デー
 | R5 | Q | 飛ばしたステップ | PR body に Evidence/Test plan 有無、テスト実行痕跡 | skill 手順のスキップ箇所 |
 | R6 | I | エージェントの虚偽 | 「テスト green」主張 vs PR body のテスト実行痕跡・再実行結果、Closes 対象と diff の不一致(注: LoopHub に CI/status checks は無い) | コーディングagの誇張をレビューが見抜けたか |
 | R7 | Q | スコープ逸脱 | diff のファイル群 vs issue scope 記述 | 「ついで修正」の混入 |
-| R8 | C | 所要時間/手戻り | issue.assigned → pull_request.merged の経過、merge_conflict 発生有無 | 手戻りの原因 |
+| R8 | C | 所要時間/手戻り | pull_request.opened → pull_request.merged の経過、merge_conflict 発生有無 | 手戻りの原因 |
 
 各観点の記録形式: `{ id, signal, value, severity: ok|warn|bad, note }`。
 数値の絶対閾値は初期は決め打ちせず、相対比較(同種 PR の分布)で warn を出す方針(PRD §3 の
