@@ -82,6 +82,24 @@ export interface PullFile {
   patch?: string;
 }
 
+/**
+ * A per-file diff description note (review_notes; #204, PR-independent since #216).
+ * Identity is the commit range (base_sha→commit_sha) + path; pull_request is an optional
+ * association to the owning PR (null for a PR-independent note). A consumer compares
+ * commit_sha against the PR's live head to decide staleness.
+ */
+export interface ReviewNote {
+  id: number;
+  pull_request: { number: number } | null;
+  path: string;
+  base_sha: string;
+  commit_sha: string;
+  body: string;
+  user: UserRef;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Repo {
   id: number;
   name: string;

@@ -22,6 +22,7 @@ import type {
   PullLineComment,
   PullRequest,
   PullReview,
+  ReviewNote,
 } from "@/api/types";
 import { PullDetail } from "./pull-detail";
 
@@ -107,6 +108,7 @@ function mockFetch() {
     "pulls/files": () => files,
     "reviews/list": () => reviews,
     "reviews/listComments": () => lineComments,
+    "reviewNotes/list": () => [],
     "comments/list": () => comments,
     "pulls/merge": () => ({ merged: true, sha: "c" }),
     "pulls/update": (p) => ({ ...pull, state: p.state }),
@@ -323,5 +325,78 @@ describe("PullDetail", () => {
     expect(older.closest("details")?.open).toBe(false);
     // No group targets the current head, so no "current" badge is shown.
     expect(screen.queryByText("current")).toBeNull();
+  });
+
+  it("renders per-file review notes with the diff range, marking stale ones (#217)", async () => {
+    // Two notes on the same file: one for the PR's current head ("aaa") and one for an
+    // earlier commit, which must be flagged STALE.
+    const notes: ReviewNote[] = [
+      {
+        id: 1,
+        pull_request: { number: 30 },
+        path: "web/src/a.ts",
+        base_sha: "bbb0000feedface",
+        commit_sha: "aaa",
+        body: "Bumps the x constant to 1.",
+        user: { login: "note-bot" },
+        created_at: "2026-06-18T11:00:00Z",
+        updated_at: "2026-06-18T11:00:00Z",
+      },
+      {
+        id: 2,
+        pull_request: { number: 30 },
+        path: "web/src/a.ts",
+        base_sha: "bbb0000feedface",
+        commit_sha: "old9999deadbeef",
+        body: "Earlier-commit note.",
+        user: { login: "note-bot" },
+        created_at: "2026-06-18T10:00:00Z",
+        updated_at: "2026-06-18T10:00:00Z",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => pull, // head.sha === "aaa"
+        "pulls/files": () => files,
+        "reviews/list": () => [],
+        "reviews/listComments": () => [],
+        "reviewNotes/list": () => notes,
+        "comments/list": () => [],
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    // Both note bodies render in the file diff.
+    expect(await screen.findByText("Bumps the x constant to 1.")).toBeTruthy();
+    expect(screen.getByText("Earlier-commit note.")).toBeTruthy();
+    // The diff range (base→commit) is shown as short SHAs.
+    expect(screen.getByText("bbb0000…aaa")).toBeTruthy();
+    expect(screen.getByText("bbb0000…old9999")).toBeTruthy();
+    // No reviews here, so the only badges come from the notes: one current, one STALE.
+    expect(screen.getByText("current")).toBeTruthy();
+    expect(screen.getByText("STALE")).toBeTruthy();
   });
 });

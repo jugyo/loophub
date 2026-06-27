@@ -14,6 +14,7 @@ import type {
   PullLineComment,
   PullRequest,
   PullReview,
+  ReviewNote,
 } from "@/api/types";
 import { useRegisterDetailTitle } from "@/components/detail-title";
 import { PullDevInfo } from "@/components/dev-info";
@@ -37,6 +38,7 @@ import {
   usePullComments,
   usePullDevNotes,
   usePullFiles,
+  usePullReviewNotes,
   usePullReviews,
   useReadyForReview,
   useSetPullState,
@@ -60,6 +62,7 @@ export function PullDetail({
   const lineCommentsQuery = usePullComments(owner, repo, number);
   const commentsQuery = useIssueComments(owner, repo, number);
   const devNotesQuery = usePullDevNotes(owner, repo, number);
+  const reviewNotesQuery = usePullReviewNotes(owner, repo, number);
 
   if (pullQuery.isLoading) {
     return (
@@ -108,6 +111,8 @@ export function PullDetail({
         repo={repo}
         files={filesQuery.data}
         lineComments={lineCommentsQuery.data}
+        reviewNotes={reviewNotesQuery.data}
+        currentHeadSha={pull.head.sha}
         isLoading={filesQuery.isLoading}
         isError={filesQuery.isError}
       />
@@ -580,6 +585,8 @@ function FilesChanged({
   repo,
   files,
   lineComments,
+  reviewNotes,
+  currentHeadSha,
   isLoading,
   isError,
 }: {
@@ -587,6 +594,8 @@ function FilesChanged({
   repo: string;
   files: PullFile[] | undefined;
   lineComments: PullLineComment[] | undefined;
+  reviewNotes: ReviewNote[] | undefined;
+  currentHeadSha: string;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -595,6 +604,15 @@ function FilesChanged({
     const list = byFile.get(c.path) ?? [];
     list.push(c);
     byFile.set(c.path, list);
+  }
+
+  // Review notes grouped by path so each file diff shows its own note(s). Guarded against a
+  // non-array (the RPC mock returns {} for unstubbed methods).
+  const notesByFile = new Map<string, ReviewNote[]>();
+  for (const n of Array.isArray(reviewNotes) ? reviewNotes : []) {
+    const list = notesByFile.get(n.path) ?? [];
+    list.push(n);
+    notesByFile.set(n.path, list);
   }
 
   // Whole-diff totals, summed from the per-file numstat already loaded here.
@@ -631,6 +649,8 @@ function FilesChanged({
             repo={repo}
             file={f}
             comments={byFile.get(f.filename) ?? []}
+            notes={notesByFile.get(f.filename) ?? []}
+            currentHeadSha={currentHeadSha}
           />
         ))
       )}
@@ -643,11 +663,15 @@ function FileDiff({
   repo,
   file,
   comments,
+  notes,
+  currentHeadSha,
 }: {
   owner: string;
   repo: string;
   file: PullFile;
   comments: PullLineComment[];
+  notes: ReviewNote[];
+  currentHeadSha: string;
 }) {
   const lines = parsePatch(file.patch);
   return (
@@ -658,6 +682,15 @@ function FileDiff({
           +{file.additions} -{file.deletions}
         </span>
       </div>
+      {notes.map((n) => (
+        <ReviewNoteCard
+          key={n.id}
+          owner={owner}
+          repo={repo}
+          note={n}
+          currentHeadSha={currentHeadSha}
+        />
+      ))}
       {lines.length > 0 ? (
         <pre className="overflow-x-auto text-xs leading-relaxed">
           {lines.map((l, i) => (
@@ -684,6 +717,47 @@ function FileDiff({
           </Markdown>
         </div>
       ))}
+    </div>
+  );
+}
+
+// A per-file review note (#217): the factual "role / change summary / review points" for a
+// file's diff range, shown in-flow above the patch so reviewers read it as they read the diff.
+// The range (base→commit) is shown as short SHAs; a note whose commit_sha no longer matches the
+// PR's current head is marked STALE so a reviewer knows it describes an earlier commit.
+function ReviewNoteCard({
+  owner,
+  repo,
+  note,
+  currentHeadSha,
+}: {
+  owner: string;
+  repo: string;
+  note: ReviewNote;
+  currentHeadSha: string;
+}) {
+  const isStale = !!currentHeadSha && note.commit_sha !== currentHeadSha;
+  return (
+    <div className="m-2 rounded-md border border-sky-500/30 bg-sky-500/5 p-2">
+      <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
+        <span className="font-medium text-sky-700 dark:text-sky-300">
+          📝 Note
+        </span>
+        <code className="rounded bg-muted px-1 py-0.5">
+          {note.base_sha.slice(0, 7)}…{note.commit_sha.slice(0, 7)}
+        </code>
+        {isStale ? (
+          <Badge tone="review-rereview">STALE</Badge>
+        ) : (
+          <Badge tone="open">current</Badge>
+        )}
+        <span className="text-muted-foreground">
+          @{note.user.login} · {relativeTime(note.created_at)}
+        </span>
+      </div>
+      <Markdown owner={owner} repo={repo}>
+        {note.body}
+      </Markdown>
     </div>
   );
 }

@@ -16,6 +16,7 @@ import type {
   PullRequest,
   PullReview,
   Repo,
+  ReviewNote,
 } from "./types";
 
 /** Resolved server base. "" => same-origin (proxy). No trailing slash. */
@@ -249,6 +250,18 @@ export function listPullComments(owner: string, repo: string, number: number) {
   return rpc<PullLineComment[]>("reviews/listComments", {
     repo: full(owner, repo),
     number,
+  });
+}
+
+/** Review notes (per-file diff descriptions) associated with a PR, across its commit ranges. */
+export function listPullReviewNotes(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  return rpc<ReviewNote[]>("reviewNotes/list", {
+    repo: full(owner, repo),
+    pr: number,
   });
 }
 

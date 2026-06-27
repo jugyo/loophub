@@ -8,6 +8,7 @@ import {
   listEvents,
   listPullComments,
   listPullFiles,
+  listPullReviewNotes,
   listPullReviews,
   listPulls,
   mergePull,
@@ -82,6 +83,23 @@ export function usePullComments(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: [...queryKeys.pull(full(owner, repo), number), "comments"],
     queryFn: () => listPullComments(owner, repo, number),
+  });
+}
+
+/**
+ * Per-file review notes for a PR (#217), grouped by path at the call site. Keyed under the
+ * pull key so the SSE map (event-keys.ts) refetches it via the pull prefix on
+ * pull_request.review_note_* events. Notes span the PR's commit ranges; the diff view marks
+ * those whose commit_sha differs from the current head as stale.
+ */
+export function usePullReviewNotes(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  return useQuery({
+    queryKey: [...queryKeys.pull(full(owner, repo), number), "review-notes"],
+    queryFn: () => listPullReviewNotes(owner, repo, number),
   });
 }
 
