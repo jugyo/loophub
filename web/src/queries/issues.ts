@@ -4,7 +4,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  addIssueLabels,
   createIssue,
   getIssue,
   listIssueComments,
@@ -15,9 +14,6 @@ import {
 import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
-
-/** Label a human applies to greenlight AFK agents to start work. */
-export const READY_TO_BUILD_LABEL = "ready-to-build";
 
 /** Filters for the issue list view (mirrors v1 listState / labels). */
 export interface IssueListFilters {
@@ -88,32 +84,6 @@ export function useSetIssueState(owner: string, repo: string, number: number) {
   return useMutation({
     mutationFn: (state: "open" | "closed") =>
       patchIssue(owner, repo, number, { state }),
-    onSuccess: () => {
-      qc.invalidateQueries({
-        queryKey: queryKeys.issue(full(owner, repo), number),
-      });
-      qc.invalidateQueries({
-        queryKey: queryKeys.issues(full(owner, repo)),
-      });
-    },
-  });
-}
-
-/**
- * Add the `ready-to-build` label to an issue, then invalidate issue + lists.
- * The button is hidden once the label is present (see issue-detail), so this is
- * add-only. SSE also refetches via the "issue.labeled" event, but invalidating
- * on success keeps the click responsive without waiting for the round-trip.
- */
-export function useAddReadyToBuild(
-  owner: string,
-  repo: string,
-  number: number,
-) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      addIssueLabels(owner, repo, number, [READY_TO_BUILD_LABEL]),
     onSuccess: () => {
       qc.invalidateQueries({
         queryKey: queryKeys.issue(full(owner, repo), number),

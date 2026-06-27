@@ -79,7 +79,9 @@ export function attachTerminalServer(server: Server): () => void {
       const repo = url.searchParams.get("repo") ?? "";
       const cols = Number(url.searchParams.get("cols")) || undefined;
       const rows = Number(url.searchParams.get("rows")) || undefined;
-      handleConnection(ws, repo, cols, rows);
+      // Optional initial command to run in the spawned shell (New Issue / Build buttons).
+      const cmd = url.searchParams.get("cmd") ?? undefined;
+      handleConnection(ws, repo, cols, rows, cmd);
     });
   };
 
@@ -97,6 +99,7 @@ function handleConnection(
   repo: string,
   cols?: number,
   rows?: number,
+  command?: string,
 ): void {
   let cwd: string;
   try {
@@ -111,7 +114,7 @@ function handleConnection(
 
   let session: PtySession;
   try {
-    session = createPtySession({ cwd, cols, rows });
+    session = createPtySession({ cwd, cols, rows, command });
   } catch {
     ws.close(4500, "failed to spawn shell");
     return;

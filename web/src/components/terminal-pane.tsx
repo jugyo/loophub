@@ -34,6 +34,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  type OpenTerminalOptions,
+  useRegisterTerminalController,
+} from "@/components/terminal-controller";
 import { TerminalView } from "@/components/terminal-view";
 import { useCurrentRepo } from "@/lib/use-current-repo";
 import { useRepos } from "@/queries/repos";
@@ -53,7 +57,9 @@ const RESERVE_VAR = "--lh-term-reserve";
 
 // One terminal tab: a stable id (React key) and the repo ("owner/name", or "" for $HOME) whose
 // base dir is its cwd. The cwd is fixed at creation — TerminalView captures it once at mount.
-type Tab = { id: string; repo: string };
+// `command` is an optional one-shot run on start (New Issue / Build); `label` overrides the
+// repo-derived tab label. Both are captured once at creation alongside the cwd.
+type Tab = { id: string; repo: string; command?: string; label?: string };
 
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -128,14 +134,25 @@ export function TerminalPane() {
     }
   }, [tabs, activeId]);
 
-  // Open a new tab with the given cwd and make it active + visible.
-  const openTab = useCallback((repo: string) => {
-    const tab = { id: newId(), repo };
+  // Open a new tab and make it active + visible. With no options it opens a plain shell in $HOME;
+  // callers pass a repo (cwd), an initial command to run on start, and/or a label override. This
+  // is the imperative API published to the rest of the app via the terminal controller below.
+  const openTerminal = useCallback((opts?: OpenTerminalOptions) => {
+    const tab: Tab = {
+      id: newId(),
+      repo: opts?.repo ?? "",
+      command: opts?.command,
+      label: opts?.label,
+    };
     setTabs((prev) => [...prev, tab]);
     setActiveId(tab.id);
     setExpanded(true);
     setMenuOpen(false);
   }, []);
+
+  // Publish openTerminal so the New Issue / Build buttons (and any future caller) can open a tab
+  // with a command. Lives here because this component owns the tab list.
+  useRegisterTerminalController(openTerminal);
 
   // Close a tab: removing it unmounts its TerminalView, which kills that PTY (other tabs are
   // untouched). activeId and collapse-on-empty are handled by the reconcile layout effect above.
@@ -200,7 +217,11 @@ export function TerminalPane() {
   useLayoutEffect(() => {
     const root = document.documentElement;
     root.style.setProperty(RESERVE_VAR, reserveCss);
-    return () => root.style.removeProperty(RESERVE_VAR);
+    // Wrap in a block so the cleanup returns void — removeProperty returns the removed value
+    // (string), which a bare arrow body would make an invalid effect Destructor.
+    return () => {
+      root.style.removeProperty(RESERVE_VAR);
+    };
   }, [reserveCss]);
 
   return (
@@ -272,9 +293,9 @@ export function TerminalPane() {
                       type="button"
                       onClick={() => setActiveId(t.id)}
                       className="truncate"
-                      title={t.repo || "~ ($HOME)"}
+                      title={t.label || t.repo || "~ ($HOME)"}
                     >
-                      {tabLabel(t.repo)}
+                      {t.label || tabLabel(t.repo)}
                     </button>
                     <button
                       type="button"
@@ -294,7 +315,9 @@ export function TerminalPane() {
                 // On a repo-scoped page the cwd is unambiguous — open a tab there directly. Off a
                 // repo (Home, archived, …) there is no obvious cwd, so let the user pick one.
                 onClick={() =>
-                  currentRepo ? openTab(currentRepo) : setMenuOpen((v) => !v)
+                  currentRepo
+                    ? openTerminal({ repo: currentRepo })
+                    : setMenuOpen((v) => !v)
                 }
                 className="flex size-6 items-center justify-center rounded hover:bg-muted hover:text-foreground"
                 title={
@@ -308,7 +331,7 @@ export function TerminalPane() {
               {menuOpen && (
                 <NewTabMenu
                   repos={(repos ?? []).map((r) => r.full_name)}
-                  onPick={openTab}
+                  onPick={(repo) => openTerminal({ repo })}
                   onClose={() => setMenuOpen(false)}
                 />
               )}
@@ -361,6 +384,7 @@ export function TerminalPane() {
               >
                 <TerminalView
                   repo={t.repo}
+                  command={t.command}
                   active={expanded && isActive}
                   onExit={() => closeTab(t.id)}
                 />

@@ -34,12 +34,16 @@ const LIGHT_THEME = {
 
 export function TerminalView({
   repo,
+  command,
   active = true,
   onExit,
 }: {
   // "owner/name" of the repo whose base dir is the cwd, or "" for $HOME. Captured once at
   // mount; later changes do not move the running session.
   repo: string;
+  // Optional command to run once the shell starts (e.g. New Issue / Build launches). Captured
+  // once at mount and run server-side after the shell is interactive; the shell stays usable.
+  command?: string;
   // Whether this terminal is the visible/active tab. When it flips to true the terminal is
   // refit and focused (it may have been hidden at display:none and gone stale). Defaults to
   // true for a standalone (single-tab) mount.
@@ -54,6 +58,9 @@ export function TerminalView({
   // Capture the repo at mount only. The ref is never reassigned, so later navigation does not
   // change the session's cwd (an empty value → $HOME, resolved server-side).
   const repoAtMount = useRef(repo);
+  // Capture the initial command at mount only, for the same reason as repo (the session is
+  // created once; a later prop change must not re-run it).
+  const commandAtMount = useRef(command);
   // True only while the WebSocket (hence the PTY) is actually open. Set in the socket effect.
   const aliveRef = useRef(false);
   // Latest `active`, read inside the async socket callbacks. Sockets connect asynchronously, so a
@@ -98,9 +105,13 @@ export function TerminalView({
     termRef.current = term;
 
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const url = `${proto}://${location.host}/terminal?repo=${encodeURIComponent(
+    let url = `${proto}://${location.host}/terminal?repo=${encodeURIComponent(
       repoAtMount.current,
     )}&cols=${term.cols}&rows=${term.rows}`;
+    // Pass the initial command (if any) so the server runs it in the spawned shell.
+    if (commandAtMount.current?.trim()) {
+      url += `&cmd=${encodeURIComponent(commandAtMount.current)}`;
+    }
     const ws = new WebSocket(url);
 
     const send = (m: object) => {

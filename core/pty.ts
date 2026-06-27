@@ -97,12 +97,24 @@ export function resolveTerminalCwd(repo?: string | null): string {
   return resolveRepoCwd(repo);
 }
 
+// Build the keystrokes to inject into a freshly-spawned interactive shell so it runs an initial
+// command, or null when there is nothing to run. A trailing carriage return submits the line, so
+// the command executes while the shell stays interactive (the AC: keep typing after it starts).
+// Pure so the command-injection decision is unit-testable without spawning a real PTY.
+export function initialCommandInput(command?: string | null): string | null {
+  const trimmed = command?.trim();
+  return trimmed ? `${trimmed}\r` : null;
+}
+
 export interface CreatePtyOptions {
   cwd: string;
   cols?: number;
   rows?: number;
   shell?: string;
   env?: NodeJS.ProcessEnv;
+  // Optional command to run once the shell is interactive (New Issue / Build buttons). The shell
+  // stays interactive afterward — this is typed into the prompt, not `shell -c`.
+  command?: string;
 }
 
 // Spawn an interactive shell PTY rooted at `cwd`. The native addon is required lazily here.
@@ -122,6 +134,17 @@ export function createPtySession(opts: CreatePtyOptions): PtySession {
     cwd: opts.cwd,
     env,
   });
+
+  // Run the initial command (if any) once the shell emits its first output — i.e. once it is
+  // interactive. Writing on first data instead of immediately after spawn avoids racing the
+  // shell's startup (rc files), which can swallow a too-early write. One-shot: dispose after firing.
+  const initial = initialCommandInput(opts.command);
+  if (initial) {
+    const sub = proc.onData(() => {
+      proc.write(initial);
+      (sub as { dispose?: () => void } | undefined)?.dispose?.();
+    }) as { dispose?: () => void } | undefined;
+  }
 
   return {
     get pid() {

@@ -17,11 +17,19 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment } from "@/api/types";
+
+// The Build button opens a terminal via useTerminal(); capture the call.
+const { openTerminal } = vi.hoisted(() => ({ openTerminal: vi.fn() }));
+vi.mock("@/components/terminal-controller", () => ({
+  useTerminal: () => ({ openTerminal }),
+}));
+
 import { IssueDetail } from "./issue-detail";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  openTerminal.mockClear();
 });
 
 const issue: Issue = {
@@ -61,7 +69,6 @@ function mockFetch(getIssue: () => Issue = () => issue) {
       body: p.body,
       created_at: "2026-06-17T12:30:00Z",
     }),
-    "issues/addLabels": (p) => p.labels.map((name: string) => ({ name })),
   });
 }
 
@@ -167,17 +174,17 @@ describe("IssueDetail", () => {
     expect(await screen.findByRole("button", { name: /build/i })).toBeTruthy();
   });
 
-  it("adds ready-to-build when the Build button is clicked", async () => {
+  it("launches `lh dev <n>` in a terminal when the Build button is clicked", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr);
 
     const button = await screen.findByRole("button", { name: /build/i });
     fireEvent.click(button);
 
-    await waitFor(() => {
-      const call = rpcCall("issues/addLabels");
-      expect(call).toBeTruthy();
-      expect(call!.params.labels).toEqual(["ready-to-build"]);
+    expect(openTerminal).toHaveBeenCalledWith({
+      command: "lh dev 12",
+      repo: "me/proj",
+      label: "dev #12",
     });
   });
 });

@@ -69,3 +69,15 @@ test("resolveTerminalCwd resolves a named repo to its base dir", () => {
   const repo = S.createRepo("me/term-cwd", HOME);
   expect(P.resolveTerminalCwd(repo.full_name)).toBe(HOME);
 });
+
+test("initialCommandInput appends a CR to a non-empty command, null otherwise", () => {
+  // A trailing CR submits the line so the command runs in the interactive shell.
+  expect(P.initialCommandInput("lh dev 42")).toBe("lh dev 42\r");
+  // Surrounding whitespace is trimmed before submitting.
+  expect(P.initialCommandInput("  lh dev 42  ")).toBe("lh dev 42\r");
+  // Nothing to run → no keystrokes (plain shell).
+  expect(P.initialCommandInput()).toBeNull();
+  expect(P.initialCommandInput(null)).toBeNull();
+  expect(P.initialCommandInput("")).toBeNull();
+  expect(P.initialCommandInput("   ")).toBeNull();
+});

@@ -10,13 +10,13 @@ import type { Issue, IssueComment } from "@/api/types";
 import { useRegisterDetailTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
 import { Markdown } from "@/components/markdown";
+import { useTerminal } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { stateBadge } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import { useImageUpload } from "@/lib/use-image-upload";
 import {
-  useAddReadyToBuild,
   useIssue,
   useIssueComments,
   usePostComment,
@@ -82,7 +82,7 @@ function IssueHeader({
   issue: Issue;
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
-  const addReady = useAddReadyToBuild(owner, repo, issue.number);
+  const { openTerminal } = useTerminal();
   const state = stateBadge(issue, "issues");
   const linked = issue.linked_pull_request;
   // Build kicks off work, so show it unless a PR is actively in progress (open)
@@ -160,15 +160,16 @@ function IssueHeader({
         </Button>
         {activePull ? null : (
           <Button
-            disabled={addReady.isPending}
-            title="Mark this issue ready for an AFK agent to start"
-            onClick={() => addReady.mutate()}
+            title={`Start \`lh dev ${issue.number}\` in a terminal`}
+            onClick={() =>
+              openTerminal({
+                command: `lh dev ${issue.number}`,
+                repo: `${owner}/${repo}`,
+                label: `dev #${issue.number}`,
+              })
+            }
           >
-            {addReady.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Play className="size-4" />
-            )}
+            <Play className="size-4" />
             Build
           </Button>
         )}
