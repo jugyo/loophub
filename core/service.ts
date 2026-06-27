@@ -38,6 +38,7 @@ import {
   agentSessionJSON,
   commentJSON,
   issueJSON,
+  issueListItemJSON,
   labelJSON,
   pullJSON,
   repoJSON,
@@ -275,7 +276,7 @@ export const sessions = {
 
 // ===== issues =====
 export const issues = {
-  list(
+  async list(
     name: string,
     opts: {
       state?: string;
@@ -302,7 +303,12 @@ export const issues = {
         return labelsFilter.every((l) => names.includes(l));
       });
     }
-    return paginate(rows, perPage, page).map((row) => issueJSON(row, r));
+    // Enrich each issue's linked PR with status (working / review / mergeable /
+    // diff totals) for the issue-list sub-row. Async git fan-out, bounded by the
+    // pagination slice above; other surfaces keep the sync issueJSON summary.
+    return Promise.all(
+      paginate(rows, perPage, page).map((row) => issueListItemJSON(row, r)),
+    );
   },
 
   get(name: string, number: number) {

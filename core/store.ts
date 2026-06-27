@@ -291,6 +291,32 @@ export function linkedPullForIssue(linkedIssueId: number): any | null {
   );
 }
 
+// Cap on linked PRs surfaced per issue row. Normally 0–1 exist; the cap only
+// bites for an issue that accumulated many (rejected attempts, multi-proposal).
+// It bounds both the stacked sub-rows and — more importantly — the per-PR git
+// fan-out that the issue list runs to compute each PR's status (see
+// serialize.ts issueListItemJSON), keeping a single list page's git work
+// bounded regardless of how many PRs an issue collects over time.
+export const MAX_LINKED_PULLS = 6;
+
+// PRs linked to an issue, most-relevant first (same ordering as
+// linkedPullForIssue): open & unmerged ahead of merged/closed, then by recency.
+// Capped at MAX_LINKED_PULLS so the issue list can stack them without an
+// unbounded git fan-out.
+export function linkedPullsForIssue(linkedIssueId: number): any[] {
+  return db
+    .query(
+      `SELECT i.*, p.merged, p.merged_at
+       FROM pulls p
+       JOIN issues i ON i.id = p.issue_id
+       WHERE p.linked_issue_id = ? AND i.kind = 'pull'
+       ORDER BY CASE WHEN i.state = 'open' AND p.merged = 0 THEN 0 ELSE 1 END,
+                COALESCE(p.merged_at, i.updated_at) DESC
+       LIMIT ?`,
+    )
+    .all(linkedIssueId, MAX_LINKED_PULLS);
+}
+
 export function getPull(issueId: number): any {
   return db.query(`SELECT * FROM pulls WHERE issue_id = ?`).get(issueId);
 }

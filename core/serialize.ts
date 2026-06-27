@@ -96,6 +96,110 @@ function linkedPullSummary(repo: S.Repo, issueRowId: number) {
   };
 }
 
+// Git-derived status fields for a PR row: mergeable state, diff totals, the
+// "working" flag, and review state. Shared by pullJSON (PR list/detail) and the
+// issue list's linked-PR summary so both compute status identically. The git
+// fan-out (revParse/mergePreview/diffStat/status) is bounded — callers keep
+// their lists paginated.
+async function pullStatusFields(repo: S.Repo, row: any) {
+  const p = S.getPull(row.id);
+  const headSha = await revParse(repo.local_path, p.head_ref);
+  const baseSha = await revParse(repo.local_path, p.base_ref);
+  const review_state = S.computeReviewState(row.id);
+  let mergeable: boolean | null = null;
+  let mergeable_state = "unknown";
+  if (!p.merged && headSha && baseSha) {
+    const [prev, ahead] = await Promise.all([
+      mergePreview(repo.local_path, p.base_ref, p.head_ref),
+      commitsAhead(repo.local_path, p.base_ref, p.head_ref),
+    ]);
+    ({ mergeable, mergeable_state } = resolveMergeable({
+      hasCommits: ahead > 0,
+      conflict: prev.conflict,
+      approved: review_state === "APPROVED",
+    }));
+  }
+  // Diff totals (+/-, changed files) for the PR. Aggregated from numstat over
+  // base...head; left at 0 when refs can't be resolved so list/detail render
+  // gracefully. Skip merged PRs (like the mergeable fan-out above): base...head
+  // would be empty for a merge commit but show the full original diff for a
+  // squash/rebase merge whose head branch still exists — inconsistent, so don't.
+  let additions = 0;
+  let deletions = 0;
+  let changed_files = 0;
+  if (!p.merged && headSha && baseSha) {
+    try {
+      ({
+        additions,
+        deletions,
+        changedFiles: changed_files,
+      } = await diffStat(repo.local_path, p.base_ref, p.head_ref));
+    } catch {
+      // leave zeros — a diff stat failure must not break serialization
+    }
+  }
+  // "working" badge: real uncommitted changes in this PR's lh-dev worktree. Guarded so the
+  // git status only runs for an open PR whose worktree directory actually exists (see
+  // pullWorktreeDirty); merged/closed and worktree-less PRs skip git.
+  const linked = linkedIssueSummary(repo, row.id);
+  const working = await pullWorktreeDirty({
+    fullName: repo.full_name,
+    headRef: p.head_ref,
+    linkedIssueNumber: linked?.number ?? null,
+    prNumber: row.number,
+    merged: !!p.merged,
+    state: row.state,
+  });
+  return {
+    headSha,
+    baseSha,
+    mergeable,
+    mergeable_state,
+    additions,
+    deletions,
+    changed_files,
+    working,
+    review_state,
+    linked,
+  };
+}
+
+// Issue list item with its linked PR enriched with status (working / review /
+// mergeable / diff totals) for the issue-list Pattern E sub-row. Async because
+// the status fields need a bounded git fan-out per linked PR; used only by the
+// paginated issues.list path, so issueJSON stays sync for detail/dashboard.
+export async function issueListItemJSON(row: any, repo: S.Repo) {
+  const out = issueJSON(row, repo);
+  if (row.kind !== "pull") {
+    // All linked PRs (usually 0–1, occasionally more — see linkedPullsForIssue),
+    // most-relevant first, so the list can stack them vertically. The singular
+    // field stays set to the primary one for any consumer that reads it.
+    const pulls = await Promise.all(
+      S.linkedPullsForIssue(row.id).map((pr) => linkedPullDetail(repo, pr)),
+    );
+    out.linked_pull_requests = pulls;
+    out.linked_pull_request = pulls[0] ?? null;
+  }
+  return out;
+}
+
+async function linkedPullDetail(repo: S.Repo, pr: any) {
+  const status = await pullStatusFields(repo, pr);
+  return {
+    number: pr.number,
+    title: pr.title,
+    state: pr.state,
+    merged: !!pr.merged,
+    html_url: linkedRef(repo, "pulls", pr.number).html_url,
+    working: status.working,
+    review_state: status.review_state,
+    mergeable_state: status.mergeable_state,
+    additions: status.additions,
+    deletions: status.deletions,
+    changed_files: status.changed_files,
+  };
+}
+
 export function issueJSON(row: any, repo?: S.Repo) {
   const out: any = {
     number: row.number,
@@ -147,53 +251,7 @@ export function retroJSON(row: any) {
 
 export async function pullJSON(repo: S.Repo, row: any) {
   const p = S.getPull(row.id);
-  const headSha = await revParse(repo.local_path, p.head_ref);
-  const baseSha = await revParse(repo.local_path, p.base_ref);
-  const review_state = S.computeReviewState(row.id);
-  let mergeable: boolean | null = null;
-  let mergeable_state = "unknown";
-  if (!p.merged && headSha && baseSha) {
-    const [prev, ahead] = await Promise.all([
-      mergePreview(repo.local_path, p.base_ref, p.head_ref),
-      commitsAhead(repo.local_path, p.base_ref, p.head_ref),
-    ]);
-    ({ mergeable, mergeable_state } = resolveMergeable({
-      hasCommits: ahead > 0,
-      conflict: prev.conflict,
-      approved: review_state === "APPROVED",
-    }));
-  }
-  // Diff totals (+/-, changed files) for the PR. Aggregated from numstat over
-  // base...head; left at 0 when refs can't be resolved so list/detail render
-  // gracefully. Skip merged PRs (like the mergeable fan-out above): base...head
-  // would be empty for a merge commit but show the full original diff for a
-  // squash/rebase merge whose head branch still exists — inconsistent, so don't.
-  let additions = 0;
-  let deletions = 0;
-  let changed_files = 0;
-  if (!p.merged && headSha && baseSha) {
-    try {
-      ({
-        additions,
-        deletions,
-        changedFiles: changed_files,
-      } = await diffStat(repo.local_path, p.base_ref, p.head_ref));
-    } catch {
-      // leave zeros — a diff stat failure must not break serialization
-    }
-  }
-  // "working" badge: real uncommitted changes in this PR's lh-dev worktree. Guarded so the
-  // git status only runs for an open PR whose worktree directory actually exists (see
-  // pullWorktreeDirty); merged/closed and worktree-less PRs skip git.
-  const linked = linkedIssueSummary(repo, row.id);
-  const working = await pullWorktreeDirty({
-    fullName: repo.full_name,
-    headRef: p.head_ref,
-    linkedIssueNumber: linked?.number ?? null,
-    prNumber: row.number,
-    merged: !!p.merged,
-    state: row.state,
-  });
+  const status = await pullStatusFields(repo, row);
 
   return {
     number: row.number,
@@ -201,23 +259,23 @@ export async function pullJSON(repo: S.Repo, row: any) {
     title: row.title,
     body: row.body,
     user: { login: row.author },
-    head: { ref: p.head_ref, sha: headSha },
-    base: { ref: p.base_ref, sha: baseSha },
+    head: { ref: p.head_ref, sha: status.headSha },
+    base: { ref: p.base_ref, sha: status.baseSha },
     merged: !!p.merged,
-    mergeable,
-    mergeable_state,
+    mergeable: status.mergeable,
+    mergeable_state: status.mergeable_state,
     merge_commit_sha: p.merge_commit_sha,
-    additions,
-    deletions,
-    changed_files,
-    working,
-    review_state,
+    additions: status.additions,
+    deletions: status.deletions,
+    changed_files: status.changed_files,
+    working: status.working,
+    review_state: status.review_state,
     changes_addressed_at: p.changes_addressed_at ?? null,
     changes_addressed_by: p.changes_addressed_by ?? null,
     labels: S.issueLabels(row.id).map(labelJSON),
     comments: S.countComments(row.id),
     created_at: row.created_at,
     updated_at: row.updated_at,
-    linked_issue: linked,
+    linked_issue: status.linked,
   };
 }

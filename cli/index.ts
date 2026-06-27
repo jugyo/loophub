@@ -726,7 +726,7 @@ async function main() {
     const repo = await resolveRepo();
     if (sub === "list") {
       const state = flags.state || "open";
-      const items = s.issues.list(repo, { state });
+      const items = await s.issues.list(repo, { state });
       const issues = items.filter((i: any) => !i.pull_request);
       out(issues);
       if (!flags.json)

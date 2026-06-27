@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { Issue, PullRequest } from "@/api/types";
+import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 import {
   issueBadges,
+  linkedPullStatus,
   mergeableBadge,
   pullBadges,
   reviewBadge,
@@ -122,6 +123,73 @@ describe("workingBadge", () => {
   it("does not show on merged or non-open PRs even if flagged", () => {
     expect(workingBadge(pull({ working: true, merged: true }))).toBeNull();
     expect(workingBadge(pull({ working: true, state: "closed" }))).toBeNull();
+  });
+});
+
+describe("linkedPullStatus", () => {
+  function linked(partial: Partial<LinkedPull> = {}): LinkedPull {
+    return {
+      number: 2,
+      title: "A PR",
+      state: "open",
+      merged: false,
+      ...partial,
+    };
+  }
+
+  it("returns null for a plain open PR with no notable status", () => {
+    expect(linkedPullStatus(linked())).toBeNull();
+  });
+
+  it("reports merged and closed states", () => {
+    expect(linkedPullStatus(linked({ merged: true }))?.tone).toBe("merged");
+    expect(linkedPullStatus(linked({ state: "closed" }))?.tone).toBe("closed");
+  });
+
+  it("prioritizes working over review and mergeable", () => {
+    const status = linkedPullStatus(
+      linked({
+        working: true,
+        review_state: "APPROVED",
+        mergeable_state: "clean",
+      }),
+    );
+    expect(status).toMatchObject({ tone: "working", label: "working" });
+  });
+
+  it("flags a dirty tree as conflict ahead of review", () => {
+    expect(
+      linkedPullStatus(
+        linked({ mergeable_state: "dirty", review_state: "APPROVED" }),
+      )?.tone,
+    ).toBe("conflict");
+  });
+
+  it("maps review states to a single labelled word", () => {
+    expect(
+      linkedPullStatus(linked({ review_state: "CHANGES_REQUESTED" })),
+    ).toEqual({ tone: "review-changes", label: "changes" });
+    expect(linkedPullStatus(linked({ review_state: "STALE" }))?.label).toBe(
+      "re-review",
+    );
+    expect(linkedPullStatus(linked({ review_state: "APPROVED" }))?.tone).toBe(
+      "review-approved",
+    );
+  });
+
+  it("falls back to mergeable for a clean PR without review", () => {
+    expect(linkedPullStatus(linked({ mergeable_state: "clean" }))).toEqual({
+      tone: "mergeable",
+      label: "mergeable",
+    });
+  });
+
+  it("does not derive working/conflict from a merged PR", () => {
+    expect(
+      linkedPullStatus(
+        linked({ merged: true, working: true, mergeable_state: "dirty" }),
+      )?.tone,
+    ).toBe("merged");
   });
 });
 

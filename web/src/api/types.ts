@@ -17,6 +17,17 @@ export interface LinkedPull {
   state: "open" | "closed";
   merged: boolean;
   html_url?: string;
+  /**
+   * Status fields populated on the issue-list response (issueListItemJSON) for
+   * the row's PR sub-row. Absent on the issue-detail summary, which does not run
+   * the git fan-out.
+   */
+  working?: boolean;
+  review_state?: PullRequest["review_state"];
+  mergeable_state?: PullRequest["mergeable_state"];
+  additions?: number;
+  deletions?: number;
+  changed_files?: number;
 }
 
 /** Summary of the issue a PR closes (pull-detail `linked_issue`). */
@@ -89,8 +100,17 @@ export interface Issue {
   created_at: string;
   updated_at: string;
   pull_request?: unknown;
-  /** Set on the issue-detail response when an open PR is linked. */
+  /**
+   * Primary linked PR. On the issue-detail response this is the single open PR;
+   * on the issue-list response it is the most-relevant of `linked_pull_requests`.
+   */
   linked_pull_request?: LinkedPull | null;
+  /**
+   * All PRs linked to this issue, most-relevant first. Populated only on the
+   * issue-list response (issueListItemJSON); usually 0–1, occasionally more, and
+   * the list stacks them vertically.
+   */
+  linked_pull_requests?: LinkedPull[];
 }
 
 export interface PullRequest {

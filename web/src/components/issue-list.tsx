@@ -5,7 +5,7 @@
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { CreateIssueButton } from "@/components/create-issue-button";
-import { IssueRow } from "@/components/dashboard-rows";
+import { IssueListRow } from "@/components/dashboard-rows";
 import { Button } from "@/components/ui/button";
 import {
   DEFAULT_ISSUE_FILTERS,
@@ -89,7 +89,7 @@ export function IssueList({ owner, repo }: { owner: string; repo: string }) {
         <ul className="flex flex-col divide-y rounded-md border">
           {query.data.map((issue) => (
             <li key={issue.number}>
-              <IssueRow owner={owner} repo={repo} issue={issue} />
+              <IssueListRow owner={owner} repo={repo} issue={issue} />
             </li>
           ))}
         </ul>

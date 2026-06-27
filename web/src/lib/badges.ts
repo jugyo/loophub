@@ -2,7 +2,7 @@
 // v1 UI (src/ui.html) for parity: state, review state, mergeable/conflict.
 // Kept dependency-free so the badge logic is unit-testable without React.
 
-import type { Issue, PullRequest } from "@/api/types";
+import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 
 export type BadgeTone =
   | "open"
@@ -125,4 +125,41 @@ export function pullBadges(pr: PullRequest): Badge[] {
     badges.push(mergeable);
   }
   return badges;
+}
+
+/**
+ * Single status descriptor for an issue row's linked PR (the issue-list
+ * sub-row). Collapses the PR's working / review / mergeable signals into one
+ * toned, labelled word, by priority (most actionable first): merged/closed →
+ * working → conflict → review → mergeable. Returns null when the PR carries no
+ * notable status beyond plain "open" — the bare `PR #n` pill then stands alone.
+ *
+ * Reads the status fields populated only on the issue-list response
+ * (issueListItemJSON); a summary lacking them collapses to null.
+ */
+export function linkedPullStatus(pull: LinkedPull): Badge | null {
+  if (pull.merged) return { tone: "merged", label: "merged" };
+  if (pull.state === "closed") return { tone: "closed", label: "closed" };
+  if (pull.working)
+    return {
+      tone: "working",
+      label: "working",
+      title: "Uncommitted changes in the PR worktree",
+    };
+  if (pull.mergeable_state === "dirty")
+    return { tone: "conflict", label: "conflict" };
+  switch (pull.review_state) {
+    case "CHANGES_REQUESTED":
+      return { tone: "review-changes", label: "changes" };
+    case "READY_FOR_RE_REVIEW":
+    case "STALE":
+      return { tone: "review-rereview", label: "re-review" };
+    case "APPROVED":
+      return { tone: "review-approved", label: "approved" };
+    case "COMMENTED":
+      return { tone: "review-commented", label: "commented" };
+  }
+  if (pull.mergeable_state === "clean")
+    return { tone: "mergeable", label: "mergeable" };
+  return null;
 }

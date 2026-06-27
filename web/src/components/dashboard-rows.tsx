@@ -3,11 +3,17 @@
 // (../lib/badges.ts).
 
 import { Link } from "@tanstack/react-router";
-import type { Issue, Label, PullRequest } from "@/api/types";
+import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
-import { Badge } from "@/components/ui/badge";
-import { issueBadges, pullBadges } from "@/lib/badges";
+import { Badge, badgeVariants } from "@/components/ui/badge";
+import {
+  type BadgeTone,
+  issueBadges,
+  linkedPullStatus,
+  pullBadges,
+} from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
 
 function RowBadges({ badges }: { badges: ReturnType<typeof issueBadges> }) {
   if (badges.length === 0) return null;
@@ -87,6 +93,120 @@ export function IssueRow({
         {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
       </span>
     </Link>
+  );
+}
+
+// Status-word color per tone for the linked-PR sub-row. The PR pill carries the
+// same tone via badgeVariants; the word repeats it as plain text so the status
+// reads without relying on the pill border alone.
+const STATUS_TEXT: Partial<Record<BadgeTone, string>> = {
+  working: "text-sky-600 dark:text-sky-300",
+  conflict: "text-destructive",
+  "review-changes": "text-destructive",
+  "review-rereview": "text-amber-600 dark:text-amber-400",
+  "review-approved": "text-green-600 dark:text-green-400",
+  "review-commented": "text-muted-foreground",
+  mergeable: "text-green-600 dark:text-green-400",
+  merged: "text-purple-500 dark:text-purple-400",
+  closed: "text-muted-foreground",
+};
+
+// Muted sub-row under an issue title carrying its linked PR: a toned `PR #n`
+// link pill, the single status word, and the diff total. Its own PR link (not
+// the issue title link), so the row exposes two distinct destinations.
+function LinkedPullSubRow({
+  owner,
+  repo,
+  pull,
+}: {
+  owner: string;
+  repo: string;
+  pull: LinkedPull;
+}) {
+  const status = linkedPullStatus(pull);
+  const files = pull.changed_files ?? 0;
+  return (
+    <div className="flex items-center gap-2 pl-7 text-xs text-muted-foreground">
+      <Link
+        to="/r/$owner/$repo/pulls/$number"
+        params={{ owner, repo, number: String(pull.number) }}
+        className={cn(
+          badgeVariants({ tone: status?.tone ?? "unknown" }),
+          "shrink-0 hover:opacity-80",
+        )}
+      >
+        PR #{pull.number}
+      </Link>
+      {status ? (
+        <span
+          className={cn("shrink-0 font-medium", STATUS_TEXT[status.tone])}
+          title={status.title}
+        >
+          {status.label}
+        </span>
+      ) : null}
+      {files > 0 ? (
+        <DiffStat
+          additions={pull.additions ?? 0}
+          deletions={pull.deletions ?? 0}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// Issue list row (issues page). Pattern E: the title is the issue link (so the
+// PR pill below can be its own link), and the linked PR — when present — renders
+// on a muted sub-row. Unlike IssueRow (dashboard/home), the whole row is not a
+// single link, and the open-state badge is dropped (only `closed` shows, under
+// the closed filter), since an all-open list makes `open` redundant.
+export function IssueListRow({
+  owner,
+  repo,
+  issue,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+}) {
+  // Usually 0–1 linked PRs; when more than one exists they stack vertically, one
+  // sub-row each. Fall back to the singular field for any response shape that
+  // only carries it.
+  const pulls =
+    issue.linked_pull_requests ??
+    (issue.linked_pull_request ? [issue.linked_pull_request] : []);
+  return (
+    <div className="flex flex-col gap-1 px-3 py-2 text-sm hover:bg-accent">
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-muted-foreground">#{issue.number}</span>
+        <Link
+          to="/r/$owner/$repo/issues/$number"
+          params={{ owner, repo, number: String(issue.number) }}
+          className="min-w-0 flex-1 truncate font-medium hover:underline"
+        >
+          {issue.title}
+        </Link>
+        <RowLabels labels={issue.labels} />
+        {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {relativeTime(issue.updated_at)}
+        </span>
+      </div>
+      {pulls.length > 0 ? (
+        // Own column so the gap between stacked PRs is a touch wider than the
+        // title↔first-PR gap above.
+        <div className="flex flex-col gap-1.5">
+          {pulls.map((pull) => (
+            <LinkedPullSubRow
+              key={pull.number}
+              owner={owner}
+              repo={repo}
+              pull={pull}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

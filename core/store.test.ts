@@ -92,6 +92,26 @@ test("an APPROVE with no recorded head stays APPROVED (legacy approves)", () => 
   expect(S.computeReviewState(pr.id)).toBe("APPROVED");
 });
 
+test("linkedPullsForIssue caps the fan-out and orders open PRs first", () => {
+  const repo = S.createRepo("me/multi", "/tmp/multi");
+  const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any;
+
+  // Historical merged PRs linked to the issue (more than the cap).
+  for (let i = 0; i < 7; i++) {
+    const pr = S.createIssue(repo.id, "pull", `feat-${i}`, "Closes #1", "bot");
+    S.createPull(pr.id, `feat-${i}`, "main", `sha-${i}`, issue.id);
+    S.setMerged(pr.id, `merge-${i}`, "squash");
+  }
+  // One current open PR — most relevant, must sort first.
+  const open = S.createIssue(repo.id, "pull", "feat-open", "Closes #1", "bot");
+  S.createPull(open.id, "feat-open", "main", "sha-open", issue.id);
+
+  const linked = S.linkedPullsForIssue(issue.id);
+  expect(linked.length).toBe(S.MAX_LINKED_PULLS); // 8 linked, capped to 6
+  expect(linked[0].number).toBe(open.number); // open & unmerged first
+  expect(S.linkedPullsForIssue(-1)).toEqual([]); // none -> empty array, not null
+});
+
 test("registerAgentSession conflict surfaces as an error", () => {
   S.createRepo("me/sess", "/tmp/sess");
   S.registerAgentSession(
