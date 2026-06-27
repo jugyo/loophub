@@ -112,8 +112,17 @@ export function pullBadges(pr: PullRequest): Badge[] {
   const state = stateBadge(pr, "pulls");
   if (state) badges.push(state);
   const review = reviewBadge(pr);
-  if (review) badges.push(review);
-  const conflict = mergeableBadge(pr);
-  if (conflict) badges.push(conflict);
+  // While the PR is working (worktree dirty), hide the "approved" badge: the
+  // state is still moving, so "approved" would wrongly imply it is ready to
+  // merge. Other review states (changes requested, stale, …) still show.
+  if (review && !(working && review.tone === "review-approved")) {
+    badges.push(review);
+  }
+  const mergeable = mergeableBadge(pr);
+  // Same reasoning: hide "mergeable" while working. "conflict" still shows —
+  // a conflict is worth surfacing regardless of in-progress work.
+  if (mergeable && !(working && mergeable.tone === "mergeable")) {
+    badges.push(mergeable);
+  }
   return badges;
 }

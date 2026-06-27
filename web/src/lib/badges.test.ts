@@ -146,7 +146,7 @@ describe("issueBadges / pullBadges", () => {
     expect(badges.map((b) => b.tone)).toEqual(["mergeable"]);
   });
 
-  it("places the working badge before state/review", () => {
+  it("hides approved and mergeable while working", () => {
     const badges = pullBadges(
       pull({
         working: true,
@@ -154,10 +154,32 @@ describe("issueBadges / pullBadges", () => {
         mergeable_state: "clean",
       }),
     );
+    expect(badges.map((b) => b.tone)).toEqual(["working"]);
+  });
+
+  it("keeps non-approved review and conflict badges while working", () => {
+    const badges = pullBadges(
+      pull({
+        working: true,
+        review_state: "CHANGES_REQUESTED",
+        mergeable_state: "dirty",
+      }),
+    );
     expect(badges.map((b) => b.tone)).toEqual([
       "working",
-      "review-approved",
-      "mergeable",
+      "review-changes",
+      "conflict",
     ]);
+  });
+
+  it("keeps the stale review badge while working", () => {
+    const badges = pullBadges(
+      pull({
+        working: true,
+        review_state: "STALE",
+        mergeable_state: "unknown",
+      }),
+    );
+    expect(badges.map((b) => b.tone)).toEqual(["working", "review-rereview"]);
   });
 });
