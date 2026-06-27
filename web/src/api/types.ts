@@ -172,6 +172,15 @@ export interface PullRequest {
   updated_at: string;
   /** Set on the pull-detail response when the PR closes an issue. */
   linked_issue?: LinkedIssue | null;
+  /** Other open PRs that would merge-conflict with this one (PR detail only). */
+  conflicts_with?: PullConflict[];
+}
+
+/** An open PR that merge-conflicts with the PR being viewed, plus the conflicting files. */
+export interface PullConflict {
+  number: number;
+  title: string;
+  files: string[];
 }
 
 /** Minimal repo identity attached to aggregated dashboard items. */

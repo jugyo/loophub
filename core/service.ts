@@ -669,7 +669,7 @@ export const pulls = {
 
   get(name: string, number: number) {
     const r = repoOr404(name);
-    return pullJSON(r, issueOr404(r, number, "pull"));
+    return pullJSON(r, issueOr404(r, number, "pull"), { withConflicts: true });
   },
 
   async create(

@@ -2,6 +2,7 @@
 // (CLI now, JSON-RPC clients later) read. Kept separate from service.ts so the
 // shaping is reusable and side-effect free.
 
+import { conflictsForPull, type PullConflict } from "./conflicts.ts";
 import { commitsAhead, diffStat, mergePreview, revParse } from "./git.ts";
 import { linkedRef } from "./links.ts";
 import { resolveMergeable } from "./mergeable.ts";
@@ -123,7 +124,11 @@ function linkedPullSummary(repo: S.Repo, issueRowId: number) {
 // issue list's linked-PR summary so both compute status identically. The git
 // fan-out (revParse/mergePreview/diffStat/status) is bounded — callers keep
 // their lists paginated.
-async function pullStatusFields(repo: S.Repo, row: any) {
+async function pullStatusFields(
+  repo: S.Repo,
+  row: any,
+  opts: { withConflicts?: boolean } = {},
+) {
   const p = S.getPull(row.id);
   const headSha = await revParse(repo.local_path, p.head_ref);
   const baseSha = await revParse(repo.local_path, p.base_ref);
@@ -172,6 +177,12 @@ async function pullStatusFields(repo: S.Repo, row: any) {
     merged: !!p.merged,
     state: row.state,
   });
+  // Cross-PR conflicts: only on demand (PR detail), and only for an open, unmerged
+  // PR with a resolvable head — the PR list skips this to keep its fan-out O(n).
+  let conflicts_with: PullConflict[] = [];
+  if (opts.withConflicts && !p.merged && row.state === "open" && headSha) {
+    conflicts_with = await conflictsForPull(repo, row.number, headSha);
+  }
   return {
     headSha,
     baseSha,
@@ -183,6 +194,7 @@ async function pullStatusFields(repo: S.Repo, row: any) {
     working,
     review_state,
     linked,
+    conflicts_with,
   };
 }
 
@@ -271,9 +283,18 @@ export function retroJSON(row: any) {
   };
 }
 
-export async function pullJSON(repo: S.Repo, row: any) {
+// `withConflicts` triggers the cross-PR conflict fan-out (PR head vs every other
+// open PR's head). Enabled for the PR *detail* (pulls.get) only; the PR *list* and
+// dashboard leave it off so their per-row serialization stays O(1) git calls.
+export async function pullJSON(
+  repo: S.Repo,
+  row: any,
+  opts: { withConflicts?: boolean } = {},
+) {
   const p = S.getPull(row.id);
-  const status = await pullStatusFields(repo, row);
+  const status = await pullStatusFields(repo, row, {
+    withConflicts: opts.withConflicts,
+  });
 
   return {
     number: row.number,
@@ -299,5 +320,6 @@ export async function pullJSON(repo: S.Repo, row: any) {
     created_at: row.created_at,
     updated_at: row.updated_at,
     linked_issue: status.linked,
+    conflicts_with: status.conflicts_with,
   };
 }

@@ -331,7 +331,7 @@ export function setHeadSha(issueId: number, sha: string | null) {
 export function listOpenPullsForRepo(repoId: number): any[] {
   return db
     .query(
-      `SELECT p.issue_id, p.head_ref
+      `SELECT p.issue_id, i.number, i.title, p.head_ref, p.base_ref
        FROM pulls p
        JOIN issues i ON i.id = p.issue_id
        WHERE i.repo_id = ? AND i.kind = 'pull' AND i.state = 'open' AND p.merged = 0`,

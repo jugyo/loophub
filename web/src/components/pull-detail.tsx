@@ -10,6 +10,7 @@ import { Link } from "@tanstack/react-router";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useState } from "react";
 import type {
+  PullConflict,
   PullFile,
   PullLineComment,
   PullRequest,
@@ -87,6 +88,8 @@ export function PullDetail({
   return (
     <div className="mx-auto flex max-w-content flex-col gap-6">
       <PullHeader owner={owner} repo={repo} pull={pull} />
+
+      <ConflictList owner={owner} repo={repo} conflicts={pull.conflicts_with} />
 
       <DevNoteTimeline
         owner={owner}
@@ -279,6 +282,58 @@ function PullHeader({
         </p>
       ) : null}
     </div>
+  );
+}
+
+// Cross-PR conflicts (#222): other open PRs whose head merge-conflicts with this
+// PR's head. Hidden entirely when there are none, so a conflict-free PR stays
+// uncluttered. Computed on demand server-side (PR detail only); see core/conflicts.ts.
+function ConflictList({
+  owner,
+  repo,
+  conflicts,
+}: {
+  owner: string;
+  repo: string;
+  conflicts: PullConflict[] | undefined;
+}) {
+  if (!conflicts || conflicts.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-2 rounded-md border border-destructive/50 bg-destructive/5 p-3">
+      <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <Badge tone="conflict">conflicts</Badge>
+        <span>
+          Conflicts with {conflicts.length} open PR
+          {conflicts.length === 1 ? "" : "s"}
+        </span>
+      </h2>
+      <ul className="flex flex-col gap-2">
+        {conflicts.map((c) => (
+          <li key={c.number} className="text-sm">
+            <Link
+              to="/r/$owner/$repo/pulls/$number"
+              params={{ owner, repo, number: String(c.number) }}
+              className="font-medium text-foreground hover:underline"
+            >
+              #{c.number}
+            </Link>{" "}
+            <span className="text-muted-foreground">{c.title}</span>
+            {c.files.length > 0 ? (
+              <ul className="mt-1 flex flex-wrap gap-1">
+                {c.files.map((f) => (
+                  <li
+                    key={f}
+                    className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground"
+                  >
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

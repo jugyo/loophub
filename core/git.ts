@@ -220,6 +220,42 @@ export async function mergePreview(
   return { conflict: r.code !== 0, tree };
 }
 
+export interface MergeConflict {
+  conflict: boolean;
+  files: string[]; // conflicted paths (empty when no conflict)
+}
+
+// 2 つのコミット/ブランチがマージコンフリクトするかを判定し、衝突したファイル一覧も返す
+// (作業ツリー非接触)。`git merge-tree --write-tree --name-only A B` は A/B の merge-base を
+// 自動算出してインメモリ 3-way マージを試みる。出力は 1 行目がツリー OID、続いて衝突した
+// ファイル名が 1 行ずつ、空行、情報メッセージ、という構造。終了コードは clean=0 / conflict=1
+// / それ以外=判定不能。判定不能(unrelated histories など)は衝突なし扱いにする。
+export async function mergeConflict(
+  repoPath: string,
+  a: string,
+  b: string,
+): Promise<MergeConflict> {
+  const r = await git(repoPath, [
+    "merge-tree",
+    "--write-tree",
+    "--name-only",
+    a,
+    b,
+  ]);
+  if (r.code !== 1) return { conflict: false, files: [] };
+  const files: string[] = [];
+  const lines = r.stdout.split("\n");
+  // line 0 is the tree OID; conflicted filenames follow until the blank-line separator.
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i] === "") break;
+    files.push(lines[i]);
+  }
+  // A genuine conflict always names at least one file under --name-only. Exit 1 with
+  // no listed file means a non-mergeable argument (e.g. a non-commit object, empty
+  // stdout), not a conflict — treat that as "no conflict" so we never report a phantom.
+  return { conflict: files.length > 0, files };
+}
+
 export interface MergeResult {
   merged: boolean;
   sha?: string;
