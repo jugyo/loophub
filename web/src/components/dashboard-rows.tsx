@@ -9,6 +9,7 @@ import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
   type Badge as BadgeData,
   type BadgeTone,
+  linkedPullDisplayTone,
   linkedPullStatus,
   pullBadges,
 } from "@/lib/badges";
@@ -126,19 +127,16 @@ export function IssueRow({
   );
 }
 
-// Status-word color per tone for the linked-PR sub-row. The PR pill carries the
-// same tone via badgeVariants; the word repeats it as plain text so the status
-// reads without relying on the pill border alone.
+// Status-word color per (collapsed) tone for the linked-PR sub-row. The PR pill
+// carries the same collapsed tone via badgeVariants; the word repeats it as
+// plain text so the status reads without relying on the pill border alone. The
+// sub-row uses only the three #244 colors — green (unmerged), purple (merged),
+// muted (working / closed) — so this maps only the tones linkedPullDisplayTone
+// produces.
 const STATUS_TEXT: Partial<Record<BadgeTone, string>> = {
-  working: "text-sky-600 dark:text-sky-300",
-  conflict: "text-destructive",
-  "review-changes": "text-destructive",
-  "review-rereview": "text-amber-600 dark:text-amber-400",
-  "review-approved": "text-green-600 dark:text-green-400",
-  "review-commented": "text-muted-foreground",
-  mergeable: "text-green-600 dark:text-green-400",
+  open: "text-green-600 dark:text-green-400",
   merged: "text-purple-500 dark:text-purple-400",
-  closed: "text-muted-foreground",
+  unknown: "text-muted-foreground",
 };
 
 // Muted sub-row under an issue title carrying its linked PR: a toned `PR #n`
@@ -154,22 +152,20 @@ function LinkedPullSubRow({
   pull: LinkedPull;
 }) {
   const status = linkedPullStatus(pull);
+  const tone = status ? linkedPullDisplayTone(status.tone) : "unknown";
   const files = pull.changed_files ?? 0;
   return (
     <div className="flex items-center gap-2 pl-7 text-xs text-muted-foreground">
       <Link
         to="/r/$owner/$repo/pulls/$number"
         params={{ owner, repo, number: String(pull.number) }}
-        className={cn(
-          badgeVariants({ tone: status?.tone ?? "unknown" }),
-          "shrink-0 hover:opacity-80",
-        )}
+        className={cn(badgeVariants({ tone }), "shrink-0 hover:opacity-80")}
       >
         PR #{pull.number}
       </Link>
       {status ? (
         <span
-          className={cn("shrink-0 font-medium", STATUS_TEXT[status.tone])}
+          className={cn("shrink-0 font-medium", STATUS_TEXT[tone])}
           title={status.title}
         >
           {status.label}

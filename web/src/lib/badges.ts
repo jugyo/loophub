@@ -163,3 +163,17 @@ export function linkedPullStatus(pull: LinkedPull): Badge | null {
     return { tone: "mergeable", label: "mergeable" };
   return null;
 }
+
+/**
+ * Collapse a linked-PR sub-row status into the three colors the issue list uses
+ * (#244): merged → purple, working → muted grey, and every other unmerged state
+ * (conflict / changes / re-review / approved / commented / mergeable) → green.
+ * `closed` (out of scope) stays muted. This is a pure colour mapping — the
+ * status word and title from {@link linkedPullStatus} are unchanged; only the
+ * tone collapses, so the descriptive tones above keep their richer labels.
+ */
+export function linkedPullDisplayTone(tone: BadgeTone): BadgeTone {
+  if (tone === "merged") return "merged";
+  if (tone === "working" || tone === "closed") return "unknown";
+  return "open";
+}

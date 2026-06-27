@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 import {
   issueBadges,
+  linkedPullDisplayTone,
   linkedPullStatus,
   mergeableBadge,
   pullBadges,
@@ -190,6 +191,30 @@ describe("linkedPullStatus", () => {
         linked({ merged: true, working: true, mergeable_state: "dirty" }),
       )?.tone,
     ).toBe("merged");
+  });
+});
+
+describe("linkedPullDisplayTone (#244 three-color collapse)", () => {
+  it("keeps merged purple", () => {
+    expect(linkedPullDisplayTone("merged")).toBe("merged");
+  });
+
+  it("renders working (and closed) as muted grey", () => {
+    expect(linkedPullDisplayTone("working")).toBe("unknown");
+    expect(linkedPullDisplayTone("closed")).toBe("unknown");
+  });
+
+  it("collapses every other unmerged status to green", () => {
+    for (const tone of [
+      "conflict",
+      "review-changes",
+      "review-rereview",
+      "review-approved",
+      "review-commented",
+      "mergeable",
+    ] as const) {
+      expect(linkedPullDisplayTone(tone)).toBe("open");
+    }
   });
 });
 
