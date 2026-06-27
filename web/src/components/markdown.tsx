@@ -45,7 +45,7 @@ const components: Components = {
         <Link
           to="/r/$owner/$repo/n/$number"
           params={params}
-          className="text-primary hover:underline"
+          className="text-link hover:underline"
         >
           {children}
         </Link>

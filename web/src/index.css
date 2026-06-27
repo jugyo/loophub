@@ -12,6 +12,8 @@
     /* GitHub-style green primary action button (#1f883d) */
     --primary: 137 63% 33%;
     --primary-foreground: 0 0% 100%;
+    /* GitHub-style blue link color (#0969da); independent of --primary */
+    --link: 212 92% 45%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
@@ -34,6 +36,8 @@
     /* GitHub-style green primary action button (#238636) */
     --primary: 131 59% 40%;
     --primary-foreground: 0 0% 100%;
+    /* GitHub-style blue link color (#2f81f7); independent of --primary */
+    --link: 215 92% 58%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
@@ -96,7 +100,7 @@
     @apply my-2;
   }
   .markdown-body a {
-    @apply font-medium text-primary hover:underline;
+    @apply font-medium text-link hover:underline;
   }
   .markdown-body strong {
     @apply font-semibold;
