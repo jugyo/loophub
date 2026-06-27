@@ -142,6 +142,36 @@ Extract from the conversation:
 
 Ask the user briefly if anything is missing.
 
+#### Coverage check (only when the target may appear in multiple places)
+
+Some issues name a **UI element or shared concept** — "list item", "badge", "the <element> row", a
+status indicator — that *looks* like one thing but is rendered in several places. These are the
+**ambiguity-prone signals**: a shared UI noun, or any "<element> row / item / badge" that could have
+more than one renderer. When you spot one, run a **single** targeted confirmation before filing:
+
+> Does this target appear in more than one place? If so, is **every** place in scope, or just one
+> specific screen?
+
+This is **conditional — not a new default question.** Ask it only when a coverage-ambiguous signal is
+present; when the target is unambiguously a single place, skip it. The AFK premise depends on not
+overloading the user with questions, so the goal is one well-aimed question on the risky cases, not
+more questions everywhere.
+
+When the answer is "every place is in scope", fold the coverage into the issue so it can't silently
+collapse to a single site:
+
+- List the actual occurrence sites in **Goal** (or state "all of them"), and
+- Add **one AC line that verifies coverage**, e.g.
+  `- [ ] <element> is shown in **all** places it renders (A / B / C)` — so a single-site implementation
+  cannot tick every box.
+
+> **Why this step exists (#194 → #226).** #194 asked to "show PR info on the issue list item". The
+> "issue list item" is actually rendered in 3 places (home `IssueRow` / repo dashboard `IssueRow` /
+> dedicated `IssueListRow`), but the issue listed none of them, and an Out-of-scope line ("screens
+> other than the issue list item") was read as excluding two of the three intended sites. Only 1 of 3
+> was implemented and a follow-up issue (#226) was needed to finish the rest. A coverage question plus
+> a "shown in all places" AC would have caught it up front.
+
 ### 2. Duplicate check
 
 Search existing issues before creating:
@@ -175,6 +205,12 @@ None — can start immediately
 
 <!-- or: #12, #34 -->
 ```
+
+**Out of scope — re-read for over-exclusion.** Before finalizing, check each exclusion line once:
+could it be read to **also exclude a place you actually want in scope**? An exclusion like "screens
+other than <element>" easily reads as ruling out sites you intended to cover (this is what happened in
+#194 — see the Coverage check in step 1). Prefer naming what is excluded positively, and list the
+in-scope sites explicitly in Goal/AC so an exclusion line can't swallow them.
 
 ### 4. Create
 
