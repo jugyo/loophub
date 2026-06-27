@@ -9,7 +9,7 @@ import {
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Issue, LinkedPull } from "@/api/types";
-import { IssueListRow, IssueRow } from "./dashboard-rows";
+import { IssueRow } from "./dashboard-rows";
 
 afterEach(cleanup);
 
@@ -85,12 +85,10 @@ describe("IssueRow", () => {
     expect(await screen.findByText("Example issue")).toBeTruthy();
     expect(screen.queryByText("bug")).toBeNull();
   });
-});
 
-describe("IssueListRow", () => {
   it("links the title to the issue and the pill to the PR", async () => {
     renderInRouter(
-      <IssueListRow
+      <IssueRow
         owner="me"
         repo="proj"
         issue={makeIssue({
@@ -107,7 +105,7 @@ describe("IssueListRow", () => {
 
   it("stacks one sub-row per linked PR when there are several", async () => {
     renderInRouter(
-      <IssueListRow
+      <IssueRow
         owner="me"
         repo="proj"
         issue={makeIssue({
@@ -124,13 +122,15 @@ describe("IssueListRow", () => {
     expect(screen.getByText("merged")).toBeTruthy();
   });
 
+  it("renders a single row (no PR sub-row) when no PR is linked", async () => {
+    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />);
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /^PR #/ })).toBeNull();
+  });
+
   it("drops the open badge", async () => {
     renderInRouter(
-      <IssueListRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ state: "open" })}
-      />,
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ state: "open" })} />,
     );
     expect(await screen.findByText("Example issue")).toBeTruthy();
     expect(screen.queryByText("open")).toBeNull();
@@ -138,7 +138,7 @@ describe("IssueListRow", () => {
 
   it("shows the closed badge under the closed filter", async () => {
     renderInRouter(
-      <IssueListRow
+      <IssueRow
         owner="me"
         repo="proj"
         issue={makeIssue({ state: "closed" })}

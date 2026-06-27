@@ -7,15 +7,15 @@ import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
+  type Badge as BadgeData,
   type BadgeTone,
-  issueBadges,
   linkedPullStatus,
   pullBadges,
 } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-function RowBadges({ badges }: { badges: ReturnType<typeof issueBadges> }) {
+function RowBadges({ badges }: { badges: BadgeData[] }) {
   if (badges.length === 0) return null;
   return (
     <span className="flex flex-wrap items-center gap-1">
@@ -59,6 +59,12 @@ function RowLabels({ labels }: { labels: Label[] }) {
   );
 }
 
+// Single issue list row, shared by every issue list (home "Recent issues",
+// repo dashboard "Open Issues", and the dedicated /issues page). Pattern E
+// (#194): the title is the issue link — so a linked PR can render as its own
+// link pill on a muted sub-row below — and the whole row is not a single link.
+// The redundant `open` badge is dropped (these lists are open-only; only
+// `closed`, surfaced under the closed filter, carries signal).
 export function IssueRow({
   owner,
   repo,
@@ -69,7 +75,7 @@ export function IssueRow({
   owner: string;
   repo: string;
   issue: Issue;
-  /** When set (cross-repo views), shows which project the issue belongs to. */
+  /** When set (cross-repo views, e.g. home), shows which project the issue belongs to. */
   repoLabel?: string;
   /**
    * Show the creation time instead of the last-update time. Used by lists that
@@ -78,21 +84,45 @@ export function IssueRow({
    */
   showCreatedAt?: boolean;
 }) {
+  // Usually 0–1 linked PRs; when more than one exists they stack vertically, one
+  // sub-row each. Fall back to the singular field for any response shape that
+  // only carries it.
+  const pulls =
+    issue.linked_pull_requests ??
+    (issue.linked_pull_request ? [issue.linked_pull_request] : []);
   return (
-    <Link
-      to="/r/$owner/$repo/issues/$number"
-      params={{ owner, repo, number: String(issue.number) }}
-      className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
-    >
-      <RepoChip label={repoLabel} />
-      <span className="shrink-0 text-muted-foreground">#{issue.number}</span>
-      <span className="min-w-0 flex-1 truncate font-medium">{issue.title}</span>
-      <RowLabels labels={issue.labels} />
-      <RowBadges badges={issueBadges(issue)} />
-      <span className="shrink-0 text-xs text-muted-foreground">
-        {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
-      </span>
-    </Link>
+    <div className="flex flex-col gap-1 px-3 py-2 text-sm hover:bg-accent">
+      <div className="flex items-center gap-2">
+        <RepoChip label={repoLabel} />
+        <span className="shrink-0 text-muted-foreground">#{issue.number}</span>
+        <Link
+          to="/r/$owner/$repo/issues/$number"
+          params={{ owner, repo, number: String(issue.number) }}
+          className="min-w-0 flex-1 truncate font-medium hover:underline"
+        >
+          {issue.title}
+        </Link>
+        <RowLabels labels={issue.labels} />
+        {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
+        </span>
+      </div>
+      {pulls.length > 0 ? (
+        // Own column so the gap between stacked PRs is a touch wider than the
+        // title↔first-PR gap above.
+        <div className="flex flex-col gap-1.5">
+          {pulls.map((pull) => (
+            <LinkedPullSubRow
+              key={pull.number}
+              owner={owner}
+              repo={repo}
+              pull={pull}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -150,61 +180,6 @@ function LinkedPullSubRow({
           additions={pull.additions ?? 0}
           deletions={pull.deletions ?? 0}
         />
-      ) : null}
-    </div>
-  );
-}
-
-// Issue list row (issues page). Pattern E: the title is the issue link (so the
-// PR pill below can be its own link), and the linked PR — when present — renders
-// on a muted sub-row. Unlike IssueRow (dashboard/home), the whole row is not a
-// single link, and the open-state badge is dropped (only `closed` shows, under
-// the closed filter), since an all-open list makes `open` redundant.
-export function IssueListRow({
-  owner,
-  repo,
-  issue,
-}: {
-  owner: string;
-  repo: string;
-  issue: Issue;
-}) {
-  // Usually 0–1 linked PRs; when more than one exists they stack vertically, one
-  // sub-row each. Fall back to the singular field for any response shape that
-  // only carries it.
-  const pulls =
-    issue.linked_pull_requests ??
-    (issue.linked_pull_request ? [issue.linked_pull_request] : []);
-  return (
-    <div className="flex flex-col gap-1 px-3 py-2 text-sm hover:bg-accent">
-      <div className="flex items-center gap-2">
-        <span className="shrink-0 text-muted-foreground">#{issue.number}</span>
-        <Link
-          to="/r/$owner/$repo/issues/$number"
-          params={{ owner, repo, number: String(issue.number) }}
-          className="min-w-0 flex-1 truncate font-medium hover:underline"
-        >
-          {issue.title}
-        </Link>
-        <RowLabels labels={issue.labels} />
-        {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {relativeTime(issue.updated_at)}
-        </span>
-      </div>
-      {pulls.length > 0 ? (
-        // Own column so the gap between stacked PRs is a touch wider than the
-        // title↔first-PR gap above.
-        <div className="flex flex-col gap-1.5">
-          {pulls.map((pull) => (
-            <LinkedPullSubRow
-              key={pull.number}
-              owner={owner}
-              repo={repo}
-              pull={pull}
-            />
-          ))}
-        </div>
       ) : null}
     </div>
   );

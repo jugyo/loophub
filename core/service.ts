@@ -1341,8 +1341,11 @@ function byCreatedDesc(
 // (git-spawning) calls run per request regardless of total backlog size.
 export const DASHBOARD_SECTION_LIMIT = 50;
 
-// Cap for the cross-repo "recently created open issues" list. Higher than the
-// PR cap because issues are cheap to serialize (no git fan-out).
+// Cap for the cross-repo "recently created open issues" list. Bounds the git
+// fan-out from enriching each issue's linked PR (issueListItemJSON below):
+// serialization runs only after the slice, and only issues that actually have a
+// linked PR spawn git — most have none — so this stays well under the per-issue
+// worst case even at a higher cap than the open-PR section.
 export const DASHBOARD_RECENT_ISSUES_LIMIT = 100;
 
 export const dashboard = {
@@ -1358,17 +1361,24 @@ export const dashboard = {
         pullRows.push({ repo: r, ref, row });
       }
     }
-    // Cap each section before serialization so the lists stay bounded and
-    // pullJSON's git fan-out stays bounded. Issues are ordered newest-created
-    // first; PRs keep their most-recently-updated ordering.
+    // Cap each section before serialization so the lists stay bounded and the
+    // git fan-out (pullJSON for PRs, issueListItemJSON's linked-PR enrichment
+    // for issues) stays bounded. Issues are ordered newest-created first; PRs
+    // keep their most-recently-updated ordering.
     issueRows.sort((a, b) => byCreatedDesc(a.row, b.row));
     pullRows.sort((a, b) => byUpdatedDesc(a.row, b.row));
-    const issues = issueRows
-      .slice(0, DASHBOARD_RECENT_ISSUES_LIMIT)
-      .map(({ repo, ref, row }) => ({
-        repo: ref,
-        issue: issueJSON(row, repo),
-      }));
+    // Enrich each issue's linked PR (status word + diff totals + the full
+    // linked_pull_requests[] stack) so the home "Recent issues" rows match the
+    // dedicated issue list's Pattern E sub-rows. issueListItemJSON is async per
+    // the bounded git fan-out, hence Promise.all.
+    const issues = await Promise.all(
+      issueRows
+        .slice(0, DASHBOARD_RECENT_ISSUES_LIMIT)
+        .map(async ({ repo, ref, row }) => ({
+          repo: ref,
+          issue: await issueListItemJSON(row, repo),
+        })),
+    );
     const pulls = await Promise.all(
       pullRows
         .slice(0, DASHBOARD_SECTION_LIMIT)
