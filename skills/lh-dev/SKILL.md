@@ -134,9 +134,10 @@ need to flag a blocker or hand-off for a human watching the UI.
 
 #### Another session already owns the issue
 
-The double-`lh dev` guard is the **open-PR constraint** (at most one open PR per linked issue) plus the
-host-local dev lock — `lh dev` is idempotent and reuses the existing open PR rather than opening a
-second. But if you find a **different active session** is genuinely working the same issue (not just a
+The double-`lh dev` guard is a **soft open-PR check** (at most one open PR per linked issue; not a DB
+constraint, so it can be relaxed later for multiple proposal PRs) plus the host-local dev lock — `lh
+dev` is idempotent and reuses the existing open PR rather than opening a second. But if you find a
+**different active session** is genuinely working the same issue (not just a
 stale re-launch of your own), **stop** and ask the human whether to wait, pick another issue, or take
 over. Do not edit in parallel.
 
@@ -152,8 +153,8 @@ cd ~/.loophub/worktrees/<owner>/<repo>/issue-<n>
 SID="$(uuidgen)"
 lh session register --id "$SID" --agent impl-bot --session "$SID"
 # Open the linked draft PR. `--session-id "$SID"` attributes the session to the PR row
-# (`pulls.session_id`) — the basis for `lh resume` / retro. The open-PR constraint makes this the
-# point at which the issue is "taken": a second open PR for the same issue is rejected.
+# (`pulls.session_id`) — the basis for `lh resume` / retro. The soft open-PR check makes this the
+# point at which the issue is "taken": a second open PR for the same issue is refused (422).
 lh pr create --repo <repo> --head loophub/issue-<n> --base main --title "..." --issue <n> --session-id "$SID"
 ```
 

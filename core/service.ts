@@ -74,12 +74,6 @@ function actorFor(sessionId: string | null | undefined): string {
   return S.authorFromSession(sessionId) ?? "unknown";
 }
 
-// node:sqlite surfaces a partial-unique-index violation as a SQLITE_CONSTRAINT error whose message
-// contains "UNIQUE constraint failed". Used as the hard backstop for the open-PR guard.
-function isUniqueConstraint(e: unknown): boolean {
-  return e instanceof Error && /UNIQUE constraint failed/i.test(e.message);
-}
-
 // Resolve symlinks so worktree paths from `git worktree list` (which canonicalizes, e.g.
 // /var → /private/var on macOS) compare equal to a caller's cwd. Falls back to a plain
 // absolute path when the target no longer exists.
@@ -549,33 +543,16 @@ export const pulls = {
     if (!title || !head || !base)
       throw new ServiceError(422, "title, head, base are required");
     const actor = actorFor(sessionId);
+    // Soft "one open PR per linked issue" guard: refuse a second open PR for an issue that already
+    // has one. This is the double-`lh dev` guard (not a DB constraint — see #186 dev.note), so it
+    // can be relaxed later to allow multiple proposal PRs per issue.
     const linkedIssueId = resolveLinkedIssueId(r, body, issue);
     const linkedNumber = issue ?? parseClosingIssueNumber(body);
-    // Resolve head SHA before the row write so the issue + pulls rows can be created atomically
-    // (no await inside the transaction). The open-PR constraint then holds for the insert.
+    // Resolve the head SHA before writing any row, so a bad head ref fails without leaving an orphan
+    // kind='pull' issue row (no pulls row to match it).
     const headSha = await revParse(r.local_path, head);
-    let row: any;
-    try {
-      row = S.createPullWithIssue({
-        repoId: r.id,
-        title,
-        body,
-        author: actor,
-        head,
-        base,
-        headSha,
-        linkedIssueId,
-        sessionId: sessionId ?? null,
-      });
-    } catch (e: any) {
-      if (e.message === S.CONFLICT_OPEN_PR || isUniqueConstraint(e)) {
-        throw new ServiceError(
-          422,
-          `issue #${linkedNumber} already has an open pull request`,
-        );
-      }
-      throw e;
-    }
+    const row = S.createIssue(r.id, "pull", title, body, actor) as any;
+    S.createPull(row.id, head, base, headSha, linkedIssueId, sessionId ?? null);
     S.emitEvent(r.id, "pull_request.opened", actor, {
       number: row.number,
       linked_issue: linkedNumber ?? undefined,
@@ -603,33 +580,8 @@ export const pulls = {
     if (p?.merged && patch.state !== undefined) {
       throw new ServiceError(405, "Pull Request is already merged");
     }
-    // Reopening a closed PR re-claims the issue's single open-PR slot. If another open PR already
-    // holds it, refuse with a clean 422 rather than letting the open-PR unique index throw a raw
-    // error (the underlying updateIssue is transactional, so the state change rolls back either way).
-    if (
-      patch.state === "open" &&
-      row.state === "closed" &&
-      p?.linked_issue_id != null
-    ) {
-      const other = S.openPullLinkedToIssue(p.linked_issue_id);
-      if (other && other.id !== row.id) {
-        const linked = S.getIssueById(p.linked_issue_id);
-        throw new ServiceError(
-          422,
-          `issue #${linked?.number} already has an open pull request`,
-        );
-      }
-    }
     const actor = actorFor(sessionId);
-    try {
-      S.updateIssue(row.id, patch);
-    } catch (e) {
-      // Backstop for a concurrent reopen that slipped past the guard above.
-      if (isUniqueConstraint(e)) {
-        throw new ServiceError(422, "issue already has an open pull request");
-      }
-      throw e;
-    }
+    S.updateIssue(row.id, patch);
     S.emitEvent(r.id, "pull_request.updated", actor, { number: row.number });
     return pullJSON(r, S.getIssue(r.id, row.number));
   },
@@ -751,28 +703,18 @@ export const dev = {
       return { created: false, number: existing.number };
     }
     const body = input.body ?? defaultDraftPrBody(input.issue);
-    try {
-      const pr = await pulls.create(
-        name,
-        {
-          title: issueRow.title,
-          body,
-          head: input.head,
-          base: input.base,
-          issue: input.issue,
-        },
-        sessionId,
-      );
-      return { created: true, number: pr.number };
-    } catch (e: any) {
-      // Lost a concurrent race for the issue's single open-PR slot (the open-PR constraint fired
-      // between the check above and the insert). Return the PR that won — `lh dev` is idempotent.
-      if (e instanceof ServiceError && e.status === 422) {
-        const winner = S.openPullLinkedToIssue(issueRow.id);
-        if (winner) return { created: false, number: winner.number };
-      }
-      throw e;
-    }
+    const pr = await pulls.create(
+      name,
+      {
+        title: issueRow.title,
+        body,
+        head: input.head,
+        base: input.base,
+        issue: input.issue,
+      },
+      sessionId,
+    );
+    return { created: true, number: pr.number };
   },
 
   // Attribute a dev session to an existing PR (pulls.session_id) so `lh resume`/retro can later find

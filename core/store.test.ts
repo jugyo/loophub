@@ -110,58 +110,6 @@ test("registerAgentSession conflict surfaces as an error", () => {
   ).toThrow("CONFLICT_ID");
 });
 
-// The open-PR constraint (#186) replaces the old issue-assignee unique index as the double-`lh dev`
-// guard: a linked issue may have at most one open, unmerged PR at a time.
-test("createPullWithIssue enforces one open PR per linked issue", () => {
-  const repo = S.createRepo("me/onepr", "/tmp/onepr");
-  const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any;
-  const mk = () =>
-    S.createPullWithIssue({
-      repoId: repo.id,
-      title: "impl",
-      body: `Closes #${issue.number}`,
-      author: "bot",
-      head: `feat-${issue.number}`,
-      base: "main",
-      headSha: "sha",
-      linkedIssueId: issue.id,
-      sessionId: null,
-    });
-  const first = mk();
-  // A second open PR for the same issue is rejected.
-  expect(() => mk()).toThrow(S.CONFLICT_OPEN_PR);
-  // Once the first PR is merged, the issue's open-PR slot is freed and a new one may be created.
-  S.setMerged(first.id, "merge-sha", "squash");
-  expect(() => mk()).not.toThrow();
-});
-
-// Closing a PR (without merging) also frees the open-PR slot, and reopening re-claims it.
-test("open-PR slot follows the PR's open state", () => {
-  const repo = S.createRepo("me/reopen", "/tmp/reopen");
-  const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any;
-  const mk = () =>
-    S.createPullWithIssue({
-      repoId: repo.id,
-      title: "impl",
-      body: "",
-      author: "bot",
-      head: `feat-${issue.number}`,
-      base: "main",
-      headSha: "sha",
-      linkedIssueId: issue.id,
-      sessionId: null,
-    });
-  const first = mk();
-  S.updateIssue(first.id, { state: "closed" });
-  // Slot freed: a fresh PR can be opened for the same issue.
-  const second = mk();
-  expect(second.number).not.toBe(first.number);
-  // Reopening the original would re-claim a slot already held by `second` → constraint violation.
-  expect(() => S.updateIssue(first.id, { state: "open" })).toThrow(
-    /UNIQUE constraint failed/i,
-  );
-});
-
 test("registerAgentSession persists and updates the runtime column", () => {
   const id = "22222222-0000-0000-0000-000000000001";
   // Insert with an explicit runtime.

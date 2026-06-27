@@ -105,9 +105,9 @@ describe("dev.openPr", () => {
     expect(prSession(second.number)).toBe("sess-b");
   });
 
-  test("a closed PR frees the open-PR slot; reopening it while another open PR exists is refused", async () => {
+  test("soft guard: a second open PR is refused while one is open, and freed by closing the first", async () => {
     const issue = svc.issues.create("me/proj", { title: "feature C" });
-    const pr1 = await svc.dev.openPr(
+    await svc.dev.openPr(
       "me/proj",
       {
         issue: issue.number,
@@ -116,8 +116,34 @@ describe("dev.openPr", () => {
       },
       "sess-1",
     );
-    // Close PR1 → slot freed → a second openPr creates a fresh PR.
-    svc.pulls.update("me/proj", pr1.number, { state: "closed" }, "sess-1");
+    // `lh dev` is idempotent: re-opening reuses the existing PR rather than erroring.
+    const reuse = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
+    expect(reuse.created).toBe(false);
+    // The direct create path (e.g. `lh pr create --issue`) is soft-guarded: a second open PR for the
+    // same issue is refused (422). This is a soft check, not a DB constraint — relaxable for the
+    // future multi-proposal flow (#186 dev.note).
+    await expect(
+      svc.pulls.create(
+        "me/proj",
+        {
+          title: "rival",
+          head: "rival-branch",
+          base: "main",
+          issue: issue.number,
+        },
+        "sess-1",
+      ),
+    ).rejects.toThrow(/already has an open pull request/);
+    // Closing the open PR frees the slot so a fresh PR can be opened for the issue.
+    svc.pulls.update("me/proj", reuse.number, { state: "closed" }, "sess-1");
     const pr2 = await svc.dev.openPr(
       "me/proj",
       {
@@ -128,14 +154,7 @@ describe("dev.openPr", () => {
       "sess-1",
     );
     expect(pr2.created).toBe(true);
-    expect(pr2.number).not.toBe(pr1.number);
-    // Reopening PR1 would give the issue two open PRs → clean 422, not a raw constraint error.
-    expect(() =>
-      svc.pulls.update("me/proj", pr1.number, { state: "open" }, "sess-1"),
-    ).toThrow(/already has an open pull request/);
-    // The refused reopen left PR1 closed (the state change rolled back).
-    const pr1View = (await svc.pulls.get("me/proj", pr1.number)) as any;
-    expect(pr1View.state).toBe("closed");
+    expect(pr2.number).not.toBe(reuse.number);
   });
 });
 

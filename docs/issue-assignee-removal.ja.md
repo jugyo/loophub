@@ -89,6 +89,13 @@ assign が消えると、唯一のアトミックな「この issue は着手済
 > 残課題: assign は claude 起動の**前**に着手を確定できたが、PR ベースだと openPr 失敗時に
 > 着手記録が残らない。§3.3 で扱う。
 
+> **実装時の変更（#186 / PR #187）**: hard な DB 制約（部分一意制約）は採らず、**ソフトチェック**で実装した。
+> `dev.openPr` は既存 open PR を返す冪等チェック、`resolveLinkedIssueId` は2本目の open PR を 422 で拒否し、
+> 同一ホストの二重 `lh dev` は dev ロックが弾く。理由: 将来「1 つの issue に複数エージェントが
+> プロポーザル PR を出す」運用の余地を残すため、「1 issue : 1 open PR」をスキーマに焼かない。hard 制約は
+> マルチプロポーザル化のとき migration で剥がす羽目になり、最も戻しにくい所に invariant を埋めてしまう。
+> ソフトチェックは将来この振る舞いを緩めるのが容易（マルチプロポーザル自体は読み取り側の再設計を伴う別 issue）。
+
 ### 3.2 session 解決（`lh resume` / retro）→ PR 行への帰属移設
 
 現状 `lh dev <issue>` は PR 行の assignee を立てないため、session 解決は issue の assignee に依存する。
