@@ -11,8 +11,10 @@ import { ThemeToggle } from "@/components/theme-toggle";
 export function AppLayout() {
   return (
     // The terminal is a fixed full-width overlay along the bottom (see terminal-pane.tsx), so
-    // expanding it never reflows the page. The sidebar + content fill the viewport; both reserve
-    // bottom space (pb-12) so the always-present collapsed bar (h-9) doesn't cover their content.
+    // expanding it never reflows the page. The main content reserves bottom space equal to the
+    // terminal's current height via the --lh-term-reserve CSS var the pane publishes, so its tail
+    // stays scrollable past the terminal whether it is collapsed, dragged, or maximized. The
+    // sidebar keeps a static pb-12 — its short list never reaches under an expanded terminal.
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
       <AppSidebar />
       <DetailTitleProvider>
@@ -23,7 +25,10 @@ export function AppLayout() {
               <ThemeToggle />
             </div>
           </header>
-          <main className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-12">
+          <main
+            className="min-h-0 flex-1 overflow-y-auto px-6 pt-6"
+            style={{ paddingBottom: "var(--lh-term-reserve, 48px)" }}
+          >
             <Outlet />
           </main>
         </div>

@@ -44,8 +44,12 @@ const MIN_H = 120;
 const DEFAULT_H = 680; // ~40 rows at the 13px terminal font (capped to the viewport on open)
 const BAR_H = 36; // the h-9 toggle bar
 const TOP_GAP = 12; // sliver of the app kept visible above a maximized/tall terminal
+const REST_GAP = 12; // breathing room kept between page content and the terminal top
 const RESERVE = BAR_H + TOP_GAP; // viewport px reserved above the terminal content
 const MAX_CONTENT = `calc(100dvh - ${RESERVE}px)`;
+// CSS var the page layout reads to reserve bottom padding equal to the terminal's current visible
+// height, so the always-on-top fixed overlay never hides the tail of a scrollable region.
+const RESERVE_VAR = "--lh-term-reserve";
 
 // One terminal tab: a stable id (React key) and the repo ("owner/name", or "" for $HOME) whose
 // base dir is its cwd. The cwd is fixed at creation — TerminalView captures it once at mount.
@@ -181,6 +185,23 @@ export function TerminalPane() {
   }, []);
 
   const contentHeight = !expanded ? 0 : maximized ? MAX_CONTENT : height;
+
+  // The terminal is a fixed overlay along the bottom, so it never reflows the page. Publish its
+  // current total visible height (bar + content) so scrollable regions can reserve that much
+  // bottom padding and stay reachable past the terminal — collapsed, dragged, or maximized.
+  const reserveCss = !expanded
+    ? `${BAR_H + REST_GAP}px`
+    : maximized
+      ? `calc(100dvh - ${TOP_GAP}px)`
+      : // The rendered terminal content is capped at MAX_CONTENT, but `height` is only clamped on
+        // drag — a window shrink without a re-drag leaves it stale. Cap the reserve at the same
+        // maximized limit so a tall stored height can't over-reserve a dead scroll zone.
+        `min(${BAR_H + height + REST_GAP}px, 100dvh - ${TOP_GAP}px)`;
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty(RESERVE_VAR, reserveCss);
+    return () => root.style.removeProperty(RESERVE_VAR);
+  }, [reserveCss]);
 
   return (
     // Fixed full-width overlay pinned to the bottom: growing it never reflows the page behind it.
