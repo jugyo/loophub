@@ -7,7 +7,7 @@
 // via <Markdown>.
 
 import { Link } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { useState } from "react";
 import type {
   PullFile,
@@ -476,9 +476,13 @@ function ReviewCommitGroup({
   return (
     <details
       open={group.defaultOpen}
-      className="overflow-hidden rounded-md border"
+      className="group overflow-hidden rounded-md border"
     >
-      <summary className="flex cursor-pointer flex-wrap items-center gap-2 bg-muted/40 px-3 py-2 text-sm">
+      <summary className="flex cursor-pointer flex-wrap items-center gap-2 bg-muted/40 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden list-none">
+        <ChevronRight
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+          aria-hidden="true"
+        />
         {shortSha ? (
           <code className="rounded bg-muted px-1 py-0.5 text-xs">
             {shortSha}
