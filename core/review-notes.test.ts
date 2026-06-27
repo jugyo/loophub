@@ -77,7 +77,9 @@ test("multiple notes per file are allowed; list is newest-first", () => {
     body: "second",
     author: "bot",
   });
-  const ids = S.listReviewNotes(pr.id).map((n: any) => n.id);
+  const ids = S.listReviewNotes(repo.id, { issueId: pr.id }).map(
+    (n: any) => n.id,
+  );
   expect(ids).toEqual([b.id, a.id]); // newest (higher id) first
 });
 
@@ -111,12 +113,18 @@ test("list filters by path and by target commit", () => {
     author: "bot",
   });
 
-  expect(S.listReviewNotes(pr.id, { path: "x.ts" }).length).toBe(2);
-  expect(S.listReviewNotes(pr.id, { commitSha: "new" }).length).toBe(2);
   expect(
-    S.listReviewNotes(pr.id, { path: "x.ts", commitSha: "new" }).map(
-      (n: any) => n.body,
-    ),
+    S.listReviewNotes(repo.id, { issueId: pr.id, path: "x.ts" }).length,
+  ).toBe(2);
+  expect(
+    S.listReviewNotes(repo.id, { issueId: pr.id, commitSha: "new" }).length,
+  ).toBe(2);
+  expect(
+    S.listReviewNotes(repo.id, {
+      issueId: pr.id,
+      path: "x.ts",
+      commitSha: "new",
+    }).map((n: any) => n.body),
   ).toEqual(["on new commit"]);
 });
 
@@ -133,7 +141,36 @@ test("notes are scoped to their PR", () => {
     body: "mine",
     author: "bot",
   });
-  expect(S.listReviewNotes(otherPr.id).length).toBe(0);
+  expect(S.listReviewNotes(repo.id, { issueId: otherPr.id }).length).toBe(0);
+});
+
+test("PR-independent note (issue_id NULL) round-trips and lists by commit range", () => {
+  const slug = `bare${seq++}`;
+  const repo = S.createRepo(`me/${slug}`, `/tmp/${slug}`);
+  const row = S.createReviewNote({
+    repoId: repo.id,
+    // no issueId: a note keyed purely by (repo, base..commit, path)
+    baseSha: "base777",
+    commitSha: "head888",
+    path: "core/lib.ts",
+    body: "pure helpers; added a parser. review: error handling",
+    author: "bot",
+  });
+  expect(row.issue_id).toBeNull();
+
+  // Serializer reports no PR for a PR-independent note.
+  const json = serialize.reviewNoteJSON(S.getReviewNoteById(row.id));
+  expect(json.pull_request).toBeNull();
+  expect(json.base_sha).toBe("base777");
+  expect(json.commit_sha).toBe("head888");
+
+  // The note is found by its commit range + path, with no PR involved.
+  const byRange = S.listReviewNotes(repo.id, {
+    baseSha: "base777",
+    commitSha: "head888",
+    path: "core/lib.ts",
+  });
+  expect(byRange.map((n: any) => n.id)).toEqual([row.id]);
 });
 
 test("update edits body and bumps updated_at; delete removes the row", () => {

@@ -129,13 +129,15 @@ export function deleteRepo(owner: string, name: string): boolean {
   const issueIds = issues.map((i) => i.id);
   if (issueIds.length) {
     const ph = issueIds.map(() => "?").join(",");
-    db.run(`DELETE FROM review_notes WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM review_comments WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM reviews WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM comments WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM pulls WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM issue_labels WHERE issue_id IN (${ph})`, issueIds);
   }
+  // Notes are deleted by repo_id (#216): this covers both PR-linked notes and PR-independent ones
+  // (issue_id NULL), so no separate issue_id sweep is needed.
+  db.run(`DELETE FROM review_notes WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM issues WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM labels WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM events WHERE repo_id = ?`, [repo.id]);
@@ -714,13 +716,14 @@ export function mergedPullsWithoutRetro(repoId: number, limit: number): any[] {
     .all(repoId, limit);
 }
 
-// ---- review notes (#204) ----
-// A note attaches a short description to one file's diff (base_sha -> commit_sha) inside a
-// PR (issue_id is the kind='pull' issues row). The diff range lives on the row, so the note's
-// identity is the range, not the PR's current refs. Multiple notes per file are allowed.
+// ---- review notes (#204, PR-independent since #216) ----
+// A note attaches a short description to one file's diff (base_sha -> commit_sha). Its identity is
+// the range + path within a repo; issue_id is an OPTIONAL link to a PR (the kind='pull' issues row),
+// NULL for a PR-independent note. The diff range lives on the row, so a note stands on its own
+// without a PR. Multiple notes per file are allowed.
 export interface ReviewNoteInput {
   repoId: number;
-  issueId: number;
+  issueId?: number | null;
   baseSha: string;
   commitSha: string;
   path: string;
@@ -738,7 +741,7 @@ export function createReviewNote(input: ReviewNoteInput): any {
     )
     .get(
       input.repoId,
-      input.issueId,
+      input.issueId ?? null,
       input.baseSha,
       input.commitSha,
       input.path,
@@ -753,17 +756,32 @@ export function getReviewNoteById(id: number): any {
   return db.query(`SELECT * FROM review_notes WHERE id = ?`).get(id);
 }
 
-// List a PR's notes, newest first. Optional filters narrow to a single file (path) and/or a
-// single target commit (commitSha) — the latter is how a consumer fetches notes for one diff.
+// List a repo's notes, newest first. All filters are optional: issueId narrows to one PR's notes,
+// baseSha/commitSha to a single diff range, path to a single file. With no filters it returns every
+// note in the repo. Filtering by (baseSha, commitSha, path) is how a consumer fetches the notes for
+// a bare commit range with no PR.
 export function listReviewNotes(
-  issueId: number,
-  opts: { path?: string; commitSha?: string } = {},
+  repoId: number,
+  opts: {
+    issueId?: number;
+    path?: string;
+    baseSha?: string;
+    commitSha?: string;
+  } = {},
 ): any[] {
-  const conds = ["issue_id = ?"];
-  const params: any[] = [issueId];
+  const conds = ["repo_id = ?"];
+  const params: any[] = [repoId];
+  if (opts.issueId !== undefined) {
+    conds.push("issue_id = ?");
+    params.push(opts.issueId);
+  }
   if (opts.path !== undefined) {
     conds.push("path = ?");
     params.push(opts.path);
+  }
+  if (opts.baseSha !== undefined) {
+    conds.push("base_sha = ?");
+    params.push(opts.baseSha);
   }
   if (opts.commitSha !== undefined) {
     conds.push("commit_sha = ?");

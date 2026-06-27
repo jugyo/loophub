@@ -45,14 +45,13 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("create defaults the diff range to the PR's base/head SHAs", async () => {
+test("create with pr defaults the diff range to the PR's base/head SHAs", async () => {
   const number = await makePull();
   const headSha = git(["rev-parse", "main"]).stdout.trim();
 
   const note = await svc.reviewNotes.create(
     "me/proj",
-    number,
-    { path: "a.txt", body: "what/why/review-points" },
+    { pr: number, path: "a.txt", body: "what/why/review-points" },
     "sess-1",
   );
   expect(note.path).toBe("a.txt");
@@ -60,43 +59,78 @@ test("create defaults the diff range to the PR's base/head SHAs", async () => {
   expect(note.base_sha).toBe(headSha); // head == base in this minimal PR
   expect(note.pull_request).toEqual({ number });
 
-  const listed = svc.reviewNotes.list("me/proj", number);
+  const listed = svc.reviewNotes.list("me/proj", { pr: number });
   expect(listed.map((n: any) => n.id)).toContain(note.id);
 });
 
-test("create accepts an explicit pinned diff range", async () => {
+test("create with pr accepts an explicit pinned diff range", async () => {
   const number = await makePull();
   const note = await svc.reviewNotes.create(
     "me/proj",
-    number,
-    { path: "a.txt", body: "pinned", baseSha: "base999", commitSha: "head999" },
+    {
+      pr: number,
+      path: "a.txt",
+      body: "pinned",
+      baseSha: "base999",
+      commitSha: "head999",
+    },
     "sess-1",
   );
   expect(note.base_sha).toBe("base999");
   expect(note.commit_sha).toBe("head999");
 });
 
+test("PR-independent create: a bare commit range, no PR, listed by range", async () => {
+  const note = await svc.reviewNotes.create(
+    "me/proj",
+    {
+      path: "core/x.ts",
+      body: "role/change/review-points",
+      baseSha: "rangeBase",
+      commitSha: "rangeHead",
+    },
+    "sess-1",
+  );
+  expect(note.pull_request).toBeNull();
+  expect(note.base_sha).toBe("rangeBase");
+  expect(note.commit_sha).toBe("rangeHead");
+
+  const byRange = svc.reviewNotes.list("me/proj", {
+    baseSha: "rangeBase",
+    commitSha: "rangeHead",
+  });
+  expect(byRange.map((n: any) => n.id)).toContain(note.id);
+});
+
+test("PR-independent create requires an explicit base/commit range", async () => {
+  await expect(
+    svc.reviewNotes.create(
+      "me/proj",
+      { path: "core/x.ts", body: "no range, no pr" },
+      "sess-1",
+    ),
+  ).rejects.toThrow();
+});
+
 test("list filters by path and commit; get/update/delete by id", async () => {
   const number = await makePull();
   const n1 = await svc.reviewNotes.create(
     "me/proj",
-    number,
-    { path: "a.txt", body: "one", baseSha: "b", commitSha: "c1" },
+    { pr: number, path: "a.txt", body: "one", baseSha: "b", commitSha: "c1" },
     "sess-1",
   );
   await svc.reviewNotes.create(
     "me/proj",
-    number,
-    { path: "b.txt", body: "two", baseSha: "b", commitSha: "c2" },
+    { pr: number, path: "b.txt", body: "two", baseSha: "b", commitSha: "c2" },
     "sess-1",
   );
 
   expect(
-    svc.reviewNotes.list("me/proj", number, { path: "a.txt" }).length,
+    svc.reviewNotes.list("me/proj", { pr: number, path: "a.txt" }).length,
   ).toBe(1);
-  expect(svc.reviewNotes.list("me/proj", number, { commit: "c2" }).length).toBe(
-    1,
-  );
+  expect(
+    svc.reviewNotes.list("me/proj", { pr: number, commitSha: "c2" }).length,
+  ).toBe(1);
 
   expect(svc.reviewNotes.get("me/proj", n1.id).body).toBe("one");
 
@@ -113,28 +147,24 @@ test("list filters by path and commit; get/update/delete by id", async () => {
 });
 
 test("create validates path and body, and 404s for a missing PR", async () => {
-  const number = await makePull();
   await expect(
     svc.reviewNotes.create(
       "me/proj",
-      number,
-      { path: "", body: "x" },
+      { path: "", body: "x", baseSha: "b", commitSha: "c" },
       "sess-1",
     ),
   ).rejects.toThrow();
   await expect(
     svc.reviewNotes.create(
       "me/proj",
-      number,
-      { path: "a.txt", body: "" },
+      { path: "a.txt", body: "", baseSha: "b", commitSha: "c" },
       "sess-1",
     ),
   ).rejects.toThrow();
   await expect(
     svc.reviewNotes.create(
       "me/proj",
-      99999,
-      { path: "a.txt", body: "x" },
+      { pr: 99999, path: "a.txt", body: "x" },
       "sess-1",
     ),
   ).rejects.toThrow();

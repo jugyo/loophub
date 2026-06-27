@@ -521,6 +521,171 @@
       }
     },
     {
+      "name": "reviewNotes/list",
+      "description": "List a repo's review notes (per-file diff descriptions), newest first. All filters optional: pr narrows to one PR, path to one file, base_sha/commit_sha to one diff range.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pr": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string"
+          },
+          "base_sha": {
+            "type": "string"
+          },
+          "commit_sha": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "reviewNotes/get",
+      "description": "Get a single review note by id.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "reviewNotes/create",
+      "description": "Create a review note for a file on a commit range. PR-independent: pass base_sha + commit_sha. Or pass pr to associate the note with a PR and default the range to its base..head.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "base_sha": {
+            "type": "string"
+          },
+          "commit_sha": {
+            "type": "string"
+          },
+          "pr": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "reviewNotes/update",
+      "description": "Edit a review note's body.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "reviewNotes/delete",
+      "description": "Delete a review note.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "labels/list",
       "description": "List a repository's labels.",
       "params": {
@@ -863,6 +1028,9 @@
             ]
           },
           "body": {
+            "type": "string"
+          },
+          "topic": {
             "type": "string"
           },
           "comments": {

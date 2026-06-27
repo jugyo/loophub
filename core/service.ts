@@ -472,11 +472,12 @@ export const labels = {
   },
 };
 
-// ===== review notes (#204) =====
-// A review note is a short, human-written description of one file's diff inside a PR — what the
-// file is, what changed, what to look at — to orient a reviewer. Each note is bound to a diff
-// range (base_sha -> commit_sha): by default the PR's current base/head, but a caller may pin an
-// explicit range. The note belongs to the PR (resolved by PR number) and a concrete file path.
+// ===== review notes (#204, PR-independent since #216) =====
+// A review note is a short, fact-based description of one file's diff — what the file is, what
+// changed, what to look at — to orient a reviewer. Each note is bound to a diff range
+// (base_sha -> commit_sha) within a repo and a concrete file path; that tuple is its identity, so a
+// note stands on its own without a PR. A PR may be associated optionally (pass `pr`): the note then
+// also belongs to that PR and, if the range is omitted, defaults to the PR's current base/head.
 function reviewNoteOr404(r: S.Repo, id: number): any {
   const n = S.getReviewNoteById(id);
   if (!n || n.repo_id !== r.id) throw new ServiceError(404, "Not Found");
@@ -484,18 +485,28 @@ function reviewNoteOr404(r: S.Repo, id: number): any {
 }
 
 export const reviewNotes = {
-  // List a PR's notes (newest first), optionally narrowed to one file (path) and/or one target
-  // commit (commit). Filtering by commit is how a consumer fetches the notes for a single diff.
+  // List a repo's notes (newest first). All filters are optional: `pr` narrows to one PR's notes,
+  // path to one file, baseSha/commitSha to one diff range. Filtering by (baseSha, commitSha, path)
+  // is how a consumer fetches the notes for a bare commit range with no PR.
   list(
     name: string,
-    number: number,
-    opts: { path?: string; commit?: string } = {},
+    opts: {
+      pr?: number;
+      path?: string;
+      baseSha?: string;
+      commitSha?: string;
+    } = {},
   ) {
     const r = repoOr404(name);
-    const pr = issueOr404(r, number, "pull");
-    return S.listReviewNotes(pr.id, {
+    let issueId: number | undefined;
+    if (opts.pr !== undefined) {
+      issueId = issueOr404(r, opts.pr, "pull").id;
+    }
+    return S.listReviewNotes(r.id, {
+      issueId,
       path: opts.path,
-      commitSha: opts.commit,
+      baseSha: opts.baseSha,
+      commitSha: opts.commitSha,
     }).map(reviewNoteJSON);
   },
 
@@ -504,43 +515,59 @@ export const reviewNotes = {
     return reviewNoteJSON(reviewNoteOr404(r, id));
   },
 
+  // Create a note for a file's diff range. Two modes:
+  //   - PR-independent: pass baseSha + commitSha (the diff range). No PR is involved.
+  //   - PR-associated: pass `pr`; the range defaults to the PR's current base/head when omitted, and
+  //     the note links to the PR. An explicit range is still honored (e.g. to annotate a past commit).
   async create(
     name: string,
-    number: number,
-    input: { path: string; body: string; baseSha?: string; commitSha?: string },
+    input: {
+      path: string;
+      body: string;
+      baseSha?: string;
+      commitSha?: string;
+      pr?: number;
+    },
     sessionId?: string | null,
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
-    const pr = issueOr404(r, number, "pull");
     if (!input.path) throw new ServiceError(422, "path is required");
     if (!input.body) throw new ServiceError(422, "body is required");
-    // Default the diff range to the PR's current base/head; a caller may pin an explicit range
-    // (e.g. to annotate a past commit). Resolve refs to concrete SHAs so the note records the
-    // exact range, not a moving ref.
-    const p = S.getPull(pr.id);
-    const baseSha =
-      input.baseSha ?? (await revParse(r.local_path, p.base_ref)) ?? null;
-    const commitSha =
-      input.commitSha ?? (await revParse(r.local_path, p.head_ref)) ?? null;
+    let issueId: number | null = null;
+    let baseSha = input.baseSha ?? null;
+    let commitSha = input.commitSha ?? null;
+    if (input.pr !== undefined) {
+      const pr = issueOr404(r, input.pr, "pull");
+      issueId = pr.id;
+      // Default the range to the PR's current base/head, resolved to concrete SHAs so the note
+      // records the exact range, not a moving ref.
+      const p = S.getPull(pr.id);
+      baseSha = baseSha ?? (await revParse(r.local_path, p.base_ref)) ?? null;
+      commitSha =
+        commitSha ?? (await revParse(r.local_path, p.head_ref)) ?? null;
+    }
     if (!baseSha || !commitSha)
       throw new ServiceError(
         422,
-        "could not resolve base/commit SHA for the diff range",
+        "base_sha and commit_sha are required for the diff range (or pass pr to default them)",
       );
     const actor = actorFor(sessionId);
     const row = S.createReviewNote({
       repoId: r.id,
-      issueId: pr.id,
+      issueId,
       baseSha,
       commitSha,
       path: input.path,
       body: input.body,
       author: actor,
     });
+    const pr = issueId ? S.getIssueById(issueId) : null;
     S.emitEvent(r.id, "pull_request.review_note_created", actor, {
-      number: pr.number,
+      ...(pr ? { number: pr.number } : {}),
       path: input.path,
+      base_sha: baseSha,
+      commit_sha: commitSha,
       ...(sessionId ? { session_id: sessionId } : {}),
     });
     return reviewNoteJSON(row);

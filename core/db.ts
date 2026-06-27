@@ -268,19 +268,20 @@ CREATE TABLE IF NOT EXISTS retros (
 CREATE INDEX IF NOT EXISTS idx_retros_repo ON retros(repo_id, id);
 CREATE INDEX IF NOT EXISTS idx_retros_pr   ON retros(pr_id);
 
--- Review notes (#204). A short human-written description attached to a single file
--- inside a PR's review, to help a reviewer (what the file is, what changed, what to
--- look at). The note is bound to a *diff range*: base_sha -> commit_sha. Storing both
--- shas on the row makes "the note is about the base->target diff" explicit in the model
--- rather than implied by the PR's current refs. issue_id is the PR (an issues row with
--- kind='pull'); a note therefore always belongs to a PR and to a concrete commit range.
--- Notes are never auto-migrated when the head advances: a note whose commit_sha no longer
--- matches the PR head is simply "stale" (still retrievable; staleness is a consumer call).
+-- Review notes (#204, made PR-independent in #216). A short description attached to a single
+-- file, to help a reviewer (what the file is, what changed, what to look at). The note is bound
+-- to a *diff range*: base_sha -> commit_sha. Storing both shas on the row makes "the note is
+-- about the base->target diff" explicit in the model rather than implied by a PR's current refs.
+-- Identity is (repo_id, base_sha, commit_sha, path) — a note stands on its own without a PR.
+-- issue_id is an OPTIONAL association to a PR (an issues row with kind='pull'): set when a note
+-- belongs to a PR, NULL for a PR-independent note (e.g. one generated from a bare commit range).
+-- Notes are never auto-migrated when a head advances: a note whose commit_sha no longer matches
+-- a PR head is simply "stale" (still retrievable; staleness is a consumer call).
 -- Multiple notes per file are allowed (no UNIQUE on path) — like review_comments.
 CREATE TABLE IF NOT EXISTS review_notes (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id     INTEGER NOT NULL REFERENCES repos(id),
-  issue_id    INTEGER NOT NULL REFERENCES issues(id),
+  issue_id    INTEGER REFERENCES issues(id),
   base_sha    TEXT NOT NULL,
   commit_sha  TEXT NOT NULL,
   path        TEXT NOT NULL,
@@ -292,6 +293,7 @@ CREATE TABLE IF NOT EXISTS review_notes (
 
 CREATE INDEX IF NOT EXISTS idx_review_notes_pr        ON review_notes(issue_id);
 CREATE INDEX IF NOT EXISTS idx_review_notes_pr_commit ON review_notes(issue_id, commit_sha);
+CREATE INDEX IF NOT EXISTS idx_review_notes_range      ON review_notes(repo_id, base_sha, commit_sha, path);
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）
@@ -364,6 +366,63 @@ tryExec("ALTER TABLE reviews ADD COLUMN topic TEXT");
 // Pre-existing rows get NULL and rely on the lh-dev → claude-code backward-compat fallback
 // (core/resume.ts sessionRuntime).
 tryExec("ALTER TABLE agent_sessions ADD COLUMN runtime TEXT");
+
+// review_notes.issue_id becomes nullable (#216): a note is now identified by
+// (repo_id, base_sha -> commit_sha, path) and a PR association is optional. Older DBs created the
+// column NOT NULL (#204), and SQLite cannot drop a column constraint in place — rebuild the table.
+// Guard on the live schema so the rebuild runs exactly once: only when issue_id is still NOT NULL.
+function reviewNotesIssueIdIsNotNull(): boolean {
+  try {
+    const cols = db.query("PRAGMA table_info(review_notes)").all() as Array<{
+      name: string;
+      notnull: number;
+    }>;
+    const col = cols.find((c) => c.name === "issue_id");
+    return !!col && col.notnull === 1;
+  } catch {
+    return false;
+  }
+}
+if (reviewNotesIssueIdIsNotNull()) {
+  // Drive the transaction with one exec per statement instead of a single multi-statement
+  // exec containing BEGIN..COMMIT. `db.exec` retries the whole string on SQLITE_BUSY (see
+  // withWriteRetry); a string that starts with BEGIN would, on retry, run BEGIN again inside
+  // the open transaction and throw "cannot start a transaction within a transaction", leaving
+  // the rebuild half-applied. BEGIN IMMEDIATE takes the write lock up front, so a BUSY there is
+  // retried cleanly (no transaction is open on failure) and the later statements cannot contend;
+  // any other error rolls back so the next startup re-runs the rebuild from a clean state.
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.exec(`
+      CREATE TABLE review_notes__new (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_id     INTEGER NOT NULL REFERENCES repos(id),
+        issue_id    INTEGER REFERENCES issues(id),
+        base_sha    TEXT NOT NULL,
+        commit_sha  TEXT NOT NULL,
+        path        TEXT NOT NULL,
+        body        TEXT NOT NULL,
+        author      TEXT NOT NULL,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      );
+      INSERT INTO review_notes__new
+        SELECT id, repo_id, issue_id, base_sha, commit_sha, path, body, author, created_at, updated_at
+        FROM review_notes;
+      DROP TABLE review_notes;
+      ALTER TABLE review_notes__new RENAME TO review_notes;
+      CREATE INDEX IF NOT EXISTS idx_review_notes_pr        ON review_notes(issue_id);
+      CREATE INDEX IF NOT EXISTS idx_review_notes_pr_commit ON review_notes(issue_id, commit_sha);
+      CREATE INDEX IF NOT EXISTS idx_review_notes_range      ON review_notes(repo_id, base_sha, commit_sha, path);
+    `);
+    db.exec("COMMIT");
+  } catch (err) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {}
+    throw err;
+  }
+}
 
 export function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "Z");

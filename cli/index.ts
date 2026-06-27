@@ -963,8 +963,8 @@ async function main() {
       const n = await run(async () =>
         s.reviewNotes.create(
           repo,
-          Number(rest[0]),
           {
+            pr: Number(rest[0]),
             path: flags.path as string,
             body: flags.body as string,
             ...(flags.base ? { baseSha: flags.base } : {}),
@@ -978,9 +978,10 @@ async function main() {
         console.log(`note #${n.id} added on ${n.path} (${n.commit_sha})`);
     } else if (sub === "notes") {
       const notes = await run(() =>
-        s.reviewNotes.list(repo, Number(rest[0]), {
+        s.reviewNotes.list(repo, {
+          pr: Number(rest[0]),
           ...(flags.path ? { path: flags.path } : {}),
-          ...(flags.commit ? { commit: flags.commit } : {}),
+          ...(flags.commit ? { commitSha: flags.commit } : {}),
         }),
       );
       out(notes);
@@ -1037,6 +1038,78 @@ async function main() {
         ),
       );
       console.log("reopened");
+    } else usage();
+    return;
+  }
+
+  // Review notes, PR-independent (#216). A note is keyed by (repo, base..commit, path); pass --pr to
+  // associate it with a PR (and default the range to that PR's base/head). get/edit/rm take a note id.
+  if (group === "note") {
+    const s = await svc();
+    const repo = await resolveRepo();
+    if (sub === "add") {
+      if (!flags.path) fail("--path is required");
+      if (!flags.body) fail("--body is required");
+      if (!flags.pr && (!flags.base || !flags.commit))
+        fail("--base and --commit are required (or pass --pr to default them)");
+      const n = await run(async () =>
+        s.reviewNotes.create(
+          repo,
+          {
+            path: flags.path as string,
+            body: flags.body as string,
+            ...(flags.base ? { baseSha: flags.base } : {}),
+            ...(flags.commit ? { commitSha: flags.commit } : {}),
+            ...(flags.pr ? { pr: Number(flags.pr) } : {}),
+          },
+          await writeSession(),
+        ),
+      );
+      out(n);
+      if (!flags.json)
+        console.log(
+          `note #${n.id} added on ${n.path} (${n.base_sha}..${n.commit_sha})`,
+        );
+    } else if (sub === "list") {
+      const notes = await run(() =>
+        s.reviewNotes.list(repo, {
+          ...(flags.pr ? { pr: Number(flags.pr) } : {}),
+          ...(flags.path ? { path: flags.path } : {}),
+          ...(flags.base ? { baseSha: flags.base } : {}),
+          ...(flags.commit ? { commitSha: flags.commit } : {}),
+        }),
+      );
+      out(notes);
+      if (!flags.json)
+        notes.forEach((n: any) => {
+          console.log(
+            `#${n.id}\t${n.path}\t${n.base_sha}..${n.commit_sha}\t${n.body}`,
+          );
+        });
+    } else if (sub === "get") {
+      const n = await run(() => s.reviewNotes.get(repo, Number(rest[0])));
+      out(n);
+      if (!flags.json)
+        console.log(
+          `#${n.id}\t${n.path}\t${n.base_sha}..${n.commit_sha}\t${n.body}`,
+        );
+    } else if (sub === "edit") {
+      if (!flags.body) fail("--body is required");
+      const n = await run(async () =>
+        s.reviewNotes.update(
+          repo,
+          Number(rest[0]),
+          flags.body as string,
+          await writeSession(),
+        ),
+      );
+      out(n);
+      if (!flags.json) console.log(`note #${n.id} updated`);
+    } else if (sub === "rm") {
+      await run(async () =>
+        s.reviewNotes.remove(repo, Number(rest[0]), await writeSession()),
+      );
+      console.log(`note #${rest[0]} deleted`);
     } else usage();
     return;
   }
@@ -1286,6 +1359,8 @@ function usage() {
   lh pr list|view|diff|create|update|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
   lh pr note <m> --path <file> --body <text> [--base <sha>] [--commit <sha>]   # add a review note for a file on the PR's diff (range defaults to base..head)
   lh pr notes <m> [--path <file>] [--commit <sha>]   lh pr note-edit <id> --body <text>   lh pr note-rm <id>   # list / edit / delete review notes
+  lh note add --path <file> --body <text> --base <sha> --commit <sha> [--pr <m>]   # add a PR-independent review note for a file on a commit range
+  lh note list [--pr <m>] [--path <file>] [--base <sha>] [--commit <sha>]   lh note get <id>   lh note edit <id> --body <text>   lh note rm <id>   # read / edit / delete review notes
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR
   lh retro list [--pr <m>] [--status draft]   lh retro view <id>   lh retro pending [--limit N]   # read retros / list merged PRs without one
   lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-dev worktrees (issue closed / PR merged, clean tree)
