@@ -226,8 +226,8 @@ in-scope sites explicitly in Goal/AC so an exclusion line can't swallow them.
 
 **Do not attach labels by default.** Mechanical per-issue labels — category (`enhancement` /
 `bug`) and `ready-to-build` — have little practical value, so this skill no longer adds them
-automatically. Attach a label only when it forms a **meaningful grouping** and the user
-explicitly asks for it:
+automatically. Attach a label only when it forms a **meaningful grouping** — and, except for
+related multi-issue creation (the exception below), only when the user explicitly asks for it:
 
 - **Category** (`enhancement` / `bug`): omit by default. Add only if the user explicitly asks
   to categorize.
@@ -236,9 +236,23 @@ explicitly asks for it:
   reappears if the linked PR was closed unmerged), or you pass `--label ready-to-build` **only**
   when the user explicitly asks to mark it ready.
 - **Theme / grouping label** (e.g. `ui-v3`): add only when the user names a theme to group a
-  set of issues under.
+  set of issues under — **except** for related multi-issue creation, which is the one case
+  where a grouping label is required even without an explicit request (see below).
 
-CLI (no labels — the default):
+**Exception — related multi-issue creation always gets a grouping label.** When a single request
+is split into **multiple related issues** in one filing (e.g. #253 / #254 / #255 splitting one
+requirement), attach a **common grouping label to every issue in the set** — even when the user
+did **not** explicitly name a theme. This is the one case where a grouping label is added without
+an explicit request, so the related issues can be traced together later. It does **not** change
+the single-issue default: filing **one** issue on its own stays label-free unless the user asks.
+
+- **Naming**: derive the label from the shared theme of the request, in **kebab-case** (e.g.
+  `pr-status-color`, `issue-list-coverage`). Keep it short and specific to the group. Reuse a
+  theme label the user already named instead of inventing a second one.
+- **Applying**: pass the **same** `--label <name>` on **every** `lh issue create` in the group
+  (see CLI below). Mention the chosen grouping label when you report creation (step 5).
+
+CLI (no labels — the default for a single, standalone issue):
 
 ```sh
 lh issue create --repo <repo> --title "<title>" \
@@ -248,7 +262,9 @@ EOF
 )" --actor triage-bot
 ```
 
-Append `--label <name>` only for an explicitly requested grouping/theme or `ready-to-build`.
+Append `--label <name>` for an explicitly requested grouping/theme, for `ready-to-build`, or — on
+**related multi-issue creation** — for the required common grouping label applied to every issue in
+the set (above). For a single standalone issue with no explicit request, omit it.
 
 ### 5. Report (stop here)
 
