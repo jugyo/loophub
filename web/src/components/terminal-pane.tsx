@@ -1,30 +1,42 @@
 // Bottom terminal pane, present on every screen and spanning the full window width (it sits below
 // the sidebar, not beside it — see app-layout.tsx). Window-scoped by design: each browser tab runs
-// its own independent session — there is no cross-window sync.
+// its own independent terminals — there is no cross-window sync.
 //
-// Two separate notions of state:
-//   - `started`: a live PTY/WebSocket session exists. It starts when the user first expands the
-//     pane, persists across all navigation, and ends ONLY on shell exit or a page reload.
+// The pane hosts one or more terminal *tabs*. Each tab is an independent PTY/WebSocket session
+// (a TerminalView), kept mounted while it exists so switching tabs only hides the inactive ones
+// (display toggle) — their shells keep running in the background. State to track:
+//   - `tabs`: the live sessions. A tab exists from when it is created until its shell exits or the
+//     user closes it (unmount → the PTY is killed). `tabs.length > 0` is the old single-session
+//     `started` flag; an empty list returns the pane to the closed "nothing running" state.
 //   - `expanded`: whether the terminal area is shown. Minimizing (expanded=false) only HIDES the
-//     terminal — it keeps the session mounted and the shell running, so it is NOT a terminate.
+//     terminals — it keeps every tab mounted and its shell running, so it is NOT a terminate.
 // `maximized` grows the area to nearly the full window height (a sliver of the app stays visible
-// at the top). The session stays collapsed by default so no screen auto-spawns a shell. `expanded`
-// lives in sessionStorage (per tab); the pane height is cosmetic and shared via localStorage.
+// at the top). The pane stays collapsed by default so no screen auto-spawns a shell. `expanded`
+// lives in sessionStorage (per browser tab); the pane height is cosmetic and shared via localStorage.
+//
+// The reload/close guard lives inside each TerminalView (gated on its own live socket), so with
+// several mounted the browser prompts whenever *any* tab still has a live shell.
 import {
   ChevronDown,
   ChevronUp,
+  House,
   Maximize2,
   Minimize2,
+  Plus,
   SquareTerminal,
+  X,
 } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { TerminalView } from "@/components/terminal-view";
+import { useCurrentRepo } from "@/lib/use-current-repo";
+import { useRepos } from "@/queries/repos";
 
 const EXPANDED_KEY = "lh.terminal.open"; // sessionStorage: per-tab expanded state
 const HEIGHT_KEY = "lh.terminal.height"; // localStorage: shared cosmetic height
@@ -35,6 +47,24 @@ const TOP_GAP = 12; // sliver of the app kept visible above a maximized/tall ter
 const RESERVE = BAR_H + TOP_GAP; // viewport px reserved above the terminal content
 const MAX_CONTENT = `calc(100dvh - ${RESERVE}px)`;
 
+// One terminal tab: a stable id (React key) and the repo ("owner/name", or "" for $HOME) whose
+// base dir is its cwd. The cwd is fixed at creation — TerminalView captures it once at mount.
+type Tab = { id: string; repo: string };
+
+function newId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `t-${Math.random().toString(36).slice(2)}`;
+}
+
+// Short tab label: the repo name (last path segment) or "~" for a $HOME shell.
+function tabLabel(repo: string): string {
+  if (!repo) return "~";
+  const slash = repo.lastIndexOf("/");
+  return slash >= 0 ? repo.slice(slash + 1) : repo;
+}
+
 function readHeight(): number {
   const v = Number(localStorage.getItem(HEIGHT_KEY));
   const base = Number.isFinite(v) && v >= MIN_H ? v : DEFAULT_H;
@@ -44,15 +74,31 @@ function readHeight(): number {
 }
 
 export function TerminalPane() {
-  // Restore the expanded preference per tab. On a reload the prior PTY is gone, so a tab that was
-  // expanded starts a fresh session (started follows expanded at mount); a minimized tab does not.
+  // The repo of the route currently in view ("" on non-repo screens). Read live (not captured):
+  // on a repo page the "+" opens a tab there directly; off a repo it opens the cwd-picker menu.
+  const currentRepo = useCurrentRepo() ?? "";
+  const { data: repos } = useRepos();
+
+  // Restore the expanded preference per browser tab. On a reload the prior PTYs are gone, so a
+  // pane that was expanded reopens with one fresh tab (cwd = the repo in view at first render);
+  // a minimized pane reopens with no tabs.
   const [expanded, setExpanded] = useState(
     () => sessionStorage.getItem(EXPANDED_KEY) === "1",
   );
-  const [started, setStarted] = useState(expanded);
+  const [tabs, setTabs] = useState<Tab[]>(() =>
+    sessionStorage.getItem(EXPANDED_KEY) === "1"
+      ? [{ id: newId(), repo: currentRepo }]
+      : [],
+  );
+  const [activeId, setActiveId] = useState<string | null>(
+    () => tabs[0]?.id ?? null,
+  );
   const [maximized, setMaximized] = useState(false);
   const [height, setHeight] = useState(readHeight);
+  const [menuOpen, setMenuOpen] = useState(false);
   const drag = useRef<{ startY: number; startH: number } | null>(null);
+
+  const started = tabs.length > 0;
 
   useEffect(() => {
     sessionStorage.setItem(EXPANDED_KEY, expanded ? "1" : "0");
@@ -61,25 +107,55 @@ export function TerminalPane() {
     localStorage.setItem(HEIGHT_KEY, String(height));
   }, [height]);
 
-  const toggle = useCallback(() => {
-    setExpanded((v) => {
-      const next = !v;
-      // Expanding (re)starts a session if none is running; minimizing leaves it running but
-      // drops the maximized state so a later peek-open returns to the normal dragged height.
-      if (next) setStarted(true);
-      else setMaximized(false);
-      return next;
-    });
+  // Reconcile derived UI state from the authoritative tab list. This is the single owner of
+  // "is activeId valid" and "did the last tab go", so removals don't each have to recompute a
+  // neighbour from a possibly-stale snapshot — every path (single close, several shells exiting
+  // in one tick, programmatic close) converges here. Layout effect so a just-removed activeId is
+  // repointed before paint (no blank frame). When the list empties, fall back to the closed
+  // "nothing running" state — the old single-session behaviour on shell exit.
+  useLayoutEffect(() => {
+    if (tabs.length === 0) {
+      setActiveId(null);
+      setExpanded(false);
+      setMaximized(false);
+      setMenuOpen(false);
+    } else if (!tabs.some((t) => t.id === activeId)) {
+      setActiveId(tabs[tabs.length - 1].id);
+    }
+  }, [tabs, activeId]);
+
+  // Open a new tab with the given cwd and make it active + visible.
+  const openTab = useCallback((repo: string) => {
+    const tab = { id: newId(), repo };
+    setTabs((prev) => [...prev, tab]);
+    setActiveId(tab.id);
+    setExpanded(true);
+    setMenuOpen(false);
   }, []);
+
+  // Close a tab: removing it unmounts its TerminalView, which kills that PTY (other tabs are
+  // untouched). activeId and collapse-on-empty are handled by the reconcile layout effect above.
+  const closeTab = useCallback((id: string) => {
+    setTabs((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const toggle = useCallback(() => {
+    if (expanded) {
+      // Minimizing leaves every tab running but drops the maximized state so a later peek-open
+      // returns to the normal dragged height.
+      setExpanded(false);
+      setMaximized(false);
+      setMenuOpen(false);
+      return;
+    }
+    setExpanded(true);
+    // Expanding with no tabs starts the first session (cwd = the repo in view). Compute the tab
+    // outside the updater so the updater stays pure; the reconcile effect makes it active.
+    const tab = { id: newId(), repo: currentRepo };
+    setTabs((prev) => (prev.length > 0 ? prev : [tab]));
+  }, [expanded, currentRepo]);
 
   const toggleMaximize = useCallback(() => setMaximized((v) => !v), []);
-
-  // The shell exited (or the connection ended cleanly): tear the session down and collapse.
-  const onSessionEnd = useCallback(() => {
-    setStarted(false);
-    setExpanded(false);
-    setMaximized(false);
-  }, []);
 
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -139,21 +215,92 @@ export function TerminalPane() {
           }
         >
           <SquareTerminal className="size-3.5" />
-          {/* A session is alive but hidden — mark it so a minimized shell is discoverable. */}
+          {/* Sessions are alive but hidden — mark it (with a count) so they stay discoverable. */}
           {started && !expanded && (
             <span
-              className="size-1.5 rounded-full bg-emerald-500"
-              aria-label="session running"
-            />
+              className="flex items-center gap-1"
+              aria-label={`${tabs.length} session${tabs.length === 1 ? "" : "s"} running`}
+            >
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              {tabs.length > 1 && (
+                <span className="tabular-nums">{tabs.length}</span>
+              )}
+            </span>
           )}
         </button>
-        {/* Inert spacer: the bar area between the icon and the right controls is not clickable. */}
-        <div className="flex-1" />
+        {/* Tab strip (only when open). Each tab shows its label and a close button; the active
+            tab is highlighted. The trailing "+" opens the new-tab cwd menu. */}
+        {expanded && (
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {/* Tabs scroll horizontally when they overflow; the "+" stays outside this
+                scroll container so its upward-opening menu isn't clipped (an overflow-x
+                container also clips the y-axis). */}
+            <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+              {tabs.map((t) => {
+                const isActive = t.id === activeId;
+                return (
+                  <div
+                    key={t.id}
+                    className={`group flex h-6 max-w-40 shrink-0 items-center gap-1 rounded px-2 ${
+                      isActive
+                        ? "bg-muted text-foreground"
+                        : "hover:bg-muted/60 hover:text-foreground"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setActiveId(t.id)}
+                      className="truncate"
+                      title={t.repo || "~ ($HOME)"}
+                    >
+                      {tabLabel(t.repo)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => closeTab(t.id)}
+                      className="rounded p-0.5 opacity-60 hover:bg-background hover:opacity-100"
+                      title="Close tab"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                // On a repo-scoped page the cwd is unambiguous — open a tab there directly. Off a
+                // repo (Home, archived, …) there is no obvious cwd, so let the user pick one.
+                onClick={() =>
+                  currentRepo ? openTab(currentRepo) : setMenuOpen((v) => !v)
+                }
+                className="flex size-6 items-center justify-center rounded hover:bg-muted hover:text-foreground"
+                title={
+                  currentRepo
+                    ? `New terminal in ${currentRepo}`
+                    : "New terminal…"
+                }
+              >
+                <Plus className="size-3.5" />
+              </button>
+              {menuOpen && (
+                <NewTabMenu
+                  repos={(repos ?? []).map((r) => r.full_name)}
+                  onPick={openTab}
+                  onClose={() => setMenuOpen(false)}
+                />
+              )}
+            </div>
+          </div>
+        )}
+        {/* Inert spacer keeps the right controls pinned when there is no tab strip. */}
+        {!expanded && <div className="flex-1" />}
         {expanded && (
           <button
             type="button"
             onClick={toggleMaximize}
-            className="flex size-6 items-center justify-center rounded hover:bg-muted hover:text-foreground"
+            className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted hover:text-foreground"
             title={maximized ? "Restore terminal height" : "Maximize terminal"}
           >
             {maximized ? (
@@ -166,7 +313,7 @@ export function TerminalPane() {
         <button
           type="button"
           onClick={toggle}
-          className="flex size-6 items-center justify-center rounded hover:bg-muted hover:text-foreground"
+          className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted hover:text-foreground"
           title={expanded ? "Minimize terminal" : "Open terminal"}
         >
           {expanded ? (
@@ -177,14 +324,99 @@ export function TerminalPane() {
         </button>
       </div>
       {started && (
-        // Kept mounted once started so minimizing (height 0) doesn't kill the shell. Not keyed by
-        // route — the session persists across all navigation until shell exit or reload.
+        // Kept mounted once any tab exists so minimizing (height 0) doesn't kill the shells. All
+        // tabs stay mounted; only the active one is shown (display) so the others keep running.
         <div
           style={{ height: contentHeight, maxHeight: MAX_CONTENT }}
           className={`overflow-hidden ${expanded ? "border-t px-2 py-1" : ""}`}
         >
-          <TerminalView onExit={onSessionEnd} />
+          {tabs.map((t) => {
+            const isActive = t.id === activeId;
+            return (
+              <div
+                key={t.id}
+                className="h-full w-full"
+                style={{ display: isActive ? "block" : "none" }}
+              >
+                <TerminalView
+                  repo={t.repo}
+                  active={expanded && isActive}
+                  onExit={() => closeTab(t.id)}
+                />
+              </div>
+            );
+          })}
         </div>
+      )}
+    </div>
+  );
+}
+
+// New-tab cwd picker, opened from the "+" button only when off a repo-scoped page (on a repo
+// page the "+" opens a tab in that repo directly, no menu). Offers a $HOME shell and every
+// registered repo. Opens upward (the pane sits at the viewport bottom) and closes on an outside
+// click or Escape.
+function NewTabMenu({
+  repos,
+  onPick,
+  onClose,
+}: {
+  repos: string[];
+  onPick: (repo: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Held in a ref so the dismiss listeners are wired up once (empty deps) and aren't re-armed
+  // each time the parent passes a fresh onClose closure.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onCloseRef.current();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCloseRef.current();
+    };
+    // Defer so the click that opened the menu doesn't immediately close it.
+    const id = setTimeout(() => document.addEventListener("mousedown", onDown));
+    document.addEventListener("keydown", onKey);
+    return () => {
+      clearTimeout(id);
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      // Opens upward (the pane is at the viewport bottom) and rightward (left-0): the "+" sits
+      // near the left edge, so a right-anchored menu would spill off-screen over the sidebar.
+      className="absolute bottom-full left-0 z-50 mb-1 max-h-80 w-56 overflow-y-auto rounded-md border bg-popover p-1 text-xs shadow-md"
+    >
+      <button
+        type="button"
+        onClick={() => onPick("")}
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted"
+      >
+        <House className="size-3.5 shrink-0" />
+        <span>Home (~)</span>
+      </button>
+      {repos.length > 0 && (
+        <>
+          <div className="my-1 border-t" />
+          {repos.map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => onPick(r)}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted"
+            >
+              <SquareTerminal className="size-3.5 shrink-0 opacity-60" />
+              <span className="truncate">{r}</span>
+            </button>
+          ))}
+        </>
       )}
     </div>
   );

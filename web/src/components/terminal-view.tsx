@@ -1,16 +1,15 @@
 // One xterm.js terminal wired to a backend PTY over the /terminal WebSocket. Mount == open a
-// session; unmount == close the socket (which kills the PTY server-side). Keep this component
-// a single terminal so a future tab feature can mount several side by side.
+// session; unmount == close the socket (which kills the PTY server-side). The tab feature
+// (TerminalPane) mounts several of these side by side — one per tab, all kept mounted so
+// inactive tabs keep running, and only the active one is shown (display toggled by the parent).
 //
-// The session is window-scoped and persists across all navigation: the repo in view is read
-// once at mount to pick the cwd (a repo's base dir, or $HOME on non-repo screens) and then never
-// changes — navigating to another repo keeps the same shell. Only a reload or collapsing the
-// pane (unmount) tears it down.
+// The session is window-scoped and persists across all navigation: the cwd is chosen from the
+// `repo` prop captured once at mount (a repo's base dir, or $HOME for an empty repo) and then
+// never changes. Only a reload or closing the tab (unmount) tears it down.
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
-import { useCurrentRepo } from "@/lib/use-current-repo";
 
 // WebSocket close code for a normal shell exit (`exit` / Ctrl-D). Only this collapses the pane.
 // Everything else — including 1001 "server going away" (a restart, not a user action) and the
@@ -34,20 +33,38 @@ const LIGHT_THEME = {
 };
 
 export function TerminalView({
+  repo,
+  active = true,
   onExit,
 }: {
-  // Called when the shell exits so the parent can collapse the pane. Held in a ref so a new
+  // "owner/name" of the repo whose base dir is the cwd, or "" for $HOME. Captured once at
+  // mount; later changes do not move the running session.
+  repo: string;
+  // Whether this terminal is the visible/active tab. When it flips to true the terminal is
+  // refit and focused (it may have been hidden at display:none and gone stale). Defaults to
+  // true for a standalone (single-tab) mount.
+  active?: boolean;
+  // Called when the shell exits so the parent can close this tab. Held in a ref so a new
   // callback identity doesn't remount the terminal.
   onExit?: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
-  // Capture the repo in view at mount only. The ref is never reassigned, so later navigation
-  // does not change the session's cwd (an empty value → $HOME, resolved server-side).
-  const repoAtMount = useRef(useCurrentRepo() ?? "");
+  // Capture the repo at mount only. The ref is never reassigned, so later navigation does not
+  // change the session's cwd (an empty value → $HOME, resolved server-side).
+  const repoAtMount = useRef(repo);
   // True only while the WebSocket (hence the PTY) is actually open. Set in the socket effect.
   const aliveRef = useRef(false);
+  // Latest `active`, read inside the async socket callbacks. Sockets connect asynchronously, so a
+  // tab can finish connecting after the user has already switched away — without this the late
+  // onopen would steal focus to a now-hidden terminal.
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  // Refs to the live terminal + a fit-and-resize callback, so the activation effect can refit
+  // and focus this tab when it becomes visible without remounting.
+  const termRef = useRef<Terminal | null>(null);
+  const fitAndResizeRef = useRef<(() => void) | null>(null);
 
   // Guard the tab/window against an accidental close or reload while a live shell is attached.
   // Gated on aliveRef so a failed-to-start or already-closed session doesn't prompt for nothing.
@@ -78,6 +95,7 @@ export function TerminalView({
     term.loadAddon(fit);
     term.open(host);
     fit.fit();
+    termRef.current = term;
 
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const url = `${proto}://${location.host}/terminal?repo=${encodeURIComponent(
@@ -96,11 +114,14 @@ export function TerminalView({
       }
       send({ type: "resize", cols: term.cols, rows: term.rows });
     };
+    fitAndResizeRef.current = fitAndResize;
 
     ws.onopen = () => {
       aliveRef.current = true;
       fitAndResize();
-      term.focus();
+      // Only grab focus if this tab is still the active one — a tab switched away from during
+      // the connect window must not pull keystrokes back to its hidden terminal.
+      if (activeRef.current) term.focus();
     };
     ws.onmessage = (e) => {
       if (typeof e.data === "string") term.write(e.data);
@@ -127,9 +148,23 @@ export function TerminalView({
       ws.onclose = null; // don't write the close note into a disposing terminal
       ws.close();
       term.dispose();
+      termRef.current = null;
+      fitAndResizeRef.current = null;
     };
     // Mount once: the session must survive navigation. repoAtMount/onExit are refs.
   }, []);
+
+  // When this tab becomes active it may have been hidden (display:none → 0-sized host), so the
+  // terminal's geometry is stale. Refit on the next frame (after display:block applies) and
+  // move focus to it. No-op while inactive or before the terminal/socket are up.
+  useEffect(() => {
+    if (!active) return;
+    const id = requestAnimationFrame(() => {
+      fitAndResizeRef.current?.();
+      termRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [active]);
 
   return <div ref={hostRef} className="h-full w-full" />;
 }
