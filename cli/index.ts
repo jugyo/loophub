@@ -71,6 +71,7 @@ type Flags = {
   comments?: string;
   commit?: string;
   event?: string;
+  topic?: string;
   since?: string;
   order?: string;
   follow?: boolean;
@@ -119,6 +120,7 @@ const { values, positionals: pos } = parseArgs({
     comments: { type: "string" },
     commit: { type: "string" },
     event: { type: "string" },
+    topic: { type: "string" },
     since: { type: "string" },
     order: { type: "string" },
     follow: { type: "boolean", short: "f" },
@@ -946,6 +948,7 @@ async function main() {
           {
             event: (flags.event || "comment").toUpperCase(),
             body: flags.body || "",
+            ...(flags.topic ? { topic: flags.topic } : {}),
             comments,
           },
           await writeSession(),
@@ -1302,6 +1305,7 @@ function usage() {
     lh pr create --head feature-x --base main --title "impl" --issue 5
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
+    lh pr review 3 --topic security --event approve --body "no issues found"
     echo '[{"path":"a.txt","line":2,"body":"typo"}]' | lh pr review 3 --comments -
     lh pr note 3 --path src/app.ts --body "entry point; added auth guard. review: token refresh path"
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)

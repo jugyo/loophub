@@ -1063,6 +1063,7 @@ export const reviews = {
     input: {
       event?: string;
       body?: string;
+      topic?: string;
       comments?: { path: string; line?: number; side?: string; body: string }[];
     },
     sessionId?: string | null,
@@ -1071,6 +1072,10 @@ export const reviews = {
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
     const event = (input.event ?? "COMMENT").toUpperCase();
+    // Aspect/topic of the review (e.g. design/bug/style/security), so a single
+    // commit can carry several reviews distinguished by topic (#209). Free-form;
+    // a blank topic is stored as NULL (untagged).
+    const topic = input.topic?.trim() || null;
     const lineComments = Array.isArray(input.comments) ? input.comments : [];
     for (const cm of lineComments) {
       if (!cm?.path || !cm?.body)
@@ -1086,6 +1091,7 @@ export const reviews = {
       event,
       input.body ?? "",
       headSha,
+      topic,
     ) as any;
     for (const cm of lineComments) {
       S.createReviewComment(row.id, v.id, actor, {
@@ -1100,6 +1106,7 @@ export const reviews = {
     S.emitEvent(r.id, "pull_request.review_submitted", actor, {
       number: row.number,
       state: event,
+      topic,
       comments: lineComments.length,
     });
     return { ...reviewJSON(v), comments: lineComments.length };

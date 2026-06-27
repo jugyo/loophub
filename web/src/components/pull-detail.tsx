@@ -381,6 +381,11 @@ function ReviewList({
               <span className={`font-medium ${REVIEW_VERDICT_TONE[r.state]}`}>
                 ● {r.state}
               </span>{" "}
+              {r.topic ? (
+                <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+                  {r.topic}
+                </span>
+              ) : null}
               <span className="font-medium">@{r.user.login}</span>{" "}
               <span className="text-xs text-muted-foreground">
                 {relativeTime(r.submitted_at)}

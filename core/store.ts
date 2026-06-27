@@ -421,13 +421,14 @@ export function createReview(
   event: string,
   body: string,
   headSha: string | null = null,
+  topic: string | null = null,
 ): any {
   return db
     .query(
-      `INSERT INTO reviews (issue_id, author, event, body, head_sha, created_at)
-       VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
+      `INSERT INTO reviews (issue_id, author, event, body, head_sha, topic, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(issueId, author, event, body, headSha, now());
+    .get(issueId, author, event, body, headSha, topic, now());
 }
 
 export type ReviewState =

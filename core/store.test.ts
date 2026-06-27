@@ -92,6 +92,27 @@ test("an APPROVE with no recorded head stays APPROVED (legacy approves)", () => 
   expect(S.computeReviewState(pr.id)).toBe("APPROVED");
 });
 
+test("one commit can carry several reviews distinguished by topic (#209)", () => {
+  const repo = S.createRepo("me/topics", "/tmp/topics");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
+  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
+
+  // Two topic-tagged reviews plus one untagged, all against the same head.
+  S.createReview(pr.id, "rev", "APPROVE", "design lgtm", "sha-1", "design");
+  S.createReview(pr.id, "rev", "REQUEST_CHANGES", "sqli", "sha-1", "security");
+  S.createReview(pr.id, "rev", "COMMENT", "nit", "sha-1");
+
+  const reviews = S.listReviews(pr.id);
+  expect(reviews.map((r: any) => r.topic)).toEqual([
+    "design",
+    "security",
+    null,
+  ]);
+  // All bound to the same commit -> they coexist, not overwrite.
+  expect(reviews.every((r: any) => r.head_sha === "sha-1")).toBe(true);
+});
+
 test("linkedPullsForIssue caps the fan-out and orders open PRs first", () => {
   const repo = S.createRepo("me/multi", "/tmp/multi");
   const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any;

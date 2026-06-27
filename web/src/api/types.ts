@@ -54,6 +54,10 @@ export interface PullReview {
   /** Review verdict as stored by the API. */
   state: "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
   body: string;
+  /** Commit the review was made against (for grouping by commit; #208). */
+  head_sha?: string | null;
+  /** Aspect/topic of the review, e.g. design/bug/style/security (#209). */
+  topic?: string | null;
   submitted_at: string;
 }
 

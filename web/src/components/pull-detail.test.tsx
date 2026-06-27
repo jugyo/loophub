@@ -73,6 +73,7 @@ const reviews: PullReview[] = [
     user: { login: "design-bot" },
     state: "APPROVE",
     body: "LGTM",
+    topic: "design",
     submitted_at: "2026-06-18T11:30:00Z",
   },
 ];
@@ -151,6 +152,8 @@ describe("PullDetail", () => {
     expect(await screen.findByText("+const x = 1;")).toBeTruthy();
     // Review body and verdict.
     expect(screen.getByText("LGTM")).toBeTruthy();
+    // Review topic tag (#209).
+    expect(screen.getByText("design")).toBeTruthy();
     // Line comment.
     expect(screen.getByText("nice constant")).toBeTruthy();
     // Issue comment.

@@ -174,6 +174,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   event       TEXT NOT NULL,
   body        TEXT NOT NULL DEFAULT '',
   head_sha    TEXT,
+  topic       TEXT,
   created_at  TEXT NOT NULL
 );
 
@@ -354,6 +355,10 @@ tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_by TEXT");
 // reviews.head_sha records the PR head a review was made against, so an APPROVE
 // can be marked stale once the branch advances past that commit.
 tryExec("ALTER TABLE reviews ADD COLUMN head_sha TEXT");
+// reviews.topic labels the review's aspect (e.g. design/bug/style/security) so a
+// single commit can carry several reviews distinguished by topic (#209). NULL =
+// untagged (all pre-existing rows, and reviews submitted without a topic).
+tryExec("ALTER TABLE reviews ADD COLUMN topic TEXT");
 // agent_sessions.runtime records which runtime launched the session (e.g. "claude-code"), so
 // `lh resume` picks the resume command by runtime instead of inferring it from the agent label.
 // Pre-existing rows get NULL and rely on the lh-dev → claude-code backward-compat fallback

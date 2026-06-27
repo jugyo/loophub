@@ -50,6 +50,10 @@ export function reviewJSON(v: any) {
     user: { login: v.author },
     state: v.event,
     body: v.body,
+    // The commit this review was made against (lets clients group reviews by
+    // commit, e.g. #208) and its aspect/topic (#209). Both may be null.
+    head_sha: v.head_sha ?? null,
+    topic: v.topic ?? null,
     submitted_at: v.created_at,
   };
 }

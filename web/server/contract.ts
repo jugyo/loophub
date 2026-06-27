@@ -469,6 +469,7 @@ export const methods: Record<string, MethodDef> = {
           ],
         },
         body: str,
+        topic: str,
         comments: {
           type: "array",
           items: {
@@ -492,7 +493,7 @@ export const methods: Record<string, MethodDef> = {
       svc.reviews.create(
         p.repo,
         p.number,
-        { event: p.event, body: p.body, comments: p.comments },
+        { event: p.event, body: p.body, topic: p.topic, comments: p.comments },
         p.session_id,
       ),
   },
