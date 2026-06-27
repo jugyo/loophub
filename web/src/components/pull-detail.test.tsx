@@ -74,6 +74,7 @@ const reviews: PullReview[] = [
     state: "APPROVE",
     body: "LGTM",
     topic: "design",
+    head_sha: "aaa",
     submitted_at: "2026-06-18T11:30:00Z",
   },
 ];
@@ -154,8 +155,8 @@ describe("PullDetail", () => {
     expect(screen.getByText("LGTM")).toBeTruthy();
     // Review topic tag (#209).
     expect(screen.getByText("design")).toBeTruthy();
-    // Line comment.
-    expect(screen.getByText("nice constant")).toBeTruthy();
+    // Line comment — shown both inline in the diff and within its review group.
+    expect(screen.getAllByText("nice constant").length).toBeGreaterThan(0);
     // Issue comment.
     expect(screen.getByText("Thanks!")).toBeTruthy();
 
@@ -189,5 +190,138 @@ describe("PullDetail", () => {
       expect(call).toBeTruthy();
       expect(call!.params.merge_method).toBe("squash");
     });
+  });
+
+  it("groups reviews by commit: current head expanded, older head collapsed", async () => {
+    // Two reviews against different commits: one on the PR's current head ("aaa")
+    // and one on a superseded commit.
+    const grouped: PullReview[] = [
+      {
+        id: 2,
+        user: { login: "design-bot" },
+        state: "REQUEST_CHANGES",
+        body: "needs work",
+        head_sha: "old1234deadbeef",
+        submitted_at: "2026-06-18T10:00:00Z",
+      },
+      {
+        id: 1,
+        user: { login: "design-bot" },
+        state: "APPROVE",
+        body: "LGTM now",
+        head_sha: "aaa",
+        submitted_at: "2026-06-18T11:30:00Z",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => pull,
+        "pulls/files": () => files,
+        "reviews/list": () => grouped,
+        "reviews/listComments": () => [],
+        "comments/list": () => [],
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    // Both commit groups render with a short-SHA heading.
+    const currentSummary = await screen.findByText("aaa");
+    const staleSummary = await screen.findByText("old1234");
+
+    // Current-head group is expanded by default; the older group is collapsed.
+    const currentGroup = currentSummary.closest("details");
+    const staleGroup = staleSummary.closest("details");
+    expect(currentGroup?.open).toBe(true);
+    expect(staleGroup?.open).toBe(false);
+
+    // Existing per-commit state badges are preserved.
+    expect(screen.getByText("current")).toBeTruthy();
+    expect(screen.getByText("STALE")).toBeTruthy();
+  });
+
+  it("expands the newest group when no review targets the current head", async () => {
+    // The branch advanced past every reviewed commit, so no group is current.
+    // The newest group must still expand so its feedback is not hidden.
+    const grouped: PullReview[] = [
+      {
+        id: 1,
+        user: { login: "design-bot" },
+        state: "REQUEST_CHANGES",
+        body: "older feedback",
+        head_sha: "older12",
+        submitted_at: "2026-06-18T09:00:00Z",
+      },
+      {
+        id: 2,
+        user: { login: "design-bot" },
+        state: "REQUEST_CHANGES",
+        body: "newest feedback",
+        head_sha: "newer34",
+        submitted_at: "2026-06-18T10:00:00Z",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => pull, // head.sha === "aaa", matches no review
+        "pulls/files": () => files,
+        "reviews/list": () => grouped,
+        "reviews/listComments": () => [],
+        "comments/list": () => [],
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    const newest = await screen.findByText("newer34");
+    const older = await screen.findByText("older12");
+    expect(newest.closest("details")?.open).toBe(true);
+    expect(older.closest("details")?.open).toBe(false);
+    // No group targets the current head, so no "current" badge is shown.
+    expect(screen.queryByText("current")).toBeNull();
   });
 });

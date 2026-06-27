@@ -97,6 +97,8 @@ export function PullDetail({
         owner={owner}
         repo={repo}
         reviews={reviewsQuery.data}
+        lineComments={lineCommentsQuery.data}
+        currentHeadSha={pull.head.sha}
         isLoading={reviewsQuery.isLoading}
         isError={reviewsQuery.isError}
       />
@@ -348,19 +350,88 @@ const REVIEW_VERDICT_TONE: Record<PullReview["state"], string> = {
   COMMENT: "text-muted-foreground",
 };
 
+type ReviewGroup = {
+  /** The commit (head_sha) the reviews were made against; null for legacy reviews. */
+  headSha: string | null;
+  reviews: PullReview[];
+  /** Whether this group targets the PR's current head commit. */
+  isCurrent: boolean;
+  /** Whether this group renders expanded by default. */
+  defaultOpen: boolean;
+};
+
+// Group reviews by the commit (head_sha) they were made against. The group for
+// the PR's current head comes first (and is rendered expanded); the remaining
+// groups follow newest-review-first and are rendered collapsed. When no review
+// targets the current head (the branch advanced since the last review), the
+// newest group is expanded instead, so actionable feedback is never hidden.
+function groupReviewsByCommit(
+  reviews: PullReview[],
+  currentHeadSha: string,
+): ReviewGroup[] {
+  const byCommit = new Map<string, PullReview[]>();
+  for (const r of reviews) {
+    const key = r.head_sha ?? "";
+    const list = byCommit.get(key) ?? [];
+    list.push(r);
+    byCommit.set(key, list);
+  }
+  const groups: ReviewGroup[] = [];
+  for (const [key, list] of byCommit) {
+    groups.push({
+      headSha: key === "" ? null : key,
+      reviews: list,
+      isCurrent: key !== "" && key === currentHeadSha,
+      defaultOpen: false,
+    });
+  }
+  // Max submitted_at in the group; computed explicitly so the non-current
+  // group ordering does not depend on the backend's row order.
+  const latest = (g: ReviewGroup) =>
+    g.reviews.reduce((m, r) => (r.submitted_at > m ? r.submitted_at : m), "");
+  groups.sort((a, b) => {
+    if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
+    return latest(b).localeCompare(latest(a));
+  });
+  // Expand the current-head group; if there is none, fall back to the newest
+  // group (first after the sort) so the latest review stays visible.
+  const open = groups.find((g) => g.isCurrent) ?? groups[0];
+  if (open) open.defaultOpen = true;
+  return groups;
+}
+
 function ReviewList({
   owner,
   repo,
   reviews,
+  lineComments,
+  currentHeadSha,
   isLoading,
   isError,
 }: {
   owner: string;
   repo: string;
   reviews: PullReview[] | undefined;
+  lineComments: PullLineComment[] | undefined;
+  currentHeadSha: string;
   isLoading: boolean;
   isError: boolean;
 }) {
+  // Inline comments keyed by the review they belong to, so each review shows its
+  // own line comments inside its commit group (collapsing with the group).
+  const commentsByReview = new Map<number, PullLineComment[]>();
+  for (const c of lineComments ?? []) {
+    if (c.pull_request_review_id == null) continue;
+    const list = commentsByReview.get(c.pull_request_review_id) ?? [];
+    list.push(c);
+    commentsByReview.set(c.pull_request_review_id, list);
+  }
+
+  const groups =
+    reviews && reviews.length > 0
+      ? groupReviewsByCommit(reviews, currentHeadSha)
+      : [];
+
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold">Reviews</h2>
@@ -372,34 +443,123 @@ function ReviewList({
         <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
           Failed to load reviews.
         </div>
-      ) : !reviews || reviews.length === 0 ? (
+      ) : groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">No reviews.</p>
       ) : (
-        reviews.map((r) => (
-          <article key={r.id} className="rounded-md border p-3">
-            <header className="mb-1 text-sm">
-              <span className={`font-medium ${REVIEW_VERDICT_TONE[r.state]}`}>
-                ● {r.state}
-              </span>{" "}
-              {r.topic ? (
-                <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-                  {r.topic}
-                </span>
-              ) : null}
-              <span className="font-medium">@{r.user.login}</span>{" "}
-              <span className="text-xs text-muted-foreground">
-                {relativeTime(r.submitted_at)}
-              </span>
-            </header>
-            {r.body ? (
-              <Markdown owner={owner} repo={repo}>
-                {r.body}
-              </Markdown>
-            ) : null}
-          </article>
+        groups.map((g) => (
+          <ReviewCommitGroup
+            key={g.headSha ?? "unknown"}
+            owner={owner}
+            repo={repo}
+            group={g}
+            commentsByReview={commentsByReview}
+          />
         ))
       )}
     </section>
+  );
+}
+
+function ReviewCommitGroup({
+  owner,
+  repo,
+  group,
+  commentsByReview,
+}: {
+  owner: string;
+  repo: string;
+  group: ReviewGroup;
+  commentsByReview: Map<number, PullLineComment[]>;
+}) {
+  const shortSha = group.headSha ? group.headSha.slice(0, 7) : null;
+  const count = group.reviews.length;
+  return (
+    <details
+      open={group.defaultOpen}
+      className="overflow-hidden rounded-md border"
+    >
+      <summary className="flex cursor-pointer flex-wrap items-center gap-2 bg-muted/40 px-3 py-2 text-sm">
+        {shortSha ? (
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">
+            {shortSha}
+          </code>
+        ) : (
+          <span className="font-medium">unknown commit</span>
+        )}
+        {group.isCurrent ? (
+          <Badge tone="open">current</Badge>
+        ) : group.headSha ? (
+          <Badge tone="review-rereview">STALE</Badge>
+        ) : null}
+        <span className="text-xs text-muted-foreground">
+          {count} review{count === 1 ? "" : "s"}
+        </span>
+      </summary>
+      <div className="flex flex-col gap-3 p-3">
+        {group.reviews.map((r) => (
+          <ReviewItem
+            key={r.id}
+            owner={owner}
+            repo={repo}
+            review={r}
+            comments={commentsByReview.get(r.id) ?? []}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function ReviewItem({
+  owner,
+  repo,
+  review,
+  comments,
+}: {
+  owner: string;
+  repo: string;
+  review: PullReview;
+  comments: PullLineComment[];
+}) {
+  return (
+    <article className="rounded-md border p-3">
+      <header className="mb-1 text-sm">
+        <span className={`font-medium ${REVIEW_VERDICT_TONE[review.state]}`}>
+          ● {review.state}
+        </span>{" "}
+        {review.topic ? (
+          <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+            {review.topic}
+          </span>
+        ) : null}
+        <span className="font-medium">@{review.user.login}</span>{" "}
+        <span className="text-xs text-muted-foreground">
+          {relativeTime(review.submitted_at)}
+        </span>
+      </header>
+      {review.body ? (
+        <Markdown owner={owner} repo={repo}>
+          {review.body}
+        </Markdown>
+      ) : null}
+      {comments.length > 0 ? (
+        <ul className="mt-2 flex flex-col gap-2">
+          {comments.map((c) => (
+            <li key={c.id} className="rounded-md border bg-muted/20 p-2">
+              <div className="mb-1 text-xs">
+                💬 @{c.user.login}{" "}
+                <span className="text-muted-foreground">
+                  {c.path}:{c.line ?? "?"}
+                </span>
+              </div>
+              <Markdown owner={owner} repo={repo}>
+                {c.body}
+              </Markdown>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
   );
 }
 
