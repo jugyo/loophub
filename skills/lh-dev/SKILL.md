@@ -40,12 +40,46 @@ user chooses implementation.
 
 ## Invocation
 
-`/lh-dev <issue id>` — take the number from the argument. If omitted, ask the user which issue
-to work on.
+`/lh-dev <issue id>` — take the issue number from the argument and start on it directly (**no
+selection UI**). If the id is **omitted**, present a selection UI (see § Selecting an issue).
 
 **If the startup guard is not satisfied, stop here** — even if you know the issue number.
 
 Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
+
+### Selecting an issue (no id given)
+
+When `/lh-dev` is run **without** an issue id, do not guess — let the user pick via the built-in
+`AskUserQuestion` UI:
+
+1. **A just-created issue takes priority.** If an issue was created earlier in *this same
+   conversation* (e.g. via `lh-issue-create`) and the user clearly means it, start on that issue
+   directly and skip the selection UI. If it is ambiguous, put that issue **first** in the options
+   below.
+2. **Fetch candidates** — open, `ready-to-build`, no linked PR yet, newest first:
+
+   ```sh
+   lh issue list --repo <repo> --json \
+     | jq -r '[.[]
+         | select((.labels // [] | map(.name) | index("ready-to-build"))
+             and ((.linked_pull_request | not) or (.linked_pull_request.state != "open")))]
+         | sort_by(.updated_at) | reverse | .[0:4]
+         | .[] | "#\(.number)\t\(.title)"'
+   ```
+
+   `lh issue list` defaults to `--state open` and already drops PRs; the `jq` keeps only
+   `ready-to-build` issues that have **no open linked PR** (an issue whose only PR was closed
+   without merging — an abandoned attempt — stays a candidate), sorts by `updated_at` descending,
+   and takes the **top 4**.
+3. **Ask with `AskUserQuestion`** — one question, the top **3–4** candidates as options. Each option
+   label is the issue `#number — title` (add a label chip when useful). `AskUserQuestion` always
+   appends an **"Other"** entry: tell the user they can type any issue number there if the one they
+   want is not listed. The 3–4 shown cover the common case; "Other" covers the long tail (full list
+   via `lh issue list`).
+4. **On selection**, take the chosen issue number (or the number typed into "Other") and continue the
+   normal flow (§1 onward) for that issue.
+
+If no candidate issues are found (empty list), say so and ask the user for an issue number directly.
 
 ## Called from other skills
 
