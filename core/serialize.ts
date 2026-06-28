@@ -204,13 +204,18 @@ async function pullStatusFields(
   const review_state = S.computeReviewState(row.id);
   let mergeable: boolean | null = null;
   let mergeable_state = "unknown";
+  // Whether this PR carries any commits over its base (diff-free when 0). Reused
+  // by the cross-PR conflict guard below so a diff-free PR — which can never
+  // conflict (see core/mergeable.ts) — skips the conflict fan-out entirely.
+  let hasCommits = false;
   if (!p.merged && headSha && baseSha) {
     const [prev, ahead] = await Promise.all([
       mergePreview(repo.local_path, p.base_ref, p.head_ref),
       commitsAhead(repo.local_path, p.base_ref, p.head_ref),
     ]);
+    hasCommits = ahead > 0;
     ({ mergeable, mergeable_state } = resolveMergeable({
-      hasCommits: ahead > 0,
+      hasCommits,
       conflict: prev.conflict,
       approved: review_state === "APPROVED",
     }));
@@ -248,8 +253,16 @@ async function pullStatusFields(
   });
   // Cross-PR conflicts: only on demand (PR detail), and only for an open, unmerged
   // PR with a resolvable head — the PR list skips this to keep its fan-out O(n).
+  // A diff-free PR (hasCommits === false) can never conflict, so skip the fan-out
+  // and leave conflicts_with empty — same principle resolveMergeable applies above.
   let conflicts_with: PullConflict[] = [];
-  if (opts.withConflicts && !p.merged && row.state === "open" && headSha) {
+  if (
+    opts.withConflicts &&
+    !p.merged &&
+    row.state === "open" &&
+    headSha &&
+    hasCommits
+  ) {
     conflicts_with = await conflictsForPull(
       repo,
       row.number,
