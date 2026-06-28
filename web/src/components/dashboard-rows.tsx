@@ -130,13 +130,12 @@ export function IssueRow({
   );
 }
 
-// Hover-revealed Build button for an issue row: starts `lh dev <n>` in a
-// terminal, the same action as the issue-detail Build button (issue-detail.tsx).
+// Build button for an issue row: starts `lh dev <n>` in a terminal, the same
+// action as the issue-detail Build button (issue-detail.tsx). Always visible
+// (not hover-revealed) so the row layout is stable regardless of label presence.
 // Hidden whenever a linked PR is actively in progress (open) or already merged
 // (done) — mirroring `activePull` there; a closed-unmerged (rejected) PR does
-// NOT hide it, since the issue still needs a fresh attempt. The button reserves
-// its slot (opacity, not display) so the row layout does not shift on hover, and
-// stays visible on keyboard focus for accessibility.
+// NOT hide it, since the issue still needs a fresh attempt.
 function RowBuildButton({
   owner,
   repo,
@@ -164,7 +163,7 @@ function RowBuildButton({
           issueRef: { owner, repo, number: issue.number },
         })
       }
-      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
       <Play className="size-4" />
     </button>

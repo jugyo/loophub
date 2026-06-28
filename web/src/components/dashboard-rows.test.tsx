@@ -190,6 +190,19 @@ describe("IssueRow", () => {
     ).toBeTruthy();
   });
 
+  it("renders the Build button always visible (not hover-revealed)", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
+    );
+    const button = await screen.findByRole("button", {
+      name: "Build issue #7",
+    });
+    // No opacity-0 / hover-reveal classes: the button must show without hover so
+    // a label row's layout does not shift on the button appearing/disappearing.
+    expect(button.className).not.toContain("opacity-0");
+    expect(button.className).not.toContain("group-hover:opacity-100");
+  });
+
   it("shows the Build button when the linked PR is closed unmerged (rejected)", async () => {
     renderInRouter(
       <IssueRow
