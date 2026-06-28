@@ -486,9 +486,66 @@ async function main() {
         fail(e.message);
       }
     }
-    // Set the session display name to the issue so the session picker / terminal title shows
-    // what's being worked on. buildClaudeArgs strips control chars from the title before argv.
-    const sessionName = `#${item.number} ${item.title}`;
+    // Make the work visible: register this session before spawning. The runtime session id is the
+    // Claude session we are about to spawn (unique per run, so re-launching the same issue never
+    // collides on the (agent, session) pair).
+    await run(() =>
+      s.sessions.register({
+        id: sessionId,
+        agent: LH_DEV_SESSION_AGENT,
+        session: sessionId,
+        // The session we are about to spawn is a Claude Code session; record the runtime so
+        // `lh resume` picks `claude --resume` by runtime rather than inferring it from the agent.
+        runtime: RUNTIME_CLAUDE_CODE,
+        // This is an implementation (dev) session; record its kind (#298) so it surfaces in the
+        // PR's related-sessions list as a dev session. (setPullSession also stamps 'dev' when it
+        // attributes the session to the PR — this just sets it at the registration point too.)
+        kind: "dev",
+      }),
+    );
+
+    // Attribute this session to the work's PR (via session_links, #316) so `lh resume`/retro can
+    // later re-enter it (#186 — replaces the old issue-assignee path). For an issue target, open (or reuse)
+    // the draft PR so the agent has a place to write its plan and dev notes; for a PR target, point
+    // the existing PR at this session. Best-effort: a failure warns rather than blocks the dev loop.
+    // Capture the resolved PR number so the session name below can be built from it (#336): for a PR
+    // target it is the target itself (`item.number`); for an issue target it is the PR openPr resolves.
+    let prNumber: number | undefined = item.pull_request
+      ? item.number
+      : undefined;
+    if (!item.pull_request) {
+      try {
+        const res = await s.dev.openPr(
+          repo,
+          {
+            issue: n,
+            head: worktreeBranch(n),
+            base: r.default_branch,
+          },
+          sessionId,
+        );
+        prNumber = res.number;
+        console.error(
+          res.created
+            ? `draft PR #${res.number} opened`
+            : `using existing PR #${res.number}`,
+        );
+      } catch (e: any) {
+        console.error(`warning: could not open draft PR: ${e.message}`);
+      }
+    } else {
+      try {
+        await s.dev.attachSession(repo, n, sessionId);
+      } catch (e: any) {
+        console.error(`warning: could not attach session to PR: ${e.message}`);
+      }
+    }
+
+    // Set the session display name to the PR being worked on so the session picker / terminal title
+    // shows the linked PR (#336). The name is built only after openPr/attachSession above so the PR
+    // number is known; if the PR couldn't be resolved (e.g. openPr failed) we fall back to the issue
+    // number so `lh dev` still launches. buildClaudeArgs strips control chars from the title before argv.
+    const sessionName = `#${prNumber ?? item.number} ${item.title}`;
     const claudeArgs = buildClaudeArgs({
       sessionId,
       managedSettings: managed,
@@ -515,55 +572,6 @@ async function main() {
     console.error(
       formatSpawnCommand(claudeArgs, { color: process.stderr.isTTY === true }),
     );
-
-    // Make the work visible: register this session before spawning. The runtime session id is the
-    // Claude session we are about to spawn (unique per run, so re-launching the same issue never
-    // collides on the (agent, session) pair).
-    await run(() =>
-      s.sessions.register({
-        id: sessionId,
-        agent: LH_DEV_SESSION_AGENT,
-        session: sessionId,
-        // The session we are about to spawn is a Claude Code session; record the runtime so
-        // `lh resume` picks `claude --resume` by runtime rather than inferring it from the agent.
-        runtime: RUNTIME_CLAUDE_CODE,
-        // This is an implementation (dev) session; record its kind (#298) so it surfaces in the
-        // PR's related-sessions list as a dev session. (setPullSession also stamps 'dev' when it
-        // attributes the session to the PR — this just sets it at the registration point too.)
-        kind: "dev",
-      }),
-    );
-
-    // Attribute this session to the work's PR (via session_links, #316) so `lh resume`/retro can
-    // later re-enter it (#186 — replaces the old issue-assignee path). For an issue target, open (or reuse)
-    // the draft PR so the agent has a place to write its plan and dev notes; for a PR target, point
-    // the existing PR at this session. Best-effort: a failure warns rather than blocks the dev loop.
-    if (!item.pull_request) {
-      try {
-        const res = await s.dev.openPr(
-          repo,
-          {
-            issue: n,
-            head: worktreeBranch(n),
-            base: r.default_branch,
-          },
-          sessionId,
-        );
-        console.error(
-          res.created
-            ? `draft PR #${res.number} opened`
-            : `using existing PR #${res.number}`,
-        );
-      } catch (e: any) {
-        console.error(`warning: could not open draft PR: ${e.message}`);
-      }
-    } else {
-      try {
-        await s.dev.attachSession(repo, n, sessionId);
-      } catch (e: any) {
-        console.error(`warning: could not attach session to PR: ${e.message}`);
-      }
-    }
 
     // The lock claimed above holds our pid for the session's lifetime (the spawnSync below blocks
     // until claude exits); the exit handler releases it. Release is best-effort — if the process
