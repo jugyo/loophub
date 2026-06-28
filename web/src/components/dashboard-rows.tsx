@@ -22,6 +22,7 @@ import {
   pullBadges,
   type StatusWordTone,
 } from "@/lib/badges";
+import { labelColorClass } from "@/lib/label-color";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -73,7 +74,9 @@ function RepoChip({
   );
 }
 
-// Label chips, sharing the issue-detail chip style (issue-detail.tsx).
+// Label chips, sharing the issue-detail chip style (issue-detail.tsx). Colour is
+// derived from the label name (labelColorClass) so the same label is always the
+// same colour, readable in both themes.
 function RowLabels({ labels }: { labels: Label[] }) {
   if (labels.length === 0) return null;
   return (
@@ -81,7 +84,10 @@ function RowLabels({ labels }: { labels: Label[] }) {
       {labels.map((l) => (
         <span
           key={l.name}
-          className="shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground"
+          className={cn(
+            "shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px]",
+            labelColorClass(l.name),
+          )}
         >
           {l.name}
         </span>
