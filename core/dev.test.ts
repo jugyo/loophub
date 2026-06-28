@@ -62,6 +62,11 @@ describe("dev.openPr", () => {
     expect(pull.base.ref).toBe("main");
     expect(pull.linked_issue?.number).toBe(issue.number);
     expect(pull.body).toContain(`Closes #${issue.number}`);
+    // The deterministic `lh dev` worktree path is surfaced for the terminal PR region (#270):
+    // <worktreeRoot>/<owner>/<repo>/issue-<n>, derived from the head branch's issue number.
+    expect(pull.worktree_path).toBe(
+      join(HOME, "worktrees", "me", "proj", "issue-1"),
+    );
 
     // Second call finds the existing open PR and does not create another.
     const second = await svc.dev.openPr(

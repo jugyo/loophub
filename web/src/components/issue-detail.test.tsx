@@ -185,6 +185,7 @@ describe("IssueDetail", () => {
       command: "lh dev 12",
       repo: "me/proj",
       label: "dev #12",
+      issueRef: { owner: "me", repo: "proj", number: 12 },
     });
   });
 });

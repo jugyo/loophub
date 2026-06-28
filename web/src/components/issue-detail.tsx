@@ -166,6 +166,7 @@ function IssueHeader({
                 command: `lh dev ${issue.number}`,
                 repo: `${owner}/${repo}`,
                 label: `dev #${issue.number}`,
+                issueRef: { owner, repo, number: issue.number },
               })
             }
           >

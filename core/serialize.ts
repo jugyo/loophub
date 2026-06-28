@@ -2,12 +2,15 @@
 // (CLI now, JSON-RPC clients later) read. Kept separate from service.ts so the
 // shaping is reusable and side-effect free.
 
+import { worktreeRoot } from "./config.ts";
 import { conflictsForPull, type PullConflict } from "./conflicts.ts";
 import { commitsAhead, diffStat, mergePreview, revParse } from "./git.ts";
 import { linkedRef } from "./links.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import { pullWorktreeDirty } from "./pull-worktree.ts";
+import { resumeWorktreeIssue } from "./resume.ts";
 import * as S from "./store.ts";
+import { worktreePath } from "./worktree-path.ts";
 
 export function repoJSON(r: S.Repo) {
   return {
@@ -183,6 +186,20 @@ async function pullStatusFields(
   if (opts.withConflicts && !p.merged && row.state === "open" && headSha) {
     conflicts_with = await conflictsForPull(repo, row.number, headSha);
   }
+  // Deterministic path of the `lh dev` worktree backing this PR (same convention as the
+  // "working" flag above), so a consumer can show / copy it without knowing worktreeRoot.
+  // Pure path math (no fs); null only for a crafted repo name that can't form a safe path.
+  let worktree_path: string | null = null;
+  try {
+    const issue = resumeWorktreeIssue(
+      p.head_ref,
+      linked?.number ?? null,
+      row.number,
+    );
+    worktree_path = worktreePath(worktreeRoot(), repo.full_name, issue);
+  } catch {
+    worktree_path = null;
+  }
   return {
     headSha,
     baseSha,
@@ -195,6 +212,7 @@ async function pullStatusFields(
     review_state,
     linked,
     conflicts_with,
+    worktree_path,
   };
 }
 
@@ -321,5 +339,6 @@ export async function pullJSON(
     updated_at: row.updated_at,
     linked_issue: status.linked,
     conflicts_with: status.conflicts_with,
+    worktree_path: status.worktree_path,
   };
 }

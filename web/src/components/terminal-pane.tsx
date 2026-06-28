@@ -36,8 +36,10 @@ import {
 } from "react";
 import {
   type OpenTerminalOptions,
+  type TerminalIssueRef,
   useRegisterTerminalController,
 } from "@/components/terminal-controller";
+import { TerminalPrHeader } from "@/components/terminal-pr-header";
 import { TerminalView } from "@/components/terminal-view";
 import { useCurrentRepo } from "@/lib/use-current-repo";
 import { useRepos } from "@/queries/repos";
@@ -58,8 +60,15 @@ const RESERVE_VAR = "--lh-term-reserve";
 // One terminal tab: a stable id (React key) and the repo ("owner/name", or "" for $HOME) whose
 // base dir is its cwd. The cwd is fixed at creation — TerminalView captures it once at mount.
 // `command` is an optional one-shot run on start (New Issue / Build); `label` overrides the
-// repo-derived tab label. Both are captured once at creation alongside the cwd.
-type Tab = { id: string; repo: string; command?: string; label?: string };
+// repo-derived tab label. `issueRef` (Build tabs only) drives the PR top region. All captured
+// once at creation alongside the cwd.
+type Tab = {
+  id: string;
+  repo: string;
+  command?: string;
+  label?: string;
+  issueRef?: TerminalIssueRef;
+};
 
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -109,6 +118,9 @@ export function TerminalPane() {
   const drag = useRef<{ startY: number; startH: number } | null>(null);
 
   const started = tabs.length > 0;
+  // The PR top region (below) follows the active tab — it shows that tab's linked PR, so switching
+  // tabs swaps the region with it. Only Build tabs carry an issueRef, so other tabs show none.
+  const activeTab = tabs.find((t) => t.id === activeId);
 
   useEffect(() => {
     sessionStorage.setItem(EXPANDED_KEY, expanded ? "1" : "0");
@@ -143,6 +155,7 @@ export function TerminalPane() {
       repo: opts?.repo ?? "",
       command: opts?.command,
       label: opts?.label,
+      issueRef: opts?.issueRef,
     };
     setTabs((prev) => [...prev, tab]);
     setActiveId(tab.id);
@@ -372,25 +385,32 @@ export function TerminalPane() {
         // tabs stay mounted; only the active one is shown (display) so the others keep running.
         <div
           style={{ height: contentHeight, maxHeight: MAX_CONTENT }}
-          className={`overflow-hidden ${expanded ? "border-t px-2 py-1" : ""}`}
+          className={`flex flex-col overflow-hidden ${expanded ? "border-t" : ""}`}
         >
-          {tabs.map((t) => {
-            const isActive = t.id === activeId;
-            return (
-              <div
-                key={t.id}
-                className="h-full w-full"
-                style={{ display: isActive ? "block" : "none" }}
-              >
-                <TerminalView
-                  repo={t.repo}
-                  command={t.command}
-                  active={expanded && isActive}
-                  onExit={() => closeTab(t.id)}
-                />
-              </div>
-            );
-          })}
+          {/* PR top region for the active Build tab (#270). Above the terminals, follows the active
+              tab. min-h-0 below lets the terminal area shrink so this never gets clipped. */}
+          {expanded && activeTab?.issueRef && (
+            <TerminalPrHeader issueRef={activeTab.issueRef} />
+          )}
+          <div className={`min-h-0 flex-1 ${expanded ? "px-2 py-1" : ""}`}>
+            {tabs.map((t) => {
+              const isActive = t.id === activeId;
+              return (
+                <div
+                  key={t.id}
+                  className="h-full w-full"
+                  style={{ display: isActive ? "block" : "none" }}
+                >
+                  <TerminalView
+                    repo={t.repo}
+                    command={t.command}
+                    active={expanded && isActive}
+                    onExit={() => closeTab(t.id)}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

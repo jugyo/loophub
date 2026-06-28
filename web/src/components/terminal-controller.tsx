@@ -17,6 +17,15 @@ import {
   useRef,
 } from "react";
 
+// An issue this terminal tab is working on (set when opened from the issue Build button). The
+// terminal pane uses it to render a top region that resolves and surfaces the linked PR — issue
+// number, not PR number, because at Build time the PR may not exist yet (`lh dev` opens it).
+export interface TerminalIssueRef {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
 // Options for opening a terminal tab. All optional: no command opens a plain shell, and an empty
 // repo roots the shell at $HOME (resolved server-side).
 export interface OpenTerminalOptions {
@@ -26,6 +35,8 @@ export interface OpenTerminalOptions {
   repo?: string;
   // Tab label override; defaults to the repo name (or "~" for $HOME).
   label?: string;
+  // The issue this tab is building (Build button only) — drives the PR top region in the pane.
+  issueRef?: TerminalIssueRef;
 }
 
 export type OpenTerminal = (opts?: OpenTerminalOptions) => void;

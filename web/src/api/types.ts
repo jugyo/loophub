@@ -174,6 +174,12 @@ export interface PullRequest {
   linked_issue?: LinkedIssue | null;
   /** Other open PRs that would merge-conflict with this one (PR detail only). */
   conflicts_with?: PullConflict[];
+  /**
+   * Deterministic path of the `lh dev` worktree backing this PR (same convention as the
+   * "working" flag). Pure path derivation, so it is the canonical location even if the
+   * worktree was pruned; null only for a repo name that can't form a safe path.
+   */
+  worktree_path?: string | null;
 }
 
 /** An open PR that merge-conflicts with the PR being viewed, plus the conflicting files. */

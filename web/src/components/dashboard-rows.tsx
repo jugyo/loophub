@@ -161,6 +161,7 @@ function RowBuildButton({
           command: `lh dev ${issue.number}`,
           repo: `${owner}/${repo}`,
           label: `dev #${issue.number}`,
+          issueRef: { owner, repo, number: issue.number },
         })
       }
       className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
