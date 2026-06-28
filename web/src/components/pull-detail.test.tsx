@@ -319,6 +319,58 @@ describe("PullDetail", () => {
     });
   });
 
+  it("disables the Merge button when the PR conflicts even if APPROVED (#334)", async () => {
+    const conflicting: PullRequest = {
+      ...pull,
+      mergeable: false,
+      mergeable_state: "conflict",
+      review_state: "APPROVED",
+    };
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => conflicting,
+        "pulls/files": () => files,
+        "reviews/list": () => [],
+        "reviews/listComments": () => [],
+        "reviewNotes/list": () => [],
+        "comments/list": () => [],
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    const button = await screen.findByRole("button", { name: /^Merge$/i });
+    // Conflict overrides APPROVED: the button is disabled and exposes the reason.
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("title")).toMatch(/conflict/i);
+
+    // Clicking the disabled button must not fire a merge request.
+    fireEvent.click(button);
+    expect(rpcCall("pulls/merge")).toBeFalsy();
+  });
+
   it("groups reviews by commit, collapsed by default with a verdict on each summary (#268)", async () => {
     // Two reviews against different commits: one on the PR's current head ("aaa")
     // and one on a superseded commit.

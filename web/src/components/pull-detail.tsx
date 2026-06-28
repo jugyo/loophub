@@ -166,8 +166,14 @@ function PullHeader({
   const linked = pull.linked_issue;
 
   const canAct = pull.state === "open" && !pull.merged;
-  const canMerge = canAct && pull.review_state === "APPROVED";
+  // A conflicting PR (mergeable_state === "conflict", i.e. mergeable === false) can never merge
+  // server-side, so the Merge control must stay disabled even when APPROVED.
+  const hasConflict = pull.mergeable_state === "conflict";
+  const canMerge = canAct && pull.review_state === "APPROVED" && !hasConflict;
   const canReady = canAct && pull.review_state === "CHANGES_REQUESTED";
+  const mergeBlockedReason = hasConflict
+    ? "Cannot merge: this PR has conflicts with the base branch."
+    : undefined;
 
   return (
     <div className="flex flex-col gap-3">
@@ -266,6 +272,7 @@ function PullHeader({
           value={method}
           onChange={(e) => setMethod(e.target.value as MergeMethod)}
           disabled={!canMerge || merge.isPending}
+          title={mergeBlockedReason}
           className="h-9 rounded-md border bg-background px-2 text-sm"
         >
           {MERGE_METHODS.map((m) => (
@@ -276,6 +283,7 @@ function PullHeader({
         </select>
         <Button
           disabled={!canMerge || merge.isPending}
+          title={mergeBlockedReason}
           onClick={() =>
             merge.mutate(method, {
               onError: (e) => showError(failureMessage("Merge failed", e)),
