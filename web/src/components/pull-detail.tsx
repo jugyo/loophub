@@ -91,7 +91,17 @@ export function PullDetail({
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-6">
-      <PullHeader owner={owner} repo={repo} pull={pull} />
+      {/* Key by the PR's full identity (owner/repo/number) so navigating between PRs on the same
+          route remounts the header, giving each PR a fresh mutation observer. Without this the
+          merge/ready/setState mutation state (e.g. a `Merge failed: …` error) leaks onto the next
+          PR, since the component is reused at the same tree position when only the route params
+          change (#321). Keying on the full identity (not number alone) stays correct across repos. */}
+      <PullHeader
+        key={`${owner}/${repo}/${pull.number}`}
+        owner={owner}
+        repo={repo}
+        pull={pull}
+      />
 
       <ConflictList owner={owner} repo={repo} conflicts={pull.conflicts_with} />
 

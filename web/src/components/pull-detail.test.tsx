@@ -14,8 +14,9 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
+import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type {
   IssueComment,
   PullFile,
@@ -255,6 +256,78 @@ describe("PullDetail", () => {
       expect(call).toBeTruthy();
       expect(call!.params.merge_method).toBe("squash");
     });
+  });
+
+  it("does not carry a merge-failed error onto a different PR on the same route (#321)", async () => {
+    // The PR-detail route only changes its `number` param between PRs, so React reuses the same
+    // PullHeader instance — and with it the useMergePull observer's error state — unless the header
+    // is keyed by PR number. Reproduce the no-loading-gap path (a loading gap would unmount the
+    // header and mask the leak) by pre-seeding PR #31's detail, so switching to it renders
+    // synchronously. The merge fails on #30; that error must not appear on #31.
+    const pull30 = pull; // number 30, APPROVED + open → Merge enabled
+    const pull31: PullRequest = { ...pull, number: 31, title: "second pr" };
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": (p) => (p.number === 31 ? pull31 : pull30),
+        "pulls/files": () => files,
+        "reviews/list": () => [],
+        "reviews/listComments": () => [],
+        "reviewNotes/list": () => [],
+        "comments/list": () => [],
+        "pulls/merge": () => {
+          throw new RpcFault(409, "merge conflict");
+        },
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    // Seed PR #31 so navigating to it has no loading gap (the bug's reproduction condition).
+    queryClient.setQueryData(["pull", "me/proj", 31], pull31);
+
+    function Switcher() {
+      const [n, setN] = useState(30);
+      return (
+        <>
+          <button type="button" onClick={() => setN(31)}>
+            go-31
+          </button>
+          <PullDetail owner="me" repo="proj" number={n} />
+        </>
+      );
+    }
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: Switcher,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    // Merge PR #30 → it fails → the error surfaces.
+    fireEvent.click(await screen.findByRole("button", { name: /^Merge$/i }));
+    expect(await screen.findByText(/Merge failed:/)).toBeTruthy();
+
+    // Navigate to PR #31 on the same route (no loading gap thanks to the seed).
+    fireEvent.click(screen.getByRole("button", { name: "go-31" }));
+
+    // The new PR's header renders; the stale merge error from #30 is gone.
+    expect(await screen.findByText("second pr")).toBeTruthy();
+    expect(screen.queryByText(/Merge failed:/)).toBeNull();
   });
 
   it("groups reviews by commit, collapsed by default with a verdict on each summary (#268)", async () => {
