@@ -33,14 +33,35 @@ function RowBadges({ badges }: { badges: BadgeData[] }) {
 }
 
 // Repo identity chip for cross-repo rows (top page). Omitted on per-repo
-// dashboards where the project is already in context.
-function RepoChip({ label }: { label?: string }) {
+// dashboards where the project is already in context. Links to the repo
+// dashboard when owner/repo are known (issue rows); falls back to a plain span
+// otherwise (e.g. PR rows that don't thread owner/repo through).
+function RepoChip({
+  label,
+  owner,
+  repo,
+}: {
+  label?: string;
+  owner?: string;
+  repo?: string;
+}) {
   if (!label) return null;
+  const className =
+    "shrink-0 whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground";
+  if (owner && repo) {
+    return (
+      <Link
+        to="/r/$owner/$repo"
+        params={{ owner, repo }}
+        className={cn(className, "hover:underline")}
+        title={label}
+      >
+        {label}
+      </Link>
+    );
+  }
   return (
-    <span
-      className="shrink-0 whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
-      title={label}
-    >
+    <span className={className} title={label}>
       {label}
     </span>
   );
@@ -97,8 +118,14 @@ export function IssueRow({
   return (
     <div className="group flex flex-col gap-1 px-3 py-2 text-sm hover:bg-accent">
       <div className="flex items-center gap-2">
-        <RepoChip label={repoLabel} />
-        <span className="shrink-0 text-muted-foreground">#{issue.number}</span>
+        <RepoChip label={repoLabel} owner={owner} repo={repo} />
+        <Link
+          to="/r/$owner/$repo/issues/$number"
+          params={{ owner, repo, number: String(issue.number) }}
+          className="shrink-0 text-muted-foreground hover:underline"
+        >
+          #{issue.number}
+        </Link>
         <Link
           to="/r/$owner/$repo/issues/$number"
           params={{ owner, repo, number: String(issue.number) }}
