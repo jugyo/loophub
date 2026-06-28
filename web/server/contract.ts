@@ -358,6 +358,72 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.labels.list(p.repo),
   },
 
+  // ---- issue groups (#312) ----
+  "issueGroups/list": {
+    description: "List a repository's issue groups (each with a member count).",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.issueGroups.list(p.repo),
+  },
+  "issueGroups/get": {
+    description: "Get one issue group by id.",
+    params: params({ repo, id: positiveInt }, ["repo", "id"]),
+    result: anyObject,
+    handler: (p) => svc.issueGroups.get(p.repo, p.id),
+  },
+  "issueGroups/members": {
+    description: "List a group's issues, ordered by position.",
+    params: params({ repo, id: positiveInt }, ["repo", "id"]),
+    result: anyArray,
+    handler: (p) => svc.issueGroups.members(p.repo, p.id),
+  },
+  "issueGroups/create": {
+    description: "Create an issue group.",
+    params: params({ repo, name: strNonEmpty, session_id: sid }, [
+      "repo",
+      "name",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.issueGroups.create(p.repo, p.name, p.session_id),
+  },
+  "issueGroups/rename": {
+    description: "Rename an issue group.",
+    params: params(
+      { repo, id: positiveInt, name: strNonEmpty, session_id: sid },
+      ["repo", "id", "name"],
+    ),
+    result: anyObject,
+    handler: (p) => svc.issueGroups.rename(p.repo, p.id, p.name, p.session_id),
+  },
+  "issueGroups/delete": {
+    description:
+      "Delete an issue group (memberships are removed; issues are untouched).",
+    params: params({ repo, id: positiveInt, session_id: sid }, ["repo", "id"]),
+    result: anyObject,
+    handler: (p) => svc.issueGroups.remove(p.repo, p.id, p.session_id),
+  },
+  "issueGroups/addIssue": {
+    description:
+      "Add an issue (by number) to a group, appended to the group's order. Idempotent.",
+    params: params(
+      { repo, id: positiveInt, number: positiveInt, session_id: sid },
+      ["repo", "id", "number"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.issueGroups.addIssue(p.repo, p.id, p.number, p.session_id),
+  },
+  "issueGroups/removeIssue": {
+    description: "Remove an issue (by number) from a group.",
+    params: params(
+      { repo, id: positiveInt, number: positiveInt, session_id: sid },
+      ["repo", "id", "number"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.issueGroups.removeIssue(p.repo, p.id, p.number, p.session_id),
+  },
+
   // ---- pulls ----
   "pulls/list": {
     description: "List pull requests in a repository.",

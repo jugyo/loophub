@@ -138,7 +138,15 @@ export function deleteRepo(owner: string, name: string): boolean {
   // Notes are deleted by repo_id (#216): this covers both PR-linked notes and PR-independent ones
   // (issue_id NULL), so no separate issue_id sweep is needed.
   db.run(`DELETE FROM review_notes WHERE repo_id = ?`, [repo.id]);
+  // Issue group membership (#312) references issues(id) and issue_groups(id); drop it before the
+  // issues delete so foreign_keys=ON does not reject. Then drop the groups before the repos delete,
+  // since issue_groups.repo_id references repos(id).
+  db.run(
+    `DELETE FROM issue_group_members WHERE group_id IN (SELECT id FROM issue_groups WHERE repo_id = ?)`,
+    [repo.id],
+  );
   db.run(`DELETE FROM issues WHERE repo_id = ?`, [repo.id]);
+  db.run(`DELETE FROM issue_groups WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM labels WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM events WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM repos WHERE id = ?`, [repo.id]);
@@ -885,6 +893,123 @@ export function updateReviewNote(id: number, body: string): any {
 
 export function deleteReviewNote(id: number): void {
   db.run(`DELETE FROM review_notes WHERE id = ?`, [id]);
+}
+
+// ---- issue groups (#312) ----
+// A group is a repo-scoped, ordered collection of issues, stored entirely apart from the issues
+// table (see db.ts). Membership is many-to-many via issue_group_members with a per-group `position`
+// for ordering; an issue may belong to several groups. All functions here are pure store access —
+// validation/event emission lives in service.ts.
+export function createIssueGroup(repoId: number, name: string): any {
+  const t = now();
+  return db
+    .query(
+      `INSERT INTO issue_groups (repo_id, name, created_at, updated_at)
+       VALUES (?, ?, ?, ?) RETURNING *`,
+    )
+    .get(repoId, name, t, t);
+}
+
+export function getIssueGroupById(id: number): any {
+  return db.query(`SELECT * FROM issue_groups WHERE id = ?`).get(id);
+}
+
+export function getIssueGroupByName(repoId: number, name: string): any {
+  return (
+    db
+      .query(`SELECT * FROM issue_groups WHERE repo_id = ? AND name = ?`)
+      .get(repoId, name) ?? null
+  );
+}
+
+export function listIssueGroups(repoId: number): any[] {
+  return db
+    .query(`SELECT * FROM issue_groups WHERE repo_id = ? ORDER BY name`)
+    .all(repoId);
+}
+
+export function renameIssueGroup(id: number, name: string): any {
+  db.run(`UPDATE issue_groups SET name = ?, updated_at = ? WHERE id = ?`, [
+    name,
+    now(),
+    id,
+  ]);
+  return getIssueGroupById(id);
+}
+
+export function deleteIssueGroup(id: number): void {
+  db.run(`DELETE FROM issue_group_members WHERE group_id = ?`, [id]);
+  db.run(`DELETE FROM issue_groups WHERE id = ?`, [id]);
+}
+
+// Count members so a group summary can report size without listing rows.
+export function countGroupMembers(groupId: number): number {
+  return (
+    db
+      .query(`SELECT COUNT(*) AS c FROM issue_group_members WHERE group_id = ?`)
+      .get(groupId) as any
+  ).c;
+}
+
+// Add an issue at the end of the group's order (idempotent: re-adding an existing member is a
+// no-op that keeps its current position). Returns true when a new membership was created.
+export function addIssueToGroup(groupId: number, issueId: number): boolean {
+  const existing = db
+    .query(
+      `SELECT 1 FROM issue_group_members WHERE group_id = ? AND issue_id = ?`,
+    )
+    .get(groupId, issueId);
+  if (existing) return false;
+  const next = db
+    .query(
+      `SELECT COALESCE(MAX(position), 0) + 1 AS p FROM issue_group_members WHERE group_id = ?`,
+    )
+    .get(groupId) as { p: number };
+  db.run(
+    `INSERT INTO issue_group_members (group_id, issue_id, position, added_at)
+     VALUES (?, ?, ?, ?)`,
+    [groupId, issueId, next.p, now()],
+  );
+  db.run(`UPDATE issue_groups SET updated_at = ? WHERE id = ?`, [
+    now(),
+    groupId,
+  ]);
+  return true;
+}
+
+// Remove an issue from a group. Returns true when a membership was actually removed. Remaining
+// members keep their positions (gaps are fine — order is defined by position, not contiguity).
+export function removeIssueFromGroup(
+  groupId: number,
+  issueId: number,
+): boolean {
+  const existing = db
+    .query(
+      `SELECT 1 FROM issue_group_members WHERE group_id = ? AND issue_id = ?`,
+    )
+    .get(groupId, issueId);
+  if (!existing) return false;
+  db.run(
+    `DELETE FROM issue_group_members WHERE group_id = ? AND issue_id = ?`,
+    [groupId, issueId],
+  );
+  db.run(`UPDATE issue_groups SET updated_at = ? WHERE id = ?`, [
+    now(),
+    groupId,
+  ]);
+  return true;
+}
+
+// Issues in a group, ordered by position (insertion order). Returns full issue rows.
+export function listGroupMembers(groupId: number): any[] {
+  return db
+    .query(
+      `SELECT i.* FROM issues i
+       JOIN issue_group_members m ON m.issue_id = i.id
+       WHERE m.group_id = ?
+       ORDER BY m.position`,
+    )
+    .all(groupId);
 }
 
 // ---- events ----

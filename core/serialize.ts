@@ -162,6 +162,18 @@ export function labelJSON(l: any) {
   return { name: l.name, color: l.color };
 }
 
+// Shape an `issue_groups` row (#312). `members` is the count, not the rows, so a list/summary
+// stays cheap; the full ordered membership is fetched via the dedicated members procedure.
+export function issueGroupJSON(g: any) {
+  return {
+    id: g.id,
+    name: g.name,
+    members: S.countGroupMembers(g.id),
+    created_at: g.created_at,
+    updated_at: g.updated_at,
+  };
+}
+
 function linkedIssueSummary(repo: S.Repo, pullRowId: number) {
   const p = S.getPull(pullRowId);
   if (!p?.linked_issue_id) return null;
