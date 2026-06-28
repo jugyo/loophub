@@ -10,6 +10,7 @@ import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
+import { tlog } from "@/lib/terminal-debug";
 
 // WebSocket close code for a normal shell exit (`exit` / Ctrl-D). Only this collapses the pane.
 // Everything else — including 1001 "server going away" (a restart, not a user action) and the
@@ -37,6 +38,7 @@ export function TerminalView({
   command,
   active = true,
   onExit,
+  debugId,
 }: {
   // "owner/name" of the repo whose base dir is the cwd, or "" for $HOME. Captured once at
   // mount; later changes do not move the running session.
@@ -51,6 +53,9 @@ export function TerminalView({
   // Called when the shell exits so the parent can close this tab. Held in a ref so a new
   // callback identity doesn't remount the terminal.
   onExit?: () => void;
+  // Owning tab id, for #275 diagnostics only (correlates this view's mount/socket logs with the
+  // tab id minted in TerminalPane). No behavioral use.
+  debugId?: string;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
@@ -85,6 +90,13 @@ export function TerminalView({
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
+
+  // #275 diagnostics: log this view's mount/unmount so a sleep/resume "reset" can be matched to a
+  // remount (vs a reload or a socket close). Separate from the socket effect so it reads cleanly.
+  useEffect(() => {
+    tlog("TerminalView mount", { tab: debugId, repo });
+    return () => tlog("TerminalView unmount", { tab: debugId, repo });
+  }, [debugId, repo]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -127,8 +139,10 @@ export function TerminalView({
     };
     fitAndResizeRef.current = fitAndResize;
 
+    tlog("ws connecting", { tab: debugId, repo: repoAtMount.current });
     ws.onopen = () => {
       aliveRef.current = true;
+      tlog("ws onopen", { tab: debugId });
       fitAndResize();
       // Only grab focus if this tab is still the active one — a tab switched away from during
       // the connect window must not pull keystrokes back to its hidden terminal.
@@ -137,8 +151,17 @@ export function TerminalView({
     ws.onmessage = (e) => {
       if (typeof e.data === "string") term.write(e.data);
     };
+    // #275: a socket dropping on sleep/resume is hypothesis 2 — log code/reason/wasClean so a
+    // clean shell exit (1000) is distinguishable from an abnormal close (1006, 1001, 4xxx).
+    ws.onerror = () => tlog("ws onerror", { tab: debugId });
     ws.onclose = (e) => {
       aliveRef.current = false;
+      tlog("ws onclose", {
+        tab: debugId,
+        code: e.code,
+        reason: e.reason,
+        wasClean: e.wasClean,
+      });
       if (e.code === SHELL_EXIT_CODE) {
         // The shell exited — collapse the pane instead of showing a dead terminal.
         onExitRef.current?.();
@@ -156,7 +179,8 @@ export function TerminalView({
     return () => {
       ro.disconnect();
       dataSub.dispose();
-      ws.onclose = null; // don't write the close note into a disposing terminal
+      ws.onclose = null; // don't write the close note (or log) for an intentional unmount
+      ws.onerror = null; // teardown can fire onerror; the unmount log already covers this path
       ws.close();
       term.dispose();
       termRef.current = null;

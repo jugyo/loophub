@@ -41,6 +41,7 @@ import {
 } from "@/components/terminal-controller";
 import { TerminalPrHeader } from "@/components/terminal-pr-header";
 import { TerminalView } from "@/components/terminal-view";
+import { installTerminalDebugLogging, tlog } from "@/lib/terminal-debug";
 import { useCurrentRepo } from "@/lib/use-current-repo";
 import { useRepos } from "@/queries/repos";
 
@@ -71,10 +72,14 @@ type Tab = {
 };
 
 function newId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `t-${Math.random().toString(36).slice(2)}`;
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `t-${Math.random().toString(36).slice(2)}`;
+  // #275 diagnostics: a fresh tab id on sleep/resume means the SPA rebuilt the tab list (the
+  // "reset" shape from a reload/remount), not that an existing session reconnected.
+  tlog("newId (tab created)", { id });
+  return id;
 }
 
 // Short tab label: the repo name (last path segment) or "~" for a $HOME shell.
@@ -121,6 +126,14 @@ export function TerminalPane() {
   // The PR top region (below) follows the active tab — it shows that tab's linked PR, so switching
   // tabs swaps the region with it. Only Build tabs carry an issueRef, so other tabs show none.
   const activeTab = tabs.find((t) => t.id === activeId);
+
+  // #275 diagnostics: install the page-global lifecycle listeners (once) and log this pane's
+  // mount/unmount. A TerminalPane remount on resume would itself reset every tab.
+  useEffect(() => {
+    installTerminalDebugLogging();
+    tlog("TerminalPane mount");
+    return () => tlog("TerminalPane unmount");
+  }, []);
 
   useEffect(() => {
     sessionStorage.setItem(EXPANDED_KEY, expanded ? "1" : "0");
@@ -406,6 +419,7 @@ export function TerminalPane() {
                     command={t.command}
                     active={expanded && isActive}
                     onExit={() => closeTab(t.id)}
+                    debugId={t.id}
                   />
                 </div>
               );
