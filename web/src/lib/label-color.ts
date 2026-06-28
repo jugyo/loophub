@@ -85,6 +85,14 @@ const PALETTE: readonly string[] = [
 
 export const LABEL_COLOR_PALETTE = PALETTE;
 
+// Shared shape/size utilities for a label chip, so every place that renders a
+// label (issue detail, list rows) stays visually identical. Pair with
+// `labelColorClass(name)` for the colour. Vertical padding is intentionally
+// tight (`py-px`) so the chip is not taller than the text needs — see #319;
+// horizontal `px-2` keeps the text from touching the rounded edge.
+export const LABEL_CHIP_BASE_CLASS =
+  "rounded-full border px-2 py-px text-[11px]";
+
 // djb2 string hash (Bernstein). Deterministic and well-distributed over short
 // ASCII strings; `>>> 0` keeps it an unsigned 32-bit int so the modulo below is
 // non-negative across engines.

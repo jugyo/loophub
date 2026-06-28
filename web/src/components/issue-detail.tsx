@@ -15,7 +15,7 @@ import { useTerminal } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { stateBadge } from "@/lib/badges";
-import { labelColorClass } from "@/lib/label-color";
+import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
 import { relativeTime } from "@/lib/time";
 import { useImageUpload } from "@/lib/use-image-upload";
 import { cn } from "@/lib/utils";
@@ -121,10 +121,7 @@ function IssueHeader({
           {issue.labels.map((l) => (
             <span
               key={l.name}
-              className={cn(
-                "rounded-full border px-2 py-0.5 text-[11px]",
-                labelColorClass(l.name),
-              )}
+              className={cn(LABEL_CHIP_BASE_CLASS, labelColorClass(l.name))}
             >
               {l.name}
             </span>

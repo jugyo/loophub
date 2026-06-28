@@ -22,7 +22,7 @@ import {
   pullBadges,
   type StatusWordTone,
 } from "@/lib/badges";
-import { labelColorClass } from "@/lib/label-color";
+import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -85,7 +85,8 @@ function RowLabels({ labels }: { labels: Label[] }) {
         <span
           key={l.name}
           className={cn(
-            "shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px]",
+            "shrink-0 whitespace-nowrap",
+            LABEL_CHIP_BASE_CLASS,
             labelColorClass(l.name),
           )}
         >
