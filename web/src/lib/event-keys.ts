@@ -67,6 +67,17 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     keys.push([...queryKeys.dashboard()]);
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
+    // agent_session.linked (#298) targets a specific PR or issue; its related_sessions list lives in
+    // that detail's query, so invalidate it. The payload carries the target number under `pr`/`issue`
+    // (mirroring dev.note's pr_number routing above).
+    if (repo) {
+      const prNumber = payload?.pr;
+      const issueNumber = payload?.issue;
+      if (typeof prNumber === "number")
+        keys.push([...queryKeys.pull(repo, prNumber)]);
+      if (typeof issueNumber === "number")
+        keys.push([...queryKeys.issue(repo, issueNumber)]);
+    }
   }
 
   // Repo-level metadata (assignment / status counts) and the activity feed can

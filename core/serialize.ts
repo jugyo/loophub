@@ -8,7 +8,11 @@ import { commitsAhead, diffStat, mergePreview, revParse } from "./git.ts";
 import { linkedRef } from "./links.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import { pullWorktreeDirty } from "./pull-worktree.ts";
-import { resumeWorktreeIssue } from "./resume.ts";
+import {
+  resolveRuntimeResume,
+  resumeWorktreeIssue,
+  sessionRuntime,
+} from "./resume.ts";
 import * as S from "./store.ts";
 import { worktreePath } from "./worktree-path.ts";
 
@@ -36,7 +40,66 @@ export function agentSessionJSON(row: any) {
   };
   if (row.name) out.name = row.name;
   if (row.runtime) out.runtime = row.runtime;
+  if (row.kind) out.kind = row.kind;
   return out;
+}
+
+// One entry in a PR/issue's "related sessions" list (#298). Wraps agentSessionJSON with `linked_at`
+// (when the session was attached to this target) and a `resume` verdict that follows core/resume.ts'
+// runtime-based judgment:
+//   - resumable=true  → `lh resume <pr>` would re-enter this session (claude-code + UUID id, and it
+//     is the PR's current primary attribution).
+//   - resumable=false → `reason` says why: a runtime this build cannot resume ("unknown-runtime"),
+//     nothing resumable on the row ("no-session"), an issue-linked session that is resumed via its
+//     PR rather than the issue ("resume-via-pull"), a past dev session a newer one replaced as the
+//     PR's anchor ("superseded"), or a session that is simply not the PR's resume anchor — a non-dev
+//     session, or any session on a PR with no anchor at all ("not-anchor"). resume is intentionally
+//     runtime-level only — worktree/branch restorability is resolved per-PR by `pulls/resumable`
+//     (the Resume button), not duplicated per list row.
+//
+// `lh resume <pr>` re-enters exactly the PR's primary dev session (pulls.session_id = primarySessionId).
+// So a row is resumable ONLY when it IS that anchor; everything else is reported with a reason. The
+// anchor check must compare equality directly (not "anchor exists AND not this row"), otherwise a PR
+// with no anchor at all (primarySessionId null — reachable by linking a session via `sessions.link`
+// to a PR that never had a dev session) would fall through and be mislabeled resumable.
+export function relatedSessionJSON(
+  row: any,
+  opts: { container: "issue" | "pull"; primarySessionId?: string | null },
+): any {
+  const base = agentSessionJSON(row);
+  const rr = resolveRuntimeResume(sessionRuntime(row), row.external_session);
+  let resume: { resumable: boolean; reason?: string };
+  if (!rr.ok) {
+    resume = { resumable: false, reason: rr.reason };
+  } else if (opts.container !== "pull") {
+    resume = { resumable: false, reason: "resume-via-pull" };
+  } else if (opts.primarySessionId && row.id === opts.primarySessionId) {
+    resume = { resumable: true };
+  } else if (opts.primarySessionId && row.kind === "dev") {
+    // A dev session on this PR that a newer dev session replaced as the resume anchor.
+    resume = { resumable: false, reason: "superseded" };
+  } else {
+    // Runtime-resumable but not the PR's anchor: a non-dev session linked to the PR, or a PR with
+    // no anchor at all (pulls.session_id null). `lh resume <pr>` has nothing of this row to re-enter.
+    resume = { resumable: false, reason: "not-anchor" };
+  }
+  return { ...base, linked_at: row.linked_at ?? null, resume };
+}
+
+// The full related-sessions list for an issues row (issue or PR), newest link first. `primarySessionId`
+// is the PR's pulls.session_id — the one `lh resume <pr>` actually re-enters — so only that row is
+// marked directly resumable; pass it for PR containers, omit it for issue containers.
+export function relatedSessionsJSON(
+  containerRow: any,
+  opts: { primarySessionId?: string | null } = {},
+): any[] {
+  const container = containerRow.kind === "pull" ? "pull" : "issue";
+  return S.listSessionsForIssue(containerRow.id).map((row) =>
+    relatedSessionJSON(row, {
+      container,
+      primarySessionId: opts.primarySessionId,
+    }),
+  );
 }
 
 export function commentJSON(m: any) {
@@ -339,7 +402,7 @@ export function retroJSON(row: any) {
 export async function pullJSON(
   repo: S.Repo,
   row: any,
-  opts: { withConflicts?: boolean } = {},
+  opts: { withConflicts?: boolean; withRelatedSessions?: boolean } = {},
 ) {
   const p = S.getPull(row.id);
   const status = await pullStatusFields(repo, row, {
@@ -372,5 +435,14 @@ export async function pullJSON(
     linked_issue: status.linked,
     conflicts_with: status.conflicts_with,
     worktree_path: status.worktree_path,
+    // Detail-only (#298): the PR's related sessions, newest first, with per-row resume verdicts.
+    // Gated like withConflicts so the PR list/dashboard stay O(1) git + no extra per-row query.
+    ...(opts.withRelatedSessions
+      ? {
+          related_sessions: relatedSessionsJSON(row, {
+            primarySessionId: p.session_id ?? null,
+          }),
+        }
+      : {}),
   };
 }

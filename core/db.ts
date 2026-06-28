@@ -225,10 +225,27 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   external_session  TEXT NOT NULL,
   name              TEXT,
   runtime           TEXT,
+  kind              TEXT,
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL,
   UNIQUE (agent, external_session)
 );
+
+-- Generalized session<->target links (#298). A session can relate to any issues row — an
+-- issue (kind=issue) OR a PR (kind=pull) — and a single issue/PR can carry many sessions
+-- (dev, review, issue-create, ...), so this is a plain many-to-many bridge keyed by the pair.
+-- This generalizes the old 1:1 pulls.session_id attribution (which is kept, denormalized, as the
+-- PR's primary dev session that lh resume/retro resolve from — see core/db.ts migration and
+-- store.setPullSession). The session's own kind lives on agent_sessions.kind; created_at is when
+-- the link was made (the basis for ordering the related-sessions list newest-first).
+CREATE TABLE IF NOT EXISTS session_links (
+  session_id  TEXT NOT NULL REFERENCES agent_sessions(id),
+  issue_id    INTEGER NOT NULL REFERENCES issues(id),
+  created_at  TEXT NOT NULL,
+  PRIMARY KEY (session_id, issue_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_links_issue ON session_links(issue_id);
 
 -- Standalone image blobs embedded in markdown bodies. Metadata only; the blob
 -- itself is content-addressed on disk under $LOOPHUB_HOME/attachments/. The
@@ -366,6 +383,34 @@ tryExec("ALTER TABLE reviews ADD COLUMN topic TEXT");
 // Pre-existing rows get NULL and rely on the lh-dev → claude-code backward-compat fallback
 // (core/resume.ts sessionRuntime).
 tryExec("ALTER TABLE agent_sessions ADD COLUMN runtime TEXT");
+// agent_sessions.kind labels the session's purpose (#298): "dev" / "review" / "issue-create" / …
+// (extensible — stored as a free TEXT, not an enum, so new kinds need no migration). Pre-existing
+// rows get NULL; the pulls.session_id backfill below stamps the migrated dev sessions as "dev".
+tryExec("ALTER TABLE agent_sessions ADD COLUMN kind TEXT");
+// Backfill the generalized session_links bridge (#298) from the existing 1:1 pulls.session_id
+// attribution: each PR's dev session becomes a link to the PR's own issues row, and the session is
+// stamped kind='dev'. INSERT OR IGNORE keeps it idempotent across restarts (the PK is the pair) and
+// preserves any link a newer build already wrote. pulls.session_id itself is intentionally KEPT —
+// it stays the PR's primary dev session for `lh resume`/retro, while session_links adds the N:M
+// related-sessions view on top. On a fresh DB there are no pulls rows, so these are no-ops.
+// INNER JOIN agent_sessions (not LEFT): session_links.session_id has a FK to agent_sessions and
+// foreign_keys is ON, and an FK violation is NOT suppressed by OR IGNORE — it aborts the whole
+// INSERT...SELECT. A pre-#298 pulls.session_id could point at an unregistered session (createPull/
+// setPullSession never verified registration), so a LEFT JOIN would emit such an orphan row and the
+// FK error would silently (tryExec) skip the ENTIRE backfill. The INNER JOIN drops orphans up front
+// so every valid pair still inserts; s.created_at is then always present (no COALESCE needed).
+tryExec(
+  `INSERT OR IGNORE INTO session_links (session_id, issue_id, created_at)
+   SELECT pulls.session_id, pulls.issue_id, s.created_at
+   FROM pulls
+   JOIN agent_sessions s ON s.id = pulls.session_id
+   WHERE pulls.session_id IS NOT NULL`,
+);
+tryExec(
+  `UPDATE agent_sessions SET kind = 'dev'
+   WHERE kind IS NULL
+     AND id IN (SELECT session_id FROM pulls WHERE session_id IS NOT NULL)`,
+);
 
 // review_notes.issue_id becomes nullable (#216): a note is now identified by
 // (repo_id, base_sha -> commit_sha, path) and a PR association is optional. Older DBs created the

@@ -527,6 +527,10 @@ async function main() {
         // The session we are about to spawn is a Claude Code session; record the runtime so
         // `lh resume` picks `claude --resume` by runtime rather than inferring it from the agent.
         runtime: RUNTIME_CLAUDE_CODE,
+        // This is an implementation (dev) session; record its kind (#298) so it surfaces in the
+        // PR's related-sessions list as a dev session. (setPullSession also stamps 'dev' when it
+        // attributes the session to the PR — this just sets it at the registration point too.)
+        kind: "dev",
       }),
     );
 
@@ -821,6 +825,7 @@ async function main() {
           session,
           ...(flags.name ? { name: flags.name } : {}),
           ...(flags.runtime ? { runtime: flags.runtime } : {}),
+          ...(flags.kind ? { kind: flags.kind } : {}),
         }),
       );
       console.log(`registered session ${row.id} (${row.agent})`);
@@ -1353,7 +1358,7 @@ function usage() {
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>
   lh repo update --repo owner/name [--default-branch main] [--path /abs/path]
   lh repo remove --repo owner/name
-  lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."] [--runtime claude-code]
+  lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."] [--runtime claude-code] [--kind dev|review|issue-create]
   lh session list
   lh issue list|view|create|update|comment|close|label  [--repo owner/repo]
   lh pr list|view|diff|create|update|merge|review|ready-for-review|close|reopen  [--repo owner/repo]

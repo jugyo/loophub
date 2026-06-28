@@ -22,6 +22,7 @@ import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
 import { Markdown } from "@/components/markdown";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
+import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminal } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,6 +94,13 @@ export function PullDetail({
       <PullHeader owner={owner} repo={repo} pull={pull} />
 
       <ConflictList owner={owner} repo={repo} conflicts={pull.conflicts_with} />
+
+      <RelatedSessions
+        owner={owner}
+        repo={repo}
+        sessions={pull.related_sessions}
+        resumeNumber={pull.number}
+      />
 
       <DevNoteTimeline
         owner={owner}

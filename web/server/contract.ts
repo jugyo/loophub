@@ -109,7 +109,14 @@ export const methods: Record<string, MethodDef> = {
   "sessions/register": {
     description: "Register (or update) an agent session.",
     params: params(
-      { id: sid, agent: strNonEmpty, session: strNonEmpty, name: str },
+      {
+        id: sid,
+        agent: strNonEmpty,
+        session: strNonEmpty,
+        name: str,
+        runtime: str,
+        kind: str,
+      },
       ["id", "agent", "session"],
     ),
     result: anyObject,
@@ -119,7 +126,31 @@ export const methods: Record<string, MethodDef> = {
         agent: p.agent,
         session: p.session,
         name: p.name,
+        runtime: p.runtime,
+        kind: p.kind,
       }),
+  },
+  "sessions/link": {
+    description:
+      "Link a registered session to an issue or a PR (exactly one of issue/pr). Generalized attach point for session kinds beyond dev; idempotent.",
+    params: params(
+      { repo, sessionId: sid, issue: positiveInt, pr: positiveInt },
+      ["repo", "sessionId"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.sessions.link(p.repo, {
+        sessionId: p.sessionId,
+        issue: p.issue,
+        pr: p.pr,
+      }),
+  },
+  "sessions/listFor": {
+    description:
+      "Related sessions for an issue or a PR (exactly one of issue/pr), newest first, with per-row resume verdicts.",
+    params: params({ repo, issue: positiveInt, pr: positiveInt }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.sessions.listFor(p.repo, { issue: p.issue, pr: p.pr }),
   },
   "sessions/list": {
     description: "List agent sessions.",

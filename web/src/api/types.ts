@@ -133,6 +133,8 @@ export interface Issue {
   comment_list?: IssueComment[];
   created_at: string;
   updated_at: string;
+  /** Sessions related to this issue (#298), newest first. Detail response only. */
+  related_sessions?: RelatedSession[];
   pull_request?: unknown;
   /**
    * Primary linked PR. On the issue-detail response this is the single open PR;
@@ -186,6 +188,28 @@ export interface PullRequest {
    * worktree was pruned; null only for a repo name that can't form a safe path.
    */
   worktree_path?: string | null;
+  /** Sessions related to this PR (#298), newest first. Detail response only. */
+  related_sessions?: RelatedSession[];
+}
+
+/**
+ * A session related to a PR or issue (#298). Mirrors core/serialize.ts relatedSessionJSON: the
+ * session metadata plus a runtime-based `resume` verdict. `resumable` true only for the PR's current
+ * primary dev session on a resumable runtime; otherwise `reason` says why (e.g. "superseded",
+ * "resume-via-pull", "unknown-runtime", "no-session").
+ */
+export interface RelatedSession {
+  id: string;
+  agent: string;
+  session: string;
+  kind?: string;
+  runtime?: string;
+  name?: string;
+  created_at: string;
+  updated_at: string;
+  /** When this session was linked to the PR/issue. */
+  linked_at: string | null;
+  resume: { resumable: boolean; reason?: string };
 }
 
 /** An open PR that merge-conflicts with the PR being viewed, plus the conflicting files. */

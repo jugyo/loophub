@@ -175,6 +175,75 @@ test("registerAgentSession persists and updates the runtime column", () => {
   expect(S.getAgentSession(id2).runtime).toBeNull();
 });
 
+test("registerAgentSession persists and preserves the kind column (#298)", () => {
+  const id = "33333333-0000-0000-0000-000000000001";
+  const created = S.registerAgentSession(
+    id,
+    "lh-dev",
+    "ext-kind",
+    null,
+    "claude-code",
+    "dev",
+  );
+  expect(created.created).toBe(true);
+  expect(S.getAgentSession(id).kind).toBe("dev");
+
+  // Re-register without a kind keeps the stored value (undefined preserves, like name/runtime).
+  S.registerAgentSession(id, "lh-dev", "ext-kind");
+  expect(S.getAgentSession(id).kind).toBe("dev");
+
+  // setSessionKind overwrites it in place.
+  S.setSessionKind(id, "review");
+  expect(S.getAgentSession(id).kind).toBe("review");
+});
+
+test("linkSession is idempotent and listSessionsForIssue orders newest link first (#298)", () => {
+  const repo = S.createRepo("me/links", "/tmp/links");
+  const issue = S.createIssue(repo.id, "issue", "i", "", "me") as any;
+  const a = "44444444-0000-0000-0000-00000000000a";
+  const b = "44444444-0000-0000-0000-00000000000b";
+  S.registerAgentSession(a, "lh-dev", "ext-a", null, "claude-code", "dev");
+  S.registerAgentSession(b, "reviewer", "ext-b", null, null, "review");
+
+  S.linkSession(a, issue.id);
+  S.linkSession(b, issue.id);
+  // Re-linking the same pair is a no-op (PK), not a duplicate row.
+  S.linkSession(a, issue.id);
+
+  const list = S.listSessionsForIssue(issue.id);
+  expect(list.length).toBe(2);
+  // Newest link first: b was linked after a.
+  expect(list[0].id).toBe(b);
+  expect(list[1].id).toBe(a);
+  expect(list[0].kind).toBe("review");
+  // linked_at is exposed for the related-sessions list ordering/display.
+  expect(typeof list[0].linked_at).toBe("string");
+});
+
+test("createPull and setPullSession record the dev session in session_links (#298)", () => {
+  const repo = S.createRepo("me/devsess", "/tmp/devsess");
+  const issue = S.createIssue(repo.id, "issue", "i", "", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "p", "Closes #1", "bot") as any;
+  const s1 = "55555555-0000-0000-0000-000000000001";
+  const s2 = "55555555-0000-0000-0000-000000000002";
+  S.registerAgentSession(s1, "lh-dev", "ext-s1", null, "claude-code");
+
+  // createPull with a session links it and stamps kind='dev'.
+  S.createPull(pr.id, "p", "main", "sha1", issue.id, s1);
+  expect(S.getAgentSession(s1).kind).toBe("dev");
+  let list = S.listSessionsForIssue(pr.id);
+  expect(list.map((r: any) => r.id)).toEqual([s1]);
+
+  // Re-attributing the PR to a newer session adds it to the list (1:N, not a replacement).
+  S.registerAgentSession(s2, "lh-dev", "ext-s2", null, "claude-code");
+  S.setPullSession(pr.id, s2);
+  expect(S.getAgentSession(s2).kind).toBe("dev");
+  list = S.listSessionsForIssue(pr.id);
+  expect(list.map((r: any) => r.id).sort()).toEqual([s1, s2].sort());
+  // pulls.session_id still points at the latest (the resume anchor).
+  expect(S.getPull(pr.id).session_id).toBe(s2);
+});
+
 test("emitEvent persists and listEvents filters by since/order", () => {
   const repo = S.createRepo("me/ev", "/tmp/ev");
   S.emitEvent(repo.id, "issue.opened", "me", { number: 1 });

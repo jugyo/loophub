@@ -44,6 +44,7 @@ import {
   issueListItemJSON,
   labelJSON,
   pullJSON,
+  relatedSessionsJSON,
   repoJSON,
   retroJSON,
   reviewCommentJSON,
@@ -231,20 +232,22 @@ export const sessions = {
     session: string;
     name?: string | null;
     runtime?: string | null;
+    kind?: string | null;
   }) {
-    const { id, agent, session, name, runtime } = input;
+    const { id, agent, session, name, runtime, kind } = input;
     if (!id || !agent || !session)
       throw new ServiceError(422, "id, agent, and session are required");
     try {
-      // Pass name/runtime straight through (not `?? null`): the store INSERT path applies `?? null`
-      // for new rows, while its UPDATE path preserves the existing value when the arg is undefined.
-      // Forcing undefined → null here would defeat that preserve-on-re-register contract.
+      // Pass name/runtime/kind straight through (not `?? null`): the store INSERT path applies
+      // `?? null` for new rows, while its UPDATE path preserves the existing value when the arg is
+      // undefined. Forcing undefined → null here would defeat that preserve-on-re-register contract.
       const { session: row, created } = S.registerAgentSession(
         id,
         agent,
         session,
         name,
         runtime,
+        kind,
       );
       S.emitEvent(
         null,
@@ -256,6 +259,7 @@ export const sessions = {
           session: row.external_session,
           ...(row.name ? { name: row.name } : {}),
           ...(row.runtime ? { runtime: row.runtime } : {}),
+          ...(row.kind ? { kind: row.kind } : {}),
         },
       );
       return { session: agentSessionJSON(row), created };
@@ -267,6 +271,41 @@ export const sessions = {
     }
   },
 
+  // Link an already-registered session to an issue or a PR (#298). The generalized attach point for
+  // session kinds beyond dev (review, issue-create, …): the launch flows for those kinds live in
+  // their own issues, but the base records the link here. Idempotent (the bridge PK is the pair).
+  // `target` is { issue } or { pr } — a number resolved against the repo. Emits `agent_session.linked`.
+  link(
+    name: string,
+    input: { sessionId: string; issue?: number; pr?: number },
+  ): { session_id: string; issue_number?: number; pr_number?: number } {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const { sessionId, issue, pr } = input;
+    if (!sessionId) throw new ServiceError(422, "sessionId is required");
+    if ((issue == null) === (pr == null))
+      throw new ServiceError(422, "exactly one of issue or pr is required");
+    if (!S.getAgentSession(sessionId))
+      throw new ServiceError(404, "Agent session not found");
+    const targetKind = issue != null ? "issue" : "pull";
+    const number = (issue ?? pr) as number;
+    const row = issueOr404(r, number, targetKind);
+    S.linkSession(sessionId, row.id);
+    // `agent_session.*` namespace (matches register's agent_session.registered/updated) so the
+    // web event-key router (web/src/lib/event-keys.ts startsWith "agent_session.") invalidates the
+    // agent-sessions queries on a link too.
+    S.emitEvent(r.id, "agent_session.linked", actorFor(sessionId), {
+      session_id: sessionId,
+      [targetKind === "pull" ? "pr" : "issue"]: row.number,
+    });
+    return {
+      session_id: sessionId,
+      ...(targetKind === "pull"
+        ? { pr_number: row.number }
+        : { issue_number: row.number }),
+    };
+  },
+
   list() {
     return S.listAgentSessions().map(agentSessionJSON);
   },
@@ -275,6 +314,22 @@ export const sessions = {
     const row = S.getAgentSession(id);
     if (!row) throw new ServiceError(404, "Not Found");
     return agentSessionJSON(row);
+  },
+
+  // The related-sessions list for a PR or issue (#298), standalone — same payload pullJSON/issueJSON
+  // embed as `related_sessions`, exposed directly for clients that want it without the full detail.
+  listFor(name: string, input: { issue?: number; pr?: number }): any[] {
+    const r = repoOr404(name);
+    const { issue, pr } = input;
+    if ((issue == null) === (pr == null))
+      throw new ServiceError(422, "exactly one of issue or pr is required");
+    if (issue != null)
+      return relatedSessionsJSON(issueOr404(r, issue, "issue"));
+    const row = issueOr404(r, pr as number, "pull");
+    const p = S.getPull(row.id);
+    return relatedSessionsJSON(row, {
+      primarySessionId: p?.session_id ?? null,
+    });
   },
 };
 
@@ -330,6 +385,9 @@ export const issues = {
     const row = issueOr404(r, number);
     const out = issueJSON(row, r);
     out.comment_list = S.listComments(row.id).map(commentJSON);
+    // Detail-only (#298): the issue's related sessions, newest first. Resume is offered via the
+    // linked PR (relatedSessionJSON marks issue-container rows "resume-via-pull"), not the issue.
+    out.related_sessions = relatedSessionsJSON(row);
     return out;
   },
 
@@ -677,7 +735,10 @@ export const pulls = {
 
   get(name: string, number: number) {
     const r = repoOr404(name);
-    return pullJSON(r, issueOr404(r, number, "pull"), { withConflicts: true });
+    return pullJSON(r, issueOr404(r, number, "pull"), {
+      withConflicts: true,
+      withRelatedSessions: true,
+    });
   },
 
   async create(
@@ -918,7 +979,15 @@ export const dev = {
       // Re-running `lh dev <issue>` reuses the open PR but must re-point it at the session it is
       // about to spawn (latest-writer-wins), so `lh resume`/retro resolve the current session rather
       // than a stale one. (The old model re-assigned the issue on every run.)
-      if (sessionId) S.setPullSession(existing.id, sessionId);
+      if (sessionId) {
+        S.setPullSession(existing.id, sessionId);
+        // setPullSession also appends the session to session_links (#298) — the PR's related-sessions
+        // list and the prior session's now-"superseded" verdict change here. Emit a PR-scoped event so
+        // the open detail refreshes (the create path below gets this via pull_request.opened).
+        S.emitEvent(r.id, "pull_request.updated", actorFor(sessionId), {
+          number: existing.number,
+        });
+      }
       return { created: false, number: existing.number };
     }
     const body = input.body ?? defaultDraftPrBody(input.issue);

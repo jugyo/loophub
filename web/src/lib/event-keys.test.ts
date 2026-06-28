@@ -82,4 +82,25 @@ describe("queryKeysForEvent", () => {
     expect(keys).not.toContainEqual(["issues"]);
     expect(keys).not.toContainEqual(["pulls"]);
   });
+
+  it("routes agent_session.linked to the target PR/issue detail (#298)", () => {
+    const prKeys = queryKeysForEvent(
+      ev({
+        type: "agent_session.linked",
+        repo: "me/proj",
+        payload: { session_id: "s", pr: 7 },
+      }),
+    );
+    expect(prKeys).toContainEqual(["agent-sessions"]);
+    expect(prKeys).toContainEqual(["pull", "me/proj", 7]);
+
+    const issueKeys = queryKeysForEvent(
+      ev({
+        type: "agent_session.linked",
+        repo: "me/proj",
+        payload: { session_id: "s", issue: 4 },
+      }),
+    );
+    expect(issueKeys).toContainEqual(["issue", "me/proj", 4]);
+  });
 });

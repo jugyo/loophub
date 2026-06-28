@@ -10,6 +10,7 @@ import type { Issue, IssueComment } from "@/api/types";
 import { useRegisterDetailTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
 import { Markdown } from "@/components/markdown";
+import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminal } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,12 @@ export function IssueDetail({
   return (
     <div className="mx-auto flex max-w-content flex-col gap-6">
       <IssueHeader owner={owner} repo={repo} issue={issue} />
+
+      <RelatedSessions
+        owner={owner}
+        repo={repo}
+        sessions={issue.related_sessions}
+      />
 
       <CommentList
         owner={owner}

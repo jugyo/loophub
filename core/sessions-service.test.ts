@@ -1,0 +1,163 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, expect, test } from "vitest";
+
+// Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md). #298:
+// generalized session links (kind + N:M) surfaced as related_sessions on PR/issue detail.
+const HOME = mkdtempSync(join(tmpdir(), "lh-sess-"));
+process.env.LOOPHUB_HOME = HOME;
+process.env.LOOPHUB_DB = join(HOME, "test.db");
+
+let svc: typeof import("./service.ts");
+let repoPath: string;
+
+function git(args: string[]) {
+  spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
+}
+
+const DEV_UUID = "aaaaaaaa-0000-0000-0000-000000000001";
+const REVIEW_UUID = "bbbbbbbb-0000-0000-0000-000000000002";
+
+beforeAll(async () => {
+  svc = await import("./service.ts");
+  repoPath = mkdtempSync(join(tmpdir(), "lh-sess-repo-"));
+  git(["init", "-q", "-b", "main"]);
+  git(["config", "user.email", "t@t.local"]);
+  git(["config", "user.name", "tester"]);
+  writeFileSync(join(repoPath, "a.txt"), "x\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "init"]);
+  await svc.repos.create({ path: repoPath, name: "me/proj" });
+});
+
+afterAll(() => {
+  rmSync(HOME, { recursive: true, force: true });
+  rmSync(repoPath, { recursive: true, force: true });
+});
+
+test("a dev session opened via lh dev surfaces in the PR's related_sessions and is resumable", async () => {
+  const issue = svc.issues.create("me/proj", { title: "feature" });
+  svc.sessions.register({
+    id: DEV_UUID,
+    agent: "lh-dev",
+    session: DEV_UUID,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  const opened = await svc.dev.openPr(
+    "me/proj",
+    { issue: issue.number, head: "loophub/issue-1", base: "main" },
+    DEV_UUID,
+  );
+
+  const pull = (await svc.pulls.get("me/proj", opened.number)) as any;
+  expect(Array.isArray(pull.related_sessions)).toBe(true);
+  expect(pull.related_sessions.length).toBe(1);
+  const s = pull.related_sessions[0];
+  expect(s.id).toBe(DEV_UUID);
+  expect(s.kind).toBe("dev");
+  // The PR's primary dev session on a claude-code runtime is resumable (runtime-based judgment).
+  expect(s.resume.resumable).toBe(true);
+});
+
+test("a second dev session is added (1:N) and the older one is marked superseded", async () => {
+  // Re-enter the same PR with a new session: latest becomes the resume anchor, both stay listed.
+  svc.sessions.register({
+    id: "aaaaaaaa-0000-0000-0000-000000000099",
+    agent: "lh-dev",
+    session: "aaaaaaaa-0000-0000-0000-000000000099",
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  await svc.dev.openPr(
+    "me/proj",
+    { issue: 1, head: "loophub/issue-1", base: "main" },
+    "aaaaaaaa-0000-0000-0000-000000000099",
+  );
+
+  const pull = (await svc.pulls.get("me/proj", 2)) as any;
+  expect(pull.related_sessions.length).toBe(2);
+  const byId = Object.fromEntries(
+    pull.related_sessions.map((s: any) => [s.id, s]),
+  );
+  // The newest (primary) is resumable; the earlier one is superseded.
+  expect(byId["aaaaaaaa-0000-0000-0000-000000000099"].resume.resumable).toBe(
+    true,
+  );
+  expect(byId[DEV_UUID].resume.resumable).toBe(false);
+  expect(byId[DEV_UUID].resume.reason).toBe("superseded");
+});
+
+test("sessions.link attaches a session to an issue; issue detail lists it, resume-via-pull", () => {
+  svc.sessions.register({
+    id: REVIEW_UUID,
+    agent: "reviewer",
+    session: REVIEW_UUID,
+    runtime: "claude-code",
+    kind: "review",
+  });
+  const linked = svc.sessions.link("me/proj", {
+    sessionId: REVIEW_UUID,
+    issue: 1,
+  });
+  expect(linked.issue_number).toBe(1);
+
+  const issue = svc.issues.get("me/proj", 1) as any;
+  expect(Array.isArray(issue.related_sessions)).toBe(true);
+  const s = issue.related_sessions.find((x: any) => x.id === REVIEW_UUID);
+  expect(s.kind).toBe("review");
+  // Issue-linked sessions are resumed via their PR, not the issue directly.
+  expect(s.resume.resumable).toBe(false);
+  expect(s.resume.reason).toBe("resume-via-pull");
+});
+
+test("sessions.link is idempotent and rejects ambiguous / missing targets", () => {
+  // Idempotent: re-linking does not duplicate.
+  svc.sessions.link("me/proj", { sessionId: REVIEW_UUID, issue: 1 });
+  const list = svc.sessions.listFor("me/proj", { issue: 1 });
+  expect(list.filter((x: any) => x.id === REVIEW_UUID).length).toBe(1);
+
+  // Exactly one of issue/pr is required.
+  expect(() =>
+    svc.sessions.link("me/proj", { sessionId: REVIEW_UUID, issue: 1, pr: 2 }),
+  ).toThrow();
+  expect(() =>
+    svc.sessions.link("me/proj", { sessionId: REVIEW_UUID }),
+  ).toThrow();
+  // Unknown session -> 404.
+  expect(() =>
+    svc.sessions.link("me/proj", { sessionId: "no-such", issue: 1 }),
+  ).toThrow();
+});
+
+test("sessions.listFor a PR marks the primary dev session resumable", () => {
+  const list = svc.sessions.listFor("me/proj", { pr: 2 });
+  expect(list.length).toBe(2);
+  expect(list.some((s: any) => s.resume.resumable)).toBe(true);
+});
+
+test("a session linked to a PR with no primary dev session is NOT resumable (not-anchor)", async () => {
+  // Reachable via sessions.link({pr}): a PR opened without a dev session (pulls.session_id null),
+  // then a session attached. `lh resume <pr>` would resolve nothing, so it must not be resumable.
+  const pr = (await svc.pulls.create("me/proj", {
+    title: "manual PR",
+    head: "manual-branch",
+    base: "main",
+  })) as any;
+  const anchorless = "cccccccc-0000-0000-0000-000000000003";
+  svc.sessions.register({
+    id: anchorless,
+    agent: "lh-dev",
+    session: anchorless,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  svc.sessions.link("me/proj", { sessionId: anchorless, pr: pr.number });
+
+  const list = svc.sessions.listFor("me/proj", { pr: pr.number });
+  const s = list.find((x: any) => x.id === anchorless);
+  expect(s.resume.resumable).toBe(false);
+  expect(s.resume.reason).toBe("not-anchor");
+});

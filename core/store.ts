@@ -258,6 +258,13 @@ export function createPull(
      VALUES (?, ?, ?, ?, ?, ?)`,
     [issueId, head, base, headSha, linkedIssueId, sessionId],
   );
+  // pulls.session_id is, by definition, the PR's dev session. Record it in the generalized
+  // session_links bridge (kind='dev') so the PR's related-sessions list reflects it — mirroring
+  // setPullSession, which does the same when the session is (re-)attributed after creation (#298).
+  if (sessionId) {
+    setSessionKind(sessionId, "dev");
+    linkSession(sessionId, issueId);
+  }
 }
 
 export function getIssueById(id: number): any {
@@ -587,6 +594,7 @@ export function registerAgentSession(
   externalSession: string,
   name?: string | null,
   runtime?: string | null,
+  kind?: string | null,
 ): { session: any; created: boolean } {
   const existing = getAgentSession(id);
   const t = now();
@@ -597,11 +605,14 @@ export function registerAgentSession(
     ) {
       throw new Error("CONFLICT_ID" satisfies RegisterConflict);
     }
+    // Preserve-on-re-register: an undefined arg keeps the stored value (the service layer relies on
+    // this — it forwards name/runtime/kind straight through without `?? null`).
     db.run(
-      `UPDATE agent_sessions SET name = ?, runtime = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE agent_sessions SET name = ?, runtime = ?, kind = ?, updated_at = ? WHERE id = ?`,
       [
         name !== undefined ? name : existing.name,
         runtime !== undefined ? runtime : existing.runtime,
+        kind !== undefined ? kind : existing.kind,
         t,
         id,
       ],
@@ -615,20 +626,74 @@ export function registerAgentSession(
     .get(agent, externalSession) as { id: string } | null;
   if (byPair) throw new Error("CONFLICT_PAIR" satisfies RegisterConflict);
   db.query(
-    `INSERT INTO agent_sessions (id, agent, external_session, name, runtime, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
-  ).get(id, agent, externalSession, name ?? null, runtime ?? null, t, t);
+    `INSERT INTO agent_sessions (id, agent, external_session, name, runtime, kind, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+  ).get(
+    id,
+    agent,
+    externalSession,
+    name ?? null,
+    runtime ?? null,
+    kind ?? null,
+    t,
+    t,
+  );
   return { session: getAgentSession(id), created: true };
+}
+
+// Set a session's kind in place (#298). Used when the kind becomes known at association time (e.g.
+// `lh dev` stamps its session 'dev' when it links the PR). No-op if the session row is absent.
+export function setSessionKind(sessionId: string, kind: string) {
+  db.run(`UPDATE agent_sessions SET kind = ?, updated_at = ? WHERE id = ?`, [
+    kind,
+    now(),
+    sessionId,
+  ]);
+}
+
+// Link a session to an issues row (issue or PR) in the generalized session_links bridge (#298).
+// Idempotent — the (session_id, issue_id) pair is the PK, so re-linking keeps the original
+// created_at (INSERT OR IGNORE). The first link's created_at orders the related-sessions list.
+export function linkSession(sessionId: string, issueId: number) {
+  db.run(
+    `INSERT OR IGNORE INTO session_links (session_id, issue_id, created_at)
+     VALUES (?, ?, ?)`,
+    [sessionId, issueId, now()],
+  );
+}
+
+// All sessions linked to an issues row (issue or PR), newest link first. Joins the bridge to the
+// session rows so callers get the full session (incl. kind/runtime) for the related-sessions list.
+// `linked_at` is the bridge row's created_at (when this session was attached to this target).
+export function listSessionsForIssue(issueId: number): any[] {
+  return db
+    .query(
+      // l.rowid DESC is the tiebreaker: now() is second-resolution, so links made in the same
+      // second share created_at; rowid (monotonic insert order) keeps newest-linked-first stable.
+      `SELECT s.*, l.created_at AS linked_at
+       FROM session_links l
+       JOIN agent_sessions s ON s.id = l.session_id
+       WHERE l.issue_id = ?
+       ORDER BY l.created_at DESC, l.rowid DESC`,
+    )
+    .all(issueId);
 }
 
 // Set/replace the dev session attributed to a PR row (pulls.session_id). `lh resume`/retro resolve
 // the implementation session from here (#186). Latest writer wins — a fresh `lh dev <pr>` re-points
 // it at the session it is about to spawn.
+//
+// pulls.session_id stays the PR's *primary* (latest) dev session. As of #298 this also records the
+// session in the generalized session_links bridge (kind='dev'), so the PR's related-sessions list
+// accumulates every dev session that worked it — not just the latest — while resume/retro keep
+// reading the single pulls.session_id pointer.
 export function setPullSession(issueId: number, sessionId: string) {
   db.run(`UPDATE pulls SET session_id = ? WHERE issue_id = ?`, [
     sessionId,
     issueId,
   ]);
+  setSessionKind(sessionId, "dev");
+  linkSession(sessionId, issueId);
 }
 
 export function authorFromSession(
