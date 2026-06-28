@@ -12,16 +12,23 @@ import { X } from "lucide-react";
 import { TerminalView } from "@/components/terminal-view";
 import { Button } from "@/components/ui/button";
 
-// Command typed into the spawned shell. The skill's slash form starts a Claude session in
-// question mode (no arguments). It needs no shell escaping — it is a fixed literal.
-const CREATE_ISSUE_COMMAND = 'claude "/lh-issue-create"';
+// Command typed into the spawned shell. `lh issue new` launches the /lh-issue-create skill in a
+// Claude session recorded as kind=issue-create (#299) — so the filing session is linked to the
+// created issue and resumable later — instead of bare `claude "/lh-issue-create"` (which left no
+// recorded session). `--repo` scopes it to the repo in view; omitted when unknown so `lh` falls
+// back to cwd resolution (the previous behaviour). owner/name is a safe shell token (a registered
+// repo full name: `[\w.-]+/[\w.-]+`), so the literal needs no escaping; guarded below regardless.
+function createIssueCommand(repo: string): string {
+  const safe = /^[\w.-]+\/[\w.-]+$/.test(repo);
+  return safe ? `lh issue new --repo ${repo}` : "lh issue new";
+}
 
 export function CreateIssueModal({
   repo,
   onClose,
 }: {
-  // "owner/name" of the repo whose base dir becomes the terminal cwd, or "" for $HOME. The skill
-  // resolves the target repo from cwd, mirroring the previous bottom-tab behaviour.
+  // "owner/name" of the repo whose base dir becomes the terminal cwd, or "" for $HOME. `lh issue
+  // new` files into this repo (via --repo, else cwd), mirroring the previous bottom-tab behaviour.
   repo: string;
   onClose: () => void;
 }) {
@@ -58,7 +65,7 @@ export function CreateIssueModal({
         <div className="min-h-0 flex-1 bg-background px-2 py-1">
           <TerminalView
             repo={repo}
-            command={CREATE_ISSUE_COMMAND}
+            command={createIssueCommand(repo)}
             active
             onExit={onClose}
           />

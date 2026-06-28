@@ -6,7 +6,13 @@ import { createInterface } from "node:readline/promises";
 import { parseArgs, stripVTControlCharacters } from "node:util";
 import { baseUrl, configDir, dbPath, worktreeRoot } from "../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../core/git.ts";
-import { LH_DEV_SESSION_AGENT, RUNTIME_CLAUDE_CODE } from "../core/resume.ts";
+import {
+  ENV_ISSUE_CREATE_SESSION,
+  LH_DEV_SESSION_AGENT,
+  LH_ISSUE_CREATE_SESSION_AGENT,
+  RUNTIME_CLAUDE_CODE,
+  SESSION_KIND_ISSUE_CREATE,
+} from "../core/resume.ts";
 import {
   acquireDevLock,
   buildClaudeArgs,
@@ -585,6 +591,45 @@ async function main() {
   }
 
   if (group === "resume") {
+    // `lh resume --session <id>` re-enters a session by its id (#299), for sessions with no PR/dev
+    // worktree — chiefly the `issue-create` session `lh issue new` records. No worktree to restore:
+    // resolve the runtime + id and spawn `claude --resume <id>` in the repo root. The issue detail's
+    // related-sessions Resume button runs exactly this. Checked before the PR-positional path below.
+    if (flags.session) {
+      const sessionId = flags.session;
+      const s = await svc();
+      const resolution = await run(() => s.resume.resolveSession(sessionId));
+      if (!resolution.ok) {
+        if (resolution.reason === "not-found")
+          fail(`no session recorded with id ${sessionId}.`);
+        if (resolution.reason === "unknown-runtime")
+          fail(
+            `session ${sessionId} uses a runtime this version of \`lh resume\` cannot ` +
+              `resume (only \`${RUNTIME_CLAUDE_CODE}\` is supported).`,
+          );
+        fail(
+          `session ${sessionId}: no resumable Claude session id is recorded, so there is ` +
+            `nothing to resume.`,
+        );
+      }
+      // cwd = repo root when --repo is given (an issue-create session has no worktree); else inherit
+      // the current directory. resolveRepo() would 404 outside a known repo, so --repo is optional.
+      let cwd: string | undefined;
+      if (flags.repo) {
+        const repoArg = flags.repo;
+        const r = await run(() => s.repos.get(repoArg));
+        cwd = r.local_path;
+      }
+      const claudeArgs = buildResumeArgs({ sessionId: resolution.sessionId });
+      console.error(`resuming session ${resolution.sessionId}`);
+      console.error(
+        formatSpawnCommand(claudeArgs, {
+          color: process.stderr.isTTY === true,
+        }),
+      );
+      const proc = spawnSync("claude", claudeArgs, { stdio: "inherit", cwd });
+      process.exit(proc.status ?? 0);
+    }
     // `lh resume <PR id>` re-enters the Claude session a PR was developed in. Resolution
     // (session id + worktree/branch + restorability) lives in core (service.resume.resolve);
     // the CLI provisions the worktree (idempotent restore) and spawns `claude --resume`, mirroring
@@ -763,6 +808,44 @@ async function main() {
         }
         console.log(`${line}\n\n${i.body}`);
       }
+    } else if (sub === "new") {
+      // `lh issue new` files an issue *with an AI session* (#299): it launches a Claude session
+      // running the `/lh-issue-create` skill, recorded as kind=issue-create so it surfaces in the
+      // created issue's related-sessions list and can be resumed later. The New Issue button runs
+      // this. Mirrors `lh dev`: register the session, then spawn `claude --session-id <id>` — here
+      // in the repo root (no worktree; filing an issue does not touch a branch).
+      const r = await run(() => s.repos.get(repo));
+      const sessionId = randomUUID();
+      const slashCommand = "/lh-issue-create";
+      await run(() =>
+        s.sessions.register({
+          id: sessionId,
+          agent: LH_ISSUE_CREATE_SESSION_AGENT,
+          session: sessionId,
+          runtime: RUNTIME_CLAUDE_CODE,
+          kind: SESSION_KIND_ISSUE_CREATE,
+          name: `New issue (${r.full_name})`,
+        }),
+      );
+      const claudeArgs = buildClaudeArgs({
+        sessionId,
+        slashCommand,
+        sessionName: `New issue (${r.full_name})`,
+      });
+      console.error(
+        formatSpawnCommand(claudeArgs, {
+          color: process.stderr.isTTY === true,
+        }),
+      );
+      // Carry the session id into the spawned Claude via env. A `lh issue create` run inside the
+      // session reads it and links the session to whatever issue it files (the number is unknown
+      // here, so the link is recorded after creation — see the create branch below).
+      const proc = spawnSync("claude", claudeArgs, {
+        stdio: "inherit",
+        cwd: r.local_path,
+        env: { ...process.env, [ENV_ISSUE_CREATE_SESSION]: sessionId },
+      });
+      process.exit(proc.status ?? 0);
     } else if (sub === "create") {
       const labels = (flags.label || "")
         .split(",")
@@ -776,6 +859,22 @@ async function main() {
         ),
       );
       console.log(`created #${i.number}`);
+      // When this create runs inside a `lh issue new` AI session, link that session to the issue
+      // it just filed (#299) so it appears in the issue's related-sessions list and is resumable.
+      // Best-effort: a link failure must not fail the create the user asked for.
+      const createSession = process.env[ENV_ISSUE_CREATE_SESSION];
+      if (createSession) {
+        try {
+          await s.sessions.link(repo, {
+            sessionId: createSession,
+            issue: i.number,
+          });
+        } catch (e: any) {
+          console.error(
+            `warning: could not link issue-create session: ${e.message}`,
+          );
+        }
+      }
     } else if (sub === "update") {
       const patch: { title?: string; body?: string } = {};
       if (flags.title !== undefined) patch.title = flags.title;

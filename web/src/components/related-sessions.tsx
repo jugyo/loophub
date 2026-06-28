@@ -1,7 +1,9 @@
 // Related sessions list for a PR or issue (#298). Shows every session linked to the PR/issue
 // (dev, review, issue-create, …) newest-first, with its kind, runtime, and when it was linked.
-// A session the server reports as resumable gets a Resume button that runs `lh resume <pr>` in the
-// built-in terminal (PR detail only — that is where resume re-enters a worktree); others show a
+// A session the server reports as resumable gets a Resume button that runs `lh resume …` in the
+// built-in terminal: `lh resume <pr>` on PR detail (re-enters the dev worktree), or
+// `lh resume --session <id> --repo <owner>/<repo>` on issue detail for an issue-create session
+// (#299 — no worktree, resumes the filing session in the repo root). Non-resumable sessions show a
 // short, muted reason so it is clear why they cannot be resumed (the AC's "resume 不可なものは
 // その旨を示す"). The whole section hides when there are no linked sessions, so PRs/issues without a
 // dev loop stay uncluttered.
@@ -52,8 +54,17 @@ export function RelatedSessions({
       <h2 className="text-lg font-semibold">Sessions</h2>
       <ul className="flex flex-col gap-2">
         {sessions.map((s) => {
-          const canResume = s.resume.resumable && resumeNumber != null;
-          const resumeId = `${owner}/${repo}/${resumeNumber}`;
+          const canResume = s.resume.resumable;
+          // PR detail re-enters the PR's worktree by number; issue detail resumes the issue-create
+          // session by its id in the repo root (#299). resumeNumber present ⇒ PR container.
+          // `--session` takes the session *row id* (s.id), which the CLI resolves via
+          // getAgentSession(id) → external_session for `claude --resume`. Pass s.id, not s.session
+          // (external_session): the two coincide for an issue-create session today, but the row id
+          // is the lookup key resolveSession contracts on.
+          const resumeCommand =
+            resumeNumber != null
+              ? `lh resume ${owner}/${repo}/${resumeNumber}`
+              : `lh resume --session ${s.id} --repo ${owner}/${repo}`;
           const reason = s.resume.reason
             ? (RESUME_REASON[s.resume.reason] ?? s.resume.reason)
             : null;
@@ -81,12 +92,12 @@ export function RelatedSessions({
                   <Button
                     variant="secondary"
                     size="sm"
-                    title={`Resume \`lh resume ${resumeId}\` in a terminal`}
+                    title={`Resume \`${resumeCommand}\` in a terminal`}
                     onClick={() =>
                       openTerminal({
-                        command: `lh resume ${resumeId}`,
+                        command: resumeCommand,
                         repo: `${owner}/${repo}`,
-                        label: `resume ${resumeId}`,
+                        label: `resume ${s.name ?? s.kind ?? s.id}`,
                       })
                     }
                   >

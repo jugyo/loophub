@@ -11,6 +11,7 @@ import { pullWorktreeDirty } from "./pull-worktree.ts";
 import {
   resolveRuntimeResume,
   resumeWorktreeIssue,
+  SESSION_KIND_ISSUE_CREATE,
   sessionRuntime,
 } from "./resume.ts";
 import * as S from "./store.ts";
@@ -73,7 +74,14 @@ export function relatedSessionJSON(
   if (!rr.ok) {
     resume = { resumable: false, reason: rr.reason };
   } else if (opts.container !== "pull") {
-    resume = { resumable: false, reason: "resume-via-pull" };
+    // Issue container. An `issue-create` session (the New Issue AI flow, #299) has no PR and no dev
+    // worktree, so it resumes directly off the issue with `claude --resume <id>` (resume by session
+    // id, not by PR). Any other issue-linked session is a dev/review session whose resume anchor is
+    // its PR, so it is still resumed via that PR ("resume-via-pull").
+    resume =
+      row.kind === SESSION_KIND_ISSUE_CREATE
+        ? { resumable: true }
+        : { resumable: false, reason: "resume-via-pull" };
   } else if (opts.primarySessionId && row.id === opts.primarySessionId) {
     resume = { resumable: true };
   } else if (opts.primarySessionId && row.kind === "dev") {

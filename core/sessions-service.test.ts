@@ -163,3 +163,64 @@ test("a session linked to a PR with no primary dev session is NOT resumable (not
   expect(s.resume.resumable).toBe(false);
   expect(s.resume.reason).toBe("not-anchor");
 });
+
+test("an issue-create session linked to an issue is listed and resumable from the issue (#299)", () => {
+  // `lh issue new` records the filing session as kind=issue-create, then `lh issue create` links it
+  // to the issue it files. It has no PR/dev worktree, so it resumes directly off the issue
+  // (`lh resume --session <id>`), unlike dev/review sessions which resume via their PR.
+  const issue = svc.issues.create("me/proj", {
+    title: "needs filing help",
+  }) as any;
+  const createUuid = "dddddddd-0000-0000-0000-000000000004";
+  svc.sessions.register({
+    id: createUuid,
+    agent: "lh-issue-create",
+    session: createUuid,
+    runtime: "claude-code",
+    kind: "issue-create",
+  });
+  svc.sessions.link("me/proj", { sessionId: createUuid, issue: issue.number });
+
+  const detail = svc.issues.get("me/proj", issue.number) as any;
+  const s = detail.related_sessions.find((x: any) => x.id === createUuid);
+  expect(s).toBeTruthy();
+  expect(s.kind).toBe("issue-create");
+  // Resumable directly from the issue — no "resume-via-pull" indirection.
+  expect(s.resume.resumable).toBe(true);
+  expect(s.resume.reason).toBeUndefined();
+});
+
+test("resume.resolveSession resolves an issue-create session and reports failures (#299)", () => {
+  const createUuid = "eeeeeeee-0000-0000-0000-000000000005";
+  svc.sessions.register({
+    id: createUuid,
+    agent: "lh-issue-create",
+    session: createUuid,
+    runtime: "claude-code",
+    kind: "issue-create",
+  });
+  // Happy path: claude-code + UUID id → resumable, returns external_session for `claude --resume`.
+  expect(svc.resume.resolveSession(createUuid)).toEqual({
+    ok: true,
+    runtime: "claude-code",
+    sessionId: createUuid,
+  });
+  // Unknown id → not-found.
+  expect(svc.resume.resolveSession("no-such")).toMatchObject({
+    ok: false,
+    reason: "not-found",
+  });
+  // A runtime this build cannot resume → unknown-runtime (distinct from no-session).
+  const codexUuid = "ffffffff-0000-0000-0000-000000000006";
+  svc.sessions.register({
+    id: codexUuid,
+    agent: "lh-issue-create",
+    session: codexUuid,
+    runtime: "codex",
+    kind: "issue-create",
+  });
+  expect(svc.resume.resolveSession(codexUuid)).toMatchObject({
+    ok: false,
+    reason: "unknown-runtime",
+  });
+});

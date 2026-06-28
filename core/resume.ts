@@ -38,6 +38,17 @@ export function decideResume(input: ResumeInputs): ResumeDecision {
 // only sessions registered under this agent — UUID shape alone does not prove Claude provenance.
 export const LH_DEV_SESSION_AGENT = "lh-dev";
 
+// The agent label and session kind for the New Issue AI flow (#299). `lh issue new` registers the
+// issue-create session under this agent with kind=SESSION_KIND_ISSUE_CREATE so it surfaces in the
+// created issue's related-sessions list and is resumable via `claude --resume`.
+export const LH_ISSUE_CREATE_SESSION_AGENT = "lh-issue-create";
+export const SESSION_KIND_ISSUE_CREATE = "issue-create";
+
+// Env var carrying the issue-create session id from `lh issue new` into the spawned Claude session.
+// A `lh issue create` run inside that session reads it and links the session to the issue it files
+// (#299) — the issue number is unknown at launch, so the link is recorded after creation.
+export const ENV_ISSUE_CREATE_SESSION = "LOOPHUB_ISSUE_CREATE_SESSION";
+
 // A Claude session id is a UUID (`claude --session-id` requires one; `lh dev` stores the exact
 // UUID it generates). `lh resume` reads a *stored* id and feeds it to `claude --resume <id>`, so
 // validate the shape before it reaches argv: claude's `-r, --resume [value]` takes an OPTIONAL

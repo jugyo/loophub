@@ -1290,6 +1290,15 @@ export interface ResumeFail {
 }
 export type ResumeResolution = ResumeOk | ResumeFail;
 
+// Resolve a resume by *session id* rather than by PR (#299). An issue-create session has no PR and
+// no dev worktree — it is just a Claude session that filed an issue — so `lh resume --session <id>`
+// re-enters it with `claude --resume <id>` in the repo root, bypassing the worktree machinery that
+// `resume.resolve` (PR path) needs. Only the runtime check applies: a non-resumable runtime or a
+// missing/non-UUID id is reported so the CLI can explain it.
+export type SessionResumeResolution =
+  | { ok: true; runtime: string; sessionId: string }
+  | { ok: false; reason: "not-found" | "no-session" | "unknown-runtime" };
+
 export const resume = {
   async resolve(name: string, prNumber: number): Promise<ResumeResolution> {
     const r = repoOr404(name);
@@ -1366,6 +1375,25 @@ export const resume = {
       runtime: runtimeResume.ok ? runtimeResume.runtime : RUNTIME_CLAUDE_CODE,
       sessionId: claudeSessionId as string,
       restore: decision.restore,
+    };
+  },
+
+  // Resolve a session-id resume (#299). Used by `lh resume --session <id>` for sessions that are not
+  // a PR's dev session — chiefly the `issue-create` session a New Issue flow records (`lh issue
+  // new`). No worktree/branch facts are needed: a resumable Claude session re-enters with
+  // `claude --resume <external_session>` in the repo root, so this returns just the runtime + id.
+  resolveSession(sessionId: string): SessionResumeResolution {
+    const row = S.getAgentSession(sessionId);
+    if (!row) return { ok: false, reason: "not-found" };
+    const runtimeResume = resolveRuntimeResume(
+      sessionRuntime(row),
+      row.external_session ?? null,
+    );
+    if (!runtimeResume.ok) return { ok: false, reason: runtimeResume.reason };
+    return {
+      ok: true,
+      runtime: runtimeResume.runtime,
+      sessionId: runtimeResume.sessionId,
     };
   },
 };
