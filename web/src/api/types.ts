@@ -28,6 +28,12 @@ export interface LinkedPull {
   additions?: number;
   deletions?: number;
   changed_files?: number;
+  /**
+   * Other open PRs that would merge-conflict with this one (#267). Populated on
+   * the issue-list response so the sub-row can flag conflicts, matching the
+   * PR-detail ConflictList; empty when the PR conflicts with nobody.
+   */
+  conflicts_with?: PullConflict[];
 }
 
 /** Summary of the issue a PR closes (pull-detail `linked_issue`). */

@@ -154,6 +154,62 @@ describe("IssueRow", () => {
     expect(screen.queryByLabelText("approved")).toBeNull();
   });
 
+  // #267: the linked-PR sub-row flags cross-PR conflicts, matching the PR-detail
+  // ConflictList. The whole IssueRow is shared by all three issue lists (home,
+  // repo dashboard, dedicated /issues), so this one render path covers all of them.
+  it("shows a conflict marker with the other PR number when the linked PR conflicts", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({
+              number: 10,
+              conflicts_with: [{ number: 12, title: "Other PR", files: ["a.ts"] }],
+            }),
+          ],
+        })}
+      />,
+    );
+    expect(await screen.findByText("conflicts with #12")).toBeTruthy();
+  });
+
+  it("collapses to a plain 'conflicts' label when several PRs conflict", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({
+              number: 10,
+              conflicts_with: [
+                { number: 12, title: "PR twelve", files: ["a.ts"] },
+                { number: 13, title: "PR thirteen", files: ["b.ts"] },
+              ],
+            }),
+          ],
+        })}
+      />,
+    );
+    expect(await screen.findByText("conflicts")).toBeTruthy();
+  });
+
+  it("shows no conflict marker when the linked PR conflicts with nobody", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ number: 10, conflicts_with: [] })],
+        })}
+      />,
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(screen.queryByText(/^conflicts/)).toBeNull();
+  });
+
   it("renders a single row (no PR sub-row) when no PR is linked", async () => {
     renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />);
     expect(await screen.findByText("Example issue")).toBeTruthy();

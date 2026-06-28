@@ -4,7 +4,13 @@
 
 import { Link } from "@tanstack/react-router";
 import { Check, Play } from "lucide-react";
-import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
+import type {
+  Issue,
+  Label,
+  LinkedPull,
+  PullConflict,
+  PullRequest,
+} from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { useTerminal } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
@@ -218,6 +224,26 @@ const STATUS_TEXT: Record<StatusWordTone, string> = {
   muted: "text-muted-foreground",
 };
 
+// Compact conflict flag for the linked-PR sub-row (#267): the same cross-PR
+// conflict detection the PR-detail ConflictList renders, condensed to a single
+// red pill. Hidden entirely when the PR conflicts with nobody, so a clean PR
+// keeps the existing layout. The other PR numbers (and conflicting files) ride
+// in the tooltip so the row stays one line.
+function ConflictMarker({ conflicts }: { conflicts: PullConflict[] }) {
+  if (conflicts.length === 0) return null;
+  const refs = conflicts.map((c) => `#${c.number}`).join(", ");
+  const label = conflicts.length === 1 ? `conflicts with ${refs}` : "conflicts";
+  const title =
+    conflicts.length === 1
+      ? `Merge-conflicts with PR ${refs}`
+      : `Merge-conflicts with ${conflicts.length} open PRs: ${refs}`;
+  return (
+    <Badge tone="conflict" title={title} className="shrink-0">
+      {label}
+    </Badge>
+  );
+}
+
 // Muted sub-row under an issue title carrying its linked PR: a toned `PR #n`
 // link pill, the single status word, and the diff total. Its own PR link (not
 // the issue title link), so the row exposes two distinct destinations.
@@ -239,6 +265,7 @@ function LinkedPullSubRow({
   // ステータス語にチェックアイコンを添える。他の未マージ状態には出さない。
   const approved = status?.tone === "review-approved";
   const files = pull.changed_files ?? 0;
+  const conflicts = pull.conflicts_with ?? [];
   return (
     <div className="flex items-center gap-2 pl-7 text-xs text-muted-foreground">
       <Link
@@ -251,6 +278,7 @@ function LinkedPullSubRow({
       >
         PR #{pull.number}
       </Link>
+      <ConflictMarker conflicts={conflicts} />
       {status ? (
         <span
           className={cn(

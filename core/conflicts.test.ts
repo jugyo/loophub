@@ -86,3 +86,57 @@ test("pulls.get reports cross-PR conflicts with conflicting files; list omits th
   const listA = list.find((p) => p.number === a.number);
   expect(listA.conflicts_with).toEqual([]);
 });
+
+test("issues.list surfaces cross-PR conflicts on the linked-PR sub-row (#267)", async () => {
+  // Two issues, each with a linked PR; the two PR heads edit the same line of a
+  // fresh file, so they merge-conflict with each other.
+  git(["checkout", "-q", "main"]);
+  writeFileSync(join(repoPath, "h.txt"), "x\ny\nz\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "h-base"]);
+
+  git(["checkout", "-q", "-b", "pr-d"]);
+  writeFileSync(join(repoPath, "h.txt"), "DDD\ny\nz\n");
+  git(["commit", "-qam", "d"]);
+
+  git(["checkout", "-q", "main"]);
+  git(["checkout", "-q", "-b", "pr-e"]);
+  writeFileSync(join(repoPath, "h.txt"), "EEE\ny\nz\n");
+  git(["commit", "-qam", "e"]);
+  git(["checkout", "-q", "main"]);
+
+  const issD: any = await svc.issues.create(
+    "me/proj",
+    { title: "issue D" },
+    "sess-1",
+  );
+  const issE: any = await svc.issues.create(
+    "me/proj",
+    { title: "issue E" },
+    "sess-1",
+  );
+  const prD = await svc.pulls.create(
+    "me/proj",
+    { title: "D", head: "pr-d", base: "main", issue: issD.number },
+    "sess-1",
+  );
+  const prE = await svc.pulls.create(
+    "me/proj",
+    { title: "E", head: "pr-e", base: "main", issue: issE.number },
+    "sess-1",
+  );
+
+  // Issue D's list row carries its linked PR with conflicts_with pointing at PR E.
+  const issues: any[] = await svc.issues.list("me/proj", { kind: "issue" });
+  const rowD = issues.find((i) => i.number === issD.number);
+  expect(rowD.linked_pull_request.number).toBe(prD.number);
+  expect(
+    rowD.linked_pull_request.conflicts_with.map((c: any) => c.number),
+  ).toEqual([prE.number]);
+
+  // Symmetric: issue E's linked PR points back at PR D.
+  const rowE = issues.find((i) => i.number === issE.number);
+  expect(
+    rowE.linked_pull_request.conflicts_with.map((c: any) => c.number),
+  ).toEqual([prD.number]);
+});

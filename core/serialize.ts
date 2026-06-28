@@ -130,7 +130,10 @@ function linkedPullSummary(repo: S.Repo, issueRowId: number) {
 async function pullStatusFields(
   repo: S.Repo,
   row: any,
-  opts: { withConflicts?: boolean } = {},
+  opts: {
+    withConflicts?: boolean;
+    headShaCache?: Map<string, Promise<string | null>>;
+  } = {},
 ) {
   const p = S.getPull(row.id);
   const headSha = await revParse(repo.local_path, p.head_ref);
@@ -184,7 +187,12 @@ async function pullStatusFields(
   // PR with a resolvable head — the PR list skips this to keep its fan-out O(n).
   let conflicts_with: PullConflict[] = [];
   if (opts.withConflicts && !p.merged && row.state === "open" && headSha) {
-    conflicts_with = await conflictsForPull(repo, row.number, headSha);
+    conflicts_with = await conflictsForPull(
+      repo,
+      row.number,
+      headSha,
+      opts.headShaCache,
+    );
   }
   // Deterministic path of the `lh dev` worktree backing this PR (same convention as the
   // "working" flag above), so a consumer can show / copy it without knowing worktreeRoot.
@@ -220,14 +228,24 @@ async function pullStatusFields(
 // mergeable / diff totals) for the issue-list Pattern E sub-row. Async because
 // the status fields need a bounded git fan-out per linked PR; used only by the
 // paginated issues.list path, so issueJSON stays sync for detail/dashboard.
-export async function issueListItemJSON(row: any, repo: S.Repo) {
+// `headShaCache` (optional) is a per-list-build cache the caller passes once and
+// shares across every row's linked-PR enrichment, so the cross-PR conflict fan-out
+// rev-parses each open PR's head ref at most once for the whole page (see
+// core/conflicts.ts resolveHeadSha). Omit it for a single-row serialization.
+export async function issueListItemJSON(
+  row: any,
+  repo: S.Repo,
+  headShaCache?: Map<string, Promise<string | null>>,
+) {
   const out = issueJSON(row, repo);
   if (row.kind !== "pull") {
     // All linked PRs (usually 0–1, occasionally more — see linkedPullsForIssue),
     // most-relevant first, so the list can stack them vertically. The singular
     // field stays set to the primary one for any consumer that reads it.
     const pulls = await Promise.all(
-      S.linkedPullsForIssue(row.id).map((pr) => linkedPullDetail(repo, pr)),
+      S.linkedPullsForIssue(row.id).map((pr) =>
+        linkedPullDetail(repo, pr, headShaCache),
+      ),
     );
     out.linked_pull_requests = pulls;
     out.linked_pull_request = pulls[0] ?? null;
@@ -235,8 +253,21 @@ export async function issueListItemJSON(row: any, repo: S.Repo) {
   return out;
 }
 
-async function linkedPullDetail(repo: S.Repo, pr: any) {
-  const status = await pullStatusFields(repo, pr);
+async function linkedPullDetail(
+  repo: S.Repo,
+  pr: any,
+  headShaCache?: Map<string, Promise<string | null>>,
+) {
+  // `withConflicts` so the issue-list sub-row can flag a PR that merge-conflicts
+  // with another open PR (#267), matching the PR-detail ConflictList. The PR list
+  // skips this to stay O(n); here the cost is bounded by the per-pair merge-result
+  // memo (immutable sha pairs, process-lifetime) plus the per-build headShaCache
+  // (ref→sha resolved once per open PR per page), and only open, unmerged linked
+  // PRs — usually 0–1 per issue — trigger it at all.
+  const status = await pullStatusFields(repo, pr, {
+    withConflicts: true,
+    headShaCache,
+  });
   return {
     number: pr.number,
     title: pr.title,
@@ -249,6 +280,7 @@ async function linkedPullDetail(repo: S.Repo, pr: any) {
     additions: status.additions,
     deletions: status.deletions,
     changed_files: status.changed_files,
+    conflicts_with: status.conflicts_with,
   };
 }
 

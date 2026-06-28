@@ -42,19 +42,51 @@ function pairKey(repoPath: string, a: string, b: string): string {
   return `${repoPath}\0${x}\0${y}`;
 }
 
+// Resolve an open PR's head ref to a sha, optionally memoized through a
+// caller-provided cache. The merge-result cache below is content-addressed by
+// immutable shas, but resolving a *ref* → sha is not memoized there (a ref's sha
+// changes as commits land). When the issue list enriches many PRs in one build,
+// every PR's conflictsForPull loops over the *same* set of other open PRs, so the
+// same head refs would be rev-parsed once per self-PR — O(K×M) git spawns. A
+// per-build cache (created once per list response, lifetime bounded to that build)
+// collapses that to one rev-parse per open PR. Omit the cache (PR detail) to keep
+// the original always-fresh resolution. The Promise is cached so concurrent
+// lookups for the same ref share a single spawn.
+function resolveHeadSha(
+  repoPath: string,
+  headRef: string,
+  cache?: Map<string, Promise<string | null>>,
+): Promise<string | null> {
+  if (!cache) return revParse(repoPath, headRef);
+  const key = `${repoPath}\0${headRef}`;
+  let p = cache.get(key);
+  if (!p) {
+    p = revParse(repoPath, headRef);
+    cache.set(key, p);
+  }
+  return p;
+}
+
 // Conflicts between `self` (an open PR) and every *other* open PR in the same repo.
 // `selfHeadSha` is the already-resolved head sha of `self` (serialize.ts computes it
 // once); pass null when it can't be resolved, in which case no conflicts are reported.
+// `headShaCache` (optional) memoizes other-PR ref→sha resolution across calls within a
+// single issue-list build; see resolveHeadSha.
 export async function conflictsForPull(
   repo: S.Repo,
   selfNumber: number,
   selfHeadSha: string | null,
+  headShaCache?: Map<string, Promise<string | null>>,
 ): Promise<PullConflict[]> {
   if (!selfHeadSha) return [];
   const out: PullConflict[] = [];
   for (const other of S.listOpenPullsForRepo(repo.id)) {
     if (other.number === selfNumber) continue;
-    const otherSha = await revParse(repo.local_path, other.head_ref);
+    const otherSha = await resolveHeadSha(
+      repo.local_path,
+      other.head_ref,
+      headShaCache,
+    );
     if (!otherSha) continue;
     const key = pairKey(repo.local_path, selfHeadSha, otherSha);
     let res = cache.get(key);
