@@ -28,19 +28,21 @@ export function CreateIssueModal({
   return (
     // Front overlay with a dimmed backdrop. No backdrop-click-to-close: an accidental outside click
     // must not kill an in-progress filing session — closing is intentional (× or shell exit) only.
-    // The dialog is vertically centered (not stretched) so its height comes from min-h/max-h below
-    // rather than always filling the viewport.
+    // The dialog is vertically centered (not stretched) so its height comes from the definite
+    // h-[min(36rem,100%)] below rather than always filling the viewport.
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-8">
       <div
         role="dialog"
         aria-modal="true"
         aria-label="New issue"
-        // Height floor + viewport cap so the dialog stays a stable mid size: min-h keeps it from
-        // collapsing (the embedded terminal fits to its container and has no intrinsic height, so
-        // without a floor the dialog would shrink to just the header), while max-h-full caps it to
-        // the available height. min() ties the floor to 100% so a viewport shorter than 36rem can't
-        // produce a min-height that exceeds (and overflows) the cap.
-        className="flex max-h-full min-h-[min(36rem,100%)] w-full max-w-4xl flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
+        // Stable mid size via a *definite* height (not just a min-height): the embedded terminal
+        // sizes to its container with `h-full` (height:100%), which only resolves against an
+        // ancestor whose height is definite. A min-height alone leaves the flex chain indefinite,
+        // so `h-full` collapses to the terminal's intrinsic content height and the dialog shows a
+        // large empty gap below it (#317). A concrete height makes the chain resolve so the
+        // terminal fills the body. min(36rem,100%) caps to the available height, so a viewport
+        // shorter than 36rem shrinks to fit instead of overflowing.
+        className="flex h-[min(36rem,100%)] w-full max-w-4xl flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
       >
         <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
           <h2 className="text-sm font-semibold">New issue</h2>
