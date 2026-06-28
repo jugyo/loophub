@@ -254,12 +254,13 @@ export function createPull(
   sessionId: string | null = null,
 ) {
   db.run(
-    `INSERT INTO pulls (issue_id, head_ref, base_ref, head_sha, linked_issue_id, session_id)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [issueId, head, base, headSha, linkedIssueId, sessionId],
+    `INSERT INTO pulls (issue_id, head_ref, base_ref, head_sha, linked_issue_id)
+     VALUES (?, ?, ?, ?, ?)`,
+    [issueId, head, base, headSha, linkedIssueId],
   );
-  // pulls.session_id is, by definition, the PR's dev session. Record it in the generalized
-  // session_links bridge (kind='dev') so the PR's related-sessions list reflects it — mirroring
+  // The PR's dev session is recorded only in the generalized session_links bridge (kind='dev'); the
+  // PR's resume/retro anchor is derived from there (primaryDevSessionForPull). #316 dropped the
+  // denormalized pulls.session_id, so this link is now the single source of truth — mirroring
   // setPullSession, which does the same when the session is (re-)attributed after creation (#298).
   if (sessionId) {
     setSessionKind(sessionId, "dev");
@@ -679,21 +680,34 @@ export function listSessionsForIssue(issueId: number): any[] {
     .all(issueId);
 }
 
-// Set/replace the dev session attributed to a PR row (pulls.session_id). `lh resume`/retro resolve
-// the implementation session from here (#186). Latest writer wins — a fresh `lh dev <pr>` re-points
-// it at the session it is about to spawn.
-//
-// pulls.session_id stays the PR's *primary* (latest) dev session. As of #298 this also records the
-// session in the generalized session_links bridge (kind='dev'), so the PR's related-sessions list
-// accumulates every dev session that worked it — not just the latest — while resume/retro keep
-// reading the single pulls.session_id pointer.
+// Attribute a dev session to a PR row by recording it in the generalized session_links bridge
+// (kind='dev'). `lh resume`/retro resolve the PR's implementation session from there (#186, #316).
+// The PR's related-sessions list accumulates every dev session that worked it; the *primary* anchor
+// is the latest-linked one (primaryDevSessionForPull) — a fresh `lh dev <pr>` re-links the session
+// it is about to spawn, so latest-writer-wins still holds. As of #316 there is no denormalized
+// pulls.session_id to keep in sync; the link is the single source of truth.
 export function setPullSession(issueId: number, sessionId: string) {
-  db.run(`UPDATE pulls SET session_id = ? WHERE issue_id = ?`, [
-    sessionId,
-    issueId,
-  ]);
   setSessionKind(sessionId, "dev");
   linkSession(sessionId, issueId);
+}
+
+// The PR's resume/retro anchor (#316): the latest kind='dev' session linked to the PR's issues row.
+// Derived from session_links — the single source of truth since pulls.session_id was dropped. `lh
+// dev` links each dev session it opens/re-enters (createPull / setPullSession), and the newest link
+// wins (ORDER BY created_at DESC, rowid DESC), matching the old latest-writer-wins pulls.session_id.
+// Returns the session id, or null when the PR has no dev session linked.
+export function primaryDevSessionForPull(issueId: number): string | null {
+  const row = db
+    .query(
+      `SELECT l.session_id AS id
+       FROM session_links l
+       JOIN agent_sessions s ON s.id = l.session_id
+       WHERE l.issue_id = ? AND s.kind = 'dev'
+       ORDER BY l.created_at DESC, l.rowid DESC
+       LIMIT 1`,
+    )
+    .get(issueId) as { id: string } | null;
+  return row?.id ?? null;
 }
 
 export function authorFromSession(

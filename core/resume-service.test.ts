@@ -26,7 +26,7 @@ async function makeRepo(name: string): Promise<{ id: number; path: string }> {
 }
 
 // Set up the canonical `lh dev <issue>` shape: an open issue plus an open PR linked to it on branch
-// loophub/issue-<n>, with the dev session attributed to the PR row (pulls.session_id). Returns the
+// loophub/issue-<n>, with the dev session attributed to the PR via session_links (#316). Returns the
 // PR number and the Claude session id stored as the session's external_session (distinct from the
 // row id to prove resolve returns external_session, the value `claude --resume` consumes).
 async function devFlow(
@@ -61,7 +61,7 @@ async function devFlow(
   const branch = `loophub/issue-${issue.number}`;
   if (opts.withBranch) await git(repo.path, ["branch", branch, "main"]);
   const pr = S.createIssue(repo.id, "pull", "impl", "", "me") as any;
-  // The dev session is attributed to the PR row (pulls.session_id) — the `lh dev <issue>` flow
+  // The dev session is attributed to the PR via session_links (#316) — the `lh dev <issue>` flow
   // where openPr records the session that opened the PR (#186).
   S.createPull(pr.id, branch, "main", null, issue.id, sessionRowId);
   return { pr: pr.number, external };
@@ -166,7 +166,7 @@ test("resolve reuses an existing worktree", async () => {
   await git(repo.path, ["worktree", "remove", "--force", wt]);
 });
 
-// A PR worked directly via `lh dev <pr>` carries the session on the PR row itself (pulls.session_id);
+// A PR worked directly via `lh dev <pr>` carries its own dev session linked in session_links (#316);
 // resolve uses it even without a linked issue.
 test("resolve uses the PR row's own session when present", async () => {
   const repo = await makeRepo("me/prself");

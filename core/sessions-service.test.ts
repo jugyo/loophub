@@ -139,8 +139,10 @@ test("sessions.listFor a PR marks the primary dev session resumable", () => {
 });
 
 test("a session linked to a PR with no primary dev session is NOT resumable (not-anchor)", async () => {
-  // Reachable via sessions.link({pr}): a PR opened without a dev session (pulls.session_id null),
-  // then a session attached. `lh resume <pr>` would resolve nothing, so it must not be resumable.
+  // Reachable via sessions.link({pr}): a PR opened without a dev session (no kind='dev' link), then a
+  // non-dev session attached (sessions.link is documented as the attach point for kinds beyond dev).
+  // The PR has no dev anchor (primaryDevSessionForPull → null), so `lh resume <pr>` would resolve
+  // nothing and this row must not be resumable.
   const pr = (await svc.pulls.create("me/proj", {
     title: "manual PR",
     head: "manual-branch",
@@ -149,10 +151,10 @@ test("a session linked to a PR with no primary dev session is NOT resumable (not
   const anchorless = "cccccccc-0000-0000-0000-000000000003";
   svc.sessions.register({
     id: anchorless,
-    agent: "lh-dev",
+    agent: "reviewer",
     session: anchorless,
     runtime: "claude-code",
-    kind: "dev",
+    kind: "review",
   });
   svc.sessions.link("me/proj", { sessionId: anchorless, pr: pr.number });
 

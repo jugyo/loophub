@@ -17,11 +17,11 @@ function git(args: string[]) {
   spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
 }
 
-// Read a PR's stored dev-session attribution (pulls.session_id) by PR number.
+// Read a PR's primary dev-session attribution (derived from session_links, #316) by PR number.
 function prSession(prNumber: number): string | null {
   const repoId = (S.getRepo("me", "proj") as { id: number }).id;
   const issueId = (S.getIssue(repoId, prNumber) as { id: number }).id;
-  return S.getPull(issueId).session_id ?? null;
+  return S.primaryDevSessionForPull(issueId);
 }
 
 beforeAll(async () => {

@@ -57,10 +57,11 @@ export function agentSessionJSON(row: any) {
 //     runtime-level only — it reflects whether the runtime + anchor make `lh resume <pr>` meaningful,
 //     not whether the worktree/branch still survive on disk.
 //
-// `lh resume <pr>` re-enters exactly the PR's primary dev session (pulls.session_id = primarySessionId).
-// So a row is resumable ONLY when it IS that anchor; everything else is reported with a reason. The
-// anchor check must compare equality directly (not "anchor exists AND not this row"), otherwise a PR
-// with no anchor at all (primarySessionId null — reachable by linking a session via `sessions.link`
+// `lh resume <pr>` re-enters exactly the PR's primary dev session (primaryDevSessionForPull =
+// primarySessionId, #316). So a row is resumable ONLY when it IS that anchor; everything else is
+// reported with a reason. The anchor check must compare equality directly (not "anchor exists AND
+// not this row"), otherwise a PR with no anchor at all (primarySessionId null — reachable by linking
+// a session via `sessions.link`
 // to a PR that never had a dev session) would fall through and be mislabeled resumable.
 export function relatedSessionJSON(
   row: any,
@@ -80,15 +81,16 @@ export function relatedSessionJSON(
     resume = { resumable: false, reason: "superseded" };
   } else {
     // Runtime-resumable but not the PR's anchor: a non-dev session linked to the PR, or a PR with
-    // no anchor at all (pulls.session_id null). `lh resume <pr>` has nothing of this row to re-enter.
+    // no anchor at all (primarySessionId null). `lh resume <pr>` has nothing of this row to re-enter.
     resume = { resumable: false, reason: "not-anchor" };
   }
   return { ...base, linked_at: row.linked_at ?? null, resume };
 }
 
 // The full related-sessions list for an issues row (issue or PR), newest link first. `primarySessionId`
-// is the PR's pulls.session_id — the one `lh resume <pr>` actually re-enters — so only that row is
-// marked directly resumable; pass it for PR containers, omit it for issue containers.
+// is the PR's primary dev session (primaryDevSessionForPull) — the one `lh resume <pr>` actually
+// re-enters — so only that row is marked directly resumable; pass it for PR containers, omit it for
+// issue containers.
 export function relatedSessionsJSON(
   containerRow: any,
   opts: { primarySessionId?: string | null } = {},
@@ -453,7 +455,7 @@ export async function pullJSON(
     ...(opts.withRelatedSessions
       ? {
           related_sessions: relatedSessionsJSON(row, {
-            primarySessionId: p.session_id ?? null,
+            primarySessionId: S.primaryDevSessionForPull(row.id),
           }),
         }
       : {}),

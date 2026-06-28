@@ -326,9 +326,8 @@ export const sessions = {
     if (issue != null)
       return relatedSessionsJSON(issueOr404(r, issue, "issue"));
     const row = issueOr404(r, pr as number, "pull");
-    const p = S.getPull(row.id);
     return relatedSessionsJSON(row, {
-      primarySessionId: p?.session_id ?? null,
+      primarySessionId: S.primaryDevSessionForPull(row.id),
     });
   },
 };
@@ -913,9 +912,11 @@ export const pulls = {
     ).map((row: any) => formatEvent(row, r.full_name));
 
     // Serialize the session via agentSessionJSON (not the raw row) so a future secret-bearing
-    // column on agent_sessions can't silently flow into the copyable debug dump.
-    const sessionRow = pull.session_id
-      ? (S.getAgentSession(pull.session_id) ?? null)
+    // column on agent_sessions can't silently flow into the copyable debug dump. The PR's primary
+    // dev session is derived from session_links (#316), not a denormalized pulls column.
+    const primarySessionId = S.primaryDevSessionForPull(issueRow.id);
+    const sessionRow = primarySessionId
+      ? (S.getAgentSession(primarySessionId) ?? null)
       : null;
 
     return {
@@ -1005,8 +1006,9 @@ export const dev = {
     return { created: true, number: pr.number };
   },
 
-  // Attribute a dev session to an existing PR (pulls.session_id) so `lh resume`/retro can later find
-  // it. Used by `lh dev <pr>` — the direct-PR path that does not open a new PR. Latest writer wins.
+  // Attribute a dev session to an existing PR (via session_links, #316) so `lh resume`/retro can
+  // later find it. Used by `lh dev <pr>` — the direct-PR path that does not open a new PR. Latest
+  // linked dev session wins.
   attachSession(
     name: string,
     number: number,
@@ -1153,10 +1155,11 @@ export const resume = {
         : null;
     const linkedIssueNumber: number | null = linkedIssue?.number ?? null;
 
-    // Session attribution lives on the PR row (pulls.session_id): set when `lh dev` opened the PR
-    // (the `lh dev <issue>` flow) or re-entered it directly (`lh dev <pr>`). #186 removed the old
-    // issue-assignee fallback — the PR is the single source of truth.
-    const sessionRowId: string | null = pull.session_id ?? null;
+    // The PR's resume anchor is the latest kind='dev' session linked to it in session_links (#316),
+    // recorded when `lh dev` opened the PR (the `lh dev <issue>` flow) or re-entered it directly
+    // (`lh dev <pr>`). #186 removed the old issue-assignee fallback — the PR is the single source of
+    // truth; #316 derives it from session_links instead of a denormalized pulls.session_id column.
+    const sessionRowId: string | null = S.primaryDevSessionForPull(prRow.id);
     const sessionRow = sessionRowId ? S.getAgentSession(sessionRowId) : null;
     // The session's runtime selects how to resume it. Prefer the explicit runtime column; fall back
     // to "lh-dev agent + no runtime → claude-code" for sessions registered before the column
@@ -1338,14 +1341,14 @@ export const retros = {
       );
     }
 
-    // PR -> implementation session (design §4.3.1). The session is attributed to the PR row
-    // (pulls.session_id, set by `lh dev`); issue_id still records the linked issue for the retro.
-    // Any link may be absent: a PR with no session/link keeps those NULL and the retro still
-    // stands on event/PR data alone.
+    // PR -> implementation session (design §4.3.1). The session is the PR's latest kind='dev' link
+    // in session_links (primaryDevSessionForPull, #316); issue_id still records the linked issue for
+    // the retro. Any link may be absent: a PR with no session/link keeps those NULL and the retro
+    // still stands on event/PR data alone.
     const pull = S.getPull(prRow.id);
     const issueId: number | null = pull?.linked_issue_id ?? null;
     const linkedIssue = issueId != null ? S.getIssueById(issueId) : null;
-    const implSession: string | null = pull?.session_id ?? null;
+    const implSession: string | null = S.primaryDevSessionForPull(prRow.id);
 
     const actor = actorFor(sessionId);
     const row = S.createRetro({

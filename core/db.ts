@@ -234,10 +234,10 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
 -- Generalized session<->target links (#298). A session can relate to any issues row — an
 -- issue (kind=issue) OR a PR (kind=pull) — and a single issue/PR can carry many sessions
 -- (dev, review, issue-create, ...), so this is a plain many-to-many bridge keyed by the pair.
--- This generalizes the old 1:1 pulls.session_id attribution (which is kept, denormalized, as the
--- PR's primary dev session that lh resume/retro resolve from — see core/db.ts migration and
--- store.setPullSession). The session's own kind lives on agent_sessions.kind; created_at is when
--- the link was made (the basis for ordering the related-sessions list newest-first).
+-- This replaces the old 1:1 pulls.session_id attribution (dropped in #316): the PR's primary dev
+-- session — the anchor lh resume/retro resolve from — is now derived as the latest kind='dev' link
+-- here (store.primaryDevSessionForPull). The session's own kind lives on agent_sessions.kind;
+-- created_at is when the link was made (the basis for ordering the related-sessions list newest-first).
 CREATE TABLE IF NOT EXISTS session_links (
   session_id  TEXT NOT NULL REFERENCES agent_sessions(id),
   issue_id    INTEGER NOT NULL REFERENCES issues(id),
@@ -263,7 +263,7 @@ CREATE TABLE IF NOT EXISTS attachments (
 -- Loop retrospectives (loop-retrospective-design.ja.md §4.2). One row per
 -- generated retro: rubric scores + free-form findings for a (merged) PR, stored
 -- structured for later aggregation/UI. session_id is the *implementation* session
--- (resolved from the PR row's own session attribution, pulls.session_id), NULL
+-- (resolved from the PR's session_links via store.primaryDevSessionForPull since #316), NULL
 -- when the PR has none. findings_json / rubric note are sensitive at-rest; redacted/redact_ruleset
 -- record the redaction version so weakly-redacted rows can be re-processed later.
 CREATE TABLE IF NOT EXISTS retros (
@@ -320,6 +320,18 @@ function tryExec(sql: string) {
   } catch {}
 }
 
+// Whether `table` currently has a column named `column`. Used to gate one-time, churn-prone
+// migrations (ADD + backfill + DROP) so a fully-migrated DB doesn't rebuild the table every boot.
+function columnExists(table: string, column: string): boolean {
+  try {
+    return (
+      db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]
+    ).some((c) => c.name === column);
+  } catch {
+    return false;
+  }
+}
+
 tryExec("ALTER TABLE pulls ADD COLUMN head_sha TEXT");
 tryExec("ALTER TABLE review_comments ADD COLUMN review_id INTEGER");
 tryExec(
@@ -330,38 +342,10 @@ tryExec(
 );
 tryExec("ALTER TABLE repos ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
 tryExec("ALTER TABLE repos ADD COLUMN archived_at TEXT");
-// issue assignee (`@lh-dev`) is retired (#186): the load-bearing roles it held — the double
-// `lh dev` guard and `lh resume`/retro session resolution — moved to PR rows. Session resolution
-// now reads pulls.session_id; the double-`lh dev` guard is a soft check (`lh dev` reuses the open
-// linked PR, `resolveLinkedIssueId` refuses a second one) backed by the host-local dev lock — not a
-// DB constraint, so a single issue may carry multiple proposal PRs in the future (see #186 dev.note).
-// The migration order matters: add pulls.session_id and backfill it from the retiring assignee
-// BEFORE dropping the column, so PRs open (or pending retro) at upgrade time keep their attribution.
+// The issue assignee (`@lh-dev`, #186) and the denormalized pulls.session_id (#186) it migrated into
+// are both retired; their one-time migration into session_links and final column drops are
+// consolidated in the guarded block at the end of this migration section (search "#316").
 //
-// pulls.session_id: the dev session that opened/worked this PR. Replaces the issue-assignee path
-// for `lh resume`/retro session resolution (#186); set by `lh dev` when it opens or re-enters a PR.
-tryExec(
-  "ALTER TABLE pulls ADD COLUMN session_id TEXT REFERENCES agent_sessions(id)",
-);
-// Backfill from the old assignee so existing PRs stay resolvable after the column is dropped. The
-// old resolution preferred the PR's own assignee (direct `lh dev <pr>`) over the linked issue's
-// (the common `lh dev <issue>` flow), so seed the own-row value first, then the linked-issue value
-// for rows still NULL. On a fresh DB the assignee column never existed, so these throw and are
-// ignored (and there is no data to backfill anyway).
-tryExec(
-  `UPDATE pulls SET session_id = (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.issue_id)
-   WHERE session_id IS NULL
-     AND (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.issue_id) IS NOT NULL`,
-);
-tryExec(
-  `UPDATE pulls SET session_id = (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.linked_issue_id)
-   WHERE session_id IS NULL AND linked_issue_id IS NOT NULL
-     AND (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.linked_issue_id) IS NOT NULL`,
-);
-// Now that pulls.session_id is backfilled, drop the retired assignee column and its unique index
-// (the index first, so DROP COLUMN is permitted).
-tryExec("DROP INDEX IF EXISTS idx_issues_assignee_session");
-tryExec("ALTER TABLE issues DROP COLUMN assignee_session_id");
 // Converge DBs that ran the intermediate #186 migration (which added a maintained
 // pulls.open_linked_issue_id column + partial unique index as a hard "one open PR per issue"
 // constraint). That approach was dropped in favor of the soft guard so an issue can carry multiple
@@ -385,32 +369,67 @@ tryExec("ALTER TABLE reviews ADD COLUMN topic TEXT");
 tryExec("ALTER TABLE agent_sessions ADD COLUMN runtime TEXT");
 // agent_sessions.kind labels the session's purpose (#298): "dev" / "review" / "issue-create" / …
 // (extensible — stored as a free TEXT, not an enum, so new kinds need no migration). Pre-existing
-// rows get NULL; the pulls.session_id backfill below stamps the migrated dev sessions as "dev".
+// rows get NULL; the #316 block below stamps the migrated dev sessions as "dev".
 tryExec("ALTER TABLE agent_sessions ADD COLUMN kind TEXT");
-// Backfill the generalized session_links bridge (#298) from the existing 1:1 pulls.session_id
-// attribution: each PR's dev session becomes a link to the PR's own issues row, and the session is
-// stamped kind='dev'. INSERT OR IGNORE keeps it idempotent across restarts (the PK is the pair) and
-// preserves any link a newer build already wrote. pulls.session_id itself is intentionally KEPT —
-// it stays the PR's primary dev session for `lh resume`/retro, while session_links adds the N:M
-// related-sessions view on top. On a fresh DB there are no pulls rows, so these are no-ops.
-// INNER JOIN agent_sessions (not LEFT): session_links.session_id has a FK to agent_sessions and
-// foreign_keys is ON, and an FK violation is NOT suppressed by OR IGNORE — it aborts the whole
-// INSERT...SELECT. A pre-#298 pulls.session_id could point at an unregistered session (createPull/
-// setPullSession never verified registration), so a LEFT JOIN would emit such an orphan row and the
-// FK error would silently (tryExec) skip the ENTIRE backfill. The INNER JOIN drops orphans up front
-// so every valid pair still inserts; s.created_at is then always present (no COALESCE needed).
-tryExec(
-  `INSERT OR IGNORE INTO session_links (session_id, issue_id, created_at)
-   SELECT pulls.session_id, pulls.issue_id, s.created_at
-   FROM pulls
-   JOIN agent_sessions s ON s.id = pulls.session_id
-   WHERE pulls.session_id IS NOT NULL`,
-);
-tryExec(
-  `UPDATE agent_sessions SET kind = 'dev'
-   WHERE kind IS NULL
-     AND id IN (SELECT session_id FROM pulls WHERE session_id IS NOT NULL)`,
-);
+
+// ---- #316: retire pulls.session_id (and the older issue assignee it migrated from) ----
+//
+// #186 added pulls.session_id as the PR's 1:1 dev-session pointer (backfilled from the retiring
+// issue assignee); #298 generalized attribution into the session_links N:M bridge. The 1:1 pointer
+// is now derivable as "the PR's latest kind='dev' linked session" (store.primaryDevSessionForPull),
+// so #316 retires the column: migrate any legacy value into session_links, then DROP it. resume/retro
+// derive the anchor from session_links from here on.
+//
+// Guarded on a still-present legacy column so a fully-migrated DB does not rebuild the pulls/issues
+// tables (SQLite DROP COLUMN rewrites the table) on every boot. Once both columns are gone the block
+// is skipped. The order matters: backfill into session_links BEFORE dropping the column, so PRs open
+// (or pending retro) at upgrade time keep their attribution.
+if (
+  columnExists("pulls", "session_id") ||
+  columnExists("issues", "assignee_session_id")
+) {
+  // Ensure the column exists so a pre-#186 DB can be backfilled from the retiring assignee.
+  tryExec(
+    "ALTER TABLE pulls ADD COLUMN session_id TEXT REFERENCES agent_sessions(id)",
+  );
+  // (#186) Backfill from the old assignee — prefer the PR's own assignee (direct `lh dev <pr>`) over
+  // the linked issue's (the common `lh dev <issue>` flow): seed the own-row value, then the
+  // linked-issue value for rows still NULL. No-op (and ignored) once the assignee column is gone.
+  tryExec(
+    `UPDATE pulls SET session_id = (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.issue_id)
+     WHERE session_id IS NULL
+       AND (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.issue_id) IS NOT NULL`,
+  );
+  tryExec(
+    `UPDATE pulls SET session_id = (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.linked_issue_id)
+     WHERE session_id IS NULL AND linked_issue_id IS NOT NULL
+       AND (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.linked_issue_id) IS NOT NULL`,
+  );
+  // Drop the retired assignee column and its unique index (index first, so DROP COLUMN is permitted).
+  tryExec("DROP INDEX IF EXISTS idx_issues_assignee_session");
+  tryExec("ALTER TABLE issues DROP COLUMN assignee_session_id");
+  // (#298) Mirror every PR's dev session into session_links (kind='dev') before the column drops, so
+  // resume/retro keep resolving it. INSERT OR IGNORE is idempotent (PK is the pair) and preserves any
+  // link a newer build already wrote. INNER JOIN agent_sessions (not LEFT): session_links.session_id
+  // has an FK to agent_sessions and foreign_keys is ON; an FK violation is NOT suppressed by OR IGNORE
+  // and would abort the whole INSERT...SELECT. A pre-#298 pulls.session_id could point at an
+  // unregistered session, so a LEFT JOIN would emit such an orphan row and silently (tryExec) skip the
+  // ENTIRE backfill. The INNER JOIN drops orphans up front; s.created_at is then always present.
+  tryExec(
+    `INSERT OR IGNORE INTO session_links (session_id, issue_id, created_at)
+     SELECT pulls.session_id, pulls.issue_id, s.created_at
+     FROM pulls
+     JOIN agent_sessions s ON s.id = pulls.session_id
+     WHERE pulls.session_id IS NOT NULL`,
+  );
+  tryExec(
+    `UPDATE agent_sessions SET kind = 'dev'
+     WHERE kind IS NULL
+       AND id IN (SELECT session_id FROM pulls WHERE session_id IS NOT NULL)`,
+  );
+  // (#316) The pointer now lives in session_links; drop the denormalized column.
+  tryExec("ALTER TABLE pulls DROP COLUMN session_id");
+}
 
 // review_notes.issue_id becomes nullable (#216): a note is now identified by
 // (repo_id, base_sha -> commit_sha, path) and a PR association is optional. Older DBs created the

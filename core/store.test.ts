@@ -240,8 +240,8 @@ test("createPull and setPullSession record the dev session in session_links (#29
   expect(S.getAgentSession(s2).kind).toBe("dev");
   list = S.listSessionsForIssue(pr.id);
   expect(list.map((r: any) => r.id).sort()).toEqual([s1, s2].sort());
-  // pulls.session_id still points at the latest (the resume anchor).
-  expect(S.getPull(pr.id).session_id).toBe(s2);
+  // The primary dev session (resume anchor) is derived as the latest kind='dev' link (#316).
+  expect(S.primaryDevSessionForPull(pr.id)).toBe(s2);
 });
 
 test("emitEvent persists and listEvents filters by since/order", () => {

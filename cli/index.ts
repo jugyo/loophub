@@ -534,8 +534,8 @@ async function main() {
       }),
     );
 
-    // Attribute this session to the work's PR (pulls.session_id) so `lh resume`/retro can later
-    // re-enter it (#186 — replaces the old issue-assignee path). For an issue target, open (or reuse)
+    // Attribute this session to the work's PR (via session_links, #316) so `lh resume`/retro can
+    // later re-enter it (#186 — replaces the old issue-assignee path). For an issue target, open (or reuse)
     // the draft PR so the agent has a place to write its plan and dev notes; for a PR target, point
     // the existing PR at this session. Best-effort: a failure warns rather than blocks the dev loop.
     if (!item.pull_request) {
