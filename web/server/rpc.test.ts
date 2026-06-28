@@ -155,7 +155,6 @@ test("dashboard/overview lists recent open issues newest-created first, tagged w
 
   const r: any = await call("dashboard/overview", {});
   expect(Array.isArray(r.result.issues)).toBe(true);
-  expect(Array.isArray(r.result.pulls)).toBe(true);
   // The cap is surfaced so the UI can note when the list is truncated.
   expect(r.result.recentIssuesLimit).toBe(100);
 
@@ -189,35 +188,6 @@ test("dashboard/overview lists recent open issues newest-created first, tagged w
   expect(
     r2.result.issues.some((it: any) => it.issue.title === "stamped-oldest"),
   ).toBe(false);
-});
-
-test("dashboard/overview lists open unmerged PRs tagged with their repo", async () => {
-  // A PR head must exist as a branch for pulls/create to resolve its sha.
-  git(["checkout", "-q", "-b", "feat-x"]);
-  writeFileSync(join(repoPath, "b.txt"), "y\n");
-  git(["add", "-A"]);
-  git(["commit", "-qm", "feat"]);
-  git(["checkout", "-q", "main"]);
-
-  const pr: any = await call("pulls/create", {
-    repo: "me/proj",
-    title: "feature pr",
-    head: "feat-x",
-    base: "main",
-  });
-  expect(pr.result.number).toBeTypeOf("number");
-
-  const r: any = await call("dashboard/overview", {});
-  const mine = r.result.pulls.find(
-    (it: any) => it.pull.number === pr.result.number,
-  );
-  expect(mine).toBeTruthy();
-  expect(mine.repo).toEqual({
-    full_name: "me/proj",
-    owner: "me",
-    name: "proj",
-  });
-  expect(mine.pull.merged).toBe(false);
 });
 
 test("dispatchRaw turns invalid JSON into -32700", async () => {

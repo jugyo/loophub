@@ -202,16 +202,9 @@ export interface DashboardIssueItem {
   issue: Issue;
 }
 
-/** One open unmerged PR plus the repo it belongs to (dashboard/overview). */
-export interface DashboardPullItem {
-  repo: RepoRef;
-  pull: PullRequest;
-}
-
 /** Cross-repo top-page overview (dashboard/overview). */
 export interface DashboardOverview {
   issues: DashboardIssueItem[];
-  pulls: DashboardPullItem[];
   /** Max issues the overview returns; used to note when the list is capped. */
   recentIssuesLimit: number;
 }

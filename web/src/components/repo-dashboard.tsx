@@ -1,13 +1,14 @@
-// Repo dashboard body (/r/:owner/:repo). Renders the "now" sections from
-// DESIGN.md § Dashboard sections — Open PRs, Open Issues — each capped at
-// SECTION_LIMIT with a "see all" link to the dedicated list view. Lists are TanStack Query backed
-// and refetch on SSE (root.tsx + event-keys).
+// Repo dashboard body (/r/:owner/:repo). Renders the "now" Open Issues section
+// from DESIGN.md § Dashboard sections, capped at SECTION_LIMIT with a "see all"
+// link to the dedicated list view. Each issue row carries its linked PR as a
+// sub-row, so a separate PR list is redundant here. The list is TanStack Query
+// backed and refetches on SSE (root.tsx + event-keys).
 
 import { CreateIssueButton } from "@/components/create-issue-button";
-import { IssueRow, PullRow } from "@/components/dashboard-rows";
+import { IssueRow } from "@/components/dashboard-rows";
 import { DashboardSection } from "@/components/dashboard-section";
 import { RepoMenu } from "@/components/repo-menu";
-import { useOpenIssues, useOpenPulls } from "@/queries/dashboard";
+import { useOpenIssues } from "@/queries/dashboard";
 
 export function RepoDashboard({
   owner,
@@ -17,7 +18,6 @@ export function RepoDashboard({
   repo: string;
 }) {
   const issues = useOpenIssues(owner, repo);
-  const pulls = useOpenPulls(owner, repo);
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-8">
@@ -32,16 +32,6 @@ export function RepoDashboard({
         </div>
         <RepoMenu owner={owner} repo={repo} />
       </div>
-
-      <DashboardSection
-        title="Open PRs"
-        query={pulls}
-        seeAllTo="/r/$owner/$repo/pulls"
-        seeAllParams={{ owner, repo }}
-        emptyText="No open pull requests."
-        keyOf={(p) => p.number}
-        renderItem={(p) => <PullRow owner={owner} repo={repo} pull={p} />}
-      />
 
       <DashboardSection
         title="Open Issues"

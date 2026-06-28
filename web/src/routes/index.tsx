@@ -1,20 +1,15 @@
 import { createRoute } from "@tanstack/react-router";
-import { IssueRow, PullRow } from "@/components/dashboard-rows";
+import { IssueRow } from "@/components/dashboard-rows";
 import { DashboardSection } from "@/components/dashboard-section";
-import {
-  useRecentIssuesLimit,
-  useRecentOpenIssues,
-  useUnmergedPulls,
-} from "@/queries/dashboard";
+import { useRecentIssuesLimit, useRecentOpenIssues } from "@/queries/dashboard";
 import { rootRoute } from "./root";
 
-// Home (/) is a cross-project overview: pull requests still open and the most
-// recently created open issues. Each row is tagged with its repo so it's clear
-// which project the work belongs to. The per-repo dashboard lives at
-// /r/:owner/:repo.
+// Home (/) is a cross-project overview of the most recently created open
+// issues. Each row is tagged with its repo so it's clear which project the work
+// belongs to, and carries its linked PR as a sub-row. The per-repo dashboard
+// lives at /r/:owner/:repo.
 function HomePage() {
   const issues = useRecentOpenIssues();
-  const pulls = useUnmergedPulls();
   const recentIssuesLimit = useRecentIssuesLimit().data;
 
   // Only hint at the cap once the list actually reaches it — below the cap the
@@ -28,25 +23,9 @@ function HomePage() {
       <div>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Open pull requests and the latest open issues, across all your
-          projects.
+          The latest open issues across all your projects.
         </p>
       </div>
-
-      <DashboardSection
-        title="Open pull requests"
-        query={pulls}
-        emptyText="No open pull requests."
-        keyOf={(it) => `${it.repo.full_name}#${it.pull.number}`}
-        renderItem={(it) => (
-          <PullRow
-            owner={it.repo.owner}
-            repo={it.repo.name}
-            pull={it.pull}
-            repoLabel={it.repo.full_name}
-          />
-        )}
-      />
 
       <DashboardSection
         title="Recent issues"

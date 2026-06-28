@@ -537,7 +537,7 @@ export const methods: Record<string, MethodDef> = {
   // ---- dashboard ----
   "dashboard/overview": {
     description:
-      "Cross-repo top-page overview: recently created open issues and open unmerged pull requests, each tagged with its repo.",
+      "Cross-repo top-page overview: recently created open issues, each tagged with its repo.",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.dashboard.overview(),

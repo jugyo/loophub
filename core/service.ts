@@ -1397,25 +1397,12 @@ function repoRef(r: S.Repo): RepoRef {
   return { full_name: r.full_name, owner: r.owner, name: r.name };
 }
 
-function byUpdatedDesc(
-  a: { updated_at: string },
-  b: { updated_at: string },
-): number {
-  return a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : 0;
-}
-
 function byCreatedDesc(
   a: { created_at: string },
   b: { created_at: string },
 ): number {
   return a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0;
 }
-
-// Per-section cap for the open-PR list, mirroring the per-repo dashboard
-// sections. Bounds both the rendered list and the git fan-out below: rows are
-// sorted and sliced *before* serialization, so at most this many pullJSON
-// (git-spawning) calls run per request regardless of total backlog size.
-export const DASHBOARD_SECTION_LIMIT = 50;
 
 // Cap for the cross-repo "recently created open issues" list. Bounds the git
 // fan-out from enriching each issue's linked PR (issueListItemJSON below):
@@ -1427,22 +1414,16 @@ export const DASHBOARD_RECENT_ISSUES_LIMIT = 100;
 export const dashboard = {
   async overview() {
     const issueRows: { repo: S.Repo; ref: RepoRef; row: any }[] = [];
-    const pullRows: { repo: S.Repo; ref: RepoRef; row: any }[] = [];
     for (const r of S.listRepos("active")) {
       const ref = repoRef(r);
       for (const row of S.listIssues(r.id, "issue", "open")) {
         issueRows.push({ repo: r, ref, row });
       }
-      for (const row of S.listPulls(r.id, "open", "exclude")) {
-        pullRows.push({ repo: r, ref, row });
-      }
     }
-    // Cap each section before serialization so the lists stay bounded and the
-    // git fan-out (pullJSON for PRs, issueListItemJSON's linked-PR enrichment
-    // for issues) stays bounded. Issues are ordered newest-created first; PRs
-    // keep their most-recently-updated ordering.
+    // Cap the section before serialization so the list stays bounded and the
+    // git fan-out (issueListItemJSON's linked-PR enrichment) stays bounded.
+    // Issues are ordered newest-created first.
     issueRows.sort((a, b) => byCreatedDesc(a.row, b.row));
-    pullRows.sort((a, b) => byUpdatedDesc(a.row, b.row));
     // Enrich each issue's linked PR (status word + diff totals + the full
     // linked_pull_requests[] stack) so the home "Recent issues" rows match the
     // dedicated issue list's Pattern E sub-rows. issueListItemJSON is async per
@@ -1455,17 +1436,9 @@ export const dashboard = {
           issue: await issueListItemJSON(row, repo),
         })),
     );
-    const pulls = await Promise.all(
-      pullRows
-        .slice(0, DASHBOARD_SECTION_LIMIT)
-        .map(async ({ repo, ref, row }) => ({
-          repo: ref,
-          pull: await pullJSON(repo, row),
-        })),
-    );
     // Surface the issue cap so the UI can note "showing the N most recent"
     // without duplicating the magic number client-side.
-    return { issues, pulls, recentIssuesLimit: DASHBOARD_RECENT_ISSUES_LIMIT };
+    return { issues, recentIssuesLimit: DASHBOARD_RECENT_ISSUES_LIMIT };
   },
 };
 

@@ -3,7 +3,7 @@
 // query-key factories so lists refetch on change.
 
 import { useQuery } from "@tanstack/react-query";
-import { getDashboardOverview, listIssues, listPulls } from "@/api/client";
+import { getDashboardOverview, listIssues } from "@/api/client";
 import { queryKeys } from "./keys";
 
 /** Max items per dashboard section (DESIGN.md § Dashboard sections: each list ~20, then "see all"). */
@@ -21,15 +21,6 @@ export function useOpenIssues(owner: string, repo: string) {
         repo,
         `state=open&kind=issue&per_page=${SECTION_LIMIT}`,
       ),
-  });
-}
-
-/** Open pull requests for the dashboard's Open PRs section. */
-export function useOpenPulls(owner: string, repo: string) {
-  return useQuery({
-    queryKey: queryKeys.pulls(full(owner, repo)),
-    queryFn: () =>
-      listPulls(owner, repo, `state=open&per_page=${SECTION_LIMIT}`),
   });
 }
 
@@ -52,14 +43,5 @@ export function useRecentIssuesLimit() {
     queryKey: queryKeys.dashboard(),
     queryFn: getDashboardOverview,
     select: (overview) => overview.recentIssuesLimit,
-  });
-}
-
-/** Open, unmerged pull requests across all active repos. */
-export function useUnmergedPulls() {
-  return useQuery({
-    queryKey: queryKeys.dashboard(),
-    queryFn: getDashboardOverview,
-    select: (overview) => overview.pulls,
   });
 }
