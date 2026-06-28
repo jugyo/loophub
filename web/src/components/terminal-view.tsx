@@ -8,9 +8,25 @@
 // never changes. Only a reload or closing the tab (unmount) tears it down.
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import { tlog } from "@/lib/terminal-debug";
+import { classifyTerminalLink } from "@/lib/terminal-link";
+import { router } from "@/router";
+
+// Open a URL clicked in the terminal. A loophub-internal link (same origin as this SPA) is taken
+// over for client-side navigation via the router so the app doesn't full-reload; anything else
+// opens in a new tab as before. window.location.origin is the live loophub origin — no hardcoded
+// host/port (see issue #302).
+function openTerminalLink(_event: MouseEvent, uri: string) {
+  const target = classifyTerminalLink(uri, window.location.origin);
+  if (target.kind === "internal") {
+    router.history.push(target.path);
+  } else {
+    window.open(target.uri, "_blank", "noopener,noreferrer");
+  }
+}
 
 // WebSocket close code for a normal shell exit (`exit` / Ctrl-D). Only this collapses the pane.
 // Everything else — including 1001 "server going away" (a restart, not a user action) and the
@@ -112,6 +128,8 @@ export function TerminalView({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    // Make URLs clickable; loophub links navigate in-app instead of opening a new tab.
+    term.loadAddon(new WebLinksAddon(openTerminalLink));
     term.open(host);
     fit.fit();
     termRef.current = term;
