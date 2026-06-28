@@ -249,7 +249,7 @@ describe("PullDetail", () => {
     });
   });
 
-  it("groups reviews by commit: current head expanded, older head collapsed", async () => {
+  it("groups reviews by commit, collapsed by default with a verdict on each summary (#268)", async () => {
     // Two reviews against different commits: one on the PR's current head ("aaa")
     // and one on a superseded commit.
     const grouped: PullReview[] = [
@@ -308,20 +308,30 @@ describe("PullDetail", () => {
     const currentSummary = await screen.findByText("aaa");
     const staleSummary = await screen.findByText("old1234");
 
-    // Current-head group is expanded by default; the older group is collapsed.
+    // Every group is collapsed by default (#268); the verdict on the summary
+    // tells the state apart without expanding.
     const currentGroup = currentSummary.closest("details");
     const staleGroup = staleSummary.closest("details");
-    expect(currentGroup?.open).toBe(true);
+    expect(currentGroup?.open).toBe(false);
     expect(staleGroup?.open).toBe(false);
 
     // Existing per-commit state badges are preserved.
     expect(screen.getByText("current")).toBeTruthy();
     expect(screen.getByText("STALE")).toBeTruthy();
+
+    // Each summary carries a collapsed verdict: APPROVE → "approved" on the
+    // current group, REQUEST_CHANGES → "changes requested" on the stale group.
+    expect(currentGroup?.querySelector("summary")?.textContent).toContain(
+      "approved",
+    );
+    expect(staleGroup?.querySelector("summary")?.textContent).toContain(
+      "changes requested",
+    );
   });
 
-  it("expands the newest group when no review targets the current head", async () => {
+  it("keeps all groups collapsed when no review targets the current head (#268)", async () => {
     // The branch advanced past every reviewed commit, so no group is current.
-    // The newest group must still expand so its feedback is not hidden.
+    // Every group stays collapsed; the verdict on each summary surfaces the state.
     const grouped: PullReview[] = [
       {
         id: 1,
@@ -376,10 +386,12 @@ describe("PullDetail", () => {
 
     const newest = await screen.findByText("newer34");
     const older = await screen.findByText("older12");
-    expect(newest.closest("details")?.open).toBe(true);
+    expect(newest.closest("details")?.open).toBe(false);
     expect(older.closest("details")?.open).toBe(false);
     // No group targets the current head, so no "current" badge is shown.
     expect(screen.queryByText("current")).toBeNull();
+    // Both groups are REQUEST_CHANGES → each summary shows "changes requested".
+    expect(screen.getAllByText("changes requested").length).toBe(2);
   });
 
   it("renders per-file review notes with the diff range, marking stale ones (#217)", async () => {

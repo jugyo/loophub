@@ -420,15 +420,28 @@ type ReviewGroup = {
   reviews: PullReview[];
   /** Whether this group targets the PR's current head commit. */
   isCurrent: boolean;
-  /** Whether this group renders expanded by default. */
-  defaultOpen: boolean;
 };
 
+// Collapse a group's reviews into a single verdict shown on the (always-visible)
+// summary, so a reader sees each group's state without expanding it (#268). A
+// REQUEST_CHANGES anywhere dominates ("changes requested"); otherwise an APPROVE
+// reads as "approved"; a comment-only group reads as "commented".
+function reviewGroupVerdict(reviews: PullReview[]): {
+  tone: BadgeTone;
+  label: string;
+} {
+  if (reviews.some((r) => r.state === "REQUEST_CHANGES"))
+    return { tone: "review-changes", label: "changes requested" };
+  if (reviews.some((r) => r.state === "APPROVE"))
+    return { tone: "review-approved", label: "approved" };
+  return { tone: "review-commented", label: "commented" };
+}
+
 // Group reviews by the commit (head_sha) they were made against. The group for
-// the PR's current head comes first (and is rendered expanded); the remaining
-// groups follow newest-review-first and are rendered collapsed. When no review
-// targets the current head (the branch advanced since the last review), the
-// newest group is expanded instead, so actionable feedback is never hidden.
+// the PR's current head comes first; the remaining groups follow
+// newest-review-first. Every group renders collapsed by default (#268) — the
+// summary carries the verdict (see {@link reviewGroupVerdict}) so the state is
+// visible without expanding.
 function groupReviewsByCommit(
   reviews: PullReview[],
   currentHeadSha: string,
@@ -446,7 +459,6 @@ function groupReviewsByCommit(
       headSha: key === "" ? null : key,
       reviews: list,
       isCurrent: key !== "" && key === currentHeadSha,
-      defaultOpen: false,
     });
   }
   // Max submitted_at in the group; computed explicitly so the non-current
@@ -457,10 +469,6 @@ function groupReviewsByCommit(
     if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
     return latest(b).localeCompare(latest(a));
   });
-  // Expand the current-head group; if there is none, fall back to the newest
-  // group (first after the sort) so the latest review stays visible.
-  const open = groups.find((g) => g.isCurrent) ?? groups[0];
-  if (open) open.defaultOpen = true;
   return groups;
 }
 
@@ -537,11 +545,9 @@ function ReviewCommitGroup({
 }) {
   const shortSha = group.headSha ? group.headSha.slice(0, 7) : null;
   const count = group.reviews.length;
+  const verdict = reviewGroupVerdict(group.reviews);
   return (
-    <details
-      open={group.defaultOpen}
-      className="group overflow-hidden rounded-md border"
-    >
+    <details className="group overflow-hidden rounded-md border">
       <summary className="flex cursor-pointer flex-wrap items-center gap-2 bg-muted/40 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden list-none">
         <ChevronRight
           className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
@@ -559,6 +565,7 @@ function ReviewCommitGroup({
         ) : group.headSha ? (
           <Badge tone="review-rereview">STALE</Badge>
         ) : null}
+        <Badge tone={verdict.tone}>{verdict.label}</Badge>
         <span className="text-xs text-muted-foreground">
           {count} review{count === 1 ? "" : "s"}
         </span>
