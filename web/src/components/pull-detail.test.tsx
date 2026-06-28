@@ -221,7 +221,7 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText(/Conflicts with 1 open PR/)).toBeTruthy();
+    expect(await screen.findByText(/May conflict with 1 open PR/)).toBeTruthy();
     expect(screen.getByText("another change")).toBeTruthy();
     // Conflicting file is listed.
     expect(screen.getByText("core/shared.ts")).toBeTruthy();

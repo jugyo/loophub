@@ -330,11 +330,11 @@ function ConflictList({
 }) {
   if (!conflicts || conflicts.length === 0) return null;
   return (
-    <section className="flex flex-col gap-2 rounded-md border border-destructive/50 bg-destructive/5 p-3">
+    <section className="flex flex-col gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 p-3">
       <h2 className="flex items-center gap-2 text-sm font-semibold">
-        <Badge tone="conflict">conflicts</Badge>
+        <Badge tone="review-rereview">potential conflict</Badge>
         <span>
-          Conflicts with {conflicts.length} open PR
+          May conflict with {conflicts.length} open PR
           {conflicts.length === 1 ? "" : "s"}
         </span>
       </h2>
