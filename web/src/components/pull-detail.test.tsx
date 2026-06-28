@@ -14,7 +14,6 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type {
@@ -33,6 +32,7 @@ vi.mock("@/components/terminal-controller", () => ({
   useTerminal: () => ({ openTerminal }),
 }));
 
+import { ErrorBanner, ErrorBannerProvider } from "./error-banner";
 import { PullDetail } from "./pull-detail";
 
 afterEach(() => {
@@ -259,18 +259,14 @@ describe("PullDetail", () => {
     });
   });
 
-  it("does not carry a merge-failed error onto a different PR on the same route (#321)", async () => {
-    // The PR-detail route only changes its `number` param between PRs, so React reuses the same
-    // PullHeader instance — and with it the useMergePull observer's error state — unless the header
-    // is keyed by PR number. Reproduce the no-loading-gap path (a loading gap would unmount the
-    // header and mask the leak) by pre-seeding PR #31's detail, so switching to it renders
-    // synchronously. The merge fails on #30; that error must not appear on #31.
-    const pull30 = pull; // number 30, APPROVED + open → Merge enabled
-    const pull31: PullRequest = { ...pull, number: 31, title: "second pr" };
+  it("surfaces a merge failure in the app error banner, dismissable by its close button (#323)", async () => {
+    // Merge feedback no longer renders inline on the PR header; a failed mutation reports to the
+    // app-shell ErrorBanner (lifetime decoupled from the header / mutation observer). Mount the
+    // banner alongside the detail and assert the failure shows there and the × dismisses it.
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
-        "pulls/get": (p) => (p.number === 31 ? pull31 : pull30),
+        "pulls/get": () => pull,
         "pulls/files": () => files,
         "reviews/list": () => [],
         "reviews/listComments": () => [],
@@ -284,25 +280,16 @@ describe("PullDetail", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    // Seed PR #31 so navigating to it has no loading gap (the bug's reproduction condition).
-    queryClient.setQueryData(["pull", "me/proj", 31], pull31);
-
-    function Switcher() {
-      const [n, setN] = useState(30);
-      return (
-        <>
-          <button type="button" onClick={() => setN(31)}>
-            go-31
-          </button>
-          <PullDetail owner="me" repo="proj" number={n} />
-        </>
-      );
-    }
     const rootRoute = createRootRoute({ component: Outlet });
     const indexRoute = createRoute({
       getParentRoute: () => rootRoute,
       path: "/",
-      component: Switcher,
+      component: () => (
+        <ErrorBannerProvider>
+          <ErrorBanner />
+          <PullDetail owner="me" repo="proj" number={30} />
+        </ErrorBannerProvider>
+      ),
     });
     const issuesRoute = createRoute({
       getParentRoute: () => rootRoute,
@@ -319,16 +306,17 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
-    // Merge PR #30 → it fails → the error surfaces.
+    // Merge PR #30 → it fails → the banner shows the failure message.
     fireEvent.click(await screen.findByRole("button", { name: /^Merge$/i }));
-    expect(await screen.findByText(/Merge failed:/)).toBeTruthy();
+    expect(
+      await screen.findByText("Merge failed: merge conflict"),
+    ).toBeTruthy();
 
-    // Navigate to PR #31 on the same route (no loading gap thanks to the seed).
-    fireEvent.click(screen.getByRole("button", { name: "go-31" }));
-
-    // The new PR's header renders; the stale merge error from #30 is gone.
-    expect(await screen.findByText("second pr")).toBeTruthy();
-    expect(screen.queryByText(/Merge failed:/)).toBeNull();
+    // The close (×) button dismisses it immediately.
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss error/i }));
+    await waitFor(() => {
+      expect(screen.queryByText("Merge failed: merge conflict")).toBeNull();
+    });
   });
 
   it("groups reviews by commit, collapsed by default with a verdict on each summary (#268)", async () => {

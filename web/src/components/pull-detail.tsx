@@ -20,6 +20,7 @@ import type {
 import { useRegisterDetailTitle } from "@/components/detail-title";
 import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
+import { useErrorBanner } from "@/components/error-banner";
 import { Markdown } from "@/components/markdown";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { RelatedSessions } from "@/components/related-sessions";
@@ -89,17 +90,10 @@ export function PullDetail({
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-6">
-      {/* Key by the PR's full identity (owner/repo/number) so navigating between PRs on the same
-          route remounts the header, giving each PR a fresh mutation observer. Without this the
-          merge/ready/setState mutation state (e.g. a `Merge failed: …` error) leaks onto the next
-          PR, since the component is reused at the same tree position when only the route params
-          change (#321). Keying on the full identity (not number alone) stays correct across repos. */}
-      <PullHeader
-        key={`${owner}/${repo}/${pull.number}`}
-        owner={owner}
-        repo={repo}
-        pull={pull}
-      />
+      {/* No key needed for feedback safety: operation-failure feedback now lives in the app-shell
+          error banner (#323), which clears on route change, so a `Merge failed: …` error can no
+          longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
+      <PullHeader owner={owner} repo={repo} pull={pull} />
 
       <ConflictList owner={owner} repo={repo} conflicts={pull.conflicts_with} />
 
@@ -162,6 +156,7 @@ function PullHeader({
   const merge = useMergePull(owner, repo, pull.number);
   const ready = useReadyForReview(owner, repo, pull.number);
   const setState = useSetPullState(owner, repo, pull.number);
+  const { showError } = useErrorBanner();
   const [method, setMethod] = useState<MergeMethod>("squash");
   const titleRef = useRegisterDetailTitle(pull.title);
 
@@ -239,7 +234,9 @@ function PullHeader({
             variant="secondary"
             disabled={setState.isPending}
             onClick={() =>
-              setState.mutate(pull.state === "open" ? "closed" : "open")
+              setState.mutate(pull.state === "open" ? "closed" : "open", {
+                onError: (e) => showError(failureMessage("Update failed", e)),
+              })
             }
           >
             {setState.isPending ? (
@@ -252,7 +249,11 @@ function PullHeader({
           <Button
             variant="secondary"
             disabled={ready.isPending}
-            onClick={() => ready.mutate()}
+            onClick={() =>
+              ready.mutate(undefined, {
+                onError: (e) => showError(failureMessage("Update failed", e)),
+              })
+            }
           >
             {ready.isPending ? (
               <Loader2 className="size-4 animate-spin" />
@@ -275,36 +276,24 @@ function PullHeader({
         </select>
         <Button
           disabled={!canMerge || merge.isPending}
-          onClick={() => merge.mutate(method)}
+          onClick={() =>
+            merge.mutate(method, {
+              onError: (e) => showError(failureMessage("Merge failed", e)),
+            })
+          }
         >
           {merge.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
           {pull.merged ? "Merged" : "Merge"}
         </Button>
       </div>
-
-      {merge.isError ? (
-        <p className="text-sm text-destructive">
-          {merge.error instanceof Error
-            ? `Merge failed: ${merge.error.message}`
-            : "Merge failed."}
-        </p>
-      ) : null}
-      {ready.isError ? (
-        <p className="text-sm text-destructive">
-          {ready.error instanceof Error
-            ? `Update failed: ${ready.error.message}`
-            : "Update failed."}
-        </p>
-      ) : null}
-      {setState.isError ? (
-        <p className="text-sm text-destructive">
-          {setState.error instanceof Error
-            ? `Update failed: ${setState.error.message}`
-            : "Update failed."}
-        </p>
-      ) : null}
     </div>
   );
+}
+
+// Format a mutation failure for the error banner: `"<prefix>: <message>"` when the error carries a
+// message, else `"<prefix>."`. Mirrors the wording the inline isError blocks used before #323.
+function failureMessage(prefix: string, error: unknown): string {
+  return error instanceof Error ? `${prefix}: ${error.message}` : `${prefix}.`;
 }
 
 // Cross-PR conflicts (#222): other open PRs whose head merge-conflicts with this
