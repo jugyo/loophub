@@ -2,14 +2,19 @@
 // Routes render into <Outlet/>. Screen content lands in later UI issues.
 
 import { Outlet } from "@tanstack/react-router";
+import { useRef } from "react";
 import { AppBreadcrumb } from "@/components/app-breadcrumb";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DetailTitleProvider } from "@/components/detail-title";
 import { TerminalControllerProvider } from "@/components/terminal-controller";
 import { TerminalPane } from "@/components/terminal-pane";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useScrollToTop } from "@/lib/use-scroll-to-top";
 
 export function AppLayout() {
+  // Reset the content scroll position to the top on every route change (#277).
+  const mainRef = useRef<HTMLElement>(null);
+  useScrollToTop(mainRef);
   return (
     // The terminal is a fixed full-width overlay along the bottom (see terminal-pane.tsx), so
     // expanding it never reflows the page. The main content reserves bottom space equal to the
@@ -30,6 +35,7 @@ export function AppLayout() {
               </div>
             </header>
             <main
+              ref={mainRef}
               className="min-h-0 flex-1 overflow-y-auto px-6 pt-6"
               style={{ paddingBottom: "var(--lh-term-reserve, 48px)" }}
             >
