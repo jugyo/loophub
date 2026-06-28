@@ -377,6 +377,13 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.issueGroups.members(p.repo, p.id),
   },
+  "issueGroups/forIssue": {
+    description:
+      "List the groups an issue (by number) belongs to, each with its ordered members.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyArray,
+    handler: (p) => svc.issueGroups.forIssue(p.repo, p.number),
+  },
   "issueGroups/create": {
     description: "Create an issue group.",
     params: params({ repo, name: strNonEmpty, session_id: sid }, [

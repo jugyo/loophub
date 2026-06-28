@@ -1012,6 +1012,20 @@ export function listGroupMembers(groupId: number): any[] {
     .all(groupId);
 }
 
+// Reverse of membership: the groups an issue belongs to, ordered by name (mirrors listIssueGroups).
+// Membership is many-to-many, so an issue can belong to several groups. Powers the "other issues in
+// the same group" list on the issue detail view (#314).
+export function listGroupsForIssue(issueId: number): any[] {
+  return db
+    .query(
+      `SELECT g.* FROM issue_groups g
+       JOIN issue_group_members m ON m.group_id = g.id
+       WHERE m.issue_id = ?
+       ORDER BY g.name`,
+    )
+    .all(issueId);
+}
+
 // ---- events ----
 // Persist then publish LoopEvent to in-process hub (order matters for SSE replay consistency).
 export function emitEvent(

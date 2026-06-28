@@ -10,6 +10,7 @@ import type {
   DashboardOverview,
   Issue,
   IssueComment,
+  IssueGroupWithMembers,
   LoopEvent,
   PullFile,
   PullLineComment,
@@ -134,6 +135,18 @@ export function listIssues(owner: string, repo: string, query = "") {
 
 export function getIssue(owner: string, repo: string, number: number) {
   return rpc<Issue>("issues/get", { repo: full(owner, repo), number });
+}
+
+/** Groups this issue belongs to, each with its ordered members (#314). */
+export function listIssueGroupsForIssue(
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  return rpc<IssueGroupWithMembers[]>("issueGroups/forIssue", {
+    repo: full(owner, repo),
+    number,
+  });
 }
 
 export function createIssue(

@@ -16,7 +16,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
-import type { Issue, IssueComment } from "@/api/types";
+import type { Issue, IssueComment, IssueGroupWithMembers } from "@/api/types";
 
 // The Build button opens a terminal via useTerminal(); capture the call.
 const { openTerminal } = vi.hoisted(() => ({ openTerminal: vi.fn() }));
@@ -59,9 +59,13 @@ const comments: IssueComment[] = [
   },
 ];
 
-function mockFetch(getIssue: () => Issue = () => issue) {
+function mockFetch(
+  getIssue: () => Issue = () => issue,
+  getGroups: () => IssueGroupWithMembers[] = () => [],
+) {
   return mockRpcFetch({
     "issues/get": getIssue,
+    "issueGroups/forIssue": getGroups,
     "comments/list": () => comments,
     "comments/create": (p) => ({
       id: 2,
@@ -72,8 +76,11 @@ function mockFetch(getIssue: () => Issue = () => issue) {
   });
 }
 
-function renderDetail(getIssue?: () => Issue) {
-  vi.stubGlobal("fetch", mockFetch(getIssue));
+function renderDetail(
+  getIssue?: () => Issue,
+  getGroups?: () => IssueGroupWithMembers[],
+) {
+  vi.stubGlobal("fetch", mockFetch(getIssue, getGroups));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -89,8 +96,14 @@ function renderDetail(getIssue?: () => Issue) {
     path: "/r/$owner/$repo/pulls/$number",
     component: () => null,
   });
+  // The grouped-issues list (IssueRow) links to the issues route; register it too.
+  const issuesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/issues/$number",
+    component: () => null,
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, pullsRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, pullsRoute, issuesRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
   return render(
@@ -187,5 +200,48 @@ describe("IssueDetail", () => {
       label: "dev #12",
       issueRef: { owner: "me", repo: "proj", number: 12 },
     });
+  });
+
+  it("lists other issues in the same group, excluding the current one", async () => {
+    const member = (number: number, title: string): Issue => ({
+      ...issue,
+      number,
+      title,
+      linked_pull_request: null,
+    });
+    const groups: IssueGroupWithMembers[] = [
+      {
+        group: {
+          id: 1,
+          name: "sprint-1",
+          members: 3,
+          created_at: "2026-06-17T10:00:00Z",
+          updated_at: "2026-06-17T10:00:00Z",
+        },
+        // Includes the current issue (#12); the UI must drop it.
+        members: [
+          member(12, "self"),
+          member(13, "next-a"),
+          member(14, "next-b"),
+        ],
+      },
+    ];
+    renderDetail(undefined, () => groups);
+
+    expect(await screen.findByText("next-a")).toBeTruthy();
+    const otherLink = screen.getByText("next-a").closest("a");
+    expect(otherLink?.getAttribute("href")).toBe("/r/me/proj/issues/13");
+    // The group heading reports the count of *other* members (2, not 3).
+    expect(screen.getByText(/Group: sprint-1/)).toBeTruthy();
+    expect(screen.getByText(/2 others/)).toBeTruthy();
+    // The current issue's title appears once (the header), not duplicated in the group list.
+    expect(screen.getAllByText("ui2: issue detail").length).toBe(1);
+  });
+
+  it("renders no group section when the issue belongs to no group", async () => {
+    renderDetail(undefined, () => []);
+
+    await screen.findByText("ui2: issue detail");
+    expect(screen.queryByText(/^Group:/)).toBeNull();
   });
 });

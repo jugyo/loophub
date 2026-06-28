@@ -149,6 +149,25 @@ export interface Issue {
   linked_pull_requests?: LinkedPull[];
 }
 
+/** An issue group (#312): a repo-scoped, ordered collection of issues. */
+export interface IssueGroup {
+  id: number;
+  name: string;
+  /** Member count (not the rows). */
+  members: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * A group an issue belongs to, paired with its ordered members (#314).
+ * Returned by `issueGroups/forIssue`; `members` includes the queried issue itself.
+ */
+export interface IssueGroupWithMembers {
+  group: IssueGroup;
+  members: Issue[];
+}
+
 export interface PullRequest {
   number: number;
   state: "open" | "closed";

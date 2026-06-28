@@ -581,6 +581,19 @@ export const issueGroups = {
     return S.listGroupMembers(g.id).map((row) => issueJSON(row, r));
   },
 
+  // Groups the given issue belongs to, each with its ordered members (#314). Powers the
+  // "other issues in the same group" list on the issue detail view. The issue itself is included
+  // in each group's `members` (the caller filters it out); membership is many-to-many, so an issue
+  // can appear under several groups. Returns [] when the issue belongs to no group.
+  forIssue(name: string, number: number) {
+    const r = repoOr404(name);
+    const issue = groupIssueOr404(r, number);
+    return S.listGroupsForIssue(issue.id).map((g) => ({
+      group: issueGroupJSON(g),
+      members: S.listGroupMembers(g.id).map((row) => issueJSON(row, r)),
+    }));
+  },
+
   create(name: string, groupName: string, sessionId?: string | null) {
     const r = repoOr404(name);
     ensureWritable(r);

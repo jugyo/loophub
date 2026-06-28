@@ -6,7 +6,8 @@
 import { Link } from "@tanstack/react-router";
 import { Loader2, Play } from "lucide-react";
 import { useRef, useState } from "react";
-import type { Issue, IssueComment } from "@/api/types";
+import type { Issue, IssueComment, IssueGroupWithMembers } from "@/api/types";
+import { IssueRow } from "@/components/dashboard-rows";
 import { useRegisterDetailTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
 import { Markdown } from "@/components/markdown";
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 import {
   useIssue,
   useIssueComments,
+  useIssueGroups,
   usePostComment,
   useSetIssueState,
 } from "@/queries/issues";
@@ -62,6 +64,8 @@ export function IssueDetail({
     <div className="mx-auto flex max-w-content flex-col gap-6">
       <IssueHeader owner={owner} repo={repo} issue={issue} />
 
+      <GroupedIssues owner={owner} repo={repo} number={number} />
+
       <RelatedSessions
         owner={owner}
         repo={repo}
@@ -78,6 +82,55 @@ export function IssueDetail({
 
       <CommentForm owner={owner} repo={repo} number={number} />
     </div>
+  );
+}
+
+// "Other issues in the same group" (#314): for each group this issue belongs to, list its other
+// members so a reader can see what comes next when working through the group in order. Reuses the
+// shared IssueRow (no bespoke row). The current issue is dropped from each list; a group that holds
+// only this issue is skipped. Hides entirely when the issue belongs to no group (or all groups are
+// solo), so ungrouped issues stay uncluttered.
+function GroupedIssues({
+  owner,
+  repo,
+  number,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+}) {
+  const query = useIssueGroups(owner, repo, number);
+  const groups = (query.data ?? [])
+    .map(
+      (g): IssueGroupWithMembers => ({
+        ...g,
+        members: g.members.filter((m) => m.number !== number),
+      }),
+    )
+    .filter((g) => g.members.length > 0);
+
+  if (groups.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-3">
+      {groups.map(({ group, members }) => (
+        <div key={group.id} className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold">
+            Group: {group.name}{" "}
+            <span className="text-sm font-normal text-muted-foreground">
+              ({members.length} other{members.length === 1 ? "" : "s"})
+            </span>
+          </h2>
+          <ul className="flex flex-col divide-y rounded-md border">
+            {members.map((m) => (
+              <li key={m.number}>
+                <IssueRow owner={owner} repo={repo} issue={m} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
   );
 }
 

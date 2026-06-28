@@ -7,6 +7,7 @@ import {
   createIssue,
   getIssue,
   listIssueComments,
+  listIssueGroupsForIssue,
   listIssues,
   patchIssue,
   postIssueComment,
@@ -51,6 +52,14 @@ export function useIssue(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: queryKeys.issue(full(owner, repo), number),
     queryFn: () => getIssue(owner, repo, number),
+  });
+}
+
+/** Groups this issue belongs to, each with its ordered members (#314). */
+export function useIssueGroups(owner: string, repo: string, number: number) {
+  return useQuery({
+    queryKey: [...queryKeys.issue(full(owner, repo), number), "groups"],
+    queryFn: () => listIssueGroupsForIssue(owner, repo, number),
   });
 }
 

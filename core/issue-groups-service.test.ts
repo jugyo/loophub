@@ -117,6 +117,38 @@ test("an issue can belong to multiple groups (many-to-many)", () => {
   ).toContain(issue.number);
 });
 
+test("forIssue lists the issue's groups (ordered by name) with their members", () => {
+  // Two groups (named out of alphabetical order to prove name-ordering), one shared issue.
+  const gB = svc.issueGroups.create("me/groups", "for-issue-b") as any;
+  const gA = svc.issueGroups.create("me/groups", "for-issue-a") as any;
+  const self = svc.issues.create("me/groups", { title: "subject" }) as any;
+  const other1 = svc.issues.create("me/groups", { title: "next-1" }) as any;
+  const other2 = svc.issues.create("me/groups", { title: "next-2" }) as any;
+
+  svc.issueGroups.addIssue("me/groups", gA.id, self.number);
+  svc.issueGroups.addIssue("me/groups", gA.id, other1.number);
+  svc.issueGroups.addIssue("me/groups", gB.id, other2.number);
+  svc.issueGroups.addIssue("me/groups", gB.id, self.number);
+
+  const res = svc.issueGroups.forIssue("me/groups", self.number) as any[];
+  // Both groups, ordered by name (a before b), each with the full ordered membership (self included).
+  expect(res.map((r) => r.group.name)).toEqual(["for-issue-a", "for-issue-b"]);
+  expect(res[0].members.map((m: any) => m.number)).toEqual([
+    self.number,
+    other1.number,
+  ]);
+  expect(res[1].members.map((m: any) => m.number)).toEqual([
+    other2.number,
+    self.number,
+  ]);
+});
+
+test("forIssue returns [] for an issue in no group; 404 for a missing issue", () => {
+  const lonely = svc.issues.create("me/groups", { title: "ungrouped" }) as any;
+  expect(svc.issueGroups.forIssue("me/groups", lonely.number)).toEqual([]);
+  expect(() => svc.issueGroups.forIssue("me/groups", 999999)).toThrow();
+});
+
 test("delete a group removes memberships but leaves the issues intact", () => {
   const g = svc.issueGroups.create("me/groups", "to-delete") as any;
   const issue = svc.issues.create("me/groups", { title: "survivor" }) as any;
