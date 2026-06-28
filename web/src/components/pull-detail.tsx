@@ -7,7 +7,7 @@
 // via <Markdown>.
 
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, Loader2, Play } from "lucide-react";
 import { useState } from "react";
 import type {
   PullConflict,
@@ -22,6 +22,7 @@ import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
 import { Markdown } from "@/components/markdown";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
+import { useTerminal } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +41,7 @@ import {
   usePullComments,
   usePullDevNotes,
   usePullFiles,
+  usePullResumable,
   usePullReviewNotes,
   usePullReviews,
   useReadyForReview,
@@ -144,6 +146,8 @@ function PullHeader({
   const merge = useMergePull(owner, repo, pull.number);
   const ready = useReadyForReview(owner, repo, pull.number);
   const setState = useSetPullState(owner, repo, pull.number);
+  const resumable = usePullResumable(owner, repo, pull.number);
+  const { openTerminal } = useTerminal();
   const [method, setMethod] = useState<MergeMethod>("squash");
   const titleRef = useRegisterDetailTitle(pull.title);
 
@@ -155,6 +159,10 @@ function PullHeader({
   const canAct = pull.state === "open" && !pull.merged;
   const canMerge = canAct && pull.review_state === "APPROVED";
   const canReady = canAct && pull.review_state === "CHANGES_REQUESTED";
+  // Resume re-enters the PR's dev session (lh resume). Show only when the server confirms it would
+  // succeed (decideResume: session id + surviving worktree/branch); otherwise the button is hidden.
+  const canResume = resumable.data?.resumable === true;
+  const resumeId = `${owner}/${repo}/${pull.number}`;
 
   return (
     <div className="flex flex-col gap-3">
@@ -216,6 +224,25 @@ function PullHeader({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
+        {canResume ? (
+          <Button
+            variant="secondary"
+            title={`Resume \`lh resume ${resumeId}\` in a terminal`}
+            onClick={() =>
+              openTerminal({
+                command: `lh resume ${resumeId}`,
+                repo: `${owner}/${repo}`,
+                label: `resume #${pull.number}`,
+                issueRef: linked
+                  ? { owner, repo, number: linked.number }
+                  : undefined,
+              })
+            }
+          >
+            <Play className="size-4" />
+            Resume
+          </Button>
+        ) : null}
         {!pull.merged ? (
           <Button
             variant="secondary"

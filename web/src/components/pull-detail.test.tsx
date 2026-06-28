@@ -24,11 +24,19 @@ import type {
   PullReview,
   ReviewNote,
 } from "@/api/types";
+
+// The Resume button (#276) opens a terminal via useTerminal(); capture the call.
+const { openTerminal } = vi.hoisted(() => ({ openTerminal: vi.fn() }));
+vi.mock("@/components/terminal-controller", () => ({
+  useTerminal: () => ({ openTerminal }),
+}));
+
 import { PullDetail } from "./pull-detail";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  openTerminal.mockClear();
 });
 
 const pull: PullRequest = {
@@ -465,5 +473,69 @@ describe("PullDetail", () => {
     // No reviews here, so the only badges come from the notes: one current, one STALE.
     expect(screen.getByText("current")).toBeTruthy();
     expect(screen.getByText("STALE")).toBeTruthy();
+  });
+
+  // Render the detail with a specific `pulls/resumable` result (the rest of the methods reuse the
+  // shared fixtures). Returns nothing; assertions read the rendered output / the openTerminal spy.
+  function renderWithResumable(resumable: boolean) {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => pull,
+        "pulls/files": () => files,
+        "reviews/list": () => reviews,
+        "reviews/listComments": () => lineComments,
+        "reviewNotes/list": () => [],
+        "comments/list": () => comments,
+        "pulls/resumable": () => ({ resumable }),
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("shows the Resume button and launches `lh resume <id>` in a terminal when resumable (#276)", async () => {
+    renderWithResumable(true);
+
+    const button = await screen.findByRole("button", { name: /^Resume$/ });
+    fireEvent.click(button);
+
+    // Same openTerminal route as the issue Build button: fully-qualified id, repo cwd, and the
+    // linked issue as the terminal's PR top-region ref.
+    expect(openTerminal).toHaveBeenCalledWith({
+      command: "lh resume me/proj/30",
+      repo: "me/proj",
+      label: "resume #30",
+      issueRef: { owner: "me", repo: "proj", number: 153 },
+    });
+  });
+
+  it("hides the Resume button when the PR cannot be resumed (#276)", async () => {
+    renderWithResumable(false);
+
+    // The header is mounted (Merge renders), so an absent Resume button means it is gated, not unrendered.
+    await screen.findByRole("button", { name: /^Merge$/i });
+    expect(screen.queryByRole("button", { name: /^Resume$/ })).toBeNull();
   });
 });

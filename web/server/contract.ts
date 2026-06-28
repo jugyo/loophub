@@ -453,6 +453,15 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.pulls.debug(p.repo, p.number),
   },
+  "pulls/resumable": {
+    description:
+      "Whether this PR's dev session can be resumed right now (decideResume): a session id exists and its worktree or head branch survives. Drives the PR-detail Resume button — true only when `lh resume` would succeed.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: async (p) => ({
+      resumable: (await svc.resume.resolve(p.repo, p.number)).ok,
+    }),
+  },
 
   // ---- reviews ----
   "reviews/list": {

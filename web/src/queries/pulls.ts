@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getPull,
   getPullDebug,
+  getPullResumable,
   listEvents,
   listPullComments,
   listPullFiles,
@@ -60,6 +61,19 @@ export function usePull(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: queryKeys.pull(full(owner, repo), number),
     queryFn: () => getPull(owner, repo, number),
+  });
+}
+
+/**
+ * Whether this PR's dev session can be resumed now (#276): a stored session id plus a surviving
+ * worktree or head branch (decideResume). Drives the PR-detail Resume button, shown only when true.
+ * Keyed under the pull key so the SSE map (event-keys.ts) refetches it on pull_request.* events —
+ * resumability changes when the worktree is pruned or the branch advances/removed.
+ */
+export function usePullResumable(owner: string, repo: string, number: number) {
+  return useQuery({
+    queryKey: [...queryKeys.pull(full(owner, repo), number), "resumable"],
+    queryFn: () => getPullResumable(owner, repo, number),
   });
 }
 
