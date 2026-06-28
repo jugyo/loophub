@@ -26,9 +26,6 @@ export function RepoDashboard({
           <h1 className="text-2xl font-semibold">
             {owner}/{repo}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            What is happening in this project right now.
-          </p>
         </div>
         <RepoMenu owner={owner} repo={repo} />
       </div>
