@@ -108,7 +108,10 @@ export function IssueRow({
         <RowLabels labels={issue.labels} />
         {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
         <RowBuildButton owner={owner} repo={repo} issue={issue} pulls={pulls} />
-        <span className="shrink-0 text-xs text-muted-foreground">
+        {/* Fixed-width, right-aligned so the Build button to its left stays
+            vertically aligned across rows regardless of the relative-time
+            length ("3m ago" vs "12h ago"). #278 */}
+        <span className="w-16 shrink-0 truncate text-right text-xs text-muted-foreground">
           {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
         </span>
       </div>
