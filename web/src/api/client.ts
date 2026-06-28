@@ -225,14 +225,6 @@ export function getPull(owner: string, repo: string, number: number) {
   return rpc<PullRequest>("pulls/get", { repo: full(owner, repo), number });
 }
 
-/** Whether this PR's dev session can be resumed now (drives the PR-detail Resume button). */
-export function getPullResumable(owner: string, repo: string, number: number) {
-  return rpc<{ resumable: boolean }>("pulls/resumable", {
-    repo: full(owner, repo),
-    number,
-  });
-}
-
 export function patchPull(
   owner: string,
   repo: string,

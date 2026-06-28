@@ -26,7 +26,8 @@ import type {
   ReviewNote,
 } from "@/api/types";
 
-// The Resume button (#276) opens a terminal via useTerminal(); capture the call.
+// RelatedSessions (rendered by PullDetail) calls useTerminal() unconditionally; stub it so the
+// component tree renders without a TerminalProvider.
 const { openTerminal } = vi.hoisted(() => ({ openTerminal: vi.fn() }));
 vi.mock("@/components/terminal-controller", () => ({
   useTerminal: () => ({ openTerminal }),
@@ -548,9 +549,7 @@ describe("PullDetail", () => {
     expect(screen.getByText("STALE")).toBeTruthy();
   });
 
-  // Render the detail with a specific `pulls/resumable` result (the rest of the methods reuse the
-  // shared fixtures). Returns nothing; assertions read the rendered output / the openTerminal spy.
-  function renderWithResumable(resumable: boolean) {
+  it("does not render a Resume button in the PR header (#325 — moved to the Sessions section)", async () => {
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
@@ -560,7 +559,6 @@ describe("PullDetail", () => {
         "reviews/listComments": () => lineComments,
         "reviewNotes/list": () => [],
         "comments/list": () => comments,
-        "pulls/resumable": () => ({ resumable }),
       }),
     );
     const queryClient = new QueryClient({
@@ -586,28 +584,8 @@ describe("PullDetail", () => {
         <RouterProvider router={router} />
       </QueryClientProvider>,
     );
-  }
 
-  it("shows the Resume button and launches `lh resume <id>` in a terminal when resumable (#276)", async () => {
-    renderWithResumable(true);
-
-    const button = await screen.findByRole("button", { name: /^Resume$/ });
-    fireEvent.click(button);
-
-    // Same openTerminal route as the issue Build button: fully-qualified id, repo cwd, and the
-    // linked issue as the terminal's PR top-region ref.
-    expect(openTerminal).toHaveBeenCalledWith({
-      command: "lh resume me/proj/30",
-      repo: "me/proj",
-      label: "resume #30",
-      issueRef: { owner: "me", repo: "proj", number: 153 },
-    });
-  });
-
-  it("hides the Resume button when the PR cannot be resumed (#276)", async () => {
-    renderWithResumable(false);
-
-    // The header is mounted (Merge renders), so an absent Resume button means it is gated, not unrendered.
+    // The header is mounted (Merge renders); with no related_sessions there is no Resume button anywhere.
     await screen.findByRole("button", { name: /^Merge$/i });
     expect(screen.queryByRole("button", { name: /^Resume$/ })).toBeNull();
   });

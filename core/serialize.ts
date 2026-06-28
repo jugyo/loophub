@@ -54,8 +54,8 @@ export function agentSessionJSON(row: any) {
 //     PR rather than the issue ("resume-via-pull"), a past dev session a newer one replaced as the
 //     PR's anchor ("superseded"), or a session that is simply not the PR's resume anchor — a non-dev
 //     session, or any session on a PR with no anchor at all ("not-anchor"). resume is intentionally
-//     runtime-level only — worktree/branch restorability is resolved per-PR by `pulls/resumable`
-//     (the Resume button), not duplicated per list row.
+//     runtime-level only — it reflects whether the runtime + anchor make `lh resume <pr>` meaningful,
+//     not whether the worktree/branch still survive on disk.
 //
 // `lh resume <pr>` re-enters exactly the PR's primary dev session (pulls.session_id = primarySessionId).
 // So a row is resumable ONLY when it IS that anchor; everything else is reported with a reason. The
