@@ -50,6 +50,20 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["pulls"]);
       keys.push(["pull"]);
     }
+    // Issue rows embed their linked PR's live status (mergeable/conflict, working,
+    // review state, diff totals) via issueListItemJSON, so a PR change must also
+    // refresh the issue list and any open issue detail — otherwise the list keeps a
+    // stale `conflict` after the PR's tree goes clean (e.g. a rebase moves the head
+    // and fires pull_request.updated; the PR detail refetches clean but the list,
+    // already mounted, stays on the old value). The event carries the PR number, not
+    // the linked issue number, so invalidate the repo's issue keys by prefix (#324).
+    if (repo) {
+      keys.push([...queryKeys.issues(repo)]);
+      keys.push(["issue", repo]); // prefix: all open issue details for the repo
+    } else {
+      keys.push(["issues"]);
+      keys.push(["issue"]);
+    }
     keys.push([...queryKeys.dashboard()]); // cross-repo top page
   } else if (type === "dev.note") {
     // A dev note targets a PR (and its issue). Invalidate the PR detail — the dev-note

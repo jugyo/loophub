@@ -34,6 +34,29 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["pull", "me/proj", 13]);
   });
 
+  it("also refreshes the repo's issue list + details for a pull_request event (#324)", () => {
+    // Issue rows embed their linked PR's mergeable/conflict status, so a PR change
+    // (e.g. a rebase that clears a conflict) must invalidate the issue views too —
+    // otherwise the list keeps a stale `conflict` while the PR detail shows clean.
+    const keys = queryKeysForEvent(
+      ev({
+        type: "pull_request.updated",
+        repo: "me/proj",
+        payload: { number: 13 },
+      }),
+    );
+    expect(keys).toContainEqual(["issues", "me/proj"]);
+    expect(keys).toContainEqual(["issue", "me/proj"]);
+  });
+
+  it("falls back to broad issue keys for a repo-less pull_request event (#324)", () => {
+    const keys = queryKeysForEvent(
+      ev({ type: "pull_request.updated", repo: undefined, payload: {} }),
+    );
+    expect(keys).toContainEqual(["issues"]);
+    expect(keys).toContainEqual(["issue"]);
+  });
+
   it("maps dev.note events to the target PR detail + pulls list", () => {
     const keys = queryKeysForEvent(
       ev({
