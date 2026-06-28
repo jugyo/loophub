@@ -15,10 +15,10 @@ describe("resolveMergeable", () => {
     ).toEqual({ mergeable: false, mergeable_state: "no_commits" });
   });
 
-  it("keeps a conflicting PR as dirty (unchanged behaviour)", () => {
+  it("marks a conflicting PR as conflict", () => {
     expect(
       resolveMergeable({ hasCommits: true, conflict: true, approved: true }),
-    ).toEqual({ mergeable: false, mergeable_state: "dirty" });
+    ).toEqual({ mergeable: false, mergeable_state: "conflict" });
   });
 
   it("blocks an unapproved PR that has commits and merges cleanly", () => {

@@ -10,10 +10,11 @@ import { useTerminal } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
   type Badge as BadgeData,
-  type BadgeTone,
-  linkedPullDisplayTone,
+  linkedPullPillTone,
   linkedPullStatus,
+  linkedPullWordTone,
   pullBadges,
+  type StatusWordTone,
 } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -173,16 +174,15 @@ function RowBuildButton({
   );
 }
 
-// Status-word color per (collapsed) tone for the linked-PR sub-row. The PR pill
-// carries the same collapsed tone via badgeVariants; the word repeats it as
-// plain text so the status reads without relying on the pill border alone. The
-// sub-row uses only the three #244 colors — green (unmerged), purple (merged),
-// muted (working / closed) — so this maps only the tones linkedPullDisplayTone
-// produces.
-const STATUS_TEXT: Partial<Record<BadgeTone, string>> = {
-  open: "text-green-600 dark:text-green-400",
-  merged: "text-purple-500 dark:text-purple-400",
-  unknown: "text-muted-foreground",
+// Tailwind text colour per status-word tone (linkedPullWordTone) — the
+// state-specific axis of the linked-PR sub-row, independent of the pill's
+// lifecycle colour. Only danger / ready / done carry a signal colour; muted is
+// the default so the few coloured words stand out.
+const STATUS_TEXT: Record<StatusWordTone, string> = {
+  danger: "text-destructive",
+  ready: "text-green-600 dark:text-green-400",
+  done: "text-purple-500 dark:text-purple-400",
+  muted: "text-muted-foreground",
 };
 
 // Muted sub-row under an issue title carrying its linked PR: a toned `PR #n`
@@ -198,7 +198,10 @@ function LinkedPullSubRow({
   pull: LinkedPull;
 }) {
   const status = linkedPullStatus(pull);
-  const tone = status ? linkedPullDisplayTone(status.tone) : "unknown";
+  // Two independent colour axes: the pill carries the PR lifecycle (open=green /
+  // merged=purple / closed=grey), the status word its state-specific signal
+  // (STATUS_TEXT). A muted pill when status is null (issue-detail summary path).
+  const pillTone = status ? linkedPullPillTone(pull) : "unknown";
   // approve 済みなら、緑にまとめられた未マージ群の中から一目で識別できるよう
   // ステータス語にチェックアイコンを添える。他の未マージ状態には出さない。
   const approved = status?.tone === "review-approved";
@@ -208,7 +211,10 @@ function LinkedPullSubRow({
       <Link
         to="/r/$owner/$repo/pulls/$number"
         params={{ owner, repo, number: String(pull.number) }}
-        className={cn(badgeVariants({ tone }), "shrink-0 hover:opacity-80")}
+        className={cn(
+          badgeVariants({ tone: pillTone }),
+          "shrink-0 hover:opacity-80",
+        )}
       >
         PR #{pull.number}
       </Link>
@@ -216,7 +222,7 @@ function LinkedPullSubRow({
         <span
           className={cn(
             "flex shrink-0 items-center gap-0.5 font-medium",
-            STATUS_TEXT[tone],
+            STATUS_TEXT[linkedPullWordTone(status.tone)],
           )}
           title={status.title}
         >

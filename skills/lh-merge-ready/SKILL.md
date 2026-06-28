@@ -10,7 +10,7 @@ description: >-
 # LoopHub merge-ready
 
 Final guard **before a human merges**. Confirm `review_state == APPROVED` and no conflict
-(`mergeable_state != dirty`). If clear, **present `lh pr merge` steps only**.
+(`mergeable_state != conflict`). If clear, **present `lh pr merge` steps only**.
 
 The preceding `lh-pr-review` (same session) already covered acceptance criteria, scope, and
 green tests; the PR Evidence section was required at creation (`lh-dev` § PR). Merge-ready does
@@ -79,7 +79,7 @@ The two final guards — confirm both before presenting merge steps:
 | Item | Pass when |
 |------|-----------|
 | `review_state` = APPROVED | LoopHub `GET /pulls/{number}` field is `APPROVED` |
-| `mergeable_state` not conflict | LoopHub: `clean` / `dirty` / `unknown`; conflict = **`dirty`** |
+| `mergeable_state` not conflict | LoopHub: `clean` / `conflict` / `unknown`; the conflict value is **`conflict`** |
 
 If `review_state` is missing from JSON, check the reviews list for the latest `APPROVE`:
 
@@ -90,7 +90,7 @@ If `review_state` is missing from JSON, check the reviews list for the latest `A
 | Condition | Action |
 |-----------|--------|
 | Not `APPROVED` | **Stop** — suggest `/lh-pr-review <m>`; do not present merge steps |
-| `mergeable_state` = `dirty` | **Stop** — suggest rebase / conflict resolution; do not present merge steps |
+| `mergeable_state` = `conflict` | **Stop** — suggest rebase / conflict resolution; do not present merge steps |
 
 ### 3. Merge steps (human executes)
 
@@ -120,7 +120,7 @@ re-explain the whole PR — only the signal needed to decide.
 and the **same-session** `lh-pr-review` result (findings raised / resolved). Never re-run a
 review here.
 
-### When mergeable (APPROVED and not `dirty`)
+### When mergeable (APPROVED and not `conflict`)
 
 Print a compact summary with these six blocks:
 
@@ -162,7 +162,7 @@ trailing [Evidence screenshots](#evidence-screenshots-last-block) block:
 | Blocker | Next action |
 |---------|-------------|
 | Not `APPROVED` | `/lh-pr-review <m>` |
-| `mergeable_state` = `dirty` | rebase / conflict resolution |
+| `mergeable_state` = `conflict` | rebase / conflict resolution |
 
 ### Evidence screenshots (last block)
 
@@ -224,5 +224,5 @@ lh-issue-create → (implementation) → lh-pr-review → lh-merge-ready → (hu
 ## Prohibited
 
 - **Do not auto-run `lh pr merge`**
-- Do not show merge steps without approve or with a conflict (`mergeable_state == dirty`)
+- Do not show merge steps without approve or with a conflict (`mergeable_state == conflict`)
 - Do not edit code inside merge-ready (send back to issue-dev / pr-review)

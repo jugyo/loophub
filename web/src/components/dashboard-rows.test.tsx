@@ -249,3 +249,63 @@ describe("IssueRow", () => {
     expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
   });
 });
+
+// #265: the linked-PR sub-row paints two independent colour axes — the `PR #n`
+// pill carries the PR lifecycle (open=green / merged=purple / closed=grey) and
+// the status word its state-specific signal (conflict/changes=red, approved=
+// green, the rest muted). These assert the actually-rendered DOM classes.
+describe("LinkedPullSubRow two-axis colours (#265)", () => {
+  async function renderPull(overrides: Partial<LinkedPull>) {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull(overrides)] })}
+      />,
+    );
+    return await screen.findByRole("link", { name: "PR #10" });
+  }
+
+  it("labels a fresh open PR (no review/conflict, status computed) as working", async () => {
+    // Previously fell to null → bare pill. Now reads working (muted word).
+    const pill = await renderPull({ mergeable_state: "blocked" });
+    expect(pill.className).toContain("text-green-600"); // open pill = green
+    const word = screen.getByText("working");
+    expect(word.className).toContain("text-muted-foreground");
+  });
+
+  it("paints a conflict word red while the pill stays green (open)", async () => {
+    const pill = await renderPull({ mergeable_state: "conflict" });
+    expect(pill.className).toContain("text-green-600"); // lifecycle: open
+    expect(screen.getByText("conflict").className).toContain(
+      "text-destructive",
+    );
+  });
+
+  it("paints a changes word red", async () => {
+    await renderPull({ review_state: "CHANGES_REQUESTED" });
+    expect(screen.getByText("changes").className).toContain("text-destructive");
+  });
+
+  it("paints an approved word green on a green pill", async () => {
+    const pill = await renderPull({
+      review_state: "APPROVED",
+      mergeable_state: "clean",
+    });
+    expect(pill.className).toContain("text-green-600");
+    expect(screen.getByText("approved").className).toContain("text-green-600");
+  });
+
+  it("keeps re-review and working words muted", async () => {
+    await renderPull({ review_state: "STALE" });
+    expect(screen.getByText("re-review").className).toContain(
+      "text-muted-foreground",
+    );
+  });
+
+  it("colours a merged pill and word purple", async () => {
+    const pill = await renderPull({ merged: true, state: "closed" });
+    expect(pill.className).toContain("text-purple-500");
+    expect(screen.getByText("merged").className).toContain("text-purple-500");
+  });
+});

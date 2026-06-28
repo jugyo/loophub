@@ -75,7 +75,7 @@ export function mergeableBadge(pr: PullRequest): Badge | null {
   switch (pr.mergeable_state) {
     case "clean":
       return { tone: "mergeable", label: "mergeable" };
-    case "dirty":
+    case "conflict":
       return { tone: "conflict", label: "conflict" };
     default:
       return null;
@@ -129,24 +129,24 @@ export function pullBadges(pr: PullRequest): Badge[] {
 
 /**
  * Single status descriptor for an issue row's linked PR (the issue-list
- * sub-row). Collapses the PR's working / review / mergeable signals into one
- * toned, labelled word, by priority (most actionable first): merged/closed →
- * working → conflict → review → mergeable. Returns null when the PR carries no
- * notable status beyond plain "open" — the bare `PR #n` pill then stands alone.
+ * sub-row). Collapses the PR's review / conflict / working signals into one
+ * toned, labelled word, by priority — mirroring {@link pullBadges}: an actionable
+ * conflict or review state outranks the in-progress "working" cue, which in turn
+ * suppresses the "ready" signals (approved). An open PR with no decided status
+ * (fresh, blocked, unknown) reads as "working" rather than a bare `PR #n` pill.
+ * Priority (most actionable first):
+ *   merged → closed → conflict → changes/re-review/commented → working →
+ *   approved → working (open, status computed but undecided).
  *
- * Reads the status fields populated only on the issue-list response
- * (issueListItemJSON); a summary lacking them collapses to null.
+ * Returns null only when the status fields are absent (`mergeable_state ===
+ * undefined`, the issue-detail summary path that does not compute them), so the
+ * row is not wrongly labelled "working".
  */
 export function linkedPullStatus(pull: LinkedPull): Badge | null {
   if (pull.merged) return { tone: "merged", label: "merged" };
   if (pull.state === "closed") return { tone: "closed", label: "closed" };
-  if (pull.working)
-    return {
-      tone: "working",
-      label: "working",
-      title: "Uncommitted changes in the PR worktree",
-    };
-  if (pull.mergeable_state === "dirty")
+  // A decided, actionable conflict wins even while the worktree is being edited.
+  if (pull.mergeable_state === "conflict")
     return { tone: "conflict", label: "conflict" };
   switch (pull.review_state) {
     case "CHANGES_REQUESTED":
@@ -154,26 +154,61 @@ export function linkedPullStatus(pull: LinkedPull): Badge | null {
     case "READY_FOR_RE_REVIEW":
     case "STALE":
       return { tone: "review-rereview", label: "re-review" };
-    case "APPROVED":
-      return { tone: "review-approved", label: "approved" };
     case "COMMENTED":
       return { tone: "review-commented", label: "commented" };
   }
-  if (pull.mergeable_state === "clean")
-    return { tone: "mergeable", label: "mergeable" };
-  return null;
+  // worktree dirty: actively being edited. Suppresses the "ready" approved word
+  // below — committing moves the head (→ STALE → re-review) on its own.
+  if (pull.working)
+    return {
+      tone: "working",
+      label: "working",
+      title: "Uncommitted changes in the PR worktree",
+    };
+  if (pull.review_state === "APPROVED")
+    return { tone: "review-approved", label: "approved" };
+  // Status computed (issue-list path) but nothing decided yet = fresh/in-progress
+  // → working. Not computed (issue-detail summary path) → indeterminable → null.
+  if (pull.mergeable_state === undefined) return null;
+  return {
+    tone: "working",
+    label: "working",
+    title: "No review or conflict status yet",
+  };
 }
 
 /**
- * Collapse a linked-PR sub-row status into the three colors the issue list uses
- * (#244): merged → purple, working → muted grey, and every other unmerged state
- * (conflict / changes / re-review / approved / commented / mergeable) → green.
- * `closed` (out of scope) stays muted. This is a pure colour mapping — the
- * status word and title from {@link linkedPullStatus} are unchanged; only the
- * tone collapses, so the descriptive tones above keep their richer labels.
+ * PR pill tone for the linked-PR sub-row — the *lifecycle* axis (is this PR
+ * worth looking at): open → green, merged → purple, closed → grey. Independent
+ * of the status word's colour: a live (green) PR can still carry a red conflict
+ * word. A null status (issue-detail summary path) shows a muted pill.
  */
-export function linkedPullDisplayTone(tone: BadgeTone): BadgeTone {
-  if (tone === "merged") return "merged";
-  if (tone === "working" || tone === "closed") return "unknown";
+export function linkedPullPillTone(pull: LinkedPull): BadgeTone {
+  if (pull.merged) return "merged";
+  if (pull.state === "closed") return "closed";
   return "open";
+}
+
+/**
+ * Status-word colour for the linked-PR sub-row — the *state-specific* axis,
+ * independent of {@link linkedPullPillTone}. A minimal palette that paints only
+ * the signals worth attention: `danger` (conflict / changes — act now), `ready`
+ * (approved), `done` (merged); everything else (working / re-review / commented
+ * / closed) is `muted`, the default, so the few coloured words stand out. The
+ * component maps these categories to text colours (dashboard-rows.tsx).
+ */
+export type StatusWordTone = "danger" | "ready" | "done" | "muted";
+
+export function linkedPullWordTone(tone: BadgeTone): StatusWordTone {
+  switch (tone) {
+    case "conflict":
+    case "review-changes":
+      return "danger";
+    case "review-approved":
+      return "ready";
+    case "merged":
+      return "done";
+    default:
+      return "muted";
+  }
 }

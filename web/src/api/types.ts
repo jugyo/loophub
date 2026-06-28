@@ -151,7 +151,7 @@ export interface PullRequest {
   base: { ref: string; sha: string };
   merged: boolean;
   mergeable: boolean | null;
-  mergeable_state: "clean" | "dirty" | "no_commits" | "blocked" | "unknown";
+  mergeable_state: "clean" | "conflict" | "no_commits" | "blocked" | "unknown";
   review_state:
     | "APPROVED"
     | "CHANGES_REQUESTED"

@@ -141,7 +141,7 @@ chosen ad hoc at the call site.
 | `review-changes` | PR review `CHANGES_REQUESTED` | Destructive outline |
 | `review-rereview` | PR review `READY_FOR_RE_REVIEW` | Amber outline |
 | `review-commented` | PR review `COMMENTED` | Muted outline |
-| `conflict` | Open PR with `mergeable_state: dirty` | Destructive outline |
+| `conflict` | Open PR with `mergeable_state: conflict` | Destructive outline |
 | `agent` | Assigned agent session (`@name`) | Violet, filled tint |
 
 Badges are outline pills (`rounded-full border`, `text-[11px]`) except `agent`,

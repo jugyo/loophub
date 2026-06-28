@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 import {
   issueBadges,
-  linkedPullDisplayTone,
+  linkedPullPillTone,
   linkedPullStatus,
+  linkedPullWordTone,
   mergeableBadge,
   pullBadges,
   reviewBadge,
@@ -82,8 +83,8 @@ describe("reviewBadge", () => {
 });
 
 describe("mergeableBadge", () => {
-  it("flags a dirty open PR as conflict", () => {
-    expect(mergeableBadge(pull({ mergeable_state: "dirty" }))?.tone).toBe(
+  it("flags a conflicting open PR as conflict", () => {
+    expect(mergeableBadge(pull({ mergeable_state: "conflict" }))?.tone).toBe(
       "conflict",
     );
   });
@@ -101,7 +102,7 @@ describe("mergeableBadge", () => {
 
   it("does not flag merged or non-open PRs", () => {
     expect(
-      mergeableBadge(pull({ merged: true, mergeable_state: "dirty" })),
+      mergeableBadge(pull({ merged: true, mergeable_state: "conflict" })),
     ).toBeNull();
     expect(
       mergeableBadge(pull({ state: "closed", mergeable_state: "clean" })),
@@ -138,8 +139,24 @@ describe("linkedPullStatus", () => {
     };
   }
 
-  it("returns null for a plain open PR with no notable status", () => {
+  it("returns null only when status fields are absent (issue-detail summary path)", () => {
+    // mergeable_state undefined = the summary path that does not compute status.
     expect(linkedPullStatus(linked())).toBeNull();
+  });
+
+  it("treats an open PR with computed-but-undecided status as working", () => {
+    // Status was computed (issue-list path) but nothing decided: a fresh PR
+    // (blocked / unknown / no_commits) reads as working, not a bare pill.
+    for (const mergeable_state of [
+      "blocked",
+      "unknown",
+      "no_commits",
+    ] as const) {
+      expect(linkedPullStatus(linked({ mergeable_state }))).toMatchObject({
+        tone: "working",
+        label: "working",
+      });
+    }
   });
 
   it("reports merged and closed states", () => {
@@ -147,21 +164,39 @@ describe("linkedPullStatus", () => {
     expect(linkedPullStatus(linked({ state: "closed" }))?.tone).toBe("closed");
   });
 
-  it("prioritizes working over review and mergeable", () => {
-    const status = linkedPullStatus(
-      linked({
-        working: true,
-        review_state: "APPROVED",
-        mergeable_state: "clean",
-      }),
-    );
-    expect(status).toMatchObject({ tone: "working", label: "working" });
-  });
-
-  it("flags a dirty tree as conflict ahead of review", () => {
+  it("lets conflict and changes win over working (mirrors pullBadges)", () => {
+    expect(
+      linkedPullStatus(linked({ working: true, mergeable_state: "conflict" }))
+        ?.tone,
+    ).toBe("conflict");
     expect(
       linkedPullStatus(
-        linked({ mergeable_state: "dirty", review_state: "APPROVED" }),
+        linked({ working: true, review_state: "CHANGES_REQUESTED" }),
+      )?.tone,
+    ).toBe("review-changes");
+  });
+
+  it("suppresses approved while working, but reports approved when clean", () => {
+    expect(
+      linkedPullStatus(
+        linked({
+          working: true,
+          review_state: "APPROVED",
+          mergeable_state: "clean",
+        }),
+      ),
+    ).toMatchObject({ tone: "working", label: "working" });
+    expect(
+      linkedPullStatus(
+        linked({ review_state: "APPROVED", mergeable_state: "clean" }),
+      )?.tone,
+    ).toBe("review-approved");
+  });
+
+  it("flags a conflict ahead of review", () => {
+    expect(
+      linkedPullStatus(
+        linked({ mergeable_state: "conflict", review_state: "APPROVED" }),
       )?.tone,
     ).toBe("conflict");
   });
@@ -173,47 +208,61 @@ describe("linkedPullStatus", () => {
     expect(linkedPullStatus(linked({ review_state: "STALE" }))?.label).toBe(
       "re-review",
     );
-    expect(linkedPullStatus(linked({ review_state: "APPROVED" }))?.tone).toBe(
-      "review-approved",
+    expect(linkedPullStatus(linked({ review_state: "COMMENTED" }))?.tone).toBe(
+      "review-commented",
     );
-  });
-
-  it("falls back to mergeable for a clean PR without review", () => {
-    expect(linkedPullStatus(linked({ mergeable_state: "clean" }))).toEqual({
-      tone: "mergeable",
-      label: "mergeable",
-    });
   });
 
   it("does not derive working/conflict from a merged PR", () => {
     expect(
       linkedPullStatus(
-        linked({ merged: true, working: true, mergeable_state: "dirty" }),
+        linked({ merged: true, working: true, mergeable_state: "conflict" }),
       )?.tone,
     ).toBe("merged");
   });
 });
 
-describe("linkedPullDisplayTone (#244 three-color collapse)", () => {
-  it("keeps merged purple", () => {
-    expect(linkedPullDisplayTone("merged")).toBe("merged");
+describe("linkedPullPillTone (lifecycle axis)", () => {
+  function linked(partial: Partial<LinkedPull> = {}): LinkedPull {
+    return {
+      number: 2,
+      title: "A PR",
+      state: "open",
+      merged: false,
+      ...partial,
+    };
+  }
+
+  it("colours the pill by lifecycle, not status", () => {
+    expect(linkedPullPillTone(linked({ merged: true }))).toBe("merged");
+    expect(linkedPullPillTone(linked({ state: "closed" }))).toBe("closed");
+    // open stays green regardless of conflict/working status on the word axis.
+    expect(linkedPullPillTone(linked({ mergeable_state: "conflict" }))).toBe(
+      "open",
+    );
+    expect(linkedPullPillTone(linked({ working: true }))).toBe("open");
+  });
+});
+
+describe("linkedPullWordTone (state-specific colour axis)", () => {
+  it("paints conflict and changes red (danger)", () => {
+    expect(linkedPullWordTone("conflict")).toBe("danger");
+    expect(linkedPullWordTone("review-changes")).toBe("danger");
   });
 
-  it("renders working (and closed) as muted grey", () => {
-    expect(linkedPullDisplayTone("working")).toBe("unknown");
-    expect(linkedPullDisplayTone("closed")).toBe("unknown");
+  it("paints approved green (ready) and merged purple (done)", () => {
+    expect(linkedPullWordTone("review-approved")).toBe("ready");
+    expect(linkedPullWordTone("merged")).toBe("done");
   });
 
-  it("collapses every other unmerged status to green", () => {
+  it("leaves every other status muted (grey)", () => {
     for (const tone of [
-      "conflict",
-      "review-changes",
+      "working",
       "review-rereview",
-      "review-approved",
       "review-commented",
-      "mergeable",
+      "closed",
     ] as const) {
-      expect(linkedPullDisplayTone(tone)).toBe("open");
+      expect(linkedPullWordTone(tone)).toBe("muted");
     }
   });
 });
@@ -228,7 +277,7 @@ describe("issueBadges / pullBadges", () => {
     const badges = pullBadges(
       pull({
         review_state: "APPROVED",
-        mergeable_state: "dirty",
+        mergeable_state: "conflict",
       }),
     );
     expect(badges.map((b) => b.tone)).toEqual(["review-approved", "conflict"]);
@@ -255,7 +304,7 @@ describe("issueBadges / pullBadges", () => {
       pull({
         working: true,
         review_state: "CHANGES_REQUESTED",
-        mergeable_state: "dirty",
+        mergeable_state: "conflict",
       }),
     );
     expect(badges.map((b) => b.tone)).toEqual([
