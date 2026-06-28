@@ -126,14 +126,20 @@ export function IssueRow({
         >
           #{issue.number}
         </Link>
-        <Link
-          to="/r/$owner/$repo/issues/$number"
-          params={{ owner, repo, number: String(issue.number) }}
-          className="min-w-0 flex-1 truncate font-medium hover:underline"
-        >
-          {issue.title}
-        </Link>
-        <RowLabels labels={issue.labels} />
+        {/* Title + labels share one flex-1 group so the labels sit directly
+            after the title (left-aligned), not pushed to the right edge. The
+            group absorbs the slack, keeping the Build button / closed badge /
+            relative time aligned on the right. #294 */}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Link
+            to="/r/$owner/$repo/issues/$number"
+            params={{ owner, repo, number: String(issue.number) }}
+            className="min-w-0 truncate font-medium hover:underline"
+          >
+            {issue.title}
+          </Link>
+          <RowLabels labels={issue.labels} />
+        </div>
         {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
         <RowBuildButton owner={owner} repo={repo} issue={issue} pulls={pulls} />
         {/* Fixed-width, right-aligned so the Build button to its left stays
