@@ -217,12 +217,14 @@ function PullHeader({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
-        <h1 ref={titleRef} className="text-2xl font-semibold">
-          {pull.title}{" "}
-          <span className="font-normal text-muted-foreground">
-            #{pull.number}
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="text-sm font-medium text-muted-foreground">
+            PR #{pull.number}
           </span>
-        </h1>
+          <h1 ref={titleRef} className="text-2xl font-semibold">
+            {pull.title}
+          </h1>
+        </div>
         <PullDebugMenu owner={owner} repo={repo} number={pull.number} />
       </div>
 

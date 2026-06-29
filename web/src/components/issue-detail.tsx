@@ -167,17 +167,19 @@ function IssueHeader({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {state ? <Badge tone={state.tone}>{state.label}</Badge> : null}
-        <span className="text-sm text-muted-foreground">#{issue.number}</span>
-      </div>
+      <span className="text-sm font-medium text-muted-foreground">
+        Issue #{issue.number}
+      </span>
 
       <h1 ref={titleRef} className="text-2xl font-semibold">
         {issue.title}
       </h1>
 
-      <div className="text-sm text-muted-foreground">
-        @{issue.user.login} · opened {relativeTime(issue.created_at)}
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        {state ? <Badge tone={state.tone}>{state.label}</Badge> : null}
+        <span>
+          @{issue.user.login} · opened {relativeTime(issue.created_at)}
+        </span>
       </div>
 
       {issue.labels.length > 0 ? (
