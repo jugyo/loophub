@@ -28,12 +28,6 @@ export interface LinkedPull {
   additions?: number;
   deletions?: number;
   changed_files?: number;
-  /**
-   * Other open PRs that would merge-conflict with this one (#267). Populated on
-   * the issue-list response so the sub-row can flag conflicts, matching the
-   * PR-detail ConflictList; empty when the PR conflicts with nobody.
-   */
-  conflicts_with?: PullConflict[];
 }
 
 /** Summary of the issue a PR closes (pull-detail `linked_issue`). */
@@ -199,8 +193,6 @@ export interface PullRequest {
   updated_at: string;
   /** Set on the pull-detail response when the PR closes an issue. */
   linked_issue?: LinkedIssue | null;
-  /** Other open PRs that would merge-conflict with this one (PR detail only). */
-  conflicts_with?: PullConflict[];
   /**
    * Deterministic path of the `lh dev` worktree backing this PR (same convention as the
    * "working" flag). Pure path derivation, so it is the canonical location even if the
@@ -229,13 +221,6 @@ export interface RelatedSession {
   /** When this session was linked to the PR/issue. */
   linked_at: string | null;
   resume: { resumable: boolean; reason?: string };
-}
-
-/** An open PR that merge-conflicts with the PR being viewed, plus the conflicting files. */
-export interface PullConflict {
-  number: number;
-  title: string;
-  files: string[];
 }
 
 /** Minimal repo identity attached to aggregated dashboard items. */

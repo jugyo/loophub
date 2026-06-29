@@ -12,7 +12,6 @@ import {
   diffStat,
   git,
   isIndexLockError,
-  mergeConflict,
   mergePull,
   sleep,
   worktreeAdd,
@@ -57,56 +56,6 @@ test("isIndexLockError matches only lock contention, not real errors", () => {
     isIndexLockError("error: Your local changes would be overwritten"),
   ).toBe(false);
   expect(isIndexLockError("")).toBe(false);
-});
-
-// 2 つのブランチの head 同士を merge-tree で判定。同じ行を別々に変更したペアは
-// conflict=true でファイル一覧を返し、別ファイルだけ触るペアは conflict=false。
-test("mergeConflict detects head-vs-head conflicts and lists files", async () => {
-  const p = mkdtempSync(join(tmpdir(), "lh-conflict-"));
-  await git(p, ["init", "-q", "-b", "main"]);
-  await git(p, ["config", "user.email", "t@t.local"]);
-  await git(p, ["config", "user.name", "tester"]);
-  writeFileSync(join(p, "f.txt"), "line1\nline2\nline3\n");
-  await git(p, ["add", "-A"]);
-  await git(p, ["commit", "-qm", "base"]);
-
-  // Branch a: edit line1 of f.txt + add a-only file.
-  await git(p, ["checkout", "-q", "-b", "a"]);
-  writeFileSync(join(p, "f.txt"), "AAA\nline2\nline3\n");
-  writeFileSync(join(p, "only_a.txt"), "x\n");
-  await git(p, ["add", "-A"]);
-  await git(p, ["commit", "-qm", "a"]);
-
-  // Branch b: edit the same line1 differently — conflicts with a.
-  await git(p, ["checkout", "-q", "main"]);
-  await git(p, ["checkout", "-q", "-b", "b"]);
-  writeFileSync(join(p, "f.txt"), "BBB\nline2\nline3\n");
-  await git(p, ["add", "-A"]);
-  await git(p, ["commit", "-qm", "b"]);
-
-  // Branch c: touch only an unrelated file — no conflict with a.
-  await git(p, ["checkout", "-q", "main"]);
-  await git(p, ["checkout", "-q", "-b", "c"]);
-  writeFileSync(join(p, "only_c.txt"), "z\n");
-  await git(p, ["add", "-A"]);
-  await git(p, ["commit", "-qm", "c"]);
-
-  const ab = await mergeConflict(p, "a", "b");
-  expect(ab.conflict).toBe(true);
-  expect(ab.files).toContain("f.txt");
-
-  const ac = await mergeConflict(p, "a", "c");
-  expect(ac.conflict).toBe(false);
-  expect(ac.files).toEqual([]);
-
-  // Defensive: a non-mergeable argument (a tree object, not a commit) makes
-  // merge-tree exit non-zero with no listed file — must not be a phantom conflict.
-  const tree = (await git(p, ["rev-parse", "a^{tree}"])).stdout.trim();
-  const bad = await mergeConflict(p, tree, "b");
-  expect(bad.conflict).toBe(false);
-  expect(bad.files).toEqual([]);
-
-  rmSync(p, { recursive: true, force: true });
 });
 
 // worktreeAdd で新規ブランチを切り、worktreeList が porcelain をパースして拾えることを検証。

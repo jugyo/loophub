@@ -3,7 +3,6 @@
 // shaping is reusable and side-effect free.
 
 import { worktreeRoot } from "./config.ts";
-import { conflictsForPull, type PullConflict } from "./conflicts.ts";
 import { commitsAhead, diffStat, mergePreview, revParse } from "./git.ts";
 import { linkedRef } from "./links.ts";
 import { resolveMergeable } from "./mergeable.ts";
@@ -212,32 +211,20 @@ function linkedPullSummary(repo: S.Repo, issueRowId: number) {
 // issue list's linked-PR summary so both compute status identically. The git
 // fan-out (revParse/mergePreview/diffStat/status) is bounded — callers keep
 // their lists paginated.
-async function pullStatusFields(
-  repo: S.Repo,
-  row: any,
-  opts: {
-    withConflicts?: boolean;
-    headShaCache?: Map<string, Promise<string | null>>;
-  } = {},
-) {
+async function pullStatusFields(repo: S.Repo, row: any) {
   const p = S.getPull(row.id);
   const headSha = await revParse(repo.local_path, p.head_ref);
   const baseSha = await revParse(repo.local_path, p.base_ref);
   const review_state = S.computeReviewState(row.id);
   let mergeable: boolean | null = null;
   let mergeable_state = "unknown";
-  // Whether this PR carries any commits over its base (diff-free when 0). Reused
-  // by the cross-PR conflict guard below so a diff-free PR — which can never
-  // conflict (see core/mergeable.ts) — skips the conflict fan-out entirely.
-  let hasCommits = false;
   if (!p.merged && headSha && baseSha) {
     const [prev, ahead] = await Promise.all([
       mergePreview(repo.local_path, p.base_ref, p.head_ref),
       commitsAhead(repo.local_path, p.base_ref, p.head_ref),
     ]);
-    hasCommits = ahead > 0;
     ({ mergeable, mergeable_state } = resolveMergeable({
-      hasCommits,
+      hasCommits: ahead > 0,
       conflict: prev.conflict,
       approved: review_state === "APPROVED",
     }));
@@ -273,25 +260,6 @@ async function pullStatusFields(
     merged: !!p.merged,
     state: row.state,
   });
-  // Cross-PR conflicts: only on demand (PR detail), and only for an open, unmerged
-  // PR with a resolvable head — the PR list skips this to keep its fan-out O(n).
-  // A diff-free PR (hasCommits === false) can never conflict, so skip the fan-out
-  // and leave conflicts_with empty — same principle resolveMergeable applies above.
-  let conflicts_with: PullConflict[] = [];
-  if (
-    opts.withConflicts &&
-    !p.merged &&
-    row.state === "open" &&
-    headSha &&
-    hasCommits
-  ) {
-    conflicts_with = await conflictsForPull(
-      repo,
-      row.number,
-      headSha,
-      opts.headShaCache,
-    );
-  }
   // Deterministic path of the `lh dev` worktree backing this PR (same convention as the
   // "working" flag above), so a consumer can show / copy it without knowing worktreeRoot.
   // Pure path math (no fs); null only for a crafted repo name that can't form a safe path.
@@ -317,7 +285,6 @@ async function pullStatusFields(
     working,
     review_state,
     linked,
-    conflicts_with,
     worktree_path,
   };
 }
@@ -326,24 +293,14 @@ async function pullStatusFields(
 // mergeable / diff totals) for the issue-list Pattern E sub-row. Async because
 // the status fields need a bounded git fan-out per linked PR; used only by the
 // paginated issues.list path, so issueJSON stays sync for detail/dashboard.
-// `headShaCache` (optional) is a per-list-build cache the caller passes once and
-// shares across every row's linked-PR enrichment, so the cross-PR conflict fan-out
-// rev-parses each open PR's head ref at most once for the whole page (see
-// core/conflicts.ts resolveHeadSha). Omit it for a single-row serialization.
-export async function issueListItemJSON(
-  row: any,
-  repo: S.Repo,
-  headShaCache?: Map<string, Promise<string | null>>,
-) {
+export async function issueListItemJSON(row: any, repo: S.Repo) {
   const out = issueJSON(row, repo);
   if (row.kind !== "pull") {
     // All linked PRs (usually 0–1, occasionally more — see linkedPullsForIssue),
     // most-relevant first, so the list can stack them vertically. The singular
     // field stays set to the primary one for any consumer that reads it.
     const pulls = await Promise.all(
-      S.linkedPullsForIssue(row.id).map((pr) =>
-        linkedPullDetail(repo, pr, headShaCache),
-      ),
+      S.linkedPullsForIssue(row.id).map((pr) => linkedPullDetail(repo, pr)),
     );
     out.linked_pull_requests = pulls;
     out.linked_pull_request = pulls[0] ?? null;
@@ -351,21 +308,8 @@ export async function issueListItemJSON(
   return out;
 }
 
-async function linkedPullDetail(
-  repo: S.Repo,
-  pr: any,
-  headShaCache?: Map<string, Promise<string | null>>,
-) {
-  // `withConflicts` so the issue-list sub-row can flag a PR that merge-conflicts
-  // with another open PR (#267), matching the PR-detail ConflictList. The PR list
-  // skips this to stay O(n); here the cost is bounded by the per-pair merge-result
-  // memo (immutable sha pairs, process-lifetime) plus the per-build headShaCache
-  // (ref→sha resolved once per open PR per page), and only open, unmerged linked
-  // PRs — usually 0–1 per issue — trigger it at all.
-  const status = await pullStatusFields(repo, pr, {
-    withConflicts: true,
-    headShaCache,
-  });
+async function linkedPullDetail(repo: S.Repo, pr: any) {
+  const status = await pullStatusFields(repo, pr);
   return {
     number: pr.number,
     title: pr.title,
@@ -378,7 +322,6 @@ async function linkedPullDetail(
     additions: status.additions,
     deletions: status.deletions,
     changed_files: status.changed_files,
-    conflicts_with: status.conflicts_with,
   };
 }
 
@@ -431,18 +374,13 @@ export function retroJSON(row: any) {
   };
 }
 
-// `withConflicts` triggers the cross-PR conflict fan-out (PR head vs every other
-// open PR's head). Enabled for the PR *detail* (pulls.get) only; the PR *list* and
-// dashboard leave it off so their per-row serialization stays O(1) git calls.
 export async function pullJSON(
   repo: S.Repo,
   row: any,
-  opts: { withConflicts?: boolean; withRelatedSessions?: boolean } = {},
+  opts: { withRelatedSessions?: boolean } = {},
 ) {
   const p = S.getPull(row.id);
-  const status = await pullStatusFields(repo, row, {
-    withConflicts: opts.withConflicts,
-  });
+  const status = await pullStatusFields(repo, row);
 
   return {
     number: row.number,
@@ -468,10 +406,9 @@ export async function pullJSON(
     created_at: row.created_at,
     updated_at: row.updated_at,
     linked_issue: status.linked,
-    conflicts_with: status.conflicts_with,
     worktree_path: status.worktree_path,
     // Detail-only (#298): the PR's related sessions, newest first, with per-row resume verdicts.
-    // Gated like withConflicts so the PR list/dashboard stay O(1) git + no extra per-row query.
+    // Gated so the PR list/dashboard stay O(1) git + no extra per-row query.
     ...(opts.withRelatedSessions
       ? {
           related_sessions: relatedSessionsJSON(row, {

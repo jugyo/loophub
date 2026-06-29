@@ -177,61 +177,6 @@ describe("PullDetail", () => {
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
-  it("renders the cross-PR conflict section with conflicting files and a PR link", async () => {
-    const withConflicts: PullRequest = {
-      ...pull,
-      conflicts_with: [
-        { number: 41, title: "another change", files: ["core/shared.ts"] },
-      ],
-    };
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "pulls/get": () => withConflicts,
-        "pulls/files": () => files,
-        "reviews/list": () => [],
-        "reviews/listComments": () => [],
-        "comments/list": () => [],
-      }),
-    );
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    const rootRoute = createRootRoute({ component: Outlet });
-    const indexRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/",
-      component: () => <PullDetail owner="me" repo="proj" number={30} />,
-    });
-    const issuesRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/r/$owner/$repo/issues/$number",
-      component: () => null,
-    });
-    const pullsRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/r/$owner/$repo/pulls/$number",
-      component: () => null,
-    });
-    const router = createRouter({
-      routeTree: rootRoute.addChildren([indexRoute, issuesRoute, pullsRoute]),
-      history: createMemoryHistory({ initialEntries: ["/"] }),
-    });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>,
-    );
-
-    expect(await screen.findByText(/May conflict with 1 open PR/)).toBeTruthy();
-    expect(screen.getByText("another change")).toBeTruthy();
-    // Conflicting file is listed.
-    expect(screen.getByText("core/shared.ts")).toBeTruthy();
-    // Link points at the conflicting PR's detail page.
-    const link = screen.getByText("#41").closest("a");
-    expect(link?.getAttribute("href")).toBe("/r/me/proj/pulls/41");
-  });
-
   it("closes the PR via PATCH state=closed without merging", async () => {
     renderDetail();
 

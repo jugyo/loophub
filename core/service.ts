@@ -365,13 +365,8 @@ export const issues = {
     // Enrich each issue's linked PR with status (working / review / mergeable /
     // diff totals) for the issue-list sub-row. Async git fan-out, bounded by the
     // pagination slice above; other surfaces keep the sync issueJSON summary.
-    // One headShaCache for the whole page so the cross-PR conflict fan-out (#267)
-    // rev-parses each open PR's head ref once, not once per enriched issue.
-    const headShaCache = new Map<string, Promise<string | null>>();
     return Promise.all(
-      paginate(rows, perPage, page).map((row) =>
-        issueListItemJSON(row, r, headShaCache),
-      ),
+      paginate(rows, perPage, page).map((row) => issueListItemJSON(row, r)),
     );
   },
 
@@ -882,7 +877,6 @@ export const pulls = {
   get(name: string, number: number) {
     const r = repoOr404(name);
     return pullJSON(r, issueOr404(r, number, "pull"), {
-      withConflicts: true,
       withRelatedSessions: true,
     });
   },
@@ -1679,16 +1673,13 @@ export const dashboard = {
     // Enrich each issue's linked PR (status word + diff totals + the full
     // linked_pull_requests[] stack) so the home "Recent issues" rows match the
     // dedicated issue list's Pattern E sub-rows. issueListItemJSON is async per
-    // the bounded git fan-out, hence Promise.all. One headShaCache across the
-    // whole (cross-repo) page dedupes the conflict fan-out's ref→sha resolution
-    // (#267); the cache key includes the repo path, so sharing it is safe.
-    const headShaCache = new Map<string, Promise<string | null>>();
+    // the bounded git fan-out, hence Promise.all.
     const issues = await Promise.all(
       issueRows
         .slice(0, DASHBOARD_RECENT_ISSUES_LIMIT)
         .map(async ({ repo, ref, row }) => ({
           repo: ref,
-          issue: await issueListItemJSON(row, repo, headShaCache),
+          issue: await issueListItemJSON(row, repo),
         })),
     );
     // Surface the issue cap so the UI can note "showing the N most recent"
