@@ -11,6 +11,7 @@ import {
 } from "../../core/event-hub.ts";
 import * as S from "../../core/store.ts";
 import { sweepPullUpdates } from "../../core/watcher.ts";
+import { log } from "./logger.ts";
 
 const REPLAY_PAGE = 100;
 const DEFAULT_TAIL_POLL_MS = 1000;
@@ -126,7 +127,7 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
     try {
       await sweepPullUpdates();
     } catch (err) {
-      console.error(
+      log.error(
         `pull sweep error: ${err instanceof Error ? err.message : String(err)}`,
       );
     } finally {

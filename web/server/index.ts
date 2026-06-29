@@ -6,6 +6,7 @@
 import { createViteDev, type ViteDev } from "./dev.ts";
 import { DEFAULT_SWEEP_MS, startEventTail, startPullSweep } from "./events.ts";
 import { createLhWebServer } from "./http.ts";
+import { log } from "./logger.ts";
 import { attachTerminalServer, isLoopbackHost } from "./terminal.ts";
 
 const argv = process.argv.slice(2);
@@ -55,11 +56,11 @@ if (isLoopbackHost(host)) {
   stopTerminal = attachTerminalServer(server);
 } else if (terminalOptIn) {
   stopTerminal = attachTerminalServer(server);
-  console.error(
+  log.warn(
     `lh-web: WARNING — terminal enabled on non-loopback host ${host}; an unauthenticated shell is reachable from the network.`,
   );
 } else {
-  console.error(
+  log.warn(
     `lh-web: terminal disabled on non-loopback host ${host} (set LOOPHUB_TERMINAL_ALLOW_NON_LOOPBACK=1 to force-enable; this exposes an unauthenticated shell).`,
   );
 }
@@ -69,16 +70,16 @@ try {
   stopTail();
   stopSweep();
   stopTerminal();
-  console.error(
+  log.error(
     "lh-web: failed to start the embedded Vite dev server. Are web deps installed (npm install)?",
   );
-  console.error(err);
+  log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
   process.exit(1);
 }
 
 server.listen(port, host, () => {
   const shown = host === "127.0.0.1" ? "localhost" : host;
-  console.error(
+  log.info(
     `lh-web listening on http://${shown}:${port}  (API + UI + HMR; events poll ${pollMs}ms; PR sweep ${sweepMs > 0 ? `${sweepMs}ms` : "off"})`,
   );
 });
@@ -111,7 +112,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     shutdown().catch((err) => {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`shutdown error: ${msg}`);
+      log.error(`shutdown error: ${msg}`);
       process.exit(1);
     });
   });
