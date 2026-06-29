@@ -4,7 +4,6 @@
 // sub-row, so a separate PR list is redundant here. The list is TanStack Query
 // backed and refetches on SSE (root.tsx + event-keys).
 
-import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
 import { DashboardSection } from "@/components/dashboard-section";
 import { RepoMenu } from "@/components/repo-menu";
@@ -38,7 +37,6 @@ export function RepoDashboard({
         emptyText="No open issues."
         keyOf={(i) => i.number}
         renderItem={(i) => <IssueRow owner={owner} repo={repo} issue={i} />}
-        headerAction={<CreateIssueButton />}
       />
     </div>
   );

@@ -4,7 +4,6 @@
 
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
-import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,10 +33,7 @@ export function IssueList({ owner, repo }: { owner: string; repo: string }) {
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Issues</h1>
-        <CreateIssueButton />
-      </div>
+      <h1 className="text-2xl font-semibold">Issues</h1>
 
       <div className="flex flex-wrap items-center gap-2">
         <select

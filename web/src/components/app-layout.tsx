@@ -5,6 +5,7 @@ import { Outlet } from "@tanstack/react-router";
 import { useRef } from "react";
 import { AppBreadcrumb } from "@/components/app-breadcrumb";
 import { AppSidebar } from "@/components/app-sidebar";
+import { CreateIssueButton } from "@/components/create-issue-button";
 import { DetailTitleProvider } from "@/components/detail-title";
 import { ErrorBanner, ErrorBannerProvider } from "@/components/error-banner";
 import { TerminalControllerProvider } from "@/components/terminal-controller";
@@ -32,7 +33,10 @@ export function AppLayout() {
             <div className="flex min-w-0 flex-1 flex-col">
               <header className="flex h-14 shrink-0 items-center gap-4 border-b px-6">
                 <AppBreadcrumb />
-                <div className="ml-auto">
+                <div className="ml-auto flex items-center gap-2">
+                  {/* New Issue lives here so it is reachable from any repo-scoped screen; it
+                      hides itself on non-repo screens (home / archived). */}
+                  <CreateIssueButton />
                   <ThemeToggle />
                 </div>
               </header>

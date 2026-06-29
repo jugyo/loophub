@@ -13,8 +13,9 @@ vi.mock("@/components/terminal-view", () => ({
     return <div data-testid="terminal-view" />;
   },
 }));
+const currentRepo = vi.hoisted(() => ({ value: "me/proj" as string | null }));
 vi.mock("@/lib/use-current-repo", () => ({
-  useCurrentRepo: () => "me/proj",
+  useCurrentRepo: () => currentRepo.value,
 }));
 
 import { CreateIssueButton } from "./create-issue-button";
@@ -22,12 +23,20 @@ import { CreateIssueButton } from "./create-issue-button";
 afterEach(() => {
   cleanup();
   terminalProps.value = null;
+  currentRepo.value = "me/proj";
 });
 
 describe("CreateIssueButton", () => {
   it("renders a New issue button", () => {
     render(<CreateIssueButton />);
     expect(screen.getByRole("button", { name: /new issue/i })).toBeTruthy();
+  });
+
+  it("renders nothing on a non-repo screen (no current repo)", () => {
+    currentRepo.value = null;
+    const { container } = render(<CreateIssueButton />);
+    expect(screen.queryByRole("button", { name: /new issue/i })).toBeNull();
+    expect(container.firstChild).toBeNull();
   });
 
   it("does not open the modal until the button is clicked", () => {
@@ -42,7 +51,7 @@ describe("CreateIssueButton", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.getByTestId("terminal-view")).toBeTruthy();
     expect(terminalProps.value).toMatchObject({
-      command: 'claude "/lh-issue-create"',
+      command: "lh issue new --repo me/proj",
       repo: "me/proj",
       // active must be true so TerminalView fits + focuses; pin it so a regression that drops
       // the prop is caught (a hidden/unfocused terminal in the modal).
