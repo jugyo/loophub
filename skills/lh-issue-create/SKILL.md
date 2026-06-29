@@ -78,16 +78,18 @@ If the skill is invoked **without arguments and without any conversation context
 from** (e.g. a fresh session where the user only typed `/lh-issue-create`, with no preceding bug
 report, request, or notes), do **not** guess or fabricate an issue. Enter **question mode**.
 
-**First, ask one light question only** — what the user wants to file — and stop there. Do **not**
-front-load the full list of required fields; a single opener like "What do you want to file?" is enough
-(localize it to the conversation language when replying). The AFK premise is "don't overload the user
-with questions", so the opener stays a one-liner.
+**First, ask one light, open question only** — just *what's going on* — and stop there. Do **not**
+front-load the full list of required fields, and do **not** open by asking which category it is (no
+"bug or enhancement?"). A single open opener like "What's going on?" (or "What do you want to file?") is
+enough — localize it to the conversation language when replying. The AFK premise is "don't overload the
+user with questions", so the opener stays a plain one-liner; infer `bug` / `enhancement` and the rest
+yourself from the reply rather than interrogating up front.
 
 **Then, after the user replies, fill in the rest progressively** — ask only for the fields still
 missing, and only as needed:
 
 - **Title candidate** (one line, starts with a verb)
-- **Category** (`bug` / `enhancement`)
+- **Category** (`bug` / `enhancement`) — infer from the reply; ask only if genuinely ambiguous
 - **Goal** (what "done" looks like)
 - **Acceptance criteria** (verifiable bullets)
 - **Target repository** — `--repo owner/name` (only when cwd doesn't already resolve it; see § LoopHub)
