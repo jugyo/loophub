@@ -56,15 +56,15 @@ export function IssueDevInfo({
   number: number;
 }) {
   const id = `${owner}/${repo}/${number}`;
+  // `lh dev --sandbox` is intentionally NOT surfaced here: the sandboxed/auto-mode variant is a
+  // hidden flag for now because Claude Code's macOS sandbox is broken on this platform (every Bash
+  // command fails with `E2BIG: argument list too long, posix_spawn '/bin/zsh'` — an upstream bug,
+  // see #343/#342). The CLI flag still exists for opt-in use, but the UI only advertises the
+  // working, non-sandboxed path.
   return (
     <DevInfo
       commands={[
         { label: "Start or resume a dev session", command: `lh dev ${id}` },
-        {
-          label: "AFK (sandboxed, auto mode)",
-          command: `lh dev --sandbox ${id}`,
-          note: "Only --sandbox runs the agent unattended in auto mode.",
-        },
       ]}
     />
   );
