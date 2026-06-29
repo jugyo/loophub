@@ -78,11 +78,17 @@ If the skill is invoked **without arguments and without any conversation context
 from** (e.g. a fresh session where the user only typed `/lh-issue-create`, with no preceding bug
 report, request, or notes), do **not** guess or fabricate an issue. Enter **question mode**.
 
-**First, ask one light, open question only** — just *what's going on* — and stop there. Do **not**
-front-load the full list of required fields, and do **not** open by asking which category it is (no
-"bug or enhancement?"). A single open opener like "What's going on?" (or "What do you want to file?") is
-enough — localize it to the conversation language when replying. The AFK premise is "don't overload the
-user with questions", so the opener stays a plain one-liner; infer `bug` / `enhancement` and the rest
+**First, ask exactly one open question and stop there.** Use this fixed opener — render it in the
+conversation language as its plain equivalent, adding nothing:
+
+> What's going on?
+
+Keep it to that wording. Do **not** rephrase it into a filing-oriented prompt (no "What do you want to
+file?", no "What do you want to report?"), do **not** prepend or append any word-count or brevity
+qualifier ("briefly", "in one word", "in a sentence", "in a few words", etc.), do **not** front-load
+the full list of required fields, and do **not** open by asking which category it is (no "bug or
+enhancement?"). The opener is a bare, neutral "what's wrong / how can I help" — not a request to
+summarize and not a request to declare what to file. Infer `bug` / `enhancement` and the rest
 yourself from the reply rather than interrogating up front.
 
 **Then, after the user replies, fill in the rest progressively** — ask only for the fields still
