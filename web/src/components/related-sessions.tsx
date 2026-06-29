@@ -15,6 +15,12 @@
 // resume judgment succeeded (see serialize.ts: only the runtime-level reasons "no-session" /
 // "unknown-runtime" mean there is no claude session id to pass; every other state still has a valid
 // id in `RelatedSession.session`).
+//
+// When the session's cwd is known (#345 — PR detail's `worktree_path`), the command block is the
+// joined form `cd <cwd> && claude --resume <id>` so a single copy resumes from the directory the
+// session was saved in: `claude --resume` only resolves a session from its original cwd (sessions
+// live at ~/.claude/projects/<dashed cwd>/<id>.jsonl). Without a cwd (issue detail, where the path
+// is not available client-side) it falls back to the bare command plus a prose hint.
 
 import { ChevronRight, Play } from "lucide-react";
 import { useState } from "react";
@@ -53,6 +59,16 @@ function canClaudeResume(s: RelatedSession): boolean {
   return s.resume.resumable || !NO_CLAUDE_RESUME.has(s.resume.reason ?? "");
 }
 
+// Shell-quote a path for the copyable `cd <path>` command (#345). Worktree paths under
+// ~/.loophub/worktrees are space-free, so the common case stays unquoted and readable; quote only
+// when the path carries characters the shell would split on or interpret (spaces, globs, etc.),
+// using POSIX single-quote escaping so the copied command is always safe to paste.
+function shellArg(p: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(p)
+    ? p
+    : `'${p.replace(/'/g, `'\\''`)}'`;
+}
+
 export function RelatedSessions({
   owner,
   repo,
@@ -66,7 +82,8 @@ export function RelatedSessions({
   // The PR number used to build `lh resume <id>`. Pass on PR detail; omit on issue detail (an
   // issue-linked session resumes via its PR, so no per-row Resume button there).
   resumeNumber?: number;
-  // The directory the `claude --resume` command should run in, shown as a copyable hint when expanded.
+  // The directory the `claude --resume` command should run in. When set, it is prepended to the
+  // command as `cd <cwd> && …` so one copy resumes from the right place (no separate path row).
   // Pass the PR's dev worktree path on PR detail; omit on issue detail (the repo-root path is not
   // available client-side, so the expanded view notes the directory in prose instead).
   cwd?: string;
@@ -94,9 +111,19 @@ export function RelatedSessions({
           const reason = s.resume.reason
             ? (RESUME_REASON[s.resume.reason] ?? s.resume.reason)
             : null;
-          // `claude --resume <external_session>` — the command a user runs in their own terminal
-          // (#340). Embeds RelatedSession.session (external_session), the value claude consumes.
-          const claudeCommand = `claude --resume ${s.session}`;
+          // The command a user runs in their own terminal. The base is `claude --resume
+          // <external_session>` (#340; embeds RelatedSession.session, the value claude consumes).
+          // With a known cwd (#345) it becomes the joined `cd <cwd> && claude --resume <id>` so one
+          // copy resumes from the right directory; without a cwd the bare command plus the prose
+          // hint below covers it. The id is shell-quoted like the path (defense in depth): a
+          // server-validated UUID passes through unquoted, but the component does not assume that,
+          // so a non-UUID id can never inject tokens into the copyable command. The joined form is
+          // split across two lines with a `\` shell line-continuation so the long command reads
+          // cleanly; the copied text keeps the `\`+newline, so pasting still runs it as one command.
+          const claudeResume = `claude --resume ${shellArg(s.session)}`;
+          const claudeCommand = cwd
+            ? `cd ${shellArg(cwd)} && \\\n  ${claudeResume}`
+            : claudeResume;
           const claudeResumable = canClaudeResume(s);
           const isOpen = expanded[s.id] ?? false;
           return (
@@ -166,7 +193,7 @@ export function RelatedSessions({
                         Resume in your own terminal:
                       </p>
                       <div className="flex items-center gap-1">
-                        <code className="flex-1 overflow-x-auto rounded bg-muted px-2 py-1.5 font-mono text-xs">
+                        <code className="flex-1 overflow-x-auto whitespace-pre rounded bg-muted px-2 py-1.5 font-mono text-xs">
                           {claudeCommand}
                         </code>
                         <CopyButton
@@ -174,22 +201,7 @@ export function RelatedSessions({
                           label="Copy resume command"
                         />
                       </div>
-                      {cwd ? (
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <span className="shrink-0">Run in:</span>
-                          <code
-                            className="min-w-0 flex-1 truncate font-mono"
-                            title={cwd}
-                          >
-                            {cwd}
-                          </code>
-                          <CopyButton
-                            value={cwd}
-                            label="Copy directory"
-                            className="size-5"
-                          />
-                        </div>
-                      ) : (
+                      {cwd ? null : (
                         <p className="text-xs text-muted-foreground">
                           Run it in the session's working directory (the repo
                           root for an issue-create session, or the PR's worktree

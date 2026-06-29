@@ -1,5 +1,5 @@
 import { fireEvent, render, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { RelatedSession } from "@/api/types";
 import { RelatedSessions } from "./related-sessions";
 
@@ -82,7 +82,12 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain("review");
   });
 
-  it("expands a row to reveal the `claude --resume <session>` command and copies it", () => {
+  it("joins cwd into `cd <path> && claude --resume <id>` and copies the whole command (#345)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
     const { container } = render(
       <RelatedSessions
         owner="jugyo"
@@ -103,19 +108,99 @@ describe("RelatedSessions", () => {
     // Collapsed by default: command hidden.
     expect(li.textContent).not.toContain("claude --resume");
     fireEvent.click(within(li).getByRole("button", { expanded: false }));
-    expect(li.textContent).toContain(
-      "claude --resume 11111111-2222-3333-4444-555555555555",
+    const joined =
+      "cd /home/me/.loophub/worktrees/jugyo/loophub/issue-7 && \\\n  claude --resume 11111111-2222-3333-4444-555555555555";
+    // The displayed command block is the joined form, split with a `\` line-continuation (path
+    // needs no shell quoting).
+    expect(li.textContent).toContain(joined);
+    // Its copy button copies the whole joined command in one shot.
+    fireEvent.click(
+      within(li).getByRole("button", { name: "Copy resume command" }),
     );
-    // cwd hint shown when provided.
-    expect(li.textContent).toContain(
-      "/home/me/.loophub/worktrees/jugyo/loophub/issue-7",
-    );
+    expect(writeText).toHaveBeenCalledWith(joined);
+    // No separate "Run in:" path row — the path lives in the joined command now.
+    expect(li.textContent).not.toContain("Run in:");
+    expect(
+      within(li).queryByRole("button", { name: "Copy directory" }),
+    ).toBeNull();
     // The Resume (lh resume) button is still present alongside the command.
     expect(
       Array.from(li.querySelectorAll("button")).some((b) =>
         b.textContent?.includes("Resume"),
       ),
     ).toBe(true);
+  });
+
+  it("falls back to the bare `claude --resume <id>` plus a directory hint when cwd is unknown (#345)", () => {
+    const { container } = render(
+      <RelatedSessions
+        owner="jugyo"
+        repo="loophub"
+        sessions={[
+          session({
+            id: "a",
+            kind: "issue-create",
+            session: "11111111-2222-3333-4444-555555555555",
+            resume: { resumable: false, reason: "resume-via-pull" },
+          }),
+        ]}
+      />,
+    );
+    const li = container.querySelector("li") as HTMLElement;
+    fireEvent.click(toggles(container)[0]);
+    // No cwd → no `cd` prefix, just the bare command.
+    expect(li.textContent).toContain(
+      "claude --resume 11111111-2222-3333-4444-555555555555",
+    );
+    expect(li.textContent).not.toContain("cd ");
+    // Prose hint about where to run it (the directory guidance fallback).
+    expect(li.textContent).toContain("working directory");
+  });
+
+  it("shell-quotes a cwd that contains spaces in the joined command (#345)", () => {
+    const { container } = render(
+      <RelatedSessions
+        owner="jugyo"
+        repo="loophub"
+        resumeNumber={42}
+        cwd="/home/me/My Worktrees/issue-7"
+        sessions={[
+          session({
+            id: "a",
+            kind: "dev",
+            session: "11111111-2222-3333-4444-555555555555",
+            resume: { resumable: true },
+          }),
+        ]}
+      />,
+    );
+    const li = container.querySelector("li") as HTMLElement;
+    fireEvent.click(toggles(container)[0]);
+    expect(li.textContent).toContain(
+      "cd '/home/me/My Worktrees/issue-7' && \\\n  claude --resume 11111111-2222-3333-4444-555555555555",
+    );
+  });
+
+  it("shell-quotes the resume id too, so a non-UUID id cannot inject tokens (#345)", () => {
+    const { container } = render(
+      <RelatedSessions
+        owner="jugyo"
+        repo="loophub"
+        resumeNumber={42}
+        sessions={[
+          session({
+            id: "a",
+            kind: "dev",
+            // Defense in depth: ids are UUIDs in practice, but the component must not assume it.
+            session: "x; rm -rf ~",
+            resume: { resumable: true },
+          }),
+        ]}
+      />,
+    );
+    const li = container.querySelector("li") as HTMLElement;
+    fireEvent.click(toggles(container)[0]);
+    expect(li.textContent).toContain("claude --resume 'x; rm -rf ~'");
   });
 
   it("shows the claude command for a superseded session that lh resume cannot reach", () => {
