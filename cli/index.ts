@@ -51,6 +51,7 @@ type Flags = {
   "session-id"?: string;
   sessionId?: string;
   sandbox?: boolean;
+  auto?: boolean;
   verbose?: boolean;
   kani?: boolean;
   force?: boolean;
@@ -102,6 +103,7 @@ const { values, positionals: pos } = parseArgs({
     "session-id": { type: "string" },
     sessionId: { type: "string" },
     sandbox: { type: "boolean" },
+    auto: { type: "boolean" },
     verbose: { type: "boolean" },
     kani: { type: "boolean" },
     force: { type: "boolean" },
@@ -308,7 +310,7 @@ async function main() {
   if (group === "dev") {
     const target = sub;
     const usageLine =
-      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani] [--force]";
+      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]";
     if (!target) {
       fail(usageLine);
     }
@@ -384,6 +386,7 @@ async function main() {
           // gets it explicitly regardless of which positional form launched this one.
           repo,
           sandbox: flags.sandbox,
+          auto: flags.auto,
           allow: flags.allow,
           verbose: flags.verbose,
           // Carry --force through the relaunch so the inner `lh dev` still overrides the lock.
@@ -555,6 +558,8 @@ async function main() {
     const claudeArgs = buildClaudeArgs({
       sessionId,
       managedSettings: managed,
+      // --auto enables auto mode without the sandbox; --sandbox already implies it via managed.
+      auto: flags.auto === true,
       slashCommand,
       sessionName,
     });
@@ -1457,7 +1462,7 @@ function usage() {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--verbose] [--kani] [--force]   # start one issue in an interactive Claude session (--kani: in a new kani terminal; --force: launch even if another session holds it)
+  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]   # start one issue in an interactive Claude session (--auto: auto mode without the sandbox; --kani: in a new kani terminal; --force: launch even if another session holds it)
   lh dev note --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]   # record a dev note on the issue's PR
   lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]   # re-enter the Claude session a PR was developed in (claude --resume in its worktree)
   lh repo add <path> [--name owner/repo]
@@ -1485,6 +1490,7 @@ function usage() {
     lh dev 42
     lh dev jugyo/loophub/42        # owner/repo/id form: start from outside the repo, no --repo needed
     lh dev --sandbox 42            # boolean flags and the issue id may appear in any order
+    lh dev --auto 42               # auto mode (--permission-mode auto) without the sandbox
     lh repo add . --name me/proj
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"

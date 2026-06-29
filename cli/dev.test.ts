@@ -211,6 +211,29 @@ test("buildClaudeArgs adds auto mode only when sandbox managed-settings are pres
   expect(plain.indexOf("--permission-mode")).toBe(-1);
 });
 
+test("buildClaudeArgs adds auto mode when --auto is set without the sandbox", () => {
+  // --auto → auto mode without managed-settings (no sandbox guard rails), enabled only because
+  // the user opted in explicitly.
+  const auto = buildClaudeArgs({
+    sessionId: "sid-1",
+    auto: true,
+    slashCommand: "/lh-dev 42",
+  });
+  const i = auto.indexOf("--permission-mode");
+  expect(i).toBeGreaterThanOrEqual(0);
+  expect(auto[i + 1]).toBe("auto");
+  // No managed-settings → no --settings, even though auto mode is on.
+  expect(auto.indexOf("--settings")).toBe(-1);
+
+  // auto: false (default) → no auto mode, matching the non-flagged no-sandbox launch.
+  const off = buildClaudeArgs({
+    sessionId: "sid-1",
+    auto: false,
+    slashCommand: "/lh-dev 42",
+  });
+  expect(off.indexOf("--permission-mode")).toBe(-1);
+});
+
 test("buildClaudeArgs carries session id, managed settings, and the slash command", () => {
   const args = buildClaudeArgs({
     sessionId: "sid-1",
@@ -315,7 +338,7 @@ test("buildKaniLaunch builds the kani launch_terminal argv with cwd and name", (
   ]);
 });
 
-test("buildKaniLaunch forwards --repo/--sandbox/--allow/--verbose/--force into the inner command", () => {
+test("buildKaniLaunch forwards --repo/--sandbox/--auto/--allow/--verbose/--force into the inner command", () => {
   const launch = buildKaniLaunch({
     issue: 7,
     title: "t",
@@ -323,14 +346,25 @@ test("buildKaniLaunch forwards --repo/--sandbox/--allow/--verbose/--force into t
     flags: {
       repo: "me/proj",
       sandbox: true,
+      auto: true,
       allow: "example.com,api.example.com",
       verbose: true,
       force: true,
     },
   });
   expect(launch.command).toBe(
-    "lh dev 7 --repo 'me/proj' --sandbox --allow 'example.com,api.example.com' --verbose --force",
+    "lh dev 7 --repo 'me/proj' --sandbox --auto --allow 'example.com,api.example.com' --verbose --force",
   );
+});
+
+test("buildKaniLaunch forwards --auto without the sandbox", () => {
+  const launch = buildKaniLaunch({
+    issue: 7,
+    title: "t",
+    cwd: "/c",
+    flags: { auto: true },
+  });
+  expect(launch.command).toBe("lh dev 7 --auto");
 });
 
 test("buildKaniLaunch never forwards --kani (no recursion)", () => {

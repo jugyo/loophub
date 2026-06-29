@@ -142,10 +142,12 @@ export function buildManagedSettings({
 
 // ---- interactive launch args ----
 //
-// Build the `claude` argv for the interactive dev session. Auto mode is coupled to the sandbox:
-// `--permission-mode auto` is added only when managed sandbox settings are present (i.e.
-// `--sandbox`). Without the sandbox there is no managed-settings, so the session starts in
-// Claude's normal approval mode — never unattended auto-run without the sandbox guard rails.
+// Build the `claude` argv for the interactive dev session. Auto mode (`--permission-mode auto`)
+// is enabled when either the sandbox managed-settings are present (`--sandbox`, the historical
+// coupling) or the caller explicitly passes `--auto`. `--auto` alone deliberately relaxes the old
+// safety premise — it enables auto-run *without* the sandbox guard rails — so it takes effect only
+// when the user opts in explicitly (never by default). Without `--auto` and without the sandbox,
+// the session starts in Claude's normal approval mode.
 // `auto` (vs `acceptEdits`) lets the session run Bash/network/edits without prompting — driven
 // by Claude's safety classifier, which still stops to confirm genuinely destructive actions
 // (force push, `terraform destroy`, `curl | bash`, …) — so a sandboxed dev loop is not blocked
@@ -194,11 +196,15 @@ export function parseDevTarget(target: string): { repo?: string; id: number } {
 export function buildClaudeArgs({
   sessionId,
   managedSettings,
+  auto,
   slashCommand,
   sessionName,
 }: {
   sessionId: string;
   managedSettings?: string;
+  // Opt into auto mode (`--permission-mode auto`) without the sandbox. `--sandbox` already
+  // implies auto via managedSettings; `--auto` enables it independently (no guard rails).
+  auto?: boolean;
   slashCommand: string;
   // Display name for the session picker / terminal title (e.g. `#54 <issue title>`). Stripped
   // of control characters before it reaches argv (see display()) so a crafted issue title can
@@ -206,8 +212,8 @@ export function buildClaudeArgs({
   sessionName?: string;
 }): string[] {
   const args = ["--session-id", sessionId];
-  if (managedSettings) {
-    // Sandbox present → opt into auto mode explicitly.
+  if (auto || managedSettings) {
+    // Auto mode when explicitly requested (--auto) or implied by the sandbox (managedSettings).
     args.push("--permission-mode", "auto");
   }
   if (sessionName) {
@@ -254,6 +260,7 @@ export function buildResumeArgs({
 export interface KaniForwardFlags {
   repo?: string;
   sandbox?: boolean;
+  auto?: boolean;
   allow?: string;
   verbose?: boolean;
   force?: boolean;
@@ -282,6 +289,7 @@ export function buildKaniLaunch({
   const parts = ["lh", "dev", String(issue)];
   if (flags.repo) parts.push("--repo", shQuote(flags.repo));
   if (flags.sandbox) parts.push("--sandbox");
+  if (flags.auto) parts.push("--auto");
   if (flags.allow) parts.push("--allow", shQuote(flags.allow));
   if (flags.verbose) parts.push("--verbose");
   if (flags.force) parts.push("--force");
