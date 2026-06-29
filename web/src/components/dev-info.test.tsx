@@ -17,6 +17,20 @@ describe("IssueDevInfo", () => {
     expect(container.textContent).not.toContain("--sandbox");
     expect(container.textContent).toContain("Develop");
   });
+
+  it("also shows the --auto (unattended) variant with a note, keeping the normal launch", () => {
+    const { container } = render(
+      <IssueDevInfo owner="jugyo" repo="loophub" number={150} />,
+    );
+    const commands = Array.from(container.querySelectorAll("code")).map(
+      (c) => c.textContent,
+    );
+    // The normal launch stays alongside the auto-mode variant (#374).
+    expect(commands).toContain("lh dev jugyo/loophub/150");
+    expect(commands).toContain("lh dev --auto jugyo/loophub/150");
+    // A short note explains the unattended/auto-mode behaviour.
+    expect(container.textContent).toContain("auto mode");
+  });
 });
 
 describe("PullDevInfo", () => {
