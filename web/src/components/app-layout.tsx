@@ -18,11 +18,12 @@ export function AppLayout() {
   const mainRef = useRef<HTMLElement>(null);
   useScrollToTop(mainRef);
   return (
-    // The terminal is a fixed full-width overlay along the bottom (see terminal-pane.tsx), so
-    // expanding it never reflows the page. The main content reserves bottom space equal to the
+    // The terminal is a fixed overlay along the bottom of the main content area (see
+    // terminal-pane.tsx) — it starts at the sidebar's right edge (--lh-sidebar-w) and never covers
+    // the sidebar, so the sidebar stays fully visible and operable while the terminal is open.
+    // Expanding it never reflows the page; the main content reserves bottom space equal to the
     // terminal's current height via the --lh-term-reserve CSS var the pane publishes, so its tail
-    // stays scrollable past the terminal whether it is collapsed, dragged, or maximized. The
-    // sidebar keeps a static pb-12 — its short list never reaches under an expanded terminal.
+    // stays scrollable past the terminal whether it is collapsed, dragged, or maximized.
     // TerminalControllerProvider wraps both the content and the pane so buttons in the content
     // (New Issue / Build) can open a terminal tab with a command via useTerminal().
     <TerminalControllerProvider>

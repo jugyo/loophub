@@ -1,6 +1,7 @@
-// Bottom terminal pane, present on every screen and spanning the full window width (it sits below
-// the sidebar, not beside it — see app-layout.tsx). Window-scoped by design: each browser tab runs
-// its own independent terminals — there is no cross-window sync.
+// Bottom terminal pane, present on every screen and spanning the main content width: it sits beside
+// the sidebar (left edge aligned to the sidebar's right edge via --lh-sidebar-w), not over it — see
+// app-layout.tsx. Window-scoped by design: each browser tab runs its own independent terminals —
+// there is no cross-window sync.
 //
 // The pane hosts one or more terminal *tabs*. Each tab is an independent PTY/WebSocket session
 // (a TerminalView), kept mounted while it exists so switching tabs only hides the inactive ones
@@ -251,10 +252,12 @@ export function TerminalPane() {
   }, [reserveCss]);
 
   return (
-    // Fixed full-width overlay pinned to the bottom: growing it never reflows the page behind it.
+    // Fixed overlay pinned to the bottom of the main content area: it starts at the sidebar's
+    // right edge (left = --lh-sidebar-w) and runs to the window's right edge, so it spans the main
+    // content width without ever covering the sidebar. Growing it never reflows the page behind it.
     // The bar sits on top of the (optional) content below, which is anchored to the viewport
     // bottom. `relative` is kept implicitly by `fixed` so the absolute resize handle anchors here.
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background">
+    <div className="fixed bottom-0 right-0 left-[var(--lh-sidebar-w)] z-40 border-t bg-background">
       {expanded && !maximized && (
         // Invisible resize handle along the top of the bar (only when open). It draws nothing —
         // the visible separator is just the pane's normal border-t — but gives a row-resize grab

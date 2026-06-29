@@ -26,6 +26,9 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
+    /* Left sidebar width — single source of truth shared by the sidebar (its width) and the
+       bottom terminal pane (its left offset, so the pane sits beside the sidebar, not over it). */
+    --lh-sidebar-w: 16rem;
   }
 
   .dark {

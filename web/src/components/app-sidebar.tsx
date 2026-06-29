@@ -10,7 +10,7 @@ export function AppSidebar() {
   const { data: repos, isLoading, isError } = useRepos();
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r bg-card">
+    <aside className="flex h-full w-[var(--lh-sidebar-w)] shrink-0 flex-col border-r bg-card">
       <div className="flex h-14 items-center border-b px-4">
         <Link to="/" className="text-lg font-semibold">
           LoopHub
@@ -30,8 +30,9 @@ export function AppSidebar() {
         Repositories
       </div>
 
-      {/* pb clears the fixed terminal bar (h-9) overlaid along the bottom. */}
-      <div className="flex-1 overflow-y-auto px-2 pb-12">
+      {/* The terminal pane now sits beside the sidebar (it starts at the sidebar's right edge),
+          so it no longer overlays the sidebar bottom and no extra clearance is needed. */}
+      <div className="flex-1 overflow-y-auto px-2 pb-2">
         {isLoading && (
           <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" /> Loading…
