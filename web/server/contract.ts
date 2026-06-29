@@ -350,6 +350,66 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.reviewNotes.remove(p.repo, p.id, p.session_id),
   },
 
+  // ---- handoffs (#352) ----
+  "handoffs/list": {
+    description:
+      "List orchestrator<->subagent handoffs for a ref, chronological (seq asc). Filters optional: pr narrows to one PR, issue to a generic issue, session to a session.",
+    params: params(
+      { repo, pr: positiveInt, issue: positiveInt, session: sid },
+      ["repo"],
+    ),
+    result: anyArray,
+    handler: (p) =>
+      svc.handoffs.list(p.repo, {
+        pr: p.pr,
+        issue: p.issue,
+        session: p.session,
+      }),
+  },
+  "handoffs/record": {
+    description:
+      "Record a handoff: a parent's instruction (dir=down) or a child's return (dir=up). Binds to a PR and/or issue (one required) plus the recording session. Pass body for inline content (instruction/Verify report), or src+hash to reference a canonical copy (plan=PR, diff=commit) without duplicating it.",
+    params: params(
+      {
+        repo,
+        phase: strNonEmpty,
+        dir: { enum: ["down", "up"] },
+        pr: positiveInt,
+        issue: positiveInt,
+        from: str,
+        to: str,
+        body: str,
+        src: str,
+        hash: str,
+        summary: str,
+        model: str,
+        cost: str,
+        session_id: sid,
+      },
+      ["repo", "phase", "dir"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.handoffs.record(
+        p.repo,
+        {
+          phase: p.phase,
+          direction: p.dir,
+          pr: p.pr,
+          issue: p.issue,
+          from: p.from,
+          to: p.to,
+          body: p.body,
+          src: p.src,
+          hash: p.hash,
+          summary: p.summary,
+          model: p.model,
+          cost: p.cost,
+        },
+        p.session_id,
+      ),
+  },
+
   // ---- labels ----
   "labels/list": {
     description: "List a repository's labels.",

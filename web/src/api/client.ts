@@ -8,6 +8,7 @@
 import { getSessionId } from "@/lib/session";
 import type {
   DashboardOverview,
+  Handoff,
   Issue,
   IssueComment,
   IssueGroupWithMembers,
@@ -273,6 +274,14 @@ export function listPullReviewNotes(
   number: number,
 ) {
   return rpc<ReviewNote[]>("reviewNotes/list", {
+    repo: full(owner, repo),
+    pr: number,
+  });
+}
+
+/** Orchestrator<->subagent handoffs (#352) recorded against a PR, chronological. */
+export function listPullHandoffs(owner: string, repo: string, number: number) {
+  return rpc<Handoff[]>("handoffs/list", {
     repo: full(owner, repo),
     pr: number,
   });

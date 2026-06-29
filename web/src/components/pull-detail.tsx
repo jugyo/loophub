@@ -20,6 +20,7 @@ import { useRegisterDetailTitle } from "@/components/detail-title";
 import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
 import { useErrorBanner } from "@/components/error-banner";
+import { HandoffTimeline } from "@/components/handoff-timeline";
 import { Markdown } from "@/components/markdown";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { RelatedSessions } from "@/components/related-sessions";
@@ -41,6 +42,7 @@ import {
   usePullComments,
   usePullDevNotes,
   usePullFiles,
+  usePullHandoffs,
   usePullReviewNotes,
   usePullReviews,
   useReadyForReview,
@@ -66,6 +68,7 @@ export function PullDetail({
   const commentsQuery = useIssueComments(owner, repo, number);
   const devNotesQuery = usePullDevNotes(owner, repo, number);
   const reviewNotesQuery = usePullReviewNotes(owner, repo, number);
+  const handoffsQuery = usePullHandoffs(owner, repo, number);
 
   if (pullQuery.isLoading) {
     return (
@@ -86,10 +89,20 @@ export function PullDetail({
   }
 
   const pull = pullQuery.data;
-  // Only reserve the sidebar column when there is something to put in it. RelatedSessions hides
-  // itself when empty, so without this guard a PR with no linked sessions would leave a dead
-  // `lg:w-80` gap instead of letting the main content reclaim the full width.
+  // Only reserve the sidebar column when there is something to put in it. RelatedSessions and
+  // HandoffTimeline both hide themselves when empty, so without this guard a PR with neither would
+  // leave a dead `lg:w-80` gap instead of letting the main content reclaim the full width.
   const hasSessions = (pull.related_sessions?.length ?? 0) > 0;
+  const hasHandoffs = (handoffsQuery.data?.length ?? 0) > 0;
+  // Also reserve the sidebar while the handoffs fetch is pending or errored, so HandoffTimeline can
+  // render its loading spinner / error state for a PR that has handoffs but no related sessions
+  // (otherwise the aside never mounts until data resolves, and a fetch error would be swallowed).
+  // Once the fetch resolves with no handoffs and no sessions, the sidebar collapses as before.
+  const hasSidebar =
+    hasSessions ||
+    hasHandoffs ||
+    handoffsQuery.isLoading ||
+    handoffsQuery.isError;
 
   return (
     // The whole PR detail is a two-column layout (#346): the main column (header, reviews, diff,
@@ -101,7 +114,7 @@ export function PullDetail({
     // with the sibling pages (issue-detail, pull-list).
     <div
       className={`mx-auto flex flex-col gap-6 lg:flex-row lg:items-start ${
-        hasSessions ? "max-w-content lg:max-w-content-wide" : "max-w-content"
+        hasSidebar ? "max-w-content lg:max-w-content-wide" : "max-w-content"
       }`}
     >
       <div className="flex min-w-0 flex-1 flex-col gap-6">
@@ -148,7 +161,7 @@ export function PullDetail({
         />
       </div>
 
-      {hasSessions ? (
+      {hasSidebar ? (
         <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
           <RelatedSessions
             owner={owner}
@@ -156,6 +169,13 @@ export function PullDetail({
             sessions={pull.related_sessions}
             resumeNumber={pull.number}
             cwd={pull.worktree_path ?? undefined}
+          />
+          <HandoffTimeline
+            owner={owner}
+            repo={repo}
+            handoffs={handoffsQuery.data}
+            isLoading={handoffsQuery.isLoading}
+            isError={handoffsQuery.isError}
           />
         </aside>
       ) : null}

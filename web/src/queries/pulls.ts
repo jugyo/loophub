@@ -9,6 +9,7 @@ import {
   listEvents,
   listPullComments,
   listPullFiles,
+  listPullHandoffs,
   listPullReviewNotes,
   listPullReviews,
   listPulls,
@@ -119,6 +120,18 @@ export function usePullReviewNotes(
   return useQuery({
     queryKey: [...queryKeys.pull(full(owner, repo), number), "review-notes"],
     queryFn: () => listPullReviewNotes(owner, repo, number),
+  });
+}
+
+/**
+ * Orchestrator<->subagent handoffs (#352) for a PR, chronological. Keyed under the pull key so the
+ * SSE map (event-keys.ts) refetches it via the pull prefix on each `handoff.recorded` event. Backed
+ * by the dedicated handoffs/list endpoint (not the events feed), so there is no 100-event cap.
+ */
+export function usePullHandoffs(owner: string, repo: string, number: number) {
+  return useQuery({
+    queryKey: [...queryKeys.pull(full(owner, repo), number), "handoffs"],
+    queryFn: () => listPullHandoffs(owner, repo, number),
   });
 }
 

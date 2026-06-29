@@ -93,6 +93,14 @@ type Flags = {
   input?: string;
   status?: string;
   limit?: string;
+  phase?: string;
+  dir?: string;
+  src?: string;
+  from?: string;
+  to?: string;
+  hash?: string;
+  model?: string;
+  cost?: string;
 };
 const { values, positionals: pos } = parseArgs({
   args: process.argv.slice(2),
@@ -143,6 +151,14 @@ const { values, positionals: pos } = parseArgs({
     input: { type: "string" },
     status: { type: "string" },
     limit: { type: "string" },
+    phase: { type: "string" },
+    dir: { type: "string" },
+    src: { type: "string" },
+    from: { type: "string" },
+    to: { type: "string" },
+    hash: { type: "string" },
+    model: { type: "string" },
+    cost: { type: "string" },
   },
 });
 const flags = values as Flags;
@@ -1231,6 +1247,75 @@ async function main() {
     return;
   }
 
+  if (group === "handoff") {
+    // Record / list orchestrator<->subagent handoffs (#352). A handoff binds to a PR (--pr, the
+    // ref the design's `--ref <pr>` names) and/or a generic issue (--issue); the recording session
+    // is the attribution session (--session-id), so the record hangs off "PR + session" naturally.
+    const s = await svc();
+    const repo = await resolveRepo();
+    if (sub === "record") {
+      const recordUsage =
+        "usage: lh handoff record --phase <p> --dir <down|up> (--pr <n> | --issue <n>) (--body <text|-> | --src <ref> [--hash <sha>]) [--from <r>] [--to <r>] [--summary <text>] [--model <m>] [--cost <json>] [--repo owner/name]";
+      if (!flags.phase || !flags.dir) fail(recordUsage);
+      if (!flags.pr && !flags.issue)
+        fail(`--pr or --issue is required\n${recordUsage}`);
+      if (!flags.body && !flags.src)
+        fail(`--body or --src is required\n${recordUsage}`);
+      // `--body -` reads the instruction/report from stdin so large prompts aren't shell args.
+      const body =
+        flags.body === "-"
+          ? await readStdin()
+          : (flags.body as string | undefined);
+      const session = await writeSession();
+      const h = await run(() =>
+        s.handoffs.record(
+          repo,
+          {
+            phase: flags.phase as string,
+            direction: flags.dir as string,
+            pr: flags.pr ? Number(flags.pr) : undefined,
+            issue: flags.issue ? Number(flags.issue) : undefined,
+            from: flags.from,
+            to: flags.to,
+            body,
+            src: flags.src,
+            hash: flags.hash,
+            summary: flags.summary,
+            model: flags.model,
+            cost: flags.cost,
+          },
+          session,
+        ),
+      );
+      if (flags.json) out(h);
+      else {
+        const target = h.pull_request
+          ? `PR #${h.pull_request.number}`
+          : `issue #${h.issue?.number}`;
+        console.log(
+          `recorded handoff #${h.seq} (${h.phase}/${h.direction}) on ${target}${h.summary ? `: ${h.summary}` : ""}`,
+        );
+      }
+    } else if (sub === "list") {
+      const handoffs = await run(() =>
+        s.handoffs.list(repo, {
+          ...(flags.pr ? { pr: Number(flags.pr) } : {}),
+          ...(flags.issue ? { issue: Number(flags.issue) } : {}),
+          ...(flags.session ? { session: flags.session } : {}),
+        }),
+      );
+      if (flags.json) out(handoffs);
+      else
+        handoffs.forEach((h: any) => {
+          const ref = h.src ? `src=${h.src}` : "body";
+          console.log(
+            `#${h.seq}\t${h.phase}/${h.direction}\t${h.from ?? "?"}→${h.to ?? "?"}\t${ref}\t${h.summary ?? ""}`,
+          );
+        });
+    } else usage();
+    return;
+  }
+
   if (group === "worktree") {
     if (sub !== "prune") {
       usage();
@@ -1478,6 +1563,8 @@ function usage() {
   lh pr notes <m> [--path <file>] [--commit <sha>]   lh pr note-edit <id> --body <text>   lh pr note-rm <id>   # list / edit / delete review notes
   lh note add --path <file> --body <text> --base <sha> --commit <sha> [--pr <m>]   # add a PR-independent review note for a file on a commit range
   lh note list [--pr <m>] [--path <file>] [--base <sha>] [--commit <sha>]   lh note get <id>   lh note edit <id> --body <text>   lh note rm <id>   # read / edit / delete review notes
+  lh handoff record --phase <p> --dir <down|up> (--pr <m> | --issue <n>) (--body <text|-> | --src <ref> [--hash <sha>]) [--from <r>] [--to <r>] [--summary <text>] [--model <m>] [--cost <json>]   # record an orchestrator<->subagent handoff (PR + session)
+  lh handoff list [--pr <m>] [--issue <n>] [--session <id>] [--json]   # list handoffs for a ref, chronological
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR
   lh retro list [--pr <m>] [--status draft]   lh retro view <id>   lh retro pending [--limit N]   # read retros / list merged PRs without one
   lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-dev worktrees (issue closed / PR merged, clean tree)

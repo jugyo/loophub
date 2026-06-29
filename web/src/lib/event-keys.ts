@@ -91,6 +91,28 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["pull"]);
     }
     keys.push([...queryKeys.dashboard()]);
+  } else if (type === "handoff.recorded") {
+    // A handoff (#352) is filed against a PR (payload.number / pr_number) and/or a generic issue
+    // (payload.issue_number). Its section is a sub-key of the pull (and, for an issue-only handoff,
+    // the issue) key, so invalidating that prefix refetches the Handoffs list. Mirrors the dev.note
+    // routing above. An issue-only handoff carries no PR number, so route its issue_number to the
+    // issue keys instead — the generic mechanism is not PR-only (#352).
+    const prNumber = payload?.pr_number ?? payload?.number;
+    const issueNumber = payload?.issue_number;
+    if (repo) {
+      keys.push([...queryKeys.pulls(repo)]);
+      if (typeof prNumber === "number") {
+        keys.push([...queryKeys.pull(repo, prNumber)]);
+      }
+      if (typeof issueNumber === "number") {
+        keys.push([...queryKeys.issue(repo, issueNumber)]);
+      }
+    } else {
+      keys.push(["pulls"]);
+      keys.push(["pull"]);
+      keys.push(["issue"]);
+    }
+    keys.push([...queryKeys.dashboard()]);
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
     // agent_session.linked (#298) targets a specific PR or issue; its related_sessions list lives in

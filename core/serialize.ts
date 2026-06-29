@@ -165,6 +165,34 @@ export function reviewNoteJSON(n: any) {
   };
 }
 
+// Shape a `handoffs` row (#352) into the wire object the CLI / UI read. pr and issue are summarized
+// by number (not the internal issues row id) so consumers see the PR/issue they know. body is the
+// inline content (instruction prompt / Verify report) when present; src+hash reference a canonical
+// copy (plan=PR, diff=commit) when the substance lives elsewhere. cost is returned as-is (free-form
+// text the consumer parses). from/to mirror the orchestration roles.
+export function handoffJSON(h: any) {
+  const prRow = h.pr_id != null ? S.getIssueById(h.pr_id) : null;
+  const issueRow = h.issue_id != null ? S.getIssueById(h.issue_id) : null;
+  return {
+    id: h.id,
+    seq: h.seq,
+    phase: h.phase,
+    direction: h.direction,
+    from: h.from_role ?? null,
+    to: h.to_role ?? null,
+    pull_request: prRow ? { number: prRow.number } : null,
+    issue: issueRow ? { number: issueRow.number } : null,
+    session_id: h.session_id ?? null,
+    body: h.body ?? null,
+    src: h.src ?? null,
+    hash: h.hash ?? null,
+    summary: h.summary ?? null,
+    model: h.model ?? null,
+    cost: h.cost ?? null,
+    created_at: h.created_at,
+  };
+}
+
 export function labelJSON(l: any) {
   return { name: l.name, color: l.color };
 }

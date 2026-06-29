@@ -338,6 +338,65 @@ CREATE TABLE IF NOT EXISTS issue_group_members (
 
 CREATE INDEX IF NOT EXISTS idx_issue_groups_repo    ON issue_groups(repo_id);
 CREATE INDEX IF NOT EXISTS idx_issue_group_members_issue ON issue_group_members(issue_id);
+
+-- Handoffs (#352). The orchestrator<->subagent handoff bus, made durable: each row is one
+-- explicit document passed between a parent orchestrator and a child subagent — the parent's
+-- instruction (direction='down') or the child's return (direction='up') — recorded out of the
+-- volatile conversation so a run's trajectory can be replayed, audited, and evaluated later
+-- (lh-build-design.ja.md §6.5; the harness "Observability" layer). Generic on purpose: any
+-- orchestration (lh-dev today, lh-build the first real user, future skills) records through the
+-- same protocol; no lh-build-specific column is required.
+--
+-- Linkage (the "ref"): a handoff binds to a PR (pr_id, the kind='pull' issues row) and/or its
+-- session (session_id), the two anchors lh-build handoffs accumulate on; issue_id is the optional
+-- generic linkage (a future issue-stage orchestration) so the mechanism is not PR-only. At least
+-- one of pr_id/issue_id is required (enforced in service.ts, not as a DB constraint, so the schema
+-- stays generic). seq is a per-ref monotonic counter (1,2,3…) giving handoffs a stable order
+-- independent of created_at's second precision.
+--
+-- Body is HYBRID (the key design decision): content with no other home — the parent's instruction
+-- prompt, the Verify report — lives INLINE in 'body'. Content whose canonical copy is elsewhere —
+-- plan=PR, diff=git commit — is NOT duplicated: 'src' references the canonical (e.g. a commit sha
+-- or comment id) and 'hash' is its content hash (sha256), so the reference is verifiable without a
+-- second copy. Exactly one of (body, src) is the substance; the other is null.
+--
+-- Security: rows are stored UNENCRYPTED and never GC'd (durable by design), so — like dev.note —
+-- secrets (credentials/tokens) must never be written here; the redaction rule lives with the
+-- caller (service validates shape, not secrecy). model/cost are optional observability fields for
+-- model-routing/economics analysis (p.42); cost is free-form JSON text (tokens/latency) the
+-- consumer parses. from_role/to_role label the agents (parent / 'code' sub / …).
+CREATE TABLE IF NOT EXISTS handoffs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id     INTEGER NOT NULL REFERENCES repos(id),
+  pr_id       INTEGER REFERENCES issues(id),
+  issue_id    INTEGER REFERENCES issues(id),
+  session_id  TEXT    REFERENCES agent_sessions(id),
+  seq         INTEGER NOT NULL,
+  phase       TEXT NOT NULL,
+  direction   TEXT NOT NULL,
+  from_role   TEXT,
+  to_role     TEXT,
+  body        TEXT,
+  src         TEXT,
+  hash        TEXT,
+  summary     TEXT,
+  model       TEXT,
+  cost        TEXT,
+  created_at  TEXT NOT NULL
+);
+
+-- seq is minted per primary ref (pr if present, else issue, else session — see nextHandoffSeq).
+-- These UNIQUE partial indexes back that invariant the way issues' UNIQUE (repo_id, number) backs
+-- nextNumber: seq is MAX(seq)+1 read in one statement then INSERTed in another, so two processes
+-- (parallel 'lh handoff record' from concurrent subagents) can read the same MAX; the unique index
+-- makes the second INSERT throw instead of silently duplicating seq, and createHandoff retries with
+-- a recomputed seq. The partial predicates mirror the seq scope exactly so they never false-collide:
+-- the pr index covers every pr-bound row (seq minted in pr scope whenever pr_id is set); the issue
+-- index covers only issue-bound rows with no pr (seq minted in issue scope only when pr_id IS NULL).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_handoffs_pr_seq    ON handoffs(pr_id, seq) WHERE pr_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_handoffs_issue_seq ON handoffs(issue_id, seq) WHERE pr_id IS NULL AND issue_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_handoffs_issue   ON handoffs(issue_id);
+CREATE INDEX IF NOT EXISTS idx_handoffs_session ON handoffs(session_id);
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）

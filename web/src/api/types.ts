@@ -100,6 +100,28 @@ export interface ReviewNote {
   updated_at: string;
 }
 
+// An orchestrator<->subagent handoff (#352), as shown in the PR detail's Handoffs section. `body`
+// is inline content (instruction / Verify report) when present; otherwise `src` references a
+// canonical copy (plan=PR, diff=commit) and `hash` is its content hash.
+export interface Handoff {
+  id: number;
+  seq: number;
+  phase: string;
+  direction: "down" | "up";
+  from: string | null;
+  to: string | null;
+  pull_request: { number: number } | null;
+  issue: { number: number } | null;
+  session_id: string | null;
+  body: string | null;
+  src: string | null;
+  hash: string | null;
+  summary: string | null;
+  model: string | null;
+  cost: string | null;
+  created_at: string;
+}
+
 export interface Repo {
   id: number;
   name: string;
