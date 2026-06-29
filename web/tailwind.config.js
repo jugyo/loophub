@@ -19,6 +19,9 @@ export default {
       },
       maxWidth: {
         content: "60rem",
+        // Wider cap for the two-column PR detail (main + sidebar), so the diff
+        // column keeps room once the Sessions sidebar takes its share (#346).
+        "content-wide": "80rem",
       },
       colors: {
         border: "hsl(var(--border))",

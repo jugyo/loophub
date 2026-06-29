@@ -86,58 +86,79 @@ export function PullDetail({
   }
 
   const pull = pullQuery.data;
+  // Only reserve the sidebar column when there is something to put in it. RelatedSessions hides
+  // itself when empty, so without this guard a PR with no linked sessions would leave a dead
+  // `lg:w-80` gap instead of letting the main content reclaim the full width.
+  const hasSessions = (pull.related_sessions?.length ?? 0) > 0;
 
   return (
-    <div className="mx-auto flex max-w-content flex-col gap-6">
-      {/* No key needed for feedback safety: operation-failure feedback now lives in the app-shell
-          error banner (#323), which clears on route change, so a `Merge failed: …` error can no
-          longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
-      <PullHeader owner={owner} repo={repo} pull={pull} />
+    // The whole PR detail is a two-column layout (#346): the main column (header, reviews, diff,
+    // comments) on the left and the Sessions sidebar on the right, running alongside from the top
+    // so ancillary info never interrupts the main vertical flow. Below `lg` the columns stack
+    // (flex-col) so the sidebar wraps under the main content on narrow screens. The page widens to
+    // `max-w-content-wide` only when the sidebar is present AND beside the content (`lg`); without a
+    // sidebar, or while stacked below `lg`, the single column stays at the standard 60rem to line up
+    // with the sibling pages (issue-detail, pull-list).
+    <div
+      className={`mx-auto flex flex-col gap-6 lg:flex-row lg:items-start ${
+        hasSessions ? "max-w-content lg:max-w-content-wide" : "max-w-content"
+      }`}
+    >
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
+        {/* No key needed for feedback safety: operation-failure feedback now lives in the app-shell
+            error banner (#323), which clears on route change, so a `Merge failed: …` error can no
+            longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
+        <PullHeader owner={owner} repo={repo} pull={pull} />
 
-      <RelatedSessions
-        owner={owner}
-        repo={repo}
-        sessions={pull.related_sessions}
-        resumeNumber={pull.number}
-        cwd={pull.worktree_path ?? undefined}
-      />
+        <DevNoteTimeline
+          owner={owner}
+          repo={repo}
+          notes={devNotesQuery.data}
+          isLoading={devNotesQuery.isLoading}
+          isError={devNotesQuery.isError}
+        />
 
-      <DevNoteTimeline
-        owner={owner}
-        repo={repo}
-        notes={devNotesQuery.data}
-        isLoading={devNotesQuery.isLoading}
-        isError={devNotesQuery.isError}
-      />
+        <ReviewList
+          owner={owner}
+          repo={repo}
+          reviews={reviewsQuery.data}
+          lineComments={lineCommentsQuery.data}
+          currentHeadSha={pull.head.sha}
+          isLoading={reviewsQuery.isLoading}
+          isError={reviewsQuery.isError}
+        />
 
-      <ReviewList
-        owner={owner}
-        repo={repo}
-        reviews={reviewsQuery.data}
-        lineComments={lineCommentsQuery.data}
-        currentHeadSha={pull.head.sha}
-        isLoading={reviewsQuery.isLoading}
-        isError={reviewsQuery.isError}
-      />
+        <FilesChanged
+          owner={owner}
+          repo={repo}
+          files={filesQuery.data}
+          lineComments={lineCommentsQuery.data}
+          reviewNotes={reviewNotesQuery.data}
+          currentHeadSha={pull.head.sha}
+          isLoading={filesQuery.isLoading}
+          isError={filesQuery.isError}
+        />
 
-      <FilesChanged
-        owner={owner}
-        repo={repo}
-        files={filesQuery.data}
-        lineComments={lineCommentsQuery.data}
-        reviewNotes={reviewNotesQuery.data}
-        currentHeadSha={pull.head.sha}
-        isLoading={filesQuery.isLoading}
-        isError={filesQuery.isError}
-      />
+        <CommentList
+          owner={owner}
+          repo={repo}
+          comments={commentsQuery.data}
+          isLoading={commentsQuery.isLoading}
+          isError={commentsQuery.isError}
+        />
+      </div>
 
-      <CommentList
-        owner={owner}
-        repo={repo}
-        comments={commentsQuery.data}
-        isLoading={commentsQuery.isLoading}
-        isError={commentsQuery.isError}
-      />
+      {hasSessions ? (
+        <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
+          <RelatedSessions
+            owner={owner}
+            repo={repo}
+            sessions={pull.related_sessions}
+            resumeNumber={pull.number}
+            cwd={pull.worktree_path ?? undefined}
+          />
+        </aside>
+      ) : null}
     </div>
   );
 }
