@@ -3,6 +3,7 @@ import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 import {
   issueBadges,
   linkedPullPillTone,
+  linkedPullStateBadge,
   linkedPullStatus,
   linkedPullWordTone,
   mergeableBadge,
@@ -218,6 +219,39 @@ describe("linkedPullStatus", () => {
       linkedPullStatus(
         linked({ merged: true, working: true, mergeable_state: "conflict" }),
       )?.tone,
+    ).toBe("merged");
+  });
+});
+
+describe("linkedPullStateBadge (#269 detail summary)", () => {
+  function linked(partial: Partial<LinkedPull> = {}): LinkedPull {
+    return {
+      number: 2,
+      title: "A PR",
+      state: "open",
+      merged: false,
+      ...partial,
+    };
+  }
+
+  it("always returns a badge from state + merged alone", () => {
+    expect(linkedPullStateBadge(linked())).toEqual({
+      tone: "open",
+      label: "open",
+    });
+    expect(linkedPullStateBadge(linked({ merged: true }))).toEqual({
+      tone: "merged",
+      label: "merged",
+    });
+    expect(linkedPullStateBadge(linked({ state: "closed" }))).toEqual({
+      tone: "closed",
+      label: "closed",
+    });
+  });
+
+  it("treats a merged PR as merged even when state is closed", () => {
+    expect(
+      linkedPullStateBadge(linked({ state: "closed", merged: true })).tone,
     ).toBe("merged");
   });
 });

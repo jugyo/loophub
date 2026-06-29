@@ -6,16 +6,25 @@
 import { Link } from "@tanstack/react-router";
 import { Loader2, Play } from "lucide-react";
 import { useRef, useState } from "react";
-import type { Issue, IssueComment, IssueGroupWithMembers } from "@/api/types";
+import type {
+  Issue,
+  IssueComment,
+  IssueGroupWithMembers,
+  LinkedPull,
+} from "@/api/types";
 import { IssueRow } from "@/components/dashboard-rows";
 import { useRegisterDetailTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
 import { Markdown } from "@/components/markdown";
 import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminal } from "@/components/terminal-controller";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { stateBadge } from "@/lib/badges";
+import {
+  linkedPullStateBadge,
+  linkedPullStatus,
+  stateBadge,
+} from "@/lib/badges";
 import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
 import { relativeTime } from "@/lib/time";
 import { useImageUpload } from "@/lib/use-image-upload";
@@ -63,6 +72,8 @@ export function IssueDetail({
   return (
     <div className="mx-auto flex max-w-content flex-col gap-6">
       <IssueHeader owner={owner} repo={repo} issue={issue} />
+
+      <LinkedPullSummary owner={owner} repo={repo} issue={issue} />
 
       <GroupedIssues owner={owner} repo={repo} number={number} />
 
@@ -182,20 +193,6 @@ function IssueHeader({
         </div>
       ) : null}
 
-      {linked ? (
-        <div className="text-sm text-muted-foreground">
-          Linked PR:{" "}
-          <Link
-            to="/r/$owner/$repo/pulls/$number"
-            params={{ owner, repo, number: String(linked.number) }}
-            className="font-medium text-foreground hover:underline"
-          >
-            #{linked.number}
-          </Link>{" "}
-          ({linked.merged ? "merged" : linked.state}) — {linked.title}
-        </div>
-      ) : null}
-
       <div className="overflow-hidden rounded-md border bg-muted/30">
         {issue.body ? (
           <Markdown owner={owner} repo={repo} className="p-4">
@@ -237,6 +234,88 @@ function IssueHeader({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+// Standalone "Linked pull request(s)" section summarizing the issue's linked
+// PR(s) at a glance (#269). Rendered as its own section under the issue header
+// (not inside it) so it reads as a related entity — not part of the issue body,
+// and not a target of the issue's Close/Build actions. A labelled heading makes
+// that boundary explicit. Each row is a toned `PR #n` link pill + a status word
+// + the PR title (also a link). Renders nothing when no PR is linked. Multiple
+// linked PRs stack vertically — the issue-detail response sends a single
+// `linked_pull_request`, but the plural `linked_pull_requests` is honored when
+// present so the display never breaks.
+function LinkedPullSummary({
+  owner,
+  repo,
+  issue,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+}) {
+  const pulls =
+    issue.linked_pull_requests ??
+    (issue.linked_pull_request ? [issue.linked_pull_request] : []);
+  if (pulls.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-sm font-medium text-muted-foreground">
+        {pulls.length > 1 ? "Linked pull requests" : "Linked pull request"}
+      </h2>
+      {pulls.map((pull) => (
+        <LinkedPullRow
+          key={pull.number}
+          owner={owner}
+          repo={repo}
+          pull={pull}
+        />
+      ))}
+    </section>
+  );
+}
+
+function LinkedPullRow({
+  owner,
+  repo,
+  pull,
+}: {
+  owner: string;
+  repo: string;
+  pull: LinkedPull;
+}) {
+  // Prefer the richer git-derived status (working/review/mergeable) when the
+  // response carries those fields; the issue-detail summary lacks them, so fall
+  // back to the always-available state badge (open/merged/closed).
+  const status = linkedPullStatus(pull) ?? linkedPullStateBadge(pull);
+  return (
+    <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+      <Link
+        to="/r/$owner/$repo/pulls/$number"
+        params={{ owner, repo, number: String(pull.number) }}
+        className={cn(
+          badgeVariants({ tone: status.tone }),
+          "shrink-0 hover:opacity-80",
+        )}
+      >
+        PR #{pull.number}
+      </Link>
+      <span
+        className="shrink-0 font-medium text-muted-foreground"
+        title={status.title}
+      >
+        {status.label}
+      </span>
+      <Link
+        to="/r/$owner/$repo/pulls/$number"
+        params={{ owner, repo, number: String(pull.number) }}
+        className="min-w-0 flex-1 truncate text-foreground hover:underline"
+        title={pull.title}
+      >
+        {pull.title}
+      </Link>
     </div>
   );
 }

@@ -178,6 +178,18 @@ export function linkedPullStatus(pull: LinkedPull): Badge | null {
 }
 
 /**
+ * State badge for a linked PR using only the always-present fields (state +
+ * merged) — merged → "merged", closed → "closed", otherwise "open". Unlike
+ * {@link linkedPullStatus} this never returns null, so the issue-detail summary
+ * (which lacks the git-derived status fields) can always show the PR's state.
+ */
+export function linkedPullStateBadge(pull: LinkedPull): Badge {
+  if (pull.merged) return { tone: "merged", label: "merged" };
+  if (pull.state === "closed") return { tone: "closed", label: "closed" };
+  return { tone: "open", label: "open" };
+}
+
+/**
  * PR pill tone for the linked-PR sub-row — the *lifecycle* axis (is this PR
  * worth looking at): open → green, merged → purple, closed → grey. Independent
  * of the status word's colour: a live (green) PR can still carry a red conflict

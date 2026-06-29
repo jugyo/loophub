@@ -114,7 +114,7 @@ function renderDetail(
 }
 
 describe("IssueDetail", () => {
-  it("renders title, body, labels, comments, and the linked PR", async () => {
+  it("renders title, body, labels, comments, and the linked PR summary", async () => {
     renderDetail();
 
     expect(await screen.findByText("ui2: issue detail")).toBeTruthy();
@@ -122,8 +122,22 @@ describe("IssueDetail", () => {
     expect(screen.getByText("ready-to-build")).toBeTruthy();
     expect(screen.getByText("Looks good.")).toBeTruthy();
 
-    const linked = screen.getByText("#30").closest("a");
-    expect(linked?.getAttribute("href")).toBe("/r/me/proj/pulls/30");
+    // The linked-PR summary card: a `PR #n` pill, the state word, and the title,
+    // all linking to the PR detail route.
+    const pill = screen.getByText("PR #30").closest("a");
+    expect(pill?.getAttribute("href")).toBe("/r/me/proj/pulls/30");
+    const titleLink = screen.getByText("ui2: issue detail PR").closest("a");
+    expect(titleLink?.getAttribute("href")).toBe("/r/me/proj/pulls/30");
+    // The state word ("open") shows inside the same summary card.
+    expect(pill?.closest("div")?.textContent).toContain("open");
+  });
+
+  it("hides the linked-PR summary when no PR is linked", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr);
+
+    await screen.findByText("ui2: issue detail");
+    expect(screen.queryByText(/^PR #/)).toBeNull();
   });
 
   it("posts a comment and clears the textarea on success", async () => {
