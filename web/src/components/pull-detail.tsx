@@ -16,7 +16,7 @@ import type {
   PullReview,
   ReviewNote,
 } from "@/api/types";
-import { useRegisterDetailTitle } from "@/components/detail-title";
+import { DetailHeaderTitle } from "@/components/detail-title";
 import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
 import { useErrorBanner } from "@/components/error-banner";
@@ -197,7 +197,6 @@ function PullHeader({
   const setState = useSetPullState(owner, repo, pull.number);
   const { showError } = useErrorBanner();
   const [method, setMethod] = useState<MergeMethod>("squash");
-  const titleRef = useRegisterDetailTitle(pull.title);
 
   const state = stateBadge(pull, "pulls");
   const review = reviewBadge(pull);
@@ -217,14 +216,7 @@ function PullHeader({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-sm font-medium text-muted-foreground">
-            PR #{pull.number}
-          </span>
-          <h1 ref={titleRef} className="text-2xl font-semibold">
-            {pull.title}
-          </h1>
-        </div>
+        <DetailHeaderTitle kind="PR" number={pull.number} title={pull.title} />
         <PullDebugMenu owner={owner} repo={repo} number={pull.number} />
       </div>
 

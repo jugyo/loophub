@@ -82,3 +82,31 @@ export function useRegisterDetailTitle(title: string) {
 
   return headingRef;
 }
+
+/**
+ * Shared id + title block for issue/PR detail headers: the kind/number line
+ * (e.g. "Issue #123") directly above the page <h1>, registering the title with
+ * the breadcrumb header. Owning the spacing here keeps the id→title margin and
+ * the id / header vertical layout identical across both detail pages.
+ */
+export function DetailHeaderTitle({
+  kind,
+  number,
+  title,
+}: {
+  kind: "Issue" | "PR";
+  number: number;
+  title: string;
+}) {
+  const titleRef = useRegisterDetailTitle(title);
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-sm font-medium text-muted-foreground">
+        {kind} #{number}
+      </span>
+      <h1 ref={titleRef} className="text-2xl font-semibold">
+        {title}
+      </h1>
+    </div>
+  );
+}

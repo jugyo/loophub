@@ -13,7 +13,7 @@ import type {
   LinkedPull,
 } from "@/api/types";
 import { IssueRow } from "@/components/dashboard-rows";
-import { useRegisterDetailTitle } from "@/components/detail-title";
+import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
 import { Markdown } from "@/components/markdown";
 import { RelatedSessions } from "@/components/related-sessions";
@@ -163,17 +163,14 @@ function IssueHeader({
   // hide Build — the issue still needs a fresh attempt.
   const activePull =
     linked != null && (linked.state === "open" || linked.merged);
-  const titleRef = useRegisterDetailTitle(issue.title);
 
   return (
     <div className="flex flex-col gap-3">
-      <span className="text-sm font-medium text-muted-foreground">
-        Issue #{issue.number}
-      </span>
-
-      <h1 ref={titleRef} className="text-2xl font-semibold">
-        {issue.title}
-      </h1>
+      <DetailHeaderTitle
+        kind="Issue"
+        number={issue.number}
+        title={issue.title}
+      />
 
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         {state ? <Badge tone={state.tone}>{state.label}</Badge> : null}
