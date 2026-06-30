@@ -10,7 +10,6 @@ import { DetailTitleProvider } from "@/components/detail-title";
 import { ErrorBanner, ErrorBannerProvider } from "@/components/error-banner";
 import { TerminalControllerProvider } from "@/components/terminal-controller";
 import { TerminalPane } from "@/components/terminal-pane";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { useScrollToTop } from "@/lib/use-scroll-to-top";
 
 export function AppLayout() {
@@ -34,9 +33,6 @@ export function AppLayout() {
             <div className="flex min-w-0 flex-1 flex-col">
               <header className="flex h-14 shrink-0 items-center gap-4 border-b px-6">
                 <AppBreadcrumb />
-                <div className="ml-auto flex items-center gap-2">
-                  <ThemeToggle />
-                </div>
               </header>
               <main
                 ref={mainRef}

@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import { useRepos } from "@/queries/repos";
 
@@ -131,6 +132,12 @@ export function AppSidebar() {
             </SidebarLink>
           );
         })}
+      </div>
+
+      {/* Fixed footer (#371): the theme toggle lives here, below the scrolling repo list. The
+          terminal pane sits beside the sidebar (not over it), so this footer stays visible. */}
+      <div className="shrink-0 border-t p-2">
+        <ThemeToggle />
       </div>
 
       {/* Drag handle along the sidebar's right edge (#378). Invisible — the visible separator is
