@@ -22,7 +22,11 @@ export function AppLayout() {
     // the sidebar, so the sidebar stays fully visible and operable while the terminal is open.
     // Expanding it never reflows the page; the main content reserves bottom space equal to the
     // terminal's current height via the --lh-term-reserve CSS var the pane publishes, so its tail
-    // stays scrollable past the terminal whether it is collapsed, dragged, or maximized.
+    // stays scrollable past the terminal whether it is collapsed, dragged, or maximized. The reserve
+    // is applied as a bottom MARGIN (not padding) so the scroll container's box ends at the
+    // terminal's top edge: a scrollbar tracks the padding box, so with padding the bar would run the
+    // full height and slide under the fixed terminal — margin shrinks the box instead, keeping the
+    // scrollbar visible and operable down to its end above the terminal (#423).
     // TerminalControllerProvider wraps both the content and the pane so buttons in the content
     // (New Issue / Build) can open a terminal tab with a command via useTerminal().
     <TerminalControllerProvider>
@@ -37,7 +41,7 @@ export function AppLayout() {
               <main
                 ref={mainRef}
                 className="min-h-0 flex-1 overflow-y-auto px-6 pt-6"
-                style={{ paddingBottom: "var(--lh-term-reserve, 48px)" }}
+                style={{ marginBottom: "var(--lh-term-reserve, 48px)" }}
               >
                 {/* Operation-failure feedback (#323): a single in-page banner at the top of the
                     content, with an explicit lifetime independent of any one screen's components. */}
