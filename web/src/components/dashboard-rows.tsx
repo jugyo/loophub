@@ -6,6 +6,7 @@ import { Link } from "@tanstack/react-router";
 import { Check, Play } from "lucide-react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
+import { LabelChip } from "@/components/label-chip";
 import { useTerminal } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
@@ -16,7 +17,6 @@ import {
   pullBadges,
   type StatusWordTone,
 } from "@/lib/badges";
-import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -68,24 +68,29 @@ function RepoChip({
   );
 }
 
-// Label chips, sharing the issue-detail chip style (issue-detail.tsx). Colour is
-// derived from the label name (labelColorClass) so the same label is always the
-// same colour, readable in both themes.
-function RowLabels({ labels }: { labels: Label[] }) {
+// Label chips, sharing the issue-detail chip style via LabelChip. Each chip
+// links to the issues list filtered by that label (#368); colour is derived
+// from the label name so the same label is always the same colour.
+function RowLabels({
+  labels,
+  owner,
+  repo,
+}: {
+  labels: Label[];
+  owner: string;
+  repo: string;
+}) {
   if (labels.length === 0) return null;
   return (
     <span className="flex min-w-0 items-center gap-1 overflow-hidden">
       {labels.map((l) => (
-        <span
+        <LabelChip
           key={l.name}
-          className={cn(
-            "shrink-0 whitespace-nowrap",
-            LABEL_CHIP_BASE_CLASS,
-            labelColorClass(l.name),
-          )}
-        >
-          {l.name}
-        </span>
+          name={l.name}
+          owner={owner}
+          repo={repo}
+          className="shrink-0 whitespace-nowrap"
+        />
       ))}
     </span>
   );
@@ -145,7 +150,7 @@ export function IssueRow({
           >
             {issue.title}
           </Link>
-          <RowLabels labels={issue.labels} />
+          <RowLabels labels={issue.labels} owner={owner} repo={repo} />
         </div>
         {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
         <RowBuildButton owner={owner} repo={repo} issue={issue} pulls={pulls} />

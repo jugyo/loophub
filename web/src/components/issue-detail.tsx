@@ -15,6 +15,7 @@ import type {
 import { IssueRow } from "@/components/dashboard-rows";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
+import { LabelChip } from "@/components/label-chip";
 import { Markdown } from "@/components/markdown";
 import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminal } from "@/components/terminal-controller";
@@ -25,7 +26,6 @@ import {
   linkedPullStatus,
   stateBadge,
 } from "@/lib/badges";
-import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
 import { relativeTime } from "@/lib/time";
 import { useImageUpload } from "@/lib/use-image-upload";
 import { cn } from "@/lib/utils";
@@ -182,12 +182,7 @@ function IssueHeader({
       {issue.labels.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {issue.labels.map((l) => (
-            <span
-              key={l.name}
-              className={cn(LABEL_CHIP_BASE_CLASS, labelColorClass(l.name))}
-            >
-              {l.name}
-            </span>
+            <LabelChip key={l.name} name={l.name} owner={owner} repo={repo} />
           ))}
         </div>
       ) : null}

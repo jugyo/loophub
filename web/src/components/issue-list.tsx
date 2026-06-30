@@ -2,8 +2,9 @@
 // over the shared list-row pattern (IssueRow). TanStack Query backed; refetches
 // on SSE via the issues query key (event-keys.ts).
 
+import { useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { IssueRow } from "@/components/dashboard-rows";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,17 +19,46 @@ const STATE_OPTIONS: { value: IssueListFilters["state"]; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-export function IssueList({ owner, repo }: { owner: string; repo: string }) {
+export function IssueList({
+  owner,
+  repo,
+  labelsParam,
+}: {
+  owner: string;
+  repo: string;
+  /** `labels` search param — seeds the filter so a label chip can deep-link here pre-filtered (#368). */
+  labelsParam?: string;
+}) {
   // `filters` is what the query reads; `draft` holds unapplied input so typing
   // labels does not refetch on every keystroke (Apply commits, v1 parity).
-  const [filters, setFilters] = useState<IssueListFilters>(
-    DEFAULT_ISSUE_FILTERS,
-  );
-  const [draftLabels, setDraftLabels] = useState("");
+  const [filters, setFilters] = useState<IssueListFilters>({
+    ...DEFAULT_ISSUE_FILTERS,
+    labels: labelsParam ?? "",
+  });
+  const [draftLabels, setDraftLabels] = useState(labelsParam ?? "");
   const query = useIssuesList(owner, repo, filters);
+  const navigate = useNavigate();
 
+  // The `labels` URL param is the single source of truth for the labels filter,
+  // so a label chip elsewhere and the Apply button below agree and the filtered
+  // list is shareable/bookmarkable. This effect mirrors the param into the live
+  // filter and the input draft whenever it changes (chip click on this same
+  // page, back/forward, reload).
+  useEffect(() => {
+    const next = labelsParam ?? "";
+    setFilters((f) => ({ ...f, labels: next }));
+    setDraftLabels(next);
+  }, [labelsParam]);
+
+  // Apply commits the draft to the URL (not directly to state) — the effect
+  // above then applies it. Keeps the URL authoritative so a reload/share keeps
+  // the same filter; an empty box drops the param entirely.
   function apply() {
-    setFilters((f) => ({ ...f, labels: draftLabels }));
+    navigate({
+      to: "/r/$owner/$repo/issues",
+      params: { owner, repo },
+      search: { labels: draftLabels.trim() || undefined },
+    });
   }
 
   return (
