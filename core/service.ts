@@ -25,6 +25,7 @@ import {
   worktreeRemove,
   worktreeStatus,
 } from "./git.ts";
+import { type GithubDeps, realGithubDeps } from "./github.ts";
 import { parseClosingIssueNumber } from "./links.ts";
 import {
   effectiveMergeMode,
@@ -1035,6 +1036,125 @@ export const pulls = {
     S.emitEvent(r.id, "pull_request.github_pr_recorded", actor, {
       number: row.number,
       github_number,
+      url: rec.url,
+    });
+    return githubPullJSON(rec);
+  },
+
+  // #411: orchestrate submitting a loophub PR to GitHub as a Draft PR in one place — push the head
+  // branch under a content-based name, open (or recover) a GitHub Draft PR, and record it back.
+  // The create-github-pr skill now only generates branch/title/body (LLM work) and calls this,
+  // instead of chaining cd → git push → gh pr create → record itself (AGENTS.md: git+DB+destructive
+  // orchestration belongs in core). Atomicity: if recording fails after `gh` creates the PR, a
+  // re-run finds the existing PR for the branch via `deps.view` and records it rather than opening a
+  // duplicate (#406's worst state — created on GitHub but unrecorded). `deps` is an injectable seam
+  // (push/gh) so this is unit-testable without a GitHub remote; callers leave it at the default.
+  async createGithubPull(
+    name: string,
+    number: number,
+    input: { branch: string; title: string; body: string },
+    sessionId?: string | null,
+    deps: GithubDeps = realGithubDeps,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+
+    // Double-create guard (maintained from record-github-pr): once a GitHub PR is recorded, refuse
+    // rather than re-push/re-create. The UI also hides the button, but guard here for non-UI launches.
+    const existing = S.getGithubPull(row.id);
+    if (existing)
+      throw new ServiceError(
+        409,
+        `PR #${number} already has a GitHub PR (#${existing.number})`,
+      );
+
+    const branch = (input.branch ?? "").trim();
+    const title = (input.title ?? "").trim();
+    const body = input.body ?? "";
+    if (!branch) throw new ServiceError(422, "branch is required");
+    if (!title) throw new ServiceError(422, "title is required");
+    if (!body.trim()) throw new ServiceError(422, "body is required");
+    // Strict branch charset: a leading "-" would be parsed by `gh`/`git` as a flag (argument
+    // injection — e.g. a branch of `--repo other/repo` could retarget the gh call), and stray
+    // characters can break the push refspec. Restrict to a conservative git-ref subset so the value
+    // is unambiguous as a positional/flag value downstream.
+    if (
+      branch.startsWith("-") ||
+      branch.includes("..") ||
+      !/^[A-Za-z0-9._/-]+$/.test(branch)
+    )
+      throw new ServiceError(422, "branch contains invalid characters");
+    // Don't push the internal branch under its own name (#406: minimal LoopHub traces on GitHub).
+    if (/^loophub\//.test(branch))
+      throw new ServiceError(
+        422,
+        "branch must be a content-based name, not the internal loophub/* branch",
+      );
+
+    // Require a GitHub origin so push + gh target GitHub.
+    if (!isGithubRemoteUrl(await remoteUrl(r.local_path)))
+      throw new ServiceError(422, "repo has no GitHub origin remote");
+
+    const p = S.getPull(row.id);
+    const base = p.base_ref;
+    const head = p.head_ref;
+    // Refuse to push onto the base or head branch itself. `git push origin <head>:refs/heads/<branch>`
+    // fast-forwards an existing branch (no -f needed when head descends from it), so branch===base
+    // would push the head's commits straight onto base and bypass the Draft-PR review flow. head is
+    // normally `loophub/*` (already rejected above), but guard explicitly for manual PRs.
+    if (branch === base || branch === head)
+      throw new ServiceError(
+        422,
+        "branch must differ from the PR's base and head branches",
+      );
+    // Run from the main checkout, not the worktree: refs are shared with the worktree, the GitHub
+    // origin lives here, and the worktree may have been pruned. This is the location resolution the
+    // skill no longer does (its `cd` into the worktree is gone).
+    const repoPath = r.local_path;
+
+    try {
+      await deps.push(repoPath, head, branch);
+    } catch (e) {
+      throw new ServiceError(
+        502,
+        `failed to push branch: ${(e as Error).message}`,
+      );
+    }
+
+    let gh: { number: number; url: string };
+    try {
+      // Recover from a prior partial run: reuse an existing PR for the branch instead of opening a
+      // duplicate; otherwise create the Draft PR (base follows the loophub PR's base, Draft fixed).
+      gh =
+        (await deps.view(repoPath, branch)) ??
+        (await deps.create(repoPath, { base, head: branch, title, body }));
+    } catch (e) {
+      throw new ServiceError(
+        502,
+        `failed to create GitHub PR: ${(e as Error).message}`,
+      );
+    }
+
+    // Record back into loophub. The URL comes from `gh`, but validate it the same way
+    // record-github-pr does so a malformed/unexpected URL never lands in the DB.
+    const trimmedUrl = typeof gh.url === "string" ? gh.url.trim() : "";
+    if (!/^https?:\/\/\S+$/.test(trimmedUrl) || !isGithubRemoteUrl(trimmedUrl))
+      throw new ServiceError(
+        502,
+        `GitHub returned an unexpected PR URL: ${gh.url}`,
+      );
+    const actor = actorFor(sessionId);
+    const rec = S.recordGithubPull({
+      issueId: row.id,
+      number: gh.number,
+      url: trimmedUrl,
+      branch,
+      createdBy: actor,
+    });
+    S.emitEvent(r.id, "pull_request.github_pr_recorded", actor, {
+      number: row.number,
+      github_number: gh.number,
       url: rec.url,
     });
     return githubPullJSON(rec);

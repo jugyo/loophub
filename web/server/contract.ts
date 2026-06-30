@@ -643,6 +643,29 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "pulls/createGithubPull": {
+    description:
+      "Submit a loophub PR to GitHub as a Draft PR (#411): push the head branch under `branch`, open (or recover) a Draft PR, and record it. Atomic — a retry recovers a created-but-unrecorded PR instead of duplicating.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        branch: strNonEmpty,
+        title: strNonEmpty,
+        body: strNonEmpty,
+        session_id: sid,
+      },
+      ["repo", "number", "branch", "title", "body"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.pulls.createGithubPull(
+        p.repo,
+        p.number,
+        { branch: p.branch, title: p.title, body: p.body },
+        p.session_id,
+      ),
+  },
   "pulls/readyForReview": {
     description:
       "Mark a pull request ready for re-review after addressing changes.",

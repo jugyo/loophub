@@ -1,53 +1,54 @@
 ---
 name: create-github-pr
 description: >-
-  Export a LoopHub PR to GitHub: push the head branch under a content-based name, write a description
-  from the repo PR template, open a GitHub Draft PR, and record it back with lh pr record-github-pr.
-  Use when the user runs /create-github-pr {pr id}, clicks "Create PR on GitHub" in the PR detail, or
-  asks to create/export/open a GitHub PR from a LoopHub PR. Does not merge or review the GitHub PR.
+  Submit a LoopHub PR to GitHub as a Draft PR: generate a content-based branch name, English title, and
+  a description from the repo PR template, then hand them to `lh pr create-github-pr`, which pushes the
+  branch, opens a GitHub Draft PR, and records it back atomically. Use when the user runs
+  /create-github-pr {pr id}, clicks "Create PR on GitHub" in the PR detail, or asks to
+  create/submit/open a GitHub PR from a LoopHub PR. Does not merge or review the GitHub PR.
 ---
 
-# LoopHub → GitHub PR export
+# Submit a LoopHub PR to GitHub
 
 Create a **GitHub Draft PR** from an existing LoopHub PR, then **record it back** into LoopHub so the
 PR detail switches from "Create PR on GitHub" to "View PR on GitHub". **Stop after recording and
 reporting. Do not merge or review the GitHub PR, and do not chain to other skills.**
 
 This is the **(B) skill side** of #406. The **(A) LoopHub side** (per-repo `github_pr` merge mode, the
-`github_pulls` data model, and the `lh pr record-github-pr` API) is already implemented (#407). This
-skill only creates the GitHub PR and records it.
+`github_pulls` data model, the `lh pr record-github-pr` API, and the `lh pr create-github-pr`
+orchestration that pushes + opens + records in one atomic command — #411) is already implemented
+(#407/#411). This skill only generates the branch/title/description and invokes that one command.
 
 ## Scope boundary (read first)
 
-**This skill ends once the GitHub Draft PR is recorded and reported.** Exporting a PR does **not**
-include merging it, requesting reviews, or running the LoopHub review loop.
+**This skill ends once the GitHub Draft PR is recorded and reported.** Submitting a PR to GitHub does
+**not** include merging it, requesting reviews, or running the LoopHub review loop.
 
 | Do | Do not |
 |----|--------|
-| Push a content-named branch, open a GitHub **Draft** PR, record it with `lh pr record-github-pr` | Merge or review the GitHub PR |
-| Read the loophub PR (`lh pr view --json`) to resolve base/head/worktree | Edit source in the worktree (export only — no code changes) |
-| Generate branch name, title (English), description from the PR template | Push the internal `loophub/issue-<n>` branch as-is to GitHub |
+| Generate branch name, title (English), description; run `lh pr create-github-pr` once | Merge or review the GitHub PR |
+| Read the loophub PR (`lh pr view --json`) for the double-create guard and generation context | Edit source in the worktree (submit only — no code changes) |
+| Let the command push the branch / open the Draft PR / record it | Hand-run `git push` / `gh pr create` / `lh pr record-github-pr` yourself, or `cd` into the worktree |
 
 ### Done when
 
 Stop **immediately** when all of the following are true:
 
-- [ ] A GitHub Draft PR exists for the loophub PR's branch (created via `gh pr create --draft`)
-- [ ] `lh pr record-github-pr` succeeded — the loophub PR now carries a `github_pull`
+- [ ] `lh pr create-github-pr` succeeded — it pushed the branch, opened the GitHub **Draft** PR, and recorded it (the loophub PR now carries a `github_pull`)
 - [ ] The GitHub PR URL/number reported to the user (and the PR detail now shows "View PR on GitHub")
 
 ## Invocation
 
-`/create-github-pr <pr id>` — the LoopHub PR number to export. The PR detail's **Create PR on GitHub**
+`/create-github-pr <pr id>` — the LoopHub PR number to submit to GitHub. The PR detail's **Create PR on GitHub**
 button dispatches exactly this command into the built-in terminal (cwd = repo root):
 
 ```text
 claude "/create-github-pr <pr id>"
 ```
 
-The terminal opens at the **repo root** (`owner/name`), not inside the PR worktree — this skill `cd`s
-into the PR's worktree itself (step 2). If the id is omitted, ask the user for the LoopHub PR number;
-do not guess.
+The terminal opens at the **repo root** (`owner/name`), not inside the PR worktree — and it stays
+there: `lh pr create-github-pr` resolves the branch/worktree location internally, so this skill no
+longer `cd`s anywhere. If the id is omitted, ask the user for the LoopHub PR number; do not guess.
 
 ## Design constraints (#406)
 
@@ -66,8 +67,8 @@ do not guess.
 
 - Server: default `http://localhost:8730` (`~/.loophub/config.json`)
 - CLI: `lh` (on PATH)
-- `--repo owner/name` — **required** here: this skill runs inside the PR worktree (outside the main
-  checkout), so `resolveRepo()` cannot infer the repo from cwd.
+- `--repo owner/name` — pass it explicitly. The terminal opens at the repo root, but the command's
+  worktree/branch resolution and the double-create guard read are unambiguous when the repo is named.
 
 ### GitHub CLI
 
@@ -86,7 +87,14 @@ do not guess.
 
 ## Procedure
 
-### 1. Read the LoopHub PR
+The git/`gh`/record orchestration now lives in **one command** — `lh pr create-github-pr` (#411).
+This skill only does the LLM work (branch name, English title, template-driven description) and hands
+the results to that command, which pushes the branch, opens the GitHub **Draft** PR, and records it
+back **atomically** (if recording ever fails after the GitHub PR is created, a re-run recovers the
+existing PR instead of opening a duplicate). Do **not** hand-run `git push` / `gh pr create` /
+`lh pr record-github-pr`, and do **not** `cd` into the worktree.
+
+### 1. Read the LoopHub PR (guard + generation context)
 
 ```sh
 lh pr view <m> --repo <owner/name> --json
@@ -96,61 +104,38 @@ Pull these fields:
 
 | Field | Use |
 |-------|-----|
-| `base.ref` | GitHub PR base branch (e.g. `main`) — the GitHub PR inherits the LoopHub PR's base |
-| `head.ref` | LoopHub internal branch (e.g. `loophub/issue-<n>`) — the source commits to push, **not** the GitHub branch name |
-| `worktree_path` | The PR's worktree directory to `cd` into |
 | `title` / `body` / `linked_issue` | Context for generating the GitHub title and description |
-| `github_pull` | **Double-create guard** — if non-null, the PR was already exported |
+| `github_pull` | **Double-create guard** — if non-null, the PR already has a GitHub PR |
 | `merge_mode` | Should be `github_pr`; warn if not (the repo may not be in GitHub mode) |
 
-**Already exported?** If `github_pull` is non-null, **stop**: report the existing GitHub PR URL/number
-and do nothing else (the LoopHub UI already shows "View PR on GitHub"; re-exporting would create a
-duplicate). #407 also hides the Create button once recorded, but guard here too for non-UI launches.
+You do **not** need `base.ref` / `head.ref` / `worktree_path` — the command resolves base, the internal
+head branch, and the location itself.
 
-### 2. Enter the PR worktree
+**Already on GitHub?** If `github_pull` is non-null, **stop**: report the existing GitHub PR URL/number
+and do nothing else (the UI already shows "View PR on GitHub"; re-running would duplicate). The
+command also refuses a PR that already has a GitHub PR, but check here so non-UI launches stop early.
 
-```sh
-cd "<worktree_path>"          # from step 1
-git status                    # confirm on <head.ref>, tree clean
-```
-
-Verify `gh` is ready:
+Confirm `gh` is authenticated (the command shells out to it):
 
 ```sh
 gh auth status                # must be authenticated
 ```
 
-If `gh` is missing or unauthenticated, stop and ask the user to set it up (`gh auth login`). Do not
-edit source here — the branch is exported as-is.
+If `gh` is missing or unauthenticated, stop and ask the user to run `gh auth login`.
 
-### 3. Generate a content-based branch name
+### 2. Generate a content-based branch name
 
-Choose a short, conventional branch name that reflects the change — **not** `loophub/issue-<n>`.
-Prefer a `type/slug` form matching the repo's convention (e.g. `feature/github-pr-export`,
-`fix/merge-mode-default`). Derive the slug from the PR title / change; keep it lowercase, hyphenated,
-ASCII. If unsure of the repo's branch convention, default to `feature/<slug>`.
+Choose a short, conventional branch name that reflects the change — **not** `loophub/issue-<n>` (the
+command rejects an internal `loophub/*` name). Prefer a `type/slug` form matching the repo's convention
+(e.g. `feature/github-pr`, `fix/merge-mode-default`). Derive the slug from the PR title / change;
+keep it lowercase, hyphenated, ASCII. If unsure of the repo's branch convention, default to
+`feature/<slug>`.
 
-### 4. Push the branch to GitHub
+### 3. Write the title and description
 
-Push the head branch's commits under the new name without disturbing the local `loophub/issue-<n>`
-branch (the LoopHub worktree keeps using it):
+Title is generated from the change, **in English by default** (the GitHub audience is external).
 
-```sh
-git push origin "<head.ref>:refs/heads/<new-branch>"
-```
-
-Do **not** pass `-u/--set-upstream`: it would rewrite the local `<head.ref>` branch's upstream to the
-GitHub branch, disturbing the LoopHub-managed branch (a later bare `git push` in the worktree could then
-target GitHub). Tracking is unnecessary — the exported branch is recorded via `lh pr record-github-pr
---branch` (step 7).
-
-`origin` is the GitHub remote (confirm with `git remote -v`; pick the GitHub one if multiple). If the
-remote branch already exists from a prior attempt, reuse it (or force-update only if you are sure it
-maps to this PR's commits).
-
-### 5. Write the description from the PR template
-
-Look for a PR template, in this order, and fill it for the change:
+For the description, look for a PR template, in this order, and fill it for the change:
 
 ```sh
 ls .github/PULL_REQUEST_TEMPLATE.md \
@@ -168,36 +153,27 @@ ls .github/PULL_REQUEST_TEMPLATE.md \
 Do **not** include LoopHub boilerplate, the `Closes #<loophub-issue>` line, or a LoopHub Evidence
 block — this is an external GitHub PR (see Design constraints).
 
-### 6. Create the GitHub Draft PR
+### 4. Run the submit command
 
-Title is generated from the change, **in English by default**. Base follows the LoopHub PR's
-`base.ref`. Use a HEREDOC for the body:
+Pipe the generated description in via `--body -` (stdin) to avoid shell-escaping a multi-line body:
 
 ```sh
-gh pr create --draft \
-  --base "<base.ref>" \
-  --head "<new-branch>" \
+lh pr create-github-pr <m> --repo <owner/name> \
+  --branch "<new-branch>" \
   --title "<English title>" \
-  --body "$(cat <<'EOF'
-<description from step 5>
+  --body - <<'EOF'
+<description from step 3>
 EOF
-)"
 ```
 
-`gh pr create` prints the new PR URL on success. Capture it; derive the number from the URL
-(`.../pull/<N>`) or `gh pr view <new-branch> --json number,url`.
+(RPC: `pulls/createGithubPull`.) The command, in `core` (#411): pushes `<internal head>:refs/heads/<new-branch>`
+to the GitHub `origin` **without** `-u` (so the LoopHub-managed branch's upstream is untouched), opens a
+**Draft** PR with base inherited from the LoopHub PR, and records it into `github_pulls` (1:1 with the
+PR — #407). It prints `created GitHub PR #<N> — <url>` (`--json` for the full object). It is atomic and
+idempotent: if a prior run created the GitHub PR but failed to record, re-running finds that PR and
+records it rather than creating a second one.
 
-### 7. Record the GitHub PR back into LoopHub
-
-```sh
-lh pr record-github-pr <m> --repo <owner/name> \
-  --number <N> --url <U> --branch <new-branch>
-```
-
-(RPC: `pulls/recordGithubPull`; stored in `github_pulls`, 1:1 with the PR — #407.) Pass `--branch` so
-LoopHub knows the exported branch name.
-
-### 8. Verify the switch and report
+### 5. Verify the switch and report
 
 ```sh
 lh pr view <m> --repo <owner/name> --json | jq '.github_pull'
@@ -209,31 +185,32 @@ lh pr view <m> --repo <owner/name> --json | jq '.github_pull'
 Report:
 
 - GitHub PR **URL and number** (Draft)
-- Exported **branch name**
+- The **branch name** pushed to GitHub
 - The LoopHub PR Web URL (format above) as a markdown link
 - Confirmation that the button now shows **View PR on GitHub**
 
-Then **stop** — exporting is complete.
+Then **stop** — the GitHub PR is created.
 
 ## Error handling
 
 | Symptom | Cause | Remedy |
 |---------|-------|--------|
-| `github_pull` already set in step 1 | PR already exported | Report the existing GitHub PR; stop (no duplicate) |
+| `github_pull` already set in step 1 | PR already has a GitHub PR | Report the existing GitHub PR; stop (no duplicate) |
 | `gh auth status` fails | `gh` not authenticated | Stop; ask user to run `gh auth login` |
-| `git push` rejected (no GitHub remote) | Repo has no GitHub `origin` | Stop; the repo isn't set up for GitHub export |
-| `merge_mode` is not `github_pr` | Repo not in GitHub mode | Warn; confirm with the user before exporting |
+| Command errors `repo has no GitHub origin remote` | Repo has no GitHub `origin` | Stop; the repo isn't set up for GitHub |
+| Command errors `already has a GitHub PR (#…)` | PR already recorded | Report the existing GitHub PR; stop (no duplicate) |
+| `merge_mode` is not `github_pr` | Repo not in GitHub mode | Warn; confirm with the user before submitting |
 
-`lh pr record-github-pr` is an **idempotent upsert** (`github_pulls` is 1:1 with the PR via
-`ON CONFLICT(issue_id) DO UPDATE` — #407), so re-running step 7 does **not** error — it silently
-**overwrites** the stored number/url/branch. The real double-create safeguard is the **step-1
-`github_pull` non-null guard**: once it is set, stop and report the existing GitHub PR rather than
-re-pushing / re-creating / re-recording.
+`lh pr create-github-pr` handles the double-create safeguard itself (#411): it refuses an
+already-recorded PR (the `github_pull` guard), and if a prior run created the GitHub PR but failed
+before recording, **re-running recovers** that PR (it finds the open PR for the branch and records it)
+rather than opening a second one. The **step-1 `github_pull` non-null guard** is the early, user-facing
+stop for non-UI launches; the command is the authoritative safeguard.
 
 ## Out of scope (this skill)
 
 - Merging, reviewing, or marking the GitHub PR ready
-- Editing source / committing changes in the worktree (export only)
+- Editing source / committing changes in the worktree (submit only)
 - Squashing or rewriting history to strip commit trailers (#406: "don't reshape")
 - Running the LoopHub review loop (`lh-pr-review`) or merge-ready check
 
@@ -242,5 +219,5 @@ re-pushing / re-creating / re-recording.
 - Do not merge or review the GitHub PR
 - Do not push the internal `loophub/issue-<n>` branch as the GitHub branch (use a content-based name)
 - Do not include LoopHub boilerplate / `Closes #<n>` / Evidence in the GitHub PR description
-- Do not re-export a PR that already has a `github_pull` (double-create)
+- Do not create a second GitHub PR for one that already has a `github_pull` (double-create)
 - Do not edit source in the worktree

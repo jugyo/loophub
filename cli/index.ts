@@ -1134,6 +1134,35 @@ async function main() {
       out(g);
       if (!flags.json)
         console.log(`recorded GitHub PR #${g.number} — ${g.url}`);
+    } else if (sub === "create-github-pr") {
+      // #411: one command for the create-github-pr skill — push the branch, open a GitHub Draft PR,
+      // and record it back. The skill supplies the generated branch/title/body; `--body -` reads the
+      // (template-derived) description from stdin to avoid shell-escaping a multi-line HEREDOC.
+      if (!flags.branch)
+        fail("--branch is required (the content-based GitHub branch name)");
+      if (!flags.title) fail("--title is required (the GitHub PR title)");
+      if (flags.body === undefined)
+        fail("--body is required (- for stdin, or a file path)");
+      // Same convention as `--comments`: `-` reads stdin, anything else is a file path. The skill
+      // pipes the generated description via `--body -` and a HEREDOC.
+      const body =
+        flags.body === "-"
+          ? await readStdin()
+          : readFileSync(flags.body, "utf8");
+      const g = await run(async () =>
+        s.pulls.createGithubPull(
+          repo,
+          Number(rest[0]),
+          {
+            branch: flags.branch as string,
+            title: flags.title as string,
+            body,
+          },
+          await writeSession(),
+        ),
+      );
+      out(g);
+      if (!flags.json) console.log(`created GitHub PR #${g.number} — ${g.url}`);
     } else if (sub === "review") {
       let comments: any;
       if (flags.comments) {
