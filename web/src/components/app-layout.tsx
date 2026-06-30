@@ -31,7 +31,7 @@ export function AppLayout() {
           <AppSidebar />
           <DetailTitleProvider>
             <div className="flex min-w-0 flex-1 flex-col">
-              <header className="flex h-14 shrink-0 items-center gap-4 border-b px-6">
+              <header className="flex h-14 shrink-0 items-center gap-4 px-6">
                 <AppBreadcrumb />
               </header>
               <main
