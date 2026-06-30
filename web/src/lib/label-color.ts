@@ -90,8 +90,13 @@ export const LABEL_COLOR_PALETTE = PALETTE;
 // `labelColorClass(name)` for the colour. Vertical padding is intentionally
 // tight (`py-px`) so the chip is not taller than the text needs — see #319;
 // horizontal `px-2` keeps the text from touching the rounded edge.
+// `leading-none` collapses the default ~1.5 line-height so the chip height
+// tracks the glyphs (not an extra line-box band) and stays balanced against
+// adjacent title text — see #375; `inline-flex items-center` centres the text
+// so the tighter line-height never clips against the rounded edge, matching the
+// status Badge.
 export const LABEL_CHIP_BASE_CLASS =
-  "rounded-full border px-2 py-px text-[11px]";
+  "inline-flex items-center rounded-full border px-2 py-px text-[11px] leading-none";
 
 // djb2 string hash (Bernstein). Deterministic and well-distributed over short
 // ASCII strings; `>>> 0` keeps it an unsigned 32-bit int so the modulo below is
