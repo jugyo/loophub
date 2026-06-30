@@ -35,9 +35,6 @@ export function AppLayout() {
               <header className="flex h-14 shrink-0 items-center gap-4 border-b px-6">
                 <AppBreadcrumb />
                 <div className="ml-auto flex items-center gap-2">
-                  {/* New Issue lives here so it is reachable from any repo-scoped screen; it
-                      hides itself on non-repo screens (home / archived). */}
-                  <CreateIssueButton />
                   <ThemeToggle />
                 </div>
               </header>
@@ -53,6 +50,10 @@ export function AppLayout() {
               </main>
             </div>
           </DetailTitleProvider>
+          {/* Floating "New issue" launcher + bottom-right filing dock. Fixed-positioned, so it is
+              rendered at the shell level rather than inside the header; it hides itself on non-repo
+              screens (home / archived). */}
+          <CreateIssueButton />
           <TerminalPane />
         </div>
       </ErrorBannerProvider>
