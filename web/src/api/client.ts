@@ -150,6 +150,7 @@ export function listIssues(owner: string, repo: string, query = "") {
       labels: labels ? labels.split(",").filter(Boolean) : undefined,
       perPage: sp.get("per_page") ? Number(sp.get("per_page")) : undefined,
       page: sp.get("page") ? Number(sp.get("page")) : undefined,
+      sort: sp.get("sort") ?? undefined,
     }),
   );
 }

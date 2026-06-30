@@ -197,6 +197,7 @@ export const methods: Record<string, MethodDef> = {
         labels: stringArray,
         page: positiveInt,
         perPage: positiveInt,
+        sort: { enum: ["updated", "created"] },
       },
       ["repo"],
     ),
@@ -208,6 +209,7 @@ export const methods: Record<string, MethodDef> = {
         labels: p.labels,
         page: p.page,
         perPage: p.perPage,
+        sort: p.sort,
       }),
   },
   "issues/get": {

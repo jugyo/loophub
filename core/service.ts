@@ -396,6 +396,7 @@ export const issues = {
       labels?: string[];
       page?: number;
       perPage?: number;
+      sort?: "updated" | "created";
     } = {},
   ) {
     const r = repoOr404(name);
@@ -408,7 +409,7 @@ export const issues = {
       MAX_LIST_PER_PAGE,
     );
     const page = opts.page && opts.page >= 1 ? opts.page : 1;
-    let rows = S.listIssues(r.id, kind, state);
+    let rows = S.listIssues(r.id, kind, state, opts.sort ?? "updated");
     if (labelsFilter.length) {
       rows = rows.filter((row) => {
         const names = S.issueLabels(row.id).map((l: any) => l.name);

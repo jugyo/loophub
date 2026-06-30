@@ -215,6 +215,7 @@ export function listIssues(
   repoId: number,
   kind: "issue" | "pull" | "any",
   state: string,
+  sort: "updated" | "created" = "updated",
 ): any[] {
   const conds = ["repo_id = ?"];
   const params: any[] = [repoId];
@@ -226,9 +227,13 @@ export function listIssues(
     conds.push("state = ?");
     params.push(state);
   }
+  const orderBy =
+    sort === "created"
+      ? "created_at DESC, number DESC"
+      : "updated_at DESC, number DESC";
   return db
     .query(
-      `SELECT * FROM issues WHERE ${conds.join(" AND ")} ORDER BY updated_at DESC, number DESC`,
+      `SELECT * FROM issues WHERE ${conds.join(" AND ")} ORDER BY ${orderBy}`,
     )
     .all(...params);
 }

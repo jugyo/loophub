@@ -11,7 +11,7 @@ export const SECTION_LIMIT = 20;
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
 
-/** Open issues (excludes PRs) for the dashboard's Open Issues section, newest update first. */
+/** Open issues (excludes PRs) for the dashboard's Open Issues section, newest created first. */
 export function useOpenIssues(owner: string, repo: string) {
   return useQuery({
     queryKey: queryKeys.issues(full(owner, repo)),
@@ -19,7 +19,7 @@ export function useOpenIssues(owner: string, repo: string) {
       listIssues(
         owner,
         repo,
-        `state=open&kind=issue&per_page=${SECTION_LIMIT}`,
+        `state=open&kind=issue&sort=created&per_page=${SECTION_LIMIT}`,
       ),
   });
 }

@@ -10,9 +10,11 @@ process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let S: typeof import("./store.ts");
+let D: typeof import("./db.ts");
 
 beforeAll(async () => {
   S = await import("./store.ts");
+  D = await import("./db.ts");
 });
 
 afterAll(() => {
@@ -59,6 +61,52 @@ test("issues, labels, comments, and review state round-trip through the adapter"
   const linkedNumber = S.setMerged(pr.id, "deadbeef", "squash");
   expect(linkedNumber).toBe(issue.number);
   expect(S.getIssueById(issue.id).state).toBe("closed");
+});
+
+test("listIssues sorts by updated_at by default and by created_at when asked (#418)", () => {
+  const repo = S.createRepo("me/sort", "/tmp/sort");
+  // Three open issues. Control created_at/updated_at directly so order is
+  // deterministic regardless of now()'s one-second granularity. Issue #1 is the
+  // oldest by creation but the most recently updated (e.g. a fresh comment);
+  // issue #3 is the newest by creation.
+  const a = S.createIssue(repo.id, "issue", "a", "", "me") as any; // #1
+  const b = S.createIssue(repo.id, "issue", "b", "", "me") as any; // #2
+  const c = S.createIssue(repo.id, "issue", "c", "", "me") as any; // #3
+  const set = (id: number, created: string, updated: string) =>
+    D.db.run("UPDATE issues SET created_at = ?, updated_at = ? WHERE id = ?", [
+      created,
+      updated,
+      id,
+    ]);
+  set(a.id, "2026-01-01T00:00:00Z", "2026-06-01T00:00:00Z");
+  set(b.id, "2026-02-01T00:00:00Z", "2026-02-01T00:00:00Z");
+  set(c.id, "2026-03-01T00:00:00Z", "2026-03-01T00:00:00Z");
+
+  const numbers = (sort?: "updated" | "created") =>
+    S.listIssues(repo.id, "issue", "open", sort).map((r: any) => r.number);
+
+  // Default: most recently updated first -> #1 (just updated), then #3, #2.
+  expect(numbers()).toEqual([1, 3, 2]);
+  expect(numbers("updated")).toEqual([1, 3, 2]);
+  // created: newest created first -> #3, #2, #1 (updated_at no longer matters).
+  expect(numbers("created")).toEqual([3, 2, 1]);
+});
+
+test("listIssues created sort breaks created_at ties by number desc (#418)", () => {
+  const repo = S.createRepo("me/sort-tie", "/tmp/sort-tie");
+  const a = S.createIssue(repo.id, "issue", "a", "", "me") as any; // #1
+  const b = S.createIssue(repo.id, "issue", "b", "", "me") as any; // #2
+  const c = S.createIssue(repo.id, "issue", "c", "", "me") as any; // #3
+  // Same created_at for all three -> tie-breaker is number DESC.
+  for (const i of [a, b, c]) {
+    D.db.run("UPDATE issues SET created_at = ? WHERE id = ?", [
+      "2026-04-01T00:00:00Z",
+      i.id,
+    ]);
+  }
+  expect(
+    S.listIssues(repo.id, "issue", "open", "created").map((r: any) => r.number),
+  ).toEqual([3, 2, 1]);
 });
 
 test("an APPROVE goes stale once the PR head advances past the approved commit", () => {
