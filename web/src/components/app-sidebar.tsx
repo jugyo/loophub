@@ -3,14 +3,85 @@
 
 import { Link } from "@tanstack/react-router";
 import { Archive, Home, Loader2 } from "lucide-react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "@/lib/utils";
 import { useRepos } from "@/queries/repos";
+
+// Draggable sidebar width (#378). The width is a CSS variable (`--lh-sidebar-w`, default 16rem)
+// shared by the sidebar and the bottom terminal pane's left offset; dragging the right edge
+// updates it live and persists the pixel value to localStorage so it survives a reload.
+const WIDTH_KEY = "lh.sidebar.width"; // localStorage: shared cosmetic width (px)
+const MIN_W = 180;
+const MAX_W = 480;
+const DEFAULT_W = 256; // 16rem — matches the CSS fallback in index.css
+
+function readWidth(): number {
+  const v = Number(localStorage.getItem(WIDTH_KEY));
+  return Number.isFinite(v) && v >= MIN_W ? Math.min(v, MAX_W) : DEFAULT_W;
+}
 
 export function AppSidebar() {
   const { data: repos, isLoading, isError } = useRepos();
 
+  const [width, setWidth] = useState(readWidth);
+  const drag = useRef<{ startX: number; startW: number } | null>(null);
+
+  // Publish the width as the shared CSS var so the sidebar and the terminal pane's left offset
+  // both follow it. Applied in a layout effect so the restored width paints without a flash.
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty("--lh-sidebar-w", `${width}px`);
+  }, [width]);
+  useEffect(() => {
+    localStorage.setItem(WIDTH_KEY, String(width));
+  }, [width]);
+  // Drop the inline override on unmount so a layout without the sidebar falls back to the
+  // index.css default (otherwise the terminal pane's left offset keeps the last width).
+  useEffect(() => {
+    return () => {
+      document.documentElement.style.removeProperty("--lh-sidebar-w");
+    };
+  }, []);
+
+  const onPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      drag.current = { startX: e.clientX, startW: width };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      // Keep the col-resize cursor and suppress text selection while dragging anywhere.
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [width],
+  );
+  const onPointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const next = Math.min(
+      MAX_W,
+      Math.max(MIN_W, d.startW + (e.clientX - d.startX)),
+    );
+    setWidth(next);
+  }, []);
+  // End the drag and restore the global styles. Bound to pointerup AND pointercancel/lost-capture
+  // so an interrupted drag (touch/pen cancel, OS interruption, stolen capture) can't leave the
+  // page stuck with a col-resize cursor and text selection disabled.
+  const onPointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    drag.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }, []);
+
   return (
-    <aside className="flex h-full w-[var(--lh-sidebar-w)] shrink-0 flex-col border-r bg-card">
+    <aside className="relative flex h-full w-[var(--lh-sidebar-w)] shrink-0 flex-col border-r bg-card">
       <div className="flex h-14 items-center px-4">
         <Link to="/" className="text-2xl font-semibold">
           LoopHub
@@ -61,6 +132,18 @@ export function AppSidebar() {
           );
         })}
       </div>
+
+      {/* Drag handle along the sidebar's right edge (#378). Invisible — the visible separator is
+          the aside's own border-r — but gives a col-resize grab strip straddling the border.
+          Absolutely positioned so it never affects the sidebar's layout width. */}
+      <div
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        className="absolute inset-y-0 right-0 z-10 w-1.5 translate-x-1/2 cursor-col-resize"
+        aria-hidden="true"
+      />
     </aside>
   );
 }
