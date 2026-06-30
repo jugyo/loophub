@@ -1,26 +1,27 @@
 // Related sessions list for a PR or issue (#298). Shows every session linked to the PR/issue
 // (dev, review, issue-create, …) newest-first, with its kind, runtime, and when it was linked.
-// A session the server reports as resumable gets a Resume button that runs `lh resume …` in the
-// built-in terminal: `lh resume <pr>` on PR detail (re-enters the dev worktree), or
-// `lh resume --session <id> --repo <owner>/<repo>` on issue detail for an issue-create session
-// (#299 — no worktree, resumes the filing session in the repo root). Non-resumable sessions show a
-// short, muted reason so it is clear why they cannot be resumed (the AC's "resume 不可なものは
-// その旨を示す"). The whole section hides when there are no linked sessions, so PRs/issues without a
-// dev loop stay uncluttered.
 //
-// Each row is also expandable (#340): expanding reveals a copyable `claude --resume <external_session>`
-// command so a user can resume the session from any terminal, not only via the built-in `lh resume`.
-// The raw `claude` command is valid for far more sessions than `lh resume <pr>` targets — including a
-// superseded dev session that `lh resume` can no longer reach — so it is shown whenever the runtime
-// resume judgment succeeded (see serialize.ts: only the runtime-level reasons "no-session" /
-// "unknown-runtime" mean there is no claude session id to pass; every other state still has a valid
-// id in `RelatedSession.session`).
+// Every session is treated equally (#401): there is no special "anchor" row and no muted
+// "superseded / not this PR's resume target" reason text. A session whose runtime is resumable
+// (claude-code with a stored session id) gets a Resume button that launches `claude --resume <id>`
+// directly in the built-in terminal — the same raw command resumes any such session, not just the
+// single dev session `lh resume <pr>` used to target. (We no longer call `lh resume`: it can only
+// re-enter a PR's one anchor session, which is exactly the unequal treatment this view drops. The
+// tradeoff: `claude --resume` needs the session's worktree to still exist on disk, whereas
+// `lh resume` could re-attach a pruned worktree from the branch — an edge case, out of scope here.)
 //
-// When the session's cwd is known (#345 — PR detail's `worktree_path`), the command block is the
-// joined form `cd <cwd> && claude --resume <id>` so a single copy resumes from the directory the
-// session was saved in: `claude --resume` only resolves a session from its original cwd (sessions
-// live at ~/.claude/projects/<dashed cwd>/<id>.jsonl). Without a cwd (issue detail, where the path
-// is not available client-side) it falls back to the bare command plus a prose hint.
+// `claude --resume` only resolves a session from its original cwd (sessions live at
+// ~/.claude/projects/<dashed cwd>/<id>.jsonl), so the button appears only when that directory is
+// known: PR detail passes the shared worktree `cwd` (#345 — `worktree_path`), used by all of the
+// PR's sessions; an issue-create session (#299) has no worktree and resumes from the repo root,
+// which is the terminal's default cwd, so a bare command works. An issue-linked dev/review session
+// on issue detail has no client-side worktree path, so it gets no button — but the row still expands
+// to a copyable command (below), so it is not visually singled out.
+//
+// Each row is expandable (#340): expanding reveals the copyable `claude --resume` command (joined as
+// `cd <cwd> && …` when the cwd is known, #345) so a user can resume from any terminal. It is shown
+// whenever the runtime resume judgment succeeded (serialize.ts: only "no-session" / "unknown-runtime"
+// mean there is no claude session id; every other state has a valid id in `RelatedSession.session`).
 
 import { ChevronRight, Play } from "lucide-react";
 import { useState } from "react";
@@ -40,11 +41,15 @@ const KIND_TONE: Record<string, BadgeTone> = {
   "issue-create": "unknown",
 };
 
-// Non-resumable reason code → short human label.
+// The issue-create session kind (#299): no worktree, resumes from the repo root (the built-in
+// terminal's default cwd), so its Resume button needs no `cd` prefix.
+const SESSION_KIND_ISSUE_CREATE = "issue-create";
+
+// Non-resumable reason code → short human label. Only the two runtime-level reasons surface now —
+// in the expanded row, explaining why even the raw `claude --resume` is unavailable. The
+// `lh resume`-anchor reasons (superseded / not-anchor / resume-via-pull) are gone: every session is
+// treated equally and no longer carries a "you can't resume this" annotation (#401).
 const RESUME_REASON: Record<string, string> = {
-  superseded: "superseded by a newer dev session",
-  "not-anchor": "not this PR's resume target",
-  "resume-via-pull": "resume from the linked PR",
   "unknown-runtime": "runtime not resumable",
   "no-session": "not resumable",
 };
@@ -73,19 +78,16 @@ export function RelatedSessions({
   owner,
   repo,
   sessions,
-  resumeNumber,
   cwd,
 }: {
   owner: string;
   repo: string;
   sessions: RelatedSession[] | undefined;
-  // The PR number used to build `lh resume <id>`. Pass on PR detail; omit on issue detail (an
-  // issue-linked session resumes via its PR, so no per-row Resume button there).
-  resumeNumber?: number;
-  // The directory the `claude --resume` command should run in. When set, it is prepended to the
-  // command as `cd <cwd> && …` so one copy resumes from the right place (no separate path row).
-  // Pass the PR's dev worktree path on PR detail; omit on issue detail (the repo-root path is not
-  // available client-side, so the expanded view notes the directory in prose instead).
+  // The directory `claude --resume` should run in. When set, the Resume button and the copyable
+  // command are prepended with `cd <cwd> && …` so resume runs from the right place. Pass the PR's
+  // dev worktree path on PR detail (shared by all the PR's sessions); omit on issue detail, where an
+  // issue-create session resumes from the repo root (the terminal's default cwd) and any other
+  // session has no client-side worktree path (no button — the expanded copy command covers it).
   cwd?: string;
 }) {
   const { openTerminal } = useTerminal();
@@ -97,38 +99,44 @@ export function RelatedSessions({
       <h2 className="text-lg font-semibold">Sessions</h2>
       <ul className="flex flex-col gap-2">
         {sessions.map((s) => {
-          const canResume = s.resume.resumable;
-          // PR detail re-enters the PR's worktree by number; issue detail resumes the issue-create
-          // session by its id in the repo root (#299). resumeNumber present ⇒ PR container.
-          // `--session` takes the session *row id* (s.id), which the CLI resolves via
-          // getAgentSession(id) → external_session for `claude --resume`. Pass s.id, not s.session
-          // (external_session): the two coincide for an issue-create session today, but the row id
-          // is the lookup key resolveSession contracts on.
-          const resumeCommand =
-            resumeNumber != null
-              ? `lh resume ${owner}/${repo}/${resumeNumber}`
-              : `lh resume --session ${s.id} --repo ${owner}/${repo}`;
+          const claudeResumable = canClaudeResume(s);
           const reason = s.resume.reason
             ? (RESUME_REASON[s.resume.reason] ?? s.resume.reason)
             : null;
-          // The command a user runs in their own terminal. The base is `claude --resume
-          // <external_session>` (#340; embeds RelatedSession.session, the value claude consumes).
-          // With a known cwd (#345) it becomes the joined `cd <cwd> && claude --resume <id>` so one
-          // copy resumes from the right directory; without a cwd the bare command plus the prose
-          // hint below covers it. The id is shell-quoted like the path (defense in depth): a
-          // server-validated UUID passes through unquoted, but the component does not assume that,
-          // so a non-UUID id can never inject tokens into the copyable command. The joined form is
-          // split across two lines with a `\` shell line-continuation so the long command reads
-          // cleanly; the copied text keeps the `\`+newline, so pasting still runs it as one command.
+          // `claude --resume <external_session>` (#340; embeds RelatedSession.session, the value
+          // claude consumes). The id is shell-quoted (defense in depth): a server-validated UUID
+          // passes through unquoted, but a non-UUID id can never inject tokens into the command.
           const claudeResume = `claude --resume ${shellArg(s.session)}`;
-          const claudeCommand = cwd
-            ? `cd ${shellArg(cwd)} && \\\n  ${claudeResume}`
+          // An issue-create session resumes from the repo root (the terminal's default cwd), so it
+          // must NOT inherit an incidental worktree `cwd` — claude resolves a session only from its
+          // original directory. `cdPrefix` is the worktree to `cd` into, or null to run bare from the
+          // repo root: the PR's shared worktree `cwd` for a worktree-backed session, never for an
+          // issue-create one.
+          const resumesFromRepoRoot = s.kind === SESSION_KIND_ISSUE_CREATE;
+          const cdPrefix = cwd != null && !resumesFromRepoRoot ? cwd : null;
+          // Launchable in the built-in terminal only when runtime-resumable AND we know its directory:
+          // a `cdPrefix` worktree, or the repo root for an issue-create session. Otherwise (an
+          // issue-linked dev/review session with no client-side worktree path) there is no button;
+          // the expanded copy command below is the fallback.
+          const canRunInTerminal =
+            claudeResumable && (cdPrefix != null || resumesFromRepoRoot);
+          // Single-line form the Resume button runs in the built-in terminal (one command).
+          const terminalCommand = cdPrefix
+            ? `cd ${shellArg(cdPrefix)} && ${claudeResume}`
             : claudeResume;
-          const claudeResumable = canClaudeResume(s);
+          // Display form for the copyable block — split with a `\` line-continuation so the long
+          // command reads cleanly; the copied text keeps the `\`+newline so pasting runs as one.
+          const claudeCommand = cdPrefix
+            ? `cd ${shellArg(cdPrefix)} && \\\n  ${claudeResume}`
+            : claudeResume;
           const isOpen = expanded[s.id] ?? false;
           return (
             <li key={s.id} className="rounded-md border text-sm">
-              <div className="flex flex-wrap items-center gap-2 p-3">
+              {/* Header row: the expandable toggle (badge / name / runtime / linked time, allowed to
+                  wrap) on the left, and — when the session can be launched in the built-in terminal —
+                  a compact Resume button pinned top-right. No per-row reason text: every session is
+                  treated the same (#401). */}
+              <div className="flex items-start gap-2 p-3">
                 <button
                   type="button"
                   onClick={() =>
@@ -136,7 +144,7 @@ export function RelatedSessions({
                   }
                   aria-expanded={isOpen}
                   aria-controls={`session-detail-${s.id}`}
-                  className="flex flex-1 flex-wrap items-center gap-2 text-left"
+                  className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-left"
                 >
                   <ChevronRight
                     className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${
@@ -148,39 +156,36 @@ export function RelatedSessions({
                   >
                     {s.kind ?? "session"}
                   </Badge>
-                  <span className="font-medium">{s.name ?? s.agent}</span>
+                  <span className="font-medium break-words">
+                    {s.name ?? s.agent}
+                  </span>
                   {s.runtime ? (
-                    <code className="rounded bg-muted px-1 py-0.5 text-xs text-muted-foreground">
+                    <code className="shrink-0 whitespace-nowrap rounded bg-muted px-1 py-0.5 text-xs text-muted-foreground">
                       {s.runtime}
                     </code>
                   ) : null}
-                  <span className="text-xs text-muted-foreground">
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">
                     linked {relativeTime(s.linked_at ?? s.created_at)}
                   </span>
                 </button>
-                <span className="ml-auto flex items-center gap-2">
-                  {canResume ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      title={`Resume \`${resumeCommand}\` in a terminal`}
-                      onClick={() =>
-                        openTerminal({
-                          command: resumeCommand,
-                          repo: `${owner}/${repo}`,
-                          label: `resume ${s.name ?? s.kind ?? s.id}`,
-                        })
-                      }
-                    >
-                      <Play className="size-3.5" />
-                      Resume
-                    </Button>
-                  ) : reason ? (
-                    <span className="text-xs text-muted-foreground">
-                      {reason}
-                    </span>
-                  ) : null}
-                </span>
+                {canRunInTerminal ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0"
+                    title={`Resume \`${terminalCommand}\` in a terminal`}
+                    onClick={() =>
+                      openTerminal({
+                        command: terminalCommand,
+                        repo: `${owner}/${repo}`,
+                        label: `resume ${s.name ?? s.kind ?? s.id}`,
+                      })
+                    }
+                  >
+                    <Play className="size-3.5" />
+                    Resume
+                  </Button>
+                ) : null}
               </div>
               {isOpen ? (
                 <div

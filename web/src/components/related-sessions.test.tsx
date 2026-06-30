@@ -23,6 +23,12 @@ function toggles(container: HTMLElement): HTMLButtonElement[] {
   );
 }
 
+function resumeButtons(container: HTMLElement): HTMLButtonElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLButtonElement>("button"),
+  ).filter((b) => b.textContent?.includes("Resume"));
+}
+
 describe("RelatedSessions", () => {
   it("renders nothing when there are no sessions", () => {
     const { container } = render(
@@ -31,55 +37,98 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("shows a Resume button for a resumable PR session and the reason otherwise", () => {
+  it("gives every session in a PR worktree a Resume button — no anchor singling-out, no reason text (#401)", () => {
     const { container } = render(
       <RelatedSessions
         owner="jugyo"
         repo="loophub"
-        resumeNumber={42}
+        cwd="/home/me/.loophub/worktrees/jugyo/loophub/issue-7"
         sessions={[
-          session({ id: "a", kind: "dev", resume: { resumable: true } }),
+          session({
+            id: "a",
+            kind: "dev",
+            session: "11111111-2222-3333-4444-555555555555",
+            resume: { resumable: true },
+          }),
+          // Formerly the "superseded" anchor reason — now treated identically to any other session.
           session({
             id: "b",
             kind: "dev",
+            session: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
             resume: { resumable: false, reason: "superseded" },
           }),
         ]}
       />,
     );
-    const buttons = Array.from(container.querySelectorAll("button")).map(
-      (b) => b.textContent,
-    );
-    // Exactly one Resume button (for the resumable session).
-    expect(buttons.filter((t) => t?.includes("Resume")).length).toBe(1);
-    // The superseded session shows its reason instead.
-    expect(container.textContent).toContain(
+    // Both sessions resume in the shared worktree, so both get a Resume button.
+    expect(resumeButtons(container).length).toBe(2);
+    // The old muted anchor reasons are gone entirely.
+    expect(container.textContent).not.toContain(
       "superseded by a newer dev session",
     );
+    expect(container.textContent).not.toContain("not this PR's resume target");
     expect(container.textContent).toContain("Sessions");
   });
 
-  it("never offers Resume on an issue (no resumeNumber); shows resume-via-pull reason", () => {
+  it("the Resume button launches `cd <cwd> && claude --resume <id>` in the terminal", () => {
+    const { container } = render(
+      <RelatedSessions
+        owner="jugyo"
+        repo="loophub"
+        cwd="/home/me/.loophub/worktrees/jugyo/loophub/issue-7"
+        sessions={[
+          session({
+            id: "a",
+            kind: "dev",
+            session: "11111111-2222-3333-4444-555555555555",
+            resume: { resumable: true },
+          }),
+        ]}
+      />,
+    );
+    const [btn] = resumeButtons(container);
+    // The single-line command (no `\` line-continuation — that is only for the copyable block).
+    expect(btn.getAttribute("title")).toBe(
+      "Resume `cd /home/me/.loophub/worktrees/jugyo/loophub/issue-7 && claude --resume 11111111-2222-3333-4444-555555555555` in a terminal",
+    );
+  });
+
+  it("on issue detail (no cwd): an issue-create session resumes from the repo root; a worktree-less session has no button but still expands to a command", () => {
     const { container } = render(
       <RelatedSessions
         owner="jugyo"
         repo="loophub"
         sessions={[
           session({
+            id: "ic",
+            kind: "issue-create",
+            session: "11111111-2222-3333-4444-555555555555",
+            resume: { resumable: true },
+          }),
+          session({
             id: "r",
             kind: "review",
+            session: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
             resume: { resumable: false, reason: "resume-via-pull" },
           }),
         ]}
       />,
     );
-    // No `lh resume` Resume button on an issue (only the expand toggle remains).
-    const labels = Array.from(container.querySelectorAll("button")).map(
-      (b) => b.textContent,
+    // Only the issue-create session (repo-root cwd) can launch in the terminal; the review session
+    // has no client-side worktree path, so no button — but no reason text either.
+    const btns = resumeButtons(container);
+    expect(btns.length).toBe(1);
+    // Its command is the bare `claude --resume <id>` (no `cd`, runs at the repo root).
+    expect(btns[0].getAttribute("title")).toBe(
+      "Resume `claude --resume 11111111-2222-3333-4444-555555555555` in a terminal",
     );
-    expect(labels.some((t) => t?.includes("Resume"))).toBe(false);
-    expect(container.textContent).toContain("resume from the linked PR");
-    expect(container.textContent).toContain("review");
+    expect(container.textContent).not.toContain("resume from the linked PR");
+    // The button-less review session still exposes the copyable command when expanded.
+    const reviewLi = container.querySelectorAll("li")[1] as HTMLElement;
+    fireEvent.click(within(reviewLi).getByRole("button", { expanded: false }));
+    expect(reviewLi.textContent).toContain(
+      "claude --resume aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    );
   });
 
   it("joins cwd into `cd <path> && claude --resume <id>` and copies the whole command (#345)", async () => {
@@ -92,7 +141,6 @@ describe("RelatedSessions", () => {
       <RelatedSessions
         owner="jugyo"
         repo="loophub"
-        resumeNumber={42}
         cwd="/home/me/.loophub/worktrees/jugyo/loophub/issue-7"
         sessions={[
           session({
@@ -120,15 +168,8 @@ describe("RelatedSessions", () => {
     expect(writeText).toHaveBeenCalledWith(joined);
     // No separate "Run in:" path row — the path lives in the joined command now.
     expect(li.textContent).not.toContain("Run in:");
-    expect(
-      within(li).queryByRole("button", { name: "Copy directory" }),
-    ).toBeNull();
-    // The Resume (lh resume) button is still present alongside the command.
-    expect(
-      Array.from(li.querySelectorAll("button")).some((b) =>
-        b.textContent?.includes("Resume"),
-      ),
-    ).toBe(true);
+    // The Resume button is present alongside the command.
+    expect(resumeButtons(li).length).toBe(1);
   });
 
   it("falls back to the bare `claude --resume <id>` plus a directory hint when cwd is unknown (#345)", () => {
@@ -141,14 +182,14 @@ describe("RelatedSessions", () => {
             id: "a",
             kind: "issue-create",
             session: "11111111-2222-3333-4444-555555555555",
-            resume: { resumable: false, reason: "resume-via-pull" },
+            resume: { resumable: true },
           }),
         ]}
       />,
     );
     const li = container.querySelector("li") as HTMLElement;
     fireEvent.click(toggles(container)[0]);
-    // No cwd → no `cd` prefix, just the bare command.
+    // No cwd → no `cd` prefix in the copyable command, just the bare command.
     expect(li.textContent).toContain(
       "claude --resume 11111111-2222-3333-4444-555555555555",
     );
@@ -162,7 +203,6 @@ describe("RelatedSessions", () => {
       <RelatedSessions
         owner="jugyo"
         repo="loophub"
-        resumeNumber={42}
         cwd="/home/me/My Worktrees/issue-7"
         sessions={[
           session({
@@ -186,7 +226,7 @@ describe("RelatedSessions", () => {
       <RelatedSessions
         owner="jugyo"
         repo="loophub"
-        resumeNumber={42}
+        cwd="/home/me/.loophub/worktrees/jugyo/loophub/issue-7"
         sessions={[
           session({
             id: "a",
@@ -203,35 +243,12 @@ describe("RelatedSessions", () => {
     expect(li.textContent).toContain("claude --resume 'x; rm -rf ~'");
   });
 
-  it("shows the claude command for a superseded session that lh resume cannot reach", () => {
-    const { container } = render(
-      <RelatedSessions
-        owner="jugyo"
-        repo="loophub"
-        resumeNumber={42}
-        sessions={[
-          session({
-            id: "b",
-            kind: "dev",
-            session: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-            resume: { resumable: false, reason: "superseded" },
-          }),
-        ]}
-      />,
-    );
-    const li = container.querySelector("li") as HTMLElement;
-    fireEvent.click(toggles(container)[0]);
-    expect(li.textContent).toContain(
-      "claude --resume aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-    );
-  });
-
   it("shows the reason instead of a command when the runtime has no claude session", () => {
     const { container } = render(
       <RelatedSessions
         owner="jugyo"
         repo="loophub"
-        resumeNumber={42}
+        cwd="/home/me/.loophub/worktrees/jugyo/loophub/issue-7"
         sessions={[
           session({
             id: "c",
@@ -241,6 +258,8 @@ describe("RelatedSessions", () => {
         ]}
       />,
     );
+    // A session with no claude id cannot be launched in the terminal — no Resume button.
+    expect(resumeButtons(container).length).toBe(0);
     const li = container.querySelector("li") as HTMLElement;
     fireEvent.click(toggles(container)[0]);
     expect(li.textContent).not.toContain("claude --resume");

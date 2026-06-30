@@ -162,7 +162,6 @@ export function PullDetail({
             owner={owner}
             repo={repo}
             sessions={pull.related_sessions}
-            resumeNumber={pull.number}
             cwd={pull.worktree_path ?? undefined}
           />
           <HandoffTimeline
