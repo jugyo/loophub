@@ -55,25 +55,39 @@ export function CreateIssueModal({
   const title = sessionRepo ? `New issue · ${sessionRepo}` : "New issue";
 
   return (
-    // Bottom-right dock. No backdrop and no `inset-0`: the screen behind stays interactive. A fixed
-    // bottom offset clears the always-present collapsed terminal bar (36px) — not --lh-term-reserve,
-    // which grows to ~100dvh when the bottom terminal is maximized/dragged tall and would push the
-    // dock off the top of the viewport. z-50 keeps the dock above that bar (z-40), so it floats over
-    // an expanded terminal instead of being shoved off-screen.
-    <div className="fixed right-4 bottom-14 z-50">
+    // Bottom-right dock. No backdrop and no `inset-0`: the screen behind stays interactive. The dock
+    // sticks its bottom to the bottom terminal's top edge with a margin, just like the floating
+    // launcher (#384/#398): --lh-term-reserve (published by terminal-pane.tsx) is the terminal's
+    // footprint plus a 12px breathing gap; + 0.5rem widens that so the dock visibly clears the
+    // terminal top (≈20px) instead of overlapping it. clamp() keeps the old bottom-right resting spot
+    // when the terminal is collapsed (floor 3.5rem) and, when the terminal is maximized (var ≈ 100dvh),
+    // caps the rise at a ceiling that still leaves the dock's minimum height (12rem) plus a 2rem top
+    // margin on screen — there the dock degrades to overlapping the terminal (z-50 > z-40) rather than
+    // being shoved off the top of the viewport. The expanded height shrinks with the terminal in step
+    // (below), so the body stays fully on screen while the bottom rides the terminal up.
+    <div
+      className="fixed right-4 z-50"
+      style={{
+        bottom:
+          "clamp(3.5rem, calc(var(--lh-term-reserve, 0px) + 0.5rem), calc(100dvh - 14rem))",
+      }}
+    >
       <div
         role="dialog"
         aria-label={title}
-        // Expanded size is unchanged from the previous modal (56rem × 36rem), anchored bottom-right
-        // and clamped to the viewport. A *definite* height (not a min-height) keeps the #317 fix: the
-        // embedded terminal sizes with `h-full`, which only resolves against a definite-height
-        // ancestor; a min-height alone collapses it to its intrinsic content and leaves a gap.
-        // Minimized collapses to a compact header pill (narrow width + h-auto) so the dock stops
+        // Expanded width is unchanged (56rem); the height now clamps against the terminal footprint so
+        // the dock never extends past the top of the viewport as it rides the terminal up: the middle
+        // term `100dvh − var − 2.5rem` pins the dock top at ≈100dvh − 2rem (its bottom is var + 0.5rem),
+        // bounded below by a 12rem floor (so a maximized terminal can't crush it to nothing) and above
+        // by the original 36rem. A *definite* height (clamp resolves to one — not a min-height) keeps
+        // the #317 fix: the embedded terminal sizes with `h-full`, which only resolves against a
+        // definite-height ancestor; a min-height alone collapses it to its intrinsic content and leaves
+        // a gap. Minimized collapses to a compact header pill (narrow width + h-auto) so the dock stops
         // covering the bottom terminal pane's right side, like a real chat-box minimize.
         className={`flex flex-col overflow-hidden rounded-lg border bg-background shadow-xl ${
           minimized
             ? "h-auto w-[min(20rem,calc(100dvw-2rem))]"
-            : "h-[min(36rem,calc(100dvh-8rem))] w-[min(56rem,calc(100dvw-2rem))]"
+            : "h-[clamp(12rem,calc(100dvh_-_var(--lh-term-reserve,0px)_-_2.5rem),36rem)] w-[min(56rem,calc(100dvw-2rem))]"
         }`}
       >
         <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
