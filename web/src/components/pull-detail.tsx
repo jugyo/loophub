@@ -26,12 +26,7 @@ import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { RelatedSessions } from "@/components/related-sessions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  type BadgeTone,
-  mergeableBadge,
-  reviewBadge,
-  stateBadge,
-} from "@/lib/badges";
+import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
 import { type DiffLineKind, parsePatch } from "@/lib/diff";
 import { relativeTime } from "@/lib/time";
 import { useIssueComments } from "@/queries/issues";
@@ -198,9 +193,9 @@ function PullHeader({
   const { showError } = useErrorBanner();
   const [method, setMethod] = useState<MergeMethod>("squash");
 
-  const state = stateBadge(pull, "pulls");
-  const review = reviewBadge(pull);
-  const mergeable = mergeableBadge(pull);
+  // Shared with the built-in terminal header (terminal-pr-header.tsx) so the two
+  // status lines always match (#386).
+  const badges = pullDetailBadges(pull);
   const linked = pull.linked_issue;
 
   const canAct = pull.state === "open" && !pull.merged;
@@ -221,13 +216,11 @@ function PullHeader({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {state ? <Badge tone={state.tone}>{state.label}</Badge> : null}
-        {review ? <Badge tone={review.tone}>{review.label}</Badge> : null}
-        {mergeable ? (
-          <Badge tone={mergeable.tone} title={mergeable.title}>
-            {mergeable.label}
+        {badges.map((b, i) => (
+          <Badge key={`${b.tone}-${i}`} tone={b.tone} title={b.title}>
+            {b.label}
           </Badge>
-        ) : null}
+        ))}
       </div>
 
       <div className="text-sm text-muted-foreground">

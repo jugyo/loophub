@@ -9,7 +9,7 @@ import { Link } from "@tanstack/react-router";
 import { CopyButton } from "@/components/copy-button";
 import type { TerminalIssueRef } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
-import { pullBadges } from "@/lib/badges";
+import { pullDetailBadges } from "@/lib/badges";
 import { useIssue } from "@/queries/issues";
 import { usePull } from "@/queries/pulls";
 
@@ -76,7 +76,9 @@ function ResolvedPrHeader({
   }
 
   const linkedIssue = pr.linked_issue?.number ?? issueNumber;
-  const badges = pullBadges(pr);
+  // Same badge composition as the PR detail page (pullDetailBadges), so the
+  // terminal header status never diverges from the detail page (#386).
+  const badges = pullDetailBadges(pr);
 
   return (
     <div className="flex shrink-0 flex-col gap-1 border-b bg-muted/40 px-3 py-1.5 text-xs">

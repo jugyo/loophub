@@ -128,6 +128,26 @@ export function pullBadges(pr: PullRequest): Badge[] {
 }
 
 /**
+ * Badges for the canonical PR status line — state, review, and mergeable shown
+ * unconditionally. Unlike {@link pullBadges}, this never suppresses "approved" /
+ * "mergeable" while the worktree is dirty and never adds a "working" badge: it
+ * is the exact trio the PR detail page renders. The PR detail page
+ * (pull-detail.tsx) and the built-in terminal header (terminal-pr-header.tsx)
+ * both call this so their status always matches (#386). The dashboard PR rows
+ * keep {@link pullBadges} — the compact "working" cue is wanted in the list.
+ */
+export function pullDetailBadges(pr: PullRequest): Badge[] {
+  const badges: Badge[] = [];
+  const state = stateBadge(pr, "pulls");
+  if (state) badges.push(state);
+  const review = reviewBadge(pr);
+  if (review) badges.push(review);
+  const mergeable = mergeableBadge(pr);
+  if (mergeable) badges.push(mergeable);
+  return badges;
+}
+
+/**
  * Single status descriptor for an issue row's linked PR (the issue-list
  * sub-row). Collapses the PR's review / conflict / working signals into one
  * toned, labelled word, by priority — mirroring {@link pullBadges}: an actionable

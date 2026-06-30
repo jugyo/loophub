@@ -8,6 +8,7 @@ import {
   linkedPullWordTone,
   mergeableBadge,
   pullBadges,
+  pullDetailBadges,
   reviewBadge,
   stateBadge,
   workingBadge,
@@ -357,5 +358,43 @@ describe("issueBadges / pullBadges", () => {
       }),
     );
     expect(badges.map((b) => b.tone)).toEqual(["working", "review-rereview"]);
+  });
+});
+
+describe("pullDetailBadges", () => {
+  it("shows approved and mergeable on an open PR (no working suppression)", () => {
+    const badges = pullDetailBadges(
+      pull({ review_state: "APPROVED", mergeable_state: "clean" }),
+    );
+    expect(badges.map((b) => b.tone)).toEqual(["review-approved", "mergeable"]);
+  });
+
+  it("still shows approved and mergeable while the worktree is working (#386)", () => {
+    // pullBadges hides these while working; pullDetailBadges does not, so the
+    // terminal header matches the PR detail page.
+    const badges = pullDetailBadges(
+      pull({
+        working: true,
+        review_state: "APPROVED",
+        mergeable_state: "clean",
+      }),
+    );
+    expect(badges.map((b) => b.tone)).toEqual(["review-approved", "mergeable"]);
+  });
+
+  it("never emits a working badge", () => {
+    const badges = pullDetailBadges(pull({ working: true }));
+    expect(badges.map((b) => b.tone)).not.toContain("working");
+  });
+
+  it("shows merged state and omits review/mergeable on a merged PR", () => {
+    const badges = pullDetailBadges(
+      pull({
+        merged: true,
+        review_state: "APPROVED",
+        mergeable_state: "clean",
+      }),
+    );
+    expect(badges.map((b) => b.tone)).toEqual(["merged"]);
   });
 });
