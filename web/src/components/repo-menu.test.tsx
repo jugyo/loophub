@@ -35,6 +35,7 @@ function repo(archived: boolean): Repo {
     archived,
     archived_at: archived ? "2026-06-01T00:00:00Z" : null,
     created_at: "2026-01-01T00:00:00Z",
+    merge_mode: null,
   };
 }
 

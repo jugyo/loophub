@@ -575,3 +575,86 @@ describe("PullDetail", () => {
     expect(screen.queryByRole("button", { name: /^Resume$/ })).toBeNull();
   });
 });
+
+// #406: the PR-detail write action follows the PR's effective merge_mode. Render with an overridden
+// pull so we can exercise each mode without touching the shared fixture.
+function renderDetailWithPull(override: Partial<PullRequest>) {
+  vi.stubGlobal(
+    "fetch",
+    mockRpcFetch({
+      "pulls/get": () => ({ ...pull, ...override }),
+      "pulls/files": () => files,
+      "reviews/list": () => reviews,
+      "reviews/listComments": () => lineComments,
+      "reviewNotes/list": () => [],
+      "comments/list": () => comments,
+    }),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const rootRoute = createRootRoute({ component: Outlet });
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/",
+    component: () => <PullDetail owner="me" repo="proj" number={30} />,
+  });
+  const issuesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/issues/$number",
+    component: () => null,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+}
+
+describe("PullDetail — GitHub export action (#406)", () => {
+  it("offers Merge (not Create PR) in 'merge' mode", async () => {
+    renderDetailWithPull({ merge_mode: "merge" });
+    await screen.findByRole("button", { name: /^Merge$/i });
+    expect(
+      screen.queryByRole("button", { name: /Create PR on GitHub/i }),
+    ).toBeNull();
+  });
+
+  it("offers Create PR on GitHub (not Merge) in 'github_pr' mode, dispatching the skill", async () => {
+    renderDetailWithPull({ merge_mode: "github_pr", github_pull: null });
+    const button = await screen.findByRole("button", {
+      name: /Create PR on GitHub/i,
+    });
+    expect(screen.queryByRole("button", { name: /^Merge$/i })).toBeNull();
+
+    fireEvent.click(button);
+    expect(openTerminal).toHaveBeenCalledTimes(1);
+    const opts = openTerminal.mock.calls[0][0];
+    expect(opts.command).toContain("/create-github-pr 30");
+    expect(opts.repo).toBe("me/proj");
+  });
+
+  it("swaps to a View PR on GitHub link once exported (double-create guard)", async () => {
+    renderDetailWithPull({
+      merge_mode: "github_pr",
+      github_pull: {
+        number: 7,
+        url: "https://github.com/me/proj/pull/7",
+        branch: "feature/x",
+        created_by: "impl-bot",
+        created_at: "2026-06-19T00:00:00Z",
+      },
+    });
+    const link = await screen.findByRole("link", {
+      name: /View PR on GitHub/i,
+    });
+    expect(link.getAttribute("href")).toBe("https://github.com/me/proj/pull/7");
+    expect(
+      screen.queryByRole("button", { name: /Create PR on GitHub/i }),
+    ).toBeNull();
+  });
+});

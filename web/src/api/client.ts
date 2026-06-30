@@ -18,6 +18,7 @@ import type {
   PullRequest,
   PullReview,
   Repo,
+  RepoMergeMode,
   ReviewNote,
 } from "./types";
 
@@ -113,6 +114,25 @@ export function setRepoArchived(
   return rpc<Repo>("repos/setArchived", {
     name: full(owner, repo),
     archived,
+    session_id: sessionId,
+  });
+}
+
+// #406: resolved merge-mode view (setting + effective + GitHub-remote presence) for the settings UI.
+export function getRepoMergeMode(owner: string, repo: string) {
+  return rpc<RepoMergeMode>("repos/mergeMode", { name: full(owner, repo) });
+}
+
+// #406: pin the repo's PR write action ('merge' | 'github_pr') or 'auto' to clear it.
+export function setRepoMergeMode(
+  owner: string,
+  repo: string,
+  mode: "merge" | "github_pr" | "auto",
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Repo>("repos/setMergeMode", {
+    name: full(owner, repo),
+    mode,
     session_id: sessionId,
   });
 }

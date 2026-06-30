@@ -3,8 +3,15 @@
 // shaping is reusable and side-effect free.
 
 import { worktreeRoot } from "./config.ts";
-import { commitsAhead, diffStat, mergePreview, revParse } from "./git.ts";
+import {
+  commitsAhead,
+  diffStat,
+  mergePreview,
+  remoteUrl,
+  revParse,
+} from "./git.ts";
 import { linkedRef } from "./links.ts";
+import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import { pullWorktreeDirty } from "./pull-worktree.ts";
 import {
@@ -27,6 +34,33 @@ export function repoJSON(r: S.Repo) {
     created_at: r.created_at,
     archived: !!r.archived,
     archived_at: r.archived_at ?? null,
+    // #406: raw per-repo setting only ('merge' | 'github_pr' | null). The effective mode (which
+    // resolves the null default against the GitHub remote) needs a git call, so it is served by the
+    // dedicated repos/mergeMode procedure, not this sync serializer.
+    merge_mode: r.merge_mode ?? null,
+  };
+}
+
+// #406: shape a github_pulls row for the wire, or null. Keeps issue_id (an internal row id) off the
+// wire — consumers identify the PR by its own number, and read the GitHub side via number/url. The
+// overloads preserve non-nullness for callers (recordGithubPull) that always pass a real row.
+export interface GithubPullWire {
+  number: number;
+  url: string;
+  branch: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+export function githubPullJSON(g: S.GithubPull): GithubPullWire;
+export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null;
+export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null {
+  if (!g) return null;
+  return {
+    number: g.number,
+    url: g.url,
+    branch: g.branch ?? null,
+    created_by: g.created_by ?? null,
+    created_at: g.created_at,
   };
 }
 
@@ -317,6 +351,19 @@ async function pullStatusFields(repo: S.Repo, row: any) {
   };
 }
 
+// #406: the PR's effective write action ('merge' | 'github_pr') and the exported GitHub PR (if any).
+// Kept out of pullStatusFields (shared by the PR list and the issue-list linked-PR summary, neither
+// of which renders the action) so only pullJSON pays for it. The GitHub-remote check is a repo-level
+// constant resolved here once per PR detail, instead of being spent — and discarded — by every
+// linked-PR summary row.
+async function pullMergeFields(repo: S.Repo, rowId: number) {
+  const merge_mode = effectiveMergeMode(
+    repo.merge_mode,
+    isGithubRemoteUrl(await remoteUrl(repo.local_path)),
+  );
+  return { merge_mode, github_pull: githubPullJSON(S.getGithubPull(rowId)) };
+}
+
 // Issue list item with its linked PR enriched with status (working / review /
 // mergeable / diff totals) for the issue-list Pattern E sub-row. Async because
 // the status fields need a bounded git fan-out per linked PR; used only by the
@@ -409,6 +456,7 @@ export async function pullJSON(
 ) {
   const p = S.getPull(row.id);
   const status = await pullStatusFields(repo, row);
+  const mergeFields = await pullMergeFields(repo, row.id);
 
   return {
     number: row.number,
@@ -435,6 +483,10 @@ export async function pullJSON(
     updated_at: row.updated_at,
     linked_issue: status.linked,
     worktree_path: status.worktree_path,
+    // #406: the effective write action for this PR ('merge' | 'github_pr') and the GitHub PR it was
+    // exported to (null until the export skill records one). The UI swaps Merge ⟷ Create/View PR.
+    merge_mode: mergeFields.merge_mode,
+    github_pull: mergeFields.github_pull,
     // Detail-only (#298): the PR's related sessions, newest first, with per-row resume verdicts.
     // Gated so the PR list/dashboard stay O(1) git + no extra per-row query.
     ...(opts.withRelatedSessions

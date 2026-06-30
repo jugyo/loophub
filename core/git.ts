@@ -64,6 +64,17 @@ export async function defaultBranch(repoPath: string): Promise<string> {
   return head.stdout.trim() || "main";
 }
 
+// Fetch URL of a remote (default origin), or null when the remote/URL is unset. Used to decide a
+// repo's default merge mode (#406): a GitHub remote defaults the PR detail to "Create PR on GitHub".
+export async function remoteUrl(
+  repoPath: string,
+  remote = "origin",
+): Promise<string | null> {
+  const r = await git(repoPath, ["remote", "get-url", remote]);
+  if (r.code !== 0) return null;
+  return r.stdout.trim() || null;
+}
+
 export async function isGitRepo(repoPath: string): Promise<boolean> {
   const r = await git(repoPath, ["rev-parse", "--git-dir"]);
   return r.code === 0;

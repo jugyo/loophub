@@ -4,10 +4,16 @@
 // unarchiving stays put.
 
 import { useNavigate } from "@tanstack/react-router";
-import { Archive, ArchiveRestore, MoreHorizontal } from "lucide-react";
+import { Archive, ArchiveRestore, Check, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { MergeMode } from "@/api/types";
 import { Button } from "@/components/ui/button";
-import { useRepo, useSetRepoArchived } from "@/queries/repos";
+import {
+  useRepo,
+  useRepoMergeMode,
+  useSetRepoArchived,
+  useSetRepoMergeMode,
+} from "@/queries/repos";
 
 export function RepoMenu({ owner, repo }: { owner: string; repo: string }) {
   const navigate = useNavigate();
@@ -90,6 +96,8 @@ export function RepoMenu({ owner, repo }: { owner: string; repo: string }) {
             )}
             {archived ? "Unarchive" : "Archive"}
           </button>
+
+          <MergeModeSection owner={owner} repo={repo} />
         </div>
       ) : null}
 
@@ -103,6 +111,75 @@ export function RepoMenu({ owner, repo }: { owner: string; repo: string }) {
           onConfirm={onConfirm}
           onCancel={() => setConfirming(false)}
         />
+      ) : null}
+    </div>
+  );
+}
+
+// #406: per-repo PR write-action toggle. The repo offers exactly one of the internal Merge button
+// or "Create PR on GitHub" on every PR detail; this picks which. "Auto" clears the override so the
+// choice follows whether the repo has a GitHub remote (the effective default is shown inline). The
+// three options are mutually exclusive, rendered as a radio-style group with a check on the active
+// one.
+const MERGE_MODE_LABELS: Record<MergeMode, string> = {
+  merge: "Merge",
+  github_pr: "Create PR on GitHub",
+};
+
+function MergeModeSection({ owner, repo }: { owner: string; repo: string }) {
+  const { data, isLoading } = useRepoMergeMode(owner, repo);
+  const setMode = useSetRepoMergeMode(owner, repo);
+
+  const current = data?.setting ?? null; // null = Auto
+  const autoHint = data
+    ? `follows remote — ${MERGE_MODE_LABELS[data.effective]}`
+    : "";
+
+  // value: "auto" | "merge" | "github_pr"; "auto" maps to a null setting.
+  const options: { value: "auto" | MergeMode; label: string; hint?: string }[] =
+    [
+      { value: "auto", label: "Auto", hint: autoHint },
+      { value: "merge", label: MERGE_MODE_LABELS.merge },
+      { value: "github_pr", label: MERGE_MODE_LABELS.github_pr },
+    ];
+
+  return (
+    <div className="mt-1 border-t pt-1">
+      <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
+        PR action
+      </div>
+      {options.map((o) => {
+        const active = (current ?? "auto") === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="menuitemradio"
+            aria-checked={active}
+            disabled={isLoading || setMode.isPending}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+            onClick={() => {
+              if (active) return;
+              setMode.mutate(o.value);
+            }}
+          >
+            <Check
+              className={`size-4 shrink-0 ${active ? "" : "invisible"}`}
+              aria-hidden="true"
+            />
+            <span className="flex flex-col">
+              <span>{o.label}</span>
+              {o.hint ? (
+                <span className="text-xs text-muted-foreground">{o.hint}</span>
+              ) : null}
+            </span>
+          </button>
+        );
+      })}
+      {setMode.error ? (
+        <p className="px-2 py-1 text-xs text-destructive">
+          {String(setMode.error)}
+        </p>
       ) : null}
     </div>
   );

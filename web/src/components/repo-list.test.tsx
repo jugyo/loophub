@@ -24,6 +24,7 @@ function repo(full_name: string, id: number): Repo {
     archived: false,
     archived_at: null,
     created_at: "2026-01-01T00:00:00Z",
+    merge_mode: null,
   };
 }
 

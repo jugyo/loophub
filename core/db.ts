@@ -397,6 +397,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_handoffs_pr_seq    ON handoffs(pr_id, seq)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_handoffs_issue_seq ON handoffs(issue_id, seq) WHERE pr_id IS NULL AND issue_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_handoffs_issue   ON handoffs(issue_id);
 CREATE INDEX IF NOT EXISTS idx_handoffs_session ON handoffs(session_id);
+
+-- The GitHub PR a loophub PR was exported to (#406). A loophub PR can have at most one GitHub PR,
+-- so this is a 1:1 side table keyed by the PR's issues row id (pulls.issue_id). Kept out of the
+-- pulls table because it is a distinct concept (an external artifact, populated asynchronously by
+-- the export skill) and most PRs never have one. The branch column records the GitHub-side branch
+-- the skill pushed (deliberately unrelated to the internal loophub branch); created_by is the actor
+-- that recorded it. Presence of a row is what flips the PR-detail button from Create to View PR.
+CREATE TABLE IF NOT EXISTS github_pulls (
+  issue_id    INTEGER PRIMARY KEY REFERENCES issues(id),
+  number      INTEGER NOT NULL,
+  url         TEXT NOT NULL,
+  branch      TEXT,
+  created_by  TEXT,
+  created_at  TEXT NOT NULL
+);
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）
@@ -428,6 +443,11 @@ tryExec(
 );
 tryExec("ALTER TABLE repos ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
 tryExec("ALTER TABLE repos ADD COLUMN archived_at TEXT");
+// repos.merge_mode (#406): which write action the PR detail offers — 'merge' (loophub's internal
+// merge) or 'github_pr' (export to GitHub via the create-PR skill). NULL = unset, so the effective
+// mode falls back to a per-repo default (github_pr when the repo has a GitHub remote, else merge —
+// see core/merge-mode.ts). The two modes are mutually exclusive in the UI.
+tryExec("ALTER TABLE repos ADD COLUMN merge_mode TEXT");
 // The issue assignee (`@lh-dev`, #186) and the denormalized pulls.session_id (#186) it migrated into
 // are both retired; their one-time migration into session_links and final column drops are
 // consolidated in the guarded block at the end of this migration section (search "#316").

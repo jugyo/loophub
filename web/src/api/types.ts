@@ -131,6 +131,31 @@ export interface Repo {
   archived: boolean;
   archived_at: string | null;
   created_at: string;
+  /**
+   * Raw per-repo PR write-action setting (#406): 'merge' | 'github_pr' | null. null = unset, so the
+   * effective mode follows the GitHub-remote default. The resolved view (with the default applied)
+   * comes from `repos/mergeMode`, not this field.
+   */
+  merge_mode: MergeMode | null;
+}
+
+/** PR-detail write action (#406): loophub's internal merge, or export to GitHub via the skill. */
+export type MergeMode = "merge" | "github_pr";
+
+/** Resolved merge-mode view for the repo settings UI (`repos/mergeMode`, #406). */
+export interface RepoMergeMode {
+  setting: MergeMode | null;
+  has_github_remote: boolean;
+  effective: MergeMode;
+}
+
+/** The GitHub PR a loophub PR was exported to (#406), or null until the export skill records one. */
+export interface GithubPull {
+  number: number;
+  url: string;
+  branch: string | null;
+  created_by: string | null;
+  created_at: string;
 }
 
 export interface Issue {
@@ -223,6 +248,14 @@ export interface PullRequest {
   worktree_path?: string | null;
   /** Sessions related to this PR (#298), newest first. Detail response only. */
   related_sessions?: RelatedSession[];
+  /**
+   * Effective write action for this PR (#406): 'merge' offers the internal Merge control, 'github_pr'
+   * offers "Create PR on GitHub" (or "View PR on GitHub" once exported). Resolves the repo's setting
+   * against its GitHub remote.
+   */
+  merge_mode?: MergeMode;
+  /** The GitHub PR this PR was exported to (#406), or null. Presence flips Create → View. */
+  github_pull?: GithubPull | null;
 }
 
 /**

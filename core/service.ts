@@ -18,6 +18,7 @@ import {
   diffStat,
   mergePull as gitMergePull,
   isGitRepo,
+  remoteUrl,
   revParse,
   worktreeList,
   worktreePrune,
@@ -25,6 +26,12 @@ import {
   worktreeStatus,
 } from "./git.ts";
 import { parseClosingIssueNumber } from "./links.ts";
+import {
+  effectiveMergeMode,
+  isGithubRemoteUrl,
+  type MergeMode,
+  normalizeMergeMode,
+} from "./merge-mode.ts";
 import {
   decideResume,
   RUNTIME_CLAUDE_CODE,
@@ -41,6 +48,7 @@ import {
 import {
   agentSessionJSON,
   commentJSON,
+  githubPullJSON,
   handoffJSON,
   issueGroupJSON,
   issueJSON,
@@ -152,6 +160,48 @@ export const repos = {
       full_name: r.full_name,
     });
     return repoJSON(repoOr404(name));
+  },
+
+  // #406: pin the repo's PR-detail write action, or clear it back to the remote-based default.
+  // `mode` is 'merge' | 'github_pr' (pin) or 'auto' / null (clear). Archived repos stay editable
+  // here — the toggle is a config preference, not a write to the repo's contents.
+  setMergeMode(
+    name: string,
+    mode: "merge" | "github_pr" | "auto" | null,
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    let stored: MergeMode | null;
+    if (mode == null || mode === "auto") {
+      stored = null;
+    } else if (mode === "merge" || mode === "github_pr") {
+      stored = mode;
+    } else {
+      throw new ServiceError(
+        422,
+        "mode must be one of: merge, github_pr, auto",
+      );
+    }
+    const actor = actorFor(sessionId);
+    S.setRepoMergeMode(r.id, stored);
+    S.emitEvent(r.id, "repo.merge_mode_changed", actor, {
+      full_name: r.full_name,
+      merge_mode: stored,
+    });
+    return repoJSON(repoOr404(name));
+  },
+
+  // #406: resolved merge-mode view for the repo settings UI — the raw stored setting, whether the
+  // repo has a GitHub remote, and the effective mode the null default resolves to. Async because the
+  // GitHub-remote check shells out to git.
+  async mergeMode(name: string) {
+    const r = repoOr404(name);
+    const has_github_remote = isGithubRemoteUrl(await remoteUrl(r.local_path));
+    return {
+      setting: normalizeMergeMode(r.merge_mode),
+      has_github_remote,
+      effective: effectiveMergeMode(r.merge_mode, has_github_remote),
+    };
   },
 
   async update(
@@ -948,6 +998,46 @@ export const pulls = {
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id);
     return diffFiles(r.local_path, p.base_ref, p.head_ref);
+  },
+
+  // #406: record the GitHub PR a loophub PR was exported to (called by the create-PR-on-GitHub
+  // skill once it has submitted the draft PR). Idempotent on the PR — re-recording overwrites, so a
+  // re-run updates the link. Validates the URL is an absolute http(s) URL so the UI can render it as
+  // a safe link; the GitHub PR number must be a positive integer.
+  recordGithubPull(
+    name: string,
+    number: number,
+    input: { github_number: number; url: string; branch?: string | null },
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const { github_number, url, branch } = input;
+    if (!Number.isInteger(github_number) || github_number < 1)
+      throw new ServiceError(422, "github_number must be a positive integer");
+    // Require an absolute http(s) URL on a GitHub host. The model is GitHub-specific and the UI
+    // renders it as a GitHub-branded "View PR on GitHub" link, so accepting an arbitrary host would
+    // let a caller plant a misleading link. The scheme check also keeps javascript:/data: out.
+    const trimmedUrl = typeof url === "string" ? url.trim() : "";
+    if (!/^https?:\/\/\S+$/.test(trimmedUrl) || !isGithubRemoteUrl(trimmedUrl))
+      throw new ServiceError(
+        422,
+        "url must be an absolute GitHub (github.com) http(s) URL",
+      );
+    const actor = actorFor(sessionId);
+    const rec = S.recordGithubPull({
+      issueId: row.id,
+      number: github_number,
+      url: trimmedUrl,
+      branch: branch ?? null,
+      createdBy: actor,
+    });
+    S.emitEvent(r.id, "pull_request.github_pr_recorded", actor, {
+      number: row.number,
+      github_number,
+      url: rec.url,
+    });
+    return githubPullJSON(rec);
   },
 
   async merge(

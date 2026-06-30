@@ -102,6 +102,9 @@ type Flags = {
   hash?: string;
   model?: string;
   cost?: string;
+  number?: string;
+  url?: string;
+  branch?: string;
 };
 const { values, positionals: pos } = parseArgs({
   args: process.argv.slice(2),
@@ -160,6 +163,9 @@ const { values, positionals: pos } = parseArgs({
     hash: { type: "string" },
     model: { type: "string" },
     cost: { type: "string" },
+    number: { type: "string" },
+    url: { type: "string" },
+    branch: { type: "string" },
   },
 });
 const flags = values as Flags;
@@ -817,6 +823,32 @@ async function main() {
       if (!name) fail("usage: lh repo remove --repo owner/name");
       await run(() => s.repos.remove(name));
       console.log(`removed ${name}`);
+    } else if (sub === "merge-mode") {
+      // #406: show or set the repo's PR-detail write action. No mode arg → show the resolved view;
+      // a mode arg (merge | github_pr | auto) pins or clears it.
+      const name = flags.repo || rest[0];
+      if (!name)
+        fail(
+          "usage: lh repo merge-mode --repo owner/name [merge|github_pr|auto]",
+        );
+      const mode = (flags.repo ? rest[0] : rest[1]) as
+        | "merge"
+        | "github_pr"
+        | "auto"
+        | undefined;
+      if (mode) {
+        const r = await run(async () =>
+          s.repos.setMergeMode(name, mode, await writeSession()),
+        );
+        console.log(`${r.full_name} merge_mode=${r.merge_mode ?? "auto"}`);
+      } else {
+        const m = await run(() => s.repos.mergeMode(name));
+        out(m);
+        if (!flags.json)
+          console.log(
+            `setting=${m.setting ?? "auto"}  github_remote=${m.has_github_remote}  effective=${m.effective}`,
+          );
+      }
     } else usage();
     return;
   }
@@ -1083,6 +1115,25 @@ async function main() {
         ),
       );
       console.log(`merged: ${r.sha}`);
+    } else if (sub === "record-github-pr") {
+      // #406: record the GitHub PR this loophub PR was exported to (used by the create-PR skill).
+      if (!flags.number) fail("--number is required (the GitHub PR number)");
+      if (!flags.url) fail("--url is required (the GitHub PR URL)");
+      const g = await run(async () =>
+        s.pulls.recordGithubPull(
+          repo,
+          Number(rest[0]),
+          {
+            github_number: Number(flags.number),
+            url: flags.url as string,
+            ...(flags.branch ? { branch: flags.branch as string } : {}),
+          },
+          await writeSession(),
+        ),
+      );
+      out(g);
+      if (!flags.json)
+        console.log(`recorded GitHub PR #${g.number} — ${g.url}`);
     } else if (sub === "review") {
       let comments: any;
       if (flags.comments) {

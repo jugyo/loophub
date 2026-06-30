@@ -7,7 +7,7 @@
 // via <Markdown>.
 
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, ExternalLink, Github, Loader2 } from "lucide-react";
 import { useState } from "react";
 import type {
   PullFile,
@@ -24,6 +24,7 @@ import { HandoffTimeline } from "@/components/handoff-timeline";
 import { Markdown } from "@/components/markdown";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { RelatedSessions } from "@/components/related-sessions";
+import { useTerminal } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
@@ -292,34 +293,96 @@ function PullHeader({
             Mark ready for re-review
           </Button>
         ) : null}
-        <select
-          aria-label="Merge method"
-          value={method}
-          onChange={(e) => setMethod(e.target.value as MergeMethod)}
-          disabled={!canMerge || merge.isPending}
-          title={mergeBlockedReason}
-          className="h-9 rounded-md border bg-background px-2 text-sm"
-        >
-          {MERGE_METHODS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-        <Button
-          disabled={!canMerge || merge.isPending}
-          title={mergeBlockedReason}
-          onClick={() =>
-            merge.mutate(method, {
-              onError: (e) => showError(failureMessage("Merge failed", e)),
-            })
-          }
-        >
-          {merge.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-          {pull.merged ? "Merged" : "Merge"}
-        </Button>
+        {/* #406: the repo's effective merge mode picks exactly one write action — the internal Merge
+            control, or the GitHub export (Create / View PR on GitHub). The two are mutually
+            exclusive, so a merged PR shows neither extra control beyond Close/Reopen above. */}
+        {pull.merge_mode === "github_pr" ? (
+          <GithubPrAction owner={owner} repo={repo} pull={pull} />
+        ) : (
+          <>
+            <select
+              aria-label="Merge method"
+              value={method}
+              onChange={(e) => setMethod(e.target.value as MergeMethod)}
+              disabled={!canMerge || merge.isPending}
+              title={mergeBlockedReason}
+              className="h-9 rounded-md border bg-background px-2 text-sm"
+            >
+              {MERGE_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <Button
+              disabled={!canMerge || merge.isPending}
+              title={mergeBlockedReason}
+              onClick={() =>
+                merge.mutate(method, {
+                  onError: (e) => showError(failureMessage("Merge failed", e)),
+                })
+              }
+            >
+              {merge.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : null}
+              {pull.merged ? "Merged" : "Merge"}
+            </Button>
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+// #406: GitHub-export write action for a PR whose repo is in 'github_pr' mode. Once the PR has been
+// exported (github_pull present) the button becomes a "View PR on GitHub" link — this is the
+// double-create guard: the Create action disappears so a second export can't be dispatched. Until
+// then, "Create PR on GitHub" dispatches the export skill into a terminal (same pattern as the
+// issue Build button), where the skill generates a branch/title/description and opens the draft PR.
+// The skill itself ships separately (issue #406 part B); the slash command below is the seam.
+function GithubPrAction({
+  owner,
+  repo,
+  pull,
+}: {
+  owner: string;
+  repo: string;
+  pull: PullRequest;
+}) {
+  const { openTerminal } = useTerminal();
+  const gh = pull.github_pull;
+  if (gh) {
+    return (
+      <a
+        href={gh.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`GitHub PR #${gh.number}`}
+        className="inline-flex h-9 items-center gap-1.5 rounded-md border bg-background px-3 text-sm font-medium hover:bg-muted"
+      >
+        <Github className="size-4" />
+        View PR on GitHub
+        <ExternalLink className="size-3.5 text-muted-foreground" />
+      </a>
+    );
+  }
+  // A merged or closed loophub PR is past the point of exporting, so offer Create only while open.
+  if (pull.state !== "open" || pull.merged) return null;
+  return (
+    <Button
+      title="Create a PR on GitHub from this branch via the export skill"
+      onClick={() =>
+        openTerminal({
+          command: `claude "/create-github-pr ${pull.number}"`,
+          repo: `${owner}/${repo}`,
+          label: `gh-pr #${pull.number}`,
+        })
+      }
+    >
+      <Github className="size-4" />
+      Create PR on GitHub
+    </Button>
   );
 }
 

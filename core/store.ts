@@ -11,6 +11,18 @@ export interface Repo {
   created_at: string;
   archived: number;
   archived_at: string | null;
+  // #406: 'merge' | 'github_pr' | null (unset → default-by-remote, see core/merge-mode.ts).
+  merge_mode: string | null;
+}
+
+// #406: the GitHub PR a loophub PR was exported to (1:1, keyed by the PR's issues row id).
+export interface GithubPull {
+  issue_id: number;
+  number: number;
+  url: string;
+  branch: string | null;
+  created_by: string | null;
+  created_at: string;
 }
 
 // ---- repos ----
@@ -58,6 +70,15 @@ export function setRepoArchived(id: number, archived: boolean) {
 
 export function isArchived(repo: Repo): boolean {
   return !!repo.archived;
+}
+
+// #406: set (or clear) the repo's merge-mode toggle. `mode` of null resets to the default-by-remote
+// behavior; 'merge' / 'github_pr' pin the choice. The caller validates the value.
+export function setRepoMergeMode(
+  id: number,
+  mode: "merge" | "github_pr" | null,
+) {
+  db.run(`UPDATE repos SET merge_mode = ? WHERE id = ?`, [mode, id]);
 }
 
 export function getRepoById(id: number): Repo | null {
@@ -134,6 +155,10 @@ export function deleteRepo(owner: string, name: string): boolean {
     db.run(`DELETE FROM comments WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM pulls WHERE issue_id IN (${ph})`, issueIds);
     db.run(`DELETE FROM issue_labels WHERE issue_id IN (${ph})`, issueIds);
+    // #406: github_pulls.issue_id has an FK to issues(id) with no cascade, so it must be swept
+    // before the issues delete (foreign_keys=ON), or `lh repo remove` fails once any PR in the repo
+    // has a recorded GitHub PR.
+    db.run(`DELETE FROM github_pulls WHERE issue_id IN (${ph})`, issueIds);
   }
   // Notes are deleted by repo_id (#216): this covers both PR-linked notes and PR-independent ones
   // (issue_id NULL), so no separate issue_id sweep is needed.
@@ -342,6 +367,47 @@ export function getPull(issueId: number): any {
 
 export function setHeadSha(issueId: number, sha: string | null) {
   db.run(`UPDATE pulls SET head_sha = ? WHERE issue_id = ?`, [sha, issueId]);
+}
+
+// #406: the GitHub PR a loophub PR was exported to, or null. Keyed by the PR's issues row id.
+export function getGithubPull(issueId: number): GithubPull | null {
+  return (
+    (db
+      .query(`SELECT * FROM github_pulls WHERE issue_id = ?`)
+      .get(issueId) as GithubPull) ?? null
+  );
+}
+
+// #406: record (or replace) the GitHub PR for a loophub PR. Idempotent on issue_id — re-recording
+// overwrites, so a re-run of the export skill updates the link rather than erroring. created_at is
+// preserved on overwrite (the link's first-seen time) while the rest is refreshed.
+export function recordGithubPull(input: {
+  issueId: number;
+  number: number;
+  url: string;
+  branch?: string | null;
+  createdBy?: string | null;
+}): GithubPull {
+  const { issueId, number, url, branch, createdBy } = input;
+  return db
+    .query(
+      `INSERT INTO github_pulls (issue_id, number, url, branch, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(issue_id) DO UPDATE SET
+         number = excluded.number,
+         url = excluded.url,
+         branch = excluded.branch,
+         created_by = excluded.created_by
+       RETURNING *`,
+    )
+    .get(
+      issueId,
+      number,
+      url,
+      branch ?? null,
+      createdBy ?? null,
+      now(),
+    ) as GithubPull;
 }
 
 export function listOpenPullsForRepo(repoId: number): any[] {

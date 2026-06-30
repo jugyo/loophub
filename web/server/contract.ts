@@ -104,6 +104,27 @@ export const methods: Record<string, MethodDef> = {
     result: { type: "null" },
     handler: (p) => svc.repos.remove(p.name) ?? null,
   },
+  "repos/setMergeMode": {
+    description:
+      "Pin the repo's PR-detail write action ('merge' | 'github_pr'), or 'auto' to clear it (#406).",
+    params: params(
+      {
+        name: repo,
+        mode: { enum: ["merge", "github_pr", "auto"] },
+        session_id: sid,
+      },
+      ["name", "mode"],
+    ),
+    result: anyObject,
+    handler: (p) => svc.repos.setMergeMode(p.name, p.mode, p.session_id),
+  },
+  "repos/mergeMode": {
+    description:
+      "Resolved merge-mode view: raw setting, GitHub-remote presence, and the effective mode (#406).",
+    params: params({ name: repo }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.repos.mergeMode(p.name),
+  },
 
   // ---- agent sessions ----
   "sessions/register": {
@@ -596,6 +617,29 @@ export const methods: Record<string, MethodDef> = {
         p.repo,
         p.number,
         p.merge_method ?? "squash",
+        p.session_id,
+      ),
+  },
+  "pulls/recordGithubPull": {
+    description:
+      "Record the GitHub PR a loophub PR was exported to (#406). Idempotent on the PR.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        github_number: positiveInt,
+        url: strNonEmpty,
+        branch: str,
+        session_id: sid,
+      },
+      ["repo", "number", "github_number", "url"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.pulls.recordGithubPull(
+        p.repo,
+        p.number,
+        { github_number: p.github_number, url: p.url, branch: p.branch },
         p.session_id,
       ),
   },
