@@ -12,7 +12,7 @@ export function AppSidebar() {
   return (
     <aside className="flex h-full w-[var(--lh-sidebar-w)] shrink-0 flex-col border-r bg-card">
       <div className="flex h-14 items-center px-4">
-        <Link to="/" className="text-lg font-semibold">
+        <Link to="/" className="text-2xl font-semibold">
           LoopHub
         </Link>
       </div>
