@@ -10,8 +10,10 @@ TARGET_DIR="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
 mkdir -p "$TARGET_DIR"
 
 count=0
-for dir in "$SKILLS_DIR"/lh-*/; do
-  [ -d "$dir" ] || continue
+# Symlink every skill directory (one that contains a SKILL.md). Covers the lh-* skills and
+# others like create-github-pr whose slash command is hardcoded in the UI without the lh- prefix.
+for dir in "$SKILLS_DIR"/*/; do
+  [ -f "$dir/SKILL.md" ] || continue
   name="$(basename "$dir")"
   ln -sfn "${dir%/}" "$TARGET_DIR/$name"
   echo "linked $name -> $TARGET_DIR/$name"

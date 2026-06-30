@@ -16,8 +16,13 @@ script symlinks them into `~/.claude/skills/`).
 | `lh-merge-ready` | `skills/lh-merge-ready/` | `/lh-merge-ready {pr id}` (pre-merge check; human merges) |
 | `lh-retro` | `skills/lh-retro/` | `/lh-retro [{pr id}]` (retrospect a merged PR / backfill → save to retros DB) |
 | `lh-review-notes` | `skills/lh-review-notes/` | `/lh-review-notes [{base..commit}]` (per-file fact-based notes from the diff → save to review_notes) |
+| `create-github-pr` | `skills/create-github-pr/` | `/create-github-pr {pr id}` (export a LoopHub PR to a GitHub Draft PR → record back) |
 
 Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
+
+`create-github-pr` intentionally drops the `lh-` prefix: the PR detail's **Create PR on GitHub** button
+dispatches `claude "/create-github-pr <pr>"`, so the directory name must match that hardcoded slash
+command exactly.
 
 ## Authoring
 
@@ -75,6 +80,11 @@ linked PR — the PR's existence is the "taken" signal, the session is attribute
 skills cover registration, issue authoring, implementation, review, conflict resolution, and the
 pre-merge check.
 
+`create-github-pr` is **outside** this chain: it is a separate, UI-triggered export action (the PR
+detail's **Create PR on GitHub** button for repos in `github_pr` merge mode). It pushes the PR's branch
+under a content-based name, opens a GitHub **Draft** PR, and records it back with
+`lh pr record-github-pr` so the button switches to **View PR on GitHub**. It does not merge or review.
+
 ## Head worktree bootstrap
 
 Skills that work on a PR head (pr-review, rebase-conflict) must **not**
@@ -113,11 +123,12 @@ Run the install script from this repo root — it symlinks every skill into `~/.
 ./skills/install.sh
 ```
 
-Or do it by hand (`-sfn` so an existing symlink is replaced, not nested inside a directory):
+Or do it by hand — mirror what `install.sh` does (symlink every directory that has a `SKILL.md`, so
+the list never goes stale; `-sfn` replaces an existing symlink instead of nesting inside a directory):
 
 ```sh
-for s in lh-repo-add lh-issue-create lh-plan-to-issues lh-dev \
-  lh-pr-review lh-rebase-conflict lh-merge-ready; do
-  ln -sfn "$PWD/skills/$s" "$HOME/.claude/skills/$s"
+for dir in "$PWD"/skills/*/; do
+  [ -f "$dir/SKILL.md" ] || continue
+  ln -sfn "${dir%/}" "$HOME/.claude/skills/$(basename "$dir")"
 done
 ```
