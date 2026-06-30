@@ -29,6 +29,7 @@ import {
   devLockPath,
   displayMultiline,
   formatLaunchPlan,
+  formatLaunchSummary,
   formatSpawnCommand,
   parseDevTarget,
   pidAlive,
@@ -570,6 +571,38 @@ test("formatLaunchPlan handles --permission-mode flag with no value (defensive)"
     claudeArgs: ["--session-id", "sid", "--permission-mode"], // flag, no value
   });
   expect(out).toContain("--permission-mode:  (default)");
+});
+
+// ---- launch summary (pure, default/minimal output) ----
+
+test("formatLaunchSummary shows only the basic context (repo / worktree / branch / session-id)", () => {
+  const out = formatLaunchSummary({
+    repo: "me/proj",
+    worktree: "/root/me/proj/issue-42",
+    branch: "loophub/issue-42",
+    sessionId: "sid-1",
+  });
+  expect(out).toContain("repo:        me/proj");
+  expect(out).toContain("worktree:    /root/me/proj/issue-42");
+  expect(out).toContain("branch:      loophub/issue-42");
+  expect(out).toContain("session-id:  sid-1");
+  // The minimal summary omits the sandbox / managed-settings details (those are --verbose only).
+  expect(out).not.toContain("sandbox");
+  expect(out).not.toContain("network domains");
+  expect(out).not.toContain("denyRead");
+});
+
+test("formatLaunchSummary strips terminal control sequences so a crafted value can't forge it", () => {
+  const out = formatLaunchSummary({
+    repo: "me/\x1b[2K\x1b[1Aevil",
+    worktree: "/wt/\x07bell",
+    branch: "loophub/issue-1",
+    sessionId: "sid",
+  });
+  expect(out).not.toContain("\x1b");
+  expect(out).not.toContain("\x07");
+  expect(out).toContain("repo:        me/evil");
+  expect(out).toContain("worktree:    /wt/bell");
 });
 
 // ---- worktree naming (pure) ----

@@ -391,6 +391,30 @@ export function formatLaunchPlan(plan: LaunchPlan): string {
   return lines.join("\n");
 }
 
+// The default (non-verbose) launch output: just the basic context a human needs to see what is
+// being worked on and where. The full managed-settings / launch-plan block (formatLaunchPlan) is
+// reserved for `--verbose` — by default the issue body and sandbox details are suppressed (#383).
+// Pure (string in, string out); values are control-char stripped (see display()) so a crafted
+// repo/branch can't forge the displayed lines.
+export function formatLaunchSummary({
+  repo,
+  worktree,
+  branch,
+  sessionId,
+}: {
+  repo: string;
+  worktree: string;
+  branch: string;
+  sessionId: string;
+}): string {
+  return [
+    `  repo:        ${display(repo)}`,
+    `  worktree:    ${display(worktree)}`,
+    `  branch:      ${display(branch)}`,
+    `  session-id:  ${display(sessionId)}`,
+  ].join("\n");
+}
+
 // Single-quote a value for a shell command string so it survives copy-paste / re-exec verbatim.
 // Used by both the launch command line shown to the human and the inner command handed to kani;
 // even where inputs are validated upstream, quote defensively so the pure builders are safe on

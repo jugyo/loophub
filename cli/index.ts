@@ -22,6 +22,7 @@ import {
   devLockPath,
   displayMultiline,
   formatLaunchPlan,
+  formatLaunchSummary,
   formatSpawnCommand,
   parseDevTarget,
   pidAlive,
@@ -472,7 +473,10 @@ async function main() {
     }
 
     // Display issue content before the launch plan so the user sees what they're about to work on.
-    {
+    // By default keep this minimal — just the `#<n> <title>` header. The full details (state/user,
+    // labels, linked PR, and the issue body) are noise on every launch, so they're gated behind
+    // --verbose (#383).
+    if (flags.verbose) {
       const line = `#${item.number} ${display(item.title)} [${item.state}] @${display(item.user.login)}`;
       console.error(line);
       if (item.labels && item.labels.length > 0) {
@@ -489,8 +493,10 @@ async function main() {
       }
       console.error();
       console.error(displayMultiline(item.body));
-      console.error();
+    } else {
+      console.error(`#${item.number} ${display(item.title)}`);
     }
+    console.error();
 
     // Build the sandbox managed-settings only when --sandbox is enabled.
     // When sandbox is disabled (default), managed will be undefined.
@@ -580,18 +586,30 @@ async function main() {
       sessionName,
     });
 
-    // Show exactly what `claude` will receive, then launch immediately. The plan is a safety
-    // artifact (what gets handed to `claude`); there is no confirmation prompt.
-    console.error(
-      formatLaunchPlan({
-        repo,
-        worktree,
-        sessionId,
-        slashCommand,
-        managedSettings: managed ?? "{}",
-        claudeArgs,
-      }),
-    );
+    // Show what `claude` will receive, then launch immediately (no confirmation prompt). By
+    // default only the basic context (repo / worktree / branch / session-id) is shown; the full
+    // managed-settings/sandbox launch plan is a safety artifact reserved for --verbose (#383).
+    if (flags.verbose) {
+      console.error(
+        formatLaunchPlan({
+          repo,
+          worktree,
+          sessionId,
+          slashCommand,
+          managedSettings: managed ?? "{}",
+          claudeArgs,
+        }),
+      );
+    } else {
+      console.error(
+        formatLaunchSummary({
+          repo,
+          worktree,
+          branch: headRef ?? worktreeBranch(n),
+          sessionId,
+        }),
+      );
+    }
     // Always show the exact command being spawned as the last line of the launch output, in
     // dim/gray, so a normal launch (no --verbose) still reveals and lets you copy what runs.
     // This supersedes the old --verbose-only `exec:` line — unified into one always-on display.
