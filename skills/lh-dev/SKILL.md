@@ -296,9 +296,9 @@ No push required (LoopHub reads the same `.git` directly). Default uses the prod
 
 **`lh dev` already opened a linked PR at the start of work (§2).** Your job here is **not** to create a
 PR — it is to **fill in that PR's body** with the real Summary / Acceptance criteria / Test plan /
-Evidence, replacing the placeholder implementation-plan body that `lh dev` generated. LoopHub has no
-separate "draft" flag, so the PR is
-already open and reviewable; filling the body is what readies it for review (§7). Do **not** run
+Evidence, replacing the placeholder implementation-plan body that `lh dev` generated. `lh dev` opened
+the PR as a **draft** (#413), so it is already open but still marked WIP; filling the body **and**
+flipping it to ready (the closing step below) is what readies it for review (§7). Do **not** run
 `lh pr create` on the normal path — that would create a duplicate.
 
 First get the PR number (it is shown by `lh issue view`, or list open PRs for the branch):
@@ -416,10 +416,35 @@ lh pr view <m> --repo <repo>   # body must include Summary, Acceptance criteria,
 Empty Evidence or placeholder bullets (`TBD`, `TODO`, unchecked test plan only) → fix the body before
 step 6.
 
+#### Mark the PR ready for review (draft → ready)
+
+`lh dev` opened this PR as a **draft** (#413) — the WIP marker for "still being implemented". Filling the
+body with real Summary / Acceptance criteria / Test plan / Evidence on a green tree **is** implementation
+completion, so flip the draft to ready here, as the closing action of §5:
+
+```sh
+lh pr ready-for-review <m> --repo <repo>   # draft → ready; fires pull_request.ready_for_review
+```
+
+When running a **parallel server** (§2), prefix `LOOPHUB_URL=http://localhost:8731`. This clears the
+draft flag so the PR reads as **ready** in events and `lh pr list` / view — distinguishing it from a PR
+left in draft (an abandoned WIP attempt). This is the draft→ready transition only; `lh pr ready-for-review`
+also has a *re-review after change requests* mode, but the lh-dev flow does not use it (§7 delegates to
+`lh-pr-review`, which re-reviews by re-running its reviewers, posting `lh pr comment` only for
+visibility).
+
+Run this **only when the PR is still a draft** — i.e. the normal `lh dev` path, where it succeeds. Do
+**not** skip it there when going straight to review: `lh-pr-review` should run against a ready PR, and a
+PR left in draft signals "implementation not finished". On the fallback path where you created the PR
+yourself **non-draft** (§5 "no linked PR exists"), it is already ready — **skip this step**: running
+`lh pr ready-for-review` on a non-draft PR with no pending change requests **exits non-zero**
+(`error 422: No pending change requests to address`), it is not a benign no-op.
+
 ### 6. Report
 
 Goal summary / changed files / test results / PR number / **PR URL** (Web URL format as markdown link) /
-**PR description written** (confirm non-empty body with Evidence via `lh pr view`)
+**PR description written** (confirm non-empty body with Evidence via `lh pr view`) / **PR status ready**
+(no longer draft after §5's `lh pr ready-for-review`)
 
 **Do not end the session here.** Step 6 is a checkpoint only — **step 7 (Review loop) is mandatory**
 unless the user said "stop at PR". Proceed immediately to `/lh-pr-review <m>` without waiting
