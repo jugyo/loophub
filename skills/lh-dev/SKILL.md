@@ -272,7 +272,20 @@ While testing, **capture evidence for the PR body** (step 5):
   generated assets under the repo) and save them to the **persistent evidence directory**
   (`${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/`; see `skills/README.md` §
   Evidence screenshots) — **not only** the session scratchpad / `$TMPDIR` or the worktree, which can be
-  cleared before `lh-merge-ready` reads them. Reference the saved path in the PR body.
+  cleared before `lh-merge-ready` reads them. **Keep the persistent-dir copy** (`lh-merge-ready` reads
+  those paths), and **also upload it for inline display in the PR**: run
+
+  ```sh
+  lh attachment add --file <path> [--file <path> ...]   # one printed line per file
+  ```
+
+  which prints embed markdown `![<name>](/attachments/<sha256>)` (one line per `--file`). Paste those
+  printed lines into the PR body's Evidence section (step 5) so the images render inline on the PR —
+  do **not** paste the filesystem path. Saving to the persistent dir and attaching for the PR are both
+  required, not either/or. **Before uploading**, confirm the screenshot/snippet contains no secrets
+  (`.env` values, tokens, `Authorization` headers, cookies, PII) — attachments are content-addressed,
+  immutable, and never garbage-collected, so a leaked secret cannot be revoked; mask or re-capture if
+  in doubt.
 - For CLI/API fixes, paste a representative command and response snippet
 
 Do not open a PR with checkboxes only — reviewers need proof you ran the verification.
@@ -318,7 +331,7 @@ lh pr update <m> --repo <repo> \
 
 ## Evidence
 - **Tests**: `<command>` — excerpt, e.g. `42 pass, 0 fail` or the final summary line
-- **UI / visual** (when applicable): screenshot path or markdown image; one line on what it shows
+- **UI / visual** (when applicable): embed markdown from `lh attachment add --file <path>` (`![name](/attachments/<sha256>)`), so it renders inline — not a filesystem path; one line on what it shows
 - **CLI / API** (when applicable): command + representative output snippet
 - **N/A** (docs-only / trivial): one line why substantive evidence does not apply — do not omit this section
 
@@ -344,7 +357,7 @@ LOOPHUB_URL=http://localhost:8731 lh pr update <m> --repo <repo> \
 
 ## Evidence
 - **Tests**: `<command>` — excerpt, e.g. `42 pass, 0 fail` or the final summary line
-- **UI / visual** (when applicable): screenshot path or markdown image; one line on what it shows
+- **UI / visual** (when applicable): embed markdown from `lh attachment add --file <path>` (`![name](/attachments/<sha256>)`), so it renders inline — not a filesystem path; one line on what it shows
 - **CLI / API** (when applicable): command + representative output snippet
 - **N/A** (docs-only / trivial): one line why substantive evidence does not apply — do not omit this section
 
@@ -396,7 +409,7 @@ lh pr view <m> --repo <repo>   # body must include Summary, Acceptance criteria,
 | Change type | Minimum evidence |
 |-------------|------------------|
 | Code / tests | Test command + green output excerpt (not "ran tests") |
-| UI / UX | Screenshot or markdown image reference + caption |
+| UI / UX | Screenshot uploaded via `lh attachment add` → embed markdown (`![name](/attachments/<sha256>)`) + caption |
 | CLI / API | Command + representative output |
 | Docs / skills only | Evidence section with **N/A** and one-line rationale |
 
