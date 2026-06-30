@@ -43,19 +43,26 @@ export function CreateIssueButton() {
 
   return (
     <>
-      {/* Floating action button: a circular icon-only launcher, bottom-right, clearing the
-          always-present collapsed terminal bar (36px). A fixed offset, not --lh-term-reserve: that
-          var grows to ~100dvh when the bottom terminal is maximized/dragged tall, which would push
-          the launcher off the top of the viewport. z-50 (> the terminal pane's z-40) instead lets
-          it float over an expanded terminal. Icon-only, so aria-label/title name it. Hidden once the
-          dock is mounted — the dock (or its minimized bar) then occupies this spot. */}
+      {/* Floating action button: a circular icon-only launcher, bottom-right, that sticks its bottom
+          just above the bottom terminal's top edge (#384). --lh-term-reserve (published by
+          terminal-pane.tsx) is the terminal's footprint plus a 12px breathing gap as a viewport-bottom
+          offset, so the launcher rises with the terminal and rests a margin above it instead of being
+          covered. clamp() keeps the old bottom-right resting spot when the terminal is collapsed (floor
+          3.5rem) and stops a maximized terminal (var ≈ 100dvh) from pushing the button off the top of
+          the viewport (ceiling 100dvh − 5rem). z-50 (> the terminal pane's z-40) lets it float over an
+          expanded terminal. Icon-only, so aria-label/title name it. Hidden once the dock is mounted —
+          the dock (or its minimized bar) occupies this spot. */}
       {!open && (
         <Button
           size="icon"
           aria-label="New issue"
           title="New issue"
           onClick={() => setOpen(true)}
-          className="fixed right-4 bottom-14 z-50 h-14 w-14 rounded-full shadow-lg"
+          style={{
+            bottom:
+              "clamp(3.5rem, var(--lh-term-reserve, 0px), calc(100dvh - 5rem))",
+          }}
+          className="fixed right-4 z-50 h-14 w-14 rounded-full shadow-lg"
         >
           <Plus className="size-6" />
         </Button>

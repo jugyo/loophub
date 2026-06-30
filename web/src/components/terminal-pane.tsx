@@ -56,7 +56,9 @@ const REST_GAP = 12; // breathing room kept between page content and the termina
 const RESERVE = BAR_H + TOP_GAP; // viewport px reserved above the terminal content
 const MAX_CONTENT = `calc(100dvh - ${RESERVE}px)`;
 // CSS var the page layout reads to reserve bottom padding equal to the terminal's current visible
-// height, so the always-on-top fixed overlay never hides the tail of a scrollable region.
+// height (plus REST_GAP breathing room), so the always-on-top fixed overlay never hides the tail of
+// a scrollable region. The floating New Issue launcher also sticks its bottom to this so it rests
+// REST_GAP above the terminal's top edge rather than on top of it (#384).
 const RESERVE_VAR = "--lh-term-reserve";
 
 // One terminal tab: a stable id (React key) and the repo ("owner/name", or "" for $HOME) whose
