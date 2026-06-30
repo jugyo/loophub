@@ -60,6 +60,8 @@ describe("dev.openPr", () => {
     const pull = (await svc.pulls.get("me/proj", first.number)) as any;
     expect(pull.head.ref).toBe("loophub/issue-1");
     expect(pull.base.ref).toBe("main");
+    // `lh dev` opens the PR at the start of work, so it begins as a draft (#413).
+    expect(pull.draft).toBe(true);
     expect(pull.linked_issue?.number).toBe(issue.number);
     expect(pull.body).toContain(`Closes #${issue.number}`);
     // The deterministic `lh dev` worktree path is surfaced for the terminal PR region (#270):
@@ -278,5 +280,79 @@ describe("dev.note", () => {
     expect(() =>
       svc.dev.note("me/proj", { kind: "action", summary: "x" }, "sess-1"),
     ).toThrowError(/one of issue or pr/);
+  });
+});
+
+// #413: PR draft / ready lifecycle.
+describe("pull draft / ready-for-review", () => {
+  // Pull a PR's events (with payloads) out of the debug dump.
+  async function prEvents(prNumber: number): Promise<any[]> {
+    return ((await svc.pulls.debug("me/proj", prNumber)) as any).events;
+  }
+
+  test("dev.openPr opens a draft PR; pull_request.opened payload carries draft: true", async () => {
+    const issue = svc.issues.create("me/proj", { title: "draft flow" });
+    const { number } = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
+
+    const pull = (await svc.pulls.get("me/proj", number)) as any;
+    expect(pull.draft).toBe(true);
+
+    const opened = (await prEvents(number)).find(
+      (e) => e.type === "pull_request.opened",
+    );
+    expect(opened?.payload.draft).toBe(true);
+  });
+
+  test("plain pulls.create defaults to ready (draft: false)", async () => {
+    const pr = (await svc.pulls.create(
+      "me/proj",
+      { title: "non-draft", head: "main", base: "main" },
+      "sess-1",
+    )) as any;
+    expect(pr.draft).toBe(false);
+
+    const opened = (await prEvents(pr.number)).find(
+      (e) => e.type === "pull_request.opened",
+    );
+    expect(opened?.payload.draft).toBe(false);
+  });
+
+  test("readyForReview flips a draft PR to ready and fires pull_request.ready_for_review", async () => {
+    const issue = svc.issues.create("me/proj", { title: "ready flow" });
+    const { number } = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
+
+    const after = (await svc.pulls.readyForReview(
+      "me/proj",
+      number,
+      undefined,
+      "sess-1",
+    )) as any;
+    expect(after.draft).toBe(false);
+
+    const ready = (await prEvents(number)).find(
+      (e) => e.type === "pull_request.ready_for_review",
+    );
+    expect(ready?.payload.draft).toBe(false);
+
+    // Idempotent: a now-ready PR with no pending change requests can't be readied again.
+    await expect(
+      svc.pulls.readyForReview("me/proj", number, undefined, "sess-1"),
+    ).rejects.toThrowError(/No pending change requests/);
   });
 });

@@ -202,8 +202,14 @@ function PullHeader({
   // A conflicting PR (mergeable_state === "conflict", i.e. mergeable === false) can never merge
   // server-side, so the Merge control must stay disabled even when APPROVED.
   const hasConflict = pull.mergeable_state === "conflict";
-  const canMerge = canAct && pull.review_state === "APPROVED" && !hasConflict;
-  const canReady = canAct && pull.review_state === "CHANGES_REQUESTED";
+  // A draft PR is WIP (#413), so the Merge control stays disabled even if it somehow carries an
+  // APPROVED review — flip it to ready via "Mark ready for review" first.
+  const canMerge =
+    canAct && !pull.draft && pull.review_state === "APPROVED" && !hasConflict;
+  // "Ready for review" covers two transitions (#413): a draft PR (opened WIP by `lh dev`) becoming
+  // ready, or an already-ready PR resubmitting after change requests. Draft takes precedence.
+  const canReady =
+    canAct && (pull.draft || pull.review_state === "CHANGES_REQUESTED");
   const mergeBlockedReason = hasConflict
     ? "Cannot merge: this PR has conflicts with the base branch."
     : undefined;
@@ -290,7 +296,7 @@ function PullHeader({
             {ready.isPending ? (
               <Loader2 className="size-4 animate-spin" />
             ) : null}
-            Mark ready for re-review
+            {pull.draft ? "Mark ready for review" : "Mark ready for re-review"}
           </Button>
         ) : null}
         {/* #406: the repo's effective merge mode picks exactly one write action — the internal Merge

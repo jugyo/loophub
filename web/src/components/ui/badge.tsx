@@ -12,6 +12,8 @@ const badgeVariants = cva(
       tone: {
         open: "border-green-600/60 text-green-600 dark:text-green-400",
         closed: "border-border text-muted-foreground",
+        draft:
+          "border-border bg-muted text-muted-foreground dark:text-muted-foreground",
         merged: "border-purple-600/60 text-purple-500 dark:text-purple-400",
         "review-approved":
           "border-green-600/60 text-green-600 dark:text-green-400",

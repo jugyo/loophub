@@ -942,12 +942,13 @@ export const pulls = {
       head: string;
       base: string;
       issue?: number;
+      draft?: boolean;
     },
     sessionId?: string | null,
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
-    const { title, body = "", head, base, issue } = input;
+    const { title, body = "", head, base, issue, draft = false } = input;
     if (!title || !head || !base)
       throw new ServiceError(422, "title, head, base are required");
     const actor = actorFor(sessionId);
@@ -960,10 +961,21 @@ export const pulls = {
     // kind='pull' issue row (no pulls row to match it).
     const headSha = await revParse(r.local_path, head);
     const row = S.createIssue(r.id, "pull", title, body, actor) as any;
-    S.createPull(row.id, head, base, headSha, linkedIssueId, sessionId ?? null);
+    S.createPull(
+      row.id,
+      head,
+      base,
+      headSha,
+      linkedIssueId,
+      sessionId ?? null,
+      draft,
+    );
+    // Carry the draft flag (#413) on the payload so event-driven consumers can tell a WIP PR
+    // (`lh dev` opens drafts) from a reviewable one without a follow-up read.
     S.emitEvent(r.id, "pull_request.opened", actor, {
       number: row.number,
       linked_issue: linkedNumber ?? undefined,
+      draft,
     });
     return pullJSON(r, S.getIssue(r.id, row.number));
   },
@@ -1214,19 +1226,39 @@ export const pulls = {
     const p = S.getPull(row.id);
     if (p.merged || row.state !== "open")
       throw new ServiceError(422, "Pull Request is not open");
+    const actor = actorFor(sessionId);
+    // Two distinct "ready for review" transitions share this entry point, both ending in a
+    // `pull_request.ready_for_review` event:
+    //   (a) draft → ready (#413): a `lh dev` PR opened at the start of work is now done. No prior
+    //       review is required — flipping the WIP flag is the whole transition.
+    //   (b) re-review after change requests: an already-ready PR whose latest review is
+    //       REQUEST_CHANGES is being resubmitted ("I addressed your feedback").
+    // Draft takes precedence: a draft PR has no meaningful review history to re-request, so the
+    // REQUEST_CHANGES guard below must not block clearing the draft flag.
+    if (p.draft) {
+      S.setPullDraft(row.id, false);
+      const headSha = await revParse(r.local_path, p.head_ref);
+      if (headSha) S.setHeadSha(row.id, headSha);
+      if (body) S.createComment(row.id, actor, body);
+      S.emitEvent(r.id, "pull_request.ready_for_review", actor, {
+        number: row.number,
+        draft: false,
+      });
+      return pullJSON(r, S.getIssue(r.id, row.number));
+    }
     const latest = S.latestSubstantiveReview(row.id);
     if (latest?.event !== "REQUEST_CHANGES") {
       throw new ServiceError(422, "No pending change requests to address");
     }
     if (p.changes_addressed_at)
       throw new ServiceError(422, "Already marked ready for re-review");
-    const actor = actorFor(sessionId);
     S.markChangesAddressed(row.id, actor);
     const headSha = await revParse(r.local_path, p.head_ref);
     if (headSha) S.setHeadSha(row.id, headSha);
     if (body) S.createComment(row.id, actor, body);
     S.emitEvent(r.id, "pull_request.ready_for_review", actor, {
       number: row.number,
+      draft: false,
     });
     return pullJSON(r, S.getIssue(r.id, row.number));
   },
@@ -1345,6 +1377,8 @@ export const dev = {
       return { created: false, number: existing.number };
     }
     const body = input.body ?? defaultDraftPrBody(input.issue);
+    // `lh dev` opens the PR at the *start* of work, so it begins as a draft (#413); the agent
+    // flips it to ready via `lh pr ready-for-review` once the implementation is done.
     const pr = await pulls.create(
       name,
       {
@@ -1353,6 +1387,7 @@ export const dev = {
         head: input.head,
         base: input.base,
         issue: input.issue,
+        draft: true,
       },
       sessionId,
     );

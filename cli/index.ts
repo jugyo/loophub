@@ -56,6 +56,7 @@ type Flags = {
   verbose?: boolean;
   kani?: boolean;
   force?: boolean;
+  draft?: boolean;
   json?: boolean;
   allow?: string;
   path?: string;
@@ -119,6 +120,7 @@ const { values, positionals: pos } = parseArgs({
     verbose: { type: "boolean" },
     kani: { type: "boolean" },
     force: { type: "boolean" },
+    draft: { type: "boolean" },
     json: { type: "boolean" },
     allow: { type: "string" },
     path: { type: "string" },
@@ -208,6 +210,19 @@ async function writeSession(): Promise<string> {
 function fail(message: string): never {
   console.error(message);
   process.exit(1);
+}
+
+// One-word status label for a PR in `lh pr list` / `view` (#413). "draft" only applies to an open WIP
+// PR — a draft closed before ready-for-review reads as "closed", not "draft" (mirrors the web
+// draftBadge guard, which gates on `state === "open"`).
+function prStatusLabel(p: {
+  merged?: boolean;
+  draft?: boolean;
+  state: string;
+}): string {
+  if (p.merged) return "merged";
+  if (p.state === "open" && p.draft) return "draft";
+  return p.state;
 }
 
 function display(v: string): string {
@@ -1057,15 +1072,20 @@ async function main() {
       out(items);
       if (!flags.json)
         items.forEach((p: any) => {
+          // draft (#413): an open WIP PR is shown as "draft". Gate on the open state so a draft
+          // closed before ready-for-review still reads as "closed", not "draft" (mirrors the web
+          // draftBadge guard).
+          const status = prStatusLabel(p);
           console.log(
-            `#${p.number}\t${p.merged ? "merged" : p.state}\t${p.head.ref}->${p.base.ref}\t${p.title}`,
+            `#${p.number}\t${status}\t${p.head.ref}->${p.base.ref}\t${p.title}`,
           );
         });
     } else if (sub === "view") {
       const p = await run(() => s.pulls.get(repo, Number(rest[0])));
       out(p);
       if (!flags.json) {
-        let line = `#${p.number} ${p.title} [${p.merged ? "merged" : p.state}]\n${p.head.ref} -> ${p.base.ref}  mergeable=${p.mergeable_state}`;
+        const status = prStatusLabel(p);
+        let line = `#${p.number} ${p.title} [${status}]\n${p.head.ref} -> ${p.base.ref}  mergeable=${p.mergeable_state}`;
         if (p.linked_issue)
           line += `\nlinked issue #${p.linked_issue.number} (${p.linked_issue.state})`;
         console.log(`${line}\n\n${p.body}`);
@@ -1089,11 +1109,12 @@ async function main() {
             head: flags.head ?? "",
             base: flags.base || "main",
             ...(flags.issue ? { issue: Number(flags.issue) } : {}),
+            ...(flags.draft ? { draft: true } : {}),
           },
           await writeSession(),
         ),
       );
-      console.log(`created PR #${p.number}`);
+      console.log(`created PR #${p.number}${p.draft ? " (draft)" : ""}`);
     } else if (sub === "update") {
       const patch: { title?: string; body?: string } = {};
       if (flags.title !== undefined) patch.title = flags.title;
@@ -1247,7 +1268,7 @@ async function main() {
         ),
       );
       console.log(
-        `PR #${p.number} marked ready for re-review (${p.review_state})`,
+        `PR #${p.number} marked ready for review (${p.review_state})`,
       );
     } else if (sub === "close") {
       await run(async () =>
@@ -1680,7 +1701,7 @@ function usage() {
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"
     lh issue create --title "do the thing" --label ready-to-build
-    lh pr create --head feature-x --base main --title "impl" --issue 5
+    lh pr create --head feature-x --base main --title "impl" --issue 5 [--draft]
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     lh pr review 3 --topic security --event approve --body "no issues found"

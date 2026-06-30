@@ -467,6 +467,9 @@ export async function pullJSON(
     head: { ref: p.head_ref, sha: status.headSha },
     base: { ref: p.base_ref, sha: status.baseSha },
     merged: !!p.merged,
+    // draft (#413): true while the PR is WIP (opened by `lh dev` at the start of work);
+    // cleared by `lh pr ready-for-review`. Lets list/view and consumers tell WIP from reviewable.
+    draft: !!p.draft,
     mergeable: status.mergeable,
     mergeable_state: status.mergeable_state,
     merge_commit_sha: p.merge_commit_sha,

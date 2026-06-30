@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS pulls (
   head_ref        TEXT NOT NULL,
   base_ref        TEXT NOT NULL,
   head_sha        TEXT,
+  draft           INTEGER NOT NULL DEFAULT 0,
   merged          INTEGER NOT NULL DEFAULT 0,
   merged_at       TEXT,
   merge_commit_sha TEXT,
@@ -461,6 +462,10 @@ tryExec("DROP INDEX IF EXISTS idx_pulls_open_linked_issue");
 tryExec("ALTER TABLE pulls DROP COLUMN open_linked_issue_id");
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_at TEXT");
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_by TEXT");
+// pulls.draft (#413): the PR's WIP lifecycle flag. `lh dev` opens a PR at the *start* of work, so a
+// just-opened PR is not yet reviewable; draft=1 marks "still being worked", flipped to 0 (ready) by
+// `lh pr ready-for-review`. Pre-existing PRs (and plain `lh pr create`) default to ready (0).
+tryExec("ALTER TABLE pulls ADD COLUMN draft INTEGER NOT NULL DEFAULT 0");
 // reviews.head_sha records the PR head a review was made against, so an APPROVE
 // can be marked stale once the branch advances past that commit.
 tryExec("ALTER TABLE reviews ADD COLUMN head_sha TEXT");

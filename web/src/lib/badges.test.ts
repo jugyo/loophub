@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 import {
+  draftBadge,
   issueBadges,
   linkedPullPillTone,
   linkedPullStateBadge,
@@ -39,6 +40,7 @@ function pull(partial: Partial<PullRequest> = {}): PullRequest {
     head: { ref: "feat", sha: "a" },
     base: { ref: "main", sha: "b" },
     merged: false,
+    draft: false,
     mergeable: true,
     mergeable_state: "clean",
     review_state: null,
@@ -127,6 +129,28 @@ describe("workingBadge", () => {
   it("does not show on merged or non-open PRs even if flagged", () => {
     expect(workingBadge(pull({ working: true, merged: true }))).toBeNull();
     expect(workingBadge(pull({ working: true, state: "closed" }))).toBeNull();
+  });
+});
+
+describe("draftBadge (#413)", () => {
+  it("shows a draft badge on an open, unmerged WIP PR", () => {
+    const badge = draftBadge(pull({ draft: true }));
+    expect(badge?.tone).toBe("draft");
+    expect(badge?.label).toBe("draft");
+  });
+
+  it("does not show once the PR is ready", () => {
+    expect(draftBadge(pull({ draft: false }))).toBeNull();
+  });
+
+  it("does not show on merged or closed PRs even if flagged", () => {
+    expect(draftBadge(pull({ draft: true, merged: true }))).toBeNull();
+    expect(draftBadge(pull({ draft: true, state: "closed" }))).toBeNull();
+  });
+
+  it("is included first in pullBadges / pullDetailBadges for a draft PR", () => {
+    expect(pullBadges(pull({ draft: true }))[0]?.tone).toBe("draft");
+    expect(pullDetailBadges(pull({ draft: true }))[0]?.tone).toBe("draft");
   });
 });
 

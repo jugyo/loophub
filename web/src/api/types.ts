@@ -218,6 +218,11 @@ export interface PullRequest {
   head: { ref: string; sha: string };
   base: { ref: string; sha: string };
   merged: boolean;
+  /**
+   * True while the PR is WIP (#413): `lh dev` opens the PR at the start of work, so it begins as a
+   * draft and is flipped to ready by `lh pr ready-for-review`.
+   */
+  draft: boolean;
   mergeable: boolean | null;
   mergeable_state: "clean" | "conflict" | "no_commits" | "blocked" | "unknown";
   review_state:

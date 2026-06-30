@@ -285,11 +285,12 @@ export function createPull(
   headSha: string | null,
   linkedIssueId: number | null = null,
   sessionId: string | null = null,
+  draft = false,
 ) {
   db.run(
-    `INSERT INTO pulls (issue_id, head_ref, base_ref, head_sha, linked_issue_id)
-     VALUES (?, ?, ?, ?, ?)`,
-    [issueId, head, base, headSha, linkedIssueId],
+    `INSERT INTO pulls (issue_id, head_ref, base_ref, head_sha, linked_issue_id, draft)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [issueId, head, base, headSha, linkedIssueId, draft ? 1 : 0],
   );
   // The PR's dev session is recorded only in the generalized session_links bridge (kind='dev'); the
   // PR's resume/retro anchor is derived from there (primaryDevSessionForPull). #316 dropped the
@@ -367,6 +368,15 @@ export function getPull(issueId: number): any {
 
 export function setHeadSha(issueId: number, sha: string | null) {
   db.run(`UPDATE pulls SET head_sha = ? WHERE issue_id = ?`, [sha, issueId]);
+}
+
+// Flip a PR's draft (#413) WIP flag. `lh pr ready-for-review` clears it (draft→ready).
+export function setPullDraft(issueId: number, draft: boolean) {
+  db.run(`UPDATE pulls SET draft = ? WHERE issue_id = ?`, [
+    draft ? 1 : 0,
+    issueId,
+  ]);
+  touchIssue(issueId);
 }
 
 // #406: the GitHub PR a loophub PR was exported to, or null. Keyed by the PR's issues row id.

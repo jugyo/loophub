@@ -7,6 +7,7 @@ import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 export type BadgeTone =
   | "open"
   | "closed"
+  | "draft"
   | "merged"
   | "review-approved"
   | "review-changes"
@@ -83,6 +84,20 @@ export function mergeableBadge(pr: PullRequest): Badge | null {
 }
 
 /**
+ * "draft" badge for an open, unmerged WIP PR (#413). `lh dev` opens the PR at the start of work,
+ * so it stays draft until `lh pr ready-for-review` flips it; surfacing it keeps a still-in-progress
+ * PR from reading as reviewable. Null for merged/closed PRs and once the PR is ready.
+ */
+export function draftBadge(pr: PullRequest): Badge | null {
+  if (pr.merged || pr.state !== "open" || !pr.draft) return null;
+  return {
+    tone: "draft",
+    label: "draft",
+    title: "Work in progress — not yet ready for review",
+  };
+}
+
+/**
  * "working" badge for an open PR whose lh-dev worktree has uncommitted changes — a quick
  * "actively being worked on" cue. Null for merged/closed PRs or when the flag is absent/false
  * (no worktree, clean tree, or an older server that doesn't send it).
@@ -107,6 +122,8 @@ export function issueBadges(issue: Issue): Badge[] {
 /** All badges for a pull-request row (working, state, review, conflict). */
 export function pullBadges(pr: PullRequest): Badge[] {
   const badges: Badge[] = [];
+  const draft = draftBadge(pr);
+  if (draft) badges.push(draft);
   const working = workingBadge(pr);
   if (working) badges.push(working);
   const state = stateBadge(pr, "pulls");
@@ -138,6 +155,8 @@ export function pullBadges(pr: PullRequest): Badge[] {
  */
 export function pullDetailBadges(pr: PullRequest): Badge[] {
   const badges: Badge[] = [];
+  const draft = draftBadge(pr);
+  if (draft) badges.push(draft);
   const state = stateBadge(pr, "pulls");
   if (state) badges.push(state);
   const review = reviewBadge(pr);
