@@ -169,13 +169,18 @@ export function pullDetailBadges(pr: PullRequest): Badge[] {
 /**
  * Single status descriptor for an issue row's linked PR (the issue-list
  * sub-row). Collapses the PR's review / conflict / working signals into one
- * toned, labelled word, by priority — mirroring {@link pullBadges}: an actionable
- * conflict or review state outranks the in-progress "working" cue, which in turn
- * suppresses the "ready" signals (approved). An open PR with no decided status
- * (fresh, blocked, unknown) reads as "working" rather than a bare `PR #n` pill.
+ * toned, labelled word, by priority. A *decided* review state (approved /
+ * changes / re-review / commented) or an actionable conflict reflects the PR's
+ * real state and so outranks the transient "working" cue — otherwise an
+ * approved PR whose dev worktree still has uncommitted changes would read
+ * "working" on the issue list while the PR detail page reads "approved" (the
+ * #419 inconsistency). "working" is only the *fallback* word for an open PR
+ * with no decided status (fresh, blocked, unknown), shown instead of a bare
+ * `PR #n` pill. Matches the PR detail page ({@link pullDetailBadges}), so the
+ * same PR reads the same word everywhere issue status is rendered.
  * Priority (most actionable first):
- *   merged → closed → conflict → changes/re-review/commented → working →
- *   approved → working (open, status computed but undecided).
+ *   merged → closed → conflict → changes/re-review/commented/approved →
+ *   working (open, status computed but undecided).
  *
  * Returns null only when the status fields are absent (`mergeable_state ===
  * undefined`, the issue-detail summary path that does not compute them), so the
@@ -187,6 +192,9 @@ export function linkedPullStatus(pull: LinkedPull): Badge | null {
   // A decided, actionable conflict wins even while the worktree is being edited.
   if (pull.mergeable_state === "conflict")
     return { tone: "conflict", label: "conflict" };
+  // Decided review states reflect the PR's real state and win over the transient
+  // "working" cue (#419): an approved PR with a dirty worktree reads "approved",
+  // matching the PR detail page rather than masking it behind "working".
   switch (pull.review_state) {
     case "CHANGES_REQUESTED":
       return { tone: "review-changes", label: "changes" };
@@ -195,17 +203,16 @@ export function linkedPullStatus(pull: LinkedPull): Badge | null {
       return { tone: "review-rereview", label: "re-review" };
     case "COMMENTED":
       return { tone: "review-commented", label: "commented" };
+    case "APPROVED":
+      return { tone: "review-approved", label: "approved" };
   }
-  // worktree dirty: actively being edited. Suppresses the "ready" approved word
-  // below — committing moves the head (→ STALE → re-review) on its own.
+  // No decided review state. Worktree dirty: actively being edited.
   if (pull.working)
     return {
       tone: "working",
       label: "working",
       title: "Uncommitted changes in the PR worktree",
     };
-  if (pull.review_state === "APPROVED")
-    return { tone: "review-approved", label: "approved" };
   // Status computed (issue-list path) but nothing decided yet = fresh/in-progress
   // → working. Not computed (issue-detail summary path) → indeterminable → null.
   if (pull.mergeable_state === undefined) return null;

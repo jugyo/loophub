@@ -202,7 +202,10 @@ describe("linkedPullStatus", () => {
     ).toBe("review-changes");
   });
 
-  it("suppresses approved while working, but reports approved when clean", () => {
+  it("reports approved over working — approved is the PR's real state (#419)", () => {
+    // A decided review state outranks the transient worktree-dirty cue, so the
+    // issue list reads "approved", matching the PR detail page, instead of
+    // masking an approved PR as "working".
     expect(
       linkedPullStatus(
         linked({
@@ -210,8 +213,8 @@ describe("linkedPullStatus", () => {
           review_state: "APPROVED",
           mergeable_state: "clean",
         }),
-      ),
-    ).toMatchObject({ tone: "working", label: "working" });
+      )?.tone,
+    ).toBe("review-approved");
     expect(
       linkedPullStatus(
         linked({ review_state: "APPROVED", mergeable_state: "clean" }),
