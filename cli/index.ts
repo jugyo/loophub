@@ -1126,6 +1126,16 @@ async function main() {
       );
       out(p);
       if (!flags.json) console.log(`updated PR #${p.number}`);
+    } else if (sub === "comment") {
+      await run(async () =>
+        s.comments.createForPull(
+          repo,
+          Number(rest[0]),
+          flags.body ?? "",
+          await writeSession(),
+        ),
+      );
+      console.log("commented");
     } else if (sub === "merge") {
       const r = await run(async () =>
         s.pulls.merge(
@@ -1677,7 +1687,7 @@ function usage() {
   lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."] [--runtime claude-code] [--kind dev|review|issue-create]
   lh session list
   lh issue list|view|create|update|comment|close|label  [--repo owner/repo]
-  lh pr list|view|diff|create|update|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
   lh pr note <m> --path <file> --body <text> [--base <sha>] [--commit <sha>]   # add a review note for a file on the PR's diff (range defaults to base..head)
   lh pr notes <m> [--path <file>] [--commit <sha>]   lh pr note-edit <id> --body <text>   lh pr note-rm <id>   # list / edit / delete review notes
   lh note add --path <file> --body <text> --base <sha> --commit <sha> [--pr <m>]   # add a PR-independent review note for a file on a commit range
@@ -1702,6 +1712,7 @@ function usage() {
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"
     lh issue create --title "do the thing" --label ready-to-build
     lh pr create --head feature-x --base main --title "impl" --issue 5 [--draft]
+    lh pr comment 3 --body "starting work"
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     lh pr review 3 --topic security --event pass --body "no issues found"
