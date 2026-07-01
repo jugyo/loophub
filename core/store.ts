@@ -367,6 +367,22 @@ export function linkedPullsForIssue(linkedIssueId: number): any[] {
     .all(linkedIssueId, MAX_LINKED_PULLS);
 }
 
+// Full linked-PR fan-out for issue detail. Unlike linkedPullsForIssue, this is
+// intentionally uncapped: the detail page is the place where the complete issue
+// history should be visible.
+export function allLinkedPullsForIssue(linkedIssueId: number): any[] {
+  return db
+    .query(
+      `SELECT i.*, p.merged, p.merged_at
+       FROM pulls p
+       JOIN issues i ON i.id = p.issue_id
+       WHERE p.linked_issue_id = ? AND i.kind = 'pull'
+       ORDER BY CASE WHEN i.state = 'open' AND p.merged = 0 THEN 0 ELSE 1 END,
+                COALESCE(p.merged_at, i.updated_at) DESC`,
+    )
+    .all(linkedIssueId);
+}
+
 export function getPull(issueId: number): any {
   return db.query(`SELECT * FROM pulls WHERE issue_id = ?`).get(issueId);
 }
@@ -510,15 +526,17 @@ export function countComments(issueId: number): number {
 
 // ---- reviews ----
 export function listReviews(issueId: number): any[] {
-  return db
-    // id ASC is a deterministic tiebreaker: now() has 1-second resolution, so
-    // two reviews on the same topic in the same second would otherwise have an
-    // undefined order — and computeReviewGate / latestSubstantiveReview rely on
-    // last-write-per-topic to gate merges (#427).
-    .query(
-      `SELECT * FROM reviews WHERE issue_id = ? ORDER BY created_at ASC, id ASC`,
-    )
-    .all(issueId);
+  return (
+    db
+      // id ASC is a deterministic tiebreaker: now() has 1-second resolution, so
+      // two reviews on the same topic in the same second would otherwise have an
+      // undefined order — and computeReviewGate / latestSubstantiveReview rely on
+      // last-write-per-topic to gate merges (#427).
+      .query(
+        `SELECT * FROM reviews WHERE issue_id = ? ORDER BY created_at ASC, id ASC`,
+      )
+      .all(issueId)
+  );
 }
 export function createReview(
   issueId: number,

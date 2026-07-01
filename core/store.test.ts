@@ -11,10 +11,12 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let S: typeof import("./store.ts");
 let D: typeof import("./db.ts");
+let Serialize: typeof import("./serialize.ts");
 
 beforeAll(async () => {
   S = await import("./store.ts");
   D = await import("./db.ts");
+  Serialize = await import("./serialize.ts");
 });
 
 afterAll(() => {
@@ -256,6 +258,76 @@ test("linkedPullsForIssue caps the fan-out and orders open PRs first", () => {
   expect(linked.length).toBe(S.MAX_LINKED_PULLS); // 8 linked, capped to 6
   expect(linked[0].number).toBe(open.number); // open & unmerged first
   expect(S.linkedPullsForIssue(-1)).toEqual([]); // none -> empty array, not null
+});
+
+test("issueJSON includes all linked PR summaries while keeping the primary first", () => {
+  const repo = S.createRepo("me/detail-prs", "/tmp/detail-prs");
+  const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any;
+  const closed = S.createIssue(
+    repo.id,
+    "pull",
+    "closed attempt",
+    "Closes #1",
+    "bot",
+  ) as any;
+  S.createPull(closed.id, "closed-attempt", "main", "sha-closed", issue.id);
+  S.updateIssue(closed.id, { state: "closed" });
+  D.db.run("UPDATE issues SET updated_at = ? WHERE id = ?", [
+    "2026-01-01T00:00:00Z",
+    closed.id,
+  ]);
+  const merged = S.createIssue(
+    repo.id,
+    "pull",
+    "merged attempt",
+    "Closes #1",
+    "bot",
+  ) as any;
+  S.createPull(merged.id, "merged-attempt", "main", "sha-merged", issue.id);
+  S.setMerged(merged.id, "merge-sha", "squash");
+  D.db.run("UPDATE pulls SET merged_at = ? WHERE issue_id = ?", [
+    "2026-02-01T00:00:00Z",
+    merged.id,
+  ]);
+  const open = S.createIssue(
+    repo.id,
+    "pull",
+    "open attempt",
+    "Closes #1",
+    "bot",
+  ) as any;
+  S.createPull(open.id, "open-attempt", "main", "sha-open", issue.id);
+  const olderClosedNumbers: number[] = [];
+  for (let i = 0; i < S.MAX_LINKED_PULLS; i++) {
+    const pr = S.createIssue(
+      repo.id,
+      "pull",
+      `older closed ${i}`,
+      "Closes #1",
+      "bot",
+    ) as any;
+    S.createPull(pr.id, `older-closed-${i}`, "main", `sha-old-${i}`, issue.id);
+    S.updateIssue(pr.id, { state: "closed" });
+    D.db.run("UPDATE issues SET updated_at = ? WHERE id = ?", [
+      `2025-01-0${i + 1}T00:00:00Z`,
+      pr.id,
+    ]);
+    olderClosedNumbers.unshift(pr.number);
+  }
+
+  const out = Serialize.issueJSON(issue, repo);
+
+  expect(out.linked_pull_requests.map((p: any) => p.number)).toEqual([
+    open.number,
+    merged.number,
+    closed.number,
+    ...olderClosedNumbers,
+  ]);
+  expect(out.linked_pull_request?.number).toBe(open.number);
+  expect(out.linked_pull_requests.length).toBe(S.MAX_LINKED_PULLS + 3);
+  expect(
+    out.linked_pull_requests.map((p: any) => p.merged).slice(0, 3),
+  ).toEqual([false, true, false]);
 });
 
 test("registerAgentSession conflict surfaces as an error", () => {

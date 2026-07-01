@@ -256,9 +256,13 @@ function linkedIssueSummary(repo: S.Repo, pullRowId: number) {
   };
 }
 
-function linkedPullSummary(repo: S.Repo, issueRowId: number) {
-  const pr = S.linkedPullForIssue(issueRowId);
-  if (!pr) return null;
+function linkedPullSummaries(repo: S.Repo, issueRowId: number) {
+  return S.allLinkedPullsForIssue(issueRowId).map((pr) =>
+    pullSummary(repo, pr),
+  );
+}
+
+function pullSummary(repo: S.Repo, pr: any) {
   return {
     number: pr.number,
     title: pr.title,
@@ -418,7 +422,11 @@ export function issueJSON(row: any, repo?: S.Repo) {
     updated_at: row.updated_at,
   };
   if (row.kind === "pull") out.pull_request = { url: `/pulls/${row.number}` };
-  else if (repo) out.linked_pull_request = linkedPullSummary(repo, row.id);
+  else if (repo) {
+    const pulls = linkedPullSummaries(repo, row.id);
+    out.linked_pull_requests = pulls;
+    out.linked_pull_request = pulls[0] ?? null;
+  }
   return out;
 }
 

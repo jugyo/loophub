@@ -140,6 +140,48 @@ describe("IssueDetail", () => {
     expect(screen.queryByText(/^PR #/)).toBeNull();
   });
 
+  it("renders every linked PR from the detail response array", async () => {
+    const multiPr: Issue = {
+      ...issue,
+      linked_pull_request: {
+        number: 31,
+        title: "current attempt",
+        state: "open",
+        merged: false,
+      },
+      linked_pull_requests: [
+        {
+          number: 31,
+          title: "current attempt",
+          state: "open",
+          merged: false,
+        },
+        {
+          number: 30,
+          title: "merged attempt",
+          state: "closed",
+          merged: true,
+        },
+        {
+          number: 29,
+          title: "closed attempt",
+          state: "closed",
+          merged: false,
+        },
+      ],
+    };
+    renderDetail(() => multiPr);
+
+    expect(await screen.findByText("Linked pull requests")).toBeTruthy();
+    expect(screen.getByText("PR #31")).toBeTruthy();
+    expect(screen.getByText("current attempt")).toBeTruthy();
+    expect(screen.getByText("PR #30")).toBeTruthy();
+    expect(screen.getByText("merged attempt")).toBeTruthy();
+    expect(screen.getByText("PR #29")).toBeTruthy();
+    expect(screen.getByText("closed attempt")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /build/i })).toBeNull();
+  });
+
   it("posts a comment and clears the textarea on success", async () => {
     renderDetail();
 
