@@ -278,6 +278,10 @@ async function pullStatusFields(repo: S.Repo, row: any) {
   const headSha = await revParse(repo.local_path, p.head_ref);
   const baseSha = await revParse(repo.local_path, p.base_ref);
   const review_state = S.computeReviewState(row.id);
+  // Merge gate aggregates reviews per topic (#427): clean requires every review
+  // topic to pass, not a single APPROVE — review_state above stays the display
+  // signal for the overall PR state.
+  const reviewGate = S.computeReviewGate(row.id);
   let mergeable: boolean | null = null;
   let mergeable_state = "unknown";
   if (!p.merged && headSha && baseSha) {
@@ -288,7 +292,8 @@ async function pullStatusFields(repo: S.Repo, row: any) {
     ({ mergeable, mergeable_state } = resolveMergeable({
       hasCommits: ahead > 0,
       conflict: prev.conflict,
-      approved: review_state === "APPROVED",
+      reviewed: reviewGate.reviewed,
+      allTopicsPassed: reviewGate.allTopicsPassed,
     }));
   }
   // Diff totals (+/-, changed files) for the PR. Aggregated from numstat over

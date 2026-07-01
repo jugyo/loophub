@@ -511,7 +511,13 @@ export function countComments(issueId: number): number {
 // ---- reviews ----
 export function listReviews(issueId: number): any[] {
   return db
-    .query(`SELECT * FROM reviews WHERE issue_id = ? ORDER BY created_at ASC`)
+    // id ASC is a deterministic tiebreaker: now() has 1-second resolution, so
+    // two reviews on the same topic in the same second would otherwise have an
+    // undefined order — and computeReviewGate / latestSubstantiveReview rely on
+    // last-write-per-topic to gate merges (#427).
+    .query(
+      `SELECT * FROM reviews WHERE issue_id = ? ORDER BY created_at ASC, id ASC`,
+    )
     .all(issueId);
 }
 export function createReview(
@@ -567,6 +573,45 @@ export function computeReviewState(issueId: number): ReviewState {
     return p.changes_addressed_at ? "READY_FOR_RE_REVIEW" : "CHANGES_REQUESTED";
   }
   return null;
+}
+
+// Per-topic merge gate (#427). The merge gate is no longer a single APPROVE:
+// every review topic must pass independently. A topic "passes" when its latest
+// substantive review (APPROVE / REQUEST_CHANGES) is a fresh APPROVE — i.e. not a
+// REQUEST_CHANGES (no unresolved change request) and not an approve made stale by
+// the head advancing past the reviewed commit (mirrors computeReviewState's STALE
+// rule, so an approved-then-changed PR is not silently mergeable again). Topics are
+// aggregated separately so a REQUEST_CHANGES on any one aspect blocks merge even
+// when other aspects approved. The untagged (NULL) topic is one bucket of its own.
+export interface ReviewGate {
+  /** At least one topic has a substantive review (APPROVE / REQUEST_CHANGES). */
+  reviewed: boolean;
+  /** Every reviewed topic's latest substantive review passes (fresh APPROVE). */
+  allTopicsPassed: boolean;
+}
+
+export function computeReviewGate(issueId: number): ReviewGate {
+  const p = getPull(issueId);
+  // ASC order (listReviews) → the last write per topic wins = latest substantive
+  // review for that topic.
+  const latestByTopic = new Map<string | null, any>();
+  for (const r of listReviews(issueId)) {
+    if (r.event === "APPROVE" || r.event === "REQUEST_CHANGES")
+      latestByTopic.set(r.topic ?? null, r);
+  }
+  // No substantive review yet → reviews not gathered; never clean.
+  if (latestByTopic.size === 0)
+    return { reviewed: false, allTopicsPassed: false };
+  for (const r of latestByTopic.values()) {
+    if (r.event === "REQUEST_CHANGES")
+      return { reviewed: true, allTopicsPassed: false };
+    // APPROVE that went stale (head moved past the reviewed commit) needs a
+    // re-review; approves with no recorded head_sha (pre-tracking) can't be
+    // determined stale, so they count as passing.
+    if (r.head_sha && p.head_sha && r.head_sha !== p.head_sha)
+      return { reviewed: true, allTopicsPassed: false };
+  }
+  return { reviewed: true, allTopicsPassed: true };
 }
 
 export function markChangesAddressed(issueId: number, actor: string) {

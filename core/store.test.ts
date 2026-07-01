@@ -161,6 +161,83 @@ test("one commit can carry several reviews distinguished by topic (#209)", () =>
   expect(reviews.every((r: any) => r.head_sha === "sha-1")).toBe(true);
 });
 
+test("computeReviewGate: no reviews yet is not gathered and never clean (#427)", () => {
+  const repo = S.createRepo("me/gate-none", "/tmp/gate-none");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
+  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
+
+  // No substantive review (a bare COMMENT does not count).
+  S.createReview(pr.id, "rev", "COMMENT", "nit", "sha-1");
+  expect(S.computeReviewGate(pr.id)).toEqual({
+    reviewed: false,
+    allTopicsPassed: false,
+  });
+});
+
+test("computeReviewGate: every topic must pass independently (#427)", () => {
+  const repo = S.createRepo("me/gate-topics", "/tmp/gate-topics");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
+  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
+
+  // One topic approved, another with an unresolved REQUEST_CHANGES -> blocked.
+  S.createReview(pr.id, "rev", "APPROVE", "design lgtm", "sha-1", "design");
+  S.createReview(pr.id, "rev", "REQUEST_CHANGES", "sqli", "sha-1", "security");
+  expect(S.computeReviewGate(pr.id)).toEqual({
+    reviewed: true,
+    allTopicsPassed: false,
+  });
+
+  // Resolve the security topic with a fresh APPROVE -> all topics pass.
+  S.createReview(pr.id, "rev", "APPROVE", "fixed", "sha-1", "security");
+  expect(S.computeReviewGate(pr.id)).toEqual({
+    reviewed: true,
+    allTopicsPassed: true,
+  });
+});
+
+test("computeReviewGate: a stale APPROVE on a topic does not pass (#427)", () => {
+  const repo = S.createRepo("me/gate-stale", "/tmp/gate-stale");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
+  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
+
+  S.createReview(pr.id, "rev", "APPROVE", "lgtm", "sha-1", "quality");
+  expect(S.computeReviewGate(pr.id)).toEqual({
+    reviewed: true,
+    allTopicsPassed: true,
+  });
+
+  // Head advances past the reviewed commit -> the approve is stale, not passing.
+  S.setHeadSha(pr.id, "sha-2");
+  expect(S.computeReviewGate(pr.id)).toEqual({
+    reviewed: true,
+    allTopicsPassed: false,
+  });
+
+  // Re-approve against the new head -> passes again.
+  S.createReview(pr.id, "rev", "APPROVE", "lgtm again", "sha-2", "quality");
+  expect(S.computeReviewGate(pr.id)).toEqual({
+    reviewed: true,
+    allTopicsPassed: true,
+  });
+});
+
+test("computeReviewGate: a single untagged APPROVE passes (legacy single-topic)", () => {
+  const repo = S.createRepo("me/gate-untagged", "/tmp/gate-untagged");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
+  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
+
+  // No head_sha recorded (pre-tracking approve) -> can't be stale, passes.
+  S.createReview(pr.id, "rev", "APPROVE", "lgtm");
+  expect(S.computeReviewGate(pr.id)).toEqual({
+    reviewed: true,
+    allTopicsPassed: true,
+  });
+});
+
 test("linkedPullsForIssue caps the fan-out and orders open PRs first", () => {
   const repo = S.createRepo("me/multi", "/tmp/multi");
   const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any;
