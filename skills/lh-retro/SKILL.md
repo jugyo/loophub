@@ -38,7 +38,7 @@ redaction risk this MVP structurally avoids.
 |--------|--------|
 | Loop timeline (intervention, reviews, elapsed, conflicts) | `lh events --repo <repo>` (filter to this PR/issue) |
 | Diff size & scope | `lh pr diff <m> --repo <repo>` |
-| Review rounds / change requests | `pull_request.review_submitted` events (state `REQUEST_CHANGES` / `APPROVE`) + `lh pr view <m>` |
+| Review rounds / change requests | `pull_request.review_submitted` events (state `REQUEST_CHANGES` / `PASS`) + `lh pr view <m>` |
 | Issue body / AC / scope | `lh issue view <n> --repo <repo>` (the PR's linked issue) |
 | Comments / human intervention | `issue.commented` events, `lh pr view` |
 | Recorded decisions (the "why") | `dev.note` events (kind `decision`/`assumption`/...) in `lh events`, recorded by the impl session via `lh dev note` |

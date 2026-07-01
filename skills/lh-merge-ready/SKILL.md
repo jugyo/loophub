@@ -1,15 +1,15 @@
 ---
 name: lh-merge-ready
 description: >-
-  Final pre-merge guard for a LoopHub PR: confirm approve status and no merge conflict, present
+  Final pre-merge guard for a LoopHub PR: confirm pass status and no merge conflict, present
   lh pr merge steps for a human, and print the change's valid evidence screenshot paths at the end
   — never merges automatically. Use when the user runs /lh-merge-ready {pr id}, or after
-  lh-pr-review approves.
+  lh-pr-review passes.
 ---
 
 # LoopHub merge-ready
 
-Final guard **before a human merges**. Confirm `review_state == APPROVED` and no conflict
+Final guard **before a human merges**. Confirm `review_state == PASSED` and no conflict
 (`mergeable_state != conflict`). If clear, **present `lh pr merge` steps only**.
 
 The preceding `lh-pr-review` (same session) already covered acceptance criteria, scope, and
@@ -34,7 +34,7 @@ is none — so a human can eyeball the change before merging.
 ### PR number resolution (when `<pr id>` omitted)
 
 Same rules as `lh-pr-review` (obvious → infer; not obvious → ask). Typical after
-`lh-pr-review` approves in the same session: the PR just reviewed is **obvious**.
+`lh-pr-review` passes in the same session: the PR just reviewed is **obvious**.
 
 Before starting, state the chosen PR in one line:
 
@@ -78,18 +78,18 @@ The two final guards — confirm both before presenting merge steps:
 
 | Item | Pass when |
 |------|-----------|
-| `review_state` = APPROVED | LoopHub `GET /pulls/{number}` field is `APPROVED` |
+| `review_state` = PASSED | LoopHub `GET /pulls/{number}` field is `PASSED` |
 | `mergeable_state` not conflict | LoopHub: `clean` / `conflict` / `unknown`; the conflict value is **`conflict`** |
 
-If `review_state` is missing from JSON, check the reviews list for the latest `APPROVE`:
+If `review_state` is missing from JSON, check the reviews list for the latest `PASS`:
 
 ```sh
-# GET /repos/{owner}/{repo}/pulls/{number}/reviews — trailing APPROVE / REQUEST_CHANGES
+# GET /repos/{owner}/{repo}/pulls/{number}/reviews — trailing PASS / REQUEST_CHANGES
 ```
 
 | Condition | Action |
 |-----------|--------|
-| Not `APPROVED` | **Stop** — suggest `/lh-pr-review <m>`; do not present merge steps |
+| Not `PASSED` | **Stop** — suggest `/lh-pr-review <m>`; do not present merge steps |
 | `mergeable_state` = `conflict` | **Stop** — suggest rebase / conflict resolution; do not present merge steps |
 
 ### 3. Merge steps (human executes)
@@ -120,7 +120,7 @@ re-explain the whole PR — only the signal needed to decide.
 and the **same-session** `lh-pr-review` result (findings raised / resolved). Never re-run a
 review here.
 
-### When mergeable (APPROVED and not `conflict`)
+### When mergeable (PASSED and not `conflict`)
 
 Print a compact summary with these six blocks:
 
@@ -136,11 +136,11 @@ Print a compact summary with these six blocks:
 - <key change 3>
 
 ### Review
-- ✅ approved (<reviewer / round count>)
+- ✅ passed (<reviewer / round count>)
 - Findings: <raised → resolved summary; "none" if no findings>
 
 ### Pre-merge check
-- review_state: APPROVED ✅
+- review_state: PASSED ✅
 - mergeable_state: clean ✅ (no conflict)
 
 ### Merge steps (human executes)
@@ -161,7 +161,7 @@ trailing [Evidence screenshots](#evidence-screenshots-last-block) block:
 
 | Blocker | Next action |
 |---------|-------------|
-| Not `APPROVED` | `/lh-pr-review <m>` |
+| Not `PASSED` | `/lh-pr-review <m>` |
 | `mergeable_state` = `conflict` | rebase / conflict resolution |
 
 ### Evidence screenshots (last block)
@@ -206,14 +206,14 @@ this block.
 
 ## Called from other skills
 
-After `lh-pr-review` approves, continue in the same session:
+After `lh-pr-review` passes, continue in the same session:
 
 ```text
 /lh-merge-ready <m>
-/lh-merge-ready   # OK when the just-approved PR is obvious
+/lh-merge-ready   # OK when the just-passed PR is obvious
 ```
 
-Also from pr-review sessions when review approves.
+Also from pr-review sessions when review passes.
 
 ## Skill chain (full)
 
@@ -224,5 +224,5 @@ lh-issue-create → (implementation) → lh-pr-review → lh-merge-ready → (hu
 ## Prohibited
 
 - **Do not auto-run `lh pr merge`**
-- Do not show merge steps without approve or with a conflict (`mergeable_state == conflict`)
+- Do not show merge steps without pass or with a conflict (`mergeable_state == conflict`)
 - Do not edit code inside merge-ready (send back to issue-dev / pr-review)

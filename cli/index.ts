@@ -1704,7 +1704,7 @@ function usage() {
     lh pr create --head feature-x --base main --title "impl" --issue 5 [--draft]
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
-    lh pr review 3 --topic security --event approve --body "no issues found"
+    lh pr review 3 --topic security --event pass --body "no issues found"
     echo '[{"path":"a.txt","line":2,"body":"typo"}]' | lh pr review 3 --comments -
     lh pr note 3 --path src/app.ts --body "entry point; added auth guard. review: token refresh path"
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)

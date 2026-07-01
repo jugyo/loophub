@@ -52,7 +52,7 @@ const pull: PullRequest = {
   merged: false,
   mergeable: true,
   mergeable_state: "clean",
-  review_state: "APPROVED",
+  review_state: "PASSED",
   changes_addressed_at: null,
   changes_addressed_by: null,
   merge_commit_sha: null,
@@ -82,7 +82,7 @@ const reviews: PullReview[] = [
   {
     id: 1,
     user: { login: "design-bot" },
-    state: "APPROVE",
+    state: "PASS",
     body: "LGTM",
     topic: "design",
     head_sha: "aaa",
@@ -190,7 +190,7 @@ describe("PullDetail", () => {
     });
   });
 
-  it("merges the PR via the squash method when APPROVED", async () => {
+  it("merges the PR via the squash method when PASSED", async () => {
     renderDetail();
 
     const button = await screen.findByRole("button", { name: /^Merge$/i });
@@ -264,12 +264,12 @@ describe("PullDetail", () => {
     });
   });
 
-  it("disables the Merge button when the PR conflicts even if APPROVED (#334)", async () => {
+  it("disables the Merge button when the PR conflicts even if PASSED (#334)", async () => {
     const conflicting: PullRequest = {
       ...pull,
       mergeable: false,
       mergeable_state: "conflict",
-      review_state: "APPROVED",
+      review_state: "PASSED",
     };
     vi.stubGlobal(
       "fetch",
@@ -307,7 +307,7 @@ describe("PullDetail", () => {
     );
 
     const button = await screen.findByRole("button", { name: /^Merge$/i });
-    // Conflict overrides APPROVED: the button is disabled and exposes the reason.
+    // Conflict overrides PASSED: the button is disabled and exposes the reason.
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(button.getAttribute("title")).toMatch(/conflict/i);
 
@@ -331,7 +331,7 @@ describe("PullDetail", () => {
       {
         id: 1,
         user: { login: "design-bot" },
-        state: "APPROVE",
+        state: "PASS",
         body: "LGTM now",
         head_sha: "aaa",
         submitted_at: "2026-06-18T11:30:00Z",
@@ -386,10 +386,10 @@ describe("PullDetail", () => {
     expect(screen.getByText("current")).toBeTruthy();
     expect(screen.getByText("STALE")).toBeTruthy();
 
-    // Each summary carries a collapsed verdict: APPROVE → "approved" on the
+    // Each summary carries a collapsed verdict: PASS → "passed" on the
     // current group, REQUEST_CHANGES → "changes requested" on the stale group.
     expect(currentGroup?.querySelector("summary")?.textContent).toContain(
-      "approved",
+      "passed",
     );
     expect(staleGroup?.querySelector("summary")?.textContent).toContain(
       "changes requested",

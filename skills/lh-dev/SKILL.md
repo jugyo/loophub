@@ -458,14 +458,14 @@ After filling in the PR body (§5), **without ending this session**, continue wi
 /lh-pr-review <m>
 ```
 
-Bugbot + Security review → fix on head in this session if needed → re-review until `approve`. See
+Bugbot + Security review → fix on head in this session if needed → re-review until `pass`. See
 `skills/lh-pr-review/SKILL.md`.
 
 Skip only if the user said "stop at PR".
 
-### 8. merge-ready (after approve, same session)
+### 8. merge-ready (after pass, same session)
 
-When `lh-pr-review` returns `approve`, **without ending this session**, pre-merge check:
+When `lh-pr-review` returns `pass`, **without ending this session**, pre-merge check:
 
 ```text
 /lh-merge-ready <m>

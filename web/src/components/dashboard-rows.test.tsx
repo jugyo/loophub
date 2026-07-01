@@ -122,23 +122,23 @@ describe("IssueRow", () => {
     expect(screen.getByText("merged")).toBeTruthy();
   });
 
-  it("shows a check icon on an approved linked PR", async () => {
+  it("shows a check icon on a passed linked PR", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
         repo="proj"
         issue={makeIssue({
           linked_pull_requests: [
-            makePull({ number: 10, review_state: "APPROVED" }),
+            makePull({ number: 10, review_state: "PASSED" }),
           ],
         })}
       />,
     );
-    expect(await screen.findByText("approved")).toBeTruthy();
-    expect(screen.getByLabelText("approved")).toBeTruthy();
+    expect(await screen.findByText("passed")).toBeTruthy();
+    expect(screen.getByLabelText("passed")).toBeTruthy();
   });
 
-  it("shows no check icon on a non-approved linked PR", async () => {
+  it("shows no check icon on a non-passed linked PR", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
@@ -151,7 +151,7 @@ describe("IssueRow", () => {
       />,
     );
     expect(await screen.findByText("changes")).toBeTruthy();
-    expect(screen.queryByLabelText("approved")).toBeNull();
+    expect(screen.queryByLabelText("passed")).toBeNull();
   });
 
   it("renders a single row (no PR sub-row) when no PR is linked", async () => {
@@ -252,7 +252,7 @@ describe("IssueRow", () => {
 
 // #265: the linked-PR sub-row paints two independent colour axes — the `PR #n`
 // pill carries the PR lifecycle (open=green / merged=purple / closed=grey) and
-// the status word its state-specific signal (conflict/changes=red, approved=
+// the status word its state-specific signal (conflict/changes=red, passed=
 // green, the rest muted). These assert the actually-rendered DOM classes.
 describe("LinkedPullSubRow two-axis colours (#265)", () => {
   async function renderPull(overrides: Partial<LinkedPull>) {
@@ -287,13 +287,13 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
     expect(screen.getByText("changes").className).toContain("text-destructive");
   });
 
-  it("paints an approved word green on a green pill", async () => {
+  it("paints a passed word green on a green pill", async () => {
     const pill = await renderPull({
-      review_state: "APPROVED",
+      review_state: "PASSED",
       mergeable_state: "clean",
     });
     expect(pill.className).toContain("text-green-600");
-    expect(screen.getByText("approved").className).toContain("text-green-600");
+    expect(screen.getByText("passed").className).toContain("text-green-600");
   });
 
   it("keeps re-review and working words muted", async () => {

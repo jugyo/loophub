@@ -710,11 +710,15 @@ export const methods: Record<string, MethodDef> = {
         event: {
           enum: [
             "COMMENT",
-            "APPROVE",
+            "PASS",
             "REQUEST_CHANGES",
             "comment",
-            "approve",
+            "pass",
             "request_changes",
+            // Back-compat (#428): "approve" was the vocabulary before the
+            // pass/fail rename; core/service.ts normalizes it to PASS.
+            "APPROVE",
+            "approve",
           ],
         },
         body: str,

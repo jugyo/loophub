@@ -1817,7 +1817,9 @@ export const reviews = {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
-    const event = (input.event ?? "COMMENT").toUpperCase();
+    let event = (input.event ?? "COMMENT").toUpperCase();
+    // Back-compat: pre-#428 callers still pass "approve" (the old vocabulary).
+    if (event === "APPROVE") event = "PASS";
     // Aspect/topic of the review (e.g. design/bug/style/security), so a single
     // commit can carry several reviews distinguished by topic (#209). Free-form;
     // a blank topic is stored as NULL (untagged).
@@ -1828,7 +1830,7 @@ export const reviews = {
         throw new ServiceError(422, "each comment requires path and body");
     }
     const actor = actorFor(sessionId);
-    // Bind the review to the head it was made against so an APPROVE can be
+    // Bind the review to the head it was made against so a PASS can be
     // marked stale once the branch advances past this commit.
     const headSha = S.getPull(row.id)?.head_sha ?? null;
     const v = S.createReview(
@@ -1847,7 +1849,7 @@ export const reviews = {
         body: cm.body,
       });
     }
-    if (event === "APPROVE" || event === "REQUEST_CHANGES")
+    if (event === "PASS" || event === "REQUEST_CHANGES")
       S.clearChangesAddressed(row.id);
     S.emitEvent(r.id, "pull_request.review_submitted", actor, {
       number: row.number,

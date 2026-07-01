@@ -1020,11 +1020,13 @@
           "event": {
             "enum": [
               "COMMENT",
-              "APPROVE",
+              "PASS",
               "REQUEST_CHANGES",
               "comment",
-              "approve",
-              "request_changes"
+              "pass",
+              "request_changes",
+              "APPROVE",
+              "approve"
             ]
           },
           "body": {

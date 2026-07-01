@@ -23,7 +23,7 @@ import { relativeTime } from "@/lib/time";
 const PHASE_TONE: Record<string, BadgeTone> = {
   plan: "open",
   code: "agent",
-  verify: "review-approved",
+  verify: "review-passed",
   review: "unknown",
   fix: "conflict",
 };

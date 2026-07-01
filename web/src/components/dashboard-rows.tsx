@@ -247,9 +247,9 @@ function LinkedPullSubRow({
   // merged=purple / closed=grey), the status word its state-specific signal
   // (STATUS_TEXT). A muted pill when status is null (issue-detail summary path).
   const pillTone = status ? linkedPullPillTone(pull) : "unknown";
-  // approve 済みなら、緑にまとめられた未マージ群の中から一目で識別できるよう
+  // pass 済みなら、緑にまとめられた未マージ群の中から一目で識別できるよう
   // ステータス語にチェックアイコンを添える。他の未マージ状態には出さない。
-  const approved = status?.tone === "review-approved";
+  const passed = status?.tone === "review-passed";
   const files = pull.changed_files ?? 0;
   return (
     <div className="flex items-center gap-2 pl-7 text-xs text-muted-foreground">
@@ -271,10 +271,10 @@ function LinkedPullSubRow({
           )}
           title={status.title}
         >
-          {approved ? (
+          {passed ? (
             <Check
               className="size-3.5 text-green-600 dark:text-green-400"
-              aria-label="approved"
+              aria-label="passed"
             />
           ) : null}
           {status.label}

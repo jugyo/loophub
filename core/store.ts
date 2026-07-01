@@ -537,7 +537,7 @@ export function createReview(
 }
 
 export type ReviewState =
-  | "APPROVED"
+  | "PASSED"
   | "CHANGES_REQUESTED"
   | "READY_FOR_RE_REVIEW"
   | "COMMENTED"
@@ -548,7 +548,7 @@ export function latestSubstantiveReview(issueId: number): any | null {
   const reviews = listReviews(issueId);
   for (let i = reviews.length - 1; i >= 0; i--) {
     const event = reviews[i].event;
-    if (event === "APPROVE" || event === "REQUEST_CHANGES") return reviews[i];
+    if (event === "PASS" || event === "REQUEST_CHANGES") return reviews[i];
   }
   return null;
 }
@@ -561,13 +561,13 @@ export function computeReviewState(issueId: number): ReviewState {
       ? "COMMENTED"
       : null;
   }
-  if (latest.event === "APPROVE") {
-    // The approve is stale once the branch head advances past the commit it was
-    // made against. Approves recorded before head_sha tracking (no recorded sha)
-    // stay APPROVED, since their staleness can't be determined.
+  if (latest.event === "PASS") {
+    // A PASS is stale once the branch head advances past the commit it was made
+    // against. Passes recorded before head_sha tracking (no recorded sha) stay
+    // PASSED, since their staleness can't be determined.
     if (latest.head_sha && p.head_sha && latest.head_sha !== p.head_sha)
       return "STALE";
-    return "APPROVED";
+    return "PASSED";
   }
   if (latest.event === "REQUEST_CHANGES") {
     return p.changes_addressed_at ? "READY_FOR_RE_REVIEW" : "CHANGES_REQUESTED";
@@ -575,18 +575,18 @@ export function computeReviewState(issueId: number): ReviewState {
   return null;
 }
 
-// Per-topic merge gate (#427). The merge gate is no longer a single APPROVE:
+// Per-topic merge gate (#427). The merge gate is no longer a single PASS:
 // every review topic must pass independently. A topic "passes" when its latest
-// substantive review (APPROVE / REQUEST_CHANGES) is a fresh APPROVE — i.e. not a
-// REQUEST_CHANGES (no unresolved change request) and not an approve made stale by
+// substantive review (PASS / REQUEST_CHANGES) is a fresh PASS — i.e. not a
+// REQUEST_CHANGES (no unresolved change request) and not a pass made stale by
 // the head advancing past the reviewed commit (mirrors computeReviewState's STALE
-// rule, so an approved-then-changed PR is not silently mergeable again). Topics are
+// rule, so a passed-then-changed PR is not silently mergeable again). Topics are
 // aggregated separately so a REQUEST_CHANGES on any one aspect blocks merge even
-// when other aspects approved. The untagged (NULL) topic is one bucket of its own.
+// when other aspects passed. The untagged (NULL) topic is one bucket of its own.
 export interface ReviewGate {
-  /** At least one topic has a substantive review (APPROVE / REQUEST_CHANGES). */
+  /** At least one topic has a substantive review (PASS / REQUEST_CHANGES). */
   reviewed: boolean;
-  /** Every reviewed topic's latest substantive review passes (fresh APPROVE). */
+  /** Every reviewed topic's latest substantive review passes (fresh PASS). */
   allTopicsPassed: boolean;
 }
 
@@ -596,7 +596,7 @@ export function computeReviewGate(issueId: number): ReviewGate {
   // review for that topic.
   const latestByTopic = new Map<string | null, any>();
   for (const r of listReviews(issueId)) {
-    if (r.event === "APPROVE" || r.event === "REQUEST_CHANGES")
+    if (r.event === "PASS" || r.event === "REQUEST_CHANGES")
       latestByTopic.set(r.topic ?? null, r);
   }
   // No substantive review yet → reviews not gathered; never clean.
@@ -605,8 +605,8 @@ export function computeReviewGate(issueId: number): ReviewGate {
   for (const r of latestByTopic.values()) {
     if (r.event === "REQUEST_CHANGES")
       return { reviewed: true, allTopicsPassed: false };
-    // APPROVE that went stale (head moved past the reviewed commit) needs a
-    // re-review; approves with no recorded head_sha (pre-tracking) can't be
+    // PASS that went stale (head moved past the reviewed commit) needs a
+    // re-review; passes with no recorded head_sha (pre-tracking) can't be
     // determined stale, so they count as passing.
     if (r.head_sha && p.head_sha && r.head_sha !== p.head_sha)
       return { reviewed: true, allTopicsPassed: false };

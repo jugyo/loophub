@@ -137,7 +137,7 @@ lh pr comment <m> --body "Conflict resolution complete. Please re-review." --act
 /lh-pr-review <m>
 ```
 
-Re-review with the quality + security reviewers until `approve` (follow `lh-pr-review` SKILL;
+Re-review with the quality + security reviewers until `pass` (follow `lh-pr-review` SKILL;
 reviewer mechanism is host-mapped there).
 
 Skip pr-review only if user said "stop at rebase".

@@ -1,7 +1,7 @@
 // PR detail view (/r/:owner/:repo/pulls/:number). v1 parity: title, body,
 // state + review badges, head→base, the linked issue (bidirectional with the
 // issue's linked PR), reviews, the file diff with line comments,
-// issue comments, plus the write operations — merge (when APPROVED), "mark ready
+// issue comments, plus the write operations — merge (when PASSED), "mark ready
 // for re-review" (when CHANGES_REQUESTED), and close/reopen (when not merged).
 // Body, reviews, and comments are stored as plain Markdown and rendered as GFM
 // via <Markdown>.
@@ -200,12 +200,12 @@ function PullHeader({
 
   const canAct = pull.state === "open" && !pull.merged;
   // A conflicting PR (mergeable_state === "conflict", i.e. mergeable === false) can never merge
-  // server-side, so the Merge control must stay disabled even when APPROVED.
+  // server-side, so the Merge control must stay disabled even when PASSED.
   const hasConflict = pull.mergeable_state === "conflict";
-  // A draft PR is WIP (#413), so the Merge control stays disabled even if it somehow carries an
-  // APPROVED review — flip it to ready via "Mark ready for review" first.
+  // A draft PR is WIP (#413), so the Merge control stays disabled even if it somehow carries a
+  // PASSED review — flip it to ready via "Mark ready for review" first.
   const canMerge =
-    canAct && !pull.draft && pull.review_state === "APPROVED" && !hasConflict;
+    canAct && !pull.draft && pull.review_state === "PASSED" && !hasConflict;
   // "Ready for review" covers two transitions (#413): a draft PR (opened WIP by `lh dev`) becoming
   // ready, or an already-ready PR resubmitting after change requests. Draft takes precedence.
   const canReady =
@@ -466,7 +466,7 @@ function DevNoteTimeline({
 }
 
 const REVIEW_VERDICT_TONE: Record<PullReview["state"], string> = {
-  APPROVE: "text-green-600 dark:text-green-400",
+  PASS: "text-green-600 dark:text-green-400",
   REQUEST_CHANGES: "text-destructive",
   COMMENT: "text-muted-foreground",
 };
@@ -481,16 +481,16 @@ type ReviewGroup = {
 
 // Collapse a group's reviews into a single verdict shown on the (always-visible)
 // summary, so a reader sees each group's state without expanding it (#268). A
-// REQUEST_CHANGES anywhere dominates ("changes requested"); otherwise an APPROVE
-// reads as "approved"; a comment-only group reads as "commented".
+// REQUEST_CHANGES anywhere dominates ("changes requested"); otherwise a PASS
+// reads as "passed"; a comment-only group reads as "commented".
 function reviewGroupVerdict(reviews: PullReview[]): {
   tone: BadgeTone;
   label: string;
 } {
   if (reviews.some((r) => r.state === "REQUEST_CHANGES"))
     return { tone: "review-changes", label: "changes requested" };
-  if (reviews.some((r) => r.state === "APPROVE"))
-    return { tone: "review-approved", label: "approved" };
+  if (reviews.some((r) => r.state === "PASS"))
+    return { tone: "review-passed", label: "passed" };
   return { tone: "review-commented", label: "commented" };
 }
 

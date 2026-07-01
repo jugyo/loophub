@@ -9,7 +9,7 @@ export type BadgeTone =
   | "closed"
   | "draft"
   | "merged"
-  | "review-approved"
+  | "review-passed"
   | "review-changes"
   | "review-rereview"
   | "review-commented"
@@ -46,12 +46,12 @@ const REVIEW_TONE: Record<
   NonNullable<PullRequest["review_state"]>,
   BadgeTone
 > = {
-  APPROVED: "review-approved",
+  PASSED: "review-passed",
   CHANGES_REQUESTED: "review-changes",
   READY_FOR_RE_REVIEW: "review-rereview",
   COMMENTED: "review-commented",
-  // A previously-approved PR whose head advanced past the approved commit: the
-  // approval is dismissed and the PR needs another look before merging.
+  // A previously-passed PR whose head advanced past the passed commit: the
+  // pass is dismissed and the PR needs another look before merging.
   STALE: "review-rereview",
 };
 
@@ -129,10 +129,10 @@ export function pullBadges(pr: PullRequest): Badge[] {
   const state = stateBadge(pr, "pulls");
   if (state) badges.push(state);
   const review = reviewBadge(pr);
-  // While the PR is working (worktree dirty), hide the "approved" badge: the
-  // state is still moving, so "approved" would wrongly imply it is ready to
+  // While the PR is working (worktree dirty), hide the "passed" badge: the
+  // state is still moving, so "passed" would wrongly imply it is ready to
   // merge. Other review states (changes requested, stale, …) still show.
-  if (review && !(working && review.tone === "review-approved")) {
+  if (review && !(working && review.tone === "review-passed")) {
     badges.push(review);
   }
   const mergeable = mergeableBadge(pr);
@@ -146,7 +146,7 @@ export function pullBadges(pr: PullRequest): Badge[] {
 
 /**
  * Badges for the canonical PR status line — state, review, and mergeable shown
- * unconditionally. Unlike {@link pullBadges}, this never suppresses "approved" /
+ * unconditionally. Unlike {@link pullBadges}, this never suppresses "passed" /
  * "mergeable" while the worktree is dirty and never adds a "working" badge: it
  * is the exact trio the PR detail page renders. The PR detail page
  * (pull-detail.tsx) and the built-in terminal header (terminal-pr-header.tsx)
@@ -169,17 +169,17 @@ export function pullDetailBadges(pr: PullRequest): Badge[] {
 /**
  * Single status descriptor for an issue row's linked PR (the issue-list
  * sub-row). Collapses the PR's review / conflict / working signals into one
- * toned, labelled word, by priority. A *decided* review state (approved /
+ * toned, labelled word, by priority. A *decided* review state (passed /
  * changes / re-review / commented) or an actionable conflict reflects the PR's
- * real state and so outranks the transient "working" cue — otherwise an
- * approved PR whose dev worktree still has uncommitted changes would read
- * "working" on the issue list while the PR detail page reads "approved" (the
+ * real state and so outranks the transient "working" cue — otherwise a
+ * passed PR whose dev worktree still has uncommitted changes would read
+ * "working" on the issue list while the PR detail page reads "passed" (the
  * #419 inconsistency). "working" is only the *fallback* word for an open PR
  * with no decided status (fresh, blocked, unknown), shown instead of a bare
  * `PR #n` pill. Matches the PR detail page ({@link pullDetailBadges}), so the
  * same PR reads the same word everywhere issue status is rendered.
  * Priority (most actionable first):
- *   merged → closed → conflict → changes/re-review/commented/approved →
+ *   merged → closed → conflict → changes/re-review/commented/passed →
  *   working (open, status computed but undecided).
  *
  * Returns null only when the status fields are absent (`mergeable_state ===
@@ -193,7 +193,7 @@ export function linkedPullStatus(pull: LinkedPull): Badge | null {
   if (pull.mergeable_state === "conflict")
     return { tone: "conflict", label: "conflict" };
   // Decided review states reflect the PR's real state and win over the transient
-  // "working" cue (#419): an approved PR with a dirty worktree reads "approved",
+  // "working" cue (#419): a passed PR with a dirty worktree reads "passed",
   // matching the PR detail page rather than masking it behind "working".
   switch (pull.review_state) {
     case "CHANGES_REQUESTED":
@@ -203,8 +203,8 @@ export function linkedPullStatus(pull: LinkedPull): Badge | null {
       return { tone: "review-rereview", label: "re-review" };
     case "COMMENTED":
       return { tone: "review-commented", label: "commented" };
-    case "APPROVED":
-      return { tone: "review-approved", label: "approved" };
+    case "PASSED":
+      return { tone: "review-passed", label: "passed" };
   }
   // No decided review state. Worktree dirty: actively being edited.
   if (pull.working)
@@ -251,7 +251,7 @@ export function linkedPullPillTone(pull: LinkedPull): BadgeTone {
  * Status-word colour for the linked-PR sub-row — the *state-specific* axis,
  * independent of {@link linkedPullPillTone}. A minimal palette that paints only
  * the signals worth attention: `danger` (conflict / changes — act now), `ready`
- * (approved), `done` (merged); everything else (working / re-review / commented
+ * (passed), `done` (merged); everything else (working / re-review / commented
  * / closed) is `muted`, the default, so the few coloured words stand out. The
  * component maps these categories to text colours (dashboard-rows.tsx).
  */
@@ -262,7 +262,7 @@ export function linkedPullWordTone(tone: BadgeTone): StatusWordTone {
     case "conflict":
     case "review-changes":
       return "danger";
-    case "review-approved":
+    case "review-passed":
       return "ready";
     case "merged":
       return "done";

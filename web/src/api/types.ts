@@ -52,7 +52,7 @@ export interface PullReview {
   id: number;
   user: UserRef;
   /** Review verdict as stored by the API. */
-  state: "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+  state: "PASS" | "REQUEST_CHANGES" | "COMMENT";
   body: string;
   /** Commit the review was made against (for grouping by commit; #208). */
   head_sha?: string | null;
@@ -226,7 +226,7 @@ export interface PullRequest {
   mergeable: boolean | null;
   mergeable_state: "clean" | "conflict" | "no_commits" | "blocked" | "unknown";
   review_state:
-    | "APPROVED"
+    | "PASSED"
     | "CHANGES_REQUESTED"
     | "READY_FOR_RE_REVIEW"
     | "COMMENTED"

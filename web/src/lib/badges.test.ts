@@ -202,30 +202,30 @@ describe("linkedPullStatus", () => {
     ).toBe("review-changes");
   });
 
-  it("reports approved over working — approved is the PR's real state (#419)", () => {
+  it("reports passed over working — passed is the PR's real state (#419)", () => {
     // A decided review state outranks the transient worktree-dirty cue, so the
-    // issue list reads "approved", matching the PR detail page, instead of
-    // masking an approved PR as "working".
+    // issue list reads "passed", matching the PR detail page, instead of
+    // masking a passed PR as "working".
     expect(
       linkedPullStatus(
         linked({
           working: true,
-          review_state: "APPROVED",
+          review_state: "PASSED",
           mergeable_state: "clean",
         }),
       )?.tone,
-    ).toBe("review-approved");
+    ).toBe("review-passed");
     expect(
       linkedPullStatus(
-        linked({ review_state: "APPROVED", mergeable_state: "clean" }),
+        linked({ review_state: "PASSED", mergeable_state: "clean" }),
       )?.tone,
-    ).toBe("review-approved");
+    ).toBe("review-passed");
   });
 
   it("flags a conflict ahead of review", () => {
     expect(
       linkedPullStatus(
-        linked({ mergeable_state: "conflict", review_state: "APPROVED" }),
+        linked({ mergeable_state: "conflict", review_state: "PASSED" }),
       )?.tone,
     ).toBe("conflict");
   });
@@ -312,8 +312,8 @@ describe("linkedPullWordTone (state-specific colour axis)", () => {
     expect(linkedPullWordTone("review-changes")).toBe("danger");
   });
 
-  it("paints approved green (ready) and merged purple (done)", () => {
-    expect(linkedPullWordTone("review-approved")).toBe("ready");
+  it("paints passed green (ready) and merged purple (done)", () => {
+    expect(linkedPullWordTone("review-passed")).toBe("ready");
     expect(linkedPullWordTone("merged")).toBe("done");
   });
 
@@ -338,11 +338,11 @@ describe("issueBadges / pullBadges", () => {
   it("collects review and conflict badges on a PR", () => {
     const badges = pullBadges(
       pull({
-        review_state: "APPROVED",
+        review_state: "PASSED",
         mergeable_state: "conflict",
       }),
     );
-    expect(badges.map((b) => b.tone)).toEqual(["review-approved", "conflict"]);
+    expect(badges.map((b) => b.tone)).toEqual(["review-passed", "conflict"]);
   });
 
   it("shows the mergeable badge on a clean open PR", () => {
@@ -350,18 +350,18 @@ describe("issueBadges / pullBadges", () => {
     expect(badges.map((b) => b.tone)).toEqual(["mergeable"]);
   });
 
-  it("hides approved and mergeable while working", () => {
+  it("hides passed and mergeable while working", () => {
     const badges = pullBadges(
       pull({
         working: true,
-        review_state: "APPROVED",
+        review_state: "PASSED",
         mergeable_state: "clean",
       }),
     );
     expect(badges.map((b) => b.tone)).toEqual(["working"]);
   });
 
-  it("keeps non-approved review and conflict badges while working", () => {
+  it("keeps non-passed review and conflict badges while working", () => {
     const badges = pullBadges(
       pull({
         working: true,
@@ -389,24 +389,24 @@ describe("issueBadges / pullBadges", () => {
 });
 
 describe("pullDetailBadges", () => {
-  it("shows approved and mergeable on an open PR (no working suppression)", () => {
+  it("shows passed and mergeable on an open PR (no working suppression)", () => {
     const badges = pullDetailBadges(
-      pull({ review_state: "APPROVED", mergeable_state: "clean" }),
+      pull({ review_state: "PASSED", mergeable_state: "clean" }),
     );
-    expect(badges.map((b) => b.tone)).toEqual(["review-approved", "mergeable"]);
+    expect(badges.map((b) => b.tone)).toEqual(["review-passed", "mergeable"]);
   });
 
-  it("still shows approved and mergeable while the worktree is working (#386)", () => {
+  it("still shows passed and mergeable while the worktree is working (#386)", () => {
     // pullBadges hides these while working; pullDetailBadges does not, so the
     // terminal header matches the PR detail page.
     const badges = pullDetailBadges(
       pull({
         working: true,
-        review_state: "APPROVED",
+        review_state: "PASSED",
         mergeable_state: "clean",
       }),
     );
-    expect(badges.map((b) => b.tone)).toEqual(["review-approved", "mergeable"]);
+    expect(badges.map((b) => b.tone)).toEqual(["review-passed", "mergeable"]);
   });
 
   it("never emits a working badge", () => {
@@ -418,7 +418,7 @@ describe("pullDetailBadges", () => {
     const badges = pullDetailBadges(
       pull({
         merged: true,
-        review_state: "APPROVED",
+        review_state: "PASSED",
         mergeable_state: "clean",
       }),
     );

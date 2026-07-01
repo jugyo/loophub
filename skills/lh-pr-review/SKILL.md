@@ -2,7 +2,7 @@
 name: lh-pr-review
 description: >-
   Review a LoopHub PR with quality, security, and acceptance reviewers (host-mapped subagents), fix
-  findings on the head branch, and re-review until approve. Use when the user runs /lh-pr-review {pr
+  findings on the head branch, and re-review until pass. Use when the user runs /lh-pr-review {pr
   id}, when asked to review a LoopHub PR, or after issue-dev creates a PR. Posts a per-topic lh pr
   review each round. Does not merge. Add --review-only for a single review without the fix loop.
 ---
@@ -11,7 +11,7 @@ description: >-
 
 Review a PR with a **quality reviewer + a security reviewer + an acceptance reviewer** (run as readonly
 subagents, mapped to whatever the host provides); if findings exist, **fix on head in this session
-(parent agent)** → test → **re-review** until **`approve`**. Do not merge.
+(parent agent)** → test → **re-review** until **`pass`**. Do not merge.
 
 Vendor-agnostic by design: the reviewer **roles** are fixed, but their **mechanism** is resolved per
 host (Cursor, Claude Code, …). The Acceptance role runs only when the PR has a linked issue. See
@@ -128,7 +128,7 @@ weaker pass was acceptable. Prefer the strongest available mechanism for the Sec
 
 This skill is English. **Review output read by humans** — the `lh pr review` body (Verdict / Scope /
 Reviewers / per-role sections) and every line comment — must match the **PR's language**. Code, CLI,
-identifiers, and severity keywords (`approve` / `request_changes` / `comment`) stay English.
+identifiers, and severity keywords (`pass` / `request_changes` / `comment`) stay English.
 
 Resolve the target language once in A.1 (which already reads the PR and, when linked, the issue),
 taking the first that applies: (1) the **linked issue**'s language (the primary signal); (2) the
@@ -142,7 +142,7 @@ structured JSON regardless; the parent localizes the prose when synthesizing (A.
 round = 1
 while round <= max_rounds:
   A. Review (steps 1–6) → per-topic verdicts → overall verdict (A.4)
-  if overall == approve:           # only when EVERY topic that ran is approve
+  if overall == pass:           # only when EVERY topic that ran is pass
     report completion and exit
   if --review-only:
     report and exit (no fixes)
@@ -155,7 +155,7 @@ report: max_rounds reached; escalate to human
 
 Each round posts one review **per topic** (quality / security / acceptance), and aggregates them into
 a single **overall verdict** that drives the loop: `request_changes` if **any** topic requests changes,
-otherwise `approve` only when **every** topic that ran is approve (see A.4 / A.5).
+otherwise `pass` only when **every** topic that ran is pass (see A.4 / A.5).
 
 Default `max_rounds` **5**. Stop loop if the same finding persists two rounds in a row; escalate.
 
@@ -206,7 +206,7 @@ If `lh pr diff` includes changes under `skills/`:
 bun test tests/skills-lint.test.ts
 ```
 
-Any failure → **`request_changes`** (do not `approve`). Report file:line from test output.
+Any failure → **`request_changes`** (do not `pass`). Report file:line from test output.
 
 LoopHub skills are **English-only in the body** (after YAML frontmatter). CJK in `description` is allowed
 for routing triggers. Localized issue/PR templates belong in user output, not in skill files — see
@@ -293,7 +293,7 @@ its **own** topic bucket — `quality`, `security`, `acceptance` — instead of 
    bucket when A.3 skipped it (no linked issue) — that topic is simply not posted in A.5.
 3. **Per-topic verdict** — decide each topic on its **own** findings:
 
-   | Topic | `request_changes` when | `approve` when |
+   | Topic | `request_changes` when | `pass` when |
    |-------|------------------------|----------------|
    | `quality` | unresolved Critical / High, **or** skills lint failed (A.2.5) | no Critical/High and lint passed (Medium-only → `comment`) |
    | `security` | unresolved Critical / High | none unresolved |
@@ -302,13 +302,13 @@ its **own** topic bucket — `quality`, `security`, `acceptance` — instead of 
    Skills lint failure (A.2.5) belongs to the **quality** topic — it forces `quality` to
    `request_changes`.
 4. **Overall verdict** (round-wide, drives the loop): `request_changes` if **any** topic is
-   `request_changes`; else `comment` if any topic is `comment`; else `approve` (every topic that ran is
-   approve). Only `approve` exits the loop.
+   `request_changes`; else `comment` if any topic is `comment`; else `pass` (every topic that ran is
+   pass). Only `pass` exits the loop.
 
 Per-topic `--body` template (one per topic; include round number and the same Scope line):
 
 ```markdown
-## <Quality|Security|Acceptance> — Verdict: <approve|request_changes|comment>
+## <Quality|Security|Acceptance> — Verdict: <pass|request_changes|comment>
 Round: <n>/<max_rounds>
 Reviewer: <mechanism this role actually ran — note "degraded" if a fallback was used>
 
@@ -331,19 +331,19 @@ each tagged with `--topic` and carrying that topic's own verdict, body, and line
 topic per round** — never post the same topic twice in one round (the per-round double-post guard now
 applies per topic; multiple rounds across the loop are still fine).
 
-**Posting order matters.** A PR's resolved review state is the **latest substantive (approve /
+**Posting order matters.** A PR's resolved review state is the **latest substantive (pass /
 request_changes) review regardless of topic** (`core/store.ts` `latestSubstantiveReview` /
-`computeReviewState`). So post topics whose verdict is `approve` or `comment` **first**, and any
+`computeReviewState`). So post topics whose verdict is `pass` or `comment` **first**, and any
 `request_changes` topic **last**. This guarantees the two states that matter: a round with **any**
-`request_changes` topic ends in `CHANGES_REQUESTED`, and a round where **every** topic approves ends in
-`APPROVED`. (An overall `comment` round — Medium-only, no `request_changes` — resolves to `APPROVED`
+`request_changes` topic ends in `CHANGES_REQUESTED`, and a round where **every** topic passes ends in
+`PASSED`. (An overall `comment` round — Medium-only, no `request_changes` — resolves to `PASSED`
 because `computeReviewState` surfaces a `COMMENT` only when no substantive review exists; that is
-acceptable, since the loop continues on any non-`approve` overall verdict and a `comment` topic carries
+acceptable, since the loop continues on any non-`pass` overall verdict and a `comment` topic carries
 only non-blocking findings.)
 
 ```sh
-# approve/comment topics first …
-lh pr review <m> --repo <repo> --topic acceptance --event approve \
+# pass/comment topics first …
+lh pr review <m> --repo <repo> --topic acceptance --event pass \
   --body "..." --actor reviewer-bot
 # … any request_changes topic last, with its line comments
 echo '[{"path":"src/a.ts","line":12,"body":"[security] ..."}]' \
@@ -362,7 +362,7 @@ echo '[{"path":"src/a.ts","line":12,"body":"[security] ..."}]' \
 Per-topic verdicts + overall verdict / finding count / line comment count / `lh pr review` result per
 topic. Table for major findings (Severity | Location | Finding | Topic).
 
-If overall `approve` or `--review-only` → full completion report. Otherwise → Phase B.
+If overall `pass` or `--review-only` → full completion report. Otherwise → Phase B.
 
 ## Phase B — Fix (parent, fix phase only)
 
@@ -373,7 +373,7 @@ If overall `approve` or `--review-only` → full completion report. Otherwise �
 From previous round findings, prioritize:
 
 1. Critical / High (required)
-2. Medium (if needed for `approve`)
+2. Medium (if needed for `pass`)
 3. Low / nit (in scope and low cost)
 
 Escalate scope-out or design-judgment findings without fixing.
@@ -419,7 +419,7 @@ Return to Phase A (`round += 1`). Checkout usually unnecessary (already on head)
 - Final verdict / total rounds
 - Summary of fixes per round
 - Test results
-- If `approve`, note `/lh-merge-ready <m>` continues (human merges)
+- If `pass`, note `/lh-merge-ready <m>` continues (human merges)
 - If `max_rounds` reached, list unresolved findings
 
 ## Called from other skills
@@ -433,9 +433,9 @@ After a PR is created, continue in the same session:
 
 Default: run this loop in the implementation session, not a separate session.
 
-### After approve → merge-ready
+### After pass → merge-ready
 
-After `approve`, **same session** pre-merge check:
+After `pass`, **same session** pre-merge check:
 
 ```text
 /lh-merge-ready <m>

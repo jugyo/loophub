@@ -29,8 +29,8 @@ export interface MergeableDecision {
  * Decide whether a PR is mergeable from its raw signals (#427). A PR is
  * `mergeable: true` (state `clean`) only when it has commits, merges cleanly,
  * has at least one review gathered (`reviewed`), and every *reviewed* topic
- * passed (`allTopicsPassed` — no unresolved REQUEST_CHANGES / stale approve on
- * any aspect that was reviewed). The merge gate is no longer a single APPROVE:
+ * passed (`allTopicsPassed` — no unresolved REQUEST_CHANGES / stale pass on
+ * any aspect that was reviewed). The merge gate is no longer a single PASS:
  * a PR with no reviews yet stays `blocked` rather than falling to `clean` just
  * because nothing requested changes. Note the gate does not require any specific
  * aspect to be present — there is no required-topic registry (out of scope for

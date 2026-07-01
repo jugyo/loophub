@@ -466,13 +466,18 @@ tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_by TEXT");
 // just-opened PR is not yet reviewable; draft=1 marks "still being worked", flipped to 0 (ready) by
 // `lh pr ready-for-review`. Pre-existing PRs (and plain `lh pr create`) default to ready (0).
 tryExec("ALTER TABLE pulls ADD COLUMN draft INTEGER NOT NULL DEFAULT 0");
-// reviews.head_sha records the PR head a review was made against, so an APPROVE
+// reviews.head_sha records the PR head a review was made against, so a PASS
 // can be marked stale once the branch advances past that commit.
 tryExec("ALTER TABLE reviews ADD COLUMN head_sha TEXT");
 // reviews.topic labels the review's aspect (e.g. design/bug/style/security) so a
 // single commit can carry several reviews distinguished by topic (#209). NULL =
 // untagged (all pre-existing rows, and reviews submitted without a topic).
 tryExec("ALTER TABLE reviews ADD COLUMN topic TEXT");
+// #428: unify the review-verdict vocabulary from "approve" to "pass" (AI
+// reviewers pass/fail a topic rather than "approve" it). One-time rewrite of
+// historical rows; new rows are written as PASS directly (core/service.ts still
+// accepts the old "approve" input as a back-compat alias).
+tryExec("UPDATE reviews SET event = 'PASS' WHERE event = 'APPROVE'");
 // agent_sessions.runtime records which runtime launched the session (e.g. "claude-code"), so
 // `lh resume` picks the resume command by runtime instead of inferring it from the agent label.
 // Pre-existing rows get NULL and rely on the lh-dev → claude-code backward-compat fallback

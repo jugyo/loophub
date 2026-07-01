@@ -137,7 +137,7 @@ chosen ad hoc at the call site.
 | `open` | Open issue | Green outline |
 | `closed` | Closed issue / closed PR (also the default) | Muted outline |
 | `merged` | Merged PR | Purple outline |
-| `review-approved` | PR review `APPROVED` | Green outline |
+| `review-passed` | PR review `PASSED` | Green outline |
 | `review-changes` | PR review `CHANGES_REQUESTED` | Destructive outline |
 | `review-rereview` | PR review `READY_FOR_RE_REVIEW` | Amber outline |
 | `review-commented` | PR review `COMMENTED` | Muted outline |

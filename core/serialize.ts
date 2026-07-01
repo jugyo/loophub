@@ -279,7 +279,7 @@ async function pullStatusFields(repo: S.Repo, row: any) {
   const baseSha = await revParse(repo.local_path, p.base_ref);
   const review_state = S.computeReviewState(row.id);
   // Merge gate aggregates reviews per topic (#427): clean requires every review
-  // topic to pass, not a single APPROVE — review_state above stays the display
+  // topic to pass, not a single PASS — review_state above stays the display
   // signal for the overall PR state.
   const reviewGate = S.computeReviewGate(row.id);
   let mergeable: boolean | null = null;

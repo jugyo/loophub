@@ -47,7 +47,7 @@ const pull: PullRequest = {
   merged: false,
   mergeable: true,
   mergeable_state: "clean",
-  review_state: "APPROVED",
+  review_state: "PASSED",
   changes_addressed_at: null,
   changes_addressed_by: null,
   merge_commit_sha: null,
@@ -111,8 +111,8 @@ describe("TerminalPrHeader", () => {
     const titleLink = title.closest("a");
     expect(titleLink?.getAttribute("href")).toBe("/r/me/proj/pulls/30");
 
-    // PR state: an approved review collapses to a visible "approved" badge.
-    expect(screen.getByText("approved")).toBeTruthy();
+    // PR state: a passed review collapses to a visible "passed" badge.
+    expect(screen.getByText("passed")).toBeTruthy();
 
     // Issue link as supporting info.
     const issueLink = screen.getByText("issue #12").closest("a");
