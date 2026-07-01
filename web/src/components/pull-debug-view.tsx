@@ -8,6 +8,37 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+// Strict ISO-8601 instant: a date-time carrying a zone designator (`Z` or `±hh:mm`). Only these are
+// unambiguous points in time we can safely re-render in the viewer's local zone (#426). The dump
+// mixes DB timestamps (`2026-07-01T14:30:00Z`, see core db `now()`) and git dates (`%cI`, offset
+// form); both match. A naive date-time without a zone is left untouched rather than guessed at.
+const ISO_INSTANT_RE =
+  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
+
+// Render an ISO instant as the viewer's local time with a zone label appended (TZ name or offset,
+// e.g. `2026-07-01 14:30:00 JST` / `GMT+9`), so the debug dump reads in local time instead of UTC.
+// Locale-driven via `Intl`, so it follows the viewer's environment. Returns the input unchanged if
+// it doesn't parse.
+function formatLocalInstant(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const parts = new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    // h23 (00–23), not `hour12: false` — the latter can resolve to h24 in some locales and render
+    // local midnight as `24:00:00`. Forcing h23 keeps midnight `00:00:00` regardless of locale.
+    hourCycle: "h23",
+    timeZoneName: "short",
+  }).formatToParts(d);
+  const m: Record<string, string> = {};
+  for (const p of parts) m[p.type] = p.value;
+  return `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}:${m.second} ${m.timeZoneName}`;
+}
+
 // One JSON value, rendered by type. Objects → key/value table; arrays of objects → columnar table;
 // multi-line strings → scrollable <pre>; everything else → inline mono text.
 function DebugValue({ value }: { value: unknown }) {
@@ -26,6 +57,14 @@ function DebugValue({ value }: { value: unknown }) {
         <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-xs leading-relaxed">
           {value}
         </pre>
+      );
+    }
+    if (ISO_INSTANT_RE.test(value)) {
+      // Show local time; keep the original UTC/offset string on hover for exact inspection.
+      return (
+        <span className="font-mono break-all" title={value}>
+          {formatLocalInstant(value)}
+        </span>
       );
     }
     return <span className="font-mono break-all">{value}</span>;
