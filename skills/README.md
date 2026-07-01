@@ -90,6 +90,38 @@ detail's **Create PR on GitHub** button for repos in `github_pr` merge mode). It
 under a content-based name, opens a GitHub **Draft** PR, and records it back with
 `lh pr record-github-pr` so the button switches to **View PR on GitHub**. It does not merge or review.
 
+## Install
+
+### `npx skills add`
+
+Matches the layout the [`skills` CLI](https://github.com/vercel-labs/skills) expects
+(`skills/<name>/SKILL.md`). Review a skill before installing — it becomes instructions your agent
+follows.
+
+```sh
+npx skills add owner/repo                 # from GitHub
+npx skills add .                          # from a local checkout (this repo's root)
+npx skills add owner/repo --skill lh-dev  # install one skill by name
+```
+
+### `install.sh`
+
+Symlinks every skill into `~/.claude/skills/` in one go:
+
+```sh
+./skills/install.sh
+```
+
+Or do it by hand — mirror what `install.sh` does (symlink every directory that has a `SKILL.md`, so
+the list never goes stale; `-sfn` replaces an existing symlink instead of nesting inside a directory):
+
+```sh
+for dir in "$PWD"/skills/*/; do
+  [ -f "$dir/SKILL.md" ] || continue
+  ln -sfn "${dir%/}" "$HOME/.claude/skills/$(basename "$dir")"
+done
+```
+
 ## Head worktree bootstrap
 
 Skills that work on a PR head (pr-review, rebase-conflict) must **not**
@@ -119,21 +151,3 @@ fi
 ```
 
 rebase-conflict may reuse an existing worktree.
-
-## Install
-
-Run the install script from this repo root — it symlinks every skill into `~/.claude/skills/`:
-
-```sh
-./skills/install.sh
-```
-
-Or do it by hand — mirror what `install.sh` does (symlink every directory that has a `SKILL.md`, so
-the list never goes stale; `-sfn` replaces an existing symlink instead of nesting inside a directory):
-
-```sh
-for dir in "$PWD"/skills/*/; do
-  [ -f "$dir/SKILL.md" ] || continue
-  ln -sfn "${dir%/}" "$HOME/.claude/skills/$(basename "$dir")"
-done
-```
