@@ -83,6 +83,16 @@ export interface PullFile {
 }
 
 /**
+ * Whole-file content of a changed file at one side (base/head) of a PR (#435), for the Markdown
+ * preview modal. "missing" covers an added file (absent from base) or a deleted file (absent
+ * from head); "binary" flags content that isn't renderable as text.
+ */
+export interface FileAtRef {
+  status: "ok" | "missing" | "binary";
+  content?: string;
+}
+
+/**
  * A per-file diff description note (review_notes; #204, PR-independent since #216).
  * Identity is the commit range (base_sha→commit_sha) + path; pull_request is an optional
  * association to the owning PR (null for a PR-independent note). A consumer compares

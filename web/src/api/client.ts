@@ -8,6 +8,7 @@
 import { getSessionId } from "@/lib/session";
 import type {
   DashboardOverview,
+  FileAtRef,
   Handoff,
   Issue,
   IssueComment,
@@ -275,6 +276,21 @@ export function patchPull(
 
 export function listPullFiles(owner: string, repo: string, number: number) {
   return rpc<PullFile[]>("pulls/files", { repo: full(owner, repo), number });
+}
+
+export function getPullFileAtRef(
+  owner: string,
+  repo: string,
+  number: number,
+  path: string,
+  side: "base" | "head",
+) {
+  return rpc<FileAtRef>("pulls/fileAtRef", {
+    repo: full(owner, repo),
+    number,
+    path,
+    side,
+  });
 }
 
 export function listPullReviews(owner: string, repo: string, number: number) {

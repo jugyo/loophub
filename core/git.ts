@@ -204,6 +204,42 @@ function stripDiffHeader(full: string): string {
   return full.slice(idx + 1);
 }
 
+export interface FileAtRef {
+  status: "ok" | "missing" | "binary";
+  content?: string;
+}
+
+// Full text of `path` as it existed at `ref` (`git show <ref>:<path>`), for whole-file preview
+// (e.g. rendering Markdown) rather than a unified diff. "missing" covers both an added file
+// (absent from base) and a deleted file (absent from head); "binary" flags content with an
+// embedded NUL byte so callers can skip trying to render it as text.
+export async function fileAtRef(
+  repoPath: string,
+  ref: string,
+  path: string,
+): Promise<FileAtRef> {
+  const r = await git(repoPath, ["show", `${ref}:${path}`]);
+  if (r.code !== 0) return { status: "missing" };
+  if (r.stdout.includes("\0")) return { status: "binary" };
+  return { status: "ok", content: r.stdout };
+}
+
+// Whether `path` is one of the files changed in base...head — an exact-string membership check
+// against the full changed-file list (cheap, unlike diffFiles() which computes every changed
+// file's full patch), used to keep fileAtRef() from being callable as a general "read any tracked
+// file at any commit" primitive. Deliberately does NOT pass `path` as a `--` pathspec: git
+// pathspecs support wildcards and `:(...)` magic (e.g. `:(exclude)...`) that can match every
+// changed file without `path` actually being one of them, which would defeat this check.
+export async function pathInDiff(
+  repoPath: string,
+  base: string,
+  head: string,
+  path: string,
+): Promise<boolean> {
+  const r = await git(repoPath, ["diff", "--name-only", `${base}...${head}`]);
+  return r.stdout.split("\n").some((line) => line === path);
+}
+
 // Number of commits on head not reachable from base (base..head). 0 means head
 // adds nothing over base — a diff-free PR with no commits to merge.
 export async function commitsAhead(

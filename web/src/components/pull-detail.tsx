@@ -22,6 +22,7 @@ import { DiffStat } from "@/components/diff-stat";
 import { useErrorBanner } from "@/components/error-banner";
 import { HandoffTimeline } from "@/components/handoff-timeline";
 import { Markdown } from "@/components/markdown";
+import { MarkdownPreviewModal } from "@/components/markdown-preview-modal";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminal } from "@/components/terminal-controller";
@@ -140,6 +141,7 @@ export function PullDetail({
         <FilesChanged
           owner={owner}
           repo={repo}
+          number={number}
           files={filesQuery.data}
           lineComments={lineCommentsQuery.data}
           reviewNotes={reviewNotesQuery.data}
@@ -706,6 +708,7 @@ const DIFF_LINE_CLASS: Record<DiffLineKind, string> = {
 function FilesChanged({
   owner,
   repo,
+  number,
   files,
   lineComments,
   reviewNotes,
@@ -715,6 +718,7 @@ function FilesChanged({
 }: {
   owner: string;
   repo: string;
+  number: number;
   files: PullFile[] | undefined;
   lineComments: PullLineComment[] | undefined;
   reviewNotes: ReviewNote[] | undefined;
@@ -770,6 +774,7 @@ function FilesChanged({
             key={f.filename}
             owner={owner}
             repo={repo}
+            number={number}
             file={f}
             comments={byFile.get(f.filename) ?? []}
             notes={notesByFile.get(f.filename) ?? []}
@@ -781,9 +786,22 @@ function FilesChanged({
   );
 }
 
+// Files changed only shows the unified diff patch, not a rendered whole-file view — Preview
+// opens a full-size modal with the base/head Markdown instead (#435). Scoped to .md/.markdown so
+// non-Markdown files (which the modal can't usefully render) don't grow the button.
+const MARKDOWN_FILENAME = /\.(md|markdown)$/i;
+
+// `file.filename` for a rename comes from git numstat's mangled "old => new" / "dir/{old =>
+// new}" path column (core/git.ts diffFiles), not a real path — `git show <ref>:<path>` can't
+// resolve it. Exclude renamed files from Preview rather than resolving the wrong or a missing
+// blob (fixing this properly needs diffFiles() to expose the real per-side rename paths, which
+// is out of scope here).
+const RENAMED_FILENAME = / => /;
+
 function FileDiff({
   owner,
   repo,
+  number,
   file,
   comments,
   notes,
@@ -791,12 +809,17 @@ function FileDiff({
 }: {
   owner: string;
   repo: string;
+  number: number;
   file: PullFile;
   comments: PullLineComment[];
   notes: ReviewNote[];
   currentHeadSha: string;
 }) {
   const lines = parsePatch(file.patch);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const isMarkdown =
+    MARKDOWN_FILENAME.test(file.filename) &&
+    !RENAMED_FILENAME.test(file.filename);
   return (
     <div className="overflow-hidden rounded-md border">
       <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 text-sm">
@@ -804,7 +827,26 @@ function FileDiff({
         <span className="text-xs text-muted-foreground">
           +{file.additions} -{file.deletions}
         </span>
+        {isMarkdown ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="ml-auto h-7 px-2 text-xs"
+            onClick={() => setPreviewOpen(true)}
+          >
+            Preview
+          </Button>
+        ) : null}
       </div>
+      {previewOpen ? (
+        <MarkdownPreviewModal
+          owner={owner}
+          repo={repo}
+          number={number}
+          path={file.filename}
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
       {notes.map((n) => (
         <ReviewNoteCard
           key={n.id}

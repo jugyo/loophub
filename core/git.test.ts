@@ -10,9 +10,11 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   diffStat,
+  fileAtRef,
   git,
   isIndexLockError,
   mergePull,
+  pathInDiff,
   sleep,
   worktreeAdd,
   worktreeList,
@@ -251,6 +253,65 @@ test("diffStat aggregates additions, deletions and changed files", async () => {
   // No diff against itself → all zeros.
   const empty = await diffStat(p, "feat", "feat");
   expect(empty).toEqual({ additions: 0, deletions: 0, changedFiles: 0 });
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("fileAtRef returns content, or 'missing'/'binary' for an absent or binary file", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-fileatref-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "README.md"), "# base\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  writeFileSync(join(p, "README.md"), "# head\n");
+  writeFileSync(join(p, "new.md"), "# new file\n"); // added on feat, absent from main
+  writeFileSync(join(p, "img.bin"), Buffer.from([0, 1, 2, 0, 3])); // binary
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "feat"]);
+
+  expect(await fileAtRef(p, "main", "README.md")).toEqual({
+    status: "ok",
+    content: "# base\n",
+  });
+  expect(await fileAtRef(p, "feat", "README.md")).toEqual({
+    status: "ok",
+    content: "# head\n",
+  });
+  expect(await fileAtRef(p, "main", "new.md")).toEqual({ status: "missing" });
+  expect(await fileAtRef(p, "feat", "img.bin")).toEqual({ status: "binary" });
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("pathInDiff reports only files actually changed in base...head", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-pathindiff-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "changed.md"), "base\n");
+  writeFileSync(join(p, "untouched.md"), "untouched\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  writeFileSync(join(p, "changed.md"), "head\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qam", "feat"]);
+
+  expect(await pathInDiff(p, "main", "feat", "changed.md")).toBe(true);
+  expect(await pathInDiff(p, "main", "feat", "untouched.md")).toBe(false);
+  expect(await pathInDiff(p, "main", "feat", "nope.md")).toBe(false);
+
+  // Git pathspec magic (e.g. an exclude-only pathspec, which implicitly matches every other
+  // changed file) must not be able to make an out-of-scope `path` look like a diff member.
+  expect(
+    await pathInDiff(p, "main", "feat", ":(exclude)nonexistent12345"),
+  ).toBe(false);
+  expect(await pathInDiff(p, "main", "feat", "*.md")).toBe(false);
 
   rmSync(p, { recursive: true, force: true });
 });

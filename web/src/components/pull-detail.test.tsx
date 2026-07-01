@@ -177,6 +177,131 @@ describe("PullDetail", () => {
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
+  it("shows a Preview button only for Markdown files, opening a base/head modal (#435)", async () => {
+    const mdFiles: PullFile[] = [
+      ...files,
+      {
+        filename: "README.md",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: "@@ -1 +1 @@\n-# old\n+# new",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => pull,
+        "pulls/files": () => mdFiles,
+        "reviews/list": () => [],
+        "reviews/listComments": () => [],
+        "reviewNotes/list": () => [],
+        "comments/list": () => [],
+        "pulls/fileAtRef": (p) =>
+          p.side === "base"
+            ? { status: "ok", content: "# old\n" }
+            : { status: "ok", content: "# new\n" },
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("web/src/a.ts");
+    // Only the Markdown file gets a Preview button.
+    const previewButtons = screen.getAllByRole("button", {
+      name: /^Preview$/i,
+    });
+    expect(previewButtons.length).toBe(1);
+
+    fireEvent.click(previewButtons[0]);
+    expect(
+      await screen.findByRole("dialog", {
+        name: /Markdown preview for README.md/i,
+      }),
+    ).toBeTruthy();
+
+    // Defaults to head.
+    expect(await screen.findByRole("heading", { name: "new" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Base" }));
+    expect(await screen.findByRole("heading", { name: "old" })).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("hides the Preview button for a renamed Markdown file (mangled numstat path, #436)", async () => {
+    // git numstat renders a cross-directory rename as "old => new" — this still ends in ".md" but
+    // is not a resolvable git path, so `pulls.fileAtRef` would always report "missing" for it.
+    const renamedFiles: PullFile[] = [
+      {
+        filename: "docs/old.md => top.md",
+        status: "renamed",
+        additions: 1,
+        deletions: 0,
+        patch: "@@ -1 +1 @@\n-# old\n+# old\n+extra",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => pull,
+        "pulls/files": () => renamedFiles,
+        "reviews/list": () => [],
+        "reviews/listComments": () => [],
+        "reviewNotes/list": () => [],
+        "comments/list": () => [],
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("docs/old.md => top.md");
+    expect(screen.queryByRole("button", { name: /^Preview$/i })).toBeNull();
+  });
+
   it("closes the PR via PATCH state=closed without merging", async () => {
     renderDetail();
 

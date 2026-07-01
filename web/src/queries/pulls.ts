@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getPull,
   getPullDebug,
+  getPullFileAtRef,
   listEvents,
   listPullComments,
   listPullFiles,
@@ -87,6 +88,30 @@ export function usePullFiles(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: [...queryKeys.pull(full(owner, repo), number), "files"],
     queryFn: () => listPullFiles(owner, repo, number),
+  });
+}
+
+/**
+ * Whole-file content of one file at one side (base/head) of a PR (#435), for the Markdown
+ * preview modal. `enabled` gates the fetch so it only runs once the modal is open.
+ */
+export function usePullFileAtRef(
+  owner: string,
+  repo: string,
+  number: number,
+  path: string,
+  side: "base" | "head",
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: [
+      ...queryKeys.pull(full(owner, repo), number),
+      "fileAtRef",
+      side,
+      path,
+    ],
+    queryFn: () => getPullFileAtRef(owner, repo, number, path, side),
+    enabled,
   });
 }
 

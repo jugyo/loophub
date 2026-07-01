@@ -16,8 +16,10 @@ import {
   defaultBranch,
   diffFiles,
   diffStat,
+  fileAtRef,
   mergePull as gitMergePull,
   isGitRepo,
+  pathInDiff,
   remoteUrl,
   revParse,
   worktreeList,
@@ -1012,6 +1014,26 @@ export const pulls = {
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id);
     return diffFiles(r.local_path, p.base_ref, p.head_ref);
+  },
+
+  // Whole-file content of a changed file at the PR's base or head commit (#435), for the
+  // Markdown preview modal — the diff `files()` above only carries the unified patch. Scoped to
+  // paths actually in the PR's diff so this can't be used to read arbitrary tracked files at an
+  // arbitrary commit beyond what `files()` already exposes for the same PR.
+  async fileAtRef(
+    name: string,
+    number: number,
+    path: string,
+    side: "base" | "head",
+  ) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const p = S.getPull(row.id);
+    if (!(await pathInDiff(r.local_path, p.base_ref, p.head_ref, path))) {
+      throw new ServiceError(404, "Not Found");
+    }
+    const ref = side === "base" ? p.base_ref : p.head_ref;
+    return fileAtRef(r.local_path, ref, path);
   },
 
   // #406: record the GitHub PR a loophub PR was exported to (called by the create-PR-on-GitHub

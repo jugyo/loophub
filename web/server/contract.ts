@@ -604,6 +604,21 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.pulls.files(p.repo, p.number),
   },
+  "pulls/fileAtRef": {
+    description:
+      "Whole-file content of a changed file at the PR's base or head commit (#435), for the Markdown preview modal. `status` is 'ok' (with `content`), 'missing' (the file does not exist at that side — an added or deleted file), or 'binary'.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        path: strNonEmpty,
+        side: { enum: ["base", "head"] },
+      },
+      ["repo", "number", "path", "side"],
+    ),
+    result: anyObject,
+    handler: (p) => svc.pulls.fileAtRef(p.repo, p.number, p.path, p.side),
+  },
   "pulls/merge": {
     description: "Merge a pull request.",
     params: params(
