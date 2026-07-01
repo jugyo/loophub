@@ -43,9 +43,11 @@ command exactly.
 - **PR evidence**: PR bodies require an **Evidence** section (test output excerpts, screenshots for UI,
   CLI snippets, or explicit N/A). Enforced at PR creation — see `lh-dev` § PR (step 5).
 - **Reviewers are role-based, not vendor-based**: reference review subagents by **role** (Quality,
-  Security), never by a product name. `lh-pr-review` § Reviewer roles & host mapping resolves each
-  role to a host mechanism (Cursor `bugbot`/`security-review`, Claude Code `code-reviewer`/`general-purpose`
-  + `/security-review`) with a `general-purpose` fallback so a missing vendor reviewer never blocks review.
+  Security, Documentation, Acceptance), never by a product name. `lh-pr-review` § Reviewer roles &
+  host mapping resolves each role to a host mechanism (Cursor `bugbot`/`security-review`, Claude Code
+  `code-reviewer`/`general-purpose` + `/security-review`) with a `general-purpose` fallback so a
+  missing vendor reviewer never blocks review. Documentation runs only for changed documentation files
+  and checks reader fit, not implementation correctness.
 
 ## Evidence screenshots
 
