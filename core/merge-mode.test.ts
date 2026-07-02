@@ -3,6 +3,7 @@ import {
   effectiveMergeMode,
   isGithubRemoteUrl,
   normalizeMergeMode,
+  parseGithubPullNumber,
 } from "./merge-mode.ts";
 
 describe("normalizeMergeMode", () => {
@@ -37,6 +38,20 @@ describe("isGithubRemoteUrl", () => {
     // A host that merely contains the substring must not match.
     expect(isGithubRemoteUrl("https://notgithub.com/o/r")).toBe(false);
     expect(isGithubRemoteUrl("https://github.com.evil.com/o/r")).toBe(false);
+  });
+});
+
+describe("parseGithubPullNumber", () => {
+  test("extracts the number from a GitHub PR URL (#487)", () => {
+    expect(parseGithubPullNumber("https://github.com/o/r/pull/42")).toBe(42);
+    expect(parseGithubPullNumber("https://github.com/o/r/pull/42/files")).toBe(
+      42,
+    );
+  });
+  test("returns null when there is no /pull/<number> segment", () => {
+    expect(parseGithubPullNumber("https://github.com/o/r")).toBeNull();
+    expect(parseGithubPullNumber(null)).toBeNull();
+    expect(parseGithubPullNumber("")).toBeNull();
   });
 });
 

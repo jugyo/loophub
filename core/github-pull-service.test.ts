@@ -137,6 +137,25 @@ test("recordGithubPull validates the URL and PR number (#406)", async () => {
   ).toThrow(/github_number/);
 });
 
+test("recordGithubPull derives github_number from the url when omitted (#487)", async () => {
+  const number = await openPull();
+  const rec = svc.pulls.recordGithubPull("me/proj", number, {
+    url: "https://github.com/me/proj/pull/77",
+  });
+  expect(rec.number).toBe(77);
+  const after = (await svc.pulls.get("me/proj", number)) as any;
+  expect(after.github_pull).toMatchObject({ number: 77 });
+});
+
+test("recordGithubPull rejects a url with no derivable PR number and no github_number (#487)", async () => {
+  const number = await openPull();
+  expect(() =>
+    svc.pulls.recordGithubPull("me/proj", number, {
+      url: "https://github.com/me/proj",
+    }),
+  ).toThrow(/github_number/);
+});
+
 // #411: createGithubPull orchestration. push + gh are injected fakes so the test runs without a
 // GitHub remote/network; the DB record, double-create guard, and validation are exercised for real.
 type GhCalls = {

@@ -53,6 +53,7 @@ import {
   isGithubRemoteUrl,
   type MergeMode,
   normalizeMergeMode,
+  parseGithubPullNumber,
 } from "./merge-mode.ts";
 import {
   decideResume,
@@ -1534,21 +1535,22 @@ export const pulls = {
     return fileAtRef(r.local_path, ref, path);
   },
 
-  // #406: record the GitHub PR a loophub PR was exported to (called by the create-PR-on-GitHub
-  // skill once it has submitted the draft PR). Idempotent on the PR — re-recording overwrites, so a
-  // re-run updates the link. Validates the URL is an absolute http(s) URL so the UI can render it as
-  // a safe link; the GitHub PR number must be a positive integer.
+  // #406: record the GitHub PR a loophub PR was exported to. Originally an internal step of the
+  // create-PR-on-GitHub skill; also the general-purpose way to attach a GitHub PR that was created
+  // outside LoopHub (e.g. `gh pr create` run directly) back onto its LoopHub PR (#487). Idempotent
+  // on the PR — re-recording (including with a different URL/number) overwrites, so a re-run or a
+  // correction always reflects the latest link. Validates the URL is an absolute http(s) URL so the
+  // UI can render it as a safe link; the GitHub PR number must be a positive integer, and if omitted
+  // is derived from the URL's `/pull/<number>` segment (#487).
   recordGithubPull(
     name: string,
     number: number,
-    input: { github_number: number; url: string; branch?: string | null },
+    input: { github_number?: number; url: string; branch?: string | null },
     sessionId?: string | null,
   ) {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
-    const { github_number, url, branch } = input;
-    if (!Number.isInteger(github_number) || github_number < 1)
-      throw new ServiceError(422, "github_number must be a positive integer");
+    const { url, branch } = input;
     // Require an absolute http(s) URL on a GitHub host. The model is GitHub-specific and the UI
     // renders it as a GitHub-branded "View PR on GitHub" link, so accepting an arbitrary host would
     // let a caller plant a misleading link. The scheme check also keeps javascript:/data: out.
@@ -1558,10 +1560,17 @@ export const pulls = {
         422,
         "url must be an absolute GitHub (github.com) http(s) URL",
       );
+    const github_number =
+      input.github_number ?? parseGithubPullNumber(trimmedUrl);
+    if (!Number.isInteger(github_number) || (github_number as number) < 1)
+      throw new ServiceError(
+        422,
+        "github_number must be a positive integer, or derivable from a .../pull/<number> url",
+      );
     const actor = actorFor(sessionId);
     const rec = S.recordGithubPull({
       issueId: row.id,
-      number: github_number,
+      number: github_number as number,
       url: trimmedUrl,
       branch: branch ?? null,
       createdBy: actor,

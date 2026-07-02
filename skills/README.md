@@ -112,6 +112,9 @@ It only starts work (never reviews or merges) and treats every ready issue as AF
 detail's **Create PR on GitHub** button for repos in `github_pr` merge mode). It pushes the PR's branch
 under a content-based name, opens a GitHub **Draft** PR, and records it back with
 `lh pr record-github-pr` so the button switches to **View PR on GitHub**. It does not merge or review.
+`lh pr record-github-pr <pr-id> --url <github-pr-url>` can also be run directly to attach a GitHub
+PR that was created outside LoopHub (e.g. via `gh pr create`) back onto its LoopHub PR (#487) — the
+GitHub PR number is derived from the URL when `--number` is omitted.
 
 ## Install
 

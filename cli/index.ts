@@ -1267,14 +1267,16 @@ async function main() {
       console.log(`merged: ${r.sha}`);
     } else if (sub === "record-github-pr") {
       // #406: record the GitHub PR this loophub PR was exported to (used by the create-PR skill).
-      if (!flags.number) fail("--number is required (the GitHub PR number)");
+      // Also the general-purpose way to attach a GitHub PR created outside LoopHub back onto its
+      // LoopHub PR (#487) — e.g. `lh pr record-github-pr <id> --url <github-pr-url>`. --number is
+      // optional: if omitted, it is derived from the URL's `/pull/<number>` segment.
       if (!flags.url) fail("--url is required (the GitHub PR URL)");
       const g = await run(async () =>
         s.pulls.recordGithubPull(
           repo,
           Number(rest[0]),
           {
-            github_number: Number(flags.number),
+            ...(flags.number ? { github_number: Number(flags.number) } : {}),
             url: flags.url as string,
             ...(flags.branch ? { branch: flags.branch as string } : {}),
           },

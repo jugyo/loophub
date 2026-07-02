@@ -42,6 +42,17 @@ export function isGithubRemoteUrl(url: string | null | undefined): boolean {
   return host === "github.com" || host.endsWith(".github.com");
 }
 
+// Extract the PR number from a GitHub PR URL (e.g. `https://github.com/o/r/pull/42`), for callers
+// that only have the URL and want to avoid also requiring the number as a separate input (#487).
+// Returns null if the URL has no `/pull/<digits>` segment.
+export function parseGithubPullNumber(
+  url: string | null | undefined,
+): number | null {
+  if (!url) return null;
+  const m = url.match(/\/pull\/(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
 // Resolve the effective mode for a repo: the pinned setting if any, else the remote-based default
 // (github_pr when a GitHub remote exists, merge otherwise).
 export function effectiveMergeMode(
