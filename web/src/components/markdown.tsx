@@ -10,10 +10,11 @@
 // turns those internal links into client-side router navigations.
 
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { isValidElement, type ReactNode, useState } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ImageLightbox } from "@/components/image-lightbox";
+import { MermaidDiagram } from "@/components/mermaid-diagram";
 import { remarkIssueRefs } from "@/lib/remark-issue-refs";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +39,37 @@ function refParams(
   }
 }
 
+// A ```mermaid fenced block renders as `<pre><code class="language-mermaid">...</code></pre>` by
+// react-markdown's default (no `code` component is registered, so the `code` child is a plain
+// React element, not yet rendered — its props are readable synchronously here). Extract the chart
+// text when the `pre`'s only child is such a code element; otherwise this isn't a mermaid block.
+function mermaidChart(children: ReactNode): string | null {
+  const child = Array.isArray(children) ? children[0] : children;
+  if (!isValidElement<{ className?: string; children?: unknown }>(child)) {
+    return null;
+  }
+  if (child.type !== "code") return null;
+  const className = child.props.className;
+  if (
+    typeof className !== "string" ||
+    !/(^|\s)language-mermaid(\s|$)/.test(className)
+  ) {
+    return null;
+  }
+  const text = Array.isArray(child.props.children)
+    ? child.props.children.join("")
+    : child.props.children;
+  return typeof text === "string" ? text.replace(/\n$/, "") : "";
+}
+
 const components: Components = {
+  pre({ node, children, ...rest }) {
+    const chart = mermaidChart(children);
+    if (chart !== null) {
+      return <MermaidDiagram chart={chart} />;
+    }
+    return <pre {...rest}>{children}</pre>;
+  },
   a({ href, title, children }) {
     const m = href ? REF_HREF.exec(href) : null;
     const params = m ? refParams(m) : null;

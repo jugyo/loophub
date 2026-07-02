@@ -8,7 +8,16 @@ import {
 } from "@tanstack/react-router";
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// MermaidDiagram itself is covered by mermaid-diagram.test.tsx; here we only need to confirm
+// markdown.tsx routes ```mermaid fenced blocks to it (and nowhere else) with the right chart text.
+vi.mock("@/components/mermaid-diagram", () => ({
+  MermaidDiagram: ({ chart }: { chart: string }) => (
+    <div data-testid="mermaid-mock">{chart}</div>
+  ),
+}));
+
 import { Markdown } from "./markdown";
 
 // Render `children` inside a memory router so the in-repo `#n` links emitted by
@@ -60,6 +69,15 @@ describe("Markdown", () => {
     );
     const pre = container.querySelector("pre code");
     expect(pre?.textContent).toContain("const x = 1;");
+  });
+
+  it("routes a ```mermaid fenced block to MermaidDiagram instead of a plain pre/code", () => {
+    const { container } = render(
+      <Markdown>{"```mermaid\ngraph TD;\nA-->B;\n```"}</Markdown>,
+    );
+    const mock = container.querySelector('[data-testid="mermaid-mock"]');
+    expect(mock?.textContent).toBe("graph TD;\nA-->B;");
+    expect(container.querySelector("pre")).toBeNull();
   });
 
   it("renders GFM tables", () => {
