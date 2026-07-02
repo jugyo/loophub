@@ -208,6 +208,84 @@ describe("SidebarHerdrSessions", () => {
       expect(rpcCall("terminal/agentRead")).toBeUndefined();
     });
 
+    it("stays open when the pointer moves from the row onto the preview, and closes on leaving the preview", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithSessions(
+        {
+          repos: [
+            {
+              repo: "me/app",
+              session_name: "me-app-12345678",
+              agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+            },
+          ],
+        },
+        { output: "$ npm test\n42 passing\n" },
+      );
+      await screen.findByText("dev #11");
+
+      const row = agentRow();
+      fireEvent.mouseEnter(row);
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      const tooltip = await screen.findByRole("tooltip");
+
+      // Pointer leaves the row on its way to the preview — this must not hide it
+      // immediately (#523), since the two elements don't overlap on screen.
+      fireEvent.mouseLeave(row);
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(screen.queryByRole("tooltip")).toBeTruthy();
+
+      fireEvent.mouseEnter(tooltip);
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(screen.queryByRole("tooltip")).toBeTruthy();
+
+      fireEvent.mouseLeave(tooltip);
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    it("renders the preview as a DOM sibling of the row, not a descendant (#523 round 2)", async () => {
+      // Real-browser mouseenter/mouseleave firing is DOM-ancestry-aware: nesting the
+      // (visually detached, `position: fixed`) preview inside the row let the browser
+      // treat the pointer as never leaving the row while it sat over the preview, so the
+      // row's onMouseEnter failed to re-fire on the way back and the popup could close
+      // while the pointer was still on the row. jsdom's fireEvent bypasses real
+      // hit-testing, so it can't reproduce that bug directly — this asserts the DOM
+      // structure the fix depends on instead.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithSessions(
+        {
+          repos: [
+            {
+              repo: "me/app",
+              session_name: "me-app-12345678",
+              agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+            },
+          ],
+        },
+        { output: "$ npm test\n42 passing\n" },
+      );
+      await screen.findByText("dev #11");
+
+      const row = agentRow();
+      fireEvent.mouseEnter(row);
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      const tooltip = await screen.findByRole("tooltip");
+
+      expect(row.contains(tooltip)).toBe(false);
+      expect(tooltip.parentElement).toBe(row.parentElement);
+    });
+
     it("shows nothing when the agent has no output (herdr down / agent gone)", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       renderWithSessions(

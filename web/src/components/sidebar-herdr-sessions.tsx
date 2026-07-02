@@ -21,6 +21,14 @@ import {
 // hovers shortly after.
 const HOVER_DEBOUNCE_MS = 300;
 
+// Grace period before actually hiding the preview after the pointer leaves the row
+// or the preview itself (#523). The preview is `position: fixed`, offset a few px
+// from the row, so the pointer crosses a gap of unrelated page content on its way
+// there — closing immediately on mouseleave never lets it arrive. Delaying the close
+// (and cancelling it if the pointer lands back on the row or the preview within the
+// window) keeps the popup open across that gap without leaving it stuck open forever.
+const CLOSE_DELAY_MS = 200;
+
 // The positional-fallback id herdr-status.ts assigns when pane_id is missing starts with a
 // NUL byte (core/herdr-status.ts's NO_PANE_ID_PREFIX) followed by "idx:". Built the same way
 // here (fromCharCode) so this file carries no raw control byte either.
@@ -88,6 +96,7 @@ export function SidebarHerdrSessions() {
 function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [preview, setPreview] = useState<{ top: number; left: number } | null>(
     null,
   );
@@ -101,14 +110,25 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
     }
   }
 
+  function clearCloseTimer() {
+    if (closeTimer.current !== null) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }
+
   // Guards against a debounced fetch firing (and calling setState) after the row has
   // already unmounted, e.g. the sidebar list refreshing mid-hover.
   useEffect(() => {
-    return () => clearHoverTimer();
+    return () => {
+      clearHoverTimer();
+      clearCloseTimer();
+    };
   }, []);
 
   function onMouseEnter() {
     clearHoverTimer();
+    clearCloseTimer();
     hoverTimer.current = setTimeout(() => {
       hoverTimer.current = null;
       const rect = rowRef.current?.getBoundingClientRect();
@@ -130,9 +150,19 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
     }, HOVER_DEBOUNCE_MS);
   }
 
+  // Doesn't hide immediately: scheduleClose (below) gives the pointer time to land on
+  // the preview itself, which cancels this via its own onMouseEnter.
   function onMouseLeave() {
     clearHoverTimer();
-    setPreview(null);
+    scheduleClose();
+  }
+
+  function scheduleClose() {
+    clearCloseTimer();
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      setPreview(null);
+    }, CLOSE_DELAY_MS);
   }
 
   async function onConfirmKill() {
@@ -147,43 +177,54 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   }
 
   return (
-    <div
-      ref={rowRef}
-      className="group flex items-center gap-2 px-2 py-0.5 pl-4 text-sm"
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-    >
-      <span
-        className={cn(
-          "size-2 shrink-0 rounded-full",
-          statusDotClass(agent.status),
-        )}
-        aria-hidden="true"
-      />
-      <span className="truncate">{agent.name}</span>
-      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-        {agent.status}
-      </span>
-      <button
-        type="button"
-        aria-label={`Close ${agent.name}'s pane`}
-        className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-        onClick={() => {
-          killAgent.reset();
-          setConfirming(true);
-        }}
+    // The preview is a DOM *sibling* of the row, not a child (#523 round 2): mouseenter/
+    // mouseleave firing is DOM-ancestry-aware, so nesting the preview inside the row made
+    // the browser treat the pointer as never having left the row while it sat over the
+    // (visually detached, `position: fixed`) preview — the row's onMouseEnter then failed
+    // to re-fire on the way back, and the popup could close while the pointer was still on
+    // the row. Siblings have no such ancestry relationship, so enter/leave on each fires
+    // purely from real cursor position. The kill confirm dialog (#521) is a full-screen
+    // `fixed inset-0` overlay, so its own DOM position doesn't matter, but it's kept as a
+    // sibling too for consistency.
+    <>
+      <div
+        ref={rowRef}
+        className="group flex items-center gap-2 px-2 py-0.5 pl-4 text-sm"
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
       >
-        <X className="size-3.5" />
-      </button>
-
+        <span
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            statusDotClass(agent.status),
+          )}
+          aria-hidden="true"
+        />
+        <span className="truncate">{agent.name}</span>
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          {agent.status}
+        </span>
+        <button
+          type="button"
+          aria-label={`Close ${agent.name}'s pane`}
+          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+          onClick={() => {
+            killAgent.reset();
+            setConfirming(true);
+          }}
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
       {preview ? (
         <AgentPreview
           repo={repo}
           target={agentReadTarget(agent)}
           position={preview}
+          onMouseEnter={clearCloseTimer}
+          onMouseLeave={scheduleClose}
         />
       ) : null}
-
       {confirming ? (
         <ConfirmKillAgentDialog
           agentName={agent.name}
@@ -193,7 +234,7 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
           onCancel={() => setConfirming(false)}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -207,10 +248,16 @@ function AgentPreview({
   repo,
   target,
   position,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   repo: string;
   target: string;
   position: { top: number; left: number };
+  // Keeps the panel open while the pointer is over it, and lets it schedule its own
+  // close when the pointer leaves — see CLOSE_DELAY_MS above.
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
 }) {
   // enabled: true here is safe — the row only mounts this once the hover debounce (see
   // HOVER_DEBOUNCE_MS above) has already elapsed; staleTime on the hook covers reuse.
@@ -222,12 +269,14 @@ function AgentPreview({
   return (
     <div
       role="tooltip"
-      className="fixed z-50 w-96 max-w-[60vw] overflow-y-auto rounded-md border bg-background p-2 shadow-lg"
+      className="fixed z-50 w-96 max-w-[60vw] overflow-x-hidden overflow-y-auto rounded-md border bg-background p-2 shadow-lg"
       style={{
         top: position.top,
         left: position.left,
         maxHeight: AGENT_PREVIEW_MAX_HEIGHT,
       }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">
         {data.output}

@@ -107,7 +107,54 @@ export function parseHerdrAgentRead(stdout: string): string | null {
   const parsed = tryParse(stdout);
   const text = (parsed as { result?: { read?: { text?: unknown } } })?.result
     ?.read?.text;
-  return typeof text === "string" ? text : null;
+  return typeof text === "string" ? stripAnsi(text) : null;
+}
+
+// herdr's recent-pane buffer is raw terminal output: SGR color codes, cursor moves,
+// and lone carriage returns (progress-bar overwrites) are all still in there. The
+// sidebar preview (#523) renders this text as-is inside a plain <pre>, which doesn't
+// interpret escape sequences the way a terminal does — left untouched, they show up
+// as literal garbage (e.g. "[32m") and stray \r/\r\n runs that look like broken
+// wrapping. Strip them down to plain text here, once, so every caller gets clean output.
+// Parameter bytes include ':' too (ITU-T colon syntax for direct-color SGR, e.g.
+// "\x1b[38:2:255:0:0m"), not just the more common ';'-delimited form. Deliberately no
+// intermediate-byte class (ECMA-48 allows one, values 0x20-0x2F i.e. space through '/')
+// between the parameters and the final byte: real terminal programs essentially never
+// emit one, but the final-byte class below (`[@-~]`) is broad enough to match almost
+// any letter — so an intermediate class here would let a literal space in ordinary
+// prose immediately after a CSI-like "\x1b[<digits>" get treated as filler and the
+// first following letter as the "final byte", deleting real text up to that letter
+// (e.g. "\x1b[123 processes running" losing "123 p"). Dropping the class means such
+// input simply doesn't match here at all, falling through to ANSI_CSI_TRUNCATED below.
+const ANSI_CSI = /\x1b\[[0-9;:?]*[@-~]/g;
+// The middle class excludes \x1b (not just \x07): without that, an ST-terminated OSC
+// sequence (e.g. an OSC 8 hyperlink) greedily backtracks past a *later* unrelated OSC's
+// terminator, deleting real text in between — and on adversarial input (many bare
+// "\x1b]" with no terminator) the same greedy backtracking is O(n^2), a DoS on lh-web's
+// single-threaded event loop given herdr output can run up to HERDR_CAPTURE_MAX_BYTES.
+const ANSI_OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+// A CSI introducer that never reaches a valid final byte — e.g. the recent-pane window
+// starts mid-sequence, cutting off "\x1b[1" before its "m" — doesn't match ANSI_CSI
+// above (no final byte = no match at that position), so its parameter bytes would
+// otherwise survive as literal garbage once the lone ESC is stripped below. Runs after
+// ANSI_CSI has already removed every well-formed sequence, so only true leftovers match.
+// Same no-intermediate-class reasoning as ANSI_CSI above — this only ever consumes
+// parameter bytes, never text that follows them.
+const ANSI_CSI_TRUNCATED = /\x1b\[[0-9;:?]*/g;
+// DECSC/DECRC (save/restore cursor), IND/NEL/RI (line motion), RIS (reset) — single-byte
+// ESC sequences besides charset designation and keypad mode.
+const ANSI_OTHER = /\x1b[()][A-Za-z0-9]|\x1b[=>]|\x1b[78DMEc]/g;
+const ANSI_ESCAPE = /\x1b/g;
+
+function stripAnsi(text: string): string {
+  return text
+    .replace(ANSI_CSI, "")
+    .replace(ANSI_CSI_TRUNCATED, "")
+    .replace(ANSI_OSC, "")
+    .replace(ANSI_OTHER, "")
+    .replace(ANSI_ESCAPE, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "");
 }
 
 function tryParse(text: string): unknown {
