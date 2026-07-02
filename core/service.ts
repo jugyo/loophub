@@ -2,10 +2,11 @@
 // input (throwing ServiceError with an HTTP-style status), mutates the store, emits
 // events, and returns serialized wire objects. The CLI calls these directly (S5); the
 // JSON-RPC layer (S2) will wrap the same procedures. No HTTP/Request types leak in here.
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { worktreeRoot } from "./config.ts";
+import { terminalLaunchBackend, worktreeRoot } from "./config.ts";
 import { ServiceError } from "./errors.ts";
 import { formatEvent, type LoopEvent } from "./event-hub.ts";
 import { type FollowOptions, followEvents } from "./events-follow.ts";
@@ -66,6 +67,11 @@ import {
   reviewNoteJSON,
 } from "./serialize.ts";
 import * as S from "./store.ts";
+import {
+  buildHerdrLaunchPlan,
+  commandForHerdrLaunch,
+  type TerminalLaunchBackend,
+} from "./terminal-launch.ts";
 import { sweepPullUpdates } from "./watcher.ts";
 import { worktreePath } from "./worktree-path.ts";
 import {
@@ -77,6 +83,16 @@ import {
 export const MAX_EVENTS_PER_PAGE = 100;
 export const DEFAULT_LIST_PER_PAGE = 30;
 export const MAX_LIST_PER_PAGE = 100;
+
+export interface TerminalLaunchInput {
+  repo: string;
+  label?: string;
+  workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";
+  issueNumber?: number;
+  prNumber?: number;
+  session?: string;
+  cwd?: string;
+}
 
 // ---- shared helpers ----
 function repoOr404(name: string): S.Repo {
@@ -289,6 +305,83 @@ export const repos = {
     const [owner, rname] = S.splitName(name);
     if (!S.getRepo(owner, rname)) throw new ServiceError(404, "Not Found");
     S.deleteRepo(owner, rname);
+  },
+};
+
+// Spawns Herdr asynchronously (never spawnSync — this runs inside the lh-web server process,
+// which also serves SSE/WebSocket terminals for every other client). Errors are deliberately
+// generic: the underlying stderr/stdout (or an OS error message) can embed the repo's absolute
+// local_path, mirroring web/server/terminal.ts's closeReasonFor rationale for not forwarding
+// internal process output to the client.
+function runHerdrLaunch(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // stdio all "ignore": the client never sees stdout/stderr (see the comment above), and a
+    // "pipe" nobody drains would let the child's writes fill the OS pipe buffer and block
+    // forever (no `close` event, an indefinitely hanging RPC call) — or crash the whole
+    // lh-web process on an unhandled stream error.
+    const child = spawn(command, args, {
+      cwd,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    child.on("error", (err) => {
+      const code = (err as NodeJS.ErrnoException).code;
+      reject(
+        code === "ENOENT"
+          ? new ServiceError(422, "herdr command not found on PATH")
+          : new ServiceError(500, "failed to launch Herdr"),
+      );
+    });
+    child.on("close", (status, signal) => {
+      // `status` is null when the child was terminated by a signal rather than exiting on its
+      // own — treat that as a failure too, instead of `?? 0` collapsing a null code to success.
+      if (signal == null && status === 0) resolve();
+      else reject(new ServiceError(500, "Herdr launch failed"));
+    });
+  });
+}
+
+// ===== terminal launch =====
+export const terminal = {
+  config(): { backend: TerminalLaunchBackend } {
+    return { backend: terminalLaunchBackend() };
+  },
+
+  async launch(input: TerminalLaunchInput) {
+    if (!input.repo) throw new ServiceError(422, "repo is required");
+    const backend = terminalLaunchBackend();
+    if (backend === "builtin") return { backend };
+
+    const r = repoOr404(input.repo);
+    const command = commandForHerdrLaunch({
+      repo: r.full_name,
+      workflow: input.workflow,
+      issueNumber: input.issueNumber,
+      prNumber: input.prNumber,
+      session: input.session,
+      cwd: input.cwd,
+    });
+    if (!command.trim()) throw new ServiceError(422, "command is required");
+
+    const plan = buildHerdrLaunchPlan({
+      repo: { full_name: r.full_name, local_path: r.local_path },
+      command,
+      label: input.label,
+    });
+    // Non-blocking: lh-web is a single process also serving SSE/WebSocket terminals for every
+    // client, so a synchronous spawnSync here would stall the whole server for as long as the
+    // Herdr launch takes (or hangs).
+    await runHerdrLaunch(plan.argv[0], plan.argv.slice(1), plan.cwd);
+    return {
+      backend,
+      session_name: plan.sessionName,
+      command: plan.command,
+      cwd: plan.cwd,
+      attach: `herdr session attach ${plan.sessionName}`,
+    };
   },
 };
 

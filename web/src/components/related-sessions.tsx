@@ -27,7 +27,7 @@ import { ChevronRight, Play } from "lucide-react";
 import { useState } from "react";
 import type { RelatedSession } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
-import { useTerminal } from "@/components/terminal-controller";
+import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { BadgeTone } from "@/lib/badges";
@@ -90,7 +90,7 @@ export function RelatedSessions({
   // session has no client-side worktree path (no button — the expanded copy command covers it).
   cwd?: string;
 }) {
-  const { openTerminal } = useTerminal();
+  const { launchTerminal } = useTerminalLauncher();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   if (!sessions || sessions.length === 0) return null;
 
@@ -175,10 +175,13 @@ export function RelatedSessions({
                     className="shrink-0"
                     title={`Resume \`${terminalCommand}\` in a terminal`}
                     onClick={() =>
-                      openTerminal({
+                      launchTerminal({
                         command: terminalCommand,
                         repo: `${owner}/${repo}`,
                         label: `resume ${s.name ?? s.kind ?? s.id}`,
+                        workflow: "resume",
+                        session: s.session,
+                        cwd: cdPrefix ?? undefined,
                       })
                     }
                   >

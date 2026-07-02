@@ -25,7 +25,7 @@ import { Markdown } from "@/components/markdown";
 import { MarkdownPreviewModal } from "@/components/markdown-preview-modal";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { RelatedSessions } from "@/components/related-sessions";
-import { useTerminal } from "@/components/terminal-controller";
+import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
@@ -358,7 +358,7 @@ function GithubPrAction({
   repo: string;
   pull: PullRequest;
 }) {
-  const { openTerminal } = useTerminal();
+  const { launchTerminal } = useTerminalLauncher();
   const gh = pull.github_pull;
   if (gh) {
     return (
@@ -381,10 +381,12 @@ function GithubPrAction({
     <Button
       title="Create a PR on GitHub from this branch via the export skill"
       onClick={() =>
-        openTerminal({
+        launchTerminal({
           command: `claude "/create-github-pr ${pull.number}"`,
           repo: `${owner}/${repo}`,
           label: `gh-pr #${pull.number}`,
+          workflow: "github-pr-export",
+          prNumber: pull.number,
         })
       }
     >

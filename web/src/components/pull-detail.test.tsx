@@ -25,11 +25,11 @@ import type {
   ReviewNote,
 } from "@/api/types";
 
-// RelatedSessions (rendered by PullDetail) calls useTerminal() unconditionally; stub it so the
+// RelatedSessions and GitHub export launch through the terminal backend abstraction; stub it so the
 // component tree renders without a TerminalProvider.
-const { openTerminal } = vi.hoisted(() => ({ openTerminal: vi.fn() }));
+const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
 vi.mock("@/components/terminal-controller", () => ({
-  useTerminal: () => ({ openTerminal }),
+  useTerminalLauncher: () => ({ launchTerminal }),
 }));
 
 import { ErrorBanner, ErrorBannerProvider } from "./error-banner";
@@ -38,7 +38,7 @@ import { PullDetail } from "./pull-detail";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  openTerminal.mockClear();
+  launchTerminal.mockClear();
 });
 
 const pull: PullRequest = {
@@ -757,10 +757,12 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(screen.queryByRole("button", { name: /^Merge$/i })).toBeNull();
 
     fireEvent.click(button);
-    expect(openTerminal).toHaveBeenCalledTimes(1);
-    const opts = openTerminal.mock.calls[0][0];
+    expect(launchTerminal).toHaveBeenCalledTimes(1);
+    const opts = launchTerminal.mock.calls[0][0];
     expect(opts.command).toContain("/create-github-pr 30");
     expect(opts.repo).toBe("me/proj");
+    expect(opts.workflow).toBe("github-pr-export");
+    expect(opts.prNumber).toBe(30);
   });
 
   it("swaps to a View PR on GitHub link once exported (double-create guard)", async () => {

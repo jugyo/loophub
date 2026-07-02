@@ -21,6 +21,8 @@ import type {
   Repo,
   RepoMergeMode,
   ReviewNote,
+  TerminalLaunchConfig,
+  TerminalLaunchResult,
 } from "./types";
 
 /** Resolved server base. "" => same-origin (proxy). No trailing slash. */
@@ -149,6 +151,23 @@ export function setRepoMergeMode(
     mode,
     session_id: sessionId,
   });
+}
+
+// --- terminal launch ---
+export function getTerminalLaunchConfig() {
+  return rpc<TerminalLaunchConfig>("terminal/config");
+}
+
+export function launchTerminalWorkflow(input: {
+  repo: string;
+  label?: string;
+  workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";
+  issueNumber?: number;
+  prNumber?: number;
+  session?: string;
+  cwd?: string;
+}) {
+  return rpc<TerminalLaunchResult>("terminal/launch", clean(input));
 }
 
 // --- issues ---

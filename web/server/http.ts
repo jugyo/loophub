@@ -24,6 +24,7 @@ import {
 import { isServiceError } from "../../core/errors.ts";
 import { subscribeEvents } from "./events.ts";
 import { dispatchRaw } from "./rpc.ts";
+import { isAllowedOrigin, isLoopbackHost } from "./terminal.ts";
 
 // Built SPA assets. Defaults to web/dist; override with LOOPHUB_WEB_DIST.
 const DIST_DIR =
@@ -90,6 +91,38 @@ function readBinaryBody(
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
+}
+
+function isJsonRequest(req: IncomingMessage): boolean {
+  const contentType = req.headers["content-type"];
+  const value = Array.isArray(contentType) ? contentType[0] : contentType;
+  return (
+    (value ?? "").split(";")[0].trim().toLowerCase() === "application/json"
+  );
+}
+
+// A form can't set content-type: application/json without a CORS preflight, so the JSON check
+// above already defeats classic non-preflighted CSRF. This catches the modern-browser case on top:
+// a page's cross-site fetch() carries Sec-Fetch-Site: cross-site regardless of content-type.
+function isCrossSiteFetch(req: IncomingMessage): boolean {
+  const site = req.headers["sec-fetch-site"];
+  return site === "cross-site";
+}
+
+// Sec-Fetch-Site alone doesn't stop DNS rebinding: an attacker's page (origin evil.com) can wait
+// for evil.com's DNS to rebind to 127.0.0.1/the LAN host, then fetch("http://evil.com:<port>/rpc")
+// — that request is same-origin from the browser's point of view (Sec-Fetch-Site: same-origin), so
+// it reaches this far, but its actual Origin header string is still "evil.com", never "localhost"
+// (rebinding only changes DNS resolution, not what the page's own JS sends). Checking the Origin
+// *hostname* against loopback names (mirrors web/server/terminal.ts's isAllowedOrigin, used for the
+// /terminal WebSocket) defeats that. But it must not reject the SPA's own same-origin requests when
+// the operator has intentionally bound lh-web off loopback (LOOPHUB_HOST=0.0.0.0 etc., #465) — those
+// legitimately carry a non-loopback Origin. Mirror index.ts's own opt-in pattern for the parallel
+// terminal-feature tradeoff: apply the strict loopback check only while still bound to loopback
+// (the default, overwhelmingly common case); an operator who opts into a non-loopback bind has
+// already accepted broadened exposure for this instance, same as that feature.
+function isBoundToLoopback(): boolean {
+  return isLoopbackHost(process.env.LOOPHUB_HOST ?? "127.0.0.1");
 }
 
 // POST /attachments — upload a standalone image blob. The binary is the request
@@ -269,6 +302,17 @@ export function handleRequest(
 ): void {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (url.pathname === "/rpc" && req.method === "POST") {
+    if (!isJsonRequest(req)) {
+      sendJson(res, 415, { error: "Unsupported Media Type" });
+      return;
+    }
+    if (
+      isCrossSiteFetch(req) ||
+      (isBoundToLoopback() && !isAllowedOrigin(req.headers.origin))
+    ) {
+      sendJson(res, 403, { error: "Forbidden" });
+      return;
+    }
     handleRpc(req, res).catch(() => {
       if (!res.headersSent)
         res.writeHead(500, {

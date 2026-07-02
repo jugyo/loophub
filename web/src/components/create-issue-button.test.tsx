@@ -17,6 +17,16 @@ const currentRepo = vi.hoisted(() => ({ value: "me/proj" as string | null }));
 vi.mock("@/lib/use-current-repo", () => ({
   useCurrentRepo: () => currentRepo.value,
 }));
+const terminalLaunchConfig = vi.hoisted(() => ({
+  value: { isSuccess: true, data: { backend: "builtin" } },
+}));
+vi.mock("@/queries/terminal", () => ({
+  useTerminalLaunchConfig: () => terminalLaunchConfig.value,
+}));
+const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
+vi.mock("@/components/terminal-controller", () => ({
+  useTerminalLauncher: () => ({ launchTerminal }),
+}));
 
 import { CreateIssueButton } from "./create-issue-button";
 
@@ -24,6 +34,11 @@ afterEach(() => {
   cleanup();
   terminalProps.value = null;
   currentRepo.value = "me/proj";
+  terminalLaunchConfig.value = {
+    isSuccess: true,
+    data: { backend: "builtin" },
+  };
+  launchTerminal.mockClear();
 });
 
 describe("CreateIssueButton", () => {
@@ -65,6 +80,24 @@ describe("CreateIssueButton", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /close new issue/i }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByTestId("terminal-view")).toBeNull();
+  });
+
+  it("dispatches the issue-create workflow through Herdr instead of opening the builtin modal", () => {
+    terminalLaunchConfig.value = {
+      isSuccess: true,
+      data: { backend: "herdr" },
+    };
+    render(<CreateIssueButton />);
+
+    fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: "new issue",
+      workflow: "issue-create",
+    });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByTestId("terminal-view")).toBeNull();
   });

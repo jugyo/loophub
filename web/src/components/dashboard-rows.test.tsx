@@ -6,12 +6,21 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Issue, LinkedPull } from "@/api/types";
+
+const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
+vi.mock("@/components/terminal-controller", () => ({
+  useTerminalLauncher: () => ({ launchTerminal }),
+}));
+
 import { IssueRow } from "./dashboard-rows";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  launchTerminal.mockClear();
+});
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
   return {
@@ -201,6 +210,26 @@ describe("IssueRow", () => {
     // a label row's layout does not shift on the button appearing/disappearing.
     expect(button.className).not.toContain("opacity-0");
     expect(button.className).not.toContain("group-hover:opacity-100");
+  });
+
+  it("launches the typed issue-dev workflow when the Build button is clicked", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
+    );
+    const button = await screen.findByRole("button", {
+      name: "Build issue #7",
+    });
+
+    fireEvent.click(button);
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      command: "lh dev 7",
+      repo: "me/proj",
+      label: "dev #7",
+      issueRef: { owner: "me", repo: "proj", number: 7 },
+      workflow: "issue-dev",
+      issueNumber: 7,
+    });
   });
 
   it("shows the Build button when the linked PR is closed unmerged (rejected)", async () => {

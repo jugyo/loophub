@@ -18,7 +18,7 @@ import { IssueDevInfo } from "@/components/dev-info";
 import { LabelChip } from "@/components/label-chip";
 import { Markdown } from "@/components/markdown";
 import { RelatedSessions } from "@/components/related-sessions";
-import { useTerminal } from "@/components/terminal-controller";
+import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -155,7 +155,7 @@ function IssueHeader({
   issue: Issue;
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
-  const { openTerminal } = useTerminal();
+  const { launchTerminal } = useTerminalLauncher();
   const state = stateBadge(issue, "issues");
   const linked = issue.linked_pull_request;
   // Build kicks off work, so show it unless a PR is actively in progress (open)
@@ -215,11 +215,13 @@ function IssueHeader({
           <Button
             title={`Start \`lh dev ${issue.number}\` in a terminal`}
             onClick={() =>
-              openTerminal({
+              launchTerminal({
                 command: `lh dev ${issue.number}`,
                 repo: `${owner}/${repo}`,
                 label: `dev #${issue.number}`,
                 issueRef: { owner, repo, number: issue.number },
+                workflow: "issue-dev",
+                issueNumber: issue.number,
               })
             }
           >

@@ -8,7 +8,10 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { DetailTitleProvider } from "@/components/detail-title";
 import { ErrorBanner, ErrorBannerProvider } from "@/components/error-banner";
-import { TerminalControllerProvider } from "@/components/terminal-controller";
+import {
+  TerminalControllerProvider,
+  TerminalLaunchFeedback,
+} from "@/components/terminal-controller";
 import { TerminalPane } from "@/components/terminal-pane";
 import { useScrollToTop } from "@/lib/use-scroll-to-top";
 
@@ -46,6 +49,7 @@ export function AppLayout() {
                 {/* Operation-failure feedback (#323): a single in-page banner at the top of the
                     content, with an explicit lifetime independent of any one screen's components. */}
                 <ErrorBanner />
+                <TerminalLaunchFeedback />
                 <Outlet />
               </main>
             </div>

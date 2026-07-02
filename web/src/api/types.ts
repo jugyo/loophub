@@ -161,6 +161,20 @@ export interface RepoMergeMode {
   effective: MergeMode;
 }
 
+export type TerminalLaunchBackend = "builtin" | "herdr";
+
+export interface TerminalLaunchConfig {
+  backend: TerminalLaunchBackend;
+}
+
+export interface TerminalLaunchResult {
+  backend: TerminalLaunchBackend;
+  session_name?: string;
+  command?: string;
+  cwd?: string;
+  attach?: string;
+}
+
 /** The GitHub PR a loophub PR was exported to (#406), or null until the export skill records one. */
 export interface GithubPull {
   number: number;

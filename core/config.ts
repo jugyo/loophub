@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+  normalizeTerminalLaunchBackend,
+  type TerminalLaunchBackend,
+} from "./terminal-launch.ts";
 
 // Read env at call time so parallel test files can set LOOPHUB_HOME/LOOPHUB_DB
 // before db.ts is first imported (import-time consts froze the wrong path).
@@ -58,4 +62,19 @@ export function baseUrl(): string {
 export function uiUrl(path: string): string {
   const p = path.replace(/^\/+/, "");
   return p ? `${baseUrl()}/${p}` : baseUrl();
+}
+
+export function terminalLaunchBackend(): TerminalLaunchBackend {
+  if (process.env.LOOPHUB_TERMINAL_LAUNCH_BACKEND) {
+    return normalizeTerminalLaunchBackend(
+      process.env.LOOPHUB_TERMINAL_LAUNCH_BACKEND,
+    );
+  }
+  try {
+    const cfg = JSON.parse(
+      readFileSync(join(configDir(), "config.json"), "utf8"),
+    );
+    return normalizeTerminalLaunchBackend(cfg.terminalLaunchBackend);
+  } catch {}
+  return "builtin";
 }

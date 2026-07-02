@@ -1,7 +1,18 @@
-import { fireEvent, render, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RelatedSession } from "@/api/types";
+
+const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
+vi.mock("@/components/terminal-controller", () => ({
+  useTerminalLauncher: () => ({ launchTerminal }),
+}));
+
 import { RelatedSessions } from "./related-sessions";
+
+afterEach(() => {
+  cleanup();
+  launchTerminal.mockClear();
+});
 
 function session(over: Partial<RelatedSession>): RelatedSession {
   return {
@@ -70,7 +81,7 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain("Sessions");
   });
 
-  it("the Resume button launches `cd <cwd> && claude --resume <id>` in the terminal", () => {
+  it("the Resume button launches the typed resume workflow with the right cwd", () => {
     const { container } = render(
       <RelatedSessions
         owner="jugyo"
@@ -91,6 +102,17 @@ describe("RelatedSessions", () => {
     expect(btn.getAttribute("title")).toBe(
       "Resume `cd /home/me/.loophub/worktrees/jugyo/loophub/issue-7 && claude --resume 11111111-2222-3333-4444-555555555555` in a terminal",
     );
+
+    fireEvent.click(btn);
+    expect(launchTerminal).toHaveBeenCalledWith({
+      command:
+        "cd /home/me/.loophub/worktrees/jugyo/loophub/issue-7 && claude --resume 11111111-2222-3333-4444-555555555555",
+      repo: "jugyo/loophub",
+      label: "resume dev",
+      workflow: "resume",
+      session: "11111111-2222-3333-4444-555555555555",
+      cwd: "/home/me/.loophub/worktrees/jugyo/loophub/issue-7",
+    });
   });
 
   it("on issue detail (no cwd): an issue-create session resumes from the repo root; a worktree-less session has no button but still expands to a command", () => {

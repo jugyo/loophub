@@ -81,6 +81,64 @@ test("POST /rpc with invalid JSON returns a -32700 error", async () => {
   expect(((await res.json()) as any).error.code).toBe(-32700);
 });
 
+test("POST /rpc rejects non-JSON content types", async () => {
+  const res = await fetch(`${base}/rpc`, {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+  });
+  expect(res.status).toBe(415);
+});
+
+test("POST /rpc rejects a non-loopback Origin by default (DNS-rebinding defense, #465)", async () => {
+  // With no LOOPHUB_HOST override (the default, loopback-bound deployment), a non-loopback Origin
+  // is suspicious — e.g. a DNS-rebound attacker page whose Origin string is still its own hostname
+  // even once that hostname resolves to 127.0.0.1 — and must be rejected even without Sec-Fetch-Site.
+  const res = await fetch(`${base}/rpc`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "http://evil.example:8730",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+  });
+  expect(res.status).toBe(403);
+});
+
+test("POST /rpc allows a non-loopback Origin once LOOPHUB_HOST opts into a non-loopback bind (#465)", async () => {
+  // LOOPHUB_HOST=0.0.0.0 (LAN access, web/server/index.ts) makes the SPA's own same-origin
+  // requests carry a non-loopback Origin hostname — those must still work once the operator has
+  // opted into that broadened exposure, same tradeoff the terminal feature already makes there.
+  const prevHost = process.env.LOOPHUB_HOST;
+  process.env.LOOPHUB_HOST = "0.0.0.0";
+  try {
+    const res = await fetch(`${base}/rpc`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://192.168.1.50:8730",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+    });
+    expect(res.status).toBe(200);
+  } finally {
+    if (prevHost === undefined) delete process.env.LOOPHUB_HOST;
+    else process.env.LOOPHUB_HOST = prevHost;
+  }
+});
+
+test("POST /rpc rejects cross-site fetch metadata", async () => {
+  const res = await fetch(`${base}/rpc`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "sec-fetch-site": "cross-site",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+  });
+  expect(res.status).toBe(403);
+});
+
 test("POST /rpc with only notifications returns 204", async () => {
   const res = await fetch(`${base}/rpc`, {
     method: "POST",

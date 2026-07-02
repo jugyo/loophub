@@ -7,7 +7,7 @@ import { Check, Play } from "lucide-react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { LabelChip } from "@/components/label-chip";
-import { useTerminal } from "@/components/terminal-controller";
+import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
   type Badge as BadgeData,
@@ -196,7 +196,7 @@ function RowBuildButton({
   issue: Issue;
   pulls: LinkedPull[];
 }) {
-  const { openTerminal } = useTerminal();
+  const { launchTerminal } = useTerminalLauncher();
   const activePull = pulls.some((p) => p.state === "open" || p.merged);
   if (activePull) return null;
   return (
@@ -205,11 +205,13 @@ function RowBuildButton({
       title={`Start \`lh dev ${issue.number}\` in a terminal`}
       aria-label={`Build issue #${issue.number}`}
       onClick={() =>
-        openTerminal({
+        launchTerminal({
           command: `lh dev ${issue.number}`,
           repo: `${owner}/${repo}`,
           label: `dev #${issue.number}`,
           issueRef: { owner, repo, number: issue.number },
+          workflow: "issue-dev",
+          issueNumber: issue.number,
         })
       }
       className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

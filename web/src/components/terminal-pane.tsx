@@ -45,6 +45,7 @@ import { TerminalView } from "@/components/terminal-view";
 import { installTerminalDebugLogging, tlog } from "@/lib/terminal-debug";
 import { useCurrentRepo } from "@/lib/use-current-repo";
 import { useRepos } from "@/queries/repos";
+import { useTerminalLaunchConfig } from "@/queries/terminal";
 
 const EXPANDED_KEY = "lh.terminal.open"; // sessionStorage: per-tab expanded state
 const HEIGHT_KEY = "lh.terminal.height"; // localStorage: shared cosmetic height
@@ -105,18 +106,21 @@ export function TerminalPane() {
   // on a repo page the "+" opens a tab there directly; off a repo it opens the cwd-picker menu.
   const currentRepo = useCurrentRepo() ?? "";
   const { data: repos } = useRepos();
+  const launchConfig = useTerminalLaunchConfig();
+  const canStartBuiltin =
+    launchConfig.isSuccess && launchConfig.data.backend === "builtin";
+  const disabled = launchConfig.data?.backend === "herdr";
 
   // Restore the expanded preference per browser tab. On a reload the prior PTYs are gone, so a
   // pane that was expanded reopens with one fresh tab (cwd = the repo in view at first render);
   // a minimized pane reopens with no tabs.
+  const [restorePending, setRestorePending] = useState(
+    () => sessionStorage.getItem(EXPANDED_KEY) === "1",
+  );
   const [expanded, setExpanded] = useState(
     () => sessionStorage.getItem(EXPANDED_KEY) === "1",
   );
-  const [tabs, setTabs] = useState<Tab[]>(() =>
-    sessionStorage.getItem(EXPANDED_KEY) === "1"
-      ? [{ id: newId(), repo: currentRepo }]
-      : [],
-  );
+  const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeId, setActiveId] = useState<string | null>(
     () => tabs[0]?.id ?? null,
   );
@@ -154,30 +158,49 @@ export function TerminalPane() {
   useLayoutEffect(() => {
     if (tabs.length === 0) {
       setActiveId(null);
+      // Only wait while the query is genuinely still settling (`isPending`) — not on
+      // `!isSuccess`, which also stays true forever once the query settles into an error
+      // (e.g. a transient network failure), which would otherwise leave the pane stuck
+      // "expanded but empty" indefinitely (#465).
+      if (restorePending && launchConfig.isPending) return;
+      if (restorePending && canStartBuiltin && expanded) return;
+      setRestorePending(false);
       setExpanded(false);
       setMaximized(false);
       setMenuOpen(false);
     } else if (!tabs.some((t) => t.id === activeId)) {
+      setRestorePending(false);
       setActiveId(tabs[tabs.length - 1].id);
     }
-  }, [tabs, activeId]);
+  }, [
+    tabs,
+    activeId,
+    restorePending,
+    launchConfig.isPending,
+    canStartBuiltin,
+    expanded,
+  ]);
 
   // Open a new tab and make it active + visible. With no options it opens a plain shell in $HOME;
   // callers pass a repo (cwd), an initial command to run on start, and/or a label override. This
   // is the imperative API published to the rest of the app via the terminal controller below.
-  const openTerminal = useCallback((opts?: OpenTerminalOptions) => {
-    const tab: Tab = {
-      id: newId(),
-      repo: opts?.repo ?? "",
-      command: opts?.command,
-      label: opts?.label,
-      issueRef: opts?.issueRef,
-    };
-    setTabs((prev) => [...prev, tab]);
-    setActiveId(tab.id);
-    setExpanded(true);
-    setMenuOpen(false);
-  }, []);
+  const openTerminal = useCallback(
+    (opts?: OpenTerminalOptions) => {
+      if (!canStartBuiltin) return;
+      const tab: Tab = {
+        id: newId(),
+        repo: opts?.repo ?? "",
+        command: opts?.command,
+        label: opts?.label,
+        issueRef: opts?.issueRef,
+      };
+      setTabs((prev) => [...prev, tab]);
+      setActiveId(tab.id);
+      setExpanded(true);
+      setMenuOpen(false);
+    },
+    [canStartBuiltin],
+  );
 
   // Publish openTerminal so the New Issue / Build buttons (and any future caller) can open a tab
   // with a command. Lives here because this component owns the tab list.
@@ -198,12 +221,20 @@ export function TerminalPane() {
       setMenuOpen(false);
       return;
     }
+    if (!canStartBuiltin) return;
     setExpanded(true);
     // Expanding with no tabs starts the first session (cwd = the repo in view). Compute the tab
     // outside the updater so the updater stays pure; the reconcile effect makes it active.
     const tab = { id: newId(), repo: currentRepo };
     setTabs((prev) => (prev.length > 0 ? prev : [tab]));
-  }, [expanded, currentRepo]);
+  }, [expanded, currentRepo, canStartBuiltin]);
+
+  useEffect(() => {
+    if (!restorePending || !canStartBuiltin || !expanded || tabs.length > 0)
+      return;
+    setRestorePending(false);
+    setTabs([{ id: newId(), repo: currentRepo }]);
+  }, [restorePending, canStartBuiltin, expanded, tabs.length, currentRepo]);
 
   const toggleMaximize = useCallback(() => setMaximized((v) => !v), []);
 
@@ -235,14 +266,16 @@ export function TerminalPane() {
   // The terminal is a fixed overlay along the bottom, so it never reflows the page. Publish its
   // current total visible height (bar + content) so scrollable regions can reserve that much
   // bottom padding and stay reachable past the terminal — collapsed, dragged, or maximized.
-  const reserveCss = !expanded
-    ? `${BAR_H + REST_GAP}px`
-    : maximized
-      ? `calc(100dvh - ${TOP_GAP}px)`
-      : // The rendered terminal content is capped at MAX_CONTENT, but `height` is only clamped on
-        // drag — a window shrink without a re-drag leaves it stale. Cap the reserve at the same
-        // maximized limit so a tall stored height can't over-reserve a dead scroll zone.
-        `min(${BAR_H + height + REST_GAP}px, 100dvh - ${TOP_GAP}px)`;
+  const reserveCss = disabled
+    ? "0px"
+    : !expanded
+      ? `${BAR_H + REST_GAP}px`
+      : maximized
+        ? `calc(100dvh - ${TOP_GAP}px)`
+        : // The rendered terminal content is capped at MAX_CONTENT, but `height` is only clamped on
+          // drag — a window shrink without a re-drag leaves it stale. Cap the reserve at the same
+          // maximized limit so a tall stored height can't over-reserve a dead scroll zone.
+          `min(${BAR_H + height + REST_GAP}px, 100dvh - ${TOP_GAP}px)`;
   useLayoutEffect(() => {
     const root = document.documentElement;
     root.style.setProperty(RESERVE_VAR, reserveCss);
@@ -252,6 +285,8 @@ export function TerminalPane() {
       root.style.removeProperty(RESERVE_VAR);
     };
   }, [reserveCss]);
+
+  if (disabled) return null;
 
   return (
     // Fixed overlay pinned to the bottom of the main content area: it starts at the sidebar's

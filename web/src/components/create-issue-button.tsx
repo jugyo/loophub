@@ -12,8 +12,10 @@
 import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CreateIssueModal } from "@/components/create-issue-modal";
+import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button } from "@/components/ui/button";
 import { useCurrentRepo } from "@/lib/use-current-repo";
+import { useTerminalLaunchConfig } from "@/queries/terminal";
 
 export function CreateIssueButton() {
   // `open` mounts the dock (and its terminal/PTY); `minimized` collapses it to a header bar while
@@ -22,6 +24,8 @@ export function CreateIssueButton() {
   const [minimized, setMinimized] = useState(false);
   // Run in the repo currently in view so the skill resolves the target repo from cwd.
   const repo = useCurrentRepo();
+  const launchConfig = useTerminalLaunchConfig();
+  const { launchTerminal } = useTerminalLauncher();
   // Leaving every repo (home / archived) unmounts the dock and kills its PTY. Reset the open/minimized
   // flags too, otherwise they stay set and the dock auto-resurrects with a *brand-new* session — a
   // hidden one if it was minimized — the next time a repo comes into view, without the user asking.
@@ -33,6 +37,9 @@ export function CreateIssueButton() {
   }, [repo]);
   // No repo in view (home / archived) → nothing to file against, so render nothing.
   if (!repo) return null;
+  const builtin =
+    launchConfig.isSuccess && launchConfig.data.backend === "builtin";
+  const herdr = launchConfig.isSuccess && launchConfig.data.backend === "herdr";
 
   // Close destroys the dock: unmounting CreateIssueModal unmounts TerminalView, which closes the
   // WebSocket and kills the PTY server-side.
@@ -57,7 +64,18 @@ export function CreateIssueButton() {
           size="icon"
           aria-label="New issue"
           title="New issue"
-          onClick={() => setOpen(true)}
+          disabled={!launchConfig.isSuccess}
+          onClick={() =>
+            herdr
+              ? launchTerminal({
+                  repo,
+                  label: "new issue",
+                  workflow: "issue-create",
+                })
+              : builtin
+                ? setOpen(true)
+                : null
+          }
           style={{
             bottom:
               "clamp(3.5rem, var(--lh-term-reserve, 0px), calc(100dvh - 5rem))",
@@ -67,7 +85,7 @@ export function CreateIssueButton() {
           <Plus className="size-6" />
         </Button>
       )}
-      {open && (
+      {open && builtin && (
         <CreateIssueModal
           repo={repo}
           minimized={minimized}

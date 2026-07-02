@@ -135,6 +135,44 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.repos.mergeMode(p.name),
   },
 
+  // ---- terminal launch ----
+  "terminal/config": {
+    description:
+      "Current terminal launch backend. builtin keeps the embedded PTY; herdr launches workflows externally.",
+    params: EMPTY_PARAMS,
+    result: anyObject,
+    handler: () => svc.terminal.config(),
+  },
+  "terminal/launch": {
+    description:
+      "Launch a terminal workflow through the configured backend. For builtin this is a no-op acknowledgement; for herdr it starts a named session.",
+    params: params(
+      {
+        repo,
+        label: str,
+        workflow: {
+          enum: ["issue-dev", "issue-create", "resume", "github-pr-export"],
+        },
+        issueNumber: positiveInt,
+        prNumber: positiveInt,
+        session: str,
+        cwd: str,
+      },
+      ["repo"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.terminal.launch({
+        repo: p.repo,
+        label: p.label,
+        workflow: p.workflow,
+        issueNumber: p.issueNumber,
+        prNumber: p.prNumber,
+        session: p.session,
+        cwd: p.cwd,
+      }),
+  },
+
   // ---- agent sessions ----
   "sessions/register": {
     description: "Register (or update) an agent session.",

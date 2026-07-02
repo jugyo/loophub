@@ -18,10 +18,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment, IssueGroupWithMembers } from "@/api/types";
 
-// The Build button opens a terminal via useTerminal(); capture the call.
-const { openTerminal } = vi.hoisted(() => ({ openTerminal: vi.fn() }));
+// The Build button launches through the terminal backend abstraction; capture the call.
+const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
 vi.mock("@/components/terminal-controller", () => ({
-  useTerminal: () => ({ openTerminal }),
+  useTerminalLauncher: () => ({ launchTerminal }),
 }));
 
 import { IssueDetail } from "./issue-detail";
@@ -29,7 +29,7 @@ import { IssueDetail } from "./issue-detail";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  openTerminal.mockClear();
+  launchTerminal.mockClear();
 });
 
 const issue: Issue = {
@@ -250,11 +250,13 @@ describe("IssueDetail", () => {
     const button = await screen.findByRole("button", { name: /build/i });
     fireEvent.click(button);
 
-    expect(openTerminal).toHaveBeenCalledWith({
+    expect(launchTerminal).toHaveBeenCalledWith({
       command: "lh dev 12",
       repo: "me/proj",
       label: "dev #12",
       issueRef: { owner: "me", repo: "proj", number: 12 },
+      workflow: "issue-dev",
+      issueNumber: 12,
     });
   });
 
