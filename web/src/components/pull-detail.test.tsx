@@ -586,6 +586,145 @@ describe("PullDetail", () => {
     expect(screen.getAllByText("changes requested").length).toBe(2);
   });
 
+  it("resolves a group's verdict per-topic, so a later PASS clears an earlier REQUEST_CHANGES on the same topic (#533)", async () => {
+    // Round 1: quality REQUEST_CHANGES against the current head. Round 2:
+    // quality PASS against the same head, resolving it. A REQUEST_CHANGES on a
+    // different topic (security) stays unresolved and must still dominate.
+    const grouped: PullReview[] = [
+      {
+        id: 1,
+        user: { login: "quality-bot" },
+        state: "REQUEST_CHANGES",
+        topic: "quality",
+        body: "round 1: needs work",
+        head_sha: "aaa",
+        submitted_at: "2026-06-18T10:00:00Z",
+      },
+      {
+        id: 2,
+        user: { login: "security-bot" },
+        state: "PASS",
+        topic: "security",
+        body: "security ok",
+        head_sha: "aaa",
+        submitted_at: "2026-06-18T10:05:00Z",
+      },
+      {
+        id: 3,
+        user: { login: "quality-bot" },
+        state: "PASS",
+        topic: "quality",
+        body: "round 2: looks good now",
+        head_sha: "aaa",
+        submitted_at: "2026-06-18T11:00:00Z",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => pull,
+        "pulls/files": () => files,
+        "reviews/list": () => grouped,
+        "reviews/listComments": () => [],
+        "comments/list": () => [],
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    const summary = (await screen.findByText("aaa")).closest("details");
+    // The quality topic's REQUEST_CHANGES is superseded by its own later PASS,
+    // so the group reads "passed" rather than "changes requested".
+    expect(summary?.querySelector("summary")?.textContent).toContain("passed");
+    expect(summary?.querySelector("summary")?.textContent).not.toContain(
+      "changes requested",
+    );
+  });
+
+  it("keeps a group's verdict as changes requested when an unresolved REQUEST_CHANGES sits alongside a passed topic (#533)", async () => {
+    // quality is REQUEST_CHANGES with no later PASS on that topic; security
+    // passed. The unresolved topic must still dominate the group verdict.
+    const grouped: PullReview[] = [
+      {
+        id: 1,
+        user: { login: "security-bot" },
+        state: "PASS",
+        topic: "security",
+        body: "security ok",
+        head_sha: "aaa",
+        submitted_at: "2026-06-18T10:00:00Z",
+      },
+      {
+        id: 2,
+        user: { login: "quality-bot" },
+        state: "REQUEST_CHANGES",
+        topic: "quality",
+        body: "still needs work",
+        head_sha: "aaa",
+        submitted_at: "2026-06-18T10:05:00Z",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => pull,
+        "pulls/files": () => files,
+        "reviews/list": () => grouped,
+        "reviews/listComments": () => [],
+        "comments/list": () => [],
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    const summary = (await screen.findByText("aaa")).closest("details");
+    expect(summary?.querySelector("summary")?.textContent).toContain(
+      "changes requested",
+    );
+  });
+
   it("renders per-file review notes with the diff range, marking stale ones (#217)", async () => {
     // Two notes on the same file: one for the PR's current head ("aaa") and one for an
     // earlier commit, which must be flagged STALE.

@@ -469,16 +469,24 @@ type ReviewGroup = {
 };
 
 // Collapse a group's reviews into a single verdict shown on the (always-visible)
-// summary, so a reader sees each group's state without expanding it (#268). A
-// REQUEST_CHANGES anywhere dominates ("changes requested"); otherwise a PASS
-// reads as "passed"; a comment-only group reads as "commented".
+// summary, so a reader sees each group's state without expanding it (#268).
+// Mirrors core/store.ts's computeReviewGate: only the latest review per topic
+// counts, so a REQUEST_CHANGES that a later PASS on the same topic resolves no
+// longer dominates the verdict (#533). Reviews arrive in created_at ASC order
+// (see groupReviewsByCommit), so the last write per topic wins.
 function reviewGroupVerdict(reviews: PullReview[]): {
   tone: BadgeTone;
   label: string;
 } {
-  if (reviews.some((r) => r.state === "REQUEST_CHANGES"))
+  const latestByTopic = new Map<string | null, PullReview>();
+  for (const r of reviews) {
+    if (r.state === "PASS" || r.state === "REQUEST_CHANGES")
+      latestByTopic.set(r.topic ?? null, r);
+  }
+  const latest = [...latestByTopic.values()];
+  if (latest.some((r) => r.state === "REQUEST_CHANGES"))
     return { tone: "review-changes", label: "changes requested" };
-  if (reviews.some((r) => r.state === "PASS"))
+  if (latest.some((r) => r.state === "PASS"))
     return { tone: "review-passed", label: "passed" };
   return { tone: "review-commented", label: "commented" };
 }
