@@ -29,7 +29,11 @@ export function SidebarHerdrSessions() {
   if (groups.length === 0) return null;
 
   return (
-    <div className="mt-3">
+    // Section divider (#514): `border-t` closes off the repo list+Archived block above the
+    // same way #504's `border-b`/`border-t` pair closes off the nav and footer — this div is
+    // the section's own wrapper (returns null above when there's nothing to show), so the
+    // divider only appears alongside the content it separates.
+    <div className="mt-3 border-t pt-3">
       <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Agents
       </div>

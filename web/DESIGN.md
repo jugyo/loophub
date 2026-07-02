@@ -99,6 +99,12 @@ whichever side owns the section's own wrapper element. This is the same token
 boundaries read as one consistent line weight/color across light and dark
 themes.
 
+Within the repo list+Archived+herdr sessions section, the herdr "Agents"
+sub-section (`SidebarHerdrSessions`) applies the same `border-t` token on its
+own wrapper when it renders. Since that component returns `null` when there
+are no herdr sessions to show, the divider only ever appears alongside the
+content it separates.
+
 ### Dashboard sections
 
 The repo dashboard (`/r/:owner/:repo`) shows the "now" sections — **Open PRs**
