@@ -8,7 +8,7 @@
 // so useTerminal() is a safe no-op when there is no provider (e.g. unit tests), mirroring the
 // defensive default in detail-title.tsx.
 
-import { ExternalLink, X } from "lucide-react";
+import { X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -240,7 +240,6 @@ export function TerminalLaunchFeedback() {
   if (!ctx?.launchMessage) return null;
   return (
     <div className="mx-auto mb-4 flex max-w-content items-start gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-100">
-      <ExternalLink className="mt-0.5 size-4 shrink-0" />
       <span className="min-w-0 flex-1 break-words">{ctx.launchMessage}</span>
       <button
         type="button"
