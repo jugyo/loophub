@@ -404,6 +404,62 @@ describe("SidebarHerdrSessions", () => {
       expect(tooltip.parentElement).toBe(row.parentElement);
     });
 
+    it("renders SGR color codes as colored HTML (#554)", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithSessions(
+        {
+          repos: [
+            {
+              repo: "me/app",
+              session_name: "me-app-12345678",
+              agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+            },
+          ],
+        },
+        // core/herdr-status.ts keeps SGR sequences in `output` (#554); the raw green
+        // color code must never leak into the rendered text as literal garbage.
+        { output: "\x1b[32mPASS\x1b[0m npm test\n", cols: null, rows: null },
+      );
+      await screen.findByText("dev #11");
+
+      fireEvent.mouseEnter(agentRow());
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      const tooltip = await screen.findByRole("tooltip");
+      expect(tooltip.querySelector('[style*="color"]')?.textContent).toBe(
+        "PASS",
+      );
+      expect(tooltip.textContent).toBe("PASS npm test\n");
+      expect(tooltip.textContent).not.toContain("\x1b");
+    });
+
+    it("still renders plain-text output with no ANSI unchanged (no regression)", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithSessions(
+        {
+          repos: [
+            {
+              repo: "me/app",
+              session_name: "me-app-12345678",
+              agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+            },
+          ],
+        },
+        { output: "$ npm test\n42 passing\n", cols: null, rows: null },
+      );
+      await screen.findByText("dev #11");
+
+      fireEvent.mouseEnter(agentRow());
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      const tooltip = await screen.findByRole("tooltip");
+      expect(tooltip.textContent).toBe("$ npm test\n42 passing\n");
+    });
+
     it("shows nothing when the agent has no output (herdr down / agent gone)", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       renderWithSessions(

@@ -141,10 +141,11 @@ export function parseHerdrPaneLayout(
 
 // herdr's recent-pane buffer is raw terminal output: SGR color codes, cursor moves,
 // and lone carriage returns (progress-bar overwrites) are all still in there. The
-// sidebar preview (#523) renders this text as-is inside a plain <pre>, which doesn't
-// interpret escape sequences the way a terminal does — left untouched, they show up
-// as literal garbage (e.g. "[32m") and stray \r/\r\n runs that look like broken
-// wrapping. Strip them down to plain text here, once, so every caller gets clean output.
+// sidebar preview (#554) renders SGR sequences as actual color via ansi_up, so those
+// are kept intact; everything else here doesn't mean anything outside a live terminal
+// (cursor moves, OSC titles/hyperlinks) or breaks a plain <pre> (stray \r/\r\n runs
+// that look like broken wrapping) and is stripped, once, so every caller gets terminal
+// output that's safe to render as either colored HTML or plain text.
 // Parameter bytes include ':' too (ITU-T colon syntax for direct-color SGR, e.g.
 // "\x1b[38:2:255:0:0m"), not just the more common ';'-delimited form. Deliberately no
 // intermediate-byte class (ECMA-48 allows one, values 0x20-0x2F i.e. space through '/')
@@ -156,6 +157,14 @@ export function parseHerdrPaneLayout(
 // (e.g. "\x1b[123 processes running" losing "123 p"). Dropping the class means such
 // input simply doesn't match here at all, falling through to ANSI_CSI_TRUNCATED below.
 const ANSI_CSI = /\x1b\[[0-9;:?]*[@-~]/g;
+// SGR (color/style) sequences specifically — same parameter-byte class as ANSI_CSI
+// above, restricted to the 'm' final byte. Extracted via split/match in stripAnsi
+// below *before* the generic stripping runs, so these survive intact for ansi_up to
+// render as color: the generic passes below (especially ANSI_CSI_TRUNCATED, which has
+// no final-byte requirement at all) can't tell a still-open CSI from one whose final
+// byte is a color code worth keeping, so they'd otherwise eat an SGR sequence's
+// leading parameter bytes (e.g. the "\x1b[32" of "\x1b[32m").
+const ANSI_SGR = /\x1b\[[0-9;:]*m/g;
 // The middle class excludes \x1b (not just \x07): without that, an ST-terminated OSC
 // sequence (e.g. an OSC 8 hyperlink) greedily backtracks past a *later* unrelated OSC's
 // terminator, deleting real text in between — and on adversarial input (many bare
@@ -176,14 +185,22 @@ const ANSI_OTHER = /\x1b[()][A-Za-z0-9]|\x1b[=>]|\x1b[78DMEc]/g;
 const ANSI_ESCAPE = /\x1b/g;
 
 function stripAnsi(text: string): string {
-  return text
-    .replace(ANSI_CSI, "")
-    .replace(ANSI_CSI_TRUNCATED, "")
-    .replace(ANSI_OSC, "")
-    .replace(ANSI_OTHER, "")
-    .replace(ANSI_ESCAPE, "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "");
+  const colors = text.match(ANSI_SGR) ?? [];
+  const segments = text
+    .split(ANSI_SGR)
+    .map((segment) =>
+      segment
+        .replace(ANSI_CSI, "")
+        .replace(ANSI_CSI_TRUNCATED, "")
+        .replace(ANSI_OSC, "")
+        .replace(ANSI_OTHER, "")
+        .replace(ANSI_ESCAPE, ""),
+    );
+  let result = segments[0];
+  for (const [i, color] of colors.entries()) {
+    result += color + segments[i + 1];
+  }
+  return result.replace(/\r\n/g, "\n").replace(/\r/g, "");
 }
 
 function tryParse(text: string): unknown {

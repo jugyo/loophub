@@ -4,8 +4,9 @@
 // that agent's recent terminal output, fetched on demand via `terminal/agentRead`. Renders
 // nothing while loading, on error, or when no session has agents, so the section never gets
 // in the way when herdr isn't in use.
+import { AnsiUp } from "ansi_up";
 import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { HerdrAgent } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -330,7 +331,16 @@ function AgentPreview({
   const { data, isLoading } = useHerdrAgentRead(repo, target, {
     enabled: true,
   });
-  if (isLoading || !data?.output) return null;
+  // core/herdr-status.ts keeps SGR (color) sequences in `output` (#554) so the terminal's
+  // actual colors carry through; ansi_up converts them to inline-styled <span>s here.
+  // escape_html defaults to true, so any HTML-special chars in the terminal text itself
+  // are entity-escaped before the markup is trusted below — untrusted herdr output can't
+  // inject elements through this preview.
+  const html = useMemo(() => {
+    if (!data?.output) return null;
+    return new AnsiUp().ansi_to_html(data.output);
+  }, [data?.output]);
+  if (isLoading || !data?.output || html === null) return null;
   const { width, maxHeight } = previewBoxSize(
     data.rows ?? null,
     position.maxWidth,
@@ -350,9 +360,10 @@ function AgentPreview({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      <pre className="whitespace-pre font-mono text-xs text-foreground">
-        {data.output}
-      </pre>
+      <pre
+        className="whitespace-pre font-mono text-xs text-foreground"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </div>
   );
 }

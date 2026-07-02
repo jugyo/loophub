@@ -144,7 +144,7 @@ describe("parseHerdrAgentRead", () => {
     expect(parseHerdrAgentRead(AGENT_READ)).toBe("$ npm test\n42 passing\n");
   });
 
-  test("strips SGR color codes and OSC title sequences (#523)", () => {
+  test("keeps SGR color codes but strips OSC title sequences (#523, #554)", () => {
     const withAnsi = JSON.stringify({
       result: {
         read: {
@@ -152,7 +152,9 @@ describe("parseHerdrAgentRead", () => {
         },
       },
     });
-    expect(parseHerdrAgentRead(withAnsi)).toBe("PASS npm test\n");
+    expect(parseHerdrAgentRead(withAnsi)).toBe(
+      "\x1b[32mPASS\x1b[0m \x1b[1mnpm test\x1b[0m\n",
+    );
   });
 
   test("keeps text between two ST-terminated OSC sequences instead of swallowing it (#523 round 2)", () => {
@@ -166,11 +168,13 @@ describe("parseHerdrAgentRead", () => {
     expect(parseHerdrAgentRead(withHyperlink)).toBe("before link text after\n");
   });
 
-  test("strips colon-delimited (ITU-T direct-color) SGR sequences (#523 round 2)", () => {
+  test("keeps colon-delimited (ITU-T direct-color) SGR sequences (#523 round 2, #554)", () => {
     const withColonSgr = JSON.stringify({
       result: { read: { text: "\x1b[38:2:255:0:0mRED\x1b[0m\n" } },
     });
-    expect(parseHerdrAgentRead(withColonSgr)).toBe("RED\n");
+    expect(parseHerdrAgentRead(withColonSgr)).toBe(
+      "\x1b[38:2:255:0:0mRED\x1b[0m\n",
+    );
   });
 
   test("strips save/restore-cursor escape sequences (#523 round 2)", () => {
@@ -204,11 +208,11 @@ describe("parseHerdrAgentRead", () => {
     expect(result?.endsWith("done\n")).toBe(true);
   });
 
-  test("drops a truncated CSI introducer with no final byte instead of leaking its params (#523 round 2)", () => {
+  test("drops a truncated CSI introducer with no final byte instead of leaking its params, but keeps the SGR that follows it (#523 round 2, #554)", () => {
     const withTruncatedCsi = JSON.stringify({
       result: { read: { text: "\x1b[1\x1b[mHELLO" } },
     });
-    expect(parseHerdrAgentRead(withTruncatedCsi)).toBe("HELLO");
+    expect(parseHerdrAgentRead(withTruncatedCsi)).toBe("\x1b[mHELLO");
   });
 
   test("normalizes CRLF to LF and drops stray progress-bar carriage returns (#523)", () => {
