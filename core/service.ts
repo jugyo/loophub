@@ -4,9 +4,20 @@
 // JSON-RPC layer (S2) will wrap the same procedures. No HTTP/Request types leak in here.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, realpathSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
-import { terminalLaunchBackend, updateConfig, worktreeRoot } from "./config.ts";
+import {
+  configDir,
+  terminalLaunchBackend,
+  updateConfig,
+  worktreeRoot,
+} from "./config.ts";
 import { isServiceError, ServiceError } from "./errors.ts";
 import { formatEvent, type LoopEvent } from "./event-hub.ts";
 import { type FollowOptions, followEvents } from "./events-follow.ts";
@@ -24,6 +35,7 @@ import {
   remoteUrl,
   revParse,
   worktreeList,
+  worktreeListChecked,
   worktreePrune,
   worktreeRemove,
   worktreeStatus,
@@ -197,6 +209,107 @@ export const repos = {
       full_name: r.full_name,
     });
     return repoJSON(repoOr404(name));
+  },
+
+  // #485: rename a repo's owner/name (full_name). The row keeps its id, so issues/PRs/events
+  // follow automatically, and `/r/:owner/:repo` routes plus `--repo owner/name` resolve by
+  // full_name per request — both work under the new name immediately. Worktree and dev-lock
+  // paths, however, are *derived* from full_name (core/worktree-path.ts, cli/dev.ts
+  // devLockPath), so a rename would orphan anything provisioned under the old name; rather
+  // than relocating paths, refuse the rename while any worktree or dev lock still lives under
+  // the repo's current name. Archived repos stay renamable — like setArchived/setFavorite/
+  // setMergeMode, this edits registration metadata, not the repo's contents.
+  async rename(name: string, newName: string, sessionId?: string | null) {
+    const r = repoOr404(name);
+    if (typeof newName !== "string" || !newName.trim())
+      throw new ServiceError(422, "new_name must be a non-empty string");
+    const trimmed = newName.trim();
+    // splitName would silently drop segments past the second; reject instead.
+    if (trimmed.split("/").length > 2)
+      throw new ServiceError(422, `invalid repo name: ${trimmed}`);
+    const [owner, rname] = S.splitName(trimmed);
+    const full = `${owner}/${rname}`;
+    try {
+      // Reuse the worktree-path segment guard as the canonical "safe repo name" check
+      // (rejects empty, ".", "..", and backslash segments).
+      worktreePath("/", full, 0);
+    } catch {
+      throw new ServiceError(422, `invalid repo name: ${trimmed}`);
+    }
+    if (full === r.full_name) return repoJSON(r);
+    // Collision check is case- and Unicode-normalization-insensitive: UNIQUE(full_name) is
+    // byte-exact, but the derived worktree/dev-lock directories live on filesystems that are
+    // commonly case-insensitive and NFC/NFD-normalizing (macOS/Windows), where "acme/app",
+    // "Acme/App", and an NFD variant would clobber each other's paths. Exclude the repo
+    // itself so a case-only self-rename stays a rename, not a collision.
+    const foldName = (s: string) => s.normalize("NFC").toLowerCase();
+    const folded = foldName(full);
+    const clash = S.listRepos("all").find(
+      (other) => other.id !== r.id && foldName(other.full_name) === folded,
+    );
+    if (clash)
+      throw new ServiceError(422, `already registered: ${clash.full_name}`);
+
+    // A git failure must refuse the rename, not read as "no worktrees" — otherwise a
+    // moved/corrupt local_path silently bypasses the very orphaning guard below.
+    const listed = await worktreeListChecked(r.local_path);
+    if (!listed.ok) {
+      throw new ServiceError(
+        422,
+        `cannot rename: cannot verify worktrees (git failed in ${r.local_path}: ${listed.error}); fix local_path first`,
+      );
+    }
+    const base = canonicalPath(join(worktreeRoot(), r.full_name));
+    const inUse = listed.worktrees.filter((w) =>
+      canonicalPath(w.path).startsWith(`${base}/`),
+    );
+    if (inUse.length) {
+      throw new ServiceError(
+        422,
+        `cannot rename: ${inUse.length} worktree(s) exist under the current name ` +
+          `(${inUse.map((w) => w.path).join(", ")}); ` +
+          `merge or close those PRs and remove the worktrees (lh worktree prune) first`,
+      );
+    }
+
+    // Dev locks are keyed by full_name too (<home>/dev-locks/<full_name>/pr-<n>.json,
+    // cli/dev.ts devLockPath) and can exist before the worktree does — `lh dev` claims the
+    // lock first. Refuse while any lock file remains so an in-flight dev session isn't
+    // orphaned under the old name; stale lock files must be removed by hand first.
+    const lockDir = join(configDir(), "dev-locks", r.full_name);
+    const locks = existsSync(lockDir)
+      ? readdirSync(lockDir).filter((f) => f.endsWith(".json"))
+      : [];
+    if (locks.length) {
+      throw new ServiceError(
+        422,
+        `cannot rename: ${locks.length} dev lock(s) exist under the current name ` +
+          `(${lockDir}); wait for the dev session to finish or remove stale locks first`,
+      );
+    }
+
+    const [oldOwner, oldName] = S.splitName(r.full_name);
+    let updated: S.Repo | null;
+    try {
+      updated = S.updateRepo(oldOwner, oldName, { full_name: full });
+    } catch (e) {
+      // The pre-checks above race against concurrent create/rename calls (async gap at the
+      // worktree listing). The byte-exact UNIQUE(full_name) constraint backstops only an
+      // identical-name race; a concurrent case/normalization variant slips both checks and
+      // is accepted risk for this single-user local tool (closing it would need a
+      // COLLATE NOCASE unique index). Normalize the covered race to the same 422 instead of
+      // leaking a raw SQLITE_CONSTRAINT error as a 500.
+      if (e instanceof Error && /UNIQUE constraint failed/.test(e.message))
+        throw new ServiceError(422, `already registered: ${full}`);
+      throw e;
+    }
+    if (!updated) throw new ServiceError(404, "Not Found");
+    const actor = actorFor(sessionId);
+    S.emitEvent(r.id, "repo.renamed", actor, {
+      full_name: full,
+      from: r.full_name,
+    });
+    return repoJSON(updated);
   },
 
   // #406: pin the repo's PR-detail write action, or clear it back to the remote-based default.

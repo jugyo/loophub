@@ -107,6 +107,15 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "repos/rename": {
+    description: "Rename a repository's owner/name (full_name) (#485).",
+    params: params({ name: repo, new_name: strNonEmpty, session_id: sid }, [
+      "name",
+      "new_name",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.repos.rename(p.name, p.new_name, p.session_id),
+  },
   "repos/remove": {
     description: "Remove a repository and its issues/PRs.",
     params: params({ name: repo }, ["name"]),

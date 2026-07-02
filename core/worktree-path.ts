@@ -6,9 +6,22 @@
 // tests. See also worktree-prune.ts (prNumberFromBranch) which decodes the same branch convention.
 import { join } from "node:path";
 
-function assertSafeRepoSegments(fullName: string, context: string): void {
+// Exported for reuse wherever a full_name feeds a derived path or the repos.full_name
+// column (worktree paths here, the rename write in core/store.ts).
+export function assertSafeRepoSegments(
+  fullName: string,
+  context: string,
+): void {
   for (const seg of fullName.split("/")) {
-    if (!seg || seg === "." || seg === ".." || seg.includes("\\")) {
+    // Control characters (NUL etc.) survive path.join but blow up every later fs call on
+    // the derived path (ERR_INVALID_ARG_VALUE), so reject them alongside traversal.
+    if (
+      !seg ||
+      seg === "." ||
+      seg === ".." ||
+      seg.includes("\\") ||
+      /[\u0000-\u001f]/.test(seg)
+    ) {
       throw new Error(`invalid repo name for ${context}: "${fullName}"`);
     }
   }

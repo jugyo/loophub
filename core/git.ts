@@ -495,6 +495,18 @@ export async function worktreeList(repoPath: string): Promise<Worktree[]> {
   return parseWorktreePorcelain(r.stdout);
 }
 
+// Like worktreeList, but a git failure is reported instead of read as "no worktrees" —
+// for callers whose safety decision depends on actually seeing the list (#485: the rename
+// guard must refuse, not proceed, when local_path is gone or the repo is corrupt).
+export async function worktreeListChecked(
+  repoPath: string,
+): Promise<{ ok: true; worktrees: Worktree[] } | { ok: false; error: string }> {
+  const r = await git(repoPath, ["worktree", "list", "--porcelain"]);
+  if (r.code !== 0)
+    return { ok: false, error: r.stderr.trim() || `git exited ${r.code}` };
+  return { ok: true, worktrees: parseWorktreePorcelain(r.stdout) };
+}
+
 function parseWorktreePorcelain(out: string): Worktree[] {
   const wts: Worktree[] = [];
   let cur: Worktree | null = null;

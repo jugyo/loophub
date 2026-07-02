@@ -48,6 +48,10 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
       if (patchFails) throw new RpcFault(500, "boom");
       return repo(p.archived);
     },
+    "repos/rename": (p) => {
+      if (patchFails) throw new RpcFault(422, "already registered");
+      return { ...repo(initialArchived), full_name: p.new_name };
+    },
   });
 }
 
@@ -62,8 +66,14 @@ function renderMenu(initialArchived = false, patchFails = false) {
     path: "/",
     component: () => <RepoMenu owner="me" repo="proj" />,
   });
+  // Rename navigates to the renamed repo's URL; give the test router a target.
+  const repoRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo",
+    component: () => <div data-testid="repo-page" />,
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, repoRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
   return render(
@@ -119,6 +129,52 @@ describe("RepoMenu", () => {
       await screen.findByRole("menuitem", { name: "Unarchive" }),
     ).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "Archive" })).toBeNull();
+  });
+
+  it("renames via the dialog and navigates to the new repo URL (#485)", async () => {
+    renderMenu(false);
+    await openMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const input = within(dialog).getByRole("textbox", {
+      name: /new repository name/i,
+    }) as HTMLInputElement;
+    expect(input.value).toBe("me/proj");
+
+    // Unchanged name keeps the submit disabled.
+    const submit = within(dialog).getByRole("button", { name: "Rename" });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(input, { target: { value: "acme/other" } });
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      const call = rpcCall("repos/rename");
+      expect(call).toBeTruthy();
+      expect(call!.params).toMatchObject({
+        name: "me/proj",
+        new_name: "acme/other",
+      });
+    });
+    // Navigated to the renamed repo's page.
+    expect(await screen.findByTestId("repo-page")).toBeTruthy();
+  });
+
+  it("keeps the rename dialog open and shows the server error (#485)", async () => {
+    renderMenu(false, true);
+    await openMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(
+      within(dialog).getByRole("textbox", { name: /new repository name/i }),
+      { target: { value: "me/taken" } },
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
+
+    expect(await screen.findByText(/already registered/)).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("keeps the dialog open and shows an error when the PATCH fails", async () => {

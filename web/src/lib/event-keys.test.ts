@@ -159,4 +159,35 @@ describe("queryKeysForEvent", () => {
     );
     expect(issueKeys).toContainEqual(["issue", "me/proj", 4]);
   });
+
+  it("maps repo.* events to the sidebar repos list (#485)", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "repo.archived",
+        repo: "me/proj",
+        payload: { full_name: "me/proj" },
+      }),
+    );
+    expect(keys).toContainEqual(["repos"]);
+  });
+
+  it("invalidates the old name's keys for repo.renamed via payload.from (#485)", () => {
+    // event.repo carries the NEW full_name; the stale caches live under the old one.
+    const keys = queryKeysForEvent(
+      ev({
+        type: "repo.renamed",
+        repo: "acme/renamed",
+        payload: { full_name: "acme/renamed", from: "me/proj" },
+      }),
+    );
+    expect(keys).toContainEqual(["repos"]);
+    expect(keys).toContainEqual(["repo", "me/proj"]);
+    expect(keys).toContainEqual(["issues", "me/proj"]);
+    expect(keys).toContainEqual(["pulls", "me/proj"]);
+    expect(keys).toContainEqual(["events", "me/proj"]);
+    // Dashboard rows embed full_name + links, so the top page must refresh too.
+    expect(keys).toContainEqual(["dashboard"]);
+    // The new name's repo key comes from the generic repo tail.
+    expect(keys).toContainEqual(["repo", "acme/renamed"]);
+  });
 });

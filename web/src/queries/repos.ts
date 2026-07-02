@@ -6,6 +6,7 @@ import {
   getRepo,
   getRepoMergeMode,
   listRepos,
+  renameRepo,
   setRepoArchived,
   setRepoFavorite,
   setRepoMergeMode,
@@ -63,6 +64,21 @@ export function useSetRepoFavorite(owner: string, repo: string) {
     mutationFn: (favorite: boolean) => setRepoFavorite(owner, repo, favorite),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
+      qc.invalidateQueries({ queryKey: queryKeys.repos() });
+    },
+  });
+}
+
+/**
+ * Rename the repo's owner/name (#485). Invalidates the sidebar list; the caller
+ * navigates to the new /r/:owner/:repo URL, whose queries fetch fresh under the
+ * new name (the old repo's cached entries just go stale and unused).
+ */
+export function useRenameRepo(owner: string, repo: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (newName: string) => renameRepo(owner, repo, newName),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.repos() });
     },
   });

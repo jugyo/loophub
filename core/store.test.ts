@@ -31,6 +31,39 @@ test("createRepo normalizes slashless names to me/<name> (RETURNING row)", () =>
   expect(S.getRepo("me", "proj")?.id).toBe(repo.id);
 });
 
+test("updateRepo renames full_name and keeps name/owner in sync (#485)", () => {
+  const repo = S.createRepo("me/rn-store", "/tmp/rn-store");
+
+  const updated = S.updateRepo("me", "rn-store", {
+    full_name: "acme/renamed-store",
+  });
+  expect(updated?.id).toBe(repo.id);
+  expect(updated?.full_name).toBe("acme/renamed-store");
+  expect(updated?.owner).toBe("acme");
+  expect(updated?.name).toBe("renamed-store");
+
+  // Old name no longer resolves; new one does, to the same row.
+  expect(S.getRepo("me", "rn-store")).toBeNull();
+  expect(S.getRepo("acme", "renamed-store")?.id).toBe(repo.id);
+});
+
+test("updateRepo rejects malformed full_name instead of mangling it (#485)", () => {
+  S.createRepo("me/rn-guard", "/tmp/rn-guard");
+
+  // splitName would silently truncate "a/b/c" to "a/b"; the write must refuse instead.
+  expect(() => S.updateRepo("me", "rn-guard", { full_name: "a/b/c" })).toThrow(
+    /invalid repo name/,
+  );
+  expect(() =>
+    S.updateRepo("me", "rn-guard", { full_name: "../evil" }),
+  ).toThrow(/invalid repo name/);
+  // Control characters would poison every later derived-path fs call.
+  expect(() =>
+    S.updateRepo("me", "rn-guard", { full_name: "a\u0000b/app" }),
+  ).toThrow(/invalid repo name/);
+  expect(S.getRepo("me", "rn-guard")).not.toBeNull();
+});
+
 test("issues, labels, comments, and review state round-trip through the adapter", () => {
   const repo = S.createRepo("me/app", "/tmp/app");
 

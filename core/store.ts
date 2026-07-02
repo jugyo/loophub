@@ -1,5 +1,6 @@
 import { db, now } from "./db.ts";
 import { formatEvent, publishEvent } from "./event-hub.ts";
+import { assertSafeRepoSegments } from "./worktree-path.ts";
 
 export interface Repo {
   id: number;
@@ -113,7 +114,7 @@ export function getRepo(owner: string, name: string): Repo | null {
 export function updateRepo(
   owner: string,
   name: string,
-  fields: { default_branch?: string; local_path?: string },
+  fields: { default_branch?: string; local_path?: string; full_name?: string },
   headShas?: { issueId: number; sha: string | null }[],
 ): Repo | null {
   const repo = getRepo(owner, name);
@@ -127,6 +128,18 @@ export function updateRepo(
   if (fields.local_path !== undefined) {
     sets.push("local_path = ?");
     params.push(fields.local_path);
+  }
+  if (fields.full_name !== undefined) {
+    // #485: rename. Keep the derived name/owner columns in sync with full_name. Validate here
+    // too (not only in repos.rename): full_name later feeds derived filesystem paths, and
+    // splitName silently drops segments past the second, so a future caller skipping the
+    // service-layer guard must get an error, not mangled data.
+    if (fields.full_name.split("/").length > 2)
+      throw new Error(`invalid repo name: "${fields.full_name}"`);
+    assertSafeRepoSegments(fields.full_name, "repos.full_name");
+    const [newOwner, newName] = splitName(fields.full_name);
+    sets.push("full_name = ?", "name = ?", "owner = ?");
+    params.push(`${newOwner}/${newName}`, newName, newOwner);
   }
   if (!sets.length && !headShas?.length) return repo;
 
@@ -155,7 +168,8 @@ export function updateRepo(
   } else {
     apply();
   }
-  return getRepo(owner, name);
+  // Re-fetch by id: after a full_name change the (owner, name) lookup no longer matches.
+  return getRepoById(repo.id);
 }
 
 export function deleteRepo(owner: string, name: string): boolean {

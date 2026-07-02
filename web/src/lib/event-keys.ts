@@ -2,6 +2,7 @@
 // invalidate. Centralized so the SSE hook stays dumb. event.type prefixes:
 //   issue.*          -> issue / issues lists
 //   pull_request.*   -> pull / pulls lists
+//   repo.*           -> repos list (+ old-name keys on repo.renamed)
 //   agent_session.*  -> agent-sessions
 // See ../../../API.md for the full event type list.
 
@@ -119,6 +120,26 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // change came from.
     keys.push(["settings"]);
     keys.push(["terminal", "config"]);
+  } else if (type.startsWith("repo.")) {
+    // Repo metadata changes (archived/favorited/renamed/merge_mode, #485) alter the sidebar
+    // list for every connected client, not just the tab that performed the mutation (whose
+    // hook already invalidates onSuccess). repo.renamed additionally strands the old name's
+    // repo-scoped caches — the event's `repo` field carries the NEW full_name — so invalidate
+    // the old-name prefixes via payload.from; a client sitting on the old URL refetches and
+    // surfaces the 404 instead of showing stale data under a dead route.
+    keys.push([...queryKeys.repos()]);
+    // Dashboard rows embed the repo's full_name and /r/<full_name> links, so any repo
+    // metadata change (rename especially) must refresh the cross-repo top page too.
+    keys.push([...queryKeys.dashboard()]);
+    const from = payload?.from;
+    if (typeof from === "string" && from) {
+      keys.push([...queryKeys.repo(from)]);
+      keys.push(["issues", from]);
+      keys.push(["issue", from]);
+      keys.push(["pulls", from]);
+      keys.push(["pull", from]);
+      keys.push([...queryKeys.events(), from]);
+    }
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
     // agent_session.linked (#298) targets a specific PR or issue; its related_sessions list lives in

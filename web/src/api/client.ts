@@ -153,6 +153,20 @@ export function setRepoFavorite(
   });
 }
 
+// #485: rename the repo's owner/name (full_name). Returns the repo under its new name.
+export function renameRepo(
+  owner: string,
+  repo: string,
+  newName: string,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Repo>("repos/rename", {
+    name: full(owner, repo),
+    new_name: newName,
+    session_id: sessionId,
+  });
+}
+
 // #406: resolved merge-mode view (setting + effective + GitHub-remote presence) for the settings UI.
 export function getRepoMergeMode(owner: string, repo: string) {
   return rpc<RepoMergeMode>("repos/mergeMode", { name: full(owner, repo) });

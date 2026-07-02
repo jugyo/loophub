@@ -1,14 +1,21 @@
 // Overflow menu for the repo detail header. Holds infrequent repo-level actions
-// — currently Archive / Unarchive — behind a "…" trigger so they don't crowd the
-// header. Archiving routes back home (the repo leaves the active sidebar list);
-// unarchiving stays put.
+// — Archive / Unarchive, Rename, and the PR-action toggle — behind a "…" trigger
+// so they don't crowd the header. Archiving routes back home (the repo leaves the
+// active sidebar list); unarchiving stays put. Renaming routes to the new URL.
 
 import { useNavigate } from "@tanstack/react-router";
-import { Archive, ArchiveRestore, Check, MoreHorizontal } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  MoreHorizontal,
+  Pencil,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { MergeMode } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import {
+  useRenameRepo,
   useRepo,
   useRepoMergeMode,
   useSetRepoArchived,
@@ -22,6 +29,7 @@ export function RepoMenu({ owner, repo }: { owner: string; repo: string }) {
 
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Close the menu on outside click or Escape (native dropdown dismissal). The
@@ -97,8 +105,28 @@ export function RepoMenu({ owner, repo }: { owner: string; repo: string }) {
             {archived ? "Unarchive" : "Archive"}
           </button>
 
+          <button
+            role="menuitem"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+            onClick={() => {
+              setOpen(false);
+              setRenaming(true);
+            }}
+          >
+            <Pencil className="size-4" />
+            Rename
+          </button>
+
           <MergeModeSection owner={owner} repo={repo} />
         </div>
+      ) : null}
+
+      {renaming ? (
+        <RenameRepoDialog
+          owner={owner}
+          repo={repo}
+          onClose={() => setRenaming(false)}
+        />
       ) : null}
 
       {confirming ? (
@@ -181,6 +209,111 @@ function MergeModeSection({ owner, repo }: { owner: string; repo: string }) {
           {String(setMode.error)}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+// #485: rename the repo's owner/name. Worktree/dev-lock paths derive from the name, so the
+// server refuses while worktrees exist under the current name — that error is surfaced here.
+// On success, navigate to the repo's new URL (the old /r/:owner/:repo no longer resolves).
+function RenameRepoDialog({
+  owner,
+  repo,
+  onClose,
+}: {
+  owner: string;
+  repo: string;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const rename = useRenameRepo(owner, repo);
+  const [value, setValue] = useState(`${owner}/${repo}`);
+
+  // Match the disabled Cancel button: no dismissal path (Escape/backdrop) while the
+  // mutation is in flight, so the dialog can't vanish mid-rename.
+  const pending = rename.isPending;
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !pending) onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose, pending]);
+
+  const unchanged = value.trim() === `${owner}/${repo}`;
+
+  async function onSubmit() {
+    let updated: Awaited<ReturnType<typeof rename.mutateAsync>>;
+    try {
+      updated = await rename.mutateAsync(value.trim());
+    } catch {
+      // Surfaced via rename.error below; keep the dialog open.
+      return;
+    }
+    onClose();
+    const [newOwner, newRepo] = updated.full_name.split("/");
+    navigate({
+      to: "/r/$owner/$repo",
+      params: { owner: newOwner, repo: newRepo },
+    });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
+      onClick={() => {
+        if (!pending) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Rename repository"
+        className="flex w-full max-w-md flex-col rounded-lg border bg-background p-5 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold">
+          Rename {owner}/{repo}?
+        </h2>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Changes the repository's owner/name in LoopHub. The local git folder
+          is not moved. Renaming is refused while worktrees exist under the
+          current name.
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!unchanged && !rename.isPending) onSubmit();
+          }}
+        >
+          <input
+            type="text"
+            aria-label="New repository name"
+            className="mt-4 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            autoFocus
+          />
+          {rename.error ? (
+            <p className="mt-3 text-sm text-destructive">
+              {String(rename.error)}
+            </p>
+          ) : null}
+          <div className="mt-5 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onClose}
+              disabled={rename.isPending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={rename.isPending || unchanged}>
+              {rename.isPending ? "Working…" : "Rename"}
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
