@@ -168,11 +168,12 @@ describe("SidebarHerdrSessions", () => {
       // Height still sized from rows rather than the fixed fallback (256).
       expect(tooltip.style.maxHeight).not.toBe("256px");
       // Width no longer tries to fit columns (#548) — the `pre` scrolls horizontally
-      // instead of wrapping, so the popup keeps its fixed default width.
-      expect(tooltip.style.width).toBe("384px");
+      // instead of wrapping, so the popup's width tracks the viewport-relative ceiling
+      // (jsdom default 1024 width) rather than the pane's columns (#567).
+      expect(tooltip.style.width).toBe(`${1024 * 0.6}px`);
     });
 
-    it("scales the popup's height with the viewport for tall panes, without widening for wide ones (#548)", async () => {
+    it("scales the popup's height with the viewport for tall panes, without widening further for wide ones (#548)", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       renderWithSessions(
         {
@@ -202,8 +203,9 @@ describe("SidebarHerdrSessions", () => {
       // not the old fixed 480 ceiling.
       expect(tooltip.style.maxHeight).not.toBe("480px");
       expect(tooltip.style.maxHeight).toBe(`${768 * 0.7}px`);
-      // Width stays at the fixed default — it no longer scales with columns.
-      expect(tooltip.style.width).toBe("384px");
+      // Width doesn't scale with columns (a 239-wide pane produces the same width as a
+      // narrower one) — it tracks the viewport-relative ceiling directly (#567).
+      expect(tooltip.style.width).toBe(`${1024 * 0.6}px`);
     });
 
     it("lets the preview scroll horizontally instead of wrapping long lines (#548)", async () => {
@@ -257,7 +259,7 @@ describe("SidebarHerdrSessions", () => {
       });
 
       const tooltip = await screen.findByRole("tooltip");
-      expect(tooltip.style.width).toBe("384px");
+      expect(tooltip.style.width).toBe(`${1024 * 0.6}px`);
       expect(tooltip.style.maxHeight).toBe("256px");
     });
 

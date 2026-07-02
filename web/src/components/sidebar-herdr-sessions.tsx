@@ -258,7 +258,6 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
 // Fallback size while the pane's real dimensions are unknown (#531 AC: never silently
 // fail, keep the preview visible).
 const AGENT_PREVIEW_MAX_HEIGHT = 256;
-const AGENT_PREVIEW_WIDTH = 384; // matches the panel's old fixed w-96
 
 // Rough monospace line-height metric for the `font-mono text-xs` preview text below — real
 // font metrics vary by browser/OS, so this is only a fit, bounded by MIN/MAX so a huge or
@@ -272,32 +271,35 @@ const AGENT_PREVIEW_MIN_HEIGHT = 120;
 // Upper bound on the sized popup, as a fraction of the viewport rather than a fixed pixel
 // value (#536). A fixed cap (previously 640x480) is far smaller than real herdr panes —
 // e.g. a common 239x85 pane needs up to ~1376px of height at the metrics above — so the
-// popup was silently shrunk back down below the pane's actual content. Height still scales
-// with this ceiling via the pane's rows; width no longer scales with pane size (#548, the
-// `pre` scrolls horizontally instead of wrapping) but stays clamped by it on narrow
-// viewports (matching the `max-w-[60vw]` class on the popup below).
+// popup was silently shrunk back down below the pane's actual content. Height scales with
+// this ceiling via the pane's rows; width no longer tracks the pane's columns (#548, the
+// `pre` scrolls horizontally instead of wrapping) but now grows all the way to this same
+// ceiling too (#553 follow-up) instead of stopping at a fixed 384px, which was narrow
+// enough that most panes needed horizontal scrolling just to be readable.
 const AGENT_PREVIEW_MAX_WIDTH_VW = 0.6;
 const AGENT_PREVIEW_MAX_HEIGHT_VH = 0.7;
 
 // Sizes the popup to the target pane's actual rows (#531) when herdr reported them,
 // falling back to the fixed height above when it didn't (herdr down, or the read target is
 // the display-name fallback that `pane layout --pane` can't resolve). Width no longer
-// tracks the pane's columns (#548) — the `pre` scrolls horizontally instead of wrapping, so
-// a fixed width (still clamped to the viewport-relative ceiling below) is enough. maxWidth/
-// maxHeight are that viewport-relative ceiling computed once at hover time (see
-// AGENT_PREVIEW_MAX_WIDTH_VW above) so the position clamp and the actual box size always
-// agree on the same worst case.
+// tracks the pane's columns (#548) — the `pre` scrolls horizontally instead of wrapping —
+// so there's no per-pane signal to size it against; it uses the viewport-relative ceiling
+// directly instead (#553 follow-up), matching how height already scales. maxWidth/maxHeight
+// are that ceiling, computed once at hover time (see AGENT_PREVIEW_MAX_WIDTH_VW above) so
+// the position clamp and the actual box size always agree on the same worst case.
 function previewBoxSize(
   rows: number | null,
   maxWidth: number,
   maxHeight: number,
 ): { width: number; maxHeight: number } {
-  const width = Math.min(maxWidth, AGENT_PREVIEW_WIDTH);
   if (!rows || rows <= 0) {
-    return { width, maxHeight: Math.min(maxHeight, AGENT_PREVIEW_MAX_HEIGHT) };
+    return {
+      width: maxWidth,
+      maxHeight: Math.min(maxHeight, AGENT_PREVIEW_MAX_HEIGHT),
+    };
   }
   return {
-    width,
+    width: maxWidth,
     maxHeight: Math.min(
       maxHeight,
       Math.max(
