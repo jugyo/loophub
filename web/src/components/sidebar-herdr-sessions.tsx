@@ -101,9 +101,12 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [preview, setPreview] = useState<{ top: number; left: number } | null>(
-    null,
-  );
+  const [preview, setPreview] = useState<{
+    top: number;
+    left: number;
+    maxWidth: number;
+    maxHeight: number;
+  } | null>(null);
   const [confirming, setConfirming] = useState(false);
   const killAgent = useKillHerdrAgent();
 
@@ -137,28 +140,28 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
       hoverTimer.current = null;
       const rect = rowRef.current?.getBoundingClientRect();
       if (!rect) return;
+      // Viewport-relative, not a fixed pixel cap (#536) — see AGENT_PREVIEW_MAX_WIDTH_VW.
+      const maxWidth = window.innerWidth * AGENT_PREVIEW_MAX_WIDTH_VW;
+      const maxHeight = window.innerHeight * AGENT_PREVIEW_MAX_HEIGHT_VH;
       setPreview({
         // Clamp so the panel stays on screen: pulled up for rows near the sidebar
-        // bottom, but never above the viewport top on short windows. Sized against the
-        // largest box previewBoxSize can produce (not the smaller fixed fallback size)
-        // — this runs before the pane's cols/rows are known (#531), so it must assume
-        // the worst case or a sized-up preview near the edge would render off-screen.
+        // bottom, but never above the viewport top on short windows. Sized against
+        // maxWidth/maxHeight (the largest box previewBoxSize can produce for this
+        // viewport, not the smaller fixed fallback size) — this runs before the pane's
+        // cols/rows are known (#531), so it must assume the worst case or a sized-up
+        // preview near the edge would render off-screen.
         top: Math.max(
           0,
-          Math.min(
-            rect.top,
-            window.innerHeight - AGENT_PREVIEW_SIZED_MAX_HEIGHT - 8,
-          ),
+          Math.min(rect.top, window.innerHeight - maxHeight - 8),
         ),
-        // Same idea horizontally: pulled left on narrow viewports so the panel
-        // (capped at 60vw) doesn't run off the right edge.
+        // Same idea horizontally: pulled left on narrow viewports so the panel doesn't
+        // run off the right edge.
         left: Math.max(
           8,
-          Math.min(
-            rect.right + 8,
-            window.innerWidth - AGENT_PREVIEW_MAX_WIDTH - 8,
-          ),
+          Math.min(rect.right + 8, window.innerWidth - maxWidth - 8),
         ),
+        maxWidth,
+        maxHeight,
       });
     }, HOVER_DEBOUNCE_MS);
   }
@@ -263,30 +266,48 @@ const PREVIEW_CHAR_WIDTH_PX = 7.2;
 const PREVIEW_LINE_HEIGHT_PX = 16;
 const PREVIEW_PADDING_PX = 16; // p-2 (8px) on both left/right and top/bottom
 const AGENT_PREVIEW_MIN_WIDTH = 240;
-const AGENT_PREVIEW_MAX_WIDTH = 640;
 const AGENT_PREVIEW_MIN_HEIGHT = 120;
-const AGENT_PREVIEW_SIZED_MAX_HEIGHT = 480;
+
+// Upper bound on the sized popup, as a fraction of the viewport rather than a fixed pixel
+// value (#536). A fixed cap (previously 640x480) is far smaller than real herdr panes —
+// e.g. a common 239x85 pane needs ~1735x1376px at the metrics above — so the popup was
+// silently shrunk back down below the pane's actual content, and the `pre`'s
+// `whitespace-pre-wrap` then re-wrapped every long line inside the undersized box,
+// reproducing the "still wraps into a tiny popup" symptom even though #531/#532 already
+// plumbed cols/rows through correctly. Scaling with the viewport (matching the
+// `max-w-[60vw]` class on the popup below) lets a wide/tall pane claim a proportionally
+// larger box instead of hitting a ceiling far below typical terminal sizes.
+const AGENT_PREVIEW_MAX_WIDTH_VW = 0.6;
+const AGENT_PREVIEW_MAX_HEIGHT_VH = 0.7;
 
 // Sizes the popup to the target pane's actual columns/rows (#531) when herdr reported
 // them, falling back to the fixed size above when it didn't (herdr down, or the read
-// target is the display-name fallback that `pane layout --pane` can't resolve).
+// target is the display-name fallback that `pane layout --pane` can't resolve). maxWidth/
+// maxHeight are the viewport-relative ceiling computed once at hover time (see
+// AGENT_PREVIEW_MAX_WIDTH_VW above) so the position clamp and the actual box size always
+// agree on the same worst case.
 function previewBoxSize(
   cols: number | null,
   rows: number | null,
+  maxWidth: number,
+  maxHeight: number,
 ): { width: number; maxHeight: number } {
   if (!cols || !rows || cols <= 0 || rows <= 0) {
-    return { width: AGENT_PREVIEW_WIDTH, maxHeight: AGENT_PREVIEW_MAX_HEIGHT };
+    return {
+      width: Math.min(maxWidth, AGENT_PREVIEW_WIDTH),
+      maxHeight: Math.min(maxHeight, AGENT_PREVIEW_MAX_HEIGHT),
+    };
   }
   return {
     width: Math.min(
-      AGENT_PREVIEW_MAX_WIDTH,
+      maxWidth,
       Math.max(
         AGENT_PREVIEW_MIN_WIDTH,
         cols * PREVIEW_CHAR_WIDTH_PX + PREVIEW_PADDING_PX,
       ),
     ),
     maxHeight: Math.min(
-      AGENT_PREVIEW_SIZED_MAX_HEIGHT,
+      maxHeight,
       Math.max(
         AGENT_PREVIEW_MIN_HEIGHT,
         rows * PREVIEW_LINE_HEIGHT_PX + PREVIEW_PADDING_PX,
@@ -307,7 +328,7 @@ function AgentPreview({
 }: {
   repo: string;
   target: string;
-  position: { top: number; left: number };
+  position: { top: number; left: number; maxWidth: number; maxHeight: number };
   // Keeps the panel open while the pointer is over it, and lets it schedule its own
   // close when the pointer leaves — see CLOSE_DELAY_MS above.
   onMouseEnter: () => void;
@@ -322,6 +343,8 @@ function AgentPreview({
   const { width, maxHeight } = previewBoxSize(
     data.cols ?? null,
     data.rows ?? null,
+    position.maxWidth,
+    position.maxHeight,
   );
 
   return (

@@ -170,6 +170,40 @@ describe("SidebarHerdrSessions", () => {
       expect(tooltip.style.maxHeight).not.toBe("256px");
     });
 
+    it("scales the popup with the viewport instead of a small fixed cap for wide panes (#536)", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithSessions(
+        {
+          repos: [
+            {
+              repo: "me/app",
+              session_name: "me-app-12345678",
+              agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+            },
+          ],
+        },
+        // A common wide/tall terminal pane — far more cols/rows than a fixed pixel
+        // cap can hold. Previously clamped to a fixed 640x480 regardless of the
+        // viewport, leaving the popup far smaller than the pane's actual content and
+        // forcing `whitespace-pre-wrap` to re-wrap every long line inside it (#536).
+        { output: "$ npm test\n42 passing\n", cols: 239, rows: 85 },
+      );
+      await screen.findByText("dev #11");
+
+      fireEvent.mouseEnter(agentRow());
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      const tooltip = await screen.findByRole("tooltip");
+      // Clamped to a fraction of the (jsdom default 1024x768) viewport, not the old
+      // fixed 640x480 ceiling.
+      expect(tooltip.style.width).not.toBe("640px");
+      expect(tooltip.style.maxHeight).not.toBe("480px");
+      expect(tooltip.style.width).toBe(`${1024 * 0.6}px`);
+      expect(tooltip.style.maxHeight).toBe(`${768 * 0.7}px`);
+    });
+
     it("falls back to a fixed popup size when herdr didn't report pane dimensions (#531 AC)", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       renderWithSessions(
