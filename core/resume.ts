@@ -79,6 +79,10 @@ export function isClaudeSessionId(id: string | null | undefined): id is string {
 // runtime so resume stays correct once `lh dev` can launch other runtimes (codex, ...). Only
 // claude-code is actually resumable today — real multi-runtime support is out of scope for #164.
 export const RUNTIME_CLAUDE_CODE = "claude-code";
+// `lh dev --codex` launches the dev session in Codex instead (#458). Codex sessions are recorded
+// with this runtime but are not resumable by `lh resume` (resolveRuntimeResume reports
+// unknown-runtime) — Codex resume support is a separate step.
+export const RUNTIME_CODEX = "codex";
 
 // The effective runtime of a session row, with backward-compat for sessions registered before the
 // runtime column existed. A null-runtime row registered under LH_DEV_SESSION_AGENT predates the

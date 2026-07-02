@@ -198,6 +198,41 @@ export function parseDevTarget(target: string): { repo?: string; id: number } {
   );
 }
 
+// ---- runtime selection ----
+//
+// `lh dev` can launch the interactive dev session in Claude Code (default) or Codex (#458).
+// The worktree/PR/session preparation is runtime-independent; only the final spawn differs.
+export type DevRuntime = "claude-code" | "codex";
+
+// Resolve the runtime from the mutually-exclusive `--claude-code` / `--codex` flags. Passing
+// both is ambiguous — fail loudly rather than pick one. No flag means the historical default
+// (Claude Code), so plain `lh dev <id>` behavior is unchanged.
+export function resolveDevRuntime(flags: {
+  claudeCode?: boolean;
+  codex?: boolean;
+}): DevRuntime {
+  if (flags.claudeCode && flags.codex) {
+    throw new Error(
+      "--claude-code and --codex are mutually exclusive (pass at most one)",
+    );
+  }
+  return flags.codex ? "codex" : "claude-code";
+}
+
+// Build the `codex` argv for the interactive dev session. Codex takes the initial prompt as a
+// positional (`codex [PROMPT]`), so the same `/lh-dev <id>` slash command Claude receives is
+// handed to Codex verbatim — the rest of the context (worktree cwd, registered session, linked
+// PR) is prepared before spawn and is runtime-independent. Codex has no `--session-id` /
+// `--name` / `--settings` equivalents, so the argv is just the prompt; claude-only flags
+// (--sandbox/--allow/--auto) are rejected up front by the CLI, not silently dropped here.
+export function buildCodexArgs({
+  slashCommand,
+}: {
+  slashCommand: string;
+}): string[] {
+  return [slashCommand];
+}
+
 export function buildClaudeArgs({
   sessionId,
   managedSettings,
@@ -269,6 +304,9 @@ export interface KaniForwardFlags {
   allow?: string;
   verbose?: boolean;
   force?: boolean;
+  // Runtime selection (#458) — forwarded so the inner `lh dev` launches the same runtime.
+  claudeCode?: boolean;
+  codex?: boolean;
 }
 
 export interface KaniLaunch {
@@ -298,6 +336,8 @@ export function buildKaniLaunch({
   if (flags.allow) parts.push("--allow", shQuote(flags.allow));
   if (flags.verbose) parts.push("--verbose");
   if (flags.force) parts.push("--force");
+  if (flags.claudeCode) parts.push("--claude-code");
+  if (flags.codex) parts.push("--codex");
   const command = parts.join(" ");
 
   // Strip control chars from the title (it reaches the terminal name and shell argv) so a
@@ -433,14 +473,15 @@ export function shQuote(s: string): string {
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
-// Render the exact `claude` command line that will be spawned. Built from the same `claudeArgs`
-// passed to spawnSync, so what the human reads is byte-for-byte what runs (single source of
-// truth). With `color`, the line is wrapped in ANSI dim for an always-on gray display.
+// Render the exact runtime command line that will be spawned. Built from the same argv passed
+// to spawnSync, so what the human reads is byte-for-byte what runs (single source of truth).
+// `bin` selects the runtime binary (`claude` by default, `codex` for --codex, #458). With
+// `color`, the line is wrapped in ANSI dim for an always-on gray display.
 export function formatSpawnCommand(
-  claudeArgs: string[],
-  opts: { color?: boolean } = {},
+  runtimeArgs: string[],
+  opts: { color?: boolean; bin?: string } = {},
 ): string {
-  const line = `claude ${claudeArgs.map(shQuote).join(" ")}`;
+  const line = `${opts.bin ?? "claude"} ${runtimeArgs.map(shQuote).join(" ")}`;
   return opts.color ? `${DIM}${line}${RESET}` : line;
 }
 

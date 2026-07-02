@@ -11,15 +11,18 @@ import {
   LH_DEV_SESSION_AGENT,
   LH_ISSUE_CREATE_SESSION_AGENT,
   RUNTIME_CLAUDE_CODE,
+  RUNTIME_CODEX,
   resolveWorktreeIdentity,
   SESSION_KIND_ISSUE_CREATE,
 } from "../core/resume.ts";
 import {
   acquireDevLock,
   buildClaudeArgs,
+  buildCodexArgs,
   buildKaniLaunch,
   buildManagedSettings,
   buildResumeArgs,
+  type DevRuntime,
   devLockPath,
   displayMultiline,
   formatLaunchPlan,
@@ -31,6 +34,7 @@ import {
   provisionWorktree,
   removeDevLock,
   resolveAllowedDomains,
+  resolveDevRuntime,
   validateRepo,
   worktreePath,
 } from "./dev.ts";
@@ -57,6 +61,8 @@ type Flags = {
   verbose?: boolean;
   kani?: boolean;
   force?: boolean;
+  "claude-code"?: boolean;
+  codex?: boolean;
   draft?: boolean;
   json?: boolean;
   allow?: string;
@@ -121,6 +127,8 @@ const { values, positionals: pos } = parseArgs({
     verbose: { type: "boolean" },
     kani: { type: "boolean" },
     force: { type: "boolean" },
+    "claude-code": { type: "boolean" },
+    codex: { type: "boolean" },
     draft: { type: "boolean" },
     json: { type: "boolean" },
     allow: { type: "string" },
@@ -349,7 +357,7 @@ async function main() {
   if (group === "dev") {
     const target = sub;
     const usageLine =
-      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]";
+      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]";
     if (!target) {
       fail(usageLine);
     }
@@ -380,10 +388,30 @@ async function main() {
     const sessionId = randomUUID();
     const slashCommand = `/lh-dev ${issue}`;
 
+    // Resolve the agent runtime (#458): Claude Code by default, Codex with --codex. Passing
+    // both flags is ambiguous and fails before any side effect.
+    let runtime: DevRuntime;
+    try {
+      runtime = resolveDevRuntime({
+        claudeCode: flags["claude-code"] === true,
+        codex: flags.codex === true,
+      });
+    } catch (e: any) {
+      fail(`${e.message}\n${usageLine}`);
+    }
+
     // Validate --allow vs --sandbox flag early.
     const useSandbox = flags.sandbox === true;
     if (flags.allow && !useSandbox) {
       fail("--allow can only be used with --sandbox");
+    }
+
+    // The sandbox managed-settings and auto mode are `claude` launch options with no Codex
+    // equivalent — reject the combination up front rather than silently dropping the flags.
+    if (runtime === "codex" && (useSandbox || flags.auto === true)) {
+      fail(
+        "--sandbox/--allow/--auto are only supported with the claude-code runtime (remove them or drop --codex)",
+      );
     }
 
     // Validate --repo up front, before any side effects (provisioning a worktree).
@@ -430,6 +458,9 @@ async function main() {
           verbose: flags.verbose,
           // Carry --force through the relaunch so the inner `lh dev` still overrides the lock.
           force: flags.force,
+          // Forward the runtime selection so the inner `lh dev` launches the same runtime.
+          claudeCode: flags["claude-code"],
+          codex: flags.codex,
         },
       });
       const proc = spawnSync("kani", launch.argv, { stdio: "inherit" });
@@ -452,9 +483,10 @@ async function main() {
         id: sessionId,
         agent: LH_DEV_SESSION_AGENT,
         session: sessionId,
-        // The session we are about to spawn is a Claude Code session; record the runtime so
-        // `lh resume` picks `claude --resume` by runtime rather than inferring it from the agent.
-        runtime: RUNTIME_CLAUDE_CODE,
+        // Record which runtime the session we are about to spawn runs in, so `lh resume` picks
+        // the resume command by runtime rather than inferring it from the agent. Codex sessions
+        // are recorded too, but `lh resume` cannot re-enter them yet (see RUNTIME_CODEX).
+        runtime: runtime === "codex" ? RUNTIME_CODEX : RUNTIME_CLAUDE_CODE,
         // This is an implementation (dev) session; record its kind (#298) so it surfaces in the
         // PR's related-sessions list as a dev session. (setPullSession also stamps 'dev' when it
         // attributes the session to the PR — this just sets it at the registration point too.)
@@ -639,16 +671,23 @@ async function main() {
     // Set the session display name to the PR being worked on so the session picker / terminal title
     // shows the linked PR (#336). buildClaudeArgs strips control chars from the title before argv.
     const sessionName = `#${prNumber} ${item.title}`;
-    const claudeArgs = buildClaudeArgs({
-      sessionId,
-      managedSettings: managed,
-      // --auto enables auto mode without the sandbox; --sandbox already implies it via managed.
-      auto: flags.auto === true,
-      slashCommand,
-      sessionName,
-    });
+    // The argv for the selected runtime (#458). Codex takes only the initial prompt (the same
+    // `/lh-dev <id>` slash command, run from the same worktree cwd); claude additionally carries
+    // the session id / display name / sandbox settings, which have no Codex equivalent.
+    const runtimeBin = runtime === "codex" ? "codex" : "claude";
+    const runtimeArgs =
+      runtime === "codex"
+        ? buildCodexArgs({ slashCommand })
+        : buildClaudeArgs({
+            sessionId,
+            managedSettings: managed,
+            // --auto enables auto mode without the sandbox; --sandbox already implies it via managed.
+            auto: flags.auto === true,
+            slashCommand,
+            sessionName,
+          });
 
-    // Show what `claude` will receive, then launch immediately (no confirmation prompt). By
+    // Show what the runtime will receive, then launch immediately (no confirmation prompt). By
     // default only the basic context (repo / worktree / branch / session-id) is shown; the full
     // managed-settings/sandbox launch plan is a safety artifact reserved for --verbose (#383).
     if (flags.verbose) {
@@ -659,7 +698,7 @@ async function main() {
           sessionId,
           slashCommand,
           managedSettings: managed ?? "{}",
-          claudeArgs,
+          claudeArgs: runtimeArgs,
         }),
       );
     } else {
@@ -675,19 +714,31 @@ async function main() {
     // Always show the exact command being spawned as the last line of the launch output, in
     // dim/gray, so a normal launch (no --verbose) still reveals and lets you copy what runs.
     // This supersedes the old --verbose-only `exec:` line — unified into one always-on display.
-    // Built from `claudeArgs` (the same argv handed to spawnSync below) for an exact match.
+    // Built from `runtimeArgs` (the same argv handed to spawnSync below) for an exact match.
     console.error(
-      formatSpawnCommand(claudeArgs, { color: process.stderr.isTTY === true }),
+      formatSpawnCommand(runtimeArgs, {
+        color: process.stderr.isTTY === true,
+        bin: runtimeBin,
+      }),
     );
 
     // The lock claimed above holds our pid for the session's lifetime (the spawnSync below blocks
-    // until claude exits); the exit handler releases it. Release is best-effort — if the process
-    // is killed before it runs, the stale lock self-heals (its pid is gone, so the next launch
-    // reclaims it).
-    const proc = spawnSync("claude", claudeArgs, {
+    // until the runtime exits); the exit handler releases it. Release is best-effort — if the
+    // process is killed before it runs, the stale lock self-heals (its pid is gone, so the next
+    // launch reclaims it).
+    const proc = spawnSync(runtimeBin, runtimeArgs, {
       stdio: "inherit",
       cwd: worktree,
     });
+    if (proc.error) {
+      const err = proc.error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") {
+        fail(
+          `failed to launch ${runtimeBin}: '${runtimeBin}' not found on PATH`,
+        );
+      }
+      fail(`failed to launch ${runtimeBin}: ${err.message}`);
+    }
     process.exit(proc.status ?? 0);
   }
 
@@ -1728,7 +1779,7 @@ function usage() {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]   # start one issue in an interactive Claude session (--auto: auto mode without the sandbox; --kani: in a new kani terminal; --force: launch even if another session holds it)
+  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --auto: auto mode without the sandbox; --kani: in a new kani terminal; --force: launch even if another session holds it)
   lh dev note --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]   # record a dev note on the issue's PR
   lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]   # re-enter the Claude session a PR was developed in (claude --resume in its worktree)
   lh repo add <path> [--name owner/repo]
@@ -1760,6 +1811,7 @@ function usage() {
     lh dev jugyo/loophub/42        # owner/repo/id form: start from outside the repo, no --repo needed
     lh dev --sandbox 42            # boolean flags and the issue id may appear in any order
     lh dev --auto 42               # auto mode (--permission-mode auto) without the sandbox
+    lh dev --codex 42              # same worktree/PR/session preparation, but launch Codex instead of Claude Code
     lh repo add . --name me/proj
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"

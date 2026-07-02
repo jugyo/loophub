@@ -23,6 +23,7 @@ import {
 import {
   acquireDevLock,
   buildClaudeArgs,
+  buildCodexArgs,
   buildKaniLaunch,
   buildManagedSettings,
   buildResumeArgs,
@@ -38,6 +39,7 @@ import {
   provisionWorktree,
   readDevLock,
   removeDevLock,
+  resolveDevRuntime,
   validateDomain,
   worktreeBranch,
   worktreePath,
@@ -370,6 +372,23 @@ test("buildKaniLaunch forwards --auto without the sandbox", () => {
   expect(launch.command).toBe("lh dev 7 --auto");
 });
 
+test("buildKaniLaunch forwards the runtime flag (--codex / --claude-code) into the inner command", () => {
+  const codex = buildKaniLaunch({
+    issue: 7,
+    title: "t",
+    cwd: "/c",
+    flags: { codex: true },
+  });
+  expect(codex.command).toBe("lh dev 7 --codex");
+  const claude = buildKaniLaunch({
+    issue: 7,
+    title: "t",
+    cwd: "/c",
+    flags: { claudeCode: true },
+  });
+  expect(claude.command).toBe("lh dev 7 --claude-code");
+});
+
 test("buildKaniLaunch never forwards --kani (no recursion)", () => {
   const launch = buildKaniLaunch({
     issue: 7,
@@ -520,6 +539,32 @@ test("formatLaunchPlan strips terminal control sequences so a crafted name can't
   expect(out).toContain("worktree:    /wt/bell");
 });
 
+// ---- runtime selection (pure) ----
+
+test("resolveDevRuntime defaults to claude-code when no runtime flag is passed", () => {
+  expect(resolveDevRuntime({})).toBe("claude-code");
+});
+
+test("resolveDevRuntime keeps claude-code for an explicit --claude-code", () => {
+  expect(resolveDevRuntime({ claudeCode: true })).toBe("claude-code");
+});
+
+test("resolveDevRuntime selects codex for --codex", () => {
+  expect(resolveDevRuntime({ codex: true })).toBe("codex");
+});
+
+test("resolveDevRuntime rejects --claude-code together with --codex", () => {
+  expect(() => resolveDevRuntime({ claudeCode: true, codex: true })).toThrow(
+    /mutually exclusive/,
+  );
+});
+
+test("buildCodexArgs passes the slash command as the only (positional) argument", () => {
+  expect(buildCodexArgs({ slashCommand: "/lh-dev 42" })).toEqual([
+    "/lh-dev 42",
+  ]);
+});
+
 // ---- spawn command line (pure) ----
 
 test("formatSpawnCommand renders the exact argv as a shell-pasteable `claude` line", () => {
@@ -532,6 +577,11 @@ test("formatSpawnCommand renders the exact argv as a shell-pasteable `claude` li
 
 test("formatSpawnCommand shell-escapes embedded single quotes", () => {
   expect(formatSpawnCommand(["it's"])).toBe("claude 'it'\\''s'");
+});
+
+test("formatSpawnCommand renders the codex binary when bin is given", () => {
+  const args = buildCodexArgs({ slashCommand: "/lh-dev 42" });
+  expect(formatSpawnCommand(args, { bin: "codex" })).toBe("codex '/lh-dev 42'");
 });
 
 test("formatSpawnCommand wraps the line in ANSI dim only when color is requested", () => {
