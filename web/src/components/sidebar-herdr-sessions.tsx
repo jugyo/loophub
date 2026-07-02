@@ -259,53 +259,44 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
 const AGENT_PREVIEW_MAX_HEIGHT = 256;
 const AGENT_PREVIEW_WIDTH = 384; // matches the panel's old fixed w-96
 
-// Rough monospace cell metrics for the `font-mono text-xs` preview text below — real font
-// metrics vary by browser/OS, so this is only a fit, bounded by MIN/MAX so a huge or tiny
-// pane can't blow up or shrink the popup unreasonably (#531).
-const PREVIEW_CHAR_WIDTH_PX = 7.2;
+// Rough monospace line-height metric for the `font-mono text-xs` preview text below — real
+// font metrics vary by browser/OS, so this is only a fit, bounded by MIN/MAX so a huge or
+// tiny pane can't blow up or shrink the popup unreasonably (#531). The `pre` no longer
+// wraps (#548), so there's no equivalent per-character width metric to fit — the popup
+// keeps a fixed width and overflowing lines scroll horizontally instead.
 const PREVIEW_LINE_HEIGHT_PX = 16;
-const PREVIEW_PADDING_PX = 16; // p-2 (8px) on both left/right and top/bottom
-const AGENT_PREVIEW_MIN_WIDTH = 240;
+const PREVIEW_PADDING_PX = 16; // p-2 (8px) top/bottom
 const AGENT_PREVIEW_MIN_HEIGHT = 120;
 
 // Upper bound on the sized popup, as a fraction of the viewport rather than a fixed pixel
 // value (#536). A fixed cap (previously 640x480) is far smaller than real herdr panes —
-// e.g. a common 239x85 pane needs ~1735x1376px at the metrics above — so the popup was
-// silently shrunk back down below the pane's actual content, and the `pre`'s
-// `whitespace-pre-wrap` then re-wrapped every long line inside the undersized box,
-// reproducing the "still wraps into a tiny popup" symptom even though #531/#532 already
-// plumbed cols/rows through correctly. Scaling with the viewport (matching the
-// `max-w-[60vw]` class on the popup below) lets a wide/tall pane claim a proportionally
-// larger box instead of hitting a ceiling far below typical terminal sizes.
+// e.g. a common 239x85 pane needs up to ~1376px of height at the metrics above — so the
+// popup was silently shrunk back down below the pane's actual content. Height still scales
+// with this ceiling via the pane's rows; width no longer scales with pane size (#548, the
+// `pre` scrolls horizontally instead of wrapping) but stays clamped by it on narrow
+// viewports (matching the `max-w-[60vw]` class on the popup below).
 const AGENT_PREVIEW_MAX_WIDTH_VW = 0.6;
 const AGENT_PREVIEW_MAX_HEIGHT_VH = 0.7;
 
-// Sizes the popup to the target pane's actual columns/rows (#531) when herdr reported
-// them, falling back to the fixed size above when it didn't (herdr down, or the read
-// target is the display-name fallback that `pane layout --pane` can't resolve). maxWidth/
-// maxHeight are the viewport-relative ceiling computed once at hover time (see
+// Sizes the popup to the target pane's actual rows (#531) when herdr reported them,
+// falling back to the fixed height above when it didn't (herdr down, or the read target is
+// the display-name fallback that `pane layout --pane` can't resolve). Width no longer
+// tracks the pane's columns (#548) — the `pre` scrolls horizontally instead of wrapping, so
+// a fixed width (still clamped to the viewport-relative ceiling below) is enough. maxWidth/
+// maxHeight are that viewport-relative ceiling computed once at hover time (see
 // AGENT_PREVIEW_MAX_WIDTH_VW above) so the position clamp and the actual box size always
 // agree on the same worst case.
 function previewBoxSize(
-  cols: number | null,
   rows: number | null,
   maxWidth: number,
   maxHeight: number,
 ): { width: number; maxHeight: number } {
-  if (!cols || !rows || cols <= 0 || rows <= 0) {
-    return {
-      width: Math.min(maxWidth, AGENT_PREVIEW_WIDTH),
-      maxHeight: Math.min(maxHeight, AGENT_PREVIEW_MAX_HEIGHT),
-    };
+  const width = Math.min(maxWidth, AGENT_PREVIEW_WIDTH);
+  if (!rows || rows <= 0) {
+    return { width, maxHeight: Math.min(maxHeight, AGENT_PREVIEW_MAX_HEIGHT) };
   }
   return {
-    width: Math.min(
-      maxWidth,
-      Math.max(
-        AGENT_PREVIEW_MIN_WIDTH,
-        cols * PREVIEW_CHAR_WIDTH_PX + PREVIEW_PADDING_PX,
-      ),
-    ),
+    width,
     maxHeight: Math.min(
       maxHeight,
       Math.max(
@@ -341,7 +332,6 @@ function AgentPreview({
   });
   if (isLoading || !data?.output) return null;
   const { width, maxHeight } = previewBoxSize(
-    data.cols ?? null,
     data.rows ?? null,
     position.maxWidth,
     position.maxHeight,
@@ -350,7 +340,7 @@ function AgentPreview({
   return (
     <div
       role="tooltip"
-      className="fixed z-50 max-w-[60vw] overflow-x-hidden overflow-y-auto rounded-md border bg-background p-2 shadow-lg"
+      className="fixed z-50 max-w-[60vw] overflow-x-auto overflow-y-auto rounded-md border bg-background p-2 shadow-lg"
       style={{
         top: position.top,
         left: position.left,
@@ -360,7 +350,7 @@ function AgentPreview({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">
+      <pre className="whitespace-pre font-mono text-xs text-foreground">
         {data.output}
       </pre>
     </div>

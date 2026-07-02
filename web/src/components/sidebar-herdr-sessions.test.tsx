@@ -143,7 +143,7 @@ describe("SidebarHerdrSessions", () => {
       });
     });
 
-    it("sizes the popup to the pane's reported columns/rows (#531)", async () => {
+    it("sizes the popup's height to the pane's reported rows, independent of its columns (#548)", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       renderWithSessions(
         {
@@ -165,12 +165,14 @@ describe("SidebarHerdrSessions", () => {
       });
 
       const tooltip = await screen.findByRole("tooltip");
-      // Sized from cols/rows rather than the fixed fallback (384 / 256).
-      expect(tooltip.style.width).not.toBe("384px");
+      // Height still sized from rows rather than the fixed fallback (256).
       expect(tooltip.style.maxHeight).not.toBe("256px");
+      // Width no longer tries to fit columns (#548) — the `pre` scrolls horizontally
+      // instead of wrapping, so the popup keeps its fixed default width.
+      expect(tooltip.style.width).toBe("384px");
     });
 
-    it("scales the popup with the viewport instead of a small fixed cap for wide panes (#536)", async () => {
+    it("scales the popup's height with the viewport for tall panes, without widening for wide ones (#548)", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       renderWithSessions(
         {
@@ -182,10 +184,10 @@ describe("SidebarHerdrSessions", () => {
             },
           ],
         },
-        // A common wide/tall terminal pane — far more cols/rows than a fixed pixel
-        // cap can hold. Previously clamped to a fixed 640x480 regardless of the
-        // viewport, leaving the popup far smaller than the pane's actual content and
-        // forcing `whitespace-pre-wrap` to re-wrap every long line inside it (#536).
+        // A common wide/tall terminal pane. Previously (#536) this drove the popup's
+        // width up to the viewport-relative ceiling to avoid `whitespace-pre-wrap`
+        // re-wrapping every long line; now the `pre` scrolls horizontally instead
+        // (#548), so only the height still tracks the pane (via rows).
         { output: "$ npm test\n42 passing\n", cols: 239, rows: 85 },
       );
       await screen.findByText("dev #11");
@@ -196,12 +198,41 @@ describe("SidebarHerdrSessions", () => {
       });
 
       const tooltip = await screen.findByRole("tooltip");
-      // Clamped to a fraction of the (jsdom default 1024x768) viewport, not the old
-      // fixed 640x480 ceiling.
-      expect(tooltip.style.width).not.toBe("640px");
+      // Height still clamped to a fraction of the (jsdom default 1024x768) viewport,
+      // not the old fixed 480 ceiling.
       expect(tooltip.style.maxHeight).not.toBe("480px");
-      expect(tooltip.style.width).toBe(`${1024 * 0.6}px`);
       expect(tooltip.style.maxHeight).toBe(`${768 * 0.7}px`);
+      // Width stays at the fixed default — it no longer scales with columns.
+      expect(tooltip.style.width).toBe("384px");
+    });
+
+    it("lets the preview scroll horizontally instead of wrapping long lines (#548)", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithSessions(
+        {
+          repos: [
+            {
+              repo: "me/app",
+              session_name: "me-app-12345678",
+              agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+            },
+          ],
+        },
+        { output: "$ npm test\n42 passing\n", cols: 239, rows: 85 },
+      );
+      await screen.findByText("dev #11");
+
+      fireEvent.mouseEnter(agentRow());
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      const tooltip = await screen.findByRole("tooltip");
+      expect(tooltip.className).toContain("overflow-x-auto");
+      const pre = tooltip.querySelector("pre");
+      expect(pre?.className).toContain("whitespace-pre");
+      expect(pre?.className).not.toContain("whitespace-pre-wrap");
+      expect(pre?.className).not.toContain("break-words");
     });
 
     it("falls back to a fixed popup size when herdr didn't report pane dimensions (#531 AC)", async () => {
