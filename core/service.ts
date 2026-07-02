@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import {
+  autoModeOnBuild,
   configDir,
   terminalLaunchBackend,
   updateConfig,
@@ -586,6 +587,9 @@ export const terminal = {
       prNumber: input.prNumber,
       session: input.session,
       cwd: input.cwd,
+      // Auto mode only applies to the Build button's issue-dev launch (#499), not other
+      // terminal workflows (issue-create, resume, github-pr-export).
+      auto: input.workflow === "issue-dev" && autoModeOnBuild(),
     });
     if (!command.trim()) throw new ServiceError(422, "command is required");
 
@@ -727,14 +731,26 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
 // terminalLaunchBackend is the first field; more can be added to both the input/result shape
 // and the validation below as they're introduced.
 export const settings = {
-  get(): { terminalLaunchBackend: TerminalLaunchBackend } {
-    return { terminalLaunchBackend: terminalLaunchBackend() };
+  get(): {
+    terminalLaunchBackend: TerminalLaunchBackend;
+    autoModeOnBuild: boolean;
+  } {
+    return {
+      terminalLaunchBackend: terminalLaunchBackend(),
+      autoModeOnBuild: autoModeOnBuild(),
+    };
   },
 
   update(
-    input: { terminalLaunchBackend?: TerminalLaunchBackend },
+    input: {
+      terminalLaunchBackend?: TerminalLaunchBackend;
+      autoModeOnBuild?: boolean;
+    },
     sessionId?: string | null,
-  ): { terminalLaunchBackend: TerminalLaunchBackend } {
+  ): {
+    terminalLaunchBackend: TerminalLaunchBackend;
+    autoModeOnBuild: boolean;
+  } {
     if (
       input.terminalLaunchBackend !== undefined &&
       input.terminalLaunchBackend !== "builtin" &&
@@ -744,6 +760,12 @@ export const settings = {
         422,
         "terminalLaunchBackend must be one of: builtin, herdr",
       );
+    }
+    if (
+      input.autoModeOnBuild !== undefined &&
+      typeof input.autoModeOnBuild !== "boolean"
+    ) {
+      throw new ServiceError(422, "autoModeOnBuild must be a boolean");
     }
     updateConfig(input);
     const actor = actorFor(sessionId);

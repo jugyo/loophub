@@ -21,8 +21,10 @@ export function useSettings() {
 export function useUpdateSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { terminalLaunchBackend?: TerminalLaunchBackend }) =>
-      updateSettings(input),
+    mutationFn: (input: {
+      terminalLaunchBackend?: TerminalLaunchBackend;
+      autoModeOnBuild?: boolean;
+    }) => updateSettings(input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: settingsKeys.all });
       qc.invalidateQueries({ queryKey: ["terminal", "config"] });

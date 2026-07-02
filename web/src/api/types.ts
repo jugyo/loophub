@@ -199,6 +199,8 @@ export interface HerdrSessions {
 /** Instance-level config.json settings (`settings/get`, `settings/update`, #474). */
 export interface GlobalSettings {
   terminalLaunchBackend: TerminalLaunchBackend;
+  // Whether the Build button launches `lh dev` with auto mode (#499).
+  autoModeOnBuild: boolean;
 }
 
 /** The GitHub PR a loophub PR was exported to (#406), or null until the export skill records one. */

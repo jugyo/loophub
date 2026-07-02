@@ -19,6 +19,7 @@ import {
 } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { useSettings } from "@/queries/settings";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
   if (badges.length === 0) return null;
@@ -197,16 +198,20 @@ function RowBuildButton({
   pulls: LinkedPull[];
 }) {
   const { launchTerminal } = useTerminalLauncher();
+  const { data: settings } = useSettings();
   const activePull = pulls.some((p) => p.state === "open" || p.merged);
   if (activePull) return null;
+  const command = settings?.autoModeOnBuild
+    ? `lh dev ${issue.number} --auto`
+    : `lh dev ${issue.number}`;
   return (
     <button
       type="button"
-      title={`Start \`lh dev ${issue.number}\` in a terminal`}
+      title={`Start \`${command}\` in a terminal`}
       aria-label={`Build issue #${issue.number}`}
       onClick={() =>
         launchTerminal({
-          command: `lh dev ${issue.number}`,
+          command,
           repo: `${owner}/${repo}`,
           label: `Issue #${issue.number} - ${issue.title}`,
           issueRef: { owner, repo, number: issue.number },

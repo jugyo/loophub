@@ -194,7 +194,10 @@ export function getSettings() {
 }
 
 export function updateSettings(
-  input: { terminalLaunchBackend?: TerminalLaunchBackend },
+  input: {
+    terminalLaunchBackend?: TerminalLaunchBackend;
+    autoModeOnBuild?: boolean;
+  },
   sessionId: string = getSessionId(),
 ) {
   return rpc<GlobalSettings>("settings/update", {

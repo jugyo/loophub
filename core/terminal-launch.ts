@@ -100,9 +100,13 @@ export function commandForHerdrLaunch(input: {
   prNumber?: number;
   session?: string;
   cwd?: string;
+  // Append `--auto` to the issue-dev launch (#499). Only meaningful for that workflow — the
+  // Build button is the only caller that ever passes this, other workflows never do.
+  auto?: boolean;
 }): string {
   if (input.workflow === "issue-dev" && input.issueNumber) {
-    return `lh dev ${shellArg(`${input.repo}/${input.issueNumber}`)}`;
+    const target = shellArg(`${input.repo}/${input.issueNumber}`);
+    return input.auto ? `lh dev ${target} --auto` : `lh dev ${target}`;
   }
   if (input.workflow === "issue-create") {
     // `lh issue new` is the recorded LoopHub entrypoint for the /lh-issue-create workflow.

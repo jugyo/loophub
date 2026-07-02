@@ -223,14 +223,24 @@ export function resolveDevRuntime(flags: {
 // positional (`codex [PROMPT]`), so the same `/lh-dev <id>` slash command Claude receives is
 // handed to Codex verbatim — the rest of the context (worktree cwd, registered session, linked
 // PR) is prepared before spawn and is runtime-independent. Codex has no `--session-id` /
-// `--name` / `--settings` equivalents, so the argv is just the prompt; claude-only flags
-// (--sandbox/--allow/--auto/--model) are rejected up front by the CLI, not silently dropped here.
+// `--name` / `--settings` equivalents, so the argv is just the prompt (plus the auto-mode flag
+// below); claude-only flags (--sandbox/--allow/--model) are rejected up front by the CLI, not
+// silently dropped here.
 export function buildCodexArgs({
   slashCommand,
+  auto,
 }: {
   slashCommand: string;
+  // Opt into Codex's auto-mode equivalent (#499): skip approval prompts and run unsandboxed,
+  // matching Claude Code's --auto (`--permission-mode auto`, "no guard rails" — see
+  // buildClaudeArgs). Codex's closest single flag for that is
+  // --dangerously-bypass-approvals-and-sandbox.
+  auto?: boolean;
 }): string[] {
-  return [slashCommand];
+  const args: string[] = [];
+  if (auto) args.push("--dangerously-bypass-approvals-and-sandbox");
+  args.push(slashCommand);
+  return args;
 }
 
 export function buildClaudeArgs({

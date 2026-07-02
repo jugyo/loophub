@@ -67,6 +67,25 @@ describe("terminal launch backend", () => {
     ).toBe("cd '/tmp/work tree' && claude --resume 'session-1'");
   });
 
+  test("appends --auto to the issue-dev command when auto is set (#499)", () => {
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "issue-dev",
+        issueNumber: 444,
+        auto: true,
+      }),
+    ).toBe("lh dev 'jugyo/loophub/444' --auto");
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "issue-dev",
+        issueNumber: 444,
+        auto: false,
+      }),
+    ).toBe("lh dev 'jugyo/loophub/444'");
+  });
+
   test("shell-quotes repo names in generated workflows", () => {
     expect(
       commandForHerdrLaunch({

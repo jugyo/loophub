@@ -413,15 +413,13 @@ async function main() {
       fail(`--model requires a value\n${usageLine}`);
     }
 
-    // The sandbox managed-settings, auto mode, and model selection are `claude` launch options
-    // with no Codex equivalent (Codex model support is out of scope of #486; tracked separately)
-    // — reject the combination up front rather than silently dropping the flags.
-    if (
-      runtime === "codex" &&
-      (useSandbox || flags.auto === true || flags.model)
-    ) {
+    // The sandbox managed-settings and model selection are `claude` launch options with no
+    // Codex equivalent (Codex model support is out of scope of #486; tracked separately) —
+    // reject the combination up front rather than silently dropping the flags. --auto has a
+    // Codex equivalent (#499, see buildCodexArgs) so it's allowed with --codex.
+    if (runtime === "codex" && (useSandbox || flags.model)) {
       fail(
-        "--sandbox/--allow/--auto/--model are only supported with the claude-code runtime (remove them or drop --codex)",
+        "--sandbox/--allow/--model are only supported with the claude-code runtime (remove them or drop --codex)",
       );
     }
 
@@ -690,7 +688,7 @@ async function main() {
     const runtimeBin = runtime === "codex" ? "codex" : "claude";
     const runtimeArgs =
       runtime === "codex"
-        ? buildCodexArgs({ slashCommand })
+        ? buildCodexArgs({ slashCommand, auto: flags.auto === true })
         : buildClaudeArgs({
             sessionId,
             managedSettings: managed,
@@ -1797,7 +1795,7 @@ function usage() {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, passed through to the claude CLI; --auto: auto mode without the sandbox; --kani: in a new kani terminal; --force: launch even if another session holds it)
+  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, claude-code only, passed through to the claude CLI; --auto: auto mode without the sandbox (claude-code: --permission-mode auto; codex: --dangerously-bypass-approvals-and-sandbox); --kani: in a new kani terminal; --force: launch even if another session holds it)
   lh dev note --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]   # record a dev note on the issue's PR
   lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]   # re-enter the Claude session a PR was developed in (claude --resume in its worktree)
   lh repo add <path> [--name owner/repo]
@@ -1830,6 +1828,7 @@ function usage() {
     lh dev --sandbox 42            # boolean flags and the issue id may appear in any order
     lh dev --auto 42               # auto mode (--permission-mode auto) without the sandbox
     lh dev --codex 42              # same worktree/PR/session preparation, but launch Codex instead of Claude Code
+    lh dev --codex --auto 42       # Codex's auto-mode equivalent (--dangerously-bypass-approvals-and-sandbox)
     lh repo add . --name me/proj
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"

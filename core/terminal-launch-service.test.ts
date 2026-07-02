@@ -139,4 +139,20 @@ describe("terminal.launch tab orchestration", () => {
     expect(tabClose).toContain("close");
     expect(tabClose).toContain("w1:t9");
   });
+
+  test("appends --auto to the launched command when autoModeOnBuild is enabled (#499)", async () => {
+    herdr.script.push(exitWith(0, TAB_JSON), exitWith(0));
+    svc.settings.update({ autoModeOnBuild: true });
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+    });
+
+    const agentStart = herdr.calls[1];
+    expect(agentStart[agentStart.length - 1]).toContain("--auto");
+
+    svc.settings.update({ autoModeOnBuild: false });
+  });
 });

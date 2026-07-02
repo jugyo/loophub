@@ -62,6 +62,7 @@ const comments: IssueComment[] = [
 function mockFetch(
   getIssue: () => Issue = () => issue,
   getGroups: () => IssueGroupWithMembers[] = () => [],
+  autoModeOnBuild = false,
 ) {
   return mockRpcFetch({
     "issues/get": getIssue,
@@ -73,14 +74,19 @@ function mockFetch(
       body: p.body,
       created_at: "2026-06-17T12:30:00Z",
     }),
+    "settings/get": () => ({
+      terminalLaunchBackend: "builtin",
+      autoModeOnBuild,
+    }),
   });
 }
 
 function renderDetail(
   getIssue?: () => Issue,
   getGroups?: () => IssueGroupWithMembers[],
+  autoModeOnBuild = false,
 ) {
-  vi.stubGlobal("fetch", mockFetch(getIssue, getGroups));
+  vi.stubGlobal("fetch", mockFetch(getIssue, getGroups, autoModeOnBuild));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -258,6 +264,18 @@ describe("IssueDetail", () => {
       workflow: "issue-dev",
       issueNumber: 12,
     });
+  });
+
+  it("launches with --auto when auto-mode-on-Build is enabled", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr, undefined, true);
+
+    const button = await screen.findByRole("button", { name: /build/i });
+    fireEvent.click(button);
+
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ command: "lh dev 12 --auto" }),
+    );
   });
 
   it("lists other issues in the same group, excluding the current one", async () => {

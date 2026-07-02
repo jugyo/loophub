@@ -58,3 +58,14 @@ test("terminalLaunchBackend reflects updateConfig, with env var still taking pri
   process.env.LOOPHUB_TERMINAL_LAUNCH_BACKEND = "builtin";
   expect(terminalLaunchBackend()).toBe("builtin"); // env overrides config.json
 });
+
+test("autoModeOnBuild defaults to false and reflects updateConfig (#499)", async () => {
+  const { autoModeOnBuild, updateConfig } = await import("./config.ts");
+  expect(autoModeOnBuild()).toBe(false); // default
+
+  updateConfig({ autoModeOnBuild: true });
+  expect(autoModeOnBuild()).toBe(true);
+
+  updateConfig({ autoModeOnBuild: false });
+  expect(autoModeOnBuild()).toBe(false);
+});

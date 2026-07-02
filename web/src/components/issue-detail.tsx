@@ -36,6 +36,7 @@ import {
   usePostComment,
   useSetIssueState,
 } from "@/queries/issues";
+import { useSettings } from "@/queries/settings";
 
 export function IssueDetail({
   owner,
@@ -156,6 +157,7 @@ function IssueHeader({
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
   const { launchTerminal } = useTerminalLauncher();
+  const { data: settings } = useSettings();
   const state = stateBadge(issue, "issues");
   const linked = issue.linked_pull_request;
   // Build kicks off work, so show it unless a PR is actively in progress (open)
@@ -163,6 +165,9 @@ function IssueHeader({
   // hide Build — the issue still needs a fresh attempt.
   const activePull =
     linked != null && (linked.state === "open" || linked.merged);
+  const buildCommand = settings?.autoModeOnBuild
+    ? `lh dev ${issue.number} --auto`
+    : `lh dev ${issue.number}`;
 
   return (
     <div className="flex flex-col gap-3">
@@ -213,10 +218,10 @@ function IssueHeader({
         </Button>
         {activePull ? null : (
           <Button
-            title={`Start \`lh dev ${issue.number}\` in a terminal`}
+            title={`Start \`${buildCommand}\` in a terminal`}
             onClick={() =>
               launchTerminal({
-                command: `lh dev ${issue.number}`,
+                command: buildCommand,
                 repo: `${owner}/${repo}`,
                 label: `Issue #${issue.number} - ${issue.title}`,
                 issueRef: { owner, repo, number: issue.number },

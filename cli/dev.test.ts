@@ -425,6 +425,16 @@ test("buildKaniLaunch forwards the runtime flag (--codex / --claude-code) into t
   expect(claude.command).toBe("lh dev 7 --claude-code");
 });
 
+test("buildKaniLaunch forwards --codex together with --auto (allowed combination, #499)", () => {
+  const launch = buildKaniLaunch({
+    issue: 7,
+    title: "t",
+    cwd: "/c",
+    flags: { codex: true, auto: true },
+  });
+  expect(launch.command).toBe("lh dev 7 --auto --codex");
+});
+
 test("buildKaniLaunch forwards --model (shell-quoted) into the inner command", () => {
   const launch = buildKaniLaunch({
     issue: 7,
@@ -607,6 +617,19 @@ test("resolveDevRuntime rejects --claude-code together with --codex", () => {
 
 test("buildCodexArgs passes the slash command as the only (positional) argument", () => {
   expect(buildCodexArgs({ slashCommand: "/lh-dev 42" })).toEqual([
+    "/lh-dev 42",
+  ]);
+});
+
+test("buildCodexArgs adds --dangerously-bypass-approvals-and-sandbox when auto is set", () => {
+  expect(buildCodexArgs({ slashCommand: "/lh-dev 42", auto: true })).toEqual([
+    "--dangerously-bypass-approvals-and-sandbox",
+    "/lh-dev 42",
+  ]);
+});
+
+test("buildCodexArgs omits the auto flag when auto is false/absent", () => {
+  expect(buildCodexArgs({ slashCommand: "/lh-dev 42", auto: false })).toEqual([
     "/lh-dev 42",
   ]);
 });

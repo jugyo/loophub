@@ -14,12 +14,19 @@ const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
 vi.mock("@/components/terminal-controller", () => ({
   useTerminalLauncher: () => ({ launchTerminal }),
 }));
+const settingsData = vi.hoisted(() => ({
+  value: { autoModeOnBuild: false } as { autoModeOnBuild: boolean } | undefined,
+}));
+vi.mock("@/queries/settings", () => ({
+  useSettings: () => ({ data: settingsData.value }),
+}));
 
 import { IssueRow } from "./dashboard-rows";
 
 afterEach(() => {
   cleanup();
   launchTerminal.mockClear();
+  settingsData.value = { autoModeOnBuild: false };
 });
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
@@ -230,6 +237,22 @@ describe("IssueRow", () => {
       workflow: "issue-dev",
       issueNumber: 7,
     });
+  });
+
+  it("launches with --auto when auto-mode-on-Build is enabled", async () => {
+    settingsData.value = { autoModeOnBuild: true };
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
+    );
+    const button = await screen.findByRole("button", {
+      name: "Build issue #7",
+    });
+
+    fireEvent.click(button);
+
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ command: "lh dev 7 --auto" }),
+    );
   });
 
   it("shows the Build button when the linked PR is closed unmerged (rejected)", async () => {

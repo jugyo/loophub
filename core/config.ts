@@ -13,6 +13,9 @@ export interface GlobalConfig {
   worktreeRoot?: string;
   url?: string;
   terminalLaunchBackend?: TerminalLaunchBackend;
+  // Whether the Build button (issue row / issue detail) launches `lh dev` with auto mode
+  // (--auto for Claude Code, an equivalent flag for Codex). Default off (#499).
+  autoModeOnBuild?: boolean;
 }
 
 // Read env at call time so parallel test files can set LOOPHUB_HOME/LOOPHUB_DB
@@ -86,6 +89,17 @@ export function terminalLaunchBackend(): TerminalLaunchBackend {
     return normalizeTerminalLaunchBackend(cfg.terminalLaunchBackend);
   } catch {}
   return "builtin";
+}
+
+// Whether the Build button should launch `lh dev` with auto mode (#499). Default false.
+export function autoModeOnBuild(): boolean {
+  try {
+    const cfg = JSON.parse(
+      readFileSync(join(configDir(), "config.json"), "utf8"),
+    );
+    return cfg.autoModeOnBuild === true;
+  } catch {}
+  return false;
 }
 
 function configPath(): string {

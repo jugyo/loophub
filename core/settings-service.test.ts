@@ -22,14 +22,23 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-test("settings.get defaults to builtin (#474)", () => {
-  expect(svc.settings.get()).toEqual({ terminalLaunchBackend: "builtin" });
+test("settings.get defaults to builtin / auto mode off (#474, #499)", () => {
+  expect(svc.settings.get()).toEqual({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: false,
+  });
 });
 
 test("settings.update persists to config.json and is reflected by settings.get (#474)", () => {
   const result = svc.settings.update({ terminalLaunchBackend: "herdr" });
-  expect(result).toEqual({ terminalLaunchBackend: "herdr" });
-  expect(svc.settings.get()).toEqual({ terminalLaunchBackend: "herdr" });
+  expect(result).toEqual({
+    terminalLaunchBackend: "herdr",
+    autoModeOnBuild: false,
+  });
+  expect(svc.settings.get()).toEqual({
+    terminalLaunchBackend: "herdr",
+    autoModeOnBuild: false,
+  });
 
   const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
   expect(raw.terminalLaunchBackend).toBe("herdr");
@@ -45,11 +54,54 @@ test("settings.update omitting terminalLaunchBackend preserves the persisted val
   svc.settings.update({ terminalLaunchBackend: "herdr" });
   // Mirrors the RPC handler forwarding a schema-valid request that omits the optional field.
   svc.settings.update({});
-  expect(svc.settings.get()).toEqual({ terminalLaunchBackend: "herdr" });
+  expect(svc.settings.get()).toEqual({
+    terminalLaunchBackend: "herdr",
+    autoModeOnBuild: false,
+  });
 });
 
 test("LOOPHUB_TERMINAL_LAUNCH_BACKEND env var still overrides the persisted setting (#474)", () => {
   svc.settings.update({ terminalLaunchBackend: "herdr" });
   process.env.LOOPHUB_TERMINAL_LAUNCH_BACKEND = "builtin";
-  expect(svc.settings.get()).toEqual({ terminalLaunchBackend: "builtin" });
+  expect(svc.settings.get()).toEqual({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: false,
+  });
+});
+
+test("settings.update persists autoModeOnBuild and is reflected by settings.get (#499)", () => {
+  // Pin terminalLaunchBackend too: settings.update only patches fields it's given, and prior
+  // tests in this file may have left it as "herdr" — pin it so this test's expectations don't
+  // depend on run order.
+  svc.settings.update({ terminalLaunchBackend: "builtin" });
+  const result = svc.settings.update({ autoModeOnBuild: true });
+  expect(result).toEqual({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: true,
+  });
+  expect(svc.settings.get()).toEqual({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: true,
+  });
+
+  const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
+  expect(raw.autoModeOnBuild).toBe(true);
+});
+
+test("settings.update rejects a non-boolean autoModeOnBuild (#499)", () => {
+  expect(() => svc.settings.update({ autoModeOnBuild: "yes" as any })).toThrow(
+    /autoModeOnBuild must be a boolean/,
+  );
+});
+
+test("settings.update omitting autoModeOnBuild preserves the persisted value (#499)", () => {
+  svc.settings.update({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: true,
+  });
+  svc.settings.update({});
+  expect(svc.settings.get()).toEqual({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: true,
+  });
 });
