@@ -34,7 +34,6 @@ function initGitRepoWithCommit(): string {
 
 beforeAll(async () => {
   svc = await import("./service.ts");
-  svc.settings.update({ terminalLaunchBackend: "herdr" });
 });
 
 afterAll(() => {

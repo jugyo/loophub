@@ -8,13 +8,11 @@ let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "lh-config-"));
   process.env.LOOPHUB_HOME = dir;
-  delete process.env.LOOPHUB_TERMINAL_LAUNCH_BACKEND;
 });
 
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
   delete process.env.LOOPHUB_HOME;
-  delete process.env.LOOPHUB_TERMINAL_LAUNCH_BACKEND;
 });
 
 test("updateConfig writes config.json atomically and preserves other fields", async () => {
@@ -28,10 +26,10 @@ test("updateConfig writes config.json atomically and preserves other fields", as
   });
   expect(existsSync(`${path}.tmp`)).toBe(false); // temp renamed away
 
-  updateConfig({ terminalLaunchBackend: "herdr" });
+  updateConfig({ autoModeOnBuild: true });
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
     url: "http://example.test",
-    terminalLaunchBackend: "herdr",
+    autoModeOnBuild: true,
   });
 });
 
@@ -39,24 +37,35 @@ test("updateConfig ignores undefined-valued keys instead of erasing the existing
   const { updateConfig } = await import("./config.ts");
   const path = join(dir, "config.json");
 
-  updateConfig({ terminalLaunchBackend: "herdr" });
+  updateConfig({ autoModeOnBuild: true });
   // A caller (e.g. an RPC handler forwarding an omitted optional param) passing an explicit
   // `undefined` must not wipe the field that was already persisted.
-  updateConfig({ terminalLaunchBackend: undefined });
+  updateConfig({ autoModeOnBuild: undefined });
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
-    terminalLaunchBackend: "herdr",
+    autoModeOnBuild: true,
   });
 });
 
-test("terminalLaunchBackend reflects updateConfig, with env var still taking priority", async () => {
-  const { terminalLaunchBackend, updateConfig } = await import("./config.ts");
-  expect(terminalLaunchBackend()).toBe("builtin"); // default
+// A stale `terminalLaunchBackend` field left over from before the builtin/herdr switch was
+// removed (#562) must round-trip through updateConfig untouched and never break reads of the
+// other typed fields, since updateConfig merges into the raw parsed object rather than this
+// module's typed GlobalConfig shape.
+test("a stale terminalLaunchBackend field in config.json is preserved and ignored", async () => {
+  const { autoModeOnBuild, codingAgent, updateConfig } = await import(
+    "./config.ts"
+  );
+  const path = join(dir, "config.json");
 
-  updateConfig({ terminalLaunchBackend: "herdr" });
-  expect(terminalLaunchBackend()).toBe("herdr");
+  updateConfig({ terminalLaunchBackend: "builtin" } as never);
+  updateConfig({ autoModeOnBuild: true, codingAgent: "codex" });
 
-  process.env.LOOPHUB_TERMINAL_LAUNCH_BACKEND = "builtin";
-  expect(terminalLaunchBackend()).toBe("builtin"); // env overrides config.json
+  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: true,
+    codingAgent: "codex",
+  });
+  expect(autoModeOnBuild()).toBe(true);
+  expect(codingAgent()).toBe("codex");
 });
 
 test("autoModeOnBuild defaults to false and reflects updateConfig (#499)", async () => {

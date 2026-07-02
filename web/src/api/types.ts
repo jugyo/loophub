@@ -222,7 +222,6 @@ export type CodingAgent = "claude-code" | "codex";
 
 /** Instance-level config.json settings (`settings/get`, `settings/update`, #474). */
 export interface GlobalSettings {
-  terminalLaunchBackend: TerminalLaunchBackend;
   // Whether the Build button launches `lh dev` with auto mode (#499).
   autoModeOnBuild: boolean;
   // Default coding agent `lh dev` launches (#516).

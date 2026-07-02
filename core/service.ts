@@ -17,7 +17,6 @@ import {
   type CodingAgent,
   codingAgent,
   configDir,
-  terminalLaunchBackend,
   updateConfig,
   worktreeRoot,
 } from "./config.ts";
@@ -113,7 +112,6 @@ import {
   parseHerdrTabId,
   parseHerdrWorkspaceId,
   parseHerdrWorktreeOpenResult,
-  type TerminalLaunchBackend,
   type TerminalLaunchRepo,
 } from "./terminal-launch.ts";
 import { sweepPullUpdates } from "./watcher.ts";
@@ -707,15 +705,12 @@ async function acquireHerdrWorktreeTab(
 
 // ===== terminal launch =====
 export const terminal = {
-  config(): { backend: TerminalLaunchBackend } {
-    return { backend: terminalLaunchBackend() };
+  config(): { backend: "herdr" } {
+    return { backend: "herdr" };
   },
 
   async launch(input: TerminalLaunchInput) {
     if (!input.repo) throw new ServiceError(422, "repo is required");
-    const backend = terminalLaunchBackend();
-    if (backend === "builtin") return { backend };
-
     const r = repoOr404(input.repo);
     const command = commandForHerdrLaunch({
       repo: r.full_name,
@@ -937,7 +932,7 @@ export const terminal = {
       );
     }
     return {
-      backend,
+      backend: "herdr" as const,
       session_name: plan.sessionName,
       command: plan.command,
       cwd: plan.cwd,
@@ -1145,16 +1140,12 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
 
 // ===== global settings =====
 // Instance-level config.json settings, as opposed to the repo-scoped settings above (#474).
-// terminalLaunchBackend is the first field; more can be added to both the input/result shape
-// and the validation below as they're introduced.
 export const settings = {
   get(): {
-    terminalLaunchBackend: TerminalLaunchBackend;
     autoModeOnBuild: boolean;
     codingAgent: CodingAgent;
   } {
     return {
-      terminalLaunchBackend: terminalLaunchBackend(),
       autoModeOnBuild: autoModeOnBuild(),
       codingAgent: codingAgent(),
     };
@@ -1162,26 +1153,14 @@ export const settings = {
 
   update(
     input: {
-      terminalLaunchBackend?: TerminalLaunchBackend;
       autoModeOnBuild?: boolean;
       codingAgent?: CodingAgent;
     },
     sessionId?: string | null,
   ): {
-    terminalLaunchBackend: TerminalLaunchBackend;
     autoModeOnBuild: boolean;
     codingAgent: CodingAgent;
   } {
-    if (
-      input.terminalLaunchBackend !== undefined &&
-      input.terminalLaunchBackend !== "builtin" &&
-      input.terminalLaunchBackend !== "herdr"
-    ) {
-      throw new ServiceError(
-        422,
-        "terminalLaunchBackend must be one of: builtin, herdr",
-      );
-    }
     if (
       input.autoModeOnBuild !== undefined &&
       typeof input.autoModeOnBuild !== "boolean"

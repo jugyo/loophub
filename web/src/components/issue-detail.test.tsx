@@ -78,7 +78,6 @@ function mockFetch(
       created_at: "2026-06-17T12:30:00Z",
     }),
     "settings/get": () => ({
-      terminalLaunchBackend: "builtin",
       autoModeOnBuild,
     }),
   });

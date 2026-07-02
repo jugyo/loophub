@@ -25,7 +25,6 @@ import type {
   Repo,
   RepoMergeMode,
   ReviewNote,
-  TerminalLaunchBackend,
   TerminalLaunchConfig,
   TerminalLaunchResult,
 } from "./types";
@@ -197,7 +196,6 @@ export function getSettings() {
 
 export function updateSettings(
   input: {
-    terminalLaunchBackend?: TerminalLaunchBackend;
     autoModeOnBuild?: boolean;
     codingAgent?: CodingAgent;
   },

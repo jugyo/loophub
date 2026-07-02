@@ -12,21 +12,13 @@ import {
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
   herdrWorktreeOpenArgv,
-  normalizeTerminalLaunchBackend,
   parseHerdrRootPaneId,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
   parseHerdrWorktreeOpenResult,
 } from "./terminal-launch.ts";
 
-describe("terminal launch backend", () => {
-  test("normalizes unknown values to builtin", () => {
-    expect(normalizeTerminalLaunchBackend("herdr")).toBe("herdr");
-    expect(normalizeTerminalLaunchBackend("builtin")).toBe("builtin");
-    expect(normalizeTerminalLaunchBackend("tmux")).toBe("builtin");
-    expect(normalizeTerminalLaunchBackend(undefined)).toBe("builtin");
-  });
-
+describe("herdr terminal launch", () => {
   test("builds deterministic path-safe Herdr session names from repo and path", () => {
     const a = herdrSessionName({
       full_name: "loophub/loophub",

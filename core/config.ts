@@ -1,10 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import {
-  normalizeTerminalLaunchBackend,
-  type TerminalLaunchBackend,
-} from "./terminal-launch.ts";
 
 // Which coding agent `lh dev` launches by default (#516). Mirrors the `DevRuntime` values
 // cli/dev.ts's --claude-code / --codex flags select between.
@@ -16,7 +12,6 @@ export type CodingAgent = "claude-code" | "codex";
 export interface GlobalConfig {
   worktreeRoot?: string;
   url?: string;
-  terminalLaunchBackend?: TerminalLaunchBackend;
   // Whether the Build button (issue row / issue detail) launches `lh dev` with auto mode
   // (--auto for Claude Code, an equivalent flag for Codex). Default off (#499).
   autoModeOnBuild?: boolean;
@@ -81,21 +76,6 @@ export function baseUrl(): string {
 export function uiUrl(path: string): string {
   const p = path.replace(/^\/+/, "");
   return p ? `${baseUrl()}/${p}` : baseUrl();
-}
-
-export function terminalLaunchBackend(): TerminalLaunchBackend {
-  if (process.env.LOOPHUB_TERMINAL_LAUNCH_BACKEND) {
-    return normalizeTerminalLaunchBackend(
-      process.env.LOOPHUB_TERMINAL_LAUNCH_BACKEND,
-    );
-  }
-  try {
-    const cfg = JSON.parse(
-      readFileSync(join(configDir(), "config.json"), "utf8"),
-    );
-    return normalizeTerminalLaunchBackend(cfg.terminalLaunchBackend);
-  } catch {}
-  return "builtin";
 }
 
 // Whether the Build button should launch `lh dev` with auto mode (#499). Default false.

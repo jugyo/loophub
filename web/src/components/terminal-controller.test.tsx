@@ -30,10 +30,6 @@ const launchMutation = vi.hoisted(() => ({
 }));
 
 vi.mock("@/queries/terminal", () => ({
-  useTerminalLaunchConfig: () => ({
-    isSuccess: true,
-    data: { backend: "herdr" },
-  }),
   useLaunchTerminalWorkflow: () => launchMutation,
 }));
 

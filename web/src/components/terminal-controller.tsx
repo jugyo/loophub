@@ -25,10 +25,7 @@ import {
   type HerdrLaunchError,
   HerdrLaunchErrorDialog,
 } from "@/components/herdr-launch-error-dialog";
-import {
-  useLaunchTerminalWorkflow,
-  useTerminalLaunchConfig,
-} from "@/queries/terminal";
+import { useLaunchTerminalWorkflow } from "@/queries/terminal";
 
 // An issue this terminal tab is working on (set when opened from the issue Build button). The
 // terminal pane uses it to render a top region that resolves and surfaces the linked PR — issue
@@ -176,20 +173,10 @@ export function useTerminal(): { openTerminal: OpenTerminal } {
 
 export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
   const ctx = useContext(TerminalControllerContext);
-  const { openTerminal } = useTerminal();
-  const config = useTerminalLaunchConfig();
   const launch = useLaunchTerminalWorkflow();
   const { showError } = useErrorBanner();
   const launchTerminal = useCallback<OpenTerminal>(
     (opts) => {
-      if (!config.isSuccess) {
-        showError("Terminal backend is still loading.");
-        return;
-      }
-      if (config.data.backend === "builtin") {
-        openTerminal(opts);
-        return;
-      }
       if (!opts?.repo) {
         showError("Herdr launch failed: repo is required.");
         return;
@@ -230,14 +217,7 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
         },
       );
     },
-    [
-      config.data?.backend,
-      config.isSuccess,
-      ctx,
-      launch,
-      openTerminal,
-      showError,
-    ],
+    [ctx, launch, showError],
   );
   return { launchTerminal };
 }

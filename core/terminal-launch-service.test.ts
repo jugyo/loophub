@@ -113,7 +113,6 @@ beforeAll(async () => {
   git(["commit", "-qm", "init"]);
 
   await svc.repos.create({ path: repoPath, name: "me/proj" });
-  svc.settings.update({ terminalLaunchBackend: "herdr" });
 });
 
 afterAll(() => {

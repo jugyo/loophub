@@ -1,7 +1,5 @@
 import { createHash } from "node:crypto";
 
-export type TerminalLaunchBackend = "builtin" | "herdr";
-
 export interface TerminalLaunchRepo {
   full_name: string;
   local_path: string;
@@ -12,12 +10,6 @@ export interface HerdrLaunchPlan {
   command: string;
   cwd: string;
   argv: string[];
-}
-
-export function normalizeTerminalLaunchBackend(
-  value: unknown,
-): TerminalLaunchBackend {
-  return value === "herdr" ? "herdr" : "builtin";
 }
 
 function pathSafePart(value: string): string {

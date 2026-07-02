@@ -147,7 +147,7 @@ export const methods: Record<string, MethodDef> = {
   // ---- global settings ----
   "settings/get": {
     description:
-      "Instance-level config.json settings (terminalLaunchBackend, autoModeOnBuild, codingAgent) (#474, #499, #516).",
+      "Instance-level config.json settings (autoModeOnBuild, codingAgent) (#474, #499, #516).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.settings.get(),
@@ -156,7 +156,6 @@ export const methods: Record<string, MethodDef> = {
     description:
       "Update instance-level config.json settings, preserving unrelated fields (#474).",
     params: params({
-      terminalLaunchBackend: { enum: ["builtin", "herdr"] },
       autoModeOnBuild: { type: "boolean" },
       codingAgent: { enum: ["claude-code", "codex"] },
       session_id: sid,
@@ -165,7 +164,6 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) =>
       svc.settings.update(
         {
-          terminalLaunchBackend: p.terminalLaunchBackend,
           autoModeOnBuild: p.autoModeOnBuild,
           codingAgent: p.codingAgent,
         },
@@ -176,14 +174,13 @@ export const methods: Record<string, MethodDef> = {
   // ---- terminal launch ----
   "terminal/config": {
     description:
-      "Current terminal launch backend. builtin keeps the embedded PTY; herdr launches workflows externally.",
+      "Terminal launch backend, always herdr — terminal workflows launch as external Herdr sessions (#562).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.terminal.config(),
   },
   "terminal/launch": {
-    description:
-      "Launch a terminal workflow through the configured backend. For builtin this is a no-op acknowledgement; for herdr it starts a named session.",
+    description: "Launch a terminal workflow as a named Herdr session.",
     params: params(
       {
         repo,
