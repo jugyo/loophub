@@ -34,6 +34,8 @@ function repo(archived: boolean): Repo {
     local_path: "/tmp/proj",
     archived,
     archived_at: archived ? "2026-06-01T00:00:00Z" : null,
+    favorite: false,
+    favorited_at: null,
     created_at: "2026-01-01T00:00:00Z",
     merge_mode: null,
   };

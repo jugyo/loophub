@@ -807,7 +807,7 @@ async function main() {
       if (!flags.json)
         repos.forEach((r) => {
           console.log(
-            `${r.archived ? "[archived] " : ""}${r.full_name}\t${r.local_path}`,
+            `${r.favorite ? "[favorite] " : ""}${r.archived ? "[archived] " : ""}${r.full_name}\t${r.local_path}`,
           );
         });
     } else if (sub === "archive" || sub === "unarchive") {
@@ -815,6 +815,13 @@ async function main() {
       if (!name) fail("owner/name is required");
       const r = await run(async () =>
         s.repos.setArchived(name, sub === "archive", await writeSession()),
+      );
+      console.log(`${sub}d ${r.full_name}`);
+    } else if (sub === "favorite" || sub === "unfavorite") {
+      const name = rest[0] || flags.repo;
+      if (!name) fail("owner/name is required");
+      const r = await run(async () =>
+        s.repos.setFavorite(name, sub === "favorite", await writeSession()),
       );
       console.log(`${sub}d ${r.full_name}`);
     } else if (sub === "update") {
@@ -1682,6 +1689,7 @@ function usage() {
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
   lh repo archive <owner/repo>   lh repo unarchive <owner/repo>
+  lh repo favorite <owner/repo>   lh repo unfavorite <owner/repo>
   lh repo update --repo owner/name [--default-branch main] [--path /abs/path]
   lh repo remove --repo owner/name
   lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."] [--runtime claude-code] [--kind dev|review|issue-create]

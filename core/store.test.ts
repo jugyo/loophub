@@ -452,3 +452,33 @@ test("emitEvent persists and listEvents filters by since/order", () => {
   expect(desc.length).toBe(1);
   expect(desc[0].type).toBe("issue.closed");
 });
+
+test("setRepoFavorite toggles favorite and stamps/clears favorited_at (#457)", () => {
+  const repo = S.createRepo("me/fav", "/tmp/fav");
+  expect(S.isFavorite(repo)).toBe(false);
+  expect(repo.favorited_at).toBeNull();
+
+  S.setRepoFavorite(repo.id, true);
+  const favorited = S.getRepoById(repo.id)!;
+  expect(S.isFavorite(favorited)).toBe(true);
+  expect(favorited.favorited_at).not.toBeNull();
+
+  S.setRepoFavorite(repo.id, false);
+  const unfavorited = S.getRepoById(repo.id)!;
+  expect(S.isFavorite(unfavorited)).toBe(false);
+  expect(unfavorited.favorited_at).toBeNull();
+});
+
+test("listRepos sorts favorites first, then by insertion order (#457)", () => {
+  const a = S.createRepo("me/sort-fav-a", "/tmp/sort-fav-a");
+  const b = S.createRepo("me/sort-fav-b", "/tmp/sort-fav-b");
+  const c = S.createRepo("me/sort-fav-c", "/tmp/sort-fav-c");
+  S.setRepoFavorite(c.id, true);
+
+  const idsAmong = (ids: number[]) =>
+    S.listRepos("all")
+      .map((r) => r.id)
+      .filter((id) => ids.includes(id));
+
+  expect(idsAmong([a.id, b.id, c.id])).toEqual([c.id, a.id, b.id]);
+});

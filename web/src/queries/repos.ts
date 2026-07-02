@@ -7,6 +7,7 @@ import {
   getRepoMergeMode,
   listRepos,
   setRepoArchived,
+  setRepoFavorite,
   setRepoMergeMode,
 } from "@/api/client";
 import { queryKeys } from "./keys";
@@ -45,6 +46,21 @@ export function useSetRepoArchived(owner: string, repo: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (archived: boolean) => setRepoArchived(owner, repo, archived),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
+      qc.invalidateQueries({ queryKey: queryKeys.repos() });
+    },
+  });
+}
+
+/**
+ * Favorite / unfavorite a repo, then invalidate the repo + the sidebar and
+ * archived repo lists so the new state (and sort order) shows everywhere.
+ */
+export function useSetRepoFavorite(owner: string, repo: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (favorite: boolean) => setRepoFavorite(owner, repo, favorite),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: queryKeys.repos() });

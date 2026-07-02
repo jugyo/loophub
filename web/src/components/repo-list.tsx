@@ -3,8 +3,9 @@
 
 import type { UseQueryResult } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { Loader2, Star } from "lucide-react";
 import type { Repo } from "@/api/types";
+import { useSetRepoFavorite } from "@/queries/repos";
 
 export function RepoList({
   query,
@@ -43,28 +44,52 @@ export function RepoList({
     );
   }
 
-  // Sort by the owner/repository display string, case-insensitively, so the
-  // sidebar order is stable regardless of the API's return order.
-  const sorted = [...repos].sort((a, b) =>
-    a.full_name.localeCompare(b.full_name, undefined, { sensitivity: "base" }),
-  );
+  // Favorites first, then by the owner/repository display string,
+  // case-insensitively, so the sidebar order is stable regardless of the
+  // API's return order.
+  const sorted = [...repos].sort((a, b) => {
+    if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+    return a.full_name.localeCompare(b.full_name, undefined, {
+      sensitivity: "base",
+    });
+  });
 
   return (
     <ul className="flex flex-col gap-2">
-      {sorted.map((repo) => {
-        const [owner, name] = repo.full_name.split("/");
-        return (
-          <li key={repo.id}>
-            <Link
-              to="/r/$owner/$repo"
-              params={{ owner, repo: name }}
-              className="block rounded-md border px-4 py-3 hover:bg-accent hover:text-accent-foreground"
-            >
-              <span className="font-medium">{repo.full_name}</span>
-            </Link>
-          </li>
-        );
-      })}
+      {sorted.map((repo) => (
+        <RepoListRow key={repo.id} repo={repo} />
+      ))}
     </ul>
+  );
+}
+
+function RepoListRow({ repo }: { repo: Repo }) {
+  const [owner, name] = repo.full_name.split("/");
+  const setFavorite = useSetRepoFavorite(owner, name);
+
+  return (
+    <li className="flex items-center gap-1 rounded-md border pr-2 hover:bg-accent hover:text-accent-foreground">
+      <Link
+        to="/r/$owner/$repo"
+        params={{ owner, repo: name }}
+        className="block flex-1 px-4 py-3"
+      >
+        <span className="font-medium">{repo.full_name}</span>
+      </Link>
+      <button
+        type="button"
+        aria-label={
+          repo.favorite ? "Remove from favorites" : "Add to favorites"
+        }
+        aria-pressed={repo.favorite}
+        disabled={setFavorite.isPending}
+        onClick={() => setFavorite.mutate(!repo.favorite)}
+        className="rounded-sm p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
+      >
+        <Star
+          className={`size-4 ${repo.favorite ? "fill-current text-amber-500" : ""}`}
+        />
+      </button>
+    </li>
   );
 }

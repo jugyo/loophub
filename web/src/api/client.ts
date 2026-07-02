@@ -119,6 +119,19 @@ export function setRepoArchived(
   });
 }
 
+export function setRepoFavorite(
+  owner: string,
+  repo: string,
+  favorite: boolean,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Repo>("repos/setFavorite", {
+    name: full(owner, repo),
+    favorite,
+    session_id: sessionId,
+  });
+}
+
 // #406: resolved merge-mode view (setting + effective + GitHub-remote presence) for the settings UI.
 export function getRepoMergeMode(owner: string, repo: string) {
   return rpc<RepoMergeMode>("repos/mergeMode", { name: full(owner, repo) });

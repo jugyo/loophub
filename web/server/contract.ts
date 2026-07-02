@@ -79,6 +79,15 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.repos.setArchived(p.name, p.archived, p.session_id),
   },
+  "repos/setFavorite": {
+    description: "Favorite or unfavorite a repository.",
+    params: params(
+      { name: repo, favorite: { type: "boolean" }, session_id: sid },
+      ["name", "favorite"],
+    ),
+    result: anyObject,
+    handler: (p) => svc.repos.setFavorite(p.name, p.favorite, p.session_id),
+  },
   "repos/update": {
     description: "Update a repository's default branch and/or local path.",
     params: params(

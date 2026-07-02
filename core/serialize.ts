@@ -34,6 +34,8 @@ export function repoJSON(r: S.Repo) {
     created_at: r.created_at,
     archived: !!r.archived,
     archived_at: r.archived_at ?? null,
+    favorite: !!r.favorite,
+    favorited_at: r.favorited_at ?? null,
     // #406: raw per-repo setting only ('merge' | 'github_pr' | null). The effective mode (which
     // resolves the null default against the GitHub remote) needs a git call, so it is served by the
     // dedicated repos/mergeMode procedure, not this sync serializer.

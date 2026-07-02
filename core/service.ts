@@ -165,6 +165,18 @@ export const repos = {
     return repoJSON(repoOr404(name));
   },
 
+  setFavorite(name: string, favorite: boolean, sessionId?: string | null) {
+    if (typeof favorite !== "boolean")
+      throw new ServiceError(422, "favorite must be a boolean");
+    const r = repoOr404(name);
+    const actor = actorFor(sessionId);
+    S.setRepoFavorite(r.id, favorite);
+    S.emitEvent(r.id, favorite ? "repo.favorited" : "repo.unfavorited", actor, {
+      full_name: r.full_name,
+    });
+    return repoJSON(repoOr404(name));
+  },
+
   // #406: pin the repo's PR-detail write action, or clear it back to the remote-based default.
   // `mode` is 'merge' | 'github_pr' (pin) or 'auto' / null (clear). Archived repos stay editable
   // here — the toggle is a config preference, not a write to the repo's contents.

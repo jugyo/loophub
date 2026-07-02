@@ -2,7 +2,7 @@
 // plus links to Home and Archived. Repo screens land in later UI issues.
 
 import { Link } from "@tanstack/react-router";
-import { Archive, Home, Loader2 } from "lucide-react";
+import { Archive, Home, Loader2, Star } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -11,9 +11,10 @@ import {
   useRef,
   useState,
 } from "react";
+import type { Repo } from "@/api/types";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
-import { useRepos } from "@/queries/repos";
+import { useRepos, useSetRepoFavorite } from "@/queries/repos";
 
 // Draggable sidebar width (#378). The width is a CSS variable (`--lh-sidebar-w`, default 16rem)
 // shared by the sidebar and the bottom terminal pane's left offset; dragging the right edge
@@ -120,18 +121,12 @@ export function AppSidebar() {
             No repositories.
           </div>
         )}
-        {repos?.map((repo) => {
-          const [owner, name] = repo.full_name.split("/");
-          return (
-            <SidebarLink
-              key={repo.id}
-              to={`/r/${owner}/${name}`}
-              title={repo.full_name}
-            >
-              <span className="truncate">{repo.full_name}</span>
-            </SidebarLink>
-          );
-        })}
+        {/* Favorites first (#457) so frequently-used repos stay at the top of the nav. */}
+        {[...(repos ?? [])]
+          .sort((a, b) => (a.favorite === b.favorite ? 0 : a.favorite ? -1 : 1))
+          .map((repo) => (
+            <RepoSidebarLink key={repo.id} repo={repo} />
+          ))}
       </div>
 
       {/* Fixed footer (#371): the theme toggle lives here, below the scrolling repo list. The
@@ -181,5 +176,49 @@ function SidebarLink({
       {icon}
       {children}
     </Link>
+  );
+}
+
+// Repo nav row with an inline favorite toggle (#457). Unlike SidebarLink, the star sits
+// outside the <Link> (nesting a <button> inside an <a> is invalid) but inside the same
+// hover/active-styled row, so favoriting doesn't require leaving the sidebar.
+function RepoSidebarLink({ repo }: { repo: Repo }) {
+  const [owner, name] = repo.full_name.split("/");
+  const setFavorite = useSetRepoFavorite(owner, name);
+  const to: string = `/r/${owner}/${name}`;
+
+  return (
+    <div className="group flex items-center gap-1 rounded-md hover:bg-accent hover:text-accent-foreground">
+      <Link
+        to={to}
+        title={repo.full_name}
+        className="flex flex-1 items-center gap-2 truncate px-2 py-1.5 text-sm"
+        activeProps={{
+          className: "bg-accent text-accent-foreground font-medium",
+        }}
+      >
+        <span className="truncate">{repo.full_name}</span>
+      </Link>
+      <button
+        type="button"
+        aria-label={
+          repo.favorite ? "Remove from favorites" : "Add to favorites"
+        }
+        aria-pressed={repo.favorite}
+        disabled={setFavorite.isPending}
+        onClick={() => setFavorite.mutate(!repo.favorite)}
+        className={cn(
+          "shrink-0 rounded-sm p-1 text-muted-foreground hover:text-foreground disabled:opacity-50",
+          repo.favorite ? "" : "opacity-0 group-hover:opacity-100",
+        )}
+      >
+        <Star
+          className={cn(
+            "size-3.5",
+            repo.favorite ? "fill-current text-amber-500" : "",
+          )}
+        />
+      </button>
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { UseQueryResult } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -7,14 +8,28 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Repo } from "@/api/types";
 import { RepoList } from "./repo-list";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
-function repo(full_name: string, id: number): Repo {
+function repo(
+  full_name: string,
+  id: number,
+  overrides: Partial<Repo> = {},
+): Repo {
   return {
     id,
     name: full_name.split("/")[1],
@@ -23,8 +38,11 @@ function repo(full_name: string, id: number): Repo {
     local_path: `/tmp/${id}`,
     archived: false,
     archived_at: null,
+    favorite: false,
+    favorited_at: null,
     created_at: "2026-01-01T00:00:00Z",
     merge_mode: null,
+    ...overrides,
   };
 }
 
@@ -35,8 +53,18 @@ function result(
   return partial as UseQueryResult<Repo[]>;
 }
 
-// RepoList renders <Link>, which needs a router context.
+// RepoList renders <Link> and (via the favorite toggle) useMutation, so it needs both a
+// router and a query-client context; the favorite toggle also needs fetch stubbed.
 function renderInRouter(ui: React.ReactNode) {
+  vi.stubGlobal(
+    "fetch",
+    mockRpcFetch({
+      "repos/setFavorite": (p) => repo(p.name, 1, { favorite: p.favorite }),
+    }),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const rootRoute = createRootRoute({ component: Outlet });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -52,7 +80,11 @@ function renderInRouter(ui: React.ReactNode) {
     routeTree: rootRoute.addChildren([indexRoute, repoRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(<RouterProvider router={router} />);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
 }
 
 describe("RepoList", () => {
@@ -130,5 +162,62 @@ describe("RepoList", () => {
       "me/beta",
       "zed/gamma",
     ]);
+  });
+
+  it("sorts favorites before non-favorites, alphabetically within each group (#457)", async () => {
+    renderInRouter(
+      <RepoList
+        query={result({
+          data: [
+            repo("me/zulu", 1),
+            repo("me/alpha", 2, { favorite: true }),
+            repo("me/bravo", 3),
+            repo("me/yankee", 4, { favorite: true }),
+          ],
+        })}
+        emptyTitle=""
+        emptyDescription=""
+      />,
+    );
+    await screen.findByText("me/zulu");
+    const order = screen.getAllByRole("link").map((a) => a.textContent?.trim());
+    expect(order).toEqual(["me/alpha", "me/yankee", "me/bravo", "me/zulu"]);
+  });
+
+  it("shows a pressed favorite toggle for a favorited repo (#457)", async () => {
+    renderInRouter(
+      <RepoList
+        query={result({ data: [repo("me/alpha", 1, { favorite: true })] })}
+        emptyTitle=""
+        emptyDescription=""
+      />,
+    );
+    const button = await screen.findByRole("button", {
+      name: /remove from favorites/i,
+    });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("toggling the favorite button calls repos/setFavorite (#457)", async () => {
+    renderInRouter(
+      <RepoList
+        query={result({ data: [repo("me/alpha", 1)] })}
+        emptyTitle=""
+        emptyDescription=""
+      />,
+    );
+    const button = await screen.findByRole("button", {
+      name: /add to favorites/i,
+    });
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      const call = rpcCall("repos/setFavorite");
+      expect(call).toBeTruthy();
+      expect(call!.params).toMatchObject({
+        name: "me/alpha",
+        favorite: true,
+      });
+    });
   });
 });

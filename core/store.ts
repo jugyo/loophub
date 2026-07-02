@@ -13,6 +13,8 @@ export interface Repo {
   archived_at: string | null;
   // #406: 'merge' | 'github_pr' | null (unset → default-by-remote, see core/merge-mode.ts).
   merge_mode: string | null;
+  favorite: number;
+  favorited_at: string | null;
 }
 
 // #406: the GitHub PR a loophub PR was exported to (1:1, keyed by the PR's issues row id).
@@ -52,10 +54,12 @@ export function listRepos(
   archived: "active" | "archived" | "all" = "active",
 ): Repo[] {
   if (archived === "all")
-    return db.query(`SELECT * FROM repos ORDER BY id`).all() as Repo[];
+    return db
+      .query(`SELECT * FROM repos ORDER BY favorite DESC, id`)
+      .all() as Repo[];
   const flag = archived === "archived" ? 1 : 0;
   return db
-    .query(`SELECT * FROM repos WHERE archived = ? ORDER BY id`)
+    .query(`SELECT * FROM repos WHERE archived = ? ORDER BY favorite DESC, id`)
     .all(flag) as Repo[];
 }
 
@@ -70,6 +74,19 @@ export function setRepoArchived(id: number, archived: boolean) {
 
 export function isArchived(repo: Repo): boolean {
   return !!repo.archived;
+}
+
+export function setRepoFavorite(id: number, favorite: boolean) {
+  const favoritedAt = favorite ? now() : null;
+  db.run(`UPDATE repos SET favorite = ?, favorited_at = ? WHERE id = ?`, [
+    favorite ? 1 : 0,
+    favoritedAt,
+    id,
+  ]);
+}
+
+export function isFavorite(repo: Repo): boolean {
+  return !!repo.favorite;
 }
 
 // #406: set (or clear) the repo's merge-mode toggle. `mode` of null resets to the default-by-remote

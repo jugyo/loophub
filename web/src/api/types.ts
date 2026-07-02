@@ -140,6 +140,8 @@ export interface Repo {
   local_path: string;
   archived: boolean;
   archived_at: string | null;
+  favorite: boolean;
+  favorited_at: string | null;
   created_at: string;
   /**
    * Raw per-repo PR write-action setting (#406): 'merge' | 'github_pr' | null. null = unset, so the

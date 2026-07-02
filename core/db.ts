@@ -604,6 +604,12 @@ if (reviewNotesIssueIdIsNotNull()) {
   }
 }
 
+// repos.favorite (#457): user-marked "quick access" flag for a repo, surfaced in the repo list UI
+// (sorted first) independent of archived state. favorited_at is a companion nullable timestamp, set
+// when the flag flips on and cleared when it flips off, mirroring the archived/archived_at pairing.
+tryExec("ALTER TABLE repos ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0");
+tryExec("ALTER TABLE repos ADD COLUMN favorited_at TEXT");
+
 export function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "Z");
 }
