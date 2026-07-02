@@ -320,6 +320,42 @@ test("buildClaudeArgs omits --name when the session name is only control charact
   expect(args.indexOf("--name")).toBe(-1);
 });
 
+test("buildClaudeArgs passes --model through verbatim and keeps the slash command last", () => {
+  const args = buildClaudeArgs({
+    sessionId: "sid-1",
+    slashCommand: "/lh-dev 42",
+    model: "sonnet",
+  });
+  expect(args[args.indexOf("--model") + 1]).toBe("sonnet");
+  expect(args[args.length - 1]).toBe("/lh-dev 42");
+});
+
+test("buildClaudeArgs omits --model when not provided (backend default model)", () => {
+  const args = buildClaudeArgs({
+    sessionId: "sid-1",
+    slashCommand: "/lh-dev 42",
+  });
+  expect(args.indexOf("--model")).toBe(-1);
+});
+
+test("buildClaudeArgs strips control characters from the model before argv", () => {
+  const args = buildClaudeArgs({
+    sessionId: "sid-1",
+    slashCommand: "/lh-dev 42",
+    model: "\x1b]0;x\x07sonnet\r",
+  });
+  expect(args[args.indexOf("--model") + 1]).toBe("sonnet");
+});
+
+test("buildClaudeArgs omits --model when the model is only control characters", () => {
+  const args = buildClaudeArgs({
+    sessionId: "sid-1",
+    slashCommand: "/lh-dev 42",
+    model: "\x1b[0m\r\x07",
+  });
+  expect(args.indexOf("--model")).toBe(-1);
+});
+
 // ---- kani launch (pure) ----
 
 test("buildKaniLaunch builds the kani launch_terminal argv with cwd and name", () => {
@@ -387,6 +423,16 @@ test("buildKaniLaunch forwards the runtime flag (--codex / --claude-code) into t
     flags: { claudeCode: true },
   });
   expect(claude.command).toBe("lh dev 7 --claude-code");
+});
+
+test("buildKaniLaunch forwards --model (shell-quoted) into the inner command", () => {
+  const launch = buildKaniLaunch({
+    issue: 7,
+    title: "t",
+    cwd: "/c",
+    flags: { model: "sonnet" },
+  });
+  expect(launch.command).toBe("lh dev 7 --model 'sonnet'");
 });
 
 test("buildKaniLaunch never forwards --kani (no recursion)", () => {

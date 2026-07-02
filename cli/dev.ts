@@ -224,7 +224,7 @@ export function resolveDevRuntime(flags: {
 // handed to Codex verbatim — the rest of the context (worktree cwd, registered session, linked
 // PR) is prepared before spawn and is runtime-independent. Codex has no `--session-id` /
 // `--name` / `--settings` equivalents, so the argv is just the prompt; claude-only flags
-// (--sandbox/--allow/--auto) are rejected up front by the CLI, not silently dropped here.
+// (--sandbox/--allow/--auto/--model) are rejected up front by the CLI, not silently dropped here.
 export function buildCodexArgs({
   slashCommand,
 }: {
@@ -239,6 +239,7 @@ export function buildClaudeArgs({
   auto,
   slashCommand,
   sessionName,
+  model,
 }: {
   sessionId: string;
   managedSettings?: string;
@@ -250,8 +251,17 @@ export function buildClaudeArgs({
   // of control characters before it reaches argv (see display()) so a crafted issue title can
   // never inject escape sequences into the spawned terminal.
   sessionName?: string;
+  // Model for the session (`--model <name>`, #486). No name validation — an unknown name is
+  // the claude CLI's error to raise. Omitted => claude's default. Control characters are
+  // stripped (see display()) like every other argv value that reaches terminal output
+  // (the echoed spawn line / kani command string), same invariant as sessionName.
+  model?: string;
 }): string[] {
   const args = ["--session-id", sessionId];
+  if (model) {
+    const m = display(model).trim();
+    if (m) args.push("--model", m);
+  }
   if (auto || managedSettings) {
     // Auto mode when explicitly requested (--auto) or implied by the sandbox (managedSettings).
     args.push("--permission-mode", "auto");
@@ -307,6 +317,8 @@ export interface KaniForwardFlags {
   // Runtime selection (#458) — forwarded so the inner `lh dev` launches the same runtime.
   claudeCode?: boolean;
   codex?: boolean;
+  // Model selection (#486) — forwarded so the inner `lh dev` spawns the same model.
+  model?: string;
 }
 
 export interface KaniLaunch {
@@ -338,6 +350,7 @@ export function buildKaniLaunch({
   if (flags.force) parts.push("--force");
   if (flags.claudeCode) parts.push("--claude-code");
   if (flags.codex) parts.push("--codex");
+  if (flags.model) parts.push("--model", shQuote(display(flags.model)));
   const command = parts.join(" ");
 
   // Strip control chars from the title (it reaches the terminal name and shell argv) so a

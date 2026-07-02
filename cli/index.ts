@@ -357,7 +357,7 @@ async function main() {
   if (group === "dev") {
     const target = sub;
     const usageLine =
-      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]";
+      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]";
     if (!target) {
       fail(usageLine);
     }
@@ -406,11 +406,22 @@ async function main() {
       fail("--allow can only be used with --sandbox");
     }
 
-    // The sandbox managed-settings and auto mode are `claude` launch options with no Codex
-    // equivalent — reject the combination up front rather than silently dropping the flags.
-    if (runtime === "codex" && (useSandbox || flags.auto === true)) {
+    // With strict:false, a value-less `--model` parses as boolean true (see the Flags comment on
+    // `archived`) — fail with a usage error up front rather than crashing later in the argv
+    // builders (shQuote / spawnSync require a string), after side effects like opening the PR.
+    if (flags.model !== undefined && typeof flags.model !== "string") {
+      fail(`--model requires a value\n${usageLine}`);
+    }
+
+    // The sandbox managed-settings, auto mode, and model selection are `claude` launch options
+    // with no Codex equivalent (Codex model support is out of scope of #486; tracked separately)
+    // — reject the combination up front rather than silently dropping the flags.
+    if (
+      runtime === "codex" &&
+      (useSandbox || flags.auto === true || flags.model)
+    ) {
       fail(
-        "--sandbox/--allow/--auto are only supported with the claude-code runtime (remove them or drop --codex)",
+        "--sandbox/--allow/--auto/--model are only supported with the claude-code runtime (remove them or drop --codex)",
       );
     }
 
@@ -461,6 +472,8 @@ async function main() {
           // Forward the runtime selection so the inner `lh dev` launches the same runtime.
           claudeCode: flags["claude-code"],
           codex: flags.codex,
+          // Forward the model selection so the inner `lh dev` spawns the same model (#486).
+          model: flags.model,
         },
       });
       const proc = spawnSync("kani", launch.argv, { stdio: "inherit" });
@@ -685,6 +698,9 @@ async function main() {
             auto: flags.auto === true,
             slashCommand,
             sessionName,
+            // --model passes the session model through to claude verbatim (#486); omitted =>
+            // claude's own default model.
+            model: flags.model,
           });
 
     // Show what the runtime will receive, then launch immediately (no confirmation prompt). By
@@ -1779,7 +1795,7 @@ function usage() {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --auto: auto mode without the sandbox; --kani: in a new kani terminal; --force: launch even if another session holds it)
+  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, passed through to the claude CLI; --auto: auto mode without the sandbox; --kani: in a new kani terminal; --force: launch even if another session holds it)
   lh dev note --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]   # record a dev note on the issue's PR
   lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]   # re-enter the Claude session a PR was developed in (claude --resume in its worktree)
   lh repo add <path> [--name owner/repo]
