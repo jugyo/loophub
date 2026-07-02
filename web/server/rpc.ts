@@ -97,7 +97,7 @@ async function dispatchOne(req: unknown): Promise<RpcResponse | null> {
   } catch (e: any) {
     if (isNotification) return null;
     if (isServiceError(e))
-      return fail(id, APP_ERROR, e.message, { status: e.status });
+      return fail(id, APP_ERROR, e.message, { status: e.status, ...e.data });
     return fail(id, INTERNAL_ERROR, "Internal error", { message: e?.message });
   }
 }

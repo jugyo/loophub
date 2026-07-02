@@ -10,6 +10,7 @@ import { DetailTitleProvider } from "@/components/detail-title";
 import { ErrorBanner, ErrorBannerProvider } from "@/components/error-banner";
 import {
   TerminalControllerProvider,
+  TerminalLaunchErrorDialog,
   TerminalLaunchFeedback,
 } from "@/components/terminal-controller";
 import { TerminalPane } from "@/components/terminal-pane";
@@ -59,6 +60,7 @@ export function AppLayout() {
               screens (home / archived). */}
           <CreateIssueButton />
           <TerminalPane />
+          <TerminalLaunchErrorDialog />
         </div>
       </ErrorBannerProvider>
     </TerminalControllerProvider>

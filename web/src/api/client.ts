@@ -34,19 +34,30 @@ export const API_BASE: string = (
 
 export const RPC_URL = `${API_BASE}/rpc`;
 
+// Mirrors core/errors.ts's ServiceErrorData — an allowlisted shape, not Record<string, unknown>,
+// so a server-side error can only ever carry known-safe fields across the wire.
+interface ApiErrorData {
+  command?: string;
+  session?: string;
+}
+
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  // Extra fields ServiceError attached server-side (e.g. `command` — the Herdr command a caller
+  // can re-run locally). Absent for most errors.
+  data?: ApiErrorData;
+  constructor(status: number, message: string, data?: ApiErrorData) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.data = data;
   }
 }
 
 interface RpcError {
   code: number;
   message: string;
-  data?: { status?: number };
+  data?: { status?: number } & ApiErrorData;
 }
 
 // Map a JSON-RPC error to an HTTP-style status so callers keep checking err.status
@@ -81,8 +92,14 @@ export async function rpc<T>(
   });
   if (!res.ok) throw new ApiError(res.status, res.statusText);
   const body = (await res.json()) as { result?: T; error?: RpcError };
-  if (body.error)
-    throw new ApiError(statusFromError(body.error), body.error.message);
+  if (body.error) {
+    const { status: _status, ...data } = body.error.data ?? {};
+    throw new ApiError(
+      statusFromError(body.error),
+      body.error.message,
+      Object.keys(data).length > 0 ? data : undefined,
+    );
+  }
   return body.result as T;
 }
 

@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/api/client";
 import {
   TerminalControllerProvider,
+  TerminalLaunchErrorDialog,
   TerminalLaunchFeedback,
   useTerminalLauncher,
 } from "./terminal-controller";
@@ -15,6 +17,7 @@ const launchMutation = vi.hoisted(() => ({
           session_name?: string;
           attach?: string;
         }) => void;
+        onError?: (e: unknown) => void;
       },
     ) => {
       opts?.onSuccess?.({
@@ -85,5 +88,34 @@ describe("TerminalController", () => {
         "Launched in jugyo-loophub-deadbeef. Attach: herdr attach jugyo-loophub-deadbeef",
       ),
     ).toBeTruthy();
+  });
+
+  it("shows an overlay dialog with the reason, example command, and session-creation hint when the launch fails (#483)", () => {
+    launchMutation.mutate.mockImplementationOnce((_input, opts) => {
+      opts?.onError?.(
+        new ApiError(500, "Herdr exited with status 1", {
+          command: "herdr --session jugyo-loophub-444 agent start 'dev #444'",
+          session: "jugyo-loophub-444",
+        }),
+      );
+    });
+
+    render(
+      <TerminalControllerProvider>
+        <TerminalLaunchErrorDialog />
+        <LaunchButton />
+      </TerminalControllerProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Launch" }));
+
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByText("Herdr exited with status 1")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "herdr --session jugyo-loophub-444 agent start 'dev #444'",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("herdr --session jugyo-loophub-444")).toBeTruthy();
   });
 });

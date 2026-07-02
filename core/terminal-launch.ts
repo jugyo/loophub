@@ -44,6 +44,23 @@ function shellArg(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+// Only wraps a token in quotes when the shell would otherwise misparse it (empty, or containing
+// anything outside the safe unquoted set). Used for display purposes so the copy-pasteable
+// command reads the way a person would actually type it, instead of every single token —
+// including plain flags like `--cwd` — being quoted uniformly.
+const SAFE_UNQUOTED = /^[A-Za-z0-9_\-./:=@]+$/;
+function displayArg(value: string): string {
+  return SAFE_UNQUOTED.test(value) ? value : shellArg(value);
+}
+
+// The actual `herdr ...` invocation a caller can paste into their own shell to reproduce a launch
+// failure — distinct from HerdrLaunchPlan.command, which is only the inner workflow command herdr
+// would run once its session existed (e.g. "lh dev '...'"). That inner command doesn't depend on
+// `herdr` at all, so it can't reproduce a herdr-specific failure.
+export function herdrCommandLine(plan: HerdrLaunchPlan): string {
+  return plan.argv.map(displayArg).join(" ");
+}
+
 export function commandForHerdrLaunch(input: {
   repo: string;
   workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";

@@ -19,7 +19,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { ApiError } from "@/api/client";
 import { useErrorBanner } from "@/components/error-banner";
+import {
+  type HerdrLaunchError,
+  HerdrLaunchErrorDialog,
+} from "@/components/herdr-launch-error-dialog";
 import {
   useLaunchTerminalWorkflow,
   useTerminalLaunchConfig,
@@ -63,6 +68,12 @@ interface TerminalControllerValue {
   launchMessage: string | null;
   showLaunchMessage: (message: string) => void;
   dismissLaunchMessage: () => void;
+  // Overlay dialog state for a failed Herdr launch (#483) — kept separate from launchMessage
+  // (success feedback) since it needs a richer payload (reason + example command) and stays
+  // until the user dismisses it, rather than auto-clearing.
+  herdrLaunchError: HerdrLaunchError | null;
+  showHerdrLaunchError: (error: HerdrLaunchError) => void;
+  dismissHerdrLaunchError: () => void;
 }
 
 const TerminalControllerContext = createContext<TerminalControllerValue | null>(
@@ -96,6 +107,17 @@ export function TerminalControllerProvider({
     [dismissLaunchMessage],
   );
   useEffect(() => dismissLaunchMessage, [dismissLaunchMessage]);
+
+  const [herdrLaunchError, setHerdrLaunchError] =
+    useState<HerdrLaunchError | null>(null);
+  const dismissHerdrLaunchError = useCallback(
+    () => setHerdrLaunchError(null),
+    [],
+  );
+  const showHerdrLaunchError = useCallback((error: HerdrLaunchError) => {
+    setHerdrLaunchError(error);
+  }, []);
+
   // Stable context value: the ref identity never changes, so consumers never re-render when the
   // pane republishes a new implementation.
   const value = useMemo<TerminalControllerValue>(
@@ -104,8 +126,18 @@ export function TerminalControllerProvider({
       launchMessage,
       showLaunchMessage,
       dismissLaunchMessage,
+      herdrLaunchError,
+      showHerdrLaunchError,
+      dismissHerdrLaunchError,
     }),
-    [launchMessage, showLaunchMessage, dismissLaunchMessage],
+    [
+      launchMessage,
+      showLaunchMessage,
+      dismissLaunchMessage,
+      herdrLaunchError,
+      showHerdrLaunchError,
+      dismissHerdrLaunchError,
+    ],
   );
   return (
     <TerminalControllerContext.Provider value={value}>
@@ -183,11 +215,11 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
             ctx?.showLaunchMessage(`Launched in ${session}.${attach}`);
           },
           onError: (e) =>
-            showError(
-              e instanceof Error
-                ? `Herdr launch failed: ${e.message}`
-                : "Herdr launch failed.",
-            ),
+            ctx?.showHerdrLaunchError({
+              reason: e instanceof Error ? e.message : "Herdr launch failed.",
+              command: e instanceof ApiError ? e.data?.command : undefined,
+              session: e instanceof ApiError ? e.data?.session : undefined,
+            }),
         },
       );
     },
@@ -219,5 +251,17 @@ export function TerminalLaunchFeedback() {
         <X className="size-4" />
       </button>
     </div>
+  );
+}
+
+// Overlay dialog shown for a failed Herdr launch (#483), in place of the generic ErrorBanner.
+export function TerminalLaunchErrorDialog() {
+  const ctx = useContext(TerminalControllerContext);
+  if (!ctx?.herdrLaunchError) return null;
+  return (
+    <HerdrLaunchErrorDialog
+      error={ctx.herdrLaunchError}
+      onClose={ctx.dismissHerdrLaunchError}
+    />
   );
 }

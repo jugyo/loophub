@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { terminalLaunchBackend, updateConfig, worktreeRoot } from "./config.ts";
-import { ServiceError } from "./errors.ts";
+import { isServiceError, ServiceError } from "./errors.ts";
 import { formatEvent, type LoopEvent } from "./event-hub.ts";
 import { type FollowOptions, followEvents } from "./events-follow.ts";
 import {
@@ -70,6 +70,7 @@ import * as S from "./store.ts";
 import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
+  herdrCommandLine,
   type TerminalLaunchBackend,
 } from "./terminal-launch.ts";
 import { sweepPullUpdates } from "./watcher.ts";
@@ -337,14 +338,26 @@ function runHerdrLaunch(
       reject(
         code === "ENOENT"
           ? new ServiceError(422, "herdr command not found on PATH")
-          : new ServiceError(500, "failed to launch Herdr"),
+          : new ServiceError(
+              500,
+              `failed to launch Herdr (${code ?? "spawn error"})`,
+            ),
       );
     });
     child.on("close", (status, signal) => {
       // `status` is null when the child was terminated by a signal rather than exiting on its
       // own — treat that as a failure too, instead of `?? 0` collapsing a null code to success.
+      // The distinction (signal vs. exit code) is itself a safe, non-leaky hint about *why* the
+      // launch failed, so surface it instead of one generic "Herdr launch failed" for both.
       if (signal == null && status === 0) resolve();
-      else reject(new ServiceError(500, "Herdr launch failed"));
+      else if (signal != null)
+        reject(
+          new ServiceError(
+            500,
+            `Herdr process was terminated by signal ${signal}`,
+          ),
+        );
+      else reject(new ServiceError(500, `Herdr exited with status ${status}`));
     });
   });
 }
@@ -379,7 +392,29 @@ export const terminal = {
     // Non-blocking: lh-web is a single process also serving SSE/WebSocket terminals for every
     // client, so a synchronous spawnSync here would stall the whole server for as long as the
     // Herdr launch takes (or hangs).
-    await runHerdrLaunch(plan.argv[0], plan.argv.slice(1), plan.cwd);
+    try {
+      await runHerdrLaunch(plan.argv[0], plan.argv.slice(1), plan.cwd);
+    } catch (e) {
+      // Attach the actual `herdr ...` invocation (not plan.command, which is only the inner
+      // workflow command herdr would run) so the client can re-run the real command locally and
+      // see the full output itself — this rides on top of the deliberately generic message (see
+      // the comment on runHerdrLaunch above), so the client still never sees raw stdout/stderr/paths.
+      //
+      // Only suggest creating the session for the non-zero-exit case: that's the one empirically
+      // confirmed to happen when the named session doesn't exist yet (`agent start` only works
+      // against an already-running session, unlike the auto-creating bare `herdr --session` form).
+      // ENOENT (herdr missing from PATH) or a signal-killed process have unrelated causes, and
+      // suggesting `herdr --session <name>` there would just fail again the same way, misdirecting
+      // the user away from the real fix.
+      if (isServiceError(e))
+        throw new ServiceError(e.status, e.message, {
+          command: herdrCommandLine(plan),
+          session: /^Herdr exited with status \d+$/.test(e.message)
+            ? plan.sessionName
+            : undefined,
+        });
+      throw e;
+    }
     return {
       backend,
       session_name: plan.sessionName,
