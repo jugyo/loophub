@@ -89,6 +89,16 @@ header ([`src/components/app-layout.tsx`](./src/components/app-layout.tsx),
 The sidebar is `shrink-0` and the main column is `min-w-0 flex-1`; only `<main>`
 scrolls (`overflow-y-auto`).
 
+#### Sidebar section dividers
+
+The sidebar's vertical sections (nav / repo list+Archived+herdr sessions /
+footer) are separated by a single-pixel `border` token, applied as `border-b`
+on the section above (nav) or `border-t` on the section below (footer) —
+whichever side owns the section's own wrapper element. This is the same token
+`divide-y` uses for in-list row separators, so section boundaries and row
+boundaries read as one consistent line weight/color across light and dark
+themes.
+
 ### Dashboard sections
 
 The repo dashboard (`/r/:owner/:repo`) shows the "now" sections — **Open PRs**

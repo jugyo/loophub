@@ -91,7 +91,9 @@ export function AppSidebar() {
         </Link>
       </div>
 
-      <nav className="flex flex-col gap-1 p-2">
+      {/* Section divider (#504): `border-b` closes off the nav block the same way the footer's
+          `border-t` closes off the repo list, so the sidebar's sections read distinctly. */}
+      <nav className="flex flex-col gap-1 border-b p-2">
         <SidebarLink to="/" icon={<Home className="size-4" />}>
           Home
         </SidebarLink>
