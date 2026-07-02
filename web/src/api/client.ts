@@ -11,6 +11,7 @@ import type {
   FileAtRef,
   GlobalSettings,
   Handoff,
+  HerdrAgentRead,
   HerdrSessions,
   Issue,
   IssueComment,
@@ -226,6 +227,15 @@ export function launchTerminalWorkflow(input: {
 /** Running herdr sessions grouped by repo, for the sidebar status section (#495). */
 export function getHerdrSessions() {
   return rpc<HerdrSessions>("terminal/sessions");
+}
+
+/** Recent terminal output for one herdr agent, for the sidebar hover preview (#500). */
+export function getHerdrAgentRead(input: {
+  repo: string;
+  target: string;
+  lines?: number;
+}) {
+  return rpc<HerdrAgentRead>("terminal/agentRead", clean(input));
 }
 
 // --- issues ---

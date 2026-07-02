@@ -90,6 +90,19 @@ export function reposWithRunningSession<T extends TerminalLaunchRepo>(
   return out;
 }
 
+/**
+ * Preview text from `herdr --session <name> agent read <target> --source recent
+ * --lines N`, which prints `{ result: { read: { text: "..." } } }` (also without
+ * `--json`, like `agent list`). Null on anything unparseable, so the caller's
+ * "no preview" fallback needs no separate empty-string check.
+ */
+export function parseHerdrAgentRead(stdout: string): string | null {
+  const parsed = tryParse(stdout);
+  const text = (parsed as { result?: { read?: { text?: unknown } } })?.result
+    ?.read?.text;
+  return typeof text === "string" ? text : null;
+}
+
 function tryParse(text: string): unknown {
   try {
     return JSON.parse(text);

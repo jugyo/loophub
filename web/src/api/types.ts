@@ -196,6 +196,15 @@ export interface HerdrSessions {
   repos: HerdrRepoSessions[];
 }
 
+/**
+ * Recent terminal output for one herdr agent (`terminal/agentRead`, #500), for the
+ * sidebar hover preview. `output` is null when herdr isn't running, the session is
+ * gone, or the agent is no longer present — never an error.
+ */
+export interface HerdrAgentRead {
+  output: string | null;
+}
+
 /** Instance-level config.json settings (`settings/get`, `settings/update`, #474). */
 export interface GlobalSettings {
   terminalLaunchBackend: TerminalLaunchBackend;

@@ -142,3 +142,79 @@ test("terminal.sessions is empty when herdr exits non-zero", async () => {
     process.env.PATH = ORIGINAL_PATH;
   }
 });
+
+test("terminal.agentRead returns the preview text on success (#500)", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/agent-read",
+  });
+  const sessionName = herdrSessionName(repo);
+  const read = JSON.stringify({
+    id: "cli:agent:read",
+    result: { read: { text: "$ npm test\n42 passing\n" } },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      // argv: herdr --session <name> agent read <target> --source recent --lines <n>
+      `if [ "$2" = "${sessionName}" ] && [ "$4" = "read" ] && [ "$5" = "dev #11" ]; then printf '%s' '${read}'; exit 0; fi`,
+      "exit 1",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    const result = await svc.terminal.agentRead({
+      repo: repo.full_name,
+      target: "dev #11",
+    });
+    expect(result).toEqual({ output: "$ npm test\n42 passing\n" });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.agentRead degrades to a null output when herdr errors (agent gone, herdr missing, etc.)", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/agent-read-missing",
+  });
+  writeFileSync(join(FAKE_BIN, "herdr"), "#!/bin/sh\nexit 1\n");
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    expect(
+      await svc.terminal.agentRead({
+        repo: repo.full_name,
+        target: "no-such-agent",
+      }),
+    ).toEqual({ output: null });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+
+  process.env.PATH = EMPTY_BIN;
+  try {
+    expect(
+      await svc.terminal.agentRead({
+        repo: repo.full_name,
+        target: "dev #11",
+      }),
+    ).toEqual({ output: null });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.agentRead degrades to a null output when the repo no longer exists", async () => {
+  // Covers the TOCTOU window between the sidebar's last terminal/sessions poll and a
+  // hover firing after the repo was archived/removed in between.
+  expect(
+    await svc.terminal.agentRead({
+      repo: "me/never-registered",
+      target: "dev #11",
+    }),
+  ).toEqual({ output: null });
+});

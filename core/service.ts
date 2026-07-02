@@ -45,6 +45,7 @@ import { type GithubDeps, realGithubDeps } from "./github.ts";
 import {
   type HerdrAgent,
   parseHerdrAgentList,
+  parseHerdrAgentRead,
   parseHerdrSessionList,
   reposWithRunningSession,
 } from "./herdr-status.ts";
@@ -91,6 +92,7 @@ import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
   herdrCommandLine,
+  herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
   parseHerdrTabId,
@@ -689,7 +691,54 @@ export const terminal = {
     });
     return herdrSessionsInflight;
   },
+
+  // Recent terminal output for one herdr agent, for the sidebar hover preview (#500).
+  // `target` is whatever the client sends as a herdr `agent read` target — usually a
+  // pane_id, since herdr only resolves an agent *name* target when it's unique within
+  // the session, and two label-less launches can share a display name (the sidebar
+  // client prefers pane_id for exactly this reason; see agentReadTarget() in
+  // web/src/components/sidebar-herdr-sessions.tsx). Same failure-tolerance as
+  // sessions() above: herdr not running, the session gone, or the agent no longer
+  // present all degrade to a null output instead of an error, so the client just
+  // doesn't show a preview.
+  async agentRead(input: {
+    repo: string;
+    target: string;
+    lines?: number;
+  }): Promise<{ output: string | null }> {
+    if (!input.target) throw new ServiceError(422, "target is required");
+    const lines = clampAgentReadLines(input.lines);
+    try {
+      const r = repoOr404(input.repo);
+      const sessionName = herdrSessionName(r);
+      const out = await runHerdrCapture([
+        "--session",
+        sessionName,
+        "agent",
+        "read",
+        input.target,
+        "--source",
+        "recent",
+        "--lines",
+        String(lines),
+      ]);
+      return { output: parseHerdrAgentRead(out) };
+    } catch {
+      return { output: null };
+    }
+  },
 };
+
+const HERDR_AGENT_READ_DEFAULT_LINES = 40;
+const HERDR_AGENT_READ_MAX_LINES = 300;
+
+function clampAgentReadLines(lines: number | undefined): number {
+  if (!Number.isFinite(lines) || !lines) return HERDR_AGENT_READ_DEFAULT_LINES;
+  return Math.min(
+    Math.max(Math.trunc(lines as number), 1),
+    HERDR_AGENT_READ_MAX_LINES,
+  );
+}
 
 async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
   let listOut: string;

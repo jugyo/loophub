@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   parseHerdrAgentList,
+  parseHerdrAgentRead,
   parseHerdrSessionList,
   reposWithRunningSession,
 } from "./herdr-status.ts";
@@ -116,6 +117,44 @@ describe("parseHerdrAgentList", () => {
     ['{"result": {}}', "missing agents"],
   ])("degrades to [] on %s (%s)", (input) => {
     expect(parseHerdrAgentList(input)).toEqual([]);
+  });
+});
+
+describe("parseHerdrAgentRead", () => {
+  // Real-shaped fixture from `herdr --session <name> agent read <target>`.
+  const AGENT_READ = JSON.stringify({
+    id: "cli:agent:read",
+    result: {
+      read: {
+        format: "text",
+        pane_id: "w1:pR",
+        revision: 0,
+        source: "recent",
+        tab_id: "w1:t9",
+        text: "$ npm test\n42 passing\n",
+        truncated: false,
+        workspace_id: "w1",
+      },
+    },
+    type: "pane_read",
+  });
+
+  test("extracts result.read.text", () => {
+    expect(parseHerdrAgentRead(AGENT_READ)).toBe("$ npm test\n42 passing\n");
+  });
+
+  test.each([
+    ["", "empty"],
+    ["not json", "non-JSON"],
+    ["{}", "missing result"],
+    ['{"result": {}}', "missing read"],
+    ['{"result": {"read": {}}}', "missing text"],
+    [
+      '{"error":{"code":"agent_not_found","message":"agent target x not found"}}',
+      "error response",
+    ],
+  ])("degrades to null on %s (%s)", (input) => {
+    expect(parseHerdrAgentRead(input)).toBeNull();
   });
 });
 
