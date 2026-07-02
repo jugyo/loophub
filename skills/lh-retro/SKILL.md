@@ -3,8 +3,7 @@ name: lh-retro
 description: >-
   Retrospect a merged LoopHub PR (or backfill the recent merged PRs that have none) and save the
   findings to the retros DB. Use when the user runs /lh-retro {pr id}, asks to retrospect/振り返り a
-  PR or loop, or to backfill retros. Read-only on the repo: it never merges, edits source, or
-  changes state.
+  PR or loop, or to backfill retros. Read-only on the repo (see Boundaries).
 ---
 
 # LoopHub retro
@@ -130,7 +129,7 @@ any PR that already has a retro, so a re-run never double-counts.
 
 ## Language
 
-This skill body is English. Match **retro note / finding text** to the user's conversation
+Match **retro note / finding text** to the user's conversation
 language; keep `id` / `category` / CLI / JSON keys as written.
 
 ## Boundaries (do not)

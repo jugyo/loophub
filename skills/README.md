@@ -56,6 +56,8 @@ Shared conventions referenced from every skill's own `## LoopHub` section:
 - **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
 - **CLI**: `lh` (on PATH), or `bun run <repo>/src/cli.ts` from a checkout
 - **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
+- **Auto-sync**: `lh-web` sweeps open PRs' head SHAs and auto-fires `pull_request.updated` — after
+  committing, rebasing, or merging on a PR head, no manual sync call is needed
 
 ### Web URL / baseUrl resolution
 

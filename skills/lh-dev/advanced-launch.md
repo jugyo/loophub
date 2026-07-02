@@ -1,0 +1,41 @@
+Reference for `lh-dev/SKILL.md` § 2 (Worktree & session) — the two branches below are rare; most
+`lh-dev` runs never reach either.
+
+## Manual launch (not via `lh dev`)
+
+Only if you arrived here **without** `lh dev` (ad-hoc, or a host that doesn't use the launcher): set up
+the worktree and the linked draft PR yourself first, then continue. `lh dev openPr` records the session
+on the PR (`pulls.session_id`); there is no separate assign step.
+
+```sh
+# `lh dev` derives the branch/worktree name from the PR number (`loophub/pr-<m>`), which is not
+# known until the PR row exists — a manual launch can't reproduce that, so pick a branch name
+# yourself (any name works; `--head` below just has to match it).
+git worktree add ~/.loophub/worktrees/<owner>/<repo>/<branch> -b <branch> main
+cd ~/.loophub/worktrees/<owner>/<repo>/<branch>
+SID="$(uuidgen)"
+lh session register --id "$SID" --agent impl-bot --session "$SID"
+# Open the linked draft PR. `--session-id "$SID"` attributes the session to the PR row
+# (`pulls.session_id`) — the basis for `lh resume` / retro. The soft open-PR check makes this the
+# point at which the issue is "taken": a second open PR for the same issue is refused (422).
+lh pr create --repo <repo> --head <branch> --base main --title "..." --issue <n> --session-id "$SID"
+```
+
+## Parallel LoopHub server (only when changing server code)
+
+The CLI uses production `:8730` by default. **Never stop `:8730`.** If your change touches the server
+itself and you need to exercise the new code, run a second server on a free port and point the CLI at it:
+
+```sh
+lh-web --port 8731 --poll-ms 0 &
+LOOPHUB_URL=http://localhost:8731 lh issue view <n> --repo <repo>
+```
+
+| Variable | Purpose |
+|----------|---------|
+| `LOOPHUB_PORT` | Server listen port (default 8730) |
+| `LOOPHUB_URL` | CLI API target (set explicitly when running in parallel) |
+
+`LOOPHUB_HOME` (default `~/.loophub`) is shared across ports, so the production UI (8730) still shows the
+data; new API behavior exists only on the new server code. The existing `url` in `config.json` is read
+first, so set `LOOPHUB_URL` explicitly when running in parallel.

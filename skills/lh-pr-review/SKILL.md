@@ -159,7 +159,7 @@ See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
 
 ## Language
 
-This skill is English. **Review output read by humans** — the `lh pr review` body (Verdict / Scope /
+**Review output read by humans** — the `lh pr review` body (Verdict / Scope /
 Reviewers / per-role sections) and every line comment — must match the **PR's language**. Code, CLI,
 identifiers, and severity keywords (`pass` / `request_changes` / `comment`) stay English.
 
@@ -431,8 +431,8 @@ git add <paths>
 git commit -m "<what changed, not why>"
 ```
 
-LoopHub reads local git directly; lh-web sweeps open-PR head SHAs and auto-fires
-`pull_request.updated`, so no manual sync is needed.
+LoopHub reads local git directly; auto-sync (`skills/README.md` § LoopHub basics) picks up the new
+head — no manual sync needed.
 
 Optional visibility:
 

@@ -50,8 +50,6 @@ Optional arguments the user may supply:
 /lh-repo-add /abs/path --name owner/repo
 ```
 
-See `skills/README.md` (skill naming) for why this skill does not use a `loop-` prefix.
-
 ## LoopHub
 
 See `skills/README.md` § LoopHub basics for server / CLI defaults — **`lh serve` must be running**

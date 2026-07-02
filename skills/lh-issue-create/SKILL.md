@@ -70,8 +70,6 @@ Stop **immediately** when all of the following are true (do not start extra work
 `/lh-issue-create` — file an issue from conversation context. Follow any title or type the user
 specifies.
 
-See `skills/README.md` (skill naming) for why this skill does not use a `loop-` prefix.
-
 ### Question mode (no arguments, no context)
 
 If the skill is invoked **without arguments and without any conversation context to draw an issue
@@ -138,7 +136,7 @@ Example: `http://localhost:8730/r/jugyo/local-github/issues/42`
 
 ## Language
 
-This skill is English. **Issue output** (title, body headings, prose, checklist items) must match the
+**Issue output** (title, body headings, prose, checklist items) must match the
 user's **conversation language** — translate section headings and text; do not paste the English
 template below verbatim when the user writes in another language. Code, CLI, and commit messages stay
 English.

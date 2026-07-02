@@ -203,17 +203,12 @@ before recording, **re-running recovers** that PR (it finds the open PR for the 
 rather than opening a second one. The **step-1 `github_pull` non-null guard** is the early, user-facing
 stop for non-UI launches; the command is the authoritative safeguard.
 
-## Out of scope (this skill)
-
-- Merging, reviewing, or marking the GitHub PR ready
-- Editing source / committing changes in the worktree (submit only)
-- Squashing or rewriting history to strip commit trailers (#406: "don't reshape")
-- Running the LoopHub review loop (`lh-pr-review`) or merge-ready check
-
 ## Prohibited
 
-- Do not merge or review the GitHub PR
+- Do not merge, review, or mark the GitHub PR ready
+- Do not edit source or commit changes in the worktree (submit only)
+- Do not squash, rebase, or rewrite history to strip commit trailers (#406: "don't reshape")
+- Do not run the LoopHub review loop (`lh-pr-review`) or merge-ready check
 - Do not push the internal `loophub/issue-<n>` branch as the GitHub branch (use a content-based name)
 - Do not include LoopHub boilerplate / `Closes #<n>` / Evidence in the GitHub PR description
 - Do not create a second GitHub PR for one that already has a `github_pull` (double-create)
-- Do not edit source in the worktree

@@ -124,8 +124,8 @@ Repo standard (e.g. `bun test`). **Green before proceeding**, same as before PR.
 
 ### 6. Report and resume review
 
-LoopHub reads the same `.git` directly (no push); lh-web sweeps open-PR head SHAs and
-auto-fires `pull_request.updated`, so no manual sync is needed.
+LoopHub reads the same `.git` directly (no push); auto-sync (`skills/README.md` § LoopHub basics)
+picks up the new head — no manual sync needed.
 
 ```sh
 lh pr comment <m> --body "Conflict resolution complete. Please re-review." --actor impl-bot --repo <repo>

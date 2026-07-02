@@ -45,8 +45,6 @@ selection UI**). If the id is **omitted**, present a selection UI (see § Select
 
 **If the startup guard is not satisfied, stop here** — even if you know the issue number.
 
-See `skills/README.md` (skill naming) for why this skill does not use a `loop-` prefix.
-
 ### Selecting an issue (no id given)
 
 When `/lh-dev` is run **without** an issue id, do not guess — let the user pick via the built-in
@@ -109,7 +107,7 @@ Example: `http://localhost:8730/r/jugyo/local-github/issues/73`
 
 ## Language
 
-This skill is English. **Reader-facing output** — PR title/body headings, user-facing summaries,
+**Reader-facing output** — PR title/body headings, user-facing summaries,
 `review_notes`, and `lh dev note` hand-off text — must match the **PR's language**. Code, CLI,
 identifiers, and commit messages stay English.
 
@@ -199,44 +197,9 @@ dev` is idempotent and reuses the existing open PR rather than opening a second.
 stale re-launch of your own), **stop** and ask the human whether to wait, pick another issue, or take
 over. Do not edit in parallel.
 
-#### Manual launch (not via `lh dev`)
-
-Only if you arrived here **without** `lh dev` (ad-hoc, or a host that doesn't use the launcher): set up
-the worktree and the linked draft PR yourself first, then continue. `lh dev openPr` records the session
-on the PR (`pulls.session_id`); there is no separate assign step.
-
-```sh
-# `lh dev` derives the branch/worktree name from the PR number (`loophub/pr-<m>`), which is not
-# known until the PR row exists — a manual launch can't reproduce that, so pick a branch name
-# yourself (any name works; `--head` below just has to match it).
-git worktree add ~/.loophub/worktrees/<owner>/<repo>/<branch> -b <branch> main
-cd ~/.loophub/worktrees/<owner>/<repo>/<branch>
-SID="$(uuidgen)"
-lh session register --id "$SID" --agent impl-bot --session "$SID"
-# Open the linked draft PR. `--session-id "$SID"` attributes the session to the PR row
-# (`pulls.session_id`) — the basis for `lh resume` / retro. The soft open-PR check makes this the
-# point at which the issue is "taken": a second open PR for the same issue is refused (422).
-lh pr create --repo <repo> --head <branch> --base main --title "..." --issue <n> --session-id "$SID"
-```
-
-#### Parallel LoopHub server (only when changing server code)
-
-The CLI uses production `:8730` by default. **Never stop `:8730`.** If your change touches the server
-itself and you need to exercise the new code, run a second server on a free port and point the CLI at it:
-
-```sh
-lh-web --port 8731 --poll-ms 0 &
-LOOPHUB_URL=http://localhost:8731 lh issue view <n> --repo <repo>
-```
-
-| Variable | Purpose |
-|----------|---------|
-| `LOOPHUB_PORT` | Server listen port (default 8730) |
-| `LOOPHUB_URL` | CLI API target (set explicitly when running in parallel) |
-
-`LOOPHUB_HOME` (default `~/.loophub`) is shared across ports, so the production UI (8730) still shows the
-data; new API behavior exists only on the new server code. The existing `url` in `config.json` is read
-first, so set `LOOPHUB_URL` explicitly when running in parallel.
+Two rare branches of this step — launching **without** `lh dev`, and running a **parallel LoopHub
+server** to exercise server-side changes — are moved out to `skills/lh-dev/advanced-launch.md`; open
+it only if one applies.
 
 ### 3. Implement
 
@@ -342,9 +305,9 @@ EOF
 )"
 ```
 
-When running a **parallel server** in the worktree (§2 `lh-web --port 8731`), prefix
-`LOOPHUB_URL=http://localhost:8731` on the same command — the `--body` heredoc is identical to the one
-above.
+When running a **parallel server** in the worktree (`advanced-launch.md` § Parallel LoopHub server),
+prefix `LOOPHUB_URL=http://localhost:8731` on the same command — the `--body` heredoc is identical to
+the one above.
 
 | Required | Content |
 |----------|---------|
@@ -399,16 +362,17 @@ step 6.
 
 #### Mark the PR ready for review (draft → ready)
 
-`lh dev` opened this PR as a **draft** (#413) — the WIP marker for "still being implemented". Filling the
-body with real Summary / Acceptance criteria / Test plan / Evidence on a green tree **is** implementation
-completion, so flip the draft to ready here, as the closing action of §5:
+The PR is still a **draft** (#413 — see above). Filling the body with real Summary / Acceptance
+criteria / Test plan / Evidence on a green tree **is** implementation completion, so flip the draft
+to ready here, as the closing action of §5:
 
 ```sh
 lh pr ready-for-review <m> --repo <repo>   # draft → ready; fires pull_request.ready_for_review
 ```
 
-When running a **parallel server** (§2), prefix `LOOPHUB_URL=http://localhost:8731`. This clears the
-draft flag so the PR reads as **ready** in events and `lh pr list` / view — distinguishing it from a PR
+When running a **parallel server** (`advanced-launch.md`), prefix
+`LOOPHUB_URL=http://localhost:8731`. This clears the draft flag so the PR reads as **ready** in
+events and `lh pr list` / view — distinguishing it from a PR
 left in draft (an abandoned WIP attempt). This is the draft→ready transition only; `lh pr ready-for-review`
 also has a *re-review after change requests* mode, but the lh-dev flow does not use it (§7 delegates to
 `lh-pr-review`, which re-reviews by re-running its reviewers, posting `lh pr comment` only for
@@ -488,8 +452,8 @@ Do not stop at commit or `lh pr create` alone. See `skills/README.md` § Skill c
 
 ## Conflicts
 
-On the worktree head: `git rebase main` (or `merge main`) → commit. lh-web sweeps open-PR head
-SHAs and auto-fires `pull_request.updated`, so no manual sync is needed.
+On the worktree head: `git rebase main` (or `merge main`) → commit. Auto-sync (`skills/README.md` §
+LoopHub basics) picks it up — no manual sync needed.
 
 ## Prohibited
 

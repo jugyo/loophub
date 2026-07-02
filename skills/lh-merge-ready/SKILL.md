@@ -44,8 +44,6 @@ Merge-ready check for PR #<m>: <title>
 
 Dispatch / cron must pass `<pr id>` explicitly (no inference).
 
-See `skills/README.md` (skill naming) for why this skill does not use a `loop-` prefix.
-
 ## LoopHub
 
 See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
@@ -54,7 +52,7 @@ See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
 
 ## Language
 
-This skill is English. The **merge-decision summary** (`## Report`) is user-facing output: localize its
+The **merge-decision summary** (`## Report`) is user-facing output: localize its
 section headings and text to the user's conversation language. The example in `## Report` is shown in
 English; render the same blocks in the conversation language at runtime. Code, CLI, and PR/issue
 identifiers stay English.

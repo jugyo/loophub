@@ -35,8 +35,6 @@ LoopHub variant of the generic `to-issues` skill.
 
 `/lh-plan-to-issues` — use conversation context or an issue / document from arguments.
 
-See `skills/README.md` (skill naming) for why this skill does not use a `loop-` prefix.
-
 ## LoopHub
 
 See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
@@ -46,7 +44,7 @@ See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
 
 ## Language
 
-This skill is English. **Issue output** (slice titles, body headings, prose) must match the user's
+**Issue output** (slice titles, body headings, prose) must match the user's
 **conversation language** — translate section headings and text; do not paste the English template
 below verbatim when the user writes in another language. Code and CLI stay English.
 
