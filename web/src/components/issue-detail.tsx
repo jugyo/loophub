@@ -27,6 +27,7 @@ import {
   stateBadge,
 } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
+import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useImageUpload } from "@/lib/use-image-upload";
 import { cn } from "@/lib/utils";
 import {
@@ -158,6 +159,7 @@ function IssueHeader({
   const setState = useSetIssueState(owner, repo, issue.number);
   const { launchTerminal } = useTerminalLauncher();
   const { data: settings } = useSettings();
+  const [isBuildLoading, startBuildLoading] = useFixedLoading();
   const state = stateBadge(issue, "issues");
   const linked = issue.linked_pull_request;
   // Build kicks off work, so show it unless a PR is actively in progress (open)
@@ -219,7 +221,9 @@ function IssueHeader({
         {activePull ? null : (
           <Button
             title={`Start \`${buildCommand}\` in a terminal`}
-            onClick={() =>
+            disabled={isBuildLoading}
+            onClick={() => {
+              startBuildLoading();
               launchTerminal({
                 command: buildCommand,
                 repo: `${owner}/${repo}`,
@@ -227,10 +231,14 @@ function IssueHeader({
                 issueRef: { owner, repo, number: issue.number },
                 workflow: "issue-dev",
                 issueNumber: issue.number,
-              })
-            }
+              });
+            }}
           >
-            <Play className="size-4" />
+            {isBuildLoading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Play className="size-4" />
+            )}
             Build
           </Button>
         )}

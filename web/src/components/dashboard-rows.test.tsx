@@ -6,9 +6,17 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Issue, LinkedPull } from "@/api/types";
+import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
 vi.mock("@/components/terminal-controller", () => ({
@@ -25,6 +33,7 @@ import { IssueRow } from "./dashboard-rows";
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   launchTerminal.mockClear();
   settingsData.value = { autoModeOnBuild: false };
 });
@@ -253,6 +262,26 @@ describe("IssueRow", () => {
     expect(launchTerminal).toHaveBeenCalledWith(
       expect.objectContaining({ command: "lh dev 7 --auto" }),
     );
+  });
+
+  it("shows a fixed-duration loading state on the Build button and re-enables it after", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
+    );
+    const button = await screen.findByRole("button", {
+      name: "Build issue #7",
+    });
+
+    fireEvent.click(button);
+    expect(button.hasAttribute("disabled")).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ACTION_LOADING_MS);
+    });
+    await waitFor(() => {
+      expect(button.hasAttribute("disabled")).toBe(false);
+    });
   });
 
   it("shows the Build button when the linked PR is closed unmerged (rejected)", async () => {

@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -24,6 +25,7 @@ import type {
   PullReview,
   ReviewNote,
 } from "@/api/types";
+import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 
 // RelatedSessions and GitHub export launch through the terminal backend abstraction; stub it so the
 // component tree renders without a TerminalProvider.
@@ -38,6 +40,7 @@ import { PullDetail } from "./pull-detail";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   launchTerminal.mockClear();
 });
 
@@ -326,6 +329,68 @@ describe("PullDetail", () => {
       const call = rpcCall("pulls/merge");
       expect(call).toBeTruthy();
       expect(call!.params.merge_method).toBe("squash");
+    });
+  });
+
+  it("shows a fixed-duration loading state on Merge and re-enables it once loading and the mutation both settle (#560)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let resolveMerge!: (v: unknown) => void;
+    const pending = new Promise((resolve) => {
+      resolveMerge = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => pull,
+        "pulls/files": () => files,
+        "reviews/list": () => reviews,
+        "reviews/listComments": () => lineComments,
+        "reviewNotes/list": () => [],
+        "comments/list": () => comments,
+        "pulls/merge": () => pending,
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    const button = (await screen.findByRole("button", {
+      name: /^Merge$/i,
+    })) as HTMLButtonElement;
+    fireEvent.click(button);
+    expect(button.disabled).toBe(true);
+
+    // The fixed loading window elapses, but the mutation is still in flight — stay disabled so a
+    // slow merge can't be double-submitted.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ACTION_LOADING_MS);
+    });
+    expect(button.disabled).toBe(true);
+
+    // Once the mutation itself resolves, the button re-enables.
+    resolveMerge({ merged: true, sha: "c" });
+    await waitFor(() => {
+      expect(button.disabled).toBe(false);
     });
   });
 

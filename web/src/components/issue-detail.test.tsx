@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -17,6 +18,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment, IssueGroupWithMembers } from "@/api/types";
+import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 
 // The Build button launches through the terminal backend abstraction; capture the call.
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -29,6 +31,7 @@ import { IssueDetail } from "./issue-detail";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   launchTerminal.mockClear();
 });
 
@@ -276,6 +279,24 @@ describe("IssueDetail", () => {
     expect(launchTerminal).toHaveBeenCalledWith(
       expect.objectContaining({ command: "lh dev 12 --auto" }),
     );
+  });
+
+  it("shows a fixed-duration loading state on the Build button and re-enables it after", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr);
+
+    const button = await screen.findByRole("button", { name: /build/i });
+    fireEvent.click(button);
+
+    expect(button.hasAttribute("disabled")).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ACTION_LOADING_MS);
+    });
+    await waitFor(() => {
+      expect(button.hasAttribute("disabled")).toBe(false);
+    });
   });
 
   it("lists other issues in the same group, excluding the current one", async () => {

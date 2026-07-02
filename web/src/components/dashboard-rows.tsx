@@ -3,7 +3,7 @@
 // (../lib/badges.ts).
 
 import { Link } from "@tanstack/react-router";
-import { Check, Play } from "lucide-react";
+import { Check, Loader2, Play } from "lucide-react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { LabelChip } from "@/components/label-chip";
@@ -18,6 +18,7 @@ import {
   type StatusWordTone,
 } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
+import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/queries/settings";
 
@@ -199,6 +200,7 @@ function RowBuildButton({
 }) {
   const { launchTerminal } = useTerminalLauncher();
   const { data: settings } = useSettings();
+  const [isLoading, startLoading] = useFixedLoading();
   const activePull = pulls.some((p) => p.state === "open" || p.merged);
   if (activePull) return null;
   const command = settings?.autoModeOnBuild
@@ -209,7 +211,9 @@ function RowBuildButton({
       type="button"
       title={`Start \`${command}\` in a terminal`}
       aria-label={`Build issue #${issue.number}`}
-      onClick={() =>
+      disabled={isLoading}
+      onClick={() => {
+        startLoading();
         launchTerminal({
           command,
           repo: `${owner}/${repo}`,
@@ -217,11 +221,15 @@ function RowBuildButton({
           issueRef: { owner, repo, number: issue.number },
           workflow: "issue-dev",
           issueNumber: issue.number,
-        })
-      }
-      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        });
+      }}
+      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
     >
-      <Play className="size-4" />
+      {isLoading ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : (
+        <Play className="size-4" />
+      )}
     </button>
   );
 }

@@ -11,7 +11,7 @@ export class RpcFault {
   ) {}
 }
 
-type Handler = (params: any) => unknown;
+type Handler = (params: any) => unknown | Promise<unknown>;
 
 export function mockRpcFetch(handlers: Record<string, Handler>) {
   return vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -24,7 +24,8 @@ export function mockRpcFetch(handlers: Record<string, Handler>) {
     const handler = handlers[method];
     if (!handler) return send({ jsonrpc: "2.0", id: 1, result: {} });
     try {
-      return send({ jsonrpc: "2.0", id: 1, result: handler(params) });
+      const result = await handler(params);
+      return send({ jsonrpc: "2.0", id: 1, result });
     } catch (e) {
       if (e instanceof RpcFault) {
         return send({

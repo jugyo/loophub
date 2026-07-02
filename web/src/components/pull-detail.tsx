@@ -32,6 +32,7 @@ import { WorkDuration } from "@/components/work-duration";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
 import { type DiffLineKind, parsePatch } from "@/lib/diff";
 import { relativeTime } from "@/lib/time";
+import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useIssueComments } from "@/queries/issues";
 import {
   type DevNote,
@@ -179,6 +180,11 @@ function PullHeader({
   const setState = useSetPullState(owner, repo, pull.number);
   const { showError } = useErrorBanner();
   const [method, setMethod] = useState<MergeMethod>("squash");
+  const [isMergeLoading, startMergeLoading] = useFixedLoading();
+  // The fixed loading window is a UX minimum, not a substitute for the real request: once it
+  // elapses the button must stay disabled/spinning until the mutation itself settles, so a
+  // slow merge can't be double-submitted (#560).
+  const isMerging = isMergeLoading || merge.isPending;
 
   // Shared with the built-in terminal header (terminal-pr-header.tsx) so the two
   // status lines always match (#386).
@@ -297,7 +303,7 @@ function PullHeader({
               aria-label="Merge method"
               value={method}
               onChange={(e) => setMethod(e.target.value as MergeMethod)}
-              disabled={!canMerge || merge.isPending}
+              disabled={!canMerge || isMerging}
               title={mergeBlockedReason}
               className="h-9 rounded-md border bg-background px-2 text-sm"
             >
@@ -308,17 +314,16 @@ function PullHeader({
               ))}
             </select>
             <Button
-              disabled={!canMerge || merge.isPending}
+              disabled={!canMerge || isMerging}
               title={mergeBlockedReason}
-              onClick={() =>
+              onClick={() => {
+                startMergeLoading();
                 merge.mutate(method, {
                   onError: (e) => showError(failureMessage("Merge failed", e)),
-                })
-              }
+                });
+              }}
             >
-              {merge.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : null}
+              {isMerging ? <Loader2 className="size-4 animate-spin" /> : null}
               {pull.merged ? "Merged" : "Merge"}
             </Button>
           </>
