@@ -2,7 +2,7 @@
 // plus links to Home and Archived. Repo screens land in later UI issues.
 
 import { Link } from "@tanstack/react-router";
-import { Archive, Home, Loader2, Settings, Star } from "lucide-react";
+import { Home, Loader2, Settings, Star } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -94,9 +94,6 @@ export function AppSidebar() {
         <SidebarLink to="/" icon={<Home className="size-4" />}>
           Home
         </SidebarLink>
-        <SidebarLink to="/archived" icon={<Archive className="size-4" />}>
-          Archived
-        </SidebarLink>
         <SidebarLink to="/settings" icon={<Settings className="size-4" />}>
           Settings
         </SidebarLink>
@@ -130,6 +127,21 @@ export function AppSidebar() {
           .map((repo) => (
             <RepoSidebarLink key={repo.id} repo={repo} />
           ))}
+
+        {/* Archived (#478): sits directly under the repo list (inside the same scroll area, right
+            after the last item) rather than pinned to the sidebar bottom — de-emphasized styling
+            (small, muted, no icon) since it's an occasional escape hatch, not a top-level nav item.
+            The arrow glyph (not a lucide icon, to keep the issue's "no icon" requirement) sets it
+            apart from the repo rows above it, which it would otherwise visually blend into. */}
+        <Link
+          to="/archived"
+          className="mt-1 block truncate rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          activeProps={{
+            className: "bg-accent text-accent-foreground font-medium",
+          }}
+        >
+          <span aria-hidden="true">→</span> Archived
+        </Link>
       </div>
 
       {/* Fixed footer (#371): the theme toggle lives here, below the scrolling repo list. The
