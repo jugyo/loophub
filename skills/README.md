@@ -11,7 +11,6 @@ script symlinks them into `~/.claude/skills/`).
 | `lh-issue-create` | `skills/lh-issue-create/` | `/lh-issue-create` |
 | `lh-plan-to-issues` | `skills/lh-plan-to-issues/` | `/lh-plan-to-issues` |
 | `lh-dev` | `skills/lh-dev/` | `/lh-dev {issue id}` (implement → PR → review loop; `lh dev` provisions the worktree) |
-| `lh-watch` | `skills/lh-watch/` | `/lh-watch` (watch the repo's event feed; auto-dispatch unblocked issues via `lh dev`) |
 | `lh-pr-review` | `skills/lh-pr-review/` | `/lh-pr-review {pr id}` (review → fix → re-review loop) |
 | `lh-rebase-conflict` | `skills/lh-rebase-conflict/` | `/lh-rebase-conflict {pr id}` (resolve conflicts → re-review) |
 | `lh-merge-ready` | `skills/lh-merge-ready/` | `/lh-merge-ready {pr id}` (pre-merge check; human merges) |
@@ -63,10 +62,6 @@ PR-keyed worktree (`pr-<m>`, #463) — the PR's existence is the "taken" signal,
 attributed to the PR row); these
 skills cover registration, issue authoring, implementation, review, conflict resolution, and the
 pre-merge check.
-
-`lh-watch` sits **above** this chain: it watches a repo's event feed and, when a blocker is released,
-dispatches each now-unblocked issue with `lh dev --auto --kani` — feeding new sessions into `lh-dev`.
-It only starts work (never reviews or merges) and treats every ready issue as AFK.
 
 `create-github-pr` is **outside** this chain: it is a separate, UI-triggered export action (the PR
 detail's **Create PR on GitHub** button for repos in `github_pr` merge mode). It pushes the PR's branch

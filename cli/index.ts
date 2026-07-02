@@ -25,7 +25,6 @@ import {
   acquireDevLock,
   buildClaudeArgs,
   buildCodexArgs,
-  buildKaniLaunch,
   buildManagedSettings,
   buildResumeArgs,
   type DevRuntime,
@@ -65,7 +64,6 @@ type Flags = {
   sandbox?: boolean;
   auto?: boolean;
   verbose?: boolean;
-  kani?: boolean;
   force?: boolean;
   "claude-code"?: boolean;
   codex?: boolean;
@@ -131,7 +129,6 @@ const { values, positionals: pos } = parseArgs({
     sandbox: { type: "boolean" },
     auto: { type: "boolean" },
     verbose: { type: "boolean" },
-    kani: { type: "boolean" },
     force: { type: "boolean" },
     "claude-code": { type: "boolean" },
     codex: { type: "boolean" },
@@ -363,7 +360,7 @@ async function main() {
   if (group === "dev") {
     const target = sub;
     const usageLine =
-      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]";
+      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--force]";
     if (!target) {
       fail(usageLine);
     }
@@ -455,43 +452,6 @@ async function main() {
     const s = await svc();
     const r = await run(() => s.repos.get(repo));
     const item = await run(() => s.issues.get(repo, n));
-
-    // --kani: relaunch the dev loop in a fresh kani terminal instead of the foreground. The
-    // inner `lh dev` (without --kani) provisions the worktree and spawns claude itself, so we
-    // do neither here — just launch the terminal and report its id. r.local_path is the main
-    // checkout root the inner command resolves the repo from.
-    if (flags.kani === true) {
-      const launch = buildKaniLaunch({
-        issue: n,
-        title: item.title,
-        cwd: r.local_path,
-        flags: {
-          // Forward the fully-resolved repo (not the raw --repo flag) so the inner `lh dev`
-          // gets it explicitly regardless of which positional form launched this one.
-          repo,
-          sandbox: flags.sandbox,
-          auto: flags.auto,
-          allow: flags.allow,
-          verbose: flags.verbose,
-          // Carry --force through the relaunch so the inner `lh dev` still overrides the lock.
-          force: flags.force,
-          // Forward the runtime selection so the inner `lh dev` launches the same runtime.
-          claudeCode: flags["claude-code"],
-          codex: flags.codex,
-          // Forward the model selection so the inner `lh dev` spawns the same model (#486).
-          model: flags.model,
-        },
-      });
-      const proc = spawnSync("kani", launch.argv, { stdio: "inherit" });
-      if (proc.error) {
-        const err = proc.error as NodeJS.ErrnoException;
-        if (err.code === "ENOENT") {
-          fail("failed to launch kani terminal: 'kani' not found on PATH");
-        }
-        fail(`failed to launch kani terminal: ${err.message}`);
-      }
-      process.exit(proc.status ?? 0);
-    }
 
     // Make the work visible: register this session before anything that links to it (session_links
     // has a FK on agent_sessions, so dev.openPr below — which links the session to the PR it opens
@@ -1803,7 +1763,7 @@ function usage() {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--kani] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, claude-code only, passed through to the claude CLI; --auto: auto mode without the sandbox (claude-code: --permission-mode auto; codex: --dangerously-bypass-approvals-and-sandbox); --kani: in a new kani terminal; --force: launch even if another session holds it)
+  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, claude-code only, passed through to the claude CLI; --auto: auto mode without the sandbox (claude-code: --permission-mode auto; codex: --dangerously-bypass-approvals-and-sandbox); --force: launch even if another session holds it)
   lh dev note --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]   # record a dev note on the issue's PR
   lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]   # re-enter the Claude session a PR was developed in (claude --resume in its worktree)
   lh repo add <path> [--name owner/repo]

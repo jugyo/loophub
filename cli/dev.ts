@@ -269,7 +269,7 @@ export function buildClaudeArgs({
   // Model for the session (`--model <name>`, #486). No name validation — an unknown name is
   // the claude CLI's error to raise. Omitted => claude's default. Control characters are
   // stripped (see display()) like every other argv value that reaches terminal output
-  // (the echoed spawn line / kani command string), same invariant as sessionName.
+  // (the echoed spawn line), same invariant as sessionName.
   model?: string;
 }): string[] {
   const args = ["--session-id", sessionId];
@@ -313,77 +313,6 @@ export function buildResumeArgs({
   return ["--resume", sessionId];
 }
 
-// ---- kani terminal launch (pure) ----
-//
-// `lh dev --kani` relaunches the dev loop in a fresh kani terminal instead of the foreground,
-// mirroring the /lh-dev-kani skill. The inner `lh dev` runs *without* --kani, so it provisions
-// the worktree and spawns claude itself; --kani is deliberately not forwarded, which prevents
-// infinite recursion. Everything here is a pure argv/string builder so it can be unit-tested
-// without spawning anything (same approach as buildClaudeArgs / formatLaunchPlan).
-
-// Flags forwarded to the inner `lh dev`. --kani is intentionally absent (no recursion).
-export interface KaniForwardFlags {
-  repo?: string;
-  sandbox?: boolean;
-  auto?: boolean;
-  allow?: string;
-  verbose?: boolean;
-  force?: boolean;
-  // Runtime selection (#458) — forwarded so the inner `lh dev` launches the same runtime.
-  claudeCode?: boolean;
-  codex?: boolean;
-  // Model selection (#486) — forwarded so the inner `lh dev` spawns the same model.
-  model?: string;
-}
-
-export interface KaniLaunch {
-  command: string; // inner shell command: `lh dev <n> <forwarded flags>`
-  cwd: string; // main checkout root (repo local_path) the inner `lh dev` resolves from
-  name: string; // terminal display name: `#<n> <title>` (control chars stripped)
-  argv: string[]; // full argv for spawnSync("kani", argv)
-}
-
-export function buildKaniLaunch({
-  issue,
-  title,
-  cwd,
-  flags,
-}: {
-  issue: number;
-  title: string;
-  cwd: string;
-  flags: KaniForwardFlags;
-}): KaniLaunch {
-  // Forward every flag except --kani. Boolean flags are emitted bare; value flags are
-  // shell-quoted so a value with spaces/quotes can't break the command string kani runs.
-  const parts = ["lh", "dev", String(issue)];
-  if (flags.repo) parts.push("--repo", shQuote(flags.repo));
-  if (flags.sandbox) parts.push("--sandbox");
-  if (flags.auto) parts.push("--auto");
-  if (flags.allow) parts.push("--allow", shQuote(flags.allow));
-  if (flags.verbose) parts.push("--verbose");
-  if (flags.force) parts.push("--force");
-  if (flags.claudeCode) parts.push("--claude-code");
-  if (flags.codex) parts.push("--codex");
-  if (flags.model) parts.push("--model", shQuote(display(flags.model)));
-  const command = parts.join(" ");
-
-  // Strip control chars from the title (it reaches the terminal name and shell argv) so a
-  // crafted issue title can't inject escape sequences (see display()).
-  const name = `#${issue} ${display(title)}`.trim();
-
-  const argv = [
-    "launch_terminal",
-    "--command",
-    command,
-    "--cwd",
-    cwd,
-    "--name",
-    name,
-  ];
-  return { command, cwd, name, argv };
-}
-
 // ---- launch plan (pure, human-readable) ----
 //
 // Render the settings about to be handed to `claude` so a human can confirm before spawn.
@@ -406,7 +335,7 @@ function display(v: string): string {
   // Remove ANSI/VT escape sequences first, then any remaining C0/C1 control bytes (CR, BEL,
   // backspace, …) — a bare \r or \b can still overwrite the rendered line on its own. The range
   // covers DEL (0x7f) and the 8-bit C1 controls (0x80-0x9f), so a single C1 OSC/CSI introducer
-  // (e.g. 0x9d) in an attacker-controlled title can't reach a terminal title (kani / claude --name).
+  // (e.g. 0x9d) in an attacker-controlled title can't reach a terminal title (claude --name).
   return stripVTControlCharacters(v).replace(/[\x00-\x1f\x7f-\x9f]/g, "");
 }
 
@@ -489,9 +418,8 @@ export function formatLaunchSummary({
 }
 
 // Single-quote a value for a shell command string so it survives copy-paste / re-exec verbatim.
-// Used by both the launch command line shown to the human and the inner command handed to kani;
-// even where inputs are validated upstream, quote defensively so the pure builders are safe on
-// any input.
+// Used by the launch command line shown to the human; even where inputs are validated upstream,
+// quote defensively so the pure builders are safe on any input.
 export function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
