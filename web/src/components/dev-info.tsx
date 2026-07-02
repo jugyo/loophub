@@ -76,7 +76,7 @@ export function IssueDevInfo({
 }
 
 // PR: how to pick the dev session back up where it left off. The header's Resume button (#276) is
-// the one-click path (it runs this same command in the built-in terminal, shown only when resume is
+// the one-click path (it launches this same command as a Herdr session, shown only when resume is
 // actually possible); this copy command stays as the always-present, copy-paste-anywhere reference —
 // mirroring how the issue keeps its `lh dev` copy command alongside the Build button.
 export function PullDevInfo({

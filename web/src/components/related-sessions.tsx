@@ -176,7 +176,6 @@ export function RelatedSessions({
                     title={`Resume \`${terminalCommand}\` in a terminal`}
                     onClick={() =>
                       launchTerminal({
-                        command: terminalCommand,
                         repo: `${owner}/${repo}`,
                         label: `Resume - ${s.name ?? s.kind ?? s.id}`,
                         workflow: "resume",

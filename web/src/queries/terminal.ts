@@ -2,24 +2,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getHerdrAgentRead,
   getHerdrSessions,
-  getTerminalLaunchConfig,
   killHerdrAgent,
   launchTerminalWorkflow,
 } from "@/api/client";
 
 export const terminalKeys = {
-  config: ["terminal", "config"] as const,
   sessions: ["terminal", "sessions"] as const,
   agentRead: (repo: string, target: string) =>
     ["terminal", "agentRead", repo, target] as const,
 };
-
-export function useTerminalLaunchConfig() {
-  return useQuery({
-    queryKey: terminalKeys.config,
-    queryFn: getTerminalLaunchConfig,
-  });
-}
 
 export function useLaunchTerminalWorkflow() {
   return useMutation({

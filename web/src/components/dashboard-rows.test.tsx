@@ -239,16 +239,14 @@ describe("IssueRow", () => {
     fireEvent.click(button);
 
     expect(launchTerminal).toHaveBeenCalledWith({
-      command: "lh dev 7",
       repo: "me/proj",
       label: "Issue #7 - Example issue",
-      issueRef: { owner: "me", repo: "proj", number: 7 },
       workflow: "issue-dev",
       issueNumber: 7,
     });
   });
 
-  it("launches with --auto when auto-mode-on-Build is enabled", async () => {
+  it("shows the --auto command in the title when auto-mode-on-Build is enabled", async () => {
     settingsData.value = { autoModeOnBuild: true };
     renderInRouter(
       <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
@@ -257,11 +255,7 @@ describe("IssueRow", () => {
       name: "Build issue #7",
     });
 
-    fireEvent.click(button);
-
-    expect(launchTerminal).toHaveBeenCalledWith(
-      expect.objectContaining({ command: "lh dev 7 --auto" }),
-    );
+    expect(button.title).toBe("Start `lh dev 7 --auto` in a terminal");
   });
 
   it("shows a fixed-duration loading state on the Build button and re-enables it after", async () => {

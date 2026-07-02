@@ -1,7 +1,7 @@
 // Full-size Markdown preview modal for a diff file (#435): renders the whole-file Markdown at
 // the PR's base and head commits (not the diff itself — see the Preview button in
 // pull-detail.tsx's FileDiff), reusing the shared <Markdown> renderer. Follows the same
-// role="dialog" + fixed inset-0 backdrop pattern as pull-debug-menu.tsx / create-issue-modal.tsx.
+// role="dialog" + fixed inset-0 backdrop pattern as pull-debug-menu.tsx.
 
 import { Loader2, X } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";

@@ -225,10 +225,8 @@ function IssueHeader({
             onClick={() => {
               startBuildLoading();
               launchTerminal({
-                command: buildCommand,
                 repo: `${owner}/${repo}`,
                 label: `Issue #${issue.number} - ${issue.title}`,
-                issueRef: { owner, repo, number: issue.number },
                 workflow: "issue-dev",
                 issueNumber: issue.number,
               });

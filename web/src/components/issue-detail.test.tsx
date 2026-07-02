@@ -259,25 +259,20 @@ describe("IssueDetail", () => {
     fireEvent.click(button);
 
     expect(launchTerminal).toHaveBeenCalledWith({
-      command: "lh dev 12",
       repo: "me/proj",
       label: "Issue #12 - ui2: issue detail",
-      issueRef: { owner: "me", repo: "proj", number: 12 },
       workflow: "issue-dev",
       issueNumber: 12,
     });
   });
 
-  it("launches with --auto when auto-mode-on-Build is enabled", async () => {
+  it("shows the --auto command in the title when auto-mode-on-Build is enabled", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr, undefined, true);
 
     const button = await screen.findByRole("button", { name: /build/i });
-    fireEvent.click(button);
 
-    expect(launchTerminal).toHaveBeenCalledWith(
-      expect.objectContaining({ command: "lh dev 12 --auto" }),
-    );
+    expect(button.title).toBe("Start `lh dev 12 --auto` in a terminal");
   });
 
   it("shows a fixed-duration loading state on the Build button and re-enables it after", async () => {

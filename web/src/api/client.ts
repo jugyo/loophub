@@ -25,7 +25,6 @@ import type {
   Repo,
   RepoMergeMode,
   ReviewNote,
-  TerminalLaunchConfig,
   TerminalLaunchResult,
 } from "./types";
 
@@ -208,10 +207,6 @@ export function updateSettings(
 }
 
 // --- terminal launch ---
-export function getTerminalLaunchConfig() {
-  return rpc<TerminalLaunchConfig>("terminal/config");
-}
-
 export function launchTerminalWorkflow(input: {
   repo: string;
   label?: string;

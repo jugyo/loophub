@@ -742,7 +742,7 @@ export const terminal = {
           await runHerdr(focus[0], focus.slice(1), r.local_path, {
             timeoutMs: 10_000,
           });
-          return { backend, focused: true, session_name: sessionName };
+          return { backend: "herdr", focused: true, session_name: sessionName };
         } catch {
           // The pane found above can vanish (closed) or herdr can wedge between the probe and
           // this call — unlike the probe itself, this is the actual action, so a failure here

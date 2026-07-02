@@ -1,12 +1,9 @@
-// Bridges the bottom terminal pane to the rest of the app so any component can open a terminal
-// tab with a specific command. The pane (terminal-pane.tsx) owns the tab state; it publishes its
-// imperative `openTerminal` here via useRegisterTerminalController, and consumers (the New Issue /
-// Build buttons) read a stable `openTerminal` via useTerminal().
+// Herdr launch state shared across the app: consumers (New Issue / Build / Resume buttons) call
+// useTerminalLauncher() to start a Herdr session, and the shell (app-layout.tsx) renders the
+// resulting feedback / error dialog here.
 //
-// The published fn is held in a ref so a consumer's `openTerminal` identity stays stable (no
-// re-renders) and the latest pane implementation is always called. The context defaults to null,
-// so useTerminal() is a safe no-op when there is no provider (e.g. unit tests), mirroring the
-// defensive default in detail-title.tsx.
+// The context defaults to null, so useTerminalLauncher()'s feedback calls are safe no-ops when
+// there is no provider (e.g. unit tests), mirroring the defensive default in detail-title.tsx.
 
 import { X } from "lucide-react";
 import {
@@ -27,27 +24,14 @@ import {
 } from "@/components/herdr-launch-error-dialog";
 import { useLaunchTerminalWorkflow } from "@/queries/terminal";
 
-// An issue this terminal tab is working on (set when opened from the issue Build button). The
-// terminal pane uses it to render a top region that resolves and surfaces the linked PR — issue
-// number, not PR number, because at Build time the PR may not exist yet (`lh dev` opens it).
-export interface TerminalIssueRef {
-  owner: string;
-  repo: string;
-  number: number;
-}
-
-// Options for opening a terminal tab. All optional: no command opens a plain shell, and an empty
-// repo roots the shell at $HOME (resolved server-side).
+// Options for launching a Herdr terminal session. All optional except `repo` and `workflow`,
+// which useTerminalLauncher requires.
 export interface OpenTerminalOptions {
-  // Command to type into the shell once it is interactive (it stays interactive afterward).
-  command?: string;
-  // "owner/name" of the repo whose base dir becomes the cwd, or "" for $HOME.
+  // "owner/name" of the repo whose base dir becomes the session's cwd, or "" for $HOME.
   repo?: string;
-  // Tab label override; defaults to the repo name (or "~" for $HOME).
+  // Session label override; defaults to the repo name (or "~" for $HOME).
   label?: string;
-  // The issue this tab is building (Build button only) — drives the PR top region in the pane.
-  issueRef?: TerminalIssueRef;
-  // Semantic workflow for non-builtin backends that should not replay the literal command.
+  // Semantic workflow the Herdr session runs — it does not replay a literal shell command.
   workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";
   issueNumber?: number;
   prNumber?: number;
@@ -57,11 +41,7 @@ export interface OpenTerminalOptions {
 
 export type OpenTerminal = (opts?: OpenTerminalOptions) => void;
 
-const noop: OpenTerminal = () => {};
-
 interface TerminalControllerValue {
-  // Ref to the live open fn published by the mounted terminal pane.
-  ref: React.MutableRefObject<OpenTerminal>;
   launchMessage: string | null;
   showLaunchMessage: (message: string) => void;
   dismissLaunchMessage: () => void;
@@ -82,7 +62,6 @@ export function TerminalControllerProvider({
 }: {
   children: ReactNode;
 }) {
-  const ref = useRef<OpenTerminal>(noop);
   const [launchMessage, setLaunchMessage] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dismissLaunchMessage = useCallback(() => {
@@ -115,11 +94,8 @@ export function TerminalControllerProvider({
     setHerdrLaunchError(error);
   }, []);
 
-  // Stable context value: the ref identity never changes, so consumers never re-render when the
-  // pane republishes a new implementation.
   const value = useMemo<TerminalControllerValue>(
     () => ({
-      ref,
       launchMessage,
       showLaunchMessage,
       dismissLaunchMessage,
@@ -143,34 +119,6 @@ export function TerminalControllerProvider({
   );
 }
 
-// Publish the terminal pane's imperative open fn so consumers can call it. Called by the pane with
-// its own `openTerminal`; the latest is kept in the shared ref and cleared on unmount.
-export function useRegisterTerminalController(
-  openTerminal: OpenTerminal,
-): void {
-  const ctx = useContext(TerminalControllerContext);
-  useEffect(() => {
-    if (!ctx) return;
-    ctx.ref.current = openTerminal;
-    return () => {
-      ctx.ref.current = noop;
-    };
-  }, [ctx, openTerminal]);
-}
-
-// Read a stable `openTerminal` to open a terminal tab from any component. No-op (without a
-// provider, or before the pane mounts) so callers never need to guard.
-export function useTerminal(): { openTerminal: OpenTerminal } {
-  const ctx = useContext(TerminalControllerContext);
-  const openTerminal = useCallback<OpenTerminal>(
-    (opts) => {
-      ctx?.ref.current(opts);
-    },
-    [ctx],
-  );
-  return { openTerminal };
-}
-
 export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
   const ctx = useContext(TerminalControllerContext);
   const launch = useLaunchTerminalWorkflow();
@@ -190,7 +138,7 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
           repo: opts.repo,
           label: opts.label,
           workflow: opts.workflow,
-          issueNumber: opts.issueNumber ?? opts.issueRef?.number,
+          issueNumber: opts.issueNumber,
           prNumber: opts.prNumber,
           session: opts.session,
           cwd: opts.cwd,

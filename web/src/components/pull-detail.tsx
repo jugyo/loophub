@@ -186,8 +186,6 @@ function PullHeader({
   // slow merge can't be double-submitted (#560).
   const isMerging = isMergeLoading || merge.isPending;
 
-  // Shared with the built-in terminal header (terminal-pr-header.tsx) so the two
-  // status lines always match (#386).
   const badges = pullDetailBadges(pull);
   const linked = pull.linked_issue;
 

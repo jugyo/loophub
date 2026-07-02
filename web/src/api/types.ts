@@ -163,10 +163,6 @@ export interface RepoMergeMode {
 
 export type TerminalLaunchBackend = "builtin" | "herdr";
 
-export interface TerminalLaunchConfig {
-  backend: TerminalLaunchBackend;
-}
-
 export interface TerminalLaunchResult {
   backend: TerminalLaunchBackend;
   session_name?: string;

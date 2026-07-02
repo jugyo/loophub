@@ -17,9 +17,9 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import { useRepos, useSetRepoFavorite } from "@/queries/repos";
 
-// Draggable sidebar width (#378). The width is a CSS variable (`--lh-sidebar-w`, default 16rem)
-// shared by the sidebar and the bottom terminal pane's left offset; dragging the right edge
-// updates it live and persists the pixel value to localStorage so it survives a reload.
+// Draggable sidebar width (#378). The width is a CSS variable (`--lh-sidebar-w`, default 16rem);
+// dragging the right edge updates it live and persists the pixel value to localStorage so it
+// survives a reload.
 const WIDTH_KEY = "lh.sidebar.width"; // localStorage: shared cosmetic width (px)
 const MIN_W = 180;
 const MAX_W = 480;
@@ -36,8 +36,8 @@ export function AppSidebar() {
   const [width, setWidth] = useState(readWidth);
   const drag = useRef<{ startX: number; startW: number } | null>(null);
 
-  // Publish the width as the shared CSS var so the sidebar and the terminal pane's left offset
-  // both follow it. Applied in a layout effect so the restored width paints without a flash.
+  // Publish the width as a CSS var so the sidebar's own layout follows it. Applied in a layout
+  // effect so the restored width paints without a flash.
   useLayoutEffect(() => {
     document.documentElement.style.setProperty("--lh-sidebar-w", `${width}px`);
   }, [width]);
@@ -45,7 +45,7 @@ export function AppSidebar() {
     localStorage.setItem(WIDTH_KEY, String(width));
   }, [width]);
   // Drop the inline override on unmount so a layout without the sidebar falls back to the
-  // index.css default (otherwise the terminal pane's left offset keeps the last width).
+  // index.css default.
   useEffect(() => {
     return () => {
       document.documentElement.style.removeProperty("--lh-sidebar-w");
@@ -106,8 +106,6 @@ export function AppSidebar() {
         Repositories
       </div>
 
-      {/* The terminal pane now sits beside the sidebar (it starts at the sidebar's right edge),
-          so it no longer overlays the sidebar bottom and no extra clearance is needed. */}
       <div className="flex-1 overflow-y-auto px-2 pb-2">
         {isLoading && (
           <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
@@ -151,8 +149,7 @@ export function AppSidebar() {
         <SidebarHerdrSessions />
       </div>
 
-      {/* Fixed footer (#371): the theme toggle lives here, below the scrolling repo list. The
-          terminal pane sits beside the sidebar (not over it), so this footer stays visible. */}
+      {/* Fixed footer (#371): the theme toggle lives here, below the scrolling repo list. */}
       <div className="shrink-0 border-t p-2">
         <ThemeToggle />
       </div>
