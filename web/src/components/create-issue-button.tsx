@@ -17,6 +17,17 @@ import { Button } from "@/components/ui/button";
 import { useCurrentRepo } from "@/lib/use-current-repo";
 import { useTerminalLaunchConfig } from "@/queries/terminal";
 
+// Unlike Issue/PR/Resume launches (#497), there is no issue number yet to make the herdr agent
+// name unique — the issue doesn't exist until the launched session files it. A random suffix
+// (same technique as terminal-pane.tsx's newId()) keeps consecutive New Issue launches from
+// colliding on the same agent name (`agent_name_taken`, #501); unlike a Date.now() timestamp, it
+// can't collide even when two launches land in the same millisecond.
+function launchSuffix(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
+}
+
 export function CreateIssueButton() {
   // `open` mounts the dock (and its terminal/PTY); `minimized` collapses it to a header bar while
   // keeping the terminal mounted so the running session survives.
@@ -69,7 +80,7 @@ export function CreateIssueButton() {
             herdr
               ? launchTerminal({
                   repo,
-                  label: "New issue",
+                  label: `New issue - ${launchSuffix()}`,
                   workflow: "issue-create",
                 })
               : builtin

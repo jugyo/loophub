@@ -32,6 +32,7 @@ import { CreateIssueButton } from "./create-issue-button";
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   terminalProps.value = null;
   currentRepo.value = "me/proj";
   terminalLaunchConfig.value = {
@@ -95,10 +96,27 @@ describe("CreateIssueButton", () => {
 
     expect(launchTerminal).toHaveBeenCalledWith({
       repo: "me/proj",
-      label: "New issue",
+      label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
       workflow: "issue-create",
     });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByTestId("terminal-view")).toBeNull();
+  });
+
+  it("gives each consecutive Herdr launch a distinct agent name label", () => {
+    terminalLaunchConfig.value = {
+      isSuccess: true,
+      data: { backend: "herdr" },
+    };
+    render(<CreateIssueButton />);
+
+    fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
+    const first = launchTerminal.mock.calls[0][0].label;
+    launchTerminal.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
+    const second = launchTerminal.mock.calls[0][0].label;
+
+    expect(first).not.toBe(second);
   });
 });
