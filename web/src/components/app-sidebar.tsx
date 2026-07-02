@@ -210,14 +210,19 @@ function RepoSidebarLink({ repo }: { repo: Repo }) {
   const to: string = `/r/${owner}/${name}`;
 
   return (
-    <div className="group flex items-center gap-1 rounded-md hover:bg-accent hover:text-accent-foreground">
+    <div
+      className={cn(
+        "group flex items-center gap-1 rounded-md hover:bg-accent hover:text-accent-foreground",
+        // Link sets `data-status="active"` on itself when its route matches (#472); extending
+        // the highlight to the whole row (star button included) via `has-*` avoids duplicating
+        // Link's active-route matching here.
+        "has-[[data-status=active]]:bg-accent has-[[data-status=active]]:text-accent-foreground has-[[data-status=active]]:font-medium",
+      )}
+    >
       <Link
         to={to}
         title={repo.full_name}
         className="flex flex-1 items-center gap-2 truncate px-2 py-1.5 text-sm"
-        activeProps={{
-          className: "bg-accent text-accent-foreground font-medium",
-        }}
       >
         <span className="truncate">{repo.full_name}</span>
       </Link>
