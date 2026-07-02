@@ -264,6 +264,25 @@ export function herdrWorkspaceFocusArgv(
   ];
 }
 
+// Switches focus (workspace + tab + pane, in one call) to an already-running agent, by pane id
+// (#578's Resume dedup). Unlike herdrWorkspaceFocusArgv above, this doesn't require the caller to
+// know which workspace/tab the target lives in — `herdr agent focus` resolves that itself — which
+// matters here because a Resume session's tab can land in any workspace (Resume never creates its
+// own, unlike New Issue's isNewWorkspace path), not just the one currently in front.
+export function herdrAgentFocusArgv(
+  repo: TerminalLaunchRepo,
+  target: string,
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "agent",
+    "focus",
+    target,
+  ];
+}
+
 // Closes the pane an agent is running in (#521's kill button). `herdr` has no direct
 // "kill agent" command; closing its pane is the confirmed equivalent.
 export function herdrPaneCloseArgv(

@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
+  paneRunsClaudeResume,
   parseHerdrAgentList,
   parseHerdrAgentRead,
   parseHerdrPaneLayout,
+  parseHerdrPaneProcessInfo,
   parseHerdrSessionList,
   reposWithRunningSession,
 } from "./herdr-status.ts";
@@ -279,6 +281,116 @@ describe("parseHerdrPaneLayout", () => {
     ],
   ])("degrades to null on %s (%s)", (input) => {
     expect(parseHerdrPaneLayout(input)).toBeNull();
+  });
+});
+
+describe("parseHerdrPaneProcessInfo", () => {
+  // Real-shaped fixture from `herdr --session <name> pane process-info --pane <pane_id>`.
+  const PROCESS_INFO = JSON.stringify({
+    result: {
+      process_info: {
+        foreground_process_group_id: 32732,
+        foreground_processes: [
+          {
+            argv: ["node", "/path/to/some-mcp-server"],
+            cwd: "/w/app",
+            name: "node",
+            pid: 33197,
+          },
+          // Some processes are reported name-only, with no argv (e.g. herdr couldn't resolve
+          // the full command line) — these must be dropped, not crash the parse.
+          { argv0: "mcp@0.0.76", cwd: "/w/app", name: "node", pid: 32778 },
+          {
+            argv: [
+              "claude",
+              "--resume",
+              "416a33e4-903e-44c9-b0f8-591c65f8b395",
+            ],
+            cwd: "/w/app",
+            name: "claude",
+            pid: 32732,
+          },
+        ],
+        pane_id: "wF:p9",
+        shell_pid: 32732,
+      },
+    },
+    type: "pane_process_info",
+  });
+
+  test("extracts each foreground process's argv, dropping entries without one", () => {
+    expect(parseHerdrPaneProcessInfo(PROCESS_INFO)).toEqual([
+      ["node", "/path/to/some-mcp-server"],
+      ["claude", "--resume", "416a33e4-903e-44c9-b0f8-591c65f8b395"],
+    ]);
+  });
+
+  test.each([
+    ["", "empty"],
+    ["not json", "non-JSON"],
+    ["{}", "missing result"],
+    ['{"result": {}}', "missing process_info"],
+    ['{"result": {"process_info": {}}}', "missing foreground_processes"],
+    [
+      '{"error":{"code":"pane_not_found","message":"pane target x not found"}}',
+      "error response",
+    ],
+  ])("degrades to null on %s (%s)", (input) => {
+    expect(parseHerdrPaneProcessInfo(input)).toBeNull();
+  });
+});
+
+describe("paneRunsClaudeResume", () => {
+  const SESSION = "416a33e4-903e-44c9-b0f8-591c65f8b395";
+
+  test("true when a foreground process is exactly claude --resume <session>", () => {
+    expect(
+      paneRunsClaudeResume(
+        [
+          ["node", "/path/to/some-mcp-server"],
+          ["claude", "--resume", SESSION],
+        ],
+        SESSION,
+      ),
+    ).toBe(true);
+  });
+
+  test("false for a different session id (no false positive across sessions, #578)", () => {
+    expect(
+      paneRunsClaudeResume([["claude", "--resume", "other-session"]], SESSION),
+    ).toBe(false);
+  });
+
+  test("false when extra flags surround the resume args (exact match only, #578 review)", () => {
+    expect(
+      paneRunsClaudeResume(
+        [["claude", "--resume", SESSION, "--continue"]],
+        SESSION,
+      ),
+    ).toBe(false);
+    expect(
+      paneRunsClaudeResume(
+        [["claude", "--model", "x", "--resume", SESSION]],
+        SESSION,
+      ),
+    ).toBe(false);
+  });
+
+  test("false when nothing in the pane is claude at all", () => {
+    expect(
+      paneRunsClaudeResume(
+        [["node", "server.js", "--resume", SESSION]],
+        SESSION,
+      ),
+    ).toBe(false);
+  });
+
+  test("false for a bare claude launch with no --resume", () => {
+    expect(paneRunsClaudeResume([["claude"]], SESSION)).toBe(false);
+  });
+
+  test("false on an empty process list", () => {
+    expect(paneRunsClaudeResume([], SESSION)).toBe(false);
   });
 });
 

@@ -47,9 +47,11 @@ import { type GithubDeps, realGithubDeps } from "./github.ts";
 import {
   type HerdrAgent,
   NO_PANE_ID_PREFIX,
+  paneRunsClaudeResume,
   parseHerdrAgentList,
   parseHerdrAgentRead,
   parseHerdrPaneLayout,
+  parseHerdrPaneProcessInfo,
   parseHerdrSessionList,
   reposWithRunningSession,
 } from "./herdr-status.ts";
@@ -96,6 +98,7 @@ import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
   HERDR_ID,
+  herdrAgentFocusArgv,
   herdrCommandLine,
   herdrPaneCloseArgv,
   herdrSessionName,
@@ -728,6 +731,32 @@ export const terminal = {
     if (!command.trim()) throw new ServiceError(422, "command is required");
 
     const repo = { full_name: r.full_name, local_path: r.local_path };
+
+    // Resume dedup (#578): if a pane in this repo's herdr session is already running
+    // `claude --resume <session>` for this exact session, switch focus to it instead of piling
+    // on another tab. Scoped to the "resume" workflow only — every other workflow (Build,
+    // New Issue, github-pr-export) starts a fresh agent run each time by design. Best-effort:
+    // any probe failure (herdr not running, nothing to find) falls through to the normal launch
+    // below, same failure tolerance as sessions()/agentRead() above.
+    if (input.workflow === "resume" && input.session) {
+      const sessionName = herdrSessionName(repo);
+      const existingPaneId = await findResumePaneId(sessionName, input.session);
+      if (existingPaneId) {
+        const focus = herdrAgentFocusArgv(repo, existingPaneId);
+        try {
+          await runHerdr(focus[0], focus.slice(1), r.local_path, {
+            timeoutMs: 10_000,
+          });
+          return { backend, focused: true, session_name: sessionName };
+        } catch {
+          // The pane found above can vanish (closed) or herdr can wedge between the probe and
+          // this call — unlike the probe itself, this is the actual action, so a failure here
+          // must not surface as a hard error for a Resume click that would otherwise have
+          // succeeded via a fresh tab; fall through to the normal launch below (#578 review).
+        }
+      }
+    }
+
     // New Issue gets its own fresh workspace instead of a tab in the repo's existing default
     // workspace (#544) — it has no worktree to pin to. The worktree-backed workflows
     // (Build/issue-dev, resume, github-pr-export) instead open a workspace pinned to the PR's
@@ -1025,6 +1054,58 @@ function clampAgentReadLines(lines: number | undefined): number {
     Math.max(Math.trunc(lines as number), 1),
     HERDR_AGENT_READ_MAX_LINES,
   );
+}
+
+// Finds the pane already running `claude --resume <session>` in a herdr session, if any (#578's
+// Resume dedup — see the call site in terminal.launch above). Checks every agent's foreground
+// process, not just its display name, since two Resume launches for different sessions can share
+// one (see paneRunsClaudeResume's doc). Best-effort like sweepHerdrSessions below: any herdr
+// failure (not running, no session yet, unparseable output) degrades to "nothing found" rather
+// than blocking the launch this backs.
+async function findResumePaneId(
+  sessionName: string,
+  session: string,
+): Promise<string | null> {
+  let agentsOut: string;
+  try {
+    agentsOut = await runHerdrCapture([
+      "--session",
+      sessionName,
+      "agent",
+      "list",
+    ]);
+  } catch {
+    return null;
+  }
+  // HERDR_ID excludes the NO_PANE_ID_PREFIX control byte too, so this one check covers both "no
+  // real pane to probe" and "pane_id isn't shaped like a real herdr id" — the latter matters
+  // because, from here on, agent.id is spliced into further herdr argv (`pane process-info
+  // --pane`, and the caller's `agent focus`), the same trust boundary killAgent's HERDR_ID check
+  // guards for a client-supplied paneId (#578 review).
+  const agents = parseHerdrAgentList(agentsOut).filter((a) =>
+    HERDR_ID.test(a.id),
+  );
+  const hits = await Promise.all(
+    agents.map(async (agent) => {
+      try {
+        const infoOut = await runHerdrCapture([
+          "--session",
+          sessionName,
+          "pane",
+          "process-info",
+          "--pane",
+          agent.id,
+        ]);
+        const processes = parseHerdrPaneProcessInfo(infoOut);
+        return processes && paneRunsClaudeResume(processes, session)
+          ? agent.id
+          : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return hits.find((id): id is string => id !== null) ?? null;
 }
 
 async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {

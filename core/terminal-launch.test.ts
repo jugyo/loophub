@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
+  herdrAgentFocusArgv,
   herdrPaneCloseArgv,
   herdrSessionName,
   herdrTabCloseArgv,
@@ -218,6 +219,19 @@ describe("terminal launch backend", () => {
       sessionName,
       "pane",
       "close",
+      "w1:p2",
+    ]);
+  });
+
+  test("builds Herdr agent focus argv scoped to the repo session (#578)", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const sessionName = herdrSessionName(repo);
+    expect(herdrAgentFocusArgv(repo, "w1:p2")).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "agent",
+      "focus",
       "w1:p2",
     ]);
   });

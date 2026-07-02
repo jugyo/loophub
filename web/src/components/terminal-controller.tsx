@@ -210,6 +210,13 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
         },
         {
           onSuccess: (result) => {
+            // Resume dedup (#578): the backend switched focus to an already-running terminal
+            // instead of starting a new one — say so instead of the generic "Launched in ..."
+            // message, which would misleadingly imply a fresh agent just started.
+            if (result.focused) {
+              ctx?.showLaunchMessage("Switched to the existing terminal.");
+              return;
+            }
             const session = result.session_name ?? "Herdr";
             const attach = result.attach ? ` Attach: ${result.attach}` : "";
             ctx?.showLaunchMessage(`Launched in ${session}.${attach}`);

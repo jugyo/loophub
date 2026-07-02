@@ -173,6 +173,10 @@ export interface TerminalLaunchResult {
   command?: string;
   cwd?: string;
   attach?: string;
+  // True when the "resume" workflow found a terminal already running this session and switched
+  // focus to it instead of starting a new one (#578) — distinguishes that from a fresh launch so
+  // the client can show "switched to existing terminal" rather than "launched in ...".
+  focused?: boolean;
 }
 
 /** One agent inside a running herdr session (`terminal/sessions`, #495). */

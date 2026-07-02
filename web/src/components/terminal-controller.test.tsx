@@ -16,6 +16,7 @@ const launchMutation = vi.hoisted(() => ({
         onSuccess?: (result: {
           session_name?: string;
           attach?: string;
+          focused?: boolean;
         }) => void;
         onError?: (e: unknown) => void;
       },
@@ -88,6 +89,27 @@ describe("TerminalController", () => {
         "Launched in jugyo-loophub-deadbeef. Attach: herdr attach jugyo-loophub-deadbeef",
       ),
     ).toBeTruthy();
+  });
+
+  it("shows a 'switched to existing terminal' message instead of the launch message when the backend focused an existing pane (#578)", () => {
+    launchMutation.mutate.mockImplementationOnce((_input, opts) => {
+      opts?.onSuccess?.({
+        session_name: "jugyo-loophub-deadbeef",
+        focused: true,
+      });
+    });
+
+    render(
+      <TerminalControllerProvider>
+        <TerminalLaunchFeedback />
+        <LaunchButton />
+      </TerminalControllerProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Launch" }));
+
+    expect(screen.getByText("Switched to the existing terminal.")).toBeTruthy();
+    expect(screen.queryByText(/^Launched in/)).toBeNull();
   });
 
   it("shows an overlay dialog with the reason, example command, and session-creation hint when the launch fails (#483)", () => {

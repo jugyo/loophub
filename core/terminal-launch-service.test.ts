@@ -78,6 +78,20 @@ const WORKSPACE_JSON_NO_PRIMARY_WORKSPACE_ID =
 const WORKSPACE_JSON_NO_WORKSPACE_ID_ANYWHERE =
   '{"id":"cli:workspace:create","result":{"tab":{"tab_id":"w4:t1"},"type":"workspace_created","workspace":{}}}';
 
+// Fixtures for the Resume dedup probe (#578): `herdr agent list` then, per agent,
+// `herdr pane process-info --pane <id>`.
+const AGENT_LIST_EMPTY = '{"result":{"agents":[]}}';
+const AGENT_LIST_ONE =
+  '{"result":{"agents":[{"agent":"claude","agent_status":"working","name":"Resume - dev","pane_id":"w1:p2"}]}}';
+const PROCESS_INFO_MATCHING_RESUME =
+  '{"result":{"process_info":{"foreground_processes":[{"argv":["claude","--resume","session-1"]}]}}}';
+const PROCESS_INFO_OTHER_SESSION =
+  '{"result":{"process_info":{"foreground_processes":[{"argv":["claude","--resume","some-other-session"]}]}}}';
+// A pane_id shaped like a flag (fails HERDR_ID) — must never be spliced into a further `herdr`
+// argv (#578 review), so it should be filtered out before any process-info/focus call.
+const AGENT_LIST_MALFORMED_PANE_ID =
+  '{"result":{"agents":[{"agent":"claude","agent_status":"working","name":"Resume - dev","pane_id":"--evil-flag"}]}}';
+
 function exitWith(status: number, stdout?: string) {
   return (child: { stdout: EventEmitter } & EventEmitter) => {
     if (stdout) child.stdout.emit("data", Buffer.from(stdout));
@@ -254,7 +268,13 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
   });
 
   test("other workflows keep creating a tab in the existing session, not a new workspace", async () => {
-    herdr.script.push(exitWith(0, TAB_JSON), exitWith(0));
+    // Resume dedup (#578) probes for an existing pane first; an empty agent list means nothing
+    // to find, so the normal tab-creating flow runs after it.
+    herdr.script.push(
+      exitWith(0, AGENT_LIST_EMPTY),
+      exitWith(0, TAB_JSON),
+      exitWith(0),
+    );
 
     await svc.terminal.launch({
       repo: "me/proj",
@@ -262,8 +282,9 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
       session: "session-1",
     });
 
-    expect(herdr.calls[0]).toContain("tab");
-    expect(herdr.calls[0]).not.toContain("workspace");
+    expect(herdr.calls[0]).toContain("list");
+    expect(herdr.calls[1]).toContain("tab");
+    expect(herdr.calls[1]).not.toContain("workspace");
     expect(herdr.calls.some((call) => call.includes("focus"))).toBe(false);
   });
 
@@ -381,5 +402,136 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
     expect(cleanup).toContain("tab");
     expect(cleanup).toContain("close");
     expect(cleanup).toContain("w4:t1");
+  });
+});
+
+describe("terminal.launch Resume dedup (#578)", () => {
+  test("focuses an existing pane already running claude --resume <session>, instead of creating a new tab", async () => {
+    herdr.script.push(
+      exitWith(0, AGENT_LIST_ONE), // agent list
+      exitWith(0, PROCESS_INFO_MATCHING_RESUME), // pane process-info for that agent
+      exitWith(0), // agent focus
+    );
+
+    const result = await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "resume",
+      session: "session-1",
+    });
+
+    expect(herdr.calls).toHaveLength(3);
+    expect(herdr.calls[0]).toContain("list");
+    expect(herdr.calls[1]).toContain("process-info");
+    const focus = herdr.calls[2];
+    expect(focus).toContain("agent");
+    expect(focus).toContain("focus");
+    expect(focus).toContain("w1:p2");
+    // No tab was created — the whole point of dedup is not piling on another one.
+    expect(herdr.calls.some((call) => call.includes("create"))).toBe(false);
+    expect(result).toMatchObject({ backend: "herdr", focused: true });
+  });
+
+  test("creates a new tab when the only existing pane is resuming a different session (no false-positive name match)", async () => {
+    herdr.script.push(
+      exitWith(0, AGENT_LIST_ONE), // agent list — pane's display name is "Resume - dev" too
+      exitWith(0, PROCESS_INFO_OTHER_SESSION), // but it's actually running a different session
+      exitWith(0, TAB_JSON),
+      exitWith(0),
+    );
+
+    const result = await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "resume",
+      session: "session-1",
+    });
+
+    expect(herdr.calls[2]).toContain("tab");
+    expect(herdr.calls.some((call) => call.includes("focus"))).toBe(false);
+    expect(result).toMatchObject({ backend: "herdr" });
+    expect(result).not.toHaveProperty("focused");
+  });
+
+  test("falls back to the normal launch when the dedup probe itself fails (herdr not running yet)", async () => {
+    herdr.script.push(
+      exitWith(1), // agent list fails
+      exitWith(0, TAB_JSON),
+      exitWith(0),
+    );
+
+    const result = await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "resume",
+      session: "session-1",
+    });
+
+    expect(herdr.calls[1]).toContain("tab");
+    expect(result).toMatchObject({ backend: "herdr" });
+  });
+
+  test("does not run the dedup probe for non-resume workflows", async () => {
+    herdr.script.push(exitWith(0, TAB_JSON), exitWith(0));
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+    });
+
+    expect(herdr.calls).toHaveLength(2);
+    expect(herdr.calls.some((call) => call.includes("process-info"))).toBe(
+      false,
+    );
+  });
+
+  // Round 1 quality review: the focus call for a found pane must not surface as a hard failure —
+  // the pane can vanish (closed) between the probe and this call, or herdr can be transiently
+  // wedged, and a Resume click that would otherwise have succeeded via a fresh tab must not break.
+  test("falls back to creating a tab when herdr agent focus fails after finding an existing pane (TOCTOU)", async () => {
+    herdr.script.push(
+      exitWith(0, AGENT_LIST_ONE), // agent list
+      exitWith(0, PROCESS_INFO_MATCHING_RESUME), // pane process-info — matches
+      exitWith(3), // agent focus fails (e.g. the pane just closed)
+      exitWith(0, TAB_JSON), // falls through to the normal tab-creating flow
+      exitWith(0),
+    );
+
+    const result = await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "resume",
+      session: "session-1",
+    });
+
+    expect(herdr.calls[2]).toContain("focus");
+    expect(herdr.calls[3]).toContain("tab");
+    expect(result).toMatchObject({ backend: "herdr" });
+    expect(result).not.toHaveProperty("focused");
+  });
+
+  // Round 1 security review: a pane_id from `herdr agent list` must be validated the same way
+  // killAgent validates a client-supplied paneId before it's spliced into a further herdr argv
+  // (`pane process-info --pane`, `agent focus`) — a malformed one is dropped instead of probed.
+  test("skips an agent whose pane_id fails the HERDR_ID shape check instead of probing or focusing it", async () => {
+    herdr.script.push(
+      exitWith(0, AGENT_LIST_MALFORMED_PANE_ID), // agent list — one agent, bad pane_id
+      exitWith(0, TAB_JSON), // no process-info call happens; falls straight through to normal flow
+      exitWith(0),
+    );
+
+    const result = await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "resume",
+      session: "session-1",
+    });
+
+    expect(herdr.calls).toHaveLength(3);
+    expect(herdr.calls[0]).toContain("list");
+    expect(herdr.calls.some((call) => call.includes("process-info"))).toBe(
+      false,
+    );
+    expect(herdr.calls.some((call) => call.includes("--evil-flag"))).toBe(
+      false,
+    );
+    expect(herdr.calls[1]).toContain("tab");
+    expect(result).toMatchObject({ backend: "herdr" });
   });
 });
