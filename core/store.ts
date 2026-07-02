@@ -294,6 +294,21 @@ export function updateIssue(id: number, fields: Record<string, any>) {
       params.push(fields[k]);
     }
   }
+  // closed_at (#456): stamp once at the open->closed transition, clear on reopen. Deliberately NOT
+  // touched by a title/body-only edit (fields.state undefined) or by a redundant `state: "closed"`
+  // patch on an already-closed row — unlike updated_at below, which every edit bumps. This gives the
+  // PR work-duration "closed" basis a stable anchor instead of one a later edit could push forward.
+  if (fields.state !== undefined) {
+    const current = db
+      .query(`SELECT state FROM issues WHERE id = ?`)
+      .get(id) as { state: string } | null;
+    if (fields.state === "closed" && current?.state !== "closed") {
+      sets.push("closed_at = ?");
+      params.push(now());
+    } else if (fields.state !== "closed" && current?.state === "closed") {
+      sets.push("closed_at = NULL");
+    }
+  }
   sets.push("updated_at = ?");
   params.push(now());
   params.push(id);
@@ -493,20 +508,25 @@ export function setMerged(
   method: string,
 ): number | null {
   const pull = getPull(issueId);
+  const t = now();
   db.run(
     `UPDATE pulls SET merged = 1, merged_at = ?, merge_commit_sha = ?, merge_method = ? WHERE issue_id = ?`,
-    [now(), sha, method, issueId],
+    [t, sha, method, issueId],
   );
-  db.run(`UPDATE issues SET state = 'closed', updated_at = ? WHERE id = ?`, [
-    now(),
-    issueId,
-  ]);
+  // Sets closed_at alongside state (not via updateIssue, which this bypasses) so the "closed_at is
+  // stamped whenever state transitions to closed" invariant holds for every close path, even though
+  // pullWorkDuration never actually reads it here (a merged PR's "merged" branch — p.merged &&
+  // p.merged_at — always wins first, see serialize.ts).
+  db.run(
+    `UPDATE issues SET state = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
+    [t, t, issueId],
+  );
   if (pull?.linked_issue_id) {
     const linked = getIssueById(pull.linked_issue_id);
     if (linked?.state === "open") {
       db.run(
-        `UPDATE issues SET state = 'closed', updated_at = ? WHERE id = ?`,
-        [now(), linked.id],
+        `UPDATE issues SET state = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
+        [t, t, linked.id],
       );
       return linked.number;
     }
@@ -1382,6 +1402,27 @@ export function listEvents(
       `SELECT * FROM events WHERE ${clauses.join(" AND ")} ORDER BY id ${dir} LIMIT ?`,
     )
     .all(...params);
+}
+
+// The timestamp of the PR's earliest `pull_request.ready_for_review` event, or null if it never
+// fired. Both transitions that emit this event type (draft→ready, and re-review after change
+// requests — see service.ts `readyForReview`) carry the same `{ number, draft: false }` payload, so
+// the earliest one is always the original draft→ready flip — the moment the PR first became
+// reviewable. Used to anchor the "work duration" calculation (serialize.ts `pullWorkDuration`) for a
+// PR that reached review but hasn't merged yet.
+export function firstReadyForReviewAt(
+  repoId: number,
+  prNumber: number,
+): string | null {
+  const row = db
+    .query(
+      `SELECT created_at FROM events
+       WHERE repo_id = ? AND type = 'pull_request.ready_for_review'
+         AND json_extract(payload, '$.number') = ?
+       ORDER BY id ASC LIMIT 1`,
+    )
+    .get(repoId, prNumber) as { created_at: string } | null;
+  return row?.created_at ?? null;
 }
 
 // Events related to a single PR, newest first. Matches a repo's events whose payload targets

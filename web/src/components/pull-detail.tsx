@@ -28,6 +28,7 @@ import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { WorkDuration } from "@/components/work-duration";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
 import { type DiffLineKind, parsePatch } from "@/lib/diff";
 import { relativeTime } from "@/lib/time";
@@ -86,20 +87,9 @@ export function PullDetail({
   }
 
   const pull = pullQuery.data;
-  // Only reserve the sidebar column when there is something to put in it. RelatedSessions and
-  // HandoffTimeline both hide themselves when empty, so without this guard a PR with neither would
-  // leave a dead `lg:w-80` gap instead of letting the main content reclaim the full width.
-  const hasSessions = (pull.related_sessions?.length ?? 0) > 0;
-  const hasHandoffs = (handoffsQuery.data?.length ?? 0) > 0;
-  // Also reserve the sidebar while the handoffs fetch is pending or errored, so HandoffTimeline can
-  // render its loading spinner / error state for a PR that has handoffs but no related sessions
-  // (otherwise the aside never mounts until data resolves, and a fetch error would be swallowed).
-  // Once the fetch resolves with no handoffs and no sessions, the sidebar collapses as before.
-  const hasSidebar =
-    hasSessions ||
-    hasHandoffs ||
-    handoffsQuery.isLoading ||
-    handoffsQuery.isError;
+  // The sidebar column is now always reserved (#456): WorkDuration always renders (with an "N/A"
+  // fallback), so there is no longer a PR that leaves the aside empty. RelatedSessions and
+  // HandoffTimeline still hide themselves individually when a PR has neither.
 
   return (
     // The whole PR detail is a two-column layout (#346): the main column (header, reviews, diff,
@@ -109,11 +99,7 @@ export function PullDetail({
     // `max-w-content-wide` only when the sidebar is present AND beside the content (`lg`); without a
     // sidebar, or while stacked below `lg`, the single column stays at the standard 60rem to line up
     // with the sibling pages (issue-detail, pull-list).
-    <div
-      className={`mx-auto flex flex-col gap-6 lg:flex-row lg:items-start ${
-        hasSidebar ? "max-w-content lg:max-w-content-wide" : "max-w-content"
-      }`}
-    >
+    <div className="mx-auto flex max-w-content flex-col gap-6 lg:max-w-content-wide lg:flex-row lg:items-start">
       <div className="flex min-w-0 flex-1 flex-col gap-6">
         {/* No key needed for feedback safety: operation-failure feedback now lives in the app-shell
             error banner (#323), which clears on route change, so a `Merge failed: …` error can no
@@ -159,23 +145,22 @@ export function PullDetail({
         />
       </div>
 
-      {hasSidebar ? (
-        <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
-          <RelatedSessions
-            owner={owner}
-            repo={repo}
-            sessions={pull.related_sessions}
-            cwd={pull.worktree_path ?? undefined}
-          />
-          <HandoffTimeline
-            owner={owner}
-            repo={repo}
-            handoffs={handoffsQuery.data}
-            isLoading={handoffsQuery.isLoading}
-            isError={handoffsQuery.isError}
-          />
-        </aside>
-      ) : null}
+      <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
+        <WorkDuration workDuration={pull.work_duration} />
+        <RelatedSessions
+          owner={owner}
+          repo={repo}
+          sessions={pull.related_sessions}
+          cwd={pull.worktree_path ?? undefined}
+        />
+        <HandoffTimeline
+          owner={owner}
+          repo={repo}
+          handoffs={handoffsQuery.data}
+          isLoading={handoffsQuery.isLoading}
+          isError={handoffsQuery.isError}
+        />
+      </aside>
     </div>
   );
 }

@@ -287,6 +287,23 @@ export interface PullRequest {
   merge_mode?: MergeMode;
   /** The GitHub PR this PR was exported to (#406), or null. Presence flips Create → View. */
   github_pull?: GithubPull | null;
+  /**
+   * How long the PR's dev session took (#456), anchored at the primary dev session's start. Detail
+   * response only (paired with `related_sessions`). `total` reflects the PR's current state — it
+   * keeps growing through "in_progress"/"in_review" until "merged"/"closed" freezes it.
+   * `implementation` (start → first ready_for_review event) and `review` (that event → merge/close)
+   * split the total into the pre- and post-review-handoff phases; `review` is null until the PR has
+   * reached ready_for_review at least once. Everything is null when there is no dev session to
+   * anchor the calculation — the frontend renders that as "N/A".
+   */
+  work_duration?: {
+    total: {
+      seconds: number | null;
+      basis: "merged" | "closed" | "in_review" | "in_progress" | null;
+    };
+    implementation: { seconds: number | null; done: boolean } | null;
+    review: { seconds: number | null; done: boolean } | null;
+  };
 }
 
 /**

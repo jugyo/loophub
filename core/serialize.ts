@@ -462,6 +462,139 @@ export function retroJSON(row: any) {
   };
 }
 
+// Work-duration basis values (#456): tells the frontend which signal grounded the `total` figure,
+// so it can render an appropriate label rather than a bare number. Unlike the implementation/review
+// phase split below, `total` always reflects the PR's *current* state — it keeps growing through
+// "in_progress" and "in_review" until the PR reaches a terminal state ("merged" / "closed").
+//   - "merged": session start → merged_at (terminal — the work is finished).
+//   - "closed": session start → the issue row's closed_at (terminal — the PR was closed without
+//     merging, rejected/abandoned).
+//   - "in_review": session start → now — the PR has reached its first ready_for_review event but
+//     hasn't merged or closed yet, so the clock is still running.
+//   - "in_progress": session start → now — no ready_for_review event yet (still draft, or ready
+//     with no recorded event), so the clock is still running.
+export type PullWorkDurationBasis =
+  | "merged"
+  | "closed"
+  | "in_review"
+  | "in_progress";
+
+// One phase's elapsed time (#456): `done` distinguishes a phase that reached its own terminal event
+// (so `seconds` is fixed) from one still measured up to "now" (so `seconds` keeps growing on the
+// next read).
+export interface PullWorkPhase {
+  seconds: number | null;
+  done: boolean;
+}
+
+export interface PullWorkDuration {
+  // The whole PR: session start → the clearest completion signal, or "now" while still open. See
+  // PullWorkDurationBasis for what grounds each value.
+  total: { seconds: number | null; basis: PullWorkDurationBasis | null };
+  // Session start → the first ready_for_review event (or → the PR's own end signal, for a PR that
+  // was merged/closed without ever passing through a draft→ready transition — see below). Null only
+  // when there is no dev session to anchor from (mirrors `total.basis === null`).
+  implementation: PullWorkPhase | null;
+  // The first ready_for_review event → merged_at/closed_at, or → now while still under review. Null
+  // until the PR has reached ready_for_review at least once — there is nothing to report yet.
+  review: PullWorkPhase | null;
+}
+
+// How long the PR's dev session took (#456), split into three figures anchored at the primary dev
+// session's start (agent_sessions.created_at — set once at `lh dev`/`sessions.register` and never
+// touched again by resumes, so it is a stable start marker):
+//   - total: start → the clearest completion signal (see PullWorkDurationBasis), or now.
+//   - implementation: start → the first ready_for_review event — the phase before a
+//     reviewer/human ever saw the PR. A PR that merges/closes without ever passing through
+//     draft→ready (e.g. a plain non-draft `pulls.create`) has no ready_for_review event to anchor
+//     to; implementation then covers the PR's whole life and `review` stays null, since there is no
+//     signal marking a review phase ever began.
+//   - review: the first ready_for_review event → merged_at/closed_at/now — review + any fix-cycle
+//     time after the implementation handoff.
+// Returns `{ total: { seconds: null, basis: null }, implementation: null, review: null }` — the
+// fallback the frontend renders as "N/A" — when there is no dev session to anchor the calculation.
+function pullWorkDuration(
+  repo: S.Repo,
+  row: any,
+  p: any,
+  primarySessionId: string | null,
+): PullWorkDuration {
+  const naFields = {
+    total: { seconds: null, basis: null },
+    implementation: null,
+    review: null,
+  };
+  if (!primarySessionId) return naFields;
+  const session = S.getAgentSession(primarySessionId);
+  const startedAt = session ? Date.parse(session.created_at) : NaN;
+  if (Number.isNaN(startedAt)) return naFields;
+
+  const now = Date.now();
+  const mergedAt = p.merged && p.merged_at ? Date.parse(p.merged_at) : null;
+  // Closed without merging (rejected/abandoned). Anchored at row.closed_at — stamped once at the
+  // open->closed transition (store.ts updateIssue) — not row.updated_at, which every field edit
+  // bumps; anchoring to updated_at would let a later title/body edit on an already-closed PR
+  // silently inflate the reported duration. Falls back to updated_at only for a row whose closed_at
+  // wasn't backfilled (defensive; the db.ts migration backfills every closed row).
+  const closedAt =
+    row.state === "closed" && mergedAt == null
+      ? Date.parse(row.closed_at ?? row.updated_at)
+      : null;
+  const readyAtStr = S.firstReadyForReviewAt(repo.id, row.number);
+  const readyAt = readyAtStr ? Date.parse(readyAtStr) : null;
+
+  let totalEndedAt: number;
+  let basis: PullWorkDurationBasis;
+  if (mergedAt != null && !Number.isNaN(mergedAt)) {
+    totalEndedAt = mergedAt;
+    basis = "merged";
+  } else if (closedAt != null && !Number.isNaN(closedAt)) {
+    totalEndedAt = closedAt;
+    basis = "closed";
+  } else if (readyAt != null && !Number.isNaN(readyAt)) {
+    totalEndedAt = now;
+    basis = "in_review";
+  } else {
+    totalEndedAt = now;
+    basis = "in_progress";
+  }
+  const total =
+    Number.isNaN(totalEndedAt) || totalEndedAt < startedAt
+      ? { seconds: null, basis: null }
+      : { seconds: Math.round((totalEndedAt - startedAt) / 1000), basis };
+
+  // Implementation ends at the first ready_for_review event; failing that, at whichever terminal
+  // signal (merged/closed) closed the PR without one ever firing; failing that, "now" (still WIP).
+  const implEndedAt =
+    readyAt != null && !Number.isNaN(readyAt)
+      ? readyAt
+      : (mergedAt ?? closedAt ?? now);
+  const implDone = readyAt != null || mergedAt != null || closedAt != null;
+  const implementation =
+    Number.isNaN(implEndedAt) || implEndedAt < startedAt
+      ? null
+      : {
+          seconds: Math.round((implEndedAt - startedAt) / 1000),
+          done: implDone,
+        };
+
+  // Review has nothing to report until the PR has reached ready_for_review at least once.
+  let review: PullWorkPhase | null = null;
+  if (readyAt != null && !Number.isNaN(readyAt)) {
+    const reviewEndedAt = mergedAt ?? closedAt ?? now;
+    const reviewDone = mergedAt != null || closedAt != null;
+    review =
+      Number.isNaN(reviewEndedAt) || reviewEndedAt < readyAt
+        ? null
+        : {
+            seconds: Math.round((reviewEndedAt - readyAt) / 1000),
+            done: reviewDone,
+          };
+  }
+
+  return { total, implementation, review };
+}
+
 export async function pullJSON(
   repo: S.Repo,
   row: any,
@@ -503,14 +636,18 @@ export async function pullJSON(
     // exported to (null until the export skill records one). The UI swaps Merge ⟷ Create/View PR.
     merge_mode: mergeFields.merge_mode,
     github_pull: mergeFields.github_pull,
-    // Detail-only (#298): the PR's related sessions, newest first, with per-row resume verdicts.
-    // Gated so the PR list/dashboard stay O(1) git + no extra per-row query.
+    // Detail-only (#298, #456): the PR's related sessions and derived work duration, newest first.
+    // Gated so the PR list/dashboard stay O(1) git + no extra per-row query. Both share the same
+    // primarySessionId lookup (primaryDevSessionForPull) — the PR's resume/retro anchor — so it is
+    // computed once here rather than twice.
     ...(opts.withRelatedSessions
-      ? {
-          related_sessions: relatedSessionsJSON(row, {
-            primarySessionId: S.primaryDevSessionForPull(row.id),
-          }),
-        }
+      ? (() => {
+          const primarySessionId = S.primaryDevSessionForPull(row.id);
+          return {
+            related_sessions: relatedSessionsJSON(row, { primarySessionId }),
+            work_duration: pullWorkDuration(repo, row, p, primarySessionId),
+          };
+        })()
       : {}),
   };
 }

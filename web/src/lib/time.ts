@@ -21,3 +21,32 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
   }
   return "";
 }
+
+const DURATION_UNITS: [secs: number, label: string][] = [
+  [31536000, "y"],
+  [2592000, "mo"],
+  [86400, "d"],
+  [3600, "h"],
+  [60, "m"],
+  [1, "s"],
+];
+
+/**
+ * Format a duration in seconds as a short string like "2h 15m" (#456). Shows the two
+ * largest non-zero units so both a multi-day span and a short one stay readable.
+ */
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds)) return "";
+  const total = Math.max(0, Math.round(seconds));
+  if (total === 0) return "0s";
+  const parts: string[] = [];
+  let remaining = total;
+  for (const [secs, label] of DURATION_UNITS) {
+    if (remaining < secs) continue;
+    const value = Math.floor(remaining / secs);
+    parts.push(`${value}${label}`);
+    remaining -= value * secs;
+    if (parts.length === 2) break;
+  }
+  return parts.join(" ");
+}

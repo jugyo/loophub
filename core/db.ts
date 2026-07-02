@@ -610,6 +610,18 @@ if (reviewNotesIssueIdIsNotNull()) {
 tryExec("ALTER TABLE repos ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0");
 tryExec("ALTER TABLE repos ADD COLUMN favorited_at TEXT");
 
+// issues.closed_at (#456): stamped once, only at the open->closed transition (core/store.ts
+// updateIssue), unlike updated_at which every field edit bumps (title/body/state alike). Needed as
+// a stable "closed at" anchor for the PR work-duration "closed" basis (serialize.ts
+// pullWorkDuration) — anchoring to updated_at instead let a later title/body edit on an
+// already-closed PR silently inflate the reported duration. Backfilled once for pre-existing closed
+// rows (best-effort approximation — the real close time isn't recoverable, so updated_at is the
+// closest available signal for rows that predate this column).
+tryExec("ALTER TABLE issues ADD COLUMN closed_at TEXT");
+tryExec(
+  "UPDATE issues SET closed_at = updated_at WHERE state = 'closed' AND closed_at IS NULL",
+);
+
 export function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "Z");
 }

@@ -41,9 +41,11 @@ export function HandoffTimeline({
   isLoading: boolean;
   isError: boolean;
 }) {
+  // Guarded against a non-array (the RPC mock returns {} for unstubbed methods, same as
+  // FilesChanged's reviewNotes guard) — otherwise `.map` below throws instead of rendering empty.
+  const list = Array.isArray(handoffs) ? handoffs : [];
   // Hide entirely until there is something to show (a PR with no orchestration loop stays clean).
-  if (!isLoading && !isError && (!handoffs || handoffs.length === 0))
-    return null;
+  if (!isLoading && !isError && list.length === 0) return null;
 
   return (
     <section className="flex flex-col gap-3">
@@ -58,7 +60,7 @@ export function HandoffTimeline({
         </div>
       ) : (
         <ol className="flex flex-col gap-2">
-          {(handoffs ?? []).map((h) => (
+          {list.map((h) => (
             <li key={h.id} className="rounded-md border p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-medium text-muted-foreground">
