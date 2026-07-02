@@ -370,7 +370,7 @@ function AgentPreview({
 
 // Gates the kill button behind a confirm dialog (#521 AC: misclick protection for a
 // destructive action). Follows the same role="dialog" + fixed inset-0 backdrop pattern as
-// repo-menu.tsx's ConfirmArchiveDialog.
+// repo-settings-page.tsx's ConfirmArchiveDialog.
 function ConfirmKillAgentDialog({
   agentName,
   pending,

@@ -1,5 +1,5 @@
 // Instance-level settings (#474) — the first entry point for global config.json settings, as
-// opposed to the per-repo settings menu (see repo-menu.tsx's MergeModeSection).
+// opposed to the per-repo settings screen (see repo-settings-page.tsx's MergeModeSection).
 
 import { Check } from "lucide-react";
 import type { CodingAgent, TerminalLaunchBackend } from "@/api/types";

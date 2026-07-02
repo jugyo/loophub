@@ -6,7 +6,7 @@
 
 import { IssueRow } from "@/components/dashboard-rows";
 import { DashboardSection } from "@/components/dashboard-section";
-import { RepoMenu } from "@/components/repo-menu";
+import { RepoSettingsLink } from "@/components/repo-settings-link";
 import { useOpenIssues } from "@/queries/dashboard";
 
 export function RepoDashboard({
@@ -26,7 +26,7 @@ export function RepoDashboard({
             {owner}/{repo}
           </h1>
         </div>
-        <RepoMenu owner={owner} repo={repo} />
+        <RepoSettingsLink owner={owner} repo={repo} />
       </div>
 
       <DashboardSection
