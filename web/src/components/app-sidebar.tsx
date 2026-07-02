@@ -242,7 +242,9 @@ function RepoSidebarLink({ repo }: { repo: Repo }) {
         <Star
           className={cn(
             "size-3.5",
-            repo.favorite ? "fill-current text-amber-500" : "",
+            repo.favorite
+              ? "fill-current text-yellow-600/70 dark:text-yellow-300/70"
+              : "",
           )}
         />
       </button>

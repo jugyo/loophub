@@ -87,7 +87,7 @@ function RepoListRow({ repo }: { repo: Repo }) {
         className="rounded-sm p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
       >
         <Star
-          className={`size-4 ${repo.favorite ? "fill-current text-amber-500" : ""}`}
+          className={`size-4 ${repo.favorite ? "fill-current text-yellow-600/70 dark:text-yellow-300/70" : ""}`}
         />
       </button>
     </li>
