@@ -3,7 +3,10 @@ import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
   herdrSessionName,
+  herdrTabCloseArgv,
+  herdrTabCreateArgv,
   normalizeTerminalLaunchBackend,
+  parseHerdrTabId,
 } from "./terminal-launch.ts";
 
 describe("terminal launch backend", () => {
@@ -78,6 +81,7 @@ describe("terminal launch backend", () => {
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       command: "lh dev 'jugyo/loophub/444'",
       label: "dev #444",
+      tabId: "w1:t2",
     });
     expect(plan.argv).toEqual([
       "herdr",
@@ -88,12 +92,72 @@ describe("terminal launch backend", () => {
       "dev #444",
       "--cwd",
       "/repo/main",
+      "--tab",
+      "w1:t2",
       "--no-focus",
       "--",
       "zsh",
       "-lc",
       "lh dev 'jugyo/loophub/444'",
     ]);
+  });
+
+  test("omits --tab when tab creation did not yield an id (fallback to split)", () => {
+    for (const tabId of [undefined, null]) {
+      const plan = buildHerdrLaunchPlan({
+        repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+        command: "lh dev 'jugyo/loophub/444'",
+        label: "dev #444",
+        tabId,
+      });
+      expect(plan.argv).not.toContain("--tab");
+    }
+  });
+
+  test("builds Herdr tab create/close argv scoped to the repo session", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const sessionName = herdrSessionName(repo);
+    expect(herdrTabCreateArgv(repo)).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "tab",
+      "create",
+      "--cwd",
+      "/repo/main",
+      "--no-focus",
+    ]);
+    expect(herdrTabCloseArgv(repo, "w1:t2")).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "tab",
+      "close",
+      "w1:t2",
+    ]);
+  });
+
+  test("parses the tab id from herdr tab create output", () => {
+    expect(
+      parseHerdrTabId(
+        '{"id":"cli:tab:create","result":{"tab":{"tab_id":"w1:t2","workspace_id":"w1"},"type":"tab_created"}}',
+      ),
+    ).toBe("w1:t2");
+    expect(parseHerdrTabId("")).toBeNull();
+    expect(parseHerdrTabId("not json")).toBeNull();
+    expect(parseHerdrTabId('{"result":{"tab":{}}}')).toBeNull();
+    expect(parseHerdrTabId('{"result":{"tab":{"tab_id":42}}}')).toBeNull();
+  });
+
+  test("rejects tab ids that could be parsed as flags or shell noise", () => {
+    const wrap = (id: string) =>
+      JSON.stringify({ result: { tab: { tab_id: id } } });
+    expect(parseHerdrTabId(wrap("--workspace"))).toBeNull();
+    expect(parseHerdrTabId(wrap("-x"))).toBeNull();
+    expect(parseHerdrTabId(wrap("w1 t2"))).toBeNull();
+    expect(parseHerdrTabId(wrap("w1;rm"))).toBeNull();
+    expect(parseHerdrTabId(wrap(""))).toBeNull();
+    expect(parseHerdrTabId(wrap("w1:t2"))).toBe("w1:t2");
   });
 
   test("does not map unspecified workflows to raw commands", () => {

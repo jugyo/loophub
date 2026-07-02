@@ -83,6 +83,9 @@ import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
   herdrCommandLine,
+  herdrTabCloseArgv,
+  herdrTabCreateArgv,
+  parseHerdrTabId,
   type TerminalLaunchBackend,
 } from "./terminal-launch.ts";
 import { sweepPullUpdates } from "./watcher.ts";
@@ -427,26 +430,50 @@ export const repos = {
   },
 };
 
+// The expected `herdr tab create` output is one small JSON object; anything past this cap is
+// discarded so a misbehaving herdr streaming output can't grow lh-web memory unbounded.
+const HERDR_CAPTURE_MAX_BYTES = 64 * 1024;
+
 // Spawns Herdr asynchronously (never spawnSync — this runs inside the lh-web server process,
 // which also serves SSE/WebSocket terminals for every other client). Errors are deliberately
 // generic: the underlying stderr/stdout (or an OS error message) can embed the repo's absolute
 // local_path, mirroring web/server/terminal.ts's closeReasonFor rationale for not forwarding
-// internal process output to the client.
-function runHerdrLaunch(
+// internal process output to the client. Resolves with the drained stdout when captureStdout
+// is set, "" otherwise.
+function runHerdr(
   command: string,
   args: string[],
   cwd: string,
-): Promise<void> {
+  opts: { captureStdout?: boolean; timeoutMs?: number } = {},
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    // stdio all "ignore": the client never sees stdout/stderr (see the comment above), and a
-    // "pipe" nobody drains would let the child's writes fill the OS pipe buffer and block
-    // forever (no `close` event, an indefinitely hanging RPC call) — or crash the whole
-    // lh-web process on an unhandled stream error.
+    // stdio defaults to all "ignore": the client never sees stdout/stderr (see the comment
+    // above), and a "pipe" nobody drains would let the child's writes fill the OS pipe buffer
+    // and block forever (no `close` event, an indefinitely hanging RPC call) — or crash the
+    // whole lh-web process on an unhandled stream error. captureStdout pipes stdout but always
+    // drains it (and handles its `error` event below, so a stream error can't crash lh-web).
     const child = spawn(command, args, {
       cwd,
-      stdio: ["ignore", "ignore", "ignore"],
+      stdio: ["ignore", opts.captureStdout ? "pipe" : "ignore", "ignore"],
+    });
+    // Guards the awaiting RPC call against a herdr client that never exits (e.g. wedged on its
+    // session socket): kill and let the `close` handler reject via the signal path.
+    const timer = opts.timeoutMs
+      ? setTimeout(() => child.kill("SIGKILL"), opts.timeoutMs)
+      : undefined;
+    const chunks: Buffer[] = [];
+    let captured = 0;
+    child.stdout?.on("data", (chunk: Buffer) => {
+      if (captured >= HERDR_CAPTURE_MAX_BYTES) return; // keep draining, stop keeping
+      chunks.push(chunk);
+      captured += chunk.length;
+    });
+    child.stdout?.on("error", () => {
+      // Losing the output stream only means the tab id can't be read; the `close` handler
+      // still decides success/failure, so just stop the error from being unhandled.
     });
     child.on("error", (err) => {
+      clearTimeout(timer);
       const code = (err as NodeJS.ErrnoException).code;
       reject(
         code === "ENOENT"
@@ -458,11 +485,13 @@ function runHerdrLaunch(
       );
     });
     child.on("close", (status, signal) => {
+      clearTimeout(timer);
       // `status` is null when the child was terminated by a signal rather than exiting on its
       // own — treat that as a failure too, instead of `?? 0` collapsing a null code to success.
       // The distinction (signal vs. exit code) is itself a safe, non-leaky hint about *why* the
       // launch failed, so surface it instead of one generic "Herdr launch failed" for both.
-      if (signal == null && status === 0) resolve();
+      if (signal == null && status === 0)
+        resolve(Buffer.concat(chunks).toString("utf8"));
       else if (signal != null)
         reject(
           new ServiceError(
@@ -473,6 +502,14 @@ function runHerdrLaunch(
       else reject(new ServiceError(500, `Herdr exited with status ${status}`));
     });
   });
+}
+
+function runHerdrLaunch(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<void> {
+  return runHerdr(command, args, cwd).then(() => {});
 }
 
 // ===== terminal launch =====
@@ -497,10 +534,41 @@ export const terminal = {
     });
     if (!command.trim()) throw new ServiceError(422, "command is required");
 
+    const repo = { full_name: r.full_name, local_path: r.local_path };
+    // Create a fresh tab first so the agent starts in it instead of splitting the focused
+    // pane (#489). Best-effort: on any failure fall back to the tab-less launch (Herdr's
+    // default split placement) rather than breaking the launch; a hard herdr failure still
+    // surfaces from the agent start below. The timeout keeps a wedged `herdr tab create`
+    // from hanging the RPC forever — runHerdr kills it and the catch falls back.
+    let tabId: string | null = null;
+    try {
+      const tabCreate = herdrTabCreateArgv(repo);
+      const out = await runHerdr(
+        tabCreate[0],
+        tabCreate.slice(1),
+        r.local_path,
+        {
+          captureStdout: true,
+          timeoutMs: 10_000,
+        },
+      );
+      tabId = parseHerdrTabId(out);
+      // Zero exit with no parseable id means a tab was likely created but can't be closed on
+      // failure (no id) — every such launch leaks one empty tab. Log server-side (never to the
+      // client) so a herdr output-format drift is noticed instead of silently leaking tabs.
+      if (!tabId)
+        console.error(
+          "herdr tab create succeeded but its output had no usable tab id; falling back to split placement",
+        );
+    } catch {
+      tabId = null;
+    }
+
     const plan = buildHerdrLaunchPlan({
-      repo: { full_name: r.full_name, local_path: r.local_path },
+      repo,
       command,
       label: input.label,
+      tabId,
     });
     // Non-blocking: lh-web is a single process also serving SSE/WebSocket terminals for every
     // client, so a synchronous spawnSync here would stall the whole server for as long as the
@@ -508,6 +576,13 @@ export const terminal = {
     try {
       await runHerdrLaunch(plan.argv[0], plan.argv.slice(1), plan.cwd);
     } catch (e) {
+      // Don't leave the just-created empty tab behind; fire-and-forget cleanup.
+      if (tabId) {
+        const tabClose = herdrTabCloseArgv(repo, tabId);
+        runHerdrLaunch(tabClose[0], tabClose.slice(1), r.local_path).catch(
+          () => {},
+        );
+      }
       // Attach the actual `herdr ...` invocation (not plan.command, which is only the inner
       // workflow command herdr would run) so the client can re-run the real command locally and
       // see the full output itself — this rides on top of the deliberately generic message (see
@@ -519,9 +594,15 @@ export const terminal = {
       // ENOENT (herdr missing from PATH) or a signal-killed process have unrelated causes, and
       // suggesting `herdr --session <name>` there would just fail again the same way, misdirecting
       // the user away from the real fix.
+      //
+      // The suggested command is built from a tab-less plan: the failed argv's `--tab <id>`
+      // points at the tab that was just cleaned up above, so re-running it verbatim would fail
+      // with an unknown-tab error instead of reproducing the original failure.
       if (isServiceError(e))
         throw new ServiceError(e.status, e.message, {
-          command: herdrCommandLine(plan),
+          command: herdrCommandLine(
+            buildHerdrLaunchPlan({ repo, command, label: input.label }),
+          ),
           session: /^Herdr exited with status \d+$/.test(e.message)
             ? plan.sessionName
             : undefined,

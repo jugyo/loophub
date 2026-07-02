@@ -118,10 +118,52 @@ export function commandForHerdrLaunch(input: {
   return "";
 }
 
+// Creates the tab the agent will start in (`herdr agent start --tab <ID>`), so launches open
+// a new tab instead of splitting the currently focused pane (#489).
+export function herdrTabCreateArgv(repo: TerminalLaunchRepo): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "tab",
+    "create",
+    "--cwd",
+    repo.local_path,
+    "--no-focus",
+  ];
+}
+
+export function herdrTabCloseArgv(
+  repo: TerminalLaunchRepo,
+  tabId: string,
+): string[] {
+  return ["herdr", "--session", herdrSessionName(repo), "tab", "close", tabId];
+}
+
+// Observed shape is `w1:t2`. The strict pattern (in particular no leading `-`) keeps a value
+// from child-process stdout from being spliced into the agent-start argv as something herdr
+// would parse as a flag, or from echoing arbitrary process output back to clients via the
+// launch-failure `command` hint.
+const HERDR_TAB_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]*$/;
+
+// `herdr tab create` prints one JSON object with the new tab at .result.tab.tab_id.
+export function parseHerdrTabId(stdout: string): string | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    const tabId = parsed?.result?.tab?.tab_id;
+    return typeof tabId === "string" && HERDR_TAB_ID.test(tabId) ? tabId : null;
+  } catch {
+    return null;
+  }
+}
+
 export function buildHerdrLaunchPlan(input: {
   repo: TerminalLaunchRepo;
   command: string;
   label?: string;
+  // Tab to start the agent in. Omitted (tab creation failed) falls back to Herdr's default
+  // placement, which splits the focused pane.
+  tabId?: string | null;
 }): HerdrLaunchPlan {
   const sessionName = herdrSessionName(input.repo);
   const agentName = normalizeAgentName(input.label || "LoopHub workflow");
@@ -134,6 +176,7 @@ export function buildHerdrLaunchPlan(input: {
     agentName,
     "--cwd",
     input.repo.local_path,
+    ...(input.tabId ? ["--tab", input.tabId] : []),
     "--no-focus",
     "--",
     "zsh",
