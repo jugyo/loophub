@@ -61,15 +61,17 @@ export function CreateIssueButton() {
 
   return (
     <>
-      {/* Floating action button: a circular icon-only launcher, bottom-right, that sticks its bottom
-          just above the bottom terminal's top edge (#384). --lh-term-reserve (published by
-          terminal-pane.tsx) is the terminal's footprint plus a 12px breathing gap as a viewport-bottom
-          offset, so the launcher rises with the terminal and rests a margin above it instead of being
-          covered. clamp() keeps the old bottom-right resting spot when the terminal is collapsed (floor
-          3.5rem) and stops a maximized terminal (var ≈ 100dvh) from pushing the button off the top of
-          the viewport (ceiling 100dvh − 5rem). z-50 (> the terminal pane's z-40) lets it float over an
-          expanded terminal. Icon-only, so aria-label/title name it. Hidden once the dock is mounted —
-          the dock (or its minimized bar) occupies this spot. */}
+      {/* Floating action button: a circular icon-only launcher, bottom-right. In builtin mode it
+          sticks its bottom just above the bottom terminal's top edge (#384). --lh-term-reserve
+          (published by terminal-pane.tsx) is the terminal's footprint plus a 12px breathing gap as
+          a viewport-bottom offset, so the launcher rises with the terminal and rests a margin above
+          it instead of being covered. clamp() keeps the old bottom-right resting spot when the
+          terminal is collapsed (floor 3.5rem) and stops a maximized terminal (var ≈ 100dvh) from
+          pushing the button off the top of the viewport (ceiling 100dvh − 5rem). Herdr has no
+          builtin terminal panel, so that floor's rationale doesn't apply there (#546) — herdr uses a
+          plain FAB margin matched to the horizontal right-4 offset instead. z-50 (> the terminal
+          pane's z-40) lets it float over an expanded terminal. Icon-only, so aria-label/title name
+          it. Hidden once the dock is mounted — the dock (or its minimized bar) occupies this spot. */}
       {!open && (
         <Button
           size="icon"
@@ -88,8 +90,9 @@ export function CreateIssueButton() {
                 : null
           }
           style={{
-            bottom:
-              "clamp(3.5rem, var(--lh-term-reserve, 0px), calc(100dvh - 5rem))",
+            bottom: herdr
+              ? "1rem"
+              : "clamp(3.5rem, var(--lh-term-reserve, 0px), calc(100dvh - 5rem))",
           }}
           className="fixed right-4 z-50 h-14 w-14 rounded-full shadow-lg"
         >

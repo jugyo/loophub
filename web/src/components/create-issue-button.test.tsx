@@ -103,6 +103,24 @@ describe("CreateIssueButton", () => {
     expect(screen.queryByTestId("terminal-view")).toBeNull();
   });
 
+  it("does not use the herdr FAB margin for the bottom style in builtin mode", () => {
+    render(<CreateIssueButton />);
+    const button = screen.getByRole("button", { name: /new issue/i });
+    // happy-dom's CSSOM rejects clamp() as an invalid value for `bottom`, so the builtin-mode
+    // value can't be asserted directly here; this just pins that herdr's plain "1rem" isn't applied.
+    expect(button.style.bottom).not.toBe("1rem");
+  });
+
+  it("uses a plain FAB margin (not the builtin terminal-reserve floor) in herdr mode", () => {
+    terminalLaunchConfig.value = {
+      isSuccess: true,
+      data: { backend: "herdr" },
+    };
+    render(<CreateIssueButton />);
+    const button = screen.getByRole("button", { name: /new issue/i });
+    expect(button.style.bottom).toBe("1rem");
+  });
+
   it("gives each consecutive Herdr launch a distinct agent name label", () => {
     terminalLaunchConfig.value = {
       isSuccess: true,
