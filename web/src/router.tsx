@@ -7,6 +7,7 @@ import { pullDetailRoute, pullsRoute } from "./routes/pulls";
 import { refRoute } from "./routes/ref";
 import { repoRoute } from "./routes/repo";
 import { rootRoute } from "./routes/root";
+import { settingsRoute } from "./routes/settings";
 
 // App-shell route tree. Leaf components are placeholders; later UI issues
 // replace each screen in place without changing this tree.
@@ -20,6 +21,7 @@ const routeTree = rootRoute.addChildren([
   pullDetailRoute,
   refRoute,
   mergedRoute,
+  settingsRoute,
 ]);
 
 export const router = createRouter({ routeTree });

@@ -175,6 +175,11 @@ export interface TerminalLaunchResult {
   attach?: string;
 }
 
+/** Instance-level config.json settings (`settings/get`, `settings/update`, #474). */
+export interface GlobalSettings {
+  terminalLaunchBackend: TerminalLaunchBackend;
+}
+
 /** The GitHub PR a loophub PR was exported to (#406), or null until the export skill records one. */
 export interface GithubPull {
   number: number;

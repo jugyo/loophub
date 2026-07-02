@@ -2,7 +2,7 @@
 // plus links to Home and Archived. Repo screens land in later UI issues.
 
 import { Link } from "@tanstack/react-router";
-import { Archive, Home, Loader2, Star } from "lucide-react";
+import { Archive, Home, Loader2, Settings, Star } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -96,6 +96,9 @@ export function AppSidebar() {
         </SidebarLink>
         <SidebarLink to="/archived" icon={<Archive className="size-4" />}>
           Archived
+        </SidebarLink>
+        <SidebarLink to="/settings" icon={<Settings className="size-4" />}>
+          Settings
         </SidebarLink>
       </nav>
 

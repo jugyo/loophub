@@ -1,10 +1,19 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   normalizeTerminalLaunchBackend,
   type TerminalLaunchBackend,
 } from "./terminal-launch.ts";
+
+// Known config.json fields (#474). Fields are optional — any subset may be present, and
+// unrecognized fields written by a future version must round-trip through updateConfig
+// untouched (it merges into the raw parsed object, not this typed shape).
+export interface GlobalConfig {
+  worktreeRoot?: string;
+  url?: string;
+  terminalLaunchBackend?: TerminalLaunchBackend;
+}
 
 // Read env at call time so parallel test files can set LOOPHUB_HOME/LOOPHUB_DB
 // before db.ts is first imported (import-time consts froze the wrong path).
@@ -77,4 +86,40 @@ export function terminalLaunchBackend(): TerminalLaunchBackend {
     return normalizeTerminalLaunchBackend(cfg.terminalLaunchBackend);
   } catch {}
   return "builtin";
+}
+
+function configPath(): string {
+  return join(configDir(), "config.json");
+}
+
+/** Raw config.json contents, or {} when the file is absent/unreadable/malformed. */
+function readConfigFile(): Record<string, unknown> {
+  try {
+    return JSON.parse(readFileSync(configPath(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Merge `patch` into config.json, preserving every other field (known or not), and persist
+ * atomically (temp file + rename, mirroring core/worker-cursor.ts) so a crash mid-write never
+ * leaves a truncated file. Returns the merged config.
+ *
+ * `undefined`-valued keys in `patch` are dropped rather than merged: an object spread copies an
+ * own property even when its value is `undefined`, which would otherwise clobber an existing
+ * field and then vanish on JSON.stringify — silently erasing it instead of leaving it untouched
+ * (a caller that omits an optional field must not wipe it, e.g. an RPC param the client left out).
+ */
+export function updateConfig(patch: Partial<GlobalConfig>): GlobalConfig {
+  const definedPatch = Object.fromEntries(
+    Object.entries(patch).filter(([, v]) => v !== undefined),
+  );
+  const merged = { ...readConfigFile(), ...definedPatch };
+  mkdirSync(configDir(), { recursive: true });
+  const path = configPath();
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, JSON.stringify(merged, null, 2));
+  renameSync(tmp, path);
+  return merged as GlobalConfig;
 }

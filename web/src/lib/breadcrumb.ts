@@ -15,6 +15,7 @@ export interface Crumb {
  * Examples:
  *   "/"                              -> [Home]
  *   "/archived"                      -> [Home, Archived]
+ *   "/settings"                      -> [Home, Settings]
  *   "/r/me/proj"                     -> [Home, me/proj]
  *   "/r/me/proj/issues"              -> [Home, me/proj, Issues]
  *   "/r/me/proj/issues/12"           -> [Home, me/proj, Issues, #12]
@@ -31,6 +32,11 @@ export function crumbsForPath(pathname: string): Crumb[] {
 
   if (parts[0] === "archived") {
     crumbs.push({ label: "Archived" });
+    return crumbs;
+  }
+
+  if (parts[0] === "settings") {
+    crumbs.push({ label: "Settings" });
     return crumbs;
   }
 

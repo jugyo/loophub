@@ -9,6 +9,7 @@ import { getSessionId } from "@/lib/session";
 import type {
   DashboardOverview,
   FileAtRef,
+  GlobalSettings,
   Handoff,
   Issue,
   IssueComment,
@@ -21,6 +22,7 @@ import type {
   Repo,
   RepoMergeMode,
   ReviewNote,
+  TerminalLaunchBackend,
   TerminalLaunchConfig,
   TerminalLaunchResult,
 } from "./types";
@@ -149,6 +151,22 @@ export function setRepoMergeMode(
   return rpc<Repo>("repos/setMergeMode", {
     name: full(owner, repo),
     mode,
+    session_id: sessionId,
+  });
+}
+
+// --- global settings ---
+// Instance-level config.json settings (#474), as opposed to the per-repo settings above.
+export function getSettings() {
+  return rpc<GlobalSettings>("settings/get");
+}
+
+export function updateSettings(
+  input: { terminalLaunchBackend?: TerminalLaunchBackend },
+  sessionId: string = getSessionId(),
+) {
+  return rpc<GlobalSettings>("settings/update", {
+    ...input,
     session_id: sessionId,
   });
 }

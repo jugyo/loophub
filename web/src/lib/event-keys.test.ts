@@ -131,6 +131,14 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["issue"]);
   });
 
+  it("maps settings.updated to the settings view and terminal config, with no repo key (#474)", () => {
+    const keys = queryKeysForEvent(
+      ev({ type: "settings.updated", repo: undefined, payload: {} }),
+    );
+    expect(keys).toContainEqual(["settings"]);
+    expect(keys).toContainEqual(["terminal", "config"]);
+  });
+
   it("routes agent_session.linked to the target PR/issue detail (#298)", () => {
     const prKeys = queryKeysForEvent(
       ev({

@@ -13,6 +13,10 @@ describe("crumbsForPath", () => {
     expect(labels("/archived")).toEqual(["Home", "Archived"]);
   });
 
+  it("renders the settings route", () => {
+    expect(labels("/settings")).toEqual(["Home", "Settings"]);
+  });
+
   it("renders a repo route with the full name", () => {
     expect(labels("/r/me/proj")).toEqual(["Home", "me/proj"]);
   });

@@ -135,6 +135,29 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.repos.mergeMode(p.name),
   },
 
+  // ---- global settings ----
+  "settings/get": {
+    description:
+      "Instance-level config.json settings (currently: terminalLaunchBackend) (#474).",
+    params: EMPTY_PARAMS,
+    result: anyObject,
+    handler: () => svc.settings.get(),
+  },
+  "settings/update": {
+    description:
+      "Update instance-level config.json settings, preserving unrelated fields (#474).",
+    params: params({
+      terminalLaunchBackend: { enum: ["builtin", "herdr"] },
+      session_id: sid,
+    }),
+    result: anyObject,
+    handler: (p) =>
+      svc.settings.update(
+        { terminalLaunchBackend: p.terminalLaunchBackend },
+        p.session_id,
+      ),
+  },
+
   // ---- terminal launch ----
   "terminal/config": {
     description:

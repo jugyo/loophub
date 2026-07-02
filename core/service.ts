@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { terminalLaunchBackend, worktreeRoot } from "./config.ts";
+import { terminalLaunchBackend, updateConfig, worktreeRoot } from "./config.ts";
 import { ServiceError } from "./errors.ts";
 import { formatEvent, type LoopEvent } from "./event-hub.ts";
 import { type FollowOptions, followEvents } from "./events-follow.ts";
@@ -387,6 +387,36 @@ export const terminal = {
       cwd: plan.cwd,
       attach: `herdr session attach ${plan.sessionName}`,
     };
+  },
+};
+
+// ===== global settings =====
+// Instance-level config.json settings, as opposed to the repo-scoped settings above (#474).
+// terminalLaunchBackend is the first field; more can be added to both the input/result shape
+// and the validation below as they're introduced.
+export const settings = {
+  get(): { terminalLaunchBackend: TerminalLaunchBackend } {
+    return { terminalLaunchBackend: terminalLaunchBackend() };
+  },
+
+  update(
+    input: { terminalLaunchBackend?: TerminalLaunchBackend },
+    sessionId?: string | null,
+  ): { terminalLaunchBackend: TerminalLaunchBackend } {
+    if (
+      input.terminalLaunchBackend !== undefined &&
+      input.terminalLaunchBackend !== "builtin" &&
+      input.terminalLaunchBackend !== "herdr"
+    ) {
+      throw new ServiceError(
+        422,
+        "terminalLaunchBackend must be one of: builtin, herdr",
+      );
+    }
+    updateConfig(input);
+    const actor = actorFor(sessionId);
+    S.emitEvent(null, "settings.updated", actor, input);
+    return settings.get();
   },
 };
 

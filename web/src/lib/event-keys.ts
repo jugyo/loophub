@@ -113,6 +113,12 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["issue"]);
     }
     keys.push([...queryKeys.dashboard()]);
+  } else if (type === "settings.updated") {
+    // Instance-level settings (#474) are global, not repo-scoped — refetch the settings view and
+    // anything derived from it (e.g. the terminal launch backend) regardless of which repo/tab the
+    // change came from.
+    keys.push(["settings"]);
+    keys.push(["terminal", "config"]);
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
     // agent_session.linked (#298) targets a specific PR or issue; its related_sessions list lives in
