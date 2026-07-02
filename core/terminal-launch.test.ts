@@ -6,9 +6,12 @@ import {
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
+  herdrWorkspaceCloseArgv,
+  herdrWorkspaceCreateArgv,
   normalizeTerminalLaunchBackend,
   parseHerdrRootPaneId,
   parseHerdrTabId,
+  parseHerdrWorkspaceId,
 } from "./terminal-launch.ts";
 
 describe("terminal launch backend", () => {
@@ -166,6 +169,29 @@ describe("terminal launch backend", () => {
     ]);
   });
 
+  test("builds Herdr workspace create/close argv scoped to the repo session (#544)", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const sessionName = herdrSessionName(repo);
+    expect(herdrWorkspaceCreateArgv(repo)).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "workspace",
+      "create",
+      "--cwd",
+      "/repo/main",
+      "--no-focus",
+    ]);
+    expect(herdrWorkspaceCloseArgv(repo, "w4")).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "workspace",
+      "close",
+      "w4",
+    ]);
+  });
+
   test("builds Herdr pane close argv scoped to the repo session (#521)", () => {
     const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
     const sessionName = herdrSessionName(repo);
@@ -221,6 +247,71 @@ describe("terminal launch backend", () => {
         JSON.stringify({ result: { root_pane: { pane_id: "--workspace" } } }),
       ),
     ).toBeNull();
+  });
+
+  test("parses the workspace id from herdr workspace create output", () => {
+    expect(
+      parseHerdrWorkspaceId(
+        '{"id":"cli:workspace:create","result":{"root_pane":{"pane_id":"w4:p1"},"tab":{"tab_id":"w4:t1"},"type":"workspace_created","workspace":{"workspace_id":"w4"}}}',
+      ),
+    ).toBe("w4");
+    expect(parseHerdrWorkspaceId("")).toBeNull();
+    expect(parseHerdrWorkspaceId("not json")).toBeNull();
+    expect(parseHerdrWorkspaceId('{"result":{"workspace":{}}}')).toBeNull();
+    expect(
+      parseHerdrWorkspaceId('{"result":{"workspace":{"workspace_id":42}}}'),
+    ).toBeNull();
+    expect(
+      parseHerdrWorkspaceId(
+        JSON.stringify({ result: { workspace: { workspace_id: "--tab" } } }),
+      ),
+    ).toBeNull();
+  });
+
+  // A workspace-create response seeds exactly one tab, which belongs to the workspace it was
+  // just created in, so `.result.tab.workspace_id` reports the same id as
+  // `.result.workspace.workspace_id` — falling back to it keeps cleanup able to target the
+  // workspace (rather than a doomed tab close) even if the primary field is ever malformed.
+  test("falls back to the seeded tab's workspace_id when the primary workspace field is missing", () => {
+    expect(
+      parseHerdrWorkspaceId(
+        '{"result":{"tab":{"tab_id":"w4:t1","workspace_id":"w4"},"workspace":{}}}',
+      ),
+    ).toBe("w4");
+    expect(
+      parseHerdrWorkspaceId('{"result":{"tab":{"tab_id":"w4:t1"}}}'),
+    ).toBeNull();
+    expect(
+      parseHerdrWorkspaceId(
+        JSON.stringify({ result: { tab: { workspace_id: "--tab" } } }),
+      ),
+    ).toBeNull();
+  });
+
+  // Each candidate is validated independently rather than selected via `??`, which would only
+  // skip a nullish primary field — not one that's present but invalid (empty string, wrong type,
+  // fails HERDR_ID) — and so would wrongly discard a still-usable fallback.
+  test("falls back to the tab's workspace_id when the primary field is present but malformed", () => {
+    expect(
+      parseHerdrWorkspaceId(
+        '{"result":{"workspace":{"workspace_id":""},"tab":{"tab_id":"w4:t1","workspace_id":"w4"}}}',
+      ),
+    ).toBe("w4");
+    expect(
+      parseHerdrWorkspaceId(
+        '{"result":{"workspace":{"workspace_id":42},"tab":{"tab_id":"w4:t1","workspace_id":"w4"}}}',
+      ),
+    ).toBe("w4");
+    expect(
+      parseHerdrWorkspaceId(
+        JSON.stringify({
+          result: {
+            workspace: { workspace_id: "--tab" },
+            tab: { workspace_id: "w4" },
+          },
+        }),
+      ),
+    ).toBe("w4");
   });
 
   test("does not map unspecified workflows to raw commands", () => {

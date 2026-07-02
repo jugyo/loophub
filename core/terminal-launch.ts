@@ -144,6 +144,40 @@ export function herdrTabCloseArgv(
   return ["herdr", "--session", herdrSessionName(repo), "tab", "close", tabId];
 }
 
+// Creates a whole new workspace (rather than a tab in whichever workspace herdr currently treats
+// as default) so the New Issue flow gets its own space instead of piling onto the repo's existing
+// session (#544). `herdr workspace create` seeds the workspace with one tab and one empty pane,
+// reported in the same shape `herdr tab create` uses (`.result.tab.tab_id` /
+// `.result.root_pane.pane_id`), so parseHerdrTabId/parseHerdrRootPaneId apply here unchanged.
+export function herdrWorkspaceCreateArgv(repo: TerminalLaunchRepo): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "workspace",
+    "create",
+    "--cwd",
+    repo.local_path,
+    "--no-focus",
+  ];
+}
+
+// herdr refuses to close a workspace's last tab (`tab_close_failed`), so cleaning up a failed
+// launch that created its own workspace must close the whole workspace, not just its seeded tab.
+export function herdrWorkspaceCloseArgv(
+  repo: TerminalLaunchRepo,
+  workspaceId: string,
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "workspace",
+    "close",
+    workspaceId,
+  ];
+}
+
 // Closes the pane an agent is running in (#521's kill button). `herdr` has no direct
 // "kill agent" command; closing its pane is the confirmed equivalent.
 export function herdrPaneCloseArgv(
@@ -187,6 +221,32 @@ export function parseHerdrRootPaneId(stdout: string): string | null {
     const parsed = JSON.parse(stdout);
     const paneId = parsed?.result?.root_pane?.pane_id;
     return typeof paneId === "string" && HERDR_ID.test(paneId) ? paneId : null;
+  } catch {
+    return null;
+  }
+}
+
+// `herdr workspace create` prints one JSON object with the new workspace at
+// `.result.workspace.workspace_id`, needed so a failed launch can close the whole workspace it
+// created (herdrWorkspaceCloseArgv) rather than just the tab — closing a workspace's last tab is
+// refused by herdr, so a caller that can't determine the workspace id would otherwise be stuck
+// falling back to a tab-close that's guaranteed to fail. `.result.tab.workspace_id` reports the
+// same id (a workspace-create response seeds exactly one tab, which belongs to the workspace it
+// was just created in), so fall back to it if the primary field is ever absent or malformed.
+export function parseHerdrWorkspaceId(stdout: string): string | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    // Validate each candidate independently and take the first that passes — a `??` chain would
+    // only skip a nullish primary, not one that's present but malformed (empty string, wrong
+    // type, a value that fails HERDR_ID), silently discarding a still-usable fallback.
+    for (const candidate of [
+      parsed?.result?.workspace?.workspace_id,
+      parsed?.result?.tab?.workspace_id,
+    ]) {
+      if (typeof candidate === "string" && HERDR_ID.test(candidate))
+        return candidate;
+    }
+    return null;
   } catch {
     return null;
   }

@@ -101,8 +101,11 @@ import {
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
+  herdrWorkspaceCloseArgv,
+  herdrWorkspaceCreateArgv,
   parseHerdrRootPaneId,
   parseHerdrTabId,
+  parseHerdrWorkspaceId,
   type TerminalLaunchBackend,
 } from "./terminal-launch.ts";
 import { sweepPullUpdates } from "./watcher.ts";
@@ -603,10 +606,16 @@ export const terminal = {
     if (!command.trim()) throw new ServiceError(422, "command is required");
 
     const repo = { full_name: r.full_name, local_path: r.local_path };
-    // Create a fresh tab first so the agent starts in it instead of splitting the focused
-    // pane (#489). Best-effort: on any failure fall back to the tab-less launch (Herdr's
+    // New Issue gets its own fresh workspace instead of a tab in the repo's existing default
+    // workspace (#544) — every other workflow (Build/issue-dev, resume, github-pr-export) keeps
+    // reusing that default workspace. `herdr workspace create` seeds the workspace with one tab
+    // and one empty pane in the same output shape `herdr tab create` uses, so the tab/root-pane
+    // parsing below is unchanged either way.
+    const isNewWorkspace = input.workflow === "issue-create";
+    // Create a fresh tab (or workspace) first so the agent starts in it instead of splitting the
+    // focused pane (#489). Best-effort: on any failure fall back to the tab-less launch (Herdr's
     // default split placement) rather than breaking the launch; a hard herdr failure still
-    // surfaces from the agent start below. The timeout keeps a wedged `herdr tab create`
+    // surfaces from the agent start below. The timeout keeps a wedged `herdr tab/workspace create`
     // from hanging the RPC forever — runHerdr kills it and the catch falls back.
     let tabId: string | null = null;
     // `herdr tab create` seeds the new tab with one empty default pane; `agent start --tab`
@@ -614,28 +623,50 @@ export const terminal = {
     // the launch closes it once the agent's own pane exists. Captured from the same tab-create
     // output as tabId, so it's only ever set together with a usable tabId.
     let rootPaneId: string | null = null;
+    // Only set for the new-workspace path — used to close the whole workspace (not just the tab)
+    // if the agent fails to start, since herdr refuses to close a workspace's last remaining tab.
+    // Parsed independently from tabId out of the same response, so it is NOT guaranteed to
+    // succeed/fail together with it — the cleanup below must handle either one being null while
+    // the other is set.
+    let workspaceId: string | null = null;
     try {
-      const tabCreate = herdrTabCreateArgv(repo);
-      const out = await runHerdr(
-        tabCreate[0],
-        tabCreate.slice(1),
-        r.local_path,
-        {
-          captureStdout: true,
-          timeoutMs: 10_000,
-        },
-      );
+      const create = isNewWorkspace
+        ? herdrWorkspaceCreateArgv(repo)
+        : herdrTabCreateArgv(repo);
+      const out = await runHerdr(create[0], create.slice(1), r.local_path, {
+        captureStdout: true,
+        timeoutMs: 10_000,
+      });
       tabId = parseHerdrTabId(out);
       rootPaneId = parseHerdrRootPaneId(out);
-      // Zero exit with no parseable id means a tab was likely created but can't be closed on
-      // failure (no id) — every such launch leaks one empty tab. Log server-side (never to the
-      // client) so a herdr output-format drift is noticed instead of silently leaking tabs.
+      if (isNewWorkspace) workspaceId = parseHerdrWorkspaceId(out);
+      // Zero exit with no parseable id means a tab (or, for the new-workspace path, a workspace)
+      // was likely created but can't be closed on failure (no id) — every such launch leaks one
+      // empty tab or workspace. Log server-side (never to the client) so a herdr output-format
+      // drift is noticed instead of silently leaking them.
       if (!tabId)
         console.error(
-          "herdr tab create succeeded but its output had no usable tab id; falling back to split placement",
+          `herdr ${isNewWorkspace ? "workspace" : "tab"} create succeeded but its output had no usable tab id; falling back to split placement`,
+        );
+      else if (isNewWorkspace && !workspaceId)
+        console.error(
+          "herdr workspace create succeeded but its output had no usable workspace id; failure cleanup may be unable to remove it",
         );
     } catch {
       tabId = null;
+      rootPaneId = null;
+      workspaceId = null;
+    }
+    // A workspace whose seeded tab id failed to parse can never be targeted — buildHerdrLaunchPlan
+    // below only routes the agent into it via --tab — so it would otherwise sit orphaned forever
+    // regardless of whether the agent-start call that follows succeeds or fails. Close it now
+    // rather than relying on the failure-only cleanup further down.
+    if (isNewWorkspace && workspaceId && !tabId) {
+      const cleanup = herdrWorkspaceCloseArgv(repo, workspaceId);
+      runHerdrLaunch(cleanup[0], cleanup.slice(1), r.local_path).catch(
+        () => {},
+      );
+      workspaceId = null;
       rootPaneId = null;
     }
 
@@ -651,10 +682,19 @@ export const terminal = {
     try {
       await runHerdrLaunch(plan.argv[0], plan.argv.slice(1), plan.cwd);
     } catch (e) {
-      // Don't leave the just-created empty tab behind; fire-and-forget cleanup.
-      if (tabId) {
-        const tabClose = herdrTabCloseArgv(repo, tabId);
-        runHerdrLaunch(tabClose[0], tabClose.slice(1), r.local_path).catch(
+      // Don't leave the just-created empty tab (or workspace) behind; fire-and-forget cleanup.
+      // herdr refuses to close a workspace's last remaining tab, so whenever a workspace was
+      // created, close the whole workspace instead — even if tabId itself failed to parse (the
+      // two ids come from independent parses of the same response, see the workspaceId comment
+      // above, so either one can be set without the other).
+      if (workspaceId) {
+        const cleanup = herdrWorkspaceCloseArgv(repo, workspaceId);
+        runHerdrLaunch(cleanup[0], cleanup.slice(1), r.local_path).catch(
+          () => {},
+        );
+      } else if (tabId) {
+        const cleanup = herdrTabCloseArgv(repo, tabId);
+        runHerdrLaunch(cleanup[0], cleanup.slice(1), r.local_path).catch(
           () => {},
         );
       }
