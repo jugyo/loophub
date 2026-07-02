@@ -16,12 +16,12 @@ import { resolveMergeable } from "./mergeable.ts";
 import { pullWorktreeDirty } from "./pull-worktree.ts";
 import {
   resolveRuntimeResume,
-  resumeWorktreeIssue,
+  resolveWorktreeIdentity,
   SESSION_KIND_ISSUE_CREATE,
   sessionRuntime,
 } from "./resume.ts";
 import * as S from "./store.ts";
-import { worktreePath } from "./worktree-path.ts";
+import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
 
 export function repoJSON(r: S.Repo) {
   return {
@@ -328,7 +328,6 @@ async function pullStatusFields(repo: S.Repo, row: any) {
   const working = await pullWorktreeDirty({
     fullName: repo.full_name,
     headRef: p.head_ref,
-    linkedIssueNumber: linked?.number ?? null,
     prNumber: row.number,
     merged: !!p.merged,
     state: row.state,
@@ -338,12 +337,11 @@ async function pullStatusFields(repo: S.Repo, row: any) {
   // Pure path math (no fs); null only for a crafted repo name that can't form a safe path.
   let worktree_path: string | null = null;
   try {
-    const issue = resumeWorktreeIssue(
-      p.head_ref,
-      linked?.number ?? null,
-      row.number,
-    );
-    worktree_path = worktreePath(worktreeRoot(), repo.full_name, issue);
+    const identity = resolveWorktreeIdentity(p.head_ref, row.number);
+    worktree_path =
+      identity.scheme === "legacy-issue"
+        ? legacyWorktreePath(worktreeRoot(), repo.full_name, identity.number)
+        : worktreePath(worktreeRoot(), repo.full_name, identity.number);
   } catch {
     worktree_path = null;
   }

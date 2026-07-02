@@ -10,8 +10,13 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { branchExists, worktreeAdd, worktreeList } from "../core/git.ts";
-import { isClaudeSessionId } from "../core/resume.ts";
-import { worktreeBranch, worktreePath } from "../core/worktree-path.ts";
+import { isClaudeSessionId, type WorktreeScheme } from "../core/resume.ts";
+import {
+  legacyWorktreeBranch,
+  legacyWorktreePath,
+  worktreeBranch,
+  worktreePath,
+} from "../core/worktree-path.ts";
 
 // `lh dev` provisions an isolated git worktree (outside the sandbox) and launches an
 // interactive Claude session in it. Everything here is pure CLI-side policy — it imports
@@ -441,11 +446,16 @@ export function formatSpawnCommand(
 
 // ---- worktree provisioning ----
 //
-// Path and branch are deterministic from the issue number (no slug). Reuse is derived from
+// Path and branch are deterministic from the PR number (no slug, #463). Reuse is derived from
 // disk truth (`git worktree list` + naming convention) — there is no ledger table. The pure
 // path/branch helpers live in core/worktree-path.ts (shared with core/service.ts for
 // `lh resume`); re-exported here so existing cli/dev.ts callers and tests keep importing them.
-export { worktreeBranch, worktreePath };
+export {
+  legacyWorktreeBranch,
+  legacyWorktreePath,
+  worktreeBranch,
+  worktreePath,
+};
 
 // Resolve symlinks when the path exists; fall back to lexical normalization otherwise.
 function canonical(p: string): string {
@@ -458,37 +468,40 @@ function canonical(p: string): string {
 
 // ---- dev lock (single-host duplicate-launch guard) ----
 //
-// A `lh dev` worktree is deterministic per issue, so a second `lh dev <n>` on the same issue
-// reuses the *same* worktree — two live sessions editing one tree clobber each other. We guard
-// this with a lock file keyed by (repo, issue) under LOOPHUB_HOME recording the running `lh dev`
-// process: `lh dev` launches `claude` via a blocking `spawnSync`, so the `lh` process is alive
-// for exactly the session's lifetime, making its PID a precise liveness signal. A new launch that
-// finds a lock whose PID is still alive refuses (unless --force); one whose PID is gone (crash /
-// Ctrl-C) treats it as stale and reclaims it — so a finished/interrupted session never blocks a
-// relaunch. The lock is host-local by design (cross-host exclusion is out of scope) and lives
-// outside the worktree, so it never leaks into a PR. Pure decision logic is split from the
-// fs/PID side effects so it can be unit-tested.
+// A `lh dev` worktree is deterministic per PR (#463 — previously per issue), so a second
+// `lh dev` targeting the same PR reuses the *same* worktree — two live sessions editing one tree
+// clobber each other. We guard this with a lock file keyed by (repo, PR) under LOOPHUB_HOME
+// recording the running `lh dev` process: `lh dev` launches `claude` via a blocking `spawnSync`,
+// so the `lh` process is alive for exactly the session's lifetime, making its PID a precise
+// liveness signal. A new launch that finds a lock whose PID is still alive refuses (unless
+// --force); one whose PID is gone (crash / Ctrl-C) treats it as stale and reclaims it — so a
+// finished/interrupted session never blocks a relaunch. Keying by PR (not issue) means two PRs
+// linked to the same issue can now run `lh dev` concurrently without colliding; a second
+// concurrent `lh dev <issue>` racing to open the *first* PR for that issue is not separately
+// guarded — out of scope for #463. The lock is host-local by design (cross-host exclusion is out
+// of scope) and lives outside the worktree, so it never leaks into a PR. Pure decision logic is
+// split from the fs/PID side effects so it can be unit-tested.
 export interface DevLock {
   pid: number;
-  issue: number;
+  pr: number;
   worktree: string;
   sessionId: string;
   startedAt: string; // ISO8601
 }
 
-// Deterministic lock path: <home>/dev-locks/<owner>/<repo>/issue-<n>.json. Guards every
+// Deterministic lock path: <home>/dev-locks/<owner>/<repo>/pr-<n>.json. Guards every
 // fullName segment like worktreePath so a crafted repo name can't traverse out of <home>.
 export function devLockPath(
   home: string,
   fullName: string,
-  issue: number,
+  pr: number,
 ): string {
   for (const seg of fullName.split("/")) {
     if (!seg || seg === "." || seg === ".." || seg.includes("\\")) {
       throw new Error(`invalid repo name for dev-lock path: "${fullName}"`);
     }
   }
-  return join(home, "dev-locks", fullName, `issue-${issue}.json`);
+  return join(home, "dev-locks", fullName, `pr-${pr}.json`);
 }
 
 // Is a process alive? `kill(pid, 0)` sends no signal but throws ESRCH when the pid is gone;
@@ -547,7 +560,7 @@ export function readDevLock(path: string): DevLock | null {
     if (
       v &&
       Number.isInteger(v.pid) &&
-      typeof v.issue === "number" &&
+      typeof v.pr === "number" &&
       typeof v.worktree === "string" &&
       typeof v.sessionId === "string" &&
       typeof v.startedAt === "string"
@@ -573,8 +586,17 @@ export interface ProvisionInput {
   fullName: string; // owner/name
   defaultBranch: string;
   worktreeRoot: string;
-  issue: number;
-  headRef: string | null; // non-null => kind=pull; check out this existing branch
+  pr: number; // identity number for the worktree path/branch (PR number, or issue number under scheme "legacy-issue")
+  scheme?: WorktreeScheme; // naming convention to use for path/branch; default "pr" (#463)
+  headRef: string | null; // an explicit branch to check out; null => use the scheme's convention branch
+  // Allow fabricating the scheme's convention branch fresh off the default branch when headRef is
+  // given and matches that convention but the branch doesn't exist. True only for a PR `lh dev`
+  // itself just opened this run (its branch genuinely never existed yet, #463); false (default)
+  // for re-entering an already-established PR, where a missing convention branch means it was
+  // deleted out-of-band and silently recreating it under the same name would discard history
+  // without warning. Ignored when headRef is null — that path (a brand-new self-managed branch)
+  // has always been safe to create.
+  allowCreatingConventionBranch?: boolean;
 }
 
 // `.claude/` (settings.json / settings.local.json) is usually untracked / gitignored, so a
@@ -588,14 +610,23 @@ function syncClaudeDir(repoPath: string, worktreePath: string): void {
   cpSync(src, join(worktreePath, ".claude"), { recursive: true });
 }
 
-// Ensure a worktree for the issue exists and return its path. Idempotent: an existing
-// worktree at the deterministic path is reused as-is.
+// Ensure a worktree for the PR (or, under scheme "legacy-issue", the issue) exists and return its
+// path. Idempotent: an existing worktree at the deterministic path is reused as-is.
 export async function provisionWorktree(
   input: ProvisionInput,
 ): Promise<string> {
-  const { repoPath, fullName, defaultBranch, worktreeRoot, issue, headRef } =
+  const { repoPath, fullName, defaultBranch, worktreeRoot, pr, headRef } =
     input;
-  const path = worktreePath(worktreeRoot, fullName, issue);
+  const scheme = input.scheme ?? "pr";
+  const path =
+    scheme === "legacy-issue"
+      ? legacyWorktreePath(worktreeRoot, fullName, pr)
+      : worktreePath(worktreeRoot, fullName, pr);
+  const conventionBranch =
+    scheme === "legacy-issue" ? legacyWorktreeBranch(pr) : worktreeBranch(pr);
+  // The branch to check out: an explicit headRef wins (a PR target's actual head, which may or
+  // may not exist yet — see below); otherwise the scheme's own convention branch.
+  const branch = headRef ?? conventionBranch;
 
   // Reuse from disk truth: a registered worktree already at this path wins. `git worktree
   // list` canonicalizes paths (e.g. /var → /private/var on macOS), so compare real paths.
@@ -614,27 +645,34 @@ export async function provisionWorktree(
 
     mkdirSync(dirname(path), { recursive: true });
 
-    if (headRef) {
-      // PR (kind=pull): no new branch — check out the existing head branch.
-      await worktreeAdd(repoPath, path, headRef, defaultBranch, {
+    if (await branchExists(repoPath, branch)) {
+      // Branch already exists (a resumed PR, or a re-run after a prior partial provision) →
+      // re-attach without -b.
+      await worktreeAdd(repoPath, path, branch, defaultBranch, {
         existingBranch: true,
       });
+    } else if (headRef && headRef !== conventionBranch) {
+      // The caller expects a specific existing branch (e.g. a PR opened outside `lh dev`'s own
+      // naming convention) that isn't ours to fabricate — its absence is a real error, not
+      // something to paper over with a fresh branch under a different name.
+      throw new Error(`branch "${headRef}" does not exist`);
+    } else if (headRef && !input.allowCreatingConventionBranch) {
+      // headRef matches our own convention branch, but it's missing and the caller has not
+      // asserted this is a brand-new PR whose branch never existed — refuse rather than silently
+      // fabricate a fresh, empty branch under the same name, which would look like "continuing
+      // existing work" while actually discarding whatever history that branch held.
+      throw new Error(
+        `branch "${headRef}" does not exist (it should already exist for this PR)`,
+      );
     } else {
-      const branch = worktreeBranch(issue);
-      if (await branchExists(repoPath, branch)) {
-        // Branch survives but its worktree was removed → re-attach without -b.
-        await worktreeAdd(repoPath, path, branch, defaultBranch, {
-          existingBranch: true,
-        });
-      } else {
-        // New branch off the local default branch's current commit (no fetch).
-        if (!(await branchExists(repoPath, defaultBranch))) {
-          throw new Error(
-            `cannot resolve default branch "${defaultBranch}" (no commits?)`,
-          );
-        }
-        await worktreeAdd(repoPath, path, branch, defaultBranch);
+      // Our own convention branch, not created yet (e.g. `lh dev` just opened this PR, #463) —
+      // create it fresh off the local default branch's current commit (no fetch).
+      if (!(await branchExists(repoPath, defaultBranch))) {
+        throw new Error(
+          `cannot resolve default branch "${defaultBranch}" (no commits?)`,
+        );
       }
+      await worktreeAdd(repoPath, path, branch, defaultBranch);
     }
   }
 

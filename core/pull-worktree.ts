@@ -8,15 +8,14 @@ import { existsSync } from "node:fs";
 import { worktreeRoot } from "./config.ts";
 import type { GitResult } from "./git.ts";
 import { worktreeStatus } from "./git.ts";
-import { resumeWorktreeIssue } from "./resume.ts";
-import { worktreePath } from "./worktree-path.ts";
+import { resolveWorktreeIdentity } from "./resume.ts";
+import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
 import { porcelainIsDirty } from "./worktree-prune.ts";
 
 export interface PullWorktreeDirtyInput {
   fullName: string; // repo "owner/name"
-  headRef: string | null; // PR head branch (lh-dev convention: loophub/issue-<n>)
-  linkedIssueNumber: number | null; // linked issue, used when headRef is off-convention
-  prNumber: number; // last-resort worktree key
+  headRef: string | null; // PR head branch (lh-dev convention: loophub/pr-<n>, or legacy issue-<n>)
+  prNumber: number; // worktree key when headRef is off-convention (#463: PR-id based)
   merged: boolean;
   state: string; // "open" | "closed"
 }
@@ -38,14 +37,13 @@ export async function pullWorktreeDirty(
   if (input.merged || input.state !== "open") return false;
 
   const root = deps.worktreeRootDir ?? worktreeRoot();
-  const issue = resumeWorktreeIssue(
-    input.headRef,
-    input.linkedIssueNumber,
-    input.prNumber,
-  );
+  const identity = resolveWorktreeIdentity(input.headRef, input.prNumber);
   let path: string;
   try {
-    path = worktreePath(root, input.fullName, issue);
+    path =
+      identity.scheme === "legacy-issue"
+        ? legacyWorktreePath(root, input.fullName, identity.number)
+        : worktreePath(root, input.fullName, identity.number);
   } catch {
     return false; // crafted repo name → no worktree to inspect
   }

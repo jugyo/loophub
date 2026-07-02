@@ -2,14 +2,28 @@
 // git/DB side effects so the guard and the keep/remove/skip decision are unit-testable in
 // isolation; the CLI layer feeds it the resolved issue/PR state, dirtiness and cwd flag.
 
-// Branch convention created by `lh dev`: loophub/issue-<n> (see cli/dev.ts worktreeBranch).
-const LOOPHUB_BRANCH_RE = /^loophub\/issue-(\d+)$/;
+// Legacy (pre-#463) branch convention created by `lh dev`: loophub/issue-<n> (see
+// core/worktree-path.ts legacyWorktreeBranch). `lh dev` no longer creates these, but a worktree
+// provisioned before #463 may still be on disk, so prune must keep recognizing it.
+const LEGACY_LOOPHUB_BRANCH_RE = /^loophub\/issue-(\d+)$/;
 
-// Issue number for a LoopHub-managed branch, or null for anything off-convention (the primary
-// checkout's default branch, ad-hoc worktrees) which prune must ignore entirely.
+// Current (#463+) branch convention: loophub/pr-<n> (see core/worktree-path.ts worktreeBranch).
+const LOOPHUB_PR_BRANCH_RE = /^loophub\/pr-(\d+)$/;
+
+// Issue number for a legacy LoopHub-managed branch, or null for anything off that convention
+// (the primary checkout's default branch, ad-hoc worktrees, or the current pr-<n> convention).
 export function issueNumberFromBranch(branch: string | null): number | null {
   if (!branch) return null;
-  const m = LOOPHUB_BRANCH_RE.exec(branch);
+  const m = LEGACY_LOOPHUB_BRANCH_RE.exec(branch);
+  return m ? Number(m[1]) : null;
+}
+
+// PR number for a current-convention LoopHub-managed branch, or null for anything off that
+// convention (the primary checkout's default branch, ad-hoc worktrees, or a legacy issue-<n>
+// branch — see issueNumberFromBranch).
+export function prNumberFromBranch(branch: string | null): number | null {
+  if (!branch) return null;
+  const m = LOOPHUB_PR_BRANCH_RE.exec(branch);
   return m ? Number(m[1]) : null;
 }
 

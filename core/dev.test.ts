@@ -50,34 +50,47 @@ describe("dev.openPr", () => {
     const issue = svc.issues.create("me/proj", { title: "feature A" });
     expect(issue.number).toBe(1);
 
+    // No explicit head: the PR's branch defaults to the PR-id convention (#463), derived from
+    // the PR's own number once assigned — `lh dev` relies on this default in production.
     const first = await svc.dev.openPr(
       "me/proj",
-      { issue: issue.number, head: "loophub/issue-1", base: "main" },
+      { issue: issue.number, base: "main" },
       "sess-1",
     );
     expect(first.created).toBe(true);
 
     const pull = (await svc.pulls.get("me/proj", first.number)) as any;
-    expect(pull.head.ref).toBe("loophub/issue-1");
+    expect(pull.head.ref).toBe(`loophub/pr-${first.number}`);
     expect(pull.base.ref).toBe("main");
     // `lh dev` opens the PR at the start of work, so it begins as a draft (#413).
     expect(pull.draft).toBe(true);
     expect(pull.linked_issue?.number).toBe(issue.number);
     expect(pull.body).toContain(`Closes #${issue.number}`);
     // The deterministic `lh dev` worktree path is surfaced for the terminal PR region (#270):
-    // <worktreeRoot>/<owner>/<repo>/issue-<n>, derived from the head branch's issue number.
+    // <worktreeRoot>/<owner>/<repo>/pr-<n>, derived from the PR's own number (#463).
     expect(pull.worktree_path).toBe(
-      join(HOME, "worktrees", "me", "proj", "issue-1"),
+      join(HOME, "worktrees", "me", "proj", `pr-${first.number}`),
     );
 
     // Second call finds the existing open PR and does not create another.
     const second = await svc.dev.openPr(
       "me/proj",
-      { issue: issue.number, head: "loophub/issue-1", base: "main" },
+      { issue: issue.number, base: "main" },
       "sess-1",
     );
     expect(second.created).toBe(false);
     expect(second.number).toBe(first.number);
+  });
+
+  test("an explicit head overrides the PR-id convention", async () => {
+    const issue = svc.issues.create("me/proj", { title: "explicit head" });
+    const first = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number, head: "loophub/issue-custom", base: "main" },
+      "sess-1",
+    );
+    const pull = (await svc.pulls.get("me/proj", first.number)) as any;
+    expect(pull.head.ref).toBe("loophub/issue-custom");
   });
 
   test("attributes the session to the PR row and re-attaches on re-run", async () => {
@@ -110,6 +123,32 @@ describe("dev.openPr", () => {
     );
     expect(second.created).toBe(false);
     expect(prSession(second.number)).toBe("sess-b");
+  });
+
+  test("attributeSession: false skips re-pointing an existing PR's session (#463: deferred until the caller's dev lock is won)", async () => {
+    svc.sessions.register({ id: "sess-c", agent: "lh-dev", session: "sess-c" });
+    svc.sessions.register({ id: "sess-d", agent: "lh-dev", session: "sess-d" });
+    const issue = svc.issues.create("me/proj", { title: "feature deferred" });
+
+    const first = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number, base: "main" },
+      "sess-c",
+    );
+    expect(prSession(first.number)).toBe("sess-c");
+
+    // Re-running with attributeSession: false reuses the open PR but must NOT re-point its
+    // session — the caller (lh dev) hasn't won its PR-keyed dev lock yet at this point, and a
+    // losing concurrent launch must never be allowed to overwrite the eventual winner's pointer.
+    const second = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number, base: "main" },
+      "sess-d",
+      { attributeSession: false },
+    );
+    expect(second.created).toBe(false);
+    expect(second.number).toBe(first.number);
+    expect(prSession(second.number)).toBe("sess-c"); // unchanged
   });
 
   test("soft guard: a second open PR is refused while one is open, and freed by closing the first", async () => {
@@ -162,6 +201,36 @@ describe("dev.openPr", () => {
     );
     expect(pr2.created).toBe(true);
     expect(pr2.number).not.toBe(reuse.number);
+  });
+});
+
+describe("dev.attachSession", () => {
+  // #463: `lh dev <issue>` defers session attribution for a reused PR from openPr to a later
+  // attachSession call (after its dev lock is won). openPr's reuse branch used to emit
+  // pull_request.updated on re-attribution so the PR detail's related-sessions list (SSE-driven)
+  // refreshes; attachSession must emit the same event or that live-refresh silently regresses.
+  test("re-points the session and emits pull_request.updated", async () => {
+    svc.sessions.register({ id: "sess-e", agent: "lh-dev", session: "sess-e" });
+    const pr = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: svc.issues.create("me/proj", { title: "attach" }).number,
+        base: "main",
+      },
+      "sess-e",
+    );
+
+    svc.sessions.register({ id: "sess-f", agent: "lh-dev", session: "sess-f" });
+    svc.dev.attachSession("me/proj", pr.number, "sess-f");
+    expect(prSession(pr.number)).toBe("sess-f");
+
+    const events = svc.events.list({ repo: "me/proj", limit: 100 });
+    const updated = events.find(
+      (e) =>
+        e.type === "pull_request.updated" &&
+        (e.payload as any).number === pr.number,
+    );
+    expect(updated).toBeDefined();
   });
 });
 

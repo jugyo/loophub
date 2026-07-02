@@ -4,7 +4,7 @@ import {
   isClaudeSessionId,
   RUNTIME_CLAUDE_CODE,
   resolveRuntimeResume,
-  resumeWorktreeIssue,
+  resolveWorktreeIdentity,
   sessionRuntime,
 } from "./resume.ts";
 
@@ -50,20 +50,31 @@ test("decideResume: no worktree and no branch is unrestorable", () => {
   ).toEqual({ ok: false, reason: "unrestorable" });
 });
 
-// resumeWorktreeIssue: the head branch (lh-dev convention) is the most direct source, then the
-// linked issue, then the PR's own number.
-test("resumeWorktreeIssue: prefers the lh-dev branch convention", () => {
-  expect(resumeWorktreeIssue("loophub/issue-7", 3, 9)).toBe(7);
+// resolveWorktreeIdentity (#463): a legacy loophub/issue-<n> branch (worktree provisioned before
+// the PR-id convention) keeps resolving to its issue-<n> path; anything else — including
+// off-convention branches — resolves to the PR's own number, never a linked issue. Falling back to
+// a linked issue for an off-convention branch (the pre-#463 behavior) is exactly what let two PRs
+// on the same issue collide on one worktree, so that fallback is gone.
+test("resolveWorktreeIdentity: a legacy loophub/issue-<n> branch resolves to the legacy scheme", () => {
+  expect(resolveWorktreeIdentity("loophub/issue-7", 9)).toEqual({
+    scheme: "legacy-issue",
+    number: 7,
+  });
 });
 
-test("resumeWorktreeIssue: falls back to the linked issue for an off-convention branch", () => {
-  expect(resumeWorktreeIssue("feature-x", 3, 9)).toBe(3);
-  expect(resumeWorktreeIssue(null, 3, 9)).toBe(3);
+test("resolveWorktreeIdentity: an off-convention branch resolves to the PR's own number", () => {
+  expect(resolveWorktreeIdentity("feature-x", 9)).toEqual({
+    scheme: "pr",
+    number: 9,
+  });
+  expect(resolveWorktreeIdentity(null, 9)).toEqual({ scheme: "pr", number: 9 });
 });
 
-test("resumeWorktreeIssue: falls back to the PR number when nothing else resolves", () => {
-  expect(resumeWorktreeIssue("feature-x", null, 9)).toBe(9);
-  expect(resumeWorktreeIssue(null, null, 9)).toBe(9);
+test("resolveWorktreeIdentity: a current loophub/pr-<n> branch resolves to the PR scheme", () => {
+  expect(resolveWorktreeIdentity("loophub/pr-9", 9)).toEqual({
+    scheme: "pr",
+    number: 9,
+  });
 });
 
 // isClaudeSessionId: only a UUID is a resumable Claude session id; a flag-like or malformed value

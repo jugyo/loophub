@@ -31,6 +31,8 @@ import {
   formatLaunchPlan,
   formatLaunchSummary,
   formatSpawnCommand,
+  legacyWorktreeBranch,
+  legacyWorktreePath,
   parseDevTarget,
   pidAlive,
   provisionWorktree,
@@ -607,10 +609,10 @@ test("formatLaunchSummary strips terminal control sequences so a crafted value c
 
 // ---- worktree naming (pure) ----
 
-test("worktree path and branch are deterministic from the issue number", () => {
-  expect(worktreeBranch(42)).toBe("loophub/issue-42");
+test("worktree path and branch are deterministic from the PR number (#463)", () => {
+  expect(worktreeBranch(42)).toBe("loophub/pr-42");
   expect(worktreePath("/root", "me/loophub", 42)).toBe(
-    "/root/me/loophub/issue-42",
+    "/root/me/loophub/pr-42",
   );
 });
 
@@ -621,6 +623,13 @@ test("worktreePath rejects repo names that would traverse out of the root", () =
   expect(() => worktreePath("/root", "..", 1)).toThrow(/invalid repo name/);
   expect(() => worktreePath("/root", "me//proj", 1)).toThrow(
     /invalid repo name/,
+  );
+});
+
+test("legacy worktree path and branch are deterministic from the issue number (pre-#463)", () => {
+  expect(legacyWorktreeBranch(42)).toBe("loophub/issue-42");
+  expect(legacyWorktreePath("/root", "me/loophub", 42)).toBe(
+    "/root/me/loophub/issue-42",
   );
 });
 
@@ -644,27 +653,31 @@ function tmpRoot(): string {
 function provision(
   repo: string,
   root: string,
-  issue: number,
+  pr: number,
   headRef: string | null = null,
+  scheme?: "pr" | "legacy-issue",
+  allowCreatingConventionBranch?: boolean,
 ) {
   return provisionWorktree({
     repoPath: repo,
     fullName: "me/proj",
     defaultBranch: "main",
     worktreeRoot: root,
-    issue,
+    pr,
+    scheme,
     headRef,
+    allowCreatingConventionBranch,
   });
 }
 
-test("creates a new loophub/issue-<n> branch worktree off the default branch", async () => {
+test("creates a new loophub/pr-<n> branch worktree off the default branch (#463)", async () => {
   const repo = await makeRepo();
   const root = tmpRoot();
   const path = await provision(repo, root, 7);
-  expect(path).toBe(join(root, "me/proj", "issue-7"));
+  expect(path).toBe(join(root, "me/proj", "pr-7"));
   expect(existsSync(join(path, "f.txt"))).toBe(true);
-  const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("issue-7"));
-  expect(wt?.branch).toBe("loophub/issue-7");
+  const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("pr-7"));
+  expect(wt?.branch).toBe("loophub/pr-7");
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
@@ -676,7 +689,7 @@ test("reuses an existing worktree at the deterministic path", async () => {
   const b = await provision(repo, root, 7);
   expect(b).toBe(a);
   expect(
-    (await worktreeList(repo)).filter((w) => w.path.endsWith("issue-7")),
+    (await worktreeList(repo)).filter((w) => w.path.endsWith("pr-7")),
   ).toHaveLength(1);
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
@@ -688,24 +701,80 @@ test("re-attaches an existing branch whose worktree was removed (disk-truth self
   const path = await provision(repo, root, 7);
   await git(repo, ["worktree", "remove", "--force", path]);
   expect(existsSync(path)).toBe(false);
-  expect(await branchExists(repo, "loophub/issue-7")).toBe(true);
+  expect(await branchExists(repo, "loophub/pr-7")).toBe(true);
   const again = await provision(repo, root, 7);
   expect(again).toBe(path);
   expect(
-    (await worktreeList(repo)).some((w) => w.branch === "loophub/issue-7"),
+    (await worktreeList(repo)).some((w) => w.branch === "loophub/pr-7"),
   ).toBe(true);
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
 
-test("checks out an existing head branch for a PR (kind=pull) without creating a branch", async () => {
+test("checks out an existing off-convention head branch for a PR without creating a branch", async () => {
   const repo = await makeRepo();
   await git(repo, ["branch", "feature-x"]);
   const root = tmpRoot();
   const _path = await provision(repo, root, 9, "feature-x");
-  const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("issue-9"));
+  const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("pr-9"));
   expect(wt?.branch).toBe("feature-x");
-  expect(await branchExists(repo, "loophub/issue-9")).toBe(false);
+  expect(await branchExists(repo, "loophub/pr-9")).toBe(false);
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("creates the convention branch fresh when allowCreatingConventionBranch is set and it doesn't exist yet (#463: PR opened before its worktree)", async () => {
+  const repo = await makeRepo();
+  const root = tmpRoot();
+  // dev.openPr records head_ref = loophub/pr-<n> before the branch/worktree are provisioned;
+  // `lh dev` then passes that same headRef in here (with allowCreatingConventionBranch, since
+  // this is an issue target's own just-resolved PR) — it must be created, not rejected.
+  const path = await provision(
+    repo,
+    root,
+    11,
+    "loophub/pr-11",
+    undefined,
+    true,
+  );
+  expect(path).toBe(join(root, "me/proj", "pr-11"));
+  const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("pr-11"));
+  expect(wt?.branch).toBe("loophub/pr-11");
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("errors when an explicit off-convention headRef does not exist (nothing to fabricate)", async () => {
+  const repo = await makeRepo();
+  const root = tmpRoot();
+  await expect(
+    provision(repo, root, 9, "feature-does-not-exist"),
+  ).rejects.toThrow(/branch "feature-does-not-exist" does not exist/);
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("refuses to fabricate the convention branch when allowCreatingConventionBranch is not set (#463: a direct PR target's branch must not be silently recreated)", async () => {
+  const repo = await makeRepo();
+  const root = tmpRoot();
+  // headRef matches the PR-id convention but the branch was never created (or was deleted
+  // out-of-band) and the caller has not asserted this is a brand-new PR's own branch — a direct
+  // `lh dev <pr>` re-entering an established PR must refuse rather than silently start on a
+  // fresh, empty branch under the same name.
+  await expect(provision(repo, root, 11, "loophub/pr-11")).rejects.toThrow(
+    /branch "loophub\/pr-11" does not exist/,
+  );
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("provisions at the legacy issue-<n> path/branch under scheme legacy-issue", async () => {
+  const repo = await makeRepo();
+  const root = tmpRoot();
+  const path = await provision(repo, root, 7, null, "legacy-issue");
+  expect(path).toBe(join(root, "me/proj", "issue-7"));
+  const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("issue-7"));
+  expect(wt?.branch).toBe("loophub/issue-7");
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
@@ -798,7 +867,7 @@ test("worktree commit writes are all covered by the minimal allow-list, which ex
 
   const { json } = buildManagedSettings({
     repo: "me/proj",
-    git: { gitDir, worktreeGitDir, branch: "loophub/issue-28" },
+    git: { gitDir, worktreeGitDir, branch: "loophub/pr-28" },
   });
   const fs = JSON.parse(json).sandbox.filesystem;
   const allow: string[] = fs.allowWrite;
@@ -834,7 +903,7 @@ test("worktree commit writes are all covered by the minimal allow-list, which ex
 test("refuses to overwrite a path that exists but is not a git worktree", async () => {
   const repo = await makeRepo();
   const root = tmpRoot();
-  const occupied = join(root, "me/proj", "issue-7");
+  const occupied = join(root, "me/proj", "pr-7");
   mkdirSync(occupied, { recursive: true });
   writeFileSync(join(occupied, "stray.txt"), "x");
   await expect(provision(repo, root, 7)).rejects.toThrow(/not a git worktree/);
@@ -912,9 +981,9 @@ test("positional repo conflicting with --repo is a hard error (before DB access)
 
 // ---- dev lock (pure / fs) ----
 
-test("devLockPath is deterministic per (home, repo, issue)", () => {
+test("devLockPath is deterministic per (home, repo, PR)", () => {
   expect(devLockPath("/home", "me/proj", 42)).toBe(
-    join("/home", "dev-locks", "me", "proj", "issue-42.json"),
+    join("/home", "dev-locks", "me", "proj", "pr-42.json"),
   );
 });
 
@@ -939,7 +1008,7 @@ test("pidAlive reports the current process as alive and a free pid as dead", () 
 
 const sampleLock = (over: Partial<Record<string, unknown>> = {}) => ({
   pid: 999,
-  issue: 1,
+  pr: 1,
   worktree: "/wt",
   sessionId: "sid",
   startedAt: "2026-06-25T00:00:00.000Z",

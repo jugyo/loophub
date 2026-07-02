@@ -152,5 +152,34 @@ test("remove refuses when the path is no longer the expected worktree", async ()
     issue: 7,
   });
   expect(res.removed).toBe(false);
-  expect(res.reason).toContain("no longer a loophub/issue-7 worktree");
+  expect(res.reason).toContain("no longer a loophub-managed worktree for #7");
+});
+
+// plan()/remove() also recognize the current loophub/pr-<n> convention (#463), not just the
+// legacy loophub/issue-<n> one exercised above.
+test("plan and remove recognize the current loophub/pr-<n> convention", async () => {
+  const repo = await makeRepo("me/prconv");
+  const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any; // #1
+  const pr = S.createIssue(repo.id, "pull", "impl", "", "me") as any; // #2
+  S.createPull(pr.id, "loophub/pr-2", "main", null, issue.id);
+  S.setMerged(pr.id, "deadbeef", "squash");
+
+  const wtPath = join(repo.path, "..", `wt-prconv-${repo.id}-2`);
+  await worktreeAdd(repo.path, wtPath, "loophub/pr-2", "main");
+
+  const entries = await svc.worktrees.plan({
+    repo: "me/prconv",
+    cwd: "/nowhere",
+  });
+  const e2 = entries.find((e) => e.issue === 2);
+  expect(e2?.action).toBe("remove");
+  expect(e2?.reason).toBe("PR merged");
+
+  const res = await svc.worktrees.remove({
+    repoPath: repo.path,
+    path: wtPath,
+    issue: 2,
+  });
+  expect(res.removed).toBe(true);
+  expect(existsSync(wtPath)).toBe(false);
 });

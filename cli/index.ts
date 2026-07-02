@@ -11,6 +11,7 @@ import {
   LH_DEV_SESSION_AGENT,
   LH_ISSUE_CREATE_SESSION_AGENT,
   RUNTIME_CLAUDE_CODE,
+  resolveWorktreeIdentity,
   SESSION_KIND_ISSUE_CREATE,
 } from "../core/resume.ts";
 import {
@@ -24,13 +25,13 @@ import {
   formatLaunchPlan,
   formatLaunchSummary,
   formatSpawnCommand,
+  legacyWorktreePath,
   parseDevTarget,
   pidAlive,
   provisionWorktree,
   removeDevLock,
   resolveAllowedDomains,
   validateRepo,
-  worktreeBranch,
   worktreePath,
 } from "./dev.ts";
 
@@ -442,21 +443,91 @@ async function main() {
       process.exit(proc.status ?? 0);
     }
 
-    // Duplicate-launch guard: atomically claim this issue's worktree before any side effect
-    // (provisioning). The worktree path/branch are deterministic from the issue number, so a
-    // second concurrent `lh dev <n>` would share the same tree and clobber edits. acquireDevLock
+    // Make the work visible: register this session before anything that links to it (session_links
+    // has a FK on agent_sessions, so dev.openPr below — which links the session to the PR it opens
+    // — must run after this). The runtime session id is the Claude session we are about to spawn
+    // (unique per run, so re-launching the same issue never collides on the (agent, session) pair).
+    await run(() =>
+      s.sessions.register({
+        id: sessionId,
+        agent: LH_DEV_SESSION_AGENT,
+        session: sessionId,
+        // The session we are about to spawn is a Claude Code session; record the runtime so
+        // `lh resume` picks `claude --resume` by runtime rather than inferring it from the agent.
+        runtime: RUNTIME_CLAUDE_CODE,
+        // This is an implementation (dev) session; record its kind (#298) so it surfaces in the
+        // PR's related-sessions list as a dev session. (setPullSession also stamps 'dev' when it
+        // attributes the session to the PR — this just sets it at the registration point too.)
+        kind: "dev",
+      }),
+    );
+
+    // Resolve the PR this session is developing *before* provisioning the worktree (#463): the
+    // worktree path/branch are now PR-id-based, so the PR must exist first. A PR target already
+    // has one; an issue target opens (or reuses) its draft PR here so the agent has a place to
+    // write its plan and dev notes — that call is NOT best-effort: without a PR number there is
+    // nothing to provision a worktree for, so a failure here aborts the launch. The session row
+    // registered above is left in place on that abort (a harmless orphan — it is never linked to
+    // a PR and a fresh randomUUID means the next launch can't collide with it).
+    //
+    // Attributing *this* session to the PR (session_links) is deferred until after the dev lock
+    // is claimed below (see the attachSession call there): the lock is keyed by PR number, which
+    // isn't known until this resolves, so a losing concurrent `lh dev` racing on the same
+    // already-open PR must not be allowed to re-point its session pointer before the lock
+    // differentiates winner from loser — otherwise the winner's live session could be silently
+    // orphaned from session_links and `lh resume` would resolve the loser's dead one instead.
+    let prNumber: number;
+    let prJustOpened: { created: boolean } | null = null;
+    if (item.pull_request) {
+      prNumber = item.number;
+    } else {
+      // Note: the dev lock below is keyed by PR number, which is not known until openPr resolves
+      // it — so, unlike before #463, two concurrent `lh dev <same-issue>` runs racing to reach
+      // this call are not serialized by the lock (dev.openPr's own "one open PR per issue" guard
+      // is a soft, non-transactional check-then-act — see core/service.ts pulls.create). Adding
+      // issue-level concurrency control for this is explicitly out of scope for #463 (see the
+      // issue's "Out of scope" section); a second concurrent launch on a brand-new issue can in
+      // the worst case create two draft PRs for it.
+      try {
+        const res = await s.dev.openPr(
+          repo,
+          { issue: n, base: r.default_branch },
+          sessionId,
+          { attributeSession: false },
+        );
+        prNumber = res.number;
+        prJustOpened = res;
+      } catch (e: any) {
+        fail(`could not open draft PR: ${e.message}`);
+      }
+    }
+    const headRef: string = (await run(() => s.pulls.get(repo, prNumber))).head
+      .ref;
+
+    // The naming scheme for this PR's worktree: the current PR-id convention (#463), or — for a
+    // PR whose worktree was already provisioned before this change — the legacy issue-id
+    // convention, still recognized so it is not orphaned.
+    const identity = resolveWorktreeIdentity(headRef, prNumber);
+
+    // Duplicate-launch guard: atomically claim this PR's worktree before any side effect
+    // (provisioning). The worktree path/branch are deterministic from the PR (#463 — previously
+    // the issue), so a second concurrent `lh dev` targeting the same PR would share the same tree
+    // and clobber edits; two PRs linked to the same issue no longer collide. acquireDevLock
     // exclusively creates the lock recording this process's pid; if a *live* `lh dev` already
     // holds it we refuse (unless --force). A stale lock (the previous session crashed / was
     // interrupted, so its pid is gone) is reclaimed, so a finished session never blocks a
     // relaunch. Host-local by design (cross-host exclusion is out of scope). The exit handler is
     // registered immediately so the lock is released even if provisioning below fails.
-    const lockPath = devLockPath(configDir(), r.full_name, n);
-    const wtPath = worktreePath(worktreeRoot(), r.full_name, n);
+    const lockPath = devLockPath(configDir(), r.full_name, prNumber);
+    const wtPath =
+      identity.scheme === "legacy-issue"
+        ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
+        : worktreePath(worktreeRoot(), r.full_name, identity.number);
     const claim = acquireDevLock(
       lockPath,
       {
         pid: process.pid,
-        issue: n,
+        pr: prNumber,
         worktree: wtPath,
         sessionId,
         startedAt: new Date().toISOString(),
@@ -467,7 +538,7 @@ async function main() {
     if (!claim.ok) {
       const l = claim.held;
       fail(
-        `issue #${n} is already being worked on by another \`lh dev\` session ` +
+        `PR #${prNumber} is already being worked on by another \`lh dev\` session ` +
           `(pid ${l.pid}, since ${l.startedAt}).\n` +
           `  worktree: ${wtPath}\n` +
           `Launching a second session would share this worktree and clobber edits. ` +
@@ -476,9 +547,16 @@ async function main() {
     }
     process.on("exit", () => removeDevLock(lockPath));
 
-    const headRef = item.pull_request
-      ? (await run(() => s.pulls.get(repo, n))).head.ref
-      : null;
+    // Now that this launch has won the dev lock, it is safe to point the PR's session pointer
+    // (session_links) at this session — no other concurrent `lh dev` can still be racing to do
+    // the same for this PR (see the note above). Idempotent and best-effort: a failure only
+    // warns, since the PR itself is already resolved and the worktree can still be provisioned.
+    try {
+      await s.dev.attachSession(repo, prNumber, sessionId);
+    } catch (e: any) {
+      console.error(`warning: could not attach session to PR: ${e.message}`);
+    }
+
     let worktree: string;
     try {
       worktree = await provisionWorktree({
@@ -486,8 +564,18 @@ async function main() {
         fullName: r.full_name,
         defaultBranch: r.default_branch,
         worktreeRoot: worktreeRoot(),
-        issue: n,
+        pr: identity.number,
+        scheme: identity.scheme,
         headRef,
+        // Only a PR `dev.openPr` genuinely just created THIS run may have its convention branch
+        // fabricated fresh if missing — that branch is guaranteed to have never existed in git
+        // yet. Gating on "issue target" alone is not enough: re-running `lh dev <issue>` against
+        // an already-existing (reused, not just-created) PR reaches this same code path, and its
+        // convention branch missing there would mean it was deleted out-of-band — silently
+        // fabricating a fresh one would discard whatever history it held, same risk as a direct
+        // PR target. `created` is only true for a brand-new PR, so this correctly refuses in both
+        // the direct-PR-target and reused-PR cases.
+        allowCreatingConventionBranch: prJustOpened?.created === true,
       });
     } catch (e: any) {
       fail(e.message);
@@ -519,6 +607,16 @@ async function main() {
     }
     console.error();
 
+    // Report the PR resolved above, now that the launch header (verbose issue dump or the plain
+    // `#n title` line) has printed.
+    if (!item.pull_request) {
+      console.error(
+        prJustOpened?.created
+          ? `draft PR #${prNumber} opened`
+          : `using existing PR #${prNumber}`,
+      );
+    }
+
     // Build the sandbox managed-settings only when --sandbox is enabled.
     // When sandbox is disabled (default), managed will be undefined.
     let managed: string | undefined;
@@ -528,76 +626,19 @@ async function main() {
           gitCommonDir(worktree),
           gitDirOf(worktree),
         ]);
-        const branch = headRef ?? worktreeBranch(n);
         ({ json: managed } = buildManagedSettings({
           repo,
           allow: flags.allow,
-          git: { gitDir, worktreeGitDir, branch },
+          git: { gitDir, worktreeGitDir, branch: headRef },
         }));
       } catch (e: any) {
         fail(e.message);
       }
     }
-    // Make the work visible: register this session before spawning. The runtime session id is the
-    // Claude session we are about to spawn (unique per run, so re-launching the same issue never
-    // collides on the (agent, session) pair).
-    await run(() =>
-      s.sessions.register({
-        id: sessionId,
-        agent: LH_DEV_SESSION_AGENT,
-        session: sessionId,
-        // The session we are about to spawn is a Claude Code session; record the runtime so
-        // `lh resume` picks `claude --resume` by runtime rather than inferring it from the agent.
-        runtime: RUNTIME_CLAUDE_CODE,
-        // This is an implementation (dev) session; record its kind (#298) so it surfaces in the
-        // PR's related-sessions list as a dev session. (setPullSession also stamps 'dev' when it
-        // attributes the session to the PR — this just sets it at the registration point too.)
-        kind: "dev",
-      }),
-    );
-
-    // Attribute this session to the work's PR (via session_links, #316) so `lh resume`/retro can
-    // later re-enter it (#186 — replaces the old issue-assignee path). For an issue target, open (or reuse)
-    // the draft PR so the agent has a place to write its plan and dev notes; for a PR target, point
-    // the existing PR at this session. Best-effort: a failure warns rather than blocks the dev loop.
-    // Capture the resolved PR number so the session name below can be built from it (#336): for a PR
-    // target it is the target itself (`item.number`); for an issue target it is the PR openPr resolves.
-    let prNumber: number | undefined = item.pull_request
-      ? item.number
-      : undefined;
-    if (!item.pull_request) {
-      try {
-        const res = await s.dev.openPr(
-          repo,
-          {
-            issue: n,
-            head: worktreeBranch(n),
-            base: r.default_branch,
-          },
-          sessionId,
-        );
-        prNumber = res.number;
-        console.error(
-          res.created
-            ? `draft PR #${res.number} opened`
-            : `using existing PR #${res.number}`,
-        );
-      } catch (e: any) {
-        console.error(`warning: could not open draft PR: ${e.message}`);
-      }
-    } else {
-      try {
-        await s.dev.attachSession(repo, n, sessionId);
-      } catch (e: any) {
-        console.error(`warning: could not attach session to PR: ${e.message}`);
-      }
-    }
 
     // Set the session display name to the PR being worked on so the session picker / terminal title
-    // shows the linked PR (#336). The name is built only after openPr/attachSession above so the PR
-    // number is known; if the PR couldn't be resolved (e.g. openPr failed) we fall back to the issue
-    // number so `lh dev` still launches. buildClaudeArgs strips control chars from the title before argv.
-    const sessionName = `#${prNumber ?? item.number} ${item.title}`;
+    // shows the linked PR (#336). buildClaudeArgs strips control chars from the title before argv.
+    const sessionName = `#${prNumber} ${item.title}`;
     const claudeArgs = buildClaudeArgs({
       sessionId,
       managedSettings: managed,
@@ -626,7 +667,7 @@ async function main() {
         formatLaunchSummary({
           repo,
           worktree,
-          branch: headRef ?? worktreeBranch(n),
+          branch: headRef,
           sessionId,
         }),
       );
@@ -749,6 +790,9 @@ async function main() {
 
     // Idempotent worktree restore: reuse the existing worktree, or re-attach it from the surviving
     // branch (same provisionWorktree path `lh dev` uses for a removed-but-branch-present worktree).
+    // allowCreatingConventionBranch is left at its default (false): decideResume already refused
+    // "unrestorable" (worktree and branch both gone) above, so provisionWorktree never needs to
+    // fabricate a branch here — it only ever reattaches an existing worktree or branch.
     let worktree: string;
     try {
       worktree = await provisionWorktree({
@@ -756,7 +800,8 @@ async function main() {
         fullName: r.full_name,
         defaultBranch: r.default_branch,
         worktreeRoot: worktreeRoot(),
-        issue: resolution.issue,
+        pr: resolution.worktreeNumber,
+        scheme: resolution.worktreeScheme,
         headRef: resolution.branch,
       });
     } catch (e: any) {

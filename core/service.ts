@@ -40,7 +40,7 @@ import {
   decideResume,
   RUNTIME_CLAUDE_CODE,
   resolveRuntimeResume,
-  resumeWorktreeIssue,
+  resolveWorktreeIdentity,
   sessionRuntime,
 } from "./resume.ts";
 import {
@@ -73,11 +73,16 @@ import {
   type TerminalLaunchBackend,
 } from "./terminal-launch.ts";
 import { sweepPullUpdates } from "./watcher.ts";
-import { worktreePath } from "./worktree-path.ts";
+import {
+  legacyWorktreePath,
+  worktreeBranch,
+  worktreePath,
+} from "./worktree-path.ts";
 import {
   classifyWorktree,
   issueNumberFromBranch,
   porcelainIsDirty,
+  prNumberFromBranch,
 } from "./worktree-prune.ts";
 
 export const MAX_EVENTS_PER_PAGE = 100;
@@ -1066,7 +1071,11 @@ export const pulls = {
     input: {
       title: string;
       body?: string;
-      head: string;
+      // Either a fixed branch name, or a callback deriving one from the PR's own number once
+      // assigned (e.g. dev.openPr's PR-id worktree branch convention, #463) — exactly one is
+      // required.
+      head?: string;
+      headFromNumber?: (prNumber: number) => string;
       base: string;
       issue?: number;
       draft?: boolean;
@@ -1075,8 +1084,8 @@ export const pulls = {
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
-    const { title, body = "", head, base, issue, draft = false } = input;
-    if (!title || !head || !base)
+    const { title, body = "", base, issue, draft = false } = input;
+    if (!title || (!input.head && !input.headFromNumber) || !base)
       throw new ServiceError(422, "title, head, base are required");
     const actor = actorFor(sessionId);
     // Soft "one open PR per linked issue" guard: refuse a second open PR for an issue that already
@@ -1084,10 +1093,14 @@ export const pulls = {
     // can be relaxed later to allow multiple proposal PRs per issue.
     const linkedIssueId = resolveLinkedIssueId(r, body, issue);
     const linkedNumber = issue ?? parseClosingIssueNumber(body);
-    // Resolve the head SHA before writing any row, so a bad head ref fails without leaving an orphan
-    // kind='pull' issue row (no pulls row to match it).
-    const headSha = await revParse(r.local_path, head);
+    // Create the issue row first so a PR-number-derived head (headFromNumber) can be computed
+    // from its assigned number; a plain string head is unaffected by this reordering. The head
+    // branch itself need not exist yet in git — revParse resolves a null sha for a missing ref
+    // rather than throwing, which is what lets `lh dev` open the PR before the branch/worktree
+    // exist (#463).
     const row = S.createIssue(r.id, "pull", title, body, actor) as any;
+    const head = input.head ?? input.headFromNumber!(row.number);
+    const headSha = await revParse(r.local_path, head);
     S.createPull(
       row.id,
       head,
@@ -1498,12 +1511,25 @@ export const dev = {
   // if the issue already has an open (unmerged) linked PR, return it untouched. The PR can
   // be opened with 0 commits — LoopHub does not require head to be ahead of base (the diff
   // is just empty until the agent commits). The body seeds a plan placeholder the agent
-  // overwrites; `Closes #<n>` links it both ways.
+  // overwrites; `Closes #<n>` links it both ways. `lh dev` calls this *before* provisioning the
+  // worktree (#463) so the PR number is known first; head defaults to the PR-id branch
+  // convention (worktreeBranch), derived from the PR's own number once assigned — pass an
+  // explicit `head` only to override it (e.g. tests simulating a specific branch).
+  //
+  // `opts.attributeSession` (default true) gates re-pointing an *existing, reused* PR's session
+  // pointer (setPullSession) at `sessionId`. `lh dev` needs the PR number before it can claim its
+  // (PR-keyed, #463) dev lock, so it calls this before the lock exists — pass `false` there to
+  // defer the write until after the lock is won, so a losing concurrent `lh dev` racing on the
+  // same already-open PR can never overwrite the winner's session pointer. A brand-new PR
+  // (created below) is unaffected by this flag: two racing creates for the same issue make two
+  // distinct PR rows, each correctly attributed to its own creating session.
   async openPr(
     name: string,
-    input: { issue: number; head: string; base: string; body?: string },
+    input: { issue: number; head?: string; base: string; body?: string },
     sessionId?: string | null,
+    opts: { attributeSession?: boolean } = {},
   ): Promise<{ created: boolean; number: number }> {
+    const attributeSession = opts.attributeSession ?? true;
     const r = repoOr404(name);
     ensureWritable(r);
     const issueRow = issueOr404(r, input.issue, "issue");
@@ -1512,7 +1538,7 @@ export const dev = {
       // Re-running `lh dev <issue>` reuses the open PR but must re-point it at the session it is
       // about to spawn (latest-writer-wins), so `lh resume`/retro resolve the current session rather
       // than a stale one. (The old model re-assigned the issue on every run.)
-      if (sessionId) {
+      if (sessionId && attributeSession) {
         S.setPullSession(existing.id, sessionId);
         // setPullSession also appends the session to session_links (#298) — the PR's related-sessions
         // list and the prior session's now-"superseded" verdict change here. Emit a PR-scoped event so
@@ -1532,6 +1558,7 @@ export const dev = {
         title: issueRow.title,
         body,
         head: input.head,
+        headFromNumber: input.head ? undefined : worktreeBranch,
         base: input.base,
         issue: input.issue,
         draft: true,
@@ -1542,8 +1569,12 @@ export const dev = {
   },
 
   // Attribute a dev session to an existing PR (via session_links, #316) so `lh resume`/retro can
-  // later find it. Used by `lh dev <pr>` — the direct-PR path that does not open a new PR. Latest
-  // linked dev session wins.
+  // later find it. Used by `lh dev <pr>` (the direct-PR path that does not open a new PR) and, as
+  // of #463, also by `lh dev <issue>` to attribute the session to a *reused* open PR — deferred
+  // here until after the caller's PR-keyed dev lock is won (see dev.openPr's `attributeSession`
+  // option), so a losing concurrent launch can never overwrite the winner's pointer. Emits the
+  // same `pull_request.updated` event openPr's reuse branch does, so the PR detail's related-
+  // sessions list (SSE-driven) refreshes here too. Latest linked dev session wins.
   attachSession(
     name: string,
     number: number,
@@ -1552,7 +1583,12 @@ export const dev = {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
-    if (sessionId) S.setPullSession(row.id, sessionId);
+    if (sessionId) {
+      S.setPullSession(row.id, sessionId);
+      S.emitEvent(r.id, "pull_request.updated", actorFor(sessionId), {
+        number: row.number,
+      });
+    }
     return { number: row.number };
   },
 
@@ -1812,7 +1848,8 @@ function defaultDraftPrBody(issue: number): string {
 export interface ResumeOk {
   ok: true;
   pr: number;
-  issue: number; // issue number identifying the worktree path/branch
+  worktreeScheme: "pr" | "legacy-issue"; // naming convention for the worktree path/branch (#463)
+  worktreeNumber: number; // PR number ("pr" scheme) or issue number ("legacy-issue" scheme)
   branch: string; // PR head ref to check out
   runtime: string; // session runtime that selects the resume command (e.g. "claude-code")
   sessionId: string; // runtime session id for the resume command (e.g. `claude --resume <id>`)
@@ -1842,11 +1879,6 @@ export const resume = {
     const prRow = issueOr404(r, prNumber, "pull");
     const pull = S.getPull(prRow.id);
     const headRef: string = pull.head_ref;
-    const linkedIssue =
-      pull.linked_issue_id != null
-        ? S.getIssueById(pull.linked_issue_id)
-        : null;
-    const linkedIssueNumber: number | null = linkedIssue?.number ?? null;
 
     // The PR's resume anchor is the latest kind='dev' session linked to it in session_links (#316),
     // recorded when `lh dev` opened the PR (the `lh dev <issue>` flow) or re-entered it directly
@@ -1878,12 +1910,11 @@ export const resume = {
       ? runtimeResume.sessionId
       : null;
 
-    const issueNumber = resumeWorktreeIssue(
-      headRef,
-      linkedIssueNumber,
-      prNumber,
-    );
-    const path = worktreePath(worktreeRoot(), r.full_name, issueNumber);
+    const identity = resolveWorktreeIdentity(headRef, prNumber);
+    const path =
+      identity.scheme === "legacy-issue"
+        ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
+        : worktreePath(worktreeRoot(), r.full_name, identity.number);
     const worktrees = await worktreeList(r.local_path);
     const worktreeExists = worktrees.some(
       (w) => canonicalPath(w.path) === canonicalPath(path),
@@ -1906,7 +1937,8 @@ export const resume = {
     return {
       ok: true,
       pr: prNumber,
-      issue: issueNumber,
+      worktreeScheme: identity.scheme,
+      worktreeNumber: identity.number,
       branch: headRef,
       // decision.ok ⇒ claudeSessionId is non-null ⇒ runtimeResume.ok, so its runtime is set.
       runtime: runtimeResume.ok ? runtimeResume.runtime : RUNTIME_CLAUDE_CODE,
@@ -2245,16 +2277,26 @@ export const sync = {
 };
 
 // ===== worktree housekeeping =====
-// Batch GC of stale `lh dev` worktrees (branch `loophub/issue-<n>`). The orchestration —
-// scanning git worktrees, resolving each one's issue/PR state, and the destructive removal —
-// lives here so the CLI stays a thin presenter and the logic is unit-testable. Pure decisioning
-// (clean-tree guard, keep/remove/skip classification) stays in worktree-prune.ts.
+// Batch GC of stale `lh dev` worktrees: the current `loophub/pr-<n>` convention (#463) and the
+// legacy pre-#463 `loophub/issue-<n>` convention (still recognized so a worktree provisioned
+// before the migration is not orphaned). The orchestration — scanning git worktrees, resolving
+// each one's issue/PR state, and the destructive removal — lives here so the CLI stays a thin
+// presenter and the logic is unit-testable. Pure decisioning (clean-tree guard, keep/remove/skip
+// classification) stays in worktree-prune.ts.
+
+// The number encoded in a LoopHub-managed branch, current or legacy convention — used purely as
+// a lookup key into `issues` (which numbers issues and pulls in one sequence per repo), so it does
+// not matter here whether it names an issue or a PR row.
+function worktreeNumberFromBranch(branch: string | null): number | null {
+  return issueNumberFromBranch(branch) ?? prNumberFromBranch(branch);
+}
+
 export interface WorktreePlanEntry {
   repo: string; // owner/name
   repoPath: string; // primary checkout (shared .git)
   path: string; // worktree directory
   branch: string;
-  issue: number;
+  issue: number; // the number encoded in the branch (issue or PR, whichever convention applies)
   action: "remove" | "keep" | "skip";
   reason: string;
 }
@@ -2273,15 +2315,16 @@ export const worktrees = {
     const entries: WorktreePlanEntry[] = [];
     for (const r of repoRows) {
       for (const wt of await worktreeList(r.local_path)) {
-        const n = issueNumberFromBranch(wt.branch);
+        const n = worktreeNumberFromBranch(wt.branch);
         if (n == null) continue; // primary checkout / off-convention worktrees are not ours
 
         let issueState: "open" | "closed" | null = null;
         let prMerged = false;
         let prState: "open" | "closed" | null = null;
-        // Done-ness comes from the row's own state (an `lh dev` worktree branch maps to an
-        // issue, but read state for any row so a number that resolves to a pull behaves as it
-        // did pre-refactor). A merged linked PR is only meaningful for an issue row.
+        // Done-ness comes from the row's own state. A legacy worktree's branch names its issue
+        // (row.kind === "issue"), so merged-ness comes from its linked PR; the current #463
+        // convention names the worktree after the PR itself (row.kind === "pull"), so its own
+        // merged/state apply directly.
         const row = S.getIssue(r.id, n);
         if (row) {
           issueState = row.state;
@@ -2291,6 +2334,10 @@ export const worktrees = {
               prMerged = !!pr.merged;
               prState = pr.state;
             }
+          } else {
+            const pull = S.getPull(row.id);
+            prMerged = !!pull?.merged;
+            prState = row.state;
           }
         }
 
@@ -2318,10 +2365,11 @@ export const worktrees = {
   },
 
   // Remove one worktree after re-asserting the safety invariants right before the destructive
-  // call: it must still be a registered worktree on its `loophub/issue-<n>` branch (state may
-  // have changed since plan()). The LoopHub-injected, un-gitignored `.claude/` is dropped first
-  // (regenerated on the next `lh dev`) so the no-`--force` `git worktree remove` stays a real
-  // guard for any other change — but only when it is a real directory, never a symlink.
+  // call: it must still be a registered worktree on its `loophub/pr-<n>` (or legacy
+  // `loophub/issue-<n>`) branch (state may have changed since plan()). The LoopHub-injected,
+  // un-gitignored `.claude/` is dropped first (regenerated on the next `lh dev`) so the
+  // no-`--force` `git worktree remove` stays a real guard for any other change — but only when it
+  // is a real directory, never a symlink.
   async remove(entry: {
     repoPath: string;
     path: string;
@@ -2331,10 +2379,10 @@ export const worktrees = {
     const match = fresh.find(
       (w) => canonicalPath(w.path) === canonicalPath(entry.path),
     );
-    if (!match || issueNumberFromBranch(match.branch) !== entry.issue) {
+    if (!match || worktreeNumberFromBranch(match.branch) !== entry.issue) {
       return {
         removed: false,
-        reason: `no longer a loophub/issue-${entry.issue} worktree`,
+        reason: `no longer a loophub-managed worktree for #${entry.issue}`,
       };
     }
     const claudeDir = join(entry.path, ".claude");

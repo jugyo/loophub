@@ -85,7 +85,9 @@ test("resolve returns the linked-issue session and restores from the branch", as
   expect(res.ok).toBe(true);
   if (!res.ok) return;
   expect(res.sessionId).toBe(external); // external_session, not the agent_sessions row id
-  expect(res.issue).toBe(1); // worktree issue number from loophub/issue-1
+  // legacy loophub/issue-1 branch (worktree provisioned before #463) still resolves correctly.
+  expect(res.worktreeScheme).toBe("legacy-issue");
+  expect(res.worktreeNumber).toBe(1);
   expect(res.branch).toBe("loophub/issue-1");
   expect(res.restore).toBe(true); // worktree absent, branch present → re-attach
   // Backward-compat: this session has runtime=NULL (registered without one), so it resolves via the
@@ -183,7 +185,36 @@ test("resolve uses the PR row's own session when present", async () => {
   expect(res.ok).toBe(true);
   if (!res.ok) return;
   expect(res.sessionId).toBe("11111111-1111-4111-8111-111111111111");
-  expect(res.issue).toBe(5);
+  expect(res.worktreeScheme).toBe("legacy-issue");
+  expect(res.worktreeNumber).toBe(5);
+});
+
+// A PR opened after #463 carries the current loophub/pr-<n> branch convention: resolve keys the
+// worktree by the PR's own number, not a linked issue's.
+test("resolve resolves the current loophub/pr-<n> convention to the PR scheme", async () => {
+  const repo = await makeRepo("me/prconv");
+  const issue = S.createIssue(repo.id, "issue", "feature", "", "me") as any;
+  S.registerAgentSession(
+    "row-prconv",
+    "lh-dev",
+    "44444444-4444-4444-8444-444444444444",
+  );
+  const pr = S.createIssue(repo.id, "pull", "impl", "", "me") as any;
+  await git(repo.path, ["branch", `loophub/pr-${pr.number}`, "main"]);
+  S.createPull(
+    pr.id,
+    `loophub/pr-${pr.number}`,
+    "main",
+    null,
+    issue.id,
+    "row-prconv",
+  );
+
+  const res = await svc.resume.resolve("me/prconv", pr.number);
+  expect(res.ok).toBe(true);
+  if (!res.ok) return;
+  expect(res.worktreeScheme).toBe("pr");
+  expect(res.worktreeNumber).toBe(pr.number);
 });
 
 // A stored session id that is not a UUID (not a real Claude session) is unusable for `claude

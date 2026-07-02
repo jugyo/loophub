@@ -4,6 +4,17 @@
 // the resolved session id and the on-disk worktree/branch facts.
 import { issueNumberFromBranch } from "./worktree-prune.ts";
 
+// The naming scheme that identifies where a PR's `lh dev` worktree lives on disk. "pr" is the
+// current (#463+) convention (core/worktree-path.ts worktreeBranch/worktreePath); "legacy-issue"
+// is the pre-#463 convention (legacyWorktreeBranch/legacyWorktreePath), kept recognizable so a
+// worktree provisioned before this change is not orphaned.
+export type WorktreeScheme = "pr" | "legacy-issue";
+
+export interface WorktreeIdentity {
+  scheme: WorktreeScheme;
+  number: number; // issue number for "legacy-issue", PR number for "pr"
+}
+
 // Facts the service resolves before deciding (DB + git):
 //   sessionId      — the Claude session id stored for the PR's dev session (agent_sessions
 //                    .external_session), or null when none was ever recorded.
@@ -106,14 +117,19 @@ export function resolveRuntimeResume(
   return { ok: false, reason: "unknown-runtime" };
 }
 
-// The issue number that identifies a PR's worktree path/branch. `lh dev <n>` names the worktree
-// after the issue and opens the PR on branch `loophub/issue-<n>`, so the head branch is the most
-// direct source; fall back to the PR's linked issue, then the PR's own number (a PR worked
-// directly via `lh dev <pr>` whose branch is off-convention).
-export function resumeWorktreeIssue(
+// The scheme + number that identifies a PR's worktree path/branch (#463). The head branch is the
+// most direct source: a legacy `loophub/issue-<n>` branch means the worktree was provisioned
+// before #463 and still lives at the issue-<n> path, so that convention is preserved for any
+// branch matching it. Anything else — including the current `loophub/pr-<n>` convention and any
+// off-convention (manually created) branch — resolves to the PR's own number: worktree/branch
+// naming is PR-id-based going forward, so a PR must never fall back to its linked issue's number
+// (that fallback pre-#463 is exactly what let two PRs on the same issue collide on one worktree).
+export function resolveWorktreeIdentity(
   headRef: string | null,
-  linkedIssueNumber: number | null,
   prNumber: number,
-): number {
-  return issueNumberFromBranch(headRef) ?? linkedIssueNumber ?? prNumber;
+): WorktreeIdentity {
+  const legacyIssue = issueNumberFromBranch(headRef);
+  if (legacyIssue != null)
+    return { scheme: "legacy-issue", number: legacyIssue };
+  return { scheme: "pr", number: prNumber };
 }

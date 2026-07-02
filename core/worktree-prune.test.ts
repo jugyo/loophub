@@ -3,16 +3,29 @@ import {
   classifyWorktree,
   issueNumberFromBranch,
   porcelainIsDirty,
+  prNumberFromBranch,
 } from "./worktree-prune.ts";
 
-test("issueNumberFromBranch matches only the loophub/issue-<n> convention", () => {
+test("issueNumberFromBranch matches only the legacy loophub/issue-<n> convention", () => {
   expect(issueNumberFromBranch("loophub/issue-95")).toBe(95);
   expect(issueNumberFromBranch("loophub/issue-1")).toBe(1);
   expect(issueNumberFromBranch("main")).toBeNull();
   expect(issueNumberFromBranch("loophub/issue-")).toBeNull();
   expect(issueNumberFromBranch("loophub/issue-12a")).toBeNull();
   expect(issueNumberFromBranch("feature/loophub/issue-3")).toBeNull();
+  expect(issueNumberFromBranch("loophub/pr-95")).toBeNull();
   expect(issueNumberFromBranch(null)).toBeNull();
+});
+
+test("prNumberFromBranch matches only the current loophub/pr-<n> convention (#463)", () => {
+  expect(prNumberFromBranch("loophub/pr-95")).toBe(95);
+  expect(prNumberFromBranch("loophub/pr-1")).toBe(1);
+  expect(prNumberFromBranch("main")).toBeNull();
+  expect(prNumberFromBranch("loophub/pr-")).toBeNull();
+  expect(prNumberFromBranch("loophub/pr-12a")).toBeNull();
+  expect(prNumberFromBranch("feature/loophub/pr-3")).toBeNull();
+  expect(prNumberFromBranch("loophub/issue-95")).toBeNull();
+  expect(prNumberFromBranch(null)).toBeNull();
 });
 
 test("porcelainIsDirty ignores the injected .claude/ artifact but flags real changes", () => {

@@ -3,8 +3,8 @@ import type { GitResult } from "./git.ts";
 import { pullWorktreeDirty } from "./pull-worktree.ts";
 
 const ROOT = "/wt-root";
-// Deterministic worktree dir for the lh-dev convention head below (issue 7).
-const WT = "/wt-root/me/repo/issue-7";
+// Deterministic worktree dir for the lh-dev convention head below (PR 9, #463).
+const WT = "/wt-root/me/repo/pr-9";
 
 function result(stdout: string, code = 0): GitResult {
   return { code, stdout, stderr: "" };
@@ -12,8 +12,7 @@ function result(stdout: string, code = 0): GitResult {
 
 const baseInput = {
   fullName: "me/repo",
-  headRef: "loophub/issue-7",
-  linkedIssueNumber: 3,
+  headRef: "loophub/pr-9",
   prNumber: 9,
   merged: false,
   state: "open",
@@ -31,7 +30,7 @@ describe("pullWorktreeDirty", () => {
       },
     });
     expect(dirty).toBe(true);
-    // Derived from the lh-dev branch convention, not the PR number.
+    // Derived from the PR number (#463: PR-id-based worktree convention).
     expect(statusedPath).toBe(WT);
   });
 
@@ -110,10 +109,26 @@ describe("pullWorktreeDirty", () => {
     expect(dirty).toBe(false);
   });
 
-  it("falls back to the linked issue number for an off-convention head", async () => {
+  it("falls back to the PR number for an off-convention head", async () => {
     let statusedPath: string | null = null;
     await pullWorktreeDirty(
       { ...baseInput, headRef: "feature-x" },
+      {
+        worktreeRootDir: ROOT,
+        exists: (p) => {
+          statusedPath = p;
+          return false;
+        },
+        status: async () => result(""),
+      },
+    );
+    expect(statusedPath).toBe("/wt-root/me/repo/pr-9");
+  });
+
+  it("recognizes a legacy loophub/issue-<n> head from before #463", async () => {
+    let statusedPath: string | null = null;
+    await pullWorktreeDirty(
+      { ...baseInput, headRef: "loophub/issue-3" },
       {
         worktreeRootDir: ROOT,
         exists: (p) => {
