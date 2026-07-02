@@ -52,9 +52,10 @@ Optional arguments the user may supply:
 
 ## LoopHub
 
-See `skills/README.md` § LoopHub basics for server / CLI defaults — **`lh serve` must be running**
-for this skill. Exception: `lh repo add` does not require `--repo` (registers globally under
-`LOOPHUB_HOME`).
+- **Server**: default `http://localhost:8730` (`~/.loophub/config.json`) — **`lh serve` must be
+  running** for this skill
+- **CLI**: `lh` (on PATH)
+- Exception: `lh repo add` does not require `--repo` (registers globally under `LOOPHUB_HOME`)
 
 | Action | CLI |
 |--------|-----|
@@ -70,7 +71,10 @@ After registration, the repo appears in the LoopHub UI:
 {baseUrl}/r/{owner}/{repo}
 ```
 
-See `skills/README.md` § Web URL / baseUrl resolution for how `baseUrl` is computed.
+- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
+  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` →
+  `http://localhost:${LOOPHUB_PORT:-8730}`)
+- **owner/repo**: the `owner/repo` slug chosen at registration (step 3)
 
 Example: `http://localhost:8730/r/jugyo/my-project`
 

@@ -88,8 +88,11 @@ If no candidate issues are found (empty list), say so and ask the user for an is
 
 ## LoopHub
 
-See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
-
+- **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
+- **CLI**: `lh` (on PATH)
+- **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
+- **Auto-sync**: `lh-web` sweeps open PRs' head SHAs and auto-fires `pull_request.updated` — after
+  committing, rebasing, or merging on a PR head, no manual sync call is needed
 - `--session-id` — attribution for comments and other writes (`lh dev` attributes the session to the linked PR row for you)
 
 ### Web URL (for reporting)
@@ -101,7 +104,10 @@ Always show the user a UI URL when reporting (no CLI output changes required).
 | issue | `{baseUrl}/r/{owner}/{repo}/issues/{n}` |
 | PR | `{baseUrl}/r/{owner}/{repo}/pulls/{m}` |
 
-See `skills/README.md` § Web URL / baseUrl resolution for how `baseUrl` is computed.
+- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
+  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` →
+  `http://localhost:${LOOPHUB_PORT:-8730}`)
+- **owner/repo**: `--repo`, or repo resolution from cwd (same as `lh issue view` / `resolveRepo()`)
 
 Example: `http://localhost:8730/r/jugyo/local-github/issues/73`
 
@@ -233,15 +239,13 @@ Use the repo standard command (e.g. `npm test`). **Green before PR.**
 While testing, **capture evidence for the PR body** (step 5):
 
 - Save the command and a short excerpt of green output (pass/fail counts, key lines)
-- For UI or visual changes, take screenshots before opening the PR — `claude-in-chrome` for
-  interactive verification in a live session, or headless Playwright (`npx playwright screenshot`,
-  no display required) for AFK/sandbox capture; manual capture or generated assets under the repo also
-  work — and save them to the **persistent evidence directory**
-  (`${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/`; see `skills/README.md` §
-  Evidence screenshots, which also covers the capture-method choice and storageState for authenticated
-  pages) — **not only** the session scratchpad / `$TMPDIR` or the worktree, which can be
-  cleared before `lh-merge-ready` reads them. **Keep the persistent-dir copy** (`lh-merge-ready` reads
-  those paths), and **also upload it for inline display in the PR**: run
+- For UI or visual changes, take screenshots before opening the PR (see [§ Evidence
+  screenshots](#evidence-screenshots) below for capture method and storage) and save them to the
+  **persistent evidence directory**
+  (`${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/`) — **not only** the session
+  scratchpad / `$TMPDIR` or the worktree, which can be cleared before `lh-merge-ready` reads them.
+  **Keep the persistent-dir copy** (`lh-merge-ready` reads those paths), and **also upload it for
+  inline display in the PR**: run
 
   ```sh
   lh attachment add --file <path> [--file <path> ...]   # one printed line per file
@@ -257,6 +261,92 @@ While testing, **capture evidence for the PR body** (step 5):
 - For CLI/API fixes, paste a representative command and response snippet
 
 Do not open a PR with checkboxes only — reviewers need proof you ran the verification.
+
+#### Evidence screenshots
+
+UI / visual evidence (screenshots) is stored in a **persistent evidence directory** so it
+survives worktree removal and session / temp cleanup — and is therefore still present when
+`lh-merge-ready` runs at the end of the chain:
+
+```text
+${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/
+```
+
+- **Key by linked issue number** (`issue-<n>`, the issue the PR closes — not the `pr-<m>`
+  worktree name) so every step in the chain — dev, review, merge-ready — resolves the same
+  directory. For a PR with no linked issue, use `pr-<m>` instead.
+- Do **not** keep UI evidence only under the session scratchpad / `$TMPDIR` or inside the
+  worktree — both can be cleared before merge-ready, losing the evidence. Copy or write it into
+  the directory above.
+- Filenames: a short descriptive slug, no spaces, `.png` (e.g. `home-recent-open-issues.png`).
+- This skill and `lh-pr-review` (Phase B) write here; `lh-merge-ready` reads the directory,
+  validates each image, and prints the valid paths at the end of its report.
+
+##### Capture method: claude-in-chrome vs. headless Playwright
+
+Two ways to produce the screenshot itself before it goes through the evidence flow above:
+
+| Method | Use when |
+|--------|----------|
+| **`claude-in-chrome`** (MCP tool) | Interactive verification in the operator's real, already-logged-in Chrome session — clicking through a flow, confirming something visually, or exercising a page that needs a live human-authenticated session. Requires a display and the extension. |
+| **Headless Playwright** (`npx playwright screenshot`, below) | AFK / cron / sandbox / CI evidence capture with no display attached, or scripted repeatable screenshots. Runs headless by default, so it works in environments without a display (confirmed in a sandboxed worktree with no display: `npx --yes playwright@1.61.1 screenshot --browser=chromium <url> out.png` produced a valid PNG). |
+
+This is additive, not a replacement — interactive verification during implementation should still use
+`claude-in-chrome`; reach for headless Playwright when no display/session is available or the capture
+needs to be scripted.
+
+Playwright is **not** a project dependency — its CLI is invoked via `npx`, which resolves from npm's
+cache without touching `package.json`:
+
+```sh
+npx --yes playwright@1.61.1 screenshot --full-page <url> <output.png>
+```
+
+Useful flags: `--full-page`, `--viewport-size "1280,720"`, `--wait-for-selector <css>` /
+`--wait-for-timeout <ms>` (let the page settle before capturing).
+
+**Authenticated pages** — reproduce login state with a saved storage state instead of logging in on
+every capture:
+
+1. Capture once, with a display available, by logging in interactively and saving the session:
+
+   ```sh
+   npx --yes playwright@1.61.1 open --save-storage="${TMPDIR:-/tmp}/auth.json" <login-url>
+   # log in in the window that opens, then close it — auth.json now holds cookies/localStorage
+   ```
+
+   Or capture it headlessly/programmatically (no display needed) with a short script that drives the
+   login form and writes the same file:
+
+   ```js
+   import { chromium } from "playwright";
+   import { tmpdir } from "node:os";
+   import { join } from "node:path";
+   const browser = await chromium.launch();
+   const page = await browser.newPage();
+   await page.goto("<login-url>");
+   await page.fill("#username", process.env.LOGIN_USER);
+   await page.fill("#password", process.env.LOGIN_PASS);
+   await page.click("button[type=submit]");
+   await page.waitForURL("<post-login-url>");
+   await page.context().storageState({ path: join(tmpdir(), "auth.json") });
+   await browser.close();
+   ```
+
+   `os.tmpdir()` falls back to `/tmp` on its own, unlike a bare `process.env.TMPDIR` read — TMPDIR is
+   often unset on Linux CI/sandbox environments, and reading it directly there would silently write
+   `auth.json` to a relative, possibly-in-repo path instead.
+
+2. Reuse the saved state on every subsequent headless capture — no login step needed:
+
+   ```sh
+   npx --yes playwright@1.61.1 screenshot --load-storage="${TMPDIR:-/tmp}/auth.json" <url> <output.png>
+   ```
+
+`auth.json` holds live session cookies/tokens — treat it like a credential: write it outside the repo
+(e.g. `${TMPDIR:-/tmp}/auth.json` or the session scratchpad, not a path inside the worktree) so it can't
+end up committed, and keep it out of PR evidence uploads (confirm no secrets before uploading, per the
+scrub note above).
 
 ### 5. PR (fill the existing draft PR)
 
@@ -406,8 +496,8 @@ After filling in the PR body (§5), **without ending this session**, continue wi
 /lh-pr-review <m>
 ```
 
-Bugbot + Security review → fix on head in this session if needed → re-review until `pass`. See
-`skills/lh-pr-review/SKILL.md`.
+Bugbot + Security review → fix on head in this session if needed → re-review until `pass`, via
+`lh-pr-review`.
 
 Skip only if the user said "stop at PR".
 
@@ -419,7 +509,7 @@ When `lh-pr-review` returns `pass`, **without ending this session**, pre-merge c
 /lh-merge-ready <m>
 ```
 
-See `skills/lh-merge-ready/SKILL.md`. Human performs merge.
+Human performs merge, via `lh-merge-ready`.
 
 ### 9. Final output (always)
 
@@ -451,12 +541,12 @@ in the same session**:
 /lh-pr-review <m> → /lh-merge-ready <m>
 ```
 
-Do not stop at commit or `lh pr create` alone. See `skills/README.md` § Skill chain.
+Do not stop at commit or `lh pr create` alone.
 
 ## Conflicts
 
-On the worktree head: `git rebase main` (or `merge main`) → commit. Auto-sync (`skills/README.md` §
-LoopHub basics) picks it up — no manual sync needed.
+On the worktree head: `git rebase main` (or `merge main`) → commit. Auto-sync (see [§
+LoopHub](#loophub)) picks it up — no manual sync needed.
 
 ## Prohibited
 

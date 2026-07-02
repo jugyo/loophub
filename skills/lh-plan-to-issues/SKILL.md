@@ -37,8 +37,9 @@ LoopHub variant of the generic `to-issues` skill.
 
 ## LoopHub
 
-See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
-
+- **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
+- **CLI**: `lh` (on PATH)
+- **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
 - **Commands used here**: `lh issue create|view|list`
 - `--actor triage-bot` (default)
 

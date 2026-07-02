@@ -35,8 +35,11 @@ Dispatch / cron must pass `<pr id>` explicitly (no inference).
 
 ## LoopHub
 
-See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
-
+- **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
+- **CLI**: `lh` (on PATH)
+- **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
+- **Auto-sync**: `lh-web` sweeps open PRs' head SHAs and auto-fires `pull_request.updated` — after
+  committing, rebasing, or merging on a PR head, no manual sync call is needed
 - `--actor impl-bot` (when posting comments)
 
 ## Worktree rules
@@ -44,13 +47,7 @@ See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
 Work on the PR's existing head branch (`head.ref` — `loophub/pr-<m>` for `lh dev` PRs), never on
 the main checkout. If the head branch already has a worktree — e.g. the `lh dev` one at
 `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` — **reuse it** (no new worktree needed). Otherwise,
-from repo root:
-
-```sh
-mkdir -p .worktrees
-git worktree add ".worktrees/<head.ref>" <head.ref>
-cd ".worktrees/<head.ref>"
-```
+add one under `.worktrees/<head.ref>` from repo root (see step 2 for the exact bootstrap procedure).
 
 | Forbidden | Reason |
 |-----------|--------|
@@ -82,7 +79,7 @@ lh pr comment <m> --body "Starting conflict resolution" --actor impl-bot --repo 
 
 ### 2. Checkout head
 
-Follow [Head worktree bootstrap](../README.md#head-worktree-bootstrap) — move to `.worktrees/<head.ref>` (reuse if present, else `git worktree add`):
+Move to `.worktrees/<head.ref>` (reuse if already checked out somewhere, else `git worktree add`):
 
 ```sh
 ROOT="<local_path>"
@@ -124,8 +121,8 @@ Repo standard (e.g. `bun test`). **Green before proceeding**, same as before PR.
 
 ### 6. Report and resume review
 
-LoopHub reads the same `.git` directly (no push); auto-sync (`skills/README.md` § LoopHub basics)
-picks up the new head — no manual sync needed.
+LoopHub reads the same `.git` directly (no push); auto-sync (see [§ LoopHub](#loophub)) picks up
+the new head — no manual sync needed.
 
 ```sh
 lh pr comment <m> --body "Conflict resolution complete. Please re-review." --actor impl-bot --repo <repo>

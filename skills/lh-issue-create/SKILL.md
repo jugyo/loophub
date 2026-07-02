@@ -111,8 +111,9 @@ is created, **stop** — do not implement (see § Scope boundary).
 
 ## LoopHub
 
-See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
-
+- **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
+- **CLI**: `lh` (on PATH)
+- **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
 - `--actor triage-bot` (default) or user-specified
 
 | Action | CLI |
@@ -129,8 +130,11 @@ Always show the user a UI URL when reporting creation (no CLI output changes req
 {baseUrl}/r/{owner}/{repo}/issues/{n}
 ```
 
-See `skills/README.md` § Web URL / baseUrl resolution for how `baseUrl` is computed (`--repo` at
-create time when cwd doesn't already resolve it).
+- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
+  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` →
+  `http://localhost:${LOOPHUB_PORT:-8730}`)
+- **owner/repo**: `--repo` at create time when cwd doesn't already resolve it, or repo resolution
+  from cwd (same as `lh issue view` / `resolveRepo()`)
 
 Example: `http://localhost:8730/r/jugyo/local-github/issues/42`
 

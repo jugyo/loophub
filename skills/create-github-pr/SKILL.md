@@ -63,8 +63,8 @@ longer `cd`s anywhere. If the id is omitted, ask the user for the LoopHub PR num
 
 ## LoopHub
 
-See `skills/README.md` § LoopHub basics for server / CLI defaults.
-
+- **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
+- **CLI**: `lh` (on PATH)
 - `--repo owner/name` — pass it explicitly. The terminal opens at the repo root, but the command's
   worktree/branch resolution and the double-create guard read are unambiguous when the repo is named.
 
@@ -79,7 +79,10 @@ See `skills/README.md` § LoopHub basics for server / CLI defaults.
 |------|--------|
 | PR (LoopHub) | `{baseUrl}/r/{owner}/{repo}/pulls/{m}` |
 
-See `skills/README.md` § Web URL / baseUrl resolution for how `baseUrl` is computed.
+- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
+  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` →
+  `http://localhost:${LOOPHUB_PORT:-8730}`)
+- **owner/repo**: `--repo`, or repo resolution from cwd
 
 ## Procedure
 

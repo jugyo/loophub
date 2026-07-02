@@ -153,8 +153,11 @@ weaker pass was acceptable. Prefer the strongest available mechanism for the Sec
 
 ## LoopHub
 
-See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
-
+- **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
+- **CLI**: `lh` (on PATH)
+- **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
+- **Auto-sync**: `lh-web` sweeps open PRs' head SHAs and auto-fires `pull_request.updated` — after
+  committing, rebasing, or merging on a PR head, no manual sync call is needed
 - `--actor reviewer-bot` (review posts) / `--actor impl-bot` (fix comments, etc.)
 
 ## Language
@@ -231,7 +234,16 @@ policy](#review-selection-policy) gates on — apply that table in A.3.
 
 ### A.2 Head worktree (parent)
 
-**Do not `git checkout head.ref` on the main checkout.** Follow [Head worktree bootstrap](../README.md#head-worktree-bootstrap):
+**Do not `git checkout head.ref` on the main checkout.** Bootstrap a worktree on the PR head instead:
+
+1. Record `head.ref` and repo absolute path (`local_path`) from `lh pr view <m>` (A.1). For `lh dev`
+   PRs the head is `loophub/pr-<m>`, and its worktree usually already exists at
+   `~/.loophub/worktrees/<owner>/<repo>/pr-<m>`.
+2. If a worktree already has `head.ref` checked out — the session's cwd (e.g. issue-dev → pr-review
+   chain), or the `lh dev` worktree above (`git worktree list`) — use that one (adding a second
+   worktree for a checked-out branch fails).
+3. Else `cd local_path` and check `.worktrees/<head.ref>`: exists → `cd` into it; missing →
+   `git worktree add .worktrees/<head.ref> <head.ref>` then `cd`.
 
 ```sh
 ROOT="<local_path>"
@@ -246,7 +258,10 @@ fi
 ```
 
 - Cannot add worktree (dirty / conflict) → blocker. Stash only after user confirmation
-- Pass `--repo owner/name` on all CLI calls from inside the worktree
+- Pass `--repo owner/name` on all CLI calls from inside the worktree (`resolveRepo()` omits it only
+  when cwd is the repo root)
+- Pass the **working cwd (worktree absolute path)** as the reviewer subagents' repository path (see
+  [reviewer-prompts.md](reviewer-prompts.md), "Repository path")
 
 ### A.2.5 Skills lint (parent, when PR touches `skills/`)
 
@@ -262,8 +277,7 @@ Tests section instead of failing the topic. (This is why [Review selection
 policy](#review-selection-policy) keeps Quality active on a skills-only diff.)
 
 LoopHub skills are **English-only in the body** (after YAML frontmatter). CJK in `description` is allowed
-for routing triggers. Localized issue/PR templates belong in user output, not in skill files — see
-`skills/README.md` § Authoring.
+for routing triggers. Localized issue/PR templates belong in user output, not in skill files.
 
 ### A.3 Launch reviewers in parallel (parent)
 
@@ -419,10 +433,16 @@ Escalate scope-out or design-judgment findings without fixing.
 Repo standard (e.g. `bun test`). When the PR touches `skills/`, also run
 `bun test tests/skills-lint.test.ts`. **Green before next round.**
 
-For UI / visual fixes, save the verification screenshot to the **persistent evidence directory**
-(`${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/`; see `skills/README.md` §
-Evidence screenshots), not only the session scratchpad / `$TMPDIR` or worktree — so it is still
-present when `lh-merge-ready` reads the directory at the end of the chain.
+For UI / visual fixes, save the verification screenshot to the **persistent evidence directory**:
+
+```text
+${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/
+```
+
+Key it by the **linked issue number** (`issue-<n>` — the issue the PR closes, not the `pr-<m>`
+worktree name; use `pr-<m>` when there is no linked issue) so `lh-dev` and `lh-merge-ready` resolve
+the same directory. Do not keep the screenshot only in the session scratchpad / `$TMPDIR` or the
+worktree — both can be cleared before `lh-merge-ready` reads the directory at the end of the chain.
 
 ### B.4 Commit
 
@@ -431,7 +451,7 @@ git add <paths>
 git commit -m "<what changed, not why>"
 ```
 
-LoopHub reads local git directly; auto-sync (`skills/README.md` § LoopHub basics) picks up the new
+LoopHub reads local git directly; auto-sync (see [§ LoopHub](#loophub)) picks up the new
 head — no manual sync needed.
 
 Optional visibility:
@@ -471,7 +491,7 @@ After `pass`, **same session** pre-merge check:
 /lh-merge-ready <m>
 ```
 
-See `skills/lh-merge-ready/SKILL.md`. Do not run `lh pr merge`.
+Hand off to `lh-merge-ready`. Do not run `lh pr merge`.
 
 ## Skill chain (full)
 

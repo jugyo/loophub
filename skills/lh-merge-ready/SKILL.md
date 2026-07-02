@@ -17,9 +17,9 @@ green tests; the PR Evidence section was required at creation (`lh-dev` § PR). 
 not re-check them.
 
 As the **last block of its report**, merge-ready also surfaces the change's **evidence
-screenshots**: it reads the persistent evidence directory (see `skills/README.md` § Evidence
-screenshots), validates each image, and prints the **paths** of the valid ones — or states there
-is none — so a human can eyeball the change before merging.
+screenshots**: it reads the persistent evidence directory (`lh-dev` and `lh-pr-review` write here
+during implementation and fixes), validates each image, and prints the **paths** of the valid
+ones — or states there is none — so a human can eyeball the change before merging.
 
 **No automatic merge.** Human merges via UI or CLI.
 
@@ -46,9 +46,21 @@ Dispatch / cron must pass `<pr id>` explicitly (no inference).
 
 ## LoopHub
 
-See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
-
+- **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
+- **CLI**: `lh` (on PATH)
+- **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
 - **Commands used here**: `lh pr view|merge`, `lh issue comment`
+
+### Web URL (for reporting)
+
+```text
+{baseUrl}/r/{owner}/{repo}/pulls/{m}
+```
+
+- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
+  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` →
+  `http://localhost:${LOOPHUB_PORT:-8730}`)
+- **owner/repo**: `--repo`, or repo resolution from cwd
 
 ## Language
 
@@ -175,8 +187,10 @@ not-mergeable case — so the change's visual evidence is grouped at the end. (W
    ls "$DIR" 2>/dev/null
    ```
 
-   `<n>` is the linked issue (PR body `closes #<n>` / the `--issue` link from step 1). For a PR
-   with no linked issue, use `pr-<m>` instead. See `skills/README.md` § Evidence screenshots.
+   `<n>` is the linked issue (PR body `closes #<n>` / the `--issue` link from step 1) — the
+   directory is keyed by the **linked issue number**, not the `pr-<m>` worktree name, so `lh-dev`,
+   `lh-pr-review`, and this skill all resolve the same directory. For a PR with no linked issue,
+   use `pr-<m>` instead.
 
 2. **Validate each file — keep only valid evidence.** Open each image and keep it only when it
    **actually shows this PR's change** and is readable. Exclude:
