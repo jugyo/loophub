@@ -41,6 +41,12 @@ import {
   worktreeStatus,
 } from "./git.ts";
 import { type GithubDeps, realGithubDeps } from "./github.ts";
+import {
+  type HerdrAgent,
+  parseHerdrAgentList,
+  parseHerdrSessionList,
+  reposWithRunningSession,
+} from "./herdr-status.ts";
 import { parseClosingIssueNumber } from "./links.ts";
 import {
   effectiveMergeMode,
@@ -456,10 +462,32 @@ function runHerdr(
       cwd,
       stdio: ["ignore", opts.captureStdout ? "pipe" : "ignore", "ignore"],
     });
+    // Settle-once guard: the success path settles on `close` (all output drained), but the
+    // timeout path settles immediately — `close` waits for the stdout pipe to shut, and a
+    // descendant process that inherited the pipe fd can hold it open past herdr's own death,
+    // which would leave the promise pending forever (and wedge terminal.sessions' coalescing
+    // slot until a server restart).
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
     // Guards the awaiting RPC call against a herdr client that never exits (e.g. wedged on its
-    // session socket): kill and let the `close` handler reject via the signal path.
+    // session socket): kill and reject right away (see the settle-once comment above).
     const timer = opts.timeoutMs
-      ? setTimeout(() => child.kill("SIGKILL"), opts.timeoutMs)
+      ? setTimeout(() => {
+          child.kill("SIGKILL");
+          settle(() =>
+            reject(
+              new ServiceError(
+                500,
+                `Herdr timed out after ${opts.timeoutMs}ms`,
+              ),
+            ),
+          );
+        }, opts.timeoutMs)
       : undefined;
     const chunks: Buffer[] = [];
     let captured = 0;
@@ -473,33 +501,36 @@ function runHerdr(
       // still decides success/failure, so just stop the error from being unhandled.
     });
     child.on("error", (err) => {
-      clearTimeout(timer);
       const code = (err as NodeJS.ErrnoException).code;
-      reject(
-        code === "ENOENT"
-          ? new ServiceError(422, "herdr command not found on PATH")
-          : new ServiceError(
-              500,
-              `failed to launch Herdr (${code ?? "spawn error"})`,
-            ),
+      settle(() =>
+        reject(
+          code === "ENOENT"
+            ? new ServiceError(422, "herdr command not found on PATH")
+            : new ServiceError(
+                500,
+                `failed to launch Herdr (${code ?? "spawn error"})`,
+              ),
+        ),
       );
     });
     child.on("close", (status, signal) => {
-      clearTimeout(timer);
       // `status` is null when the child was terminated by a signal rather than exiting on its
       // own — treat that as a failure too, instead of `?? 0` collapsing a null code to success.
       // The distinction (signal vs. exit code) is itself a safe, non-leaky hint about *why* the
       // launch failed, so surface it instead of one generic "Herdr launch failed" for both.
-      if (signal == null && status === 0)
-        resolve(Buffer.concat(chunks).toString("utf8"));
-      else if (signal != null)
-        reject(
-          new ServiceError(
-            500,
-            `Herdr process was terminated by signal ${signal}`,
-          ),
-        );
-      else reject(new ServiceError(500, `Herdr exited with status ${status}`));
+      settle(() => {
+        if (signal == null && status === 0)
+          resolve(Buffer.concat(chunks).toString("utf8"));
+        else if (signal != null)
+          reject(
+            new ServiceError(
+              500,
+              `Herdr process was terminated by signal ${signal}`,
+            ),
+          );
+        else
+          reject(new ServiceError(500, `Herdr exited with status ${status}`));
+      });
     });
   });
 }
@@ -511,6 +542,29 @@ function runHerdrLaunch(
 ): Promise<void> {
   return runHerdr(command, args, cwd).then(() => {});
 }
+
+// Herdr query command for the sidebar status sweep (#495): capture stdout with a hard
+// timeout. Rides on runHerdr so the spawn/capture-cap/error semantics stay in one place;
+// callers treat any rejection as "no data". The cwd is irrelevant to `herdr session list` /
+// `agent list`, so the server's own cwd will do.
+function runHerdrCapture(args: string[]): Promise<string> {
+  return runHerdr("herdr", args, process.cwd(), {
+    captureStdout: true,
+    timeoutMs: 10_000,
+  });
+}
+
+export interface HerdrRepoSessions {
+  repo: string;
+  session_name: string;
+  agents: HerdrAgent[];
+}
+
+// Coalesces concurrent terminal.sessions calls onto one herdr sweep. Every client polls this
+// RPC (15s interval per tab), so without sharing, N tabs would each spawn their own
+// `herdr session list` + per-repo `agent list` process trees against the same state.
+let herdrSessionsInflight: Promise<{ repos: HerdrRepoSessions[] }> | null =
+  null;
 
 // ===== terminal launch =====
 export const terminal = {
@@ -617,7 +671,55 @@ export const terminal = {
       attach: `herdr session attach ${plan.sessionName}`,
     };
   },
+
+  // Running herdr sessions grouped by repo, for the sidebar status section (#495).
+  // Read-only and deliberately failure-tolerant: herdr missing from PATH, no running
+  // sessions, or unparseable output all degrade to an empty list — the sidebar hides
+  // the section instead of surfacing an error. Not gated on the configured launch
+  // backend: sessions started outside LoopHub are just as real to a supervisor.
+  sessions(): Promise<{ repos: HerdrRepoSessions[] }> {
+    if (herdrSessionsInflight) return herdrSessionsInflight;
+    herdrSessionsInflight = sweepHerdrSessions().finally(() => {
+      herdrSessionsInflight = null;
+    });
+    return herdrSessionsInflight;
+  },
 };
+
+async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
+  let listOut: string;
+  try {
+    listOut = await runHerdrCapture(["session", "list", "--json"]);
+  } catch {
+    return { repos: [] };
+  }
+  const running = parseHerdrSessionList(listOut);
+  if (running.length === 0) return { repos: [] };
+
+  const matched = reposWithRunningSession(S.listRepos("active"), running);
+  const groups = await Promise.all(
+    matched.map(async ({ repo, sessionName }) => {
+      let agentsOut: string;
+      try {
+        // No `--json` here: `herdr agent list` rejects the flag and already prints JSON.
+        agentsOut = await runHerdrCapture([
+          "--session",
+          sessionName,
+          "agent",
+          "list",
+        ]);
+      } catch {
+        return null;
+      }
+      const agents = parseHerdrAgentList(agentsOut);
+      // A running session with zero agents has nothing to show — drop the group so
+      // the sidebar section only appears when there is actual agent activity.
+      if (agents.length === 0) return null;
+      return { repo: repo.full_name, session_name: sessionName, agents };
+    }),
+  );
+  return { repos: groups.filter((g) => g !== null) };
+}
 
 // ===== global settings =====
 // Instance-level config.json settings, as opposed to the repo-scoped settings above (#474).

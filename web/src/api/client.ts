@@ -11,6 +11,7 @@ import type {
   FileAtRef,
   GlobalSettings,
   Handoff,
+  HerdrSessions,
   Issue,
   IssueComment,
   IssueGroupWithMembers,
@@ -217,6 +218,11 @@ export function launchTerminalWorkflow(input: {
   cwd?: string;
 }) {
   return rpc<TerminalLaunchResult>("terminal/launch", clean(input));
+}
+
+/** Running herdr sessions grouped by repo, for the sidebar status section (#495). */
+export function getHerdrSessions() {
+  return rpc<HerdrSessions>("terminal/sessions");
 }
 
 // --- issues ---

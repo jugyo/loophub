@@ -175,6 +175,27 @@ export interface TerminalLaunchResult {
   attach?: string;
 }
 
+/** One agent inside a running herdr session (`terminal/sessions`, #495). */
+export interface HerdrAgent {
+  /** Stable identity within the session (agent names are not guaranteed unique). */
+  id: string;
+  /** Display name, e.g. "dev #486". */
+  name: string;
+  /** Raw herdr agent_status (known values: working | blocked | idle). */
+  status: string;
+}
+
+/** A repo's running herdr session and its agents (`terminal/sessions`, #495). */
+export interface HerdrRepoSessions {
+  repo: string;
+  session_name: string;
+  agents: HerdrAgent[];
+}
+
+export interface HerdrSessions {
+  repos: HerdrRepoSessions[];
+}
+
 /** Instance-level config.json settings (`settings/get`, `settings/update`, #474). */
 export interface GlobalSettings {
   terminalLaunchBackend: TerminalLaunchBackend;

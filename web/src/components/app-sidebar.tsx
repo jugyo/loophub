@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import type { Repo } from "@/api/types";
+import { SidebarHerdrSessions } from "@/components/sidebar-herdr-sessions";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import { useRepos, useSetRepoFavorite } from "@/queries/repos";
@@ -142,6 +143,10 @@ export function AppSidebar() {
         >
           <span aria-hidden="true">→</span> Archived
         </Link>
+
+        {/* Running herdr sessions grouped by repo (#495). Sits under the repo list inside the
+            same scroll area; renders nothing when herdr isn't in use. */}
+        <SidebarHerdrSessions />
       </div>
 
       {/* Fixed footer (#371): the theme toggle lives here, below the scrolling repo list. The

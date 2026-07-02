@@ -205,6 +205,14 @@ export const methods: Record<string, MethodDef> = {
       }),
   },
 
+  "terminal/sessions": {
+    description:
+      "Running herdr sessions grouped by repository, with each agent's name and status (#495). Empty when herdr is not installed or nothing is running.",
+    params: EMPTY_PARAMS,
+    result: anyObject,
+    handler: () => svc.terminal.sessions(),
+  },
+
   // ---- agent sessions ----
   "sessions/register": {
     description: "Register (or update) an agent session.",
