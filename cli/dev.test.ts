@@ -615,6 +615,22 @@ test("resolveDevRuntime rejects --claude-code together with --codex", () => {
   );
 });
 
+test("resolveDevRuntime uses defaultRuntime when no flag is passed (#516)", () => {
+  expect(resolveDevRuntime({ defaultRuntime: "codex" })).toBe("codex");
+  expect(resolveDevRuntime({ defaultRuntime: "claude-code" })).toBe(
+    "claude-code",
+  );
+});
+
+test("resolveDevRuntime prefers an explicit flag over defaultRuntime (#516)", () => {
+  expect(resolveDevRuntime({ claudeCode: true, defaultRuntime: "codex" })).toBe(
+    "claude-code",
+  );
+  expect(
+    resolveDevRuntime({ codex: true, defaultRuntime: "claude-code" }),
+  ).toBe("codex");
+});
+
 test("buildCodexArgs passes the slash command as the only (positional) argument", () => {
   expect(buildCodexArgs({ slashCommand: "/lh-dev 42" })).toEqual([
     "/lh-dev 42",

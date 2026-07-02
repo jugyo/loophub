@@ -14,6 +14,8 @@ import {
 import { join, resolve } from "node:path";
 import {
   autoModeOnBuild,
+  type CodingAgent,
+  codingAgent,
   configDir,
   terminalLaunchBackend,
   updateConfig,
@@ -801,10 +803,12 @@ export const settings = {
   get(): {
     terminalLaunchBackend: TerminalLaunchBackend;
     autoModeOnBuild: boolean;
+    codingAgent: CodingAgent;
   } {
     return {
       terminalLaunchBackend: terminalLaunchBackend(),
       autoModeOnBuild: autoModeOnBuild(),
+      codingAgent: codingAgent(),
     };
   },
 
@@ -812,11 +816,13 @@ export const settings = {
     input: {
       terminalLaunchBackend?: TerminalLaunchBackend;
       autoModeOnBuild?: boolean;
+      codingAgent?: CodingAgent;
     },
     sessionId?: string | null,
   ): {
     terminalLaunchBackend: TerminalLaunchBackend;
     autoModeOnBuild: boolean;
+    codingAgent: CodingAgent;
   } {
     if (
       input.terminalLaunchBackend !== undefined &&
@@ -833,6 +839,16 @@ export const settings = {
       typeof input.autoModeOnBuild !== "boolean"
     ) {
       throw new ServiceError(422, "autoModeOnBuild must be a boolean");
+    }
+    if (
+      input.codingAgent !== undefined &&
+      input.codingAgent !== "claude-code" &&
+      input.codingAgent !== "codex"
+    ) {
+      throw new ServiceError(
+        422,
+        "codingAgent must be one of: claude-code, codex",
+      );
     }
     updateConfig(input);
     const actor = actorFor(sessionId);

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSettings, updateSettings } from "@/api/client";
-import type { TerminalLaunchBackend } from "@/api/types";
+import type { CodingAgent, TerminalLaunchBackend } from "@/api/types";
 
 export const settingsKeys = {
   all: ["settings"] as const,
@@ -24,6 +24,7 @@ export function useUpdateSettings() {
     mutationFn: (input: {
       terminalLaunchBackend?: TerminalLaunchBackend;
       autoModeOnBuild?: boolean;
+      codingAgent?: CodingAgent;
     }) => updateSettings(input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: settingsKeys.all });

@@ -4,7 +4,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs, stripVTControlCharacters } from "node:util";
-import { baseUrl, configDir, dbPath, worktreeRoot } from "../core/config.ts";
+import {
+  baseUrl,
+  codingAgent,
+  configDir,
+  dbPath,
+  worktreeRoot,
+} from "../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../core/git.ts";
 import {
   ENV_ISSUE_CREATE_SESSION,
@@ -388,13 +394,15 @@ async function main() {
     const sessionId = randomUUID();
     const slashCommand = `/lh-dev ${issue}`;
 
-    // Resolve the agent runtime (#458): Claude Code by default, Codex with --codex. Passing
-    // both flags is ambiguous and fails before any side effect.
+    // Resolve the agent runtime (#458): Claude Code by default, Codex with --codex, or the
+    // configured `codingAgent` app setting (#516) when neither flag is passed. Passing both
+    // flags is ambiguous and fails before any side effect.
     let runtime: DevRuntime;
     try {
       runtime = resolveDevRuntime({
         claudeCode: flags["claude-code"] === true,
         codex: flags.codex === true,
+        defaultRuntime: codingAgent(),
       });
     } catch (e: any) {
       fail(`${e.message}\n${usageLine}`);

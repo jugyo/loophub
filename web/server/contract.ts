@@ -147,7 +147,7 @@ export const methods: Record<string, MethodDef> = {
   // ---- global settings ----
   "settings/get": {
     description:
-      "Instance-level config.json settings (terminalLaunchBackend, autoModeOnBuild) (#474, #499).",
+      "Instance-level config.json settings (terminalLaunchBackend, autoModeOnBuild, codingAgent) (#474, #499, #516).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.settings.get(),
@@ -158,6 +158,7 @@ export const methods: Record<string, MethodDef> = {
     params: params({
       terminalLaunchBackend: { enum: ["builtin", "herdr"] },
       autoModeOnBuild: { type: "boolean" },
+      codingAgent: { enum: ["claude-code", "codex"] },
       session_id: sid,
     }),
     result: anyObject,
@@ -166,6 +167,7 @@ export const methods: Record<string, MethodDef> = {
         {
           terminalLaunchBackend: p.terminalLaunchBackend,
           autoModeOnBuild: p.autoModeOnBuild,
+          codingAgent: p.codingAgent,
         },
         p.session_id,
       ),

@@ -22,10 +22,11 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-test("settings.get defaults to builtin / auto mode off (#474, #499)", () => {
+test("settings.get defaults to builtin / auto mode off / claude-code (#474, #499, #516)", () => {
   expect(svc.settings.get()).toEqual({
     terminalLaunchBackend: "builtin",
     autoModeOnBuild: false,
+    codingAgent: "claude-code",
   });
 });
 
@@ -34,10 +35,12 @@ test("settings.update persists to config.json and is reflected by settings.get (
   expect(result).toEqual({
     terminalLaunchBackend: "herdr",
     autoModeOnBuild: false,
+    codingAgent: "claude-code",
   });
   expect(svc.settings.get()).toEqual({
     terminalLaunchBackend: "herdr",
     autoModeOnBuild: false,
+    codingAgent: "claude-code",
   });
 
   const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
@@ -57,6 +60,7 @@ test("settings.update omitting terminalLaunchBackend preserves the persisted val
   expect(svc.settings.get()).toEqual({
     terminalLaunchBackend: "herdr",
     autoModeOnBuild: false,
+    codingAgent: "claude-code",
   });
 });
 
@@ -66,6 +70,7 @@ test("LOOPHUB_TERMINAL_LAUNCH_BACKEND env var still overrides the persisted sett
   expect(svc.settings.get()).toEqual({
     terminalLaunchBackend: "builtin",
     autoModeOnBuild: false,
+    codingAgent: "claude-code",
   });
 });
 
@@ -78,10 +83,12 @@ test("settings.update persists autoModeOnBuild and is reflected by settings.get 
   expect(result).toEqual({
     terminalLaunchBackend: "builtin",
     autoModeOnBuild: true,
+    codingAgent: "claude-code",
   });
   expect(svc.settings.get()).toEqual({
     terminalLaunchBackend: "builtin",
     autoModeOnBuild: true,
+    codingAgent: "claude-code",
   });
 
   const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
@@ -103,5 +110,44 @@ test("settings.update omitting autoModeOnBuild preserves the persisted value (#4
   expect(svc.settings.get()).toEqual({
     terminalLaunchBackend: "builtin",
     autoModeOnBuild: true,
+    codingAgent: "claude-code",
+  });
+});
+
+test("settings.update persists codingAgent and is reflected by settings.get (#516)", () => {
+  // Pin the other fields too, for the same run-order-independence reason as above.
+  svc.settings.update({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: false,
+  });
+  const result = svc.settings.update({ codingAgent: "codex" });
+  expect(result).toEqual({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: false,
+    codingAgent: "codex",
+  });
+  expect(svc.settings.get()).toEqual({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: false,
+    codingAgent: "codex",
+  });
+
+  const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
+  expect(raw.codingAgent).toBe("codex");
+});
+
+test("settings.update rejects an unknown codingAgent (#516)", () => {
+  expect(() => svc.settings.update({ codingAgent: "nope" as any })).toThrow(
+    /codingAgent must be one of/,
+  );
+});
+
+test("settings.update omitting codingAgent preserves the persisted value (#516)", () => {
+  svc.settings.update({ codingAgent: "codex" });
+  svc.settings.update({});
+  expect(svc.settings.get()).toEqual({
+    terminalLaunchBackend: "builtin",
+    autoModeOnBuild: false,
+    codingAgent: "codex",
   });
 });

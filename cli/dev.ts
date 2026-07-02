@@ -205,18 +205,23 @@ export function parseDevTarget(target: string): { repo?: string; id: number } {
 export type DevRuntime = "claude-code" | "codex";
 
 // Resolve the runtime from the mutually-exclusive `--claude-code` / `--codex` flags. Passing
-// both is ambiguous — fail loudly rather than pick one. No flag means the historical default
-// (Claude Code), so plain `lh dev <id>` behavior is unchanged.
+// both is ambiguous — fail loudly rather than pick one. When neither flag is passed, `defaultRuntime`
+// (the `codingAgent` app setting, #516) decides; omitting it too falls back to the historical
+// default (Claude Code), so plain `lh dev <id>` behavior is unchanged for callers that don't pass it
+// (e.g. existing tests).
 export function resolveDevRuntime(flags: {
   claudeCode?: boolean;
   codex?: boolean;
+  defaultRuntime?: DevRuntime;
 }): DevRuntime {
   if (flags.claudeCode && flags.codex) {
     throw new Error(
       "--claude-code and --codex are mutually exclusive (pass at most one)",
     );
   }
-  return flags.codex ? "codex" : "claude-code";
+  if (flags.claudeCode) return "claude-code";
+  if (flags.codex) return "codex";
+  return flags.defaultRuntime ?? "claude-code";
 }
 
 // Build the `codex` argv for the interactive dev session. Codex takes the initial prompt as a

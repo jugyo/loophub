@@ -6,6 +6,10 @@ import {
   type TerminalLaunchBackend,
 } from "./terminal-launch.ts";
 
+// Which coding agent `lh dev` launches by default (#516). Mirrors the `DevRuntime` values
+// cli/dev.ts's --claude-code / --codex flags select between.
+export type CodingAgent = "claude-code" | "codex";
+
 // Known config.json fields (#474). Fields are optional — any subset may be present, and
 // unrecognized fields written by a future version must round-trip through updateConfig
 // untouched (it merges into the raw parsed object, not this typed shape).
@@ -16,6 +20,9 @@ export interface GlobalConfig {
   // Whether the Build button (issue row / issue detail) launches `lh dev` with auto mode
   // (--auto for Claude Code, an equivalent flag for Codex). Default off (#499).
   autoModeOnBuild?: boolean;
+  // Default coding agent `lh dev` launches when neither --claude-code nor --codex is passed
+  // (#516). Default "claude-code".
+  codingAgent?: CodingAgent;
 }
 
 // Read env at call time so parallel test files can set LOOPHUB_HOME/LOOPHUB_DB
@@ -100,6 +107,22 @@ export function autoModeOnBuild(): boolean {
     return cfg.autoModeOnBuild === true;
   } catch {}
   return false;
+}
+
+export function normalizeCodingAgent(value: unknown): CodingAgent {
+  return value === "codex" ? "codex" : "claude-code";
+}
+
+// The coding agent `lh dev` launches when neither --claude-code nor --codex is passed (#516).
+// Default "claude-code".
+export function codingAgent(): CodingAgent {
+  try {
+    const cfg = JSON.parse(
+      readFileSync(join(configDir(), "config.json"), "utf8"),
+    );
+    return normalizeCodingAgent(cfg.codingAgent);
+  } catch {}
+  return "claude-code";
 }
 
 function configPath(): string {

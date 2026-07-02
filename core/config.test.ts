@@ -69,3 +69,21 @@ test("autoModeOnBuild defaults to false and reflects updateConfig (#499)", async
   updateConfig({ autoModeOnBuild: false });
   expect(autoModeOnBuild()).toBe(false);
 });
+
+test("codingAgent defaults to claude-code and reflects updateConfig (#516)", async () => {
+  const { codingAgent, updateConfig } = await import("./config.ts");
+  expect(codingAgent()).toBe("claude-code"); // default
+
+  updateConfig({ codingAgent: "codex" });
+  expect(codingAgent()).toBe("codex");
+
+  updateConfig({ codingAgent: "claude-code" });
+  expect(codingAgent()).toBe("claude-code");
+});
+
+test("normalizeCodingAgent falls back to claude-code for an unknown value (#516)", async () => {
+  const { normalizeCodingAgent } = await import("./config.ts");
+  expect(normalizeCodingAgent("codex")).toBe("codex");
+  expect(normalizeCodingAgent("bogus")).toBe("claude-code");
+  expect(normalizeCodingAgent(undefined)).toBe("claude-code");
+});

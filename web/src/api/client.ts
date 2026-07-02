@@ -7,6 +7,7 @@
 
 import { getSessionId } from "@/lib/session";
 import type {
+  CodingAgent,
   DashboardOverview,
   FileAtRef,
   GlobalSettings,
@@ -198,6 +199,7 @@ export function updateSettings(
   input: {
     terminalLaunchBackend?: TerminalLaunchBackend;
     autoModeOnBuild?: boolean;
+    codingAgent?: CodingAgent;
   },
   sessionId: string = getSessionId(),
 ) {

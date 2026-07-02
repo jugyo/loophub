@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
-import type { TerminalLaunchBackend } from "@/api/types";
+import type { CodingAgent, TerminalLaunchBackend } from "@/api/types";
 import { SettingsPage } from "./settings-page";
 
 afterEach(() => {
@@ -20,18 +20,22 @@ afterEach(() => {
 function mockFetch(
   initialBackend: TerminalLaunchBackend,
   initialAutoModeOnBuild = false,
+  initialCodingAgent: CodingAgent = "claude-code",
 ) {
   let backend = initialBackend;
   let autoModeOnBuild = initialAutoModeOnBuild;
+  let codingAgent = initialCodingAgent;
   return mockRpcFetch({
     "settings/get": () => ({
       terminalLaunchBackend: backend,
       autoModeOnBuild,
+      codingAgent,
     }),
     "settings/update": (p) => {
       if (p.terminalLaunchBackend) backend = p.terminalLaunchBackend;
       if (p.autoModeOnBuild !== undefined) autoModeOnBuild = p.autoModeOnBuild;
-      return { terminalLaunchBackend: backend, autoModeOnBuild };
+      if (p.codingAgent) codingAgent = p.codingAgent;
+      return { terminalLaunchBackend: backend, autoModeOnBuild, codingAgent };
     },
   });
 }
@@ -39,8 +43,12 @@ function mockFetch(
 function renderSettings(
   initialBackend: TerminalLaunchBackend = "builtin",
   initialAutoModeOnBuild = false,
+  initialCodingAgent: CodingAgent = "claude-code",
 ) {
-  vi.stubGlobal("fetch", mockFetch(initialBackend, initialAutoModeOnBuild));
+  vi.stubGlobal(
+    "fetch",
+    mockFetch(initialBackend, initialAutoModeOnBuild, initialCodingAgent),
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -112,6 +120,41 @@ describe("SettingsPage", () => {
     });
     await waitFor(() =>
       expect(onOption.getAttribute("aria-checked")).toBe("true"),
+    );
+  });
+
+  it("shows the current coding agent as checked", async () => {
+    renderSettings("builtin", false, "codex");
+    // "Claude Code" also appears in the Auto-mode-on-Build hint text ("--auto for Claude
+    // Code"), so an unscoped name match is ambiguous — scope to the Coding agent radiogroup.
+    const group = await screen.findByRole("radiogroup", {
+      name: /coding agent/i,
+    });
+    const [claudeCodeOption, codexOption] = within(group).getAllByRole("radio");
+    await waitFor(() =>
+      expect(codexOption.getAttribute("aria-checked")).toBe("true"),
+    );
+    expect(claudeCodeOption.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("switches the coding agent and persists via settings/update", async () => {
+    renderSettings("builtin", false, "claude-code");
+    const group = await screen.findByRole("radiogroup", {
+      name: /coding agent/i,
+    });
+    const [, codexOption] = within(group).getAllByRole(
+      "radio",
+    ) as HTMLButtonElement[];
+    await waitFor(() => expect(codexOption.disabled).toBe(false));
+    fireEvent.click(codexOption);
+
+    await waitFor(() => {
+      const call = rpcCall("settings/update");
+      expect(call).toBeTruthy();
+      expect(call!.params).toMatchObject({ codingAgent: "codex" });
+    });
+    await waitFor(() =>
+      expect(codexOption.getAttribute("aria-checked")).toBe("true"),
     );
   });
 });
