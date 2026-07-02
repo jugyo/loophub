@@ -852,7 +852,7 @@ function FileDiff({
         />
       ))}
       {lines.length > 0 ? (
-        <pre className="overflow-x-auto text-xs leading-relaxed">
+        <pre className="pr-diff overflow-x-auto text-xs leading-relaxed">
           {lines.map((l, i) => (
             <span key={i} className={`block px-3 ${DIFF_LINE_CLASS[l.kind]}`}>
               {l.text || " "}
