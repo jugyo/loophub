@@ -39,23 +39,24 @@ See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
 
 - `--actor impl-bot` (when posting comments)
 
-## Worktree rules (same as issue-dev)
+## Worktree rules
 
-From repo root:
+Work on the PR's existing head branch (`head.ref` — `loophub/pr-<m>` for `lh dev` PRs), never on
+the main checkout. If the head branch already has a worktree — e.g. the `lh dev` one at
+`~/.loophub/worktrees/<owner>/<repo>/pr-<m>` — **reuse it** (no new worktree needed). Otherwise,
+from repo root:
 
 ```sh
 mkdir -p .worktrees
-git worktree add .worktrees/issue-<n> -b issue-<n> main
-cd .worktrees/issue-<n>
+git worktree add ".worktrees/<head.ref>" <head.ref>
+cd ".worktrees/<head.ref>"
 ```
-
-If the PR head branch already has a worktree, **reuse it** (no new worktree needed).
 
 | Forbidden | Reason |
 |-----------|--------|
 | rebase / merge / commit directly on main | Conflicts with human working copy |
 | `../.worktrees/` outside repo | Outside Cursor sandbox; permissions every run |
-| `../<repo>-issue-<n>` | Pollutes parent directory |
+| `../<repo>-pr-<m>` | Pollutes parent directory |
 
 ## Procedure
 
@@ -145,7 +146,7 @@ Skip pr-review only if user said "stop at rebase".
 
 | Item | issue-dev | rebase-conflict |
 |------|-----------|-----------------|
-| worktree location | `.worktrees/issue-<n>` | same, or existing head worktree |
+| worktree location | `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` (provisioned by `lh dev`) | that one reused, or `.worktrees/<head.ref>` |
 | rebase command | `git rebase main` | same |
 | merge | do not | do not |
 | review | pr-review after PR create | pr-review after resolution |

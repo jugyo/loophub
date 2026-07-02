@@ -159,11 +159,13 @@ or in the session log for AFK/cron).
 
 ### 2. Worktree & session (already provisioned by `lh dev`)
 
-When launched via `lh dev <n>`, the session **starts already inside the issue worktree** with the setup
+When launched via `lh dev <n>`, the session **starts already inside the PR worktree** with the setup
 below done for you — do **not** redo it:
 
-- **Worktree**: provisioned at `~/.loophub/worktrees/<owner>/<repo>/issue-<n>` on branch
-  `loophub/issue-<n>` (off `main`); the session's cwd is already there.
+- **Worktree**: provisioned at `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` on branch
+  `loophub/pr-<m>` (off `main`) — keyed by the **linked PR's number** `<m>`, not the issue number
+  (#463: `lh dev` opens the PR first and derives the branch/worktree name from it, so two PRs for
+  the same issue never collide); the session's cwd is already there.
 - **Session**: registered (agent `lh-dev`). The dev session is attributed to the **PR row**
   (`pulls.session_id`) when `lh dev` opens or re-enters the PR — that is what `lh resume` / retro
   resolve from. There is no issue-assignee step (removed in #186); "who is working this issue" is the
@@ -178,8 +180,8 @@ below done for you — do **not** redo it:
 So skip straight to implementing (§3). Verify the setup once:
 
 ```sh
-git status                          # tree clean; on branch loophub/issue-<n>
-git rev-parse --abbrev-ref HEAD     # loophub/issue-<n>
+git status                          # tree clean; on branch loophub/pr-<m>
+git rev-parse --abbrev-ref HEAD     # loophub/pr-<m>  (<m> = linked PR number)
 ```
 
 Inside the worktree, **`--repo owner/name` is required** for every `lh` call — the worktree lives
@@ -204,14 +206,17 @@ the worktree and the linked draft PR yourself first, then continue. `lh dev open
 on the PR (`pulls.session_id`); there is no separate assign step.
 
 ```sh
-git worktree add ~/.loophub/worktrees/<owner>/<repo>/issue-<n> -b loophub/issue-<n> main
-cd ~/.loophub/worktrees/<owner>/<repo>/issue-<n>
+# `lh dev` derives the branch/worktree name from the PR number (`loophub/pr-<m>`), which is not
+# known until the PR row exists — a manual launch can't reproduce that, so pick a branch name
+# yourself (any name works; `--head` below just has to match it).
+git worktree add ~/.loophub/worktrees/<owner>/<repo>/<branch> -b <branch> main
+cd ~/.loophub/worktrees/<owner>/<repo>/<branch>
 SID="$(uuidgen)"
 lh session register --id "$SID" --agent impl-bot --session "$SID"
 # Open the linked draft PR. `--session-id "$SID"` attributes the session to the PR row
 # (`pulls.session_id`) — the basis for `lh resume` / retro. The soft open-PR check makes this the
 # point at which the issue is "taken": a second open PR for the same issue is refused (422).
-lh pr create --repo <repo> --head loophub/issue-<n> --base main --title "..." --issue <n> --session-id "$SID"
+lh pr create --repo <repo> --head <branch> --base main --title "..." --issue <n> --session-id "$SID"
 ```
 
 #### Parallel LoopHub server (only when changing server code)
@@ -302,7 +307,7 @@ First get the PR number (it is shown by `lh issue view`, or list open PRs for th
 
 ```sh
 lh issue view <n> --repo <repo>     # header shows: linked PR #<m> (open)
-# or: lh pr list --repo <repo> | grep loophub/issue-<n>
+# or read it off the worktree branch: git rev-parse --abbrev-ref HEAD → loophub/pr-<m>
 ```
 
 **`--body` is required.** Do not leave the placeholder body — fill all required sections below.
@@ -364,7 +369,8 @@ The draft PR is normally already there (§2). Only if `lh issue view <n>` shows 
 exception, not the default path:
 
 ```sh
-lh pr create --repo <repo> --head loophub/issue-<n> --base main \
+# --head is the worktree's current branch (git rev-parse --abbrev-ref HEAD)
+lh pr create --repo <repo> --head <branch> --base main \
   --title "..." --issue <n> --actor impl-bot \
   --body "$(cat <<'EOF'
 ... same required sections as above ...
@@ -489,7 +495,7 @@ SHAs and auto-fires `pull_request.updated`, so no manual sync is needed.
 
 - Do not merge
 - Do not work on main
-- Do not edit source outside the issue worktree (`lh dev` starts you inside it; on a manual launch, `cd`
+- Do not edit source outside the PR worktree (`lh dev` starts you inside it; on a manual launch, `cd`
   into the worktree first)
 - Do not auto-start after issue creation without consent (startup guard violation)
 - Do not "implement while you're here" without user confirmation

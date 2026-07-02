@@ -79,9 +79,9 @@ survives worktree removal and session / temp cleanup — and is therefore still 
 ${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/
 ```
 
-- **Key by issue number** (`issue-<n>`, from the `loophub/issue-<n>` head branch) so every step
-  in the chain — dev, review, merge-ready — resolves the same directory. For a PR with no linked
-  issue, use `pr-<m>` instead.
+- **Key by linked issue number** (`issue-<n>`, the issue the PR closes — not the `pr-<m>`
+  worktree name) so every step in the chain — dev, review, merge-ready — resolves the same
+  directory. For a PR with no linked issue, use `pr-<m>` instead.
 - Do **not** keep UI evidence only under the session scratchpad / `$TMPDIR` or inside the
   worktree — both can be cleared before merge-ready, losing the evidence. Copy or write it into
   the directory above.
@@ -98,8 +98,9 @@ repo-add (one-time) → issue-create / plan-to-issues
 rebase-conflict resolves conflicts on a PR head, then resumes pr-review.
 ```
 
-`lh-dev` drives implementation (launched by `lh dev`, which provisions the issue worktree and opens the
-linked PR — the PR's existence is the "taken" signal, the session is attributed to the PR row); these
+`lh-dev` drives implementation (launched by `lh dev`, which opens the linked PR and provisions its
+PR-keyed worktree (`pr-<m>`, #463) — the PR's existence is the "taken" signal, the session is
+attributed to the PR row); these
 skills cover registration, issue authoring, implementation, review, conflict resolution, and the
 pre-merge check.
 
@@ -149,8 +150,12 @@ done
 Skills that work on a PR head (pr-review, rebase-conflict) must **not**
 `git checkout head.ref` on the repo root (main checkout). Shared procedure:
 
-1. Record `head.ref` and repo absolute path (`local_path`) from `lh pr view <m>`
-2. If cwd is already `local_path/.worktrees/<head.ref>`, continue
+1. Record `head.ref` and repo absolute path (`local_path`) from `lh pr view <m>`. For `lh dev`
+   PRs the head is `loophub/pr-<m>`, and its worktree usually already exists at
+   `~/.loophub/worktrees/<owner>/<repo>/pr-<m>`
+2. If a worktree already has `head.ref` checked out — the session's cwd (in-session chain), or
+   the `lh dev` worktree above (`git worktree list`) — use that one (adding a second worktree
+   for a checked-out branch fails)
 3. Else `cd local_path` and check `.worktrees/<head.ref>`:
    - Exists → `cd .worktrees/<head.ref>`
    - Missing → `git worktree add .worktrees/<head.ref> <head.ref>` then `cd`
@@ -161,6 +166,7 @@ Skills that work on a PR head (pr-review, rebase-conflict) must **not**
 Shared shell snippet (substitute `local_path` and `<head.ref>`):
 
 ```sh
+# Only when no worktree has <head.ref> checked out yet (step 2 above) — otherwise cd there.
 ROOT="<local_path>"
 WT="$ROOT/.worktrees/<head.ref>"
 if [ "$(pwd -P)" = "$(cd "$WT" 2>/dev/null && pwd -P)" ]; then
