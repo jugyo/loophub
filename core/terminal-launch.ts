@@ -144,18 +144,45 @@ export function herdrTabCloseArgv(
   return ["herdr", "--session", herdrSessionName(repo), "tab", "close", tabId];
 }
 
-// Observed shape is `w1:t2`. The strict pattern (in particular no leading `-`) keeps a value
-// from child-process stdout from being spliced into the agent-start argv as something herdr
-// would parse as a flag, or from echoing arbitrary process output back to clients via the
-// launch-failure `command` hint.
-const HERDR_TAB_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]*$/;
+export function herdrPaneCloseArgv(
+  repo: TerminalLaunchRepo,
+  paneId: string,
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "pane",
+    "close",
+    paneId,
+  ];
+}
+
+// Observed shape is `w1:t2` for tabs and `w1:p1Q` for panes. The strict pattern (in particular
+// no leading `-`) keeps a value from child-process stdout from being spliced into an argv as
+// something herdr would parse as a flag, or from echoing arbitrary process output back to
+// clients via the launch-failure `command` hint.
+const HERDR_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]*$/;
 
 // `herdr tab create` prints one JSON object with the new tab at .result.tab.tab_id.
 export function parseHerdrTabId(stdout: string): string | null {
   try {
     const parsed = JSON.parse(stdout);
     const tabId = parsed?.result?.tab?.tab_id;
-    return typeof tabId === "string" && HERDR_TAB_ID.test(tabId) ? tabId : null;
+    return typeof tabId === "string" && HERDR_ID.test(tabId) ? tabId : null;
+  } catch {
+    return null;
+  }
+}
+
+// `herdr tab create` seeds the new tab with one empty default pane, reported as
+// `.result.root_pane.pane_id`. `herdr agent start --tab <id>` splits alongside that pane
+// rather than replacing it (#503), so the caller closes it once the agent's own pane exists.
+export function parseHerdrRootPaneId(stdout: string): string | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    const paneId = parsed?.result?.root_pane?.pane_id;
+    return typeof paneId === "string" && HERDR_ID.test(paneId) ? paneId : null;
   } catch {
     return null;
   }

@@ -2,10 +2,12 @@ import { describe, expect, test } from "vitest";
 import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
+  herdrPaneCloseArgv,
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
   normalizeTerminalLaunchBackend,
+  parseHerdrRootPaneId,
   parseHerdrTabId,
 } from "./terminal-launch.ts";
 
@@ -154,6 +156,14 @@ describe("terminal launch backend", () => {
       "close",
       "w1:t2",
     ]);
+    expect(herdrPaneCloseArgv(repo, "w1:p1Q")).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "pane",
+      "close",
+      "w1:p1Q",
+    ]);
   });
 
   test("parses the tab id from herdr tab create output", () => {
@@ -177,6 +187,27 @@ describe("terminal launch backend", () => {
     expect(parseHerdrTabId(wrap("w1;rm"))).toBeNull();
     expect(parseHerdrTabId(wrap(""))).toBeNull();
     expect(parseHerdrTabId(wrap("w1:t2"))).toBe("w1:t2");
+  });
+
+  // `herdr tab create` seeds the new tab with one empty default pane (`root_pane`); the caller
+  // must close it after the agent's own pane starts, or it's left behind as a split (#503).
+  test("parses the root pane id from herdr tab create output", () => {
+    expect(
+      parseHerdrRootPaneId(
+        '{"id":"cli:tab:create","result":{"root_pane":{"pane_id":"w1:p1Q"},"tab":{"tab_id":"w1:t2"},"type":"tab_created"}}',
+      ),
+    ).toBe("w1:p1Q");
+    expect(parseHerdrRootPaneId("")).toBeNull();
+    expect(parseHerdrRootPaneId("not json")).toBeNull();
+    expect(parseHerdrRootPaneId('{"result":{"root_pane":{}}}')).toBeNull();
+    expect(
+      parseHerdrRootPaneId('{"result":{"root_pane":{"pane_id":42}}}'),
+    ).toBeNull();
+    expect(
+      parseHerdrRootPaneId(
+        JSON.stringify({ result: { root_pane: { pane_id: "--workspace" } } }),
+      ),
+    ).toBeNull();
   });
 
   test("does not map unspecified workflows to raw commands", () => {

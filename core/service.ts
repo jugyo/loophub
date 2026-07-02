@@ -92,9 +92,11 @@ import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
   herdrCommandLine,
+  herdrPaneCloseArgv,
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
+  parseHerdrRootPaneId,
   parseHerdrTabId,
   type TerminalLaunchBackend,
 } from "./terminal-launch.ts";
@@ -602,6 +604,11 @@ export const terminal = {
     // surfaces from the agent start below. The timeout keeps a wedged `herdr tab create`
     // from hanging the RPC forever — runHerdr kills it and the catch falls back.
     let tabId: string | null = null;
+    // `herdr tab create` seeds the new tab with one empty default pane; `agent start --tab`
+    // below splits alongside that pane instead of replacing it, leaving it behind (#503) unless
+    // the launch closes it once the agent's own pane exists. Captured from the same tab-create
+    // output as tabId, so it's only ever set together with a usable tabId.
+    let rootPaneId: string | null = null;
     try {
       const tabCreate = herdrTabCreateArgv(repo);
       const out = await runHerdr(
@@ -614,6 +621,7 @@ export const terminal = {
         },
       );
       tabId = parseHerdrTabId(out);
+      rootPaneId = parseHerdrRootPaneId(out);
       // Zero exit with no parseable id means a tab was likely created but can't be closed on
       // failure (no id) — every such launch leaks one empty tab. Log server-side (never to the
       // client) so a herdr output-format drift is noticed instead of silently leaking tabs.
@@ -623,6 +631,7 @@ export const terminal = {
         );
     } catch {
       tabId = null;
+      rootPaneId = null;
     }
 
     const plan = buildHerdrLaunchPlan({
@@ -669,6 +678,15 @@ export const terminal = {
             : undefined,
         });
       throw e;
+    }
+    // The agent's own pane now exists alongside the tab's leftover empty root pane (see the
+    // rootPaneId comment above) — close it. Fire-and-forget: the agent is already running, so a
+    // failure here must not fail the launch, only leave one harmless empty pane behind.
+    if (tabId && rootPaneId) {
+      const paneClose = herdrPaneCloseArgv(repo, rootPaneId);
+      runHerdrLaunch(paneClose[0], paneClose.slice(1), r.local_path).catch(
+        () => {},
+      );
     }
     return {
       backend,

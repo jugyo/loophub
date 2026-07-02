@@ -55,6 +55,10 @@ let repoPath: string;
 const TAB_JSON =
   '{"id":"cli:tab:create","result":{"tab":{"tab_id":"w1:t9","workspace_id":"w1"},"type":"tab_created"}}';
 
+// Real `herdr tab create` output also reports the tab's seeded empty pane as `root_pane`.
+const TAB_JSON_WITH_ROOT_PANE =
+  '{"id":"cli:tab:create","result":{"root_pane":{"pane_id":"w1:p1Q"},"tab":{"tab_id":"w1:t9","workspace_id":"w1"},"type":"tab_created"}}';
+
 function exitWith(status: number, stdout?: string) {
   return (child: { stdout: EventEmitter } & EventEmitter) => {
     if (stdout) child.stdout.emit("data", Buffer.from(stdout));
@@ -106,6 +110,41 @@ describe("terminal.launch tab orchestration", () => {
     expect(agentStart).toContain("start");
     expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w1:t9");
     expect(result).toMatchObject({ backend: "herdr" });
+  });
+
+  // `herdr tab create` seeds the new tab with one empty default pane; `agent start --tab`
+  // splits alongside it rather than replacing it, leaving it behind unless closed (#503).
+  test("closes the tab's leftover empty pane once the agent has started in it", async () => {
+    herdr.script.push(
+      exitWith(0, TAB_JSON_WITH_ROOT_PANE),
+      exitWith(0),
+      exitWith(0),
+    );
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+    });
+
+    // Fire-and-forget cleanup: wait for the queued pane-close spawn to happen.
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(3));
+    const paneClose = herdr.calls[2];
+    expect(paneClose).toContain("pane");
+    expect(paneClose).toContain("close");
+    expect(paneClose).toContain("w1:p1Q");
+  });
+
+  test("skips the pane close when tab create output has no root pane id", async () => {
+    herdr.script.push(exitWith(0, TAB_JSON), exitWith(0));
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+    });
+
+    expect(herdr.calls).toHaveLength(2);
   });
 
   test("falls back to a tab-less launch when tab creation fails", async () => {
