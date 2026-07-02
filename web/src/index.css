@@ -212,6 +212,6 @@
     @apply bg-muted/50 font-semibold;
   }
   .markdown-body img {
-    @apply max-w-full rounded;
+    @apply max-w-full cursor-zoom-in rounded;
   }
 }

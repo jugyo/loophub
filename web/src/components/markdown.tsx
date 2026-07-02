@@ -10,8 +10,10 @@
 // turns those internal links into client-side router navigations.
 
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ImageLightbox } from "@/components/image-lightbox";
 import { remarkIssueRefs } from "@/lib/remark-issue-refs";
 import { cn } from "@/lib/utils";
 
@@ -72,15 +74,53 @@ export function Markdown({
   owner?: string;
   repo?: string;
 }) {
+  // Clicking an embedded image opens it full-size in <ImageLightbox> (#471).
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
+    null,
+  );
   const remarkPlugins: Options["remarkPlugins"] =
     owner && repo
       ? [remarkGfm, [remarkIssueRefs, { owner, repo }]]
       : [remarkGfm];
+  const componentsWithImg: Components = {
+    ...components,
+    img({ src, alt, title }) {
+      if (!src) return null;
+      const open = () => setLightbox({ src, alt: alt ?? "" });
+      return (
+        <img
+          src={src}
+          alt={alt ?? ""}
+          title={title}
+          role="button"
+          tabIndex={0}
+          onClick={open}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              open();
+            }
+          }}
+        />
+      );
+    },
+  };
   return (
     <div className={cn("markdown-body", className)}>
-      <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
+      <ReactMarkdown
+        remarkPlugins={remarkPlugins}
+        components={componentsWithImg}
+      >
         {children}
       </ReactMarkdown>
+      {lightbox && (
+        <ImageLightbox
+          key={lightbox.src}
+          src={lightbox.src}
+          alt={lightbox.alt}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }
