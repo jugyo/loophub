@@ -46,6 +46,7 @@ import {
 import { type GithubDeps, realGithubDeps } from "./github.ts";
 import {
   type HerdrAgent,
+  NO_PANE_ID_PREFIX,
   parseHerdrAgentList,
   parseHerdrAgentRead,
   parseHerdrSessionList,
@@ -93,6 +94,7 @@ import * as S from "./store.ts";
 import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
+  HERDR_ID,
   herdrCommandLine,
   herdrPaneCloseArgv,
   herdrSessionName,
@@ -746,6 +748,34 @@ export const terminal = {
     } catch {
       return { output: null };
     }
+  },
+
+  // Closes the pane an agent is running in — the sidebar kill button (#521). herdr has no
+  // direct "kill agent" command; `pane close` against the agent's pane_id is the confirmed
+  // equivalent. Unlike sessions() above, failures here must reach the client (silently
+  // swallowing a kill the user asked for would be worse than a visible error), so this
+  // rejects with runHerdr's ServiceError as-is instead of degrading to a default.
+  async killAgent(input: { repo: string; paneId: string }): Promise<{
+    ok: true;
+  }> {
+    if (!input.repo) throw new ServiceError(422, "repo is required");
+    if (!input.paneId) throw new ServiceError(422, "paneId is required");
+    if (input.paneId.startsWith(NO_PANE_ID_PREFIX))
+      throw new ServiceError(
+        422,
+        "This agent has no pane id available to close",
+      );
+    // Unlike tab/pane ids parsed from herdr's own stdout (parseHerdrTabId /
+    // parseHerdrRootPaneId), paneId here comes straight from an external JSON-RPC caller —
+    // reject anything that doesn't look like a real herdr id before it reaches the argv.
+    if (!HERDR_ID.test(input.paneId))
+      throw new ServiceError(422, "paneId is not a valid herdr pane id");
+    const r = repoOr404(input.repo);
+    const argv = herdrPaneCloseArgv(r, input.paneId);
+    await runHerdr(argv[0], argv.slice(1), r.local_path, {
+      timeoutMs: 10_000,
+    });
+    return { ok: true };
   },
 };
 

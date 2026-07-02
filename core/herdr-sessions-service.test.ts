@@ -218,3 +218,79 @@ test("terminal.agentRead degrades to a null output when the repo no longer exist
     }),
   ).toEqual({ output: null });
 });
+
+// #521: sidebar kill button. killAgent runs `herdr --session <name> pane close <paneId>` for
+// the repo's deterministic session and surfaces failures instead of degrading like sessions().
+test("terminal.killAgent runs herdr pane close scoped to the repo's session", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/kill-target",
+  });
+  const sessionName = herdrSessionName(repo);
+  const CALLS_FILE = join(HOME, "kill-calls.txt");
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    ["#!/bin/sh", `echo "$@" >> ${CALLS_FILE}`, "exit 0"].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    await expect(
+      svc.terminal.killAgent({ repo: "me/kill-target", paneId: "w1:p2" }),
+    ).resolves.toEqual({ ok: true });
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync(CALLS_FILE, "utf8").trim()).toBe(
+      `--session ${sessionName} pane close w1:p2`,
+    );
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.killAgent rejects an agent with no real pane id instead of shelling out", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/no-pane" });
+  // Never touches PATH — asserts the guard runs before any herdr spawn is attempted.
+  process.env.PATH = EMPTY_BIN;
+  try {
+    await expect(
+      svc.terminal.killAgent({
+        repo: "me/no-pane",
+        paneId: `${String.fromCharCode(0)}idx:0`,
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+// A JSON-RPC caller can send any string as paneId (unlike tab/pane ids parsed from herdr's
+// own stdout, which parseHerdrTabId/parseHerdrRootPaneId already validate) — killAgent must
+// reject anything that doesn't look like a real herdr id before it reaches the argv.
+test("terminal.killAgent rejects a paneId that doesn't look like a real herdr id", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/bad-pane-id" });
+  process.env.PATH = EMPTY_BIN;
+  try {
+    for (const badId of ["-x", "--session", "w1 p2", "w1;rm"]) {
+      await expect(
+        svc.terminal.killAgent({ repo: "me/bad-pane-id", paneId: badId }),
+      ).rejects.toMatchObject({ status: 422 });
+    }
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.killAgent surfaces a visible error when herdr is not installed", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/no-herdr" });
+  process.env.PATH = EMPTY_BIN;
+  try {
+    await expect(
+      svc.terminal.killAgent({ repo: "me/no-herdr", paneId: "w1:p2" }),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: "herdr command not found on PATH",
+    });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});

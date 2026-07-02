@@ -234,6 +234,14 @@ export const methods: Record<string, MethodDef> = {
       }),
   },
 
+  "terminal/killAgent": {
+    description:
+      "Close the pane a herdr agent is running in, identified by its pane id (#521). Fails visibly (herdr not installed, session/pane already gone) rather than silently.",
+    params: params({ repo, paneId: strNonEmpty }, ["repo", "paneId"]),
+    result: anyObject,
+    handler: (p) => svc.terminal.killAgent({ repo: p.repo, paneId: p.paneId }),
+  },
+
   // ---- agent sessions ----
   "sessions/register": {
     description: "Register (or update) an agent session.",

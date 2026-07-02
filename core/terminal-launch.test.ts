@@ -166,6 +166,19 @@ describe("terminal launch backend", () => {
     ]);
   });
 
+  test("builds Herdr pane close argv scoped to the repo session (#521)", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const sessionName = herdrSessionName(repo);
+    expect(herdrPaneCloseArgv(repo, "w1:p2")).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "pane",
+      "close",
+      "w1:p2",
+    ]);
+  });
+
   test("parses the tab id from herdr tab create output", () => {
     expect(
       parseHerdrTabId(

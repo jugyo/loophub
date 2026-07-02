@@ -1,8 +1,9 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getHerdrAgentRead,
   getHerdrSessions,
   getTerminalLaunchConfig,
+  killHerdrAgent,
   launchTerminalWorkflow,
 } from "@/api/client";
 
@@ -60,5 +61,20 @@ export function useHerdrAgentRead(
     enabled: opts.enabled,
     staleTime: 15_000,
     retry: false,
+  });
+}
+
+/**
+ * Kill button mutation (#521): closes the pane a herdr agent is running in. Invalidates the
+ * sessions list on success so the closed agent drops out of the sidebar without waiting for
+ * the next 15s poll.
+ */
+export function useKillHerdrAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: killHerdrAgent,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: terminalKeys.sessions });
+    },
   });
 }

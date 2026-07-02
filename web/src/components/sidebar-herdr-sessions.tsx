@@ -1,14 +1,19 @@
 // Sidebar section (#495): running herdr sessions grouped by repo, shown under the
-// repository list. Display-only — each agent row is a name (e.g. "dev #486") plus a
-// status dot. Renders nothing while loading, on error, or when no session has agents,
-// so the section never gets in the way when herdr isn't in use.
-//
-// Hovering a row (#500) shows a preview of that agent's recent terminal output,
-// fetched on demand via `terminal/agentRead`.
+// repository list. Each agent row is a name (e.g. "dev #486"), a status dot, a kill button
+// (#521, experimental) that closes the agent's pane, and — on hover (#500) — a preview of
+// that agent's recent terminal output, fetched on demand via `terminal/agentRead`. Renders
+// nothing while loading, on error, or when no session has agents, so the section never gets
+// in the way when herdr isn't in use.
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { HerdrAgent } from "@/api/types";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useHerdrAgentRead, useHerdrSessions } from "@/queries/terminal";
+import {
+  useHerdrAgentRead,
+  useHerdrSessions,
+  useKillHerdrAgent,
+} from "@/queries/terminal";
 
 // Hover must hold this long before a preview fetch fires — avoids spawning a herdr
 // process for every row the pointer passes over on its way elsewhere (#500 AC: don't
@@ -16,14 +21,19 @@ import { useHerdrAgentRead, useHerdrSessions } from "@/queries/terminal";
 // hovers shortly after.
 const HOVER_DEBOUNCE_MS = 300;
 
+// The positional-fallback id herdr-status.ts assigns when pane_id is missing starts with a
+// NUL byte (core/herdr-status.ts's NO_PANE_ID_PREFIX) followed by "idx:". Built the same way
+// here (fromCharCode) so this file carries no raw control byte either.
+const NO_PANE_ID_PREFIX = `${String.fromCharCode(0)}idx:`;
+
 // `herdr agent read` accepts a pane id or a *unique* agent name — two label-less
 // launches can share a display name (see HerdrAgent.id's doc in api/types.ts), which
 // would make a name-based lookup ambiguous. `agent.id` is already the pane id
 // whenever herdr reported one (core/herdr-status.ts's parseHerdrAgentList); prefer it
 // so the preview can't be misattributed to another same-named agent, falling back to
-// the name only for the rare synthetic id (`\u0000idx:N`, no pane_id case).
+// the name only for the rare synthetic id (no pane_id case).
 function agentReadTarget(agent: HerdrAgent): string {
-  return agent.id.startsWith("\u0000idx:") ? agent.name : agent.id;
+  return agent.id.startsWith(NO_PANE_ID_PREFIX) ? agent.name : agent.id;
 }
 
 // Known agent_status values -> dot color; anything unrecognized falls back to muted.
@@ -81,6 +91,8 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   const [preview, setPreview] = useState<{ top: number; left: number } | null>(
     null,
   );
+  const [confirming, setConfirming] = useState(false);
+  const killAgent = useKillHerdrAgent();
 
   function clearHoverTimer() {
     if (hoverTimer.current !== null) {
@@ -123,10 +135,21 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
     setPreview(null);
   }
 
+  async function onConfirmKill() {
+    try {
+      await killAgent.mutateAsync({ repo, paneId: agent.id });
+    } catch {
+      // Surfaced via killAgent.error in the dialog; keep it open instead of throwing an
+      // unhandled rejection from this event handler.
+      return;
+    }
+    setConfirming(false);
+  }
+
   return (
     <div
       ref={rowRef}
-      className="flex items-center gap-2 px-2 py-0.5 pl-4 text-sm"
+      className="group flex items-center gap-2 px-2 py-0.5 pl-4 text-sm"
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
@@ -141,11 +164,33 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
       <span className="ml-auto shrink-0 text-xs text-muted-foreground">
         {agent.status}
       </span>
+      <button
+        type="button"
+        aria-label={`Close ${agent.name}'s pane`}
+        className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+        onClick={() => {
+          killAgent.reset();
+          setConfirming(true);
+        }}
+      >
+        <X className="size-3.5" />
+      </button>
+
       {preview ? (
         <AgentPreview
           repo={repo}
           target={agentReadTarget(agent)}
           position={preview}
+        />
+      ) : null}
+
+      {confirming ? (
+        <ConfirmKillAgentDialog
+          agentName={agent.name}
+          pending={killAgent.isPending}
+          error={killAgent.error ? String(killAgent.error) : null}
+          onConfirm={onConfirmKill}
+          onCancel={() => setConfirming(false)}
         />
       ) : null}
     </div>
@@ -187,6 +232,63 @@ function AgentPreview({
       <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">
         {data.output}
       </pre>
+    </div>
+  );
+}
+
+// Gates the kill button behind a confirm dialog (#521 AC: misclick protection for a
+// destructive action). Follows the same role="dialog" + fixed inset-0 backdrop pattern as
+// repo-menu.tsx's ConfirmArchiveDialog.
+function ConfirmKillAgentDialog({
+  agentName,
+  pending,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  agentName: string;
+  pending: boolean;
+  error: string | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Close agent pane"
+        className="flex w-full max-w-md flex-col rounded-lg border bg-background p-5 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold">Close {agentName}'s pane?</h2>
+        <p className="mt-3 text-sm text-muted-foreground">
+          This closes the herdr pane the agent is running in. Unsaved work in
+          that pane is lost.
+        </p>
+        {error ? (
+          <p className="mt-3 text-sm text-destructive">{error}</p>
+        ) : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} disabled={pending}>
+            {pending ? "Closing…" : "Close pane"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

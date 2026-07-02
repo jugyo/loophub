@@ -240,6 +240,11 @@ export function getHerdrAgentRead(input: {
   return rpc<HerdrAgentRead>("terminal/agentRead", clean(input));
 }
 
+/** Close the pane a herdr agent is running in — the sidebar kill button (#521). */
+export function killHerdrAgent(input: { repo: string; paneId: string }) {
+  return rpc<{ ok: true }>("terminal/killAgent", input);
+}
+
 // --- issues ---
 export function listIssues(owner: string, repo: string, query = "") {
   const sp = new URLSearchParams(query);

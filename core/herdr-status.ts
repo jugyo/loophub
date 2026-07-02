@@ -22,6 +22,13 @@ export interface HerdrAgent {
   status: string;
 }
 
+// Prefix for the positional-fallback id assigned below when herdr omits pane_id. Built via
+// fromCharCode(0) so the leading control byte never appears as a literal in the source. That
+// control byte keeps the prefix out of the pane_id namespace, so a real pane_id can never
+// collide with it — service.ts checks this prefix to refuse a pane-close call against an
+// agent that has no real pane to close.
+export const NO_PANE_ID_PREFIX = `${String.fromCharCode(0)}idx:`;
+
 /** Running session names from `herdr session list --json` output. */
 export function parseHerdrSessionList(stdout: string): string[] {
   const parsed = tryParse(stdout);
@@ -59,12 +66,12 @@ export function parseHerdrAgentList(stdout: string): HerdrAgent[] {
     };
     if (typeof rec.name !== "string" || rec.name === "") continue;
     out.push({
-      // The positional fallback stays unique within one parse; the NUL byte keeps it
-      // out of the pane_id namespace, so a real pane_id can never collide with it.
+      // The positional fallback stays unique within one parse; NO_PANE_ID_PREFIX's control
+      // byte keeps it out of the pane_id namespace, so a real pane_id can never collide with it.
       id:
         typeof rec.pane_id === "string" && rec.pane_id !== ""
           ? rec.pane_id
-          : `\u0000idx:${out.length}`,
+          : `${NO_PANE_ID_PREFIX}${out.length}`,
       name: rec.name,
       status: typeof rec.agent_status === "string" ? rec.agent_status : "",
     });

@@ -144,6 +144,8 @@ export function herdrTabCloseArgv(
   return ["herdr", "--session", herdrSessionName(repo), "tab", "close", tabId];
 }
 
+// Closes the pane an agent is running in (#521's kill button). `herdr` has no direct
+// "kill agent" command; closing its pane is the confirmed equivalent.
 export function herdrPaneCloseArgv(
   repo: TerminalLaunchRepo,
   paneId: string,
@@ -161,8 +163,10 @@ export function herdrPaneCloseArgv(
 // Observed shape is `w1:t2` for tabs and `w1:p1Q` for panes. The strict pattern (in particular
 // no leading `-`) keeps a value from child-process stdout from being spliced into an argv as
 // something herdr would parse as a flag, or from echoing arbitrary process output back to
-// clients via the launch-failure `command` hint.
-const HERDR_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]*$/;
+// clients via the launch-failure `command` hint. Exported so callers that take an id from
+// outside herdr's own output — e.g. killAgent's client-supplied paneId — can apply the same
+// guard before it reaches an argv.
+export const HERDR_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]*$/;
 
 // `herdr tab create` prints one JSON object with the new tab at .result.tab.tab_id.
 export function parseHerdrTabId(stdout: string): string | null {

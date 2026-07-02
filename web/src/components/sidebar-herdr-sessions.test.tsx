@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
@@ -21,6 +22,7 @@ afterEach(() => {
 function renderWithSessions(
   result: HerdrSessions,
   agentRead?: HerdrAgentRead | ((params: any) => HerdrAgentRead),
+  extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
   vi.stubGlobal(
     "fetch",
@@ -30,6 +32,7 @@ function renderWithSessions(
         typeof agentRead === "function"
           ? agentRead(p)
           : (agentRead ?? { output: null }),
+      ...extraHandlers,
     }),
   );
   const queryClient = new QueryClient({
@@ -150,7 +153,11 @@ describe("SidebarHerdrSessions", () => {
               session_name: "me-app-12345678",
               // The synthetic idx: id (no pane_id from herdr) — see core/herdr-status.ts.
               agents: [
-                { id: "\u0000idx:0", name: "dev #11", status: "working" },
+                {
+                  id: `${String.fromCharCode(0)}idx:0`,
+                  name: "dev #11",
+                  status: "working",
+                },
               ],
             },
           ],
@@ -225,5 +232,97 @@ describe("SidebarHerdrSessions", () => {
       await waitFor(() => expect(rpcCall("terminal/agentRead")).toBeDefined());
       expect(screen.queryByRole("tooltip")).toBeNull();
     });
+  });
+
+  // #521: kill button.
+  const ONE_AGENT: HerdrSessions = {
+    repos: [
+      {
+        repo: "me/app",
+        session_name: "me-app-12345678",
+        agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+      },
+    ],
+  };
+
+  it("gates the kill button behind a confirm dialog and closes the pane on confirm", async () => {
+    renderWithSessions(ONE_AGENT, undefined, {
+      "terminal/killAgent": () => ({ ok: true }),
+    });
+
+    // Not visible until the kill button is clicked.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Close dev #11's pane" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close pane" }));
+
+    await waitFor(() => {
+      const call = rpcCall("terminal/killAgent");
+      expect(call).toBeTruthy();
+      expect(call!.params).toMatchObject({ repo: "me/app", paneId: "w1:p1" });
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("cancels without calling killAgent", async () => {
+    renderWithSessions(ONE_AGENT, undefined, {
+      "terminal/killAgent": () => ({ ok: true }),
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Close dev #11's pane" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(rpcCall("terminal/killAgent")).toBeUndefined();
+  });
+
+  it("keeps the dialog open and shows the error when the kill fails (#521 AC: no silent failure)", async () => {
+    renderWithSessions(ONE_AGENT, undefined, {
+      "terminal/killAgent": () => {
+        throw new RpcFault(422, "herdr command not found on PATH");
+      },
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Close dev #11's pane" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close pane" }));
+
+    expect(
+      await screen.findByText(/herdr command not found on PATH/),
+    ).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("does not show a stale error from a previous failed attempt when the dialog reopens", async () => {
+    renderWithSessions(ONE_AGENT, undefined, {
+      "terminal/killAgent": () => {
+        throw new RpcFault(422, "herdr command not found on PATH");
+      },
+    });
+
+    const killButton = await screen.findByRole("button", {
+      name: "Close dev #11's pane",
+    });
+    fireEvent.click(killButton);
+    let dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close pane" }));
+    await screen.findByText(/herdr command not found on PATH/);
+
+    // Cancel, then reopen — the dialog must start clean, not show the previous failure.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(killButton);
+    dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).queryByText(/herdr command not found on PATH/),
+    ).toBeNull();
   });
 });
