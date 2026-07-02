@@ -69,7 +69,7 @@ export function CreateIssueButton() {
             herdr
               ? launchTerminal({
                   repo,
-                  label: "new issue",
+                  label: "New issue",
                   workflow: "issue-create",
                 })
               : builtin

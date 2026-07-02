@@ -40,6 +40,38 @@ export function herdrSessionName(repo: TerminalLaunchRepo): string {
   return `${repoPart}-${hash}`;
 }
 
+// Long issue/PR titles baked into a herdr agent name (label) could otherwise appear as a huge or
+// multi-line token in the copy-pasteable command line the launch-error dialog shows (see
+// herdrCommandLine) — those titles come straight from GitHub issue/PR data, so treat them as
+// untrusted: strip control/escape/bidi-override characters that could smuggle terminal escape
+// sequences or spoof the displayed text, collapse whitespace, and cap the length. Truncation
+// slices by Unicode code point (not UTF-16 code unit) so it can't split a surrogate pair.
+const MAX_AGENT_NAME_LENGTH = 80;
+// C0/C1 controls (incl. ESC) plus the Unicode bidi-override/isolate control characters
+// (U+200E/U+200F LRM/RLM, U+202A-U+202E embedding/override, U+2066-U+2069 isolates).
+const UNSAFE_CHARS =
+  /[\x00-\x1F\x7F-\x9F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+
+function normalizeAgentName(
+  label: string,
+  max = MAX_AGENT_NAME_LENGTH,
+): string {
+  // Replace (not delete) unsafe chars with a space first, so a bare newline/tab or a control
+  // char sitting between two separate whitespace runs still leaves a separator behind instead
+  // of gluing words together; the single \s+ collapse pass afterward then merges everything
+  // (original whitespace + newly-inserted spaces) down to one space.
+  const collapsed = label
+    .replace(UNSAFE_CHARS, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const codePoints = [...collapsed];
+  if (codePoints.length <= max) return collapsed;
+  return `${codePoints
+    .slice(0, max - 1)
+    .join("")
+    .trimEnd()}…`;
+}
+
 function shellArg(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -92,7 +124,7 @@ export function buildHerdrLaunchPlan(input: {
   label?: string;
 }): HerdrLaunchPlan {
   const sessionName = herdrSessionName(input.repo);
-  const agentName = input.label || "LoopHub workflow";
+  const agentName = normalizeAgentName(input.label || "LoopHub workflow");
   const argv = [
     "herdr",
     "--session",

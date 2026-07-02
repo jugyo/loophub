@@ -369,7 +369,7 @@ function GithubPrAction({
         launchTerminal({
           command: `claude "/create-github-pr ${pull.number}"`,
           repo: `${owner}/${repo}`,
-          label: `gh-pr #${pull.number}`,
+          label: `PR #${pull.number} - ${pull.title}`,
           workflow: "github-pr-export",
           prNumber: pull.number,
         })

@@ -218,7 +218,7 @@ function IssueHeader({
               launchTerminal({
                 command: `lh dev ${issue.number}`,
                 repo: `${owner}/${repo}`,
-                label: `dev #${issue.number}`,
+                label: `Issue #${issue.number} - ${issue.title}`,
                 issueRef: { owner, repo, number: issue.number },
                 workflow: "issue-dev",
                 issueNumber: issue.number,

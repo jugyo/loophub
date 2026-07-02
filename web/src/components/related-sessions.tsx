@@ -178,7 +178,7 @@ export function RelatedSessions({
                       launchTerminal({
                         command: terminalCommand,
                         repo: `${owner}/${repo}`,
-                        label: `resume ${s.name ?? s.kind ?? s.id}`,
+                        label: `Resume - ${s.name ?? s.kind ?? s.id}`,
                         workflow: "resume",
                         session: s.session,
                         cwd: cdPrefix ?? undefined,

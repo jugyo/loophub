@@ -225,7 +225,7 @@ describe("IssueRow", () => {
     expect(launchTerminal).toHaveBeenCalledWith({
       command: "lh dev 7",
       repo: "me/proj",
-      label: "dev #7",
+      label: "Issue #7 - Example issue",
       issueRef: { owner: "me", repo: "proj", number: 7 },
       workflow: "issue-dev",
       issueNumber: 7,

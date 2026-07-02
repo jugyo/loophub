@@ -108,7 +108,7 @@ describe("RelatedSessions", () => {
       command:
         "cd /home/me/.loophub/worktrees/jugyo/loophub/issue-7 && claude --resume 11111111-2222-3333-4444-555555555555",
       repo: "jugyo/loophub",
-      label: "resume dev",
+      label: "Resume - dev",
       workflow: "resume",
       session: "11111111-2222-3333-4444-555555555555",
       cwd: "/home/me/.loophub/worktrees/jugyo/loophub/issue-7",

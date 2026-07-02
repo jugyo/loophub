@@ -95,7 +95,7 @@ describe("CreateIssueButton", () => {
 
     expect(launchTerminal).toHaveBeenCalledWith({
       repo: "me/proj",
-      label: "new issue",
+      label: "New issue",
       workflow: "issue-create",
     });
     expect(screen.queryByRole("dialog")).toBeNull();
