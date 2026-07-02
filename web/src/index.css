@@ -214,4 +214,83 @@
   .markdown-body img {
     @apply max-w-full cursor-zoom-in rounded;
   }
+
+  /* Full-file preview (#462): a more spacious vertical rhythm for reading a
+     whole rendered file, scoped via an extra class alongside .markdown-body
+     (see MarkdownPreviewModal) so the shared issue/PR/comment rules above are
+     untouched. Selectors combine both classes for specificity, independent of
+     declaration order.
+
+     Spacing is modeled after the @tailwindcss/typography `prose` scale
+     (mirrored by GitHub's own rendered-Markdown spacing): larger top margin
+     than bottom margin on headings so a section reads as attached to the
+     content below it and separated from what precedes it, and generous
+     breathing room around block-level elements (paragraphs, lists,
+     blockquotes, code blocks, tables) rather than a single uniform margin. */
+  .markdown-preview.markdown-body {
+    @apply leading-7;
+  }
+  .markdown-preview.markdown-body h1 {
+    @apply mb-4 mt-10 pb-2 text-2xl leading-snug;
+  }
+  .markdown-preview.markdown-body h2 {
+    @apply mb-3 mt-9 pb-2 text-xl leading-snug;
+  }
+  .markdown-preview.markdown-body h3 {
+    @apply mb-2 mt-7 text-lg leading-snug;
+  }
+  .markdown-preview.markdown-body h4,
+  .markdown-preview.markdown-body h5,
+  .markdown-preview.markdown-body h6 {
+    @apply mb-2 mt-6 leading-snug;
+  }
+  .markdown-preview.markdown-body p {
+    @apply my-5;
+  }
+  .markdown-preview.markdown-body ul,
+  .markdown-preview.markdown-body ol {
+    @apply my-5;
+  }
+  .markdown-preview.markdown-body li {
+    @apply my-1.5;
+  }
+  .markdown-preview.markdown-body li > ul,
+  .markdown-preview.markdown-body li > ol {
+    @apply my-1.5;
+  }
+  .markdown-preview.markdown-body blockquote {
+    @apply my-6 py-1 pl-5;
+  }
+  .markdown-preview.markdown-body pre {
+    @apply my-6 p-5;
+  }
+  .markdown-preview.markdown-body table {
+    @apply my-6;
+  }
+  .markdown-preview.markdown-body th,
+  .markdown-preview.markdown-body td {
+    @apply px-4 py-2;
+  }
+  .markdown-preview.markdown-body hr {
+    @apply my-10;
+  }
+  /* GFM wraps loose-list-item and blockquote content in <p>, which would
+     otherwise stack the paragraph's own my-5 on top of the li/blockquote's
+     own spacing. */
+  .markdown-preview.markdown-body li > p,
+  .markdown-preview.markdown-body blockquote > p {
+    @apply my-0;
+  }
+  /* react-markdown renders without a wrapper element, so these headings /
+     paragraphs / lists / etc. sit directly under the .markdown-body div —
+     exactly what .markdown-body > :first-child / :last-child (mt-0 / mb-0,
+     specificity 0-2-0) target. Every tag-qualified rule above resolves to
+     0-2-1, which outranks that reset regardless of source order, so it must
+     be restated here at equal-or-higher specificity to still win. */
+  .markdown-preview.markdown-body > :first-child {
+    @apply mt-0;
+  }
+  .markdown-preview.markdown-body > :last-child {
+    @apply mb-0;
+  }
 }

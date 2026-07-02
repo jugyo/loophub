@@ -101,7 +101,7 @@ export function MarkdownPreviewModal({
               N/A — binary file, cannot render as Markdown.
             </p>
           ) : (
-            <Markdown owner={owner} repo={repo}>
+            <Markdown owner={owner} repo={repo} className="markdown-preview">
               {active.data?.content ?? ""}
             </Markdown>
           )}
