@@ -1,10 +1,8 @@
 ---
 name: create-github-pr
 description: >-
-  Submit a LoopHub PR to GitHub as a Draft PR: generate a content-based branch name, English title, and
-  a description from the repo PR template, then hand them to `lh pr create-github-pr`, which pushes the
-  branch, opens a GitHub Draft PR, and records it back atomically. Use when the user runs
-  /create-github-pr {pr id}, clicks "Create PR on GitHub" in the PR detail, or asks to
+  Submit a LoopHub PR to GitHub as a Draft PR, then record it back into LoopHub. Use when the user
+  runs /create-github-pr {pr id}, clicks "Create PR on GitHub" in the PR detail, or asks to
   create/submit/open a GitHub PR from a LoopHub PR. Does not merge or review the GitHub PR.
 ---
 
@@ -65,8 +63,8 @@ longer `cd`s anywhere. If the id is omitted, ask the user for the LoopHub PR num
 
 ## LoopHub
 
-- Server: default `http://localhost:8730` (`~/.loophub/config.json`)
-- CLI: `lh` (on PATH)
+See `skills/README.md` § LoopHub basics for server / CLI defaults.
+
 - `--repo owner/name` — pass it explicitly. The terminal opens at the repo root, but the command's
   worktree/branch resolution and the double-create guard read are unambiguous when the repo is named.
 
@@ -81,9 +79,7 @@ longer `cd`s anywhere. If the id is omitted, ask the user for the LoopHub PR num
 |------|--------|
 | PR (LoopHub) | `{baseUrl}/r/{owner}/{repo}/pulls/{m}` |
 
-- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
-  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` →
-  `http://localhost:${LOOPHUB_PORT:-8730}`)
+See `skills/README.md` § Web URL / baseUrl resolution for how `baseUrl` is computed.
 
 ## Procedure
 

@@ -49,6 +49,26 @@ command exactly.
   missing vendor reviewer never blocks review. Documentation runs only for changed documentation files
   and checks reader fit, not implementation correctness.
 
+## LoopHub basics
+
+Shared conventions referenced from every skill's own `## LoopHub` section:
+
+- **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
+- **CLI**: `lh` (on PATH), or `bun run <repo>/src/cli.ts` from a checkout
+- **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
+
+### Web URL / baseUrl resolution
+
+For any UI link a skill reports back to the user:
+
+- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
+  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` →
+  `http://localhost:${LOOPHUB_PORT:-8730}`)
+- **owner/repo**: `--repo`, or repo resolution from cwd (same as `lh issue view` / `resolveRepo()`)
+
+Each skill's own `## LoopHub` / `### Web URL` section states the specific URL format it links (issue /
+PR / repo) and points here for how `baseUrl` itself is computed.
+
 ## Evidence screenshots
 
 UI / visual evidence (screenshots) is stored in a **persistent evidence directory** so it

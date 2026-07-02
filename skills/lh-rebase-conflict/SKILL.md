@@ -35,9 +35,8 @@ Dispatch / cron must pass `<pr id>` explicitly (no inference).
 
 ## LoopHub
 
-- Server: default `http://localhost:8730` (`~/.loophub/config.json`)
-- CLI: `lh` or `bun run <repo>/src/cli.ts`
-- `--repo owner/name` (omit when cwd is the repo root; **required inside `.worktrees/`**)
+See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
+
 - `--actor impl-bot` (when posting comments)
 
 ## Worktree rules (same as issue-dev)

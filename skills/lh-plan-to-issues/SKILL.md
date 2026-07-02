@@ -35,13 +35,13 @@ LoopHub variant of the generic `to-issues` skill.
 
 `/lh-plan-to-issues` — use conversation context or an issue / document from arguments.
 
-Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
+See `skills/README.md` (skill naming) for why this skill does not use a `loop-` prefix.
 
 ## LoopHub
 
-- Server: default `http://localhost:8730` (`~/.loophub/config.json`)
-- **CLI**: `lh issue create|view|list` — publish and verify
-- `--repo owner/name` (omit when cwd is the repo root; **required inside `.worktrees/`**)
+See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
+
+- **Commands used here**: `lh issue create|view|list`
 - `--actor triage-bot` (default)
 
 ## Language

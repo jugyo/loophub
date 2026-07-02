@@ -70,7 +70,7 @@ Stop **immediately** when all of the following are true (do not start extra work
 `/lh-issue-create` — file an issue from conversation context. Follow any title or type the user
 specifies.
 
-Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
+See `skills/README.md` (skill naming) for why this skill does not use a `loop-` prefix.
 
 ### Question mode (no arguments, no context)
 
@@ -113,9 +113,8 @@ is created, **stop** — do not implement (see § Scope boundary).
 
 ## LoopHub
 
-- Server: default `http://localhost:8730` (`~/.loophub/config.json`)
-- **CLI**: `lh` or `bun run <repo>/src/cli.ts` — create, duplicate check, verify
-- `--repo owner/name` (omit when cwd is the repo root; **required inside `.worktrees/`**)
+See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
+
 - `--actor triage-bot` (default) or user-specified
 
 | Action | CLI |
@@ -132,9 +131,8 @@ Always show the user a UI URL when reporting creation (no CLI output changes req
 {baseUrl}/r/{owner}/{repo}/issues/{n}
 ```
 
-- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
-  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` → `http://localhost:${LOOPHUB_PORT:-8730}`)
-- **owner/repo**: `--repo` at create time (when omitted, same resolution as `resolveRepo()` from cwd)
+See `skills/README.md` § Web URL / baseUrl resolution for how `baseUrl` is computed (`--repo` at
+create time when cwd doesn't already resolve it).
 
 Example: `http://localhost:8730/r/jugyo/local-github/issues/42`
 

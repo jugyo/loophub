@@ -1,11 +1,10 @@
 ---
 name: lh-retro
 description: >-
-  Retrospect a merged LoopHub PR (or backfill the recent merged PRs that have none) from LoopHub
-  data only — events, diff, reviews, issue — score a small rubric (R1/R3/R5/R8) plus free-form
-  findings, and save them to the retros DB, emitting session.retro.created. Use when the user runs
-  /lh-retro {pr id}, asks to retrospect/振り返り a PR or loop, or to backfill retros. Read-only on the
-  repo: it never merges, edits source, or changes state.
+  Retrospect a merged LoopHub PR (or backfill the recent merged PRs that have none) and save the
+  findings to the retros DB. Use when the user runs /lh-retro {pr id}, asks to retrospect/振り返り a
+  PR or loop, or to backfill retros. Read-only on the repo: it never merges, edits source, or
+  changes state.
 ---
 
 # LoopHub retro
@@ -15,8 +14,8 @@ Generate a **retrospective** for a merged PR and **save it to the `retros` DB**,
 (`docs/loop-retrospective-design.ja.md` / `docs/loop-retrospective-prd.ja.md`): turn a finished
 loop into structured, queryable knowledge so it accumulates even before anything consumes it.
 
-**This skill only reads + saves.** It does not merge, edit source, change issue/PR state, or edit
-skills. Producing and storing the retro is the entire job (PRD §5 boundary).
+**This skill only reads + saves — see [Boundaries](#boundaries-do-not).** Producing and storing the
+retro is the entire job (PRD §5 boundary).
 
 ## Invocation
 

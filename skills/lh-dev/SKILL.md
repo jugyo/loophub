@@ -45,7 +45,7 @@ selection UI**). If the id is **omitted**, present a selection UI (see § Select
 
 **If the startup guard is not satisfied, stop here** — even if you know the issue number.
 
-Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
+See `skills/README.md` (skill naming) for why this skill does not use a `loop-` prefix.
 
 ### Selecting an issue (no id given)
 
@@ -90,9 +90,8 @@ If no candidate issues are found (empty list), say so and ask the user for an is
 
 ## LoopHub
 
-- Server: default `http://localhost:8730` (`~/.loophub/config.json`)
-- CLI: `lh` (on PATH)
-- `--repo owner/name` (omit only when cwd is the repo root; **required inside a worktree**)
+See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
+
 - `--session-id` — attribution for comments and other writes (`lh dev` attributes the session to the linked PR row for you)
 
 ### Web URL (for reporting)
@@ -104,9 +103,7 @@ Always show the user a UI URL when reporting (no CLI output changes required).
 | issue | `{baseUrl}/r/{owner}/{repo}/issues/{n}` |
 | PR | `{baseUrl}/r/{owner}/{repo}/pulls/{m}` |
 
-- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
-  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` → `http://localhost:${LOOPHUB_PORT:-8730}`)
-- **owner/repo**: `--repo` or repo resolution from cwd (same as `lh issue view`)
+See `skills/README.md` § Web URL / baseUrl resolution for how `baseUrl` is computed.
 
 Example: `http://localhost:8730/r/jugyo/local-github/issues/73`
 
@@ -340,31 +337,9 @@ EOF
 )"
 ```
 
-When running a **parallel server** in the worktree (§2 `lh-web --port 8731`), set `LOOPHUB_URL`:
-
-```sh
-LOOPHUB_URL=http://localhost:8731 lh pr update <m> --repo <repo> \
-  --body "$(cat <<'EOF'
-## Summary
-- <1–3 bullets: what changed and why>
-
-## Acceptance criteria
-- [x] <AC item satisfied by this PR — mirror from the issue>
-- [ ] <AC item not yet met / out of scope> — <one-line reason>
-
-## Test plan
-- [x] <how you verified — e.g. npm test>
-
-## Evidence
-- **Tests**: `<command>` — excerpt, e.g. `42 pass, 0 fail` or the final summary line
-- **UI / visual** (when applicable): embed markdown from `lh attachment add --file <path>` (`![name](/attachments/<sha256>)`), so it renders inline — not a filesystem path; one line on what it shows
-- **CLI / API** (when applicable): command + representative output snippet
-- **N/A** (docs-only / trivial): one line why substantive evidence does not apply — do not omit this section
-
-Closes #<n>
-EOF
-)"
-```
+When running a **parallel server** in the worktree (§2 `lh-web --port 8731`), prefix
+`LOOPHUB_URL=http://localhost:8731` on the same command — the `--body` heredoc is identical to the one
+above.
 
 | Required | Content |
 |----------|---------|

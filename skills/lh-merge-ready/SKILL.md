@@ -44,13 +44,13 @@ Merge-ready check for PR #<m>: <title>
 
 Dispatch / cron must pass `<pr id>` explicitly (no inference).
 
-Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
+See `skills/README.md` (skill naming) for why this skill does not use a `loop-` prefix.
 
 ## LoopHub
 
-- Server: default `http://localhost:8730` (`~/.loophub/config.json`)
-- **CLI**: `lh pr view|merge`, `lh issue comment`
-- `--repo owner/name` (omit when cwd is the repo root; **required inside `.worktrees/`**)
+See `skills/README.md` § LoopHub basics for server / CLI / `--repo` defaults.
+
+- **Commands used here**: `lh pr view|merge`, `lh issue comment`
 
 ## Language
 

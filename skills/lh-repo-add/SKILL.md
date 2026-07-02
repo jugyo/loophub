@@ -50,13 +50,13 @@ Optional arguments the user may supply:
 /lh-repo-add /abs/path --name owner/repo
 ```
 
-Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
+See `skills/README.md` (skill naming) for why this skill does not use a `loop-` prefix.
 
 ## LoopHub
 
-- Server: default `http://localhost:8730` (`~/.loophub/config.json`) — **`lh serve` must be running**
-- **CLI**: `lh` or `bun run <repo>/src/cli.ts`
-- `lh repo add` does not require `--repo` (registers globally under `LOOPHUB_HOME`)
+See `skills/README.md` § LoopHub basics for server / CLI defaults — **`lh serve` must be running**
+for this skill. Exception: `lh repo add` does not require `--repo` (registers globally under
+`LOOPHUB_HOME`).
 
 | Action | CLI |
 |--------|-----|
@@ -72,8 +72,7 @@ After registration, the repo appears in the LoopHub UI:
 {baseUrl}/r/{owner}/{repo}
 ```
 
-- **baseUrl**: `lh info --json | jq -r .baseUrl` (do **not** read `~/.loophub/config.json` directly —
-  `lh info` applies the canonical resolution order: `LOOPHUB_URL` → config `url` → `http://localhost:${LOOPHUB_PORT:-8730}`)
+See `skills/README.md` § Web URL / baseUrl resolution for how `baseUrl` is computed.
 
 Example: `http://localhost:8730/r/jugyo/my-project`
 
