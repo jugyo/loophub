@@ -103,6 +103,7 @@ import {
   herdrTabCreateArgv,
   herdrWorkspaceCloseArgv,
   herdrWorkspaceCreateArgv,
+  herdrWorkspaceFocusArgv,
   parseHerdrRootPaneId,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
@@ -723,6 +724,17 @@ export const terminal = {
             : undefined,
         });
       throw e;
+    }
+    // Switch herdr's active workspace to the one just created, now that the agent is running in
+    // it (#556) — `herdr workspace create` above used `--no-focus` so creation itself wouldn't
+    // yank focus mid-launch, which otherwise left the new workspace selectable only by hand.
+    // Only the New Issue path creates its own workspace; every other flow keeps reusing (and
+    // staying on) the existing default workspace, so this is scoped to isNewWorkspace exactly
+    // like the workspace-create call above. Fire-and-forget, same as the pane close below: the
+    // agent is already running, so a failure to switch selection must not fail the launch.
+    if (isNewWorkspace && workspaceId) {
+      const focus = herdrWorkspaceFocusArgv(repo, workspaceId);
+      runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
     }
     // The agent's own pane now exists alongside the tab's leftover empty root pane (see the
     // rootPaneId comment above) — close it. Fire-and-forget: the agent is already running, so a

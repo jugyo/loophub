@@ -217,7 +217,7 @@ describe("terminal.launch tab orchestration", () => {
 
 describe("terminal.launch new-workspace orchestration for New Issue (#544)", () => {
   test("creates a new workspace (not a tab in the existing session) and starts the agent in it", async () => {
-    herdr.script.push(exitWith(0, WORKSPACE_JSON), exitWith(0));
+    herdr.script.push(exitWith(0, WORKSPACE_JSON), exitWith(0), exitWith(0));
 
     const result = await svc.terminal.launch({
       repo: "me/proj",
@@ -225,7 +225,6 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
       label: "New issue",
     });
 
-    expect(herdr.calls).toHaveLength(2);
     expect(herdr.calls[0]).toContain("workspace");
     expect(herdr.calls[0]).toContain("create");
     expect(herdr.calls[0]).not.toContain("tab");
@@ -233,6 +232,25 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
     expect(agentStart).toContain("start");
     expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w4:t1");
     expect(result).toMatchObject({ backend: "herdr" });
+  });
+
+  // Once the agent is running in the new workspace, herdr's active workspace should switch to
+  // it automatically (#556) rather than leaving it selectable only by hand.
+  test("focuses the newly created workspace once the agent has started (#556)", async () => {
+    herdr.script.push(exitWith(0, WORKSPACE_JSON), exitWith(0), exitWith(0));
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-create",
+      label: "New issue",
+    });
+
+    // Fire-and-forget: wait for the queued focus spawn to happen.
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(3));
+    const focus = herdr.calls[2];
+    expect(focus).toContain("workspace");
+    expect(focus).toContain("focus");
+    expect(focus).toContain("w4");
   });
 
   test("other workflows keep creating a tab in the existing session, not a new workspace", async () => {
@@ -246,6 +264,7 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
 
     expect(herdr.calls[0]).toContain("tab");
     expect(herdr.calls[0]).not.toContain("workspace");
+    expect(herdr.calls.some((call) => call.includes("focus"))).toBe(false);
   });
 
   test("closes the whole workspace (not just its tab) when the agent fails to start", async () => {
@@ -272,6 +291,7 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
       exitWith(0, WORKSPACE_JSON_WITH_ROOT_PANE),
       exitWith(0),
       exitWith(0),
+      exitWith(0),
     );
 
     await svc.terminal.launch({
@@ -280,8 +300,12 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
       label: "New issue",
     });
 
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(3));
-    const paneClose = herdr.calls[2];
+    // Focus (#556) and the root-pane close are both fire-and-forget, queued in that order.
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
+    const focus = herdr.calls[2];
+    expect(focus).toContain("workspace");
+    expect(focus).toContain("focus");
+    const paneClose = herdr.calls[3];
     expect(paneClose).toContain("pane");
     expect(paneClose).toContain("close");
     expect(paneClose).toContain("w4:p1");

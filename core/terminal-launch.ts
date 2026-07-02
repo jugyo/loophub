@@ -178,6 +178,24 @@ export function herdrWorkspaceCloseArgv(
   ];
 }
 
+// Selects the newly created workspace so herdr's active workspace switches to it once the New
+// Issue agent is running there (#556) — without this, `herdr workspace create --no-focus` (used
+// so creation itself doesn't yank focus mid-launch) leaves the workspace created but unselected,
+// and the user has to switch to it manually.
+export function herdrWorkspaceFocusArgv(
+  repo: TerminalLaunchRepo,
+  workspaceId: string,
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "workspace",
+    "focus",
+    workspaceId,
+  ];
+}
+
 // Closes the pane an agent is running in (#521's kill button). `herdr` has no direct
 // "kill agent" command; closing its pane is the confirmed equivalent.
 export function herdrPaneCloseArgv(
