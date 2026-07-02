@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -15,6 +16,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, LinkedPull } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 
@@ -33,6 +35,7 @@ import { IssueRow } from "./dashboard-rows";
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.useRealTimers();
   launchTerminal.mockClear();
   settingsData.value = { autoModeOnBuild: false };
@@ -53,8 +56,18 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
   };
 }
 
-// IssueRow renders <Link>, which needs a router context.
-function renderInRouter(ui: React.ReactNode) {
+// IssueRow renders <Link>, which needs a router context. It also carries the
+// Close/Reopen menu (useSetIssueState), which needs a QueryClient context; stub
+// fetch so an unmocked "issues/update" call (tests that don't exercise the
+// menu) resolves instead of hitting the network.
+function renderInRouter(
+  ui: React.ReactNode,
+  handlers: Record<string, (params: any) => unknown> = {},
+) {
+  vi.stubGlobal("fetch", mockRpcFetch(handlers));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const rootRoute = createRootRoute({ component: Outlet });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -75,7 +88,11 @@ function renderInRouter(ui: React.ReactNode) {
     routeTree: rootRoute.addChildren([indexRoute, detailRoute, pullRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(<RouterProvider router={router} />);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
 }
 
 function makePull(overrides: Partial<LinkedPull> = {}): LinkedPull {
@@ -322,6 +339,61 @@ describe("IssueRow", () => {
     );
     expect(await screen.findByText("Example issue")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
+  });
+});
+
+// #582: an overflow (⋮) menu at the row's right end offers Close/Reopen,
+// reusing the same toggle mutation as the issue-detail button.
+describe("IssueRow overflow menu (#582)", () => {
+  it("shows a Close action for an open issue and closes it", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
+      { "issues/update": (p) => ({ ...makeIssue({ number: 7 }), ...p }) },
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Issue #7 actions" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close" }));
+
+    await waitFor(() => expect(rpcCall("issues/update")).toBeTruthy());
+    expect(rpcCall("issues/update")!.params.state).toBe("closed");
+  });
+
+  it("shows a Reopen action for a closed issue", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ number: 7, state: "closed" })}
+      />,
+      { "issues/update": (p) => ({ ...makeIssue({ number: 7 }), ...p }) },
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Issue #7 actions" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reopen" }));
+
+    await waitFor(() => expect(rpcCall("issues/update")).toBeTruthy());
+    expect(rpcCall("issues/update")!.params.state).toBe("open");
+  });
+
+  it("closes the menu on outside click without triggering the action", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Issue #7 actions" }),
+    );
+    expect(screen.getByRole("menuitem", { name: "Close" })).toBeTruthy();
+
+    fireEvent.mouseDown(document.body);
+    await waitFor(() =>
+      expect(screen.queryByRole("menuitem", { name: "Close" })).toBeNull(),
+    );
+    expect(rpcCall("issues/update")).toBeFalsy();
   });
 });
 

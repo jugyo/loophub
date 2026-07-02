@@ -3,7 +3,8 @@
 // (../lib/badges.ts).
 
 import { Link } from "@tanstack/react-router";
-import { Check, Loader2, Play } from "lucide-react";
+import { Check, Loader2, MoreHorizontal, Play } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { LabelChip } from "@/components/label-chip";
@@ -20,6 +21,7 @@ import {
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
+import { useSetIssueState } from "@/queries/issues";
 import { useSettings } from "@/queries/settings";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
@@ -162,6 +164,7 @@ export function IssueRow({
         <span className="w-16 shrink-0 truncate text-right text-xs text-muted-foreground">
           {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
         </span>
+        <IssueRowMenu owner={owner} repo={repo} issue={issue} />
       </div>
       {pulls.length > 0 ? (
         // Own column so the gap between stacked PRs is a touch wider than the
@@ -229,6 +232,79 @@ function RowBuildButton({
         <Play className="size-4" />
       )}
     </button>
+  );
+}
+
+// Overflow (⋮) menu for an issue row: currently a single Close/Reopen action,
+// reusing the same toggle mutation as the issue-detail Close/Reopen button
+// (issue-detail.tsx). Hand-rolled dropdown (no Radix dependency in this
+// project) matching the PullDebugMenu pattern (pull-debug-menu.tsx): outside
+// click / Escape closes the menu. Always visible, like RowBuildButton, so the
+// row layout doesn't shift on hover.
+function IssueRowMenu({
+  owner,
+  repo,
+  issue,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const setState = useSetIssueState(owner, repo, issue.number);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (!containerRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  const label = issue.state === "open" ? "Close" : "Reopen";
+
+  return (
+    <div ref={containerRef} className="relative shrink-0">
+      <button
+        type="button"
+        aria-label={`Issue #${issue.number} actions`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((v) => !v)}
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        <MoreHorizontal className="size-4" />
+      </button>
+
+      {menuOpen ? (
+        <div
+          role="menu"
+          className="absolute right-0 z-10 mt-1 min-w-28 rounded-md border bg-background p-1 shadow-md"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={setState.isPending}
+            onClick={() => {
+              setMenuOpen(false);
+              setState.mutate(issue.state === "open" ? "closed" : "open");
+            }}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-60"
+          >
+            {label}
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
