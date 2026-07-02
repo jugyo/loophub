@@ -31,7 +31,7 @@ function renderWithSessions(
       "terminal/agentRead": (p) =>
         typeof agentRead === "function"
           ? agentRead(p)
-          : (agentRead ?? { output: null }),
+          : (agentRead ?? { output: null, cols: null, rows: null }),
       ...extraHandlers,
     }),
   );
@@ -124,7 +124,7 @@ describe("SidebarHerdrSessions", () => {
             },
           ],
         },
-        { output: "$ npm test\n42 passing\n" },
+        { output: "$ npm test\n42 passing\n", cols: null, rows: null },
       );
       await screen.findByText("dev #11");
 
@@ -141,6 +141,59 @@ describe("SidebarHerdrSessions", () => {
         repo: "me/app",
         target: "w1:p1",
       });
+    });
+
+    it("sizes the popup to the pane's reported columns/rows (#531)", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithSessions(
+        {
+          repos: [
+            {
+              repo: "me/app",
+              session_name: "me-app-12345678",
+              agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+            },
+          ],
+        },
+        { output: "$ npm test\n42 passing\n", cols: 80, rows: 20 },
+      );
+      await screen.findByText("dev #11");
+
+      fireEvent.mouseEnter(agentRow());
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      const tooltip = await screen.findByRole("tooltip");
+      // Sized from cols/rows rather than the fixed fallback (384 / 256).
+      expect(tooltip.style.width).not.toBe("384px");
+      expect(tooltip.style.maxHeight).not.toBe("256px");
+    });
+
+    it("falls back to a fixed popup size when herdr didn't report pane dimensions (#531 AC)", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithSessions(
+        {
+          repos: [
+            {
+              repo: "me/app",
+              session_name: "me-app-12345678",
+              agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+            },
+          ],
+        },
+        { output: "$ npm test\n42 passing\n", cols: null, rows: null },
+      );
+      await screen.findByText("dev #11");
+
+      fireEvent.mouseEnter(agentRow());
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      const tooltip = await screen.findByRole("tooltip");
+      expect(tooltip.style.width).toBe("384px");
+      expect(tooltip.style.maxHeight).toBe("256px");
     });
 
     it("falls back to the display name when the agent has no real pane id", async () => {
@@ -162,7 +215,7 @@ describe("SidebarHerdrSessions", () => {
             },
           ],
         },
-        { output: "$ npm test\n42 passing\n" },
+        { output: "$ npm test\n42 passing\n", cols: null, rows: null },
       );
       await screen.findByText("dev #11");
 
@@ -190,7 +243,7 @@ describe("SidebarHerdrSessions", () => {
             },
           ],
         },
-        { output: "should not appear" },
+        { output: "should not appear", cols: null, rows: null },
       );
       await screen.findByText("dev #11");
 
@@ -220,7 +273,7 @@ describe("SidebarHerdrSessions", () => {
             },
           ],
         },
-        { output: "$ npm test\n42 passing\n" },
+        { output: "$ npm test\n42 passing\n", cols: null, rows: null },
       );
       await screen.findByText("dev #11");
 
@@ -271,7 +324,7 @@ describe("SidebarHerdrSessions", () => {
             },
           ],
         },
-        { output: "$ npm test\n42 passing\n" },
+        { output: "$ npm test\n42 passing\n", cols: null, rows: null },
       );
       await screen.findByText("dev #11");
 
@@ -298,7 +351,7 @@ describe("SidebarHerdrSessions", () => {
             },
           ],
         },
-        { output: null },
+        { output: null, cols: null, rows: null },
       );
       await screen.findByText("dev #11");
 

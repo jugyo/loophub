@@ -170,7 +170,54 @@ test("terminal.agentRead returns the preview text on success (#500)", async () =
       repo: repo.full_name,
       target: "dev #11",
     });
-    expect(result).toEqual({ output: "$ npm test\n42 passing\n" });
+    // The fake herdr above only handles `agent read`, so `pane layout` (below) falls
+    // through to `exit 1` — cols/rows degrade to null without failing the read.
+    expect(result).toEqual({
+      output: "$ npm test\n42 passing\n",
+      cols: null,
+      rows: null,
+    });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.agentRead includes the pane's size when `pane layout` succeeds (#531)", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/agent-read-layout",
+  });
+  const sessionName = herdrSessionName(repo);
+  const read = JSON.stringify({
+    result: { read: { text: "$ npm test\n42 passing\n" } },
+  });
+  const layout = JSON.stringify({
+    result: { layout: { area: { height: 85, width: 239, x: 36, y: 1 } } },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      // argv: herdr --session <name> agent read <target> --source recent --lines <n>
+      `if [ "$2" = "${sessionName}" ] && [ "$4" = "read" ] && [ "$5" = "w1:p2" ]; then printf '%s' '${read}'; exit 0; fi`,
+      // argv: herdr --session <name> pane layout --pane <target>
+      `if [ "$2" = "${sessionName}" ] && [ "$4" = "layout" ] && [ "$6" = "w1:p2" ]; then printf '%s' '${layout}'; exit 0; fi`,
+      "exit 1",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    const result = await svc.terminal.agentRead({
+      repo: repo.full_name,
+      target: "w1:p2",
+    });
+    expect(result).toEqual({
+      output: "$ npm test\n42 passing\n",
+      cols: 239,
+      rows: 85,
+    });
   } finally {
     process.env.PATH = ORIGINAL_PATH;
   }
@@ -190,7 +237,7 @@ test("terminal.agentRead degrades to a null output when herdr errors (agent gone
         repo: repo.full_name,
         target: "no-such-agent",
       }),
-    ).toEqual({ output: null });
+    ).toEqual({ output: null, cols: null, rows: null });
   } finally {
     process.env.PATH = ORIGINAL_PATH;
   }
@@ -202,7 +249,7 @@ test("terminal.agentRead degrades to a null output when herdr errors (agent gone
         repo: repo.full_name,
         target: "dev #11",
       }),
-    ).toEqual({ output: null });
+    ).toEqual({ output: null, cols: null, rows: null });
   } finally {
     process.env.PATH = ORIGINAL_PATH;
   }
@@ -216,7 +263,7 @@ test("terminal.agentRead degrades to a null output when the repo no longer exist
       repo: "me/never-registered",
       target: "dev #11",
     }),
-  ).toEqual({ output: null });
+  ).toEqual({ output: null, cols: null, rows: null });
 });
 
 // #521: sidebar kill button. killAgent runs `herdr --session <name> pane close <paneId>` for

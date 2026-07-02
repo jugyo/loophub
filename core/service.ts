@@ -49,6 +49,7 @@ import {
   NO_PANE_ID_PREFIX,
   parseHerdrAgentList,
   parseHerdrAgentRead,
+  parseHerdrPaneLayout,
   parseHerdrSessionList,
   reposWithRunningSession,
 } from "./herdr-status.ts";
@@ -727,13 +728,25 @@ export const terminal = {
     repo: string;
     target: string;
     lines?: number;
-  }): Promise<{ output: string | null }> {
+  }): Promise<{
+    output: string | null;
+    cols: number | null;
+    rows: number | null;
+  }> {
     if (!input.target) throw new ServiceError(422, "target is required");
     const lines = clampAgentReadLines(input.lines);
+    let sessionName: string;
     try {
-      const r = repoOr404(input.repo);
-      const sessionName = herdrSessionName(r);
-      const out = await runHerdrCapture([
+      sessionName = herdrSessionName(repoOr404(input.repo));
+    } catch {
+      return { output: null, cols: null, rows: null };
+    }
+    // Read and layout run independently: a target that's the display-name fallback (no real
+    // pane_id — see NO_PANE_ID_PREFIX) resolves fine for `agent read` but not for `pane
+    // layout --pane`, which only accepts a real pane id. That legitimately fails here (#531);
+    // the read must still succeed, and the client falls back to its fixed preview size.
+    const [output, layout] = await Promise.all([
+      runHerdrCapture([
         "--session",
         sessionName,
         "agent",
@@ -743,11 +756,21 @@ export const terminal = {
         "recent",
         "--lines",
         String(lines),
-      ]);
-      return { output: parseHerdrAgentRead(out) };
-    } catch {
-      return { output: null };
-    }
+      ])
+        .then(parseHerdrAgentRead)
+        .catch(() => null),
+      runHerdrCapture([
+        "--session",
+        sessionName,
+        "pane",
+        "layout",
+        "--pane",
+        input.target,
+      ])
+        .then(parseHerdrPaneLayout)
+        .catch(() => null),
+    ]);
+    return { output, cols: layout?.cols ?? null, rows: layout?.rows ?? null };
   },
 
   // Closes the pane an agent is running in — the sidebar kill button (#521). herdr has no

@@ -135,16 +135,25 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
       if (!rect) return;
       setPreview({
         // Clamp so the panel stays on screen: pulled up for rows near the sidebar
-        // bottom, but never above the viewport top on short windows.
+        // bottom, but never above the viewport top on short windows. Sized against the
+        // largest box previewBoxSize can produce (not the smaller fixed fallback size)
+        // — this runs before the pane's cols/rows are known (#531), so it must assume
+        // the worst case or a sized-up preview near the edge would render off-screen.
         top: Math.max(
           0,
-          Math.min(rect.top, window.innerHeight - AGENT_PREVIEW_MAX_HEIGHT - 8),
+          Math.min(
+            rect.top,
+            window.innerHeight - AGENT_PREVIEW_SIZED_MAX_HEIGHT - 8,
+          ),
         ),
         // Same idea horizontally: pulled left on narrow viewports so the panel
-        // (w-96, capped at 60vw) doesn't run off the right edge.
+        // (capped at 60vw) doesn't run off the right edge.
         left: Math.max(
           8,
-          Math.min(rect.right + 8, window.innerWidth - AGENT_PREVIEW_WIDTH - 8),
+          Math.min(
+            rect.right + 8,
+            window.innerWidth - AGENT_PREVIEW_MAX_WIDTH - 8,
+          ),
         ),
       });
     }, HOVER_DEBOUNCE_MS);
@@ -238,8 +247,49 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   );
 }
 
+// Fallback size while the pane's real dimensions are unknown (#531 AC: never silently
+// fail, keep the preview visible).
 const AGENT_PREVIEW_MAX_HEIGHT = 256;
-const AGENT_PREVIEW_WIDTH = 384; // matches the panel's w-96
+const AGENT_PREVIEW_WIDTH = 384; // matches the panel's old fixed w-96
+
+// Rough monospace cell metrics for the `font-mono text-xs` preview text below — real font
+// metrics vary by browser/OS, so this is only a fit, bounded by MIN/MAX so a huge or tiny
+// pane can't blow up or shrink the popup unreasonably (#531).
+const PREVIEW_CHAR_WIDTH_PX = 7.2;
+const PREVIEW_LINE_HEIGHT_PX = 16;
+const PREVIEW_PADDING_PX = 16; // p-2 (8px) on both left/right and top/bottom
+const AGENT_PREVIEW_MIN_WIDTH = 240;
+const AGENT_PREVIEW_MAX_WIDTH = 640;
+const AGENT_PREVIEW_MIN_HEIGHT = 120;
+const AGENT_PREVIEW_SIZED_MAX_HEIGHT = 480;
+
+// Sizes the popup to the target pane's actual columns/rows (#531) when herdr reported
+// them, falling back to the fixed size above when it didn't (herdr down, or the read
+// target is the display-name fallback that `pane layout --pane` can't resolve).
+function previewBoxSize(
+  cols: number | null,
+  rows: number | null,
+): { width: number; maxHeight: number } {
+  if (!cols || !rows || cols <= 0 || rows <= 0) {
+    return { width: AGENT_PREVIEW_WIDTH, maxHeight: AGENT_PREVIEW_MAX_HEIGHT };
+  }
+  return {
+    width: Math.min(
+      AGENT_PREVIEW_MAX_WIDTH,
+      Math.max(
+        AGENT_PREVIEW_MIN_WIDTH,
+        cols * PREVIEW_CHAR_WIDTH_PX + PREVIEW_PADDING_PX,
+      ),
+    ),
+    maxHeight: Math.min(
+      AGENT_PREVIEW_SIZED_MAX_HEIGHT,
+      Math.max(
+        AGENT_PREVIEW_MIN_HEIGHT,
+        rows * PREVIEW_LINE_HEIGHT_PX + PREVIEW_PADDING_PX,
+      ),
+    ),
+  };
+}
 
 // Positioned with `fixed` (not `absolute` in the row's own flow) so it isn't clipped by
 // the sidebar's scrollable, overflow-hidden ancestor (the `overflow-y-auto` div in
@@ -265,15 +315,20 @@ function AgentPreview({
     enabled: true,
   });
   if (isLoading || !data?.output) return null;
+  const { width, maxHeight } = previewBoxSize(
+    data.cols ?? null,
+    data.rows ?? null,
+  );
 
   return (
     <div
       role="tooltip"
-      className="fixed z-50 w-96 max-w-[60vw] overflow-x-hidden overflow-y-auto rounded-md border bg-background p-2 shadow-lg"
+      className="fixed z-50 max-w-[60vw] overflow-x-hidden overflow-y-auto rounded-md border bg-background p-2 shadow-lg"
       style={{
         top: position.top,
         left: position.left,
-        maxHeight: AGENT_PREVIEW_MAX_HEIGHT,
+        width,
+        maxHeight,
       }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}

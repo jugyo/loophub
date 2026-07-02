@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   parseHerdrAgentList,
   parseHerdrAgentRead,
+  parseHerdrPaneLayout,
   parseHerdrSessionList,
   reposWithRunningSession,
 } from "./herdr-status.ts";
@@ -233,6 +234,47 @@ describe("parseHerdrAgentRead", () => {
     ],
   ])("degrades to null on %s (%s)", (input) => {
     expect(parseHerdrAgentRead(input)).toBeNull();
+  });
+});
+
+describe("parseHerdrPaneLayout", () => {
+  // Real-shaped fixture from `herdr --session <name> pane layout --pane <pane_id>`.
+  const PANE_LAYOUT = JSON.stringify({
+    result: { layout: { area: { height: 85, width: 239, x: 36, y: 1 } } },
+  });
+
+  test("extracts result.layout.area.width/height as cols/rows", () => {
+    expect(parseHerdrPaneLayout(PANE_LAYOUT)).toEqual({ cols: 239, rows: 85 });
+  });
+
+  test("rounds non-integer dimensions", () => {
+    const withFloats = JSON.stringify({
+      result: { layout: { area: { width: 80.4, height: 24.6 } } },
+    });
+    expect(parseHerdrPaneLayout(withFloats)).toEqual({ cols: 80, rows: 25 });
+  });
+
+  test.each([
+    ["", "empty"],
+    ["not json", "non-JSON"],
+    ["{}", "missing result"],
+    ['{"result": {}}', "missing layout"],
+    ['{"result": {"layout": {}}}', "missing area"],
+    ['{"result": {"layout": {"area": {"width": 80}}}}', "missing height"],
+    [
+      '{"result": {"layout": {"area": {"width": 0, "height": 24}}}}',
+      "non-positive width",
+    ],
+    [
+      '{"result": {"layout": {"area": {"width": 80, "height": -1}}}}',
+      "negative height",
+    ],
+    [
+      '{"error":{"code":"pane_not_found","message":"pane target x not found"}}',
+      "error response",
+    ],
+  ])("degrades to null on %s (%s)", (input) => {
+    expect(parseHerdrPaneLayout(input)).toBeNull();
   });
 });
 

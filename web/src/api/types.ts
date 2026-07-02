@@ -203,6 +203,14 @@ export interface HerdrSessions {
  */
 export interface HerdrAgentRead {
   output: string | null;
+  /**
+   * Target pane's size in character cells (columns/rows), for sizing the hover preview
+   * to the pane's actual shape instead of a fixed box (#531). Null when herdr couldn't
+   * report it — e.g. the read target is the display-name fallback (no real pane_id), or
+   * herdr failed — and the client falls back to a fixed size.
+   */
+  cols: number | null;
+  rows: number | null;
 }
 
 /** Coding agent `lh dev` launches by default when neither --claude-code nor --codex is passed (#516). */

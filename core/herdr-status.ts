@@ -110,6 +110,35 @@ export function parseHerdrAgentRead(stdout: string): string | null {
   return typeof text === "string" ? stripAnsi(text) : null;
 }
 
+/**
+ * Target pane's size from `herdr --session <name> pane layout --pane <pane_id>`, which
+ * prints `{ result: { layout: { area: { width, height, ... } } } }`. `width`/`height` are
+ * character-cell counts (columns/rows), used to size the sidebar hover preview to the
+ * pane's actual shape instead of a fixed box (#531). Null on anything unparseable or
+ * non-positive — the caller then falls back to a fixed size, same tolerance as the other
+ * parsers here.
+ */
+export function parseHerdrPaneLayout(
+  stdout: string,
+): { cols: number; rows: number } | null {
+  const parsed = tryParse(stdout);
+  const area = (parsed as { result?: { layout?: { area?: unknown } } })?.result
+    ?.layout?.area;
+  if (typeof area !== "object" || area === null) return null;
+  const { width, height } = area as { width?: unknown; height?: unknown };
+  if (
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return null;
+  }
+  return { cols: Math.round(width), rows: Math.round(height) };
+}
+
 // herdr's recent-pane buffer is raw terminal output: SGR color codes, cursor moves,
 // and lone carriage returns (progress-bar overwrites) are all still in there. The
 // sidebar preview (#523) renders this text as-is inside a plain <pre>, which doesn't
