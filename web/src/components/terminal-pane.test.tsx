@@ -88,6 +88,26 @@ describe("TerminalPane", () => {
     expect(sessionStorage.getItem("lh.terminal.open")).toBe("0");
   });
 
+  // #538: the Herdr backend has no builtin terminal, so --lh-term-reserve must publish "0px"
+  // regardless of a leftover builtin pane height/expanded flag — otherwise the New Issue
+  // launcher (which sticks its bottom to this var) reads a stale reservation and floats above
+  // its resting spot instead of sitting at the floor (create-issue-button.tsx's clamp(3.5rem, ...)).
+  it("publishes a zero --lh-term-reserve for the Herdr backend even with a stale builtin height", () => {
+    sessionStorage.setItem("lh.terminal.open", "1");
+    localStorage.setItem("lh.terminal.height", "680");
+    terminalLaunchConfig.value = {
+      isSuccess: true,
+      isPending: false,
+      data: { backend: "herdr" },
+    };
+
+    render(<TerminalPane />);
+
+    expect(
+      document.documentElement.style.getPropertyValue("--lh-term-reserve"),
+    ).toBe("0px");
+  });
+
   it("collapses a restored pane instead of getting stuck if terminal/config settles into an error (#465)", () => {
     // A query that settles to an error is never isSuccess, so gating restore on `!isSuccess`
     // alone would wait forever. isPending: false (settled) + isSuccess: false (errored) must
