@@ -6,13 +6,16 @@ import {
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
+  herdrTabCreateInWorkspaceArgv,
   herdrWorkspaceCloseArgv,
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
+  herdrWorktreeOpenArgv,
   normalizeTerminalLaunchBackend,
   parseHerdrRootPaneId,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
+  parseHerdrWorktreeOpenResult,
 } from "./terminal-launch.ts";
 
 describe("terminal launch backend", () => {
@@ -401,5 +404,70 @@ describe("terminal launch backend", () => {
       label: "a \x01 b",
     });
     expect(plan.argv[5]).toBe("a b");
+  });
+
+  // #551: herdr launches (issue-dev/resume/github-pr-export) open the PR's real worktree via
+  // `herdr worktree open --path` instead of a plain tab cd'd there by the launched command.
+  test("builds Herdr worktree open argv scoped to the repo session", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const sessionName = herdrSessionName(repo);
+    expect(herdrWorktreeOpenArgv(repo, "/wt/pr-42")).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "worktree",
+      "open",
+      "--path",
+      "/wt/pr-42",
+      "--no-focus",
+    ]);
+  });
+
+  test("builds Herdr tab create argv scoped to an already-open worktree workspace", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const sessionName = herdrSessionName(repo);
+    expect(herdrTabCreateInWorkspaceArgv(repo, "w7", "/wt/pr-42")).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "tab",
+      "create",
+      "--workspace",
+      "w7",
+      "--cwd",
+      "/wt/pr-42",
+      "--no-focus",
+    ]);
+  });
+
+  test("parses already_open and workspace_id from herdr worktree open output", () => {
+    expect(
+      parseHerdrWorktreeOpenResult(
+        '{"id":"cli:worktree:open","result":{"already_open":false,"workspace":{"workspace_id":"wB"},"tab":{"tab_id":"wB:t1"},"root_pane":{"pane_id":"wB:p1"},"type":"worktree_opened"}}',
+      ),
+    ).toEqual({ alreadyOpen: false, workspaceId: "wB" });
+    expect(
+      parseHerdrWorktreeOpenResult(
+        '{"result":{"already_open":true,"workspace":{"workspace_id":"w7"}}}',
+      ),
+    ).toEqual({ alreadyOpen: true, workspaceId: "w7" });
+    expect(parseHerdrWorktreeOpenResult("")).toBeNull();
+    expect(parseHerdrWorktreeOpenResult("not json")).toBeNull();
+    // Missing already_open collapses to false rather than throwing — an unrecognized/older herdr
+    // response shape should not be mistaken for "safe to reuse the returned tab directly".
+    expect(parseHerdrWorktreeOpenResult('{"result":{"workspace":{}}}')).toEqual(
+      { alreadyOpen: false, workspaceId: null },
+    );
+  });
+
+  test("rejects a workspace id that could be parsed as a flag or shell noise", () => {
+    const wrap = (id: string) =>
+      JSON.stringify({
+        result: { already_open: true, workspace: { workspace_id: id } },
+      });
+    expect(parseHerdrWorktreeOpenResult(wrap("--workspace"))?.workspaceId).toBe(
+      null,
+    );
+    expect(parseHerdrWorktreeOpenResult(wrap("w7"))?.workspaceId).toBe("w7");
   });
 });

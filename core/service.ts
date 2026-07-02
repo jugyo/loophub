@@ -101,13 +101,17 @@ import {
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
+  herdrTabCreateInWorkspaceArgv,
   herdrWorkspaceCloseArgv,
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
+  herdrWorktreeOpenArgv,
   parseHerdrRootPaneId,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
+  parseHerdrWorktreeOpenResult,
   type TerminalLaunchBackend,
+  type TerminalLaunchRepo,
 } from "./terminal-launch.ts";
 import { sweepPullUpdates } from "./watcher.ts";
 import {
@@ -115,6 +119,7 @@ import {
   worktreeBranch,
   worktreePath,
 } from "./worktree-path.ts";
+import { provisionWorktree } from "./worktree-provision.ts";
 import {
   classifyWorktree,
   issueNumberFromBranch,
@@ -581,6 +586,122 @@ export interface HerdrRepoSessions {
 let herdrSessionsInflight: Promise<{ repos: HerdrRepoSessions[] }> | null =
   null;
 
+// Resolves the on-disk worktree path herdr's `worktree open` should target for a launch (#551),
+// so herdr's own workspace/worktree metadata is pinned to the PR's real worktree instead of a
+// plain tab the launched command cd's into. Best-effort: returns null when the workflow has no
+// worktree (issue-create) or resolving/provisioning it fails for any reason — the caller falls
+// back to the plain repo-root tab-create, same as any other herdr failure.
+//
+// issue-dev's Build button always fires before a PR exists (it's hidden once one is open), so the
+// PR — and its deterministic worktree path (#463) — is opened/provisioned right here, ahead of the
+// herdr launch. dev.openPr and provisionWorktree are both idempotent, so this mirrors (and is
+// safely re-done by) the same calls `lh dev <issue>` makes for itself once it starts running
+// inside the tab this resolves.
+async function resolveHerdrWorktreeTarget(
+  r: S.Repo,
+  input: TerminalLaunchInput,
+): Promise<string | null> {
+  try {
+    if (input.workflow === "issue-dev" && input.issueNumber) {
+      const opened = await dev.openPr(r.full_name, {
+        issue: input.issueNumber,
+        base: r.default_branch,
+      });
+      const prRow = issueOr404(r, opened.number, "pull");
+      const headRef = S.getPull(prRow.id).head_ref;
+      return await provisionWorktree({
+        repoPath: r.local_path,
+        fullName: r.full_name,
+        defaultBranch: r.default_branch,
+        worktreeRoot: worktreeRoot(),
+        pr: opened.number,
+        headRef,
+        allowCreatingConventionBranch: opened.created,
+      });
+    }
+    if (input.workflow === "resume") {
+      // The client already resolved the PR's worktree path (issue/pull detail's worktree_path,
+      // #345); an issue-create session (no worktree) omits cwd and resumes from the repo root
+      // instead, which is exactly what the repo-root tab-create fallback gives it.
+      return input.cwd ?? null;
+    }
+    if (input.workflow === "github-pr-export" && input.prNumber) {
+      const prRow = issueOr404(r, input.prNumber, "pull");
+      const headRef = S.getPull(prRow.id).head_ref;
+      const identity = resolveWorktreeIdentity(headRef, input.prNumber);
+      return identity.scheme === "legacy-issue"
+        ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
+        : worktreePath(worktreeRoot(), r.full_name, identity.number);
+    }
+  } catch {
+    // Repo not writable, issue/PR not found, worktree provisioning error, … — none of these
+    // should fail the launch itself, only mean herdr won't get worktree metadata for it.
+  }
+  return null;
+}
+
+// Opens (or reuses) the herdr workspace pinned to `worktreeCheckoutPath` and returns a tab safe
+// to pass to `agent start --tab`. A *first-time* open creates a brand-new single-tab workspace —
+// structurally identical to `herdr workspace create` (#544) — whose sole tab herdr refuses to
+// close via `tab close` (it would be the workspace's last one), so `workspaceId` is populated in
+// that case for the caller to use `herdr workspace close` instead, exactly like the isNewWorkspace
+// path in terminal.launch. A *reused* workspace's own tab may already be in active use (someone
+// else's pane), so that case opens a genuinely new (safely closeable) tab inside it instead of
+// treating the existing one as an empty placeholder — see herdrTabCreateInWorkspaceArgv;
+// `workspaceId` is null there since the workspace itself isn't this call's to close. Returns null
+// only when the initial `worktree open` itself fails outright (worktree_not_found, timeout, …) or
+// its output is unparseable — nothing was created, so the caller falls back to the plain
+// repo-root tab-create. A partial success (e.g. the tab id itself fails to parse) still returns
+// an object so `workspaceId` reaches the caller's orphan-cleanup path instead of being lost.
+async function acquireHerdrWorktreeTab(
+  repo: TerminalLaunchRepo,
+  cwd: string,
+  worktreeCheckoutPath: string,
+): Promise<{
+  tabId: string | null;
+  rootPaneId: string | null;
+  workspaceId: string | null;
+  createdWorkspace: boolean;
+} | null> {
+  try {
+    const open = herdrWorktreeOpenArgv(repo, worktreeCheckoutPath);
+    const out = await runHerdr(open[0], open.slice(1), cwd, {
+      captureStdout: true,
+      timeoutMs: 10_000,
+    });
+    const opened = parseHerdrWorktreeOpenResult(out);
+    if (!opened) return null;
+    if (!opened.alreadyOpen) {
+      return {
+        tabId: parseHerdrTabId(out),
+        rootPaneId: parseHerdrRootPaneId(out),
+        workspaceId: opened.workspaceId,
+        createdWorkspace: true,
+      };
+    }
+    if (!opened.workspaceId) return null;
+    const tabCreate = herdrTabCreateInWorkspaceArgv(
+      repo,
+      opened.workspaceId,
+      worktreeCheckoutPath,
+    );
+    const tabOut = await runHerdr(tabCreate[0], tabCreate.slice(1), cwd, {
+      captureStdout: true,
+      timeoutMs: 10_000,
+    });
+    return {
+      tabId: parseHerdrTabId(tabOut),
+      rootPaneId: parseHerdrRootPaneId(tabOut),
+      // The reused workspace already existed before this call, so it is not this launch's to
+      // close on failure — only the freshly added tab (if its id parsed) is.
+      workspaceId: null,
+      createdWorkspace: false,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ===== terminal launch =====
 export const terminal = {
   config(): { backend: TerminalLaunchBackend } {
@@ -608,48 +729,85 @@ export const terminal = {
 
     const repo = { full_name: r.full_name, local_path: r.local_path };
     // New Issue gets its own fresh workspace instead of a tab in the repo's existing default
-    // workspace (#544) — every other workflow (Build/issue-dev, resume, github-pr-export) keeps
-    // reusing that default workspace. `herdr workspace create` seeds the workspace with one tab
+    // workspace (#544) — it has no worktree to pin to. The worktree-backed workflows
+    // (Build/issue-dev, resume, github-pr-export) instead open a workspace pinned to the PR's
+    // real worktree (#551, below). `herdr workspace create` seeds the workspace with one tab
     // and one empty pane in the same output shape `herdr tab create` uses, so the tab/root-pane
     // parsing below is unchanged either way.
     const isNewWorkspace = input.workflow === "issue-create";
     // Create a fresh tab (or workspace) first so the agent starts in it instead of splitting the
     // focused pane (#489). Best-effort: on any failure fall back to the tab-less launch (Herdr's
     // default split placement) rather than breaking the launch; a hard herdr failure still
-    // surfaces from the agent start below. The timeout keeps a wedged `herdr tab/workspace create`
-    // from hanging the RPC forever — runHerdr kills it and the catch falls back.
+    // surfaces from the agent start below. The timeout keeps a wedged herdr call from hanging
+    // the RPC forever — runHerdr kills it and the catch falls back.
     let tabId: string | null = null;
-    // `herdr tab create` seeds the new tab with one empty default pane; `agent start --tab`
-    // below splits alongside that pane instead of replacing it, leaving it behind (#503) unless
-    // the launch closes it once the agent's own pane exists. Captured from the same tab-create
-    // output as tabId, so it's only ever set together with a usable tabId.
+    // The seed tab's root pane (from `worktree open`, its follow-up `tab create --workspace`, or
+    // the plain repo-root `tab create`) is an empty default pane; `agent start --tab` below
+    // splits alongside it instead of replacing it, leaving it behind (#503) unless the launch
+    // closes it once the agent's own pane exists. Captured from the same output as tabId, so
+    // it's only ever set together with a usable tabId.
     let rootPaneId: string | null = null;
-    // Only set for the new-workspace path — used to close the whole workspace (not just the tab)
-    // if the agent fails to start, since herdr refuses to close a workspace's last remaining tab.
-    // Parsed independently from tabId out of the same response, so it is NOT guaranteed to
-    // succeed/fail together with it — the cleanup below must handle either one being null while
-    // the other is set.
+    // Set whenever this launch is responsible for a whole *fresh* single-tab workspace — the
+    // issue-create `workspace create` path, or a first-time worktree `worktree open` (#551,
+    // acquireHerdrWorktreeTab's createdWorkspace) — used to close the whole workspace (not just
+    // the tab) if the agent fails to start, since herdr refuses to close a workspace's last
+    // remaining tab. Parsed independently from tabId out of the same response, so it is NOT
+    // guaranteed to succeed/fail together with it — the cleanup below must handle either one
+    // being null while the other is set. Not set when a worktree's workspace was merely *reused*
+    // (acquireHerdrWorktreeTab's already-open branch) — that workspace predates this launch and
+    // isn't this launch's to close.
     let workspaceId: string | null = null;
+    let createdWorkspace = false;
     try {
-      const create = isNewWorkspace
-        ? herdrWorkspaceCreateArgv(repo)
-        : herdrTabCreateArgv(repo);
-      const out = await runHerdr(create[0], create.slice(1), r.local_path, {
-        captureStdout: true,
-        timeoutMs: 10_000,
-      });
-      tabId = parseHerdrTabId(out);
-      rootPaneId = parseHerdrRootPaneId(out);
-      if (isNewWorkspace) workspaceId = parseHerdrWorkspaceId(out);
-      // Zero exit with no parseable id means a tab (or, for the new-workspace path, a workspace)
+      if (isNewWorkspace) {
+        const create = herdrWorkspaceCreateArgv(repo);
+        const out = await runHerdr(create[0], create.slice(1), r.local_path, {
+          captureStdout: true,
+          timeoutMs: 10_000,
+        });
+        tabId = parseHerdrTabId(out);
+        rootPaneId = parseHerdrRootPaneId(out);
+        workspaceId = parseHerdrWorkspaceId(out);
+        createdWorkspace = true;
+      } else {
+        // Worktree-backed workflows (issue-dev/resume/github-pr-export, #551) open the herdr
+        // workspace directly at the PR's real worktree path, so herdr's own workspace/worktree
+        // metadata reflects it — instead of a plain repo-root tab the launched command cd's
+        // into. Falls back to that plain tab below when there is no resolvable worktree path
+        // or the worktree-open attempt itself fails for any reason.
+        const worktreeTarget = await resolveHerdrWorktreeTarget(r, input);
+        const acquired = worktreeTarget
+          ? await acquireHerdrWorktreeTab(repo, r.local_path, worktreeTarget)
+          : null;
+        if (acquired) {
+          tabId = acquired.tabId;
+          rootPaneId = acquired.rootPaneId;
+          workspaceId = acquired.workspaceId;
+          createdWorkspace = acquired.createdWorkspace;
+        } else {
+          const tabCreate = herdrTabCreateArgv(repo);
+          const out = await runHerdr(
+            tabCreate[0],
+            tabCreate.slice(1),
+            r.local_path,
+            {
+              captureStdout: true,
+              timeoutMs: 10_000,
+            },
+          );
+          tabId = parseHerdrTabId(out);
+          rootPaneId = parseHerdrRootPaneId(out);
+        }
+      }
+      // Zero exit with no parseable id means a tab (or, when createdWorkspace, a whole workspace)
       // was likely created but can't be closed on failure (no id) — every such launch leaks one
       // empty tab or workspace. Log server-side (never to the client) so a herdr output-format
       // drift is noticed instead of silently leaking them.
       if (!tabId)
         console.error(
-          `herdr ${isNewWorkspace ? "workspace" : "tab"} create succeeded but its output had no usable tab id; falling back to split placement`,
+          `herdr ${createdWorkspace ? "workspace" : "tab"} create succeeded but its output had no usable tab id; falling back to split placement`,
         );
-      else if (isNewWorkspace && !workspaceId)
+      else if (createdWorkspace && !workspaceId)
         console.error(
           "herdr workspace create succeeded but its output had no usable workspace id; failure cleanup may be unable to remove it",
         );
@@ -661,8 +819,10 @@ export const terminal = {
     // A workspace whose seeded tab id failed to parse can never be targeted — buildHerdrLaunchPlan
     // below only routes the agent into it via --tab — so it would otherwise sit orphaned forever
     // regardless of whether the agent-start call that follows succeeds or fails. Close it now
-    // rather than relying on the failure-only cleanup further down.
-    if (isNewWorkspace && workspaceId && !tabId) {
+    // rather than relying on the failure-only cleanup further down. Applies whenever this launch
+    // owns a freshly created workspace (workspaceId is only ever set in that case — see the
+    // createdWorkspace comment above), not just the issue-create path.
+    if (workspaceId && !tabId) {
       const cleanup = herdrWorkspaceCloseArgv(repo, workspaceId);
       runHerdrLaunch(cleanup[0], cleanup.slice(1), r.local_path).catch(
         () => {},
@@ -726,13 +886,15 @@ export const terminal = {
       throw e;
     }
     // Switch herdr's active workspace to the one just created, now that the agent is running in
-    // it (#556) — `herdr workspace create` above used `--no-focus` so creation itself wouldn't
-    // yank focus mid-launch, which otherwise left the new workspace selectable only by hand.
-    // Only the New Issue path creates its own workspace; every other flow keeps reusing (and
-    // staying on) the existing default workspace, so this is scoped to isNewWorkspace exactly
-    // like the workspace-create call above. Fire-and-forget, same as the pane close below: the
-    // agent is already running, so a failure to switch selection must not fail the launch.
-    if (isNewWorkspace && workspaceId) {
+    // it (#556) — the create/open call above used `--no-focus` so creation itself wouldn't yank
+    // focus mid-launch, which otherwise left the new workspace selectable only by hand. Scoped to
+    // createdWorkspace (not isNewWorkspace): the New Issue path always creates its own workspace,
+    // but a worktree-backed launch (#551) does too on a first-time `worktree open` — both cases
+    // land the agent in a workspace nobody was looking at yet, so both should get focus. A
+    // *reused* worktree workspace (workspaceId null, createdWorkspace false) keeps whatever was
+    // already focused, same as before. Fire-and-forget, same as the pane close below: the agent
+    // is already running, so a failure to switch selection must not fail the launch.
+    if (createdWorkspace && workspaceId) {
       const focus = herdrWorkspaceFocusArgv(repo, workspaceId);
       runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
     }

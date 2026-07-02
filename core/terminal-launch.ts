@@ -137,6 +137,74 @@ export function herdrTabCreateArgv(repo: TerminalLaunchRepo): string[] {
   ];
 }
 
+// Opens (or reuses) a herdr *workspace* pinned to a git worktree's checkout path, so herdr's own
+// workspace/worktree metadata reflects the PR's real worktree instead of a plain tab cd'd there
+// by the launched command (#551). The path must already be a registered git worktree — herdr
+// replies `worktree_not_found` otherwise, which callers treat like any other best-effort herdr
+// failure (fall back to the plain tab-create launch).
+export function herdrWorktreeOpenArgv(
+  repo: TerminalLaunchRepo,
+  worktreeCheckoutPath: string,
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "worktree",
+    "open",
+    "--path",
+    worktreeCheckoutPath,
+    "--no-focus",
+  ];
+}
+
+// `herdr worktree open` reuses an already-open workspace's existing tab/pane rather than handing
+// back a fresh empty one (unlike a brand-new open, whose tab/pane are safe to treat like
+// `tab create`'s seed pane — see the rootPaneId comment in service.ts). `already_open` tells the
+// caller which case it got; `workspace_id` lets it open a genuinely new tab in that workspace via
+// herdrTabCreateInWorkspaceArgv when reusing.
+export function parseHerdrWorktreeOpenResult(
+  stdout: string,
+): { alreadyOpen: boolean; workspaceId: string | null } | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    const result = parsed?.result;
+    const alreadyOpen = result?.already_open === true;
+    const workspaceId = result?.workspace?.workspace_id;
+    return {
+      alreadyOpen,
+      workspaceId:
+        typeof workspaceId === "string" && HERDR_ID.test(workspaceId)
+          ? workspaceId
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Creates a fresh tab inside an already-open worktree workspace (the `already_open: true` case
+// above) instead of splitting whatever pane already occupies it — same #489 rationale as
+// herdrTabCreateArgv, scoped to the worktree's own workspace via --workspace.
+export function herdrTabCreateInWorkspaceArgv(
+  repo: TerminalLaunchRepo,
+  workspaceId: string,
+  worktreeCheckoutPath: string,
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "tab",
+    "create",
+    "--workspace",
+    workspaceId,
+    "--cwd",
+    worktreeCheckoutPath,
+    "--no-focus",
+  ];
+}
+
 export function herdrTabCloseArgv(
   repo: TerminalLaunchRepo,
   tabId: string,
