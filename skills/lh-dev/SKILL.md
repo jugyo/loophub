@@ -233,10 +233,13 @@ Use the repo standard command (e.g. `npm test`). **Green before PR.**
 While testing, **capture evidence for the PR body** (step 5):
 
 - Save the command and a short excerpt of green output (pass/fail counts, key lines)
-- For UI or visual changes, take screenshots before opening the PR (browser tool, manual capture, or
-  generated assets under the repo) and save them to the **persistent evidence directory**
+- For UI or visual changes, take screenshots before opening the PR — `claude-in-chrome` for
+  interactive verification in a live session, or headless Playwright (`npx playwright screenshot`,
+  no display required) for AFK/sandbox capture; manual capture or generated assets under the repo also
+  work — and save them to the **persistent evidence directory**
   (`${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/`; see `skills/README.md` §
-  Evidence screenshots) — **not only** the session scratchpad / `$TMPDIR` or the worktree, which can be
+  Evidence screenshots, which also covers the capture-method choice and storageState for authenticated
+  pages) — **not only** the session scratchpad / `$TMPDIR` or the worktree, which can be
   cleared before `lh-merge-ready` reads them. **Keep the persistent-dir copy** (`lh-merge-ready` reads
   those paths), and **also upload it for inline display in the PR**: run
 

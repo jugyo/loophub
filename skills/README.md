@@ -91,6 +91,71 @@ ${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/
 - `lh-dev` (§4) and `lh-pr-review` (Phase B) write here; `lh-merge-ready` reads the directory,
   validates each image, and prints the valid paths at the end of its report.
 
+### Capture method: claude-in-chrome vs. headless Playwright
+
+Two ways to produce the screenshot itself before it goes through the evidence flow above:
+
+| Method | Use when |
+|--------|----------|
+| **`claude-in-chrome`** (MCP tool) | Interactive verification in the operator's real, already-logged-in Chrome session — clicking through a flow, confirming something visually, or exercising a page that needs a live human-authenticated session. Requires a display and the extension. |
+| **Headless Playwright** (`npx playwright screenshot`, below) | AFK / cron / sandbox / CI evidence capture with no display attached, or scripted repeatable screenshots. Runs headless by default, so it works in environments without a display (confirmed in a sandboxed worktree with no display: `npx --yes playwright@1.61.1 screenshot --browser=chromium <url> out.png` produced a valid PNG). |
+
+This is additive, not a replacement — interactive verification during implementation should still use
+`claude-in-chrome`; reach for headless Playwright when no display/session is available or the capture
+needs to be scripted.
+
+Playwright is **not** a project dependency — its CLI is invoked via `npx`, which resolves from npm's
+cache without touching `package.json`:
+
+```sh
+npx --yes playwright@1.61.1 screenshot --full-page <url> <output.png>
+```
+
+Useful flags: `--full-page`, `--viewport-size "1280,720"`, `--wait-for-selector <css>` /
+`--wait-for-timeout <ms>` (let the page settle before capturing).
+
+**Authenticated pages** — reproduce login state with a saved storage state instead of logging in on
+every capture:
+
+1. Capture once, with a display available, by logging in interactively and saving the session:
+
+   ```sh
+   npx --yes playwright@1.61.1 open --save-storage="${TMPDIR:-/tmp}/auth.json" <login-url>
+   # log in in the window that opens, then close it — auth.json now holds cookies/localStorage
+   ```
+
+   Or capture it headlessly/programmatically (no display needed) with a short script that drives the
+   login form and writes the same file:
+
+   ```js
+   import { chromium } from "playwright";
+   import { tmpdir } from "node:os";
+   import { join } from "node:path";
+   const browser = await chromium.launch();
+   const page = await browser.newPage();
+   await page.goto("<login-url>");
+   await page.fill("#username", process.env.LOGIN_USER);
+   await page.fill("#password", process.env.LOGIN_PASS);
+   await page.click("button[type=submit]");
+   await page.waitForURL("<post-login-url>");
+   await page.context().storageState({ path: join(tmpdir(), "auth.json") });
+   await browser.close();
+   ```
+
+   `os.tmpdir()` falls back to `/tmp` on its own, unlike a bare `process.env.TMPDIR` read — TMPDIR is
+   often unset on Linux CI/sandbox environments, and reading it directly there would silently write
+   `auth.json` to a relative, possibly-in-repo path instead.
+
+2. Reuse the saved state on every subsequent headless capture — no login step needed:
+
+   ```sh
+   npx --yes playwright@1.61.1 screenshot --load-storage="${TMPDIR:-/tmp}/auth.json" <url> <output.png>
+   ```
+
+`auth.json` holds live session cookies/tokens — treat it like a credential: write it outside the repo
+(e.g. `${TMPDIR:-/tmp}/auth.json` or the session scratchpad, not a path inside the worktree) so it can't end up
+committed, and keep it out of PR evidence uploads (see the secret-scrub note in `lh-dev` § 4. Test).
+
 ## Skill chain
 
 ```text
