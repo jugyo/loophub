@@ -181,7 +181,7 @@ export interface HerdrAgent {
   id: string;
   /** Display name, e.g. "dev #486". */
   name: string;
-  /** Raw herdr agent_status (known values: working | blocked | idle). */
+  /** Raw herdr agent_status (known values: working | blocked | done | idle). */
   status: string;
 }
 

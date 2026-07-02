@@ -44,15 +44,19 @@ function agentReadTarget(agent: HerdrAgent): string {
   return agent.id.startsWith(NO_PANE_ID_PREFIX) ? agent.name : agent.id;
 }
 
-// Known agent_status values -> dot color; anything unrecognized falls back to muted.
+// Known agent_status values -> dot color, matched to herdr's own status colors
+// (herdr README "agent awareness": 🔴 blocked, 🟡 working, 🔵 done, 🟢 idle — #528).
+// Anything unrecognized falls back to muted.
 function statusDotClass(status: string): string {
   switch (status) {
-    case "working":
-      return "bg-green-500";
     case "blocked":
-      return "bg-amber-500";
+      return "bg-red-500";
+    case "working":
+      return "bg-yellow-500";
+    case "done":
+      return "bg-blue-500";
     case "idle":
-      return "bg-muted-foreground/50";
+      return "bg-green-500";
     default:
       return "bg-muted-foreground/30";
   }
