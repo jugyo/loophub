@@ -1,23 +1,22 @@
 ---
 name: lh-pr-review
 description: >-
-  Review a LoopHub PR with quality, security, documentation, and acceptance reviewers
-  (host-mapped subagents), fix findings on the head branch, and re-review until pass. Use when the
-  user runs /lh-pr-review {pr id}, when asked to review a LoopHub PR, or after issue-dev creates a
-  PR. Posts a per-topic lh pr review each round. Does not merge. Add --review-only for a single
-  review without the fix loop.
+  Review a LoopHub PR with quality, security, documentation, and acceptance reviewers, selected by
+  what the PR diff changes (host-mapped subagents), fix findings on the head branch, and re-review
+  until pass. Use when the user runs /lh-pr-review {pr id}, when asked to review a LoopHub PR, or
+  after issue-dev creates a PR. Posts a per-topic lh pr review each round. Does not merge. Add
+  --review-only for a single review without the fix loop.
 ---
 
 # LoopHub PR review
 
-Review a PR with a **quality reviewer + a security reviewer + a documentation reviewer + an acceptance
-reviewer** (run as readonly subagents, mapped to whatever the host provides); if findings exist, **fix
-on head in this session (parent agent)** → test → **re-review** until **`pass`**. Do not merge.
+Review a PR with up to four reviewers — **quality, security, documentation, acceptance** (run as
+readonly subagents, mapped to whatever the host provides) — **selected by what the PR diff actually
+changes**, per [Review selection policy](#review-selection-policy); if findings exist, **fix on head in
+this session (parent agent)** → test → **re-review** until **`pass`**. Do not merge.
 
 Vendor-agnostic by design: the reviewer **roles** are fixed, but their **mechanism** is resolved per
-host (Cursor, Claude Code, …). The Documentation role runs only when the PR diff touches
-documentation files. The Acceptance role runs only when the PR has a linked issue. See [Reviewer roles
-& host mapping](#reviewer-roles--host-mapping).
+host (Cursor, Claude Code, …). See [Reviewer roles & host mapping](#reviewer-roles--host-mapping).
 
 Distinct from Cursor's built-in `/loop` (scheduled wake). Here, "loop" means **review → fix → review**.
 
@@ -86,10 +85,9 @@ subagent mechanism; the concrete `subagent_type` is chosen at runtime per
 
 ## Reviewer roles & host mapping
 
-Reviews are defined by **role**, never by a vendor product name. Quality and Security run every round;
-Documentation runs every round **when the PR diff touches documentation files** (skipped otherwise —
-see A.1 / A.3 / A.4). Acceptance runs every round **when the PR has a linked issue** (skipped otherwise
-— see A.3 / A.4):
+Reviews are defined by **role**, never by a vendor product name. Which roles run each round is decided
+by the PR diff's content and metadata ([Review selection policy](#review-selection-policy) below),
+re-evaluated every round from A.1 / A.3 / A.4:
 
 | Role | Looks for |
 |------|-----------|
@@ -98,12 +96,39 @@ see A.1 / A.3 / A.4). Acceptance runs every round **when the PR has a linked iss
 | **Documentation** | reader fit for changed documentation: intended audience, natural reading flow, leaked internal details, information order |
 | **Acceptance** | unmet acceptance criteria, requirement/spec gaps, behavior that contradicts the linked issue |
 
+### Review selection policy
+
+| Role | Runs when | Skipped when |
+|------|-----------|---------------|
+| Quality | diff includes a non-documentation (code) file, **or** the diff touches `skills/` (A.2.5 skills-lint) | diff is documentation-only and does not touch `skills/` |
+| Security | diff includes a non-documentation (code) file | diff is documentation-only |
+| Documentation | diff includes at least one documentation file (`README*`, `*.md`, `skills/**/SKILL.md`) | diff has no documentation file |
+| Acceptance | PR has a linked issue | no linked issue |
+
+Each role's trigger is independent, so a diff mixing code and documentation changes runs **all four**
+applicable roles — code changes pull in Quality/Security, documentation changes pull in Documentation,
+and a linked issue pulls in Acceptance, regardless of what the other roles' triggers found. A
+documentation-only diff that does not touch `skills/` (a plain README-only PR, for example) skips
+Quality and Security, since there is no code surface for correctness or security review; running them
+anyway is exactly the excess review noise this policy avoids. A code-only diff with no documentation
+files skips Documentation.
+
+**Exception — `skills/` diffs**: `skills/**/SKILL.md` is classified as documentation (A.1), so a
+skills-only diff is otherwise documentation-only. But Quality still runs whenever the diff touches
+`skills/`, even if nothing else in the diff is code — the skills-lint check (A.2.5) is scoped to the
+`quality` topic, and it needs that topic active to report a lint failure. Security has no such check, so
+it keeps the plain documentation-only skip.
+
+The diff classification that drives this table (`hasCodeChanges` / `hasDocChanges` / `touchesSkills`) is
+computed in A.1; role selection is applied in A.3; which roles ran or were skipped, and why, is recorded
+in the A.4 synthesis and surfaced in the A.6 round report — that record is the audit trail for "why this
+review set ran."
+
 ### Capability detection (pick the best available mechanism)
 
 At launch, map each role to the **first available** mechanism for the current host, degrading left→right.
-Never hard-fail because a vendor-specific reviewer is absent — always run **every applicable** role
-(Quality and Security every round; Documentation whenever documentation changed; Acceptance whenever a
-linked issue exists) via *some* readonly subagent.
+Never hard-fail because a vendor-specific reviewer is absent — always run **every role selected by**
+[Review selection policy](#review-selection-policy) via *some* readonly subagent.
 
 | Role | Cursor | Claude Code | Generic fallback (any host) |
 |------|--------|-------------|------------------------------|
@@ -114,8 +139,7 @@ linked issue exists) via *some* readonly subagent.
 
 Documentation and Acceptance are **not** vendor products — there are no specialized reviewers for them.
 On every host they run as `general-purpose` subagents fed the Documentation and Acceptance prompts
-(A.3). Documentation runs only when documentation files changed; Acceptance runs only when a linked
-issue exists.
+(A.3), when [Review selection policy](#review-selection-policy) selects them.
 
 Detection rule: if the named subagent type is unavailable in this host, fall to the next column. The
 **prompt and expected output below are identical** regardless of which mechanism wins, so synthesis
@@ -188,16 +212,23 @@ lh issue view <n> --repo <repo>
 ```
 
 Record: PR number / title / `head.ref` / `base.ref` / repo absolute path / linked issue goal (if any) /
-round number / whether the diff touches documentation files.
+round number / the diff's file classification (below).
 
-For the Documentation role, treat these changed paths as documentation files:
+Classify every changed path from `lh pr diff` as **documentation** or **code**:
 
 - `README`, `README.*`, and any path segment exactly equal to `README` or starting with `README.`
 - `*.md`, including files under `docs/`
 - `skills/**/SKILL.md`
 
-If no changed path matches those rules, skip Documentation exactly as Acceptance is skipped when there
-is no linked issue.
+A changed path matching one of those rules is a documentation file; every other changed path is a code
+file. Derive three flags from this classification and carry them into A.3:
+
+- `hasDocChanges` — at least one changed path is a documentation file
+- `hasCodeChanges` — at least one changed path is **not** a documentation file
+- `touchesSkills` — at least one changed path starts with `skills/`
+
+These flags, plus whether the PR has a linked issue, are exactly the inputs [Review selection
+policy](#review-selection-policy) gates on — apply that table in A.3.
 
 ### A.2 Head worktree (parent)
 
@@ -228,7 +259,8 @@ bun test tests/skills-lint.test.ts
 
 Any failure → **`request_changes`** (do not `pass`). Report file:line from test output. If the file does
 not exist, record `skills-lint: skipped (tests/skills-lint.test.ts not present)` in the Quality review's
-Tests section instead of failing the topic.
+Tests section instead of failing the topic. (This is why [Review selection
+policy](#review-selection-policy) keeps Quality active on a skills-only diff.)
 
 LoopHub skills are **English-only in the body** (after YAML frontmatter). CJK in `description` is allowed
 for routing triggers. Localized issue/PR templates belong in user output, not in skill files — see
@@ -236,22 +268,15 @@ for routing triggers. Localized issue/PR templates belong in user output, not in
 
 ### A.3 Launch reviewers in parallel (parent)
 
-Launch the **Quality**, **Security**, **Documentation**, and **Acceptance** reviewers as **readonly
-subagents in one message**; each applicable role runs once per round. Resolve each role's
-`subagent_type` via
-[Reviewer roles & host mapping](#reviewer-roles--host-mapping) — e.g. on Cursor `bugbot` /
-`security-review` / `general-purpose` / `general-purpose`, on Claude Code `code-reviewer` (or
-`general-purpose`) / `general-purpose` running `/security-review` / `general-purpose` /
-`general-purpose`.
+Apply [Review selection policy](#review-selection-policy) to A.1's `hasCodeChanges` / `hasDocChanges` /
+`touchesSkills` flags and linked-issue presence to decide which of **Quality**, **Security**,
+**Documentation**, **Acceptance** run this round. Launch the selected roles as **readonly subagents in
+one message**; each runs once per round. Record which roles were skipped, and why, for A.4. Resolve each
+launched role's `subagent_type` via [Reviewer roles & host mapping](#reviewer-roles--host-mapping) —
+e.g. on Cursor `bugbot` / `security-review` / `general-purpose` / `general-purpose`, on Claude Code
+`code-reviewer` (or `general-purpose`) / `general-purpose` running `/security-review` /
+`general-purpose` / `general-purpose`.
 `description: "<Quality|Security|Documentation|Acceptance> review PR #<m> round <round>"`.
-
-**Skip Documentation when the diff has no documentation files** (A.1 found no matching changed path):
-launch only Quality, Security, and any applicable Acceptance reviewer, and record the skip for A.4.
-Documentation reviews only the changed documentation files; it does not run for code-only diffs.
-
-**Skip Acceptance when there is no linked issue** (A.1 found no `linked_issue`): launch only Quality and
-Security, plus Documentation when applicable, and record the skip for A.4. Acceptance requires the
-issue's Goal + AC as input, so it cannot run without one.
 
 **The Quality / Security prompt is identical across hosts** — only the chosen mechanism differs:
 
@@ -343,9 +368,8 @@ them into one body.
 
 1. **Scope** (round-wide): Does PR match the issue goal? One or two sentences reused in each topic body.
 2. **Per-topic findings**: keep Quality / Security / Documentation / Acceptance findings separate, each
-   by severity. The Quality-only false-positive filter (A.3) applies to the `quality` bucket only.
-   Documentation has **no** bucket when A.3 skipped it (no documentation files). Acceptance has **no**
-   bucket when A.3 skipped it (no linked issue). Skipped topics are simply not posted in A.5.
+   by severity. The Quality-only false-positive filter (A.3) applies to the `quality` bucket only. A
+   role A.3 skipped this round has **no** bucket — its topic is simply not posted in A.5.
 3. **Per-topic verdict** — decide each topic on its **own** findings:
 
    | Topic | `request_changes` when | `comment` when | `pass` when |
@@ -383,11 +407,10 @@ Reviewer: <mechanism this role actually ran — note "degraded" if a fallback wa
 
 ### A.5 Post per topic (parent, required each round)
 
-Post **one review per topic** that ran (`quality`, `security`, `documentation` when documentation
-changed, and `acceptance` when linked issue exists), each tagged with `--topic` and carrying that
-topic's own verdict, body, and line comments. **Once per topic per round** — never post the same topic
-twice in one round (the per-round double-post guard now applies per topic; multiple rounds across the
-loop are still fine).
+Post **one review per topic that ran** this round (per A.3's launch decisions), each tagged with
+`--topic` and carrying that topic's own verdict, body, and line comments. **Once per topic per round** —
+never post the same topic twice in one round (the per-round double-post guard now applies per topic;
+multiple rounds across the loop are still fine).
 
 **Posting order matters.** A PR's resolved review state is the **latest substantive (pass /
 request_changes) review regardless of topic** (`core/store.ts` `latestSubstantiveReview` /
@@ -418,7 +441,12 @@ echo '[{"path":"src/a.ts","line":12,"body":"[security] ..."}]' \
 ### A.6 Round report (parent)
 
 Per-topic verdicts + overall verdict / finding count / line comment count / `lh pr review` result per
-topic. Table for major findings (Severity | Location | Finding | Topic).
+topic. Table for major findings (Severity | Location | Finding | Topic). Include a **review selection
+line** — which roles ran/skipped and why, per [Review selection policy](#review-selection-policy) — so a
+human sees the reason without re-deriving it from the diff, e.g. `Selection: quality, security skipped
+(documentation-only diff); documentation, acceptance ran.` or, on a skills-only diff, `Selection: security
+skipped (documentation-only diff); quality ran (touchesSkills — skills-lint exception); documentation,
+acceptance ran.`
 
 If overall `pass` or `--review-only` → full completion report. Otherwise → Phase B.
 
