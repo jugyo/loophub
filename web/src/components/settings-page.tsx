@@ -65,7 +65,8 @@ export function SettingsPage() {
         <h2 className="text-sm font-medium">Coding agent</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Which coding agent <code>lh dev</code> launches by default when
-          neither --claude-code nor --codex is passed.
+          neither --claude-code nor --codex is passed. Each agent's individual
+          settings are nested below it.
         </p>
         <div
           role="radiogroup"
@@ -101,27 +102,29 @@ export function SettingsPage() {
             );
           })}
         </div>
-      </section>
 
-      <section className="mt-6">
-        <h2 className="text-sm font-medium">Auto mode on Build</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Whether the Build button (issue list / issue detail) launches{" "}
-          <code>lh dev</code> with auto mode, per coding agent.
-        </p>
-        <div className="mt-3 flex flex-col gap-4">
-          {CODING_AGENT_OPTIONS.map((agentOption) => {
+        {/* Child settings, one block per agent, indented under the agent
+            selection above instead of living in a separate flat section. */}
+        <div className="mt-3 max-w-md border-l-2 pl-4">
+          {CODING_AGENT_OPTIONS.map((agentOption, i) => {
             const autoModeOnBuild =
               data?.agents?.[agentOption.value]?.autoModeOnBuild ?? false;
             return (
-              <div key={agentOption.value}>
+              <div
+                key={agentOption.value}
+                className={i > 0 ? "mt-4" : undefined}
+              >
                 <h3 className="text-xs font-medium text-muted-foreground">
-                  {agentOption.label}
+                  {agentOption.label} — Auto mode on Build
                 </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Whether the Build button (issue list / issue detail) launches{" "}
+                  <code>lh dev</code> with auto mode for {agentOption.label}.
+                </p>
                 <div
                   role="radiogroup"
                   aria-label={`Auto mode on Build (${agentOption.label})`}
-                  className="mt-1 max-w-md rounded-md border"
+                  className="mt-2 max-w-sm rounded-md border"
                 >
                   {autoModeOptions(agentOption.value).map((o) => {
                     const active = autoModeOnBuild === o.value;
