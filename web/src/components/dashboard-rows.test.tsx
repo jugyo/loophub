@@ -481,6 +481,75 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
     expect(screen.getByText("passed").className).toContain("text-green-600");
   });
 
+  it("shows working instead of review results while herdr reports the PR working", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
+        },
+      ],
+    };
+    await renderPull({
+      review_state: "CHANGES_REQUESTED",
+      mergeable_state: "clean",
+    });
+    expect(screen.queryByText("changes")).toBeNull();
+    expect(screen.getAllByText("working").length).toBeGreaterThan(0);
+  });
+
+  it("uses agent status when multiple agents target the PR", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [
+            {
+              id: "agent-1",
+              name: "blocked-agent",
+              status: "blocked",
+              pull: 10,
+            },
+            {
+              id: "agent-2",
+              name: "working-agent",
+              status: "working",
+              pull: 10,
+            },
+          ],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "blocked" }],
+        },
+      ],
+    };
+    await renderPull({
+      review_state: "CHANGES_REQUESTED",
+      mergeable_state: "clean",
+    });
+    expect(screen.queryByText("changes")).toBeNull();
+    expect(screen.getByText("working")).toBeTruthy();
+  });
+
+  it("does not suppress review results for a blocked herdr agent", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "blocked" }],
+        },
+      ],
+    };
+    await renderPull({
+      review_state: "PASSED",
+      mergeable_state: "clean",
+    });
+    expect(screen.getByText("passed")).toBeTruthy();
+  });
+
   it("keeps re-review and working words muted", async () => {
     await renderPull({ review_state: "STALE" });
     expect(screen.getByText("re-review").className).toContain(

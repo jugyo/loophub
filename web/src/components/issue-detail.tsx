@@ -18,7 +18,7 @@ import { BuildStatusLabel } from "@/components/build-status-label";
 import { IssueRow } from "@/components/dashboard-rows";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
-import { HerdrBadge } from "@/components/herdr-badge";
+import { HerdrBadge, isPullHerdrWorking } from "@/components/herdr-badge";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { Markdown } from "@/components/markdown";
@@ -45,6 +45,7 @@ import {
   useSetIssueState,
 } from "@/queries/issues";
 import { useSettings } from "@/queries/settings";
+import { useHerdrSessions } from "@/queries/terminal";
 
 export function IssueDetail({
   owner,
@@ -458,10 +459,17 @@ function LinkedPullRow({
   repo: string;
   pull: LinkedPull;
 }) {
+  const { data: herdrSessions } = useHerdrSessions();
+  const agentWorking = isPullHerdrWorking(
+    herdrSessions,
+    `${owner}/${repo}`,
+    pull.number,
+  );
   // Prefer the richer git-derived status (working/review/mergeable) when the
   // response carries those fields; the issue-detail summary lacks them, so fall
   // back to the always-available state badge (open/merged/closed).
-  const status = linkedPullStatus(pull) ?? linkedPullStateBadge(pull);
+  const status =
+    linkedPullStatus(pull, { agentWorking }) ?? linkedPullStateBadge(pull);
   return (
     <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
       <Link

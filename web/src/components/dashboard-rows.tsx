@@ -7,7 +7,7 @@ import { Check, Loader2, MoreHorizontal, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
-import { HerdrBadge } from "@/components/herdr-badge";
+import { HerdrBadge, isPullHerdrWorking } from "@/components/herdr-badge";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useTerminalLauncher } from "@/components/terminal-controller";
@@ -26,6 +26,7 @@ import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
 import { useSetIssueState } from "@/queries/issues";
 import { useSettings } from "@/queries/settings";
+import { useHerdrSessions } from "@/queries/terminal";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
   if (badges.length === 0) return null;
@@ -340,7 +341,13 @@ function LinkedPullSubRow({
   repo: string;
   pull: LinkedPull;
 }) {
-  const status = linkedPullStatus(pull);
+  const { data: herdrSessions } = useHerdrSessions();
+  const agentWorking = isPullHerdrWorking(
+    herdrSessions,
+    `${owner}/${repo}`,
+    pull.number,
+  );
+  const status = linkedPullStatus(pull, { agentWorking });
   // Two independent colour axes: the pill carries the PR lifecycle (open=green /
   // merged=purple / closed=grey), the status word its state-specific signal
   // (STATUS_TEXT). A muted pill when status is null (issue-detail summary path).
@@ -402,6 +409,12 @@ export function PullRow({
   /** When set (cross-repo views), shows which project the PR belongs to. */
   repoLabel?: string;
 }) {
+  const { data: herdrSessions } = useHerdrSessions();
+  const agentWorking = isPullHerdrWorking(
+    herdrSessions,
+    `${owner}/${repo}`,
+    pull.number,
+  );
   return (
     <Link
       to="/r/$owner/$repo/pulls/$number"
@@ -418,7 +431,7 @@ export function PullRow({
           className="shrink-0 text-xs"
         />
       ) : null}
-      <RowBadges badges={pullBadges(pull)} />
+      <RowBadges badges={pullBadges(pull, { agentWorking })} />
       <span className="shrink-0 text-xs text-muted-foreground">
         {relativeTime(pull.updated_at)}
       </span>

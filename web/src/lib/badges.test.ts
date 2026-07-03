@@ -224,6 +224,49 @@ describe("linkedPullStatus", () => {
     ).toBe("review-passed");
   });
 
+  it("reports herdr agent working over review-result statuses", () => {
+    expect(
+      linkedPullStatus(
+        linked({ review_state: "PASSED", mergeable_state: "clean" }),
+        { agentWorking: true },
+      )?.tone,
+    ).toBe("working");
+    expect(
+      linkedPullStatus(
+        linked({ review_state: "CHANGES_REQUESTED", mergeable_state: "clean" }),
+        { agentWorking: true },
+      )?.tone,
+    ).toBe("working");
+    expect(
+      linkedPullStatus(
+        linked({ review_state: "STALE", mergeable_state: "blocked" }),
+        { agentWorking: true },
+      )?.tone,
+    ).toBe("working");
+    expect(
+      linkedPullStatus(
+        linked({ review_state: "COMMENTED", mergeable_state: "clean" }),
+        { agentWorking: true },
+      )?.tone,
+    ).toBe("working");
+  });
+
+  it("keeps merged, closed, and conflict ahead of herdr agent working", () => {
+    expect(
+      linkedPullStatus(linked({ merged: true }), { agentWorking: true })?.tone,
+    ).toBe("merged");
+    expect(
+      linkedPullStatus(linked({ state: "closed" }), { agentWorking: true })
+        ?.tone,
+    ).toBe("closed");
+    expect(
+      linkedPullStatus(
+        linked({ mergeable_state: "conflict", review_state: "PASSED" }),
+        { agentWorking: true },
+      )?.tone,
+    ).toBe("conflict");
+  });
+
   it("flags a conflict ahead of review", () => {
     expect(
       linkedPullStatus(
@@ -454,7 +497,7 @@ describe("issueBadges / pullBadges", () => {
     expect(badges.map((b) => b.tone)).toEqual(["working"]);
   });
 
-  it("keeps non-passed review and conflict badges while working", () => {
+  it("keeps non-passed review and conflict badges while worktree-dirty working", () => {
     const badges = pullBadges(
       pull({
         working: true,
@@ -469,7 +512,7 @@ describe("issueBadges / pullBadges", () => {
     ]);
   });
 
-  it("keeps the stale review badge while working", () => {
+  it("keeps the stale review badge while worktree-dirty working", () => {
     const badges = pullBadges(
       pull({
         working: true,
@@ -478,6 +521,28 @@ describe("issueBadges / pullBadges", () => {
       }),
     );
     expect(badges.map((b) => b.tone)).toEqual(["working", "review-rereview"]);
+  });
+
+  it("suppresses review-result badges while a herdr agent is working", () => {
+    const badges = pullBadges(
+      pull({
+        review_state: "CHANGES_REQUESTED",
+        mergeable_state: "clean",
+      }),
+      { agentWorking: true },
+    );
+    expect(badges.map((b) => b.tone)).toEqual(["working"]);
+  });
+
+  it("keeps conflict visible while a herdr agent is working", () => {
+    const badges = pullBadges(
+      pull({
+        review_state: "PASSED",
+        mergeable_state: "conflict",
+      }),
+      { agentWorking: true },
+    );
+    expect(badges.map((b) => b.tone)).toEqual(["working", "conflict"]);
   });
 });
 
@@ -502,9 +567,25 @@ describe("pullDetailBadges", () => {
     expect(badges.map((b) => b.tone)).toEqual(["review-passed", "mergeable"]);
   });
 
-  it("never emits a working badge", () => {
+  it("does not emit a working badge for dirty-worktree working alone", () => {
     const badges = pullDetailBadges(pull({ working: true }));
     expect(badges.map((b) => b.tone)).not.toContain("working");
+  });
+
+  it("shows working and suppresses review results while a herdr agent is working", () => {
+    const badges = pullDetailBadges(
+      pull({ review_state: "PASSED", mergeable_state: "clean" }),
+      { agentWorking: true },
+    );
+    expect(badges.map((b) => b.tone)).toEqual(["working"]);
+  });
+
+  it("keeps conflict visible in detail while a herdr agent is working", () => {
+    const badges = pullDetailBadges(
+      pull({ review_state: "PASSED", mergeable_state: "conflict" }),
+      { agentWorking: true },
+    );
+    expect(badges.map((b) => b.tone)).toEqual(["working", "conflict"]);
   });
 
   it("shows merged state and omits review/mergeable on a merged PR", () => {
@@ -516,5 +597,18 @@ describe("pullDetailBadges", () => {
       }),
     );
     expect(badges.map((b) => b.tone)).toEqual(["merged"]);
+  });
+
+  it("merged and closed states outrank a herdr working agent", () => {
+    expect(
+      pullDetailBadges(pull({ merged: true }), { agentWorking: true }).map(
+        (b) => b.tone,
+      ),
+    ).toEqual(["merged"]);
+    expect(
+      pullDetailBadges(pull({ state: "closed" }), { agentWorking: true }).map(
+        (b) => b.tone,
+      ),
+    ).toEqual(["closed"]);
   });
 });

@@ -38,6 +38,25 @@ export function findPullHerdrWorkspace(
   return null;
 }
 
+export function isPullHerdrWorking(
+  data: HerdrSessions | undefined,
+  repo: string,
+  pull: number,
+): boolean {
+  const groups = Array.isArray(data?.repos) ? data.repos : [];
+  for (const group of groups) {
+    if (group.repo !== repo) continue;
+    const agents = Array.isArray(group.agents) ? group.agents : [];
+    if (agents.some((agent) => agent.pull === pull && agent.status === "working"))
+      return true;
+    const workspaces = Array.isArray(group.pull_workspaces)
+      ? group.pull_workspaces
+      : [];
+    return workspaces.some((workspace) => workspace.pull === pull && workspace.status === "working");
+  }
+  return false;
+}
+
 export function HerdrBadge({
   owner,
   repo,
