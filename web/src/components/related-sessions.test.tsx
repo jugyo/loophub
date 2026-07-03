@@ -100,7 +100,7 @@ describe("RelatedSessions", () => {
     const [btn] = resumeButtons(container);
     // The single-line command (no `\` line-continuation — that is only for the copyable block).
     expect(btn.getAttribute("title")).toBe(
-      "Resume `cd /home/me/.loophub/worktrees/jugyo/loophub/issue-7 && claude --resume 11111111-2222-3333-4444-555555555555` in a terminal",
+      "Resume `cd /home/me/.loophub/worktrees/jugyo/loophub/issue-7 && claude --resume 11111111-2222-3333-4444-555555555555` in herdr",
     );
 
     fireEvent.click(btn);
@@ -113,7 +113,7 @@ describe("RelatedSessions", () => {
     });
   });
 
-  it("on issue detail (no cwd): an issue-create session resumes from the repo root; a worktree-less session has no button but still expands to a command", () => {
+  it("on issue detail (no cwd): an issue-create session resumes via herdr from the repo root; a worktree-less session herdr can't place has no button but unifies on the copyable command (#566)", () => {
     const { container } = render(
       <RelatedSessions
         owner="jugyo"
@@ -134,21 +134,25 @@ describe("RelatedSessions", () => {
         ]}
       />,
     );
-    // Only the issue-create session (repo-root cwd) can launch in the terminal; the review session
-    // has no client-side worktree path, so no button — but no reason text either.
+    // Only the issue-create session (repo-root cwd, herdr's default) can resume via herdr; the
+    // review session has no client-side worktree path for herdr to point the pane at, so no button —
+    // but no reason text either.
     const btns = resumeButtons(container);
     expect(btns.length).toBe(1);
     // Its command is the bare `claude --resume <id>` (no `cd`, runs at the repo root).
     expect(btns[0].getAttribute("title")).toBe(
-      "Resume `claude --resume 11111111-2222-3333-4444-555555555555` in a terminal",
+      "Resume `claude --resume 11111111-2222-3333-4444-555555555555` in herdr",
     );
     expect(container.textContent).not.toContain("resume from the linked PR");
-    // The button-less review session still exposes the copyable command when expanded.
+    // The button-less review session unifies on the copyable command (#566): expanding it still
+    // exposes `claude --resume <id>` plus the directory hint, the decided fallback for a
+    // directory-unknown session herdr cannot place.
     const reviewLi = container.querySelectorAll("li")[1] as HTMLElement;
     fireEvent.click(within(reviewLi).getByRole("button", { expanded: false }));
     expect(reviewLi.textContent).toContain(
       "claude --resume aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     );
+    expect(reviewLi.textContent).toContain("working directory");
   });
 
   it("joins cwd into `cd <path> && claude --resume <id>` and copies the whole command (#345)", async () => {
