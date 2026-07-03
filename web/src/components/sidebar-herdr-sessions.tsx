@@ -2,15 +2,15 @@
 // repository list. Each agent row is a name (e.g. "dev #486"), a status dot, a kill button
 // (#521, experimental) that closes the agent's pane, and — on hover (#500) — a preview of
 // that agent's recent terminal output, fetched on demand via `terminal/agentRead`. Rows
-// whose worktree PR is merged/closed render muted (#611). Renders nothing while loading,
-// on error, or when no session has agents, so the section never gets in the way when
-// herdr isn't in use.
+// whose worktree PR is merged/closed render muted (#611); the kill button is shown only on
+// those muted rows (#621), where closing the no-longer-needed pane is the point. Renders
+// nothing while loading, on error, or when no session has agents, so the section never gets
+// in the way when herdr isn't in use.
 import { AnsiUp } from "ansi_up";
 import { Terminal, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { HerdrAgent } from "@/api/types";
 import { useToast } from "@/components/toast";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   useFocusHerdrAgent,
@@ -123,7 +123,6 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
     maxWidth: number;
     maxHeight: number;
   } | null>(null);
-  const [confirming, setConfirming] = useState(false);
   const killAgent = useKillHerdrAgent();
   const focusAgent = useFocusHerdrAgent();
   const { showError } = useToast();
@@ -133,8 +132,9 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   // real pane to focus, so the button is hidden for it (#617 AC).
   const canFocus = !agent.id.startsWith(NO_PANE_ID_PREFIX);
   // The agent's worktree PR is merged/closed (#611): gray the row out so no-longer-needed
-  // agents stand out. Display only — hover preview and the kill button keep working, since
-  // a stale agent is exactly the one someone wants to inspect or close.
+  // agents stand out. This also gates the kill button (#621): only a stale agent — one whose
+  // work is done — gets a kill button, and it kills immediately (no confirm), since closing a
+  // finished pane is low-risk. Active rows show no kill button at all.
   const stale = agent.pull_closed === true;
 
   function clearHoverTimer() {
@@ -208,15 +208,20 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
     }, CLOSE_DELAY_MS);
   }
 
-  async function onConfirmKill() {
-    try {
-      await killAgent.mutateAsync({ repo, paneId: agent.id });
-    } catch {
-      // Surfaced via killAgent.error in the dialog; keep it open instead of throwing an
-      // unhandled rejection from this event handler.
-      return;
-    }
-    setConfirming(false);
+  // Kills immediately, no confirm (#621): the button only appears on a stale row, so the
+  // pane being closed is already finished work. A failure is surfaced via a toast (the
+  // confirm dialog that used to carry the error is gone), matching the focus button's
+  // error handling above.
+  function onKill() {
+    killAgent.mutate(
+      { repo, paneId: agent.id },
+      {
+        onError: (e) =>
+          showError(
+            e instanceof Error ? e.message : "Failed to close the Herdr pane.",
+          ),
+      },
+    );
   }
 
   return (
@@ -226,9 +231,7 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
     // (visually detached, `position: fixed`) preview — the row's onMouseEnter then failed
     // to re-fire on the way back, and the popup could close while the pointer was still on
     // the row. Siblings have no such ancestry relationship, so enter/leave on each fires
-    // purely from real cursor position. The kill confirm dialog (#521) is a full-screen
-    // `fixed inset-0` overlay, so its own DOM position doesn't matter, but it's kept as a
-    // sibling too for consistency.
+    // purely from real cursor position.
     <>
       <div
         ref={rowRef}
@@ -280,17 +283,18 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
             <Terminal className="size-3.5" />
           </button>
         ) : null}
-        <button
-          type="button"
-          aria-label={`Close ${agent.name}'s pane`}
-          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-          onClick={() => {
-            killAgent.reset();
-            setConfirming(true);
-          }}
-        >
-          <X className="size-3.5" />
-        </button>
+        {stale ? (
+          <button
+            type="button"
+            aria-label={`Close ${agent.name}'s pane`}
+            title="Close the finished Herdr pane"
+            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+            disabled={killAgent.isPending}
+            onClick={onKill}
+          >
+            <X className="size-3.5" />
+          </button>
+        ) : null}
       </div>
       {preview ? (
         <AgentPreview
@@ -299,15 +303,6 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
           position={preview}
           onMouseEnter={clearCloseTimer}
           onMouseLeave={scheduleClose}
-        />
-      ) : null}
-      {confirming ? (
-        <ConfirmKillAgentDialog
-          agentName={agent.name}
-          pending={killAgent.isPending}
-          error={killAgent.error ? String(killAgent.error) : null}
-          onConfirm={onConfirmKill}
-          onCancel={() => setConfirming(false)}
         />
       ) : null}
     </>
@@ -425,63 +420,6 @@ function AgentPreview({
         className="whitespace-pre font-mono text-xs text-foreground"
         dangerouslySetInnerHTML={{ __html: html }}
       />
-    </div>
-  );
-}
-
-// Gates the kill button behind a confirm dialog (#521 AC: misclick protection for a
-// destructive action). Follows the same role="dialog" + fixed inset-0 backdrop pattern as
-// repo-settings-page.tsx's ConfirmArchiveDialog.
-function ConfirmKillAgentDialog({
-  agentName,
-  pending,
-  error,
-  onConfirm,
-  onCancel,
-}: {
-  agentName: string;
-  pending: boolean;
-  error: string | null;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
-      onClick={onCancel}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Close agent pane"
-        className="flex w-full max-w-md flex-col rounded-lg border bg-background p-5 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-lg font-semibold">Close {agentName}'s pane?</h2>
-        <p className="mt-3 text-sm text-muted-foreground">
-          This closes the herdr pane the agent is running in. Unsaved work in
-          that pane is lost.
-        </p>
-        {error ? (
-          <p className="mt-3 text-sm text-destructive">{error}</p>
-        ) : null}
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={pending}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm} disabled={pending}>
-            {pending ? "Closing…" : "Close pane"}
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
