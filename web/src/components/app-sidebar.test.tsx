@@ -117,6 +117,32 @@ function renderSidebar() {
   return render(<RouterProvider router={router} />);
 }
 
+describe("AppSidebar repositories", () => {
+  it("sorts favorites before non-favorites, alphabetically within each group", async () => {
+    reposData.value = [
+      repo("me/zulu", 1),
+      repo("me/alpha", 2, { favorite: true }),
+      repo("Acme/widget", 3),
+      repo("me/Yankee", 4, { favorite: true }),
+      repo("acme/Alpha", 5),
+    ];
+
+    const { container } = renderSidebar();
+    await screen.findByText("me/zulu");
+
+    const order = [...container.querySelectorAll("a")]
+      .map((a) => a.textContent?.trim())
+      .filter((text) => text?.includes("/"));
+    expect(order).toEqual([
+      "me/alpha",
+      "me/Yankee",
+      "acme/Alpha",
+      "Acme/widget",
+      "me/zulu",
+    ]);
+  });
+});
+
 describe("AppSidebar Herdr repo counts", () => {
   it("counts every Herdr agent for the matching repository", () => {
     expect(

@@ -131,19 +131,17 @@ export function AppSidebar() {
           </div>
         )}
         {/* Favorites first (#457) so frequently-used repos stay at the top of the nav. */}
-        {[...(repos ?? [])]
-          .sort((a, b) => (a.favorite === b.favorite ? 0 : a.favorite ? -1 : 1))
-          .map((repo) => (
-            <RepoSidebarLink
-              key={repo.id}
-              repo={repo}
-              agentCount={
-                herdrSessionsError
-                  ? 0
-                  : countRepoHerdrAgents(herdrSessions, repo.full_name)
-              }
-            />
-          ))}
+        {[...(repos ?? [])].sort(compareSidebarRepos).map((repo) => (
+          <RepoSidebarLink
+            key={repo.id}
+            repo={repo}
+            agentCount={
+              herdrSessionsError
+                ? 0
+                : countRepoHerdrAgents(herdrSessions, repo.full_name)
+            }
+          />
+        ))}
 
         {/* Archived (#478): sits directly under the repo list (inside the same scroll area, right
             after the last item) rather than pinned to the sidebar bottom — de-emphasized styling
@@ -194,6 +192,13 @@ export function countRepoHerdrAgents(
       .filter((group) => group.repo === repoFullName)
       .reduce((total, group) => total + group.agents.length, 0) ?? 0
   );
+}
+
+export function compareSidebarRepos(a: Repo, b: Repo): number {
+  if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+  return a.full_name.localeCompare(b.full_name, undefined, {
+    sensitivity: "base",
+  });
 }
 
 function SidebarLink({
