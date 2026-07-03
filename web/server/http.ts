@@ -23,8 +23,8 @@ import {
 } from "../../core/attachments.ts";
 import { isServiceError } from "../../core/errors.ts";
 import { subscribeEvents } from "./events.ts";
+import { isAllowedOrigin, isLoopbackHost } from "./net.ts";
 import { dispatchRaw } from "./rpc.ts";
-import { isAllowedOrigin, isLoopbackHost } from "./terminal.ts";
 
 // Built SPA assets. Defaults to web/dist; override with LOOPHUB_WEB_DIST.
 const DIST_DIR =
@@ -114,13 +114,12 @@ function isCrossSiteFetch(req: IncomingMessage): boolean {
 // — that request is same-origin from the browser's point of view (Sec-Fetch-Site: same-origin), so
 // it reaches this far, but its actual Origin header string is still "evil.com", never "localhost"
 // (rebinding only changes DNS resolution, not what the page's own JS sends). Checking the Origin
-// *hostname* against loopback names (mirrors web/server/terminal.ts's isAllowedOrigin, used for the
-// /terminal WebSocket) defeats that. But it must not reject the SPA's own same-origin requests when
-// the operator has intentionally bound lh-web off loopback (LOOPHUB_HOST=0.0.0.0 etc., #465) — those
-// legitimately carry a non-loopback Origin. Mirror index.ts's own opt-in pattern for the parallel
-// terminal-feature tradeoff: apply the strict loopback check only while still bound to loopback
-// (the default, overwhelmingly common case); an operator who opts into a non-loopback bind has
-// already accepted broadened exposure for this instance, same as that feature.
+// *hostname* against loopback names (isAllowedOrigin, net.ts) defeats that. But it must not reject
+// the SPA's own same-origin requests when the operator has intentionally bound lh-web off loopback
+// (LOOPHUB_HOST=0.0.0.0 etc., #465) — those legitimately carry a non-loopback Origin. So apply the
+// strict loopback check only while still bound to loopback (the default, overwhelmingly common
+// case); an operator who opts into a non-loopback bind has already accepted broadened exposure for
+// this instance.
 function isBoundToLoopback(): boolean {
   return isLoopbackHost(process.env.LOOPHUB_HOST ?? "127.0.0.1");
 }

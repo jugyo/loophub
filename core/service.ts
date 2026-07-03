@@ -469,10 +469,9 @@ export const repos = {
 const HERDR_CAPTURE_MAX_BYTES = 64 * 1024;
 
 // Spawns Herdr asynchronously (never spawnSync — this runs inside the lh-web server process,
-// which also serves SSE/WebSocket terminals for every other client). Errors are deliberately
-// generic: the underlying stderr/stdout (or an OS error message) can embed the repo's absolute
-// local_path, mirroring web/server/terminal.ts's closeReasonFor rationale for not forwarding
-// internal process output to the client. Resolves with the drained stdout when captureStdout
+// which also serves SSE/RPC for every other client). Errors are deliberately generic: the
+// underlying stderr/stdout (or an OS error message) can embed the repo's absolute local_path,
+// so it is never forwarded to the client. Resolves with the drained stdout when captureStdout
 // is set, "" otherwise.
 function runHerdr(
   command: string,
@@ -984,9 +983,9 @@ export const terminal = {
       label: input.label,
       tabId,
     });
-    // Non-blocking: lh-web is a single process also serving SSE/WebSocket terminals for every
-    // client, so a synchronous spawnSync here would stall the whole server for as long as the
-    // Herdr launch takes (or hangs).
+    // Non-blocking: lh-web is a single process also serving SSE/RPC for every client, so a
+    // synchronous spawnSync here would stall the whole server for as long as the Herdr launch
+    // takes (or hangs).
     try {
       await runHerdrLaunch(plan.argv[0], plan.argv.slice(1), plan.cwd);
     } catch (e) {

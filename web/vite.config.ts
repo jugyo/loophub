@@ -13,25 +13,17 @@ const API_PATHS = ["/rpc", "/events", "/attachments"];
 // `preview` command ignores `server.proxy` and reads `preview.proxy`, so the
 // production-like flow (`npm run build && npm run preview`) needs this
 // referenced from both to avoid 404s on RPC/SSE calls.
-const API_PROXY = {
-  ...Object.fromEntries(
-    API_PATHS.map((p) => [
-      p,
-      {
-        target: API_TARGET,
-        changeOrigin: true,
-        // EventSource keeps /events open; do not buffer.
-        ws: false,
-      },
-    ]),
-  ),
-  // The terminal is a real WebSocket (bidirectional PTY), so it must proxy the upgrade.
-  "/terminal": {
-    target: API_TARGET,
-    changeOrigin: true,
-    ws: true,
-  },
-};
+const API_PROXY = Object.fromEntries(
+  API_PATHS.map((p) => [
+    p,
+    {
+      target: API_TARGET,
+      changeOrigin: true,
+      // EventSource keeps /events open; do not buffer.
+      ws: false,
+    },
+  ]),
+);
 
 export default defineConfig({
   plugins: [react()],

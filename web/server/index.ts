@@ -7,7 +7,6 @@ import { createViteDev, type ViteDev } from "./dev.ts";
 import { DEFAULT_SWEEP_MS, startEventTail, startPullSweep } from "./events.ts";
 import { createLhWebServer } from "./http.ts";
 import { log } from "./logger.ts";
-import { attachTerminalServer, isLoopbackHost } from "./terminal.ts";
 
 const argv = process.argv.slice(2);
 let port = Number(process.env.LOOPHUB_PORT ?? 8730);
@@ -44,32 +43,11 @@ const server = createLhWebServer((req, res, url) => {
 // access is intentional.
 const host = process.env.LOOPHUB_HOST ?? "127.0.0.1";
 
-// Bidirectional terminal channel (WebSocket /terminal). Attached to the same server; it only
-// claims /terminal upgrades, leaving Vite's HMR socket alone. The terminal is an unauthenticated
-// interactive shell, so on a non-loopback bind (e.g. LOOPHUB_HOST=0.0.0.0) it would hand a shell
-// to anyone on the network. Refuse to attach it there unless explicitly opted in, and warn loudly
-// when it is. (The per-connection Origin check stops browser drive-by attacks but not a direct
-// non-browser client, which sends no Origin.)
-const terminalOptIn = process.env.LOOPHUB_TERMINAL_ALLOW_NON_LOOPBACK === "1";
-let stopTerminal: () => void = () => {};
-if (isLoopbackHost(host)) {
-  stopTerminal = attachTerminalServer(server);
-} else if (terminalOptIn) {
-  stopTerminal = attachTerminalServer(server);
-  log.warn(
-    `lh-web: WARNING — terminal enabled on non-loopback host ${host}; an unauthenticated shell is reachable from the network.`,
-  );
-} else {
-  log.warn(
-    `lh-web: terminal disabled on non-loopback host ${host} (set LOOPHUB_TERMINAL_ALLOW_NON_LOOPBACK=1 to force-enable; this exposes an unauthenticated shell).`,
-  );
-}
 try {
   vite = await createViteDev(server);
 } catch (err) {
   stopTail();
   stopSweep();
-  stopTerminal();
   log.error(
     "lh-web: failed to start the embedded Vite dev server. Are web deps installed (npm install)?",
   );
@@ -92,7 +70,6 @@ const shutdown = async () => {
 
   stopTail();
   stopSweep();
-  stopTerminal();
   if (vite) await vite.close();
 
   // Close gracefully first, giving existing connections a moment to finish.
