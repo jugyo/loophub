@@ -60,11 +60,13 @@ describe("PullHerdrSection (#609)", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("shows the Agents heading, Bot badge, session name, agent name, and status for the PR's workspace", () => {
+  it("shows the Agents heading, row Bot icon, session name, agent name, and status for the PR's workspace", () => {
     herdrSessions.value = running;
-    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+    const { container } = render(
+      <PullHerdrSection owner="me" repo="proj" pull={42} />,
+    );
     expect(screen.getByRole("heading", { name: "Agents" })).toBeTruthy();
-    expect(screen.getByTitle("Bot")).toBeTruthy();
+    expect(container.querySelectorAll("svg")).toHaveLength(1);
     expect(screen.getByText("lh-me-proj")).toBeTruthy();
     expect(screen.getByText(/dev #609/)).toBeTruthy();
     expect(screen.getByText("working")).toBeTruthy();
