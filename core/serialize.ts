@@ -300,6 +300,8 @@ function pullSummary(repo: S.Repo, pr: any) {
     state: pr.state,
     merged: !!pr.merged,
     html_url: linkedRef(repo, "pulls", pr.number).html_url,
+    // #629: the exported GitHub PR (if any), so the issue-detail linked-PR row can show a GH badge.
+    github_pull: githubPullJSON(S.getGithubPull(pr.id)),
   };
 }
 
@@ -435,6 +437,8 @@ async function linkedPullDetail(repo: S.Repo, pr: any) {
     additions: status.additions,
     deletions: status.deletions,
     changed_files: status.changed_files,
+    // #629: the exported GitHub PR (if any), so the issue-list linked-PR sub-row can show a GH badge.
+    github_pull: githubPullJSON(S.getGithubPull(pr.id)),
   };
 }
 

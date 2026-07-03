@@ -26,6 +26,8 @@ beforeAll(async () => {
   writeFileSync(join(repoPath, "a.txt"), "x\n");
   git(["add", "-A"]);
   git(["commit", "-qm", "init"]);
+  // A GitHub origin so recordGithubPull accepts the export (#629 github_pull badge).
+  git(["remote", "add", "origin", "https://github.com/me/proj.git"]);
 
   await svc.repos.create({ path: repoPath, name: "me/proj" });
   svc.sessions.register({ id: "sess-1", agent: "lh-dev", session: "sess-1" });
@@ -70,5 +72,47 @@ describe("dashboard.overview", () => {
     const plain = item(noPr.number);
     expect(plain.linked_pull_requests).toEqual([]);
     expect(plain.linked_pull_request).toBeNull();
+  });
+
+  test("linked PR carries github_pull once exported, null otherwise (#629)", async () => {
+    const issue = svc.issues.create("me/proj", { title: "gets a GitHub PR" });
+    const pr = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
+
+    const linkedPull = (o: any) =>
+      o.issues.find((i: any) => i.issue.number === issue.number)?.issue
+        .linked_pull_requests[0];
+
+    // Before export: the field is present on the wire but null (no github_pulls row).
+    const before = linkedPull(await svc.dashboard.overview());
+    expect(before).toHaveProperty("github_pull", null);
+    // issues.get (pullSummary path) mirrors the list.
+    expect(
+      svc.issues.get("me/proj", issue.number).linked_pull_requests[0]
+        .github_pull,
+    ).toBeNull();
+
+    svc.pulls.recordGithubPull("me/proj", pr.number, {
+      github_number: 99,
+      url: "https://github.com/me/proj/pull/99",
+    });
+
+    // After export: both the list (linkedPullDetail) and detail (pullSummary) expose it.
+    const after = linkedPull(await svc.dashboard.overview());
+    expect(after.github_pull).toMatchObject({
+      number: 99,
+      url: "https://github.com/me/proj/pull/99",
+    });
+    expect(
+      svc.issues.get("me/proj", issue.number).linked_pull_requests[0]
+        .github_pull,
+    ).toMatchObject({ number: 99 });
   });
 });

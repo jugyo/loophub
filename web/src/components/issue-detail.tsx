@@ -18,6 +18,7 @@ import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
 import { HerdrBadge } from "@/components/herdr-badge";
 import { LabelChip } from "@/components/label-chip";
+import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { Markdown } from "@/components/markdown";
 import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminalLauncher } from "@/components/terminal-controller";
@@ -316,6 +317,7 @@ function LinkedPullRow({
       >
         PR #{pull.number}
       </Link>
+      <LinkedGithubPrBadge github_pull={pull.github_pull} />
       <span
         className="shrink-0 font-medium text-muted-foreground"
         title={status.title}

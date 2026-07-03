@@ -9,6 +9,7 @@ import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { HerdrBadge } from "@/components/herdr-badge";
 import { LabelChip } from "@/components/label-chip";
+import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
@@ -360,6 +361,7 @@ function LinkedPullSubRow({
       >
         PR #{pull.number}
       </Link>
+      <LinkedGithubPrBadge github_pull={pull.github_pull} />
       {status ? (
         <span
           className={cn(

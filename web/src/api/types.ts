@@ -28,6 +28,12 @@ export interface LinkedPull {
   additions?: number;
   deletions?: number;
   changed_files?: number;
+  /**
+   * The GitHub PR this linked PR was exported to (#629), or null/absent. Present on both the
+   * issue-list and issue-detail responses; its presence drives the small `GH #N` badge next to
+   * the `PR #N` pill. Same shape as `PullRequest.github_pull`.
+   */
+  github_pull?: GithubPull | null;
 }
 
 /** Summary of the issue a PR closes (pull-detail `linked_issue`). */
