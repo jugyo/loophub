@@ -147,3 +147,90 @@ export const realGithubDeps: GithubDeps = {
   view: viewPr,
   create: createDraftPr,
 };
+
+// #614: the GitHub identity of an issue, parsed from its web URL.
+export interface GithubIssueRef {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+export interface GithubIssueContent {
+  number: number;
+  title: string;
+  body: string;
+  url: string;
+}
+
+// Parse a GitHub issue URL into owner/repo/number, or null when it is not a well-formed github.com
+// issue URL. Pure (no gh/network), so the service layer validates the input before spending a fetch,
+// and it is unit-testable on its own. Host is pinned to github.com (the model is GitHub-only); the
+// path must be exactly `/<owner>/<repo>/issues/<number>` (a `/pull/<n>` URL is intentionally rejected
+// — importing a PR as an issue is out of scope). Query/fragment (e.g. `#issuecomment-123`) is ignored.
+export function parseGithubIssueUrl(url: string): GithubIssueRef | null {
+  let u: URL;
+  try {
+    u = new URL(url.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  const host = u.hostname.toLowerCase();
+  if (host !== "github.com" && host !== "www.github.com") return null;
+  const m = u.pathname.match(/^\/([^/]+)\/([^/]+)\/issues\/(\d+)\/?$/);
+  if (!m) return null;
+  const number = Number(m[3]);
+  if (!Number.isInteger(number) || number < 1) return null;
+  return { owner: m[1], repo: m[2], number };
+}
+
+// Fetch a GitHub issue's number/title/body/url via the `gh` CLI. `--repo owner/repo <number>` is used
+// (rather than passing the URL) so the coordinates the caller parsed are authoritative and no value is
+// interpreted as a flag. `repoPath` is the cwd gh runs in (the destination repo's checkout) — matching
+// the rest of this module; the explicit `--repo` overrides gh's cwd-based repo resolution regardless.
+// Throws on any gh failure (auth/network/not-found) so the caller surfaces it rather than importing an
+// empty issue.
+export async function fetchGithubIssue(
+  repoPath: string,
+  ref: GithubIssueRef,
+): Promise<GithubIssueContent> {
+  const r = await gh(repoPath, [
+    "issue",
+    "view",
+    String(ref.number),
+    "--repo",
+    `${ref.owner}/${ref.repo}`,
+    "--json",
+    "number,title,body,url",
+  ]);
+  if (r.code !== 0)
+    throw new Error(
+      `gh issue view failed: ${r.stderr.trim() || r.stdout.trim()}`,
+    );
+  let j: { number?: unknown; title?: unknown; body?: unknown; url?: unknown };
+  try {
+    j = JSON.parse(r.stdout);
+  } catch {
+    throw new Error(
+      `gh issue view returned unparseable JSON: ${r.stdout.trim()}`,
+    );
+  }
+  if (typeof j.number !== "number" || typeof j.title !== "string")
+    throw new Error(
+      `gh issue view returned unexpected JSON: ${r.stdout.trim()}`,
+    );
+  return {
+    number: j.number,
+    title: j.title,
+    body: typeof j.body === "string" ? j.body : "",
+    url: typeof j.url === "string" ? j.url : "",
+  };
+}
+
+export interface GithubIssueDeps {
+  fetchIssue: typeof fetchGithubIssue;
+}
+
+export const realGithubIssueDeps: GithubIssueDeps = {
+  fetchIssue: fetchGithubIssue,
+};

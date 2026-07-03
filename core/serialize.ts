@@ -66,6 +66,35 @@ export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null {
   };
 }
 
+// #614: shape a github_issues row for the wire, or null. Keeps the internal issue_id off the wire —
+// consumers read the GitHub side via owner/repo/number/url. Overloads preserve non-nullness for the
+// import path, which always has a real row.
+export interface GithubIssueWire {
+  owner: string;
+  repo: string;
+  number: number;
+  url: string;
+  created_by: string | null;
+  created_at: string;
+}
+export function githubIssueJSON(g: S.GithubIssue): GithubIssueWire;
+export function githubIssueJSON(
+  g: S.GithubIssue | null,
+): GithubIssueWire | null;
+export function githubIssueJSON(
+  g: S.GithubIssue | null,
+): GithubIssueWire | null {
+  if (!g) return null;
+  return {
+    owner: g.owner,
+    repo: g.repo,
+    number: g.number,
+    url: g.url,
+    created_by: g.created_by ?? null,
+    created_at: g.created_at,
+  };
+}
+
 export function agentSessionJSON(row: any) {
   const out: any = {
     id: row.id,

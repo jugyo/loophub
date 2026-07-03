@@ -9,6 +9,7 @@ script symlinks them into `~/.claude/skills/`).
 |--------------|-------------|------------|
 | `lh-repo-add` | `skills/lh-repo-add/` | `/lh-repo-add` (register local git checkout) |
 | `lh-issue-create` | `skills/lh-issue-create/` | `/lh-issue-create` |
+| `lh-issue-import` | `skills/lh-issue-import/` | `/lh-issue-import {github-issue-url}` (copy a GitHub issue into LoopHub → link) |
 | `lh-plan-to-issues` | `skills/lh-plan-to-issues/` | `/lh-plan-to-issues` |
 | `lh-dev` | `skills/lh-dev/` | `/lh-dev {issue id}` (implement → PR → review loop; `lh dev` provisions the worktree) |
 | `lh-pr-review` | `skills/lh-pr-review/` | `/lh-pr-review {pr id}` (review → fix → re-review loop) |

@@ -1073,6 +1073,18 @@ async function main() {
           );
         }
       }
+    } else if (sub === "import") {
+      // #614: import a GitHub issue into the resolved repo, copying title/body verbatim and recording
+      // the GitHub source link. The repo is the destination (from --repo or cwd); the argument is the
+      // GitHub issue URL. Core does the parse → fetch (gh) → create → link work.
+      const url = rest[0];
+      if (!url) fail("usage: lh issue import <github-issue-url>");
+      const i = await run(async () =>
+        s.issues.import(repo, { url }, await writeSession()),
+      );
+      out(i);
+      if (!flags.json)
+        console.log(`imported #${i.number} from ${i.github_issue.url}`);
     } else if (sub === "update") {
       const patch: { title?: string; body?: string } = {};
       if (flags.title !== undefined) patch.title = flags.title;
@@ -1847,7 +1859,8 @@ function usage() {
   lh repo remove --repo owner/name
   lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."] [--runtime claude-code] [--kind dev|review|issue-create]
   lh session list
-  lh issue list|view|create|update|comment|close|label  [--repo owner/repo]
+  lh issue list|view|create|import|update|comment|close|label  [--repo owner/repo]
+  lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
   lh pr note <m> --path <file> --body <text> [--base <sha>] [--commit <sha>]   # add a review note for a file on the PR's diff (range defaults to base..head)
   lh pr notes <m> [--path <file>] [--commit <sha>]   lh pr note-edit <id> --body <text>   lh pr note-rm <id>   # list / edit / delete review notes

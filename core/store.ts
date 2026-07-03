@@ -28,6 +28,18 @@ export interface GithubPull {
   created_at: string;
 }
 
+// #614: the GitHub issue a loophub issue was imported from. Keyed by the loophub issue (1 import →
+// 1 fresh loophub issue), but MANY loophub issues may share one GitHub source (owner/repo/number).
+export interface GithubIssue {
+  issue_id: number;
+  owner: string;
+  repo: string;
+  number: number;
+  url: string;
+  created_by: string | null;
+  created_at: string;
+}
+
 // ---- repos ----
 export function splitName(fullName: string): [string, string] {
   return (fullName.includes("/") ? fullName.split("/") : ["me", fullName]) as [
@@ -190,6 +202,9 @@ export function deleteRepo(owner: string, name: string): boolean {
     // before the issues delete (foreign_keys=ON), or `lh repo remove` fails once any PR in the repo
     // has a recorded GitHub PR.
     db.run(`DELETE FROM github_pulls WHERE issue_id IN (${ph})`, issueIds);
+    // #614: same FK-with-no-cascade situation as github_pulls — sweep the import links before the
+    // issues delete, or `lh repo remove` fails once any issue in the repo was imported from GitHub.
+    db.run(`DELETE FROM github_issues WHERE issue_id IN (${ph})`, issueIds);
   }
   // Notes are deleted by repo_id (#216): this covers both PR-linked notes and PR-independent ones
   // (issue_id NULL), so no separate issue_id sweep is needed.
@@ -485,6 +500,56 @@ export function recordGithubPull(input: {
       createdBy ?? null,
       now(),
     ) as GithubPull;
+}
+
+// #614: the GitHub issue a loophub issue was imported from, or null.
+export function getGithubIssue(issueId: number): GithubIssue | null {
+  return (
+    (db
+      .query(`SELECT * FROM github_issues WHERE issue_id = ?`)
+      .get(issueId) as GithubIssue) ?? null
+  );
+}
+
+// #614: record the GitHub source of an imported loophub issue. Unlike recordGithubPull this is a
+// plain INSERT (no ON CONFLICT): each import creates a fresh loophub issue, so issue_id is always new.
+export function recordGithubIssue(input: {
+  issueId: number;
+  owner: string;
+  repo: string;
+  number: number;
+  url: string;
+  createdBy?: string | null;
+}): GithubIssue {
+  const { issueId, owner, repo, number, url, createdBy } = input;
+  return db
+    .query(
+      `INSERT INTO github_issues (issue_id, owner, repo, number, url, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    )
+    .get(
+      issueId,
+      owner,
+      repo,
+      number,
+      url,
+      createdBy ?? null,
+      now(),
+    ) as GithubIssue;
+}
+
+// #614: every loophub issue imported from a given GitHub issue (many-to-one). Backs the AC that one
+// GitHub issue can carry multiple loophub imports; resolved via idx_github_issues_source.
+export function loophubIssuesForGithubIssue(
+  owner: string,
+  repo: string,
+  number: number,
+): GithubIssue[] {
+  return db
+    .query(
+      `SELECT * FROM github_issues WHERE owner = ? AND repo = ? AND number = ? ORDER BY issue_id`,
+    )
+    .all(owner, repo, number) as GithubIssue[];
 }
 
 export function listOpenPullsForRepo(repoId: number): any[] {

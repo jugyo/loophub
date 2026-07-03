@@ -45,7 +45,13 @@ import {
   worktreeRemove,
   worktreeStatus,
 } from "./git.ts";
-import { type GithubDeps, realGithubDeps } from "./github.ts";
+import {
+  type GithubDeps,
+  type GithubIssueDeps,
+  parseGithubIssueUrl,
+  realGithubDeps,
+  realGithubIssueDeps,
+} from "./github.ts";
 import {
   type HerdrAgent,
   type HerdrPullWorkspace,
@@ -86,6 +92,7 @@ import {
 import {
   agentSessionJSON,
   commentJSON,
+  githubIssueJSON,
   githubPullJSON,
   handoffJSON,
   issueGroupJSON,
@@ -1713,6 +1720,9 @@ export const issues = {
     // Detail-only (#298): the issue's related sessions, newest first. Resume is offered via the
     // linked PR (relatedSessionJSON marks issue-container rows "resume-via-pull"), not the issue.
     out.related_sessions = relatedSessionsJSON(row);
+    // Detail-only (#614): the GitHub issue this one was imported from, or null. Mirrors how PR detail
+    // surfaces github_pull; kept off the cheap list serializer.
+    out.github_issue = githubIssueJSON(S.getGithubIssue(row.id));
     return out;
   },
 
@@ -1735,6 +1745,60 @@ export const issues = {
     if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
     S.emitEvent(r.id, "issue.opened", actor, { number: issue.number });
     return issueJSON(S.getIssue(r.id, issue.number), r);
+  },
+
+  // #614: import a GitHub issue into this repo as a loophub issue — copy its title/body verbatim (no
+  // summarization) and record the GitHub source link. Orchestration lives here (parse → fetch → create
+  // → link → event), CLI stays thin (AGENTS.md). `deps.fetchIssue` is an injectable seam so the flow is
+  // unit-testable without `gh`/network; callers leave it at the default. The import always creates a
+  // fresh loophub issue — importing the same GitHub issue twice yields two linked loophub issues (the
+  // many-to-one link is intentional, per the issue's AC).
+  async import(
+    name: string,
+    input: { url: string },
+    sessionId?: string | null,
+    deps: GithubIssueDeps = realGithubIssueDeps,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const ref = parseGithubIssueUrl(input.url ?? "");
+    if (!ref)
+      throw new ServiceError(
+        422,
+        "url must be a GitHub issue URL (https://github.com/<owner>/<repo>/issues/<number>)",
+      );
+    let gh: Awaited<ReturnType<typeof deps.fetchIssue>>;
+    try {
+      // Run `gh` from the destination repo's checkout (like the rest of github.ts), not the caller's
+      // cwd; `--repo` still makes the parsed coordinates authoritative.
+      gh = await deps.fetchIssue(r.local_path, ref);
+    } catch (e) {
+      throw new ServiceError(
+        502,
+        `failed to fetch GitHub issue: ${(e as Error).message}`,
+      );
+    }
+    const actor = actorFor(sessionId);
+    const issue = S.createIssue(r.id, "issue", gh.title, gh.body, actor) as any;
+    const link = S.recordGithubIssue({
+      issueId: issue.id,
+      owner: ref.owner,
+      repo: ref.repo,
+      number: ref.number,
+      url: gh.url || input.url.trim(),
+      createdBy: actor,
+    });
+    // Emit issue.opened (not a bespoke issue.imported): an imported issue is a normal newly-opened
+    // loophub issue, so it must reach the same consumers as `create` — chiefly the workflow worker,
+    // which only dispatches on SUPPORTED_EVENTS (issue.opened / pull_request.opened, see workflow.ts).
+    // The `github` field marks the import in the event stream without diverging the event type.
+    S.emitEvent(r.id, "issue.opened", actor, {
+      number: issue.number,
+      github: `${ref.owner}/${ref.repo}#${ref.number}`,
+    });
+    const out = issueJSON(S.getIssue(r.id, issue.number), r) as any;
+    out.github_issue = githubIssueJSON(link);
+    return out;
   },
 
   // Plain edits only (title/body/state/labels). Assignment has dedicated procedures.

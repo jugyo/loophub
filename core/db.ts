@@ -413,6 +413,25 @@ CREATE TABLE IF NOT EXISTS github_pulls (
   created_by  TEXT,
   created_at  TEXT NOT NULL
 );
+
+-- The GitHub issue a loophub issue was imported from (#614). Deliberately MANY-to-ONE, not 1:1 like
+-- github_pulls: a single GitHub issue may be imported into several loophub issues (re-imported, split
+-- across repos), so the key is the loophub issue (issue_id, PRIMARY KEY) — each import produces one
+-- fresh loophub issue linked to exactly one GitHub source — while the source coordinates
+-- (owner/repo/number) repeat across rows. The idx_github_issues_source index resolves "which loophub
+-- issues came from this GitHub issue". owner/repo/number are the GitHub identity (parsed from the URL);
+-- url is stored verbatim for display. No reverse sync — the copy is one-shot at import time.
+CREATE TABLE IF NOT EXISTS github_issues (
+  issue_id    INTEGER PRIMARY KEY REFERENCES issues(id),
+  owner       TEXT NOT NULL,
+  repo        TEXT NOT NULL,
+  number      INTEGER NOT NULL,
+  url         TEXT NOT NULL,
+  created_by  TEXT,
+  created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_github_issues_source ON github_issues(owner, repo, number);
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）
