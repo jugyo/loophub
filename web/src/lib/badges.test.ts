@@ -83,7 +83,7 @@ describe("reviewBadge", () => {
     const badge = reviewBadge(pull({ review_state: "CHANGES_REQUESTED" }));
     expect(badge).toEqual({
       tone: "review-changes",
-      label: "changes requested",
+      label: "changes",
     });
   });
 });

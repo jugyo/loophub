@@ -14,6 +14,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
@@ -150,6 +151,41 @@ describe("IssueDetail", () => {
     expect(pill?.closest("div")?.textContent).toContain("open");
   });
 
+  it("shows linked PR summary as working while a herdr terminal is working", async () => {
+    renderDetail(
+      () => ({
+        ...issue,
+        linked_pull_request: {
+          ...issue.linked_pull_request!,
+          review_state: "CHANGES_REQUESTED",
+        },
+      }),
+      undefined,
+      false,
+      {
+        "terminal/sessions": () => ({
+          repos: [
+            {
+              repo: "me/proj",
+              session_name: "lh-me-proj",
+              agents: [{ id: "%7", name: "dev #12", status: "working" }],
+              pull_workspaces: [{ pull: 30, pane_id: "%7", status: "working" }],
+            },
+          ],
+        }),
+      },
+    );
+
+    const summary = await screen.findByText("PR #30");
+    const statusCell = summary.closest("div");
+    const ctx = within(statusCell as HTMLElement);
+    const workingBadge = ctx.getByTitle(
+      "Herdr agent is working in the PR worktree",
+    );
+    expect(workingBadge.textContent).toBe("working");
+    expect(ctx.queryByText("changes")).toBeNull();
+  });
+
   it("hides the linked-PR summary when no PR is linked", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr);
@@ -237,7 +273,7 @@ describe("IssueDetail", () => {
     expect(screen.getByText("merged attempt")).toBeTruthy();
     expect(screen.getByText("PR #29")).toBeTruthy();
     expect(screen.getByText("closed attempt")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /build/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
   });
 
   // #609: the linked-PR row shows the same Herdr badge as the issue list, shown only while
@@ -306,7 +342,7 @@ describe("IssueDetail", () => {
 
     // Close renders, so the header is mounted — Build must be absent.
     await screen.findByRole("button", { name: /close/i });
-    expect(screen.queryByRole("button", { name: /build/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
     expect(screen.getByText("Building")).toBeTruthy();
   });
 
@@ -318,7 +354,7 @@ describe("IssueDetail", () => {
     renderDetail(() => merged);
 
     await screen.findByRole("button", { name: /close/i });
-    expect(screen.queryByRole("button", { name: /build/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
     expect(screen.getByText("Merged")).toBeTruthy();
   });
 
@@ -326,7 +362,7 @@ describe("IssueDetail", () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr);
 
-    expect(await screen.findByRole("button", { name: /build/i })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /^Build$/ })).toBeTruthy();
   });
 
   it("shows the Build button when the only linked PR is closed-unmerged", async () => {
@@ -340,14 +376,14 @@ describe("IssueDetail", () => {
     };
     renderDetail(() => rejected);
 
-    expect(await screen.findByRole("button", { name: /build/i })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /^Build$/ })).toBeTruthy();
   });
 
   it("launches `lh dev <n> --herdr` in a terminal when the Build button is clicked", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr);
 
-    const button = await screen.findByRole("button", { name: /build/i });
+    const button = await screen.findByRole("button", { name: /^Build$/ });
     fireEvent.click(button);
 
     expect(launchTerminal).toHaveBeenCalledWith({
@@ -362,7 +398,7 @@ describe("IssueDetail", () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr, undefined, true);
 
-    const button = await screen.findByRole("button", { name: /build/i });
+    const button = await screen.findByRole("button", { name: /^Build$/ });
 
     expect(button.title).toBe("Start `lh dev 12 --herdr --auto` in a terminal");
   });
@@ -372,7 +408,7 @@ describe("IssueDetail", () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr);
 
-    const button = await screen.findByRole("button", { name: /build/i });
+    const button = await screen.findByRole("button", { name: /^Build$/ });
     fireEvent.click(button);
 
     expect(button.hasAttribute("disabled")).toBe(true);

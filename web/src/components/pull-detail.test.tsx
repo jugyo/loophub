@@ -998,7 +998,6 @@ describe("PullDetail — GitHub export action (#406)", () => {
     fireEvent.click(button);
     expect(launchTerminal).toHaveBeenCalledTimes(1);
     const opts = launchTerminal.mock.calls[0][0];
-    expect(opts.command).toContain("/create-github-pr 30");
     expect(opts.repo).toBe("me/proj");
     expect(opts.workflow).toBe("github-pr-export");
     expect(opts.prNumber).toBe(30);

@@ -43,6 +43,91 @@ interface PullStatusOptions {
   agentWorking?: boolean;
 }
 
+type PullStatusSource = {
+  merged: boolean;
+  state: "open" | "closed";
+  working?: boolean;
+  review_state?: PullRequest["review_state"];
+  mergeable_state?: PullRequest["mergeable_state"];
+};
+
+interface PullStatusDecision {
+  terminal: Badge | null;
+  review: Badge | null;
+  mergeable: Badge | null;
+  isWorktreeWorking: boolean;
+  hasMergeableState: boolean;
+  isAgentWorking: boolean;
+}
+
+function resolveReviewState(
+  reviewState?: PullRequest["review_state"],
+): Badge | null {
+  if (!reviewState) return null;
+  return {
+    tone: REVIEW_TONE[reviewState],
+    label: REVIEW_LABEL[reviewState],
+  };
+}
+
+function resolveMergeableState(
+  merged: boolean,
+  state: "open" | "closed",
+  mergeableState?: PullRequest["mergeable_state"],
+): Badge | null {
+  if (merged || state !== "open") return null;
+  switch (mergeableState) {
+    case "clean":
+      return { tone: "mergeable", label: "mergeable" };
+    case "conflict":
+      return { tone: "conflict", label: "conflict" };
+    default:
+      return null;
+  }
+}
+
+function resolvePullStatus(
+  pull: PullStatusSource,
+  options: PullStatusOptions = {},
+): PullStatusDecision {
+  return {
+    terminal: pull.merged
+      ? { tone: "merged", label: "merged" }
+      : pull.state === "closed"
+        ? { tone: "closed", label: "closed" }
+        : null,
+    review: resolveReviewState(pull.review_state),
+    mergeable: resolveMergeableState(
+      pull.merged,
+      pull.state,
+      pull.mergeable_state,
+    ),
+    isWorktreeWorking: pull.working === true,
+    hasMergeableState: pull.mergeable_state !== undefined,
+    isAgentWorking: options.agentWorking === true,
+  };
+}
+
+function linkedPullWorkingBadge(
+  isAgentWorking: boolean,
+  isWorktreeWorking: boolean,
+): Badge {
+  if (isAgentWorking) {
+    return {
+      tone: "working",
+      label: "working",
+      title: "Herdr agent is working in the PR worktree",
+    };
+  }
+  return {
+    tone: "working",
+    label: "working",
+    title: isWorktreeWorking
+      ? "Uncommitted changes in the PR worktree"
+      : "No review or conflict status yet",
+  };
+}
+
 /** State badge: open/closed for issues, merged for merged PRs. Open PRs show none. */
 export function stateBadge(
   item: Issue | PullRequest,
@@ -71,13 +156,17 @@ const REVIEW_TONE: Record<
   STALE: "review-rereview",
 };
 
+const REVIEW_LABEL: Record<NonNullable<PullRequest["review_state"]>, string> = {
+  PASSED: "passed",
+  CHANGES_REQUESTED: "changes",
+  READY_FOR_RE_REVIEW: "re-review",
+  COMMENTED: "commented",
+  STALE: "re-review",
+};
+
 /** Review-state badge for a PR, or null when there is no review yet. */
 export function reviewBadge(pr: PullRequest): Badge | null {
-  if (!pr.review_state) return null;
-  return {
-    tone: REVIEW_TONE[pr.review_state],
-    label: pr.review_state.replace(/_/g, " ").toLowerCase(),
-  };
+  return resolveReviewState(pr.review_state);
 }
 
 /**
@@ -88,15 +177,7 @@ export function reviewBadge(pr: PullRequest): Badge | null {
  * little signal and only add noise.
  */
 export function mergeableBadge(pr: PullRequest): Badge | null {
-  if (pr.merged || pr.state !== "open") return null;
-  switch (pr.mergeable_state) {
-    case "clean":
-      return { tone: "mergeable", label: "mergeable" };
-    case "conflict":
-      return { tone: "conflict", label: "conflict" };
-    default:
-      return null;
-  }
+  return resolveMergeableState(pr.merged, pr.state, pr.mergeable_state);
 }
 
 /**
@@ -147,23 +228,25 @@ export function pullBadges(
   options: PullStatusOptions = {},
 ): Badge[] {
   const badges: Badge[] = [];
+  const status = resolvePullStatus(pr, options);
+  const isWorking = status.isWorktreeWorking || status.isAgentWorking;
   const draft = draftBadge(pr);
   if (draft) badges.push(draft);
-  const working = workingBadge(pr, options);
+  const working = isWorking ? workingBadge(pr, options) : null;
   if (working) badges.push(working);
-  const state = stateBadge(pr, "pulls");
+  const state = status.terminal;
   if (state) return [state];
-  const review = reviewBadge(pr);
+  const review = status.review;
   // While a live herdr agent is working in the PR worktree, hold review-result
   // statuses behind the working badge. A dirty worktree without a live working
   // agent keeps the older, narrower suppression of only "passed".
   if (
     review &&
-    !(options.agentWorking || (working && review.tone === "review-passed"))
+    !(status.isAgentWorking || (isWorking && review.tone === "review-passed"))
   ) {
     badges.push(review);
   }
-  const mergeable = mergeableBadge(pr);
+  const mergeable = status.mergeable;
   // Same reasoning: hide "mergeable" while working. "conflict" still shows:
   // conflict handling is intentionally unchanged.
   if (mergeable && !(working && mergeable.tone === "mergeable")) {
@@ -185,17 +268,18 @@ export function pullDetailBadges(
   options: PullStatusOptions = {},
 ): Badge[] {
   const badges: Badge[] = [];
+  const status = resolvePullStatus(pr, options);
   const draft = draftBadge(pr);
   if (draft) badges.push(draft);
   const working = options.agentWorking
     ? workingBadge(pr, { agentWorking: true })
     : null;
   if (working) badges.push(working);
-  const state = stateBadge(pr, "pulls");
+  const state = status.terminal;
   if (state) return [state];
-  const review = reviewBadge(pr);
+  const review = status.review;
   if (review && !options.agentWorking) badges.push(review);
-  const mergeable = mergeableBadge(pr);
+  const mergeable = status.mergeable;
   if (mergeable && !(options.agentWorking && mergeable.tone === "mergeable"))
     badges.push(mergeable);
   return badges;
@@ -225,47 +309,22 @@ export function linkedPullStatus(
   pull: LinkedPull,
   options: PullStatusOptions = {},
 ): Badge | null {
-  if (pull.merged) return { tone: "merged", label: "merged" };
-  if (pull.state === "closed") return { tone: "closed", label: "closed" };
+  const status = resolvePullStatus(pull, options);
+  if (status.terminal) return status.terminal;
   // A decided, actionable conflict wins even while the worktree is being edited.
-  if (pull.mergeable_state === "conflict")
-    return { tone: "conflict", label: "conflict" };
+  if (status.mergeable?.tone === "conflict") return status.mergeable;
   if (options.agentWorking) {
-    return {
-      tone: "working",
-      label: "working",
-      title: "Herdr agent is working in the PR worktree",
-    };
+    return linkedPullWorkingBadge(true, status.isWorktreeWorking);
   }
   // Decided review states reflect the PR's real state and win over the transient
   // "working" cue (#419): a passed PR with a dirty worktree reads "passed",
   // matching the PR detail page rather than masking it behind "working".
-  switch (pull.review_state) {
-    case "CHANGES_REQUESTED":
-      return { tone: "review-changes", label: "changes" };
-    case "READY_FOR_RE_REVIEW":
-    case "STALE":
-      return { tone: "review-rereview", label: "re-review" };
-    case "COMMENTED":
-      return { tone: "review-commented", label: "commented" };
-    case "PASSED":
-      return { tone: "review-passed", label: "passed" };
+  if (status.review) {
+    return status.review;
   }
   // No decided review state. Worktree dirty: actively being edited.
-  if (pull.working)
-    return {
-      tone: "working",
-      label: "working",
-      title: "Uncommitted changes in the PR worktree",
-    };
-  // Status computed (issue-list path) but nothing decided yet = fresh/in-progress
-  // → working. Not computed (issue-detail summary path) → indeterminable → null.
-  if (pull.mergeable_state === undefined) return null;
-  return {
-    tone: "working",
-    label: "working",
-    title: "No review or conflict status yet",
-  };
+  if (!status.isWorktreeWorking && !status.hasMergeableState) return null;
+  return linkedPullWorkingBadge(false, status.isWorktreeWorking);
 }
 
 /**
