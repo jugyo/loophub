@@ -92,6 +92,26 @@ describe("PullHerdrSection (#609)", () => {
     expect(screen.getByText(status).classList.contains(className)).toBe(true);
   });
 
+  it.each([
+    ["blocked", "animate-bot-bounce"],
+    ["working", "animate-bot-wobble"],
+  ])("adds %s animation class for Herdr icon", (status, expectedClass) => {
+    herdrSessions.value = {
+      repos: [
+        {
+          ...running.repos[0],
+          agents: [{ id: "%12", name: "dev #609", status }],
+          pull_workspaces: [{ pull: 42, pane_id: "%12", status }],
+        },
+      ],
+    };
+    const { container } = render(
+      <PullHerdrSection owner="me" repo="proj" pull={42} />,
+    );
+    const icon = container.querySelector("svg");
+    expect(icon?.classList.contains(expectedClass)).toBe(true);
+  });
+
   it("omits the agent name when no agent matches the workspace's pane id", () => {
     herdrSessions.value = {
       repos: [

@@ -294,8 +294,11 @@ describe("IssueDetail", () => {
     });
 
     const badge = await screen.findByRole("button", {
-      name: "Focus agent pane for PR #30",
+      name: "Focus Herdr terminal for PR #30",
     });
+    expect(
+      badge.querySelector("svg")?.classList.contains("animate-bot-wobble"),
+    ).toBe(true);
     fireEvent.click(badge);
     await waitFor(() => {
       expect(rpcCall("terminal/focusAgent")?.params).toEqual({
@@ -305,6 +308,28 @@ describe("IssueDetail", () => {
     });
   });
 
+  it("adds a bounce animation for blocked Herdr workspace status", async () => {
+    renderDetail(undefined, undefined, false, {
+      "terminal/sessions": () => ({
+        repos: [
+          {
+            repo: "me/proj",
+            session_name: "lh-me-proj",
+            agents: [{ id: "%7", name: "dev #12", status: "blocked" }],
+            pull_workspaces: [{ pull: 30, pane_id: "%7", status: "blocked" }],
+          },
+        ],
+      }),
+    });
+
+    const badge = await screen.findByRole("button", {
+      name: "Focus Herdr terminal for PR #30",
+    });
+    expect(
+      badge.querySelector("svg")?.classList.contains("animate-bot-bounce"),
+    ).toBe(true);
+  });
+
   it("shows no Herdr badge on the linked-PR row when no herdr session runs the PR", async () => {
     renderDetail(undefined, undefined, false, {
       "terminal/sessions": () => ({ repos: [] }),
@@ -312,7 +337,7 @@ describe("IssueDetail", () => {
 
     expect(await screen.findByText("PR #30")).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: /Focus agent pane/ }),
+      screen.queryByRole("button", { name: /Focus Herdr terminal/ }),
     ).toBeNull();
   });
 

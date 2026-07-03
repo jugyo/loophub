@@ -5,9 +5,13 @@
 // shared terminal/sessions poll (useHerdrSessions, #495) — no extra herdr shellout per page.
 
 import { Bot } from "lucide-react";
-import { findPullHerdrWorkspace } from "@/components/herdr-badge";
+import {
+  findPullHerdrWorkspace,
+  herdrWorkspaceBadgeIconClass,
+} from "@/components/herdr-badge";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
 
 function statusTextClass(status: string): string {
@@ -59,7 +63,12 @@ export function PullHerdrSection({
         <h2 className="text-lg font-semibold">Agents</h2>
       </div>
       <div className="flex items-center gap-2 rounded-md border p-3 text-sm">
-        <Bot className="size-4 shrink-0 text-muted-foreground" />
+        <Bot
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground",
+            herdrWorkspaceBadgeIconClass(workspace.status),
+          )}
+        />
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium" title={group.session_name}>
             {group.session_name}

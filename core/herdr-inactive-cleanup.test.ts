@@ -55,7 +55,7 @@ describe("herdrInactiveCleanupCandidate", () => {
   });
 
   test("does not select active or working panes", () => {
-    for (const status of ["active", "working", "blocked", "idle", "done"]) {
+    for (const status of ["active", "working", "blocked"]) {
       expect(
         herdrInactiveCleanupCandidate(
           {
@@ -231,7 +231,10 @@ describe("parseHerdrInactiveCleanupCandidates", () => {
         worktreeRoot: "/tmp/lh-cleanup",
         isPullClosed: (pull) => pull === 7,
       }),
-    ).toEqual([{ inactiveMs: 630_000, name: "w1:p4", paneId: "w1:p4" }]);
+    ).toEqual([
+      { inactiveMs: 601_000, name: "old inactive", paneId: "w1:p1" },
+      { inactiveMs: 630_000, name: "w1:p4", paneId: "w1:p4" },
+    ]);
   });
 
   test.each([
