@@ -11,7 +11,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { HerdrAgentRead, HerdrSessions } from "@/api/types";
-import { SidebarHerdrSessions } from "./sidebar-herdr-sessions";
+import { SidebarHerdrSessions, sortAgents } from "./sidebar-herdr-sessions";
 
 // ToastProvider reads the router (useRouterState) to dismiss on navigation, which isn't
 // mounted here — mock useToast to a spy so the focus-error path can be asserted without a
@@ -605,6 +605,81 @@ describe("SidebarHerdrSessions", () => {
       expect(freshName.className).not.toContain("text-muted-foreground");
       const freshDot = freshName.parentElement?.querySelector("span");
       expect(freshDot?.className).toContain("bg-yellow-500");
+    });
+
+    // #620: stale rows sink to the bottom of their repo group so active agents stay on top.
+    it("orders stale agents after active ones within each repo group, stably (#620)", async () => {
+      renderWithSessions({
+        repos: [
+          {
+            repo: "me/app",
+            session_name: "me-app-12345678",
+            agents: [
+              // Interleaved active/stale, two of each, to prove both the partition
+              // (stale below active) and stable order within each partition.
+              {
+                id: "w1:p1",
+                name: "app stale A",
+                status: "done",
+                pull_closed: true,
+              },
+              { id: "w1:p2", name: "app active A", status: "working" },
+              {
+                id: "w1:p3",
+                name: "app stale B",
+                status: "idle",
+                pull_closed: true,
+              },
+              { id: "w1:p4", name: "app active B", status: "blocked" },
+            ],
+          },
+          {
+            repo: "me/other",
+            session_name: "me-other-87654321",
+            agents: [
+              { id: "w2:p1", name: "other active", status: "working" },
+              {
+                id: "w2:p2",
+                name: "other stale",
+                status: "done",
+                pull_closed: true,
+              },
+            ],
+          },
+        ],
+      });
+
+      await screen.findByText("app active A");
+
+      // Rows carry text-sm; the group repo labels don't — collect only agent rows so the
+      // asserted order is agents, not repo headers.
+      const names = Array.from(
+        document.querySelectorAll<HTMLElement>("div.text-sm"),
+      ).map((row) => row.querySelector("span:nth-child(2)")?.textContent);
+
+      // me/app: actives keep their relative order, then stales keep theirs — reordering
+      // stays inside the group, and me/other's rows follow me/app's without interleaving.
+      expect(names).toEqual([
+        "app active A",
+        "app active B",
+        "app stale A",
+        "app stale B",
+        "other active",
+        "other stale",
+      ]);
+    });
+
+    it("sortAgents is a stable partition that leaves the input untouched (#620)", () => {
+      const agents = [
+        { id: "a", name: "stale 1", status: "done", pull_closed: true },
+        { id: "b", name: "active 1", status: "working" },
+        { id: "c", name: "active 2", status: "idle" },
+        { id: "d", name: "stale 2", status: "blocked", pull_closed: true },
+      ];
+      const sorted = sortAgents(agents);
+      expect(sorted.map((a) => a.id)).toEqual(["b", "c", "a", "d"]);
+      // Non-mutating: the react-query cache array must not be reordered in place.
+      expect(agents.map((a) => a.id)).toEqual(["a", "b", "c", "d"]);
     });
 
     it("keeps the hover preview and kill button working on a grayed-out row (#611 AC)", async () => {

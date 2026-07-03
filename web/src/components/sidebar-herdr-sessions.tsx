@@ -66,6 +66,18 @@ function statusDotClass(status: string): string {
   }
 }
 
+// Order agents within a repo group so no-longer-needed ones sink to the bottom (#620):
+// stale rows (worktree PR merged/closed, `pull_closed === true` — grayed out by #611) go
+// after active ones, keeping attention on the top. Reordering stays inside the group (the
+// input is one group's agents) and is stable — Array.prototype.sort is stable on Node's V8,
+// and the comparator only separates stale from active, so both partitions keep their
+// original relative order. Returns a new array; the source (react-query cache) is untouched.
+export function sortAgents(agents: HerdrAgent[]): HerdrAgent[] {
+  return [...agents].sort(
+    (a, b) => Number(a.pull_closed === true) - Number(b.pull_closed === true),
+  );
+}
+
 export function SidebarHerdrSessions() {
   const { data, isError } = useHerdrSessions();
   // Hide on error too: react-query keeps the last successful data across a failed
@@ -92,7 +104,7 @@ export function SidebarHerdrSessions() {
             {group.repo}
           </div>
           {/* Keyed on id, not name: two label-less launches can share a display name. */}
-          {group.agents.map((agent) => (
+          {sortAgents(group.agents).map((agent) => (
             <AgentRow key={agent.id} repo={group.repo} agent={agent} />
           ))}
         </div>
