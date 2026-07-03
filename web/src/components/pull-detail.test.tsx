@@ -34,8 +34,8 @@ vi.mock("@/components/terminal-controller", () => ({
   useTerminalLauncher: () => ({ launchTerminal }),
 }));
 
-import { ErrorBanner, ErrorBannerProvider } from "./error-banner";
 import { PullDetail } from "./pull-detail";
+import { ToastProvider, ToastViewport } from "./toast";
 
 afterEach(() => {
   cleanup();
@@ -394,10 +394,10 @@ describe("PullDetail", () => {
     });
   });
 
-  it("surfaces a merge failure in the app error banner, dismissable by its close button (#323)", async () => {
+  it("surfaces a merge failure in the app toast, dismissable by its close button (#323, #574)", async () => {
     // Merge feedback no longer renders inline on the PR header; a failed mutation reports to the
-    // app-shell ErrorBanner (lifetime decoupled from the header / mutation observer). Mount the
-    // banner alongside the detail and assert the failure shows there and the × dismisses it.
+    // app-shell toast (lifetime decoupled from the header / mutation observer). Mount the
+    // viewport alongside the detail and assert the failure shows there and the × dismisses it.
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
@@ -420,10 +420,10 @@ describe("PullDetail", () => {
       getParentRoute: () => rootRoute,
       path: "/",
       component: () => (
-        <ErrorBannerProvider>
-          <ErrorBanner />
+        <ToastProvider>
+          <ToastViewport />
           <PullDetail owner="me" repo="proj" number={30} />
-        </ErrorBannerProvider>
+        </ToastProvider>
       ),
     });
     const issuesRoute = createRoute({
@@ -441,7 +441,7 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
-    // Merge PR #30 → it fails → the banner shows the failure message.
+    // Merge PR #30 → it fails → the toast shows the failure message.
     fireEvent.click(await screen.findByRole("button", { name: /^Merge$/i }));
     expect(
       await screen.findByText("Merge failed: merge conflict"),

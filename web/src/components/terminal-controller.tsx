@@ -5,23 +5,20 @@
 // The context defaults to null, so useTerminalLauncher()'s feedback calls are safe no-ops when
 // there is no provider (e.g. unit tests), mirroring the defensive default in detail-title.tsx.
 
-import { X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { ApiError } from "@/api/client";
-import { useErrorBanner } from "@/components/error-banner";
 import {
   type HerdrLaunchError,
   HerdrLaunchErrorDialog,
 } from "@/components/herdr-launch-error-dialog";
+import { useToast } from "@/components/toast";
 import { useLaunchTerminalWorkflow } from "@/queries/terminal";
 
 // Options for launching a Herdr terminal session. All optional except `repo` and `workflow`,
@@ -42,12 +39,9 @@ export interface OpenTerminalOptions {
 export type OpenTerminal = (opts?: OpenTerminalOptions) => void;
 
 interface TerminalControllerValue {
-  launchMessage: string | null;
-  showLaunchMessage: (message: string) => void;
-  dismissLaunchMessage: () => void;
-  // Overlay dialog state for a failed Herdr launch (#483) — kept separate from launchMessage
-  // (success feedback) since it needs a richer payload (reason + example command) and stays
-  // until the user dismisses it, rather than auto-clearing.
+  // Overlay dialog state for a failed Herdr launch (#483) — kept separate from the toast (used for
+  // launch success) since it needs a richer payload (reason + example command) and stays until the
+  // user dismisses it, rather than auto-clearing.
   herdrLaunchError: HerdrLaunchError | null;
   showHerdrLaunchError: (error: HerdrLaunchError) => void;
   dismissHerdrLaunchError: () => void;
@@ -62,28 +56,6 @@ export function TerminalControllerProvider({
 }: {
   children: ReactNode;
 }) {
-  const [launchMessage, setLaunchMessage] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dismissLaunchMessage = useCallback(() => {
-    if (timer.current !== null) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-    setLaunchMessage(null);
-  }, []);
-  const showLaunchMessage = useCallback(
-    (message: string) => {
-      dismissLaunchMessage();
-      setLaunchMessage(message);
-      timer.current = setTimeout(() => {
-        timer.current = null;
-        setLaunchMessage(null);
-      }, 12000);
-    },
-    [dismissLaunchMessage],
-  );
-  useEffect(() => dismissLaunchMessage, [dismissLaunchMessage]);
-
   const [herdrLaunchError, setHerdrLaunchError] =
     useState<HerdrLaunchError | null>(null);
   const dismissHerdrLaunchError = useCallback(
@@ -96,21 +68,11 @@ export function TerminalControllerProvider({
 
   const value = useMemo<TerminalControllerValue>(
     () => ({
-      launchMessage,
-      showLaunchMessage,
-      dismissLaunchMessage,
       herdrLaunchError,
       showHerdrLaunchError,
       dismissHerdrLaunchError,
     }),
-    [
-      launchMessage,
-      showLaunchMessage,
-      dismissLaunchMessage,
-      herdrLaunchError,
-      showHerdrLaunchError,
-      dismissHerdrLaunchError,
-    ],
+    [herdrLaunchError, showHerdrLaunchError, dismissHerdrLaunchError],
   );
   return (
     <TerminalControllerContext.Provider value={value}>
@@ -122,7 +84,7 @@ export function TerminalControllerProvider({
 export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
   const ctx = useContext(TerminalControllerContext);
   const launch = useLaunchTerminalWorkflow();
-  const { showError } = useErrorBanner();
+  const { showSuccess, showError } = useToast();
   const launchTerminal = useCallback<OpenTerminal>(
     (opts) => {
       if (!opts?.repo) {
@@ -149,12 +111,12 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
             // instead of starting a new one — say so instead of the generic "Launched in ..."
             // message, which would misleadingly imply a fresh agent just started.
             if (result.focused) {
-              ctx?.showLaunchMessage("Switched to the existing terminal.");
+              showSuccess("Switched to the existing terminal.");
               return;
             }
             const session = result.session_name ?? "Herdr";
             const attach = result.attach ? ` Attach: ${result.attach}` : "";
-            ctx?.showLaunchMessage(`Launched in ${session}.${attach}`);
+            showSuccess(`Launched in ${session}.${attach}`);
           },
           onError: (e) =>
             ctx?.showHerdrLaunchError({
@@ -165,30 +127,12 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
         },
       );
     },
-    [ctx, launch, showError],
+    [ctx, launch, showSuccess, showError],
   );
   return { launchTerminal };
 }
 
-export function TerminalLaunchFeedback() {
-  const ctx = useContext(TerminalControllerContext);
-  if (!ctx?.launchMessage) return null;
-  return (
-    <div className="mx-auto mb-4 flex max-w-content items-start gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-100">
-      <span className="min-w-0 flex-1 break-words">{ctx.launchMessage}</span>
-      <button
-        type="button"
-        aria-label="Dismiss launch feedback"
-        onClick={ctx.dismissLaunchMessage}
-        className="shrink-0 rounded p-0.5 opacity-70 hover:bg-emerald-500/10 hover:opacity-100"
-      >
-        <X className="size-4" />
-      </button>
-    </div>
-  );
-}
-
-// Overlay dialog shown for a failed Herdr launch (#483), in place of the generic ErrorBanner.
+// Overlay dialog shown for a failed Herdr launch (#483), in place of the generic toast.
 export function TerminalLaunchErrorDialog() {
   const ctx = useContext(TerminalControllerContext);
   if (!ctx?.herdrLaunchError) return null;

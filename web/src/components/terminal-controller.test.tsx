@@ -1,10 +1,18 @@
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
+import { ToastProvider, ToastViewport } from "@/components/toast";
 import {
   TerminalControllerProvider,
   TerminalLaunchErrorDialog,
-  TerminalLaunchFeedback,
   useTerminalLauncher,
 } from "./terminal-controller";
 
@@ -58,15 +66,29 @@ afterEach(() => {
 });
 
 describe("TerminalController", () => {
-  it("shows the Herdr session name and attach command after a launch succeeds", () => {
-    render(
-      <TerminalControllerProvider>
-        <TerminalLaunchFeedback />
-        <LaunchButton />
-      </TerminalControllerProvider>,
-    );
+  it("shows the Herdr session name and attach command after a launch succeeds", async () => {
+    // ToastProvider clears on route change, so it needs a real router in the tree (matches
+    // toast.test.tsx / pull-detail.test.tsx).
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => (
+        <TerminalControllerProvider>
+          <ToastProvider>
+            <ToastViewport />
+            <LaunchButton />
+          </ToastProvider>
+        </TerminalControllerProvider>
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(<RouterProvider router={router} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Launch" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Launch" }));
 
     expect(launchMutation.mutate).toHaveBeenCalledWith(
       {
@@ -87,7 +109,7 @@ describe("TerminalController", () => {
     ).toBeTruthy();
   });
 
-  it("shows a 'switched to existing terminal' message instead of the launch message when the backend focused an existing pane (#578)", () => {
+  it("shows a 'switched to existing terminal' message instead of the launch message when the backend focused an existing pane (#578)", async () => {
     launchMutation.mutate.mockImplementationOnce((_input, opts) => {
       opts?.onSuccess?.({
         session_name: "jugyo-loophub-deadbeef",
@@ -95,14 +117,28 @@ describe("TerminalController", () => {
       });
     });
 
-    render(
-      <TerminalControllerProvider>
-        <TerminalLaunchFeedback />
-        <LaunchButton />
-      </TerminalControllerProvider>,
-    );
+    // ToastProvider clears on route change, so it needs a real router in the tree (matches
+    // toast.test.tsx / pull-detail.test.tsx).
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => (
+        <TerminalControllerProvider>
+          <ToastProvider>
+            <ToastViewport />
+            <LaunchButton />
+          </ToastProvider>
+        </TerminalControllerProvider>
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(<RouterProvider router={router} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Launch" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Launch" }));
 
     expect(screen.getByText("Switched to the existing terminal.")).toBeTruthy();
     expect(screen.queryByText(/^Launched in/)).toBeNull();

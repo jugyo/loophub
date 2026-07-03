@@ -1,4 +1,4 @@
-// Overlay dialog for a failed Herdr launch (#483). Replaces the generic ErrorBanner strip for
+// Overlay dialog for a failed Herdr launch (#483). Replaces the generic error toast for
 // this specific failure with a dialog carrying the actual reason plus the exact `herdr` command
 // the user can re-run locally to see the full output themselves (the server deliberately never
 // forwards raw stdout/stderr — see the comment on runHerdrLaunch in core/service.ts). Follows the

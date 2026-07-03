@@ -7,12 +7,11 @@ import { AppBreadcrumb } from "@/components/app-breadcrumb";
 import { AppSidebar } from "@/components/app-sidebar";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { DetailTitleProvider } from "@/components/detail-title";
-import { ErrorBanner, ErrorBannerProvider } from "@/components/error-banner";
 import {
   TerminalControllerProvider,
   TerminalLaunchErrorDialog,
-  TerminalLaunchFeedback,
 } from "@/components/terminal-controller";
+import { ToastProvider, ToastViewport } from "@/components/toast";
 import { useScrollToTop } from "@/lib/use-scroll-to-top";
 
 export function AppLayout() {
@@ -24,7 +23,7 @@ export function AppLayout() {
     // launch a Herdr session via useTerminalLauncher() and surface its launch feedback / error
     // dialog here at the shell level.
     <TerminalControllerProvider>
-      <ErrorBannerProvider>
+      <ToastProvider>
         <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
           <AppSidebar />
           <DetailTitleProvider>
@@ -36,10 +35,6 @@ export function AppLayout() {
                 ref={mainRef}
                 className="min-h-0 flex-1 overflow-y-auto px-6 pt-6"
               >
-                {/* Operation-failure feedback (#323): a single in-page banner at the top of the
-                    content, with an explicit lifetime independent of any one screen's components. */}
-                <ErrorBanner />
-                <TerminalLaunchFeedback />
                 <Outlet />
               </main>
             </div>
@@ -48,8 +43,11 @@ export function AppLayout() {
               rather than inside the header; it hides itself on non-repo screens (home / archived). */}
           <CreateIssueButton />
           <TerminalLaunchErrorDialog />
+          {/* Operation feedback (#574): a floating toast above the content, with an explicit
+              lifetime independent of any one screen's components (mirrors the old ErrorBanner). */}
+          <ToastViewport />
         </div>
-      </ErrorBannerProvider>
+      </ToastProvider>
     </TerminalControllerProvider>
   );
 }

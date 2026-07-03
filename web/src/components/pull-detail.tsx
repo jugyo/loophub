@@ -19,13 +19,13 @@ import type {
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
-import { useErrorBanner } from "@/components/error-banner";
 import { HandoffTimeline } from "@/components/handoff-timeline";
 import { Markdown } from "@/components/markdown";
 import { MarkdownPreviewModal } from "@/components/markdown-preview-modal";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminalLauncher } from "@/components/terminal-controller";
+import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WorkDuration } from "@/components/work-duration";
@@ -178,7 +178,7 @@ function PullHeader({
   const merge = useMergePull(owner, repo, pull.number);
   const ready = useReadyForReview(owner, repo, pull.number);
   const setState = useSetPullState(owner, repo, pull.number);
-  const { showError } = useErrorBanner();
+  const { showError } = useToast();
   const [method, setMethod] = useState<MergeMethod>("squash");
   const [isMergeLoading, startMergeLoading] = useFixedLoading();
   // The fixed loading window is a UX minimum, not a substitute for the real request: once it
