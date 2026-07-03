@@ -1,4 +1,4 @@
-// Terminal-icon badge shown next to a PR reference only while a herdr terminal is actually
+// Agent badge shown next to a PR reference only while a herdr terminal is actually
 // running for that PR's worktree (#579) — invisible (renders null) otherwise, so it never
 // implies a session that isn't there. Extracted from dashboard-rows.tsx (#609) so the
 // issue-detail linked-PR row can show the same badge. Reuses the same terminal/sessions poll
@@ -7,7 +7,7 @@
 // that agent's pane via terminal/focusAgent (#578's `herdr agent focus`, reused here) instead
 // of launching a new terminal.
 
-import { Terminal } from "lucide-react";
+import { Bot } from "lucide-react";
 import type {
   HerdrPullWorkspace,
   HerdrRepoSessions,
@@ -59,8 +59,8 @@ export function HerdrBadge({
   return (
     <button
       type="button"
-      title="Focus the running Herdr terminal"
-      aria-label={`Focus Herdr terminal for PR #${pull}`}
+      title="Focus the running agent pane"
+      aria-label={`Focus agent pane for PR #${pull}`}
       disabled={focus.isPending}
       onClick={() =>
         focus.mutate(
@@ -70,21 +70,17 @@ export function HerdrBadge({
               showError(
                 e instanceof Error
                   ? e.message
-                  : "Failed to focus the Herdr terminal.",
+                  : "Failed to focus the agent pane.",
               ),
           },
         )
       }
       className={cn(
         badgeVariants({ tone: "unknown" }),
-        // Terminal-flavored look, not the pill shape the rest of the badges use: a near-square
-        // corner radius and a gray zinc palette per theme (mid-gray in light, near-black in
-        // dark) so it reads as a little terminal chip rather than another status pill.
         "shrink-0 gap-1 rounded-sm border-zinc-400 bg-zinc-500 font-mono text-zinc-50 hover:opacity-80 disabled:pointer-events-none disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300",
       )}
     >
-      <Terminal className="size-3" />
-      Herdr
+      <Bot className="size-3" />
       {workspace.status ? (
         <span className="text-zinc-300 dark:text-zinc-500">
           {workspace.status}

@@ -75,7 +75,7 @@ export function PullHerdrSection({
           variant="secondary"
           size="sm"
           className="shrink-0"
-          title="Focus the running Herdr terminal"
+          title="Focus the running agent pane"
           disabled={focus.isPending}
           onClick={() =>
             focus.mutate(
@@ -85,7 +85,7 @@ export function PullHerdrSection({
                   showError(
                     e instanceof Error
                       ? e.message
-                      : "Failed to focus the Herdr terminal.",
+                      : "Failed to focus the agent pane.",
                   ),
               },
             )

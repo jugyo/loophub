@@ -218,7 +218,7 @@ describe("IssueDetail", () => {
     });
 
     const badge = await screen.findByRole("button", {
-      name: "Focus Herdr terminal for PR #30",
+      name: "Focus agent pane for PR #30",
     });
     fireEvent.click(badge);
     await waitFor(() => {
@@ -236,7 +236,7 @@ describe("IssueDetail", () => {
 
     expect(await screen.findByText("PR #30")).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: /Focus Herdr terminal/ }),
+      screen.queryByRole("button", { name: /Focus agent pane/ }),
     ).toBeNull();
   });
 
