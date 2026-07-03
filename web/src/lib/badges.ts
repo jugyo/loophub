@@ -4,6 +4,18 @@
 
 import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 
+/**
+ * The issue's most relevant linked PR — `linked_pull_requests[0]` when the
+ * array is present, falling back to the singular field for responses that
+ * only carry it. Both are already ordered/selected the same way as
+ * `linkedPullForIssue`/`linkedPullsForIssue` (core/store.ts): open & unmerged
+ * first, then most recent. The single source every Build-button call site
+ * should read instead of re-deriving "which PR counts" itself.
+ */
+export function primaryLinkedPull(issue: Issue): LinkedPull | null {
+  return issue.linked_pull_requests?.[0] ?? issue.linked_pull_request ?? null;
+}
+
 export type BadgeTone =
   | "open"
   | "closed"
@@ -268,4 +280,26 @@ export function linkedPullWordTone(tone: BadgeTone): StatusWordTone {
     default:
       return "muted";
   }
+}
+
+/**
+ * Build-button state for an issue (#598), shared by every render site (issue
+ * detail header, its grouped-issues rows, the issues list, the repo
+ * dashboard, and the home "Recent issues" rows — all render through
+ * {@link primaryLinkedPull} + this one switch):
+ *   - "build": no linked PR, or the primary one closed without merging
+ *     (rejected attempt) — the clickable Build button shows.
+ *   - "building": the primary linked PR is open and unmerged — Build is
+ *     replaced by a disabled "Building" label.
+ *   - "merged": the primary linked PR merged — Build is replaced by a
+ *     disabled "Merged" label.
+ */
+export type BuildButtonState = "build" | "building" | "merged";
+
+export function issueBuildButtonState(issue: Issue): BuildButtonState {
+  const pull = primaryLinkedPull(issue);
+  if (!pull) return "build";
+  if (pull.merged) return "merged";
+  if (pull.state === "open") return "building";
+  return "build";
 }

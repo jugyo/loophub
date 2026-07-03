@@ -13,6 +13,7 @@ import { useToast } from "@/components/toast";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
   type Badge as BadgeData,
+  issueBuildButtonState,
   linkedPullPillTone,
   linkedPullStatus,
   linkedPullWordTone,
@@ -159,7 +160,7 @@ export function IssueRow({
           <RowLabels labels={issue.labels} owner={owner} repo={repo} />
         </div>
         {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
-        <RowBuildButton owner={owner} repo={repo} issue={issue} pulls={pulls} />
+        <RowBuildButton owner={owner} repo={repo} issue={issue} />
         {/* Fixed-width, right-aligned so the Build button to its left stays
             vertically aligned across rows regardless of the relative-time
             length ("3m ago" vs "12h ago"). #278 */}
@@ -189,25 +190,24 @@ export function IssueRow({
 // Build button for an issue row: starts `lh dev <n>` in a terminal, the same
 // action as the issue-detail Build button (issue-detail.tsx). Always visible
 // (not hover-revealed) so the row layout is stable regardless of label presence.
-// Hidden whenever a linked PR is actively in progress (open) or already merged
-// (done) — mirroring `activePull` there; a closed-unmerged (rejected) PR does
-// NOT hide it, since the issue still needs a fresh attempt.
+// Hidden (not replaced by a label — that's issue-detail.tsx only, by request)
+// whenever the issue's primary linked PR is open or merged (issueBuildButtonState,
+// #598) — a closed-unmerged (rejected) PR does NOT hide it, since the issue still
+// needs a fresh attempt.
 function RowBuildButton({
   owner,
   repo,
   issue,
-  pulls,
 }: {
   owner: string;
   repo: string;
   issue: Issue;
-  pulls: LinkedPull[];
 }) {
   const { launchTerminal } = useTerminalLauncher();
   const { data: settings } = useSettings();
   const [isLoading, startLoading] = useFixedLoading();
-  const activePull = pulls.some((p) => p.state === "open" || p.merged);
-  if (activePull) return null;
+  const state = issueBuildButtonState(issue);
+  if (state !== "build") return null;
   // Display-only: the herdr backend builds and spawns `lh dev <n> --herdr [--auto]` itself
   // (core/service.ts's launchIssueDevHerdr, #584) — this string is never sent over the wire, it
   // only drives the button's tooltip so it reflects what actually runs. The Build button doesn't

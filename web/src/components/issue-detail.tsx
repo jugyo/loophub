@@ -12,6 +12,7 @@ import type {
   IssueGroupWithMembers,
   LinkedPull,
 } from "@/api/types";
+import { BuildStatusLabel } from "@/components/build-status-label";
 import { IssueRow } from "@/components/dashboard-rows";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
@@ -22,6 +23,7 @@ import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  issueBuildButtonState,
   linkedPullStateBadge,
   linkedPullStatus,
   stateBadge,
@@ -161,12 +163,7 @@ function IssueHeader({
   const { data: settings } = useSettings();
   const [isBuildLoading, startBuildLoading] = useFixedLoading();
   const state = stateBadge(issue, "issues");
-  const linked = issue.linked_pull_request;
-  // Build kicks off work, so show it unless a PR is actively in progress (open)
-  // or already merged (done). A closed-unmerged (rejected) linked PR should NOT
-  // hide Build — the issue still needs a fresh attempt.
-  const activePull =
-    linked != null && (linked.state === "open" || linked.merged);
+  const buildState = issueBuildButtonState(issue);
   // Display-only: the herdr backend builds and spawns `lh dev <n> --herdr [--auto]` itself
   // (core/service.ts's launchIssueDevHerdr, #584) — this string is never sent over the wire, it
   // only drives the button's tooltip so it reflects what actually runs. The Build button doesn't
@@ -225,7 +222,7 @@ function IssueHeader({
           ) : null}
           {issue.state === "open" ? "Close" : "Reopen"}
         </Button>
-        {activePull ? null : (
+        {buildState === "build" ? (
           <Button
             title={`Start \`${buildCommand}\` in a terminal`}
             disabled={isBuildLoading}
@@ -246,6 +243,8 @@ function IssueHeader({
             )}
             Build
           </Button>
+        ) : (
+          <BuildStatusLabel state={buildState} />
         )}
       </div>
     </div>

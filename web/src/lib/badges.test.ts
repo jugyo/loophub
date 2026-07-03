@@ -3,11 +3,13 @@ import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 import {
   draftBadge,
   issueBadges,
+  issueBuildButtonState,
   linkedPullPillTone,
   linkedPullStateBadge,
   linkedPullStatus,
   linkedPullWordTone,
   mergeableBadge,
+  primaryLinkedPull,
   pullBadges,
   pullDetailBadges,
   reviewBadge,
@@ -326,6 +328,97 @@ describe("linkedPullWordTone (state-specific colour axis)", () => {
     ] as const) {
       expect(linkedPullWordTone(tone)).toBe("muted");
     }
+  });
+});
+
+describe("primaryLinkedPull (#598)", () => {
+  function linked(partial: Partial<LinkedPull> = {}): LinkedPull {
+    return {
+      number: 2,
+      title: "A PR",
+      state: "open",
+      merged: false,
+      ...partial,
+    };
+  }
+
+  it("returns null when no PR is linked", () => {
+    expect(primaryLinkedPull(issue())).toBeNull();
+  });
+
+  it("prefers linked_pull_requests[0] over the singular field", () => {
+    const first = linked({ number: 11 });
+    const second = linked({ number: 12 });
+    expect(
+      primaryLinkedPull(
+        issue({
+          linked_pull_request: second,
+          linked_pull_requests: [first, second],
+        }),
+      ),
+    ).toBe(first);
+  });
+
+  it("falls back to the singular field when the array is absent", () => {
+    const solo = linked({ number: 13 });
+    expect(primaryLinkedPull(issue({ linked_pull_request: solo }))).toBe(solo);
+  });
+});
+
+describe("issueBuildButtonState (#598)", () => {
+  function linked(partial: Partial<LinkedPull> = {}): LinkedPull {
+    return {
+      number: 2,
+      title: "A PR",
+      state: "open",
+      merged: false,
+      ...partial,
+    };
+  }
+
+  it("is 'build' when no PR is linked", () => {
+    expect(issueBuildButtonState(issue())).toBe("build");
+  });
+
+  it("is 'building' while the primary linked PR is open and unmerged", () => {
+    expect(
+      issueBuildButtonState(
+        issue({ linked_pull_request: linked({ state: "open" }) }),
+      ),
+    ).toBe("building");
+  });
+
+  it("is 'merged' once the primary linked PR merged", () => {
+    expect(
+      issueBuildButtonState(
+        issue({
+          linked_pull_request: linked({ state: "closed", merged: true }),
+        }),
+      ),
+    ).toBe("merged");
+  });
+
+  it("is 'build' when the primary linked PR closed unmerged (rejected)", () => {
+    expect(
+      issueBuildButtonState(
+        issue({
+          linked_pull_request: linked({ state: "closed", merged: false }),
+        }),
+      ),
+    ).toBe("build");
+  });
+
+  it("judges by the most relevant PR (index 0) when several are linked", () => {
+    expect(
+      issueBuildButtonState(
+        issue({
+          linked_pull_requests: [
+            linked({ number: 1, state: "closed", merged: false }),
+            linked({ number: 2, state: "open", merged: false }),
+          ],
+        }),
+      ),
+    ).toBe("build");
   });
 });
 

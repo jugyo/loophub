@@ -214,16 +214,17 @@ describe("IssueDetail", () => {
     await waitFor(() => expect(textarea.value).toBe(""));
   });
 
-  it("hides the Build button when an open PR is linked", async () => {
+  it("replaces the Build button with a disabled Building label when an open PR is linked", async () => {
     // The default issue has an open linked PR (#30).
     renderDetail();
 
     // Close renders, so the header is mounted — Build must be absent.
     await screen.findByRole("button", { name: /close/i });
     expect(screen.queryByRole("button", { name: /build/i })).toBeNull();
+    expect(screen.getByText("Building")).toBeTruthy();
   });
 
-  it("hides the Build button when the linked PR is merged", async () => {
+  it("replaces the Build button with a disabled Merged label when the linked PR is merged", async () => {
     const merged: Issue = {
       ...issue,
       linked_pull_request: { ...issue.linked_pull_request!, merged: true },
@@ -232,6 +233,7 @@ describe("IssueDetail", () => {
 
     await screen.findByRole("button", { name: /close/i });
     expect(screen.queryByRole("button", { name: /build/i })).toBeNull();
+    expect(screen.getByText("Merged")).toBeTruthy();
   });
 
   it("shows the Build button when no PR is linked", async () => {
