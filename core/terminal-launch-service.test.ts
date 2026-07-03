@@ -21,30 +21,53 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 // Fake child process for scripted `herdr` runs. Everything else (git, etc.) uses the real spawn.
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
+  stderr = new EventEmitter();
   kill = vi.fn();
 }
+
+type ScriptedChild = {
+  stdout: EventEmitter;
+  stderr: EventEmitter;
+} & EventEmitter;
 
 const herdr = vi.hoisted(() => ({
   calls: [] as string[][],
   // One scripted behavior per expected herdr spawn, consumed in order.
-  script: [] as Array<(child: { stdout: EventEmitter } & EventEmitter) => void>,
+  script: [] as Array<(child: ScriptedChild) => void>,
+}));
+
+// `lh dev --herdr` spawns (#584): issue-dev (Build) launches now go through this instead of
+// terminal.launch orchestrating herdr tabs/workspaces itself.
+const lhDev = vi.hoisted(() => ({
+  calls: [] as string[][],
+  script: [] as Array<(child: ScriptedChild) => void>,
 }));
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
+  const scripted = (
+    log: string[][],
+    script: Array<(child: ScriptedChild) => void>,
+    command: string,
+    args: string[],
+  ) => {
+    log.push([command, ...args]);
+    const behavior = script.shift();
+    const child = new FakeChild();
+    queueMicrotask(() => {
+      if (behavior) behavior(child);
+      else child.emit("close", 0, null);
+    });
+    return child;
+  };
   return {
     ...actual,
     spawn: (command: string, args: string[], opts: object) => {
-      if (command !== "herdr")
-        return actual.spawn(command, args, opts as never);
-      herdr.calls.push([command, ...args]);
-      const behavior = herdr.script.shift();
-      const child = new FakeChild();
-      queueMicrotask(() => {
-        if (behavior) behavior(child);
-        else child.emit("close", 0, null);
-      });
-      return child;
+      if (command === "lh")
+        return scripted(lhDev.calls, lhDev.script, command, args);
+      if (command === "herdr")
+        return scripted(herdr.calls, herdr.script, command, args);
+      return actual.spawn(command, args, opts as never);
     },
   };
 });
@@ -54,10 +77,6 @@ let repoPath: string;
 
 const TAB_JSON =
   '{"id":"cli:tab:create","result":{"tab":{"tab_id":"w1:t9","workspace_id":"w1"},"type":"tab_created"}}';
-
-// Real `herdr tab create` output also reports the tab's seeded empty pane as `root_pane`.
-const TAB_JSON_WITH_ROOT_PANE =
-  '{"id":"cli:tab:create","result":{"root_pane":{"pane_id":"w1:p1Q"},"tab":{"tab_id":"w1:t9","workspace_id":"w1"},"type":"tab_created"}}';
 
 // `herdr workspace create` seeds the new workspace with one tab and one empty pane, reported in
 // the same shape `herdr tab create` uses, plus the new workspace itself.
@@ -93,9 +112,22 @@ const AGENT_LIST_MALFORMED_PANE_ID =
   '{"result":{"agents":[{"agent":"claude","agent_status":"working","name":"Resume - dev","pane_id":"--evil-flag"}]}}';
 
 function exitWith(status: number, stdout?: string) {
-  return (child: { stdout: EventEmitter } & EventEmitter) => {
+  return (child: ScriptedChild) => {
     if (stdout) child.stdout.emit("data", Buffer.from(stdout));
     child.emit("close", status, null);
+  };
+}
+
+function exitWithStderr(status: number, stderrText: string) {
+  return (child: ScriptedChild) => {
+    child.stderr.emit("data", Buffer.from(stderrText));
+    child.emit("close", status, null);
+  };
+}
+
+function killedBySignal(signal: string) {
+  return (child: ScriptedChild) => {
+    child.emit("close", null, signal);
   };
 }
 
@@ -123,11 +155,16 @@ afterAll(() => {
 beforeEach(() => {
   herdr.calls.length = 0;
   herdr.script.length = 0;
+  lhDev.calls.length = 0;
+  lhDev.script.length = 0;
 });
 
-describe("terminal.launch tab orchestration", () => {
-  test("creates a tab and starts the agent in it", async () => {
-    herdr.script.push(exitWith(0, TAB_JSON), exitWith(0));
+// issue-dev (Build): worktree/PR provisioning and the herdr launch itself are entirely
+// `lh dev --herdr`'s job now (#584) — terminal.launch just spawns it and reports the outcome, no
+// tab/workspace orchestration of its own (unlike the other workflows below).
+describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
+  test("spawns `lh dev <repo>/<issue> --herdr` and reports the herdr session", async () => {
+    lhDev.script.push(exitWith(0));
 
     const result = await svc.terminal.launch({
       repo: "me/proj",
@@ -135,84 +172,22 @@ describe("terminal.launch tab orchestration", () => {
       issueNumber: 1,
     });
 
-    expect(herdr.calls).toHaveLength(2);
-    expect(herdr.calls[0]).toContain("tab");
-    expect(herdr.calls[0]).toContain("create");
-    const agentStart = herdr.calls[1];
-    expect(agentStart).toContain("start");
-    expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w1:t9");
+    expect(lhDev.calls).toEqual([["lh", "dev", "me/proj/1", "--herdr"]]);
+    expect(herdr.calls).toHaveLength(0);
     expect(result).toMatchObject({ backend: "herdr" });
+    expect(result.session_name).toBeTruthy();
+    expect(result.attach).toContain(result.session_name);
   });
 
-  // `herdr tab create` seeds the new tab with one empty default pane; `agent start --tab`
-  // splits alongside it rather than replacing it, leaving it behind unless closed (#503).
-  test("closes the tab's leftover empty pane once the agent has started in it", async () => {
-    herdr.script.push(
-      exitWith(0, TAB_JSON_WITH_ROOT_PANE),
-      exitWith(0),
-      exitWith(0),
-    );
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-    });
-
-    // Fire-and-forget cleanup: wait for the queued pane-close spawn to happen.
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(3));
-    const paneClose = herdr.calls[2];
-    expect(paneClose).toContain("pane");
-    expect(paneClose).toContain("close");
-    expect(paneClose).toContain("w1:p1Q");
+  test("requires issueNumber", async () => {
+    await expect(
+      svc.terminal.launch({ repo: "me/proj", workflow: "issue-dev" }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(lhDev.calls).toHaveLength(0);
   });
 
-  test("skips the pane close when tab create output has no root pane id", async () => {
-    herdr.script.push(exitWith(0, TAB_JSON), exitWith(0));
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-    });
-
-    expect(herdr.calls).toHaveLength(2);
-  });
-
-  test("falls back to a tab-less launch when tab creation fails", async () => {
-    herdr.script.push(exitWith(1), exitWith(0));
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-    });
-
-    expect(herdr.calls).toHaveLength(2);
-    expect(herdr.calls[1]).not.toContain("--tab");
-  });
-
-  test("closes the created tab and suggests a tab-less command when agent start fails", async () => {
-    herdr.script.push(exitWith(0, TAB_JSON), exitWith(3), exitWith(0));
-
-    const err = await svc.terminal
-      .launch({ repo: "me/proj", workflow: "issue-dev", issueNumber: 1 })
-      .then(
-        () => null,
-        (e: unknown) => e as { message: string; data?: { command?: string } },
-      );
-
-    expect(err?.message).toBe("Herdr exited with status 3");
-    expect(err?.data?.command).not.toContain("--tab");
-    // Fire-and-forget cleanup: wait for the queued tab-close spawn to happen.
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(3));
-    const tabClose = herdr.calls[2];
-    expect(tabClose).toContain("close");
-    expect(tabClose).toContain("w1:t9");
-  });
-
-  test("appends --auto to the launched command when autoModeOnBuild is enabled (#499)", async () => {
-    herdr.script.push(exitWith(0, TAB_JSON), exitWith(0));
+  test("appends --auto when autoModeOnBuild is enabled (#499)", async () => {
+    lhDev.script.push(exitWith(0));
     svc.settings.update({ autoModeOnBuild: true });
 
     await svc.terminal.launch({
@@ -221,10 +196,111 @@ describe("terminal.launch tab orchestration", () => {
       issueNumber: 1,
     });
 
-    const agentStart = herdr.calls[1];
-    expect(agentStart[agentStart.length - 1]).toContain("--auto");
+    expect(lhDev.calls[0]).toContain("--auto");
 
     svc.settings.update({ autoModeOnBuild: false });
+  });
+
+  test("surfaces a non-zero exit as a ServiceError with a reproducible command", async () => {
+    lhDev.script.push(exitWith(1));
+
+    const err = await svc.terminal
+      .launch({ repo: "me/proj", workflow: "issue-dev", issueNumber: 1 })
+      .then(
+        () => null,
+        (e: unknown) => e as { message: string; data?: { command?: string } },
+      );
+
+    expect(err?.message).toBe("lh dev exited with status 1");
+    expect(err?.data?.command).toBe("lh dev me/proj/1 --herdr");
+  });
+
+  test("reports lh missing from PATH distinctly from a launch failure", async () => {
+    lhDev.script.push((child) =>
+      child.emit(
+        "error",
+        Object.assign(new Error("spawn lh ENOENT"), { code: "ENOENT" }),
+      ),
+    );
+
+    const err = await svc.terminal
+      .launch({ repo: "me/proj", workflow: "issue-dev", issueNumber: 1 })
+      .then(
+        () => null,
+        (e: unknown) => e as { status: number; message: string },
+      );
+
+    expect(err?.status).toBe(422);
+    expect(err?.message).toBe("lh command not found on PATH");
+  });
+
+  test("logs a bounded stderr tail server-side, but never in the client-facing error (#584 security review)", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    lhDev.script.push(exitWithStderr(1, "error 404: Not Found\n"));
+
+    const err = await svc.terminal
+      .launch({ repo: "me/proj", workflow: "issue-dev", issueNumber: 1 })
+      .then(
+        () => null,
+        (e: unknown) => e as { message: string },
+      );
+
+    // The client-facing message stays generic — raw `lh dev` stderr can embed the server's
+    // absolute paths or a stack trace, so it must never reach the RPC caller.
+    expect(err?.message).toBe("lh dev exited with status 1");
+    expect(
+      consoleError.mock.calls.some((call) =>
+        String(call[0]).includes("error 404: Not Found"),
+      ),
+    ).toBe(true);
+
+    consoleError.mockRestore();
+  });
+
+  test("surfaces a signal-killed child distinctly from a plain exit", async () => {
+    lhDev.script.push(killedBySignal("SIGKILL"));
+
+    const err = await svc.terminal
+      .launch({ repo: "me/proj", workflow: "issue-dev", issueNumber: 1 })
+      .then(
+        () => null,
+        (e: unknown) => e as { message: string },
+      );
+
+    expect(err?.message).toBe("lh dev was terminated by signal SIGKILL");
+  });
+
+  test("times out and kills the child if lh dev hangs, logging any stderr it printed before wedging", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      // Prints diagnostic output, then never emits close/error — simulates a hang mid-run.
+      lhDev.script.push((child) =>
+        child.stderr.emit("data", Buffer.from("provisioning worktree...\n")),
+      );
+      const pending = svc.terminal.launch({
+        repo: "me/proj",
+        workflow: "issue-dev",
+        issueNumber: 1,
+      });
+      const assertion = expect(pending).rejects.toMatchObject({
+        message: expect.stringMatching(/^lh dev timed out after \d+ms$/),
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+      await assertion;
+      expect(
+        consoleError.mock.calls.some((call) =>
+          String(call[0]).includes("provisioning worktree..."),
+        ),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      consoleError.mockRestore();
+    }
   });
 });
 
@@ -468,15 +544,14 @@ describe("terminal.launch Resume dedup (#578)", () => {
   });
 
   test("does not run the dedup probe for non-resume workflows", async () => {
-    herdr.script.push(exitWith(0, TAB_JSON), exitWith(0));
+    herdr.script.push(exitWith(0, WORKSPACE_JSON), exitWith(0), exitWith(0));
 
     await svc.terminal.launch({
       repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
+      workflow: "issue-create",
+      label: "New issue",
     });
 
-    expect(herdr.calls).toHaveLength(2);
     expect(herdr.calls.some((call) => call.includes("process-info"))).toBe(
       false,
     );

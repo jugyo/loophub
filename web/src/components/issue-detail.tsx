@@ -167,9 +167,12 @@ function IssueHeader({
   // hide Build — the issue still needs a fresh attempt.
   const activePull =
     linked != null && (linked.state === "open" || linked.merged);
+  // Display-only: the herdr backend builds and spawns `lh dev <n> --herdr [--auto]` itself
+  // (core/service.ts's launchIssueDevHerdr, #584) — this string is never sent over the wire, it
+  // only drives the button's tooltip so it reflects what actually runs.
   const buildCommand = settings?.autoModeOnBuild
-    ? `lh dev ${issue.number} --auto`
-    : `lh dev ${issue.number}`;
+    ? `lh dev ${issue.number} --herdr --auto`
+    : `lh dev ${issue.number} --herdr`;
 
   return (
     <div className="flex flex-col gap-3">

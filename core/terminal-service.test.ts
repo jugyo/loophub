@@ -1,11 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { worktreeRoot } from "./config.ts";
 import type { ServiceError } from "./errors.ts";
-import { worktreePath } from "./worktree-path.ts";
 
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-terminal-svc-"));
@@ -17,18 +15,6 @@ let svc: typeof import("./service.ts");
 function initGitRepo(): string {
   const path = mkdtempSync(join(HOME, "repo-"));
   spawnSync("git", ["init", "-q", "-b", "main"], { cwd: path });
-  return path;
-}
-
-// Like initGitRepo, but with a base commit on the default branch — provisionWorktree needs a
-// resolvable default branch to fork the PR's convention branch from.
-function initGitRepoWithCommit(): string {
-  const path = initGitRepo();
-  spawnSync("git", ["config", "user.email", "t@t.local"], { cwd: path });
-  spawnSync("git", ["config", "user.name", "tester"], { cwd: path });
-  writeFileSync(join(path, "f.txt"), "base\n");
-  spawnSync("git", ["add", "-A"], { cwd: path });
-  spawnSync("git", ["commit", "-qm", "base"], { cwd: path });
   return path;
 }
 
@@ -79,43 +65,9 @@ test("terminal.launch attaches a specific reason and the retryable herdr command
   }
 });
 
-// Build (issue-dev) always fires before a PR exists (the button is hidden once one is open), so
-// there is no PR-derived worktree path to hand herdr's `worktree open --path` yet (#551). This
-// asserts terminal.launch resolves that ahead of the (always-failing-in-test) herdr call: it opens
-// the issue's draft PR and provisions its deterministic worktree on disk, exactly like `lh dev
-// <issue>` would once it started running inside the tab this launch would have opened.
-test("issue-dev launch opens the PR and provisions its worktree ahead of the herdr call (#551)", async () => {
-  const path = initGitRepoWithCommit();
-  await svc.repos.create({ path, name: "me/herdr-worktree-svc" });
-  const issue = svc.issues.create("me/herdr-worktree-svc", {
-    title: "worktree-open target",
-  });
-
-  let err: ServiceError | undefined;
-  try {
-    await svc.terminal.launch({
-      repo: "me/herdr-worktree-svc",
-      workflow: "issue-dev",
-      issueNumber: issue.number,
-    });
-  } catch (e) {
-    err = e as ServiceError;
-  }
-  // herdr is unavailable in the test environment, so the launch itself still fails — see the
-  // #483 test above. What matters here is what happened *before* that failure.
-  if (!err) throw new Error("expected terminal.launch to reject");
-
-  const detail = svc.issues.get("me/herdr-worktree-svc", issue.number) as {
-    linked_pull_request?: { number: number };
-  };
-  const prNumber = detail.linked_pull_request?.number;
-  expect(prNumber).toBeTypeOf("number");
-
-  const wtPath = worktreePath(
-    worktreeRoot(),
-    "me/herdr-worktree-svc",
-    prNumber as number,
-  );
-  expect(existsSync(wtPath)).toBe(true);
-  expect(existsSync(join(wtPath, "f.txt"))).toBe(true);
-});
+// Build (issue-dev) used to open the PR and provision its worktree here, ahead of the herdr call
+// (#551), so herdr's `worktree open --path` had somewhere to point. That responsibility moved
+// entirely to `lh dev --herdr` (#584) — terminal.launch just spawns it now and does no git/PR
+// work of its own; see core/terminal-launch-service.test.ts's "issue-dev spawns `lh dev --herdr`"
+// suite for the (mocked-spawn) coverage of that call, and cli/dev.test.ts for worktree
+// provisioning itself.

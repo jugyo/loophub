@@ -73,7 +73,7 @@ function shellArg(value: string): string {
 // command reads the way a person would actually type it, instead of every single token —
 // including plain flags like `--cwd` — being quoted uniformly.
 const SAFE_UNQUOTED = /^[A-Za-z0-9_\-./:=@]+$/;
-function displayArg(value: string): string {
+export function displayArg(value: string): string {
   return SAFE_UNQUOTED.test(value) ? value : shellArg(value);
 }
 
@@ -87,19 +87,15 @@ export function herdrCommandLine(plan: HerdrLaunchPlan): string {
 
 export function commandForHerdrLaunch(input: {
   repo: string;
-  workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";
-  issueNumber?: number;
+  // "issue-dev" (the Build button) has no entry here: worktree/PR provisioning and the herdr
+  // launch itself are entirely `lh dev --herdr`'s responsibility (#584) — the server only spawns
+  // it directly (see launchIssueDevHerdr in service.ts) rather than building a command string for
+  // an agent-start pane the way the other workflows below do.
+  workflow?: "issue-create" | "resume" | "github-pr-export";
   prNumber?: number;
   session?: string;
   cwd?: string;
-  // Append `--auto` to the issue-dev launch (#499). Only meaningful for that workflow — the
-  // Build button is the only caller that ever passes this, other workflows never do.
-  auto?: boolean;
 }): string {
-  if (input.workflow === "issue-dev" && input.issueNumber) {
-    const target = shellArg(`${input.repo}/${input.issueNumber}`);
-    return input.auto ? `lh dev ${target} --auto` : `lh dev ${target}`;
-  }
   if (input.workflow === "issue-create") {
     // `lh issue new` is the recorded LoopHub entrypoint for the /lh-issue-create workflow.
     return `lh issue new --repo ${shellArg(input.repo)}`;
@@ -357,9 +353,14 @@ export function buildHerdrLaunchPlan(input: {
   // Tab to start the agent in. Omitted (tab creation failed) falls back to Herdr's default
   // placement, which splits the focused pane.
   tabId?: string | null;
+  // Overrides repo.local_path as the agent's --cwd (e.g. a PR worktree, #584's `lh dev --herdr`)
+  // without changing the herdr session name, which stays derived from the repo so every launch
+  // for it — worktree-pinned or not — lands in the same herdr session.
+  cwd?: string;
 }): HerdrLaunchPlan {
   const sessionName = herdrSessionName(input.repo);
   const agentName = normalizeAgentName(input.label || "LoopHub workflow");
+  const cwd = input.cwd ?? input.repo.local_path;
   const argv = [
     "herdr",
     "--session",
@@ -368,7 +369,7 @@ export function buildHerdrLaunchPlan(input: {
     "start",
     agentName,
     "--cwd",
-    input.repo.local_path,
+    cwd,
     ...(input.tabId ? ["--tab", input.tabId] : []),
     "--no-focus",
     "--",
@@ -379,7 +380,7 @@ export function buildHerdrLaunchPlan(input: {
   return {
     sessionName,
     command: input.command,
-    cwd: input.repo.local_path,
+    cwd,
     argv,
   };
 }

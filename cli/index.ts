@@ -22,6 +22,10 @@ import {
   SESSION_KIND_ISSUE_CREATE,
 } from "../core/resume.ts";
 import {
+  buildHerdrLaunchPlan,
+  herdrCommandLine,
+} from "../core/terminal-launch.ts";
+import {
   acquireDevLock,
   buildClaudeArgs,
   buildCodexArgs,
@@ -64,6 +68,7 @@ type Flags = {
   sandbox?: boolean;
   auto?: boolean;
   verbose?: boolean;
+  herdr?: boolean;
   force?: boolean;
   "claude-code"?: boolean;
   codex?: boolean;
@@ -129,6 +134,7 @@ const { values, positionals: pos } = parseArgs({
     sandbox: { type: "boolean" },
     auto: { type: "boolean" },
     verbose: { type: "boolean" },
+    herdr: { type: "boolean" },
     force: { type: "boolean" },
     "claude-code": { type: "boolean" },
     codex: { type: "boolean" },
@@ -360,7 +366,7 @@ async function main() {
   if (group === "dev") {
     const target = sub;
     const usageLine =
-      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--force]";
+      "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]";
     if (!target) {
       fail(usageLine);
     }
@@ -703,6 +709,52 @@ async function main() {
         bin: runtimeBin,
       }),
     );
+
+    // --herdr: the worktree/PR setup above already ran in this process; hand the interactive
+    // runtime off to a herdr pane instead of blocking this process's own foreground with it —
+    // mirrors the removed --kani flag, but launches *after* setup completes here rather than
+    // relaunching itself first (#584), so there is no inner/outer recursion to avoid. This is
+    // also how the Build button's herdr launch works now: it just spawns `lh dev <id> --herdr`
+    // and lets this branch do the rest (core/service.ts's launchIssueDevHerdr).
+    if (flags.herdr === true) {
+      // The pane is pinned to the worktree (not repo.local_path) but keeps the repo's herdr
+      // session name, so it lands alongside every other launch for this repo (Build button,
+      // resume, …) in the same `herdr session attach`.
+      const plan = buildHerdrLaunchPlan({
+        repo: { full_name: r.full_name, local_path: r.local_path },
+        command: formatSpawnCommand(runtimeArgs, { bin: runtimeBin }),
+        label: sessionName,
+        cwd: worktree,
+      });
+      const herdrProc = spawnSync(plan.argv[0], plan.argv.slice(1), {
+        stdio: "inherit",
+        timeout: 15_000,
+      });
+      if (herdrProc.error) {
+        const err = herdrProc.error as NodeJS.ErrnoException;
+        if (err.code === "ENOENT") {
+          fail("failed to launch herdr: 'herdr' not found on PATH");
+        }
+        fail(`failed to launch herdr: ${err.message}`);
+      }
+      // spawnSync's own `timeout` kills the child via signal without populating `.error`, so
+      // `status` comes back `null` on both a timeout and an external kill — checking status alone
+      // would silently report either as success.
+      if (herdrProc.signal) {
+        fail(
+          `herdr was terminated by signal ${herdrProc.signal} (killed, or timed out after 15s)\n  reproduce: ${herdrCommandLine(plan)}`,
+        );
+      }
+      if ((herdrProc.status ?? 0) !== 0) {
+        fail(
+          `herdr exited with status ${herdrProc.status}\n  reproduce: ${herdrCommandLine(plan)}`,
+        );
+      }
+      console.error(
+        `Launched in herdr session ${plan.sessionName}. Attach with: herdr session attach ${plan.sessionName}`,
+      );
+      process.exit(0);
+    }
 
     // The lock claimed above holds our pid for the session's lifetime (the spawnSync below blocks
     // until the runtime exits); the exit handler releases it. Release is best-effort — if the
@@ -1763,7 +1815,7 @@ function usage() {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, claude-code only, passed through to the claude CLI; --auto: auto mode without the sandbox (claude-code: --permission-mode auto; codex: --dangerously-bypass-approvals-and-sandbox); --force: launch even if another session holds it)
+  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, claude-code only, passed through to the claude CLI; --auto: auto mode without the sandbox (claude-code: --permission-mode auto; codex: --dangerously-bypass-approvals-and-sandbox); --herdr: after setup, hand off to a herdr pane instead of blocking this process; --force: launch even if another session holds it)
   lh dev note --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]   # record a dev note on the issue's PR
   lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]   # re-enter the Claude session a PR was developed in (claude --resume in its worktree)
   lh repo add <path> [--name owner/repo]

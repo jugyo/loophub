@@ -42,13 +42,6 @@ describe("herdr terminal launch", () => {
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
-        workflow: "issue-dev",
-        issueNumber: 444,
-      }),
-    ).toBe("lh dev 'jugyo/loophub/444'");
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
         workflow: "issue-create",
       }),
     ).toBe("lh issue new --repo 'jugyo/loophub'");
@@ -67,25 +60,6 @@ describe("herdr terminal launch", () => {
         cwd: "/tmp/work tree",
       }),
     ).toBe("cd '/tmp/work tree' && claude --resume 'session-1'");
-  });
-
-  test("appends --auto to the issue-dev command when auto is set (#499)", () => {
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
-        workflow: "issue-dev",
-        issueNumber: 444,
-        auto: true,
-      }),
-    ).toBe("lh dev 'jugyo/loophub/444' --auto");
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
-        workflow: "issue-dev",
-        issueNumber: 444,
-        auto: false,
-      }),
-    ).toBe("lh dev 'jugyo/loophub/444'");
   });
 
   test("shell-quotes repo names in generated workflows", () => {
@@ -121,6 +95,21 @@ describe("herdr terminal launch", () => {
       "-lc",
       "lh dev 'jugyo/loophub/444'",
     ]);
+  });
+
+  test("cwd overrides repo.local_path for --cwd without changing the session name (#584)", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const plan = buildHerdrLaunchPlan({
+      repo,
+      command: "claude '--session-id' 'x'",
+      label: "#12 dev",
+      cwd: "/repo/worktrees/pr-12",
+    });
+    expect(plan.sessionName).toBe(herdrSessionName(repo));
+    expect(plan.cwd).toBe("/repo/worktrees/pr-12");
+    expect(plan.argv[plan.argv.indexOf("--cwd") + 1]).toBe(
+      "/repo/worktrees/pr-12",
+    );
   });
 
   test("omits --tab when tab creation did not yield an id (fallback to split)", () => {

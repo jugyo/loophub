@@ -98,6 +98,7 @@ import * as S from "./store.ts";
 import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
+  displayArg,
   HERDR_ID,
   herdrAgentFocusArgv,
   herdrCommandLine,
@@ -122,7 +123,6 @@ import {
   worktreeBranch,
   worktreePath,
 } from "./worktree-path.ts";
-import { provisionWorktree } from "./worktree-provision.ts";
 import {
   classifyWorktree,
   issueNumberFromBranch,
@@ -577,6 +577,129 @@ function runHerdrCapture(args: string[]): Promise<string> {
   });
 }
 
+// Spawns `lh dev ... --herdr` for the Build button (#584). This is not routed through runHerdr:
+// that helper's error messages are hardcoded around the `herdr` binary ("herdr command not found
+// on PATH", "Herdr exited with status N", …), which would misreport a failure of `lh` itself (a
+// missing PATH entry, an issue lookup failure, a worktree provisioning error, …) as a Herdr
+// problem. `lh dev --herdr` owns worktree/PR provisioning and the actual herdr pane launch
+// end-to-end (cli/index.ts), so this call only needs to await it and translate a non-zero exit.
+//
+// Generous relative to the individual 10s herdr-call timeouts elsewhere in this file: this one
+// bounds the *whole* `lh dev --herdr` run — issue lookup, PR open, worktree provisioning (a
+// first-time `git worktree add` on a large repo), and the herdr launch itself — none of which
+// carried an overall deadline before this call replaced the in-process equivalent (#584 review).
+const LH_DEV_HERDR_TIMEOUT_MS = 90_000;
+// Bounded tail of the child's stderr, logged server-side only (never in the thrown ServiceError)
+// so an operator can see `lh dev`'s actual failure reason (`fail(message)` etc.) without every
+// failure collapsing to a bare "exited with status N" — but never reaching the HTTP client, same
+// "deliberately generic" policy runHerdr documents above: raw process output can embed the
+// server's absolute paths, a Node stack trace, or other detail that must not reach a non-loopback
+// client (#584 review).
+const LH_DEV_STDERR_TAIL_BYTES = 4 * 1024;
+function runLhDevLaunch(args: string[], cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("lh", args, {
+      cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const chunks: Buffer[] = [];
+    let captured = 0;
+    child.stderr?.on("data", (chunk: Buffer) => {
+      if (captured >= LH_DEV_STDERR_TAIL_BYTES) return; // keep draining, stop keeping
+      // Slice a single oversized chunk down to the remaining room — pushing it whole would let
+      // captured exceed LH_DEV_STDERR_TAIL_BYTES despite the cap check above only running between
+      // chunks, not within one (#584 review).
+      const room = LH_DEV_STDERR_TAIL_BYTES - captured;
+      const piece = chunk.length > room ? chunk.subarray(0, room) : chunk;
+      chunks.push(piece);
+      captured += piece.length;
+    });
+    child.stderr?.on("error", () => {
+      // Losing the stderr stream only means the failure detail below is missing; `close` still
+      // decides success/failure, so just stop this from becoming an unhandled stream error.
+    });
+    // Server-side only — never interpolated into a thrown ServiceError (see the const's comment).
+    const logStderrTail = () => {
+      const tail = Buffer.concat(chunks).toString("utf8").trim();
+      if (tail) console.error(`lh dev --herdr failed:\n${tail}`);
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      settle(() => {
+        logStderrTail();
+        reject(
+          new ServiceError(
+            500,
+            `lh dev timed out after ${LH_DEV_HERDR_TIMEOUT_MS}ms`,
+          ),
+        );
+      });
+    }, LH_DEV_HERDR_TIMEOUT_MS);
+    child.on("error", (err) => {
+      const code = (err as NodeJS.ErrnoException).code;
+      settle(() =>
+        reject(
+          code === "ENOENT"
+            ? new ServiceError(422, "lh command not found on PATH")
+            : new ServiceError(
+                500,
+                `failed to launch lh dev (${code ?? "spawn error"})`,
+              ),
+        ),
+      );
+    });
+    child.on("close", (status, signal) => {
+      settle(() => {
+        if (signal == null && status === 0) return resolve();
+        logStderrTail();
+        if (signal != null)
+          reject(
+            new ServiceError(500, `lh dev was terminated by signal ${signal}`),
+          );
+        else
+          reject(new ServiceError(500, `lh dev exited with status ${status}`));
+      });
+    });
+  });
+}
+
+// The Build button's whole job (#584): spawn `lh dev <owner>/<repo>/<n> --herdr [--auto]` and let
+// it provision the worktree/PR and launch the herdr pane itself — this server no longer does any
+// of that (see the removed issue-dev case in resolveHerdrWorktreeTarget). session_name/attach are
+// still computable up front since herdrSessionName only depends on the repo, not the worktree
+// `lh dev` resolves internally.
+async function launchIssueDevHerdr(r: S.Repo, issueNumber: number) {
+  const repo = { full_name: r.full_name, local_path: r.local_path };
+  const args = [
+    "dev",
+    `${r.full_name}/${issueNumber}`,
+    "--herdr",
+    ...(autoModeOnBuild() ? ["--auto"] : []),
+  ];
+  try {
+    await runLhDevLaunch(args, r.local_path);
+  } catch (e) {
+    if (isServiceError(e))
+      throw new ServiceError(e.status, e.message, {
+        command: `lh ${args.map(displayArg).join(" ")}`,
+      });
+    throw e;
+  }
+  const sessionName = herdrSessionName(repo);
+  return {
+    backend: "herdr" as const,
+    session_name: sessionName,
+    attach: `herdr session attach ${sessionName}`,
+  };
+}
+
 export interface HerdrRepoSessions {
   repo: string;
   session_name: string;
@@ -595,36 +718,17 @@ let herdrSessionsInflight: Promise<{ repos: HerdrRepoSessions[] }> | null =
 // Resolves the on-disk worktree path herdr's `worktree open` should target for a launch (#551),
 // so herdr's own workspace/worktree metadata is pinned to the PR's real worktree instead of a
 // plain tab the launched command cd's into. Best-effort: returns null when the workflow has no
-// worktree (issue-create) or resolving/provisioning it fails for any reason — the caller falls
-// back to the plain repo-root tab-create, same as any other herdr failure.
+// worktree (issue-create) or resolving it fails for any reason — the caller falls back to the
+// plain repo-root tab-create, same as any other herdr failure.
 //
-// issue-dev's Build button always fires before a PR exists (it's hidden once one is open), so the
-// PR — and its deterministic worktree path (#463) — is opened/provisioned right here, ahead of the
-// herdr launch. dev.openPr and provisionWorktree are both idempotent, so this mirrors (and is
-// safely re-done by) the same calls `lh dev <issue>` makes for itself once it starts running
-// inside the tab this resolves.
+// issue-dev (Build) has no case here: worktree/PR provisioning is entirely `lh dev --herdr`'s
+// responsibility (#584) — see launchIssueDevHerdr, which spawns it directly instead of routing
+// through this tab/workspace-pinning path at all.
 async function resolveHerdrWorktreeTarget(
   r: S.Repo,
   input: TerminalLaunchInput,
 ): Promise<string | null> {
   try {
-    if (input.workflow === "issue-dev" && input.issueNumber) {
-      const opened = await dev.openPr(r.full_name, {
-        issue: input.issueNumber,
-        base: r.default_branch,
-      });
-      const prRow = issueOr404(r, opened.number, "pull");
-      const headRef = S.getPull(prRow.id).head_ref;
-      return await provisionWorktree({
-        repoPath: r.local_path,
-        fullName: r.full_name,
-        defaultBranch: r.default_branch,
-        worktreeRoot: worktreeRoot(),
-        pr: opened.number,
-        headRef,
-        allowCreatingConventionBranch: opened.created,
-      });
-    }
     if (input.workflow === "resume") {
       // The client already resolved the PR's worktree path (issue/pull detail's worktree_path,
       // #345); an issue-create session (no worktree) omits cwd and resumes from the repo root
@@ -717,16 +821,22 @@ export const terminal = {
   async launch(input: TerminalLaunchInput) {
     if (!input.repo) throw new ServiceError(422, "repo is required");
     const r = repoOr404(input.repo);
+
+    // issue-dev (Build): worktree/PR provisioning and the herdr launch are entirely `lh dev
+    // --herdr`'s job now (#584) — this RPC's only role is to spawn it. Short-circuits before any
+    // of the tab/workspace-pinning machinery below, which the other workflows still use.
+    if (input.workflow === "issue-dev") {
+      if (!input.issueNumber)
+        throw new ServiceError(422, "issueNumber is required");
+      return launchIssueDevHerdr(r, input.issueNumber);
+    }
+
     const command = commandForHerdrLaunch({
       repo: r.full_name,
       workflow: input.workflow,
-      issueNumber: input.issueNumber,
       prNumber: input.prNumber,
       session: input.session,
       cwd: input.cwd,
-      // Auto mode only applies to the Build button's issue-dev launch (#499), not other
-      // terminal workflows (issue-create, resume, github-pr-export).
-      auto: input.workflow === "issue-dev" && autoModeOnBuild(),
     });
     if (!command.trim()) throw new ServiceError(422, "command is required");
 
