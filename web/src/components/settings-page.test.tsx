@@ -17,12 +17,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-type AgentSettingsForTest = { autoModeOnBuild: boolean; model: string };
+type AgentSettingsForTest = {
+  autoModeOnBuild: boolean;
+  model: string;
+  effort: string;
+};
 
 function mockFetch(
   initialAgents: Record<CodingAgent, AgentSettingsForTest> = {
-    "claude-code": { autoModeOnBuild: false, model: "opus" },
-    codex: { autoModeOnBuild: false, model: "gpt-5.5" },
+    "claude-code": { autoModeOnBuild: false, model: "opus", effort: "medium" },
+    codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
   },
   initialCodingAgent: CodingAgent = "claude-code",
 ) {
@@ -44,6 +48,12 @@ function mockFetch(
         agents[p.agent as CodingAgent] = {
           ...agents[p.agent as CodingAgent],
           model: p.model as string,
+        };
+      }
+      if (p.agent && p.effort !== undefined) {
+        agents[p.agent as CodingAgent] = {
+          ...agents[p.agent as CodingAgent],
+          effort: p.effort as string,
         };
       }
       if (p.codingAgent) codingAgent = p.codingAgent;
@@ -70,8 +80,8 @@ function renderSettings(
 describe("SettingsPage", () => {
   it("shows the current auto-mode-on-Build setting per agent", async () => {
     renderSettings({
-      "claude-code": { autoModeOnBuild: true, model: "opus" },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5" },
+      "claude-code": { autoModeOnBuild: true, model: "opus", effort: "medium" },
+      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
     });
     // The label ("On"/"Off") and hint text are adjacent in the accessible name, so scope the
     // query to the radiogroup and pick by position instead of matching the name by text.
@@ -156,31 +166,70 @@ describe("SettingsPage", () => {
     );
   });
 
-  it("shows the current default model per agent (#594)", async () => {
+  it("shows the current default model+effort per agent as a select (#594, #682)", async () => {
     renderSettings({
-      "claude-code": { autoModeOnBuild: false, model: "opus" },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5" },
+      "claude-code": { autoModeOnBuild: false, model: "opus", effort: "high" },
+      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "low" },
     });
-    const claudeInput = (await screen.findByLabelText(
-      "Default model (Claude Code)",
-    )) as HTMLInputElement;
-    await waitFor(() => expect(claudeInput.value).toBe("opus"));
+    const claudeSelect = (await screen.findByLabelText(
+      "Default model and effort (Claude Code)",
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(claudeSelect.value).toBe("opus::high"));
 
-    const codexInput = (await screen.findByLabelText(
-      "Default model (Codex)",
-    )) as HTMLInputElement;
-    expect(codexInput.value).toBe("gpt-5.5");
+    const codexSelect = (await screen.findByLabelText(
+      "Default model and effort (Codex)",
+    )) as HTMLSelectElement;
+    expect(codexSelect.value).toBe("gpt-5.5::low");
   });
 
-  it("updates one agent's default model and persists via settings/update, leaving the other agent untouched (#594)", async () => {
+  it("offers every model x effort combination as select options, per agent (#610, #682)", async () => {
     renderSettings();
-    const claudeInput = (await screen.findByLabelText(
-      "Default model (Claude Code)",
-    )) as HTMLInputElement;
-    await waitFor(() => expect(claudeInput.value).toBe("opus"));
+    const claudeSelect = (await screen.findByLabelText(
+      "Default model and effort (Claude Code)",
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(claudeSelect.value).toBe("opus::medium"));
+    const claudeOptions = Array.from(claudeSelect.options).map((o) => o.value);
+    expect(claudeOptions).toEqual(
+      expect.arrayContaining([
+        "opus::low",
+        "opus::medium",
+        "opus::high",
+        "opus::xhigh",
+        "opus::max",
+        "sonnet::high",
+        "haiku::max",
+      ]),
+    );
 
-    fireEvent.change(claudeInput, { target: { value: "claude-opus-4-8" } });
-    fireEvent.submit(claudeInput.closest("form")!);
+    const codexSelect = (await screen.findByLabelText(
+      "Default model and effort (Codex)",
+    )) as HTMLSelectElement;
+    const codexOptions = Array.from(codexSelect.options).map((o) => o.value);
+    expect(codexOptions).toEqual(
+      expect.arrayContaining([
+        "gpt-5.5::minimal",
+        "gpt-5.5::low",
+        "gpt-5.5::medium",
+        "gpt-5.5::high",
+      ]),
+    );
+    // codex has no effort concept beyond these four static levels — no claude-code-only level
+    // ("xhigh"/"max") should leak into its options.
+    expect(codexOptions).not.toEqual(
+      expect.arrayContaining(["gpt-5.5::xhigh"]),
+    );
+  });
+
+  it("selecting a combination saves model and effort together via settings/update, leaving the other agent untouched (#682)", async () => {
+    renderSettings();
+    const claudeSelect = (await screen.findByLabelText(
+      "Default model and effort (Claude Code)",
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(claudeSelect.value).toBe("opus::medium"));
+
+    fireEvent.change(claudeSelect, {
+      target: { value: "claude-opus-4-8::xhigh" },
+    });
 
     await waitFor(() => {
       const call = rpcCall("settings/update");
@@ -188,52 +237,36 @@ describe("SettingsPage", () => {
       expect(call!.params).toMatchObject({
         agent: "claude-code",
         model: "claude-opus-4-8",
+        effort: "xhigh",
       });
     });
-    await waitFor(() => expect(claudeInput.value).toBe("claude-opus-4-8"));
-
-    const codexInput = (await screen.findByLabelText(
-      "Default model (Codex)",
-    )) as HTMLInputElement;
-    expect(codexInput.value).toBe("gpt-5.5");
-  });
-
-  it("offers per-agent model suggestions via a datalist, without constraining free text (#610)", async () => {
-    renderSettings();
-    const claudeInput = (await screen.findByLabelText(
-      "Default model (Claude Code)",
-    )) as HTMLInputElement;
-    await waitFor(() => expect(claudeInput.value).toBe("opus"));
-
-    const claudeListId = claudeInput.getAttribute("list");
-    expect(claudeListId).toBeTruthy();
-    const claudeOptions = Array.from(
-      document.getElementById(claudeListId!)!.querySelectorAll("option"),
-    ).map((o) => o.getAttribute("value"));
-    expect(claudeOptions).toEqual(
-      expect.arrayContaining(["opus", "sonnet", "haiku"]),
+    await waitFor(() =>
+      expect(claudeSelect.value).toBe("claude-opus-4-8::xhigh"),
     );
 
-    const codexInput = (await screen.findByLabelText(
-      "Default model (Codex)",
-    )) as HTMLInputElement;
-    const codexListId = codexInput.getAttribute("list");
-    expect(codexListId).toBeTruthy();
-    expect(codexListId).not.toBe(claudeListId);
-    const codexOptions = Array.from(
-      document.getElementById(codexListId!)!.querySelectorAll("option"),
-    ).map((o) => o.getAttribute("value"));
-    expect(codexOptions).toEqual(expect.arrayContaining(["gpt-5.5"]));
+    const codexSelect = (await screen.findByLabelText(
+      "Default model and effort (Codex)",
+    )) as HTMLSelectElement;
+    expect(codexSelect.value).toBe("gpt-5.5::medium");
+  });
 
-    // Free text outside the suggestion list is still accepted and saved (#610's core requirement).
-    fireEvent.change(claudeInput, { target: { value: "claude-fable-5" } });
-    fireEvent.submit(claudeInput.closest("form")!);
-    await waitFor(() => {
-      const call = rpcCall("settings/update");
-      expect(call!.params).toMatchObject({
-        agent: "claude-code",
+  it("shows a saved model+effort pair outside the suggestion list as its own selected option, instead of silently jumping to a different combination (#682)", async () => {
+    renderSettings({
+      "claude-code": {
+        autoModeOnBuild: false,
         model: "claude-fable-5",
-      });
+        effort: "medium",
+      },
+      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
     });
+    const claudeSelect = (await screen.findByLabelText(
+      "Default model and effort (Claude Code)",
+    )) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(claudeSelect.value).toBe("claude-fable-5::medium"),
+    );
+    expect(Array.from(claudeSelect.options).map((o) => o.value)).toContain(
+      "claude-fable-5::medium",
+    );
   });
 });

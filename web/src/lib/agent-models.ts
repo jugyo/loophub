@@ -25,3 +25,12 @@ export const MODEL_SUGGESTIONS: Record<CodingAgent, string[]> = {
   ],
   codex: ["gpt-5.5"],
 };
+
+// Reasoning-effort levels offered per agent for the Settings screen's model+effort picker
+// (#682). claude-code's levels mirror the `claude --effort` CLI flag; codex's mirror the
+// `model_reasoning_effort` config values its underlying models accept. Static, like
+// MODEL_SUGGESTIONS above — no dynamic fetch of what a given model actually supports.
+export const EFFORT_SUGGESTIONS: Record<CodingAgent, string[]> = {
+  "claude-code": ["low", "medium", "high", "xhigh", "max"],
+  codex: ["minimal", "low", "medium", "high"],
+};

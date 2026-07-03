@@ -17,6 +17,10 @@ export interface AgentConfig {
   // Model this agent launches with when `lh dev --model` isn't passed explicitly (#594).
   // Falls back to DEFAULT_AGENT_MODEL when unset.
   defaultModel?: string;
+  // Reasoning effort paired with defaultModel in the Settings screen (#682). Falls back to
+  // DEFAULT_AGENT_EFFORT when unset. Not yet wired into `lh dev`'s spawn args — the Settings
+  // screen only stores the model+effort pair for now.
+  defaultEffort?: string;
 }
 
 // Default per-agent model (#594) used by agentModel() when config.json has no override.
@@ -25,6 +29,12 @@ export interface AgentConfig {
 export const DEFAULT_AGENT_MODEL: Record<CodingAgent, string> = {
   "claude-code": "opus",
   codex: "gpt-5.5",
+};
+
+// Default per-agent effort (#682) used by agentEffort() when config.json has no override.
+export const DEFAULT_AGENT_EFFORT: Record<CodingAgent, string> = {
+  "claude-code": "medium",
+  codex: "medium",
 };
 
 // Known config.json fields (#474). Fields are optional — any subset may be present, and
@@ -122,6 +132,19 @@ export function agentModel(agent: CodingAgent): string {
   return DEFAULT_AGENT_MODEL[agent];
 }
 
+// Effort paired with agentModel() (#682). Falls back to DEFAULT_AGENT_EFFORT when config.json
+// has no override for this agent.
+export function agentEffort(agent: CodingAgent): string {
+  try {
+    const cfg: GlobalConfig = JSON.parse(
+      readFileSync(join(configDir(), "config.json"), "utf8"),
+    );
+    const configured = cfg.agents?.[agent]?.defaultEffort?.trim();
+    if (configured) return configured;
+  } catch {}
+  return DEFAULT_AGENT_EFFORT[agent];
+}
+
 export function normalizeCodingAgent(value: unknown): CodingAgent {
   return value === "codex" ? "codex" : "claude-code";
 }
@@ -199,6 +222,20 @@ export function updateAgentDefaultModel(
     agents: {
       ...current.agents,
       [agent]: { ...current.agents?.[agent], defaultModel: model },
+    },
+  });
+}
+
+// Set a single agent's defaultEffort without disturbing other agents' settings (#682).
+export function updateAgentDefaultEffort(
+  agent: CodingAgent,
+  effort: string,
+): GlobalConfig {
+  const current = readConfigFile() as GlobalConfig;
+  return updateConfig({
+    agents: {
+      ...current.agents,
+      [agent]: { ...current.agents?.[agent], defaultEffort: effort },
     },
   });
 }

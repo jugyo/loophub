@@ -2,10 +2,8 @@
 // opposed to the per-repo settings screen (see repo-settings-page.tsx's MergeModeSection).
 
 import { Check } from "lucide-react";
-import { useEffect, useId, useState } from "react";
 import type { CodingAgent } from "@/api/types";
-import { Button } from "@/components/ui/button";
-import { MODEL_SUGGESTIONS } from "@/lib/agent-models";
+import { EFFORT_SUGGESTIONS, MODEL_SUGGESTIONS } from "@/lib/agent-models";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
 
 function autoModeOptions(): { value: boolean; label: string }[] {
@@ -35,66 +33,68 @@ const CODING_AGENT_OPTIONS: {
   },
 ];
 
-// A single agent's "Default model" input (#594, #610). A native <input list> + <datalist> combobox:
-// the browser offers `suggestions` as a picklist, but any other value can still be typed directly —
-// no dedicated combobox component exists in this project's UI kit (see web/src/components/ui/), so
-// this reuses the plain <select>-adjacent styling already used elsewhere (issue-list.tsx) rather than
-// adding one. Local `draft` state so typing doesn't round-trip through the query cache on every
-// keystroke; resyncs with the server value on load/refetch via the effect below (mirrors
-// repo-settings-page.tsx's RenameSection).
-function AgentModelInput({
+// Serializes a model+effort pair into one <select> option value. "::" is safe as a separator:
+// no entry in MODEL_SUGGESTIONS/EFFORT_SUGGESTIONS contains it.
+function comboValue(model: string, effort: string): string {
+  return `${model}::${effort}`;
+}
+
+// A single agent's "Default model & effort" picker (#594, #610, #682). Was previously a free-text
+// <input list>+<datalist> combobox for model alone; replaced with a plain <select> (no dedicated
+// combobox component exists in this project's UI kit — see web/src/components/ui/) whose options
+// are the full model x effort combination, so a selection always saves a valid pair and an invalid
+// combination can never be chosen. If the currently persisted pair isn't one of the combinations
+// (e.g. a model saved before effort existed, or a value typed via the old free-text field), it's
+// injected as an extra leading option so the picker still reflects the real saved state instead of
+// silently jumping to something else (#682 AC: "existing settings select the right combination").
+function AgentModelEffortSelect({
   label,
-  value,
-  suggestions,
+  model,
+  effort,
+  modelSuggestions,
+  effortSuggestions,
   disabled,
   saving,
   onSave,
 }: {
   label: string;
-  value: string;
-  suggestions: string[];
+  model: string;
+  effort: string;
+  modelSuggestions: string[];
+  effortSuggestions: string[];
   disabled: boolean;
   saving: boolean;
-  onSave: (model: string) => void;
+  onSave: (model: string, effort: string) => void;
 }) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
-  const listId = useId();
-  const trimmed = draft.trim();
-  const unchanged = trimmed === value;
+  const combos = modelSuggestions.flatMap((m) =>
+    effortSuggestions.map((e) => ({ model: m, effort: e })),
+  );
+  const currentValue = comboValue(model, effort);
+  const hasCurrent = combos.some(
+    (c) => comboValue(c.model, c.effort) === currentValue,
+  );
+  const options = hasCurrent ? combos : [{ model, effort }, ...combos];
 
   return (
-    <form
-      className="flex max-w-md gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (trimmed && !unchanged && !saving) onSave(trimmed);
+    <select
+      aria-label={`Default model and effort (${label})`}
+      className="w-full max-w-md rounded-md border bg-background px-3 py-1.5 text-sm"
+      value={currentValue}
+      disabled={disabled || saving}
+      onChange={(e) => {
+        const [m, ef] = e.target.value.split("::");
+        onSave(m, ef);
       }}
     >
-      <input
-        type="text"
-        list={listId}
-        aria-label={`Default model (${label})`}
-        className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm"
-        value={draft}
-        disabled={disabled || saving}
-        onChange={(e) => setDraft(e.target.value)}
-      />
-      <datalist id={listId}>
-        {suggestions.map((m) => (
-          <option key={m} value={m} />
-        ))}
-      </datalist>
-      <Button
-        type="submit"
-        disabled={disabled || saving || !trimmed || unchanged}
-      >
-        {saving ? "Saving…" : "Save"}
-      </Button>
-    </form>
+      {options.map((o) => (
+        <option
+          key={comboValue(o.model, o.effort)}
+          value={comboValue(o.model, o.effort)}
+        >
+          {o.model} — {o.effort}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -153,6 +153,7 @@ export function SettingsPage() {
             const autoModeOnBuild =
               data?.agents?.[agentOption.value]?.autoModeOnBuild ?? false;
             const model = data?.agents?.[agentOption.value]?.model ?? "";
+            const effort = data?.agents?.[agentOption.value]?.effort ?? "";
             return (
               <div
                 key={agentOption.value}
@@ -195,17 +196,23 @@ export function SettingsPage() {
                 </div>
 
                 <h3 className="mt-4 text-xs font-medium text-muted-foreground">
-                  {agentOption.label} — Default model
+                  {agentOption.label} — Default model & effort
                 </h3>
                 <div className="mt-1 max-w-sm">
-                  <AgentModelInput
+                  <AgentModelEffortSelect
                     label={agentOption.label}
-                    value={model}
-                    suggestions={MODEL_SUGGESTIONS[agentOption.value]}
+                    model={model}
+                    effort={effort}
+                    modelSuggestions={MODEL_SUGGESTIONS[agentOption.value]}
+                    effortSuggestions={EFFORT_SUGGESTIONS[agentOption.value]}
                     disabled={isLoading}
                     saving={update.isPending}
-                    onSave={(m) =>
-                      update.mutate({ agent: agentOption.value, model: m })
+                    onSave={(m, ef) =>
+                      update.mutate({
+                        agent: agentOption.value,
+                        model: m,
+                        effort: ef,
+                      })
                     }
                   />
                 </div>

@@ -198,6 +198,7 @@ export function updateSettings(
     agent?: CodingAgent;
     autoModeOnBuild?: boolean;
     model?: string;
+    effort?: string;
     codingAgent?: CodingAgent;
   },
   sessionId: string = getSessionId(),

@@ -21,6 +21,7 @@ export function useUpdateSettings() {
       agent?: CodingAgent;
       autoModeOnBuild?: boolean;
       model?: string;
+      effort?: string;
       codingAgent?: CodingAgent;
     }) => updateSettings(input),
     onSuccess: () => {

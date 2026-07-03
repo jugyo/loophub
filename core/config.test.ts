@@ -126,6 +126,30 @@ test("updateAgentDefaultModel sets one agent without disturbing another's settin
   expect(agentModel("codex")).toBe("gpt-5.5-codex"); // untouched
 });
 
+test("agentEffort defaults to DEFAULT_AGENT_EFFORT per agent and reflects updateAgentDefaultEffort (#682)", async () => {
+  const { agentEffort, DEFAULT_AGENT_EFFORT, updateAgentDefaultEffort } =
+    await import("./config.ts");
+  expect(agentEffort("claude-code")).toBe(DEFAULT_AGENT_EFFORT["claude-code"]);
+  expect(agentEffort("codex")).toBe(DEFAULT_AGENT_EFFORT.codex);
+
+  updateAgentDefaultEffort("claude-code", "high");
+  expect(agentEffort("claude-code")).toBe("high");
+  expect(agentEffort("codex")).toBe(DEFAULT_AGENT_EFFORT.codex); // unaffected
+});
+
+test("updateAgentDefaultEffort sets one agent without disturbing another's setting (#682)", async () => {
+  const { agentEffort, updateAgentDefaultEffort } = await import("./config.ts");
+
+  updateAgentDefaultEffort("claude-code", "high");
+  updateAgentDefaultEffort("codex", "low");
+  expect(agentEffort("claude-code")).toBe("high");
+  expect(agentEffort("codex")).toBe("low");
+
+  updateAgentDefaultEffort("claude-code", "xhigh");
+  expect(agentEffort("claude-code")).toBe("xhigh");
+  expect(agentEffort("codex")).toBe("low"); // untouched
+});
+
 test("codingAgent defaults to claude-code and reflects updateConfig (#516)", async () => {
   const { codingAgent, updateConfig } = await import("./config.ts");
   expect(codingAgent()).toBe("claude-code"); // default
