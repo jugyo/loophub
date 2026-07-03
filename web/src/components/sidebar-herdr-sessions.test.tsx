@@ -789,4 +789,112 @@ describe("SidebarHerdrSessions", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
   });
+
+  // #633: a "New issue" agent has no linked PR (pull === null), so pull_closed can never be
+  // true for it. Once it goes idle it should gray out and get a kill button like a stale PR
+  // pane; while it's still active (working/blocked/done) it stays a normal row.
+  describe("no-PR New issue agents (#633)", () => {
+    it("grays out a no-PR agent and shows its kill button once it goes idle", async () => {
+      renderWithSessions({
+        repos: [
+          {
+            repo: "me/app",
+            session_name: "me-app-12345678",
+            agents: [
+              { id: "w1:p1", name: "New issue", status: "idle", pull: null },
+            ],
+          },
+        ],
+      });
+
+      const name = await screen.findByText("New issue");
+      expect(name.className).toContain("text-muted-foreground");
+      const dot = name.parentElement?.querySelector("span");
+      expect(dot?.className).toContain("bg-muted-foreground/30");
+      expect(dot?.className).not.toContain("bg-green-500");
+      expect(
+        screen.getByRole("button", { name: "Close New issue's pane" }),
+      ).toBeTruthy();
+    });
+
+    it("keeps a no-PR agent a normal row (no gray, no kill) while it is not idle", async () => {
+      renderWithSessions({
+        repos: [
+          {
+            repo: "me/app",
+            session_name: "me-app-12345678",
+            agents: [
+              { id: "w1:p1", name: "New issue", status: "working", pull: null },
+            ],
+          },
+        ],
+      });
+
+      const name = await screen.findByText("New issue");
+      expect(name.className).not.toContain("text-muted-foreground");
+      const dot = name.parentElement?.querySelector("span");
+      expect(dot?.className).toContain("bg-yellow-500");
+      expect(
+        screen.queryByRole("button", { name: "Close New issue's pane" }),
+      ).toBeNull();
+    });
+
+    it("leaves an idle PR-linked agent with an open PR a normal row (pull_closed logic unchanged)", async () => {
+      renderWithSessions({
+        repos: [
+          {
+            repo: "me/app",
+            session_name: "me-app-12345678",
+            // Open PR: pull is a number and pull_closed is false, even though idle.
+            agents: [
+              {
+                id: "w1:p1",
+                name: "dev #11",
+                status: "idle",
+                pull: 11,
+                pull_closed: false,
+              },
+            ],
+          },
+        ],
+      });
+
+      const name = await screen.findByText("dev #11");
+      expect(name.className).not.toContain("text-muted-foreground");
+      const dot = name.parentElement?.querySelector("span");
+      expect(dot?.className).toContain("bg-green-500");
+      expect(
+        screen.queryByRole("button", { name: "Close dev #11's pane" }),
+      ).toBeNull();
+    });
+
+    it("kills the no-PR idle agent's pane when its kill button is clicked", async () => {
+      renderWithSessions(
+        {
+          repos: [
+            {
+              repo: "me/app",
+              session_name: "me-app-12345678",
+              agents: [
+                { id: "w1:p1", name: "New issue", status: "idle", pull: null },
+              ],
+            },
+          ],
+        },
+        undefined,
+        { "terminal/killAgent": () => ({ ok: true }) },
+      );
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Close New issue's pane" }),
+      );
+
+      await waitFor(() => {
+        expect(rpcCall("terminal/killAgent")?.params).toMatchObject({
+          repo: "me/app",
+          paneId: "w1:p1",
+        });
+      });
+    });
+  });
 });

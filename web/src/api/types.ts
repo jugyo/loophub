@@ -195,6 +195,14 @@ export interface HerdrAgent {
    * or no PR could be resolved: both render as a normal row.
    */
   pull_closed?: boolean;
+  /**
+   * The PR number whose worktree the agent's pane cwd resolves to, or null when the
+   * agent has no linked PR — a "New issue" agent running at the repo root (#633). Since
+   * pull_closed can never be true for a no-PR agent, the sidebar instead grays it out
+   * (and shows the kill button) once it goes idle. Absent in legacy payloads — treat a
+   * missing value the same as null.
+   */
+  pull?: number | null;
 }
 
 /**

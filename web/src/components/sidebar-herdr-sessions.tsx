@@ -2,8 +2,9 @@
 // repository list. Each agent row is a name (e.g. "dev #486"), a status dot, a kill button
 // (#521, experimental) that closes the agent's pane, and — on hover (#500) — a preview of
 // that agent's recent terminal output, fetched on demand via `terminal/agentRead`. Rows
-// whose worktree PR is merged/closed render muted (#611); the kill button is shown only on
-// those muted rows (#621), where closing the no-longer-needed pane is the point. Renders
+// whose worktree PR is merged/closed render muted (#611); so do no-PR "New issue" agents once
+// they go idle (#633). The kill button is shown only on those muted rows (#621, #633), where
+// closing the no-longer-needed pane is the point. Renders
 // nothing while loading, on error, or when no session has agents, so the section never gets
 // in the way when herdr isn't in use.
 import { AnsiUp } from "ansi_up";
@@ -72,6 +73,11 @@ function statusDotClass(status: string): string {
 // input is one group's agents) and is stable — Array.prototype.sort is stable on Node's V8,
 // and the comparator only separates stale from active, so both partitions keep their
 // original relative order. Returns a new array; the source (react-query cache) is untouched.
+//
+// This keys on `pull_closed` only — deliberately narrower than AgentRow's `stale` (which
+// also grays no-PR idle agents, #633). #633 scopes ordering out ("並び順変更 … 変更なし"), so a
+// grayed no-PR idle agent keeps its position rather than sinking; only #620's PR-closed rows
+// move. Keep the two in sync only if a future issue widens the sort intentionally.
 export function sortAgents(agents: HerdrAgent[]): HerdrAgent[] {
   return [...agents].sort(
     (a, b) => Number(a.pull_closed === true) - Number(b.pull_closed === true),
@@ -131,11 +137,16 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   // id whenever herdr reported one (see agentReadTarget); the synthetic idx: fallback has no
   // real pane to focus, so the button is hidden for it (#617 AC).
   const canFocus = !agent.id.startsWith(NO_PANE_ID_PREFIX);
-  // The agent's worktree PR is merged/closed (#611): gray the row out so no-longer-needed
-  // agents stand out. This also gates the kill button (#621): only a stale agent — one whose
-  // work is done — gets a kill button, and it kills immediately (no confirm), since closing a
-  // finished pane is low-risk. Active rows show no kill button at all.
-  const stale = agent.pull_closed === true;
+  // A "finished" row: grayed out so no-longer-needed agents stand out, and given a kill
+  // button (#621) that closes the pane immediately (no confirm), since closing finished
+  // work is low-risk. Active rows show no kill button at all. Two cases qualify:
+  //   1. A PR-linked agent whose worktree PR is merged/closed (`pull_closed`, #611).
+  //   2. A "New issue" agent with no linked PR (`pull == null`) that has gone idle (#633):
+  //      pull_closed can never be true for it, so idle is the signal its work is done. A
+  //      no-PR agent still working/blocked/done stays a normal, active row.
+  const stale =
+    agent.pull_closed === true ||
+    (agent.pull == null && agent.status === "idle");
 
   function clearHoverTimer() {
     if (hoverTimer.current !== null) {

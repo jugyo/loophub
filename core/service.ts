@@ -723,6 +723,10 @@ async function launchIssueDevHerdr(r: S.Repo, issueNumber: number) {
 // agent with no resolvable PR (repo-root cwd, legacy worktree convention, or a pr-<n> dir
 // with no matching PR row) stays false: unknown must render as a normal row, not a stale one.
 export interface HerdrSessionAgent extends HerdrAgent {
+  // The PR number the agent's worktree cwd resolves to, or null for a no-PR agent (a
+  // "New issue" agent at the repo root, #633). The sidebar needs this to gray a no-PR
+  // agent out on idle, since pull_closed is always false for it.
+  pull: number | null;
   pull_closed: boolean;
 }
 
@@ -1478,7 +1482,7 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
           }
           closed = known;
         }
-        return { id, name, status, pull_closed: closed };
+        return { id, name, status, pull, pull_closed: closed };
       });
       const pullWorkspaces = herdrPullWorkspacesFromAgentList(
         agentsOut,

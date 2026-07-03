@@ -123,12 +123,14 @@ test("terminal.sessions groups running herdr agents by repo and drops agentless 
             id: "w1:p2",
             name: "dev #11",
             status: "working",
+            pull: null,
             pull_closed: false,
           },
           {
             id: "w1:pC",
             name: "dev #13",
             status: "blocked",
+            pull: null,
             pull_closed: false,
           },
         ],
@@ -191,6 +193,7 @@ test("terminal.sessions maps a running agent's cwd back to its PR (#579)", async
             id: "wP:p2",
             name: "Issue #9 - PR 12",
             status: "working",
+            pull: 12,
             pull_closed: false,
           },
         ],
@@ -285,11 +288,42 @@ test("terminal.sessions flags agents whose worktree PR is merged or closed (#611
     const result = await svc.terminal.sessions();
     expect(result.repos).toHaveLength(1);
     expect(result.repos[0].agents).toEqual([
-      { id: "wS:p1", name: "dev #1", status: "done", pull_closed: true },
-      { id: "wS:p2", name: "dev #2", status: "idle", pull_closed: true },
-      { id: "wS:p3", name: "dev #3", status: "working", pull_closed: false },
-      { id: "wS:p4", name: "dev #99", status: "working", pull_closed: false },
-      { id: "wS:p5", name: "shell", status: "idle", pull_closed: false },
+      {
+        id: "wS:p1",
+        name: "dev #1",
+        status: "done",
+        pull: 1,
+        pull_closed: true,
+      },
+      {
+        id: "wS:p2",
+        name: "dev #2",
+        status: "idle",
+        pull: 2,
+        pull_closed: true,
+      },
+      {
+        id: "wS:p3",
+        name: "dev #3",
+        status: "working",
+        pull: 3,
+        pull_closed: false,
+      },
+      {
+        id: "wS:p4",
+        name: "dev #99",
+        status: "working",
+        pull: 99,
+        pull_closed: false,
+      },
+      // Repo-root cwd resolves to no PR (pull null) — a "New issue" agent shape (#633).
+      {
+        id: "wS:p5",
+        name: "shell",
+        status: "idle",
+        pull: null,
+        pull_closed: false,
+      },
     ]);
   } finally {
     process.env.PATH = ORIGINAL_PATH;
