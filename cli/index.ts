@@ -330,39 +330,6 @@ async function main() {
     return;
   }
 
-  if (group === "dev" && sub === "note") {
-    // Record a development note (decision/action/assumption/blocker) on the issue's PR.
-    const noteUsage =
-      "usage: lh dev note --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]";
-    if (!flags.kind || !flags.summary) fail(noteUsage);
-    if (!flags.issue && !flags.pr)
-      fail(`--issue or --pr is required\n${noteUsage}`);
-    const repo = await resolveRepo();
-    const s = await svc();
-    const session = await writeSession();
-    const note = await run(() =>
-      s.dev.note(
-        repo,
-        {
-          kind: flags.kind as string,
-          summary: flags.summary as string,
-          body: flags.body,
-          issue: flags.issue ? Number(flags.issue) : undefined,
-          pr: flags.pr ? Number(flags.pr) : undefined,
-        },
-        session,
-      ),
-    );
-    if (flags.json) out(note);
-    else {
-      const target = note.pr_number
-        ? `PR #${note.pr_number}`
-        : `issue #${note.issue_number}`;
-      console.log(`recorded ${note.kind} on ${target}: ${note.summary}`);
-    }
-    return;
-  }
-
   if (group === "dev") {
     const target = sub;
     const usageLine =
@@ -482,7 +449,7 @@ async function main() {
     // Resolve the PR this session is developing *before* provisioning the worktree (#463): the
     // worktree path/branch are now PR-id-based, so the PR must exist first. A PR target already
     // has one; an issue target opens (or reuses) its draft PR here so the agent has a place to
-    // write its plan and dev notes — that call is NOT best-effort: without a PR number there is
+    // write its plan — that call is NOT best-effort: without a PR number there is
     // nothing to provision a worktree for, so a failure here aborts the launch. The session row
     // registered above is left in place on that abort (a harmless orphan — it is never linked to
     // a PR and a fresh randomUUID means the next launch can't collide with it).
@@ -1816,7 +1783,6 @@ function usage() {
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
   lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, claude-code only, passed through to the claude CLI; --auto: auto mode without the sandbox (claude-code: --permission-mode auto; codex: --dangerously-bypass-approvals-and-sandbox); --herdr: after setup, hand off to a herdr pane instead of blocking this process; --force: launch even if another session holds it)
-  lh dev note --kind <decision|action|assumption|blocker> --summary <text> [--body <text>] [--issue <n>] [--pr <n>] [--repo owner/name]   # record a dev note on the issue's PR
   lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]   # re-enter the Claude session a PR was developed in (claude --resume in its worktree)
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]

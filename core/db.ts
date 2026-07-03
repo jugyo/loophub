@@ -361,7 +361,7 @@ CREATE INDEX IF NOT EXISTS idx_issue_group_members_issue ON issue_group_members(
 -- or comment id) and 'hash' is its content hash (sha256), so the reference is verifiable without a
 -- second copy. Exactly one of (body, src) is the substance; the other is null.
 --
--- Security: rows are stored UNENCRYPTED and never GC'd (durable by design), so — like dev.note —
+-- Security: rows are stored UNENCRYPTED and never GC'd (durable by design), so
 -- secrets (credentials/tokens) must never be written here; the redaction rule lives with the
 -- caller (service validates shape, not secrecy). model/cost are optional observability fields for
 -- model-routing/economics analysis (p.42); cost is free-form JSON text (tokens/latency) the

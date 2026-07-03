@@ -86,7 +86,7 @@ retro を起動する。Phase 1 はこのイベントを **前提・契約とし
 | issue 本体 | `lh issue view`(本文・AC・scope) | R2/R7 の基準 |
 | コメント | `comments` | R1/R2 介入痕跡 |
 | **セッション transcript** | **cc-session-finder MCP**(ローカル索引、read-only)で `session_id` から引く。PR→session の紐付けは LoopHub が持つ(§4.3) | R1/R5/R6 の深掘り。MVP では任意 |
-| **decision log** | エージェントが任意で emit した `dev.note`(`lh dev note --kind decision`)、または transcript から passive 抽出した根拠(§4.3) | R2/R6/R7 の WHY |
+| **decision log** | transcript から passive 抽出した根拠(§4.3) | R2/R6/R7 の WHY |
 | 既存 retro | 蓄積済み retros(§4) | 再振り返りの重複検出・バックフィル判定 |
 
 transcript は本来エージェント実行環境にある。**cc-session-finder があればそれ経由で
@@ -242,17 +242,16 @@ transcript は tool 出力にファイル内容・トークン・絶対パスを
   文字列・`env` ダンプ・credential 中身のマスク)を通し `redacted=1`・`redact_ruleset` を
   立て、取得経路を `issues`/`events` と分ける。
 
-#### 4.3.4 根拠の抽出/記録(passive / active)
+#### 4.3.4 根拠の抽出/記録(passive)
 
-働くセッションへの負荷を最小化する二段構え:
+働くセッションへの負荷を最小化する:
 
 - **passive(既定)**: retro(別セッション)が cc-session-finder 経由で transcript を読み、
   「X にした、理由は Y」を抽出 → `retros.findings_json` / rubric の根拠に使う。**実装
   セッションへの追加負荷ゼロ**、かつその場の発言を読むので事後正当化バイアスが無い。
-- **active(任意・限定)**: 特に重要で本文に現れにくい判断だけ、fire-and-forget の
-  `lh dev note --kind <decision|action|assumption|blocker> --summary "..." [--body "..."] --pr <m>` を emit
-  (`dev.note` イベント。小さい構造化レコードなので LoopHub に常駐させても安い)。
-  **非ブロッキング・失敗しても実装を止めない**。常時ログにはしない。
+
+かつては active 記録(`lh dev note` → `dev.note` イベント)も併設していたが、実質使われず
+#607 で機構ごと削除した。根拠の取得は passive 抽出に一本化する。
 
 ---
 
@@ -284,10 +283,10 @@ transcript は tool 出力にファイル内容・トークン・絶対パスを
    (§4.3.1/4.3.3/4.3.4)。一次手段。
 5. **(任意)LoopHub 保存フォールバック** — cc-session-finder が無い環境向けに `SessionEnd`
    hook + `session_artifacts` + redaction(§4.3.2)。必要になったときだけ。
-6. **(任意)active decision log** — `lh dev note` / `dev.note`(§4.3.4)。本文に
-   出にくい判断の補完。
 
-依存順: 1 →(2 と 3 は並行可)→ 4 →(5・6 は任意)。4 は cc-session-finder があれば保存実装
+(旧 6 の active decision log — `lh dev note` / `dev.note` — は実質使われず #607 で削除。)
+
+依存順: 1 →(2 と 3 は並行可)→ 4 →(5 は任意)。4 は cc-session-finder があれば保存実装
 (5)抜きで成立する。1 だけでも価値が出る縦切りにしてある。
 
 ---

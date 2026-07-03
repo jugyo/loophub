@@ -2046,7 +2046,7 @@ export const pulls = {
       throw new ServiceError(422, "title, head, base are required");
     const actor = actorFor(sessionId);
     // Soft "one open PR per linked issue" guard: refuse a second open PR for an issue that already
-    // has one. This is the double-`lh dev` guard (not a DB constraint — see #186 dev.note), so it
+    // has one. This is the double-`lh dev` guard (not a DB constraint — see #186), so it
     // can be relaxed later to allow multiple proposal PRs per issue.
     const linkedIssueId = resolveLinkedIssueId(r, body, issue);
     const linkedNumber = issue ?? parseClosingIssueNumber(body);
@@ -2459,17 +2459,7 @@ export const pulls = {
 // ===== dev (issue-dev loop support) =====
 //
 // Helpers for the `lh dev` development loop: open a draft PR at the start of work so the
-// agent has a place to write its plan and attach decision/action notes, and record those
-// notes (`dev.note` events) to the shared events table.
-
-// Allowed `dev.note` kinds. An unknown kind is rejected (422) rather than stored.
-export const DEV_NOTE_KINDS = [
-  "decision",
-  "action",
-  "assumption",
-  "blocker",
-] as const;
-export type DevNoteKind = (typeof DEV_NOTE_KINDS)[number];
+// agent has a place to write its plan, and attribute the dev session to the PR.
 
 export const dev = {
   // Open the draft PR for an issue's worktree branch at the start of `lh dev`. Idempotent:
@@ -2556,92 +2546,6 @@ export const dev = {
     }
     return { number: row.number };
   },
-
-  // Record a development note (decision / action / assumption / blocker) as a `dev.note`
-  // event in the shared events table. The note targets an issue and/or a PR; the missing
-  // side is resolved when possible (a PR's linked issue, or an issue's open linked PR).
-  note(
-    name: string,
-    input: {
-      kind: string;
-      summary: string;
-      body?: string;
-      issue?: number;
-      pr?: number;
-    },
-    sessionId?: string | null,
-  ): {
-    issue_number: number;
-    pr_number?: number;
-    kind: DevNoteKind;
-    summary: string;
-    body?: string;
-  } {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const summary = (input.summary ?? "").trim();
-    if (!summary) throw new ServiceError(422, "summary is required");
-    if (!DEV_NOTE_KINDS.includes(input.kind as DevNoteKind)) {
-      throw new ServiceError(
-        422,
-        `invalid kind "${input.kind}" (expected one of: ${DEV_NOTE_KINDS.join(", ")})`,
-      );
-    }
-    if (input.issue == null && input.pr == null) {
-      throw new ServiceError(422, "one of issue or pr is required");
-    }
-    const kind = input.kind as DevNoteKind;
-
-    let prNumber: number | undefined;
-    let issueNumber: number | undefined;
-    let prLinkedIssue: number | undefined;
-    if (input.pr != null) {
-      const prRow = issueOr404(r, input.pr, "pull");
-      prNumber = prRow.number;
-      const linkedId = S.getPull(prRow.id)?.linked_issue_id;
-      if (linkedId != null) {
-        prLinkedIssue = S.getIssueById(linkedId)?.number;
-        issueNumber = prLinkedIssue;
-      }
-    }
-    if (input.issue != null) {
-      const issueRow = issueOr404(r, input.issue, "issue");
-      // Both given: reject a PR whose linked issue contradicts the supplied issue,
-      // rather than silently recording a mismatched note.
-      if (
-        input.pr != null &&
-        prLinkedIssue != null &&
-        prLinkedIssue !== issueRow.number
-      ) {
-        throw new ServiceError(
-          422,
-          `issue #${issueRow.number} is not linked to PR #${input.pr}`,
-        );
-      }
-      issueNumber = issueRow.number;
-      if (prNumber == null) {
-        const open = S.openPullLinkedToIssue(issueRow.id);
-        if (open) prNumber = open.number;
-      }
-    }
-    if (issueNumber == null) {
-      throw new ServiceError(422, "could not resolve target issue");
-    }
-
-    const actor = actorFor(sessionId);
-    const body = input.body?.trim() || undefined;
-    const payload: {
-      issue_number: number;
-      pr_number?: number;
-      kind: DevNoteKind;
-      summary: string;
-      body?: string;
-    } = { issue_number: issueNumber, kind, summary };
-    if (prNumber != null) payload.pr_number = prNumber;
-    if (body) payload.body = body;
-    S.emitEvent(r.id, "dev.note", actor, payload);
-    return payload;
-  },
 };
 
 // ===== handoffs (#352) =====
@@ -2658,7 +2562,7 @@ export const dev = {
 // report), or `src` to reference a canonical copy living elsewhere (plan=PR, diff=commit) without
 // duplicating it. Exactly one of (body, src) carries the substance. When inline, `hash` defaults to
 // the sha256 of `body` for integrity; with `src` the caller supplies `hash` (the referenced
-// content's hash). Security: rows persist unencrypted and are never GC'd, so — like dev.note — the
+// content's hash). Security: rows persist unencrypted and are never GC'd, so the
 // caller must keep secrets out (this layer validates shape, not secrecy). The body may also carry
 // issue-derived (untrusted) text, and `lh handoff list` reads it back into an orchestrator's
 // context: consumers MUST treat a recorded body as DATA, never as instructions to act on. The
@@ -2761,8 +2665,8 @@ export const handoffs = {
     });
 
     // Emit a PR-scoped event so the PR detail's handoff section refetches over SSE. payload.number
-    // is the PR number (the routing key event-keys.ts maps to the pull detail); pr_number mirrors
-    // dev.note for consumers that read it. For an issue-only handoff there is no PR to scope to.
+    // is the PR number (the routing key event-keys.ts maps to the pull detail); pr_number is a
+    // duplicate for consumers that read it. For an issue-only handoff there is no PR to scope to.
     S.emitEvent(r.id, "handoff.recorded", actorFor(sessionId), {
       ...(prNumber != null ? { number: prNumber, pr_number: prNumber } : {}),
       ...(issueNumber != null ? { issue_number: issueNumber } : {}),

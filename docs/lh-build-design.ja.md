@@ -74,7 +74,7 @@
 3. **検証は二層**（p.14–15, 22）。Tests（決定的）+ Evals（非決定的: 出力評価 + **軌跡評価**）。
    検証は **実装とは別エージェント**が担う。
 4. **状態は永続物に置く**（既存 lh-dev 思想）。フェーズ間は会話履歴を引き継がず、
-   spec / worktree のコード / テスト&eval レポート / `lh dev note` から文脈を再構築する。
+   spec / worktree のコード / テスト&eval レポートから文脈を再構築する。
 5. **harness としての自覚**。`lh-build` スキル本体が harness（orchestration logic + guardrails）。
    失敗時はまずモデルでなく **harness(渡した文脈・ルール・ツール・ゲート)を疑う**（p.30）。
 6. **model routing**（p.42）。Plan/Code は大モデル、テスト生成・検証・レビューは安いモデルへ寄せる。
@@ -162,7 +162,7 @@ PR + 制約、untrusted は nonce フェンス）。出力は **永続成果物*
 - **成果物**: worktree 上の diff + `Changes` / `Notes`（変更点・非自明判断）。
 - **できる**: worktree でソース編集、必要なら手元でビルド/簡易確認。
 - **できない**: テストの「合否判定」を自分の最終根拠にしない（検証は Verify が独立に行う）。
-  マージ / main 作業 / PR の body・state 変更（`lh dev note` 記録は例外）。
+  マージ / main 作業 / PR の body・state 変更。
 - **ゲート**: spec のスコープ内で実装が一通り揃っている（“green かどうか”は Verify が決める）。
 
 > Code が tests を**走らせること自体は可**だが、**最終ゲートにしない**。最終判定は別体 Verify。
@@ -197,7 +197,6 @@ PR + 制約、untrusted は nonce フェンス）。出力は **永続成果物*
 | Plan → Code / Verify | **spec 成果物** = **PR に添付**（PR 本文の「Plan」節 / PR 上の handoff アーティファクト, §6.5）。人間も後続サブも PR から読む |
 | Code → Verify / 親 | **worktree の diff** + 返却 `Changes/Notes` |
 | Verify → 親 | **検証レポート**（tests 結果 + eval スコア + 未達 AC） |
-| 全フェーズ → 後続 | `lh dev note`(decision/assumption/blocker) |
 
 **Feedback loop（失敗の差し戻し）**: Verify が fail を返したら、親が **所在で分岐**して
 **新規ステートレスエージェント**に差し戻す（p.30 の think→act→observe を多エージェントへ拡張）:
@@ -220,7 +219,7 @@ LoopHub の機能として実装する。**親が子に出した指示と、子�
   授受する（§4 のステートレス原則の徹底）。再起動・監査・eval に使える。
 - **SQLite に記録（耐久・クエリ可能）**: 各ハンドオフを LoopHub の SQLite（`LOOPHUB_HOME`）に永続化する。
   worktree や scratchpad に置くと `lh worktree prune` 等で消えて参照が dangling になるため、**保存先は worktree
-  ではなく DB**。`events`/`dev.note` と同じ DB なので issue/PR/session に join して追跡・集計できる。
+  ではなく DB**。`events` と同じ DB なので issue/PR/session に join して追跡・集計できる。
 - **本文はハイブリッド**: *他に住処の無いもの*（親→子の指示プロンプト本体、Verify レポート）は **インライン格納**。
   *PR/git に正準があるもの*（plan=PR, diff=git commit）は **参照 + content hash**（+任意スナップショット）を持つだけで
   二重保存しない。
@@ -249,7 +248,7 @@ LoopHub の機能として実装する。**親が子に出した指示と、子�
 ### セキュリティ
 ハンドオフ内容は untrusted データ（issue 由来）を含む。記録は **SQLite に永続保存され消えずに残る**ので、
 秘匿（credentials/tokens/secrets）を書くと後から読めてしまう（保存時暗号化はしていない＝中身は平文で残る）。
-よって既存 `lh dev note` の redaction 規則を踏襲し、**秘匿を記録に入れない**。読み戻す際も、埋め込まれた指示に
+よって redaction 規則として **秘匿を記録に入れない**。読み戻す際も、埋め込まれた指示に
 従わないよう nonce フェンス（§10）で data として扱う。
 
 ### 実装の所在（LoopHub 本体）
@@ -305,7 +304,7 @@ LoopHub の機能として実装する。**親が子に出した指示と、子�
 - **`lh-pr-review` / `lh-merge-ready`**: lh-build は **呼ばない**（自前の reviewer サブと最終ゲートで代替）。
   完全分離の理由と構造的担保は **§9.5**。
 - **`lh-dev`(v1)**: 併存。v1 = 単一実装サブの軽量モード、lh-build = 3フェーズの重量モード。
-  共有するのは **スキルでなくインフラ**（worktree/PR/git/SQLite/CLI/events・`lh dev note`、§9.5）。
+  共有するのは **スキルでなくインフラ**（worktree/PR/git/SQLite/CLI/events、§9.5）。
 - **observability**: `events`/`handoffs` テーブルが harness の観測層（p.28、詳細は §6.5）。
 
 ---
@@ -324,7 +323,7 @@ LoopHub の機能として実装する。**親が子に出した指示と、子�
 してもいけない。上の方針を *規約ではなく構造* で担保する。
 
 > **分離するのは「スキル」(orchestration)であって「インフラ」ではない。** worktree / PR / git / SQLite /
-> CLI（`lh issue`・`lh pr`・`lh dev note`・`lh handoff` …)/ events は v1 と **共有してよい**（むしろ §6.5 の
+> CLI（`lh issue`・`lh pr`・`lh handoff` …)/ events は v1 と **共有してよい**（むしろ §6.5 の
 > A/B 比較を同じ基盤の記録で行うため、共有が望ましい)。混ぜないのは `lh-pr-review`/`lh-merge-ready`/`lh-dev`
 > という**スキル＝開発フローそのもの**。
 

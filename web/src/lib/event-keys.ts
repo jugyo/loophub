@@ -78,26 +78,12 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["issue"]);
     }
     keys.push([...queryKeys.dashboard()]); // cross-repo top page
-  } else if (type === "dev.note") {
-    // A dev note targets a PR (and its issue). Invalidate the PR detail — the dev-note
-    // timeline is a sub-key of the pull key, so the prefix refetches it — plus the lists.
-    const prNumber = payload?.pr_number;
-    if (repo) {
-      keys.push([...queryKeys.pulls(repo)]);
-      if (typeof prNumber === "number") {
-        keys.push([...queryKeys.pull(repo, prNumber)]);
-      }
-    } else {
-      keys.push(["pulls"]);
-      keys.push(["pull"]);
-    }
-    keys.push([...queryKeys.dashboard()]);
   } else if (type === "handoff.recorded") {
     // A handoff (#352) is filed against a PR (payload.number / pr_number) and/or a generic issue
     // (payload.issue_number). Its section is a sub-key of the pull (and, for an issue-only handoff,
-    // the issue) key, so invalidating that prefix refetches the Handoffs list. Mirrors the dev.note
-    // routing above. An issue-only handoff carries no PR number, so route its issue_number to the
-    // issue keys instead — the generic mechanism is not PR-only (#352).
+    // the issue) key, so invalidating that prefix refetches the Handoffs list. An issue-only handoff
+    // carries no PR number, so route its issue_number to the issue keys instead — the generic
+    // mechanism is not PR-only (#352).
     const prNumber = payload?.pr_number ?? payload?.number;
     const issueNumber = payload?.issue_number;
     if (repo) {
@@ -143,8 +129,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
     // agent_session.linked (#298) targets a specific PR or issue; its related_sessions list lives in
-    // that detail's query, so invalidate it. The payload carries the target number under `pr`/`issue`
-    // (mirroring dev.note's pr_number routing above).
+    // that detail's query, so invalidate it. The payload carries the target number under `pr`/`issue`.
     if (repo) {
       const prNumber = payload?.pr;
       const issueNumber = payload?.issue;

@@ -17,7 +17,6 @@ import type {
   Issue,
   IssueComment,
   IssueGroupWithMembers,
-  LoopEvent,
   PullFile,
   PullLineComment,
   PullRequest,
@@ -476,21 +475,4 @@ export function readyForReview(
 // --- dashboard ---
 export function getDashboardOverview() {
   return rpc<DashboardOverview>("dashboard/overview");
-}
-
-// --- events ---
-export function listEvents(query = "") {
-  const sp = new URLSearchParams(query);
-  const labels = sp.get("label");
-  const order = sp.get("order");
-  return rpc<LoopEvent[]>(
-    "events/list",
-    clean({
-      since: sp.get("since") ? Number(sp.get("since")) : undefined,
-      repo: sp.get("repo") ?? undefined,
-      labels: labels ? labels.split(",").filter(Boolean) : undefined,
-      order: order === "desc" ? "desc" : undefined,
-      limit: sp.get("per_page") ? Number(sp.get("per_page")) : undefined,
-    }),
-  );
 }

@@ -175,7 +175,7 @@ describe("dev.openPr", () => {
     expect(reuse.created).toBe(false);
     // The direct create path (e.g. `lh pr create --issue`) is soft-guarded: a second open PR for the
     // same issue is refused (422). This is a soft check, not a DB constraint — relaxable for the
-    // future multi-proposal flow (#186 dev.note).
+    // future multi-proposal flow (#186).
     await expect(
       svc.pulls.create(
         "me/proj",
@@ -231,124 +231,6 @@ describe("dev.attachSession", () => {
         (e.payload as any).number === pr.number,
     );
     expect(updated).toBeDefined();
-  });
-});
-
-describe("dev.note", () => {
-  test("emits dev.note resolving the PR from the issue", async () => {
-    const issue = svc.issues.create("me/proj", { title: "feature B" });
-    const pr = await svc.dev.openPr(
-      "me/proj",
-      {
-        issue: issue.number,
-        head: `loophub/issue-${issue.number}`,
-        base: "main",
-      },
-      "sess-1",
-    );
-
-    const note = svc.dev.note(
-      "me/proj",
-      {
-        kind: "decision",
-        summary: "use SQLite",
-        body: "node:sqlite",
-        issue: issue.number,
-      },
-      "sess-1",
-    );
-    expect(note).toEqual({
-      issue_number: issue.number,
-      pr_number: pr.number,
-      kind: "decision",
-      summary: "use SQLite",
-      body: "node:sqlite",
-    });
-
-    // Persisted to the shared events table with the session's actor.
-    const events = svc.events.list({ repo: "me/proj", limit: 100 });
-    const devNote = events.find(
-      (e) =>
-        e.type === "dev.note" && (e.payload as any).pr_number === pr.number,
-    );
-    expect(devNote).toBeDefined();
-    expect(devNote?.actor).toBe("lh-dev");
-    expect((devNote?.payload as any).summary).toBe("use SQLite");
-  });
-
-  test("resolves the issue from the PR and omits an empty body", async () => {
-    const issue = svc.issues.create("me/proj", { title: "feature C" });
-    const pr = await svc.dev.openPr(
-      "me/proj",
-      {
-        issue: issue.number,
-        head: `loophub/issue-${issue.number}`,
-        base: "main",
-      },
-      "sess-1",
-    );
-
-    const note = svc.dev.note(
-      "me/proj",
-      { kind: "blocker", summary: "needs review", pr: pr.number },
-      "sess-1",
-    );
-    expect(note.issue_number).toBe(issue.number);
-    expect(note.pr_number).toBe(pr.number);
-    expect("body" in note).toBe(false);
-  });
-
-  test("rejects a mismatched --issue / --pr pair", async () => {
-    const issueX = svc.issues.create("me/proj", { title: "feature E" });
-    const pr = await svc.dev.openPr(
-      "me/proj",
-      {
-        issue: issueX.number,
-        head: `loophub/issue-${issueX.number}`,
-        base: "main",
-      },
-      "sess-1",
-    );
-    const otherIssue = svc.issues.create("me/proj", { title: "unrelated" });
-    expect(() =>
-      svc.dev.note(
-        "me/proj",
-        {
-          kind: "action",
-          summary: "x",
-          issue: otherIssue.number,
-          pr: pr.number,
-        },
-        "sess-1",
-      ),
-    ).toThrowError(/not linked to PR/);
-  });
-
-  test("rejects an invalid kind", () => {
-    const issue = svc.issues.create("me/proj", { title: "feature D" });
-    expect(() =>
-      svc.dev.note(
-        "me/proj",
-        { kind: "nope", summary: "x", issue: issue.number },
-        "sess-1",
-      ),
-    ).toThrowError(/invalid kind/);
-  });
-
-  test("requires a summary", () => {
-    expect(() =>
-      svc.dev.note(
-        "me/proj",
-        { kind: "action", summary: "  ", issue: 1 },
-        "sess-1",
-      ),
-    ).toThrowError(/summary is required/);
-  });
-
-  test("requires one of issue or pr", () => {
-    expect(() =>
-      svc.dev.note("me/proj", { kind: "action", summary: "x" }, "sess-1"),
-    ).toThrowError(/one of issue or pr/);
   });
 });
 

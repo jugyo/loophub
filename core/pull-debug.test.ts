@@ -59,13 +59,7 @@ test("pulls.debug aggregates raw rows, git facts, notes, and events for a PR", a
     "sess-1",
   );
 
-  // A dev note (dev.note event) and a review note for this PR, so the dump's note/event
-  // sections are non-empty.
-  svc.dev.note(
-    "me/proj",
-    { kind: "decision", summary: "chose X", pr: pr.number },
-    "sess-1",
-  );
+  // A review note for this PR, so the dump's note section is non-empty.
   await svc.reviewNotes.create(
     "me/proj",
     { path: "f.txt", body: "edits f.txt", pr: pr.number },
@@ -96,7 +90,6 @@ test("pulls.debug aggregates raw rows, git facts, notes, and events for a PR", a
   expect(dump.review_notes.some((n: any) => n.path === "f.txt")).toBe(true);
   const types = dump.events.map((e: any) => e.type);
   expect(types).toContain("pull_request.opened");
-  expect(types).toContain("dev.note");
 
   // Dev session attribution carried through.
   expect(dump.session?.id).toBe("sess-1");

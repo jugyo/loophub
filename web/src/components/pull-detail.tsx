@@ -35,11 +35,9 @@ import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useIssueComments } from "@/queries/issues";
 import {
-  type DevNote,
   useMergePull,
   usePull,
   usePullComments,
-  usePullDevNotes,
   usePullFiles,
   usePullHandoffs,
   usePullReviewNotes,
@@ -65,7 +63,6 @@ export function PullDetail({
   const reviewsQuery = usePullReviews(owner, repo, number);
   const lineCommentsQuery = usePullComments(owner, repo, number);
   const commentsQuery = useIssueComments(owner, repo, number);
-  const devNotesQuery = usePullDevNotes(owner, repo, number);
   const reviewNotesQuery = usePullReviewNotes(owner, repo, number);
   const handoffsQuery = usePullHandoffs(owner, repo, number);
 
@@ -106,14 +103,6 @@ export function PullDetail({
             error banner (#323), which clears on route change, so a `Merge failed: …` error can no
             longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
         <PullHeader owner={owner} repo={repo} pull={pull} />
-
-        <DevNoteTimeline
-          owner={owner}
-          repo={repo}
-          notes={devNotesQuery.data}
-          isLoading={devNotesQuery.isLoading}
-          isError={devNotesQuery.isError}
-        />
 
         <ReviewList
           owner={owner}
@@ -388,73 +377,6 @@ function GithubPrAction({
 // message, else `"<prefix>."`. Mirrors the wording the inline isError blocks used before #323.
 function failureMessage(prefix: string, error: unknown): string {
   return error instanceof Error ? `${prefix}: ${error.message}` : `${prefix}.`;
-}
-
-// dev.note kind → badge tone (reuses the existing badge palette; no new CSS).
-const DEV_NOTE_TONE: Record<string, BadgeTone> = {
-  decision: "open",
-  action: "agent",
-  assumption: "unknown",
-  blocker: "conflict",
-};
-
-function DevNoteTimeline({
-  owner,
-  repo,
-  notes,
-  isLoading,
-  isError,
-}: {
-  owner: string;
-  repo: string;
-  notes: DevNote[] | undefined;
-  isLoading: boolean;
-  isError: boolean;
-}) {
-  // Hide the section entirely until there is something to show, so PRs without a dev loop
-  // (e.g. human-authored) stay uncluttered.
-  if (!isLoading && !isError && (!notes || notes.length === 0)) return null;
-
-  return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Dev notes</h2>
-      {isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading dev notes…
-        </div>
-      ) : isError ? (
-        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
-          Failed to load dev notes.
-        </div>
-      ) : (
-        <ol className="flex flex-col gap-2">
-          {(notes ?? []).map((n) => (
-            <li key={n.id} className="rounded-md border p-3">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <Badge tone={DEV_NOTE_TONE[n.kind] ?? "unknown"}>
-                  {n.kind}
-                </Badge>
-                <span className="font-medium">{n.summary}</span>
-                <span className="text-xs text-muted-foreground">
-                  @{n.actor} · {relativeTime(n.created_at)}
-                </span>
-              </div>
-              {n.body ? (
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">
-                    Details
-                  </summary>
-                  <Markdown owner={owner} repo={repo} className="mt-1">
-                    {n.body}
-                  </Markdown>
-                </details>
-              ) : null}
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
-  );
 }
 
 const REVIEW_VERDICT_TONE: Record<PullReview["state"], string> = {

@@ -17,7 +17,7 @@ export type BadgeTone =
   | "conflict"
   | "working"
   | "unknown"
-  // Violet tone, still used by the dev-note "action" badge (pull-detail.tsx).
+  // Violet tone, used by the related-sessions "dev" and handoff "code" badges.
   | "agent";
 
 export interface Badge {

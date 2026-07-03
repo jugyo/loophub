@@ -113,8 +113,8 @@ Example: `http://localhost:8730/r/jugyo/local-github/issues/73`
 
 ## Language
 
-**Reader-facing output** — PR title/body headings, user-facing summaries,
-`review_notes`, and `lh dev note` hand-off text — must match the **PR's language**. Code, CLI,
+**Reader-facing output** — PR title/body headings, user-facing summaries, and
+`review_notes` — must match the **PR's language**. Code, CLI,
 identifiers, and commit messages stay English.
 
 Resolve the target language once, taking the first that applies: (1) the **linked issue**'s language
@@ -211,26 +211,6 @@ it only if one applies.
 
 Match existing naming, types, tests, and style. Stay within issue scope. Commit messages: concise
 outcome only (no narrative).
-
-#### Record key decisions (optional, for later retro)
-
-When you make a judgement that won't be obvious from the diff or PR body — a scope call, a step
-deliberately skipped, a non-obvious tradeoff — record it so a later `/lh-retro` can recover the
-*why* (design §4.3.4, `docs/loop-retrospective-design.ja.md`):
-
-```sh
-lh dev note --kind decision --summary "<what you decided>" --body "<why>" --pr <m> --repo <repo>
-```
-
-`--kind` is one of `decision|action|assumption|blocker`. This emits a small `dev.note` event (stored
-in the `events` table — no transcript). **Non-blocking: a failed note must never stop implementation.**
-Don't add notes routinely; reserve them for judgements that won't surface in the diff/PR body. Inside a
-worktree `--repo owner/name` is required.
-
-**Redaction**: `--summary` / `--body` must hold a *redacted rationale only* — state the decision and
-why in your own words. Never paste tool output, file contents, credentials/tokens, env dumps, or
-absolute paths into them. The note is stored at-rest and is later read by `/lh-retro`, so a secret
-pasted here persists and can flow into retro findings.
 
 ### 4. Test
 
