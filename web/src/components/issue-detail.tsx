@@ -4,7 +4,7 @@
 // Markdown and rendered as GFM via <Markdown>.
 
 import { Link } from "@tanstack/react-router";
-import { ChevronDown, Loader2, Play } from "lucide-react";
+import { ChevronDown, Loader2, Play, Terminal } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
   CodingAgent,
@@ -24,6 +24,7 @@ import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { Markdown } from "@/components/markdown";
 import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminalLauncher } from "@/components/terminal-controller";
+import { useToast } from "@/components/toast";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CODING_AGENT_LABELS, MODEL_SUGGESTIONS } from "@/lib/agent-models";
@@ -45,7 +46,7 @@ import {
   useSetIssueState,
 } from "@/queries/issues";
 import { useSettings } from "@/queries/settings";
-import { useHerdrSessions } from "@/queries/terminal";
+import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
 
 export function IssueDetail({
   owner,
@@ -203,6 +204,7 @@ function IssueHeader({
       </div>
 
       <div className="flex flex-wrap justify-end gap-2">
+        <IssueHerdrPaneButton owner={owner} repo={repo} issue={issue} />
         <Button
           variant="secondary"
           disabled={setState.isPending}
@@ -222,6 +224,49 @@ function IssueHeader({
         )}
       </div>
     </div>
+  );
+}
+
+function IssueHerdrPaneButton({
+  owner,
+  repo,
+  issue,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+}) {
+  const paneId = issue.herdr_pane?.pane_id;
+  const focus = useFocusHerdrAgent();
+  const { showError } = useToast();
+  if (!paneId) return null;
+  return (
+    <Button
+      variant="secondary"
+      disabled={focus.isPending}
+      title="Focus the Herdr terminal that created this issue"
+      aria-label={`Focus Herdr terminal for issue #${issue.number}`}
+      onClick={() =>
+        focus.mutate(
+          { repo: `${owner}/${repo}`, paneId },
+          {
+            onError: (e) =>
+              showError(
+                e instanceof Error
+                  ? e.message
+                  : "Failed to focus the Herdr terminal.",
+              ),
+          },
+        )
+      }
+    >
+      {focus.isPending ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : (
+        <Terminal className="size-4" />
+      )}
+      Focus terminal
+    </Button>
   );
 }
 
@@ -304,10 +349,10 @@ function BuildControls({
         Build
       </Button>
       <Button
-        aria-label="Choose agent and model for this build"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        title="Build with a specific agent / model (this launch only)"
+        aria-label="Choose agent and model"
+        title="Choose agent and model for this launch"
         disabled={isBuildLoading}
         className="rounded-l-none border-l border-primary-foreground/25 px-2"
         onClick={() => setMenuOpen((v) => !v)}

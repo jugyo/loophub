@@ -40,6 +40,16 @@ export interface GithubIssue {
   created_at: string;
 }
 
+export interface IssueHerdrPane {
+  launch_id: string;
+  repo_id: number;
+  issue_id: number | null;
+  pane_id: string | null;
+  session_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ---- repos ----
 export function splitName(fullName: string): [string, string] {
   return (fullName.includes("/") ? fullName.split("/") : ["me", fullName]) as [
@@ -205,7 +215,11 @@ export function deleteRepo(owner: string, name: string): boolean {
     // #614: same FK-with-no-cascade situation as github_pulls — sweep the import links before the
     // issues delete, or `lh repo remove` fails once any issue in the repo was imported from GitHub.
     db.run(`DELETE FROM github_issues WHERE issue_id IN (${ph})`, issueIds);
+    db.run(`DELETE FROM issue_herdr_panes WHERE issue_id IN (${ph})`, issueIds);
   }
+  // New Issue pane links may be created before issue rows exist (issue_id NULL), so drop by repo_id
+  // before the final repos delete to avoid orphaned rows blocking deletion.
+  db.run(`DELETE FROM issue_herdr_panes WHERE repo_id = ?`, [repo.id]);
   // Notes are deleted by repo_id (#216): this covers both PR-linked notes and PR-independent ones
   // (issue_id NULL), so no separate issue_id sweep is needed.
   db.run(`DELETE FROM review_notes WHERE repo_id = ?`, [repo.id]);
@@ -249,6 +263,55 @@ export function createIssue(
        VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(repoId, number, kind, title, body, author, t, t);
+}
+
+export function upsertIssueHerdrPane(input: {
+  launchId: string;
+  repoId: number;
+  issueId?: number | null;
+  paneId?: string | null;
+  sessionName?: string | null;
+}): IssueHerdrPane {
+  const t = now();
+  db.query(
+    `INSERT INTO issue_herdr_panes
+       (launch_id, repo_id, issue_id, pane_id, session_name, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(launch_id) DO UPDATE SET
+       repo_id = excluded.repo_id,
+       issue_id = COALESCE(excluded.issue_id, issue_herdr_panes.issue_id),
+       pane_id = COALESCE(excluded.pane_id, issue_herdr_panes.pane_id),
+       session_name = COALESCE(excluded.session_name, issue_herdr_panes.session_name),
+       updated_at = excluded.updated_at
+     RETURNING *`,
+  ).get(
+    input.launchId,
+    input.repoId,
+    input.issueId ?? null,
+    input.paneId ?? null,
+    input.sessionName ?? null,
+    t,
+    t,
+  );
+  return getIssueHerdrPaneByLaunch(input.launchId) as IssueHerdrPane;
+}
+
+export function getIssueHerdrPaneByLaunch(
+  launchId: string,
+): IssueHerdrPane | null {
+  return (
+    (db
+      .query(`SELECT * FROM issue_herdr_panes WHERE launch_id = ?`)
+      .get(launchId) as IssueHerdrPane) ?? null
+  );
+}
+
+export function getIssueHerdrPane(issueId: number): IssueHerdrPane | null {
+  return (
+    (db
+      .query(`SELECT * FROM issue_herdr_panes WHERE issue_id = ?`)
+      .get(issueId) as IssueHerdrPane) ?? null
+  );
 }
 
 export function getIssue(repoId: number, number: number): any {

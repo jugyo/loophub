@@ -158,6 +158,46 @@ describe("IssueDetail", () => {
     expect(screen.queryByText(/^PR #/)).toBeNull();
   });
 
+  it("shows the New Issue Herdr pane focus button when a pane is linked", async () => {
+    renderDetail(
+      () => ({
+        ...issue,
+        herdr_pane: {
+          launch_id: "launch-1",
+          pane_id: "w4:p2",
+          session_name: "me-proj-12345678",
+        },
+      }),
+      undefined,
+      false,
+      {
+        "terminal/focusAgent": () => ({ ok: true }),
+      },
+    );
+
+    const button = await screen.findByRole("button", {
+      name: "Focus Herdr terminal for issue #12",
+    });
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(rpcCall("terminal/focusAgent")?.params).toEqual({
+        repo: "me/proj",
+        paneId: "w4:p2",
+      });
+    });
+  });
+
+  it("hides the New Issue Herdr pane focus button when no pane is linked", async () => {
+    renderDetail(() => ({ ...issue, herdr_pane: null }));
+
+    await screen.findByText("ui2: issue detail");
+    expect(
+      screen.queryByRole("button", {
+        name: "Focus Herdr terminal for issue #12",
+      }),
+    ).toBeNull();
+  });
+
   it("renders every linked PR from the detail response array", async () => {
     const multiPr: Issue = {
       ...issue,

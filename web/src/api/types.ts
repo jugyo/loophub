@@ -312,6 +312,12 @@ export interface Issue {
   updated_at: string;
   /** Sessions related to this issue (#298), newest first. Detail response only. */
   related_sessions?: RelatedSession[];
+  /** Herdr pane captured from the New Issue flow (#670). Detail response only. */
+  herdr_pane?: {
+    launch_id: string;
+    pane_id: string | null;
+    session_name: string | null;
+  } | null;
   pull_request?: unknown;
   /**
    * Primary linked PR. On the issue-detail response this is the single open PR;

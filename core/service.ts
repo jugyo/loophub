@@ -3,7 +3,7 @@
 // events, and returns serialized wire objects. The CLI calls these directly (S5); the
 // JSON-RPC layer (S2) will wrap the same procedures. No HTTP/Request types leak in here.
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -79,6 +79,7 @@ import {
 } from "./merge-mode.ts";
 import {
   decideResume,
+  ENV_ISSUE_CREATE_HERDR_LAUNCH,
   RUNTIME_CLAUDE_CODE,
   resolveRuntimeResume,
   resolveWorktreeIdentity,
@@ -127,6 +128,7 @@ import {
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
   herdrWorktreeOpenArgv,
+  parseHerdrAgentPaneId,
   parseHerdrRootPaneId,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
@@ -587,6 +589,14 @@ function runHerdrLaunch(
   return runHerdr(command, args, cwd).then(() => {});
 }
 
+function runHerdrLaunchCapture(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<string> {
+  return runHerdr(command, args, cwd, { captureStdout: true });
+}
+
 // Herdr query command for the sidebar status sweep (#495): capture stdout with a hard
 // timeout. Rides on runHerdr so the spawn/capture-cap/error semantics stay in one place;
 // callers treat any rejection as "no data". The cwd is irrelevant to `herdr session list` /
@@ -892,12 +902,18 @@ export const terminal = {
       });
     }
 
+    const issueCreateLaunchId =
+      input.workflow === "issue-create" ? randomUUID() : null;
     const command = commandForHerdrLaunch({
       repo: r.full_name,
       workflow: input.workflow,
       prNumber: input.prNumber,
       session: input.session,
       cwd: input.cwd,
+      env:
+        issueCreateLaunchId != null
+          ? { [ENV_ISSUE_CREATE_HERDR_LAUNCH]: issueCreateLaunchId }
+          : undefined,
     });
     if (!command.trim()) throw new ServiceError(422, "command is required");
 
@@ -1041,7 +1057,27 @@ export const terminal = {
     // synchronous spawnSync here would stall the whole server for as long as the Herdr launch
     // takes (or hangs).
     try {
-      await runHerdrLaunch(plan.argv[0], plan.argv.slice(1), plan.cwd);
+      const agentOut =
+        issueCreateLaunchId != null
+          ? await runHerdrLaunchCapture(
+              plan.argv[0],
+              plan.argv.slice(1),
+              plan.cwd,
+            )
+          : await runHerdrLaunch(
+              plan.argv[0],
+              plan.argv.slice(1),
+              plan.cwd,
+            ).then(() => "");
+      const agentPaneId = parseHerdrAgentPaneId(agentOut);
+      if (issueCreateLaunchId != null && agentPaneId) {
+        S.upsertIssueHerdrPane({
+          launchId: issueCreateLaunchId,
+          repoId: r.id,
+          paneId: agentPaneId,
+          sessionName: plan.sessionName,
+        });
+      }
     } catch (e) {
       // Don't leave the just-created empty tab (or workspace) behind; fire-and-forget cleanup.
       // herdr refuses to close a workspace's last remaining tab, so whenever a workspace was
@@ -1834,6 +1870,7 @@ export const issues = {
     // Detail-only (#614): the GitHub issue this one was imported from, or null. Mirrors how PR detail
     // surfaces github_pull; kept off the cheap list serializer.
     out.github_issue = githubIssueJSON(S.getGithubIssue(row.id));
+    out.herdr_pane = S.getIssueHerdrPane(row.id);
     return out;
   },
 
@@ -1854,6 +1891,14 @@ export const issues = {
       actor,
     ) as any;
     if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
+    const launchId = process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
+    if (launchId) {
+      S.upsertIssueHerdrPane({
+        launchId,
+        repoId: r.id,
+        issueId: issue.id,
+      });
+    }
     S.emitEvent(r.id, "issue.opened", actor, { number: issue.number });
     return issueJSON(S.getIssue(r.id, issue.number), r);
   },

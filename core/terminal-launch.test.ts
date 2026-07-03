@@ -17,6 +17,7 @@ import {
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
   herdrWorktreeOpenArgv,
+  parseHerdrAgentPaneId,
   parseHerdrRootPaneId,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
@@ -126,6 +127,18 @@ describe("herdr terminal launch", () => {
         workflow: "issue-create",
       }),
     ).toBe("lh issue new --repo 'bad/re'\\''po; touch nope'");
+  });
+
+  test("prefixes New Issue commands with a shell-quoted launch correlation env var", () => {
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "issue-create",
+        env: { LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH: "launch-1" },
+      }),
+    ).toBe(
+      "LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH='launch-1' lh issue new --repo 'jugyo/loophub'",
+    );
   });
 
   test("builds Herdr agent start argv without shell interpolation", () => {
@@ -328,6 +341,25 @@ describe("herdr terminal launch", () => {
       parseHerdrRootPaneId(
         JSON.stringify({ result: { root_pane: { pane_id: "--workspace" } } }),
       ),
+    ).toBeNull();
+  });
+
+  test("parses the agent pane id from herdr agent start output", () => {
+    expect(
+      parseHerdrAgentPaneId(
+        '{"result":{"agent":{"name":"New issue","pane_id":"w4:p2"}}}',
+      ),
+    ).toBe("w4:p2");
+    expect(
+      parseHerdrAgentPaneId('{"result":{"pane":{"pane_id":"w4:p3"}}}'),
+    ).toBe("w4:p3");
+    expect(parseHerdrAgentPaneId('{"result":{"pane_id":"w4:p4"}}')).toBe(
+      "w4:p4",
+    );
+    expect(parseHerdrAgentPaneId("")).toBeNull();
+    expect(parseHerdrAgentPaneId("not json")).toBeNull();
+    expect(
+      parseHerdrAgentPaneId('{"result":{"agent":{"pane_id":"--bad"}}}'),
     ).toBeNull();
   });
 

@@ -97,10 +97,18 @@ export function commandForHerdrLaunch(input: {
   session?: string;
   cwd?: string;
   codingAgent?: CodingAgent;
+  env?: Record<string, string>;
 }): string {
+  const envPrefix = input.env
+    ? Object.entries(input.env)
+        .map(([key, value]) => `${key}=${shellArg(value)}`)
+        .join(" ")
+    : "";
+  const withEnv = (command: string) =>
+    envPrefix ? `${envPrefix} ${command}` : command;
   if (input.workflow === "issue-create") {
     // `lh issue new` is the recorded LoopHub entrypoint for the /lh-issue-create workflow.
-    return `lh issue new --repo ${shellArg(input.repo)}`;
+    return withEnv(`lh issue new --repo ${shellArg(input.repo)}`);
   }
   if (input.workflow === "github-pr-export" && input.prNumber) {
     const command = shellArg(`/create-github-pr ${input.prNumber}`);
@@ -334,6 +342,26 @@ export function parseHerdrRootPaneId(stdout: string): string | null {
     const parsed = JSON.parse(stdout);
     const paneId = parsed?.result?.root_pane?.pane_id;
     return typeof paneId === "string" && HERDR_ID.test(paneId) ? paneId : null;
+  } catch {
+    return null;
+  }
+}
+
+// `herdr agent start` reports the pane the new agent is running in. Herdr has used a couple of
+// nearby shapes across commands, so accept the explicit agent/pane fields and validate exactly as
+// other pane ids before persisting or focusing it.
+export function parseHerdrAgentPaneId(stdout: string): string | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    for (const candidate of [
+      parsed?.result?.agent?.pane_id,
+      parsed?.result?.pane?.pane_id,
+      parsed?.result?.pane_id,
+    ]) {
+      if (typeof candidate === "string" && HERDR_ID.test(candidate))
+        return candidate;
+    }
+    return null;
   } catch {
     return null;
   }

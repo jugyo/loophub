@@ -432,6 +432,22 @@ CREATE TABLE IF NOT EXISTS github_issues (
 );
 
 CREATE INDEX IF NOT EXISTS idx_github_issues_source ON github_issues(owner, repo, number);
+
+-- New Issue Herdr pane links (#670). A web New Issue launch creates a Herdr pane before an issue
+-- exists, while lh issue create creates the issue from inside that pane later. launch_id is the
+-- durable correlation key both sides know; issue_id and pane_id can arrive in either order.
+CREATE TABLE IF NOT EXISTS issue_herdr_panes (
+  launch_id    TEXT PRIMARY KEY,
+  repo_id      INTEGER NOT NULL REFERENCES repos(id),
+  issue_id     INTEGER REFERENCES issues(id),
+  pane_id      TEXT,
+  session_name TEXT,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_herdr_panes_issue
+  ON issue_herdr_panes(issue_id) WHERE issue_id IS NOT NULL;
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）

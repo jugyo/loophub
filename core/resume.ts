@@ -60,6 +60,12 @@ export const SESSION_KIND_ISSUE_CREATE = "issue-create";
 // (#299) — the issue number is unknown at launch, so the link is recorded after creation.
 export const ENV_ISSUE_CREATE_SESSION = "LOOPHUB_ISSUE_CREATE_SESSION";
 
+// Correlates the Herdr pane created by the web New Issue launcher with the issue later filed
+// inside that pane. The pane id is only known after `herdr agent start` returns; the issue number
+// is only known after `lh issue create`, so both sides upsert against this launch id.
+export const ENV_ISSUE_CREATE_HERDR_LAUNCH =
+  "LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH";
+
 // A Claude session id is a UUID (`claude --session-id` requires one; `lh dev` stores the exact
 // UUID it generates). `lh resume` reads a *stored* id and feeds it to `claude --resume <id>`, so
 // validate the shape before it reaches argv: claude's `-r, --resume [value]` takes an OPTIONAL
