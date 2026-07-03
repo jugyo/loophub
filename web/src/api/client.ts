@@ -25,6 +25,7 @@ import type {
   Repo,
   RepoMergeMode,
   ReviewNote,
+  Stats,
   TerminalLaunchResult,
 } from "./types";
 
@@ -204,6 +205,12 @@ export function updateSettings(
     ...input,
     session_id: sessionId,
   });
+}
+
+// --- stats ---
+// Database statistics for the /stats page (#587).
+export function getStats() {
+  return rpc<Stats>("stats/get");
 }
 
 // --- terminal launch ---

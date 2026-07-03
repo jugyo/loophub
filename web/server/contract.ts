@@ -917,6 +917,15 @@ export const methods: Record<string, MethodDef> = {
     handler: () => svc.dashboard.overview(),
   },
 
+  // ---- stats ----
+  "stats/get": {
+    description:
+      "Database statistics: per-table row counts, DB file size (WAL included), and per-repo issue/PR tallies.",
+    params: EMPTY_PARAMS,
+    result: anyObject,
+    handler: () => svc.stats.get(),
+  },
+
   // ---- sync ----
   "sync/run": {
     description:

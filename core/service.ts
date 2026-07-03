@@ -94,6 +94,7 @@ import {
   reviewJSON,
   reviewNoteJSON,
 } from "./serialize.ts";
+import { databaseSize, repoCounts, tableRowCounts } from "./stats.ts";
 import * as S from "./store.ts";
 import {
   buildHerdrLaunchPlan,
@@ -3211,6 +3212,20 @@ export const dashboard = {
     // Surface the issue cap so the UI can note "showing the N most recent"
     // without duplicating the magic number client-side.
     return { issues, recentIssuesLimit: DASHBOARD_RECENT_ISSUES_LIMIT };
+  },
+};
+
+// ===== stats (#587) =====
+export const stats = {
+  // Database statistics for the web /stats page: row counts for every user table,
+  // the SQLite file's on-disk size (WAL included), and per-repo issue/PR tallies.
+  // Pure read-only aggregation (core/stats.ts); the web renders the numbers as-is.
+  get() {
+    return {
+      database: databaseSize(),
+      tables: tableRowCounts(),
+      repos: repoCounts(),
+    };
   },
 };
 

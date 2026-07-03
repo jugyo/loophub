@@ -9,6 +9,7 @@ import { repoRoute } from "./routes/repo";
 import { repoSettingsRoute } from "./routes/repo-settings";
 import { rootRoute } from "./routes/root";
 import { settingsRoute } from "./routes/settings";
+import { statsRoute } from "./routes/stats";
 
 // App-shell route tree. Leaf components are placeholders; later UI issues
 // replace each screen in place without changing this tree.
@@ -24,6 +25,7 @@ const routeTree = rootRoute.addChildren([
   refRoute,
   mergedRoute,
   settingsRoute,
+  statsRoute,
 ]);
 
 export const router = createRouter({ routeTree });

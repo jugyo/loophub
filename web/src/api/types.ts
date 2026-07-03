@@ -235,6 +235,26 @@ export interface GlobalSettings {
   codingAgent: CodingAgent;
 }
 
+/** Database statistics (`stats/get`, #587) for the /stats page. */
+export interface Stats {
+  database: {
+    path: string;
+    size_bytes: number;
+    /** Size of the `-wal` companion file, or null when none exists. */
+    wal_size_bytes: number | null;
+    /** size_bytes + wal_size_bytes — the DB's real on-disk footprint under WAL. */
+    total_size_bytes: number;
+  };
+  /** Row counts for every user table, name-ordered. */
+  tables: { name: string; rows: number }[];
+  /** Per-repo issue/PR tallies. A merged PR counts as merged only, not closed. */
+  repos: {
+    full_name: string;
+    issues: { open: number; closed: number };
+    pulls: { open: number; merged: number; closed: number };
+  }[];
+}
+
 /** The GitHub PR a loophub PR was exported to (#406), or null until the export skill records one. */
 export interface GithubPull {
   number: number;
