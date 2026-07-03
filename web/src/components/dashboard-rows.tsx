@@ -430,9 +430,9 @@ function HerdrBadge({
       className={cn(
         badgeVariants({ tone: "unknown" }),
         // Terminal-flavored look, not the pill shape the rest of the badges use: a near-square
-        // corner radius and a fixed dark-gray palette (independent of light/dark theme) so it
-        // reads as a little terminal chip rather than another status pill.
-        "shrink-0 gap-1 rounded-[2px] border-zinc-700 bg-zinc-800 font-mono text-zinc-200 hover:opacity-80 disabled:pointer-events-none disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300",
+        // corner radius and a gray zinc palette per theme (mid-gray in light, near-black in
+        // dark) so it reads as a little terminal chip rather than another status pill.
+        "shrink-0 gap-1 rounded-sm border-zinc-400 bg-zinc-500 font-mono text-zinc-50 hover:opacity-80 disabled:pointer-events-none disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300",
       )}
     >
       <Terminal className="size-3" />
