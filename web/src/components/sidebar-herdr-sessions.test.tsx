@@ -13,6 +13,14 @@ import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { HerdrAgentRead, HerdrSessions } from "@/api/types";
 import { SidebarHerdrSessions } from "./sidebar-herdr-sessions";
 
+// ToastProvider reads the router (useRouterState) to dismiss on navigation, which isn't
+// mounted here — mock useToast to a spy so the focus-error path can be asserted without a
+// router. Only the focus button uses it.
+const { showError } = vi.hoisted(() => ({ showError: vi.fn() }));
+vi.mock("@/components/toast", () => ({
+  useToast: () => ({ showError, showSuccess: vi.fn() }),
+}));
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -485,6 +493,82 @@ describe("SidebarHerdrSessions", () => {
 
       await waitFor(() => expect(rpcCall("terminal/agentRead")).toBeDefined());
       expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+  });
+
+  // #617: terminal icon per row that focuses the agent's herdr pane.
+  describe("focus button (#617)", () => {
+    const RUNNING: HerdrSessions = {
+      repos: [
+        {
+          repo: "me/app",
+          session_name: "me-app-12345678",
+          agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+        },
+      ],
+    };
+
+    it("focuses the agent's pane via terminal/focusAgent when the icon is clicked", async () => {
+      renderWithSessions(RUNNING, undefined, {
+        "terminal/focusAgent": () => ({ ok: true }),
+      });
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Focus dev #11's pane" }),
+      );
+
+      await waitFor(() => {
+        expect(rpcCall("terminal/focusAgent")?.params).toEqual({
+          repo: "me/app",
+          paneId: "w1:p1",
+        });
+      });
+    });
+
+    it("hides the focus icon for a synthetic-id agent that has no real pane (#617 AC)", async () => {
+      renderWithSessions({
+        repos: [
+          {
+            repo: "me/app",
+            session_name: "me-app-12345678",
+            agents: [
+              {
+                id: `${String.fromCharCode(0)}idx:0`,
+                name: "dev #11",
+                status: "working",
+              },
+            ],
+          },
+        ],
+      });
+
+      // The row (and its kill button) still render; only the focus icon is withheld.
+      await screen.findByText("dev #11");
+      expect(
+        screen.getByRole("button", { name: "Close dev #11's pane" }),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("button", { name: "Focus dev #11's pane" }),
+      ).toBeNull();
+    });
+
+    it("surfaces a toast when focusing fails (#617 AC)", async () => {
+      showError.mockClear();
+      renderWithSessions(RUNNING, undefined, {
+        "terminal/focusAgent": () => {
+          throw new RpcFault(422, "herdr command not found on PATH");
+        },
+      });
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Focus dev #11's pane" }),
+      );
+
+      await waitFor(() => {
+        expect(showError).toHaveBeenCalledWith(
+          expect.stringMatching(/herdr command not found on PATH/),
+        );
+      });
     });
   });
 

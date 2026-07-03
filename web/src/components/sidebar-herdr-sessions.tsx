@@ -6,12 +6,14 @@
 // on error, or when no session has agents, so the section never gets in the way when
 // herdr isn't in use.
 import { AnsiUp } from "ansi_up";
-import { X } from "lucide-react";
+import { Terminal, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { HerdrAgent } from "@/api/types";
+import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  useFocusHerdrAgent,
   useHerdrAgentRead,
   useHerdrSessions,
   useKillHerdrAgent,
@@ -111,6 +113,13 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   } | null>(null);
   const [confirming, setConfirming] = useState(false);
   const killAgent = useKillHerdrAgent();
+  const focusAgent = useFocusHerdrAgent();
+  const { showError } = useToast();
+  // Focus switches herdr's focus to this agent's pane (terminal/focusAgent, #578 — the same
+  // action as the PR sidebar's Herdr section and the issue-list badge). `agent.id` is the pane
+  // id whenever herdr reported one (see agentReadTarget); the synthetic idx: fallback has no
+  // real pane to focus, so the button is hidden for it (#617 AC).
+  const canFocus = !agent.id.startsWith(NO_PANE_ID_PREFIX);
   // The agent's worktree PR is merged/closed (#611): gray the row out so no-longer-needed
   // agents stand out. Display only — hover preview and the kill button keep working, since
   // a stale agent is exactly the one someone wants to inspect or close.
@@ -235,6 +244,30 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
         >
           {agent.status}
         </span>
+        {canFocus ? (
+          <button
+            type="button"
+            aria-label={`Focus ${agent.name}'s pane`}
+            title="Focus the running Herdr terminal"
+            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+            disabled={focusAgent.isPending}
+            onClick={() =>
+              focusAgent.mutate(
+                { repo, paneId: agent.id },
+                {
+                  onError: (e) =>
+                    showError(
+                      e instanceof Error
+                        ? e.message
+                        : "Failed to focus the Herdr terminal.",
+                    ),
+                },
+              )
+            }
+          >
+            <Terminal className="size-3.5" />
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label={`Close ${agent.name}'s pane`}
