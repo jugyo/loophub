@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import type { Repo } from "@/api/types";
+import { Logo } from "@/components/logo";
 import { SidebarHerdrSessions } from "@/components/sidebar-herdr-sessions";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
@@ -86,7 +87,8 @@ export function AppSidebar() {
   return (
     <aside className="relative flex h-full w-[var(--lh-sidebar-w)] shrink-0 flex-col border-r bg-card">
       <div className="flex h-14 items-center px-4">
-        <Link to="/" className="text-lg font-semibold">
+        <Link to="/" className="flex items-center gap-2 text-lg font-semibold">
+          <Logo className="size-6" />
           LoopHub
         </Link>
       </div>

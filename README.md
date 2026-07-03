@@ -1,4 +1,9 @@
-# LoopHub
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/loophub-logo-dark.svg">
+    <img src="docs/assets/loophub-logo.svg" alt="LoopHub" height="40">
+  </picture>
+</h1>
 
 ローカルの git リポジトリに対する GitHub 風の issue / PR ハブ。AI エージェントが動かす
 開発ループを、人間が「監督者」として最小の注意で見るための UI/CLI。
