@@ -135,6 +135,135 @@ export function herdrPullWorkspacesFromAgentList(
   return [...byPull.values()];
 }
 
+/** One workspace inside a herdr session, from `herdr --session <name> workspace list`. */
+export interface HerdrWorkspace {
+  id: string;
+  label: string;
+  number: number;
+}
+
+export function parseHerdrWorkspaceList(stdout: string): HerdrWorkspace[] {
+  const parsed = tryParse(stdout);
+  const workspaces = (parsed as { result?: { workspaces?: unknown } })?.result
+    ?.workspaces;
+  if (!Array.isArray(workspaces)) return [];
+  const out: HerdrWorkspace[] = [];
+  for (const w of workspaces) {
+    if (typeof w !== "object" || w === null) continue;
+    const rec = w as {
+      workspace_id?: unknown;
+      label?: unknown;
+      number?: unknown;
+    };
+    if (typeof rec.workspace_id !== "string" || rec.workspace_id === "")
+      continue;
+    out.push({
+      id: rec.workspace_id,
+      label: typeof rec.label === "string" ? rec.label : rec.workspace_id,
+      number: typeof rec.number === "number" ? rec.number : 0,
+    });
+  }
+  return out;
+}
+
+/** One tab inside a herdr session, from `herdr --session <name> tab list`. */
+export interface HerdrTab {
+  id: string;
+  workspaceId: string;
+  number: number;
+}
+
+export function parseHerdrTabList(stdout: string): HerdrTab[] {
+  const parsed = tryParse(stdout);
+  const tabs = (parsed as { result?: { tabs?: unknown } })?.result?.tabs;
+  if (!Array.isArray(tabs)) return [];
+  const out: HerdrTab[] = [];
+  for (const t of tabs) {
+    if (typeof t !== "object" || t === null) continue;
+    const rec = t as {
+      tab_id?: unknown;
+      workspace_id?: unknown;
+      number?: unknown;
+    };
+    if (
+      typeof rec.tab_id !== "string" ||
+      rec.tab_id === "" ||
+      typeof rec.workspace_id !== "string" ||
+      rec.workspace_id === ""
+    )
+      continue;
+    out.push({
+      id: rec.tab_id,
+      workspaceId: rec.workspace_id,
+      number: typeof rec.number === "number" ? rec.number : 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * One agent placed in a session's workspace/tab, plus the PR its worktree cwd resolves to
+ * (#602 — `lh herdr`'s hierarchical view). A standalone tolerant parse over the same `agent
+ * list` JSON parseHerdrAgentList/herdrPullWorkspacesFromAgentList already read, rather than
+ * joining their outputs by index — parseHerdrAgentList silently drops name-less entries, so
+ * zipping its (filtered) result back against the raw array by position would misalign once any
+ * entry is dropped.
+ */
+export interface HerdrAgentPlacement {
+  id: string;
+  name: string;
+  status: string;
+  workspaceId: string | null;
+  tabId: string | null;
+  pull: number | null;
+}
+
+export function parseHerdrAgentPlacements(
+  stdout: string,
+  worktreeRoot: string,
+  fullName: string,
+): HerdrAgentPlacement[] {
+  const parsed = tryParse(stdout);
+  const agents = (parsed as { result?: { agents?: unknown } })?.result?.agents;
+  if (!Array.isArray(agents)) return [];
+  const out: HerdrAgentPlacement[] = [];
+  for (const a of agents) {
+    if (typeof a !== "object" || a === null) continue;
+    const rec = a as {
+      name?: unknown;
+      agent_status?: unknown;
+      pane_id?: unknown;
+      workspace_id?: unknown;
+      tab_id?: unknown;
+      foreground_cwd?: unknown;
+      cwd?: unknown;
+    };
+    if (typeof rec.name !== "string" || rec.name === "") continue;
+    const cwd =
+      typeof rec.foreground_cwd === "string" && rec.foreground_cwd !== ""
+        ? rec.foreground_cwd
+        : typeof rec.cwd === "string" && rec.cwd !== ""
+          ? rec.cwd
+          : null;
+    out.push({
+      id:
+        typeof rec.pane_id === "string" && rec.pane_id !== ""
+          ? rec.pane_id
+          : `${NO_PANE_ID_PREFIX}${out.length}`,
+      name: rec.name,
+      status: typeof rec.agent_status === "string" ? rec.agent_status : "",
+      workspaceId:
+        typeof rec.workspace_id === "string" ? rec.workspace_id : null,
+      tabId: typeof rec.tab_id === "string" ? rec.tab_id : null,
+      pull:
+        cwd !== null
+          ? pullNumberFromWorktreePath(worktreeRoot, fullName, cwd)
+          : null,
+    });
+  }
+  return out;
+}
+
 /**
  * Match repos to their running herdr session. Session names are deterministic
  * (`herdrSessionName`), so the repo -> session direction needs no herdr state

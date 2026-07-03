@@ -482,3 +482,321 @@ test("terminal.focusAgent surfaces a visible error when herdr is not installed",
     process.env.PATH = ORIGINAL_PATH;
   }
 });
+
+// #602: `lh herdr`'s hierarchical workspace -> tab -> agent(PR) view.
+test("herdr.tree builds the workspace/tab/agent hierarchy, matching an agent's cwd back to its PR", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/herdr-tree",
+  });
+  const sessionName = herdrSessionName(repo);
+  const prWorktree = worktreePath(worktreeRoot(), repo.full_name, 20);
+
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const workspaceList = JSON.stringify({
+    result: {
+      workspaces: [
+        { workspace_id: "w1", label: "pr-20", number: 1 },
+        { workspace_id: "w2", label: "loophub", number: 2 },
+      ],
+    },
+  });
+  const tabList = JSON.stringify({
+    result: {
+      tabs: [
+        { tab_id: "w1:t1", workspace_id: "w1", number: 1 },
+        { tab_id: "w2:t1", workspace_id: "w2", number: 1 },
+      ],
+    },
+  });
+  const agentList = JSON.stringify({
+    result: {
+      agents: [
+        {
+          name: "dev #20",
+          agent_status: "working",
+          pane_id: "w1:p2",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          foreground_cwd: prWorktree,
+        },
+      ],
+    },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `if [ "$3" = "workspace" ]; then printf '%s' '${workspaceList}'; exit 0; fi`,
+      `if [ "$3" = "tab" ]; then printf '%s' '${tabList}'; exit 0; fi`,
+      `if [ "$3" = "agent" ]; then printf '%s' '${agentList}'; exit 0; fi`,
+      "exit 1",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    const result = await svc.herdr.tree({ repo: repo.full_name });
+    expect(result).toEqual({
+      session_name: sessionName,
+      running: true,
+      workspaces: [
+        {
+          id: "w1",
+          label: "pr-20",
+          number: 1,
+          tabs: [
+            {
+              id: "w1:t1",
+              number: 1,
+              agents: [
+                {
+                  id: "w1:p2",
+                  name: "dev #20",
+                  status: "working",
+                  pull: 20,
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: "w2",
+          label: "loophub",
+          number: 2,
+          tabs: [{ id: "w2:t1", number: 1, agents: [] }],
+        },
+      ],
+    });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("herdr.tree reports running: false without querying workspace/tab/agent when the session isn't up yet", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/herdr-tree-not-running",
+  });
+  const sessionName = herdrSessionName(repo);
+  const sessionList = JSON.stringify({
+    sessions: [{ default: true, name: "default", running: true }],
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      "exit 1", // any --session <name> call fails the test if reached
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    expect(await svc.herdr.tree({ repo: repo.full_name })).toEqual({
+      session_name: sessionName,
+      running: false,
+      workspaces: [],
+    });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("herdr.tree reports running: false when herdr is not on PATH", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/herdr-tree-no-herdr",
+  });
+  process.env.PATH = EMPTY_BIN;
+  try {
+    expect(await svc.herdr.tree({ repo: repo.full_name })).toEqual({
+      session_name: herdrSessionName(repo),
+      running: false,
+      workspaces: [],
+    });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+// Round-1 review finding: the session-list check can pass and then a follow-up call can still
+// fail (session dies/errors mid-request) — that must degrade the same as "never running", not
+// leak a raw ServiceError from runHerdr.
+test("herdr.tree degrades to running: false when the session is confirmed running but a follow-up call fails", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/herdr-tree-race",
+  });
+  const sessionName = herdrSessionName(repo);
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      "exit 1", // workspace/tab/agent list all fail, as if the session died mid-request
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    expect(await svc.herdr.tree({ repo: repo.full_name })).toEqual({
+      session_name: sessionName,
+      running: false,
+      workspaces: [],
+    });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+// #602: `lh herdr focus <pr>`.
+test("herdr.focus resolves the PR's running agent and focuses its pane", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/herdr-focus",
+  });
+  const sessionName = herdrSessionName(repo);
+  const prWorktree = worktreePath(worktreeRoot(), repo.full_name, 20);
+  const CALLS_FILE = join(HOME, "herdr-focus-calls.txt");
+
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const agentList = JSON.stringify({
+    result: {
+      agents: [
+        {
+          name: "dev #20",
+          agent_status: "working",
+          pane_id: "w1:p2",
+          foreground_cwd: prWorktree,
+        },
+      ],
+    },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `if [ "$4" = "focus" ]; then echo "$@" >> ${CALLS_FILE}; exit 0; fi`,
+      `printf '%s' '${agentList}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    await expect(
+      svc.herdr.focus({ repo: repo.full_name, pull: 20 }),
+    ).resolves.toEqual({ ok: true, pane_id: "w1:p2" });
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync(CALLS_FILE, "utf8").trim()).toBe(
+      `--session ${sessionName} agent focus w1:p2`,
+    );
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("herdr.focus rejects with 404 when no running agent matches the PR", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/herdr-focus-no-match",
+  });
+  const sessionName = herdrSessionName(repo);
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const emptyAgents = JSON.stringify({ result: { agents: [] } });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `printf '%s' '${emptyAgents}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    await expect(
+      svc.herdr.focus({ repo: repo.full_name, pull: 99 }),
+    ).rejects.toMatchObject({ status: 404 });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+// Same race as herdr.tree above: the session-list check passes, but the follow-up `agent list`
+// call fails — this must report the same 422 "not running" error rather than a raw 500.
+test("herdr.focus rejects with 422 when the session is confirmed running but the follow-up agent list call fails", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/herdr-focus-race",
+  });
+  const sessionName = herdrSessionName(repo);
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      "exit 1", // agent list fails, as if the session died mid-request
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    await expect(
+      svc.herdr.focus({ repo: repo.full_name, pull: 20 }),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: `herdr session "${sessionName}" is not running`,
+    });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("herdr.focus rejects with 422 when the repo's herdr session isn't running", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/herdr-focus-not-running",
+  });
+  const sessionList = JSON.stringify({
+    sessions: [{ default: true, name: "default", running: true }],
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      "exit 1",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    await expect(
+      svc.herdr.focus({ repo: repo.full_name, pull: 20 }),
+    ).rejects.toMatchObject({ status: 422 });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});

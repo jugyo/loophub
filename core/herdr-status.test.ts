@@ -3,10 +3,13 @@ import {
   herdrPullWorkspacesFromAgentList,
   paneRunsClaudeResume,
   parseHerdrAgentList,
+  parseHerdrAgentPlacements,
   parseHerdrAgentRead,
   parseHerdrPaneLayout,
   parseHerdrPaneProcessInfo,
   parseHerdrSessionList,
+  parseHerdrTabList,
+  parseHerdrWorkspaceList,
   reposWithRunningSession,
 } from "./herdr-status.ts";
 import { herdrSessionName } from "./terminal-launch.ts";
@@ -224,6 +227,194 @@ describe("herdrPullWorkspacesFromAgentList", () => {
     expect(herdrPullWorkspacesFromAgentList(input, ROOT, FULL_NAME)).toEqual(
       [],
     );
+  });
+});
+
+describe("parseHerdrWorkspaceList", () => {
+  // Real-shaped fixture from `herdr --session <name> workspace list`.
+  const WORKSPACE_LIST = JSON.stringify({
+    id: "cli:workspace:list",
+    result: {
+      type: "workspace_list",
+      workspaces: [
+        {
+          workspace_id: "wY",
+          label: "pr-597",
+          number: 1,
+          agent_status: "working",
+          focused: false,
+          pane_count: 1,
+          tab_count: 1,
+          active_tab_id: "wY:t1",
+        },
+        { workspace_id: "w13", label: "loophub", number: 4 },
+      ],
+    },
+  });
+
+  test("extracts id (workspace_id), label, and number", () => {
+    expect(parseHerdrWorkspaceList(WORKSPACE_LIST)).toEqual([
+      { id: "wY", label: "pr-597", number: 1 },
+      { id: "w13", label: "loophub", number: 4 },
+    ]);
+  });
+
+  test("falls back to workspace_id for a missing label, and 0 for a missing number", () => {
+    const out = parseHerdrWorkspaceList(
+      JSON.stringify({ result: { workspaces: [{ workspace_id: "w1" }] } }),
+    );
+    expect(out).toEqual([{ id: "w1", label: "w1", number: 0 }]);
+  });
+
+  test.each([
+    ["", "empty"],
+    ["not json", "non-JSON"],
+    ["{}", "missing result"],
+    ['{"result": {}}', "missing workspaces"],
+    ['{"result": {"workspaces": [{}, 42]}}', "malformed entries"],
+  ])("degrades to [] on %s (%s)", (input) => {
+    expect(parseHerdrWorkspaceList(input)).toEqual([]);
+  });
+});
+
+describe("parseHerdrTabList", () => {
+  // Real-shaped fixture from `herdr --session <name> tab list`.
+  const TAB_LIST = JSON.stringify({
+    id: "cli:tab:list",
+    result: {
+      type: "tab_list",
+      tabs: [
+        {
+          tab_id: "w12:t1",
+          workspace_id: "w12",
+          label: "1",
+          number: 1,
+          agent_status: "working",
+          focused: false,
+          pane_count: 1,
+        },
+      ],
+    },
+  });
+
+  test("extracts id (tab_id), workspaceId, and number", () => {
+    expect(parseHerdrTabList(TAB_LIST)).toEqual([
+      { id: "w12:t1", workspaceId: "w12", number: 1 },
+    ]);
+  });
+
+  test("skips a tab missing tab_id or workspace_id", () => {
+    const out = parseHerdrTabList(
+      JSON.stringify({
+        result: {
+          tabs: [{ workspace_id: "w1" }, { tab_id: "w1:t1" }],
+        },
+      }),
+    );
+    expect(out).toEqual([]);
+  });
+
+  test.each([
+    ["", "empty"],
+    ["not json", "non-JSON"],
+    ["{}", "missing result"],
+    ['{"result": {}}', "missing tabs"],
+  ])("degrades to [] on %s (%s)", (input) => {
+    expect(parseHerdrTabList(input)).toEqual([]);
+  });
+});
+
+describe("parseHerdrAgentPlacements", () => {
+  const ROOT = "/home/u/.loophub/worktrees";
+  const FULL_NAME = "me/app";
+
+  test("resolves workspace/tab ids and the PR the agent's cwd belongs to", () => {
+    const out = parseHerdrAgentPlacements(
+      JSON.stringify({
+        result: {
+          agents: [
+            {
+              name: "dev #11",
+              agent_status: "working",
+              pane_id: "w1:p2",
+              tab_id: "w1:t1",
+              workspace_id: "w1",
+              foreground_cwd: `${ROOT}/${FULL_NAME}/pr-12`,
+            },
+          ],
+        },
+      }),
+      ROOT,
+      FULL_NAME,
+    );
+    expect(out).toEqual([
+      {
+        id: "w1:p2",
+        name: "dev #11",
+        status: "working",
+        workspaceId: "w1",
+        tabId: "w1:t1",
+        pull: 12,
+      },
+    ]);
+  });
+
+  test("pull is null when the agent's cwd doesn't resolve to a PR worktree", () => {
+    const out = parseHerdrAgentPlacements(
+      JSON.stringify({
+        result: {
+          agents: [
+            {
+              name: "New issue",
+              agent_status: "idle",
+              pane_id: "w2:p2",
+              tab_id: "w2:t1",
+              workspace_id: "w2",
+              cwd: "/home/u/ws/app",
+            },
+          ],
+        },
+      }),
+      ROOT,
+      FULL_NAME,
+    );
+    expect(out).toEqual([
+      {
+        id: "w2:p2",
+        name: "New issue",
+        status: "idle",
+        workspaceId: "w2",
+        tabId: "w2:t1",
+        pull: null,
+      },
+    ]);
+  });
+
+  test("workspaceId/tabId are null when herdr omits them, id falls back like parseHerdrAgentList", () => {
+    const out = parseHerdrAgentPlacements(
+      JSON.stringify({ result: { agents: [{ name: "no-ids" }] } }),
+      ROOT,
+      FULL_NAME,
+    );
+    expect(out).toEqual([
+      {
+        id: "\u0000idx:0",
+        name: "no-ids",
+        status: "",
+        workspaceId: null,
+        tabId: null,
+        pull: null,
+      },
+    ]);
+  });
+
+  test.each([
+    ["", "empty"],
+    ["not json", "non-JSON"],
+    ["{}", "missing result"],
+    ['{"result": {}}', "missing agents"],
+  ])("degrades to [] on %s (%s)", (input) => {
+    expect(parseHerdrAgentPlacements(input, ROOT, FULL_NAME)).toEqual([]);
   });
 });
 

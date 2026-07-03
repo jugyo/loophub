@@ -1622,6 +1622,53 @@ async function main() {
     return;
   }
 
+  if (group === "herdr") {
+    const s = await svc();
+    const repo = await resolveRepo();
+    if (sub === "focus") {
+      const pull = Number(rest[0]);
+      if (!rest[0] || !Number.isInteger(pull))
+        fail("usage: lh herdr focus <pr> [--repo owner/name]");
+      const result = await run(() => s.herdr.focus({ repo, pull }));
+      out(result);
+      if (!flags.json)
+        console.log(`focused pane ${display(result.pane_id)} (PR #${pull})`);
+      return;
+    }
+    if (sub !== undefined) {
+      usage();
+      return;
+    }
+    const tree = await run(() => s.herdr.tree({ repo }));
+    out(tree);
+    if (flags.json) return;
+    if (!tree.running) {
+      console.log(
+        `herdr session "${tree.session_name}" is not running for ${repo}.`,
+      );
+      return;
+    }
+    console.log(`herdr session: ${tree.session_name}`);
+    if (tree.workspaces.length === 0) console.log("  (no workspaces)");
+    for (const w of tree.workspaces) {
+      console.log(
+        `workspace #${w.number} ${display(w.label)} (${display(w.id)})`,
+      );
+      if (w.tabs.length === 0) console.log("  (no tabs)");
+      for (const t of w.tabs) {
+        console.log(`  tab #${t.number} (${display(t.id)})`);
+        if (t.agents.length === 0) console.log("    (no agents)");
+        for (const a of t.agents) {
+          const pr = a.pull !== null ? ` PR #${a.pull}` : "";
+          console.log(
+            `    - ${display(a.name)} [${display(a.status)}] pane=${display(a.id)}${pr}`,
+          );
+        }
+      }
+    }
+    return;
+  }
+
   if (group === "retro") {
     const s = await svc();
     const repo = await resolveRepo();
@@ -1803,6 +1850,8 @@ function usage() {
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR
   lh retro list [--pr <m>] [--status draft]   lh retro view <id>   lh retro pending [--limit N]   # read retros / list merged PRs without one
   lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-dev worktrees (issue closed / PR merged, clean tree)
+  lh herdr [--repo owner/name] [--json]                      # show the repo's herdr session as workspace -> tab -> agent(PR)
+  lh herdr focus <pr> [--repo owner/name]                     # focus the pane of the running agent for that PR's worktree
   lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image(s), print embed markdown
   lh sync                                          # detect open-PR head updates and emit events
   lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc] [--follow|-f]   # --follow: tail the SSE feed (replay matching, then live; Ctrl-C to stop). --order applies to the snapshot only (a live tail is always chronological)
