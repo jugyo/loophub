@@ -366,7 +366,6 @@ function GithubPrAction({
       title="Create a PR on GitHub from this branch via the export skill"
       onClick={() =>
         launchTerminal({
-          command: `claude "/create-github-pr ${pull.number}"`,
           repo: `${owner}/${repo}`,
           label: `PR #${pull.number} - ${pull.title}`,
           workflow: "github-pr-export",
