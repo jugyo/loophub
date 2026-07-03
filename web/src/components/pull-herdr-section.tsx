@@ -4,11 +4,26 @@
 // session for the PR, so the sidebar never implies a terminal that isn't there. Reuses the
 // shared terminal/sessions poll (useHerdrSessions, #495) — no extra herdr shellout per page.
 
-import { Terminal } from "lucide-react";
+import { Bot, Terminal } from "lucide-react";
 import { findPullHerdrWorkspace } from "@/components/herdr-badge";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
+
+function statusTextClass(status: string): string {
+  switch (status) {
+    case "blocked":
+      return "text-red-500";
+    case "working":
+      return "text-yellow-500";
+    case "done":
+      return "text-blue-500";
+    case "idle":
+      return "text-green-500";
+    default:
+      return "text-muted-foreground";
+  }
+}
 
 export function PullHerdrSection({
   owner,
@@ -40,7 +55,15 @@ export function PullHerdrSection({
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Herdr</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="text-lg font-semibold">Agents</h2>
+        <span
+          className="inline-flex size-6 items-center justify-center rounded-full border bg-muted text-muted-foreground"
+          title="Bot"
+        >
+          <Bot className="size-3.5" aria-hidden="true" />
+        </span>
+      </div>
       <div className="flex items-center gap-2 rounded-md border p-3 text-sm">
         <Terminal className="size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
@@ -49,7 +72,9 @@ export function PullHerdrSection({
           </div>
           <div className="truncate text-xs text-muted-foreground">
             {agent ? `${agent.name} · ` : ""}
-            {workspace.status}
+            <span className={statusTextClass(workspace.status)}>
+              {workspace.status}
+            </span>
           </div>
         </div>
         <Button

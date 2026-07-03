@@ -909,9 +909,9 @@ describe("PullDetail", () => {
     expect(screen.queryByRole("button", { name: /^Resume$/ })).toBeNull();
   });
 
-  // #609: the sidebar shows a Herdr section (session name + Focus) while herdr reports an
+  // #609: the sidebar shows an Agents section (session name + Focus) while herdr reports an
   // agent running this PR's worktree, and hides it entirely otherwise.
-  it("shows the sidebar Herdr section when a herdr session runs this PR", async () => {
+  it("shows the sidebar Agents section when a herdr session runs this PR", async () => {
     renderDetail({
       "terminal/sessions": () => ({
         repos: [
@@ -925,18 +925,18 @@ describe("PullDetail", () => {
       }),
     });
 
-    expect(await screen.findByRole("heading", { name: "Herdr" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Agents" })).toBeTruthy();
     expect(screen.getByText("lh-me-proj")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Focus" })).toBeTruthy();
   });
 
-  it("hides the sidebar Herdr section when no herdr session runs this PR", async () => {
+  it("hides the sidebar Agents section when no herdr session runs this PR", async () => {
     renderDetail({
       "terminal/sessions": () => ({ repos: [] }),
     });
 
     await screen.findByRole("button", { name: /^Merge$/i });
-    expect(screen.queryByRole("heading", { name: "Herdr" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
   });
 });
 

@@ -60,12 +60,34 @@ describe("PullHerdrSection (#609)", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("shows the session name, agent name, and status for the PR's workspace", () => {
+  it("shows the Agents heading, Bot badge, session name, agent name, and status for the PR's workspace", () => {
     herdrSessions.value = running;
     render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
-    expect(screen.getByRole("heading", { name: "Herdr" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Agents" })).toBeTruthy();
+    expect(screen.getByTitle("Bot")).toBeTruthy();
     expect(screen.getByText("lh-me-proj")).toBeTruthy();
-    expect(screen.getByText(/dev #609 · working/)).toBeTruthy();
+    expect(screen.getByText(/dev #609/)).toBeTruthy();
+    expect(screen.getByText("working")).toBeTruthy();
+  });
+
+  it.each([
+    ["blocked", "text-red-500"],
+    ["working", "text-yellow-500"],
+    ["done", "text-blue-500"],
+    ["idle", "text-green-500"],
+    ["paused", "text-muted-foreground"],
+  ])("colors %s status text", (status, className) => {
+    herdrSessions.value = {
+      repos: [
+        {
+          ...running.repos[0],
+          agents: [{ id: "%12", name: "dev #609", status }],
+          pull_workspaces: [{ pull: 42, pane_id: "%12", status }],
+        },
+      ],
+    };
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+    expect(screen.getByText(status).classList.contains(className)).toBe(true);
   });
 
   it("omits the agent name when no agent matches the workspace's pane id", () => {
