@@ -238,6 +238,11 @@ export function killHerdrAgent(input: { repo: string; paneId: string }) {
   return rpc<{ ok: true }>("terminal/killAgent", input);
 }
 
+/** Switch herdr's focus to a running agent's pane — the issue-list Herdr badge (#579). */
+export function focusHerdrAgent(input: { repo: string; paneId: string }) {
+  return rpc<{ ok: true }>("terminal/focusAgent", input);
+}
+
 // --- issues ---
 export function listIssues(owner: string, repo: string, query = "") {
   const sp = new URLSearchParams(query);

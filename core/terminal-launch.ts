@@ -257,10 +257,11 @@ export function herdrWorkspaceFocusArgv(
 }
 
 // Switches focus (workspace + tab + pane, in one call) to an already-running agent, by pane id
-// (#578's Resume dedup). Unlike herdrWorkspaceFocusArgv above, this doesn't require the caller to
-// know which workspace/tab the target lives in — `herdr agent focus` resolves that itself — which
-// matters here because a Resume session's tab can land in any workspace (Resume never creates its
-// own, unlike New Issue's isNewWorkspace path), not just the one currently in front.
+// (#578's Resume dedup; reused by #579's issue-list Herdr badge). Unlike herdrWorkspaceFocusArgv
+// above, this doesn't require the caller to know which workspace/tab the target lives in —
+// `herdr agent focus` resolves that itself — which matters for Resume (a session's tab can land
+// in any workspace, not just the one currently in front) and equally for the badge (it only knows
+// the agent's pane id, not its workspace/tab).
 export function herdrAgentFocusArgv(
   repo: TerminalLaunchRepo,
   target: string,

@@ -7,6 +7,7 @@ import {
   herdrSessionName,
   type TerminalLaunchRepo,
 } from "./terminal-launch.ts";
+import { pullNumberFromWorktreePath } from "./worktree-path.ts";
 
 /** One agent inside a herdr session, as shown in the sidebar. */
 export interface HerdrAgent {
@@ -77,6 +78,61 @@ export function parseHerdrAgentList(stdout: string): HerdrAgent[] {
     });
   }
   return out;
+}
+
+/**
+ * A running herdr agent's pane, matched back to the PR whose worktree it's running in (#579 —
+ * the issue-list "Herdr running" badge). `pane_id` is a valid `herdr agent focus` target
+ * (#578), so focusing it resolves the agent's workspace/tab/pane in one call.
+ */
+export interface HerdrPullWorkspace {
+  pull: number;
+  pane_id: string;
+}
+
+/**
+ * Maps running herdr agents back to the PR worktree each is running in (#579 — the issue-list
+ * "Herdr running" badge). Reuses the same `agent list` JSON parseHerdrAgentList reads (its
+ * `foreground_cwd`/`cwd` fields, not extracted there since they aren't part of the client-facing
+ * HerdrAgent shape) — no extra herdr shellout. An agent's absolute cwd is only ever used here to
+ * resolve a PR number and then discarded; it must never reach the client (see terminal.sessions
+ * in service.ts, which returns this array as-is).
+ *
+ * Only agents with a real pane_id (not the NO_PANE_ID_PREFIX positional fallback — see
+ * parseHerdrAgentList) whose cwd resolves to the current pr-<n> worktree convention produce an
+ * entry — a repo-root cwd, the legacy issue-<n> convention, or a missing/malformed field is
+ * silently skipped, matching this file's degrade-to-empty tolerance for unexpected or older
+ * herdr output. When several agents share one PR's worktree, only the first is kept.
+ */
+export function herdrPullWorkspacesFromAgentList(
+  stdout: string,
+  worktreeRoot: string,
+  fullName: string,
+): HerdrPullWorkspace[] {
+  const parsed = tryParse(stdout);
+  const agents = (parsed as { result?: { agents?: unknown } })?.result?.agents;
+  if (!Array.isArray(agents)) return [];
+  const byPull = new Map<number, HerdrPullWorkspace>();
+  for (const a of agents) {
+    if (typeof a !== "object" || a === null) continue;
+    const rec = a as {
+      pane_id?: unknown;
+      foreground_cwd?: unknown;
+      cwd?: unknown;
+    };
+    if (typeof rec.pane_id !== "string" || rec.pane_id === "") continue;
+    const cwd =
+      typeof rec.foreground_cwd === "string" && rec.foreground_cwd !== ""
+        ? rec.foreground_cwd
+        : typeof rec.cwd === "string" && rec.cwd !== ""
+          ? rec.cwd
+          : null;
+    if (cwd === null) continue;
+    const pull = pullNumberFromWorktreePath(worktreeRoot, fullName, cwd);
+    if (pull === null || byPull.has(pull)) continue;
+    byPull.set(pull, { pull, pane_id: rec.pane_id });
+  }
+  return [...byPull.values()];
 }
 
 /**

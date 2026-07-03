@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  herdrPullWorkspacesFromAgentList,
   paneRunsClaudeResume,
   parseHerdrAgentList,
   parseHerdrAgentRead,
@@ -120,6 +121,109 @@ describe("parseHerdrAgentList", () => {
     ['{"result": {}}', "missing agents"],
   ])("degrades to [] on %s (%s)", (input) => {
     expect(parseHerdrAgentList(input)).toEqual([]);
+  });
+});
+
+describe("herdrPullWorkspacesFromAgentList", () => {
+  const ROOT = "/home/u/.loophub/worktrees";
+  const FULL_NAME = "me/app";
+
+  // Real-shaped fixture from `herdr --session <name> agent list`: one agent running in the
+  // PR-12 worktree (via foreground_cwd), one whose only cwd is the repo root (not a PR
+  // worktree), and one on the legacy issue-<n> convention (not resolved, #579 out of scope).
+  const AGENT_LIST_WITH_WORKSPACES = JSON.stringify({
+    result: {
+      agents: [
+        {
+          name: "Issue #9 - PR 12",
+          agent_status: "working",
+          pane_id: "wP:p2",
+          tab_id: "wP:t1",
+          workspace_id: "wP",
+          cwd: "/home/u/ws/app",
+          foreground_cwd: `${ROOT}/${FULL_NAME}/pr-12`,
+        },
+        {
+          name: "New issue",
+          agent_status: "working",
+          pane_id: "wQ:p2",
+          tab_id: "wQ:t1",
+          workspace_id: "wQ",
+          cwd: "/home/u/ws/app",
+        },
+        {
+          name: "legacy dev",
+          agent_status: "working",
+          pane_id: "wR:p2",
+          tab_id: "wR:t1",
+          workspace_id: "wR",
+          foreground_cwd: `${ROOT}/${FULL_NAME}/issue-9`,
+        },
+      ],
+    },
+  });
+
+  test("maps an agent's foreground_cwd back to its PR number", () => {
+    expect(
+      herdrPullWorkspacesFromAgentList(
+        AGENT_LIST_WITH_WORKSPACES,
+        ROOT,
+        FULL_NAME,
+      ),
+    ).toEqual([{ pull: 12, pane_id: "wP:p2" }]);
+  });
+
+  test("falls back to cwd when foreground_cwd is absent", () => {
+    const out = herdrPullWorkspacesFromAgentList(
+      JSON.stringify({
+        result: {
+          agents: [{ pane_id: "wP:p2", cwd: `${ROOT}/${FULL_NAME}/pr-12` }],
+        },
+      }),
+      ROOT,
+      FULL_NAME,
+    );
+    expect(out).toEqual([{ pull: 12, pane_id: "wP:p2" }]);
+  });
+
+  test("skips an agent with no pane_id", () => {
+    const out = herdrPullWorkspacesFromAgentList(
+      JSON.stringify({
+        result: {
+          agents: [{ cwd: `${ROOT}/${FULL_NAME}/pr-12` }],
+        },
+      }),
+      ROOT,
+      FULL_NAME,
+    );
+    expect(out).toEqual([]);
+  });
+
+  test("keeps only the first agent when two share one PR's worktree", () => {
+    const out = herdrPullWorkspacesFromAgentList(
+      JSON.stringify({
+        result: {
+          agents: [
+            { pane_id: "wP:p2", cwd: `${ROOT}/${FULL_NAME}/pr-12` },
+            { pane_id: "wP:p9", cwd: `${ROOT}/${FULL_NAME}/pr-12` },
+          ],
+        },
+      }),
+      ROOT,
+      FULL_NAME,
+    );
+    expect(out).toEqual([{ pull: 12, pane_id: "wP:p2" }]);
+  });
+
+  test.each([
+    ["", "empty"],
+    ["not json", "non-JSON"],
+    ["{}", "missing result"],
+    ['{"result": {}}', "missing agents"],
+  ])("degrades to [] on %s (%s)", (input) => {
+    expect(herdrPullWorkspacesFromAgentList(input, ROOT, FULL_NAME)).toEqual(
+      [],
+    );
   });
 });
 

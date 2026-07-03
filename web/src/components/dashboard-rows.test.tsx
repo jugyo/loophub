@@ -17,7 +17,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
-import type { Issue, LinkedPull } from "@/api/types";
+import type { HerdrSessions, Issue, LinkedPull } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -30,6 +30,19 @@ const settingsData = vi.hoisted(() => ({
 vi.mock("@/queries/settings", () => ({
   useSettings: () => ({ data: settingsData.value }),
 }));
+const { focusHerdrAgent } = vi.hoisted(() => ({
+  focusHerdrAgent: vi.fn(),
+}));
+const herdrSessionsData = vi.hoisted(() => ({
+  value: undefined as HerdrSessions | undefined,
+}));
+vi.mock("@/queries/terminal", () => ({
+  useHerdrSessions: () => ({ data: herdrSessionsData.value }),
+  useFocusHerdrAgent: () => ({
+    mutate: focusHerdrAgent,
+    isPending: false,
+  }),
+}));
 
 import { IssueRow } from "./dashboard-rows";
 
@@ -38,7 +51,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   launchTerminal.mockClear();
+  focusHerdrAgent.mockClear();
   settingsData.value = { autoModeOnBuild: false };
+  herdrSessionsData.value = undefined;
 });
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
@@ -454,5 +469,134 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
     const pill = await renderPull({ merged: true, state: "closed" });
     expect(pill.className).toContain("text-purple-500");
     expect(screen.getByText("merged").className).toContain("text-purple-500");
+  });
+});
+
+// #579: a terminal-icon badge on the linked-PR sub-row, shown only while herdr reports an
+// agent running in that PR's worktree, and clicking it switches herdr's focus there.
+describe("Herdr running badge (#579)", () => {
+  function badgeQuery() {
+    return screen.queryByRole("button", { name: /Focus Herdr terminal/ });
+  }
+
+  it("shows no badge when no herdr session is running for the PR", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+      />,
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(badgeQuery()).toBeNull();
+  });
+
+  it("shows no badge when no PR is linked, even if herdr sessions are running elsewhere", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2" }],
+        },
+      ],
+    };
+    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />);
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(badgeQuery()).toBeNull();
+  });
+
+  it("shows the badge when herdr reports a running agent for the issue's PR", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2" }],
+        },
+      ],
+    };
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+      />,
+    );
+    expect(await screen.findByText("Herdr")).toBeTruthy();
+  });
+
+  it("does not show the badge for an agent running a different PR", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 99, pane_id: "w1:p2" }],
+        },
+      ],
+    };
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+      />,
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(badgeQuery()).toBeNull();
+  });
+
+  it("does not show the badge for an agent running in a different repo", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/other",
+          session_name: "me-other-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2" }],
+        },
+      ],
+    };
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+      />,
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(badgeQuery()).toBeNull();
+  });
+
+  it("focuses the agent's pane when the badge is clicked", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2" }],
+        },
+      ],
+    };
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+      />,
+    );
+    const badge = await screen.findByRole("button", {
+      name: "Focus Herdr terminal for PR #10",
+    });
+    fireEvent.click(badge);
+    expect(focusHerdrAgent).toHaveBeenCalledWith(
+      { repo: "me/proj", paneId: "w1:p2" },
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
   });
 });

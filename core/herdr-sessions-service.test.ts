@@ -20,6 +20,8 @@ let herdrSessionName: (repo: {
   full_name: string;
   local_path: string;
 }) => string;
+let worktreeRoot: () => string;
+let worktreePath: (root: string, fullName: string, pr: number) => string;
 
 const ORIGINAL_PATH = process.env.PATH;
 // Two PATH prefixes the tests switch between: one with a fake `herdr` on it, one empty
@@ -36,6 +38,8 @@ function initGitRepo(): string {
 beforeAll(async () => {
   svc = await import("./service.ts");
   ({ herdrSessionName } = await import("./terminal-launch.ts"));
+  ({ worktreeRoot } = await import("./config.ts"));
+  ({ worktreePath } = await import("./worktree-path.ts"));
   mkdirSync(FAKE_BIN);
   mkdirSync(EMPTY_BIN);
 });
@@ -116,6 +120,62 @@ test("terminal.sessions groups running herdr agents by repo and drops agentless 
           { id: "w1:p2", name: "dev #11", status: "working" },
           { id: "w1:pC", name: "dev #13", status: "blocked" },
         ],
+        pull_workspaces: [],
+      },
+    ]);
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+// #579: the issue-list Herdr badge needs to know which PR a running agent's terminal belongs
+// to. terminal.sessions resolves that from the same `agent list` output, without an extra
+// herdr shellout, by matching an agent's foreground_cwd against the PR's deterministic
+// worktree path.
+test("terminal.sessions maps a running agent's cwd back to its PR (#579)", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/pull-workspace",
+  });
+  const sessionName = herdrSessionName(repo);
+  const prWorktree = worktreePath(worktreeRoot(), repo.full_name, 12);
+
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "Issue #9 - PR 12",
+          pane_id: "wP:p2",
+          cwd: "/some/repo/root",
+          foreground_cwd: prWorktree,
+        },
+      ],
+    },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `printf '%s' '${agents}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    const result = await svc.terminal.sessions();
+    expect(result.repos).toEqual([
+      {
+        repo: "me/pull-workspace",
+        session_name: sessionName,
+        agents: [{ id: "wP:p2", name: "Issue #9 - PR 12", status: "working" }],
+        pull_workspaces: [{ pull: 12, pane_id: "wP:p2" }],
       },
     ]);
   } finally {
@@ -333,6 +393,87 @@ test("terminal.killAgent surfaces a visible error when herdr is not installed", 
   try {
     await expect(
       svc.terminal.killAgent({ repo: "me/no-herdr", paneId: "w1:p2" }),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: "herdr command not found on PATH",
+    });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+// #579: the issue-list Herdr badge's click action. Reuses `herdr agent focus` (#578's
+// herdrAgentFocusArgv), the same one-call workspace+tab+pane focus the Resume dedup above
+// already relies on.
+test("terminal.focusAgent runs herdr agent focus scoped to the repo's session", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/focus-target",
+  });
+  const sessionName = herdrSessionName(repo);
+  const CALLS_FILE = join(HOME, "focus-calls.txt");
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    ["#!/bin/sh", `echo "$@" >> ${CALLS_FILE}`, "exit 0"].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    await expect(
+      svc.terminal.focusAgent({
+        repo: "me/focus-target",
+        paneId: "w4:p2",
+      }),
+    ).resolves.toEqual({ ok: true });
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync(CALLS_FILE, "utf8").trim()).toBe(
+      `--session ${sessionName} agent focus w4:p2`,
+    );
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+// Like killAgent's paneId, this comes straight from an external JSON-RPC caller — reject
+// anything that doesn't look like a real herdr id before it reaches the argv.
+test("terminal.focusAgent rejects a paneId that doesn't look like a real herdr id", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/bad-focus-id" });
+  process.env.PATH = EMPTY_BIN;
+  try {
+    for (const badId of ["-x", "--session", "w1 p2", "w1;rm"]) {
+      await expect(
+        svc.terminal.focusAgent({
+          repo: "me/bad-focus-id",
+          paneId: badId,
+        }),
+      ).rejects.toMatchObject({ status: 422 });
+    }
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.focusAgent requires repo and paneId", async () => {
+  await expect(
+    svc.terminal.focusAgent({ repo: "", paneId: "w4:p2" }),
+  ).rejects.toMatchObject({ status: 422 });
+  await expect(
+    svc.terminal.focusAgent({
+      repo: "me/bad-focus-id",
+      paneId: "",
+    }),
+  ).rejects.toMatchObject({ status: 422 });
+});
+
+test("terminal.focusAgent surfaces a visible error when herdr is not installed", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/no-herdr-focus" });
+  process.env.PATH = EMPTY_BIN;
+  try {
+    await expect(
+      svc.terminal.focusAgent({
+        repo: "me/no-herdr-focus",
+        paneId: "w4:p2",
+      }),
     ).rejects.toMatchObject({
       status: 422,
       message: "herdr command not found on PATH",

@@ -185,11 +185,22 @@ export interface HerdrAgent {
   status: string;
 }
 
+/**
+ * A running herdr agent's pane, keyed back to the PR whose worktree it's running in
+ * (`terminal/sessions`, #579 — the issue-list Herdr badge). `pane_id` is a valid
+ * `terminal/focusAgent` target.
+ */
+export interface HerdrPullWorkspace {
+  pull: number;
+  pane_id: string;
+}
+
 /** A repo's running herdr session and its agents (`terminal/sessions`, #495). */
 export interface HerdrRepoSessions {
   repo: string;
   session_name: string;
   agents: HerdrAgent[];
+  pull_workspaces: HerdrPullWorkspace[];
 }
 
 export interface HerdrSessions {

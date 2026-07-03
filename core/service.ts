@@ -45,6 +45,8 @@ import {
 import { type GithubDeps, realGithubDeps } from "./github.ts";
 import {
   type HerdrAgent,
+  type HerdrPullWorkspace,
+  herdrPullWorkspacesFromAgentList,
   NO_PANE_ID_PREFIX,
   paneRunsClaudeResume,
   parseHerdrAgentList,
@@ -579,6 +581,9 @@ export interface HerdrRepoSessions {
   repo: string;
   session_name: string;
   agents: HerdrAgent[];
+  // Running herdr workspaces pinned to a PR's worktree, keyed back to their PR number (#579) —
+  // drives the issue-list "Herdr running" badge and its click-to-focus action.
+  pull_workspaces: HerdrPullWorkspace[];
 }
 
 // Coalesces concurrent terminal.sessions calls onto one herdr sweep. Every client polls this
@@ -1038,6 +1043,28 @@ export const terminal = {
     });
     return { ok: true };
   },
+
+  // Switches herdr's focus to a running agent's pane — the issue-list "Herdr running" badge's
+  // click action (#579). Reuses `herdr agent focus` (#578's herdrAgentFocusArgv), the same
+  // one-call workspace+tab+pane focus the Resume dedup above already relies on. Like killAgent
+  // above, a user-initiated action must fail visibly rather than degrade silently.
+  async focusAgent(input: { repo: string; paneId: string }): Promise<{
+    ok: true;
+  }> {
+    if (!input.repo) throw new ServiceError(422, "repo is required");
+    if (!input.paneId) throw new ServiceError(422, "paneId is required");
+    // paneId comes straight from an external JSON-RPC caller (unlike the ids this module parses
+    // from herdr's own stdout elsewhere) — reject anything that doesn't look like a real herdr
+    // id before it reaches an argv, same guard as killAgent's paneId.
+    if (!HERDR_ID.test(input.paneId))
+      throw new ServiceError(422, "paneId is not a valid herdr pane id");
+    const r = repoOr404(input.repo);
+    const argv = herdrAgentFocusArgv(r, input.paneId);
+    await runHerdr(argv[0], argv.slice(1), r.local_path, {
+      timeoutMs: 10_000,
+    });
+    return { ok: true };
+  },
 };
 
 const HERDR_AGENT_READ_DEFAULT_LINES = 40;
@@ -1132,7 +1159,17 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
       // A running session with zero agents has nothing to show — drop the group so
       // the sidebar section only appears when there is actual agent activity.
       if (agents.length === 0) return null;
-      return { repo: repo.full_name, session_name: sessionName, agents };
+      const pullWorkspaces = herdrPullWorkspacesFromAgentList(
+        agentsOut,
+        worktreeRoot(),
+        repo.full_name,
+      );
+      return {
+        repo: repo.full_name,
+        session_name: sessionName,
+        agents,
+        pull_workspaces: pullWorkspaces,
+      };
     }),
   );
   return { repos: groups.filter((g) => g !== null) };

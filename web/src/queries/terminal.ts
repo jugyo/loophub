@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  focusHerdrAgent,
   getHerdrAgentRead,
   getHerdrSessions,
   killHerdrAgent,
@@ -67,5 +68,17 @@ export function useKillHerdrAgent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: terminalKeys.sessions });
     },
+  });
+}
+
+/**
+ * Focus mutation for the issue-list "Herdr running" badge (#579): switches herdr's focus to
+ * the agent pane the issue's PR is running in (reuses #578's `herdr agent focus`). No sessions
+ * invalidation needed — unlike the kill button, focusing doesn't change what terminal/sessions
+ * reports.
+ */
+export function useFocusHerdrAgent() {
+  return useMutation({
+    mutationFn: focusHerdrAgent,
   });
 }

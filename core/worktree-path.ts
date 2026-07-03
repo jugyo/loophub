@@ -4,7 +4,7 @@
 // of colliding on one. Kept in core (not cli/dev.ts) so both the CLI and core/service.ts (e.g.
 // `lh resume`) share one source of truth. cli/dev.ts re-exports these for its existing callers/
 // tests. See also worktree-prune.ts (prNumberFromBranch) which decodes the same branch convention.
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 // Exported for reuse wherever a full_name feeds a derived path or the repos.full_name
 // column (worktree paths here, the rename write in core/store.ts).
@@ -60,4 +60,22 @@ export function legacyWorktreePath(
 ): string {
   assertSafeRepoSegments(fullName, "worktree path");
   return join(worktreeRoot, fullName, `issue-${issue}`);
+}
+
+// Reverse of worktreePath (#579 — matching a running herdr agent's cwd back to the PR whose
+// worktree it's running in, for the issue-list "Herdr running" badge). Only recognizes the
+// current pr-<n> convention directly under <worktreeRoot>/<fullName> — the legacy issue-<n>
+// convention is keyed by issue, not PR, and `lh dev` no longer creates it, so it's left
+// unmatched here (null) rather than resolved to a possibly-stale issue-to-PR link.
+const PR_DIR_RE = /^pr-(\d+)$/;
+
+export function pullNumberFromWorktreePath(
+  worktreeRoot: string,
+  fullName: string,
+  checkoutPath: string,
+): number | null {
+  assertSafeRepoSegments(fullName, "worktree path");
+  if (dirname(checkoutPath) !== join(worktreeRoot, fullName)) return null;
+  const m = PR_DIR_RE.exec(basename(checkoutPath));
+  return m ? Number(m[1]) : null;
 }

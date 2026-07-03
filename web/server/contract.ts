@@ -210,7 +210,7 @@ export const methods: Record<string, MethodDef> = {
 
   "terminal/sessions": {
     description:
-      "Running herdr sessions grouped by repository, with each agent's name and status (#495). Empty when herdr is not installed or nothing is running.",
+      "Running herdr sessions grouped by repository, with each agent's name and status (#495), plus which running agents are pinned to a PR's worktree (pull_workspaces, #579 — drives the issue-list Herdr badge). Empty when herdr is not installed or nothing is running.",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.terminal.sessions(),
@@ -237,6 +237,13 @@ export const methods: Record<string, MethodDef> = {
     params: params({ repo, paneId: strNonEmpty }, ["repo", "paneId"]),
     result: anyObject,
     handler: (p) => svc.terminal.killAgent({ repo: p.repo, paneId: p.paneId }),
+  },
+  "terminal/focusAgent": {
+    description:
+      "Switch herdr's focus to a running agent's pane, identified by its pane id (#578's herdr agent focus, reused by the issue-list Herdr badge's click action, #579). Fails visibly (herdr not installed, pane already gone) rather than silently.",
+    params: params({ repo, paneId: strNonEmpty }, ["repo", "paneId"]),
+    result: anyObject,
+    handler: (p) => svc.terminal.focusAgent({ repo: p.repo, paneId: p.paneId }),
   },
 
   // ---- agent sessions ----
