@@ -4,9 +4,11 @@
 // Markdown and rendered as GFM via <Markdown>.
 
 import { Link } from "@tanstack/react-router";
-import { Loader2, Play } from "lucide-react";
-import { useRef, useState } from "react";
+import { ChevronDown, Loader2, Play } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import type {
+  CodingAgent,
+  GlobalSettings,
   Issue,
   IssueComment,
   IssueGroupWithMembers,
@@ -24,6 +26,7 @@ import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CODING_AGENT_LABELS, MODEL_SUGGESTIONS } from "@/lib/agent-models";
 import {
   issueBuildButtonState,
   linkedPullStateBadge,
@@ -161,21 +164,8 @@ function IssueHeader({
   issue: Issue;
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
-  const { launchTerminal } = useTerminalLauncher();
-  const { data: settings } = useSettings();
-  const [isBuildLoading, startBuildLoading] = useFixedLoading();
   const state = stateBadge(issue, "issues");
   const buildState = issueBuildButtonState(issue);
-  // Display-only: the herdr backend builds and spawns `lh dev <n> --herdr [--auto]` itself
-  // (core/service.ts's launchIssueDevHerdr, #584) — this string is never sent over the wire, it
-  // only drives the button's tooltip so it reflects what actually runs. The Build button doesn't
-  // pick a runtime itself, so it inherits whichever agent `lh dev` resolves to (#593).
-  const autoModeOnBuild = settings
-    ? settings.agents[settings.codingAgent]?.autoModeOnBuild
-    : false;
-  const buildCommand = autoModeOnBuild
-    ? `lh dev ${issue.number} --herdr --auto`
-    : `lh dev ${issue.number} --herdr`;
 
   return (
     <div className="flex flex-col gap-3">
@@ -225,30 +215,197 @@ function IssueHeader({
           {issue.state === "open" ? "Close" : "Reopen"}
         </Button>
         {buildState === "build" ? (
-          <Button
-            title={`Start \`${buildCommand}\` in a terminal`}
-            disabled={isBuildLoading}
-            onClick={() => {
-              startBuildLoading();
-              launchTerminal({
-                repo: `${owner}/${repo}`,
-                label: `Issue #${issue.number} - ${issue.title}`,
-                workflow: "issue-dev",
-                issueNumber: issue.number,
-              });
-            }}
-          >
-            {isBuildLoading ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Play className="size-4" />
-            )}
-            Build
-          </Button>
+          <BuildControls owner={owner} repo={repo} issue={issue} />
         ) : (
           <BuildStatusLabel state={buildState} />
         )}
       </div>
+    </div>
+  );
+}
+
+// The Build button plus its agent/model dropdown (#637). The plain button launches with the
+// Settings defaults (unchanged behavior); the chevron opens a panel to pick a coding agent and
+// model for a single launch, which spawns `lh dev <n> --herdr [--auto] --claude-code|--codex
+// --model <name>` without touching the persisted `codingAgent` / per-agent `defaultModel`. The
+// autoMode/tooltip still reflect the resolved default agent, since that is what a plain click runs.
+function BuildControls({
+  owner,
+  repo,
+  issue,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+}) {
+  const { launchTerminal } = useTerminalLauncher();
+  const { data: settings } = useSettings();
+  const [isBuildLoading, startBuildLoading] = useFixedLoading();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const defaultAgent: CodingAgent = settings?.codingAgent ?? "claude-code";
+  const autoModeOnBuild = settings
+    ? settings.agents[defaultAgent]?.autoModeOnBuild
+    : false;
+  // Display-only tooltip for the plain button: it never reaches the wire, it only shows what a
+  // default (no-override) click runs (#584, #593).
+  const buildCommand = autoModeOnBuild
+    ? `lh dev ${issue.number} --herdr --auto`
+    : `lh dev ${issue.number} --herdr`;
+
+  // Close the dropdown on outside click / Escape (mirrors PullDebugMenu's native dismissal).
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (!containerRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  // `override` set => the dropdown launch (one-shot agent/model); undefined => the plain button
+  // (default resolution). A blank model is omitted so `lh dev` falls back to the per-agent default.
+  function build(override?: { agent: CodingAgent; model: string }) {
+    startBuildLoading();
+    setMenuOpen(false);
+    const model = override?.model.trim();
+    launchTerminal({
+      repo: `${owner}/${repo}`,
+      label: `Issue #${issue.number} - ${issue.title}`,
+      workflow: "issue-dev",
+      issueNumber: issue.number,
+      agent: override?.agent,
+      model: model ? model : undefined,
+    });
+  }
+
+  return (
+    <div ref={containerRef} className="relative inline-flex">
+      <Button
+        className="rounded-r-none"
+        title={`Start \`${buildCommand}\` in a terminal`}
+        disabled={isBuildLoading}
+        onClick={() => build()}
+      >
+        {isBuildLoading ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <Play className="size-4" />
+        )}
+        Build
+      </Button>
+      <Button
+        aria-label="Choose agent and model for this build"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        title="Build with a specific agent / model (this launch only)"
+        disabled={isBuildLoading}
+        className="rounded-l-none border-l border-primary-foreground/25 px-2"
+        onClick={() => setMenuOpen((v) => !v)}
+      >
+        <ChevronDown className="size-4" />
+      </Button>
+      {menuOpen && settings ? (
+        <BuildDropdown
+          settings={settings}
+          disabled={isBuildLoading}
+          onBuild={(agent, model) => build({ agent, model })}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// Dropdown panel for a one-shot Build (#637): pick a coding agent (segmented control) and a model
+// (a native <input list> + <datalist> combobox — same picklist-plus-free-text pattern as the
+// Settings AgentModelInput, sharing MODEL_SUGGESTIONS). Both default to the current Settings values;
+// changing the agent resets the model draft to that agent's default so the picklist stays coherent.
+// Nothing here writes settings — the choice only feeds this launch.
+function BuildDropdown({
+  settings,
+  disabled,
+  onBuild,
+}: {
+  settings: GlobalSettings;
+  disabled: boolean;
+  onBuild: (agent: CodingAgent, model: string) => void;
+}) {
+  const [agent, setAgent] = useState<CodingAgent>(settings.codingAgent);
+  const [model, setModel] = useState(
+    settings.agents[settings.codingAgent]?.model ?? "",
+  );
+  const listId = useId();
+
+  function selectAgent(next: CodingAgent) {
+    setAgent(next);
+    setModel(settings.agents[next]?.model ?? "");
+  }
+
+  return (
+    <div
+      role="menu"
+      className="absolute right-0 top-full z-50 mt-1 w-72 rounded-md border bg-background p-3 text-left shadow-md"
+    >
+      <p className="mb-1 text-xs font-medium text-muted-foreground">Agent</p>
+      <div className="mb-3 flex gap-1">
+        {(Object.keys(CODING_AGENT_LABELS) as CodingAgent[]).map((a) => {
+          const active = agent === a;
+          return (
+            <button
+              key={a}
+              type="button"
+              aria-pressed={active}
+              className={cn(
+                "flex-1 rounded-md border px-2 py-1.5 text-sm",
+                active
+                  ? "border-primary bg-primary/10 font-medium"
+                  : "hover:bg-accent hover:text-accent-foreground",
+              )}
+              onClick={() => selectAgent(a)}
+            >
+              {CODING_AGENT_LABELS[a]}
+            </button>
+          );
+        })}
+      </div>
+
+      <label
+        htmlFor={`${listId}-model`}
+        className="mb-1 block text-xs font-medium text-muted-foreground"
+      >
+        Model
+      </label>
+      <input
+        id={`${listId}-model`}
+        type="text"
+        list={listId}
+        placeholder="Default"
+        className="mb-3 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+        value={model}
+        onChange={(e) => setModel(e.target.value)}
+      />
+      <datalist id={listId}>
+        {MODEL_SUGGESTIONS[agent].map((m) => (
+          <option key={m} value={m} />
+        ))}
+      </datalist>
+
+      <Button
+        className="w-full"
+        disabled={disabled}
+        onClick={() => onBuild(agent, model)}
+      >
+        <Play className="size-4" />
+        Build with {CODING_AGENT_LABELS[agent]}
+      </Button>
     </div>
   );
 }

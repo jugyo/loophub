@@ -218,6 +218,75 @@ describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
     svc.settings.update({ agent: "codex", autoModeOnBuild: false });
   });
 
+  test("forwards the dropdown agent/model override as --codex --model (#637)", async () => {
+    lhDev.script.push(exitWith(0));
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+      agent: "codex",
+      model: "gpt-5.5",
+    });
+
+    expect(lhDev.calls).toEqual([
+      ["lh", "dev", "me/proj/1", "--herdr", "--codex", "--model", "gpt-5.5"],
+    ]);
+  });
+
+  test("forces --claude-code when the override picks it over a codex default (#637)", async () => {
+    lhDev.script.push(exitWith(0));
+    svc.settings.update({ codingAgent: "codex" });
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+      agent: "claude-code",
+    });
+
+    expect(lhDev.calls[0]).toEqual([
+      "lh",
+      "dev",
+      "me/proj/1",
+      "--herdr",
+      "--claude-code",
+    ]);
+
+    svc.settings.update({ codingAgent: "claude-code" });
+  });
+
+  test("reads auto-mode from the overridden agent, not the default (#637, #593)", async () => {
+    lhDev.script.push(exitWith(0));
+    // Default agent is claude-code (auto off); enable auto on codex only, then override to codex.
+    svc.settings.update({ agent: "codex", autoModeOnBuild: true });
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+      agent: "codex",
+    });
+
+    expect(lhDev.calls[0]).toContain("--auto");
+
+    svc.settings.update({ agent: "codex", autoModeOnBuild: false });
+  });
+
+  test("omits --model when the override model is blank (#637)", async () => {
+    lhDev.script.push(exitWith(0));
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+      agent: "claude-code",
+      model: "   ",
+    });
+
+    expect(lhDev.calls[0]).not.toContain("--model");
+  });
+
   test("surfaces a non-zero exit as a ServiceError with a reproducible command", async () => {
     lhDev.script.push(exitWith(1));
 

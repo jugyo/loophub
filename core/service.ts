@@ -157,6 +157,12 @@ export interface TerminalLaunchInput {
   prNumber?: number;
   session?: string;
   cwd?: string;
+  // One-shot agent/model overrides for the issue-dev (Build) launch (#637). Set only by the
+  // issue-detail Build dropdown; unset for the plain Build button. They apply to this single
+  // `lh dev` launch (mapped to --claude-code|--codex / --model) and never touch the persisted
+  // `codingAgent` / per-agent `defaultModel` settings.
+  agent?: CodingAgent;
+  model?: string;
 }
 
 // ---- shared helpers ----
@@ -689,16 +695,37 @@ function runLhDevLaunch(args: string[], cwd: string): Promise<void> {
 // of that (see the removed issue-dev case in resolveHerdrWorktreeTarget). session_name/attach are
 // still computable up front since herdrSessionName only depends on the repo, not the worktree
 // `lh dev` resolves internally.
-async function launchIssueDevHerdr(r: S.Repo, issueNumber: number) {
+//
+// `override` carries the issue-detail Build dropdown's one-shot agent/model choice (#637). When set
+// it forces the runtime via --claude-code|--codex and the session model via --model, without
+// touching the persisted `codingAgent` / `defaultModel` settings. The plain Build button passes no
+// override, keeping the historical default-resolution behavior.
+async function launchIssueDevHerdr(
+  r: S.Repo,
+  issueNumber: number,
+  override?: { agent?: CodingAgent; model?: string },
+) {
   const repo = { full_name: r.full_name, local_path: r.local_path };
+  // The agent that actually runs: the dropdown override when present, else whichever agent `lh dev`
+  // would resolve to (the `codingAgent` setting). Auto-mode is read from *this* agent so a codex
+  // override reads codex's auto setting, not claude-code's (#593).
+  const agent = override?.agent ?? codingAgent();
+  const model = override?.model?.trim();
   const args = [
     "dev",
     `${r.full_name}/${issueNumber}`,
     "--herdr",
-    // The Build button doesn't pick a runtime itself, so it inherits whichever agent `lh dev`
-    // would resolve to (the `codingAgent` setting) and reads that agent's own auto-mode value
-    // (#593).
-    ...(autoModeOnBuild(codingAgent()) ? ["--auto"] : []),
+    // Force the runtime only when the dropdown overrode it; without an override we pass no runtime
+    // flag so `lh dev` resolves the default itself (unchanged plain-Build behavior).
+    ...(override?.agent === "codex"
+      ? ["--codex"]
+      : override?.agent === "claude-code"
+        ? ["--claude-code"]
+        : []),
+    // One-shot session model (#637); omitted when the dropdown left it blank, so `lh dev` falls
+    // back to the configured per-agent default.
+    ...(model ? ["--model", model] : []),
+    ...(autoModeOnBuild(agent) ? ["--auto"] : []),
   ];
   try {
     await runLhDevLaunch(args, r.local_path);
@@ -858,7 +885,10 @@ export const terminal = {
     if (input.workflow === "issue-dev") {
       if (!input.issueNumber)
         throw new ServiceError(422, "issueNumber is required");
-      return launchIssueDevHerdr(r, input.issueNumber);
+      return launchIssueDevHerdr(r, input.issueNumber, {
+        agent: input.agent,
+        model: input.model,
+      });
     }
 
     const command = commandForHerdrLaunch({

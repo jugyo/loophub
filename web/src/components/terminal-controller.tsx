@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 import { ApiError } from "@/api/client";
+import type { CodingAgent } from "@/api/types";
 import {
   type HerdrLaunchError,
   HerdrLaunchErrorDialog,
@@ -34,6 +35,10 @@ export interface OpenTerminalOptions {
   prNumber?: number;
   session?: string;
   cwd?: string;
+  // One-shot agent/model override for an issue-dev (Build) launch (#637) — the issue-detail Build
+  // dropdown sets these; the plain Build button omits them. They apply to this launch only.
+  agent?: CodingAgent;
+  model?: string;
 }
 
 export type OpenTerminal = (opts?: OpenTerminalOptions) => void;
@@ -104,6 +109,8 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
           prNumber: opts.prNumber,
           session: opts.session,
           cwd: opts.cwd,
+          agent: opts.agent,
+          model: opts.model,
         },
         {
           onSuccess: (result) => {

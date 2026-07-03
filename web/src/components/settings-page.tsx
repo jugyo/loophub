@@ -5,6 +5,7 @@ import { Check } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import type { CodingAgent } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { MODEL_SUGGESTIONS } from "@/lib/agent-models";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
 
 // The concrete flag `--auto` maps to differs per agent (cli/dev.ts buildClaudeArgs /
@@ -49,22 +50,6 @@ const CODING_AGENT_OPTIONS: {
     hint: "`lh dev` launches the interactive session in Codex.",
   },
 ];
-
-// Suggested models per agent (#610), shown as a picklist for people who care about exact model
-// versions. Static — no dynamic fetch of available models (out of scope, #594). Any value not in
-// this list can still be typed directly (see AgentModelInput's <datalist>, which augments free
-// text rather than constraining it).
-const MODEL_SUGGESTIONS: Record<CodingAgent, string[]> = {
-  "claude-code": [
-    "opus",
-    "sonnet",
-    "haiku",
-    "claude-opus-4-8",
-    "claude-sonnet-5",
-    "claude-haiku-4-5-20251001",
-  ],
-  codex: ["gpt-5.5"],
-};
 
 // A single agent's "Default model" input (#594, #610). A native <input list> + <datalist> combobox:
 // the browser offers `suggestions` as a picklist, but any other value can still be typed directly —
