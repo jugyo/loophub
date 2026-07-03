@@ -14,15 +14,12 @@ export function ImageLightbox({
 }) {
   return (
     <Lightbox ariaLabel={alt || "Image preview"} onClose={onClose}>
-      {(scale) => (
-        <img
-          src={src}
-          alt={alt}
-          className="max-h-[90vh] max-w-[90vw] select-none rounded object-contain shadow-2xl"
-          style={{ transform: `scale(${scale})` }}
-          onClick={(e) => e.stopPropagation()}
-        />
-      )}
+      <img
+        src={src}
+        alt={alt}
+        className="max-h-[90vh] max-w-[90vw] select-none rounded object-contain shadow-2xl"
+        draggable={false}
+      />
     </Lightbox>
   );
 }

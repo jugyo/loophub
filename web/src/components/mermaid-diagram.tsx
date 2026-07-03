@@ -49,15 +49,7 @@ function forLightbox(svg: string, renderId: string): string {
 // both: it gives the flex box a definite max-content size to shrink-fit against, and — combined
 // with the `h-auto`/`max-w-full` classes below — lets the diagram render at its natural size, only
 // scaled down (proportionally, via `height: auto`) if that's still bigger than the modal.
-function ExpandedDiagram({
-  svg,
-  renderId,
-  scale,
-}: {
-  svg: string;
-  renderId: string;
-  scale: number;
-}) {
+function ExpandedDiagram({ svg, renderId }: { svg: string; renderId: string }) {
   const ref = useRef<HTMLDivElement>(null);
 
   // useLayoutEffect (not useEffect): this div renders with no JSX children, so without
@@ -79,8 +71,6 @@ function ExpandedDiagram({
     <div
       ref={ref}
       className="max-h-[90vh] max-w-[90vw] overflow-auto rounded bg-white p-6 shadow-2xl [&_svg]:h-auto [&_svg]:max-w-full"
-      style={{ transform: `scale(${scale})` }}
-      onClick={(e) => e.stopPropagation()}
     />
   );
 }
@@ -171,9 +161,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
             ariaLabel="Diagram preview"
             onClose={() => setExpanded(false)}
           >
-            {(scale) => (
-              <ExpandedDiagram svg={svg} renderId={renderId} scale={scale} />
-            )}
+            <ExpandedDiagram svg={svg} renderId={renderId} />
           </Lightbox>
         )}
       </>

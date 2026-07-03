@@ -3,9 +3,8 @@
 // fixed inset-0 backdrop pattern as markdown-preview-modal.tsx / pull-debug-menu.tsx.
 //
 // Mouse-wheel zoom is exponential (multiplicative per tick) so it feels consistent regardless of
-// current scale; scroll up zooms in, scroll down zooms out. Content is passed as a render prop so
-// each caller applies the `scale` to its own root element (an <img> vs. an SVG wrapper need
-// different layout), while the dialog chrome, focus trap, and zoom state stay shared.
+// current scale; scroll up zooms in, scroll down zooms out. Content is wrapped once here so the
+// dialog chrome, focus trap, zoom state, and drag-to-pan behavior stay shared.
 //
 // Wheel zoom is wired via a native, non-passive listener (not React's onWheel): React registers
 // "wheel" as passive by default (see react-dom's addTrappedEventListener), so e.preventDefault()
@@ -21,6 +20,61 @@ import { Button } from "@/components/ui/button";
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+const ZERO_PAN = { x: 0, y: 0 };
+
+type Pan = {
+  x: number;
+  y: number;
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function panBounds(
+  dialog: HTMLDivElement | null,
+  content: HTMLDivElement | null,
+  scale: number,
+) {
+  if (scale <= MIN_SCALE) return { x: 0, y: 0 };
+
+  const contentRect = content?.getBoundingClientRect();
+  const viewportWidth = dialog?.clientWidth ?? 0;
+  const viewportHeight = dialog?.clientHeight ?? 0;
+
+  if (
+    !contentRect ||
+    contentRect.width === 0 ||
+    contentRect.height === 0 ||
+    viewportWidth === 0 ||
+    viewportHeight === 0
+  ) {
+    return { x: Number.POSITIVE_INFINITY, y: Number.POSITIVE_INFINITY };
+  }
+
+  const width = content.offsetWidth || contentRect.width / scale;
+  const height = content.offsetHeight || contentRect.height / scale;
+  const scaledWidth = width * scale;
+  const scaledHeight = height * scale;
+
+  return {
+    x: Math.max(0, (scaledWidth - viewportWidth) / 2),
+    y: Math.max(0, (scaledHeight - viewportHeight) / 2),
+  };
+}
+
+function clampPan(
+  pan: Pan,
+  dialog: HTMLDivElement | null,
+  content: HTMLDivElement | null,
+  scale: number,
+): Pan {
+  const bounds = panBounds(dialog, content, scale);
+  return {
+    x: clamp(pan.x, -bounds.x, bounds.x),
+    y: clamp(pan.y, -bounds.y, bounds.y),
+  };
+}
 
 export function Lightbox({
   ariaLabel,
@@ -29,10 +83,17 @@ export function Lightbox({
 }: {
   ariaLabel: string;
   onClose: () => void;
-  children: (scale: number) => ReactNode;
+  children: ReactNode;
 }) {
   const [scale, setScale] = useState(1);
+  const [pan, setPan] = useState<Pan>(ZERO_PAN);
+  const [dragStart, setDragStart] = useState<{
+    pointer: Pan;
+    pan: Pan;
+  } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const suppressNextClickRef = useRef(false);
   // The close button is the dialog's only focusable descendant, so Tab/Shift+Tab both trap
   // focus on it — without this, Tab moves focus past the (non-portaled) overlay into the
   // underlying page, after which this dialog's own Escape handler stops receiving keydowns.
@@ -49,12 +110,47 @@ export function Lightbox({
       e.preventDefault();
       setScale((s) => {
         const next = s * (1 - e.deltaY * WHEEL_ZOOM_SENSITIVITY);
-        return Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+        const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+        setPan((p) =>
+          nextScale <= MIN_SCALE
+            ? ZERO_PAN
+            : clampPan(p, dialogRef.current, contentRef.current, nextScale),
+        );
+        return nextScale;
       });
     }
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
+
+  useEffect(() => {
+    if (!dragStart) return;
+
+    function onMouseMove(e: MouseEvent) {
+      setPan(
+        clampPan(
+          {
+            x: dragStart.pan.x + e.clientX - dragStart.pointer.x,
+            y: dragStart.pan.y + e.clientY - dragStart.pointer.y,
+          },
+          dialogRef.current,
+          contentRef.current,
+          scale,
+        ),
+      );
+    }
+
+    function onMouseUp() {
+      setDragStart(null);
+    }
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [dragStart, scale]);
 
   return (
     <div
@@ -64,7 +160,13 @@ export function Lightbox({
       aria-label={ariaLabel}
       tabIndex={-1}
       className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black/80 p-4 outline-none"
-      onClick={onClose}
+      onClick={() => {
+        if (suppressNextClickRef.current) {
+          suppressNextClickRef.current = false;
+          return;
+        }
+        onClose();
+      }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
@@ -88,7 +190,31 @@ export function Lightbox({
       >
         <X className="size-5" />
       </Button>
-      {children(scale)}
+      <div
+        ref={contentRef}
+        className={
+          scale > MIN_SCALE ? "cursor-grab active:cursor-grabbing" : ""
+        }
+        style={{
+          transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${scale})`,
+        }}
+        onClick={(e) => {
+          suppressNextClickRef.current = false;
+          e.stopPropagation();
+        }}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          if (scale <= MIN_SCALE || e.button !== 0) return;
+          e.preventDefault();
+          suppressNextClickRef.current = true;
+          setDragStart({
+            pointer: { x: e.clientX, y: e.clientY },
+            pan,
+          });
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }
