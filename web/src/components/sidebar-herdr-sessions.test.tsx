@@ -609,28 +609,29 @@ describe("SidebarHerdrSessions", () => {
       expect(freshDot?.className).toContain("bg-yellow-500");
     });
 
-    // #620: stale rows sink to the bottom of their repo group so active agents stay on top.
-    it("orders stale agents after active ones within each repo group, stably (#620)", async () => {
+    // #620/#645: stale rows sink to the bottom of their repo group so active agents stay on top.
+    it("orders stale agents after active ones within each repo group, stably (#620, #645)", async () => {
       renderWithSessions({
         repos: [
           {
             repo: "me/app",
             session_name: "me-app-12345678",
             agents: [
-              // Interleaved active/stale, two of each, to prove both the partition
-              // (stale below active) and stable order within each partition.
+              // Interleaved active/stale, with both stale cases: a closed PR and a
+              // no-PR idle New issue agent. This proves the partition (stale below
+              // active) and stable order within each partition.
               {
                 id: "w1:p1",
-                name: "app stale A",
+                name: "app closed stale",
                 status: "done",
                 pull_closed: true,
               },
               { id: "w1:p2", name: "app active A", status: "working" },
               {
                 id: "w1:p3",
-                name: "app stale B",
+                name: "app no-PR idle stale",
                 status: "idle",
-                pull_closed: true,
+                pull: null,
               },
               { id: "w1:p4", name: "app active B", status: "blocked" },
             ],
@@ -664,19 +665,19 @@ describe("SidebarHerdrSessions", () => {
       expect(names).toEqual([
         "app active A",
         "app active B",
-        "app stale A",
-        "app stale B",
+        "app closed stale",
+        "app no-PR idle stale",
         "other active",
         "other stale",
       ]);
     });
 
-    it("sortAgents is a stable partition that leaves the input untouched (#620)", () => {
+    it("sortAgents is a stable partition that leaves the input untouched (#620, #645)", () => {
       const agents = [
-        { id: "a", name: "stale 1", status: "done", pull_closed: true },
+        { id: "a", name: "closed stale", status: "done", pull_closed: true },
         { id: "b", name: "active 1", status: "working" },
-        { id: "c", name: "active 2", status: "idle" },
-        { id: "d", name: "stale 2", status: "blocked", pull_closed: true },
+        { id: "c", name: "idle PR-linked active", status: "idle", pull: 11 },
+        { id: "d", name: "no-PR idle stale", status: "idle", pull: null },
       ];
       const sorted = sortAgents(agents);
       expect(sorted.map((a) => a.id)).toEqual(["b", "c", "a", "d"]);

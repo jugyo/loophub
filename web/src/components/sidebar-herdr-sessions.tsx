@@ -67,20 +67,23 @@ function statusDotClass(status: string): string {
   }
 }
 
-// Order agents within a repo group so no-longer-needed ones sink to the bottom (#620):
-// stale rows (worktree PR merged/closed, `pull_closed === true` — grayed out by #611) go
-// after active ones, keeping attention on the top. Reordering stays inside the group (the
-// input is one group's agents) and is stable — Array.prototype.sort is stable on Node's V8,
-// and the comparator only separates stale from active, so both partitions keep their
-// original relative order. Returns a new array; the source (react-query cache) is untouched.
-//
-// This keys on `pull_closed` only — deliberately narrower than AgentRow's `stale` (which
-// also grays no-PR idle agents, #633). #633 scopes ordering out ("並び順変更 … 変更なし"), so a
-// grayed no-PR idle agent keeps its position rather than sinking; only #620's PR-closed rows
-// move. Keep the two in sync only if a future issue widens the sort intentionally.
+function isStaleAgent(agent: HerdrAgent): boolean {
+  return (
+    agent.pull_closed === true ||
+    (agent.pull == null && agent.status === "idle")
+  );
+}
+
+// Order agents within a repo group so no-longer-needed ones sink to the bottom (#620,
+// #645): stale rows (worktree PR merged/closed, or no-PR New issue agents that went
+// idle) go after active ones, keeping attention on the top. Reordering stays inside
+// the group (the input is one group's agents) and is stable — Array.prototype.sort is
+// stable on Node's V8, and the comparator only separates stale from active, so both
+// partitions keep their original relative order. Returns a new array; the source
+// (react-query cache) is untouched.
 export function sortAgents(agents: HerdrAgent[]): HerdrAgent[] {
   return [...agents].sort(
-    (a, b) => Number(a.pull_closed === true) - Number(b.pull_closed === true),
+    (a, b) => Number(isStaleAgent(a)) - Number(isStaleAgent(b)),
   );
 }
 
@@ -144,9 +147,7 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   //   2. A "New issue" agent with no linked PR (`pull == null`) that has gone idle (#633):
   //      pull_closed can never be true for it, so idle is the signal its work is done. A
   //      no-PR agent still working/blocked/done stays a normal, active row.
-  const stale =
-    agent.pull_closed === true ||
-    (agent.pull == null && agent.status === "idle");
+  const stale = isStaleAgent(agent);
 
   function clearHoverTimer() {
     if (hoverTimer.current !== null) {
