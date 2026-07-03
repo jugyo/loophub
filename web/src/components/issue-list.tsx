@@ -23,16 +23,22 @@ export function IssueList({
   owner,
   repo,
   labelsParam,
+  stateParam,
 }: {
   owner: string;
   repo: string;
   /** `labels` search param — seeds the filter so a label chip can deep-link here pre-filtered (#368). */
   labelsParam?: string;
+  /** `state` search param — seeds the state filter so the repo dashboard can deep-link to closed issues (#616). */
+  stateParam?: IssueListFilters["state"];
 }) {
   // `filters` is what the query reads; `draft` holds unapplied input so typing
-  // labels does not refetch on every keystroke (Apply commits, v1 parity).
+  // labels does not refetch on every keystroke (Apply commits, v1 parity). The
+  // `state` search param only seeds the initial filter; the select below then
+  // owns it (out of scope: keeping state URL-authoritative like labels).
   const [filters, setFilters] = useState<IssueListFilters>({
     ...DEFAULT_ISSUE_FILTERS,
+    state: stateParam ?? DEFAULT_ISSUE_FILTERS.state,
     labels: labelsParam ?? "",
   });
   const [draftLabels, setDraftLabels] = useState(labelsParam ?? "");

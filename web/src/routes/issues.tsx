@@ -5,8 +5,15 @@ import { rootRoute } from "./root";
 
 function IssuesPage() {
   const { owner, repo } = issuesRoute.useParams();
-  const { labels } = issuesRoute.useSearch();
-  return <IssueList owner={owner} repo={repo} labelsParam={labels} />;
+  const { labels, state } = issuesRoute.useSearch();
+  return (
+    <IssueList
+      owner={owner}
+      repo={repo}
+      labelsParam={labels}
+      stateParam={state}
+    />
+  );
 }
 
 function IssueDetailPage() {
@@ -19,11 +26,19 @@ export const issuesRoute = createRoute({
   path: "/r/$owner/$repo/issues",
   component: IssuesPage,
   // `labels` seeds the list's labels filter, so a label chip elsewhere can link
-  // here pre-filtered (#368). Omitted/blank → no filter (kept out of the URL).
-  validateSearch: (search: Record<string, unknown>): { labels?: string } => {
+  // here pre-filtered (#368). `state` seeds the state filter so the repo
+  // dashboard can deep-link to the closed issues list (#616). Both are omitted
+  // from the URL at their default (blank labels / open state) to keep it clean.
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { labels?: string; state?: "closed" | "all" } => {
     const labels =
       typeof search.labels === "string" ? search.labels.trim() : "";
-    return labels ? { labels } : {};
+    const state =
+      search.state === "closed" || search.state === "all"
+        ? search.state
+        : undefined;
+    return { ...(labels ? { labels } : {}), ...(state ? { state } : {}) };
   },
 });
 

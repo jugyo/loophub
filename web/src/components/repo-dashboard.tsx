@@ -4,6 +4,7 @@
 // sub-row, so a separate PR list is redundant here. The list is TanStack Query
 // backed and refetches on SSE (root.tsx + event-keys).
 
+import { Link } from "@tanstack/react-router";
 import { IssueRow } from "@/components/dashboard-rows";
 import { DashboardSection } from "@/components/dashboard-section";
 import { RepoSettingsLink } from "@/components/repo-settings-link";
@@ -29,15 +30,25 @@ export function RepoDashboard({
         <RepoSettingsLink owner={owner} repo={repo} />
       </div>
 
-      <DashboardSection
-        title="Open Issues"
-        query={issues}
-        seeAllTo="/r/$owner/$repo/issues"
-        seeAllParams={{ owner, repo }}
-        emptyText="No open issues."
-        keyOf={(i) => i.number}
-        renderItem={(i) => <IssueRow owner={owner} repo={repo} issue={i} />}
-      />
+      <div className="flex flex-col gap-1">
+        <DashboardSection
+          title="Open Issues"
+          query={issues}
+          seeAllTo="/r/$owner/$repo/issues"
+          seeAllParams={{ owner, repo }}
+          emptyText="No open issues."
+          keyOf={(i) => i.number}
+          renderItem={(i) => <IssueRow owner={owner} repo={repo} issue={i} />}
+        />
+        <Link
+          to="/r/$owner/$repo/issues"
+          params={{ owner, repo }}
+          search={{ state: "closed" }}
+          className="self-end text-xs text-muted-foreground hover:text-foreground"
+        >
+          View closed issues
+        </Link>
+      </div>
     </div>
   );
 }
