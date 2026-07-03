@@ -7,9 +7,9 @@ import { Check, Loader2, MoreHorizontal, Play, Terminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
-import { useErrorBanner } from "@/components/error-banner";
 import { LabelChip } from "@/components/label-chip";
 import { useTerminalLauncher } from "@/components/terminal-controller";
+import { useToast } from "@/components/toast";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
   type Badge as BadgeData,
@@ -403,7 +403,7 @@ function HerdrBadge({
     .find((r) => r.repo === `${owner}/${repo}`)
     ?.pull_workspaces.find((w) => w.pull === pull);
   const focus = useFocusHerdrAgent();
-  const { showError } = useErrorBanner();
+  const { showError } = useToast();
   if (!workspace) return null;
   return (
     <button
