@@ -137,7 +137,6 @@ export function PullDetail({
       </div>
 
       <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
-        <WorkDuration workDuration={pull.work_duration} />
         {/* Above Sessions (#609): the live herdr terminal outranks the historical session
             list when deciding where to jump. Hides itself when no herdr session runs this PR. */}
         <PullHerdrSection owner={owner} repo={repo} pull={number} />
@@ -154,6 +153,9 @@ export function PullDetail({
           isLoading={handoffsQuery.isLoading}
           isError={handoffsQuery.isError}
         />
+        {/* Work duration sits at the bottom of the sidebar (#627): a low-priority historical
+            summary that ranks below the live herdr terminal and the session lists above. */}
+        <WorkDuration workDuration={pull.work_duration} />
       </aside>
     </div>
   );
