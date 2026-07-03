@@ -1,4 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -151,4 +157,118 @@ test("startPullSweep fires pull_request.updated on head SHA change, no-ops when 
   expect(countUpdates()).toBe(1);
 
   rmSync(repoPath, { recursive: true, force: true });
+});
+
+// #591: server-side herdr polling, gated on terminal-watch-hub subscribers, diffed against
+// the last snapshot, never persisted to the events table.
+test("startHerdrWatch skips herdr while unsubscribed, then publishes only on a session diff", async () => {
+  const { startHerdrWatch } = await import("./events.ts");
+  const { subscribe, listenerCount } = await import(
+    "../../core/terminal-watch-hub.ts"
+  );
+  const { herdrSessionName } = await import("../../core/terminal-launch.ts");
+
+  const repo = S.createRepo("me/herdr-watch", "/tmp/lh-herdr-watch-repo");
+  const sessionName = herdrSessionName(repo);
+
+  const FAKE_BIN = mkdtempSync(join(tmpdir(), "lh-herdr-watch-bin-"));
+  const AGENTS_FILE = join(FAKE_BIN, "agents.json");
+  const CALLS_FILE = join(FAKE_BIN, "calls.txt");
+  const oneAgent = JSON.stringify({
+    result: {
+      agents: [
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "a1",
+          pane_id: "w1:p1",
+        },
+      ],
+    },
+  });
+  writeFileSync(AGENTS_FILE, oneAgent);
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `echo call >> ${CALLS_FILE}`,
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `cat ${AGENTS_FILE}`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+
+  // Poll `check` until it passes or the deadline elapses, instead of a fixed sleep — the
+  // watcher's tick involves real process spawns, whose latency varies by environment.
+  async function waitUntil(check: () => boolean, label: string): Promise<void> {
+    const deadline = Date.now() + 2000;
+    while (!check()) {
+      if (Date.now() > deadline)
+        throw new Error(`timed out waiting for: ${label}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  const ORIGINAL_PATH = process.env.PATH;
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  const stop = startHerdrWatch(20);
+  try {
+    // No SSE subscriber yet -> the watcher must never shell out to herdr.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(existsSync(CALLS_FILE)).toBe(false);
+    expect(listenerCount()).toBe(0);
+
+    let notifications = 0;
+    const unsub = subscribe(() => {
+      notifications++;
+    });
+    try {
+      // First poll with a subscriber present differs from the unknown baseline -> one publish.
+      await waitUntil(() => notifications >= 1, "first publish");
+      expect(existsSync(CALLS_FILE)).toBe(true);
+      expect(notifications).toBe(1);
+
+      // Unchanged agent list -> no further publish across several more ticks.
+      await new Promise((r) => setTimeout(r, 100));
+      expect(notifications).toBe(1);
+
+      // Agent list changes -> exactly one more publish.
+      writeFileSync(
+        AGENTS_FILE,
+        JSON.stringify({
+          result: {
+            agents: [
+              {
+                agent: "claude",
+                agent_status: "working",
+                name: "a1",
+                pane_id: "w1:p1",
+              },
+              {
+                agent: "claude",
+                agent_status: "blocked",
+                name: "a2",
+                pane_id: "w1:p2",
+              },
+            ],
+          },
+        }),
+      );
+      await waitUntil(() => notifications >= 2, "second publish");
+      expect(notifications).toBe(2);
+    } finally {
+      unsub();
+    }
+
+    // Ephemeral: none of this ever touched the persisted events table.
+    expect(S.listEvents(0, repo.id, 100)).toEqual([]);
+  } finally {
+    stop();
+    process.env.PATH = ORIGINAL_PATH;
+    rmSync(FAKE_BIN, { recursive: true, force: true });
+  }
 });

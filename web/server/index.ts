@@ -1,10 +1,17 @@
 // `lh-web` entry point: start the lh-web HTTP process. Runs only while in use (no daemon).
-//   lh-web [--port <n>] [--poll-ms <ms>] [--sweep-ms <ms>]   (port: default 8730 or LOOPHUB_PORT)
+//   lh-web [--port <n>] [--poll-ms <ms>] [--sweep-ms <ms>] [--herdr-watch-ms <ms>]
+//   (port: default 8730 or LOOPHUB_PORT)
 // One command, one port: this process serves the JSON-RPC API, the SSE feed, AND the SPA
 // (with HMR) by embedding Vite in middleware mode — no separate dev server.
 
 import { createViteDev, type ViteDev } from "./dev.ts";
-import { DEFAULT_SWEEP_MS, startEventTail, startPullSweep } from "./events.ts";
+import {
+  DEFAULT_HERDR_WATCH_MS,
+  DEFAULT_SWEEP_MS,
+  startEventTail,
+  startHerdrWatch,
+  startPullSweep,
+} from "./events.ts";
 import { createLhWebServer } from "./http.ts";
 import { log } from "./logger.ts";
 
@@ -12,22 +19,31 @@ const argv = process.argv.slice(2);
 let port = Number(process.env.LOOPHUB_PORT ?? 8730);
 let pollMs = Number(process.env.LOOPHUB_POLL_MS ?? 1000);
 let sweepMs = Number(process.env.LOOPHUB_SWEEP_MS ?? DEFAULT_SWEEP_MS);
+let herdrWatchMs = Number(
+  process.env.LOOPHUB_HERDR_WATCH_MS ?? DEFAULT_HERDR_WATCH_MS,
+);
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--port") port = Number(argv[++i]);
   else if (argv[i] === "--poll-ms") pollMs = Number(argv[++i]);
   else if (argv[i] === "--sweep-ms") sweepMs = Number(argv[++i]);
+  else if (argv[i] === "--herdr-watch-ms") herdrWatchMs = Number(argv[++i]);
 }
 
 // A non-numeric env/flag (or a trailing `--sweep-ms` with no value) yields NaN; since `NaN > 0`
 // is false that would silently disable the sweep — the exact stall this feature prevents. Fall
 // back to the default instead of going quiet.
 if (!Number.isFinite(sweepMs)) sweepMs = DEFAULT_SWEEP_MS;
+if (!Number.isFinite(herdrWatchMs)) herdrWatchMs = DEFAULT_HERDR_WATCH_MS;
 
 // Tail the shared DB so CLI/agent (out-of-process) writes reach SSE subscribers live.
 const stopTail = startEventTail(pollMs);
 // Auto-fire pull_request.updated from open PR head SHA changes (no `lh sync` needed).
 // sweepMs <= 0 disables the resident sweep (rely on manual `lh sync` / `sync/run`).
 const stopSweep = sweepMs > 0 ? startPullSweep(sweepMs) : () => {};
+// Poll herdr session state for the sidebar (#591); the watcher itself no-ops while no SSE
+// connection is open, so herdrWatchMs <= 0 only matters as an explicit opt-out.
+const stopHerdrWatch =
+  herdrWatchMs > 0 ? startHerdrWatch(herdrWatchMs) : () => {};
 
 // Embed Vite so this single process serves the SPA with HMR alongside /rpc and /events.
 // `vite` is assigned before listen(), so by the time requests arrive it is always set; the
@@ -48,6 +64,7 @@ try {
 } catch (err) {
   stopTail();
   stopSweep();
+  stopHerdrWatch();
   log.error(
     "lh-web: failed to start the embedded Vite dev server. Are web deps installed (npm install)?",
   );
@@ -58,7 +75,7 @@ try {
 server.listen(port, host, () => {
   const shown = host === "127.0.0.1" ? "localhost" : host;
   log.info(
-    `lh-web listening on http://${shown}:${port}  (API + UI + HMR; events poll ${pollMs}ms; PR sweep ${sweepMs > 0 ? `${sweepMs}ms` : "off"})`,
+    `lh-web listening on http://${shown}:${port}  (API + UI + HMR; events poll ${pollMs}ms; PR sweep ${sweepMs > 0 ? `${sweepMs}ms` : "off"}; herdr watch ${herdrWatchMs > 0 ? `${herdrWatchMs}ms` : "off"})`,
   );
 });
 
@@ -70,6 +87,7 @@ const shutdown = async () => {
 
   stopTail();
   stopSweep();
+  stopHerdrWatch();
   if (vite) await vite.close();
 
   // Close gracefully first, giving existing connections a moment to finish.

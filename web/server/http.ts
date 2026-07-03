@@ -22,6 +22,7 @@ import {
   saveAttachment,
 } from "../../core/attachments.ts";
 import { isServiceError } from "../../core/errors.ts";
+import { subscribe as subscribeTerminalWatch } from "../../core/terminal-watch-hub.ts";
 import { subscribeEvents } from "./events.ts";
 import { isAllowedOrigin, isLoopbackHost } from "./net.ts";
 import { dispatchRaw } from "./rpc.ts";
@@ -237,6 +238,14 @@ function handleEvents(
     push(`event: loophub\ndata: ${JSON.stringify(n)}\n\n`),
   );
 
+  // A bare, non-persisted "herdr session state changed" signal (#591): the client invalidates
+  // and refetches over JSON-RPC, so no payload is needed. Every open /events connection
+  // subscribes here, so terminal-watch-hub's listenerCount() is exactly the open-connection
+  // count the herdr watcher (web/server/events.ts startHerdrWatch) gates its polling on.
+  const unsubTerminal = subscribeTerminalWatch(() =>
+    push("event: terminal\ndata: {}\n\n"),
+  );
+
   const heartbeat = setInterval(
     () => push(": heartbeat\n\n"),
     SSE_HEARTBEAT_MS,
@@ -246,6 +255,7 @@ function handleEvents(
     if (closed) return;
     closed = true;
     unsub();
+    unsubTerminal();
     clearInterval(heartbeat);
     res.end();
   };
