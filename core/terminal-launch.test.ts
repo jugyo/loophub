@@ -1,4 +1,8 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { updateConfig } from "./config.ts";
 import {
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
@@ -51,6 +55,7 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
+        codingAgent: "claude-code",
       }),
     ).toBe("claude '/create-github-pr 451'");
     expect(
@@ -61,6 +66,57 @@ describe("herdr terminal launch", () => {
         cwd: "/tmp/work tree",
       }),
     ).toBe("cd '/tmp/work tree' && claude --resume 'session-1'");
+  });
+
+  test("uses the configured coding agent for GitHub PR export launches (#660)", () => {
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "github-pr-export",
+        prNumber: 451,
+        codingAgent: "codex",
+      }),
+    ).toBe("codex '/create-github-pr 451'");
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "github-pr-export",
+        prNumber: 451,
+        codingAgent: "claude-code",
+      }),
+    ).toBe("claude '/create-github-pr 451'");
+  });
+
+  test("reads codingAgent config for GitHub PR export launches when no override is passed (#660)", () => {
+    const prevHome = process.env.LOOPHUB_HOME;
+    const home = mkdtempSync(join(tmpdir(), "lh-terminal-launch-"));
+    process.env.LOOPHUB_HOME = home;
+    try {
+      updateConfig({ codingAgent: "codex" });
+      expect(
+        commandForHerdrLaunch({
+          repo: "jugyo/loophub",
+          workflow: "github-pr-export",
+          prNumber: 451,
+        }),
+      ).toBe("codex '/create-github-pr 451'");
+
+      updateConfig({ codingAgent: "claude-code" });
+      expect(
+        commandForHerdrLaunch({
+          repo: "jugyo/loophub",
+          workflow: "github-pr-export",
+          prNumber: 451,
+        }),
+      ).toBe("claude '/create-github-pr 451'");
+    } finally {
+      if (prevHome === undefined) {
+        delete process.env.LOOPHUB_HOME;
+      } else {
+        process.env.LOOPHUB_HOME = prevHome;
+      }
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test("shell-quotes repo names in generated workflows", () => {

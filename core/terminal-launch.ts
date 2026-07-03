@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { type CodingAgent, codingAgent } from "./config.ts";
 
 export interface TerminalLaunchRepo {
   full_name: string;
@@ -95,13 +96,17 @@ export function commandForHerdrLaunch(input: {
   prNumber?: number;
   session?: string;
   cwd?: string;
+  codingAgent?: CodingAgent;
 }): string {
   if (input.workflow === "issue-create") {
     // `lh issue new` is the recorded LoopHub entrypoint for the /lh-issue-create workflow.
     return `lh issue new --repo ${shellArg(input.repo)}`;
   }
   if (input.workflow === "github-pr-export" && input.prNumber) {
-    return `claude ${shellArg(`/create-github-pr ${input.prNumber}`)}`;
+    const command = shellArg(`/create-github-pr ${input.prNumber}`);
+    return (input.codingAgent ?? codingAgent()) === "codex"
+      ? `codex ${command}`
+      : `claude ${command}`;
   }
   if (input.workflow === "resume" && input.session) {
     const resume = `claude --resume ${shellArg(input.session)}`;
