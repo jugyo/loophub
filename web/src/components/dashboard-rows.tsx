@@ -441,6 +441,11 @@ function HerdrBadge({
     >
       <Terminal className="size-3" />
       Herdr
+      {workspace.status ? (
+        <span className="text-zinc-300 dark:text-zinc-500">
+          {workspace.status}
+        </span>
+      ) : null}
     </button>
   );
 }

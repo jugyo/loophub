@@ -175,7 +175,7 @@ test("terminal.sessions maps a running agent's cwd back to its PR (#579)", async
         repo: "me/pull-workspace",
         session_name: sessionName,
         agents: [{ id: "wP:p2", name: "Issue #9 - PR 12", status: "working" }],
-        pull_workspaces: [{ pull: 12, pane_id: "wP:p2" }],
+        pull_workspaces: [{ pull: 12, pane_id: "wP:p2", status: "working" }],
       },
     ]);
   } finally {

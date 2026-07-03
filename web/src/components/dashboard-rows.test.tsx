@@ -521,7 +521,7 @@ describe("Herdr running badge (#579)", () => {
           repo: "me/proj",
           session_name: "me-proj-abc",
           agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2" }],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
         },
       ],
     };
@@ -537,7 +537,7 @@ describe("Herdr running badge (#579)", () => {
           repo: "me/proj",
           session_name: "me-proj-abc",
           agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2" }],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
         },
       ],
     };
@@ -551,6 +551,27 @@ describe("Herdr running badge (#579)", () => {
     expect(await screen.findByText("Herdr")).toBeTruthy();
   });
 
+  it("shows the raw herdr status string alongside the badge, unchanged (#596)", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "blocked" }],
+        },
+      ],
+    };
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+      />,
+    );
+    expect(await screen.findByText("blocked")).toBeTruthy();
+  });
+
   it("does not show the badge for an agent running a different PR", async () => {
     herdrSessionsData.value = {
       repos: [
@@ -558,7 +579,7 @@ describe("Herdr running badge (#579)", () => {
           repo: "me/proj",
           session_name: "me-proj-abc",
           agents: [],
-          pull_workspaces: [{ pull: 99, pane_id: "w1:p2" }],
+          pull_workspaces: [{ pull: 99, pane_id: "w1:p2", status: "working" }],
         },
       ],
     };
@@ -580,7 +601,7 @@ describe("Herdr running badge (#579)", () => {
           repo: "me/other",
           session_name: "me-other-abc",
           agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2" }],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
         },
       ],
     };
@@ -602,7 +623,7 @@ describe("Herdr running badge (#579)", () => {
           repo: "me/proj",
           session_name: "me-proj-abc",
           agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2" }],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
         },
       ],
     };

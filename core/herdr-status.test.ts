@@ -173,20 +173,26 @@ describe("herdrPullWorkspacesFromAgentList", () => {
         ROOT,
         FULL_NAME,
       ),
-    ).toEqual([{ pull: 12, pane_id: "wP:p2" }]);
+    ).toEqual([{ pull: 12, pane_id: "wP:p2", status: "working" }]);
   });
 
   test("falls back to cwd when foreground_cwd is absent", () => {
     const out = herdrPullWorkspacesFromAgentList(
       JSON.stringify({
         result: {
-          agents: [{ pane_id: "wP:p2", cwd: `${ROOT}/${FULL_NAME}/pr-12` }],
+          agents: [
+            {
+              pane_id: "wP:p2",
+              cwd: `${ROOT}/${FULL_NAME}/pr-12`,
+              agent_status: "idle",
+            },
+          ],
         },
       }),
       ROOT,
       FULL_NAME,
     );
-    expect(out).toEqual([{ pull: 12, pane_id: "wP:p2" }]);
+    expect(out).toEqual([{ pull: 12, pane_id: "wP:p2", status: "idle" }]);
   });
 
   test("skips an agent with no pane_id", () => {
@@ -207,15 +213,42 @@ describe("herdrPullWorkspacesFromAgentList", () => {
       JSON.stringify({
         result: {
           agents: [
-            { pane_id: "wP:p2", cwd: `${ROOT}/${FULL_NAME}/pr-12` },
-            { pane_id: "wP:p9", cwd: `${ROOT}/${FULL_NAME}/pr-12` },
+            {
+              pane_id: "wP:p2",
+              cwd: `${ROOT}/${FULL_NAME}/pr-12`,
+              agent_status: "working",
+            },
+            {
+              pane_id: "wP:p9",
+              cwd: `${ROOT}/${FULL_NAME}/pr-12`,
+              agent_status: "done",
+            },
           ],
         },
       }),
       ROOT,
       FULL_NAME,
     );
-    expect(out).toEqual([{ pull: 12, pane_id: "wP:p2" }]);
+    expect(out).toEqual([{ pull: 12, pane_id: "wP:p2", status: "working" }]);
+  });
+
+  test("defaults status to empty string when agent_status is missing or not a string", () => {
+    const out = herdrPullWorkspacesFromAgentList(
+      JSON.stringify({
+        result: {
+          agents: [
+            {
+              pane_id: "wP:p2",
+              cwd: `${ROOT}/${FULL_NAME}/pr-12`,
+              agent_status: 42,
+            },
+          ],
+        },
+      }),
+      ROOT,
+      FULL_NAME,
+    );
+    expect(out).toEqual([{ pull: 12, pane_id: "wP:p2", status: "" }]);
   });
 
   test.each([

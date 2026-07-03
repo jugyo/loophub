@@ -193,6 +193,8 @@ export interface HerdrAgent {
 export interface HerdrPullWorkspace {
   pull: number;
   pane_id: string;
+  /** Raw herdr agent_status (known values: working | blocked | done | idle), same as HerdrAgent.status. */
+  status: string;
 }
 
 /** A repo's running herdr session and its agents (`terminal/sessions`, #495). */

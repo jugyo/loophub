@@ -88,6 +88,8 @@ export function parseHerdrAgentList(stdout: string): HerdrAgent[] {
 export interface HerdrPullWorkspace {
   pull: number;
   pane_id: string;
+  /** Raw herdr agent_status (known values: working | blocked | done | idle), same as HerdrAgent.status. */
+  status: string;
 }
 
 /**
@@ -119,6 +121,7 @@ export function herdrPullWorkspacesFromAgentList(
       pane_id?: unknown;
       foreground_cwd?: unknown;
       cwd?: unknown;
+      agent_status?: unknown;
     };
     if (typeof rec.pane_id !== "string" || rec.pane_id === "") continue;
     const cwd =
@@ -130,7 +133,11 @@ export function herdrPullWorkspacesFromAgentList(
     if (cwd === null) continue;
     const pull = pullNumberFromWorktreePath(worktreeRoot, fullName, cwd);
     if (pull === null || byPull.has(pull)) continue;
-    byPull.set(pull, { pull, pane_id: rec.pane_id });
+    byPull.set(pull, {
+      pull,
+      pane_id: rec.pane_id,
+      status: typeof rec.agent_status === "string" ? rec.agent_status : "",
+    });
   }
   return [...byPull.values()];
 }
