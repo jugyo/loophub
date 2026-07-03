@@ -115,8 +115,11 @@ const comments: IssueComment[] = [
   },
 ];
 
-function mockFetch() {
+function mockFetch(
+  extraHandlers: Record<string, (params: any) => unknown> = {},
+) {
   return mockRpcFetch({
+    ...extraHandlers,
     "pulls/get": () => pull,
     "pulls/files": () => files,
     "reviews/list": () => reviews,
@@ -128,8 +131,10 @@ function mockFetch() {
   });
 }
 
-function renderDetail() {
-  vi.stubGlobal("fetch", mockFetch());
+function renderDetail(
+  extraHandlers: Record<string, (params: any) => unknown> = {},
+) {
+  vi.stubGlobal("fetch", mockFetch(extraHandlers));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -902,6 +907,36 @@ describe("PullDetail", () => {
     // The header is mounted (Merge renders); with no related_sessions there is no Resume button anywhere.
     await screen.findByRole("button", { name: /^Merge$/i });
     expect(screen.queryByRole("button", { name: /^Resume$/ })).toBeNull();
+  });
+
+  // #609: the sidebar shows a Herdr section (session name + Focus) while herdr reports an
+  // agent running this PR's worktree, and hides it entirely otherwise.
+  it("shows the sidebar Herdr section when a herdr session runs this PR", async () => {
+    renderDetail({
+      "terminal/sessions": () => ({
+        repos: [
+          {
+            repo: "me/proj",
+            session_name: "lh-me-proj",
+            agents: [{ id: "%3", name: "dev #153", status: "working" }],
+            pull_workspaces: [{ pull: 30, pane_id: "%3", status: "working" }],
+          },
+        ],
+      }),
+    });
+
+    expect(await screen.findByRole("heading", { name: "Herdr" })).toBeTruthy();
+    expect(screen.getByText("lh-me-proj")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Focus" })).toBeTruthy();
+  });
+
+  it("hides the sidebar Herdr section when no herdr session runs this PR", async () => {
+    renderDetail({
+      "terminal/sessions": () => ({ repos: [] }),
+    });
+
+    await screen.findByRole("button", { name: /^Merge$/i });
+    expect(screen.queryByRole("heading", { name: "Herdr" })).toBeNull();
   });
 });
 

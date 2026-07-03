@@ -66,8 +66,10 @@ function mockFetch(
   getIssue: () => Issue = () => issue,
   getGroups: () => IssueGroupWithMembers[] = () => [],
   autoModeOnBuild = false,
+  extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
   return mockRpcFetch({
+    ...extraHandlers,
     "issues/get": getIssue,
     "issueGroups/forIssue": getGroups,
     "comments/list": () => comments,
@@ -91,8 +93,12 @@ function renderDetail(
   getIssue?: () => Issue,
   getGroups?: () => IssueGroupWithMembers[],
   autoModeOnBuild = false,
+  extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
-  vi.stubGlobal("fetch", mockFetch(getIssue, getGroups, autoModeOnBuild));
+  vi.stubGlobal(
+    "fetch",
+    mockFetch(getIssue, getGroups, autoModeOnBuild, extraHandlers),
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -192,6 +198,46 @@ describe("IssueDetail", () => {
     expect(screen.getByText("PR #29")).toBeTruthy();
     expect(screen.getByText("closed attempt")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /build/i })).toBeNull();
+  });
+
+  // #609: the linked-PR row shows the same Herdr badge as the issue list, shown only while
+  // herdr reports an agent running in that PR's worktree; clicking focuses its pane.
+  it("shows the Herdr badge on the linked-PR row and focuses on click", async () => {
+    renderDetail(undefined, undefined, false, {
+      "terminal/sessions": () => ({
+        repos: [
+          {
+            repo: "me/proj",
+            session_name: "lh-me-proj",
+            agents: [{ id: "%7", name: "dev #12", status: "working" }],
+            pull_workspaces: [{ pull: 30, pane_id: "%7", status: "working" }],
+          },
+        ],
+      }),
+      "terminal/focusAgent": () => ({ ok: true }),
+    });
+
+    const badge = await screen.findByRole("button", {
+      name: "Focus Herdr terminal for PR #30",
+    });
+    fireEvent.click(badge);
+    await waitFor(() => {
+      expect(rpcCall("terminal/focusAgent")?.params).toEqual({
+        repo: "me/proj",
+        paneId: "%7",
+      });
+    });
+  });
+
+  it("shows no Herdr badge on the linked-PR row when no herdr session runs the PR", async () => {
+    renderDetail(undefined, undefined, false, {
+      "terminal/sessions": () => ({ repos: [] }),
+    });
+
+    expect(await screen.findByText("PR #30")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Focus Herdr terminal/ }),
+    ).toBeNull();
   });
 
   it("posts a comment and clears the textarea on success", async () => {

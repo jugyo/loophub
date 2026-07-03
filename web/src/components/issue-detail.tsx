@@ -16,6 +16,7 @@ import { BuildStatusLabel } from "@/components/build-status-label";
 import { IssueRow } from "@/components/dashboard-rows";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
+import { HerdrBadge } from "@/components/herdr-badge";
 import { LabelChip } from "@/components/label-chip";
 import { Markdown } from "@/components/markdown";
 import { RelatedSessions } from "@/components/related-sessions";
@@ -329,6 +330,9 @@ function LinkedPullRow({
       >
         {pull.title}
       </Link>
+      {/* Same badge as the issue-list linked-PR sub-row (#609): shown only while a herdr
+          terminal runs this PR's worktree; clicking focuses its pane. */}
+      <HerdrBadge owner={owner} repo={repo} pull={pull.number} />
     </div>
   );
 }

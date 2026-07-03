@@ -3,13 +3,13 @@
 // (../lib/badges.ts).
 
 import { Link } from "@tanstack/react-router";
-import { Check, Loader2, MoreHorizontal, Play, Terminal } from "lucide-react";
+import { Check, Loader2, MoreHorizontal, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
+import { HerdrBadge } from "@/components/herdr-badge";
 import { LabelChip } from "@/components/label-chip";
 import { useTerminalLauncher } from "@/components/terminal-controller";
-import { useToast } from "@/components/toast";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
   type Badge as BadgeData,
@@ -25,7 +25,6 @@ import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
 import { useSetIssueState } from "@/queries/issues";
 import { useSettings } from "@/queries/settings";
-import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
   if (badges.length === 0) return null;
@@ -386,67 +385,6 @@ function LinkedPullSubRow({
       ) : null}
       <HerdrBadge owner={owner} repo={repo} pull={pull.number} />
     </div>
-  );
-}
-
-// Terminal-icon badge shown on a linked-PR sub-row only while a herdr terminal is actually
-// running for that PR's worktree (#579) — invisible (renders null) otherwise, so it never
-// implies a session that isn't there. Reuses the same terminal/sessions poll the sidebar
-// section already runs (useHerdrSessions, #495): one shared 15s-interval query for every
-// IssueRow on the page, not one herdr shellout per row. Clicking switches herdr's focus to
-// that agent's pane via terminal/focusAgent (#578's `herdr agent focus`, reused here) instead
-// of launching a new terminal.
-function HerdrBadge({
-  owner,
-  repo,
-  pull,
-}: {
-  owner: string;
-  repo: string;
-  pull: number;
-}) {
-  const { data } = useHerdrSessions();
-  const workspace = data?.repos
-    .find((r) => r.repo === `${owner}/${repo}`)
-    ?.pull_workspaces.find((w) => w.pull === pull);
-  const focus = useFocusHerdrAgent();
-  const { showError } = useToast();
-  if (!workspace) return null;
-  return (
-    <button
-      type="button"
-      title="Focus the running Herdr terminal"
-      aria-label={`Focus Herdr terminal for PR #${pull}`}
-      disabled={focus.isPending}
-      onClick={() =>
-        focus.mutate(
-          { repo: `${owner}/${repo}`, paneId: workspace.pane_id },
-          {
-            onError: (e) =>
-              showError(
-                e instanceof Error
-                  ? e.message
-                  : "Failed to focus the Herdr terminal.",
-              ),
-          },
-        )
-      }
-      className={cn(
-        badgeVariants({ tone: "unknown" }),
-        // Terminal-flavored look, not the pill shape the rest of the badges use: a near-square
-        // corner radius and a gray zinc palette per theme (mid-gray in light, near-black in
-        // dark) so it reads as a little terminal chip rather than another status pill.
-        "shrink-0 gap-1 rounded-sm border-zinc-400 bg-zinc-500 font-mono text-zinc-50 hover:opacity-80 disabled:pointer-events-none disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300",
-      )}
-    >
-      <Terminal className="size-3" />
-      Herdr
-      {workspace.status ? (
-        <span className="text-zinc-300 dark:text-zinc-500">
-          {workspace.status}
-        </span>
-      ) : null}
-    </button>
   );
 }
 

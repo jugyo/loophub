@@ -23,6 +23,7 @@ import { HandoffTimeline } from "@/components/handoff-timeline";
 import { Markdown } from "@/components/markdown";
 import { MarkdownPreviewModal } from "@/components/markdown-preview-modal";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
+import { PullHerdrSection } from "@/components/pull-herdr-section";
 import { RelatedSessions } from "@/components/related-sessions";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { useToast } from "@/components/toast";
@@ -137,6 +138,9 @@ export function PullDetail({
 
       <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
         <WorkDuration workDuration={pull.work_duration} />
+        {/* Above Sessions (#609): the live herdr terminal outranks the historical session
+            list when deciding where to jump. Hides itself when no herdr session runs this PR. */}
+        <PullHerdrSection owner={owner} repo={repo} pull={number} />
         <RelatedSessions
           owner={owner}
           repo={repo}
