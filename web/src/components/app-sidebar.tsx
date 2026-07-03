@@ -2,7 +2,7 @@
 // plus links to Home and Archived. Repo screens land in later UI issues.
 
 import { Link } from "@tanstack/react-router";
-import { Database, Home, Loader2, Settings, Star } from "lucide-react";
+import { Bot, Database, Home, Loader2, Settings, Star } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -11,12 +11,13 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Repo } from "@/api/types";
+import type { HerdrSessions, Repo } from "@/api/types";
 import { Logo } from "@/components/logo";
 import { SidebarHerdrSessions } from "@/components/sidebar-herdr-sessions";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import { useRepos, useSetRepoFavorite } from "@/queries/repos";
+import { useHerdrSessions } from "@/queries/terminal";
 
 // Draggable sidebar width (#378). The width is a CSS variable (`--lh-sidebar-w`, default 16rem);
 // dragging the right edge updates it live and persists the pixel value to localStorage so it
@@ -33,6 +34,8 @@ function readWidth(): number {
 
 export function AppSidebar() {
   const { data: repos, isLoading, isError } = useRepos();
+  const { data: herdrSessions, isError: herdrSessionsError } =
+    useHerdrSessions();
 
   const [width, setWidth] = useState(readWidth);
   const drag = useRef<{ startX: number; startW: number } | null>(null);
@@ -131,7 +134,15 @@ export function AppSidebar() {
         {[...(repos ?? [])]
           .sort((a, b) => (a.favorite === b.favorite ? 0 : a.favorite ? -1 : 1))
           .map((repo) => (
-            <RepoSidebarLink key={repo.id} repo={repo} />
+            <RepoSidebarLink
+              key={repo.id}
+              repo={repo}
+              agentCount={
+                herdrSessionsError
+                  ? 0
+                  : countRepoHerdrAgents(herdrSessions, repo.full_name)
+              }
+            />
           ))}
 
         {/* Archived (#478): sits directly under the repo list (inside the same scroll area, right
@@ -174,6 +185,17 @@ export function AppSidebar() {
   );
 }
 
+export function countRepoHerdrAgents(
+  sessions: HerdrSessions | undefined,
+  repoFullName: string,
+): number {
+  return (
+    sessions?.repos
+      .filter((group) => group.repo === repoFullName)
+      .reduce((total, group) => total + group.agents.length, 0) ?? 0
+  );
+}
+
 function SidebarLink({
   to,
   icon,
@@ -206,10 +228,19 @@ function SidebarLink({
 // Repo nav row with an inline favorite toggle (#457). Unlike SidebarLink, the star sits
 // outside the <Link> (nesting a <button> inside an <a> is invalid) but inside the same
 // hover/active-styled row, so favoriting doesn't require leaving the sidebar.
-function RepoSidebarLink({ repo }: { repo: Repo }) {
+function RepoSidebarLink({
+  repo,
+  agentCount,
+}: {
+  repo: Repo;
+  agentCount: number;
+}) {
   const [owner, name] = repo.full_name.split("/");
   const setFavorite = useSetRepoFavorite(owner, name);
   const to: string = `/r/${owner}/${name}`;
+  const agentLabel = `${agentCount} running Herdr ${
+    agentCount === 1 ? "agent" : "agents"
+  }`;
 
   return (
     <div
@@ -224,10 +255,20 @@ function RepoSidebarLink({ repo }: { repo: Repo }) {
       <Link
         to={to}
         title={repo.full_name}
-        className="flex flex-1 items-center gap-2 truncate px-2 py-1.5 text-sm"
+        className="flex min-w-0 flex-1 items-center gap-2 truncate px-2 py-1.5 text-sm"
       >
         <span className="truncate">{repo.full_name}</span>
       </Link>
+      {agentCount > 0 && (
+        <span
+          className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+          aria-label={agentLabel}
+          title={agentLabel}
+        >
+          <Bot className="size-3.5" aria-hidden="true" />
+          <span>{agentCount}</span>
+        </span>
+      )}
       <button
         type="button"
         aria-label={
