@@ -695,15 +695,25 @@ describe("SidebarHerdrSessions", () => {
 
       const staleName = await screen.findByText("dev #11");
       expect(staleName.className).toContain("text-muted-foreground");
+      expect(staleName.className).toContain("opacity-60");
       const staleStatus = statusInRow("dev #11", "working");
       expect(staleStatus.className).toContain("text-muted-foreground");
       expect(staleStatus.className).not.toContain("text-yellow-500");
+      // The icon fades too (#678), applied on itself rather than the row so it
+      // doesn't compound onto the Focus/Kill button overlay in the same row.
+      expect(
+        rowForAgent("dev #11").querySelector(".lucide-bot")?.className,
+      ).toContain("opacity-60");
 
       const freshName = screen.getByText("dev #13");
       expect(freshName.className).not.toContain("text-muted-foreground");
+      expect(freshName.className).not.toContain("opacity-60");
       expect(statusInRow("dev #13", "working").className).toContain(
         "text-yellow-500",
       );
+      expect(
+        rowForAgent("dev #13").querySelector(".lucide-bot")?.className,
+      ).not.toContain("opacity-60");
     });
 
     // #620/#645: stale rows sink to the bottom of their repo group so active agents stay on top.

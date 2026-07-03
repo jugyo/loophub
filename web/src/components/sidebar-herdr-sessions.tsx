@@ -253,10 +253,23 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
         onMouseLeave={onMouseLeave}
       >
         <Bot
-          className="size-3.5 shrink-0 text-muted-foreground"
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground",
+            // Fades the icon too for stale agents (#678), on top of the existing
+            // name/status text dimming below — applied per-element rather than on the
+            // row itself, since the row also wraps the Focus/Kill button overlay
+            // further down and CSS opacity on an ancestor compounds into descendants,
+            // which would wash out those buttons' own opacity-100 hover reveal.
+            stale && "opacity-60",
+          )}
           aria-hidden="true"
         />
-        <span className={cn("truncate", stale && "text-muted-foreground")}>
+        <span
+          className={cn(
+            "truncate",
+            stale && "text-muted-foreground opacity-60",
+          )}
+        >
           {agent.name}
         </span>
         <span
