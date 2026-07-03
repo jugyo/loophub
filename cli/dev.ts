@@ -303,6 +303,42 @@ export function buildClaudeArgs({
   return args;
 }
 
+export function buildRuntimeLaunch({
+  runtime,
+  sessionId,
+  managedSettings,
+  auto,
+  slashCommand,
+  sessionName,
+  model,
+}: {
+  runtime: DevRuntime;
+  sessionId: string;
+  managedSettings?: string;
+  auto?: boolean;
+  slashCommand: string;
+  sessionName?: string;
+  model?: string;
+}): { bin: "claude" | "codex"; args: string[] } {
+  if (runtime === "codex") {
+    return {
+      bin: "codex",
+      args: buildCodexArgs({ slashCommand, auto, model }),
+    };
+  }
+  return {
+    bin: "claude",
+    args: buildClaudeArgs({
+      sessionId,
+      managedSettings,
+      auto,
+      slashCommand,
+      sessionName,
+      model,
+    }),
+  };
+}
+
 // `lh resume <PR id>` re-enters an existing Claude session rather than starting a new one, so the
 // argv is just `claude --resume <session-id>` (no --session-id / slash command / sandbox settings —
 // the original session already carries its history and the worktree is reused). Pure so it can be

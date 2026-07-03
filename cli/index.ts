@@ -28,10 +28,9 @@ import {
 } from "../core/terminal-launch.ts";
 import {
   acquireDevLock,
-  buildClaudeArgs,
-  buildCodexArgs,
   buildManagedSettings,
   buildResumeArgs,
+  buildRuntimeLaunch,
   type DevRuntime,
   devLockPath,
   displayMultiline,
@@ -635,20 +634,17 @@ async function main() {
     // The argv for the selected runtime (#458). Codex takes only the initial prompt (the same
     // `/lh-dev <id>` slash command, run from the same worktree cwd); claude additionally carries
     // the session id / display name / sandbox settings, which have no Codex equivalent.
-    const runtimeBin = runtime === "codex" ? "codex" : "claude";
-    const runtimeArgs =
-      runtime === "codex"
-        ? buildCodexArgs({ slashCommand, auto: flags.auto === true, model })
-        : buildClaudeArgs({
-            sessionId,
-            managedSettings: managed,
-            // --auto enables auto mode without the sandbox; --sandbox already implies it via managed.
-            auto: flags.auto === true,
-            slashCommand,
-            sessionName,
-            // The resolved session model (explicit --model, else the per-agent default, #486, #594).
-            model,
-          });
+    const { bin: runtimeBin, args: runtimeArgs } = buildRuntimeLaunch({
+      runtime,
+      sessionId,
+      managedSettings: managed,
+      // --auto enables auto mode without the sandbox; --sandbox already implies it via managed.
+      auto: flags.auto === true,
+      slashCommand,
+      sessionName,
+      // The resolved session model (explicit --model, else the per-agent default, #486, #594).
+      model,
+    });
 
     // Show what the runtime will receive, then launch immediately (no confirmation prompt). By
     // default only the basic context (repo / worktree / branch / session-id) is shown; the full
@@ -1007,43 +1003,60 @@ async function main() {
         console.log(`${line}\n\n${i.body}`);
       }
     } else if (sub === "new") {
-      // `lh issue new` files an issue *with an AI session* (#299): it launches a Claude session
-      // running the `/lh-issue-create` skill, recorded as kind=issue-create so it surfaces in the
-      // created issue's related-sessions list and can be resumed later. The New Issue button runs
-      // this. Mirrors `lh dev`: register the session, then spawn `claude --session-id <id>` — here
-      // in the repo root (no worktree; filing an issue does not touch a branch).
+      // `lh issue new` files an issue *with an AI session* (#299): it launches the configured
+      // coding-agent runtime (#658) running the `/lh-issue-create` skill, records the session as
+      // kind=issue-create, and later links it to the created issue. The New Issue button runs this.
+      // Mirrors `lh dev`: register the session, then spawn the resolved runtime — here in the repo
+      // root (no worktree; filing an issue does not touch a branch).
       const r = await run(() => s.repos.get(repo));
       const sessionId = randomUUID();
       const slashCommand = "/lh-issue-create";
+      const runtime = resolveDevRuntime({ defaultRuntime: codingAgent() });
+      const { bin: runtimeBin, args: runtimeArgs } = buildRuntimeLaunch({
+        runtime,
+        sessionId,
+        slashCommand,
+        sessionName: `New issue (${r.full_name})`,
+      });
       await run(() =>
         s.sessions.register({
           id: sessionId,
           agent: LH_ISSUE_CREATE_SESSION_AGENT,
           session: sessionId,
-          runtime: RUNTIME_CLAUDE_CODE,
+          runtime: runtime === "codex" ? RUNTIME_CODEX : RUNTIME_CLAUDE_CODE,
           kind: SESSION_KIND_ISSUE_CREATE,
           name: `New issue (${r.full_name})`,
         }),
       );
-      const claudeArgs = buildClaudeArgs({
-        sessionId,
-        slashCommand,
-        sessionName: `New issue (${r.full_name})`,
-      });
       console.error(
-        formatSpawnCommand(claudeArgs, {
+        formatSpawnCommand(runtimeArgs, {
           color: process.stderr.isTTY === true,
+          bin: runtimeBin,
         }),
       );
-      // Carry the session id into the spawned Claude via env. A `lh issue create` run inside the
+      // Carry the session id into the spawned runtime via env. A `lh issue create` run inside the
       // session reads it and links the session to whatever issue it files (the number is unknown
       // here, so the link is recorded after creation — see the create branch below).
-      const proc = spawnSync("claude", claudeArgs, {
+      const proc = spawnSync(runtimeBin, runtimeArgs, {
         stdio: "inherit",
         cwd: r.local_path,
         env: { ...process.env, [ENV_ISSUE_CREATE_SESSION]: sessionId },
       });
-      process.exit(proc.status ?? 0);
+      if (proc.error) {
+        const err = proc.error as NodeJS.ErrnoException;
+        if (err.code === "ENOENT") {
+          fail(
+            `failed to launch ${runtimeBin}: '${runtimeBin}' not found on PATH`,
+          );
+        }
+        fail(`failed to launch ${runtimeBin}: ${err.message}`);
+      }
+      if (proc.signal) {
+        fail(
+          `failed to launch ${runtimeBin}: terminated by signal ${proc.signal}`,
+        );
+      }
+      process.exit(proc.status ?? 1);
     } else if (sub === "create") {
       const labels = (flags.label || "")
         .split(",")

@@ -26,6 +26,7 @@ import {
   buildCodexArgs,
   buildManagedSettings,
   buildResumeArgs,
+  buildRuntimeLaunch,
   devLockPath,
   displayMultiline,
   formatLaunchPlan,
@@ -524,6 +525,44 @@ test("buildCodexArgs strips control characters from the model before argv (#594)
     model: "\x1b]0;x\x07gpt-5.5\r",
   });
   expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
+});
+
+test("buildRuntimeLaunch returns claude and Claude argv for claude-code", () => {
+  const launch = buildRuntimeLaunch({
+    runtime: "claude-code",
+    sessionId: "sid-1",
+    slashCommand: "/lh-issue-create",
+    sessionName: "New issue (jugyo/loophub)",
+  });
+
+  expect(launch.bin).toBe("claude");
+  expect(launch.args).toEqual(
+    buildClaudeArgs({
+      sessionId: "sid-1",
+      slashCommand: "/lh-issue-create",
+      sessionName: "New issue (jugyo/loophub)",
+    }),
+  );
+  expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toMatch(
+    /^claude /,
+  );
+});
+
+test("buildRuntimeLaunch returns codex and Codex argv for codex", () => {
+  const launch = buildRuntimeLaunch({
+    runtime: "codex",
+    sessionId: "sid-1",
+    slashCommand: "/lh-issue-create",
+    sessionName: "New issue (jugyo/loophub)",
+  });
+
+  expect(launch.bin).toBe("codex");
+  expect(launch.args).toEqual(
+    buildCodexArgs({ slashCommand: "/lh-issue-create" }),
+  );
+  expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toBe(
+    "codex '/lh-issue-create'",
+  );
 });
 
 // ---- spawn command line (pure) ----
