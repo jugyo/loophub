@@ -6,15 +6,24 @@ import { join } from "node:path";
 // cli/dev.ts's --claude-code / --codex flags select between.
 export type CodingAgent = "claude-code" | "codex";
 
+export const CODING_AGENTS: readonly CodingAgent[] = ["claude-code", "codex"];
+
+// Per-agent settings (#593). Kept as its own shape (rather than flattening fields onto
+// GlobalConfig) so a future setting can be added per-agent without another top-level field.
+export interface AgentConfig {
+  // Whether the Build button (issue row / issue detail) launches this agent with auto mode
+  // (--auto for Claude Code, an equivalent flag for Codex). Default off (#499, #593).
+  autoModeOnBuild?: boolean;
+}
+
 // Known config.json fields (#474). Fields are optional — any subset may be present, and
 // unrecognized fields written by a future version must round-trip through updateConfig
 // untouched (it merges into the raw parsed object, not this typed shape).
 export interface GlobalConfig {
   worktreeRoot?: string;
   url?: string;
-  // Whether the Build button (issue row / issue detail) launches `lh dev` with auto mode
-  // (--auto for Claude Code, an equivalent flag for Codex). Default off (#499).
-  autoModeOnBuild?: boolean;
+  // Per-agent settings, keyed by CodingAgent (#593). Absent entries default to unset (off).
+  agents?: Partial<Record<CodingAgent, AgentConfig>>;
   // Default coding agent `lh dev` launches when neither --claude-code nor --codex is passed
   // (#516). Default "claude-code".
   codingAgent?: CodingAgent;
@@ -78,13 +87,13 @@ export function uiUrl(path: string): string {
   return p ? `${baseUrl()}/${p}` : baseUrl();
 }
 
-// Whether the Build button should launch `lh dev` with auto mode (#499). Default false.
-export function autoModeOnBuild(): boolean {
+// Whether the Build button should launch `agent` with auto mode (#499, #593). Default false.
+export function autoModeOnBuild(agent: CodingAgent): boolean {
   try {
-    const cfg = JSON.parse(
+    const cfg: GlobalConfig = JSON.parse(
       readFileSync(join(configDir(), "config.json"), "utf8"),
     );
-    return cfg.autoModeOnBuild === true;
+    return cfg.agents?.[agent]?.autoModeOnBuild === true;
   } catch {}
   return false;
 }
@@ -139,4 +148,19 @@ export function updateConfig(patch: Partial<GlobalConfig>): GlobalConfig {
   writeFileSync(tmp, JSON.stringify(merged, null, 2));
   renameSync(tmp, path);
   return merged as GlobalConfig;
+}
+
+// Set a single agent's autoModeOnBuild without disturbing other agents' settings (#593).
+// updateConfig replaces `agents` wholesale, so the existing map is read and merged here first.
+export function updateAgentAutoModeOnBuild(
+  agent: CodingAgent,
+  value: boolean,
+): GlobalConfig {
+  const current = readConfigFile() as GlobalConfig;
+  return updateConfig({
+    agents: {
+      ...current.agents,
+      [agent]: { ...current.agents?.[agent], autoModeOnBuild: value },
+    },
+  });
 }

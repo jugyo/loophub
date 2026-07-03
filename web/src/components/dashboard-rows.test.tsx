@@ -17,7 +17,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
-import type { HerdrSessions, Issue, LinkedPull } from "@/api/types";
+import type {
+  GlobalSettings,
+  HerdrSessions,
+  Issue,
+  LinkedPull,
+} from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -25,7 +30,13 @@ vi.mock("@/components/terminal-controller", () => ({
   useTerminalLauncher: () => ({ launchTerminal }),
 }));
 const settingsData = vi.hoisted(() => ({
-  value: { autoModeOnBuild: false } as { autoModeOnBuild: boolean } | undefined,
+  value: {
+    agents: {
+      "claude-code": { autoModeOnBuild: false },
+      codex: { autoModeOnBuild: false },
+    },
+    codingAgent: "claude-code",
+  } as GlobalSettings | undefined,
 }));
 vi.mock("@/queries/settings", () => ({
   useSettings: () => ({ data: settingsData.value }),
@@ -52,7 +63,13 @@ afterEach(() => {
   vi.useRealTimers();
   launchTerminal.mockClear();
   focusHerdrAgent.mockClear();
-  settingsData.value = { autoModeOnBuild: false };
+  settingsData.value = {
+    agents: {
+      "claude-code": { autoModeOnBuild: false },
+      codex: { autoModeOnBuild: false },
+    },
+    codingAgent: "claude-code",
+  };
   herdrSessionsData.value = undefined;
 });
 
@@ -279,7 +296,13 @@ describe("IssueRow", () => {
   });
 
   it("shows the --auto command in the title when auto-mode-on-Build is enabled", async () => {
-    settingsData.value = { autoModeOnBuild: true };
+    settingsData.value = {
+      agents: {
+        "claude-code": { autoModeOnBuild: true },
+        codex: { autoModeOnBuild: false },
+      },
+      codingAgent: "claude-code",
+    };
     renderInRouter(
       <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
     );

@@ -186,9 +186,11 @@ describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
     expect(lhDev.calls).toHaveLength(0);
   });
 
-  test("appends --auto when autoModeOnBuild is enabled (#499)", async () => {
+  test("appends --auto when the resolved agent's autoModeOnBuild is enabled (#499, #593)", async () => {
     lhDev.script.push(exitWith(0));
-    svc.settings.update({ autoModeOnBuild: true });
+    // The Build button doesn't pick a runtime itself, so it reads the auto-mode value for
+    // whichever agent `codingAgent` (default claude-code) resolves to.
+    svc.settings.update({ agent: "claude-code", autoModeOnBuild: true });
 
     await svc.terminal.launch({
       repo: "me/proj",
@@ -198,7 +200,22 @@ describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
 
     expect(lhDev.calls[0]).toContain("--auto");
 
-    svc.settings.update({ autoModeOnBuild: false });
+    svc.settings.update({ agent: "claude-code", autoModeOnBuild: false });
+  });
+
+  test("does not append --auto when a different agent's autoModeOnBuild is enabled (#593)", async () => {
+    lhDev.script.push(exitWith(0));
+    svc.settings.update({ agent: "codex", autoModeOnBuild: true });
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+    });
+
+    expect(lhDev.calls[0]).not.toContain("--auto");
+
+    svc.settings.update({ agent: "codex", autoModeOnBuild: false });
   });
 
   test("surfaces a non-zero exit as a ServiceError with a reproducible command", async () => {

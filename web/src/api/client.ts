@@ -196,6 +196,7 @@ export function getSettings() {
 
 export function updateSettings(
   input: {
+    agent?: CodingAgent;
     autoModeOnBuild?: boolean;
     codingAgent?: CodingAgent;
   },

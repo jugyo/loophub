@@ -18,6 +18,7 @@ export function useUpdateSettings() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: {
+      agent?: CodingAgent;
       autoModeOnBuild?: boolean;
       codingAgent?: CodingAgent;
     }) => updateSettings(input),

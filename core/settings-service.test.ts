@@ -18,58 +18,106 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-test("settings.get defaults to auto mode off / claude-code (#474, #499, #516)", () => {
+test("settings.get defaults to auto mode off for every agent / claude-code (#474, #499, #516, #593)", () => {
   expect(svc.settings.get()).toEqual({
-    autoModeOnBuild: false,
+    agents: {
+      "claude-code": { autoModeOnBuild: false },
+      codex: { autoModeOnBuild: false },
+    },
     codingAgent: "claude-code",
   });
 });
 
-test("settings.update persists autoModeOnBuild and is reflected by settings.get (#499)", () => {
-  const result = svc.settings.update({ autoModeOnBuild: true });
-  expect(result).toEqual({
+test("settings.update persists a per-agent autoModeOnBuild and is reflected by settings.get (#499, #593)", () => {
+  const result = svc.settings.update({
+    agent: "claude-code",
     autoModeOnBuild: true,
+  });
+  expect(result).toEqual({
+    agents: {
+      "claude-code": { autoModeOnBuild: true },
+      codex: { autoModeOnBuild: false },
+    },
     codingAgent: "claude-code",
   });
+  expect(svc.settings.get()).toEqual(result);
+
+  const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
+  expect(raw.agents).toEqual({ "claude-code": { autoModeOnBuild: true } });
+
+  svc.settings.update({ agent: "claude-code", autoModeOnBuild: false });
+});
+
+test("settings.update sets one agent's autoModeOnBuild without disturbing another's (#593)", () => {
+  svc.settings.update({ agent: "claude-code", autoModeOnBuild: true });
+  svc.settings.update({ agent: "codex", autoModeOnBuild: true });
   expect(svc.settings.get()).toEqual({
-    autoModeOnBuild: true,
+    agents: {
+      "claude-code": { autoModeOnBuild: true },
+      codex: { autoModeOnBuild: true },
+    },
     codingAgent: "claude-code",
   });
 
-  const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
-  expect(raw.autoModeOnBuild).toBe(true);
+  svc.settings.update({ agent: "claude-code", autoModeOnBuild: false });
+  expect(svc.settings.get()).toEqual({
+    agents: {
+      "claude-code": { autoModeOnBuild: false },
+      codex: { autoModeOnBuild: true },
+    },
+    codingAgent: "claude-code",
+  });
+
+  svc.settings.update({ agent: "codex", autoModeOnBuild: false });
 });
 
 test("settings.update rejects a non-boolean autoModeOnBuild (#499)", () => {
-  expect(() => svc.settings.update({ autoModeOnBuild: "yes" as any })).toThrow(
-    /autoModeOnBuild must be a boolean/,
+  expect(() =>
+    svc.settings.update({
+      agent: "claude-code",
+      autoModeOnBuild: "yes" as any,
+    }),
+  ).toThrow(/autoModeOnBuild must be a boolean/);
+});
+
+test("settings.update rejects autoModeOnBuild without a valid agent (#593)", () => {
+  expect(() => svc.settings.update({ autoModeOnBuild: true } as any)).toThrow(
+    /agent must be one of/,
   );
+  expect(() =>
+    svc.settings.update({ agent: "bogus" as any, autoModeOnBuild: true }),
+  ).toThrow(/agent must be one of/);
 });
 
 test("settings.update omitting autoModeOnBuild preserves the persisted value (#499)", () => {
-  svc.settings.update({ autoModeOnBuild: true });
+  svc.settings.update({ agent: "claude-code", autoModeOnBuild: true });
   svc.settings.update({});
   expect(svc.settings.get()).toEqual({
-    autoModeOnBuild: true,
+    agents: {
+      "claude-code": { autoModeOnBuild: true },
+      codex: { autoModeOnBuild: false },
+    },
     codingAgent: "claude-code",
   });
+
+  svc.settings.update({ agent: "claude-code", autoModeOnBuild: false });
 });
 
 test("settings.update persists codingAgent and is reflected by settings.get (#516)", () => {
-  // Pin the other field too, for run-order-independence.
-  svc.settings.update({ autoModeOnBuild: false });
   const result = svc.settings.update({ codingAgent: "codex" });
   expect(result).toEqual({
-    autoModeOnBuild: false,
+    agents: {
+      "claude-code": { autoModeOnBuild: false },
+      codex: { autoModeOnBuild: false },
+    },
     codingAgent: "codex",
   });
-  expect(svc.settings.get()).toEqual({
-    autoModeOnBuild: false,
-    codingAgent: "codex",
-  });
+  expect(svc.settings.get()).toEqual(result);
 
   const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
   expect(raw.codingAgent).toBe("codex");
+
+  svc.settings.update({ codingAgent: "claude-code" });
 });
 
 test("settings.update rejects an unknown codingAgent (#516)", () => {
@@ -82,7 +130,12 @@ test("settings.update omitting codingAgent preserves the persisted value (#516)"
   svc.settings.update({ codingAgent: "codex" });
   svc.settings.update({});
   expect(svc.settings.get()).toEqual({
-    autoModeOnBuild: false,
+    agents: {
+      "claude-code": { autoModeOnBuild: false },
+      codex: { autoModeOnBuild: false },
+    },
     codingAgent: "codex",
   });
+
+  svc.settings.update({ codingAgent: "claude-code" });
 });

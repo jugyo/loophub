@@ -227,10 +227,16 @@ export interface HerdrAgentRead {
 /** Coding agent `lh dev` launches by default when neither --claude-code nor --codex is passed (#516). */
 export type CodingAgent = "claude-code" | "codex";
 
+/** Per-agent settings (#593). */
+export interface AgentSettings {
+  // Whether the Build button launches this agent with auto mode (#499, #593).
+  autoModeOnBuild: boolean;
+}
+
 /** Instance-level config.json settings (`settings/get`, `settings/update`, #474). */
 export interface GlobalSettings {
-  // Whether the Build button launches `lh dev` with auto mode (#499).
-  autoModeOnBuild: boolean;
+  // Per-agent settings, keyed by CodingAgent (#593).
+  agents: Record<CodingAgent, AgentSettings>;
   // Default coding agent `lh dev` launches (#516).
   codingAgent: CodingAgent;
 }

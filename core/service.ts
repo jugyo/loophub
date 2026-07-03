@@ -17,6 +17,7 @@ import {
   type CodingAgent,
   codingAgent,
   configDir,
+  updateAgentAutoModeOnBuild,
   updateConfig,
   worktreeRoot,
 } from "./config.ts";
@@ -682,7 +683,10 @@ async function launchIssueDevHerdr(r: S.Repo, issueNumber: number) {
     "dev",
     `${r.full_name}/${issueNumber}`,
     "--herdr",
-    ...(autoModeOnBuild() ? ["--auto"] : []),
+    // The Build button doesn't pick a runtime itself, so it inherits whichever agent `lh dev`
+    // would resolve to (the `codingAgent` setting) and reads that agent's own auto-mode value
+    // (#593).
+    ...(autoModeOnBuild(codingAgent()) ? ["--auto"] : []),
   ];
   try {
     await runLhDevLaunch(args, r.local_path);
@@ -1290,30 +1294,39 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
 // Instance-level config.json settings, as opposed to the repo-scoped settings above (#474).
 export const settings = {
   get(): {
-    autoModeOnBuild: boolean;
+    agents: Record<CodingAgent, { autoModeOnBuild: boolean }>;
     codingAgent: CodingAgent;
   } {
     return {
-      autoModeOnBuild: autoModeOnBuild(),
+      agents: {
+        "claude-code": { autoModeOnBuild: autoModeOnBuild("claude-code") },
+        codex: { autoModeOnBuild: autoModeOnBuild("codex") },
+      },
       codingAgent: codingAgent(),
     };
   },
 
   update(
     input: {
+      // Which agent's autoModeOnBuild is being set (#593); required together with
+      // autoModeOnBuild, ignored otherwise.
+      agent?: CodingAgent;
       autoModeOnBuild?: boolean;
       codingAgent?: CodingAgent;
     },
     sessionId?: string | null,
   ): {
-    autoModeOnBuild: boolean;
+    agents: Record<CodingAgent, { autoModeOnBuild: boolean }>;
     codingAgent: CodingAgent;
   } {
-    if (
-      input.autoModeOnBuild !== undefined &&
-      typeof input.autoModeOnBuild !== "boolean"
-    ) {
-      throw new ServiceError(422, "autoModeOnBuild must be a boolean");
+    if (input.autoModeOnBuild !== undefined) {
+      if (typeof input.autoModeOnBuild !== "boolean") {
+        throw new ServiceError(422, "autoModeOnBuild must be a boolean");
+      }
+      if (input.agent !== "claude-code" && input.agent !== "codex") {
+        throw new ServiceError(422, "agent must be one of: claude-code, codex");
+      }
+      updateAgentAutoModeOnBuild(input.agent, input.autoModeOnBuild);
     }
     if (
       input.codingAgent !== undefined &&
@@ -1325,7 +1338,9 @@ export const settings = {
         "codingAgent must be one of: claude-code, codex",
       );
     }
-    updateConfig(input);
+    if (input.codingAgent !== undefined) {
+      updateConfig({ codingAgent: input.codingAgent });
+    }
     const actor = actorFor(sessionId);
     S.emitEvent(null, "settings.updated", actor, input);
     return settings.get();

@@ -26,10 +26,10 @@ test("updateConfig writes config.json atomically and preserves other fields", as
   });
   expect(existsSync(`${path}.tmp`)).toBe(false); // temp renamed away
 
-  updateConfig({ autoModeOnBuild: true });
+  updateConfig({ codingAgent: "codex" });
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
     url: "http://example.test",
-    autoModeOnBuild: true,
+    codingAgent: "codex",
   });
 });
 
@@ -37,12 +37,12 @@ test("updateConfig ignores undefined-valued keys instead of erasing the existing
   const { updateConfig } = await import("./config.ts");
   const path = join(dir, "config.json");
 
-  updateConfig({ autoModeOnBuild: true });
+  updateConfig({ codingAgent: "codex" });
   // A caller (e.g. an RPC handler forwarding an omitted optional param) passing an explicit
   // `undefined` must not wipe the field that was already persisted.
-  updateConfig({ autoModeOnBuild: undefined });
+  updateConfig({ codingAgent: undefined });
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
-    autoModeOnBuild: true,
+    codingAgent: "codex",
   });
 });
 
@@ -51,32 +51,55 @@ test("updateConfig ignores undefined-valued keys instead of erasing the existing
 // other typed fields, since updateConfig merges into the raw parsed object rather than this
 // module's typed GlobalConfig shape.
 test("a stale terminalLaunchBackend field in config.json is preserved and ignored", async () => {
-  const { autoModeOnBuild, codingAgent, updateConfig } = await import(
-    "./config.ts"
-  );
+  const {
+    autoModeOnBuild,
+    codingAgent,
+    updateAgentAutoModeOnBuild,
+    updateConfig,
+  } = await import("./config.ts");
   const path = join(dir, "config.json");
 
   updateConfig({ terminalLaunchBackend: "builtin" } as never);
-  updateConfig({ autoModeOnBuild: true, codingAgent: "codex" });
+  updateAgentAutoModeOnBuild("claude-code", true);
+  updateConfig({ codingAgent: "codex" });
 
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
     terminalLaunchBackend: "builtin",
-    autoModeOnBuild: true,
+    agents: { "claude-code": { autoModeOnBuild: true } },
     codingAgent: "codex",
   });
-  expect(autoModeOnBuild()).toBe(true);
+  expect(autoModeOnBuild("claude-code")).toBe(true);
   expect(codingAgent()).toBe("codex");
 });
 
-test("autoModeOnBuild defaults to false and reflects updateConfig (#499)", async () => {
-  const { autoModeOnBuild, updateConfig } = await import("./config.ts");
-  expect(autoModeOnBuild()).toBe(false); // default
+test("autoModeOnBuild defaults to false per agent and reflects updateAgentAutoModeOnBuild (#499, #593)", async () => {
+  const { autoModeOnBuild, updateAgentAutoModeOnBuild } = await import(
+    "./config.ts"
+  );
+  expect(autoModeOnBuild("claude-code")).toBe(false); // default
+  expect(autoModeOnBuild("codex")).toBe(false); // default
 
-  updateConfig({ autoModeOnBuild: true });
-  expect(autoModeOnBuild()).toBe(true);
+  updateAgentAutoModeOnBuild("claude-code", true);
+  expect(autoModeOnBuild("claude-code")).toBe(true);
+  expect(autoModeOnBuild("codex")).toBe(false); // unaffected
 
-  updateConfig({ autoModeOnBuild: false });
-  expect(autoModeOnBuild()).toBe(false);
+  updateAgentAutoModeOnBuild("claude-code", false);
+  expect(autoModeOnBuild("claude-code")).toBe(false);
+});
+
+test("updateAgentAutoModeOnBuild sets one agent without disturbing another's setting (#593)", async () => {
+  const { autoModeOnBuild, updateAgentAutoModeOnBuild } = await import(
+    "./config.ts"
+  );
+
+  updateAgentAutoModeOnBuild("claude-code", true);
+  updateAgentAutoModeOnBuild("codex", true);
+  expect(autoModeOnBuild("claude-code")).toBe(true);
+  expect(autoModeOnBuild("codex")).toBe(true);
+
+  updateAgentAutoModeOnBuild("claude-code", false);
+  expect(autoModeOnBuild("claude-code")).toBe(false);
+  expect(autoModeOnBuild("codex")).toBe(true); // untouched
 });
 
 test("codingAgent defaults to claude-code and reflects updateConfig (#516)", async () => {

@@ -18,29 +18,34 @@ afterEach(() => {
 });
 
 function mockFetch(
-  initialAutoModeOnBuild = false,
+  initialAgents: Record<CodingAgent, { autoModeOnBuild: boolean }> = {
+    "claude-code": { autoModeOnBuild: false },
+    codex: { autoModeOnBuild: false },
+  },
   initialCodingAgent: CodingAgent = "claude-code",
 ) {
-  let autoModeOnBuild = initialAutoModeOnBuild;
+  const agents = { ...initialAgents };
   let codingAgent = initialCodingAgent;
   return mockRpcFetch({
     "settings/get": () => ({
-      autoModeOnBuild,
+      agents,
       codingAgent,
     }),
     "settings/update": (p) => {
-      if (p.autoModeOnBuild !== undefined) autoModeOnBuild = p.autoModeOnBuild;
+      if (p.agent && p.autoModeOnBuild !== undefined) {
+        agents[p.agent as CodingAgent] = { autoModeOnBuild: p.autoModeOnBuild };
+      }
       if (p.codingAgent) codingAgent = p.codingAgent;
-      return { autoModeOnBuild, codingAgent };
+      return { agents, codingAgent };
     },
   });
 }
 
 function renderSettings(
-  initialAutoModeOnBuild = false,
+  initialAgents?: Record<CodingAgent, { autoModeOnBuild: boolean }>,
   initialCodingAgent: CodingAgent = "claude-code",
 ) {
-  vi.stubGlobal("fetch", mockFetch(initialAutoModeOnBuild, initialCodingAgent));
+  vi.stubGlobal("fetch", mockFetch(initialAgents, initialCodingAgent));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -52,47 +57,65 @@ function renderSettings(
 }
 
 describe("SettingsPage", () => {
-  it("shows the current auto-mode-on-Build setting as checked", async () => {
-    renderSettings(true);
+  it("shows the current auto-mode-on-Build setting per agent", async () => {
+    renderSettings({
+      "claude-code": { autoModeOnBuild: true },
+      codex: { autoModeOnBuild: false },
+    });
     // The label ("On"/"Off") and hint text are adjacent in the accessible name, so scope the
     // query to the radiogroup and pick by position instead of matching the name by text.
-    const group = await screen.findByRole("radiogroup", {
-      name: /auto mode on build/i,
+    const claudeGroup = await screen.findByRole("radiogroup", {
+      name: /auto mode on build \(claude code\)/i,
     });
-    const [offOption, onOption] = within(group).getAllByRole("radio");
+    const [claudeOff, claudeOn] = within(claudeGroup).getAllByRole("radio");
     await waitFor(() =>
-      expect(onOption.getAttribute("aria-checked")).toBe("true"),
+      expect(claudeOn.getAttribute("aria-checked")).toBe("true"),
     );
-    expect(offOption.getAttribute("aria-checked")).toBe("false");
+    expect(claudeOff.getAttribute("aria-checked")).toBe("false");
+
+    const codexGroup = await screen.findByRole("radiogroup", {
+      name: /auto mode on build \(codex\)/i,
+    });
+    const [codexOff] = within(codexGroup).getAllByRole("radio");
+    expect(codexOff.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("switches auto-mode-on-Build and persists via settings/update", async () => {
-    renderSettings(false);
-    const group = await screen.findByRole("radiogroup", {
-      name: /auto mode on build/i,
+  it("switches auto-mode-on-Build for one agent and persists via settings/update, leaving the other agent untouched", async () => {
+    renderSettings();
+    const claudeGroup = await screen.findByRole("radiogroup", {
+      name: /auto mode on build \(claude code\)/i,
     });
-    const [, onOption] = within(group).getAllByRole(
+    const [, claudeOn] = within(claudeGroup).getAllByRole(
       "radio",
     ) as HTMLButtonElement[];
-    await waitFor(() => expect(onOption.disabled).toBe(false));
-    fireEvent.click(onOption);
+    await waitFor(() => expect(claudeOn.disabled).toBe(false));
+    fireEvent.click(claudeOn);
 
     await waitFor(() => {
       const call = rpcCall("settings/update");
       expect(call).toBeTruthy();
-      expect(call!.params).toMatchObject({ autoModeOnBuild: true });
+      expect(call!.params).toMatchObject({
+        agent: "claude-code",
+        autoModeOnBuild: true,
+      });
     });
     await waitFor(() =>
-      expect(onOption.getAttribute("aria-checked")).toBe("true"),
+      expect(claudeOn.getAttribute("aria-checked")).toBe("true"),
     );
+
+    const codexGroup = await screen.findByRole("radiogroup", {
+      name: /auto mode on build \(codex\)/i,
+    });
+    const [codexOff] = within(codexGroup).getAllByRole("radio");
+    expect(codexOff.getAttribute("aria-checked")).toBe("true");
   });
 
   it("shows the current coding agent as checked", async () => {
-    renderSettings(false, "codex");
+    renderSettings(undefined, "codex");
     // "Claude Code" also appears in the Auto-mode-on-Build hint text ("--auto for Claude
     // Code"), so an unscoped name match is ambiguous — scope to the Coding agent radiogroup.
     const group = await screen.findByRole("radiogroup", {
-      name: /coding agent/i,
+      name: /^coding agent$/i,
     });
     const [claudeCodeOption, codexOption] = within(group).getAllByRole("radio");
     await waitFor(() =>
@@ -102,9 +125,9 @@ describe("SettingsPage", () => {
   });
 
   it("switches the coding agent and persists via settings/update", async () => {
-    renderSettings(false, "claude-code");
+    renderSettings(undefined, "claude-code");
     const group = await screen.findByRole("radiogroup", {
-      name: /coding agent/i,
+      name: /^coding agent$/i,
     });
     const [, codexOption] = within(group).getAllByRole(
       "radio",

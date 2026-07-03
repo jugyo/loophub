@@ -78,7 +78,11 @@ function mockFetch(
       created_at: "2026-06-17T12:30:00Z",
     }),
     "settings/get": () => ({
-      autoModeOnBuild,
+      agents: {
+        "claude-code": { autoModeOnBuild },
+        codex: { autoModeOnBuild: false },
+      },
+      codingAgent: "claude-code",
     }),
   });
 }

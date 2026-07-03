@@ -210,8 +210,12 @@ function RowBuildButton({
   if (activePull) return null;
   // Display-only: the herdr backend builds and spawns `lh dev <n> --herdr [--auto]` itself
   // (core/service.ts's launchIssueDevHerdr, #584) — this string is never sent over the wire, it
-  // only drives the button's tooltip so it reflects what actually runs.
-  const command = settings?.autoModeOnBuild
+  // only drives the button's tooltip so it reflects what actually runs. The Build button doesn't
+  // pick a runtime itself, so it inherits whichever agent `lh dev` resolves to (#593).
+  const autoModeOnBuild = settings
+    ? settings.agents[settings.codingAgent]?.autoModeOnBuild
+    : false;
+  const command = autoModeOnBuild
     ? `lh dev ${issue.number} --herdr --auto`
     : `lh dev ${issue.number} --herdr`;
   return (
