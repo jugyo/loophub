@@ -23,8 +23,18 @@ import {
   SESSION_KIND_ISSUE_CREATE,
 } from "../core/resume.ts";
 import {
+  acquireHerdrWorktreeTab,
   buildHerdrLaunchPlan,
+  type HerdrCmdRunner,
   herdrCommandLine,
+  herdrPaneCloseArgv,
+  herdrTabCloseArgv,
+  herdrTabCreateArgv,
+  herdrTabFocusArgv,
+  herdrWorkspaceCloseArgv,
+  herdrWorkspaceFocusArgv,
+  parseHerdrRootPaneId,
+  parseHerdrTabId,
 } from "../core/terminal-launch.ts";
 import {
   acquireDevLock,
@@ -688,21 +698,102 @@ async function main() {
     // also how the Build button's herdr launch works now: it just spawns `lh dev <id> --herdr`
     // and lets this branch do the rest (core/service.ts's launchIssueDevHerdr).
     if (flags.herdr === true) {
+      const repoRef = { full_name: r.full_name, local_path: r.local_path };
+      const command = formatSpawnCommand(runtimeArgs, { bin: runtimeBin });
+      // Best-effort herdr runner for the ancillary tab/workspace calls (open, create, focus,
+      // close) below. spawnSync suits this short-lived CLI process (unlike lh-web, whose single
+      // server process spawns herdr async); all-ignore stdio keeps herdr's own JSON/errors out of
+      // the launch output, and it never throws — a failed call resolves ok:false so
+      // acquireHerdrWorktreeTab / the fallback simply degrade.
+      const runHerdrCmd: HerdrCmdRunner = async (argv, opts) => {
+        const proc = spawnSync(argv[0], argv.slice(1), {
+          stdio: opts?.captureStdout ? ["ignore", "pipe", "ignore"] : "ignore",
+          timeout: 15_000,
+          encoding: "utf8",
+        });
+        const ok =
+          !proc.error && proc.signal == null && (proc.status ?? 0) === 0;
+        return {
+          stdout: ok && opts?.captureStdout ? (proc.stdout ?? "") : "",
+          ok,
+        };
+      };
+      // Open (or reuse) the worktree's own herdr workspace and start the agent in a fresh tab
+      // there, instead of splitting whatever pane is currently focused (#674) — the same thing
+      // lh-web's terminal.launch does for the other worktree-backed workflows. Falls back to a
+      // plain repo-root tab (still a new tab, not a split) when the worktree open can't be
+      // resolved (herdr not running, worktree_not_found, …).
+      let tabId: string | null = null;
+      let rootPaneId: string | null = null;
+      let workspaceId: string | null = null;
+      let createdWorkspace = false;
+      const acquired = await acquireHerdrWorktreeTab(
+        repoRef,
+        worktree,
+        runHerdrCmd,
+      );
+      if (acquired) {
+        ({ tabId, rootPaneId, workspaceId, createdWorkspace } = acquired);
+      } else {
+        const out = await runHerdrCmd(herdrTabCreateArgv(repoRef), {
+          captureStdout: true,
+        });
+        if (out.ok) {
+          tabId = parseHerdrTabId(out.stdout);
+          rootPaneId = parseHerdrRootPaneId(out.stdout);
+          // A zero-exit create with no parseable tab id means herdr made a real tab but its output
+          // shape drifted: tabId stays null, so the agent splits the focused pane and the new tab
+          // is orphaned with no id to close it. Surface it (mirrors launchIssueDevHerdr's server-
+          // side warning) so the drift is noticed instead of leaking silently.
+          if (!tabId)
+            console.error(
+              "herdr tab create succeeded but its output had no usable tab id; falling back to split placement",
+            );
+        }
+      }
+      // A freshly created workspace whose seed tab id failed to parse can never be targeted (the
+      // plan routes the agent in via --tab), so close it now rather than leaking it.
+      if (workspaceId && !tabId) {
+        await runHerdrCmd(herdrWorkspaceCloseArgv(repoRef, workspaceId));
+        workspaceId = null;
+        rootPaneId = null;
+      }
       // The pane is pinned to the worktree (not repo.local_path) but keeps the repo's herdr
       // session name, so it lands alongside every other launch for this repo (Build button,
       // resume, …) in the same `herdr session attach`.
       const plan = buildHerdrLaunchPlan({
-        repo: { full_name: r.full_name, local_path: r.local_path },
-        command: formatSpawnCommand(runtimeArgs, { bin: runtimeBin }),
+        repo: repoRef,
+        command,
         label: sessionName,
+        tabId,
         cwd: worktree,
       });
       const herdrProc = spawnSync(plan.argv[0], plan.argv.slice(1), {
         stdio: "inherit",
         timeout: 15_000,
       });
+      // Any failure to start the agent leaves the just-created tab (or workspace) empty — clean it
+      // up before failing. herdr refuses to close a workspace's last tab, so a workspace this
+      // launch created is closed wholesale. The reproduce hint is built from a *tab-less* plan:
+      // the failed argv's `--tab <id>` points at the tab just cleaned up, so re-running it verbatim
+      // would fail with an unknown-tab error instead of reproducing the original failure.
+      const cleanupOnFailure = async () => {
+        if (workspaceId)
+          await runHerdrCmd(herdrWorkspaceCloseArgv(repoRef, workspaceId));
+        else if (tabId) await runHerdrCmd(herdrTabCloseArgv(repoRef, tabId));
+      };
+      const reproduce = () =>
+        herdrCommandLine(
+          buildHerdrLaunchPlan({
+            repo: repoRef,
+            command,
+            label: sessionName,
+            cwd: worktree,
+          }),
+        );
       if (herdrProc.error) {
         const err = herdrProc.error as NodeJS.ErrnoException;
+        await cleanupOnFailure();
         if (err.code === "ENOENT") {
           fail("failed to launch herdr: 'herdr' not found on PATH");
         }
@@ -712,14 +803,28 @@ async function main() {
       // `status` comes back `null` on both a timeout and an external kill — checking status alone
       // would silently report either as success.
       if (herdrProc.signal) {
+        await cleanupOnFailure();
         fail(
-          `herdr was terminated by signal ${herdrProc.signal} (killed, or timed out after 15s)\n  reproduce: ${herdrCommandLine(plan)}`,
+          `herdr was terminated by signal ${herdrProc.signal} (killed, or timed out after 15s)\n  reproduce: ${reproduce()}`,
         );
       }
       if ((herdrProc.status ?? 0) !== 0) {
+        await cleanupOnFailure();
         fail(
-          `herdr exited with status ${herdrProc.status}\n  reproduce: ${herdrCommandLine(plan)}`,
+          `herdr exited with status ${herdrProc.status}\n  reproduce: ${reproduce()}`,
         );
+      }
+      // Bring the new agent's tab/workspace to the front (every call above used --no-focus so
+      // creation wouldn't yank focus mid-launch) and close the tab's leftover empty seed pane —
+      // best-effort, since the agent is already running: a focus/close failure must not fail the
+      // launch, only leave one harmless empty pane behind.
+      if (createdWorkspace && workspaceId) {
+        await runHerdrCmd(herdrWorkspaceFocusArgv(repoRef, workspaceId));
+      } else if (tabId) {
+        await runHerdrCmd(herdrTabFocusArgv(repoRef, tabId));
+      }
+      if (tabId && rootPaneId) {
+        await runHerdrCmd(herdrPaneCloseArgv(repoRef, rootPaneId));
       }
       console.error(
         `Launched in herdr session ${plan.sessionName}. Attach with: herdr session attach ${plan.sessionName}`,

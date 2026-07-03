@@ -431,3 +431,73 @@ export function buildHerdrLaunchPlan(input: {
     argv,
   };
 }
+
+// An injected herdr command runner. Both callers of the worktree-launch orchestration below spawn
+// the `herdr` binary, but differently: lh-web runs it async (a synchronous spawn would stall the
+// single server process serving every client), while `lh dev --herdr` runs it in a short-lived CLI
+// process. Injecting the runner lets the orchestration itself stay spawn-agnostic and unit-testable
+// with a scripted fake. Contract: never throw — a failed call resolves `ok:false` so the caller can
+// fall back, mirroring the best-effort tolerance every direct herdr call in this codebase already
+// has. `stdout` is the captured output when `captureStdout` was set (else ""), used to parse ids.
+export type HerdrCmdRunner = (
+  argv: string[],
+  opts?: { captureStdout?: boolean },
+) => Promise<{ stdout: string; ok: boolean }>;
+
+export interface HerdrWorktreeTab {
+  tabId: string | null;
+  rootPaneId: string | null;
+  // Set only when this acquisition created a whole fresh single-tab workspace (a first-time
+  // `worktree open`), whose sole tab herdr refuses to close via `tab close` — the caller closes the
+  // workspace instead on failure. Null when an existing workspace was merely reused.
+  workspaceId: string | null;
+  createdWorkspace: boolean;
+}
+
+// Opens (or reuses) the herdr workspace pinned to `worktreeCheckoutPath` and returns a tab safe to
+// pass to `agent start --tab`, so a launch lands in the worktree's own workspace instead of
+// splitting whatever pane is currently focused (#489, #551). A first-time open creates a brand-new
+// single-tab workspace whose tab/root-pane come straight from the open response; a reused workspace
+// gets a genuinely new (safely closeable) tab created inside it, since its existing tab may already
+// hold someone else's pane. Returns null when the initial `worktree open` fails outright
+// (worktree_not_found, timeout, unparseable output) — the caller then falls back to a plain
+// repo-root tab-create. Extracted from lh-web's terminal.launch so `lh dev --herdr` reuses the same
+// parsing-heavy dance (core/service.ts wraps its async herdr runner around this).
+export async function acquireHerdrWorktreeTab(
+  repo: TerminalLaunchRepo,
+  worktreeCheckoutPath: string,
+  run: HerdrCmdRunner,
+): Promise<HerdrWorktreeTab | null> {
+  const openRes = await run(herdrWorktreeOpenArgv(repo, worktreeCheckoutPath), {
+    captureStdout: true,
+  });
+  if (!openRes.ok) return null;
+  const opened = parseHerdrWorktreeOpenResult(openRes.stdout);
+  if (!opened) return null;
+  if (!opened.alreadyOpen) {
+    return {
+      tabId: parseHerdrTabId(openRes.stdout),
+      rootPaneId: parseHerdrRootPaneId(openRes.stdout),
+      workspaceId: opened.workspaceId,
+      createdWorkspace: true,
+    };
+  }
+  if (!opened.workspaceId) return null;
+  const tabRes = await run(
+    herdrTabCreateInWorkspaceArgv(
+      repo,
+      opened.workspaceId,
+      worktreeCheckoutPath,
+    ),
+    { captureStdout: true },
+  );
+  if (!tabRes.ok) return null;
+  return {
+    tabId: parseHerdrTabId(tabRes.stdout),
+    rootPaneId: parseHerdrRootPaneId(tabRes.stdout),
+    // The reused workspace predates this call, so it is not ours to close on failure — only the
+    // freshly added tab (if its id parsed) is.
+    workspaceId: null,
+    createdWorkspace: false,
+  };
+}

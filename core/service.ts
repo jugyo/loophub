@@ -112,27 +112,26 @@ import {
 import { databaseSize, repoCounts, tableRowCounts } from "./stats.ts";
 import * as S from "./store.ts";
 import {
+  acquireHerdrWorktreeTab as acquireHerdrWorktreeTabCore,
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
   displayArg,
   HERDR_ID,
+  type HerdrCmdRunner,
   herdrAgentFocusArgv,
   herdrCommandLine,
   herdrPaneCloseArgv,
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
-  herdrTabCreateInWorkspaceArgv,
   herdrTabFocusArgv,
   herdrWorkspaceCloseArgv,
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
-  herdrWorktreeOpenArgv,
   parseHerdrAgentPaneId,
   parseHerdrRootPaneId,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
-  parseHerdrWorktreeOpenResult,
   type TerminalLaunchRepo,
 } from "./terminal-launch.ts";
 import { sweepPullUpdates } from "./watcher.ts";
@@ -818,66 +817,41 @@ async function resolveHerdrWorktreeTarget(
   return null;
 }
 
-// Opens (or reuses) the herdr workspace pinned to `worktreeCheckoutPath` and returns a tab safe
-// to pass to `agent start --tab`. A *first-time* open creates a brand-new single-tab workspace —
-// structurally identical to `herdr workspace create` (#544) — whose sole tab herdr refuses to
-// close via `tab close` (it would be the workspace's last one), so `workspaceId` is populated in
-// that case for the caller to use `herdr workspace close` instead, exactly like the isNewWorkspace
-// path in terminal.launch. A *reused* workspace's own tab may already be in active use (someone
-// else's pane), so that case opens a genuinely new (safely closeable) tab inside it instead of
-// treating the existing one as an empty placeholder — see herdrTabCreateInWorkspaceArgv;
-// `workspaceId` is null there since the workspace itself isn't this call's to close. Returns null
-// only when the initial `worktree open` itself fails outright (worktree_not_found, timeout, …) or
-// its output is unparseable — nothing was created, so the caller falls back to the plain
-// repo-root tab-create. A partial success (e.g. the tab id itself fails to parse) still returns
-// an object so `workspaceId` reaches the caller's orphan-cleanup path instead of being lost.
-async function acquireHerdrWorktreeTab(
+// Wraps runHerdr as the injected runner the core worktree-launch orchestration expects: a rejected
+// runHerdr (non-zero exit, ENOENT, signal, timeout) becomes `ok:false` so the orchestration falls
+// back instead of throwing — the same best-effort tolerance the direct herdr calls in launch() have.
+// 10s per call, matching those. runHerdr resolves "" when captureStdout is unset, so the id-parsing
+// steps get the empty string they treat as unparseable.
+function herdrRunner(cwd: string): HerdrCmdRunner {
+  return async (argv, opts) => {
+    try {
+      const stdout = await runHerdr(argv[0], argv.slice(1), cwd, {
+        captureStdout: opts?.captureStdout,
+        timeoutMs: 10_000,
+      });
+      return { stdout, ok: true };
+    } catch {
+      return { stdout: "", ok: false };
+    }
+  };
+}
+
+// Opens (or reuses) the herdr workspace pinned to `worktreeCheckoutPath` and returns a tab safe to
+// pass to `agent start --tab`. The parsing-heavy dance lives in core/terminal-launch.ts's
+// acquireHerdrWorktreeTab so `lh dev --herdr` reuses it (#674); this thin wrapper just binds it to
+// runHerdr at the repo's local path. `cwd` is where the herdr client is spawned — irrelevant to the
+// `--session`-scoped calls themselves, but kept as r.local_path for consistency with the rest of
+// terminal.launch.
+function acquireHerdrWorktreeTab(
   repo: TerminalLaunchRepo,
   cwd: string,
   worktreeCheckoutPath: string,
-): Promise<{
-  tabId: string | null;
-  rootPaneId: string | null;
-  workspaceId: string | null;
-  createdWorkspace: boolean;
-} | null> {
-  try {
-    const open = herdrWorktreeOpenArgv(repo, worktreeCheckoutPath);
-    const out = await runHerdr(open[0], open.slice(1), cwd, {
-      captureStdout: true,
-      timeoutMs: 10_000,
-    });
-    const opened = parseHerdrWorktreeOpenResult(out);
-    if (!opened) return null;
-    if (!opened.alreadyOpen) {
-      return {
-        tabId: parseHerdrTabId(out),
-        rootPaneId: parseHerdrRootPaneId(out),
-        workspaceId: opened.workspaceId,
-        createdWorkspace: true,
-      };
-    }
-    if (!opened.workspaceId) return null;
-    const tabCreate = herdrTabCreateInWorkspaceArgv(
-      repo,
-      opened.workspaceId,
-      worktreeCheckoutPath,
-    );
-    const tabOut = await runHerdr(tabCreate[0], tabCreate.slice(1), cwd, {
-      captureStdout: true,
-      timeoutMs: 10_000,
-    });
-    return {
-      tabId: parseHerdrTabId(tabOut),
-      rootPaneId: parseHerdrRootPaneId(tabOut),
-      // The reused workspace already existed before this call, so it is not this launch's to
-      // close on failure — only the freshly added tab (if its id parsed) is.
-      workspaceId: null,
-      createdWorkspace: false,
-    };
-  } catch {
-    return null;
-  }
+) {
+  return acquireHerdrWorktreeTabCore(
+    repo,
+    worktreeCheckoutPath,
+    herdrRunner(cwd),
+  );
 }
 
 // ===== terminal launch =====

@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { updateConfig } from "./config.ts";
 import {
+  acquireHerdrWorktreeTab,
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
+  type HerdrCmdRunner,
   herdrAgentFocusArgv,
   herdrPaneCloseArgv,
   herdrSessionName,
@@ -566,5 +568,91 @@ describe("herdr terminal launch", () => {
       null,
     );
     expect(parseHerdrWorktreeOpenResult(wrap("w7"))?.workspaceId).toBe("w7");
+  });
+});
+
+// #674: `lh dev --herdr` (the Build button) reuses this same open+tab-create dance so it lands in
+// the worktree's own herdr workspace instead of splitting the focused pane. The orchestration is
+// spawn-agnostic via an injected runner, so these exercise it with a scripted fake.
+describe("acquireHerdrWorktreeTab", () => {
+  const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+  const worktree = "/wt/pr-42";
+
+  // Records each herdr argv and replays scripted responses in order; a request past the end
+  // defaults to a bland success, so a test only scripts the calls it cares about.
+  function scriptedRunner(
+    responses: Array<{ stdout?: string; ok?: boolean }>,
+  ): { run: HerdrCmdRunner; calls: string[][] } {
+    const calls: string[][] = [];
+    let i = 0;
+    const run: HerdrCmdRunner = async (argv) => {
+      calls.push(argv);
+      const r = responses[i++] ?? {};
+      return { stdout: r.stdout ?? "", ok: r.ok ?? true };
+    };
+    return { run, calls };
+  }
+
+  test("a first-time worktree open takes the tab from the open response (one call)", async () => {
+    const { run, calls } = scriptedRunner([
+      {
+        stdout:
+          '{"result":{"already_open":false,"workspace":{"workspace_id":"wB"},"tab":{"tab_id":"wB:t1"},"root_pane":{"pane_id":"wB:p1"}}}',
+      },
+    ]);
+    const acquired = await acquireHerdrWorktreeTab(repo, worktree, run);
+    expect(acquired).toEqual({
+      tabId: "wB:t1",
+      rootPaneId: "wB:p1",
+      workspaceId: "wB",
+      createdWorkspace: true,
+    });
+    // Only the open call — a first-time open's seed tab is usable as-is, no follow-up tab create.
+    expect(calls).toEqual([herdrWorktreeOpenArgv(repo, worktree)]);
+  });
+
+  test("a reused workspace opens a fresh tab inside it (open + tab create)", async () => {
+    const { run, calls } = scriptedRunner([
+      {
+        stdout:
+          '{"result":{"already_open":true,"workspace":{"workspace_id":"w7"}}}',
+      },
+      {
+        stdout:
+          '{"result":{"tab":{"tab_id":"w7:t3"},"root_pane":{"pane_id":"w7:p3"}}}',
+      },
+    ]);
+    const acquired = await acquireHerdrWorktreeTab(repo, worktree, run);
+    expect(acquired).toEqual({
+      tabId: "w7:t3",
+      rootPaneId: "w7:p3",
+      // A reused workspace predates this call, so it is not ours to close on failure.
+      workspaceId: null,
+      createdWorkspace: false,
+    });
+    expect(calls).toEqual([
+      herdrWorktreeOpenArgv(repo, worktree),
+      herdrTabCreateInWorkspaceArgv(repo, "w7", worktree),
+    ]);
+  });
+
+  test("a failed worktree open returns null without a follow-up call", async () => {
+    const { run, calls } = scriptedRunner([{ ok: false }]);
+    expect(await acquireHerdrWorktreeTab(repo, worktree, run)).toBeNull();
+    expect(calls).toEqual([herdrWorktreeOpenArgv(repo, worktree)]);
+  });
+
+  test("unparseable open output returns null (caller falls back to a plain tab)", async () => {
+    const { run } = scriptedRunner([{ stdout: "not json" }]);
+    expect(await acquireHerdrWorktreeTab(repo, worktree, run)).toBeNull();
+  });
+
+  test("a reused workspace with no usable workspace id returns null", async () => {
+    const { run, calls } = scriptedRunner([
+      { stdout: '{"result":{"already_open":true}}' },
+    ]);
+    expect(await acquireHerdrWorktreeTab(repo, worktree, run)).toBeNull();
+    // No tab-create attempt when there is no workspace to scope it to.
+    expect(calls).toEqual([herdrWorktreeOpenArgv(repo, worktree)]);
   });
 });
