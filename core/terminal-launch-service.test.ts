@@ -359,12 +359,13 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
     expect(focus).toContain("w4");
   });
 
-  test("other workflows keep creating a tab in the existing session, not a new workspace", async () => {
+  test("other workflows keep creating a tab in the existing session, not a new workspace, then focus that tab (#625)", async () => {
     // Resume dedup (#578) probes for an existing pane first; an empty agent list means nothing
     // to find, so the normal tab-creating flow runs after it.
     herdr.script.push(
       exitWith(0, AGENT_LIST_EMPTY),
       exitWith(0, TAB_JSON),
+      exitWith(0),
       exitWith(0),
     );
 
@@ -377,7 +378,14 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
     expect(herdr.calls[0]).toContain("list");
     expect(herdr.calls[1]).toContain("tab");
     expect(herdr.calls[1]).not.toContain("workspace");
-    expect(herdr.calls.some((call) => call.includes("focus"))).toBe(false);
+    // #625: the freshly created tab (not a new workspace) is brought to the front by tab id, so
+    // the launched terminal is visible instead of hidden behind whatever was focused.
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
+    const focus = herdr.calls[3];
+    expect(focus).toContain("tab");
+    expect(focus).toContain("focus");
+    expect(focus).toContain("w1:t9");
+    expect(focus).not.toContain("workspace");
   });
 
   test("closes the whole workspace (not just its tab) when the agent fails to start", async () => {
@@ -497,6 +505,47 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
   });
 });
 
+describe("terminal.launch worktree-workspace reuse focus (#625)", () => {
+  // The already-open branch of acquireHerdrWorktreeTab: herdr's worktree workspace already exists,
+  // so a new tab is added inside it (createdWorkspace false, workspaceId null). Before #625 this
+  // path switched nothing, leaving the launched terminal hidden — now the freshly added tab is
+  // brought to the front by tab id.
+  const WORKTREE_ALREADY_OPEN =
+    '{"result":{"already_open":true,"workspace":{"workspace_id":"w7"},"type":"worktree_opened"}}';
+
+  test("focuses the freshly added tab when the worktree workspace is reused, not the workspace", async () => {
+    herdr.script.push(
+      exitWith(0, AGENT_LIST_EMPTY), // resume dedup probe: nothing to reuse
+      exitWith(0, WORKTREE_ALREADY_OPEN), // worktree open -> already open, reuse workspace w7
+      exitWith(0, TAB_JSON), // tab create inside the reused workspace -> w1:t9
+      exitWith(0), // agent start
+      exitWith(0), // tab focus (fire-and-forget)
+    );
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "resume",
+      session: "session-1",
+      cwd: "/wt/pr-42", // resolves the worktree target so the worktree-open path runs
+    });
+
+    expect(herdr.calls[1]).toContain("worktree");
+    expect(herdr.calls[1]).toContain("open");
+    expect(herdr.calls[2]).toContain("tab");
+    expect(herdr.calls[2]).toContain("create");
+    const agentStart = herdr.calls[3];
+    expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w1:t9");
+
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
+    const focus = herdr.calls[4];
+    expect(focus).toContain("tab");
+    expect(focus).toContain("focus");
+    expect(focus).toContain("w1:t9");
+    // A reused workspace isn't this launch's to refocus wholesale — only its new tab is selected.
+    expect(focus).not.toContain("workspace");
+  });
+});
+
 describe("terminal.launch Resume dedup (#578)", () => {
   test("focuses an existing pane already running claude --resume <session>, instead of creating a new tab", async () => {
     herdr.script.push(
@@ -529,6 +578,7 @@ describe("terminal.launch Resume dedup (#578)", () => {
       exitWith(0, PROCESS_INFO_OTHER_SESSION), // but it's actually running a different session
       exitWith(0, TAB_JSON),
       exitWith(0),
+      exitWith(0), // tab focus (#625, fire-and-forget)
     );
 
     const result = await svc.terminal.launch({
@@ -538,7 +588,12 @@ describe("terminal.launch Resume dedup (#578)", () => {
     });
 
     expect(herdr.calls[2]).toContain("tab");
-    expect(herdr.calls.some((call) => call.includes("focus"))).toBe(false);
+    // No dedup match, so no `agent focus` short-circuit (result stays unfocused); the new tab is
+    // still brought to the front by tab id (#625).
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
+    expect(herdr.calls[4]).toEqual(
+      expect.arrayContaining(["tab", "focus", "w1:t9"]),
+    );
     expect(result).toMatchObject({ backend: "herdr" });
     expect(result).not.toHaveProperty("focused");
   });
@@ -606,6 +661,7 @@ describe("terminal.launch Resume dedup (#578)", () => {
       exitWith(0, AGENT_LIST_MALFORMED_PANE_ID), // agent list — one agent, bad pane_id
       exitWith(0, TAB_JSON), // no process-info call happens; falls straight through to normal flow
       exitWith(0),
+      exitWith(0), // tab focus (#625, fire-and-forget)
     );
 
     const result = await svc.terminal.launch({
@@ -614,7 +670,8 @@ describe("terminal.launch Resume dedup (#578)", () => {
       session: "session-1",
     });
 
-    expect(herdr.calls).toHaveLength(3);
+    // list, tab create, agent start, then the #625 tab focus — but no process-info probe.
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
     expect(herdr.calls[0]).toContain("list");
     expect(herdr.calls.some((call) => call.includes("process-info"))).toBe(
       false,
@@ -623,6 +680,9 @@ describe("terminal.launch Resume dedup (#578)", () => {
       false,
     );
     expect(herdr.calls[1]).toContain("tab");
+    expect(herdr.calls[3]).toEqual(
+      expect.arrayContaining(["tab", "focus", "w1:t9"]),
+    );
     expect(result).toMatchObject({ backend: "herdr" });
   });
 });

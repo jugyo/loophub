@@ -121,6 +121,7 @@ import {
   herdrTabCloseArgv,
   herdrTabCreateArgv,
   herdrTabCreateInWorkspaceArgv,
+  herdrTabFocusArgv,
   herdrWorkspaceCloseArgv,
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
@@ -1049,17 +1050,25 @@ export const terminal = {
         });
       throw e;
     }
-    // Switch herdr's active workspace to the one just created, now that the agent is running in
-    // it (#556) — the create/open call above used `--no-focus` so creation itself wouldn't yank
-    // focus mid-launch, which otherwise left the new workspace selectable only by hand. Scoped to
-    // createdWorkspace (not isNewWorkspace): the New Issue path always creates its own workspace,
-    // but a worktree-backed launch (#551) does too on a first-time `worktree open` — both cases
-    // land the agent in a workspace nobody was looking at yet, so both should get focus. A
-    // *reused* worktree workspace (workspaceId null, createdWorkspace false) keeps whatever was
-    // already focused, same as before. Fire-and-forget, same as the pane close below: the agent
-    // is already running, so a failure to switch selection must not fail the launch.
+    // Switch herdr's focus so the new agent's pane comes to the front now that it's running — the
+    // create/open/tab-create calls above all used `--no-focus` so creation itself wouldn't yank
+    // focus mid-launch, which otherwise leaves the just-launched terminal invisible until the user
+    // switches to it by hand. Two selection modes:
+    //   - A *fresh* workspace (createdWorkspace: New Issue's `workspace create`, or a worktree-backed
+    //     launch's first-time `worktree open` #551) is selected by workspace id (#556) — its sole
+    //     tab is the agent's.
+    //   - Every other launch that got its own tab — a *reused* worktree workspace's freshly added
+    //     tab, or the plain repo-root tab fallback — is selected by tab id (#625). `tab focus`
+    //     switches workspace + tab in one call, so the new tab/pane is brought forward without
+    //     re-selecting a workspace that already existed and isn't this launch's to refocus wholesale.
+    // Only the tab-less fallback (tabId null: agent split into the already-focused pane) needs no
+    // switch. Fire-and-forget, same as the pane close below: the agent is already running, so a
+    // failure to switch focus must not fail the launch.
     if (createdWorkspace && workspaceId) {
       const focus = herdrWorkspaceFocusArgv(repo, workspaceId);
+      runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
+    } else if (tabId) {
+      const focus = herdrTabFocusArgv(repo, tabId);
       runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
     }
     // The agent's own pane now exists alongside the tab's leftover empty root pane (see the

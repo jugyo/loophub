@@ -252,6 +252,20 @@ export function herdrWorkspaceFocusArgv(
   ];
 }
 
+// Switches herdr's focus to a tab (workspace + tab, in one call) by tab id — brings a newly
+// launched agent's pane to the front when it started in its own tab rather than a fresh workspace
+// (#625). The New Issue path selects its whole workspace (herdrWorkspaceFocusArgv), but a *reused*
+// worktree workspace's freshly added tab — and the plain repo-root tab fallback — are selected this
+// way instead: their workspace already existed and isn't this launch's to (re)focus wholesale, so
+// only the new tab is brought forward. Both were created with `--no-focus` so creation itself
+// wouldn't yank focus mid-launch.
+export function herdrTabFocusArgv(
+  repo: TerminalLaunchRepo,
+  tabId: string,
+): string[] {
+  return ["herdr", "--session", herdrSessionName(repo), "tab", "focus", tabId];
+}
+
 // Switches focus (workspace + tab + pane, in one call) to an already-running agent, by pane id
 // (#578's Resume dedup; reused by #579's issue-list Herdr badge). Unlike herdrWorkspaceFocusArgv
 // above, this doesn't require the caller to know which workspace/tab the target lives in —

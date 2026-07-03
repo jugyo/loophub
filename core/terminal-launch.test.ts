@@ -8,6 +8,7 @@ import {
   herdrTabCloseArgv,
   herdrTabCreateArgv,
   herdrTabCreateInWorkspaceArgv,
+  herdrTabFocusArgv,
   herdrWorkspaceCloseArgv,
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
@@ -188,6 +189,19 @@ describe("herdr terminal launch", () => {
       "workspace",
       "focus",
       "w4",
+    ]);
+  });
+
+  test("builds Herdr tab focus argv scoped to the repo session (#625)", () => {
+    const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
+    const sessionName = herdrSessionName(repo);
+    expect(herdrTabFocusArgv(repo, "w1:t9")).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "tab",
+      "focus",
+      "w1:t9",
     ]);
   });
 
