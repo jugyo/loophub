@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs, stripVTControlCharacters } from "node:util";
 import {
+  agentModel,
   baseUrl,
   codingAgent,
   configDir,
@@ -391,15 +392,23 @@ async function main() {
       fail(`--model requires a value\n${usageLine}`);
     }
 
-    // The sandbox managed-settings and model selection are `claude` launch options with no
-    // Codex equivalent (Codex model support is out of scope of #486; tracked separately) —
-    // reject the combination up front rather than silently dropping the flags. --auto has a
-    // Codex equivalent (#499, see buildCodexArgs) so it's allowed with --codex.
-    if (runtime === "codex" && (useSandbox || flags.model)) {
+    // The sandbox managed-settings are a `claude` launch option with no Codex equivalent —
+    // reject the combination up front rather than silently dropping the flags. --auto and
+    // --model both have Codex equivalents (#499, #594; see buildCodexArgs) so they're allowed
+    // with --codex.
+    if (runtime === "codex" && useSandbox) {
       fail(
-        "--sandbox/--allow/--model are only supported with the claude-code runtime (remove them or drop --codex)",
+        "--sandbox/--allow are only supported with the claude-code runtime (remove them or drop --codex)",
       );
     }
+
+    // Resolve the session model: an explicit --model wins; otherwise fall back to the
+    // configured per-agent default (claude-code -> opus, codex -> gpt-5.5 unless overridden via
+    // Settings, #594).
+    const model =
+      typeof flags.model === "string" && flags.model.trim()
+        ? flags.model
+        : agentModel(runtime);
 
     // Validate --repo up front, before any side effects (provisioning a worktree).
     try {
@@ -629,7 +638,7 @@ async function main() {
     const runtimeBin = runtime === "codex" ? "codex" : "claude";
     const runtimeArgs =
       runtime === "codex"
-        ? buildCodexArgs({ slashCommand, auto: flags.auto === true })
+        ? buildCodexArgs({ slashCommand, auto: flags.auto === true, model })
         : buildClaudeArgs({
             sessionId,
             managedSettings: managed,
@@ -637,9 +646,8 @@ async function main() {
             auto: flags.auto === true,
             slashCommand,
             sessionName,
-            // --model passes the session model through to claude verbatim (#486); omitted =>
-            // claude's own default model.
-            model: flags.model,
+            // The resolved session model (explicit --model, else the per-agent default, #486, #594).
+            model,
           });
 
     // Show what the runtime will receive, then launch immediately (no confirmation prompt). By
@@ -1829,7 +1837,7 @@ function usage() {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, claude-code only, passed through to the claude CLI; --auto: auto mode without the sandbox (claude-code: --permission-mode auto; codex: --dangerously-bypass-approvals-and-sandbox); --herdr: after setup, hand off to a herdr pane instead of blocking this process; --force: launch even if another session holds it)
+  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, passed through to the claude/codex CLI verbatim, defaults to the configured per-agent model when omitted; --auto: auto mode without the sandbox (claude-code: --permission-mode auto; codex: --dangerously-bypass-approvals-and-sandbox); --herdr: after setup, hand off to a herdr pane instead of blocking this process; --force: launch even if another session holds it)
   lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]   # re-enter the Claude session a PR was developed in (claude --resume in its worktree)
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]

@@ -20,6 +20,7 @@ export function useUpdateSettings() {
     mutationFn: (input: {
       agent?: CodingAgent;
       autoModeOnBuild?: boolean;
+      model?: string;
       codingAgent?: CodingAgent;
     }) => updateSettings(input),
     onSuccess: () => {

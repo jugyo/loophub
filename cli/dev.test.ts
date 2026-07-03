@@ -507,6 +507,25 @@ test("buildCodexArgs omits the auto flag when auto is false/absent", () => {
   ]);
 });
 
+test("buildCodexArgs passes --model through verbatim and keeps the slash command last (#594)", () => {
+  const args = buildCodexArgs({ slashCommand: "/lh-dev 42", model: "gpt-5.5" });
+  expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
+  expect(args[args.length - 1]).toBe("/lh-dev 42");
+});
+
+test("buildCodexArgs omits --model when not provided (backend default model) (#594)", () => {
+  const args = buildCodexArgs({ slashCommand: "/lh-dev 42" });
+  expect(args.indexOf("--model")).toBe(-1);
+});
+
+test("buildCodexArgs strips control characters from the model before argv (#594)", () => {
+  const args = buildCodexArgs({
+    slashCommand: "/lh-dev 42",
+    model: "\x1b]0;x\x07gpt-5.5\r",
+  });
+  expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
+});
+
 // ---- spawn command line (pure) ----
 
 test("formatSpawnCommand renders the exact argv as a shell-pasteable `claude` line", () => {

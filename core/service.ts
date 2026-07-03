@@ -13,11 +13,13 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import {
+  agentModel,
   autoModeOnBuild,
   type CodingAgent,
   codingAgent,
   configDir,
   updateAgentAutoModeOnBuild,
+  updateAgentDefaultModel,
   updateConfig,
   worktreeRoot,
 } from "./config.ts";
@@ -1482,13 +1484,19 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
 // Instance-level config.json settings, as opposed to the repo-scoped settings above (#474).
 export const settings = {
   get(): {
-    agents: Record<CodingAgent, { autoModeOnBuild: boolean }>;
+    agents: Record<CodingAgent, { autoModeOnBuild: boolean; model: string }>;
     codingAgent: CodingAgent;
   } {
     return {
       agents: {
-        "claude-code": { autoModeOnBuild: autoModeOnBuild("claude-code") },
-        codex: { autoModeOnBuild: autoModeOnBuild("codex") },
+        "claude-code": {
+          autoModeOnBuild: autoModeOnBuild("claude-code"),
+          model: agentModel("claude-code"),
+        },
+        codex: {
+          autoModeOnBuild: autoModeOnBuild("codex"),
+          model: agentModel("codex"),
+        },
       },
       codingAgent: codingAgent(),
     };
@@ -1496,15 +1504,17 @@ export const settings = {
 
   update(
     input: {
-      // Which agent's autoModeOnBuild is being set (#593); required together with
-      // autoModeOnBuild, ignored otherwise.
+      // Which agent autoModeOnBuild/model is being set for (#593, #594); required together
+      // with either, ignored otherwise.
       agent?: CodingAgent;
       autoModeOnBuild?: boolean;
+      // Default model this agent launches with when `lh dev --model` is omitted (#594).
+      model?: string;
       codingAgent?: CodingAgent;
     },
     sessionId?: string | null,
   ): {
-    agents: Record<CodingAgent, { autoModeOnBuild: boolean }>;
+    agents: Record<CodingAgent, { autoModeOnBuild: boolean; model: string }>;
     codingAgent: CodingAgent;
   } {
     if (input.autoModeOnBuild !== undefined) {
@@ -1515,6 +1525,15 @@ export const settings = {
         throw new ServiceError(422, "agent must be one of: claude-code, codex");
       }
       updateAgentAutoModeOnBuild(input.agent, input.autoModeOnBuild);
+    }
+    if (input.model !== undefined) {
+      if (typeof input.model !== "string" || !input.model.trim()) {
+        throw new ServiceError(422, "model must be a non-empty string");
+      }
+      if (input.agent !== "claude-code" && input.agent !== "codex") {
+        throw new ServiceError(422, "agent must be one of: claude-code, codex");
+      }
+      updateAgentDefaultModel(input.agent, input.model.trim());
     }
     if (
       input.codingAgent !== undefined &&

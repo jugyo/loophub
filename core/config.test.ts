@@ -102,6 +102,30 @@ test("updateAgentAutoModeOnBuild sets one agent without disturbing another's set
   expect(autoModeOnBuild("codex")).toBe(true); // untouched
 });
 
+test("agentModel defaults to DEFAULT_AGENT_MODEL per agent and reflects updateAgentDefaultModel (#594)", async () => {
+  const { agentModel, DEFAULT_AGENT_MODEL, updateAgentDefaultModel } =
+    await import("./config.ts");
+  expect(agentModel("claude-code")).toBe(DEFAULT_AGENT_MODEL["claude-code"]);
+  expect(agentModel("codex")).toBe(DEFAULT_AGENT_MODEL.codex);
+
+  updateAgentDefaultModel("claude-code", "claude-opus-4-8");
+  expect(agentModel("claude-code")).toBe("claude-opus-4-8");
+  expect(agentModel("codex")).toBe(DEFAULT_AGENT_MODEL.codex); // unaffected
+});
+
+test("updateAgentDefaultModel sets one agent without disturbing another's setting (#594)", async () => {
+  const { agentModel, updateAgentDefaultModel } = await import("./config.ts");
+
+  updateAgentDefaultModel("claude-code", "claude-opus-4-8");
+  updateAgentDefaultModel("codex", "gpt-5.5-codex");
+  expect(agentModel("claude-code")).toBe("claude-opus-4-8");
+  expect(agentModel("codex")).toBe("gpt-5.5-codex");
+
+  updateAgentDefaultModel("claude-code", "sonnet");
+  expect(agentModel("claude-code")).toBe("sonnet");
+  expect(agentModel("codex")).toBe("gpt-5.5-codex"); // untouched
+});
+
 test("codingAgent defaults to claude-code and reflects updateConfig (#516)", async () => {
   const { codingAgent, updateConfig } = await import("./config.ts");
   expect(codingAgent()).toBe("claude-code"); // default

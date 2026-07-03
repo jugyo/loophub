@@ -14,7 +14,18 @@ export interface AgentConfig {
   // Whether the Build button (issue row / issue detail) launches this agent with auto mode
   // (--auto for Claude Code, an equivalent flag for Codex). Default off (#499, #593).
   autoModeOnBuild?: boolean;
+  // Model this agent launches with when `lh dev --model` isn't passed explicitly (#594).
+  // Falls back to DEFAULT_AGENT_MODEL when unset.
+  defaultModel?: string;
 }
+
+// Default per-agent model (#594) used by agentModel() when config.json has no override.
+// claude-code accepts the bare "opus" alias (resolved by the claude CLI itself); codex has no
+// alias support so its default is the full model name.
+export const DEFAULT_AGENT_MODEL: Record<CodingAgent, string> = {
+  "claude-code": "opus",
+  codex: "gpt-5.5",
+};
 
 // Known config.json fields (#474). Fields are optional — any subset may be present, and
 // unrecognized fields written by a future version must round-trip through updateConfig
@@ -98,6 +109,19 @@ export function autoModeOnBuild(agent: CodingAgent): boolean {
   return false;
 }
 
+// Model `lh dev` launches `agent` with when --model isn't passed explicitly (#594). Falls back
+// to DEFAULT_AGENT_MODEL when config.json has no override for this agent.
+export function agentModel(agent: CodingAgent): string {
+  try {
+    const cfg: GlobalConfig = JSON.parse(
+      readFileSync(join(configDir(), "config.json"), "utf8"),
+    );
+    const configured = cfg.agents?.[agent]?.defaultModel?.trim();
+    if (configured) return configured;
+  } catch {}
+  return DEFAULT_AGENT_MODEL[agent];
+}
+
 export function normalizeCodingAgent(value: unknown): CodingAgent {
   return value === "codex" ? "codex" : "claude-code";
 }
@@ -161,6 +185,20 @@ export function updateAgentAutoModeOnBuild(
     agents: {
       ...current.agents,
       [agent]: { ...current.agents?.[agent], autoModeOnBuild: value },
+    },
+  });
+}
+
+// Set a single agent's defaultModel without disturbing other agents' settings (#594).
+export function updateAgentDefaultModel(
+  agent: CodingAgent,
+  model: string,
+): GlobalConfig {
+  const current = readConfigFile() as GlobalConfig;
+  return updateConfig({
+    agents: {
+      ...current.agents,
+      [agent]: { ...current.agents?.[agent], defaultModel: model },
     },
   });
 }

@@ -147,17 +147,18 @@ export const methods: Record<string, MethodDef> = {
   // ---- global settings ----
   "settings/get": {
     description:
-      "Instance-level config.json settings (per-agent autoModeOnBuild, codingAgent) (#474, #499, #516, #593).",
+      "Instance-level config.json settings (per-agent autoModeOnBuild/model, codingAgent) (#474, #499, #516, #593, #594).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.settings.get(),
   },
   "settings/update": {
     description:
-      "Update instance-level config.json settings, preserving unrelated fields. autoModeOnBuild requires agent (#474, #593).",
+      "Update instance-level config.json settings, preserving unrelated fields. autoModeOnBuild/model require agent (#474, #593, #594).",
     params: params({
       agent: { enum: ["claude-code", "codex"] },
       autoModeOnBuild: { type: "boolean" },
+      model: strNonEmpty,
       codingAgent: { enum: ["claude-code", "codex"] },
       session_id: sid,
     }),
@@ -167,6 +168,7 @@ export const methods: Record<string, MethodDef> = {
         {
           agent: p.agent,
           autoModeOnBuild: p.autoModeOnBuild,
+          model: p.model,
           codingAgent: p.codingAgent,
         },
         p.session_id,
