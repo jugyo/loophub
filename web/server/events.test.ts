@@ -2,6 +2,7 @@ import {
   chmodSync,
   existsSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -270,5 +271,93 @@ test("startHerdrWatch skips herdr while unsubscribed, then publishes only on a s
     stop();
     process.env.PATH = ORIGINAL_PATH;
     rmSync(FAKE_BIN, { recursive: true, force: true });
+  }
+});
+
+test("startHerdrInactiveCleanup periodically closes old inactive Herdr panes only", async () => {
+  const { startHerdrInactiveCleanup } = await import("./events.ts");
+  const { herdrSessionName } = await import("../../core/terminal-launch.ts");
+
+  const repoPath = mkdtempSync(join(tmpdir(), "lh-herdr-cleanup-repo-"));
+  const repo = S.createRepo("me/herdr-cleanup", repoPath);
+  const sessionName = herdrSessionName(repo);
+
+  const FAKE_BIN = mkdtempSync(join(tmpdir(), "lh-herdr-cleanup-bin-"));
+  const CALLS_FILE = join(FAKE_BIN, "calls.txt");
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          agent_status: "inactive",
+          inactive_seconds: 601,
+          name: "old inactive",
+          pane_id: "w1:p1",
+        },
+        {
+          agent_status: "inactive",
+          inactive_seconds: 30,
+          name: "new inactive",
+          pane_id: "w1:p2",
+        },
+        {
+          agent_status: "inactive",
+          name: "unknown age",
+          pane_id: "w1:p3",
+        },
+        {
+          agent_status: "working",
+          inactive_seconds: 3600,
+          name: "working",
+          pane_id: "w1:p4",
+        },
+      ],
+    },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `echo "$*" >> ${CALLS_FILE}`,
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+
+  async function waitUntil(check: () => boolean, label: string): Promise<void> {
+    const deadline = Date.now() + 2000;
+    while (!check()) {
+      if (Date.now() > deadline)
+        throw new Error(`timed out waiting for: ${label}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  const ORIGINAL_PATH = process.env.PATH;
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  const stop = startHerdrInactiveCleanup(20);
+  try {
+    await waitUntil(
+      () =>
+        existsSync(CALLS_FILE) &&
+        readFileSync(CALLS_FILE, "utf8").includes("pane close w1:p1"),
+      "inactive pane close",
+    );
+    const calls = readFileSync(CALLS_FILE, "utf8");
+    expect(calls).toContain(`--session ${sessionName} agent list`);
+    expect(calls).toContain(`--session ${sessionName} pane close w1:p1`);
+    expect(calls).not.toContain("pane close w1:p2");
+    expect(calls).not.toContain("pane close w1:p3");
+    expect(calls).not.toContain("pane close w1:p4");
+  } finally {
+    stop();
+    process.env.PATH = ORIGINAL_PATH;
+    rmSync(FAKE_BIN, { recursive: true, force: true });
+    rmSync(repoPath, { recursive: true, force: true });
   }
 });

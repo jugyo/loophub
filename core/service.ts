@@ -52,6 +52,7 @@ import {
   realGithubDeps,
   realGithubIssueDeps,
 } from "./github.ts";
+import { parseHerdrInactiveCleanupCandidates } from "./herdr-inactive-cleanup.ts";
 import {
   type HerdrAgent,
   type HerdrPullWorkspace,
@@ -1136,6 +1137,13 @@ export const terminal = {
     return herdrSessionsInflight;
   },
 
+  async cleanupInactiveAgents(): Promise<{
+    closed: number;
+    failed: number;
+  }> {
+    return cleanupInactiveHerdrAgents();
+  },
+
   // Recent terminal output for one herdr agent, for the sidebar hover preview (#500).
   // `target` is whatever the client sends as a herdr `agent read` target — usually a
   // pane_id, since herdr only resolves an agent *name* target when it's unique within
@@ -1528,6 +1536,66 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
     }),
   );
   return { repos: groups.filter((g) => g !== null) };
+}
+
+async function cleanupInactiveHerdrAgents(): Promise<{
+  closed: number;
+  failed: number;
+}> {
+  let listOut: string;
+  try {
+    listOut = await runHerdrCapture(["session", "list", "--json"]);
+  } catch {
+    return { closed: 0, failed: 0 };
+  }
+  const running = parseHerdrSessionList(listOut);
+  if (running.length === 0) return { closed: 0, failed: 0 };
+
+  let closed = 0;
+  let failed = 0;
+  const matched = reposWithRunningSession(S.listRepos("active"), running);
+  for (const { repo, sessionName } of matched) {
+    let agentsOut: string;
+    try {
+      agentsOut = await runHerdrCapture([
+        "--session",
+        sessionName,
+        "agent",
+        "list",
+      ]);
+    } catch {
+      continue;
+    }
+    const closedByPull = new Map<number, boolean>();
+    const isPullClosed = (pull: number): boolean => {
+      const cached = closedByPull.get(pull);
+      if (cached !== undefined) return cached;
+      const row = S.getIssue(repo.id, pull);
+      const closed = !!row && row.kind === "pull" && row.state !== "open";
+      closedByPull.set(pull, closed);
+      return closed;
+    };
+    for (const candidate of parseHerdrInactiveCleanupCandidates(
+      agentsOut,
+      Date.now(),
+      {
+        worktreeRoot: worktreeRoot(),
+        fullName: repo.full_name,
+        isPullClosed,
+      },
+    )) {
+      const argv = herdrPaneCloseArgv(repo, candidate.paneId);
+      try {
+        await runHerdr(argv[0], argv.slice(1), repo.local_path, {
+          timeoutMs: 10_000,
+        });
+        closed++;
+      } catch {
+        failed++;
+      }
+    }
+  }
+  return { closed, failed };
 }
 
 // ===== global settings =====
