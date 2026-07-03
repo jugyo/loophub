@@ -2,16 +2,10 @@ import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RelatedSession } from "@/api/types";
 
-const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
-vi.mock("@/components/terminal-controller", () => ({
-  useTerminalLauncher: () => ({ launchTerminal }),
-}));
-
 import { RelatedSessions } from "./related-sessions";
 
 afterEach(() => {
   cleanup();
-  launchTerminal.mockClear();
 });
 
 function session(over: Partial<RelatedSession>): RelatedSession {
@@ -48,11 +42,12 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("gives every session in a PR worktree a Resume button — no anchor singling-out, no reason text (#401)", () => {
+  it("renders no Resume buttons and keeps old anchor reason text hidden (#401, #632)", () => {
     const { container } = render(
       <RelatedSessions
         owner="jugyo"
         repo="loophub"
+        pullNumber={7}
         cwd="/home/me/.loophub/worktrees/jugyo/loophub/issue-7"
         sessions={[
           session({
@@ -71,8 +66,7 @@ describe("RelatedSessions", () => {
         ]}
       />,
     );
-    // Both sessions resume in the shared worktree, so both get a Resume button.
-    expect(resumeButtons(container).length).toBe(2);
+    expect(resumeButtons(container).length).toBe(0);
     // The old muted anchor reasons are gone entirely.
     expect(container.textContent).not.toContain(
       "superseded by a newer dev session",
@@ -81,11 +75,17 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain("Sessions");
   });
 
-  it("the Resume button launches the typed resume workflow with the right cwd", () => {
+  it("uses `lh resume <owner>/<repo>/<pr>` for the PR dev anchor copy command", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
     const { container } = render(
       <RelatedSessions
         owner="jugyo"
         repo="loophub"
+        pullNumber={7}
         cwd="/home/me/.loophub/worktrees/jugyo/loophub/issue-7"
         sessions={[
           session({
@@ -97,23 +97,43 @@ describe("RelatedSessions", () => {
         ]}
       />,
     );
-    const [btn] = resumeButtons(container);
-    // The single-line command (no `\` line-continuation — that is only for the copyable block).
-    expect(btn.getAttribute("title")).toBe(
-      "Resume `cd /home/me/.loophub/worktrees/jugyo/loophub/issue-7 && claude --resume 11111111-2222-3333-4444-555555555555` in herdr",
-    );
+    const li = container.querySelector("li") as HTMLElement;
+    fireEvent.click(within(li).getByRole("button", { expanded: false }));
 
-    fireEvent.click(btn);
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "jugyo/loophub",
-      label: "Resume - dev",
-      workflow: "resume",
-      session: "11111111-2222-3333-4444-555555555555",
-      cwd: "/home/me/.loophub/worktrees/jugyo/loophub/issue-7",
-    });
+    expect(li.textContent).toContain("lh resume jugyo/loophub/7");
+    expect(li.textContent).not.toContain("claude --resume");
+    fireEvent.click(
+      within(li).getByRole("button", { name: "Copy resume command" }),
+    );
+    expect(writeText).toHaveBeenCalledWith("lh resume jugyo/loophub/7");
   });
 
-  it("on issue detail (no cwd): an issue-create session resumes via herdr from the repo root; a worktree-less session herdr can't place has no button but unifies on the copyable command (#566)", () => {
+  it("quotes the PR resume target and omits the direct-Claude directory hint", () => {
+    const { container } = render(
+      <RelatedSessions
+        owner="jugyo; touch /tmp/pwned"
+        repo="loop hub"
+        pullNumber={7}
+        sessions={[
+          session({
+            id: "a",
+            kind: "dev",
+            session: "11111111-2222-3333-4444-555555555555",
+            resume: { resumable: true },
+          }),
+        ]}
+      />,
+    );
+    const li = container.querySelector("li") as HTMLElement;
+    fireEvent.click(within(li).getByRole("button", { expanded: false }));
+
+    expect(li.textContent).toContain(
+      "lh resume 'jugyo; touch /tmp/pwned/loop hub/7'",
+    );
+    expect(li.textContent).not.toContain("working directory");
+  });
+
+  it("on issue detail (no cwd): issue-create and worktree-less sessions keep direct copyable commands (#566, #632)", () => {
     const { container } = render(
       <RelatedSessions
         owner="jugyo"
@@ -134,19 +154,15 @@ describe("RelatedSessions", () => {
         ]}
       />,
     );
-    // Only the issue-create session (repo-root cwd, herdr's default) can resume via herdr; the
-    // review session has no client-side worktree path for herdr to point the pane at, so no button —
-    // but no reason text either.
-    const btns = resumeButtons(container);
-    expect(btns.length).toBe(1);
-    // Its command is the bare `claude --resume <id>` (no `cd`, runs at the repo root).
-    expect(btns[0].getAttribute("title")).toBe(
-      "Resume `claude --resume 11111111-2222-3333-4444-555555555555` in herdr",
-    );
+    expect(resumeButtons(container).length).toBe(0);
     expect(container.textContent).not.toContain("resume from the linked PR");
-    // The button-less review session unifies on the copyable command (#566): expanding it still
-    // exposes `claude --resume <id>` plus the directory hint, the decided fallback for a
-    // directory-unknown session herdr cannot place.
+    const issueCreateLi = container.querySelectorAll("li")[0] as HTMLElement;
+    fireEvent.click(
+      within(issueCreateLi).getByRole("button", { expanded: false }),
+    );
+    expect(issueCreateLi.textContent).toContain(
+      "claude --resume 11111111-2222-3333-4444-555555555555",
+    );
     const reviewLi = container.querySelectorAll("li")[1] as HTMLElement;
     fireEvent.click(within(reviewLi).getByRole("button", { expanded: false }));
     expect(reviewLi.textContent).toContain(
@@ -192,8 +208,8 @@ describe("RelatedSessions", () => {
     expect(writeText).toHaveBeenCalledWith(joined);
     // No separate "Run in:" path row — the path lives in the joined command now.
     expect(li.textContent).not.toContain("Run in:");
-    // The Resume button is present alongside the command.
-    expect(resumeButtons(li).length).toBe(1);
+    // The inline launch button is gone; only the copy button remains.
+    expect(resumeButtons(li).length).toBe(0);
   });
 
   it("falls back to the bare `claude --resume <id>` plus a directory hint when cwd is unknown (#345)", () => {

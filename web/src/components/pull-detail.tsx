@@ -143,6 +143,7 @@ export function PullDetail({
         <RelatedSessions
           owner={owner}
           repo={repo}
+          pullNumber={number}
           sessions={pull.related_sessions}
           cwd={pull.worktree_path ?? undefined}
         />

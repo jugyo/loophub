@@ -1,39 +1,23 @@
 // Related sessions list for a PR or issue (#298). Shows every session linked to the PR/issue
 // (dev, review, issue-create, …) newest-first, with its kind, runtime, and when it was linked.
 //
-// Every session is treated equally (#401): there is no special "anchor" row and no muted
-// "superseded / not this PR's resume target" reason text. A session whose runtime is resumable
-// (claude-code with a stored session id) gets a Resume button that launches herdr's `resume`
-// workflow (#566) — herdr opens a pane and runs `claude --resume <id>` there, the same for any such
-// session, not just the single dev session `lh resume <pr>` used to target. (We no longer call
-// `lh resume`: it can only re-enter a PR's one anchor session, which is exactly the unequal
-// treatment this view drops.)
+// Every session is treated equally (#401): there is no muted "superseded / not this PR's resume
+// target" reason text. Rows expand to a copyable command, but do not launch a terminal directly.
 //
-// The button goes through herdr only. The built-in terminal — a generic "open a shell in any
-// directory" launcher — is gone (#624), so herdr's workflow-tied launches are the only programmatic
-// resume path. `claude --resume` resolves a session only from its original cwd (sessions live at
-// ~/.claude/projects/<dashed cwd>/<id>.jsonl), and herdr can open the resume pane only at a
-// directory we can name: PR detail passes the shared worktree `cwd` (#345 — `worktree_path`), used
-// by all of the PR's sessions; an issue-create session (#299) has no worktree and resumes from the
-// repo root, herdr's default cwd, so a bare command works. A dev/review session on issue detail has
-// no client-side worktree path, so herdr has nowhere to point the pane and it gets no button —
-// teaching herdr to reverse-map a session to its worktree is a new launch plan, out of scope (#566).
-// The row still expands to a copyable command (below), the unified fallback for that case, so a
-// button-less session is not visually singled out.
+// On PR detail, the current dev anchor row uses `lh resume <owner>/<repo>/<pr>` because that command
+// restores/re-attaches the worktree before resuming. Other rows keep the direct `claude --resume`
+// command because `lh resume --session <id>` does not resolve the original worktree cwd.
 //
-// Each row is expandable (#340): expanding reveals the copyable `claude --resume` command (joined as
-// `cd <cwd> && …` when the cwd is known, #345) so a user can resume from any terminal by hand. It is
-// shown whenever the runtime resume judgment succeeded (serialize.ts: only "no-session" /
-// "unknown-runtime" mean there is no claude session id; every other state has a valid id in
-// `RelatedSession.session`).
+// Each row is expandable (#340): expanding reveals a copyable terminal command so a user can resume
+// by hand. It is shown whenever the runtime resume judgment succeeded (serialize.ts: only
+// "no-session" / "unknown-runtime" mean there is no claude session id; every other state has a valid
+// id in `RelatedSession.session`).
 
-import { ChevronRight, Play } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { RelatedSession } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
-import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import type { BadgeTone } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 
@@ -81,20 +65,20 @@ function shellArg(p: string): string {
 export function RelatedSessions({
   owner,
   repo,
+  pullNumber,
   sessions,
   cwd,
 }: {
   owner: string;
   repo: string;
+  pullNumber?: number;
   sessions: RelatedSession[] | undefined;
-  // The directory `claude --resume` should run in. When set, the Resume button and the copyable
-  // command are prepended with `cd <cwd> && …` so resume runs from the right place. Pass the PR's
-  // dev worktree path on PR detail (shared by all the PR's sessions); omit on issue detail, where an
-  // issue-create session resumes from the repo root (the terminal's default cwd) and any other
-  // session has no client-side worktree path (no button — the expanded copy command covers it).
+  // The directory `claude --resume` should run in. When set, the copyable command is prepended with
+  // `cd <cwd> && …` so resume runs from the right place. Pass the PR's dev worktree path on PR
+  // detail (shared by all the PR's sessions); omit on issue detail, where an issue-create session
+  // resumes from the repo root and any other session has no client-side worktree path.
   cwd?: string;
 }) {
-  const { launchTerminal } = useTerminalLauncher();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   if (!sessions || sessions.length === 0) return null;
 
@@ -118,29 +102,21 @@ export function RelatedSessions({
           // issue-create one.
           const resumesFromRepoRoot = s.kind === SESSION_KIND_ISSUE_CREATE;
           const cdPrefix = cwd != null && !resumesFromRepoRoot ? cwd : null;
-          // Resumable via herdr only when runtime-resumable AND we know a directory herdr can point
-          // the pane at: a `cdPrefix` worktree, or the repo root for an issue-create session.
-          // Otherwise (an issue-linked dev/review session with no client-side worktree path) herdr
-          // has nowhere to open the resume pane, so there is no button; the expanded copy command
-          // below is the fallback.
-          const canResumeViaHerdr =
-            claudeResumable && (cdPrefix != null || resumesFromRepoRoot);
-          // Single-line form herdr's resume workflow runs in the pane (one command).
-          const resumeCommandLine = cdPrefix
-            ? `cd ${shellArg(cdPrefix)} && ${claudeResume}`
-            : claudeResume;
+          const usesPullResume =
+            pullNumber != null && s.kind === "dev" && s.resume.resumable;
           // Display form for the copyable block — split with a `\` line-continuation so the long
           // command reads cleanly; the copied text keeps the `\`+newline so pasting runs as one.
           const claudeCommand = cdPrefix
             ? `cd ${shellArg(cdPrefix)} && \\\n  ${claudeResume}`
             : claudeResume;
+          const resumeCommand = usesPullResume
+            ? `lh resume ${shellArg(`${owner}/${repo}/${pullNumber}`)}`
+            : claudeCommand;
           const isOpen = expanded[s.id] ?? false;
           return (
             <li key={s.id} className="rounded-md border text-sm">
-              {/* Header row: the expandable toggle (badge / name / runtime / linked time, allowed to
-                  wrap) on the left, and — when the session can be resumed via herdr — a compact
-                  Resume button pinned top-right. No per-row reason text: every session is treated
-                  the same (#401). */}
+              {/* Header row: expandable metadata only. No per-row reason text or terminal-launch
+                  button: every session is treated the same (#401). */}
               <div className="flex items-start gap-2 p-3">
                 <button
                   type="button"
@@ -173,26 +149,6 @@ export function RelatedSessions({
                     linked {relativeTime(s.linked_at ?? s.created_at)}
                   </span>
                 </button>
-                {canResumeViaHerdr ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="shrink-0"
-                    title={`Resume \`${resumeCommandLine}\` in herdr`}
-                    onClick={() =>
-                      launchTerminal({
-                        repo: `${owner}/${repo}`,
-                        label: `Resume - ${s.name ?? s.kind ?? s.id}`,
-                        workflow: "resume",
-                        session: s.session,
-                        cwd: cdPrefix ?? undefined,
-                      })
-                    }
-                  >
-                    <Play className="size-3.5" />
-                    Resume
-                  </Button>
-                ) : null}
               </div>
               {isOpen ? (
                 <div
@@ -206,14 +162,14 @@ export function RelatedSessions({
                       </p>
                       <div className="flex items-center gap-1">
                         <code className="flex-1 overflow-x-auto whitespace-pre rounded bg-muted px-2 py-1.5 font-mono text-xs">
-                          {claudeCommand}
+                          {resumeCommand}
                         </code>
                         <CopyButton
-                          value={claudeCommand}
+                          value={resumeCommand}
                           label="Copy resume command"
                         />
                       </div>
-                      {cwd ? null : (
+                      {cwd || usesPullResume ? null : (
                         <p className="text-xs text-muted-foreground">
                           Run it in the session's working directory (the repo
                           root for an issue-create session, or the PR's worktree

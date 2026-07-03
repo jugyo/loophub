@@ -11,16 +11,17 @@
       OS preference, else dark. Keep the two in sync.
     -->
     <script>
-      (function () {
+      (() => {
+        let t;
         try {
-          var t = localStorage.getItem("lh_theme");
+          t = localStorage.getItem("lh_theme");
           if (t !== "light" && t !== "dark") {
             t = window.matchMedia("(prefers-color-scheme: light)").matches
               ? "light"
               : "dark";
           }
           document.documentElement.classList.toggle("dark", t === "dark");
-        } catch (e) {
+        } catch {
           document.documentElement.classList.add("dark");
         }
       })();

@@ -79,7 +79,6 @@ function DebugValue({ value }: { value: unknown }) {
     return (
       <ol className="flex list-inside list-decimal flex-col gap-1">
         {value.map((item, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: positional list of opaque JSON values.
           <li key={i}>
             <DebugValue value={item} />
           </li>
@@ -131,7 +130,6 @@ function ObjectArrayTable({ rows }: { rows: Record<string, unknown>[] }) {
     return (
       <ol className="flex list-inside list-decimal flex-col gap-1">
         {rows.map((row, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: positional rows of opaque JSON values.
           <li key={i}>
             <DebugValue value={row} />
           </li>
@@ -156,7 +154,6 @@ function ObjectArrayTable({ rows }: { rows: Record<string, unknown>[] }) {
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: positional rows of opaque JSON values.
             <tr key={i} className="border-b align-top last:border-0">
               {cols.map((c) => (
                 <td key={c} className="py-1 pr-3 align-top">
