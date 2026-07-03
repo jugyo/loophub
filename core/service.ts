@@ -707,10 +707,19 @@ async function launchIssueDevHerdr(r: S.Repo, issueNumber: number) {
   };
 }
 
+// A sidebar agent row: the parsed herdr agent plus what the DB knows about the PR its
+// worktree cwd resolves to (#611). `pull_closed` is true when that PR is merged or closed —
+// the sidebar grays those rows out so no-longer-needed agents stand out at a glance. An
+// agent with no resolvable PR (repo-root cwd, legacy worktree convention, or a pr-<n> dir
+// with no matching PR row) stays false: unknown must render as a normal row, not a stale one.
+export interface HerdrSessionAgent extends HerdrAgent {
+  pull_closed: boolean;
+}
+
 export interface HerdrRepoSessions {
   repo: string;
   session_name: string;
-  agents: HerdrAgent[];
+  agents: HerdrSessionAgent[];
   // Running herdr workspaces pinned to a PR's worktree, keyed back to their PR number (#579) —
   // drives the issue-list "Herdr running" badge and its click-to-focus action.
   pull_workspaces: HerdrPullWorkspace[];
@@ -1426,10 +1435,33 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
       } catch {
         return null;
       }
-      const agents = parseHerdrAgentList(agentsOut);
+      // Placements (not parseHerdrAgentList) so each agent carries the PR its cwd
+      // resolves to — same id/name/status semantics, same `agent list` output (#611).
+      const placements = parseHerdrAgentPlacements(
+        agentsOut,
+        worktreeRoot(),
+        repo.full_name,
+      );
       // A running session with zero agents has nothing to show — drop the group so
       // the sidebar section only appears when there is actual agent activity.
-      if (agents.length === 0) return null;
+      if (placements.length === 0) return null;
+      // One DB lookup per distinct PR number — several agents often share a worktree.
+      const closedByPull = new Map<number, boolean>();
+      const agents = placements.map(({ id, name, status, pull }) => {
+        let closed = false;
+        if (pull !== null) {
+          let known = closedByPull.get(pull);
+          if (known === undefined) {
+            const row = S.getIssue(repo.id, pull);
+            // A pr-<n> dir with no matching PR row (or a same-numbered issue) resolves
+            // to nothing — render normally rather than guessing staleness.
+            known = !!row && row.kind === "pull" && row.state !== "open";
+            closedByPull.set(pull, known);
+          }
+          closed = known;
+        }
+        return { id, name, status, pull_closed: closed };
+      });
       const pullWorkspaces = herdrPullWorkspacesFromAgentList(
         agentsOut,
         worktreeRoot(),

@@ -183,6 +183,12 @@ export interface HerdrAgent {
   name: string;
   /** Raw herdr agent_status (known values: working | blocked | done | idle). */
   status: string;
+  /**
+   * True when the PR whose worktree the agent's pane cwd resolves to is merged or
+   * closed (#611) — the sidebar grays such rows out. Absent/false when the PR is open
+   * or no PR could be resolved: both render as a normal row.
+   */
+  pull_closed?: boolean;
 }
 
 /**

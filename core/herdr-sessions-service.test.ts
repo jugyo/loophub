@@ -16,6 +16,7 @@ process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
+let S: typeof import("./store.ts");
 let herdrSessionName: (repo: {
   full_name: string;
   local_path: string;
@@ -37,6 +38,7 @@ function initGitRepo(): string {
 
 beforeAll(async () => {
   svc = await import("./service.ts");
+  S = await import("./store.ts");
   ({ herdrSessionName } = await import("./terminal-launch.ts"));
   ({ worktreeRoot } = await import("./config.ts"));
   ({ worktreePath } = await import("./worktree-path.ts"));
@@ -117,8 +119,18 @@ test("terminal.sessions groups running herdr agents by repo and drops agentless 
         repo: "me/with-agents",
         session_name: sessionA,
         agents: [
-          { id: "w1:p2", name: "dev #11", status: "working" },
-          { id: "w1:pC", name: "dev #13", status: "blocked" },
+          {
+            id: "w1:p2",
+            name: "dev #11",
+            status: "working",
+            pull_closed: false,
+          },
+          {
+            id: "w1:pC",
+            name: "dev #13",
+            status: "blocked",
+            pull_closed: false,
+          },
         ],
         pull_workspaces: [],
       },
@@ -174,9 +186,110 @@ test("terminal.sessions maps a running agent's cwd back to its PR (#579)", async
       {
         repo: "me/pull-workspace",
         session_name: sessionName,
-        agents: [{ id: "wP:p2", name: "Issue #9 - PR 12", status: "working" }],
+        agents: [
+          {
+            id: "wP:p2",
+            name: "Issue #9 - PR 12",
+            status: "working",
+            pull_closed: false,
+          },
+        ],
         pull_workspaces: [{ pull: 12, pane_id: "wP:p2", status: "working" }],
       },
+    ]);
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+// #611: the sidebar grays out agents whose worktree PR is finished. terminal.sessions
+// resolves each agent's cwd to a PR (same placement parse as #602) and flags the ones
+// whose PR is merged or closed; an open PR, an unknown pr-<n> dir, and a repo-root cwd
+// all stay unflagged.
+test("terminal.sessions flags agents whose worktree PR is merged or closed (#611)", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/stale-agents",
+  });
+  const sessionName = herdrSessionName(repo);
+  // PR rows created directly in the store: pulls.create at the service level needs a real
+  // head branch, which these bare temp repos don't have. Numbers are sequential per repo,
+  // so #1 = merged, #2 = closed unmerged, #3 = open.
+  const mergedPr = S.createIssue(repo.id, "pull", "merged", "", "me");
+  S.createPull(mergedPr.id, "loophub/pr-1", "main", null);
+  S.setMerged(mergedPr.id, "0000000000000000000000000000000000000000", "merge");
+  const closedPr = S.createIssue(repo.id, "pull", "closed", "", "me");
+  S.createPull(closedPr.id, "loophub/pr-2", "main", null);
+  S.updateIssue(closedPr.id, { state: "closed" });
+  const openPr = S.createIssue(repo.id, "pull", "open", "", "me");
+  S.createPull(openPr.id, "loophub/pr-3", "main", null);
+
+  const root = worktreeRoot();
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          agent: "claude",
+          agent_status: "done",
+          name: "dev #1",
+          pane_id: "wS:p1",
+          foreground_cwd: worktreePath(root, repo.full_name, 1),
+        },
+        {
+          agent: "claude",
+          agent_status: "idle",
+          name: "dev #2",
+          pane_id: "wS:p2",
+          foreground_cwd: worktreePath(root, repo.full_name, 2),
+        },
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "dev #3",
+          pane_id: "wS:p3",
+          foreground_cwd: worktreePath(root, repo.full_name, 3),
+        },
+        {
+          // pr-99 exists as a dir name but no such PR row — must not be guessed stale.
+          agent: "claude",
+          agent_status: "working",
+          name: "dev #99",
+          pane_id: "wS:p4",
+          foreground_cwd: worktreePath(root, repo.full_name, 99),
+        },
+        {
+          agent: "claude",
+          agent_status: "idle",
+          name: "shell",
+          pane_id: "wS:p5",
+          foreground_cwd: repo.local_path,
+        },
+      ],
+    },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `printf '%s' '${agents}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    const result = await svc.terminal.sessions();
+    expect(result.repos).toHaveLength(1);
+    expect(result.repos[0].agents).toEqual([
+      { id: "wS:p1", name: "dev #1", status: "done", pull_closed: true },
+      { id: "wS:p2", name: "dev #2", status: "idle", pull_closed: true },
+      { id: "wS:p3", name: "dev #3", status: "working", pull_closed: false },
+      { id: "wS:p4", name: "dev #99", status: "working", pull_closed: false },
+      { id: "wS:p5", name: "shell", status: "idle", pull_closed: false },
     ]);
   } finally {
     process.env.PATH = ORIGINAL_PATH;

@@ -488,6 +488,74 @@ describe("SidebarHerdrSessions", () => {
     });
   });
 
+  // #611: agents whose worktree PR is merged/closed render muted.
+  describe("stale agents (#611)", () => {
+    const MIXED: HerdrSessions = {
+      repos: [
+        {
+          repo: "me/app",
+          session_name: "me-app-12345678",
+          agents: [
+            {
+              id: "w1:p1",
+              name: "dev #11",
+              status: "working",
+              pull_closed: true,
+            },
+            { id: "w1:p2", name: "dev #13", status: "working" },
+          ],
+        },
+      ],
+    };
+
+    it("grays out the row when the agent's PR is merged/closed, leaving others unchanged", async () => {
+      renderWithSessions(MIXED);
+
+      const staleName = await screen.findByText("dev #11");
+      expect(staleName.className).toContain("text-muted-foreground");
+      const staleDot = staleName.parentElement?.querySelector("span");
+      expect(staleDot?.className).toContain("bg-muted-foreground/30");
+      expect(staleDot?.className).not.toContain("bg-yellow-500");
+
+      const freshName = screen.getByText("dev #13");
+      expect(freshName.className).not.toContain("text-muted-foreground");
+      const freshDot = freshName.parentElement?.querySelector("span");
+      expect(freshDot?.className).toContain("bg-yellow-500");
+    });
+
+    it("keeps the hover preview and kill button working on a grayed-out row (#611 AC)", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      renderWithSessions(
+        MIXED,
+        { output: "$ npm test\n42 passing\n", cols: null, rows: null },
+        { "terminal/killAgent": () => ({ ok: true }) },
+      );
+
+      const row = (await screen.findByText("dev #11"))
+        .parentElement as HTMLElement;
+      fireEvent.mouseEnter(row);
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      const tooltip = await screen.findByRole("tooltip");
+      expect(tooltip.textContent).toBe("$ npm test\n42 passing\n");
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Close dev #11's pane" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Close pane" }),
+      );
+      await waitFor(() => {
+        expect(rpcCall("terminal/killAgent")?.params).toMatchObject({
+          repo: "me/app",
+          paneId: "w1:p1",
+        });
+      });
+    });
+  });
+
   // #521: kill button.
   const ONE_AGENT: HerdrSessions = {
     repos: [

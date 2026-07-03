@@ -1,9 +1,10 @@
 // Sidebar section (#495): running herdr sessions grouped by repo, shown under the
 // repository list. Each agent row is a name (e.g. "dev #486"), a status dot, a kill button
 // (#521, experimental) that closes the agent's pane, and — on hover (#500) — a preview of
-// that agent's recent terminal output, fetched on demand via `terminal/agentRead`. Renders
-// nothing while loading, on error, or when no session has agents, so the section never gets
-// in the way when herdr isn't in use.
+// that agent's recent terminal output, fetched on demand via `terminal/agentRead`. Rows
+// whose worktree PR is merged/closed render muted (#611). Renders nothing while loading,
+// on error, or when no session has agents, so the section never gets in the way when
+// herdr isn't in use.
 import { AnsiUp } from "ansi_up";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -110,6 +111,10 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   } | null>(null);
   const [confirming, setConfirming] = useState(false);
   const killAgent = useKillHerdrAgent();
+  // The agent's worktree PR is merged/closed (#611): gray the row out so no-longer-needed
+  // agents stand out. Display only — hover preview and the kill button keep working, since
+  // a stale agent is exactly the one someone wants to inspect or close.
+  const stale = agent.pull_closed === true;
 
   function clearHoverTimer() {
     if (hoverTimer.current !== null) {
@@ -213,12 +218,21 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
         <span
           className={cn(
             "size-2 shrink-0 rounded-full",
-            statusDotClass(agent.status),
+            // Muted dot instead of the status color: a finished PR's agent no longer
+            // needs attention, whatever its status says (#611).
+            stale ? "bg-muted-foreground/30" : statusDotClass(agent.status),
           )}
           aria-hidden="true"
         />
-        <span className="truncate">{agent.name}</span>
-        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+        <span className={cn("truncate", stale && "text-muted-foreground")}>
+          {agent.name}
+        </span>
+        <span
+          className={cn(
+            "ml-auto shrink-0 text-xs text-muted-foreground",
+            stale && "opacity-60",
+          )}
+        >
           {agent.status}
         </span>
         <button
