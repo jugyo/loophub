@@ -8,28 +8,15 @@ import { Button } from "@/components/ui/button";
 import { MODEL_SUGGESTIONS } from "@/lib/agent-models";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
 
-// The concrete flag `--auto` maps to differs per agent (cli/dev.ts buildClaudeArgs /
-// buildCodexArgs), so the "On" hint is agent-specific rather than a fixed string.
-const AUTO_MODE_ON_HINT: Record<CodingAgent, string> = {
-  "claude-code":
-    "Build launches `lh dev` with auto mode (--auto, `--permission-mode auto`).",
-  codex:
-    "Build launches `lh dev` with auto mode (--auto, `--dangerously-bypass-approvals-and-sandbox`).",
-};
-
-function autoModeOptions(
-  agent: CodingAgent,
-): { value: boolean; label: string; hint: string }[] {
+function autoModeOptions(): { value: boolean; label: string }[] {
   return [
     {
       value: false,
       label: "Off",
-      hint: "Build launches `lh dev` without auto mode.",
     },
     {
       value: true,
       label: "On",
-      hint: AUTO_MODE_ON_HINT[agent],
     },
   ];
 }
@@ -37,17 +24,14 @@ function autoModeOptions(
 const CODING_AGENT_OPTIONS: {
   value: CodingAgent;
   label: string;
-  hint: string;
 }[] = [
   {
     value: "claude-code",
     label: "Claude Code",
-    hint: "`lh dev` launches the interactive session in Claude Code.",
   },
   {
     value: "codex",
     label: "Codex",
-    hint: "`lh dev` launches the interactive session in Codex.",
   },
 ];
 
@@ -130,9 +114,7 @@ export function SettingsPage() {
       <section className="mt-6">
         <h2 className="text-sm font-medium">Coding agent</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Which coding agent <code>lh dev</code> launches by default when
-          neither --claude-code nor --codex is passed. Each agent's individual
-          settings are nested below it.
+          Default for <code>lh dev</code>.
         </p>
         <div
           role="radiogroup"
@@ -158,12 +140,7 @@ export function SettingsPage() {
                   className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
                   aria-hidden="true"
                 />
-                <span className="flex flex-col">
-                  <span>{o.label}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {o.hint}
-                  </span>
-                </span>
+                <span>{o.label}</span>
               </button>
             );
           })}
@@ -184,16 +161,12 @@ export function SettingsPage() {
                 <h3 className="text-xs font-medium text-muted-foreground">
                   {agentOption.label} — Auto mode on Build
                 </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Whether the Build button (issue list / issue detail) launches{" "}
-                  <code>lh dev</code> with auto mode for {agentOption.label}.
-                </p>
                 <div
                   role="radiogroup"
                   aria-label={`Auto mode on Build (${agentOption.label})`}
-                  className="mt-2 max-w-sm rounded-md border"
+                  className="mt-1 max-w-sm rounded-md border"
                 >
-                  {autoModeOptions(agentOption.value).map((o) => {
+                  {autoModeOptions().map((o) => {
                     const active = autoModeOnBuild === o.value;
                     return (
                       <button
@@ -215,12 +188,7 @@ export function SettingsPage() {
                           className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
                           aria-hidden="true"
                         />
-                        <span className="flex flex-col">
-                          <span>{o.label}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {o.hint}
-                          </span>
-                        </span>
+                        <span>{o.label}</span>
                       </button>
                     );
                   })}
@@ -229,12 +197,7 @@ export function SettingsPage() {
                 <h3 className="mt-4 text-xs font-medium text-muted-foreground">
                   {agentOption.label} — Default model
                 </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Model {agentOption.label} launches with when{" "}
-                  <code>lh dev --model</code> is not passed explicitly. Pick a
-                  suggestion or type any model name.
-                </p>
-                <div className="mt-2 max-w-sm">
+                <div className="mt-1 max-w-sm">
                   <AgentModelInput
                     label={agentOption.label}
                     value={model}
