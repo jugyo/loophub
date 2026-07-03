@@ -54,6 +54,19 @@ function renderWithSessions(
 }
 
 describe("SidebarHerdrSessions", () => {
+  function rowForAgent(name: string): HTMLElement {
+    return screen.getByText(name).parentElement as HTMLElement;
+  }
+
+  function statusInRow(name: string, status: string): HTMLElement {
+    const row = rowForAgent(name);
+    const statusEl = Array.from(row.querySelectorAll("span")).find(
+      (el) => el.textContent === status,
+    );
+    if (!statusEl) throw new Error(`Status ${status} not found for ${name}`);
+    return statusEl;
+  }
+
   it("renders agent names and statuses grouped by repo", async () => {
     renderWithSessions({
       repos: [
@@ -82,6 +95,45 @@ describe("SidebarHerdrSessions", () => {
     expect(screen.getByText("blocked")).toBeTruthy();
     expect(screen.getByText("dev #2")).toBeTruthy();
     expect(screen.getByText("idle")).toBeTruthy();
+  });
+
+  it("uses a robot icon and colors status text with the agent status mapping", async () => {
+    renderWithSessions({
+      repos: [
+        {
+          repo: "me/app",
+          session_name: "me-app-12345678",
+          agents: [
+            { id: "w1:p1", name: "blocked agent", status: "blocked" },
+            { id: "w1:p2", name: "working agent", status: "working" },
+            { id: "w1:p3", name: "done agent", status: "done" },
+            { id: "w1:p4", name: "idle agent", status: "idle", pull: 4 },
+            { id: "w1:p5", name: "unknown agent", status: "paused" },
+          ],
+        },
+      ],
+    });
+
+    await screen.findByText("blocked agent");
+
+    const row = rowForAgent("blocked agent");
+    expect(row.querySelector(".lucide-bot")).toBeTruthy();
+    expect(row.querySelector(".rounded-full")).toBeNull();
+    expect(statusInRow("blocked agent", "blocked").className).toContain(
+      "text-red-500",
+    );
+    expect(statusInRow("working agent", "working").className).toContain(
+      "text-yellow-500",
+    );
+    expect(statusInRow("done agent", "done").className).toContain(
+      "text-blue-500",
+    );
+    expect(statusInRow("idle agent", "idle").className).toContain(
+      "text-green-500",
+    );
+    expect(statusInRow("unknown agent", "paused").className).toContain(
+      "text-muted-foreground",
+    );
   });
 
   it("renders nothing when no sessions are running", async () => {
@@ -524,6 +576,20 @@ describe("SidebarHerdrSessions", () => {
       });
     });
 
+    it("renders the row full-width and overlays hover actions outside normal layout", async () => {
+      renderWithSessions(RUNNING);
+
+      const button = await screen.findByRole("button", {
+        name: "Focus dev #11's pane",
+      });
+      const row = rowForAgent("dev #11");
+
+      expect(row.className).toContain("relative");
+      expect(row.className).toContain("w-full");
+      expect(button.parentElement?.className).toContain("absolute");
+      expect(button.parentElement?.className).toContain("right-2");
+    });
+
     it("hides the focus icon for a synthetic-id agent that has no real pane (#617 AC)", async () => {
       renderWithSessions({
         repos: [
@@ -552,6 +618,36 @@ describe("SidebarHerdrSessions", () => {
       expect(
         screen.queryByRole("button", { name: "Focus dev #11's pane" }),
       ).toBeNull();
+    });
+
+    it("keeps status visible on hover-capable rows that have no overlay actions", async () => {
+      renderWithSessions({
+        repos: [
+          {
+            repo: "me/app",
+            session_name: "me-app-12345678",
+            agents: [
+              {
+                id: `${String.fromCharCode(0)}idx:0`,
+                name: "dev #11",
+                status: "working",
+              },
+            ],
+          },
+        ],
+      });
+
+      await screen.findByText("dev #11");
+
+      expect(
+        screen.queryByRole("button", { name: "Focus dev #11's pane" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Close dev #11's pane" }),
+      ).toBeNull();
+      expect(statusInRow("dev #11", "working").className).not.toContain(
+        "group-hover:opacity-0",
+      );
     });
 
     it("surfaces a toast when focusing fails (#617 AC)", async () => {
@@ -599,14 +695,15 @@ describe("SidebarHerdrSessions", () => {
 
       const staleName = await screen.findByText("dev #11");
       expect(staleName.className).toContain("text-muted-foreground");
-      const staleDot = staleName.parentElement?.querySelector("span");
-      expect(staleDot?.className).toContain("bg-muted-foreground/30");
-      expect(staleDot?.className).not.toContain("bg-yellow-500");
+      const staleStatus = statusInRow("dev #11", "working");
+      expect(staleStatus.className).toContain("text-muted-foreground");
+      expect(staleStatus.className).not.toContain("text-yellow-500");
 
       const freshName = screen.getByText("dev #13");
       expect(freshName.className).not.toContain("text-muted-foreground");
-      const freshDot = freshName.parentElement?.querySelector("span");
-      expect(freshDot?.className).toContain("bg-yellow-500");
+      expect(statusInRow("dev #13", "working").className).toContain(
+        "text-yellow-500",
+      );
     });
 
     // #620/#645: stale rows sink to the bottom of their repo group so active agents stay on top.
@@ -810,9 +907,9 @@ describe("SidebarHerdrSessions", () => {
 
       const name = await screen.findByText("New issue");
       expect(name.className).toContain("text-muted-foreground");
-      const dot = name.parentElement?.querySelector("span");
-      expect(dot?.className).toContain("bg-muted-foreground/30");
-      expect(dot?.className).not.toContain("bg-green-500");
+      const status = statusInRow("New issue", "idle");
+      expect(status.className).toContain("text-muted-foreground");
+      expect(status.className).not.toContain("text-green-500");
       expect(
         screen.getByRole("button", { name: "Close New issue's pane" }),
       ).toBeTruthy();
@@ -833,8 +930,9 @@ describe("SidebarHerdrSessions", () => {
 
       const name = await screen.findByText("New issue");
       expect(name.className).not.toContain("text-muted-foreground");
-      const dot = name.parentElement?.querySelector("span");
-      expect(dot?.className).toContain("bg-yellow-500");
+      expect(statusInRow("New issue", "working").className).toContain(
+        "text-yellow-500",
+      );
       expect(
         screen.queryByRole("button", { name: "Close New issue's pane" }),
       ).toBeNull();
@@ -862,8 +960,9 @@ describe("SidebarHerdrSessions", () => {
 
       const name = await screen.findByText("dev #11");
       expect(name.className).not.toContain("text-muted-foreground");
-      const dot = name.parentElement?.querySelector("span");
-      expect(dot?.className).toContain("bg-green-500");
+      expect(statusInRow("dev #11", "idle").className).toContain(
+        "text-green-500",
+      );
       expect(
         screen.queryByRole("button", { name: "Close dev #11's pane" }),
       ).toBeNull();

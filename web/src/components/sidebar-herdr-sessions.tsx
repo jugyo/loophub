@@ -1,6 +1,6 @@
 // Sidebar section (#495): running herdr sessions grouped by repo, shown under the
-// repository list. Each agent row is a name (e.g. "dev #486"), a status dot, a kill button
-// (#521, experimental) that closes the agent's pane, and — on hover (#500) — a preview of
+// repository list. Each agent row is a name (e.g. "dev #486"), a robot icon, colored status
+// text, a kill button (#521, experimental) that closes the agent's pane, and — on hover (#500) — a preview of
 // that agent's recent terminal output, fetched on demand via `terminal/agentRead`. Rows
 // whose worktree PR is merged/closed render muted (#611); so do no-PR "New issue" agents once
 // they go idle (#633). The kill button is shown only on those muted rows (#621, #633), where
@@ -8,7 +8,7 @@
 // nothing while loading, on error, or when no session has agents, so the section never gets
 // in the way when herdr isn't in use.
 import { AnsiUp } from "ansi_up";
-import { Terminal, X } from "lucide-react";
+import { Bot, Terminal, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { HerdrAgent } from "@/api/types";
 import { useToast } from "@/components/toast";
@@ -49,21 +49,21 @@ function agentReadTarget(agent: HerdrAgent): string {
   return agent.id.startsWith(NO_PANE_ID_PREFIX) ? agent.name : agent.id;
 }
 
-// Known agent_status values -> dot color, matched to herdr's own status colors
+// Known agent_status values -> text color, matched to herdr's own status colors
 // (herdr README "agent awareness": 🔴 blocked, 🟡 working, 🔵 done, 🟢 idle — #528).
 // Anything unrecognized falls back to muted.
-function statusDotClass(status: string): string {
+function statusTextClass(status: string): string {
   switch (status) {
     case "blocked":
-      return "bg-red-500";
+      return "text-red-500";
     case "working":
-      return "bg-yellow-500";
+      return "text-yellow-500";
     case "done":
-      return "bg-blue-500";
+      return "text-blue-500";
     case "idle":
-      return "bg-green-500";
+      return "text-green-500";
     default:
-      return "bg-muted-foreground/30";
+      return "text-muted-foreground";
   }
 }
 
@@ -148,6 +148,7 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   //      pull_closed can never be true for it, so idle is the signal its work is done. A
   //      no-PR agent still working/blocked/done stays a normal, active row.
   const stale = isStaleAgent(agent);
+  const hasRowActions = canFocus || stale;
 
   function clearHoverTimer() {
     if (hoverTimer.current !== null) {
@@ -247,17 +248,12 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
     <>
       <div
         ref={rowRef}
-        className="group flex items-center gap-2 px-2 py-0.5 pl-4 text-sm"
+        className="group relative flex w-full items-center gap-2 px-2 py-0.5 pl-4 text-sm"
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        <span
-          className={cn(
-            "size-2 shrink-0 rounded-full",
-            // Muted dot instead of the status color: a finished PR's agent no longer
-            // needs attention, whatever its status says (#611).
-            stale ? "bg-muted-foreground/30" : statusDotClass(agent.status),
-          )}
+        <Bot
+          className="size-3.5 shrink-0 text-muted-foreground"
           aria-hidden="true"
         />
         <span className={cn("truncate", stale && "text-muted-foreground")}>
@@ -265,47 +261,57 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
         </span>
         <span
           className={cn(
-            "ml-auto shrink-0 text-xs text-muted-foreground",
-            stale && "opacity-60",
+            "ml-auto shrink-0 text-xs transition-opacity",
+            hasRowActions &&
+              "group-hover:opacity-0 group-focus-within:opacity-0",
+            // Muted status instead of the status color: a finished PR's agent no longer
+            // needs attention, whatever its status says (#611).
+            stale
+              ? "text-muted-foreground opacity-60"
+              : statusTextClass(agent.status),
           )}
         >
           {agent.status}
         </span>
-        {canFocus ? (
-          <button
-            type="button"
-            aria-label={`Focus ${agent.name}'s pane`}
-            title="Focus the running Herdr terminal"
-            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
-            disabled={focusAgent.isPending}
-            onClick={() =>
-              focusAgent.mutate(
-                { repo, paneId: agent.id },
-                {
-                  onError: (e) =>
-                    showError(
-                      e instanceof Error
-                        ? e.message
-                        : "Failed to focus the Herdr terminal.",
-                    ),
-                },
-              )
-            }
-          >
-            <Terminal className="size-3.5" />
-          </button>
-        ) : null}
-        {stale ? (
-          <button
-            type="button"
-            aria-label={`Close ${agent.name}'s pane`}
-            title="Close the finished Herdr pane"
-            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
-            disabled={killAgent.isPending}
-            onClick={onKill}
-          >
-            <X className="size-3.5" />
-          </button>
+        {hasRowActions ? (
+          <div className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+            {canFocus ? (
+              <button
+                type="button"
+                aria-label={`Focus ${agent.name}'s pane`}
+                title="Focus the running Herdr terminal"
+                className="pointer-events-auto rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+                disabled={focusAgent.isPending}
+                onClick={() =>
+                  focusAgent.mutate(
+                    { repo, paneId: agent.id },
+                    {
+                      onError: (e) =>
+                        showError(
+                          e instanceof Error
+                            ? e.message
+                            : "Failed to focus the Herdr terminal.",
+                        ),
+                    },
+                  )
+                }
+              >
+                <Terminal className="size-3.5" />
+              </button>
+            ) : null}
+            {stale ? (
+              <button
+                type="button"
+                aria-label={`Close ${agent.name}'s pane`}
+                title="Close the finished Herdr pane"
+                className="pointer-events-auto rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+                disabled={killAgent.isPending}
+                onClick={onKill}
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {preview ? (
