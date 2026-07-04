@@ -44,9 +44,8 @@ export interface OpenTerminalOptions {
 export type OpenTerminal = (opts?: OpenTerminalOptions) => void;
 
 interface TerminalControllerValue {
-  // Overlay dialog state for a failed Herdr launch (#483) — kept separate from the toast (used for
-  // launch success) since it needs a richer payload (reason + example command) and stays until the
-  // user dismisses it, rather than auto-clearing.
+  // Overlay dialog state for a failed Herdr launch (#483). It needs a richer payload
+  // (reason + example command) and stays until the user dismisses it, rather than auto-clearing.
   herdrLaunchError: HerdrLaunchError | null;
   showHerdrLaunchError: (error: HerdrLaunchError) => void;
   dismissHerdrLaunchError: () => void;
@@ -114,6 +113,8 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
         },
         {
           onSuccess: (result) => {
+            if (opts.workflow === "issue-dev") return;
+
             // Resume dedup (#578): the backend switched focus to an already-running terminal
             // instead of starting a new one — say so instead of the generic "Launched in ..."
             // message, which would misleadingly imply a fresh agent just started.

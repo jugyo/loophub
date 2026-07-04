@@ -41,7 +41,11 @@ vi.mock("@/queries/terminal", () => ({
   useLaunchTerminalWorkflow: () => launchMutation,
 }));
 
-function LaunchButton() {
+function LaunchButton({
+  workflow = "issue-dev",
+}: {
+  workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";
+}) {
   const { launchTerminal } = useTerminalLauncher();
   return (
     <button
@@ -50,7 +54,7 @@ function LaunchButton() {
         launchTerminal({
           repo: "jugyo/loophub",
           label: "dev #444",
-          workflow: "issue-dev",
+          workflow,
           issueNumber: 444,
         })
       }
@@ -66,7 +70,7 @@ afterEach(() => {
 });
 
 describe("TerminalController", () => {
-  it("shows the Herdr session name and attach command after a launch succeeds", async () => {
+  it("does not show a success toast after a Build launch succeeds (#680)", async () => {
     // ToastProvider clears on route change, so it needs a real router in the tree (matches
     // toast.test.tsx / pull-detail.test.tsx).
     const rootRoute = createRootRoute({ component: Outlet });
@@ -99,9 +103,39 @@ describe("TerminalController", () => {
         prNumber: undefined,
         session: undefined,
         cwd: undefined,
+        agent: undefined,
+        model: undefined,
       },
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
+    expect(screen.queryByText(/^Launched in/)).toBeNull();
+    expect(screen.queryByText("Switched to the existing terminal.")).toBeNull();
+  });
+
+  it("shows the Herdr session name and attach command after a non-Build launch succeeds", async () => {
+    // ToastProvider clears on route change, so it needs a real router in the tree (matches
+    // toast.test.tsx / pull-detail.test.tsx).
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => (
+        <TerminalControllerProvider>
+          <ToastProvider>
+            <ToastViewport />
+            <LaunchButton workflow="issue-create" />
+          </ToastProvider>
+        </TerminalControllerProvider>
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Launch" }));
+
     expect(
       screen.getByText(
         "Launched in jugyo-loophub-deadbeef. Attach: herdr attach jugyo-loophub-deadbeef",
@@ -127,7 +161,7 @@ describe("TerminalController", () => {
         <TerminalControllerProvider>
           <ToastProvider>
             <ToastViewport />
-            <LaunchButton />
+            <LaunchButton workflow="resume" />
           </ToastProvider>
         </TerminalControllerProvider>
       ),
