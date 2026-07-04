@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { buildCodexSandboxArgs } from "../core/codex-launch.ts";
 import { isClaudeSessionId } from "../core/resume.ts";
 import {
   legacyWorktreeBranch,
@@ -228,13 +229,14 @@ export function resolveDevRuntime(flags: {
 // positional (`codex [PROMPT]`), so the same `/lh-dev <id>` slash command Claude receives is
 // handed to Codex verbatim — the rest of the context (worktree cwd, registered session, linked
 // PR) is prepared before spawn and is runtime-independent. Codex has no `--session-id` /
-// `--name` / `--settings` equivalents, so the argv is just the prompt (plus the auto-mode and
-// model flags below); claude-only flags (--sandbox/--allow) are rejected up front by the CLI,
-// not silently dropped here.
+// `--name` / `--settings` equivalents. Sandboxed launches receive a Codex config override that
+// grants LOOPHUB_HOME as a writable root; claude-only flags (--sandbox/--allow) are rejected up
+// front by the CLI, not silently dropped here.
 export function buildCodexArgs({
   slashCommand,
   auto,
   model,
+  loopHubHome,
 }: {
   slashCommand: string;
   // Opt into Codex's auto-mode equivalent (#499): skip approval prompts and run unsandboxed,
@@ -246,9 +248,13 @@ export function buildCodexArgs({
   // the codex CLI's error to raise. Omitted => codex's own default. Control characters are
   // stripped (see display()), same invariant as buildClaudeArgs' model.
   model?: string;
+  // Effective LOOPHUB_HOME to grant as a Codex sandbox writable root. Defaults to the same
+  // configDir() resolution used by LoopHub DB/config writes.
+  loopHubHome?: string;
 }): string[] {
   const args: string[] = [];
   if (auto) args.push("--dangerously-bypass-approvals-and-sandbox");
+  else args.push(...buildCodexSandboxArgs(loopHubHome));
   if (model) {
     const m = display(model).trim();
     if (m) args.push("--model", m);

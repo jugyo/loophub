@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { buildCodexSandboxArgs } from "./codex-launch.ts";
 import { type CodingAgent, codingAgent } from "./config.ts";
 
 export interface TerminalLaunchRepo {
@@ -112,9 +113,11 @@ export function commandForHerdrLaunch(input: {
   }
   if (input.workflow === "github-pr-export" && input.prNumber) {
     const command = shellArg(`/create-github-pr ${input.prNumber}`);
-    return (input.codingAgent ?? codingAgent()) === "codex"
-      ? `codex ${command}`
-      : `claude ${command}`;
+    if ((input.codingAgent ?? codingAgent()) === "codex") {
+      const sandboxArgs = buildCodexSandboxArgs().map(shellArg).join(" ");
+      return `codex ${sandboxArgs} ${command}`;
+    }
+    return `claude ${command}`;
   }
   if (input.workflow === "resume" && input.session) {
     const resume = `claude --resume ${shellArg(input.session)}`;

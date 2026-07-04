@@ -489,33 +489,70 @@ test("resolveDevRuntime prefers an explicit flag over defaultRuntime (#516)", ()
   ).toBe("codex");
 });
 
-test("buildCodexArgs passes the slash command as the only (positional) argument", () => {
-  expect(buildCodexArgs({ slashCommand: "/lh-dev 42" })).toEqual([
+test("buildCodexArgs grants LOOPHUB_HOME as a sandbox writable root before the prompt", () => {
+  expect(
+    buildCodexArgs({
+      slashCommand: "/lh-dev 42",
+      loopHubHome: "/tmp/lh-home",
+    }),
+  ).toEqual([
+    "--sandbox",
+    "workspace-write",
+    "-c",
+    'sandbox_workspace_write.writable_roots=["/tmp/lh-home"]',
     "/lh-dev 42",
   ]);
+});
+
+test("buildCodexArgs JSON-escapes the writable LOOPHUB_HOME path", () => {
+  expect(
+    buildCodexArgs({
+      slashCommand: "/lh-dev 42",
+      loopHubHome: '/tmp/lh home/quote"dir',
+    }),
+  ).toContain(
+    'sandbox_workspace_write.writable_roots=["/tmp/lh home/quote\\"dir"]',
+  );
+});
+
+test("buildCodexArgs uses the effective LOOPHUB_HOME by default", () => {
+  const previous = process.env.LOOPHUB_HOME;
+  process.env.LOOPHUB_HOME = "/tmp/lh-env-home";
+  try {
+    expect(buildCodexArgs({ slashCommand: "/lh-dev 42" })).toContain(
+      'sandbox_workspace_write.writable_roots=["/tmp/lh-env-home"]',
+    );
+  } finally {
+    if (previous === undefined) delete process.env.LOOPHUB_HOME;
+    else process.env.LOOPHUB_HOME = previous;
+  }
 });
 
 test("buildCodexArgs adds --dangerously-bypass-approvals-and-sandbox when auto is set", () => {
-  expect(buildCodexArgs({ slashCommand: "/lh-dev 42", auto: true })).toEqual([
-    "--dangerously-bypass-approvals-and-sandbox",
-    "/lh-dev 42",
-  ]);
-});
-
-test("buildCodexArgs omits the auto flag when auto is false/absent", () => {
-  expect(buildCodexArgs({ slashCommand: "/lh-dev 42", auto: false })).toEqual([
-    "/lh-dev 42",
-  ]);
+  expect(
+    buildCodexArgs({
+      slashCommand: "/lh-dev 42",
+      auto: true,
+      loopHubHome: "/tmp/lh-home",
+    }),
+  ).toEqual(["--dangerously-bypass-approvals-and-sandbox", "/lh-dev 42"]);
 });
 
 test("buildCodexArgs passes --model through verbatim and keeps the slash command last (#594)", () => {
-  const args = buildCodexArgs({ slashCommand: "/lh-dev 42", model: "gpt-5.5" });
+  const args = buildCodexArgs({
+    slashCommand: "/lh-dev 42",
+    model: "gpt-5.5",
+    loopHubHome: "/tmp/lh-home",
+  });
   expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
   expect(args[args.length - 1]).toBe("/lh-dev 42");
 });
 
 test("buildCodexArgs omits --model when not provided (backend default model) (#594)", () => {
-  const args = buildCodexArgs({ slashCommand: "/lh-dev 42" });
+  const args = buildCodexArgs({
+    slashCommand: "/lh-dev 42",
+    loopHubHome: "/tmp/lh-home",
+  });
   expect(args.indexOf("--model")).toBe(-1);
 });
 
@@ -523,6 +560,7 @@ test("buildCodexArgs strips control characters from the model before argv (#594)
   const args = buildCodexArgs({
     slashCommand: "/lh-dev 42",
     model: "\x1b]0;x\x07gpt-5.5\r",
+    loopHubHome: "/tmp/lh-home",
   });
   expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
 });
@@ -560,8 +598,8 @@ test("buildRuntimeLaunch returns codex and Codex argv for codex", () => {
   expect(launch.args).toEqual(
     buildCodexArgs({ slashCommand: "/lh-issue-create" }),
   );
-  expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toBe(
-    "codex '/lh-issue-create'",
+  expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toContain(
+    "'sandbox_workspace_write.writable_roots=",
   );
 });
 
@@ -580,8 +618,13 @@ test("formatSpawnCommand shell-escapes embedded single quotes", () => {
 });
 
 test("formatSpawnCommand renders the codex binary when bin is given", () => {
-  const args = buildCodexArgs({ slashCommand: "/lh-dev 42" });
-  expect(formatSpawnCommand(args, { bin: "codex" })).toBe("codex '/lh-dev 42'");
+  const args = buildCodexArgs({
+    slashCommand: "/lh-dev 42",
+    loopHubHome: "/tmp/lh-home",
+  });
+  expect(formatSpawnCommand(args, { bin: "codex" })).toBe(
+    "codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[\"/tmp/lh-home\"]' '/lh-dev 42'",
+  );
 });
 
 test("formatSpawnCommand wraps the line in ANSI dim only when color is requested", () => {

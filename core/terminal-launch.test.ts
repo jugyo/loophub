@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { updateConfig } from "./config.ts";
@@ -79,7 +79,9 @@ describe("herdr terminal launch", () => {
         prNumber: 451,
         codingAgent: "codex",
       }),
-    ).toBe("codex '/create-github-pr 451'");
+    ).toBe(
+      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(process.env.LOOPHUB_HOME ?? join(homedir(), ".loophub"))}]' '/create-github-pr 451'`,
+    );
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -102,7 +104,9 @@ describe("herdr terminal launch", () => {
           workflow: "github-pr-export",
           prNumber: 451,
         }),
-      ).toBe("codex '/create-github-pr 451'");
+      ).toBe(
+        `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/create-github-pr 451'`,
+      );
 
       updateConfig({ codingAgent: "claude-code" });
       expect(
