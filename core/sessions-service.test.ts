@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -19,6 +25,17 @@ function git(args: string[]) {
 
 const DEV_UUID = "aaaaaaaa-0000-0000-0000-000000000001";
 const REVIEW_UUID = "bbbbbbbb-0000-0000-0000-000000000002";
+
+function assistantLine(
+  id: string,
+  model: string,
+  usage: Record<string, number>,
+) {
+  return `${JSON.stringify({
+    type: "assistant",
+    message: { id, model, usage },
+  })}\n`;
+}
 
 beforeAll(async () => {
   svc = await import("./service.ts");
@@ -223,4 +240,83 @@ test("resume.resolveSession resolves an issue-create session and reports failure
     ok: false,
     reason: "unknown-runtime",
   });
+});
+
+test("sessions.usageSync imports Claude transcript usage incrementally", () => {
+  const sessionId = "99999999-0000-0000-0000-000000000001";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-dev",
+    session: sessionId,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  const projectsDir = mkdtempSync(join(tmpdir(), "lh-claude-projects-"));
+  const projectDir = join(projectsDir, "repo-worktree");
+  mkdirSync(projectDir);
+  const transcript = join(projectDir, `${sessionId}.jsonl`);
+  writeFileSync(
+    transcript,
+    assistantLine("msg_1", "claude-sonnet-4-6-20260601", {
+      input_tokens: 100,
+      cache_creation_input_tokens: 20,
+      cache_read_input_tokens: 300,
+      output_tokens: 10,
+    }),
+  );
+
+  const first = svc.sessions.usageSync({ sessionId, projectsDir });
+  expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
+  expect(first.sessions[0].messages).toBe(1);
+  expect(svc.sessions.get(sessionId).usage[0]).toMatchObject({
+    model: "claude-sonnet-4-6-20260601",
+    input_tokens: 100,
+    output_tokens: 10,
+  });
+  expect(svc.sessions.get(sessionId).usage[0].cost_usd).toBeCloseTo(0.000615);
+
+  const unchanged = svc.sessions.usageSync({ sessionId, projectsDir });
+  expect(unchanged).toMatchObject({ synced: 0, skipped: 1, missing: 0 });
+
+  appendFileSync(
+    transcript,
+    assistantLine("msg_1", "claude-sonnet-4-6-20260601", {
+      input_tokens: 1000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 1000,
+    }) +
+      assistantLine("msg_2", "claude-sonnet-4-6-20260601", {
+        input_tokens: 7,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        output_tokens: 3,
+      }),
+  );
+
+  const second = svc.sessions.usageSync({ sessionId, projectsDir });
+  expect(second.sessions[0].messages).toBe(1);
+  expect(svc.sessions.get(sessionId).usage[0]).toMatchObject({
+    input_tokens: 107,
+    output_tokens: 13,
+  });
+
+  writeFileSync(
+    transcript,
+    assistantLine("msg_3", "unknown-model", {
+      input_tokens: 5,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 5,
+    }),
+  );
+  const full = svc.sessions.usageSync({ sessionId, projectsDir, full: true });
+  expect(full.sessions[0].models[0]).toMatchObject({
+    model: "unknown-model",
+    input_tokens: 5,
+    output_tokens: 5,
+    cost_usd: null,
+  });
+
+  rmSync(projectsDir, { recursive: true, force: true });
 });

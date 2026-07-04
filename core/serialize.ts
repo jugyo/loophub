@@ -106,7 +106,22 @@ export function agentSessionJSON(row: any) {
   if (row.name) out.name = row.name;
   if (row.runtime) out.runtime = row.runtime;
   if (row.kind) out.kind = row.kind;
+  const usage = S.listSessionUsage(row.id);
+  if (usage.length) out.usage = usage.map(sessionUsageJSON);
   return out;
+}
+
+export function sessionUsageJSON(row: any) {
+  return {
+    session_id: row.session_id,
+    model: row.model,
+    input_tokens: row.input_tokens,
+    cache_creation_input_tokens: row.cache_creation_input_tokens,
+    cache_read_input_tokens: row.cache_read_input_tokens,
+    output_tokens: row.output_tokens,
+    cost_usd: row.cost_usd ?? null,
+    updated_at: row.updated_at,
+  };
 }
 
 // One entry in a PR/issue's "related sessions" list (#298). Wraps agentSessionJSON with `linked_at`

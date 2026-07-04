@@ -83,6 +83,7 @@ type Flags = {
   "claude-code"?: boolean;
   codex?: boolean;
   draft?: boolean;
+  full?: boolean;
   json?: boolean;
   allow?: string;
   path?: string;
@@ -149,6 +150,7 @@ const { values, positionals: pos } = parseArgs({
     "claude-code": { type: "boolean" },
     codex: { type: "boolean" },
     draft: { type: "boolean" },
+    full: { type: "boolean" },
     json: { type: "boolean" },
     allow: { type: "string" },
     path: { type: "string" },
@@ -1249,7 +1251,38 @@ async function main() {
 
   if (group === "session") {
     const s = await svc();
-    if (sub === "register") {
+    if (sub === "usage") {
+      const usageSub = rest[0];
+      if (usageSub === "sync" || usageSub === "recalculate") {
+        const result = s.sessions.usageSync({
+          ...(flags.session ? { sessionId: flags.session } : {}),
+          full: usageSub === "recalculate" || !!flags.full,
+        });
+        out(result);
+        if (!flags.json) {
+          console.log(
+            `synced ${result.synced}, skipped ${result.skipped}, missing ${result.missing}`,
+          );
+          for (const row of result.sessions) {
+            console.log(
+              `${row.session_id}\t${row.status}\t${row.messages} message(s)`,
+            );
+          }
+        }
+      } else if (!usageSub || usageSub === "confirm") {
+        const rows = s.sessions.usage(flags.session);
+        out(rows);
+        if (!flags.json) {
+          for (const x of rows) {
+            const cost =
+              x.cost_usd == null ? "n/a" : `$${x.cost_usd.toFixed(6)}`;
+            console.log(
+              `${x.model}\tinput=${x.input_tokens}\tcache_write=${x.cache_creation_input_tokens}\tcache_read=${x.cache_read_input_tokens}\toutput=${x.output_tokens}\tcost=${cost}`,
+            );
+          }
+        }
+      } else usage();
+    } else if (sub === "register") {
       const { id, agent, session } = flags;
       if (!id || !agent || !session)
         fail("--id, --agent, and --session are required");
@@ -1977,6 +2010,9 @@ function usage() {
   lh repo remove --repo owner/name
   lh session register --id <uuid> --agent <kind> --session <runtime-id> [--name "..."] [--runtime claude-code] [--kind dev|review|issue-create]
   lh session list
+  lh session usage [confirm] [--session <id>] [--json]
+  lh session usage sync [--session <id>] [--full] [--json]
+  lh session usage recalculate [--session <id>] [--json]
   lh issue list|view|create|import|update|comment|close|label  [--repo owner/repo]
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]

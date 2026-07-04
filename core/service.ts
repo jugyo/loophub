@@ -110,7 +110,16 @@ import {
   reviewCommentJSON,
   reviewJSON,
   reviewNoteJSON,
+  sessionUsageJSON,
 } from "./serialize.ts";
+import type { UsageEntry } from "./session-usage.ts";
+import {
+  aggregateUsage,
+  calculateCostUsd,
+  findClaudeTranscript,
+  parseClaudeUsageJsonl,
+  readTranscriptSlice,
+} from "./session-usage.ts";
 import { databaseSize, repoCounts, tableRowCounts } from "./stats.ts";
 import * as S from "./store.ts";
 import {
@@ -1793,6 +1802,106 @@ export const sessions = {
     const row = S.getAgentSession(id);
     if (!row) throw new ServiceError(404, "Not Found");
     return agentSessionJSON(row);
+  },
+
+  usage(id?: string) {
+    if (id) {
+      if (!S.getAgentSession(id)) throw new ServiceError(404, "Not Found");
+      return S.listSessionUsage(id).map(sessionUsageJSON);
+    }
+    return S.listAllSessionUsage().map(sessionUsageJSON);
+  },
+
+  usageSync(
+    input: { sessionId?: string; full?: boolean; projectsDir?: string } = {},
+  ) {
+    const rows = input.sessionId
+      ? [S.getAgentSession(input.sessionId)].filter(Boolean)
+      : S.listAgentSessions();
+    if (input.sessionId && rows.length === 0)
+      throw new ServiceError(404, "Not Found");
+
+    const results = rows.map((row: any) => {
+      const transcript = findClaudeTranscript(
+        row.external_session,
+        input.projectsDir,
+      );
+      if (!transcript) {
+        return {
+          session_id: row.id,
+          status: "missing",
+          messages: 0,
+          models: [],
+        };
+      }
+
+      const cursor = S.getSessionUsageCursor(row.id);
+      const sameFile = cursor?.transcript_path === transcript.path;
+      const unchanged =
+        !input.full &&
+        sameFile &&
+        cursor.cursor_offset === transcript.size &&
+        cursor.mtime_ms === transcript.mtimeMs;
+      if (unchanged) {
+        return {
+          session_id: row.id,
+          status: "skipped",
+          transcript_path: transcript.path,
+          messages: 0,
+          models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+        };
+      }
+
+      const canContinue =
+        !input.full &&
+        sameFile &&
+        cursor &&
+        cursor.cursor_offset < transcript.size;
+      const offset = canContinue ? cursor.cursor_offset : 0;
+      if (!canContinue) S.resetSessionUsage(row.id);
+
+      const parsed = parseClaudeUsageJsonl(
+        readTranscriptSlice(transcript.path, offset),
+      );
+      const fresh: UsageEntry[] = [];
+      for (const entry of parsed) {
+        if (S.insertSessionUsageMessage(row.id, entry.message_id))
+          fresh.push(entry);
+      }
+
+      for (const usage of aggregateUsage(fresh)) {
+        S.upsertSessionUsage(row.id, usage);
+      }
+      for (const usage of S.listSessionUsage(row.id)) {
+        S.rewriteSessionUsageCost(
+          row.id,
+          usage.model,
+          calculateCostUsd(usage.model, usage),
+        );
+      }
+
+      S.upsertSessionUsageCursor({
+        sessionId: row.id,
+        transcriptPath: transcript.path,
+        cursorOffset: transcript.size,
+        mtimeMs: transcript.mtimeMs,
+      });
+
+      return {
+        session_id: row.id,
+        status: fresh.length ? "updated" : "skipped",
+        transcript_path: transcript.path,
+        messages: fresh.length,
+        models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+      };
+    });
+
+    return {
+      synced: results.filter((r) => r.status === "updated").length,
+      skipped: results.filter((r) => r.status === "skipped").length,
+      missing: results.filter((r) => r.status === "missing").length,
+      sessions: results,
+    };
   },
 
   // The related-sessions list for a PR or issue (#298), standalone — same payload pullJSON/issueJSON

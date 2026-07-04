@@ -248,6 +248,32 @@ CREATE TABLE IF NOT EXISTS session_links (
 
 CREATE INDEX IF NOT EXISTS idx_session_links_issue ON session_links(issue_id);
 
+CREATE TABLE IF NOT EXISTS session_usage (
+  session_id                  TEXT NOT NULL REFERENCES agent_sessions(id),
+  model                       TEXT NOT NULL,
+  input_tokens                INTEGER NOT NULL DEFAULT 0,
+  cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_input_tokens     INTEGER NOT NULL DEFAULT 0,
+  output_tokens               INTEGER NOT NULL DEFAULT 0,
+  cost_usd                    REAL,
+  updated_at                  TEXT NOT NULL,
+  PRIMARY KEY (session_id, model)
+);
+
+CREATE TABLE IF NOT EXISTS session_usage_cursors (
+  session_id      TEXT PRIMARY KEY REFERENCES agent_sessions(id),
+  transcript_path TEXT NOT NULL,
+  cursor_offset   INTEGER NOT NULL DEFAULT 0,
+  mtime_ms        REAL NOT NULL DEFAULT 0,
+  updated_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_usage_messages (
+  session_id  TEXT NOT NULL REFERENCES agent_sessions(id),
+  message_id  TEXT NOT NULL,
+  PRIMARY KEY (session_id, message_id)
+);
+
 -- Standalone image blobs embedded in markdown bodies. Metadata only; the blob
 -- itself is content-addressed on disk under $LOOPHUB_HOME/attachments/. The
 -- sha256 is both the primary key and the URL identifier; nothing references a
