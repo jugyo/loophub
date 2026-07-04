@@ -10,7 +10,7 @@ import {
   subscribe,
 } from "../../core/event-hub.ts";
 import { HERDR_INACTIVE_CLEANUP_INTERVAL_MS } from "../../core/herdr-inactive-cleanup.ts";
-import { terminal } from "../../core/service.ts";
+import { sessions, terminal } from "../../core/service.ts";
 import * as S from "../../core/store.ts";
 import {
   publish as publishTerminalChange,
@@ -22,6 +22,7 @@ import { log } from "./logger.ts";
 const REPLAY_PAGE = 100;
 const DEFAULT_TAIL_POLL_MS = 1000;
 export const DEFAULT_SWEEP_MS = 5000;
+export const DEFAULT_USAGE_SWEEP_MS = 10000;
 export const DEFAULT_HERDR_WATCH_MS = 3000;
 export const DEFAULT_HERDR_INACTIVE_CLEANUP_MS =
   HERDR_INACTIVE_CLEANUP_INTERVAL_MS;
@@ -138,6 +139,56 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
     } catch (err) {
       log.error(
         `pull sweep error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// Keep token usage fresh while lh-web is resident. The core service owns transcript
+// cursoring and parsing; this loop only schedules the sync and emits invalidation events for
+// sessions that actually changed. Unchanged transcripts are skipped by mtime/size before parsing.
+export function startUsageSweep(
+  intervalMs = DEFAULT_USAGE_SWEEP_MS,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    try {
+      const result = sessions.usageSync();
+      for (const session of result.sessions) {
+        if (session.status !== "updated") continue;
+        const actor = S.authorFromSession(session.session_id) ?? "lh-web";
+        const payload = {
+          session_id: session.session_id,
+          messages: session.messages,
+        };
+        const targets = S.listSessionLinkedTargets(session.session_id);
+        if (targets.length === 0) {
+          S.emitEvent(null, "agent_session.usage_updated", actor, payload);
+          continue;
+        }
+        for (const target of targets) {
+          S.emitEvent(target.repo_id, "agent_session.usage_updated", actor, {
+            ...payload,
+            [target.kind === "pull" ? "pr" : "issue"]: target.number,
+          });
+        }
+      }
+    } catch (err) {
+      log.error(
+        `usage sweep error: ${err instanceof Error ? err.message : String(err)}`,
       );
     } finally {
       running = false;

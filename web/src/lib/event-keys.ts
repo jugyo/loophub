@@ -128,8 +128,8 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     }
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
-    // agent_session.linked (#298) targets a specific PR or issue; its related_sessions list lives in
-    // that detail's query, so invalidate it. The payload carries the target number under `pr`/`issue`.
+    // Some agent_session events target a specific PR or issue (for example linked/usage_updated);
+    // their related_sessions list and usage summary live in that detail's query too.
     if (repo) {
       const prNumber = payload?.pr;
       const issueNumber = payload?.issue;

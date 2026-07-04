@@ -148,6 +148,18 @@ describe("queryKeysForEvent", () => {
     expect(issueKeys).toContainEqual(["issue", "me/proj", 4]);
   });
 
+  it("routes agent_session.usage_updated to linked target detail queries", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "agent_session.usage_updated",
+        repo: "me/proj",
+        payload: { session_id: "s", pr: 7 },
+      }),
+    );
+    expect(keys).toContainEqual(["agent-sessions"]);
+    expect(keys).toContainEqual(["pull", "me/proj", 7]);
+  });
+
   it("maps repo.* events to the sidebar repos list (#485)", () => {
     const keys = queryKeysForEvent(
       ev({

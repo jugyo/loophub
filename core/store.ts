@@ -1133,6 +1133,18 @@ export function listSessionsForIssue(issueId: number): any[] {
     .all(issueId);
 }
 
+export function listSessionLinkedTargets(sessionId: string): any[] {
+  return db
+    .query(
+      `SELECT i.repo_id, i.kind, i.number
+       FROM session_links l
+       JOIN issues i ON i.id = l.issue_id
+       WHERE l.session_id = ?
+       ORDER BY i.repo_id, i.kind, i.number`,
+    )
+    .all(sessionId);
+}
+
 // Attribute a dev session to a PR row by recording it in the generalized session_links bridge
 // (kind='dev'). `lh resume`/retro resolve the PR's implementation session from there (#186, #316).
 // The PR's related-sessions list accumulates every dev session that worked it; the *primary* anchor

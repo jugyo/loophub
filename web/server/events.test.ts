@@ -1,6 +1,8 @@
 import {
+  appendFileSync,
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -19,6 +21,34 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 let subscribeEvents: typeof import("./events.ts").subscribeEvents;
 let S: typeof import("../../core/store.ts");
 let repoId: number;
+
+function assistantLine(
+  id: string,
+  usage: {
+    input_tokens: number;
+    cache_creation_input_tokens: number;
+    cache_read_input_tokens: number;
+    output_tokens: number;
+  },
+): string {
+  return `${JSON.stringify({
+    type: "assistant",
+    message: {
+      id,
+      model: "claude-sonnet-4-6-20260601",
+      usage,
+    },
+  })}\n`;
+}
+
+async function waitUntil(check: () => boolean, label: string): Promise<void> {
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline) {
+    if (check()) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
 
 beforeAll(async () => {
   ({ subscribeEvents } = await import("./events.ts"));
@@ -158,6 +188,83 @@ test("startPullSweep fires pull_request.updated on head SHA change, no-ops when 
   expect(countUpdates()).toBe(1);
 
   rmSync(repoPath, { recursive: true, force: true });
+});
+
+test("startUsageSweep syncs changed session usage and emits linked target events only on updates", async () => {
+  const { startUsageSweep } = await import("./events.ts");
+
+  const originalHome = process.env.HOME;
+  process.env.HOME = HOME;
+
+  const sessionId = "99999999-0000-0000-0000-000000000724";
+  S.registerAgentSession(
+    sessionId,
+    "lh-dev",
+    sessionId,
+    "dev agent",
+    "claude-code",
+    "dev",
+  );
+  const repo = S.createRepo("me/usage-sweep", "/tmp/lh-usage-sweep-repo");
+  const pull = S.createIssue(repo.id, "pull", "PR", "", "me");
+  S.createPull(pull.id, "loophub/issue-724", "main", null);
+  S.linkSession(sessionId, pull.id);
+
+  const projectsDir = join(HOME, ".claude", "projects");
+  const projectDir = join(projectsDir, "repo-worktree");
+  mkdirSync(projectDir, { recursive: true });
+  const transcript = join(projectDir, `${sessionId}.jsonl`);
+  writeFileSync(
+    transcript,
+    assistantLine("msg_1", {
+      input_tokens: 100,
+      cache_creation_input_tokens: 20,
+      cache_read_input_tokens: 300,
+      output_tokens: 10,
+    }),
+  );
+
+  const usageEvents = () =>
+    S.listEvents(0, repo.id, 100).filter(
+      (e: any) => e.type === "agent_session.usage_updated",
+    );
+
+  const stop = startUsageSweep(20);
+  try {
+    await waitUntil(() => usageEvents().length === 1, "first usage event");
+    expect(S.listSessionUsage(sessionId)[0]).toMatchObject({
+      input_tokens: 100,
+      output_tokens: 10,
+    });
+    const first = JSON.parse(usageEvents()[0].payload);
+    expect(first).toMatchObject({
+      session_id: sessionId,
+      messages: 1,
+      pr: pull.number,
+    });
+
+    await new Promise((r) => setTimeout(r, 80));
+    expect(usageEvents()).toHaveLength(1);
+
+    appendFileSync(
+      transcript,
+      assistantLine("msg_2", {
+        input_tokens: 7,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        output_tokens: 3,
+      }),
+    );
+    await waitUntil(() => usageEvents().length === 2, "second usage event");
+    expect(S.listSessionUsage(sessionId)[0]).toMatchObject({
+      input_tokens: 107,
+      output_tokens: 13,
+    });
+  } finally {
+    stop();
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+  }
 });
 
 // #591: server-side herdr polling, gated on terminal-watch-hub subscribers, diffed against
