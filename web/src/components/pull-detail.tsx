@@ -7,8 +7,15 @@
 // via <Markdown>.
 
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, ExternalLink, Github, Loader2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Github,
+  Loader2,
+  X,
+} from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
 import type {
   PullFile,
   PullLineComment,
@@ -671,6 +678,14 @@ function FilesChanged({
 }) {
   const [openFilename, setOpenFilename] = useState<string | null>(null);
   const openFile = files?.find((f) => f.filename === openFilename) ?? null;
+  const openFileIndex =
+    openFilename && files
+      ? files.findIndex((f) => f.filename === openFilename)
+      : -1;
+  const hasPreviousFile = openFileIndex > 0;
+  const hasNextFile = Boolean(
+    files && openFileIndex >= 0 && openFileIndex < files.length - 1,
+  );
   useEffect(() => {
     if (openFilename && files && !openFile) setOpenFilename(null);
   }, [files, openFile, openFilename]);
@@ -743,6 +758,18 @@ function FilesChanged({
               comments={byFile.get(openFile.filename) ?? []}
               notes={notesByFile.get(openFile.filename) ?? []}
               currentHeadSha={currentHeadSha}
+              hasPreviousFile={hasPreviousFile}
+              hasNextFile={hasNextFile}
+              onPreviousFile={() => {
+                if (files && hasPreviousFile) {
+                  setOpenFilename(files[openFileIndex - 1].filename);
+                }
+              }}
+              onNextFile={() => {
+                if (files && hasNextFile) {
+                  setOpenFilename(files[openFileIndex + 1].filename);
+                }
+              }}
               onClose={() => setOpenFilename(null)}
             />
           ) : null}
@@ -802,6 +829,10 @@ function DiffFileDialog({
   comments,
   notes,
   currentHeadSha,
+  hasPreviousFile,
+  hasNextFile,
+  onPreviousFile,
+  onNextFile,
   onClose,
 }: {
   owner: string;
@@ -811,6 +842,10 @@ function DiffFileDialog({
   comments: PullLineComment[];
   notes: ReviewNote[];
   currentHeadSha: string;
+  hasPreviousFile: boolean;
+  hasNextFile: boolean;
+  onPreviousFile: () => void;
+  onNextFile: () => void;
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<DiffDialogMode>("diff");
@@ -851,6 +886,16 @@ function DiffFileDialog({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border text-xs">
+              <ModeButton disabled={!hasPreviousFile} onClick={onPreviousFile}>
+                <ChevronLeft className="size-3" />
+                Prev
+              </ModeButton>
+              <ModeButton disabled={!hasNextFile} onClick={onNextFile}>
+                Next
+                <ChevronRight className="size-3" />
+              </ModeButton>
+            </div>
             {isMarkdown ? (
               <div className="flex overflow-hidden rounded-md border text-xs">
                 <ModeButton
@@ -903,21 +948,24 @@ function DiffFileDialog({
 
 function ModeButton({
   active,
+  disabled = false,
   onClick,
   children,
 }: {
-  active: boolean;
+  active?: boolean;
+  disabled?: boolean;
   onClick: () => void;
-  children: string;
+  children: ReactNode;
 }) {
   return (
     <button
       type="button"
-      aria-pressed={active}
-      className={`px-2.5 py-1 transition-colors ${
+      aria-pressed={active ?? undefined}
+      disabled={disabled}
+      className={`flex items-center gap-1 px-2.5 py-1 transition-colors ${
         active
           ? "bg-accent text-accent-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
       }`}
       onClick={onClick}
     >

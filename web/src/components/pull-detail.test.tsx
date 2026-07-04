@@ -236,6 +236,51 @@ describe("PullDetail", () => {
     expect(screen.queryByText("+const x = 1;")).toBeNull();
   });
 
+  it("moves between file diffs with Prev and Next without closing the dialog", async () => {
+    const multiFileDiff: PullFile[] = [
+      ...files,
+      {
+        filename: "web/src/b.ts",
+        status: "added",
+        additions: 1,
+        deletions: 0,
+        patch: "@@ -0,0 +1 @@\n+const y = 2;",
+      },
+    ];
+    renderDetail({ "pulls/files": () => multiFileDiff });
+
+    expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
+
+    expect(
+      await screen.findByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
+    ).toBeTruthy();
+    expect(await screen.findByText("+const x = 1;")).toBeTruthy();
+    const firstPrev = screen.getByRole("button", { name: /Prev/i });
+    const firstNext = screen.getByRole("button", { name: /Next/i });
+    expect((firstPrev as HTMLButtonElement).disabled).toBe(true);
+    expect((firstNext as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(firstNext);
+
+    expect(
+      await screen.findByRole("dialog", { name: /Diff for web\/src\/b\.ts/i }),
+    ).toBeTruthy();
+    expect(await screen.findByText("+const y = 2;")).toBeTruthy();
+    expect(screen.queryByText("+const x = 1;")).toBeNull();
+    const secondPrev = screen.getByRole("button", { name: /Prev/i });
+    const secondNext = screen.getByRole("button", { name: /Next/i });
+    expect((secondPrev as HTMLButtonElement).disabled).toBe(false);
+    expect((secondNext as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(secondPrev);
+
+    expect(
+      await screen.findByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
+    ).toBeTruthy();
+    expect(await screen.findByText("+const x = 1;")).toBeTruthy();
+  });
+
   it("keeps an open diff dialog in sync when the files query refetches", async () => {
     let currentFiles: PullFile[] = files;
     const { queryClient } = renderDetail({
