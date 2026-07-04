@@ -1096,7 +1096,7 @@ function CommentList({
   isError: boolean;
 }) {
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex flex-col gap-3 pb-6">
       <h2 className="text-lg font-semibold">Comments</h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

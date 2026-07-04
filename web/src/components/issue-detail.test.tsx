@@ -151,6 +151,16 @@ describe("IssueDetail", () => {
     expect(pill?.closest("div")?.textContent).toContain("open");
   });
 
+  it("keeps bottom spacing after the comments section", async () => {
+    renderDetail();
+
+    const textarea = await screen.findByLabelText("Add a comment");
+    const commentsSection = textarea.closest("section");
+
+    expect(commentsSection?.className).toContain("pb-6");
+    expect(commentsSection?.textContent).toContain("Looks good.");
+  });
+
   it("shows linked PR summary as working while a herdr terminal is working", async () => {
     renderDetail(
       () => ({
@@ -334,9 +344,7 @@ describe("IssueDetail", () => {
     });
 
     expect(await screen.findByText("PR #30")).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /Focus terminal/ }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /Focus terminal/ })).toBeNull();
   });
 
   it("posts a comment and clears the textarea on success", async () => {

@@ -188,6 +188,16 @@ describe("PullDetail", () => {
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
+  it("keeps bottom spacing after the comments section when comments are empty", async () => {
+    renderDetail({ "comments/list": () => [] });
+
+    const heading = await screen.findByRole("heading", { name: "Comments" });
+    const commentsSection = heading.closest("section");
+
+    expect(commentsSection?.className).toContain("pb-6");
+    expect(commentsSection?.textContent).toContain("No comments.");
+  });
+
   it("opens a full-size diff dialog from a file summary row and closes back to the summary", async () => {
     renderDetail();
 

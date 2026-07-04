@@ -94,15 +94,17 @@ export function IssueDetail({
         sessions={issue.related_sessions}
       />
 
-      <CommentList
-        owner={owner}
-        repo={repo}
-        comments={commentsQuery.data}
-        isLoading={commentsQuery.isLoading}
-        isError={commentsQuery.isError}
-      />
+      <section className="flex flex-col gap-6 pb-6">
+        <CommentList
+          owner={owner}
+          repo={repo}
+          comments={commentsQuery.data}
+          isLoading={commentsQuery.isLoading}
+          isError={commentsQuery.isError}
+        />
 
-      <CommentForm owner={owner} repo={repo} number={number} />
+        <CommentForm owner={owner} repo={repo} number={number} />
+      </section>
     </div>
   );
 }
@@ -252,9 +254,7 @@ function IssueHerdrPaneButton({
           {
             onError: (e) =>
               showError(
-                e instanceof Error
-                  ? e.message
-                  : "Failed to focus terminal.",
+                e instanceof Error ? e.message : "Failed to focus terminal.",
               ),
           },
         )
