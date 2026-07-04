@@ -1,5 +1,5 @@
 // Query hooks for the repo dashboard (/r/:owner/:repo). Each section maps to one
-// hook; the SSE invalidation map (../lib/event-keys.ts) keys off the same
+// hook; the event invalidation map (../lib/event-keys.ts) keys off the same
 // query-key factories so lists refetch on change.
 
 import { useQuery } from "@tanstack/react-query";
@@ -26,7 +26,7 @@ export function useOpenIssues(owner: string, repo: string) {
 
 // --- cross-repo top page (/) ---
 // Both hooks share one query key, so the overview is fetched once and each hook
-// selects its slice. SSE invalidation keys off queryKeys.dashboard().
+// selects its slice. Event invalidation keys off queryKeys.dashboard().
 
 /** Recently created open issues across all active repos, newest first. */
 export function useRecentOpenIssues() {

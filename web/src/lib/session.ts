@@ -30,12 +30,20 @@ export function setSessionId(id: string): void {
   sessionStorage.setItem(SESSION_KEY, id);
 }
 
-/** Last SSE event id seen, used as `?since=` on (re)connect. */
+/** Last event id seen by the web UI event poller. */
 export function getLastEventId(): number {
   return Number(localStorage.getItem(LAST_EVENT_KEY) ?? 0) || 0;
 }
 
+export function setLastEventId(id: number): void {
+  if (id <= 0) {
+    localStorage.removeItem(LAST_EVENT_KEY);
+    return;
+  }
+  localStorage.setItem(LAST_EVENT_KEY, String(id));
+}
+
 export function rememberEventId(id: number): void {
   if (!id || id <= getLastEventId()) return;
-  localStorage.setItem(LAST_EVENT_KEY, String(id));
+  setLastEventId(id);
 }

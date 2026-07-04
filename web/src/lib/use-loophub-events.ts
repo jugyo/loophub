@@ -1,32 +1,17 @@
-// Subscribes to the LoopHub SSE feed (/events) and invalidates the matching
+// Polls persisted LoopHub events over JSON-RPC and invalidates the matching
 // TanStack Query keys (event-keys.ts) so views refetch on change.
-//
-// lh-web emits `event: loophub` frames whose data is a JSON-RPC notification
-// ({ jsonrpc, method: "events/notify", params: LoopEvent }). Reconnect resumes
-// from the last seen id.
-//
-// It also emits a separate `event: terminal` frame (#591) when the server-side herdr
-// watcher sees the session/agent list change. That frame carries no id/replay semantics
-// and no payload — it's a bare "invalidate terminalKeys.sessions and refetch over
-// JSON-RPC" signal, not a persisted LoopEvent, so it's handled by its own listener below
-// instead of going through queryKeysForEvent.
 
 import type { QueryClient } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { eventsUrl } from "@/api/client";
+import { listEvents } from "@/api/client";
 import type { LoopEvent } from "@/api/types";
 import {
   recordInvalidLoopHubDebugEvent,
   recordLoopHubDebugEvent,
-  recordTerminalDebugEvent,
 } from "@/lib/event-debug";
 import { queryKeys, queryKeysForEvent } from "@/lib/event-keys";
-import { getLastEventId, rememberEventId } from "@/lib/session";
-import { terminalKeys } from "@/queries/terminal";
-
-const EVENTS_LOCK_NAME = "loophub-events";
-const EVENTS_CHANNEL_NAME = "loophub-events";
+import { getLastEventId, rememberEventId, setLastEventId } from "@/lib/session";
 
 interface EventNotification {
   jsonrpc: "2.0";
@@ -34,17 +19,10 @@ interface EventNotification {
   params: LoopEvent;
 }
 
-type EventsBroadcast =
-  | { type: "loophub"; data: string }
-  | { type: "terminal" }
-  | { type: "leader-connected" };
-
-/** Build the /events SSE URL, resuming from the last seen event id. */
-export function streamUrl(since = getLastEventId()): string {
-  const params = new URLSearchParams();
-  params.set("since", String(since));
-  return eventsUrl(params.toString());
-}
+const VISIBLE_POLL_MS = 1500;
+const HIDDEN_POLL_MS = 5000;
+const POLL_LIMIT = 100;
+const ROLLBACK_PROBE_MS = 30_000;
 
 export function applyLoopHubEventData(
   dataText: string,
@@ -59,20 +37,26 @@ export function applyLoopHubEventData(
     recordInvalidLoopHubDebugEvent(dataText, "invalid JSON");
     return;
   }
+  applyLoopHubEvent(event, queryClient, dataText);
+}
+
+function applyLoopHubEvent(
+  event: LoopEvent,
+  queryClient: QueryClient,
+  rawData?: string,
+): void {
   if (!event || typeof event.id !== "number") {
-    recordInvalidLoopHubDebugEvent(dataText, "missing numeric event id");
+    recordInvalidLoopHubDebugEvent(
+      rawData ?? JSON.stringify(event),
+      "missing numeric event id",
+    );
     return;
   }
-  recordLoopHubDebugEvent(event, dataText);
+  recordLoopHubDebugEvent(event, rawData ?? JSON.stringify(event));
   rememberEventId(event.id);
   for (const queryKey of queryKeysForEvent(event)) {
     void queryClient.invalidateQueries({ queryKey });
   }
-}
-
-function invalidateTerminalQueries(queryClient: QueryClient): void {
-  recordTerminalDebugEvent();
-  void queryClient.invalidateQueries({ queryKey: terminalKeys.sessions });
 }
 
 function invalidateReconnectQueries(queryClient: QueryClient): void {
@@ -88,7 +72,6 @@ function invalidateReconnectQueries(queryClient: QueryClient): void {
     queryKeys.dashboard(),
     ["settings"],
     ["terminal", "config"],
-    terminalKeys.sessions,
   ];
 
   for (const queryKey of queryKeyPrefixes) {
@@ -96,101 +79,82 @@ function invalidateReconnectQueries(queryClient: QueryClient): void {
   }
 }
 
-function openEventSource(
+async function resetCursorIfServerRolledBack(
+  cursor: number,
   queryClient: QueryClient,
-  broadcast: BroadcastChannel | null,
-): () => void {
-  const es = new EventSource(streamUrl());
-
-  const onMessage = (e: MessageEvent) => {
-    if (typeof e.data !== "string") return;
-    broadcast?.postMessage({
-      type: "loophub",
-      data: e.data,
-    } satisfies EventsBroadcast);
-    applyLoopHubEventData(e.data, queryClient);
-  };
-
-  const onTerminal = () => {
-    broadcast?.postMessage({ type: "terminal" } satisfies EventsBroadcast);
-    invalidateTerminalQueries(queryClient);
-  };
-
-  const onOpen = () => {
-    broadcast?.postMessage({
-      type: "leader-connected",
-    } satisfies EventsBroadcast);
-    invalidateReconnectQueries(queryClient);
-  };
-
-  // Server uses a named `loophub` event; listen there and on default messages.
-  es.addEventListener("loophub", onMessage as EventListener);
-  es.addEventListener("message", onMessage as EventListener);
-  es.addEventListener("terminal", onTerminal);
-  es.addEventListener("open", onOpen);
-
-  return () => {
-    es.close();
-  };
+): Promise<number> {
+  if (cursor <= 0) return cursor;
+  const newest = await listEvents({ since: 0, order: "desc", limit: 1 });
+  const newestId = newest[0]?.id ?? 0;
+  if (newestId >= cursor) return cursor;
+  setLastEventId(newestId);
+  invalidateReconnectQueries(queryClient);
+  return newestId;
 }
 
 /**
- * Open one cross-tab EventSource to /events and invalidate queries on each event.
- * Mount once near the app root. Web Locks elect a single leader tab; BroadcastChannel
- * fans the leader's events out to follower tabs. EventSource handles reconnects.
+ * Poll events/list and invalidate queries on each event. Mount once near the app root.
  */
 export function useLoopHubEvents(): void {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    let closeEventSource: (() => void) | null = null;
-    let releaseLeader: (() => void) | null = null;
-    const locks = navigator.locks;
-    const canCoordinateTabs =
-      typeof BroadcastChannel !== "undefined" && locks?.request;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cursor = getLastEventId();
+    let rollbackProbeCursor: number | null = null;
+    let rollbackProbeAt = 0;
 
-    if (!canCoordinateTabs) {
-      closeEventSource = openEventSource(queryClient, null);
-      return () => {
-        closeEventSource?.();
-      };
-    }
+    const nextDelay = () =>
+      document.visibilityState === "hidden" ? HIDDEN_POLL_MS : VISIBLE_POLL_MS;
 
-    const abortController = new AbortController();
-    const channel = new BroadcastChannel(EVENTS_CHANNEL_NAME);
+    const schedule = (delay = nextDelay()) => {
+      if (stopped) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        void poll();
+      }, delay);
+    };
 
-    const onBroadcast = (e: MessageEvent<EventsBroadcast>) => {
-      if (e.data?.type === "loophub") {
-        applyLoopHubEventData(e.data.data, queryClient);
-      } else if (e.data?.type === "terminal") {
-        invalidateTerminalQueries(queryClient);
-      } else if (e.data?.type === "leader-connected") {
-        invalidateReconnectQueries(queryClient);
+    const poll = async () => {
+      try {
+        const events = await listEvents({ since: cursor, limit: POLL_LIMIT });
+        if (stopped) return;
+        if (events.length === 0) {
+          const now = Date.now();
+          if (
+            cursor !== rollbackProbeCursor ||
+            now - rollbackProbeAt >= ROLLBACK_PROBE_MS
+          ) {
+            rollbackProbeCursor = cursor;
+            rollbackProbeAt = now;
+            cursor = await resetCursorIfServerRolledBack(cursor, queryClient);
+          }
+        } else {
+          for (const event of events) {
+            applyLoopHubEvent(event, queryClient);
+            cursor = Math.max(cursor, event.id);
+          }
+          if (events.length >= POLL_LIMIT) schedule(0);
+        }
+        if (!stopped && events.length < POLL_LIMIT) schedule();
+      } catch {
+        if (!stopped) schedule();
       }
     };
 
-    channel.addEventListener("message", onBroadcast);
+    const onVisibilityChange = () => {
+      schedule();
+    };
 
-    void locks
-      .request(
-        EVENTS_LOCK_NAME,
-        { mode: "exclusive", signal: abortController.signal },
-        () =>
-          new Promise<void>((resolve) => {
-            releaseLeader = resolve;
-            closeEventSource = openEventSource(queryClient, channel);
-          }),
-      )
-      .catch(() => {
-        // Unmount aborts a pending lock request; no user-visible action is needed.
-      });
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void poll();
 
     return () => {
-      abortController.abort();
-      channel.removeEventListener("message", onBroadcast);
-      channel.close();
-      closeEventSource?.();
-      releaseLeader?.();
+      stopped = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (timer) clearTimeout(timer);
     };
   }, [queryClient]);
 }

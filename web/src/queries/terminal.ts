@@ -20,17 +20,18 @@ export function useLaunchTerminalWorkflow() {
 }
 
 /**
- * Running herdr sessions for the sidebar section (#495). A server-side watcher polls herdr
- * on lh-web's behalf and pushes an SSE `terminal` invalidation when the session/agent list
- * changes (#591) — see useLoopHubEvents — so this hook no longer polls on its own; refetch is
- * invalidate-driven, same as pulls/issues. Errors are not retried; note react-query keeps the
- * last successful `data` across a failed refetch, so the component checks `isError` to hide
- * the section rather than relying on `data` becoming undefined.
+ * Running herdr sessions for UI surfaces that actually render terminal state. This polls while
+ * mounted instead of depending on the old terminal event invalidation path; React Query shares the
+ * single query across observers, so multiple components in one tab do not spawn parallel reads.
+ * Errors are not retried; note react-query keeps the last successful `data` across a failed
+ * refetch, so the component checks `isError` to hide the section rather than relying on `data`
+ * becoming undefined.
  */
 export function useHerdrSessions() {
   return useQuery({
     queryKey: terminalKeys.sessions,
     queryFn: getHerdrSessions,
+    refetchInterval: 3000,
     retry: false,
   });
 }
@@ -59,7 +60,7 @@ export function useHerdrAgentRead(
 /**
  * Kill button mutation (#521): closes the pane a herdr agent is running in. Invalidates the
  * sessions list on success so the closed agent drops out of the sidebar without waiting for
- * the server-side herdr watcher's next terminal SSE invalidation (#591).
+ * the next terminal sessions poll.
  */
 export function useKillHerdrAgent() {
   const queryClient = useQueryClient();

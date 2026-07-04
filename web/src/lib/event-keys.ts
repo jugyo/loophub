@@ -1,5 +1,5 @@
-// Maps LoopHub events (GET /events, /events/stream) to TanStack Query keys to
-// invalidate. Centralized so the SSE hook stays dumb. event.type prefixes:
+// Maps LoopHub events to TanStack Query keys to invalidate. Centralized so the
+// event polling hook stays dumb. event.type prefixes:
 //   issue.*          -> issue / issues lists
 //   pull_request.*   -> pull / pulls lists
 //   repo.*           -> repos list (+ old-name keys on repo.renamed)

@@ -1,6 +1,6 @@
 // Issue list view (/r/:owner/:repo/issues). v1-parity filters (state + labels)
 // over the shared list-row pattern (IssueRow). TanStack Query backed; refetches
-// on SSE via the issues query key (event-keys.ts).
+// on events via the issues query key (event-keys.ts).
 
 import { useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";

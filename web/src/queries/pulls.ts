@@ -1,5 +1,5 @@
 // Query + mutation hooks for the PR list, merged list, and detail screens.
-// Query keys come from the shared factory (./keys), so the SSE invalidation map
+// Query keys come from the shared factory (./keys), so the event invalidation map
 // (../lib/event-keys.ts) refetches these on pull_request.* events.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -57,7 +57,7 @@ export function usePull(owner: string, repo: string, number: number) {
 /**
  * Read-only debug dump for a PR (#248): raw DB rows + git facts + reviews/comments/notes/events.
  * `enabled` gates the fetch so the (potentially heavy, git-fanning) call only runs when the debug
- * modal is open. Kept off the SSE invalidation map — it is a manual, on-demand inspection surface.
+ * modal is open. Kept off the event invalidation map — it is a manual, on-demand inspection surface.
  */
 export function usePullDebug(
   owner: string,
@@ -122,7 +122,7 @@ export function usePullComments(owner: string, repo: string, number: number) {
 
 /**
  * Per-file review notes for a PR (#217), grouped by path at the call site. Keyed under the
- * pull key so the SSE map (event-keys.ts) refetches it via the pull prefix on
+ * pull key so the event map (event-keys.ts) refetches it via the pull prefix on
  * pull_request.review_note_* events. Notes span the PR's commit ranges; the diff view marks
  * those whose commit_sha differs from the current head as stale.
  */
@@ -139,7 +139,7 @@ export function usePullReviewNotes(
 
 /**
  * Orchestrator<->subagent handoffs (#352) for a PR, chronological. Keyed under the pull key so the
- * SSE map (event-keys.ts) refetches it via the pull prefix on each `handoff.recorded` event. Backed
+ * event map (event-keys.ts) refetches it via the pull prefix on each `handoff.recorded` event. Backed
  * by the dedicated handoffs/list endpoint (not the events feed), so there is no 100-event cap.
  */
 export function usePullHandoffs(owner: string, repo: string, number: number) {

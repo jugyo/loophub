@@ -17,6 +17,7 @@ import type {
   Issue,
   IssueComment,
   IssueGroupWithMembers,
+  LoopEvent,
   PullFile,
   PullLineComment,
   PullRequest,
@@ -107,6 +108,19 @@ export async function rpc<T>(
 /** Build the /events SSE URL (same-origin via proxy unless an API base is set). */
 export function eventsUrl(query = ""): string {
   return `${API_BASE}/events${query ? `?${query}` : ""}`;
+}
+
+/** Poll persisted LoopHub events by id cursor. */
+export function listEvents(
+  input: {
+    since?: number;
+    repo?: string;
+    labels?: string[];
+    order?: "asc" | "desc";
+    limit?: number;
+  } = {},
+) {
+  return rpc<LoopEvent[]>("events/list", clean(input));
 }
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;

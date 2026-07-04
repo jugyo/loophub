@@ -1,7 +1,7 @@
 // PR list / merged-list views (/r/:owner/:repo/pulls, .../merged). v1-parity:
 // the pulls list has a state (open/closed/all) filter; the merged list is a
 // fixed state=closed&merged=only query with no filter. Both reuse the shared
-// PullRow. TanStack Query backed; refetches on SSE via the pulls query key.
+// PullRow. TanStack Query backed; refetches on events via the pulls query key.
 
 import type { UseQueryResult } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";

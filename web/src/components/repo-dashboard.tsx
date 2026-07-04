@@ -2,7 +2,7 @@
 // from DESIGN.md § Dashboard sections, capped at SECTION_LIMIT with a "see all"
 // link to the dedicated list view. Each issue row carries its linked PR as a
 // sub-row, so a separate PR list is redundant here. The list is TanStack Query
-// backed and refetches on SSE (root.tsx + event-keys).
+// backed and refetches on events (root.tsx + event-keys).
 
 import { Link } from "@tanstack/react-router";
 import { IssueRow } from "@/components/dashboard-rows";

@@ -1,5 +1,5 @@
 // Query + mutation hooks for the issue list and detail screens. Query keys come
-// from the shared factory (./keys), so the SSE invalidation map
+// from the shared factory (./keys), so the event invalidation map
 // (../lib/event-keys.ts) refetches these lists and details on change.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

@@ -1,133 +1,34 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { LoopEvent } from "@/api/types";
 import {
   getEventDebugEntriesForTest,
   resetEventDebugEntriesForTest,
 } from "@/lib/event-debug";
 import { useLoopHubEvents } from "./use-loophub-events";
 
-type Listener = (event: MessageEvent) => void;
-
-class MockEventSource {
-  static instances: MockEventSource[] = [];
-
-  readonly listeners = new Map<string, Set<EventListener>>();
-  closed = false;
-
-  constructor(readonly url: string) {
-    MockEventSource.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: EventListener): void {
-    const listeners = this.listeners.get(type) ?? new Set<EventListener>();
-    listeners.add(listener);
-    this.listeners.set(type, listeners);
-  }
-
-  removeEventListener(type: string, listener: EventListener): void {
-    this.listeners.get(type)?.delete(listener);
-  }
-
-  close(): void {
-    this.closed = true;
-  }
-
-  emit(type: string, data = ""): void {
-    for (const listener of this.listeners.get(type) ?? []) {
-      listener({ data } as MessageEvent);
-    }
-  }
+function ev(id: number, type = "issue.updated"): LoopEvent {
+  return {
+    id,
+    type,
+    actor: "me",
+    repo: "me/proj",
+    payload: { number: 3 },
+    created_at: "2026-07-04T00:00:00Z",
+  };
 }
 
-class MockBroadcastChannel {
-  static channels = new Map<string, Set<MockBroadcastChannel>>();
-
-  readonly listeners = new Set<Listener>();
-
-  constructor(readonly name: string) {
-    const channels =
-      MockBroadcastChannel.channels.get(name) ??
-      new Set<MockBroadcastChannel>();
-    channels.add(this);
-    MockBroadcastChannel.channels.set(name, channels);
-  }
-
-  addEventListener(type: string, listener: Listener): void {
-    if (type === "message") this.listeners.add(listener);
-  }
-
-  removeEventListener(type: string, listener: Listener): void {
-    if (type === "message") this.listeners.delete(listener);
-  }
-
-  postMessage(data: unknown): void {
-    for (const channel of MockBroadcastChannel.channels.get(this.name) ?? []) {
-      if (channel === this) continue;
-      for (const listener of channel.listeners) {
-        listener({ data } as MessageEvent);
-      }
-    }
-  }
-
-  close(): void {
-    MockBroadcastChannel.channels.get(this.name)?.delete(this);
-  }
+function jsonResponse(result: unknown): Response {
+  return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }), {
+    headers: { "content-type": "application/json" },
+  });
 }
 
-interface PendingLock {
-  callback: () => Promise<void>;
-  reject: (reason?: unknown) => void;
-  resolve: () => void;
-  signal?: AbortSignal;
-}
-
-class MockLockManager {
-  active = false;
-  pending: PendingLock[] = [];
-
-  request(
-    _name: string,
-    options: { signal?: AbortSignal },
-    callback: () => Promise<void>,
-  ): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const item = { callback, reject, resolve, signal: options.signal };
-      const onAbort = () => {
-        this.pending = this.pending.filter((pending) => pending !== item);
-        reject(new DOMException("aborted", "AbortError"));
-      };
-      options.signal?.addEventListener("abort", onAbort, { once: true });
-      this.pending.push(item);
-      this.drain();
-    });
-  }
-
-  private drain(): void {
-    if (this.active) return;
-    const item = this.pending.shift();
-    if (!item) return;
-    if (item.signal?.aborted) {
-      item.reject(new DOMException("aborted", "AbortError"));
-      this.drain();
-      return;
-    }
-
-    this.active = true;
-    item.callback().then(
-      () => {
-        this.active = false;
-        item.resolve();
-        this.drain();
-      },
-      (error) => {
-        this.active = false;
-        item.reject(error);
-        this.drain();
-      },
-    );
-  }
+function rpcParams(call: unknown): Record<string, unknown> {
+  const [, init] = call as [string, RequestInit];
+  return JSON.parse(String(init.body)).params;
 }
 
 function HookHarness() {
@@ -143,63 +44,44 @@ function wrapper(client: QueryClient) {
   };
 }
 
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
-  MockEventSource.instances = [];
-  MockBroadcastChannel.channels.clear();
   localStorage.clear();
   resetEventDebugEntriesForTest();
 });
 
 describe("useLoopHubEvents", () => {
-  it("uses one EventSource across seven coordinated tabs", async () => {
-    const lockManager = new MockLockManager();
-    vi.stubGlobal("EventSource", MockEventSource);
-    vi.stubGlobal("BroadcastChannel", MockBroadcastChannel);
-    Object.defineProperty(navigator, "locks", {
-      configurable: true,
-      value: lockManager,
-    });
+  it("polls events/list in each mounted tab", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(jsonResponse([ev(7)])));
+    vi.stubGlobal("fetch", fetchMock);
 
     const clients = Array.from({ length: 7 }, () => new QueryClient());
     const invalidates = clients.map((client) =>
       vi.spyOn(client, "invalidateQueries"),
     );
 
-    const [first, ...followers] = clients.map((client) =>
+    const renders = clients.map((client) =>
       render(<HookHarness />, { wrapper: wrapper(client) }),
     );
 
-    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
-    MockEventSource.instances[0].emit("open");
-
-    await waitFor(() => {
-      for (const invalidate of invalidates) {
-        expect(invalidate).toHaveBeenCalledWith({ queryKey: ["settings"] });
-        expect(invalidate).toHaveBeenCalledWith({
-          queryKey: ["terminal", "config"],
-        });
-      }
-    });
-
-    MockEventSource.instances[0].emit(
-      "loophub",
-      JSON.stringify({
-        jsonrpc: "2.0",
-        method: "events/notify",
-        params: {
-          id: 7,
-          type: "issue.updated",
-          actor: "me",
-          repo: "me/proj",
-          payload: { number: 3 },
-          created_at: "2026-07-04T00:00:00Z",
-        },
-      }),
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(7));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/rpc",
+      expect.objectContaining({ method: "POST" }),
     );
+    for (const call of fetchMock.mock.calls) {
+      expect(rpcParams(call)).toEqual({ since: 0, limit: 100 });
+    }
 
-    await waitFor(() => {
+    await vi.waitFor(() => {
       for (const invalidate of invalidates) {
         expect(invalidate).toHaveBeenCalledWith({
           queryKey: ["issues", "me/proj"],
@@ -216,46 +98,132 @@ describe("useLoopHubEvents", () => {
       ]),
     );
 
-    MockEventSource.instances[0].emit("loophub", "{ nope");
-    expect(getEventDebugEntriesForTest()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          source: "invalid-loophub",
-          reason: "invalid JSON",
-        }),
-      ]),
-    );
-
-    MockEventSource.instances[0].emit("terminal");
-    await waitFor(() =>
-      expect(getEventDebugEntriesForTest()).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            source: "terminal",
-          }),
-        ]),
-      ),
-    );
-
-    first.unmount();
-
-    await waitFor(() => expect(MockEventSource.instances).toHaveLength(2));
-    expect(MockEventSource.instances[0].closed).toBe(true);
-    expect(MockEventSource.instances[1].url).toBe("/events?since=7");
-    for (const follower of followers) follower.unmount();
+    for (const rendered of renders) rendered.unmount();
   });
 
-  it("falls back to a direct EventSource when tab coordination is unavailable", async () => {
-    vi.stubGlobal("EventSource", MockEventSource);
-    vi.stubGlobal("BroadcastChannel", undefined);
-    Object.defineProperty(navigator, "locks", {
-      configurable: true,
-      value: undefined,
-    });
+  it("continues polling after an empty response using the saved cursor", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse([ev(7)]))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([ev(7)]))
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
 
     render(<HookHarness />, { wrapper: wrapper(new QueryClient()) });
 
-    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
-    expect(MockEventSource.instances[0].url).toBe("/events?since=0");
+    await vi.waitFor(() =>
+      expect(localStorage.getItem("lh_last_event_id")).toBe("7"),
+    );
+    await vi.advanceTimersByTimeAsync(1500);
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(rpcParams(fetchMock.mock.calls[1])).toEqual({
+      since: 7,
+      limit: 100,
+    });
+    expect(rpcParams(fetchMock.mock.calls[2])).toEqual({
+      since: 0,
+      order: "desc",
+      limit: 1,
+    });
+
+    await vi.advanceTimersByTimeAsync(1500);
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(rpcParams(fetchMock.mock.calls[3])).toEqual({
+      since: 7,
+      limit: 100,
+    });
+  });
+
+  it("keeps each mounted tab's cursor independent from localStorage writes", async () => {
+    const clients = [new QueryClient(), new QueryClient()];
+    const invalidates = clients.map((client) =>
+      vi.spyOn(client, "invalidateQueries"),
+    );
+    const fetchMock = vi.fn<typeof fetch>((_url, init) => {
+      const params = rpcParams(["/rpc", init as RequestInit]);
+      const call = fetchMock.mock.calls.length;
+      if (call === 1) return Promise.resolve(jsonResponse([ev(7)]));
+      if (call === 2) return Promise.resolve(jsonResponse([]));
+      if (params.since === 0) return Promise.resolve(jsonResponse([ev(7)]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const renders = clients.map((client) =>
+      render(<HookHarness />, { wrapper: wrapper(client) }),
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(localStorage.getItem("lh_last_event_id")).toBe("7"),
+    );
+    expect(invalidates[0]).toHaveBeenCalledWith({
+      queryKey: ["issues", "me/proj"],
+    });
+    expect(invalidates[1]).not.toHaveBeenCalledWith({
+      queryKey: ["issues", "me/proj"],
+    });
+
+    await vi.advanceTimersByTimeAsync(1500);
+
+    await vi.waitFor(() =>
+      expect(invalidates[1]).toHaveBeenCalledWith({
+        queryKey: ["issues", "me/proj"],
+      }),
+    );
+    expect(fetchMock.mock.calls.slice(2).map(rpcParams)).toEqual(
+      expect.arrayContaining([
+        { since: 7, limit: 100 },
+        { since: 0, limit: 100 },
+      ]),
+    );
+
+    for (const rendered of renders) rendered.unmount();
+  });
+
+  it("resets a too-large cursor when the server's newest event id is lower", async () => {
+    localStorage.setItem("lh_last_event_id", "999");
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([ev(12)]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<HookHarness />, { wrapper: wrapper(client) });
+
+    await vi.waitFor(() =>
+      expect(localStorage.getItem("lh_last_event_id")).toBe("12"),
+    );
+    expect(rpcParams(fetchMock.mock.calls[0])).toEqual({
+      since: 999,
+      limit: 100,
+    });
+    expect(rpcParams(fetchMock.mock.calls[1])).toEqual({
+      since: 0,
+      order: "desc",
+      limit: 1,
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["settings"] });
+  });
+
+  it("does not schedule another poll after unmount", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rendered = render(<HookHarness />, {
+      wrapper: wrapper(new QueryClient()),
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    rendered.unmount();
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
