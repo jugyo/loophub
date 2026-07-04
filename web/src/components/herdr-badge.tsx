@@ -98,8 +98,8 @@ export function HerdrBadge({
   return (
     <button
       type="button"
-      title="Focus the running Herdr terminal"
-      aria-label={`Focus Herdr terminal for PR #${pull}`}
+      title="Focus the running terminal"
+      aria-label={`Focus terminal for PR #${pull}`}
       disabled={focus.isPending}
       onClick={() =>
         focus.mutate(
@@ -109,7 +109,7 @@ export function HerdrBadge({
               showError(
                 e instanceof Error
                   ? e.message
-                  : "Failed to focus the Herdr terminal.",
+                  : "Failed to focus terminal.",
               ),
           },
         )
@@ -125,7 +125,6 @@ export function HerdrBadge({
       <Bot
         className={cn("size-3", herdrWorkspaceBadgeIconClass(workspace.status))}
       />
-      Herdr
       {workspace.status ? (
         <span className="text-zinc-300 dark:text-zinc-500">
           {workspace.status}

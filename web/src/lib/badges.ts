@@ -116,7 +116,7 @@ function linkedPullWorkingBadge(
     return {
       tone: "working",
       label: "working",
-      title: "Herdr agent is working in the PR worktree",
+      title: "Working in the PR worktree",
     };
   }
   return {
@@ -209,7 +209,7 @@ export function workingBadge(
     tone: "working",
     label: "working",
     title: options.agentWorking
-      ? "Herdr agent is working in the PR worktree"
+      ? "Working in the PR worktree"
       : "Uncommitted changes in the PR worktree",
   };
 }

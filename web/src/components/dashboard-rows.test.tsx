@@ -569,7 +569,7 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
 // agent running in that PR's worktree, and clicking it switches herdr's focus there.
 describe("Herdr running badge (#579)", () => {
   function badgeQuery() {
-    return screen.queryByRole("button", { name: /Focus Herdr terminal/ });
+    return screen.queryByRole("button", { name: /Focus terminal/ });
   }
 
   it("shows no badge when no herdr session is running for the PR", async () => {
@@ -619,10 +619,9 @@ describe("Herdr running badge (#579)", () => {
       />,
     );
     const badge = await screen.findByRole("button", {
-      name: /Focus Herdr terminal/,
+      name: /Focus terminal/,
     });
     expect(badge).toBeTruthy();
-    expect(within(badge).getByText("Herdr")).toBeTruthy();
     expect(within(badge).getByText("working")).toBeTruthy();
   });
 
@@ -710,7 +709,7 @@ describe("Herdr running badge (#579)", () => {
       />,
     );
     const badge = await screen.findByRole("button", {
-      name: "Focus Herdr terminal for PR #10",
+      name: "Focus terminal for PR #10",
     });
     fireEvent.click(badge);
     expect(focusHerdrAgent).toHaveBeenCalledWith(

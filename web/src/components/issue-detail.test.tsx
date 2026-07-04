@@ -179,9 +179,7 @@ describe("IssueDetail", () => {
     const summary = await screen.findByText("PR #30");
     const statusCell = summary.closest("div");
     const ctx = within(statusCell as HTMLElement);
-    const workingBadge = ctx.getByTitle(
-      "Herdr agent is working in the PR worktree",
-    );
+    const workingBadge = ctx.getByTitle("Working in the PR worktree");
     expect(workingBadge.textContent).toBe("working");
     expect(ctx.queryByText("changes")).toBeNull();
   });
@@ -212,7 +210,7 @@ describe("IssueDetail", () => {
     );
 
     const button = await screen.findByRole("button", {
-      name: "Focus Herdr terminal for issue #12",
+      name: "Focus terminal for issue #12",
     });
     fireEvent.click(button);
     await waitFor(() => {
@@ -229,7 +227,7 @@ describe("IssueDetail", () => {
     await screen.findByText("ui2: issue detail");
     expect(
       screen.queryByRole("button", {
-        name: "Focus Herdr terminal for issue #12",
+        name: "Focus terminal for issue #12",
       }),
     ).toBeNull();
   });
@@ -294,7 +292,7 @@ describe("IssueDetail", () => {
     });
 
     const badge = await screen.findByRole("button", {
-      name: "Focus Herdr terminal for PR #30",
+      name: "Focus terminal for PR #30",
     });
     expect(
       badge.querySelector("svg")?.classList.contains("animate-bot-wobble"),
@@ -323,7 +321,7 @@ describe("IssueDetail", () => {
     });
 
     const badge = await screen.findByRole("button", {
-      name: "Focus Herdr terminal for PR #30",
+      name: "Focus terminal for PR #30",
     });
     expect(
       badge.querySelector("svg")?.classList.contains("animate-bot-bounce"),
@@ -337,7 +335,7 @@ describe("IssueDetail", () => {
 
     expect(await screen.findByText("PR #30")).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: /Focus Herdr terminal/ }),
+      screen.queryByRole("button", { name: /Focus terminal/ }),
     ).toBeNull();
   });
 

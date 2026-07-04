@@ -243,7 +243,7 @@ function RepoSidebarLink({
   const [owner, name] = repo.full_name.split("/");
   const setFavorite = useSetRepoFavorite(owner, name);
   const to: string = `/r/${owner}/${name}`;
-  const agentLabel = `${agentCount} running Herdr ${
+  const agentLabel = `${agentCount} running ${
     agentCount === 1 ? "agent" : "agents"
   }`;
 

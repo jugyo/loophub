@@ -244,8 +244,8 @@ function IssueHerdrPaneButton({
     <Button
       variant="secondary"
       disabled={focus.isPending}
-      title="Focus the Herdr terminal that created this issue"
-      aria-label={`Focus Herdr terminal for issue #${issue.number}`}
+      title="Focus the terminal that created this issue"
+      aria-label={`Focus terminal for issue #${issue.number}`}
       onClick={() =>
         focus.mutate(
           { repo: `${owner}/${repo}`, paneId },
@@ -254,7 +254,7 @@ function IssueHerdrPaneButton({
               showError(
                 e instanceof Error
                   ? e.message
-                  : "Failed to focus the Herdr terminal.",
+                  : "Failed to focus terminal.",
               ),
           },
         )

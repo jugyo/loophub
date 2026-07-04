@@ -231,7 +231,7 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
       {
         onError: (e) =>
           showError(
-            e instanceof Error ? e.message : "Failed to close the Herdr pane.",
+            e instanceof Error ? e.message : "Failed to close the bot pane.",
           ),
       },
     );
@@ -292,7 +292,7 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
               <button
                 type="button"
                 aria-label={`Focus ${agent.name}'s pane`}
-                title="Focus the running Herdr terminal"
+                title="Focus the running terminal"
                 className="pointer-events-auto rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
                 disabled={focusAgent.isPending}
                 onClick={() =>
@@ -303,7 +303,7 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
                         showError(
                           e instanceof Error
                             ? e.message
-                            : "Failed to focus the Herdr terminal.",
+                            : "Failed to focus terminal.",
                         ),
                     },
                   )
@@ -316,7 +316,7 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
               <button
                 type="button"
                 aria-label={`Close ${agent.name}'s pane`}
-                title="Close the finished Herdr pane"
+                title="Close the finished bot pane"
                 className="pointer-events-auto rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
                 disabled={killAgent.isPending}
                 onClick={onKill}

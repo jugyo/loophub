@@ -173,7 +173,7 @@ describe("AppSidebar Herdr repo counts", () => {
     ).toBe(4);
   });
 
-  it("shows a Bot count only for repositories with running Herdr agents", async () => {
+  it("shows an agent count only for repositories with running Herdr agents", async () => {
     reposData.value = [repo("me/proj", 1), repo("me/quiet", 2)];
     herdrSessions.value = {
       repos: [
@@ -191,8 +191,8 @@ describe("AppSidebar Herdr repo counts", () => {
 
     renderSidebar();
 
-    expect(await screen.findByLabelText("2 running Herdr agents")).toBeTruthy();
-    expect(screen.queryByLabelText("0 running Herdr agents")).toBeNull();
+    expect(await screen.findByLabelText("2 running agents")).toBeTruthy();
+    expect(screen.queryByLabelText("0 running agents")).toBeNull();
   });
 
   it("hides repo Herdr counts while the sessions query is errored", async () => {
@@ -212,6 +212,6 @@ describe("AppSidebar Herdr repo counts", () => {
     renderSidebar();
 
     expect(await screen.findByText("me/proj")).toBeTruthy();
-    expect(screen.queryByLabelText("1 running Herdr agent")).toBeNull();
+    expect(screen.queryByLabelText("1 running agent")).toBeNull();
   });
 });
