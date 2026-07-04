@@ -202,6 +202,24 @@ describe("PullDetail", () => {
     expect(await screen.findByText("+const x = 1;")).toBeTruthy();
     expect(screen.getAllByText("nice constant").length).toBeGreaterThan(0);
 
+    fireEvent.click(
+      screen.getByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("dialog", { name: /Diff for web\/src\/a\.ts/i })
+        .parentElement as HTMLElement,
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
+    expect(
+      await screen.findByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
+    ).toBeTruthy();
+
     fireEvent.click(screen.getByRole("button", { name: /Close diff/i }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByText("web/src/a.ts")).toBeTruthy();
@@ -302,6 +320,22 @@ describe("PullDetail", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Base" }));
     expect(await screen.findByRole("heading", { name: "old" })).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("dialog", { name: /Diff for README.md/i }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: /Diff for README.md/i }),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("dialog", { name: /Diff for README.md/i })
+        .parentElement as HTMLElement,
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: /README\.md/i }));
+    await screen.findByRole("dialog", { name: /Diff for README.md/i });
 
     fireEvent.click(screen.getByRole("button", { name: "Diff" }));
     expect(await screen.findByText("+# new")).toBeTruthy();
