@@ -269,4 +269,35 @@ describe("SettingsPage", () => {
       "claude-fable-5::medium",
     );
   });
+
+  it("preserves saved model names containing the select value separator when saving from the dropdown", async () => {
+    renderSettings({
+      "claude-code": {
+        autoModeOnBuild: false,
+        model: "vendor::claude-fable-5",
+        effort: "medium",
+      },
+      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+    });
+    const claudeSelect = (await screen.findByLabelText(
+      "Default model and effort (Claude Code)",
+    )) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(claudeSelect.value).toBe("vendor::claude-fable-5::medium"),
+    );
+
+    fireEvent.change(claudeSelect, {
+      target: { value: "vendor::claude-fable-5::medium" },
+    });
+
+    await waitFor(() => {
+      const call = rpcCall("settings/update");
+      expect(call).toBeTruthy();
+      expect(call!.params).toMatchObject({
+        agent: "claude-code",
+        model: "vendor::claude-fable-5",
+        effort: "medium",
+      });
+    });
+  });
 });

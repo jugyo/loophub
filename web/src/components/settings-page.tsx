@@ -39,6 +39,15 @@ function comboValue(model: string, effort: string): string {
   return `${model}::${effort}`;
 }
 
+function parseComboValue(value: string): { model: string; effort: string } {
+  const separator = value.lastIndexOf("::");
+  if (separator === -1) return { model: value, effort: "" };
+  return {
+    model: value.slice(0, separator),
+    effort: value.slice(separator + 2),
+  };
+}
+
 // A single agent's "Default model & effort" picker (#594, #610, #682). Was previously a free-text
 // <input list>+<datalist> combobox for model alone; replaced with a plain <select> (no dedicated
 // combobox component exists in this project's UI kit — see web/src/components/ui/) whose options
@@ -82,7 +91,7 @@ function AgentModelEffortSelect({
       value={currentValue}
       disabled={disabled || saving}
       onChange={(e) => {
-        const [m, ef] = e.target.value.split("::");
+        const { model: m, effort: ef } = parseComboValue(e.target.value);
         onSave(m, ef);
       }}
     >
