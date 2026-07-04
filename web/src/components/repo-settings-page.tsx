@@ -4,7 +4,7 @@
 // own screen instead of a cramped dropdown. Same RPCs/hooks as before (repos/rename,
 // repos/setArchived, repos/mergeMode, repos/setMergeMode); only the presentation moved.
 
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { MergeMode } from "@/api/types";
@@ -35,14 +35,7 @@ export function RepoSettingsPage({
 
   return (
     <div className="mx-auto max-w-content">
-      <Link
-        to="/r/$owner/$repo"
-        params={{ owner, repo }}
-        className="text-sm text-muted-foreground hover:underline"
-      >
-        &larr; {owner}/{repo}
-      </Link>
-      <h1 className="mt-2 text-2xl font-semibold">
+      <h1 className="text-2xl font-semibold">
         {owner}/{repo} settings
       </h1>
 

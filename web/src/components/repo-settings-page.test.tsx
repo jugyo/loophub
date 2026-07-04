@@ -102,6 +102,15 @@ function renderSettings(initialArchived = false, patchFails = false) {
 }
 
 describe("RepoSettingsPage", () => {
+  it("does not render a duplicate repo back link when the shell breadcrumb is present", async () => {
+    renderSettings(false);
+
+    expect(
+      await screen.findByRole("heading", { name: "me/proj settings" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /me\/proj/ })).toBeNull();
+  });
+
   it("renames via the form and navigates to the renamed repo (#485)", async () => {
     renderSettings(false);
     const input = (await screen.findByRole("textbox", {

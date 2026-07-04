@@ -21,6 +21,7 @@ export interface Crumb {
  *   "/r/me/proj/issues/12"           -> [Home, me/proj, Issues, #12]
  *   "/r/me/proj/pulls/3"             -> [Home, me/proj, Pull requests, #3]
  *   "/r/me/proj/merged"              -> [Home, me/proj, Merged]
+ *   "/r/me/proj/settings"            -> [Home, me/proj, Settings]
  */
 export function crumbsForPath(pathname: string): Crumb[] {
   const crumbs: Crumb[] = [{ label: "Home", href: "/" }];
@@ -53,6 +54,7 @@ export function crumbsForPath(pathname: string): Crumb[] {
       issues: "Issues",
       pulls: "Pull requests",
       merged: "Merged",
+      settings: "Settings",
     };
 
     if (section && sections[section]) {

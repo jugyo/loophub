@@ -29,6 +29,11 @@ describe("crumbsForPath", () => {
       "Pull requests",
     ]);
     expect(labels("/r/me/proj/merged")).toEqual(["Home", "me/proj", "Merged"]);
+    expect(labels("/r/me/proj/settings")).toEqual([
+      "Home",
+      "me/proj",
+      "Settings",
+    ]);
   });
 
   it("parses the issue/pull number into a #N crumb", () => {
@@ -52,5 +57,13 @@ describe("crumbsForPath", () => {
       true,
     );
     expect(crumbs[crumbs.length - 1].href).toBeUndefined();
+  });
+
+  it("links from repo settings back to the repo route", () => {
+    expect(crumbsForPath("/r/me/proj/settings")).toEqual([
+      { label: "Home", href: "/" },
+      { label: "me/proj", href: "/r/me/proj" },
+      { label: "Settings", href: undefined },
+    ]);
   });
 });
