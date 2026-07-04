@@ -9,7 +9,7 @@
 // in the way when herdr isn't in use.
 import { AnsiUp } from "ansi_up";
 import { Bot, Terminal, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { HerdrAgent } from "@/api/types";
 import { useToast } from "@/components/toast";
 import { cn } from "@/lib/utils";
@@ -344,54 +344,54 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
 // fail, keep the preview visible).
 const AGENT_PREVIEW_MAX_HEIGHT = 256;
 
-// Rough monospace line-height metric for the `font-mono text-xs` preview text below — real
-// font metrics vary by browser/OS, so this is only a fit, bounded by MIN/MAX so a huge or
-// tiny pane can't blow up or shrink the popup unreasonably (#531). The `pre` no longer
-// wraps (#548), so there's no equivalent per-character width metric to fit — the popup
-// keeps a fixed width and overflowing lines scroll horizontally instead.
-const PREVIEW_LINE_HEIGHT_PX = 16;
 const PREVIEW_PADDING_PX = 16; // p-2 (8px) top/bottom
-const AGENT_PREVIEW_MIN_HEIGHT = 120;
+const PREVIEW_BORDER_PX = 2; // border (1px) on both sides
+const AGENT_PREVIEW_SCALE_FLOOR = 0.4;
+const AGENT_PREVIEW_SCALE_EPSILON = 0.001;
 
 // Upper bound on the sized popup, as a fraction of the viewport rather than a fixed pixel
 // value (#536). A fixed cap (previously 640x480) is far smaller than real herdr panes —
-// e.g. a common 239x85 pane needs up to ~1376px of height at the metrics above — so the
-// popup was silently shrunk back down below the pane's actual content. Height scales with
-// this ceiling via the pane's rows; width no longer tracks the pane's columns (#548, the
-// `pre` scrolls horizontally instead of wrapping) but now grows all the way to this same
-// ceiling too (#553 follow-up) instead of stopping at a fixed 384px, which was narrow
-// enough that most panes needed horizontal scrolling just to be readable.
+// e.g. a common 239x85 pane can exceed the viewport at natural size — so the popup now
+// measures the rendered terminal text and scales it down before it hits that ceiling.
 const AGENT_PREVIEW_MAX_WIDTH_VW = 0.6;
 const AGENT_PREVIEW_MAX_HEIGHT_VH = 0.7;
 
-// Sizes the popup to the target pane's actual rows (#531) when herdr reported them,
-// falling back to the fixed height above when it didn't (herdr down, or the read target is
-// the display-name fallback that `pane layout --pane` can't resolve). Width no longer
-// tracks the pane's columns (#548) — the `pre` scrolls horizontally instead of wrapping —
-// so there's no per-pane signal to size it against; it uses the viewport-relative ceiling
-// directly instead (#553 follow-up), matching how height already scales. maxWidth/maxHeight
-// are that ceiling, computed once at hover time (see AGENT_PREVIEW_MAX_WIDTH_VW above) so
-// the position clamp and the actual box size always agree on the same worst case.
-function previewBoxSize(
-  rows: number | null,
+export interface AgentPreviewFit {
+  scale: number;
+  width: number;
+  maxHeight: number;
+  contentWidth: number;
+  contentHeight: number;
+  needsHorizontalScroll: boolean;
+}
+
+export function agentPreviewFit(
+  naturalWidth: number,
+  naturalHeight: number,
   maxWidth: number,
   maxHeight: number,
-): { width: number; maxHeight: number } {
-  if (!rows || rows <= 0) {
-    return {
-      width: maxWidth,
-      maxHeight: Math.min(maxHeight, AGENT_PREVIEW_MAX_HEIGHT),
-    };
-  }
+): AgentPreviewFit {
+  const safeWidth = Math.max(1, naturalWidth);
+  const safeHeight = Math.max(1, naturalHeight);
+  const chromeSize = PREVIEW_PADDING_PX + PREVIEW_BORDER_PX;
+  const availableWidth = Math.max(1, maxWidth - chromeSize);
+  const fitScale = Math.min(1, availableWidth / safeWidth);
+  const scale =
+    fitScale < AGENT_PREVIEW_SCALE_FLOOR
+      ? AGENT_PREVIEW_SCALE_FLOOR
+      : fitScale < 1
+        ? Math.max(0, fitScale - AGENT_PREVIEW_SCALE_EPSILON)
+        : 1;
+  const scaledWidth = safeWidth * scale;
+  const scaledHeight = safeHeight * scale;
+
   return {
-    width: maxWidth,
-    maxHeight: Math.min(
-      maxHeight,
-      Math.max(
-        AGENT_PREVIEW_MIN_HEIGHT,
-        rows * PREVIEW_LINE_HEIGHT_PX + PREVIEW_PADDING_PX,
-      ),
-    ),
+    scale,
+    width: Math.min(maxWidth, Math.ceil(scaledWidth + chromeSize)),
+    maxHeight: Math.min(maxHeight, Math.ceil(scaledHeight + chromeSize)),
+    contentWidth: Math.ceil(scaledWidth),
+    contentHeight: Math.ceil(scaledHeight),
+    needsHorizontalScroll: scaledWidth > availableWidth,
   };
 }
 
@@ -427,12 +427,40 @@ function AgentPreview({
     if (!data?.output) return null;
     return new AnsiUp().ansi_to_html(data.output);
   }, [data?.output]);
+  const preRef = useRef<HTMLPreElement>(null);
+  const [naturalSize, setNaturalSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    setNaturalSize(null);
+  }, [html]);
+
+  useLayoutEffect(() => {
+    if (html === null) return;
+    const pre = preRef.current;
+    if (!pre) return;
+    const rect = pre.getBoundingClientRect();
+    const width = Math.max(pre.scrollWidth, Math.ceil(rect.width));
+    const height = Math.max(pre.scrollHeight, Math.ceil(rect.height));
+    if (width <= 0 || height <= 0) return;
+    setNaturalSize((current) =>
+      current?.width === width && current.height === height
+        ? current
+        : { width, height },
+    );
+  }, [html]);
+
   if (isLoading || !data?.output || html === null) return null;
-  const { width, maxHeight } = previewBoxSize(
-    data.rows ?? null,
-    position.maxWidth,
-    position.maxHeight,
-  );
+  const fit = naturalSize
+    ? agentPreviewFit(
+        naturalSize.width,
+        naturalSize.height,
+        position.maxWidth,
+        position.maxHeight,
+      )
+    : null;
 
   return (
     <div
@@ -441,16 +469,35 @@ function AgentPreview({
       style={{
         top: position.top,
         left: position.left,
-        width,
-        maxHeight,
+        boxSizing: "border-box",
+        width: fit?.width ?? position.maxWidth,
+        maxHeight:
+          fit?.maxHeight ??
+          Math.min(position.maxHeight, AGENT_PREVIEW_MAX_HEIGHT),
+        visibility: fit ? "visible" : "hidden",
       }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      <pre
-        className="whitespace-pre font-mono text-xs text-foreground"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      <div
+        style={{
+          width: fit?.contentWidth,
+          height: fit?.contentHeight,
+          overflow: "hidden",
+        }}
+      >
+        <pre
+          ref={preRef}
+          className="whitespace-pre font-mono text-xs text-foreground"
+          style={{
+            display: "inline-block",
+            margin: 0,
+            transform: fit ? `scale(${fit.scale})` : undefined,
+            transformOrigin: "top left",
+          }}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      </div>
     </div>
   );
 }

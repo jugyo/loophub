@@ -7,10 +7,14 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { HerdrAgentRead, HerdrSessions } from "@/api/types";
-import { SidebarHerdrSessions, sortAgents } from "./sidebar-herdr-sessions";
+import {
+  agentPreviewFit,
+  SidebarHerdrSessions,
+  sortAgents,
+} from "./sidebar-herdr-sessions";
 
 // ToastProvider reads the router (useRouterState) to dismiss on navigation, which isn't
 // mounted here — mock useToast to a spy so the focus-error path can be asserted without a
@@ -52,6 +56,83 @@ function renderWithSessions(
   );
   return { ...view, queryClient };
 }
+
+function stubPreviewNaturalSize(width = 320, height = 64) {
+  const getBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.tagName === "PRE" ? width : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.tagName === "PRE" ? height : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (this.tagName === "PRE") {
+        return {
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: height,
+          width,
+          height,
+          toJSON: () => ({}),
+        };
+      }
+      return getBoundingClientRect.call(this);
+    },
+  );
+}
+
+describe("agentPreviewFit", () => {
+  it("keeps content at 1x when it already fits", () => {
+    expect(agentPreviewFit(320, 80, 640, 480)).toMatchObject({
+      scale: 1,
+      width: 338,
+      maxHeight: 98,
+      contentWidth: 320,
+      contentHeight: 80,
+      needsHorizontalScroll: false,
+    });
+  });
+
+  it("scales wide content into the popup without a rounding overflow", () => {
+    const fit = agentPreviewFit(900, 240, 614.4, 537.6);
+    expect(fit.scale).toBeLessThan(1);
+    expect(fit.scale).toBeGreaterThan(0.4);
+    expect(fit.width).toBeLessThanOrEqual(614.4);
+    expect(fit.needsHorizontalScroll).toBe(false);
+  });
+
+  it("reserves border-box border space when fitting exactly to max width", () => {
+    const fit = agentPreviewFit(596, 120, 614, 400);
+    expect(fit.scale).toBe(1);
+    expect(fit.width).toBe(614);
+    expect(fit.contentWidth).toBe(596);
+    expect(fit.needsHorizontalScroll).toBe(false);
+  });
+
+  it("does not scale down narrow panes solely because they are tall", () => {
+    const fit = agentPreviewFit(320, 1200, 640, 480);
+    expect(fit.scale).toBe(1);
+    expect(fit.width).toBe(338);
+    expect(fit.maxHeight).toBe(480);
+    expect(fit.needsHorizontalScroll).toBe(false);
+  });
+
+  it("clamps extreme panes to the scale floor and leaves horizontal scrolling", () => {
+    const fit = agentPreviewFit(4000, 120, 614.4, 537.6);
+    expect(fit.scale).toBe(0.4);
+    expect(fit.width).toBe(614.4);
+    expect(fit.contentWidth).toBe(1600);
+    expect(fit.needsHorizontalScroll).toBe(true);
+  });
+});
 
 describe("SidebarHerdrSessions", () => {
   function rowForAgent(name: string): HTMLElement {
@@ -167,6 +248,10 @@ describe("SidebarHerdrSessions", () => {
   });
 
   describe("hover preview (#500)", () => {
+    beforeEach(() => {
+      stubPreviewNaturalSize();
+    });
+
     function agentRow() {
       return screen.getByText("dev #11").parentElement as HTMLElement;
     }
@@ -202,7 +287,7 @@ describe("SidebarHerdrSessions", () => {
       });
     });
 
-    it("sizes the popup's height to the pane's reported rows, independent of its columns (#548)", async () => {
+    it("keeps narrow measured content at 1x instead of enlarging it", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       renderWithSessions(
         {
@@ -224,16 +309,16 @@ describe("SidebarHerdrSessions", () => {
       });
 
       const tooltip = await screen.findByRole("tooltip");
-      // Height still sized from rows rather than the fixed fallback (256).
-      expect(tooltip.style.maxHeight).not.toBe("256px");
-      // Width no longer tries to fit columns (#548) — the `pre` scrolls horizontally
-      // instead of wrapping, so the popup's width tracks the viewport-relative ceiling
-      // (jsdom default 1024 width) rather than the pane's columns (#567).
-      expect(tooltip.style.width).toBe(`${1024 * 0.6}px`);
+      expect(tooltip.style.width).toBe("338px");
+      expect(tooltip.style.maxHeight).toBe("82px");
+      const pre = tooltip.querySelector("pre");
+      expect(pre?.style.display).toBe("inline-block");
+      expect(pre?.style.transform).toBe("scale(1)");
     });
 
-    it("scales the popup's height with the viewport for tall panes, without widening further for wide ones (#548)", async () => {
+    it("scales wide measured content to fit the viewport-relative popup width", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
+      stubPreviewNaturalSize(900, 240);
       renderWithSessions(
         {
           repos: [
@@ -258,13 +343,13 @@ describe("SidebarHerdrSessions", () => {
       });
 
       const tooltip = await screen.findByRole("tooltip");
-      // Height still clamped to a fraction of the (jsdom default 1024x768) viewport,
-      // not the old fixed 480 ceiling.
-      expect(tooltip.style.maxHeight).not.toBe("480px");
-      expect(tooltip.style.maxHeight).toBe(`${768 * 0.7}px`);
-      // Width doesn't scale with columns (a 239-wide pane produces the same width as a
-      // narrower one) — it tracks the viewport-relative ceiling directly (#567).
-      expect(tooltip.style.width).toBe(`${1024 * 0.6}px`);
+      expect(Number.parseFloat(tooltip.style.width)).toBeLessThanOrEqual(
+        1024 * 0.6,
+      );
+      expect(tooltip.querySelector("pre")?.style.transform).toContain("scale(");
+      expect(tooltip.querySelector("pre")?.style.transform).not.toBe(
+        "scale(1)",
+      );
     });
 
     it("lets the preview scroll horizontally instead of wrapping long lines (#548)", async () => {
@@ -291,9 +376,39 @@ describe("SidebarHerdrSessions", () => {
       const tooltip = await screen.findByRole("tooltip");
       expect(tooltip.className).toContain("overflow-x-auto");
       const pre = tooltip.querySelector("pre");
+      expect(pre?.style.transform).toBe("scale(1)");
       expect(pre?.className).toContain("whitespace-pre");
       expect(pre?.className).not.toContain("whitespace-pre-wrap");
       expect(pre?.className).not.toContain("break-words");
+    });
+
+    it("clips the transformed child so floor-mode scroll range follows scaled width", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      stubPreviewNaturalSize(4000, 120);
+      renderWithSessions(
+        {
+          repos: [
+            {
+              repo: "me/app",
+              session_name: "me-app-12345678",
+              agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+            },
+          ],
+        },
+        { output: "$ npm test\n42 passing\n", cols: 400, rows: 10 },
+      );
+      await screen.findByText("dev #11");
+
+      fireEvent.mouseEnter(agentRow());
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      const tooltip = await screen.findByRole("tooltip");
+      const scaledSlot = tooltip.querySelector("pre")?.parentElement;
+      expect(scaledSlot?.style.overflow).toBe("hidden");
+      expect(Number.parseFloat(scaledSlot?.style.width ?? "0")).toBe(1600);
+      expect(tooltip.querySelector("pre")?.style.transform).toBe("scale(0.4)");
     });
 
     it("falls back to a fixed popup size when herdr didn't report pane dimensions (#531 AC)", async () => {
@@ -318,8 +433,8 @@ describe("SidebarHerdrSessions", () => {
       });
 
       const tooltip = await screen.findByRole("tooltip");
-      expect(tooltip.style.width).toBe(`${1024 * 0.6}px`);
-      expect(tooltip.style.maxHeight).toBe("256px");
+      expect(tooltip.style.width).toBe("338px");
+      expect(tooltip.style.maxHeight).toBe("82px");
     });
 
     it("falls back to the display name when the agent has no real pane id", async () => {
@@ -794,6 +909,7 @@ describe("SidebarHerdrSessions", () => {
 
     it("keeps the hover preview and kill button working on a grayed-out row (#611 AC)", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
+      stubPreviewNaturalSize();
       renderWithSessions(
         MIXED,
         { output: "$ npm test\n42 passing\n", cols: null, rows: null },
