@@ -7,8 +7,8 @@
 // via <Markdown>.
 
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, ExternalLink, Github, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { ChevronRight, ExternalLink, Github, Loader2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import type {
   PullFile,
   PullLineComment,
@@ -22,7 +22,6 @@ import { DiffStat } from "@/components/diff-stat";
 import { HandoffTimeline } from "@/components/handoff-timeline";
 import { isPullHerdrWorking } from "@/components/herdr-badge";
 import { Markdown } from "@/components/markdown";
-import { MarkdownPreviewModal } from "@/components/markdown-preview-modal";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { PullHerdrSection } from "@/components/pull-herdr-section";
 import { RelatedSessions } from "@/components/related-sessions";
@@ -40,6 +39,7 @@ import {
   useMergePull,
   usePull,
   usePullComments,
+  usePullFileAtRef,
   usePullFiles,
   usePullHandoffs,
   usePullReviewNotes,
@@ -669,6 +669,12 @@ function FilesChanged({
   isLoading: boolean;
   isError: boolean;
 }) {
+  const [openFilename, setOpenFilename] = useState<string | null>(null);
+  const openFile = files?.find((f) => f.filename === openFilename) ?? null;
+  useEffect(() => {
+    if (openFilename && files && !openFile) setOpenFilename(null);
+  }, [files, openFile, openFilename]);
+
   const byFile = new Map<string, PullLineComment[]>();
   for (const c of lineComments ?? []) {
     const list = byFile.get(c.path) ?? [];
@@ -712,26 +718,71 @@ function FilesChanged({
       ) : !files || files.length === 0 ? (
         <p className="text-sm text-muted-foreground">No diff.</p>
       ) : (
-        files.map((f) => (
-          <FileDiff
-            key={f.filename}
-            owner={owner}
-            repo={repo}
-            number={number}
-            file={f}
-            comments={byFile.get(f.filename) ?? []}
-            notes={notesByFile.get(f.filename) ?? []}
-            currentHeadSha={currentHeadSha}
-          />
-        ))
+        <>
+          <div className="overflow-hidden rounded-md border">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b bg-muted/40 px-2.5 py-1.5 text-[11px] font-medium uppercase text-muted-foreground">
+              <span>File</span>
+              <span>Changes</span>
+            </div>
+            <ul className="divide-y">
+              {files.map((f) => (
+                <FileSummaryRow
+                  key={f.filename}
+                  file={f}
+                  onOpen={() => setOpenFilename(f.filename)}
+                />
+              ))}
+            </ul>
+          </div>
+          {openFile ? (
+            <DiffFileDialog
+              owner={owner}
+              repo={repo}
+              number={number}
+              file={openFile}
+              comments={byFile.get(openFile.filename) ?? []}
+              notes={notesByFile.get(openFile.filename) ?? []}
+              currentHeadSha={currentHeadSha}
+              onClose={() => setOpenFilename(null)}
+            />
+          ) : null}
+        </>
       )}
     </section>
   );
 }
 
-// Files changed only shows the unified diff patch, not a rendered whole-file view — Preview
-// opens a full-size modal with the base/head Markdown instead (#435). Scoped to .md/.markdown so
-// non-Markdown files (which the modal can't usefully render) don't grow the button.
+function FileSummaryRow({
+  file,
+  onOpen,
+}: {
+  file: PullFile;
+  onOpen: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2.5 py-1.5 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        <span className="min-w-0">
+          <span className="block truncate font-medium">{file.filename}</span>
+          <span className="text-[11px] text-muted-foreground">
+            {file.status}
+          </span>
+        </span>
+        <DiffStat
+          additions={file.additions}
+          deletions={file.deletions}
+          className="text-xs"
+        />
+      </button>
+    </li>
+  );
+}
+
+// Markdown files can switch the same diff dialog between the patch and base/head rendered previews.
 const MARKDOWN_FILENAME = /\.(md|markdown)$/i;
 
 // `file.filename` for a rename comes from git numstat's mangled "old => new" / "dir/{old =>
@@ -741,7 +792,9 @@ const MARKDOWN_FILENAME = /\.(md|markdown)$/i;
 // is out of scope here).
 const RENAMED_FILENAME = / => /;
 
-function FileDiff({
+type DiffDialogMode = "diff" | "base" | "head";
+
+function DiffFileDialog({
   owner,
   repo,
   number,
@@ -749,6 +802,7 @@ function FileDiff({
   comments,
   notes,
   currentHeadSha,
+  onClose,
 }: {
   owner: string;
   repo: string;
@@ -757,39 +811,150 @@ function FileDiff({
   comments: PullLineComment[];
   notes: ReviewNote[];
   currentHeadSha: string;
+  onClose: () => void;
 }) {
-  const lines = parsePatch(file.patch);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [mode, setMode] = useState<DiffDialogMode>("diff");
   const isMarkdown =
     MARKDOWN_FILENAME.test(file.filename) &&
     !RENAMED_FILENAME.test(file.filename);
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
+    setMode("diff");
+  }, [file.filename]);
+
   return (
-    <div className="overflow-hidden rounded-md border">
-      <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 text-sm">
-        <span className="font-medium">{file.filename}</span>
-        <span className="text-xs text-muted-foreground">
-          +{file.additions} -{file.deletions}
-        </span>
-        {isMarkdown ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            className="ml-auto h-7 px-2 text-xs"
-            onClick={() => setPreviewOpen(true)}
-          >
-            Preview
-          </Button>
-        ) : null}
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Diff for ${file.filename}`}
+        className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-md border bg-background shadow-lg"
+      >
+        <header className="flex items-center justify-between gap-3 border-b px-3 py-2">
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold">{file.filename}</h3>
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+              <span>{file.status}</span>
+              <DiffStat additions={file.additions} deletions={file.deletions} />
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {isMarkdown ? (
+              <div className="flex overflow-hidden rounded-md border text-xs">
+                <ModeButton
+                  active={mode === "diff"}
+                  onClick={() => setMode("diff")}
+                >
+                  Diff
+                </ModeButton>
+                <ModeButton
+                  active={mode === "base"}
+                  onClick={() => setMode("base")}
+                >
+                  Base
+                </ModeButton>
+                <ModeButton
+                  active={mode === "head"}
+                  onClick={() => setMode("head")}
+                >
+                  Head
+                </ModeButton>
+              </div>
+            ) : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label="Close diff"
+              className="h-7 w-7 shrink-0 p-0"
+              onClick={onClose}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+        </header>
+        <div className="min-h-0 flex-1 overflow-auto">
+          <FileDiffContent
+            owner={owner}
+            repo={repo}
+            number={number}
+            file={file}
+            comments={comments}
+            notes={notes}
+            currentHeadSha={currentHeadSha}
+            mode={mode}
+          />
+        </div>
       </div>
-      {previewOpen ? (
-        <MarkdownPreviewModal
-          owner={owner}
-          repo={repo}
-          number={number}
-          path={file.filename}
-          onClose={() => setPreviewOpen(false)}
-        />
-      ) : null}
+    </div>
+  );
+}
+
+function ModeButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      className={`px-2.5 py-1 transition-colors ${
+        active
+          ? "bg-accent text-accent-foreground"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      }`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function FileDiffContent({
+  owner,
+  repo,
+  number,
+  file,
+  comments,
+  notes,
+  currentHeadSha,
+  mode,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  file: PullFile;
+  comments: PullLineComment[];
+  notes: ReviewNote[];
+  currentHeadSha: string;
+  mode: DiffDialogMode;
+}) {
+  const lines = parsePatch(file.patch);
+  if (mode === "base" || mode === "head") {
+    return (
+      <MarkdownPreviewPane
+        owner={owner}
+        repo={repo}
+        number={number}
+        path={file.filename}
+        side={mode}
+      />
+    );
+  }
+
+  return (
+    <div>
       {notes.map((n) => (
         <ReviewNoteCard
           key={n.id}
@@ -825,6 +990,48 @@ function FileDiff({
           </Markdown>
         </div>
       ))}
+    </div>
+  );
+}
+
+function MarkdownPreviewPane({
+  owner,
+  repo,
+  number,
+  path,
+  side,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  path: string;
+  side: "base" | "head";
+}) {
+  const file = usePullFileAtRef(owner, repo, number, path, side, true);
+  return (
+    <div className="p-3">
+      {file.isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading preview…
+        </div>
+      ) : file.isError ? (
+        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load preview.
+          {file.error instanceof Error ? ` ${file.error.message}` : null}
+        </div>
+      ) : file.data?.status === "missing" ? (
+        <p className="text-sm text-muted-foreground">
+          N/A — file does not exist on {side}.
+        </p>
+      ) : file.data?.status === "binary" ? (
+        <p className="text-sm text-muted-foreground">
+          N/A — binary file, cannot render as Markdown.
+        </p>
+      ) : (
+        <Markdown owner={owner} repo={repo} className="markdown-preview">
+          {file.data?.content ?? ""}
+        </Markdown>
+      )}
     </div>
   );
 }

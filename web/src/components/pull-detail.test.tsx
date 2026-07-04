@@ -53,6 +53,7 @@ const pull: PullRequest = {
   head: { ref: "issue-153", sha: "aaa" },
   base: { ref: "main", sha: "bbb" },
   merged: false,
+  draft: false,
   mergeable: true,
   mergeable_state: "clean",
   review_state: "PASSED",
@@ -119,7 +120,6 @@ function mockFetch(
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
   return mockRpcFetch({
-    ...extraHandlers,
     "pulls/get": () => pull,
     "pulls/files": () => files,
     "reviews/list": () => reviews,
@@ -128,6 +128,7 @@ function mockFetch(
     "comments/list": () => comments,
     "pulls/merge": () => ({ merged: true, sha: "c" }),
     "pulls/update": (p) => ({ ...pull, state: p.state }),
+    ...extraHandlers,
   });
 }
 
@@ -154,23 +155,25 @@ function renderDetail(
     routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe("PullDetail", () => {
-  it("renders title, head→base, diff, reviews, line comments, comments, and the linked issue", async () => {
+  it("renders title, head→base, compact file summary, reviews, comments, and the linked issue", async () => {
     renderDetail();
 
     expect(await screen.findByText("ui2: PR detail")).toBeTruthy();
     expect(screen.getByText("issue-153")).toBeTruthy();
     expect(screen.getByText("main")).toBeTruthy();
 
-    // Diff line from the patch (added line).
-    expect(await screen.findByText("+const x = 1;")).toBeTruthy();
+    // The PR detail shows a compact file summary instead of expanding patch lines inline.
+    expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
+    expect(screen.queryByText("+const x = 1;")).toBeNull();
     // Review body and verdict.
     expect(screen.getByText("LGTM")).toBeTruthy();
     // Review topic tag (#209).
@@ -185,7 +188,52 @@ describe("PullDetail", () => {
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
-  it("shows a Preview button only for Markdown files, opening a base/head modal (#435)", async () => {
+  it("opens a full-size diff dialog from a file summary row and closes back to the summary", async () => {
+    renderDetail();
+
+    expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
+    expect(screen.queryByText("+const x = 1;")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
+
+    expect(
+      await screen.findByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
+    ).toBeTruthy();
+    expect(await screen.findByText("+const x = 1;")).toBeTruthy();
+    expect(screen.getAllByText("nice constant").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /Close diff/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByText("web/src/a.ts")).toBeTruthy();
+    expect(screen.queryByText("+const x = 1;")).toBeNull();
+  });
+
+  it("keeps an open diff dialog in sync when the files query refetches", async () => {
+    let currentFiles: PullFile[] = files;
+    const { queryClient } = renderDetail({
+      "pulls/files": () => currentFiles,
+    });
+
+    expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
+    expect(await screen.findByText("+const x = 1;")).toBeTruthy();
+
+    currentFiles = [
+      {
+        ...files[0],
+        additions: 2,
+        patch: "@@ -1 +1 @@\n-const x = 0;\n+const x = 2;",
+      },
+    ];
+    await act(async () => {
+      await queryClient.refetchQueries({ type: "active" });
+    });
+
+    expect(await screen.findByText("+const x = 2;")).toBeTruthy();
+    expect(screen.queryByText("+const x = 1;")).toBeNull();
+  });
+
+  it("integrates Markdown base/head preview into the diff dialog (#435)", async () => {
     const mdFiles: PullFile[] = [
       ...files,
       {
@@ -236,24 +284,27 @@ describe("PullDetail", () => {
     );
 
     await screen.findByText("web/src/a.ts");
-    // Only the Markdown file gets a Preview button.
-    const previewButtons = screen.getAllByRole("button", {
-      name: /^Preview$/i,
-    });
-    expect(previewButtons.length).toBe(1);
+    expect(screen.queryByRole("button", { name: /^Preview$/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /README\.md/i }));
 
-    fireEvent.click(previewButtons[0]);
+    await screen.findByRole("dialog", { name: /Diff for README.md/i });
     expect(
-      await screen.findByRole("dialog", {
+      screen.queryByRole("dialog", {
         name: /Markdown preview for README.md/i,
       }),
-    ).toBeTruthy();
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Diff" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Base" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Head" })).toBeTruthy();
 
-    // Defaults to head.
+    fireEvent.click(screen.getByRole("button", { name: "Head" }));
     expect(await screen.findByRole("heading", { name: "new" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Base" }));
     expect(await screen.findByRole("heading", { name: "old" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Diff" }));
+    expect(await screen.findByText("+# new")).toBeTruthy();
 
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -307,7 +358,15 @@ describe("PullDetail", () => {
     );
 
     await screen.findByText("docs/old.md => top.md");
+    fireEvent.click(
+      screen.getByRole("button", { name: /docs\/old\.md => top\.md/i }),
+    );
+    await screen.findByRole("dialog", {
+      name: /Diff for docs\/old\.md => top\.md/i,
+    });
     expect(screen.queryByRole("button", { name: /^Preview$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Base" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Head" })).toBeNull();
   });
 
   it("closes the PR via PATCH state=closed without merging", async () => {
@@ -909,7 +968,11 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
-    // Both note bodies render in the file diff.
+    await screen.findByText("web/src/a.ts");
+    expect(screen.queryByText("Bumps the x constant to 1.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
+
+    // Both note bodies render in the opened file diff.
     expect(await screen.findByText("Bumps the x constant to 1.")).toBeTruthy();
     expect(screen.getByText("Earlier-commit note.")).toBeTruthy();
     // The diff range (base→commit) is shown as short SHAs.
