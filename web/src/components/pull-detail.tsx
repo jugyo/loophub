@@ -114,16 +114,6 @@ export function PullDetail({
             longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
         <PullHeader owner={owner} repo={repo} pull={pull} />
 
-        <ReviewList
-          owner={owner}
-          repo={repo}
-          reviews={reviewsQuery.data}
-          lineComments={lineCommentsQuery.data}
-          currentHeadSha={pull.head.sha}
-          isLoading={reviewsQuery.isLoading}
-          isError={reviewsQuery.isError}
-        />
-
         <FilesChanged
           owner={owner}
           repo={repo}
@@ -134,6 +124,16 @@ export function PullDetail({
           currentHeadSha={pull.head.sha}
           isLoading={filesQuery.isLoading}
           isError={filesQuery.isError}
+        />
+
+        <ReviewList
+          owner={owner}
+          repo={repo}
+          reviews={reviewsQuery.data}
+          lineComments={lineCommentsQuery.data}
+          currentHeadSha={pull.head.sha}
+          isLoading={reviewsQuery.isLoading}
+          isError={reviewsQuery.isError}
         />
 
         <CommentList

@@ -188,6 +188,20 @@ describe("PullDetail", () => {
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
+  it("renders files changed before reviews in the main PR flow", async () => {
+    renderDetail();
+
+    const filesHeading = await screen.findByRole("heading", {
+      name: /Files changed \(1\)/,
+    });
+    const reviewsHeading = screen.getByRole("heading", { name: "Reviews" });
+
+    expect(
+      filesHeading.compareDocumentPosition(reviewsHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("keeps bottom spacing after the comments section when comments are empty", async () => {
     renderDetail({ "comments/list": () => [] });
 
