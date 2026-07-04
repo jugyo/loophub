@@ -1,9 +1,13 @@
 import { createRoute } from "@tanstack/react-router";
 import { StatsPage } from "@/components/stats-page";
+import { usePageTitle } from "@/lib/page-title";
 import { rootRoute } from "./root";
 
 export const statsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/stats",
-  component: StatsPage,
+  component: function StatsRoutePage() {
+    usePageTitle(["Stats"]);
+    return <StatsPage />;
+  },
 });

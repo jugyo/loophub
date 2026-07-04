@@ -40,6 +40,7 @@ import { WorkDuration } from "@/components/work-duration";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
 import { type DiffLineKind, parsePatch } from "@/lib/diff";
 import { relativeTime } from "@/lib/time";
+import { usePageTitle } from "@/lib/page-title";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useIssueComments } from "@/queries/issues";
 import {
@@ -184,6 +185,7 @@ function PullHeader({
   const ready = useReadyForReview(owner, repo, pull.number);
   const setState = useSetPullState(owner, repo, pull.number);
   const { showError } = useToast();
+  usePageTitle([`${owner}/${repo}`, `PR #${pull.number}`, pull.title]);
   const [method, setMethod] = useState<MergeMethod>("squash");
   const [isMergeLoading, startMergeLoading] = useFixedLoading();
   // The fixed loading window is a UX minimum, not a substitute for the real request: once it

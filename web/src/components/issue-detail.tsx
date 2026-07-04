@@ -38,6 +38,7 @@ import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useImageUpload } from "@/lib/use-image-upload";
 import { cn } from "@/lib/utils";
+import { usePageTitle } from "@/lib/page-title";
 import {
   useIssue,
   useIssueComments,
@@ -170,6 +171,7 @@ function IssueHeader({
   const setState = useSetIssueState(owner, repo, issue.number);
   const state = stateBadge(issue, "issues");
   const buildState = issueBuildButtonState(issue);
+  usePageTitle([`${owner}/${repo}`, `Issue #${issue.number}`, issue.title]);
 
   return (
     <div className="flex flex-col gap-3">

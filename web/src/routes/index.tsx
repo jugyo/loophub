@@ -2,6 +2,7 @@ import { createRoute } from "@tanstack/react-router";
 import { IssueRow } from "@/components/dashboard-rows";
 import { DashboardSection } from "@/components/dashboard-section";
 import { useRecentIssuesLimit, useRecentOpenIssues } from "@/queries/dashboard";
+import { usePageTitle } from "@/lib/page-title";
 import { rootRoute } from "./root";
 
 // Home (/) is a cross-project overview of the most recently created open
@@ -9,6 +10,7 @@ import { rootRoute } from "./root";
 // belongs to, and carries its linked PR as a sub-row. The per-repo dashboard
 // lives at /r/:owner/:repo.
 function HomePage() {
+  usePageTitle(["Dashboard"]);
   const issues = useRecentOpenIssues();
   const recentIssuesLimit = useRecentIssuesLimit().data;
 

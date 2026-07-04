@@ -1,11 +1,13 @@
 import { createRoute } from "@tanstack/react-router";
 import { IssueDetail } from "@/components/issue-detail";
 import { IssueList } from "@/components/issue-list";
+import { usePageTitle } from "@/lib/page-title";
 import { rootRoute } from "./root";
 
 function IssuesPage() {
   const { owner, repo } = issuesRoute.useParams();
   const { labels, state } = issuesRoute.useSearch();
+  usePageTitle([`${owner}/${repo}`, "Issues"]);
   return (
     <IssueList
       owner={owner}
@@ -18,6 +20,7 @@ function IssuesPage() {
 
 function IssueDetailPage() {
   const { owner, repo, number } = issueDetailRoute.useParams();
+  usePageTitle([`${owner}/${repo}`, `Issue #${number}`]);
   return <IssueDetail owner={owner} repo={repo} number={Number(number)} />;
 }
 

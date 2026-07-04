@@ -1,9 +1,11 @@
 import { createRoute } from "@tanstack/react-router";
 import { RepoList } from "@/components/repo-list";
 import { useArchivedRepos } from "@/queries/repos";
+import { usePageTitle } from "@/lib/page-title";
 import { rootRoute } from "./root";
 
 function ArchivedPage() {
+  usePageTitle(["Archived repositories"]);
   const query = useArchivedRepos();
   return (
     <div className="mx-auto max-w-content">
