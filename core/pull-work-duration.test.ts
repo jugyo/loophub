@@ -18,6 +18,17 @@ function git(args: string[]) {
   spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
 }
 
+// merge() now rejects a diff-free head (#691), so a head branch created purely to exercise
+// duration tracking needs at least one real commit ahead of main. Checks out `branch`, commits,
+// then returns to main so the shared repoPath's checkout is left as the other tests expect it.
+function commitOnBranch(branch: string) {
+  git(["checkout", "-q", branch]);
+  writeFileSync(join(repoPath, `${branch.replace(/\//g, "-")}.txt`), "x\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "impl"]);
+  git(["checkout", "-q", "main"]);
+}
+
 // Push a session's created_at back by `seconds`, so a duration test isn't at the mercy of how fast
 // the test runs (store.now() has second resolution — a same-second start/end would round to 0).
 function backdateSession(sessionId: string, seconds: number) {
@@ -167,6 +178,7 @@ test("merged PR: total/implementation/review split into distinguishable, frozen 
   // the worktree's job in the real flow). merge() needs a real branch to resolve/merge, so create
   // one here.
   git(["branch", headRef, "main"]);
+  commitOnBranch(headRef);
   const { number } = await svc.dev.openPr(
     "me/proj",
     { issue: issue.number, head: headRef, base: "main" },
@@ -198,6 +210,7 @@ test("merged without ever passing through ready_for_review: implementation cover
   svc.sessions.register({ id: "sess-f", agent: "lh-dev", session: "sess-f" });
   const headRef = "loophub/issue-no-ready";
   git(["branch", headRef, "main"]);
+  commitOnBranch(headRef);
   // A plain (non-draft) pulls.create never fires pull_request.ready_for_review — it starts ready.
   const pr = (await svc.pulls.create(
     "me/proj",
@@ -338,6 +351,7 @@ test("multiple ready_for_review events (re-review after changes requested): impl
   const issue = svc.issues.create("me/proj", { title: "re-review flow" });
   const headRef = `loophub/issue-${issue.number}`;
   git(["branch", headRef, "main"]);
+  commitOnBranch(headRef);
   const { number } = await svc.dev.openPr(
     "me/proj",
     { issue: issue.number, head: headRef, base: "main" },

@@ -511,6 +511,58 @@ describe("PullDetail", () => {
     expect(rpcCall("pulls/merge")).toBeFalsy();
   });
 
+  it("disables the Merge button when the PR has no commits even if PASSED (#691)", async () => {
+    const noCommits: PullRequest = {
+      ...pull,
+      mergeable: false,
+      mergeable_state: "no_commits",
+      review_state: "PASSED",
+    };
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "pulls/get": () => noCommits,
+        "pulls/files": () => files,
+        "reviews/list": () => [],
+        "reviews/listComments": () => [],
+        "reviewNotes/list": () => [],
+        "comments/list": () => [],
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => <PullDetail owner="me" repo="proj" number={30} />,
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    const button = await screen.findByRole("button", { name: /^Merge$/i });
+    // No commits overrides PASSED: the button is disabled and exposes the reason.
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("title")).toMatch(/no commits/i);
+
+    // Clicking the disabled button must not fire a merge request.
+    fireEvent.click(button);
+    expect(rpcCall("pulls/merge")).toBeFalsy();
+  });
+
   it("groups reviews by commit, collapsed by default with a verdict on each summary (#268)", async () => {
     // Two reviews against different commits: one on the PR's current head ("aaa")
     // and one on a superseded commit.

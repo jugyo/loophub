@@ -197,17 +197,26 @@ function PullHeader({
   // A conflicting PR (mergeable_state === "conflict", i.e. mergeable === false) can never merge
   // server-side, so the Merge control must stay disabled even when PASSED.
   const hasConflict = pull.mergeable_state === "conflict";
+  // A PR with no commits has nothing to merge server-side either (#691), so the Merge control
+  // must stay disabled the same way a conflict does.
+  const hasNoCommits = pull.mergeable_state === "no_commits";
   // A draft PR is WIP (#413), so the Merge control stays disabled even if it somehow carries a
   // PASSED review — flip it to ready via "Mark ready for review" first.
   const canMerge =
-    canAct && !pull.draft && pull.review_state === "PASSED" && !hasConflict;
+    canAct &&
+    !pull.draft &&
+    pull.review_state === "PASSED" &&
+    !hasConflict &&
+    !hasNoCommits;
   // "Ready for review" covers two transitions (#413): a draft PR (opened WIP by `lh dev`) becoming
   // ready, or an already-ready PR resubmitting after change requests. Draft takes precedence.
   const canReady =
     canAct && (pull.draft || pull.review_state === "CHANGES_REQUESTED");
   const mergeBlockedReason = hasConflict
     ? "Cannot merge: this PR has conflicts with the base branch."
-    : undefined;
+    : hasNoCommits
+      ? "Cannot merge: this PR has no commits."
+      : undefined;
 
   return (
     <div className="flex flex-col gap-3">
