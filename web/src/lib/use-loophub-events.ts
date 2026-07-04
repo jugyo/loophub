@@ -16,6 +16,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { eventsUrl } from "@/api/client";
 import type { LoopEvent } from "@/api/types";
+import {
+  recordInvalidLoopHubDebugEvent,
+  recordLoopHubDebugEvent,
+  recordTerminalDebugEvent,
+} from "@/lib/event-debug";
 import { queryKeys, queryKeysForEvent } from "@/lib/event-keys";
 import { getLastEventId, rememberEventId } from "@/lib/session";
 import { terminalKeys } from "@/queries/terminal";
@@ -51,9 +56,14 @@ export function applyLoopHubEventData(
     // lh-web wraps each event in a JSON-RPC notification; tolerate a bare event too.
     event = "params" in data ? data.params : (data as LoopEvent);
   } catch {
+    recordInvalidLoopHubDebugEvent(dataText, "invalid JSON");
     return;
   }
-  if (!event || typeof event.id !== "number") return;
+  if (!event || typeof event.id !== "number") {
+    recordInvalidLoopHubDebugEvent(dataText, "missing numeric event id");
+    return;
+  }
+  recordLoopHubDebugEvent(event, dataText);
   rememberEventId(event.id);
   for (const queryKey of queryKeysForEvent(event)) {
     void queryClient.invalidateQueries({ queryKey });
@@ -61,11 +71,12 @@ export function applyLoopHubEventData(
 }
 
 function invalidateTerminalQueries(queryClient: QueryClient): void {
+  recordTerminalDebugEvent();
   void queryClient.invalidateQueries({ queryKey: terminalKeys.sessions });
 }
 
 function invalidateReconnectQueries(queryClient: QueryClient): void {
-  const queryKeyPrefixes: readonly unknown[][] = [
+  const queryKeyPrefixes: readonly (readonly unknown[])[] = [
     queryKeys.repos(),
     ["repo"],
     ["issues"],

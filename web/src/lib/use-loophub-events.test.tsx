@@ -2,6 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  getEventDebugEntriesForTest,
+  resetEventDebugEntriesForTest,
+} from "@/lib/event-debug";
 import { useLoopHubEvents } from "./use-loophub-events";
 
 type Listener = (event: MessageEvent) => void;
@@ -145,6 +149,7 @@ afterEach(() => {
   MockEventSource.instances = [];
   MockBroadcastChannel.channels.clear();
   localStorage.clear();
+  resetEventDebugEntriesForTest();
 });
 
 describe("useLoopHubEvents", () => {
@@ -202,6 +207,35 @@ describe("useLoopHubEvents", () => {
       }
     });
     expect(localStorage.getItem("lh_last_event_id")).toBe("7");
+    expect(getEventDebugEntriesForTest()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "loophub",
+          event: expect.objectContaining({ id: 7, type: "issue.updated" }),
+        }),
+      ]),
+    );
+
+    MockEventSource.instances[0].emit("loophub", "{ nope");
+    expect(getEventDebugEntriesForTest()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "invalid-loophub",
+          reason: "invalid JSON",
+        }),
+      ]),
+    );
+
+    MockEventSource.instances[0].emit("terminal");
+    await waitFor(() =>
+      expect(getEventDebugEntriesForTest()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            source: "terminal",
+          }),
+        ]),
+      ),
+    );
 
     first.unmount();
 

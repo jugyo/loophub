@@ -2,7 +2,15 @@
 // plus links to Home and Archived. Repo screens land in later UI issues.
 
 import { Link } from "@tanstack/react-router";
-import { Bot, Database, Home, Loader2, Settings, Star } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Database,
+  Home,
+  Loader2,
+  Settings,
+  Star,
+} from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -164,8 +172,19 @@ export function AppSidebar() {
       </div>
 
       {/* Fixed footer (#371): the theme toggle lives here, below the scrolling repo list. */}
-      <div className="shrink-0 border-t p-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-t p-2">
         <ThemeToggle />
+        <Link
+          to="/debug/events"
+          title="Event debug"
+          aria-label="Event debug"
+          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          activeProps={{
+            className: "bg-accent text-accent-foreground",
+          }}
+        >
+          <Activity className="size-4" />
+        </Link>
       </div>
 
       {/* Drag handle along the sidebar's right edge (#378). Invisible — the visible separator is
