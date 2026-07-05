@@ -307,4 +307,67 @@ describe("RelatedSessions", () => {
     // The reason is shown without the old redundant "not resumable: not resumable" doubling.
     expect(li.textContent).not.toContain("Not resumable: not resumable");
   });
+
+  it("shows PR total usage and per-session cost with unknown costs as n/a", () => {
+    const { container } = render(
+      <RelatedSessions
+        owner="jugyo"
+        repo="loophub"
+        sessions={[
+          session({
+            id: "known",
+            kind: "dev",
+            usage: [
+              {
+                session_id: "known",
+                model: "claude-sonnet-4-6-20260601",
+                input_tokens: 100,
+                cache_creation_input_tokens: 20,
+                cache_read_input_tokens: 30,
+                output_tokens: 10,
+                cost_usd: 0.00061,
+                updated_at: "2026-06-01T00:00:00Z",
+              },
+            ],
+          }),
+          session({
+            id: "unknown",
+            kind: "review",
+            usage: [
+              {
+                session_id: "unknown",
+                model: "unknown-model",
+                input_tokens: 5,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                output_tokens: 5,
+                cost_usd: null,
+                updated_at: "2026-06-01T00:00:00Z",
+              },
+            ],
+          }),
+        ]}
+        usage={{
+          sessions_with_usage: 2,
+          input_tokens: 105,
+          cache_creation_input_tokens: 20,
+          cache_read_input_tokens: 30,
+          output_tokens: 15,
+          total_tokens: 170,
+          cost_usd: null,
+          has_unknown_cost: true,
+        }}
+      />,
+    );
+
+    expect(container.textContent).toContain("Total tokens170");
+    expect(container.textContent).toContain("Total costn/a");
+    expect(container.textContent).toContain(
+      "Some session costs are unavailable and counted as n/a.",
+    );
+    expect(container.textContent).toContain("claude-sonnet-4-6-20260601");
+    expect(container.textContent).toContain("unknown-model");
+    expect(container.textContent).toContain("$0.0006");
+    expect(container.textContent).toContain("Costn/a");
+  });
 });

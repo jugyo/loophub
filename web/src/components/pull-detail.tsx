@@ -39,8 +39,8 @@ import { Button } from "@/components/ui/button";
 import { WorkDuration } from "@/components/work-duration";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
 import { type DiffLineKind, parsePatch } from "@/lib/diff";
-import { relativeTime } from "@/lib/time";
 import { usePageTitle } from "@/lib/page-title";
+import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useIssueComments } from "@/queries/issues";
 import {
@@ -155,6 +155,7 @@ export function PullDetail({
           repo={repo}
           pullNumber={number}
           sessions={pull.related_sessions}
+          usage={pull.related_sessions_usage}
           cwd={pull.worktree_path ?? undefined}
         />
         <HandoffTimeline

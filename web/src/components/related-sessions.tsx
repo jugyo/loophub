@@ -15,10 +15,18 @@
 
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { RelatedSession } from "@/api/types";
+import type { RelatedSession, RelatedSessionsUsage } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeTone } from "@/lib/badges";
+import {
+  formatCost,
+  formatTokenCount,
+  modelLabel,
+  totalTokens,
+  usageCost,
+  usageTotal,
+} from "@/lib/session-usage";
 import { relativeTime } from "@/lib/time";
 
 // Session kind → badge tone (reuses the existing badge palette; no new CSS). Unknown kinds fall
@@ -67,12 +75,14 @@ export function RelatedSessions({
   repo,
   pullNumber,
   sessions,
+  usage,
   cwd,
 }: {
   owner: string;
   repo: string;
   pullNumber?: number;
   sessions: RelatedSession[] | undefined;
+  usage?: RelatedSessionsUsage;
   // The directory `claude --resume` should run in. When set, the copyable command is prepended with
   // `cd <cwd> && …` so resume runs from the right place. Pass the PR's dev worktree path on PR
   // detail (shared by all the PR's sessions); omit on issue detail, where an issue-create session
@@ -85,6 +95,7 @@ export function RelatedSessions({
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold">Sessions</h2>
+      {usage ? <UsageSummary usage={usage} /> : null}
       <ul className="flex flex-col gap-2">
         {sessions.map((s) => {
           const claudeResumable = canClaudeResume(s);
@@ -150,6 +161,7 @@ export function RelatedSessions({
                   </span>
                 </button>
               </div>
+              <SessionUsageSummary session={s} />
               {isOpen ? (
                 <div
                   id={`session-detail-${s.id}`}
@@ -190,5 +202,48 @@ export function RelatedSessions({
         })}
       </ul>
     </section>
+  );
+}
+
+function UsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
+  const hasUsage = usage.sessions_with_usage > 0;
+  return (
+    <dl className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md border bg-muted/30 p-3 text-sm">
+      <dt className="text-muted-foreground">Total tokens</dt>
+      <dd className="text-right font-medium tabular-nums">
+        {hasUsage ? formatTokenCount(usage.total_tokens) : "n/a"}
+      </dd>
+      <dt className="text-muted-foreground">Total cost</dt>
+      <dd className="text-right font-medium tabular-nums">
+        {formatCost(usage.cost_usd)}
+      </dd>
+      {usage.has_unknown_cost ? (
+        <div className="col-span-2 text-xs text-muted-foreground">
+          Some session costs are unavailable and counted as n/a.
+        </div>
+      ) : null}
+    </dl>
+  );
+}
+
+function SessionUsageSummary({ session }: { session: RelatedSession }) {
+  const hasUsage = (session.usage?.length ?? 0) > 0;
+  if (!hasUsage) return null;
+  const total = usageTotal(session.usage);
+  return (
+    <dl className="grid grid-cols-2 gap-x-3 gap-y-1 border-t px-3 py-2 text-xs">
+      <dt className="text-muted-foreground">Model</dt>
+      <dd className="min-w-0 break-words text-right">
+        {modelLabel(session.usage)}
+      </dd>
+      <dt className="text-muted-foreground">Tokens</dt>
+      <dd className="text-right tabular-nums">
+        {formatTokenCount(totalTokens(total))}
+      </dd>
+      <dt className="text-muted-foreground">Cost</dt>
+      <dd className="text-right tabular-nums">
+        {formatCost(usageCost(session.usage))}
+      </dd>
+    </dl>
   );
 }

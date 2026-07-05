@@ -335,3 +335,90 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
 
   rmSync(projectsDir, { recursive: true, force: true });
 });
+
+test("pull detail includes related session usage and an n/a aggregate for unknown costs", async () => {
+  const issue = svc.issues.create("me/proj", { title: "usage on PR detail" });
+  const devSessionId = "77777777-0000-0000-0000-000000000001";
+  const reviewSessionId = "77777777-0000-0000-0000-000000000002";
+  svc.sessions.register({
+    id: devSessionId,
+    agent: "lh-dev",
+    session: devSessionId,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  svc.sessions.register({
+    id: reviewSessionId,
+    agent: "reviewer",
+    session: reviewSessionId,
+    runtime: "claude-code",
+    kind: "review",
+  });
+  const opened = await svc.dev.openPr(
+    "me/proj",
+    {
+      issue: issue.number,
+      head: `loophub/issue-${issue.number}`,
+      base: "main",
+    },
+    devSessionId,
+  );
+  svc.sessions.link("me/proj", {
+    sessionId: reviewSessionId,
+    pr: opened.number,
+  });
+
+  const projectsDir = mkdtempSync(join(tmpdir(), "lh-pr-usage-projects-"));
+  const projectDir = join(projectsDir, "repo-worktree");
+  mkdirSync(projectDir);
+  writeFileSync(
+    join(projectDir, `${devSessionId}.jsonl`),
+    assistantLine("known_msg", "claude-sonnet-4-6-20260601", {
+      input_tokens: 100,
+      cache_creation_input_tokens: 20,
+      cache_read_input_tokens: 30,
+      output_tokens: 10,
+    }),
+  );
+  writeFileSync(
+    join(projectDir, `${reviewSessionId}.jsonl`),
+    assistantLine("unknown_msg", "unknown-model", {
+      input_tokens: 5,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 5,
+    }),
+  );
+
+  svc.sessions.usageSync({ sessionId: devSessionId, projectsDir });
+  svc.sessions.usageSync({ sessionId: reviewSessionId, projectsDir });
+
+  const pull = (await svc.pulls.get("me/proj", opened.number)) as any;
+  const dev = pull.related_sessions.find((s: any) => s.id === devSessionId);
+  const review = pull.related_sessions.find(
+    (s: any) => s.id === reviewSessionId,
+  );
+  expect(dev.usage[0]).toMatchObject({
+    model: "claude-sonnet-4-6-20260601",
+    input_tokens: 100,
+    output_tokens: 10,
+  });
+  expect(review.usage[0]).toMatchObject({
+    model: "unknown-model",
+    input_tokens: 5,
+    output_tokens: 5,
+    cost_usd: null,
+  });
+  expect(pull.related_sessions_usage).toMatchObject({
+    sessions_with_usage: 2,
+    input_tokens: 105,
+    cache_creation_input_tokens: 20,
+    cache_read_input_tokens: 30,
+    output_tokens: 15,
+    total_tokens: 170,
+    cost_usd: null,
+    has_unknown_cost: true,
+  });
+
+  rmSync(projectsDir, { recursive: true, force: true });
+});

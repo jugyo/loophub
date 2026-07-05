@@ -209,6 +209,41 @@ export function relatedSessionsJSON(
   );
 }
 
+export function relatedSessionsUsageJSON(sessions: any[]) {
+  const out = {
+    sessions_with_usage: 0,
+    input_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    total_tokens: 0,
+    cost_usd: null as number | null,
+    has_unknown_cost: false,
+  };
+  let knownCost = 0;
+  for (const session of sessions) {
+    const usage = Array.isArray(session.usage) ? session.usage : [];
+    if (usage.length === 0) continue;
+    out.sessions_with_usage += 1;
+    for (const row of usage) {
+      out.input_tokens += row.input_tokens;
+      out.cache_creation_input_tokens += row.cache_creation_input_tokens;
+      out.cache_read_input_tokens += row.cache_read_input_tokens;
+      out.output_tokens += row.output_tokens;
+      out.total_tokens +=
+        row.input_tokens +
+        row.cache_creation_input_tokens +
+        row.cache_read_input_tokens +
+        row.output_tokens;
+      if (row.cost_usd == null) out.has_unknown_cost = true;
+      else knownCost += row.cost_usd;
+    }
+  }
+  out.cost_usd =
+    out.sessions_with_usage === 0 || out.has_unknown_cost ? null : knownCost;
+  return out;
+}
+
 export function commentJSON(m: any) {
   return {
     id: m.id,
@@ -709,8 +744,12 @@ export async function pullJSON(
     ...(opts.withRelatedSessions
       ? (() => {
           const primarySessionId = S.primaryDevSessionForPull(row.id);
+          const relatedSessions = relatedSessionsJSON(row, {
+            primarySessionId,
+          });
           return {
-            related_sessions: relatedSessionsJSON(row, { primarySessionId }),
+            related_sessions: relatedSessions,
+            related_sessions_usage: relatedSessionsUsageJSON(relatedSessions),
             work_duration: pullWorkDuration(repo, row, p, primarySessionId),
           };
         })()

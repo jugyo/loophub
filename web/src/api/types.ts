@@ -430,6 +430,8 @@ export interface PullRequest {
   worktree_path?: string | null;
   /** Sessions related to this PR (#298), newest first. Detail response only. */
   related_sessions?: RelatedSession[];
+  /** Aggregate token usage for all PR-related sessions with usage data. Detail response only. */
+  related_sessions_usage?: RelatedSessionsUsage;
   /**
    * Effective write action for this PR (#406): 'merge' offers the internal Merge control, 'github_pr'
    * offers "Create PR on GitHub" (or "View PR on GitHub" once exported). Resolves the repo's setting
@@ -474,7 +476,21 @@ export interface RelatedSession {
   updated_at: string;
   /** When this session was linked to the PR/issue. */
   linked_at: string | null;
+  /** Model-level token usage and API-equivalent cost, when synced for this session. */
+  usage?: SessionUsage[];
   resume: { resumable: boolean; reason?: string };
+}
+
+export interface RelatedSessionsUsage {
+  sessions_with_usage: number;
+  input_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  /** Null when any included usage row has an unknown model price. */
+  cost_usd: number | null;
+  has_unknown_cost: boolean;
 }
 
 /** Minimal repo identity attached to aggregated dashboard items. */
