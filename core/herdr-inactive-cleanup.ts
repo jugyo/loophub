@@ -42,19 +42,26 @@ const SECOND_FIELDS = [
 export function parseHerdrInactiveCleanupCandidates(
   stdout: string,
   nowMs: number = Date.now(),
-  thresholdOrOptions: number | HerdrInactiveCleanupOptions =
-    HERDR_INACTIVE_CLEANUP_THRESHOLD_MS,
+  thresholdOrOptions:
+    | number
+    | HerdrInactiveCleanupOptions = HERDR_INACTIVE_CLEANUP_THRESHOLD_MS,
 ): HerdrInactiveCleanupCandidate[] {
   const options: HerdrInactiveCleanupOptions =
     typeof thresholdOrOptions === "number"
       ? { thresholdMs: thresholdOrOptions }
       : thresholdOrOptions;
-  const thresholdMs = options.thresholdMs ?? HERDR_INACTIVE_CLEANUP_THRESHOLD_MS;
+  const thresholdMs =
+    options.thresholdMs ?? HERDR_INACTIVE_CLEANUP_THRESHOLD_MS;
 
   const agents = rawHerdrAgents(stdout);
   const candidates: HerdrInactiveCleanupCandidate[] = [];
   for (const agent of agents) {
-    const candidate = herdrInactiveCleanupCandidate(agent, nowMs, thresholdMs, options);
+    const candidate = herdrInactiveCleanupCandidate(
+      agent,
+      nowMs,
+      thresholdMs,
+      options,
+    );
     if (candidate) candidates.push(candidate);
   }
   return candidates;
@@ -66,7 +73,8 @@ export function herdrInactiveCleanupCandidate(
   thresholdMs: number = HERDR_INACTIVE_CLEANUP_THRESHOLD_MS,
   options: HerdrInactiveCleanupOptions = {},
 ): HerdrInactiveCleanupCandidate | null {
-  const status = typeof agent.agent_status === "string" ? agent.agent_status : "";
+  const status =
+    typeof agent.agent_status === "string" ? agent.agent_status : "";
   if (status === "active" || status === "working") return null;
 
   const isPullClosed =
@@ -131,7 +139,10 @@ function herdrAgentPull(
   agent: RawHerdrAgent,
   options: HerdrInactiveCleanupOptions,
 ): number | null {
-  if (typeof options.worktreeRoot !== "string" || typeof options.fullName !== "string") {
+  if (
+    typeof options.worktreeRoot !== "string" ||
+    typeof options.fullName !== "string"
+  ) {
     return null;
   }
   const cwd =
@@ -142,7 +153,11 @@ function herdrAgentPull(
         : null;
   if (cwd === null) return null;
   try {
-    return pullNumberFromWorktreePath(options.worktreeRoot, options.fullName, cwd);
+    return pullNumberFromWorktreePath(
+      options.worktreeRoot,
+      options.fullName,
+      cwd,
+    );
   } catch {
     return null;
   }

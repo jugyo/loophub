@@ -34,11 +34,11 @@ import {
   linkedPullStatus,
   stateBadge,
 } from "@/lib/badges";
+import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useImageUpload } from "@/lib/use-image-upload";
 import { cn } from "@/lib/utils";
-import { usePageTitle } from "@/lib/page-title";
 import {
   useIssue,
   useIssueComments,

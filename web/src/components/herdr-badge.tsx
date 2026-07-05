@@ -107,9 +107,7 @@ export function HerdrBadge({
           {
             onError: (e) =>
               showError(
-                e instanceof Error
-                  ? e.message
-                  : "Failed to focus terminal.",
+                e instanceof Error ? e.message : "Failed to focus terminal.",
               ),
           },
         )

@@ -1,0 +1,922 @@
+import {
+  runHerdr,
+  runHerdrCapture,
+  runHerdrLaunch,
+  runHerdrLaunchCapture,
+} from "./herdr-runner.ts";
+import type {
+  CodingAgent,
+  HerdrAgent,
+  HerdrCmdRunner,
+  HerdrPullWorkspace,
+  TerminalLaunchRepo,
+} from "./shared.ts";
+import {
+  acquireHerdrWorktreeTabCore,
+  autoModeOnBuild,
+  buildHerdrLaunchPlan,
+  codingAgent,
+  commandForHerdrLaunch,
+  displayArg,
+  ENV_ISSUE_CREATE_HERDR_LAUNCH,
+  HERDR_ID,
+  herdrAgentFocusArgv,
+  herdrCommandLine,
+  herdrPaneCloseArgv,
+  herdrPullWorkspacesFromAgentList,
+  herdrSessionName,
+  herdrTabCloseArgv,
+  herdrTabCreateArgv,
+  herdrTabFocusArgv,
+  herdrWorkspaceCloseArgv,
+  herdrWorkspaceCreateArgv,
+  herdrWorkspaceFocusArgv,
+  isServiceError,
+  issueOr404,
+  legacyWorktreePath,
+  NO_PANE_ID_PREFIX,
+  paneRunsClaudeResume,
+  parseHerdrAgentList,
+  parseHerdrAgentPaneId,
+  parseHerdrAgentPlacements,
+  parseHerdrAgentRead,
+  parseHerdrInactiveCleanupCandidates,
+  parseHerdrPaneLayout,
+  parseHerdrPaneProcessInfo,
+  parseHerdrRootPaneId,
+  parseHerdrSessionList,
+  parseHerdrTabId,
+  parseHerdrWorkspaceId,
+  randomUUID,
+  repoOr404,
+  reposWithRunningSession,
+  resolveWorktreeIdentity,
+  S,
+  ServiceError,
+  spawn,
+  worktreePath,
+  worktreeRoot,
+} from "./shared.ts";
+
+export interface TerminalLaunchInput {
+  repo: string;
+  label?: string;
+  workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";
+  issueNumber?: number;
+  prNumber?: number;
+  session?: string;
+  cwd?: string;
+  // One-shot agent/model overrides for the issue-dev (Build) launch (#637). Set only by the
+  // issue-detail Build dropdown; unset for the plain Build button. They apply to this single
+  // `lh dev` launch (mapped to --claude-code|--codex / --model) and never touch the persisted
+  // `codingAgent` / per-agent `defaultModel` settings.
+  agent?: CodingAgent;
+  model?: string;
+}
+
+// Spawns `lh dev ... --herdr` for the Build button (#584). This is not routed through runHerdr:
+// that helper's error messages are hardcoded around the `herdr` binary ("herdr command not found
+// on PATH", "Herdr exited with status N", …), which would misreport a failure of `lh` itself (a
+// missing PATH entry, an issue lookup failure, a worktree provisioning error, …) as a Herdr
+// problem. `lh dev --herdr` owns worktree/PR provisioning and the actual herdr pane launch
+// end-to-end (cli/index.ts), so this call only needs to await it and translate a non-zero exit.
+//
+// Generous relative to the individual 10s herdr-call timeouts elsewhere in this file: this one
+// bounds the *whole* `lh dev --herdr` run — issue lookup, PR open, worktree provisioning (a
+// first-time `git worktree add` on a large repo), and the herdr launch itself — none of which
+// carried an overall deadline before this call replaced the in-process equivalent (#584 review).
+const LH_DEV_HERDR_TIMEOUT_MS = 90_000;
+// Bounded tail of the child's stderr, logged server-side only (never in the thrown ServiceError)
+// so an operator can see `lh dev`'s actual failure reason (`fail(message)` etc.) without every
+// failure collapsing to a bare "exited with status N" — but never reaching the HTTP client, same
+// "deliberately generic" policy runHerdr documents above: raw process output can embed the
+// server's absolute paths, a Node stack trace, or other detail that must not reach a non-loopback
+// client (#584 review).
+const LH_DEV_STDERR_TAIL_BYTES = 4 * 1024;
+function runLhDevLaunch(args: string[], cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("lh", args, {
+      cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const chunks: Buffer[] = [];
+    let captured = 0;
+    child.stderr?.on("data", (chunk: Buffer) => {
+      if (captured >= LH_DEV_STDERR_TAIL_BYTES) return; // keep draining, stop keeping
+      // Slice a single oversized chunk down to the remaining room — pushing it whole would let
+      // captured exceed LH_DEV_STDERR_TAIL_BYTES despite the cap check above only running between
+      // chunks, not within one (#584 review).
+      const room = LH_DEV_STDERR_TAIL_BYTES - captured;
+      const piece = chunk.length > room ? chunk.subarray(0, room) : chunk;
+      chunks.push(piece);
+      captured += piece.length;
+    });
+    child.stderr?.on("error", () => {
+      // Losing the stderr stream only means the failure detail below is missing; `close` still
+      // decides success/failure, so just stop this from becoming an unhandled stream error.
+    });
+    // Server-side only — never interpolated into a thrown ServiceError (see the const's comment).
+    const logStderrTail = () => {
+      const tail = Buffer.concat(chunks).toString("utf8").trim();
+      if (tail) console.error(`lh dev --herdr failed:\n${tail}`);
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      settle(() => {
+        logStderrTail();
+        reject(
+          new ServiceError(
+            500,
+            `lh dev timed out after ${LH_DEV_HERDR_TIMEOUT_MS}ms`,
+          ),
+        );
+      });
+    }, LH_DEV_HERDR_TIMEOUT_MS);
+    child.on("error", (err) => {
+      const code = (err as NodeJS.ErrnoException).code;
+      settle(() =>
+        reject(
+          code === "ENOENT"
+            ? new ServiceError(422, "lh command not found on PATH")
+            : new ServiceError(
+                500,
+                `failed to launch lh dev (${code ?? "spawn error"})`,
+              ),
+        ),
+      );
+    });
+    child.on("close", (status, signal) => {
+      settle(() => {
+        if (signal == null && status === 0) return resolve();
+        logStderrTail();
+        if (signal != null)
+          reject(
+            new ServiceError(500, `lh dev was terminated by signal ${signal}`),
+          );
+        else
+          reject(new ServiceError(500, `lh dev exited with status ${status}`));
+      });
+    });
+  });
+}
+
+// The Build button's whole job (#584): spawn `lh dev <owner>/<repo>/<n> --herdr [--auto]` and let
+// it provision the worktree/PR and launch the herdr pane itself — this server no longer does any
+// of that (see the removed issue-dev case in resolveHerdrWorktreeTarget). session_name/attach are
+// still computable up front since herdrSessionName only depends on the repo, not the worktree
+// `lh dev` resolves internally.
+//
+// `override` carries the issue-detail Build dropdown's one-shot agent/model choice (#637). When set
+// it forces the runtime via --claude-code|--codex and the session model via --model, without
+// touching the persisted `codingAgent` / `defaultModel` settings. The plain Build button passes no
+// override, keeping the historical default-resolution behavior.
+async function launchIssueDevHerdr(
+  r: S.Repo,
+  issueNumber: number,
+  override?: { agent?: CodingAgent; model?: string },
+) {
+  const repo = { full_name: r.full_name, local_path: r.local_path };
+  // The agent that actually runs: the dropdown override when present, else whichever agent `lh dev`
+  // would resolve to (the `codingAgent` setting). Auto-mode is read from *this* agent so a codex
+  // override reads codex's auto setting, not claude-code's (#593).
+  const agent = override?.agent ?? codingAgent();
+  const model = override?.model?.trim();
+  const args = [
+    "dev",
+    `${r.full_name}/${issueNumber}`,
+    "--herdr",
+    // Force the runtime only when the dropdown overrode it; without an override we pass no runtime
+    // flag so `lh dev` resolves the default itself (unchanged plain-Build behavior).
+    ...(override?.agent === "codex"
+      ? ["--codex"]
+      : override?.agent === "claude-code"
+        ? ["--claude-code"]
+        : []),
+    // One-shot session model (#637); omitted when the dropdown left it blank, so `lh dev` falls
+    // back to the configured per-agent default.
+    ...(model ? ["--model", model] : []),
+    ...(autoModeOnBuild(agent) ? ["--auto"] : []),
+  ];
+  try {
+    await runLhDevLaunch(args, r.local_path);
+  } catch (e) {
+    if (isServiceError(e))
+      throw new ServiceError(e.status, e.message, {
+        command: `lh ${args.map(displayArg).join(" ")}`,
+      });
+    throw e;
+  }
+  const sessionName = herdrSessionName(repo);
+  return {
+    backend: "herdr" as const,
+    session_name: sessionName,
+    attach: `herdr session attach ${sessionName}`,
+  };
+}
+
+// A sidebar agent row: the parsed herdr agent plus what the DB knows about the PR its
+// worktree cwd resolves to (#611). `pull_closed` is true when that PR is merged or closed —
+// the sidebar grays those rows out so no-longer-needed agents stand out at a glance. An
+// agent with no resolvable PR (repo-root cwd, legacy worktree convention, or a pr-<n> dir
+// with no matching PR row) stays false: unknown must render as a normal row, not a stale one.
+export interface HerdrSessionAgent extends HerdrAgent {
+  // The PR number the agent's worktree cwd resolves to, or null for a no-PR agent (a
+  // "New issue" agent at the repo root, #633). The sidebar needs this to gray a no-PR
+  // agent out on idle, since pull_closed is always false for it.
+  pull: number | null;
+  pull_closed: boolean;
+}
+
+export interface HerdrRepoSessions {
+  repo: string;
+  session_name: string;
+  agents: HerdrSessionAgent[];
+  // Running herdr workspaces pinned to a PR's worktree, keyed back to their PR number (#579) —
+  // drives the issue-list "Herdr running" badge and its click-to-focus action.
+  pull_workspaces: HerdrPullWorkspace[];
+}
+
+// Coalesces concurrent terminal.sessions calls onto one herdr sweep. Every client polls this
+// RPC (15s interval per tab), so without sharing, N tabs would each spawn their own
+// `herdr session list` + per-repo `agent list` process trees against the same state.
+let herdrSessionsInflight: Promise<{ repos: HerdrRepoSessions[] }> | null =
+  null;
+
+// Resolves the on-disk worktree path herdr's `worktree open` should target for a launch (#551),
+// so herdr's own workspace/worktree metadata is pinned to the PR's real worktree instead of a
+// plain tab the launched command cd's into. Best-effort: returns null when the workflow has no
+// worktree (issue-create) or resolving it fails for any reason — the caller falls back to the
+// plain repo-root tab-create, same as any other herdr failure.
+//
+// issue-dev (Build) has no case here: worktree/PR provisioning is entirely `lh dev --herdr`'s
+// responsibility (#584) — see launchIssueDevHerdr, which spawns it directly instead of routing
+// through this tab/workspace-pinning path at all.
+async function resolveHerdrWorktreeTarget(
+  r: S.Repo,
+  input: TerminalLaunchInput,
+): Promise<string | null> {
+  try {
+    if (input.workflow === "resume") {
+      // The client already resolved the PR's worktree path (issue/pull detail's worktree_path,
+      // #345); an issue-create session (no worktree) omits cwd and resumes from the repo root
+      // instead, which is exactly what the repo-root tab-create fallback gives it.
+      return input.cwd ?? null;
+    }
+    if (input.workflow === "github-pr-export" && input.prNumber) {
+      const prRow = issueOr404(r, input.prNumber, "pull");
+      const headRef = S.getPull(prRow.id).head_ref;
+      const identity = resolveWorktreeIdentity(headRef, input.prNumber);
+      return identity.scheme === "legacy-issue"
+        ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
+        : worktreePath(worktreeRoot(), r.full_name, identity.number);
+    }
+  } catch {
+    // Repo not writable, issue/PR not found, worktree provisioning error, … — none of these
+    // should fail the launch itself, only mean herdr won't get worktree metadata for it.
+  }
+  return null;
+}
+
+// Wraps runHerdr as the injected runner the core worktree-launch orchestration expects: a rejected
+// runHerdr (non-zero exit, ENOENT, signal, timeout) becomes `ok:false` so the orchestration falls
+// back instead of throwing — the same best-effort tolerance the direct herdr calls in launch() have.
+// 10s per call, matching those. runHerdr resolves "" when captureStdout is unset, so the id-parsing
+// steps get the empty string they treat as unparseable.
+function herdrRunner(cwd: string): HerdrCmdRunner {
+  return async (argv, opts) => {
+    try {
+      const stdout = await runHerdr(argv[0], argv.slice(1), cwd, {
+        captureStdout: opts?.captureStdout,
+        timeoutMs: 10_000,
+      });
+      return { stdout, ok: true };
+    } catch {
+      return { stdout: "", ok: false };
+    }
+  };
+}
+
+// Opens (or reuses) the herdr workspace pinned to `worktreeCheckoutPath` and returns a tab safe to
+// pass to `agent start --tab`. The parsing-heavy dance lives in core/terminal-launch.ts's
+// acquireHerdrWorktreeTab so `lh dev --herdr` reuses it (#674); this thin wrapper just binds it to
+// runHerdr at the repo's local path. `cwd` is where the herdr client is spawned — irrelevant to the
+// `--session`-scoped calls themselves, but kept as r.local_path for consistency with the rest of
+// terminal.launch.
+function acquireHerdrWorktreeTab(
+  repo: TerminalLaunchRepo,
+  cwd: string,
+  worktreeCheckoutPath: string,
+) {
+  return acquireHerdrWorktreeTabCore(
+    repo,
+    worktreeCheckoutPath,
+    herdrRunner(cwd),
+  );
+}
+
+// ===== terminal launch =====
+export const terminal = {
+  config(): { backend: "herdr" } {
+    return { backend: "herdr" };
+  },
+
+  async launch(input: TerminalLaunchInput) {
+    if (!input.repo) throw new ServiceError(422, "repo is required");
+    const r = repoOr404(input.repo);
+
+    // issue-dev (Build): worktree/PR provisioning and the herdr launch are entirely `lh dev
+    // --herdr`'s job now (#584) — this RPC's only role is to spawn it. Short-circuits before any
+    // of the tab/workspace-pinning machinery below, which the other workflows still use.
+    if (input.workflow === "issue-dev") {
+      if (!input.issueNumber)
+        throw new ServiceError(422, "issueNumber is required");
+      return launchIssueDevHerdr(r, input.issueNumber, {
+        agent: input.agent,
+        model: input.model,
+      });
+    }
+
+    const issueCreateLaunchId =
+      input.workflow === "issue-create" ? randomUUID() : null;
+    const command = commandForHerdrLaunch({
+      repo: r.full_name,
+      workflow: input.workflow,
+      prNumber: input.prNumber,
+      session: input.session,
+      cwd: input.cwd,
+      env:
+        issueCreateLaunchId != null
+          ? { [ENV_ISSUE_CREATE_HERDR_LAUNCH]: issueCreateLaunchId }
+          : undefined,
+    });
+    if (!command.trim()) throw new ServiceError(422, "command is required");
+
+    const repo = { full_name: r.full_name, local_path: r.local_path };
+
+    // Resume dedup (#578): if a pane in this repo's herdr session is already running
+    // `claude --resume <session>` for this exact session, switch focus to it instead of piling
+    // on another tab. Scoped to the "resume" workflow only — every other workflow (Build,
+    // New Issue, github-pr-export) starts a fresh agent run each time by design. Best-effort:
+    // any probe failure (herdr not running, nothing to find) falls through to the normal launch
+    // below, same failure tolerance as sessions()/agentRead() above.
+    if (input.workflow === "resume" && input.session) {
+      const sessionName = herdrSessionName(repo);
+      const existingPaneId = await findResumePaneId(sessionName, input.session);
+      if (existingPaneId) {
+        const focus = herdrAgentFocusArgv(repo, existingPaneId);
+        try {
+          await runHerdr(focus[0], focus.slice(1), r.local_path, {
+            timeoutMs: 10_000,
+          });
+          return { backend: "herdr", focused: true, session_name: sessionName };
+        } catch {
+          // The pane found above can vanish (closed) or herdr can wedge between the probe and
+          // this call — unlike the probe itself, this is the actual action, so a failure here
+          // must not surface as a hard error for a Resume click that would otherwise have
+          // succeeded via a fresh tab; fall through to the normal launch below (#578 review).
+        }
+      }
+    }
+
+    // New Issue gets its own fresh workspace instead of a tab in the repo's existing default
+    // workspace (#544) — it has no worktree to pin to. The worktree-backed workflows
+    // (Build/issue-dev, resume, github-pr-export) instead open a workspace pinned to the PR's
+    // real worktree (#551, below). `herdr workspace create` seeds the workspace with one tab
+    // and one empty pane in the same output shape `herdr tab create` uses, so the tab/root-pane
+    // parsing below is unchanged either way.
+    const isNewWorkspace = input.workflow === "issue-create";
+    // Create a fresh tab (or workspace) first so the agent starts in it instead of splitting the
+    // focused pane (#489). Best-effort: on any failure fall back to the tab-less launch (Herdr's
+    // default split placement) rather than breaking the launch; a hard herdr failure still
+    // surfaces from the agent start below. The timeout keeps a wedged herdr call from hanging
+    // the RPC forever — runHerdr kills it and the catch falls back.
+    let tabId: string | null = null;
+    // The seed tab's root pane (from `worktree open`, its follow-up `tab create --workspace`, or
+    // the plain repo-root `tab create`) is an empty default pane; `agent start --tab` below
+    // splits alongside it instead of replacing it, leaving it behind (#503) unless the launch
+    // closes it once the agent's own pane exists. Captured from the same output as tabId, so
+    // it's only ever set together with a usable tabId.
+    let rootPaneId: string | null = null;
+    // Set whenever this launch is responsible for a whole *fresh* single-tab workspace — the
+    // issue-create `workspace create` path, or a first-time worktree `worktree open` (#551,
+    // acquireHerdrWorktreeTab's createdWorkspace) — used to close the whole workspace (not just
+    // the tab) if the agent fails to start, since herdr refuses to close a workspace's last
+    // remaining tab. Parsed independently from tabId out of the same response, so it is NOT
+    // guaranteed to succeed/fail together with it — the cleanup below must handle either one
+    // being null while the other is set. Not set when a worktree's workspace was merely *reused*
+    // (acquireHerdrWorktreeTab's already-open branch) — that workspace predates this launch and
+    // isn't this launch's to close.
+    let workspaceId: string | null = null;
+    let createdWorkspace = false;
+    try {
+      if (isNewWorkspace) {
+        const create = herdrWorkspaceCreateArgv(repo);
+        const out = await runHerdr(create[0], create.slice(1), r.local_path, {
+          captureStdout: true,
+          timeoutMs: 10_000,
+        });
+        tabId = parseHerdrTabId(out);
+        rootPaneId = parseHerdrRootPaneId(out);
+        workspaceId = parseHerdrWorkspaceId(out);
+        createdWorkspace = true;
+      } else {
+        // Worktree-backed workflows (issue-dev/resume/github-pr-export, #551) open the herdr
+        // workspace directly at the PR's real worktree path, so herdr's own workspace/worktree
+        // metadata reflects it — instead of a plain repo-root tab the launched command cd's
+        // into. Falls back to that plain tab below when there is no resolvable worktree path
+        // or the worktree-open attempt itself fails for any reason.
+        const worktreeTarget = await resolveHerdrWorktreeTarget(r, input);
+        const acquired = worktreeTarget
+          ? await acquireHerdrWorktreeTab(repo, r.local_path, worktreeTarget)
+          : null;
+        if (acquired) {
+          tabId = acquired.tabId;
+          rootPaneId = acquired.rootPaneId;
+          workspaceId = acquired.workspaceId;
+          createdWorkspace = acquired.createdWorkspace;
+        } else {
+          const tabCreate = herdrTabCreateArgv(repo);
+          const out = await runHerdr(
+            tabCreate[0],
+            tabCreate.slice(1),
+            r.local_path,
+            {
+              captureStdout: true,
+              timeoutMs: 10_000,
+            },
+          );
+          tabId = parseHerdrTabId(out);
+          rootPaneId = parseHerdrRootPaneId(out);
+        }
+      }
+      // Zero exit with no parseable id means a tab (or, when createdWorkspace, a whole workspace)
+      // was likely created but can't be closed on failure (no id) — every such launch leaks one
+      // empty tab or workspace. Log server-side (never to the client) so a herdr output-format
+      // drift is noticed instead of silently leaking them.
+      if (!tabId)
+        console.error(
+          `herdr ${createdWorkspace ? "workspace" : "tab"} create succeeded but its output had no usable tab id; falling back to split placement`,
+        );
+      else if (createdWorkspace && !workspaceId)
+        console.error(
+          "herdr workspace create succeeded but its output had no usable workspace id; failure cleanup may be unable to remove it",
+        );
+    } catch {
+      tabId = null;
+      rootPaneId = null;
+      workspaceId = null;
+    }
+    // A workspace whose seeded tab id failed to parse can never be targeted — buildHerdrLaunchPlan
+    // below only routes the agent into it via --tab — so it would otherwise sit orphaned forever
+    // regardless of whether the agent-start call that follows succeeds or fails. Close it now
+    // rather than relying on the failure-only cleanup further down. Applies whenever this launch
+    // owns a freshly created workspace (workspaceId is only ever set in that case — see the
+    // createdWorkspace comment above), not just the issue-create path.
+    if (workspaceId && !tabId) {
+      const cleanup = herdrWorkspaceCloseArgv(repo, workspaceId);
+      runHerdrLaunch(cleanup[0], cleanup.slice(1), r.local_path).catch(
+        () => {},
+      );
+      workspaceId = null;
+      rootPaneId = null;
+    }
+
+    const plan = buildHerdrLaunchPlan({
+      repo,
+      command,
+      label: input.label,
+      tabId,
+    });
+    // Non-blocking: lh-web is a single process also serving SSE/RPC for every client, so a
+    // synchronous spawnSync here would stall the whole server for as long as the Herdr launch
+    // takes (or hangs).
+    try {
+      const agentOut =
+        issueCreateLaunchId != null
+          ? await runHerdrLaunchCapture(
+              plan.argv[0],
+              plan.argv.slice(1),
+              plan.cwd,
+            )
+          : await runHerdrLaunch(
+              plan.argv[0],
+              plan.argv.slice(1),
+              plan.cwd,
+            ).then(() => "");
+      const agentPaneId = parseHerdrAgentPaneId(agentOut);
+      if (issueCreateLaunchId != null && agentPaneId) {
+        S.upsertIssueHerdrPane({
+          launchId: issueCreateLaunchId,
+          repoId: r.id,
+          paneId: agentPaneId,
+          sessionName: plan.sessionName,
+        });
+      }
+    } catch (e) {
+      // Don't leave the just-created empty tab (or workspace) behind; fire-and-forget cleanup.
+      // herdr refuses to close a workspace's last remaining tab, so whenever a workspace was
+      // created, close the whole workspace instead — even if tabId itself failed to parse (the
+      // two ids come from independent parses of the same response, see the workspaceId comment
+      // above, so either one can be set without the other).
+      if (workspaceId) {
+        const cleanup = herdrWorkspaceCloseArgv(repo, workspaceId);
+        runHerdrLaunch(cleanup[0], cleanup.slice(1), r.local_path).catch(
+          () => {},
+        );
+      } else if (tabId) {
+        const cleanup = herdrTabCloseArgv(repo, tabId);
+        runHerdrLaunch(cleanup[0], cleanup.slice(1), r.local_path).catch(
+          () => {},
+        );
+      }
+      // Attach the actual `herdr ...` invocation (not plan.command, which is only the inner
+      // workflow command herdr would run) so the client can re-run the real command locally and
+      // see the full output itself — this rides on top of the deliberately generic message (see
+      // the comment on runHerdrLaunch above), so the client still never sees raw stdout/stderr/paths.
+      //
+      // Only suggest creating the session for the non-zero-exit case: that's the one empirically
+      // confirmed to happen when the named session doesn't exist yet (`agent start` only works
+      // against an already-running session, unlike the auto-creating bare `herdr --session` form).
+      // ENOENT (herdr missing from PATH) or a signal-killed process have unrelated causes, and
+      // suggesting `herdr --session <name>` there would just fail again the same way, misdirecting
+      // the user away from the real fix.
+      //
+      // The suggested command is built from a tab-less plan: the failed argv's `--tab <id>`
+      // points at the tab that was just cleaned up above, so re-running it verbatim would fail
+      // with an unknown-tab error instead of reproducing the original failure.
+      if (isServiceError(e))
+        throw new ServiceError(e.status, e.message, {
+          command: herdrCommandLine(
+            buildHerdrLaunchPlan({ repo, command, label: input.label }),
+          ),
+          session: /^Herdr exited with status \d+$/.test(e.message)
+            ? plan.sessionName
+            : undefined,
+        });
+      throw e;
+    }
+    // Switch herdr's focus so the new agent's pane comes to the front now that it's running — the
+    // create/open/tab-create calls above all used `--no-focus` so creation itself wouldn't yank
+    // focus mid-launch, which otherwise leaves the just-launched terminal invisible until the user
+    // switches to it by hand. Two selection modes:
+    //   - A *fresh* workspace (createdWorkspace: New Issue's `workspace create`, or a worktree-backed
+    //     launch's first-time `worktree open` #551) is selected by workspace id (#556) — its sole
+    //     tab is the agent's.
+    //   - Every other launch that got its own tab — a *reused* worktree workspace's freshly added
+    //     tab, or the plain repo-root tab fallback — is selected by tab id (#625). `tab focus`
+    //     switches workspace + tab in one call, so the new tab/pane is brought forward without
+    //     re-selecting a workspace that already existed and isn't this launch's to refocus wholesale.
+    // Only the tab-less fallback (tabId null: agent split into the already-focused pane) needs no
+    // switch. Fire-and-forget, same as the pane close below: the agent is already running, so a
+    // failure to switch focus must not fail the launch.
+    if (createdWorkspace && workspaceId) {
+      const focus = herdrWorkspaceFocusArgv(repo, workspaceId);
+      runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
+    } else if (tabId) {
+      const focus = herdrTabFocusArgv(repo, tabId);
+      runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
+    }
+    // The agent's own pane now exists alongside the tab's leftover empty root pane (see the
+    // rootPaneId comment above) — close it. Fire-and-forget: the agent is already running, so a
+    // failure here must not fail the launch, only leave one harmless empty pane behind.
+    if (tabId && rootPaneId) {
+      const paneClose = herdrPaneCloseArgv(repo, rootPaneId);
+      runHerdrLaunch(paneClose[0], paneClose.slice(1), r.local_path).catch(
+        () => {},
+      );
+    }
+    return {
+      backend: "herdr" as const,
+      session_name: plan.sessionName,
+      command: plan.command,
+      cwd: plan.cwd,
+      attach: `herdr session attach ${plan.sessionName}`,
+    };
+  },
+
+  // Running herdr sessions grouped by repo, for the sidebar status section (#495).
+  // Read-only and deliberately failure-tolerant: herdr missing from PATH, no running
+  // sessions, or unparseable output all degrade to an empty list — the sidebar hides
+  // the section instead of surfacing an error. Not gated on the configured launch
+  // backend: sessions started outside LoopHub are just as real to a supervisor.
+  sessions(): Promise<{ repos: HerdrRepoSessions[] }> {
+    if (herdrSessionsInflight) return herdrSessionsInflight;
+    herdrSessionsInflight = sweepHerdrSessions().finally(() => {
+      herdrSessionsInflight = null;
+    });
+    return herdrSessionsInflight;
+  },
+
+  async cleanupInactiveAgents(): Promise<{
+    closed: number;
+    failed: number;
+  }> {
+    return cleanupInactiveHerdrAgents();
+  },
+
+  // Recent terminal output for one herdr agent, for the sidebar hover preview (#500).
+  // `target` is whatever the client sends as a herdr `agent read` target — usually a
+  // pane_id, since herdr only resolves an agent *name* target when it's unique within
+  // the session, and two label-less launches can share a display name (the sidebar
+  // client prefers pane_id for exactly this reason; see agentReadTarget() in
+  // web/src/components/sidebar-herdr-sessions.tsx). Same failure-tolerance as
+  // sessions() above: herdr not running, the session gone, or the agent no longer
+  // present all degrade to a null output instead of an error, so the client just
+  // doesn't show a preview.
+  async agentRead(input: {
+    repo: string;
+    target: string;
+    lines?: number;
+  }): Promise<{
+    output: string | null;
+    cols: number | null;
+    rows: number | null;
+  }> {
+    if (!input.target) throw new ServiceError(422, "target is required");
+    const lines = clampAgentReadLines(input.lines);
+    let sessionName: string;
+    try {
+      sessionName = herdrSessionName(repoOr404(input.repo));
+    } catch {
+      return { output: null, cols: null, rows: null };
+    }
+    // Read and layout run independently: a target that's the display-name fallback (no real
+    // pane_id — see NO_PANE_ID_PREFIX) resolves fine for `agent read` but not for `pane
+    // layout --pane`, which only accepts a real pane id. That legitimately fails here (#531);
+    // the read must still succeed, and the client falls back to its fixed preview size.
+    const [output, layout] = await Promise.all([
+      runHerdrCapture([
+        "--session",
+        sessionName,
+        "agent",
+        "read",
+        input.target,
+        "--source",
+        "recent",
+        "--lines",
+        String(lines),
+      ])
+        .then(parseHerdrAgentRead)
+        .catch(() => null),
+      runHerdrCapture([
+        "--session",
+        sessionName,
+        "pane",
+        "layout",
+        "--pane",
+        input.target,
+      ])
+        .then(parseHerdrPaneLayout)
+        .catch(() => null),
+    ]);
+    return { output, cols: layout?.cols ?? null, rows: layout?.rows ?? null };
+  },
+
+  // Closes the pane an agent is running in — the sidebar kill button (#521). herdr has no
+  // direct "kill agent" command; `pane close` against the agent's pane_id is the confirmed
+  // equivalent. Unlike sessions() above, failures here must reach the client (silently
+  // swallowing a kill the user asked for would be worse than a visible error), so this
+  // rejects with runHerdr's ServiceError as-is instead of degrading to a default.
+  async killAgent(input: { repo: string; paneId: string }): Promise<{
+    ok: true;
+  }> {
+    if (!input.repo) throw new ServiceError(422, "repo is required");
+    if (!input.paneId) throw new ServiceError(422, "paneId is required");
+    if (input.paneId.startsWith(NO_PANE_ID_PREFIX))
+      throw new ServiceError(
+        422,
+        "This agent has no pane id available to close",
+      );
+    // Unlike tab/pane ids parsed from herdr's own stdout (parseHerdrTabId /
+    // parseHerdrRootPaneId), paneId here comes straight from an external JSON-RPC caller —
+    // reject anything that doesn't look like a real herdr id before it reaches the argv.
+    if (!HERDR_ID.test(input.paneId))
+      throw new ServiceError(422, "paneId is not a valid herdr pane id");
+    const r = repoOr404(input.repo);
+    const argv = herdrPaneCloseArgv(r, input.paneId);
+    await runHerdr(argv[0], argv.slice(1), r.local_path, {
+      timeoutMs: 10_000,
+    });
+    return { ok: true };
+  },
+
+  // Switches herdr's focus to a running agent's pane — the issue-list "Herdr running" badge's
+  // click action (#579). Reuses `herdr agent focus` (#578's herdrAgentFocusArgv), the same
+  // one-call workspace+tab+pane focus the Resume dedup above already relies on. Like killAgent
+  // above, a user-initiated action must fail visibly rather than degrade silently.
+  async focusAgent(input: { repo: string; paneId: string }): Promise<{
+    ok: true;
+  }> {
+    if (!input.repo) throw new ServiceError(422, "repo is required");
+    if (!input.paneId) throw new ServiceError(422, "paneId is required");
+    // paneId comes straight from an external JSON-RPC caller (unlike the ids this module parses
+    // from herdr's own stdout elsewhere) — reject anything that doesn't look like a real herdr
+    // id before it reaches an argv, same guard as killAgent's paneId.
+    if (!HERDR_ID.test(input.paneId))
+      throw new ServiceError(422, "paneId is not a valid herdr pane id");
+    const r = repoOr404(input.repo);
+    const argv = herdrAgentFocusArgv(r, input.paneId);
+    await runHerdr(argv[0], argv.slice(1), r.local_path, {
+      timeoutMs: 10_000,
+    });
+    return { ok: true };
+  },
+};
+
+const HERDR_AGENT_READ_DEFAULT_LINES = 40;
+const HERDR_AGENT_READ_MAX_LINES = 300;
+
+function clampAgentReadLines(lines: number | undefined): number {
+  if (!Number.isFinite(lines) || !lines) return HERDR_AGENT_READ_DEFAULT_LINES;
+  return Math.min(
+    Math.max(Math.trunc(lines as number), 1),
+    HERDR_AGENT_READ_MAX_LINES,
+  );
+}
+
+// Finds the pane already running `claude --resume <session>` in a herdr session, if any (#578's
+// Resume dedup — see the call site in terminal.launch above). Checks every agent's foreground
+// process, not just its display name, since two Resume launches for different sessions can share
+// one (see paneRunsClaudeResume's doc). Best-effort like sweepHerdrSessions below: any herdr
+// failure (not running, no session yet, unparseable output) degrades to "nothing found" rather
+// than blocking the launch this backs.
+async function findResumePaneId(
+  sessionName: string,
+  session: string,
+): Promise<string | null> {
+  let agentsOut: string;
+  try {
+    agentsOut = await runHerdrCapture([
+      "--session",
+      sessionName,
+      "agent",
+      "list",
+    ]);
+  } catch {
+    return null;
+  }
+  // HERDR_ID excludes the NO_PANE_ID_PREFIX control byte too, so this one check covers both "no
+  // real pane to probe" and "pane_id isn't shaped like a real herdr id" — the latter matters
+  // because, from here on, agent.id is spliced into further herdr argv (`pane process-info
+  // --pane`, and the caller's `agent focus`), the same trust boundary killAgent's HERDR_ID check
+  // guards for a client-supplied paneId (#578 review).
+  const agents = parseHerdrAgentList(agentsOut).filter((a) =>
+    HERDR_ID.test(a.id),
+  );
+  const hits = await Promise.all(
+    agents.map(async (agent) => {
+      try {
+        const infoOut = await runHerdrCapture([
+          "--session",
+          sessionName,
+          "pane",
+          "process-info",
+          "--pane",
+          agent.id,
+        ]);
+        const processes = parseHerdrPaneProcessInfo(infoOut);
+        return processes && paneRunsClaudeResume(processes, session)
+          ? agent.id
+          : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return hits.find((id): id is string => id !== null) ?? null;
+}
+
+async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
+  let listOut: string;
+  try {
+    listOut = await runHerdrCapture(["session", "list", "--json"]);
+  } catch {
+    return { repos: [] };
+  }
+  const running = parseHerdrSessionList(listOut);
+  if (running.length === 0) return { repos: [] };
+
+  const matched = reposWithRunningSession(S.listRepos("active"), running);
+  const groups = await Promise.all(
+    matched.map(async ({ repo, sessionName }) => {
+      let agentsOut: string;
+      try {
+        // No `--json` here: `herdr agent list` rejects the flag and already prints JSON.
+        agentsOut = await runHerdrCapture([
+          "--session",
+          sessionName,
+          "agent",
+          "list",
+        ]);
+      } catch {
+        return null;
+      }
+      // Placements (not parseHerdrAgentList) so each agent carries the PR its cwd
+      // resolves to — same id/name/status semantics, same `agent list` output (#611).
+      const placements = parseHerdrAgentPlacements(
+        agentsOut,
+        worktreeRoot(),
+        repo.full_name,
+      );
+      // A running session with zero agents has nothing to show — drop the group so
+      // the sidebar section only appears when there is actual agent activity.
+      if (placements.length === 0) return null;
+      // One DB lookup per distinct PR number — several agents often share a worktree.
+      const closedByPull = new Map<number, boolean>();
+      const agents = placements.map(({ id, name, status, pull }) => {
+        let closed = false;
+        if (pull !== null) {
+          let known = closedByPull.get(pull);
+          if (known === undefined) {
+            const row = S.getIssue(repo.id, pull);
+            // A pr-<n> dir with no matching PR row (or a same-numbered issue) resolves
+            // to nothing — render normally rather than guessing staleness.
+            known = !!row && row.kind === "pull" && row.state !== "open";
+            closedByPull.set(pull, known);
+          }
+          closed = known;
+        }
+        return { id, name, status, pull, pull_closed: closed };
+      });
+      const pullWorkspaces = herdrPullWorkspacesFromAgentList(
+        agentsOut,
+        worktreeRoot(),
+        repo.full_name,
+      );
+      return {
+        repo: repo.full_name,
+        session_name: sessionName,
+        agents,
+        pull_workspaces: pullWorkspaces,
+      };
+    }),
+  );
+  return { repos: groups.filter((g) => g !== null) };
+}
+
+async function cleanupInactiveHerdrAgents(): Promise<{
+  closed: number;
+  failed: number;
+}> {
+  let listOut: string;
+  try {
+    listOut = await runHerdrCapture(["session", "list", "--json"]);
+  } catch {
+    return { closed: 0, failed: 0 };
+  }
+  const running = parseHerdrSessionList(listOut);
+  if (running.length === 0) return { closed: 0, failed: 0 };
+
+  let closed = 0;
+  let failed = 0;
+  const matched = reposWithRunningSession(S.listRepos("active"), running);
+  for (const { repo, sessionName } of matched) {
+    let agentsOut: string;
+    try {
+      agentsOut = await runHerdrCapture([
+        "--session",
+        sessionName,
+        "agent",
+        "list",
+      ]);
+    } catch {
+      continue;
+    }
+    const closedByPull = new Map<number, boolean>();
+    const isPullClosed = (pull: number): boolean => {
+      const cached = closedByPull.get(pull);
+      if (cached !== undefined) return cached;
+      const row = S.getIssue(repo.id, pull);
+      const closed = !!row && row.kind === "pull" && row.state !== "open";
+      closedByPull.set(pull, closed);
+      return closed;
+    };
+    for (const candidate of parseHerdrInactiveCleanupCandidates(
+      agentsOut,
+      Date.now(),
+      {
+        worktreeRoot: worktreeRoot(),
+        fullName: repo.full_name,
+        isPullClosed,
+      },
+    )) {
+      const argv = herdrPaneCloseArgv(repo, candidate.paneId);
+      try {
+        await runHerdr(argv[0], argv.slice(1), repo.local_path, {
+          timeoutMs: 10_000,
+        });
+        closed++;
+      } catch {
+        failed++;
+      }
+    }
+  }
+  return { closed, failed };
+}

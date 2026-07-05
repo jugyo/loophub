@@ -1,8 +1,8 @@
 import { createRoute } from "@tanstack/react-router";
 import { IssueRow } from "@/components/dashboard-rows";
 import { DashboardSection } from "@/components/dashboard-section";
-import { useRecentIssuesLimit, useRecentOpenIssues } from "@/queries/dashboard";
 import { usePageTitle } from "@/lib/page-title";
+import { useRecentIssuesLimit, useRecentOpenIssues } from "@/queries/dashboard";
 import { rootRoute } from "./root";
 
 // Home (/) is a cross-project overview of the most recently created open

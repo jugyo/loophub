@@ -1,0 +1,112 @@
+import { pulls } from "./pulls.ts";
+import {
+  actorFor,
+  ensureWritable,
+  issueOr404,
+  repoOr404,
+  S,
+  worktreeBranch,
+} from "./shared.ts";
+
+function defaultDraftPrBody(issue: number): string {
+  return [
+    "## 実装計画",
+    "",
+    "<!-- 着手時に実装計画をここへ記入してください -->",
+    "",
+    `Closes #${issue}`,
+    "",
+  ].join("\n");
+}
+
+// ===== dev (issue-dev loop support) =====
+//
+// Helpers for the `lh dev` development loop: open a draft PR at the start of work so the
+// agent has a place to write its plan, and attribute the dev session to the PR.
+
+export const dev = {
+  // Open the draft PR for an issue's worktree branch at the start of `lh dev`. Idempotent:
+  // if the issue already has an open (unmerged) linked PR, return it untouched. The PR can
+  // be opened with 0 commits — LoopHub does not require head to be ahead of base (the diff
+  // is just empty until the agent commits). The body seeds a plan placeholder the agent
+  // overwrites; `Closes #<n>` links it both ways. `lh dev` calls this *before* provisioning the
+  // worktree (#463) so the PR number is known first; head defaults to the PR-id branch
+  // convention (worktreeBranch), derived from the PR's own number once assigned — pass an
+  // explicit `head` only to override it (e.g. tests simulating a specific branch).
+  //
+  // `opts.attributeSession` (default true) gates re-pointing an *existing, reused* PR's session
+  // pointer (setPullSession) at `sessionId`. `lh dev` needs the PR number before it can claim its
+  // (PR-keyed, #463) dev lock, so it calls this before the lock exists — pass `false` there to
+  // defer the write until after the lock is won, so a losing concurrent `lh dev` racing on the
+  // same already-open PR can never overwrite the winner's session pointer. A brand-new PR
+  // (created below) is unaffected by this flag: two racing creates for the same issue make two
+  // distinct PR rows, each correctly attributed to its own creating session.
+  async openPr(
+    name: string,
+    input: { issue: number; head?: string; base: string; body?: string },
+    sessionId?: string | null,
+    opts: { attributeSession?: boolean } = {},
+  ): Promise<{ created: boolean; number: number }> {
+    const attributeSession = opts.attributeSession ?? true;
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const issueRow = issueOr404(r, input.issue, "issue");
+    const existing = S.openPullLinkedToIssue(issueRow.id);
+    if (existing) {
+      // Re-running `lh dev <issue>` reuses the open PR but must re-point it at the session it is
+      // about to spawn (latest-writer-wins), so `lh resume`/retro resolve the current session rather
+      // than a stale one. (The old model re-assigned the issue on every run.)
+      if (sessionId && attributeSession) {
+        S.setPullSession(existing.id, sessionId);
+        // setPullSession also appends the session to session_links (#298) — the PR's related-sessions
+        // list and the prior session's now-"superseded" verdict change here. Emit a PR-scoped event so
+        // the open detail refreshes (the create path below gets this via pull_request.opened).
+        S.emitEvent(r.id, "pull_request.updated", actorFor(sessionId), {
+          number: existing.number,
+        });
+      }
+      return { created: false, number: existing.number };
+    }
+    const body = input.body ?? defaultDraftPrBody(input.issue);
+    // `lh dev` opens the PR at the *start* of work, so it begins as a draft (#413); the agent
+    // flips it to ready via `lh pr ready-for-review` once the implementation is done.
+    const pr = await pulls.create(
+      name,
+      {
+        title: issueRow.title,
+        body,
+        head: input.head,
+        headFromNumber: input.head ? undefined : worktreeBranch,
+        base: input.base,
+        issue: input.issue,
+        draft: true,
+      },
+      sessionId,
+    );
+    return { created: true, number: pr.number };
+  },
+
+  // Attribute a dev session to an existing PR (via session_links, #316) so `lh resume`/retro can
+  // later find it. Used by `lh dev <pr>` (the direct-PR path that does not open a new PR) and, as
+  // of #463, also by `lh dev <issue>` to attribute the session to a *reused* open PR — deferred
+  // here until after the caller's PR-keyed dev lock is won (see dev.openPr's `attributeSession`
+  // option), so a losing concurrent launch can never overwrite the winner's pointer. Emits the
+  // same `pull_request.updated` event openPr's reuse branch does, so the PR detail's related-
+  // sessions list (SSE-driven) refreshes here too. Latest linked dev session wins.
+  attachSession(
+    name: string,
+    number: number,
+    sessionId: string,
+  ): { number: number } {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    if (sessionId) {
+      S.setPullSession(row.id, sessionId);
+      S.emitEvent(r.id, "pull_request.updated", actorFor(sessionId), {
+        number: row.number,
+      });
+    }
+    return { number: row.number };
+  },
+};

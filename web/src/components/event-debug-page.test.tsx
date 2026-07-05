@@ -2,8 +2,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   EVENT_DEBUG_LIMIT,
-  recordLoopHubDebugEvent,
   recordInvalidLoopHubDebugEvent,
+  recordLoopHubDebugEvent,
   recordTerminalDebugEvent,
   resetEventDebugEntriesForTest,
 } from "@/lib/event-debug";
