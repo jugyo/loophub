@@ -83,6 +83,7 @@ import {
   decideResume,
   ENV_ISSUE_CREATE_HERDR_LAUNCH,
   RUNTIME_CLAUDE_CODE,
+  RUNTIME_CODEX,
   resolveRuntimeResume,
   resolveWorktreeIdentity,
   sessionRuntime,
@@ -117,6 +118,7 @@ import {
   aggregateUsage,
   calculateCostUsd,
   findClaudeTranscript,
+  findCodexRollouts,
   parseClaudeUsageJsonl,
   readTranscriptSlice,
 } from "./session-usage.ts";
@@ -1713,6 +1715,53 @@ export const settings = {
 };
 
 // ===== agent sessions =====
+function timestampMs(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function codexUsageTarget(row: any): {
+  cwd: string;
+  startedAtMs: number;
+  endedBeforeMs: number | null;
+} | null {
+  if (sessionRuntime(row) !== RUNTIME_CODEX) return null;
+  const startedAtMs = timestampMs(row.created_at);
+  if (startedAtMs == null) return null;
+
+  const target = S.listSessionLinkedTargets(row.id).find(
+    (x: any) => x.kind === "pull",
+  );
+  if (!target) return null;
+
+  try {
+    const r = repoOr404(target.repo);
+    const prRow = issueOr404(r, target.number, "pull");
+    const pull = S.getPull(prRow.id);
+    const identity = resolveWorktreeIdentity(pull.head_ref, prRow.number);
+    const cwd =
+      identity.scheme === "legacy-issue"
+        ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
+        : worktreePath(worktreeRoot(), r.full_name, identity.number);
+    const peerStarts = S.listSessionsForIssue(prRow.id)
+      .filter(
+        (session: any) =>
+          session.id !== row.id && sessionRuntime(session) === RUNTIME_CODEX,
+      )
+      .map((session: any) => timestampMs(session.created_at))
+      .filter((ms: number | null): ms is number => ms != null);
+    if (peerStarts.includes(startedAtMs)) return null;
+    const nextStart =
+      peerStarts
+        .filter((ms: number): boolean => ms > startedAtMs)
+        .sort((a: number, b: number) => a - b)[0] ?? null;
+    return { cwd, startedAtMs, endedBeforeMs: nextStart };
+  } catch {
+    return null;
+  }
+}
+
 export const sessions = {
   register(input: {
     id: string;
@@ -1815,7 +1864,12 @@ export const sessions = {
   },
 
   usageSync(
-    input: { sessionId?: string; full?: boolean; projectsDir?: string } = {},
+    input: {
+      sessionId?: string;
+      full?: boolean;
+      projectsDir?: string;
+      codexSessionsDir?: string;
+    } = {},
   ) {
     const rows = input.sessionId
       ? [S.getAgentSession(input.sessionId)].filter(Boolean)
@@ -1824,6 +1878,79 @@ export const sessions = {
       throw new ServiceError(404, "Not Found");
 
     const results = rows.map((row: any) => {
+      if (sessionRuntime(row) === RUNTIME_CODEX) {
+        const target = codexUsageTarget(row);
+        if (!target) {
+          S.resetSessionUsage(row.id);
+          return {
+            session_id: row.id,
+            status: "missing",
+            messages: 0,
+            models: [],
+          };
+        }
+
+        const rollouts = findCodexRollouts({
+          ...target,
+          sessionsDir: input.codexSessionsDir,
+        });
+        if (rollouts.length === 0) {
+          S.resetSessionUsage(row.id);
+          return {
+            session_id: row.id,
+            status: "missing",
+            messages: 0,
+            models: [],
+          };
+        }
+
+        const transcriptPath = rollouts.map((x) => x.path).join("\n");
+        const size = rollouts.reduce((sum, x) => sum + x.size, 0);
+        const mtimeMs = Math.max(...rollouts.map((x) => x.mtimeMs));
+        const cursor = S.getSessionUsageCursor(row.id);
+        const unchanged =
+          !input.full &&
+          cursor?.transcript_path === transcriptPath &&
+          cursor.cursor_offset === size &&
+          cursor.mtime_ms === mtimeMs;
+        if (unchanged) {
+          return {
+            session_id: row.id,
+            status: "skipped",
+            transcript_path: transcriptPath,
+            messages: 0,
+            models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+          };
+        }
+
+        S.resetSessionUsage(row.id);
+        const fresh = rollouts.flatMap((x) => x.entries);
+        for (const usage of aggregateUsage(fresh)) {
+          S.upsertSessionUsage(row.id, usage);
+        }
+        for (const usage of S.listSessionUsage(row.id)) {
+          S.rewriteSessionUsageCost(
+            row.id,
+            usage.model,
+            calculateCostUsd(usage.model, usage),
+          );
+        }
+        S.upsertSessionUsageCursor({
+          sessionId: row.id,
+          transcriptPath,
+          cursorOffset: size,
+          mtimeMs,
+        });
+
+        return {
+          session_id: row.id,
+          status: fresh.length ? "updated" : "skipped",
+          transcript_path: transcriptPath,
+          messages: fresh.length,
+          models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+        };
+      }
+
       const transcript = findClaudeTranscript(
         row.external_session,
         input.projectsDir,
