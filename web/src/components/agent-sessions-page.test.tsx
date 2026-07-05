@@ -24,6 +24,13 @@ afterEach(() => {
 
 const SESSIONS: AgentSession[] = [
   {
+    id: "s-old",
+    agent: "reviewer",
+    session: "s-old",
+    created_at: "2026-07-03T10:00:00Z",
+    updated_at: "2026-07-03T12:00:00Z",
+  },
+  {
     id: "s-new",
     agent: "lh-dev",
     session: "s-new",
@@ -70,13 +77,6 @@ const SESSIONS: AgentSession[] = [
         state: "open",
       },
     ],
-  },
-  {
-    id: "s-old",
-    agent: "reviewer",
-    session: "s-old",
-    created_at: "2026-07-03T10:00:00Z",
-    updated_at: "2026-07-03T12:00:00Z",
   },
 ];
 
@@ -128,7 +128,10 @@ describe("formatCost", () => {
 });
 
 describe("AgentSessionsPage", () => {
-  it("shows sessions in API order with usage totals, cost, and linked work", async () => {
+  it("shows sessions by updated time with usage totals, cost, and linked work", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-07-04T13:00:00Z").getTime(),
+    );
     renderPage();
 
     expect(
@@ -144,6 +147,9 @@ describe("AgentSessionsPage", () => {
     expect(within(rows[1]).getByText("4,660")).toBeTruthy();
     expect(within(rows[1]).getByText("$0.01")).toBeTruthy();
     expect(within(rows[1]).getByText("n/a")).toBeTruthy();
+    expect(within(rows[1]).getByTitle("2026-07-04T12:00:00Z").textContent).toBe(
+      "1h ago",
+    );
 
     const issue = within(rows[1]).getByRole("link", { name: "Issue #725" });
     expect(issue.getAttribute("href")).toBe("/r/jugyo/loophub/issues/725");
@@ -153,6 +159,9 @@ describe("AgentSessionsPage", () => {
     expect(within(rows[2]).getAllByText("reviewer")).toHaveLength(2);
     expect(within(rows[2]).getAllByText("n/a").length).toBeGreaterThanOrEqual(
       3,
+    );
+    expect(within(rows[2]).getByTitle("2026-07-03T12:00:00Z").textContent).toBe(
+      "1d ago",
     );
     expect(within(rows[2]).queryByText("0")).toBeNull();
   });

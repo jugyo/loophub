@@ -24,6 +24,11 @@ function targetLabel(target: SessionLinkedTarget): string {
   return `${target.kind === "pull" ? "PR" : "Issue"} #${target.number}`;
 }
 
+function updatedTime(session: AgentSession): number {
+  const ms = Date.parse(session.updated_at);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 export function AgentSessionsPage() {
   const { data, isLoading, isError } = useAgentSessions();
 
@@ -53,6 +58,10 @@ export function AgentSessionsPage() {
 }
 
 function SessionsTable({ sessions }: { sessions: AgentSession[] }) {
+  const sortedSessions = [...sessions].sort(
+    (a, b) => updatedTime(b) - updatedTime(a),
+  );
+
   return (
     <div className="mt-6 overflow-x-auto">
       <table className="min-w-[1040px] w-full text-sm">
@@ -72,7 +81,7 @@ function SessionsTable({ sessions }: { sessions: AgentSession[] }) {
           </tr>
         </thead>
         <tbody>
-          {sessions.map((session) => {
+          {sortedSessions.map((session) => {
             const hasUsage = (session.usage?.length ?? 0) > 0;
             const total = usageTotal(session.usage);
             return (
