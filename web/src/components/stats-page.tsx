@@ -3,7 +3,9 @@
 // (WAL included), and per-repo issue/PR tallies. All aggregation happens in core;
 // this page only renders the numbers.
 
-import { Loader2 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Bot, Database, Loader2 } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Stats } from "@/api/types";
 import { useStats } from "@/queries/stats";
 
@@ -28,11 +30,68 @@ export function formatBytes(n: number): string {
 }
 
 export function StatsPage() {
+  return (
+    <div className="mx-auto max-w-content">
+      <h1 className="text-2xl font-semibold">Stats</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Server statistics and agent session activity.
+      </p>
+
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        <StatsLink
+          to="/stats/db"
+          icon={<Database className="size-5" />}
+          title="DB Stats"
+          description="Database file size, table row counts, and per-repository issue and PR totals."
+        />
+        <StatsLink
+          to="/stats/sessions"
+          icon={<Bot className="size-5" />}
+          title="Agent sessions"
+          description="Registered sessions, token usage, API-equivalent cost, and linked work."
+        />
+      </div>
+    </div>
+  );
+}
+
+function StatsLink({
+  to,
+  icon,
+  title,
+  description,
+}: {
+  to: string;
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="group rounded-md border p-4 transition-colors hover:bg-accent hover:text-accent-foreground"
+    >
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 text-muted-foreground transition-colors group-hover:text-accent-foreground">
+          {icon}
+        </div>
+        <div>
+          <h2 className="text-sm font-medium">{title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground transition-colors group-hover:text-accent-foreground">
+            {description}
+          </p>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+export function DatabaseStatsPage() {
   const { data, isLoading, isError } = useStats();
 
   return (
     <div className="mx-auto max-w-content">
-      <h1 className="text-2xl font-semibold">Stats</h1>
+      <h1 className="text-2xl font-semibold">DB Stats</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Database statistics for this LoopHub server.
       </p>

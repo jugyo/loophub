@@ -1,9 +1,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch } from "@/api/rpc-mock";
 import type { Stats } from "@/api/types";
-import { formatBytes, StatsPage } from "./stats-page";
+import { DatabaseStatsPage, formatBytes, StatsPage } from "./stats-page";
 
 afterEach(() => {
   cleanup();
@@ -30,14 +38,42 @@ const STATS: Stats = {
   ],
 };
 
-function renderStats(stats: Stats = STATS) {
+function renderStatsHub() {
+  const rootRoute = createRootRoute({ component: Outlet });
+  const statsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/stats",
+    component: StatsPage,
+  });
+  const statsDbRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/stats/db",
+    component: () => null,
+  });
+  const statsSessionsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/stats/sessions",
+    component: () => null,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([
+      statsRoute,
+      statsDbRoute,
+      statsSessionsRoute,
+    ]),
+    history: createMemoryHistory({ initialEntries: ["/stats"] }),
+  });
+  return render(<RouterProvider router={router} />);
+}
+
+function renderDatabaseStats(stats: Stats = STATS) {
   vi.stubGlobal("fetch", mockRpcFetch({ "stats/get": () => stats }));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <StatsPage />
+      <DatabaseStatsPage />
     </QueryClientProvider>,
   );
 }
@@ -61,8 +97,19 @@ describe("formatBytes", () => {
 });
 
 describe("StatsPage", () => {
+  it("links to DB stats and agent sessions from the Stats root", async () => {
+    renderStatsHub();
+
+    const dbStats = await screen.findByRole("link", { name: /db stats/i });
+    expect(dbStats.getAttribute("href")).toBe("/stats/db");
+    const sessions = screen.getByRole("link", { name: /agent sessions/i });
+    expect(sessions.getAttribute("href")).toBe("/stats/sessions");
+  });
+});
+
+describe("DatabaseStatsPage", () => {
   it("shows the DB file size, WAL included, in human-readable units", async () => {
-    renderStats();
+    renderDatabaseStats();
     // "1.0 MB" appears twice: the DB file row and the Total row (1 MB + 2 KB
     // rounds back to 1.0 MB).
     expect(await screen.findAllByText("1.0 MB")).toHaveLength(2);
@@ -71,7 +118,7 @@ describe("StatsPage", () => {
   });
 
   it("shows 'none' when no WAL file exists", async () => {
-    renderStats({
+    renderDatabaseStats({
       ...STATS,
       database: {
         ...STATS.database,
@@ -84,14 +131,14 @@ describe("StatsPage", () => {
   });
 
   it("lists every table with its row count", async () => {
-    renderStats();
+    renderDatabaseStats();
     expect(await screen.findByText("issues")).toBeTruthy();
     expect(screen.getByText("42")).toBeTruthy();
     expect(screen.getByText("repos")).toBeTruthy();
   });
 
   it("lists per-repo issue and PR counts", async () => {
-    renderStats();
+    renderDatabaseStats();
     const row = (await screen.findByText("me/proj")).closest("tr")!;
     const cells = [...row.querySelectorAll("td")].map((c) => c.textContent);
     expect(cells).toEqual(["me/proj", "3", "7", "1", "5", "2"]);
@@ -107,7 +154,7 @@ describe("StatsPage", () => {
     });
     render(
       <QueryClientProvider client={queryClient}>
-        <StatsPage />
+        <DatabaseStatsPage />
       </QueryClientProvider>,
     );
     expect(await screen.findByText(/failed to load stats/i)).toBeTruthy();

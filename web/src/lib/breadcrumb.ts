@@ -16,6 +16,9 @@ export interface Crumb {
  *   "/"                              -> [Home]
  *   "/archived"                      -> [Home, Archived]
  *   "/settings"                      -> [Home, Settings]
+ *   "/stats"                         -> [Home, Stats]
+ *   "/stats/db"                      -> [Home, Stats, DB Stats]
+ *   "/stats/sessions"                -> [Home, Stats, Agent sessions]
  *   "/r/me/proj"                     -> [Home, me/proj]
  *   "/r/me/proj/issues"              -> [Home, me/proj, Issues]
  *   "/r/me/proj/issues/12"           -> [Home, me/proj, Issues, #12]
@@ -38,6 +41,21 @@ export function crumbsForPath(pathname: string): Crumb[] {
 
   if (parts[0] === "settings") {
     crumbs.push({ label: "Settings" });
+    return crumbs;
+  }
+
+  if (parts[0] === "stats") {
+    crumbs.push({ label: "Stats", href: "/stats" });
+    const statsSections: Record<string, string> = {
+      db: "DB Stats",
+      sessions: "Agent sessions",
+    };
+    const section = parts[1];
+    if (section && statsSections[section]) {
+      crumbs.push({ label: statsSections[section] });
+    }
+    const last = crumbs[crumbs.length - 1];
+    if (last) last.href = undefined;
     return crumbs;
   }
 
