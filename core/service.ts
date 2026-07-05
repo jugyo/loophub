@@ -113,10 +113,12 @@ import {
   reviewNoteJSON,
   sessionUsageJSON,
 } from "./serialize.ts";
-import type { UsageEntry } from "./session-usage.ts";
+import type { CodexRolloutScan, UsageEntry } from "./session-usage.ts";
 import {
   aggregateUsage,
   calculateCostUsd,
+  createClaudeTranscriptIndex,
+  createCodexRolloutScan,
   findClaudeTranscript,
   findCodexRollouts,
   parseClaudeUsageJsonl,
@@ -1721,7 +1723,44 @@ function timestampMs(value: unknown): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-function codexUsageTarget(row: any): {
+interface CodexUsageTargetContext {
+  peersByPullId: Map<
+    number,
+    {
+      counts: Map<number, number>;
+      sortedStarts: number[];
+    }
+  >;
+}
+
+function codexPeerStartsForPull(
+  pullId: number,
+  context?: CodexUsageTargetContext,
+): {
+  counts: Map<number, number>;
+  sortedStarts: number[];
+} {
+  const cached = context?.peersByPullId.get(pullId);
+  if (cached) return cached;
+  const counts = new Map<number, number>();
+  for (const session of S.listSessionsForIssue(pullId)) {
+    if (sessionRuntime(session) !== RUNTIME_CODEX) continue;
+    const startedAtMs = timestampMs(session.created_at);
+    if (startedAtMs == null) continue;
+    counts.set(startedAtMs, (counts.get(startedAtMs) ?? 0) + 1);
+  }
+  const result = {
+    counts,
+    sortedStarts: [...counts.keys()].sort((a, b) => a - b),
+  };
+  context?.peersByPullId.set(pullId, result);
+  return result;
+}
+
+function codexUsageTarget(
+  row: any,
+  context?: CodexUsageTargetContext,
+): {
   cwd: string;
   startedAtMs: number;
   endedBeforeMs: number | null;
@@ -1744,22 +1783,58 @@ function codexUsageTarget(row: any): {
       identity.scheme === "legacy-issue"
         ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
         : worktreePath(worktreeRoot(), r.full_name, identity.number);
-    const peerStarts = S.listSessionsForIssue(prRow.id)
-      .filter(
-        (session: any) =>
-          session.id !== row.id && sessionRuntime(session) === RUNTIME_CODEX,
-      )
-      .map((session: any) => timestampMs(session.created_at))
-      .filter((ms: number | null): ms is number => ms != null);
-    if (peerStarts.includes(startedAtMs)) return null;
+    const peerStarts = codexPeerStartsForPull(prRow.id, context);
+    if ((peerStarts.counts.get(startedAtMs) ?? 0) > 1) return null;
     const nextStart =
-      peerStarts
-        .filter((ms: number): boolean => ms > startedAtMs)
-        .sort((a: number, b: number) => a - b)[0] ?? null;
+      peerStarts.sortedStarts.find((ms: number): boolean => ms > startedAtMs) ??
+      null;
     return { cwd, startedAtMs, endedBeforeMs: nextStart };
   } catch {
     return null;
   }
+}
+
+const codexSessionScanFingerprints = new Map<string, string>();
+
+function pruneCodexSessionScanFingerprints(sessionIds: Set<string>): void {
+  for (const sessionId of codexSessionScanFingerprints.keys()) {
+    if (!sessionIds.has(sessionId))
+      codexSessionScanFingerprints.delete(sessionId);
+  }
+}
+
+function codexSessionScanFingerprint(
+  scan: CodexRolloutScan,
+  target: {
+    cwd: string;
+    startedAtMs: number;
+    endedBeforeMs: number | null;
+  },
+): string {
+  return [
+    scan.fingerprint,
+    target.cwd,
+    target.startedAtMs,
+    target.endedBeforeMs ?? "",
+  ].join("\0");
+}
+
+function codexCursorMatchesScan(cursor: any, scan: CodexRolloutScan): boolean {
+  if (!cursor?.transcript_path) return false;
+  const paths = String(cursor.transcript_path).split("\n").filter(Boolean);
+  if (paths.length === 0) return false;
+
+  const byPath = new Map(scan.files.map((file) => [file.path, file]));
+  let size = 0;
+  let mtimeMs = 0;
+  for (const path of paths) {
+    const file = byPath.get(path);
+    if (!file) return false;
+    size += file.size;
+    mtimeMs = Math.max(mtimeMs, file.mtimeMs);
+  }
+
+  return cursor.cursor_offset === size && cursor.mtime_ms === mtimeMs;
 }
 
 export const sessions = {
@@ -1877,11 +1952,48 @@ export const sessions = {
     if (input.sessionId && rows.length === 0)
       throw new ServiceError(404, "Not Found");
 
+    const codexTargetContext: CodexUsageTargetContext = {
+      peersByPullId: new Map(),
+    };
+    const codexTargets = new Map<
+      string,
+      {
+        cwd: string;
+        startedAtMs: number;
+        endedBeforeMs: number | null;
+      }
+    >();
+    for (const row of rows as any[]) {
+      if (sessionRuntime(row) !== RUNTIME_CODEX) continue;
+      const target = codexUsageTarget(row, codexTargetContext);
+      if (target) codexTargets.set(row.id, target);
+    }
+    const codexScan =
+      codexTargets.size > 0
+        ? createCodexRolloutScan(input.codexSessionsDir)
+        : null;
+    if (!input.sessionId) {
+      pruneCodexSessionScanFingerprints(
+        new Set((rows as any[]).map((row: any) => row.id)),
+      );
+    }
+    const claudeIndex = rows.some(
+      (row: any) => sessionRuntime(row) !== RUNTIME_CODEX,
+    )
+      ? createClaudeTranscriptIndex(
+          input.projectsDir,
+          (rows as any[])
+            .filter((row: any) => sessionRuntime(row) !== RUNTIME_CODEX)
+            .map((row: any) => row.external_session),
+        )
+      : null;
+
     const results = rows.map((row: any) => {
       if (sessionRuntime(row) === RUNTIME_CODEX) {
-        const target = codexUsageTarget(row);
+        const target = codexTargets.get(row.id);
         if (!target) {
           S.resetSessionUsage(row.id);
+          codexSessionScanFingerprints.delete(row.id);
           return {
             session_id: row.id,
             status: "missing",
@@ -1890,12 +2002,33 @@ export const sessions = {
           };
         }
 
+        const cursor = S.getSessionUsageCursor(row.id);
+        const scanFingerprint =
+          codexScan && codexSessionScanFingerprint(codexScan, target);
+        if (
+          !input.full &&
+          codexScan &&
+          scanFingerprint &&
+          codexSessionScanFingerprints.get(row.id) === scanFingerprint &&
+          codexCursorMatchesScan(cursor, codexScan)
+        ) {
+          return {
+            session_id: row.id,
+            status: "skipped",
+            transcript_path: cursor.transcript_path,
+            messages: 0,
+            models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+          };
+        }
+
         const rollouts = findCodexRollouts({
           ...target,
           sessionsDir: input.codexSessionsDir,
+          scan: codexScan ?? undefined,
         });
         if (rollouts.length === 0) {
           S.resetSessionUsage(row.id);
+          codexSessionScanFingerprints.delete(row.id);
           return {
             session_id: row.id,
             status: "missing",
@@ -1907,13 +2040,15 @@ export const sessions = {
         const transcriptPath = rollouts.map((x) => x.path).join("\n");
         const size = rollouts.reduce((sum, x) => sum + x.size, 0);
         const mtimeMs = Math.max(...rollouts.map((x) => x.mtimeMs));
-        const cursor = S.getSessionUsageCursor(row.id);
         const unchanged =
           !input.full &&
           cursor?.transcript_path === transcriptPath &&
           cursor.cursor_offset === size &&
           cursor.mtime_ms === mtimeMs;
         if (unchanged) {
+          if (scanFingerprint) {
+            codexSessionScanFingerprints.set(row.id, scanFingerprint);
+          }
           return {
             session_id: row.id,
             status: "skipped",
@@ -1941,6 +2076,9 @@ export const sessions = {
           cursorOffset: size,
           mtimeMs,
         });
+        if (scanFingerprint) {
+          codexSessionScanFingerprints.set(row.id, scanFingerprint);
+        }
 
         return {
           session_id: row.id,
@@ -1954,6 +2092,7 @@ export const sessions = {
       const transcript = findClaudeTranscript(
         row.external_session,
         input.projectsDir,
+        claudeIndex ?? undefined,
       );
       if (!transcript) {
         return {

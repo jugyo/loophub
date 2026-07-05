@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -32,12 +33,39 @@ export interface TranscriptCandidate {
   mtimeMs: number;
 }
 
+export interface ClaudeTranscriptIndex {
+  projectsDir: string;
+  byFilename: Map<string, TranscriptCandidate[]>;
+}
+
 export interface CodexRolloutCandidate extends TranscriptCandidate {
   entries: UsageEntry[];
   startedAtMs: number;
   threadId: string | null;
   parentThreadId: string | null;
 }
+
+interface ParsedCodexRollout extends CodexRolloutCandidate {
+  cwd: string | null;
+}
+
+interface CachedCodexRollout {
+  size: number;
+  mtimeMs: number;
+  parsed: ParsedCodexRollout | null;
+}
+
+export interface CodexRolloutScan {
+  sessionsDir: string;
+  files: TranscriptCandidate[];
+  fingerprint: string;
+}
+
+const codexRolloutCache = new Map<string, CachedCodexRollout>();
+const codexScanParsedByCwd = new WeakMap<
+  CodexRolloutScan,
+  Map<string, ParsedCodexRollout[]>
+>();
 
 export const ZERO_USAGE: TokenUsage = {
   input_tokens: 0,
@@ -339,12 +367,49 @@ export function defaultCodexSessionsDir(): string {
   return join(homedir(), ".codex", "sessions");
 }
 
+export function createClaudeTranscriptIndex(
+  projectsDir = defaultClaudeProjectsDir(),
+  externalSessions?: readonly string[],
+): ClaudeTranscriptIndex {
+  const byFilename = new Map<string, TranscriptCandidate[]>();
+  if (!existsSync(projectsDir)) return { projectsDir, byFilename };
+  const wanted = externalSessions
+    ? new Set(
+        externalSessions
+          .filter((session) => session)
+          .map((session) => `${basename(session)}.jsonl`),
+      )
+    : null;
+
+  for (const project of readdirSync(projectsDir, { withFileTypes: true })) {
+    if (!project.isDirectory()) continue;
+    const projectPath = join(projectsDir, project.name);
+    for (const file of readdirSync(projectPath, { withFileTypes: true })) {
+      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
+      if (wanted && !wanted.has(file.name)) continue;
+      const path = join(projectPath, file.name);
+      const st = statSync(path);
+      if (!st.isFile()) continue;
+      const candidates = byFilename.get(file.name) ?? [];
+      candidates.push({ path, size: st.size, mtimeMs: st.mtimeMs });
+      byFilename.set(file.name, candidates);
+    }
+  }
+
+  for (const candidates of byFilename.values()) {
+    candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  }
+  return { projectsDir, byFilename };
+}
+
 export function findClaudeTranscript(
   externalSession: string,
   projectsDir = defaultClaudeProjectsDir(),
+  index?: ClaudeTranscriptIndex,
 ): TranscriptCandidate | null {
   if (!externalSession || !existsSync(projectsDir)) return null;
   const filename = `${basename(externalSession)}.jsonl`;
+  if (index) return index.byFilename.get(filename)?.[0] ?? null;
   const matches: TranscriptCandidate[] = [];
   for (const dirent of readdirSync(projectsDir, { withFileTypes: true })) {
     if (!dirent.isDirectory()) continue;
@@ -363,7 +428,10 @@ export function readTranscriptSlice(path: string, offset: number): string {
   return buf.subarray(Math.max(0, Math.min(offset, buf.length))).toString();
 }
 
-function walkRolloutFiles(dir: string, out: string[] = []): string[] {
+function walkRolloutFiles(
+  dir: string,
+  out: TranscriptCandidate[] = [],
+): TranscriptCandidate[] {
   if (!existsSync(dir)) return out;
   for (const dirent of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, dirent.name);
@@ -376,10 +444,97 @@ function walkRolloutFiles(dir: string, out: string[] = []): string[] {
       dirent.name.startsWith("rollout-") &&
       dirent.name.endsWith(".jsonl")
     ) {
-      out.push(path);
+      const st = statSync(path);
+      if (st.isFile()) out.push({ path, size: st.size, mtimeMs: st.mtimeMs });
     }
   }
   return out;
+}
+
+function rolloutScanFingerprint(files: TranscriptCandidate[]): string {
+  const hash = createHash("sha256");
+  for (const file of files) {
+    hash.update(file.path);
+    hash.update("\0");
+    hash.update(String(file.size));
+    hash.update("\0");
+    hash.update(String(file.mtimeMs));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+function pruneCodexRolloutCache(files: TranscriptCandidate[]): void {
+  const current = new Set(files.map((file) => file.path));
+  for (const path of codexRolloutCache.keys()) {
+    if (!current.has(path)) codexRolloutCache.delete(path);
+  }
+}
+
+export function createCodexRolloutScan(
+  sessionsDir = defaultCodexSessionsDir(),
+): CodexRolloutScan {
+  const files = existsSync(sessionsDir)
+    ? walkRolloutFiles(sessionsDir).sort((a, b) => a.path.localeCompare(b.path))
+    : [];
+  pruneCodexRolloutCache(files);
+  return {
+    sessionsDir,
+    files,
+    fingerprint: rolloutScanFingerprint(files),
+  };
+}
+
+function parseCachedCodexRollout(
+  file: TranscriptCandidate,
+): ParsedCodexRollout | null {
+  const cached = codexRolloutCache.get(file.path);
+  if (cached && cached.size === file.size && cached.mtimeMs === file.mtimeMs) {
+    return cached.parsed;
+  }
+
+  const parsed = parseCodexRolloutJsonl(
+    readFileSync(file.path, "utf8"),
+    file.path,
+  );
+  const startedAtMs = parsed.startedAtMs ?? rolloutTimestampFromPath(file.path);
+  const result =
+    startedAtMs == null
+      ? null
+      : {
+          path: file.path,
+          size: file.size,
+          mtimeMs: file.mtimeMs,
+          cwd: parsed.cwd,
+          startedAtMs,
+          threadId: parsed.threadId,
+          parentThreadId: parsed.parentThreadId,
+          entries: parsed.entries,
+        };
+  codexRolloutCache.set(file.path, {
+    size: file.size,
+    mtimeMs: file.mtimeMs,
+    parsed: result,
+  });
+  return result;
+}
+
+function parsedRolloutsByCwd(
+  scan: CodexRolloutScan,
+): Map<string, ParsedCodexRollout[]> {
+  const cached = codexScanParsedByCwd.get(scan);
+  if (cached) return cached;
+
+  const byCwd = new Map<string, ParsedCodexRollout[]>();
+  for (const file of scan.files) {
+    const parsed = parseCachedCodexRollout(file);
+    if (!parsed?.cwd || parsed.entries.length === 0) continue;
+    const list = byCwd.get(parsed.cwd) ?? [];
+    list.push(parsed);
+    byCwd.set(parsed.cwd, list);
+  }
+  codexScanParsedByCwd.set(scan, byCwd);
+  return byCwd;
 }
 
 export function findCodexRollouts(input: {
@@ -387,9 +542,12 @@ export function findCodexRollouts(input: {
   startedAtMs: number;
   endedBeforeMs?: number | null;
   sessionsDir?: string;
+  scan?: CodexRolloutScan;
 }): CodexRolloutCandidate[] {
-  const sessionsDir = input.sessionsDir ?? defaultCodexSessionsDir();
-  if (!input.cwd || !existsSync(sessionsDir)) return [];
+  const scan =
+    input.scan ??
+    createCodexRolloutScan(input.sessionsDir ?? defaultCodexSessionsDir());
+  if (!input.cwd || scan.files.length === 0) return [];
   const startedAtMs = Number.isFinite(input.startedAtMs)
     ? input.startedAtMs
     : 0;
@@ -400,20 +558,13 @@ export function findCodexRollouts(input: {
       : null;
   const candidates: CodexRolloutCandidate[] = [];
 
-  for (const path of walkRolloutFiles(sessionsDir)) {
-    const st = statSync(path);
-    if (!st.isFile()) continue;
-    const parsed = parseCodexRolloutJsonl(readFileSync(path, "utf8"), path);
-    const rolloutStartedAtMs =
-      parsed.startedAtMs ?? rolloutTimestampFromPath(path);
-    if (rolloutStartedAtMs == null) continue;
-    if (rolloutStartedAtMs < startedAtMs) continue;
-    if (parsed.cwd !== input.cwd || parsed.entries.length === 0) continue;
+  for (const parsed of parsedRolloutsByCwd(scan).get(input.cwd) ?? []) {
+    if (parsed.startedAtMs < startedAtMs) continue;
     candidates.push({
-      path,
-      size: st.size,
-      mtimeMs: st.mtimeMs,
-      startedAtMs: rolloutStartedAtMs,
+      path: parsed.path,
+      size: parsed.size,
+      mtimeMs: parsed.mtimeMs,
+      startedAtMs: parsed.startedAtMs,
       threadId: parsed.threadId,
       parentThreadId: parsed.parentThreadId,
       entries: parsed.entries,
