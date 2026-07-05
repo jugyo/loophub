@@ -95,7 +95,10 @@ export function githubIssueJSON(
   };
 }
 
-export function agentSessionJSON(row: any) {
+export function agentSessionJSON(
+  row: any,
+  opts: { withLinkedTargets?: boolean } = {},
+) {
   const out: any = {
     id: row.id,
     agent: row.agent,
@@ -108,7 +111,22 @@ export function agentSessionJSON(row: any) {
   if (row.kind) out.kind = row.kind;
   const usage = S.listSessionUsage(row.id);
   if (usage.length) out.usage = usage.map(sessionUsageJSON);
+  if (opts.withLinkedTargets) {
+    const linkedTargets = S.listSessionLinkedTargets(row.id);
+    if (linkedTargets.length)
+      out.linked_targets = linkedTargets.map(sessionLinkedTargetJSON);
+  }
   return out;
+}
+
+export function sessionLinkedTargetJSON(row: any) {
+  return {
+    repo: row.repo,
+    kind: row.kind,
+    number: row.number,
+    title: row.title,
+    state: row.state,
+  };
 }
 
 export function sessionUsageJSON(row: any) {

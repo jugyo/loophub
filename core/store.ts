@@ -1136,11 +1136,18 @@ export function listSessionsForIssue(issueId: number): any[] {
 export function listSessionLinkedTargets(sessionId: string): any[] {
   return db
     .query(
-      `SELECT i.repo_id, i.kind, i.number
+      `SELECT
+         i.repo_id,
+         r.full_name AS repo,
+         i.kind,
+         i.number,
+         i.title,
+         i.state
        FROM session_links l
        JOIN issues i ON i.id = l.issue_id
+       JOIN repos r ON r.id = i.repo_id
        WHERE l.session_id = ?
-       ORDER BY i.repo_id, i.kind, i.number`,
+       ORDER BY r.full_name, i.kind, i.number`,
     )
     .all(sessionId);
 }

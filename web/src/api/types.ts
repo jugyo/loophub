@@ -287,6 +287,39 @@ export interface Stats {
   }[];
 }
 
+export interface SessionUsage {
+  session_id: string;
+  model: string;
+  input_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+  updated_at: string;
+}
+
+export interface SessionLinkedTarget {
+  repo: string;
+  kind: "issue" | "pull";
+  number: number;
+  title: string;
+  state: "open" | "closed";
+}
+
+/** Agent session list row (`sessions/list`). Usage and links are present when known. */
+export interface AgentSession {
+  id: string;
+  agent: string;
+  session: string;
+  name?: string;
+  runtime?: string;
+  kind?: string;
+  created_at: string;
+  updated_at: string;
+  usage?: SessionUsage[];
+  linked_targets?: SessionLinkedTarget[];
+}
+
 /** The GitHub PR a loophub PR was exported to (#406), or null until the export skill records one. */
 export interface GithubPull {
   number: number;

@@ -113,6 +113,9 @@ export function AppSidebar() {
         <SidebarLink to="/settings" icon={<Settings className="size-4" />}>
           Settings
         </SidebarLink>
+        <SidebarLink to="/sessions" icon={<Bot className="size-4" />}>
+          Sessions
+        </SidebarLink>
         <SidebarLink to="/stats" icon={<Database className="size-4" />}>
           Stats
         </SidebarLink>

@@ -153,6 +153,21 @@ test("sessions.listFor a PR marks the primary dev session resumable", () => {
   const list = svc.sessions.listFor("me/proj", { pr: 2 });
   expect(list.length).toBe(2);
   expect(list.some((s: any) => s.resume.resumable)).toBe(true);
+  expect(list[0].linked_targets).toBeUndefined();
+});
+
+test("sessions.list includes linked targets for the sessions page", () => {
+  const list = svc.sessions.list() as any[];
+  const review = list.find((s) => s.id === REVIEW_UUID);
+  expect(review.linked_targets).toEqual([
+    {
+      repo: "me/proj",
+      kind: "issue",
+      number: 1,
+      title: "feature",
+      state: "open",
+    },
+  ]);
 });
 
 test("a session linked to a PR with no primary dev session is NOT resumable (not-anchor)", async () => {

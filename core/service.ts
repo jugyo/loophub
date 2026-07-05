@@ -1795,7 +1795,9 @@ export const sessions = {
   },
 
   list() {
-    return S.listAgentSessions().map(agentSessionJSON);
+    return S.listAgentSessions().map((row) =>
+      agentSessionJSON(row, { withLinkedTargets: true }),
+    );
   },
 
   get(id: string) {

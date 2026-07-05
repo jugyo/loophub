@@ -9,6 +9,7 @@ import { refRoute } from "./routes/ref";
 import { repoRoute } from "./routes/repo";
 import { repoSettingsRoute } from "./routes/repo-settings";
 import { rootRoute } from "./routes/root";
+import { sessionsRoute } from "./routes/sessions";
 import { settingsRoute } from "./routes/settings";
 import { statsRoute } from "./routes/stats";
 
@@ -27,6 +28,7 @@ const routeTree = rootRoute.addChildren([
   refRoute,
   mergedRoute,
   settingsRoute,
+  sessionsRoute,
   statsRoute,
 ]);
 

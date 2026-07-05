@@ -7,6 +7,7 @@
 
 import { getSessionId } from "@/lib/session";
 import type {
+  AgentSession,
   CodingAgent,
   DashboardOverview,
   FileAtRef,
@@ -227,6 +228,12 @@ export function updateSettings(
 // Database statistics for the /stats page (#587).
 export function getStats() {
   return rpc<Stats>("stats/get");
+}
+
+// --- agent sessions ---
+// Agent session inventory for the /sessions page.
+export function getAgentSessions() {
+  return rpc<AgentSession[]>("sessions/list");
 }
 
 // --- terminal launch ---
