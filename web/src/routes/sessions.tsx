@@ -1,13 +1,24 @@
-import { createRoute } from "@tanstack/react-router";
-import { AgentSessionsPage } from "@/components/agent-sessions-page";
-import { usePageTitle } from "@/lib/page-title";
+import { createRoute, useNavigate } from "@tanstack/react-router";
+import { Loader2 } from "lucide-react";
+import { useEffect } from "react";
 import { rootRoute } from "./root";
+
+function SessionsRedirect() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    navigate({ to: "/stats/sessions", replace: true });
+  }, [navigate]);
+
+  return (
+    <div className="mx-auto flex max-w-content items-center gap-2 py-8 text-sm text-muted-foreground">
+      <Loader2 className="size-4 animate-spin" /> Opening agent sessions…
+    </div>
+  );
+}
 
 export const sessionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sessions",
-  component: function SessionsRoutePage() {
-    usePageTitle(["Agent sessions"]);
-    return <AgentSessionsPage />;
-  },
+  component: SessionsRedirect,
 });

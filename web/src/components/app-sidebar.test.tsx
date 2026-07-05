@@ -88,11 +88,6 @@ function renderSidebar() {
     path: "/settings",
     component: () => null,
   });
-  const sessionsRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/sessions",
-    component: () => null,
-  });
   const statsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/stats",
@@ -112,7 +107,6 @@ function renderSidebar() {
     routeTree: rootRoute.addChildren([
       indexRoute,
       settingsRoute,
-      sessionsRoute,
       statsRoute,
       archivedRoute,
       repoRoute,

@@ -88,7 +88,7 @@ function renderPage(sessions: AgentSession[] = SESSIONS) {
   const rootRoute = createRootRoute({ component: Outlet });
   const sessionsRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: "/sessions",
+    path: "/stats/sessions",
     component: AgentSessionsPage,
   });
   const issueRoute = createRoute({
@@ -103,7 +103,7 @@ function renderPage(sessions: AgentSession[] = SESSIONS) {
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([sessionsRoute, issueRoute, pullRoute]),
-    history: createMemoryHistory({ initialEntries: ["/sessions"] }),
+    history: createMemoryHistory({ initialEntries: ["/stats/sessions"] }),
   });
   return render(
     <QueryClientProvider client={queryClient}>

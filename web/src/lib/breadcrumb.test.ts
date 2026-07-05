@@ -17,6 +17,16 @@ describe("crumbsForPath", () => {
     expect(labels("/settings")).toEqual(["Home", "Settings"]);
   });
 
+  it("renders stats section routes", () => {
+    expect(labels("/stats")).toEqual(["Home", "Stats"]);
+    expect(labels("/stats/db")).toEqual(["Home", "Stats", "DB Stats"]);
+    expect(labels("/stats/sessions")).toEqual([
+      "Home",
+      "Stats",
+      "Agent sessions",
+    ]);
+  });
+
   it("renders a repo route with the full name", () => {
     expect(labels("/r/me/proj")).toEqual(["Home", "me/proj"]);
   });
