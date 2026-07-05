@@ -12,10 +12,6 @@ import {
 import { HERDR_INACTIVE_CLEANUP_INTERVAL_MS } from "../../core/herdr-inactive-cleanup.ts";
 import { sessions, terminal } from "../../core/service.ts";
 import * as S from "../../core/store.ts";
-import {
-  publish as publishTerminalChange,
-  listenerCount as terminalWatchListenerCount,
-} from "../../core/terminal-watch-hub.ts";
 import { sweepPullUpdates } from "../../core/watcher.ts";
 import { log } from "./logger.ts";
 
@@ -23,7 +19,6 @@ const REPLAY_PAGE = 100;
 const DEFAULT_TAIL_POLL_MS = 1000;
 export const DEFAULT_SWEEP_MS = 5000;
 export const DEFAULT_USAGE_SWEEP_MS = 10000;
-export const DEFAULT_HERDR_WATCH_MS = 3000;
 export const DEFAULT_HERDR_INACTIVE_CLEANUP_MS =
   HERDR_INACTIVE_CLEANUP_INTERVAL_MS;
 
@@ -203,53 +198,10 @@ export function startUsageSweep(
   };
 }
 
-// Poll herdr session state on the server so N open browser tabs share ONE herdr CLI spawn
-// per tick instead of each tab polling independently (#591). Gated on
-// terminal-watch-hub's listenerCount(), which equals the number of open SSE connections
-// (see web/server/http.ts): with nobody watching the sidebar, herdr is never shelled out.
-// Diffs the snapshot with a JSON-string comparison and only publishes -- a bare "invalidate"
-// signal, no payload -- when the snapshot actually changed, so idle sessions don't push an
-// SSE frame every tick. Unlike startPullSweep, this never writes to the events table: herdr
-// state is a transient observation, not a persisted, replayable event (see #591's design
-// notes on the issue).
-export function startHerdrWatch(
-  intervalMs = DEFAULT_HERDR_WATCH_MS,
-): () => void {
-  let stopped = false;
-  let running = false;
-  let lastSnapshot: string | null = null;
-
-  const tick = async () => {
-    if (stopped || running) return;
-    if (terminalWatchListenerCount() === 0) return; // nobody watching -> skip the herdr spawn
-    running = true;
-    try {
-      const snapshot = JSON.stringify(await terminal.sessions());
-      if (snapshot !== lastSnapshot) {
-        lastSnapshot = snapshot;
-        publishTerminalChange();
-      }
-    } catch (err) {
-      log.error(
-        `herdr watch error: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    } finally {
-      running = false;
-    }
-  };
-
-  const timer = setInterval(tick, intervalMs);
-  if (typeof timer.unref === "function") timer.unref();
-  return () => {
-    stopped = true;
-    clearInterval(timer);
-  };
-}
-
 // Close old Herdr panes from the backend on a coarse interval (#666). Unlike the sidebar
-// watcher above, this is not gated on SSE listeners: the cleanup is process-owned
-// maintenance, not a UI cache invalidation. The service closes inactive candidate panes
-// (including PR-closed or no-PR idle cases) with a valid pane id and a known >=10 minute age.
+// this is process-owned maintenance, not a UI cache invalidation. The service closes inactive
+// candidate panes (including PR-closed or no-PR idle cases) with a valid pane id and a known
+// >=10 minute age.
 export function startHerdrInactiveCleanup(
   intervalMs = DEFAULT_HERDR_INACTIVE_CLEANUP_MS,
 ): () => void {

@@ -201,44 +201,6 @@ test("GET /events streams replayed then live events as SSE notifications", async
   ctrl.abort();
 });
 
-// #591: a bare, non-persisted `event: terminal` frame -- distinct from `event: loophub` --
-// reaches every open /events connection when the herdr watcher (or, here, the test directly)
-// publishes to terminal-watch-hub. It carries no id/replay semantics, so the client re-fetches
-// terminal/sessions over JSON-RPC on receipt instead of parsing a payload.
-test("GET /events also streams `terminal` frames published on terminal-watch-hub", async () => {
-  const { publish } = await import("../../core/terminal-watch-hub.ts");
-
-  const ctrl = new AbortController();
-  const res = await fetch(`${base}/events`, { signal: ctrl.signal });
-  const reader = res.body!.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-
-  // Re-publish on a short interval: the very first publish() can race the connection's
-  // subscribeTerminalWatch call completing server-side, so keep nudging until a frame shows up.
-  const republish = setInterval(publish, 50);
-  publish();
-
-  const deadline = Date.now() + 2000;
-  try {
-    for (;;) {
-      if (buf.includes("event: terminal\ndata: {}\n\n")) break;
-      if (Date.now() > deadline)
-        throw new Error("timed out waiting for terminal frame");
-      const timer = new Promise<{ value?: Uint8Array; done: boolean }>((r) =>
-        setTimeout(() => r({ done: true }), 100),
-      );
-      const { value, done } = await Promise.race([reader.read(), timer]);
-      if (done && !value) continue;
-      if (value) buf += dec.decode(value, { stream: true });
-    }
-  } finally {
-    clearInterval(republish);
-  }
-
-  ctrl.abort();
-});
-
 // A 1x1 transparent PNG.
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
