@@ -325,7 +325,7 @@ export function listIssues(
   repoId: number,
   kind: "issue" | "pull" | "any",
   state: string,
-  sort: "updated" | "created" = "updated",
+  sort: "updated" | "created" = "created",
 ): any[] {
   const conds = ["repo_id = ?"];
   const params: any[] = [repoId];

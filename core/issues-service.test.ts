@@ -12,6 +12,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
+let D: typeof import("./db.ts");
 let repoPath: string;
 
 function git(args: string[]) {
@@ -21,6 +22,7 @@ function git(args: string[]) {
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
+  D = await import("./db.ts");
   repoPath = mkdtempSync(join(tmpdir(), "lh-issue-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -63,6 +65,73 @@ test("issues.get returns an empty comment_list when there are no comments", () =
   const detail = svc.issues.get("me/proj", issue.number) as any;
   expect(detail.comments).toBe(0);
   expect(detail.comment_list).toEqual([]);
+});
+
+test("issues.list defaults to newest-created order and keeps label filters (#751)", async () => {
+  const repo = S.createRepo("me/list-default-sort", "/tmp/list-default-sort");
+  const oldIssue = S.createIssue(
+    repo.id,
+    "issue",
+    "old labeled",
+    "",
+    "me",
+  ) as any;
+  const newIssue = S.createIssue(
+    repo.id,
+    "issue",
+    "new labeled",
+    "",
+    "me",
+  ) as any;
+  const newestUnlabeled = S.createIssue(
+    repo.id,
+    "issue",
+    "newest unlabeled",
+    "",
+    "me",
+  ) as any;
+  const setTimes = (id: number, created: string, updated: string) =>
+    D.db.run("UPDATE issues SET created_at = ?, updated_at = ? WHERE id = ?", [
+      created,
+      updated,
+      id,
+    ]);
+
+  setTimes(oldIssue.id, "2026-01-01T00:00:00Z", "2026-06-01T00:00:00Z");
+  setTimes(newIssue.id, "2026-02-01T00:00:00Z", "2026-02-01T00:00:00Z");
+  setTimes(newestUnlabeled.id, "2026-03-01T00:00:00Z", "2026-03-01T00:00:00Z");
+  S.addLabels(repo.id, oldIssue.id, ["ready-to-build"]);
+  S.addLabels(repo.id, newIssue.id, ["ready-to-build"]);
+
+  const defaults = (await svc.issues.list("me/list-default-sort", {
+    kind: "issue",
+    state: "open",
+  })) as any[];
+  const filtered = (await svc.issues.list("me/list-default-sort", {
+    kind: "issue",
+    state: "open",
+    labels: ["ready-to-build"],
+  })) as any[];
+  const updated = (await svc.issues.list("me/list-default-sort", {
+    kind: "issue",
+    state: "open",
+    sort: "updated",
+  })) as any[];
+
+  expect(defaults.map((issue) => issue.title)).toEqual([
+    "newest unlabeled",
+    "new labeled",
+    "old labeled",
+  ]);
+  expect(filtered.map((issue) => issue.title)).toEqual([
+    "new labeled",
+    "old labeled",
+  ]);
+  expect(updated.map((issue) => issue.title)).toEqual([
+    "old labeled",
+    "newest unlabeled",
+    "new labeled",
+  ]);
 });
 
 test("issues.create links a New Issue Herdr pane through the launch id (#670)", () => {

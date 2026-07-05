@@ -2072,7 +2072,7 @@ export const issues = {
       MAX_LIST_PER_PAGE,
     );
     const page = opts.page && opts.page >= 1 ? opts.page : 1;
-    let rows = S.listIssues(r.id, kind, state, opts.sort ?? "updated");
+    let rows = S.listIssues(r.id, kind, state, opts.sort ?? "created");
     if (labelsFilter.length) {
       rows = rows.filter((row) => {
         const names = S.issueLabels(row.id).map((l: any) => l.name);

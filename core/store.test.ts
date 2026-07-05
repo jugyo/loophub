@@ -98,7 +98,7 @@ test("issues, labels, comments, and review state round-trip through the adapter"
   expect(S.getIssueById(issue.id).state).toBe("closed");
 });
 
-test("listIssues sorts by updated_at by default and by created_at when asked (#418)", () => {
+test("listIssues sorts by created_at by default and by updated_at when asked (#418, #751)", () => {
   const repo = S.createRepo("me/sort", "/tmp/sort");
   // Three open issues. Control created_at/updated_at directly so order is
   // deterministic regardless of now()'s one-second granularity. Issue #1 is the
@@ -120,14 +120,14 @@ test("listIssues sorts by updated_at by default and by created_at when asked (#4
   const numbers = (sort?: "updated" | "created") =>
     S.listIssues(repo.id, "issue", "open", sort).map((r: any) => r.number);
 
-  // Default: most recently updated first -> #1 (just updated), then #3, #2.
-  expect(numbers()).toEqual([1, 3, 2]);
-  expect(numbers("updated")).toEqual([1, 3, 2]);
-  // created: newest created first -> #3, #2, #1 (updated_at no longer matters).
+  // Default/created: newest created first -> #3, #2, #1 (updated_at no longer matters).
+  expect(numbers()).toEqual([3, 2, 1]);
   expect(numbers("created")).toEqual([3, 2, 1]);
+  // Explicit updated still means most recently updated first -> #1 (just updated), then #3, #2.
+  expect(numbers("updated")).toEqual([1, 3, 2]);
 });
 
-test("listIssues created sort breaks created_at ties by number desc (#418)", () => {
+test("listIssues default created sort breaks created_at ties by number desc (#418, #751)", () => {
   const repo = S.createRepo("me/sort-tie", "/tmp/sort-tie");
   const a = S.createIssue(repo.id, "issue", "a", "", "me") as any; // #1
   const b = S.createIssue(repo.id, "issue", "b", "", "me") as any; // #2
@@ -140,8 +140,51 @@ test("listIssues created sort breaks created_at ties by number desc (#418)", () 
     ]);
   }
   expect(
+    S.listIssues(repo.id, "issue", "open").map((r: any) => r.number),
+  ).toEqual([3, 2, 1]);
+  expect(
     S.listIssues(repo.id, "issue", "open", "created").map((r: any) => r.number),
   ).toEqual([3, 2, 1]);
+});
+
+test("listIssues keeps filters when using the default created sort (#751)", () => {
+  const repo = S.createRepo("me/sort-filter", "/tmp/sort-filter");
+  const oldOpen = S.createIssue(repo.id, "issue", "old open", "", "me") as any;
+  const newestOpen = S.createIssue(
+    repo.id,
+    "issue",
+    "newest open",
+    "",
+    "me",
+  ) as any;
+  const newestClosed = S.createIssue(
+    repo.id,
+    "issue",
+    "newest closed",
+    "",
+    "me",
+  ) as any;
+  const newestPull = S.createIssue(
+    repo.id,
+    "pull",
+    "newest pull",
+    "",
+    "me",
+  ) as any;
+  const set = (id: number, created: string) =>
+    D.db.run("UPDATE issues SET created_at = ? WHERE id = ?", [created, id]);
+
+  set(oldOpen.id, "2026-01-01T00:00:00Z");
+  set(newestOpen.id, "2026-04-01T00:00:00Z");
+  set(newestClosed.id, "2026-05-01T00:00:00Z");
+  set(newestPull.id, "2026-06-01T00:00:00Z");
+  S.updateIssue(newestClosed.id, { state: "closed" });
+
+  const titles = S.listIssues(repo.id, "issue", "open").map(
+    (r: any) => r.title,
+  );
+
+  expect(titles).toEqual(["newest open", "old open"]);
 });
 
 test("a PASS goes stale once the PR head advances past the passed commit", () => {
