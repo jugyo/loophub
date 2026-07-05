@@ -137,7 +137,7 @@ test("startEventTail forwards out-of-process DB writes to the in-process hub", a
 });
 
 test("startPullSweep fires pull_request.updated on head SHA change, no-ops when unchanged", async () => {
-  const { startPullSweep } = await import("./events.ts");
+  const { startPullSweep } = await import("../../worker/maintenance.ts");
 
   // Real git repo so revParse(local_path, head_ref) resolves a moving branch head.
   const repoPath = mkdtempSync(join(tmpdir(), "lh-sweep-"));
@@ -191,7 +191,7 @@ test("startPullSweep fires pull_request.updated on head SHA change, no-ops when 
 });
 
 test("startUsageSweep syncs changed session usage and emits linked target events only on updates", async () => {
-  const { startUsageSweep } = await import("./events.ts");
+  const { startUsageSweep } = await import("../../worker/maintenance.ts");
 
   const originalHome = process.env.HOME;
   process.env.HOME = HOME;
@@ -268,7 +268,9 @@ test("startUsageSweep syncs changed session usage and emits linked target events
 });
 
 test("startHerdrInactiveCleanup periodically closes old inactive Herdr panes only", async () => {
-  const { startHerdrInactiveCleanup } = await import("./events.ts");
+  const { startHerdrInactiveCleanup } = await import(
+    "../../worker/maintenance.ts"
+  );
   const { herdrSessionName } = await import("../../core/terminal-launch.ts");
 
   const repoPath = mkdtempSync(join(tmpdir(), "lh-herdr-cleanup-repo-"));

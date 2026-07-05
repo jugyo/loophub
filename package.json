@@ -16,6 +16,7 @@
     "lh": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx cli/index.ts",
     "lh-web": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx web/server/index.ts",
     "lh-worker": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/index.ts",
+    "up": "node --import tsx scripts/up.ts",
     "contract": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx scripts/emit-rpc-contract.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
