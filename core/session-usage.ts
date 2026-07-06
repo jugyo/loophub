@@ -139,6 +139,22 @@ const GPT_54_MINI_PRICE: UsagePrice = {
   cacheRead: 0.08,
   output: 4.5,
 };
+// gpt-5.3-codex-spark itself has NO confirmed per-token API rate: OpenAI's
+// pricing page (https://developers.openai.com/codex/pricing, checked
+// 2026-07-06) explicitly states it as a ChatGPT Pro research preview
+// ("isn't available in the API at launch", "credit rates for this model are
+// not final") with no numeric rate listed. The figures below are the
+// confirmed OpenAI rate for the sibling gpt-5.3-codex tier (input $1.75 /
+// cached $0.175 / output $14.00 per 1M tokens), which third-party trackers
+// (e.g. pricepertoken.com) report spark as matching — a working stand-in
+// borrowed from a confirmed sibling model, not a confirmed spark-specific
+// price. Replace with OpenAI's own spark rate once it is published.
+const GPT_53_CODEX_SPARK_PRICE: UsagePrice = {
+  input: 1.75,
+  cacheCreation: 1.75,
+  cacheRead: 0.175,
+  output: 14,
+};
 
 export function priceForModel(model: string): UsagePrice | null {
   const m = model.toLowerCase();
@@ -159,6 +175,7 @@ export function priceForModel(model: string): UsagePrice | null {
   if (m.includes("gpt-5.5")) return GPT_55_PRICE;
   if (m.includes("gpt-5.4-mini")) return GPT_54_MINI_PRICE;
   if (m.includes("gpt-5.4")) return GPT_54_PRICE;
+  if (m.includes("gpt-5.3-codex-spark")) return GPT_53_CODEX_SPARK_PRICE;
   return null;
 }
 

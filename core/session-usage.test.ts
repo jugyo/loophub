@@ -5,6 +5,7 @@ import {
   parseClaudeSubagentJsonl,
   parseClaudeUsageJsonl,
   parseCodexRolloutJsonl,
+  priceForModel,
 } from "./session-usage.ts";
 
 test("parseClaudeUsageJsonl extracts assistant usage and dedupes message ids", () => {
@@ -196,4 +197,15 @@ test("parseCodexRolloutJsonl extracts final cumulative token count", () => {
     output_tokens: 12,
   });
   expect(calculateCostUsd("gpt-5.5", parsed.entries[0])).toBeCloseTo(0.000735);
+});
+
+test("priceForModel prices gpt-5.3-codex-spark without breaking the gpt-5.4-mini/gpt-5.4 order", () => {
+  expect(priceForModel("gpt-5.3-codex-spark")).toMatchObject({
+    input: 1.75,
+    cacheCreation: 1.75,
+    cacheRead: 0.175,
+    output: 14,
+  });
+  expect(priceForModel("gpt-5.4-mini")).toMatchObject({ input: 0.75 });
+  expect(priceForModel("gpt-5.4")).toMatchObject({ input: 2.5 });
 });
