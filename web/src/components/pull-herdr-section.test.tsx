@@ -66,7 +66,7 @@ describe("PullHerdrSection (#609)", () => {
       <PullHerdrSection owner="me" repo="proj" pull={42} />,
     );
     expect(screen.getByRole("heading", { name: "Agents" })).toBeTruthy();
-    expect(container.querySelectorAll("svg")).toHaveLength(1);
+    expect(container.querySelectorAll("svg")).toHaveLength(2);
     expect(screen.getByText("lh-me-proj")).toBeTruthy();
     expect(screen.getByText(/dev #609/)).toBeTruthy();
     expect(screen.getByText("working")).toBeTruthy();
@@ -127,10 +127,10 @@ describe("PullHerdrSection (#609)", () => {
     expect(screen.queryByText(/dev #609/)).toBeNull();
   });
 
-  it("focuses the agent's pane via terminal/focusAgent when Focus is clicked", () => {
+  it("focuses the agent's pane via terminal/focusAgent when Open in Herdr is clicked", () => {
     herdrSessions.value = running;
     render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
-    fireEvent.click(screen.getByRole("button", { name: "Focus" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
     expect(focusHerdrAgent).toHaveBeenCalledWith(
       { repo: "me/proj", paneId: "%12" },
       expect.anything(),

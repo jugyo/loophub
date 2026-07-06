@@ -1138,8 +1138,8 @@ describe("PullDetail", () => {
     expect(screen.queryByRole("button", { name: /^Resume$/ })).toBeNull();
   });
 
-  // #609: the sidebar shows an Agents section (session name + Focus) while herdr reports an
-  // agent running this PR's worktree, and hides it entirely otherwise.
+  // #609: the sidebar shows an Agents section (session name + Open in Herdr) while herdr reports
+  // an agent running this PR's worktree, and hides it entirely otherwise.
   it("shows the sidebar Agents section when a herdr session runs this PR", async () => {
     renderDetail({
       "terminal/sessions": () => ({
@@ -1156,7 +1156,7 @@ describe("PullDetail", () => {
 
     expect(await screen.findByRole("heading", { name: "Agents" })).toBeTruthy();
     expect(screen.getByText("lh-me-proj")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Focus" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open in Herdr" })).toBeTruthy();
   });
 
   it("hides the sidebar Agents section when no herdr session runs this PR", async () => {

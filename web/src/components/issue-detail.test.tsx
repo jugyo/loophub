@@ -222,7 +222,7 @@ describe("IssueDetail", () => {
     );
 
     const button = await screen.findByRole("button", {
-      name: "Focus terminal for issue #12",
+      name: "Open in Herdr for issue #12",
     });
     fireEvent.click(button);
     await waitFor(() => {
@@ -239,7 +239,7 @@ describe("IssueDetail", () => {
     await screen.findByText("ui2: issue detail");
     expect(
       screen.queryByRole("button", {
-        name: "Focus terminal for issue #12",
+        name: "Open in Herdr for issue #12",
       }),
     ).toBeNull();
   });

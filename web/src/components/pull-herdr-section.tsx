@@ -1,10 +1,10 @@
-// PR-detail sidebar section (#609): the herdr session running this PR's worktree, with a
-// Focus button that switches herdr's focus to that agent's pane (terminal/focusAgent, #578 —
-// same action as the issue-list Herdr badge, #579). Renders nothing when herdr reports no
+// PR-detail sidebar section (#609): the herdr session running this PR's worktree, with an
+// Open in Herdr button that switches herdr's focus to that agent's pane (terminal/focusAgent,
+// #578 — same action as the issue-list Herdr badge, #579). Renders nothing when herdr reports no
 // session for the PR, so the sidebar never implies a terminal that isn't there. Reuses the
 // shared terminal/sessions poll (useHerdrSessions, #495) — no extra herdr shellout per page.
 
-import { Bot } from "lucide-react";
+import { Bot, Terminal } from "lucide-react";
 import {
   findPullHerdrWorkspace,
   herdrWorkspaceBadgeIconClass,
@@ -84,7 +84,8 @@ export function PullHerdrSection({
           variant="secondary"
           size="sm"
           className="shrink-0"
-          title="Focus the running agent pane"
+          title="Open the running agent pane in Herdr"
+          aria-label="Open in Herdr"
           disabled={focus.isPending}
           onClick={() =>
             focus.mutate(
@@ -92,15 +93,14 @@ export function PullHerdrSection({
               {
                 onError: (e) =>
                   showError(
-                    e instanceof Error
-                      ? e.message
-                      : "Failed to focus the agent pane.",
+                    e instanceof Error ? e.message : "Failed to open in Herdr.",
                   ),
               },
             )
           }
         >
-          Focus
+          <Terminal className="size-4" />
+          Open in Herdr
         </Button>
       </div>
     </section>
