@@ -154,7 +154,7 @@ test("undoMainMerge refuses a squash merge because it is not a merge commit", as
   const { pr, mergeSha } = await createMergedPr("feat/undo-squash", "squash");
 
   await expect(svc.pulls.undoMainMerge("me/proj", pr.number)).rejects.toThrow(
-    "not a merge commit",
+    "Recorded squash merge commit has 1 parent(s)",
   );
 
   expect(git(["rev-parse", "main"])).toBe(mergeSha);

@@ -443,6 +443,7 @@ export const pulls = {
       merged: !!p.merged,
       baseRef: p.base_ref,
       mergeCommitSha: p.merge_commit_sha ?? null,
+      mergeMethod: p.merge_method ?? null,
       currentBaseSha,
       mergeParents,
     });

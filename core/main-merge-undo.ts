@@ -3,6 +3,7 @@ export interface MainMergeUndoFacts {
   baseRef: string;
   requiredBaseRef?: string;
   mergeCommitSha: string | null;
+  mergeMethod?: string | null;
   currentBaseSha: string | null;
   mergeParents: string[] | null;
 }
@@ -72,8 +73,15 @@ export function assessMainMergeUndo(
     return {
       ...base,
       can_undo: false,
-      reason: `Recorded commit has ${facts.mergeParents.length} parent(s), not a merge commit`,
+      reason: `${recordedCommitLabel(facts.mergeMethod)} has ${facts.mergeParents.length} parent(s); undo-main-merge only supports two-parent merge commits`,
     };
   }
   return { ...base, can_undo: true, reason: null };
+}
+
+function recordedCommitLabel(method: string | null | undefined): string {
+  if (method === "squash") return "Recorded squash merge commit";
+  if (method === "rebase") return "Recorded rebase merge commit";
+  if (method === "merge") return "Recorded merge commit";
+  return "Recorded commit";
 }
