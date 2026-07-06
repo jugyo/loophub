@@ -143,6 +143,57 @@ export function herdrPullWorkspacesFromAgentList(
   return [...byPull.values()];
 }
 
+/**
+ * A running herdr agent's pane, matched back to the issue it is working (#820 — the foundation
+ * for the issue-detail "Agents" section, whose UI lands in a follow-up). Same shape as
+ * HerdrPullWorkspace but keyed by issue number; `pane_id` is likewise a valid `herdr agent focus`
+ * target so a later UI can click-to-focus with it directly.
+ */
+export interface HerdrIssueWorkspace {
+  issue: number;
+  pane_id: string;
+  /** Raw herdr agent_status (known values: working | blocked | done | idle), same as HerdrAgent.status. */
+  status: string;
+}
+
+/**
+ * Maps running herdr agents back to the *issue* each is working, the issue-keyed counterpart of
+ * herdrPullWorkspacesFromAgentList (#820). There is no issue number anywhere in the `agent list`
+ * output — an agent only exposes its worktree cwd, which is the `pr-<n>` convention (herdr does
+ * not surface a launched agent's env, so an `--env` issue marker would be invisible here). So the
+ * issue binding is resolved in two already-recorded-at-launch hops: the pane's cwd structurally
+ * records its PR (`pr-<n>`, set when the worktree is provisioned), and the PR→issue link is
+ * recorded when `lh dev` opens the PR (`Closes #<n>`). This function composes them — it reuses
+ * herdrPullWorkspacesFromAgentList to resolve cwd→PR, then maps PR→issue through `pullToIssue`,
+ * which the caller builds from the DB's PR↔issue links (kept out of this pure parser so it stays
+ * unit-testable without a DB).
+ *
+ * An agent whose PR has no entry in `pullToIssue` (PR not linked to an issue, or the link is
+ * unknown to the caller) is skipped, same degrade-to-empty tolerance as the rest of this file.
+ * Several PRs can close one issue (multiple proposal PRs), so several agents can map to the same
+ * issue; as with the PR variant only the first agent per issue is kept. Issue-create sessions
+ * (repo-root cwd, no PR) never resolve here — their issue link is the post-hoc issue_herdr_panes
+ * record (#670), not this cwd→PR→issue path.
+ */
+export function herdrIssueWorkspacesFromAgentList(
+  stdout: string,
+  worktreeRoot: string,
+  fullName: string,
+  pullToIssue: ReadonlyMap<number, number>,
+): HerdrIssueWorkspace[] {
+  const byIssue = new Map<number, HerdrIssueWorkspace>();
+  for (const w of herdrPullWorkspacesFromAgentList(
+    stdout,
+    worktreeRoot,
+    fullName,
+  )) {
+    const issue = pullToIssue.get(w.pull);
+    if (issue === undefined || byIssue.has(issue)) continue;
+    byIssue.set(issue, { issue, pane_id: w.pane_id, status: w.status });
+  }
+  return [...byIssue.values()];
+}
+
 /** One workspace inside a herdr session, from `herdr --session <name> workspace list`. */
 export interface HerdrWorkspace {
   id: string;

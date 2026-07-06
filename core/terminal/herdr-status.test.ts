@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  herdrIssueWorkspacesFromAgentList,
   herdrPullWorkspacesFromAgentList,
   paneRunsClaudeResume,
   parseHerdrAgentList,
@@ -261,6 +262,99 @@ describe("herdrPullWorkspacesFromAgentList", () => {
     expect(herdrPullWorkspacesFromAgentList(input, ROOT, FULL_NAME)).toEqual(
       [],
     );
+  });
+});
+
+describe("herdrIssueWorkspacesFromAgentList", () => {
+  const ROOT = "/home/u/.loophub/worktrees";
+  const FULL_NAME = "me/app";
+
+  // One agent in the pr-12 worktree, one in pr-20 (whose PR the caller's map doesn't know), one
+  // at the repo root (no PR worktree — the New Issue flow).
+  const AGENT_LIST = JSON.stringify({
+    result: {
+      agents: [
+        {
+          name: "PR 12",
+          agent_status: "working",
+          pane_id: "wP:p2",
+          foreground_cwd: `${ROOT}/${FULL_NAME}/pr-12`,
+        },
+        {
+          name: "PR 20",
+          agent_status: "idle",
+          pane_id: "wT:p2",
+          foreground_cwd: `${ROOT}/${FULL_NAME}/pr-20`,
+        },
+        {
+          name: "New issue",
+          agent_status: "working",
+          pane_id: "wQ:p2",
+          cwd: "/home/u/ws/app",
+        },
+      ],
+    },
+  });
+
+  test("maps an agent's PR worktree to the issue its PR closes", () => {
+    // Only pr-12 is in the map; pr-20's agent and the repo-root agent are dropped.
+    expect(
+      herdrIssueWorkspacesFromAgentList(
+        AGENT_LIST,
+        ROOT,
+        FULL_NAME,
+        new Map([[12, 9]]),
+      ),
+    ).toEqual([{ issue: 9, pane_id: "wP:p2", status: "working" }]);
+  });
+
+  test("keeps only the first agent when two PRs close the same issue", () => {
+    const out = herdrIssueWorkspacesFromAgentList(
+      JSON.stringify({
+        result: {
+          agents: [
+            {
+              pane_id: "wP:p2",
+              cwd: `${ROOT}/${FULL_NAME}/pr-12`,
+              agent_status: "working",
+            },
+            {
+              pane_id: "wS:p2",
+              cwd: `${ROOT}/${FULL_NAME}/pr-15`,
+              agent_status: "done",
+            },
+          ],
+        },
+      }),
+      ROOT,
+      FULL_NAME,
+      new Map([
+        [12, 9],
+        [15, 9],
+      ]),
+    );
+    expect(out).toEqual([{ issue: 9, pane_id: "wP:p2", status: "working" }]);
+  });
+
+  test("returns [] when no agent's PR is in the map", () => {
+    expect(
+      herdrIssueWorkspacesFromAgentList(AGENT_LIST, ROOT, FULL_NAME, new Map()),
+    ).toEqual([]);
+  });
+
+  test.each([
+    ["", "empty"],
+    ["not json", "non-JSON"],
+    ['{"result": {}}', "missing agents"],
+  ])("degrades to [] on %s (%s)", (input) => {
+    expect(
+      herdrIssueWorkspacesFromAgentList(
+        input,
+        ROOT,
+        FULL_NAME,
+        new Map([[12, 9]]),
+      ),
+    ).toEqual([]);
   });
 });
 
