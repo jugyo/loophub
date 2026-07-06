@@ -7,6 +7,7 @@ import {
   ENV_ISSUE_CREATE_HERDR_LAUNCH,
   ensureWritable,
   githubIssueJSON,
+  herdrPaneJSON,
   issueJSON,
   issueListItemJSON,
   issueOr404,
@@ -75,7 +76,7 @@ export const issues = {
     // Detail-only (#614): the GitHub issue this one was imported from, or null. Mirrors how PR detail
     // surfaces github_pull; kept off the cheap list serializer.
     out.github_issue = githubIssueJSON(S.getGithubIssue(row.id));
-    out.herdr_pane = S.getIssueHerdrPane(row.id);
+    out.herdr_pane = herdrPaneJSON(S.getIssueHerdrPane(row.id));
     return out;
   },
 

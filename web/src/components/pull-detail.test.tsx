@@ -63,13 +63,20 @@ const pull: PullRequest = {
   additions: 1,
   deletions: 1,
   changed_files: 1,
+  working: false,
+  labels: [],
+  comments: 0,
   created_at: "2026-06-18T11:00:00Z",
   updated_at: "2026-06-18T12:00:00Z",
   linked_issue: {
     number: 153,
     title: "ui2: PR list + detail + merged",
     state: "open",
+    html_url: "/issues/153",
   },
+  worktree_path: null,
+  merge_mode: "merge",
+  github_pull: null,
 };
 
 const files: PullFile[] = [
@@ -869,6 +876,7 @@ describe("PullDetail", () => {
         state: "REQUEST_CHANGES",
         body: "needs work",
         head_sha: "old1234deadbeef",
+        topic: null,
         submitted_at: "2026-06-18T10:00:00Z",
       },
       {
@@ -877,6 +885,7 @@ describe("PullDetail", () => {
         state: "PASS",
         body: "LGTM now",
         head_sha: "aaa",
+        topic: null,
         submitted_at: "2026-06-18T11:30:00Z",
       },
     ];
@@ -949,6 +958,7 @@ describe("PullDetail", () => {
         state: "REQUEST_CHANGES",
         body: "older feedback",
         head_sha: "older12",
+        topic: null,
         submitted_at: "2026-06-18T09:00:00Z",
       },
       {
@@ -957,6 +967,7 @@ describe("PullDetail", () => {
         state: "REQUEST_CHANGES",
         body: "newest feedback",
         head_sha: "newer34",
+        topic: null,
         submitted_at: "2026-06-18T10:00:00Z",
       },
     ];

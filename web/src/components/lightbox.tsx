@@ -43,6 +43,7 @@ function panBounds(
   const viewportHeight = dialog?.clientHeight ?? 0;
 
   if (
+    !content ||
     !contentRect ||
     contentRect.width === 0 ||
     contentRect.height === 0 ||
@@ -125,13 +126,14 @@ export function Lightbox({
 
   useEffect(() => {
     if (!dragStart) return;
+    const start = dragStart;
 
     function onMouseMove(e: MouseEvent) {
       setPan(
         clampPan(
           {
-            x: dragStart.pan.x + e.clientX - dragStart.pointer.x,
-            y: dragStart.pan.y + e.clientY - dragStart.pointer.y,
+            x: start.pan.x + e.clientX - start.pointer.x,
+            y: start.pan.y + e.clientY - start.pointer.y,
           },
           dialogRef.current,
           contentRef.current,

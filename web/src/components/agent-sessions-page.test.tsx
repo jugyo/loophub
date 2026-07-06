@@ -26,6 +26,7 @@ const SESSIONS: AgentSession[] = [
   {
     id: "s-old",
     agent: "reviewer",
+    session: "",
     created_at: "2026-07-03T10:00:00Z",
     updated_at: "2026-07-03T12:00:00Z",
   },

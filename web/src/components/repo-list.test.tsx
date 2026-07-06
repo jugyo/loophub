@@ -34,6 +34,7 @@ function repo(
     id,
     name: full_name.split("/")[1],
     full_name,
+    owner: { login: full_name.split("/")[0] },
     default_branch: "main",
     local_path: `/tmp/${id}`,
     archived: false,

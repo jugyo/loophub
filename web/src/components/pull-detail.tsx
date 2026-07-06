@@ -490,7 +490,7 @@ function reviewGroupVerdict(reviews: PullReview[]): {
 // visible without expanding.
 function groupReviewsByCommit(
   reviews: PullReview[],
-  currentHeadSha: string,
+  currentHeadSha: string | null,
 ): ReviewGroup[] {
   const byCommit = new Map<string, PullReview[]>();
   for (const r of reviews) {
@@ -531,7 +531,7 @@ function ReviewList({
   repo: string;
   reviews: PullReview[] | undefined;
   lineComments: PullLineComment[] | undefined;
-  currentHeadSha: string;
+  currentHeadSha: string | null;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -709,7 +709,7 @@ function FilesChanged({
   files: PullFile[] | undefined;
   lineComments: PullLineComment[] | undefined;
   reviewNotes: ReviewNote[] | undefined;
-  currentHeadSha: string;
+  currentHeadSha: string | null;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -878,7 +878,7 @@ function DiffFileDialog({
   file: PullFile;
   comments: PullLineComment[];
   notes: ReviewNote[];
-  currentHeadSha: string;
+  currentHeadSha: string | null;
   hasPreviousFile: boolean;
   hasNextFile: boolean;
   onPreviousFile: () => void;
@@ -1027,7 +1027,7 @@ function FileDiffContent({
   file: PullFile;
   comments: PullLineComment[];
   notes: ReviewNote[];
-  currentHeadSha: string;
+  currentHeadSha: string | null;
   mode: DiffDialogMode;
 }) {
   const lines = parsePatch(file.patch);
@@ -1139,7 +1139,7 @@ function ReviewNoteCard({
   owner: string;
   repo: string;
   note: ReviewNote;
-  currentHeadSha: string;
+  currentHeadSha: string | null;
 }) {
   const isStale = !!currentHeadSha && note.commit_sha !== currentHeadSha;
   return (

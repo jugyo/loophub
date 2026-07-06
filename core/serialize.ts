@@ -12,8 +12,11 @@ import {
   revParse,
 } from "./git.ts";
 import { linkedRef } from "./links.ts";
+import type { MainMergeUndoStatus } from "./main-merge-undo.ts";
 import { assessMainMergeUndo } from "./main-merge-undo.ts";
+import type { MergeMode } from "./merge-mode.ts";
 import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
+import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import { pullWorktreeDirty } from "./pull-worktree.ts";
 import {
@@ -25,7 +28,25 @@ import {
 import * as S from "./store.ts";
 import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
 
-export function repoJSON(r: S.Repo) {
+export interface RepoWire {
+  id: number;
+  name: string;
+  full_name: string;
+  owner: UserWire;
+  default_branch: string;
+  local_path: string;
+  created_at: string;
+  archived: boolean;
+  archived_at: string | null;
+  favorite: boolean;
+  favorited_at: string | null;
+  // #406: raw per-repo setting only ('merge' | 'github_pr' | null). The effective mode (which
+  // resolves the null default against the GitHub remote) needs a git call, so it is served by the
+  // dedicated repos/mergeMode procedure, not this sync serializer.
+  merge_mode: MergeMode | null;
+}
+
+export function repoJSON(r: S.Repo): RepoWire {
   return {
     id: r.id,
     name: r.name,
@@ -38,18 +59,15 @@ export function repoJSON(r: S.Repo) {
     archived_at: r.archived_at ?? null,
     favorite: !!r.favorite,
     favorited_at: r.favorited_at ?? null,
-    // #406: raw per-repo setting only ('merge' | 'github_pr' | null). The effective mode (which
-    // resolves the null default against the GitHub remote) needs a git call, so it is served by the
-    // dedicated repos/mergeMode procedure, not this sync serializer.
-    merge_mode: r.merge_mode ?? null,
+    merge_mode: (r.merge_mode as MergeMode | null) ?? null,
   };
 }
 
-interface UserWire {
+export interface UserWire {
   login: string;
 }
 
-interface SessionUsageWire {
+export interface SessionUsageWire {
   session_id: string;
   model: string;
   input_tokens: number;
@@ -60,15 +78,22 @@ interface SessionUsageWire {
   updated_at: string;
 }
 
-interface SessionSubagentUsageWire extends SessionUsageWire {
+export interface SessionSubagentUsageWire extends SessionUsageWire {
   source_id: string;
   parent_source_id: string | null;
   label: string | null;
   kind: string;
 }
 
-interface AgentSessionWire {
-  [key: string]: unknown;
+export interface SessionLinkedTargetWire {
+  repo: string;
+  kind: "issue" | "pull";
+  number: number;
+  title: string;
+  state: "open" | "closed";
+}
+
+export interface AgentSessionWire {
   id: string;
   agent: string;
   session: string;
@@ -79,24 +104,23 @@ interface AgentSessionWire {
   kind?: string;
   usage?: SessionUsageWire[];
   subagent_usage?: SessionSubagentUsageWire[];
-  linked_targets?: ReturnType<typeof sessionLinkedTargetJSON>[];
+  linked_targets?: SessionLinkedTargetWire[];
 }
 
-interface RelatedSessionWire extends AgentSessionWire {
+export interface RelatedSessionWire extends AgentSessionWire {
   linked_at: string | null;
   resume: { resumable: boolean; reason?: string };
 }
 
-interface LabelWire {
+export interface LabelWire {
   name: string;
   color: string | null;
 }
 
-interface PullSummaryWire {
-  [key: string]: unknown;
+export interface PullSummaryWire {
   number: number;
   title: string;
-  state: string;
+  state: "open" | "closed";
   merged: boolean;
   html_url: string;
   github_pull: GithubPullWire | null;
@@ -106,17 +130,54 @@ interface PullSummaryWire {
   cost_usd?: number | null;
 }
 
-interface IssueWire {
-  [key: string]: unknown;
+// Extra fields present only on the issue-list linked-PR sub-row (issueListItemJSON's
+// linkedPullDetail), which runs the git status fan-out; the issue-detail summary
+// (pullSummary) does not, so those rows stay the plain PullSummaryWire.
+export interface IssueListPullSummaryWire extends PullSummaryWire {
+  working: boolean;
+  review_state: S.ReviewState;
+  mergeable_state: MergeableState;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+}
+
+// Herdr pane captured from the New Issue flow (#670). Narrowed from the `issue_herdr_panes` row —
+// repo_id/issue_id/created_at/updated_at are internal bookkeeping, not part of the wire contract.
+export interface HerdrPaneWire {
+  launch_id: string;
+  pane_id: string | null;
+  session_name: string | null;
+}
+
+export function herdrPaneJSON(
+  p: S.IssueHerdrPane | null,
+): HerdrPaneWire | null {
+  if (!p) return null;
+  return {
+    launch_id: p.launch_id,
+    pane_id: p.pane_id,
+    session_name: p.session_name,
+  };
+}
+
+export interface IssueWire {
   number: number;
-  state: string;
+  state: "open" | "closed";
   title: string;
   body: string;
   user: UserWire;
   labels: LabelWire[];
   comments: number;
+  // Full comment bodies (author, time, text). Populated only on the issue-detail response
+  // (issues.get), not the list — so the list stays cheap with just the `comments` count (#231).
+  comment_list?: CommentWire[];
   created_at: string;
   updated_at: string;
+  // Sessions related to this issue (#298), newest first. Detail response only.
+  related_sessions?: RelatedSessionWire[];
+  // Herdr pane captured from the New Issue flow (#670). Detail response only.
+  herdr_pane?: HerdrPaneWire | null;
   pull_request?: { url: string };
   linked_pull_requests?: PullSummaryWire[];
   linked_pull_request?: PullSummaryWire | null;
@@ -218,13 +279,15 @@ export function agentSessionJSON(
   return out;
 }
 
-export function sessionLinkedTargetJSON(row: S.SessionLinkedTargetRow) {
+export function sessionLinkedTargetJSON(
+  row: S.SessionLinkedTargetRow,
+): SessionLinkedTargetWire {
   return {
     repo: row.repo,
     kind: row.kind,
     number: row.number,
     title: row.title,
-    state: row.state,
+    state: row.state as "open" | "closed",
   };
 }
 
@@ -327,9 +390,21 @@ export function relatedSessionsJSON(
   );
 }
 
+export interface RelatedSessionsUsageWire {
+  sessions_with_usage: number;
+  input_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  // Null when any included usage row has an unknown model price.
+  cost_usd: number | null;
+  has_unknown_cost: boolean;
+}
+
 export function relatedSessionsUsageJSON(
   sessions: Array<{ usage?: SessionUsageWire[] }>,
-) {
+): RelatedSessionsUsageWire {
   const out = {
     sessions_with_usage: 0,
     input_tokens: 0,
@@ -364,7 +439,14 @@ export function relatedSessionsUsageJSON(
   return out;
 }
 
-export function commentJSON(m: S.CommentRow) {
+export interface CommentWire {
+  id: number;
+  user: UserWire;
+  body: string;
+  created_at: string;
+}
+
+export function commentJSON(m: S.CommentRow): CommentWire {
   return {
     id: m.id,
     user: { login: m.author },
@@ -373,21 +455,48 @@ export function commentJSON(m: S.CommentRow) {
   };
 }
 
-export function reviewJSON(v: S.ReviewRow) {
+export interface ReviewWire {
+  id: number;
+  user: UserWire;
+  // Not narrowed to "PASS" | "REQUEST_CHANGES" | "COMMENT": reviews.create (core/service/reviews.ts)
+  // only special-cases "APPROVE" -> "PASS" and otherwise stores the caller's uppercased string
+  // verbatim, so the wire value isn't actually guaranteed to be one of the three.
+  state: string;
+  body: string;
+  // The commit this review was made against (lets clients group reviews by
+  // commit, e.g. #208) and its aspect/topic (#209). Both may be null.
+  head_sha: string | null;
+  topic: string | null;
+  submitted_at: string;
+}
+
+export function reviewJSON(v: S.ReviewRow): ReviewWire {
   return {
     id: v.id,
     user: { login: v.author },
     state: v.event,
     body: v.body,
-    // The commit this review was made against (lets clients group reviews by
-    // commit, e.g. #208) and its aspect/topic (#209). Both may be null.
     head_sha: v.head_sha ?? null,
     topic: v.topic ?? null,
     submitted_at: v.created_at,
   };
 }
 
-export function reviewCommentJSON(m: S.ReviewCommentRow) {
+export interface ReviewCommentWire {
+  id: number;
+  pull_request_review_id: number | null;
+  user: UserWire;
+  path: string;
+  line: number | null;
+  // Not narrowed to "LEFT" | "RIGHT": reviews.create passes the caller's `side` straight through
+  // (only defaulting a missing value to "RIGHT"), so the wire value isn't actually guaranteed to
+  // be one of the two.
+  side: string | null;
+  body: string;
+  created_at: string;
+}
+
+export function reviewCommentJSON(m: S.ReviewCommentRow): ReviewCommentWire {
   return {
     id: m.id,
     pull_request_review_id: m.review_id,
@@ -400,10 +509,26 @@ export function reviewCommentJSON(m: S.ReviewCommentRow) {
   };
 }
 
+// A per-file diff description note (review_notes; #204, PR-independent since #216). Identity is
+// the commit range (base_sha→commit_sha) + path; pull_request is an optional association to the
+// owning PR (null for a PR-independent note). A consumer compares commit_sha against the PR's live
+// head to decide staleness.
+export interface ReviewNoteWire {
+  id: number;
+  pull_request: { number: number } | null;
+  path: string;
+  base_sha: string;
+  commit_sha: string;
+  body: string;
+  user: UserWire;
+  created_at: string;
+  updated_at: string;
+}
+
 // Shape a `review_notes` row (#204). pull_request summarizes the owning PR by number so
 // consumers see the PR, not the internal row id. base_sha/commit_sha expose the diff range the
 // note is about; a consumer compares commit_sha against the PR's live head to decide staleness.
-export function reviewNoteJSON(n: S.ReviewNoteRow) {
+export function reviewNoteJSON(n: S.ReviewNoteRow): ReviewNoteWire {
   const prRow = n.issue_id != null ? S.getIssueById(n.issue_id) : null;
   return {
     id: n.id,
@@ -418,19 +543,41 @@ export function reviewNoteJSON(n: S.ReviewNoteRow) {
   };
 }
 
+// An orchestrator<->subagent handoff (#352), as shown in the PR detail's Handoffs section. `body`
+// is inline content (instruction / Verify report) when present; otherwise `src` references a
+// canonical copy (plan=PR, diff=commit) and `hash` is its content hash.
+export interface HandoffWire {
+  id: number;
+  seq: number;
+  phase: string;
+  direction: "down" | "up";
+  from: string | null;
+  to: string | null;
+  pull_request: { number: number } | null;
+  issue: { number: number } | null;
+  session_id: string | null;
+  body: string | null;
+  src: string | null;
+  hash: string | null;
+  summary: string | null;
+  model: string | null;
+  cost: string | null;
+  created_at: string;
+}
+
 // Shape a `handoffs` row (#352) into the wire object the CLI / UI read. pr and issue are summarized
 // by number (not the internal issues row id) so consumers see the PR/issue they know. body is the
 // inline content (instruction prompt / Verify report) when present; src+hash reference a canonical
 // copy (plan=PR, diff=commit) when the substance lives elsewhere. cost is returned as-is (free-form
 // text the consumer parses). from/to mirror the orchestration roles.
-export function handoffJSON(h: S.HandoffRow) {
+export function handoffJSON(h: S.HandoffRow): HandoffWire {
   const prRow = h.pr_id != null ? S.getIssueById(h.pr_id) : null;
   const issueRow = h.issue_id != null ? S.getIssueById(h.issue_id) : null;
   return {
     id: h.id,
     seq: h.seq,
     phase: h.phase,
-    direction: h.direction,
+    direction: h.direction as HandoffWire["direction"],
     from: h.from_role ?? null,
     to: h.to_role ?? null,
     pull_request: prRow ? { number: prRow.number } : null,
@@ -450,9 +597,20 @@ export function labelJSON(l: S.LabelRow): LabelWire {
   return { name: l.name, color: l.color };
 }
 
+// An issue group (#312): a repo-scoped, ordered collection of issues. `members` is the count, not
+// the rows, so a list/summary stays cheap; the full ordered membership is fetched via the
+// dedicated members procedure.
+export interface IssueGroupWire {
+  id: number;
+  name: string;
+  members: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // Shape an `issue_groups` row (#312). `members` is the count, not the rows, so a list/summary
 // stays cheap; the full ordered membership is fetched via the dedicated members procedure.
-export function issueGroupJSON(g: S.IssueGroupRow) {
+export function issueGroupJSON(g: S.IssueGroupRow): IssueGroupWire {
   return {
     id: g.id,
     name: g.name,
@@ -462,7 +620,18 @@ export function issueGroupJSON(g: S.IssueGroupRow) {
   };
 }
 
-function linkedIssueSummary(repo: S.Repo, pullRowId: number) {
+// Summary of the issue a PR closes (pull-detail `linked_issue`).
+export interface LinkedIssueWire {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  html_url: string;
+}
+
+function linkedIssueSummary(
+  repo: S.Repo,
+  pullRowId: number,
+): LinkedIssueWire | null {
   const p = S.getPull(pullRowId)!;
   if (!p?.linked_issue_id) return null;
   const linked = S.getIssueById(p.linked_issue_id);
@@ -498,7 +667,24 @@ function pullSummary(repo: S.Repo, pr: S.LinkedPullIssueRow): PullSummaryWire {
 // issue list's linked-PR summary so both compute status identically. The git
 // fan-out (revParse/mergePreview/diffStat/status) is bounded — callers keep
 // their lists paginated.
-async function pullStatusFields(repo: S.Repo, row: S.IssueRow) {
+interface PullStatusFields {
+  headSha: string | null;
+  baseSha: string | null;
+  mergeable: boolean | null;
+  mergeable_state: MergeableState;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  working: boolean;
+  review_state: S.ReviewState;
+  linked: LinkedIssueWire | null;
+  worktree_path: string | null;
+}
+
+async function pullStatusFields(
+  repo: S.Repo,
+  row: S.IssueRow,
+): Promise<PullStatusFields> {
   const p = S.getPull(row.id)!;
   const headSha = await revParse(repo.local_path, p.head_ref);
   const baseSha = await revParse(repo.local_path, p.base_ref);
@@ -508,7 +694,7 @@ async function pullStatusFields(repo: S.Repo, row: S.IssueRow) {
   // signal for the overall PR state.
   const reviewGate = S.computeReviewGate(row.id);
   let mergeable: boolean | null = null;
-  let mergeable_state = "unknown";
+  let mergeable_state: MergeableState = "unknown";
   if (!p.merged && headSha && baseSha) {
     const [prev, ahead] = await Promise.all([
       mergePreview(repo.local_path, p.base_ref, p.head_ref),
@@ -584,7 +770,15 @@ async function pullStatusFields(repo: S.Repo, row: S.IssueRow) {
 // of which renders the action) so only pullJSON pays for it. The GitHub-remote check is a repo-level
 // constant resolved here once per PR detail, instead of being spent — and discarded — by every
 // linked-PR summary row.
-async function pullMergeFields(repo: S.Repo, rowId: number) {
+interface PullMergeFields {
+  merge_mode: MergeMode;
+  github_pull: GithubPullWire | null;
+}
+
+async function pullMergeFields(
+  repo: S.Repo,
+  rowId: number,
+): Promise<PullMergeFields> {
   const merge_mode = effectiveMergeMode(
     repo.merge_mode,
     isGithubRemoteUrl(await remoteUrl(repo.local_path)),
@@ -592,10 +786,11 @@ async function pullMergeFields(repo: S.Repo, rowId: number) {
   return { merge_mode, github_pull: githubPullJSON(S.getGithubPull(rowId)) };
 }
 
-async function pullMainMergeUndoStatus(repo: S.Repo, p: S.PullRow) {
-  const withRepoWriteStatus = (
-    status: ReturnType<typeof assessMainMergeUndo>,
-  ) =>
+async function pullMainMergeUndoStatus(
+  repo: S.Repo,
+  p: S.PullRow,
+): Promise<MainMergeUndoStatus> {
+  const withRepoWriteStatus = (status: MainMergeUndoStatus) =>
     status.can_undo && S.isArchived(repo)
       ? { ...status, can_undo: false, reason: "Repository is archived" }
       : status;
@@ -634,7 +829,10 @@ async function pullMainMergeUndoStatus(repo: S.Repo, p: S.PullRow) {
 // mergeable / diff totals) for the issue-list Pattern E sub-row. Async because
 // the status fields need a bounded git fan-out per linked PR; used only by the
 // paginated issues.list path, so issueJSON stays sync for detail/dashboard.
-export async function issueListItemJSON(row: S.IssueRow, repo: S.Repo) {
+export async function issueListItemJSON(
+  row: S.IssueRow,
+  repo: S.Repo,
+): Promise<IssueWire> {
   const out = issueJSON(row, repo);
   if (row.kind !== "pull") {
     // All linked PRs (usually 0–1, occasionally more — see linkedPullsForIssue),
@@ -652,7 +850,7 @@ export async function issueListItemJSON(row: S.IssueRow, repo: S.Repo) {
 async function linkedPullDetail(
   repo: S.Repo,
   pr: S.LinkedPullIssueRow,
-): Promise<PullSummaryWire> {
+): Promise<IssueListPullSummaryWire> {
   const status = await pullStatusFields(repo, pr);
   const usageTotals = S.sessionUsageTotalsForIssue(pr.id);
   return {
@@ -866,11 +1064,51 @@ function pullWorkDuration(
   return { total, implementation, review };
 }
 
+export interface PullWire {
+  number: number;
+  state: "open" | "closed";
+  title: string;
+  body: string;
+  user: UserWire;
+  head: { ref: string; sha: string | null };
+  base: { ref: string; sha: string | null };
+  merged: boolean;
+  // draft (#413): true while the PR is WIP (opened by `lh dev` at the start of work);
+  // cleared by `lh pr ready-for-review`. Lets list/view and consumers tell WIP from reviewable.
+  draft: boolean;
+  mergeable: boolean | null;
+  mergeable_state: MergeableState;
+  merge_commit_sha: string | null;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  working: boolean;
+  review_state: S.ReviewState;
+  changes_addressed_at: string | null;
+  changes_addressed_by: string | null;
+  main_merge_undo?: MainMergeUndoStatus;
+  labels: LabelWire[];
+  comments: number;
+  created_at: string;
+  updated_at: string;
+  linked_issue: LinkedIssueWire | null;
+  worktree_path: string | null;
+  // #406: the effective write action for this PR ('merge' | 'github_pr') and the GitHub PR it was
+  // exported to (null until the export skill records one). The UI swaps Merge ⟷ Create/View PR.
+  merge_mode: MergeMode;
+  github_pull: GithubPullWire | null;
+  // Detail-only (#298, #456): the PR's related sessions, aggregate usage, and derived work
+  // duration. Gated so the PR list/dashboard stay O(1) git + no extra per-row query.
+  related_sessions?: RelatedSessionWire[];
+  related_sessions_usage?: RelatedSessionsUsageWire;
+  work_duration?: PullWorkDuration;
+}
+
 export async function pullJSON(
   repo: S.Repo,
   row: S.IssueRow,
   opts: { withRelatedSessions?: boolean } = {},
-) {
+): Promise<PullWire> {
   const p = S.getPull(row.id)!;
   const status = await pullStatusFields(repo, row);
   const mergeFields = await pullMergeFields(repo, row.id);

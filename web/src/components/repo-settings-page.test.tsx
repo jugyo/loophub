@@ -30,6 +30,7 @@ function repo(archived: boolean): Repo {
     id: 1,
     name: "proj",
     full_name: "me/proj",
+    owner: { login: "me" },
     default_branch: "main",
     local_path: "/tmp/proj",
     archived,

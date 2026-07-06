@@ -52,8 +52,15 @@ function pull(partial: Partial<PullRequest> = {}): PullRequest {
     additions: 0,
     deletions: 0,
     changed_files: 0,
+    working: false,
+    labels: [],
+    comments: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
+    linked_issue: null,
+    worktree_path: null,
+    merge_mode: "merge",
+    github_pull: null,
     ...partial,
   };
 }
@@ -163,6 +170,8 @@ describe("linkedPullStatus", () => {
       title: "A PR",
       state: "open",
       merged: false,
+      html_url: "/pulls/2",
+      github_pull: null,
       ...partial,
     };
   }
@@ -303,6 +312,8 @@ describe("linkedPullStateBadge (#269 detail summary)", () => {
       title: "A PR",
       state: "open",
       merged: false,
+      html_url: "/pulls/2",
+      github_pull: null,
       ...partial,
     };
   }
@@ -336,6 +347,8 @@ describe("linkedPullPillTone (lifecycle axis)", () => {
       title: "A PR",
       state: "open",
       merged: false,
+      html_url: "/pulls/2",
+      github_pull: null,
       ...partial,
     };
   }
@@ -381,6 +394,8 @@ describe("primaryLinkedPull (#598)", () => {
       title: "A PR",
       state: "open",
       merged: false,
+      html_url: "/pulls/2",
+      github_pull: null,
       ...partial,
     };
   }
@@ -415,6 +430,8 @@ describe("issueBuildButtonState (#598)", () => {
       title: "A PR",
       state: "open",
       merged: false,
+      html_url: "/pulls/2",
+      github_pull: null,
       ...partial,
     };
   }

@@ -158,11 +158,13 @@ describe("SidebarHerdrSessions", () => {
             { id: "w1:p1", name: "dev #11", status: "working" },
             { id: "w1:p2", name: "dev #13", status: "blocked" },
           ],
+          pull_workspaces: [],
         },
         {
           repo: "me/other",
           session_name: "me-other-87654321",
           agents: [{ id: "w2:p1", name: "dev #2", status: "idle" }],
+          pull_workspaces: [],
         },
       ],
     });
@@ -191,6 +193,7 @@ describe("SidebarHerdrSessions", () => {
             { id: "w1:p4", name: "idle agent", status: "idle", pull: 4 },
             { id: "w1:p5", name: "unknown agent", status: "paused" },
           ],
+          pull_workspaces: [],
         },
       ],
     });
@@ -265,6 +268,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -296,6 +300,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -326,6 +331,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -361,6 +367,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -392,6 +399,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -420,6 +428,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -453,6 +462,7 @@ describe("SidebarHerdrSessions", () => {
                   status: "working",
                 },
               ],
+              pull_workspaces: [],
             },
           ],
         },
@@ -481,6 +491,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -511,6 +522,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -562,6 +574,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -589,6 +602,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -620,6 +634,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -645,6 +660,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+              pull_workspaces: [],
             },
           ],
         },
@@ -670,6 +686,7 @@ describe("SidebarHerdrSessions", () => {
           repo: "me/app",
           session_name: "me-app-12345678",
           agents: [{ id: "w1:p1", name: "dev #11", status: "working" }],
+          pull_workspaces: [],
         },
       ],
     };
@@ -721,6 +738,7 @@ describe("SidebarHerdrSessions", () => {
                 pull_closed: true,
               },
             ],
+            pull_workspaces: [],
           },
         ],
       });
@@ -748,6 +766,7 @@ describe("SidebarHerdrSessions", () => {
                 status: "working",
               },
             ],
+            pull_workspaces: [],
           },
         ],
       });
@@ -801,6 +820,7 @@ describe("SidebarHerdrSessions", () => {
             },
             { id: "w1:p2", name: "dev #13", status: "working" },
           ],
+          pull_workspaces: [],
         },
       ],
     };
@@ -857,6 +877,7 @@ describe("SidebarHerdrSessions", () => {
               },
               { id: "w1:p4", name: "app active B", status: "blocked" },
             ],
+            pull_workspaces: [],
           },
           {
             repo: "me/other",
@@ -870,6 +891,7 @@ describe("SidebarHerdrSessions", () => {
                 pull_closed: true,
               },
             ],
+            pull_workspaces: [],
           },
         ],
       });
@@ -957,6 +979,7 @@ describe("SidebarHerdrSessions", () => {
             // Active: pull_closed omitted / false — no linked closed PR.
             { id: "w1:p2", name: "dev #13", status: "working" },
           ],
+          pull_workspaces: [],
         },
       ],
     };
@@ -1027,6 +1050,7 @@ describe("SidebarHerdrSessions", () => {
             agents: [
               { id: "w1:p1", name: "New issue", status: "idle", pull: null },
             ],
+            pull_workspaces: [],
           },
         ],
       });
@@ -1050,6 +1074,7 @@ describe("SidebarHerdrSessions", () => {
             agents: [
               { id: "w1:p1", name: "New issue", status: "working", pull: null },
             ],
+            pull_workspaces: [],
           },
         ],
       });
@@ -1080,6 +1105,7 @@ describe("SidebarHerdrSessions", () => {
                 pull_closed: false,
               },
             ],
+            pull_workspaces: [],
           },
         ],
       });
@@ -1104,6 +1130,7 @@ describe("SidebarHerdrSessions", () => {
               agents: [
                 { id: "w1:p1", name: "New issue", status: "idle", pull: null },
               ],
+              pull_workspaces: [],
             },
           ],
         },

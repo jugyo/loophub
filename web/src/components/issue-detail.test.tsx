@@ -42,7 +42,7 @@ const issue: Issue = {
   title: "ui2: issue detail",
   body: "Render title, body, labels.",
   user: { login: "me" },
-  labels: [{ name: "ready-to-build" }],
+  labels: [{ name: "ready-to-build", color: null }],
   comments: 1,
   created_at: "2026-06-17T11:00:00Z",
   updated_at: "2026-06-17T12:00:00Z",
@@ -51,6 +51,8 @@ const issue: Issue = {
     title: "ui2: issue detail PR",
     state: "open",
     merged: false,
+    html_url: "/pulls/30",
+    github_pull: null,
   },
 };
 
@@ -250,6 +252,8 @@ describe("IssueDetail", () => {
         title: "current attempt",
         state: "open",
         merged: false,
+        html_url: "/pulls/31",
+        github_pull: null,
       },
       linked_pull_requests: [
         {
@@ -257,18 +261,24 @@ describe("IssueDetail", () => {
           title: "current attempt",
           state: "open",
           merged: false,
+          html_url: "/pulls/31",
+          github_pull: null,
         },
         {
           number: 30,
           title: "merged attempt",
           state: "closed",
           merged: true,
+          html_url: "/pulls/30",
+          github_pull: null,
         },
         {
           number: 29,
           title: "closed attempt",
           state: "closed",
           merged: false,
+          html_url: "/pulls/29",
+          github_pull: null,
         },
       ],
     };

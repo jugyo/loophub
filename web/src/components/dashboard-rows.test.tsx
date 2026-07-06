@@ -33,8 +33,8 @@ vi.mock("@/components/terminal-controller", () => ({
 const settingsData = vi.hoisted(() => ({
   value: {
     agents: {
-      "claude-code": { autoModeOnBuild: false },
-      codex: { autoModeOnBuild: false },
+      "claude-code": { autoModeOnBuild: false, model: "", effort: "" },
+      codex: { autoModeOnBuild: false, model: "", effort: "" },
     },
     codingAgent: "claude-code",
   } as GlobalSettings | undefined,
@@ -66,8 +66,8 @@ afterEach(() => {
   focusHerdrAgent.mockClear();
   settingsData.value = {
     agents: {
-      "claude-code": { autoModeOnBuild: false },
-      codex: { autoModeOnBuild: false },
+      "claude-code": { autoModeOnBuild: false, model: "", effort: "" },
+      codex: { autoModeOnBuild: false, model: "", effort: "" },
     },
     codingAgent: "claude-code",
   };
@@ -134,6 +134,8 @@ function makePull(overrides: Partial<LinkedPull> = {}): LinkedPull {
     title: "A PR",
     state: "open",
     merged: false,
+    html_url: "/pulls/10",
+    github_pull: null,
     ...overrides,
   };
 }
@@ -145,7 +147,10 @@ describe("IssueRow", () => {
         owner="me"
         repo="proj"
         issue={makeIssue({
-          labels: [{ name: "bug" }, { name: "ready-to-build" }],
+          labels: [
+            { name: "bug", color: null },
+            { name: "ready-to-build", color: null },
+          ],
         })}
       />,
     );
@@ -299,8 +304,8 @@ describe("IssueRow", () => {
   it("shows the --auto command in the title when auto-mode-on-Build is enabled", async () => {
     settingsData.value = {
       agents: {
-        "claude-code": { autoModeOnBuild: true },
-        codex: { autoModeOnBuild: false },
+        "claude-code": { autoModeOnBuild: true, model: "", effort: "" },
+        codex: { autoModeOnBuild: false, model: "", effort: "" },
       },
       codingAgent: "claude-code",
     };
