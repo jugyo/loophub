@@ -7,6 +7,8 @@ export interface GithubPull {
   branch: string | null;
   created_by: string | null;
   created_at: string;
+  github_merged: number;
+  github_merged_at: string | null;
 }
 
 export interface GithubIssue {
@@ -59,6 +61,51 @@ export function recordGithubPull(input: {
       createdBy ?? null,
       now(),
     ) as GithubPull;
+}
+
+// #800: a github_pulls row not yet known to be merged on GitHub, joined with enough to run the
+// merge-status check and record the result — the loophub PR number (for the event payload), the
+// repo id (to emit into), and local_path (gh's cwd; the URL itself carries owner/repo/number so
+// gh resolves the right PR regardless of local_path's own remote).
+export interface GithubPullSyncRow {
+  issue_id: number;
+  repo_id: number;
+  number: number;
+  github_number: number;
+  url: string;
+  local_path: string;
+}
+
+// #800: github_pulls links still worth polling — has a GitHub link, not yet github_merged, and the
+// loophub side is still open/unmerged (the scenario this issue targets: exported-then-merged-on-
+// GitHub while the loophub PR itself hasn't gone through its own merge flow yet). Once the loophub
+// PR is closed/merged locally or github_merged flips on, it drops out here so lh-worker doesn't
+// poll `gh` forever for a link nobody cares about anymore. Archived repos are excluded, mirroring
+// S.openPulls' sweep-target filter.
+export function unmergedGithubPullLinks(): GithubPullSyncRow[] {
+  return db
+    .query(
+      `SELECT gp.issue_id AS issue_id, i.repo_id AS repo_id, i.number AS number,
+              gp.number AS github_number, gp.url AS url, r.local_path AS local_path
+       FROM github_pulls gp
+       JOIN issues i ON i.id = gp.issue_id
+       JOIN pulls p ON p.issue_id = gp.issue_id
+       JOIN repos r ON r.id = i.repo_id
+       WHERE gp.github_merged = 0 AND i.kind = 'pull' AND i.state = 'open'
+         AND p.merged = 0 AND r.archived = 0`,
+    )
+    .all() as GithubPullSyncRow[];
+}
+
+// #800: record that the GitHub PR has been merged (idempotent — re-running after it's already
+// flagged just re-sets the same values, since unmergedGithubPullLinks stops returning the row).
+export function setGithubMerged(issueId: number, mergedAt: string): GithubPull {
+  return db
+    .query(
+      `UPDATE github_pulls SET github_merged = 1, github_merged_at = ?
+       WHERE issue_id = ? RETURNING *`,
+    )
+    .get(mergedAt, issueId) as GithubPull;
 }
 
 // #614: the GitHub issue a loophub issue was imported from, or null.

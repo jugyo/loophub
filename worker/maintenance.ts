@@ -1,3 +1,4 @@
+import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
 import { HERDR_INACTIVE_CLEANUP_INTERVAL_MS } from "../core/herdr-inactive-cleanup.ts";
 import { events, sessions, terminal } from "../core/service.ts";
 import { sweepPullUpdates } from "../core/watcher.ts";
@@ -7,17 +8,23 @@ export const DEFAULT_SWEEP_MS = 5000;
 export const DEFAULT_USAGE_SWEEP_MS = 10000;
 export const DEFAULT_HERDR_INACTIVE_CLEANUP_MS =
   HERDR_INACTIVE_CLEANUP_INTERVAL_MS;
+// #800: GitHub merge-status checks shell out to `gh` (a real network call, subject to GitHub's
+// rate limits), unlike the other sweeps here which only touch local git/DB — so this defaults to
+// a much coarser interval than DEFAULT_SWEEP_MS.
+export const DEFAULT_GITHUB_MERGE_SWEEP_MS = 60000;
 
 export interface MaintenanceLoopOptions {
   sweepMs?: number;
   usageSweepMs?: number;
   herdrInactiveCleanupMs?: number;
+  githubMergeSweepMs?: number;
 }
 
 export interface NormalizedMaintenanceLoopOptions {
   sweepMs: number;
   usageSweepMs: number;
   herdrInactiveCleanupMs: number;
+  githubMergeSweepMs: number;
 }
 
 export interface MaintenanceHandle {
@@ -34,6 +41,10 @@ export function normalizeMaintenanceLoopOptions(
       opts.herdrInactiveCleanupMs,
       DEFAULT_HERDR_INACTIVE_CLEANUP_MS,
     ),
+    githubMergeSweepMs: finiteOrDefault(
+      opts.githubMergeSweepMs,
+      DEFAULT_GITHUB_MERGE_SWEEP_MS,
+    ),
   };
 }
 
@@ -49,6 +60,8 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
       opts.herdrInactiveCleanupMs > 0
         ? `${opts.herdrInactiveCleanupMs}ms`
         : "off",
+    githubMergeSweep:
+      opts.githubMergeSweepMs > 0 ? `${opts.githubMergeSweepMs}ms` : "off",
   };
 }
 
@@ -63,6 +76,9 @@ export function startMaintenanceLoops(
       : () => {},
     normalized.herdrInactiveCleanupMs > 0
       ? startHerdrInactiveCleanup(normalized.herdrInactiveCleanupMs)
+      : () => {},
+    normalized.githubMergeSweepMs > 0
+      ? startGithubMergeSweep(normalized.githubMergeSweepMs)
       : () => {},
   ];
 
@@ -89,6 +105,38 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
     } catch (err) {
       workerLog.error(
         `lh-worker: pull sweep error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// #800: poll `gh` for the merge status of loophub PRs exported to GitHub (github_pulls) that
+// aren't yet known-merged, recording a detected merge and firing pull_request.github_merged.
+// Unlike startPullSweep this is a real network call, not a local git/DB check, so callers default
+// it to a much coarser interval (DEFAULT_GITHUB_MERGE_SWEEP_MS).
+export function startGithubMergeSweep(
+  intervalMs = DEFAULT_GITHUB_MERGE_SWEEP_MS,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    try {
+      await syncGithubMergeStatus();
+    } catch (err) {
+      workerLog.error(
+        `lh-worker: github merge sweep error: ${err instanceof Error ? err.message : String(err)}`,
       );
     } finally {
       running = false;

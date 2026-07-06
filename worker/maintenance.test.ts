@@ -23,17 +23,20 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
       sweepMs: 0,
       usageSweepMs: Number.NaN,
       herdrInactiveCleanupMs: Number.POSITIVE_INFINITY,
+      githubMergeSweepMs: 0,
     }),
   ).toEqual({
     sweepMs: 0,
     usageSweepMs: M.DEFAULT_USAGE_SWEEP_MS,
     herdrInactiveCleanupMs: M.DEFAULT_HERDR_INACTIVE_CLEANUP_MS,
+    githubMergeSweepMs: 0,
   });
 
   expect(M.normalizeMaintenanceLoopOptions()).toEqual({
     sweepMs: M.DEFAULT_SWEEP_MS,
     usageSweepMs: M.DEFAULT_USAGE_SWEEP_MS,
     herdrInactiveCleanupMs: M.DEFAULT_HERDR_INACTIVE_CLEANUP_MS,
+    githubMergeSweepMs: M.DEFAULT_GITHUB_MERGE_SWEEP_MS,
   });
 });
 
@@ -43,10 +46,12 @@ test("maintenance summary reports disabled loops as off", () => {
       sweepMs: 0,
       usageSweepMs: 25,
       herdrInactiveCleanupMs: 0,
+      githubMergeSweepMs: 0,
     }),
   ).toEqual({
     pullSweep: "off",
     usageSweep: "25ms",
     herdrInactiveCleanup: "off",
+    githubMergeSweep: "off",
   });
 });

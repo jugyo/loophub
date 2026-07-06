@@ -234,3 +234,52 @@ export interface GithubIssueDeps {
 export const realGithubIssueDeps: GithubIssueDeps = {
   fetchIssue: fetchGithubIssue,
 };
+
+// #800: the GitHub-side merge status of a PR already exported via github_pulls.
+export interface GhPrMergeStatus {
+  merged: boolean;
+  mergedAt: string | null;
+  mergedByLogin: string | null;
+}
+
+// Fetch a GitHub PR's merge status by its URL (rather than branch or number+`--repo`) — the caller
+// already has the absolute URL recorded in github_pulls, and passing it straight to `gh pr view`
+// resolves owner/repo/number from it directly, so `repoPath`'s own git remote need not match.
+// Throws on any gh failure (auth/network/deleted PR) so a sync sweep can skip this row for the
+// current tick rather than treating a transient failure as "not merged".
+export async function fetchGithubPrMergeStatus(
+  repoPath: string,
+  url: string,
+): Promise<GhPrMergeStatus> {
+  const r = await gh(repoPath, [
+    "pr",
+    "view",
+    url,
+    "--json",
+    "state,mergedAt,mergedBy",
+  ]);
+  if (r.code !== 0)
+    throw new Error(`gh pr view failed: ${r.stderr.trim() || r.stdout.trim()}`);
+  let j: { state?: unknown; mergedAt?: unknown; mergedBy?: unknown };
+  try {
+    j = JSON.parse(r.stdout);
+  } catch {
+    throw new Error(`gh pr view returned unparseable JSON: ${r.stdout.trim()}`);
+  }
+  const state = typeof j.state === "string" ? j.state : "";
+  const mergedBy = j.mergedBy as { login?: unknown } | null | undefined;
+  return {
+    merged: state.toUpperCase() === "MERGED",
+    mergedAt: typeof j.mergedAt === "string" ? j.mergedAt : null,
+    mergedByLogin:
+      mergedBy && typeof mergedBy.login === "string" ? mergedBy.login : null,
+  };
+}
+
+export interface GithubMergeStatusDeps {
+  fetchMergeStatus: typeof fetchGithubPrMergeStatus;
+}
+
+export const realGithubMergeStatusDeps: GithubMergeStatusDeps = {
+  fetchMergeStatus: fetchGithubPrMergeStatus,
+};

@@ -767,6 +767,16 @@ tryExec(
   "UPDATE issues SET closed_at = updated_at WHERE state = 'closed' AND closed_at IS NULL",
 );
 
+// github_pulls.github_merged / github_merged_at (#800): whether the GitHub PR a loophub PR was
+// exported to has since been merged on GitHub, synced periodically by lh-worker (see
+// core/github-merge-sync.ts / worker/maintenance.ts startGithubMergeSweep). Deliberately does not
+// touch the loophub PR's own state/merged columns — recording the fact is this issue's whole
+// scope; flowing it into loophub's own merge/close transition is left to a later issue.
+tryExec(
+  "ALTER TABLE github_pulls ADD COLUMN github_merged INTEGER NOT NULL DEFAULT 0",
+);
+tryExec("ALTER TABLE github_pulls ADD COLUMN github_merged_at TEXT");
+
 export function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "Z");
 }
