@@ -117,7 +117,7 @@ git rebase --continue   # or git commit for merge
 
 ### 5. Test
 
-Repo standard (e.g. `bun test`). **Green before proceeding**, same as before PR.
+Repo standard (e.g. `npm test` or `bun test`). **Green before proceeding**, same as before PR.
 
 ### 6. Report and resume review
 

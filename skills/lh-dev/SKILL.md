@@ -174,8 +174,9 @@ below done for you — do **not** redo it:
   (`pulls.session_id`) when `lh dev` opens or re-enters the PR — that is what `lh resume` / retro
   resolve from. There is no issue-assignee step (removed in #186); "who is working this issue" is the
   linked PR's existence, not a separate assignee.
-- **Draft PR**: `lh dev` **already opened a linked PR** for this issue at the start of work (idempotent;
-  see `core/service.ts` `dev.openPr`). It is a normal open PR with a placeholder body (a localized
+- **Draft PR**: `lh dev` **already opened a linked PR** for this issue at the start of work
+  (idempotent — re-running finds the existing PR rather than opening a second one). It is a
+  normal open PR with a placeholder body (a localized
   implementation-plan heading plus `Closes #<n>`) and may have 0 commits. **A linked PR already
   existing is the expected state, not an
   anomaly** — do not be surprised by it, do not create a second one, and do not stop to ask about it.

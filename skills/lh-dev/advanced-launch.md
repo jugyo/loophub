@@ -4,8 +4,8 @@ Reference for `lh-dev/SKILL.md` § 2 (Worktree & session) — the two branches b
 ## Manual launch (not via `lh dev`)
 
 Only if you arrived here **without** `lh dev` (ad-hoc, or a host that doesn't use the launcher): set up
-the worktree and the linked draft PR yourself first, then continue. `lh dev openPr` records the session
-on the PR (`pulls.session_id`); there is no separate assign step.
+the worktree and the linked draft PR yourself first, then continue. Opening the linked draft PR records
+the session on the PR (`pulls.session_id`); there is no separate assign step.
 
 ```sh
 # `lh dev` derives the branch/worktree name from the PR number (`loophub/pr-<m>`), which is not
@@ -21,7 +21,11 @@ lh session register --id "$SID" --agent impl-bot --session "$SID"
 lh pr create --repo <repo> --head <branch> --base main --title "..." --issue <n> --session-id "$SID"
 ```
 
-## Parallel LoopHub server (only when changing server code)
+## Parallel LoopHub server (only when developing LoopHub itself)
+
+This section applies only when the repo under development **is LoopHub itself** (this codebase) and
+your change touches `web/server` — `lh-web` is LoopHub's own server binary and has no equivalent in
+other registered repos, so skip this entirely otherwise.
 
 The CLI uses production `:8730` by default. **Never stop `:8730`.** If your change touches the server
 itself and you need to exercise the new code, run a second server on a free port and point the CLI at it:

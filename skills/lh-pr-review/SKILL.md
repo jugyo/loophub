@@ -287,11 +287,9 @@ fi
 
 ### A.2.5 Skills lint (parent, when PR touches `skills/`)
 
-If `lh pr diff` includes changes under `skills/` and `tests/skills-lint.test.ts` exists:
-
-```sh
-bun test tests/skills-lint.test.ts
-```
+If `lh pr diff` includes changes under `skills/` and `tests/skills-lint.test.ts` exists, run the repo's
+test command scoped to this one file (e.g. `npm test -- tests/skills-lint.test.ts` or
+`bun test tests/skills-lint.test.ts`).
 
 Any failure → **`request_changes`** (do not `pass`). Report file:line from test output. If the file does
 not exist, record `skills-lint: skipped (tests/skills-lint.test.ts not present)` in the Quality review's
@@ -400,14 +398,13 @@ never post the same topic twice in one round (the per-round double-post guard no
 multiple rounds across the loop are still fine).
 
 **Posting order matters.** A PR's resolved review state is the **latest substantive (pass /
-request_changes) review regardless of topic** (`core/store.ts` `latestSubstantiveReview` /
-`computeReviewState`). So post topics whose verdict is `pass` or `comment` **first**, and any
+request_changes) review regardless of topic**. So post topics whose verdict is `pass` or `comment` **first**, and any
 `request_changes` topic **last**. This guarantees the two states that matter: a round with **any**
 `request_changes` topic ends in `CHANGES_REQUESTED`, and a round where **every** topic passes ends in
 `PASSED`. (An overall `comment` round — Medium-only, no `request_changes` — resolves to `PASSED`
-because `computeReviewState` surfaces a `COMMENT` only when no substantive review exists; that is
-acceptable, since the loop continues on any non-`pass` overall verdict and a `comment` topic carries
-only non-blocking findings.)
+because a `COMMENT`-only round has no substantive pass/request_changes review to surface as the
+resolved state instead; that is acceptable, since the loop continues on any non-`pass` overall
+verdict and a `comment` topic carries only non-blocking findings.)
 
 ```sh
 # pass/comment topics first …
@@ -459,8 +456,8 @@ Escalate scope-out or design-judgment findings without fixing.
 
 ### B.3 Test
 
-Repo standard (e.g. `bun test`). When the PR touches `skills/`, also run
-`bun test tests/skills-lint.test.ts`. **Green before next round.**
+Repo standard (e.g. `npm test` or `bun test`). When the PR touches `skills/`, also run the repo's
+test command scoped to `tests/skills-lint.test.ts` (see A.2.5). **Green before next round.**
 
 For UI / visual fixes, save the verification screenshot to the **persistent evidence directory**:
 

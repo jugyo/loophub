@@ -314,13 +314,12 @@ question, asked proactively instead of waiting for the user to click it:
 - **Declines, or doesn't answer**: stop exactly as in builtin mode above — issue only, no
   implementation, no further prompting.
 - **Agrees**: launch the same flow the Web UI's **Build** button triggers — a new herdr tab +
-  agent running `lh dev '<repo>/<n>'` (`core/service.ts` `terminal.launch()` →
-  `commandForHerdrLaunch()` in `core/terminal-launch.ts`). There is no CLI/RPC entry point for
-  that reachable from a skill session, so drive the `herdr` CLI directly instead. `herdr agent
-  start` is a documented subcommand of the `herdr` binary itself (`herdr agent --help`), used
-  here the same session-less way as the `herdr tab create` call below — both target the
-  currently running instance from inside a herdr pane, unlike `core/terminal-launch.ts`'s
-  server-side callers (outside herdr, so they must name a `--session` explicitly):
+  agent running `lh dev '<repo>/<n>'`. There is no CLI/RPC entry point for that reachable from a
+  skill session, so drive the `herdr` CLI directly instead. `herdr agent start` is a documented
+  subcommand of the `herdr` binary itself (`herdr agent --help`), used here the same session-less
+  way as the `herdr tab create` call below — both target the currently running instance from
+  inside a herdr pane, unlike a server-side launcher (outside herdr, so it must name a `--session`
+  explicitly):
 
   ```sh
   AUTO=$(jq -r '.autoModeOnBuild // false' "${LOOPHUB_HOME:-$HOME/.loophub}/config.json" 2>/dev/null)

@@ -198,7 +198,7 @@ Do not retry blindly on `already registered` — confirm intent with the user fi
 - `lh repo update`, `lh repo archive`, `lh repo unarchive`, `lh repo remove`
 - UI-based repo registration
 - Cloning or creating git repositories
-- Symlinking skills (`skills/README.md` Install section — human one-time setup)
+- Symlinking or otherwise installing agent skills (a separate, human one-time setup step)
 
 ## Prohibited
 
