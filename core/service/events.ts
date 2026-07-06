@@ -54,4 +54,30 @@ export const events = {
   ): Promise<void> {
     return followEvents(opts, onEvent, signal);
   },
+
+  // Thin pass-through so callers outside core/ (web/server's SSE hub, lh-worker) don't reach
+  // into core/store directly to write an event.
+  emit(
+    repoId: number | null,
+    type: string,
+    actor: string,
+    payload: unknown,
+  ): S.EventRow {
+    return S.emitEvent(repoId, type, actor, payload);
+  },
+
+  // Single bounded page of raw event rows after `since` (repoId filter, or null = all repos),
+  // ascending by id — a direct pass-through with no formatting. Used where a caller manages its
+  // own paging/cursor loop: SSE replay-then-subscribe, web/server's per-tick event tail, and
+  // lh-worker's event dispatch loop each page through this repeatedly.
+  page(since: number, repoId: number | null, limit: number): S.EventRow[] {
+    return S.listEvents(since, repoId, limit);
+  },
+
+  // Highest known event id, or 0 if none exist yet. Used to seed a tail/worker cursor at
+  // startup so it only sees events from this point forward.
+  newestId(): number {
+    const newest = S.listEvents(0, null, 1, undefined, "desc");
+    return newest.length ? newest[0].id : 0;
+  },
 };

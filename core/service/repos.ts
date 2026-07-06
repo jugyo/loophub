@@ -25,8 +25,25 @@ import {
   worktreeRoot,
 } from "./shared.ts";
 
+export type { Repo } from "../store.ts";
+
 // ===== repos =====
 export const repos = {
+  // Thin lookups (by id / by "owner/name") for callers outside core/ that only need the raw
+  // row — e.g. web/server's event replay and lh-worker's event dispatch, which must not import
+  // core/store directly.
+  getById(id: number): S.Repo | null {
+    return S.getRepoById(id);
+  },
+
+  // Raw split, not S.splitName: splitName defaults an owner-less name to "me/<name>", which
+  // would silently change repo-filter matching for callers (e.g. SSE replay) that historically
+  // relied on an unslashed name resolving to nothing.
+  getByFullName(fullName: string): S.Repo | null {
+    const [owner, name] = fullName.split("/");
+    return S.getRepo(owner, name);
+  },
+
   async create(input: { path: string; name: string }) {
     const { path, name } = input;
     if (!path || !name)

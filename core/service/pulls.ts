@@ -55,6 +55,14 @@ function resolveLinkedIssueId(
 }
 
 export const pulls = {
+  // Thin lookup for callers outside core/ (lh-worker's workflow dispatch) that only need a PR's
+  // head ref for a given repo + issue number, not the full serialized pull.
+  headRefForNumber(repoId: number, number: number): string | null {
+    const issue = S.getIssue(repoId, number);
+    if (!issue) return null;
+    return S.getPull(issue.id)?.head_ref ?? null;
+  },
+
   async list(
     name: string,
     opts: {

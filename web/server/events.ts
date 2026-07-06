@@ -9,7 +9,7 @@ import {
   publishEvent,
   subscribe,
 } from "../../core/event-hub.ts";
-import * as S from "../../core/store.ts";
+import { events, repos } from "../../core/service.ts";
 
 const REPLAY_PAGE = 100;
 const DEFAULT_TAIL_POLL_MS = 1000;
@@ -38,26 +38,22 @@ export function subscribeEvents(
   const since = Number(opts.since ?? 0);
   const repoParam = opts.repo ?? null;
 
-  let repoId: number | null = null;
-  if (repoParam) {
-    const [o, n] = repoParam.split("/");
-    const r = S.getRepo(o, n);
-    repoId = r ? r.id : -1; // unknown repo -> nothing to replay, live filter never matches
-  }
+  // unknown repo -> nothing to replay, live filter never matches
+  const repoId = repoParam ? (repos.getByFullName(repoParam)?.id ?? -1) : null;
 
   let cursor = since;
 
   const toEvent = (row: any): LoopEvent => {
     const repo =
       repoParam ??
-      (row.repo_id != null ? S.getRepoById(row.repo_id)?.full_name : undefined);
+      (row.repo_id != null ? repos.getById(row.repo_id)?.full_name : undefined);
     return formatEvent(row, repo);
   };
 
   if (repoId !== -1) {
     let pageSince = since;
     for (;;) {
-      const rows = S.listEvents(pageSince, repoId, REPLAY_PAGE);
+      const rows = events.page(pageSince, repoId, REPLAY_PAGE);
       if (rows.length === 0) break;
       for (const row of rows) {
         const event = toEvent(row);
@@ -85,15 +81,14 @@ export function subscribeEvents(
 // subscriber's own cursor). Starts from the current newest id; per-connection replay covers
 // history.
 export function startEventTail(pollMs = DEFAULT_TAIL_POLL_MS): () => void {
-  const newest = S.listEvents(0, null, 1, undefined, "desc");
-  let cursor = newest.length ? newest[0].id : 0;
+  let cursor = events.newestId();
   let stopped = false;
 
   const tick = () => {
     if (stopped) return;
-    for (const row of S.listEvents(cursor, null, REPLAY_PAGE)) {
+    for (const row of events.page(cursor, null, REPLAY_PAGE)) {
       const repo =
-        row.repo_id != null ? S.getRepoById(row.repo_id)?.full_name : undefined;
+        row.repo_id != null ? repos.getById(row.repo_id)?.full_name : undefined;
       publishEvent(formatEvent(row, repo));
       cursor = Math.max(cursor, row.id);
     }

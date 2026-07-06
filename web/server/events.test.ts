@@ -106,6 +106,18 @@ test("an unknown repo filter replays nothing", () => {
   expect(got).toEqual([]);
 });
 
+// A bare (no "/") repo filter must not match anything, even when a same-named "me/<name>" repo
+// exists — core/store's splitName defaults an owner-less name to "me/<name>" for registration,
+// but a filter value here is compared as-is against full_name, not re-owner-defaulted.
+test("a bare repo filter (no slash) replays nothing even if a same-named me/<name> repo exists", () => {
+  const got: number[] = [];
+  const unsub = subscribeEvents({ since: 0, repo: "proj" }, (n) =>
+    got.push(n.params.id),
+  );
+  unsub();
+  expect(got).toEqual([]);
+});
+
 test("startEventTail forwards out-of-process DB writes to the in-process hub", async () => {
   const { startEventTail } = await import("./events.ts");
   const { subscribe } = await import("../../core/event-hub.ts");

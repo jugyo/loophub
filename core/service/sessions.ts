@@ -224,6 +224,16 @@ function saveCodexSubagentUsage(
 }
 
 export const sessions = {
+  // Thin pass-throughs so callers outside core/ (lh-worker's usage sweep) don't reach into
+  // core/store directly.
+  authorFromSession(sessionId: string | null | undefined): string | null {
+    return S.authorFromSession(sessionId);
+  },
+
+  linkedTargets(sessionId: string): S.SessionLinkedTargetRow[] {
+    return S.listSessionLinkedTargets(sessionId);
+  },
+
   register(input: {
     id: string;
     agent: string;

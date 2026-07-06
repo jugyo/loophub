@@ -6,7 +6,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { logsDir, workerCursorPath } from "../core/config.ts";
 import { worktreeList } from "../core/git.ts";
-import * as S from "../core/store.ts";
+import { events, pulls, type Repo, repos } from "../core/service.ts";
 import { resolveStartCursor, writeCursor } from "../core/worker-cursor.ts";
 import {
   buildRunEnv,
@@ -92,13 +92,11 @@ function runStep(
 
 // Resolve the worktree path for a PR head ref via on-disk `git worktree list` (not LoopHub's
 // naming convention). Returns "" when the ref has no checked-out worktree.
-async function prWorktreePath(repo: S.Repo, prNumber: number): Promise<string> {
-  const issue = S.getIssue(repo.id, prNumber);
-  if (!issue) return "";
-  const pull = S.getPull(issue.id);
-  if (!pull?.head_ref) return "";
+async function prWorktreePath(repo: Repo, prNumber: number): Promise<string> {
+  const headRef = pulls.headRefForNumber(repo.id, prNumber);
+  if (!headRef) return "";
   const worktrees = await worktreeList(repo.local_path);
-  return matchWorktreePath(pull.head_ref, worktrees);
+  return matchWorktreePath(headRef, worktrees);
 }
 
 // Run every configured step for one matched event. Each step runs even if a prior one failed;
@@ -106,7 +104,7 @@ async function prWorktreePath(repo: S.Repo, prNumber: number): Promise<string> {
 // events (visible on the Web timeline) and full output goes to the log file.
 export async function dispatchEvent(row: EventRow): Promise<void> {
   if (!isSupported(row.type) || row.repo_id == null) return;
-  const repo = S.getRepoById(row.repo_id);
+  const repo = repos.getById(row.repo_id);
   if (!repo) return;
 
   const workflow = loadWorkflow(repo.local_path);
@@ -141,7 +139,7 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
   mkdirSync(dirname(logFile), { recursive: true });
 
   for (const step of steps) {
-    S.emitEvent(repo.id, "workflow.run_started", ACTOR, {
+    events.emit(repo.id, "workflow.run_started", ACTOR, {
       number,
       source_event: row.id,
       command: step.run,
@@ -154,7 +152,7 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
       console.error(`lh-worker: step error (event ${row.id}):`, e);
       result = { exitCode: 1, durationMs: 0 };
     }
-    S.emitEvent(repo.id, "workflow.run_completed", ACTOR, {
+    events.emit(repo.id, "workflow.run_completed", ACTOR, {
       number,
       source_event: row.id,
       command: step.run,
@@ -180,8 +178,7 @@ export function startWorker(
       ? opts.pollMs
       : DEFAULT_POLL_MS;
   const cursorPath = opts.cursorPath ?? workerCursorPath();
-  const newest = S.listEvents(0, null, 1, undefined, "desc");
-  let cursor = resolveStartCursor(cursorPath, newest.length ? newest[0].id : 0);
+  let cursor = resolveStartCursor(cursorPath, events.newestId());
   let stopped = false;
   let running = false;
 
@@ -191,7 +188,7 @@ export function startWorker(
     try {
       for (;;) {
         if (stopped) break;
-        const rows = S.listEvents(cursor, null, PAGE) as EventRow[];
+        const rows = events.page(cursor, null, PAGE) as EventRow[];
         if (rows.length === 0) break;
         for (const row of rows) {
           if (stopped) break;

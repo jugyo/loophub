@@ -1,6 +1,5 @@
 import { HERDR_INACTIVE_CLEANUP_INTERVAL_MS } from "../core/herdr-inactive-cleanup.ts";
-import { sessions, terminal } from "../core/service.ts";
-import * as S from "../core/store.ts";
+import { events, sessions, terminal } from "../core/service.ts";
 import { sweepPullUpdates } from "../core/watcher.ts";
 import { workerLog } from "./logger.ts";
 
@@ -120,18 +119,19 @@ export function startUsageSweep(
       const result = sessions.usageSync();
       for (const session of result.sessions) {
         if (session.status !== "updated") continue;
-        const actor = S.authorFromSession(session.session_id) ?? "lh-worker";
+        const actor =
+          sessions.authorFromSession(session.session_id) ?? "lh-worker";
         const payload = {
           session_id: session.session_id,
           messages: session.messages,
         };
-        const targets = S.listSessionLinkedTargets(session.session_id);
+        const targets = sessions.linkedTargets(session.session_id);
         if (targets.length === 0) {
-          S.emitEvent(null, "agent_session.usage_updated", actor, payload);
+          events.emit(null, "agent_session.usage_updated", actor, payload);
           continue;
         }
         for (const target of targets) {
-          S.emitEvent(target.repo_id, "agent_session.usage_updated", actor, {
+          events.emit(target.repo_id, "agent_session.usage_updated", actor, {
             ...payload,
             [target.kind === "pull" ? "pr" : "issue"]: target.number,
           });
