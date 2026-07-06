@@ -5,6 +5,7 @@ import {
   parseHerdrAgentList,
   parseHerdrAgentPlacements,
   parseHerdrAgentRead,
+  parseHerdrPaneKillTarget,
   parseHerdrPaneLayout,
   parseHerdrPaneProcessInfo,
   parseHerdrSessionList,
@@ -665,6 +666,73 @@ describe("parseHerdrPaneProcessInfo", () => {
     ],
   ])("degrades to null on %s (%s)", (input) => {
     expect(parseHerdrPaneProcessInfo(input)).toBeNull();
+  });
+});
+
+describe("parseHerdrPaneKillTarget", () => {
+  test("prefers foreground_process_group_id over shell_pid", () => {
+    expect(
+      parseHerdrPaneKillTarget(
+        JSON.stringify({
+          result: {
+            process_info: {
+              foreground_process_group_id: 32732,
+              shell_pid: 11616,
+            },
+          },
+        }),
+      ),
+    ).toBe(32732);
+  });
+
+  test("falls back to shell_pid when the group id is missing", () => {
+    expect(
+      parseHerdrPaneKillTarget(
+        JSON.stringify({
+          result: { process_info: { shell_pid: 11616 } },
+        }),
+      ),
+    ).toBe(11616);
+  });
+
+  // #805 review: the caller negates this into a POSIX process-group signal
+  // (`process.kill(-pid, ...)`), and `kill(-1, ...)` is the documented special case for
+  // "signal every process the caller has permission to signal" — a system-wide broadcast,
+  // not "process group 1". A pid of 1 must never be returned as a kill target.
+  test.each([
+    [
+      "foreground_process_group_id",
+      JSON.stringify({
+        result: { process_info: { foreground_process_group_id: 1 } },
+      }),
+    ],
+    [
+      "shell_pid",
+      JSON.stringify({ result: { process_info: { shell_pid: 1 } } }),
+    ],
+  ])("rejects a pid of 1 (%s)", (_field, input) => {
+    expect(parseHerdrPaneKillTarget(input)).toBeNull();
+  });
+
+  test.each([
+    ["", "empty"],
+    ["not json", "non-JSON"],
+    ["{}", "missing result"],
+    ['{"result": {}}', "missing process_info"],
+    [
+      '{"result": {"process_info": {"foreground_process_group_id": 0}}}',
+      "zero pid",
+    ],
+    [
+      '{"result": {"process_info": {"foreground_process_group_id": -5}}}',
+      "negative pid",
+    ],
+    [
+      '{"result": {"process_info": {"foreground_process_group_id": "32732"}}}',
+      "non-numeric pid",
+    ],
+  ])("degrades to null on %s (%s)", (input) => {
+    expect(parseHerdrPaneKillTarget(input)).toBeNull();
   });
 });
 

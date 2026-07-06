@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-herdr-sessions-"));
@@ -473,9 +473,13 @@ test("terminal.agentRead degrades to a null output when the repo no longer exist
   ).toEqual({ output: null, cols: null, rows: null });
 });
 
-// #521: sidebar kill button. killAgent runs `herdr --session <name> pane close <paneId>` for
-// the repo's deterministic session and surfaces failures instead of degrading like sessions().
-test("terminal.killAgent runs herdr pane close scoped to the repo's session", async () => {
+// #521/#805: sidebar kill button. killAgent reads the pane's foreground process (group) id via
+// `pane process-info` and signals it directly instead of asking herdr to close the pane — `pane
+// close` refuses with `confirmation_required` whenever the pane is the last one in a
+// worktree-linked workspace, which every single-tab launch is by default (#805). The kill itself
+// must complete regardless; a best-effort `pane close` still fires afterward to tidy up the now-
+// empty pane, but its failure (simulated here as a no-op fake) must not affect the result.
+test("terminal.killAgent kills the pane's foreground process instead of closing it directly", async () => {
   const repo = await svc.repos.create({
     path: initGitRepo(),
     name: "me/kill-target",
@@ -484,19 +488,77 @@ test("terminal.killAgent runs herdr pane close scoped to the repo's session", as
   const CALLS_FILE = join(HOME, "kill-calls.txt");
   writeFileSync(
     join(FAKE_BIN, "herdr"),
-    ["#!/bin/sh", `echo "$@" >> ${CALLS_FILE}`, "exit 0"].join("\n"),
+    [
+      "#!/bin/sh",
+      `echo "$@" >> ${CALLS_FILE}`,
+      `if [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":999999}}}'; exit 0; fi`,
+      "exit 0",
+    ].join("\n"),
   );
   chmodSync(join(FAKE_BIN, "herdr"), 0o755);
   process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  // Mocked rather than left to hit the real OS: the fake herdr's foreground_process_group_id is
+  // an arbitrary placeholder, not a pid this test actually owns, so signaling it for real would
+  // either no-op by luck (ESRCH) or, if that pid/pgid ever exists on the runner, SIGKILL an
+  // unrelated live process (#805 review).
+  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
   try {
     await expect(
       svc.terminal.killAgent({ repo: "me/kill-target", paneId: "w1:p2" }),
     ).resolves.toEqual({ ok: true });
+    expect(killSpy).toHaveBeenCalledWith(-999999, "SIGKILL");
     const { readFileSync } = await import("node:fs");
-    expect(readFileSync(CALLS_FILE, "utf8").trim()).toBe(
+    expect(readFileSync(CALLS_FILE, "utf8")).toContain(
+      `--session ${sessionName} pane process-info --pane w1:p2`,
+    );
+    // The follow-up `pane close` is fire-and-forget, so it can still be in flight once killAgent
+    // itself resolves — poll instead of asserting immediately.
+    const deadline = Date.now() + 2000;
+    while (!readFileSync(CALLS_FILE, "utf8").includes("pane close w1:p2")) {
+      if (Date.now() > deadline)
+        throw new Error("timed out waiting for the best-effort pane close");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(readFileSync(CALLS_FILE, "utf8")).toContain(
       `--session ${sessionName} pane close w1:p2`,
     );
   } finally {
+    killSpy.mockRestore();
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+// The primary kill must still succeed even when the best-effort tidy-up close is refused
+// (herdr's `confirmation_required` — "closing this pane would close a worktree group", #805) —
+// only the pane's foreground process actually has to die.
+test("terminal.killAgent succeeds even when the follow-up pane close is refused", async () => {
+  await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/kill-target-refused",
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":999999}}}'; exit 0; fi`,
+      `if [ "$4" = "close" ]; then printf '%s' '{"error":{"code":"confirmation_required","message":"closing this pane would close a worktree group"}}'; exit 1; fi`,
+      "exit 0",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  // See the previous test: mocked instead of signaling a real, unowned pid on the host.
+  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+  try {
+    await expect(
+      svc.terminal.killAgent({
+        repo: "me/kill-target-refused",
+        paneId: "w1:p2",
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(killSpy).toHaveBeenCalledWith(-999999, "SIGKILL");
+  } finally {
+    killSpy.mockRestore();
     process.env.PATH = ORIGINAL_PATH;
   }
 });

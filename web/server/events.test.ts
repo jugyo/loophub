@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { git, revParse } from "../../core/git.ts";
 
 // Isolate the DB before store.ts -> db.ts runs its import-time setup.
@@ -338,6 +338,10 @@ test("startHerdrInactiveCleanup periodically closes old inactive Herdr panes onl
       `echo "$*" >> ${CALLS_FILE}`,
       `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
       `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      // #805: cleanup kills the pane's foreground process (via process-info) instead of asking
+      // herdr to close the pane directly, so it can never hit herdr's `confirmation_required`
+      // refusal for a worktree-linked workspace's last pane.
+      `if [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":999999}}}'; exit 0; fi`,
       "exit 0",
       "",
     ].join("\n"),
@@ -355,6 +359,11 @@ test("startHerdrInactiveCleanup periodically closes old inactive Herdr panes onl
 
   const ORIGINAL_PATH = process.env.PATH;
   process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  // Mocked rather than left to hit the real OS: the fake herdr's foreground_process_group_id is
+  // an arbitrary placeholder, not a pid this test actually owns, so signaling it for real would
+  // either no-op by luck (ESRCH) or, if that pid/pgid ever exists on the runner, SIGKILL an
+  // unrelated live process (#805 review).
+  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
   const stop = startHerdrInactiveCleanup(20);
   try {
     await waitUntil(
@@ -363,6 +372,7 @@ test("startHerdrInactiveCleanup periodically closes old inactive Herdr panes onl
         readFileSync(CALLS_FILE, "utf8").includes("pane close w1:p1"),
       "inactive pane close",
     );
+    expect(killSpy).toHaveBeenCalledWith(-999999, "SIGKILL");
     const calls = readFileSync(CALLS_FILE, "utf8");
     expect(calls).toContain(`--session ${sessionName} agent list`);
     expect(calls).toContain(`--session ${sessionName} pane close w1:p1`);
@@ -371,6 +381,7 @@ test("startHerdrInactiveCleanup periodically closes old inactive Herdr panes onl
     expect(calls).not.toContain("pane close w1:p4");
   } finally {
     stop();
+    killSpy.mockRestore();
     process.env.PATH = ORIGINAL_PATH;
     rmSync(FAKE_BIN, { recursive: true, force: true });
     rmSync(repoPath, { recursive: true, force: true });

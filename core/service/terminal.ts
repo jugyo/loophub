@@ -41,6 +41,7 @@ import {
   parseHerdrAgentPlacements,
   parseHerdrAgentRead,
   parseHerdrInactiveCleanupCandidates,
+  parseHerdrPaneKillTarget,
   parseHerdrPaneLayout,
   parseHerdrPaneProcessInfo,
   parseHerdrRootPaneId,
@@ -679,11 +680,16 @@ export const terminal = {
     return { output, cols: layout?.cols ?? null, rows: layout?.rows ?? null };
   },
 
-  // Closes the pane an agent is running in — the sidebar kill button (#521). herdr has no
-  // direct "kill agent" command; `pane close` against the agent's pane_id is the confirmed
-  // equivalent. Unlike sessions() above, failures here must reach the client (silently
-  // swallowing a kill the user asked for would be worse than a visible error), so this
-  // rejects with runHerdr's ServiceError as-is instead of degrading to a default.
+  // Kills the agent running in a pane — the sidebar kill button (#521). This used to be `pane
+  // close` against the agent's pane_id, but herdr refuses that with a `confirmation_required`
+  // error ("closing this pane would close a worktree group") whenever the pane is the last one
+  // in a worktree-linked workspace — which every single-tab `lh dev --herdr` launch is, by
+  // default (#805). There is no CLI flag to force it through, so that refusal hard-blocked the
+  // kill button. Killing the pane's foreground process directly (killPaneForegroundProcess)
+  // sidesteps pane/tab/workspace state entirely, so it can never hit that guard. Unlike
+  // sessions() above, failures here must reach the client (silently swallowing a kill the user
+  // asked for would be worse than a visible error), so this rejects with the ServiceError as-is
+  // instead of degrading to a default.
   async killAgent(input: { repo: string; paneId: string }): Promise<{
     ok: true;
   }> {
@@ -700,10 +706,17 @@ export const terminal = {
     if (!HERDR_ID.test(input.paneId))
       throw new ServiceError(422, "paneId is not a valid herdr pane id");
     const r = repoOr404(input.repo);
+    await killPaneForegroundProcess(r, input.paneId);
+    // Best-effort tidy-up: the process is already dead either way, so a `confirmation_required`
+    // refusal here (or any other herdr failure) must not undo the kill the caller already got —
+    // this only saves the now-empty pane from lingering in the sidebar. Bounded the same as
+    // cleanupInactiveHerdrAgents's equivalent tidy-up call below: a fire-and-forget spawn with no
+    // timeout can never be killed if the herdr client wedges on its session socket (the same
+    // failure mode runHerdr's own timeoutMs guard exists for).
     const argv = herdrPaneCloseArgv(r, input.paneId);
-    await runHerdr(argv[0], argv.slice(1), r.local_path, {
-      timeoutMs: 10_000,
-    });
+    runHerdr(argv[0], argv.slice(1), r.local_path, { timeoutMs: 10_000 }).catch(
+      () => {},
+    );
     return { ok: true };
   },
 
@@ -861,6 +874,64 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
   return { repos: groups.filter((g) => g !== null) };
 }
 
+// Terminates whatever a pane's foreground job is running by signaling it directly, instead of
+// asking herdr to close the pane (see the killAgent comment above for why: `pane close` refuses
+// with `confirmation_required` — "closing this pane would close a worktree group" — whenever the
+// pane is the last one in a worktree-linked workspace, and there is no flag to force it, #805).
+// Reads the pane's foreground process group id via `pane process-info` and SIGKILLs its
+// negation, which kills the whole foreground job (an agent plus any children it spawned) without
+// touching pane/tab/workspace state — so it can never hit that guard. When the pane is idle
+// (nothing running but the shell), herdr reports the shell's own pid as the group leader, so the
+// same call kills the shell too, same end result `pane close` used to give for a dead agent.
+// POSIX-only: negative-pid process-group signaling matches herdr's own macOS/Linux-only support;
+// this assumes lh-web itself also runs on a POSIX host.
+async function killPaneForegroundProcess(
+  repo: TerminalLaunchRepo,
+  paneId: string,
+): Promise<void> {
+  let infoOut: string;
+  try {
+    infoOut = await runHerdr(
+      "herdr",
+      [
+        "--session",
+        herdrSessionName(repo),
+        "pane",
+        "process-info",
+        "--pane",
+        paneId,
+      ],
+      repo.local_path,
+      { captureStdout: true, timeoutMs: 10_000 },
+    );
+  } catch (e) {
+    throw isServiceError(e)
+      ? e
+      : new ServiceError(500, "failed to read pane process info");
+  }
+  // A small, accepted TOCTOU window: the OS could recycle this pid/pgid for an unrelated process
+  // between this read and the signal below. Same trade-off any pid-based kill makes; the window
+  // is short and there is no cheaper way to close it without herdr itself exposing an atomic
+  // "kill the process behind this pane" call.
+  const pid = parseHerdrPaneKillTarget(infoOut);
+  if (pid == null)
+    throw new ServiceError(
+      500,
+      "could not determine the process to kill for this pane",
+    );
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch (e) {
+    // ESRCH: the process (and its whole group) is already gone — the agent is already dead,
+    // exactly the outcome this call wants, so treat it as success rather than an error. Any other
+    // errno (e.g. EPERM) is wrapped the same way as the two failure paths above, instead of
+    // rethrown as a raw NodeJS.ErrnoException — this file's herdr/OS errors are deliberately
+    // generic so a raw message never reaches the JSON-RPC client (see runHerdr's doc comment).
+    if ((e as NodeJS.ErrnoException).code !== "ESRCH")
+      throw new ServiceError(500, "failed to signal pane process");
+  }
+}
+
 async function cleanupInactiveHerdrAgents(): Promise<{
   closed: number;
   failed: number;
@@ -907,15 +978,20 @@ async function cleanupInactiveHerdrAgents(): Promise<{
         isPullClosed,
       },
     )) {
-      const argv = herdrPaneCloseArgv(repo, candidate.paneId);
       try {
-        await runHerdr(argv[0], argv.slice(1), repo.local_path, {
-          timeoutMs: 10_000,
-        });
+        await killPaneForegroundProcess(repo, candidate.paneId);
         closed++;
       } catch {
         failed++;
+        continue;
       }
+      // Best-effort tidy-up, same as killAgent above: the process is already dead either way, so
+      // a `confirmation_required` refusal here must not undo the successful kill — this only
+      // saves the now-empty pane from lingering in the sidebar.
+      const argv = herdrPaneCloseArgv(repo, candidate.paneId);
+      runHerdr(argv[0], argv.slice(1), repo.local_path, {
+        timeoutMs: 10_000,
+      }).catch(() => {});
     }
   }
   return { closed, failed };

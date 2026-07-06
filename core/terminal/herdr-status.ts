@@ -328,6 +328,49 @@ export function parseHerdrPaneProcessInfo(stdout: string): string[][] | null {
 }
 
 /**
+ * The pid to signal in order to kill whatever is running in a pane's foreground, from the same
+ * `pane process-info` output parseHerdrPaneProcessInfo reads (`{ result: { process_info: {
+ * foreground_process_group_id, shell_pid } } }`). Prefers the foreground process *group* id:
+ * sending SIGKILL to its negation kills the whole foreground job (an agent plus any children it
+ * spawned) without touching the pane's shell, which then returns to an idle prompt. When the pane
+ * is idle (nothing running but the shell), herdr reports the shell's own pid as the foreground
+ * group leader, so the same call naturally kills the shell too. Falls back to shell_pid only if
+ * the group id is ever missing/malformed. Null on anything unparseable, matching the other
+ * parsers here.
+ *
+ * Rejects `1`, not just non-positive values: the caller negates this into a POSIX process-group
+ * signal (`kill(-pid, ...)`), and `kill(-1, ...)` is a documented special case meaning "signal
+ * every process the caller has permission to signal" — a system-wide broadcast, not "process
+ * group 1". A pane whose foreground process happens to be PID 1 (e.g. the container/PID-namespace
+ * init a shell can land on) must never produce that pid here.
+ */
+export function parseHerdrPaneKillTarget(stdout: string): number | null {
+  const parsed = tryParse(stdout);
+  const info = (
+    parsed as {
+      result?: {
+        process_info?: {
+          foreground_process_group_id?: unknown;
+          shell_pid?: unknown;
+        };
+      };
+    }
+  )?.result?.process_info;
+  for (const candidate of [
+    info?.foreground_process_group_id,
+    info?.shell_pid,
+  ]) {
+    if (
+      typeof candidate === "number" &&
+      Number.isInteger(candidate) &&
+      candidate > 1
+    )
+      return candidate;
+  }
+  return null;
+}
+
+/**
  * True when one of a pane's foreground processes is exactly `claude --resume <session>` — the
  * literal argv commandForHerdrLaunch's "resume" workflow execs (a `cd <dir> &&` prefix is a
  * shell builtin, consumed before exec, so it never reaches the OS argv). Used to find a terminal
