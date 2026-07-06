@@ -73,6 +73,51 @@ export function listAllSessionUsage(): SessionUsageRow[] {
     .all() as SessionUsageRow[];
 }
 
+export interface SessionUsageTotals {
+  total_tokens: number;
+  cost_usd: number | null;
+}
+
+// Single aggregate query across every session linked to an issues row (issue or PR), used by the
+// issue-list PR sub-row (#783) where per-session/per-model joins (listSessionsForIssue +
+// listSessionUsage) would be an N+1 on top of the existing per-PR git fan-out. Returns null when no
+// linked session has usage yet, so callers can omit the field entirely rather than show a zero.
+export function sessionUsageTotalsForIssue(
+  issueId: number,
+): SessionUsageTotals | null {
+  const row = db
+    .query(
+      `SELECT
+         SUM(su.input_tokens) AS input_tokens,
+         SUM(su.cache_creation_input_tokens) AS cache_creation_input_tokens,
+         SUM(su.cache_read_input_tokens) AS cache_read_input_tokens,
+         SUM(su.output_tokens) AS output_tokens,
+         SUM(su.cost_usd) AS cost_usd_sum,
+         SUM(CASE WHEN su.cost_usd IS NULL THEN 1 ELSE 0 END) AS unknown_cost_rows,
+         COUNT(*) AS row_count
+       FROM session_links l
+       JOIN session_usage su ON su.session_id = l.session_id
+       WHERE l.issue_id = ?`,
+    )
+    .get(issueId) as {
+    input_tokens: number | null;
+    cache_creation_input_tokens: number | null;
+    cache_read_input_tokens: number | null;
+    output_tokens: number | null;
+    cost_usd_sum: number | null;
+    unknown_cost_rows: number;
+    row_count: number;
+  };
+  if (row.row_count === 0) return null;
+  const total_tokens =
+    (row.input_tokens ?? 0) +
+    (row.cache_creation_input_tokens ?? 0) +
+    (row.cache_read_input_tokens ?? 0) +
+    (row.output_tokens ?? 0);
+  const cost_usd = row.unknown_cost_rows > 0 ? null : (row.cost_usd_sum ?? 0);
+  return { total_tokens, cost_usd };
+}
+
 export function getSessionUsageCursor(
   sessionId: string,
 ): SessionUsageCursorRow | null {

@@ -21,6 +21,11 @@ import {
   pullBadges,
   type StatusWordTone,
 } from "@/lib/badges";
+import {
+  formatCost,
+  formatTokenCount,
+  formatTokenCountShort,
+} from "@/lib/session-usage";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
@@ -392,8 +397,31 @@ function LinkedPullSubRow({
           deletions={pull.deletions ?? 0}
         />
       ) : null}
+      <AgentCostBadge totalTokens={pull.total_tokens} costUsd={pull.cost_usd} />
       <HerdrBadge owner={owner} repo={repo} pull={pull.number} />
     </div>
+  );
+}
+
+// Agent cost for the PR's linked sessions (#783): compact token count + cost, shown only once the
+// PR has usage to report. Hidden (not "n/a") otherwise, so PRs with no agent session don't add noise
+// to every row.
+function AgentCostBadge({
+  totalTokens,
+  costUsd,
+}: {
+  totalTokens?: number;
+  costUsd?: number | null;
+}) {
+  if (totalTokens == null) return null;
+  const cost = formatCost(costUsd ?? null);
+  return (
+    <span
+      className="shrink-0 font-mono tabular-nums"
+      title={`${formatTokenCount(totalTokens)} tokens · ${cost}`}
+    >
+      {formatTokenCountShort(totalTokens)} tok · {cost}
+    </span>
   );
 }
 

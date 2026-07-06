@@ -100,6 +100,10 @@ interface PullSummaryWire {
   merged: boolean;
   html_url: string;
   github_pull: GithubPullWire | null;
+  // Agent cost for the issue-list PR sub-row (#783): total tokens across every linked session and
+  // the summed cost, or absent/null when no linked session has usage yet / has an unknown cost.
+  total_tokens?: number;
+  cost_usd?: number | null;
 }
 
 interface IssueWire {
@@ -650,6 +654,7 @@ async function linkedPullDetail(
   pr: S.LinkedPullIssueRow,
 ): Promise<PullSummaryWire> {
   const status = await pullStatusFields(repo, pr);
+  const usageTotals = S.sessionUsageTotalsForIssue(pr.id);
   return {
     number: pr.number,
     title: pr.title,
@@ -664,6 +669,14 @@ async function linkedPullDetail(
     changed_files: status.changed_files,
     // #629: the exported GitHub PR (if any), so the issue-list linked-PR sub-row can show a GH badge.
     github_pull: githubPullJSON(S.getGithubPull(pr.id)),
+    // #783: agent cost (total tokens + cost) for the sub-row, or omitted when no linked session
+    // has usage yet.
+    ...(usageTotals
+      ? {
+          total_tokens: usageTotals.total_tokens,
+          cost_usd: usageTotals.cost_usd,
+        }
+      : {}),
   };
 }
 

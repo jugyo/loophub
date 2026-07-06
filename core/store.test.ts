@@ -519,6 +519,60 @@ test("createPull and setPullSession record the dev session in session_links (#29
   expect(S.primaryDevSessionForPull(pr.id)).toBe(s2);
 });
 
+test("sessionUsageTotalsForIssue aggregates tokens/cost across every linked session (#783)", () => {
+  const repo = S.createRepo("me/usage-totals", "/tmp/usage-totals");
+  const pr = S.createIssue(repo.id, "pull", "p", "", "bot") as any;
+
+  // No linked session yet: null, not a zeroed-out object.
+  expect(S.sessionUsageTotalsForIssue(pr.id)).toBeNull();
+
+  const s1 = "66666666-0000-0000-0000-000000000001";
+  const s2 = "66666666-0000-0000-0000-000000000002";
+  S.registerAgentSession(s1, "lh-dev", "ext-t1");
+  S.registerAgentSession(s2, "lh-dev", "ext-t2");
+  S.linkSession(s1, pr.id);
+  S.linkSession(s2, pr.id);
+
+  // A linked session with no usage rows yet still yields null (row_count stays 0).
+  expect(S.sessionUsageTotalsForIssue(pr.id)).toBeNull();
+
+  S.upsertSessionUsage(s1, {
+    model: "claude-sonnet-5",
+    input_tokens: 10,
+    cache_creation_input_tokens: 1,
+    cache_read_input_tokens: 2,
+    output_tokens: 3,
+    cost_usd: 0.5,
+  });
+  S.upsertSessionUsage(s2, {
+    model: "claude-opus-4-8",
+    input_tokens: 20,
+    cache_creation_input_tokens: 4,
+    cache_read_input_tokens: 5,
+    output_tokens: 6,
+    cost_usd: 1.5,
+  });
+  expect(S.sessionUsageTotalsForIssue(pr.id)).toEqual({
+    total_tokens: 51,
+    cost_usd: 2,
+  });
+
+  // Any linked session with an unknown (null) cost makes the combined cost unknown too, even
+  // though its tokens still count toward the total.
+  S.upsertSessionUsage(s2, {
+    model: "claude-opus-4-8",
+    input_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: null,
+  });
+  expect(S.sessionUsageTotalsForIssue(pr.id)).toEqual({
+    total_tokens: 51,
+    cost_usd: null,
+  });
+});
+
 test("emitEvent persists and listEvents filters by since/order", () => {
   const repo = S.createRepo("me/ev", "/tmp/ev");
   S.emitEvent(repo.id, "issue.opened", "me", { number: 1 });

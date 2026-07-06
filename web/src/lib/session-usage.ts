@@ -4,6 +4,40 @@ export function formatTokenCount(n: number): string {
   return n.toLocaleString();
 }
 
+// Compact form for tight spaces (the issue-list PR sub-row, #783) — "1.2k", "3.4M" — as opposed to
+// formatTokenCount's full comma-grouped form used on the detail/admin usage tables.
+export function formatTokenCountShort(n: number): string {
+  const abs = Math.abs(n);
+  if (abs < 1000) return String(n);
+  const units: Array<[number, string]> = [
+    [1_000_000_000, "B"],
+    [1_000_000, "M"],
+    [1_000, "k"],
+  ];
+  for (let i = 0; i < units.length; i++) {
+    const [value, suffix] = units[i];
+    if (abs < value) continue;
+    const scaled = n / value;
+    const rounded =
+      Math.abs(scaled) >= 100
+        ? Math.round(scaled)
+        : Math.round(scaled * 10) / 10;
+    // Rounding at the top of a bucket can reach 1000 (e.g. 999_500 → 1000k) — that belongs to the
+    // next unit up, so fall through to it instead of showing a 4-digit magnitude.
+    const next = units[i - 1];
+    if (Math.abs(rounded) >= 1000 && next) {
+      const nextScaled = n / next[0];
+      const nextRounded =
+        Math.abs(nextScaled) >= 100
+          ? Math.round(nextScaled)
+          : Math.round(nextScaled * 10) / 10;
+      return `${nextRounded}${next[1]}`;
+    }
+    return `${rounded}${suffix}`;
+  }
+  return String(n);
+}
+
 export function formatCost(cost: number | null): string {
   if (cost === null || !Number.isFinite(cost)) return "n/a";
   if (cost === 0) return "$0.00";

@@ -34,6 +34,13 @@ export interface LinkedPull {
    * the `PR #N` pill. Same shape as `PullRequest.github_pull`.
    */
   github_pull?: GithubPull | null;
+  /**
+   * Agent cost for this PR (#783): total tokens across every linked session and the summed cost.
+   * Present on the issue-list response alongside the status fields above; absent/undefined when no
+   * linked session has usage yet, `cost_usd` is null when any linked session's cost is unknown.
+   */
+  total_tokens?: number;
+  cost_usd?: number | null;
 }
 
 /** Summary of the issue a PR closes (pull-detail `linked_issue`). */

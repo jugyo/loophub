@@ -718,3 +718,50 @@ describe("Herdr running badge (#579)", () => {
     );
   });
 });
+
+// #783: agent cost (short token count + cost) on the linked-PR sub-row. Rendered by
+// `LinkedPullSubRow`, the single component shared by the home dashboard, the repo dashboard, and the
+// dedicated issue-list screen — so this covers the display requirement identically for all three.
+describe("agent cost display (#783)", () => {
+  it("shows the short token count and cost when the PR has usage", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ total_tokens: 12345, cost_usd: 4.5 }),
+          ],
+        })}
+      />,
+    );
+    expect(await screen.findByText("12.3k tok · $4.50")).toBeTruthy();
+  });
+
+  it("shows n/a for cost when the PR's usage has an unknown cost", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ total_tokens: 500, cost_usd: null }),
+          ],
+        })}
+      />,
+    );
+    expect(await screen.findByText("500 tok · n/a")).toBeTruthy();
+  });
+
+  it("shows nothing when the PR has no linked session usage yet", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull()] })}
+      />,
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(screen.queryByText(/tok ·/)).toBeNull();
+  });
+});

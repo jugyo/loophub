@@ -10,6 +10,7 @@ process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
+let S: typeof import("./store.ts");
 let repoPath: string;
 
 function git(args: string[]) {
@@ -18,6 +19,7 @@ function git(args: string[]) {
 
 beforeAll(async () => {
   svc = await import("./service.ts");
+  S = await import("./store.ts");
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-dashboard-repo-"));
   git(["init", "-q", "-b", "main"]);
@@ -114,5 +116,43 @@ describe("dashboard.overview", () => {
       svc.issues.get("me/proj", issue.number).linked_pull_requests![0]
         .github_pull,
     ).toMatchObject({ number: 99 });
+  });
+
+  test("linked PR carries agent cost (total tokens + cost) once its session has usage (#783)", async () => {
+    const issue = svc.issues.create("me/proj", { title: "gets agent cost" });
+    await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
+
+    const linkedPull = (o: any) =>
+      o.issues.find((i: any) => i.issue.number === issue.number)?.issue
+        .linked_pull_requests[0];
+
+    // Before any usage is recorded: the fields are simply absent, not zero.
+    const before = linkedPull(await svc.dashboard.overview());
+    expect(before.total_tokens).toBeUndefined();
+    expect(before.cost_usd).toBeUndefined();
+
+    // "sess-1" is already linked to the PR's issue row as its dev session (openPr ->
+    // setPullSession above), so recording usage against it is enough for the aggregate query to
+    // pick it up.
+    S.upsertSessionUsage("sess-1", {
+      model: "claude-sonnet-5",
+      input_tokens: 100,
+      cache_creation_input_tokens: 20,
+      cache_read_input_tokens: 30,
+      output_tokens: 50,
+      cost_usd: 1.23,
+    });
+
+    const after = linkedPull(await svc.dashboard.overview());
+    expect(after.total_tokens).toBe(200);
+    expect(after.cost_usd).toBe(1.23);
   });
 });
