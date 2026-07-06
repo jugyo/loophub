@@ -1119,11 +1119,19 @@ async function main() {
       const sessionId = randomUUID();
       const slashCommand = "/lh-issue-create";
       const runtime = resolveDevRuntime({ defaultRuntime: codingAgent() });
+      if (flags.model !== undefined && typeof flags.model !== "string") {
+        fail(`--model requires a value`);
+      }
+      const model =
+        typeof flags.model === "string" && flags.model.trim()
+          ? flags.model
+          : agentModel(runtime);
       const { bin: runtimeBin, args: runtimeArgs } = buildRuntimeLaunch({
         runtime,
         sessionId,
         slashCommand,
         sessionName: `New issue (${r.full_name})`,
+        model,
       });
       await run(() =>
         s.sessions.register({
