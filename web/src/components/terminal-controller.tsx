@@ -39,6 +39,11 @@ export interface OpenTerminalOptions {
   // dropdown sets these; the plain Build button omits them. They apply to this launch only.
   agent?: CodingAgent;
   model?: string;
+  // Optional per-launch error hook (#797): lets a caller unwind its own optimistic state when the
+  // launch RPC itself fails (herdr not installed, etc.). The shared error dialog still shows; this
+  // runs in addition to it. Success is not signalled here — callers that show an in-progress state
+  // hand off to the real running-agent signal (terminal/sessions) instead.
+  onError?: (error: unknown) => void;
 }
 
 export type OpenTerminal = (opts?: OpenTerminalOptions) => void;
@@ -126,12 +131,14 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
             const attach = result.attach ? ` Attach: ${result.attach}` : "";
             showSuccess(`Launched in ${session}.${attach}`);
           },
-          onError: (e) =>
+          onError: (e) => {
+            opts.onError?.(e);
             ctx?.showHerdrLaunchError({
               reason: e instanceof Error ? e.message : "Herdr launch failed.",
               command: e instanceof ApiError ? e.data?.command : undefined,
               session: e instanceof ApiError ? e.data?.session : undefined,
-            }),
+            });
+          },
         },
       );
     },
