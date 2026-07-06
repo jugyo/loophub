@@ -437,6 +437,43 @@ export const pulls = {
     return { merged: true, sha: res.sha };
   },
 
+  // #813: close a GitHub-linked PR whose merge lh-worker already detected on GitHub
+  // (github-merge-sync.ts), without running a local git merge — same end state as merge() above
+  // (pulls.merged, issue closed, linked issue closed) but sourced from the GitHub-side timestamp.
+  async markGithubMerged(
+    name: string,
+    number: number,
+    sessionId?: string | null,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const p = S.getPull(row.id)!;
+    if (p.merged) throw new ServiceError(405, "Pull Request is already merged");
+    // The UI only offers this action while the PR is open (pull-detail.tsx canMarkMerged), but
+    // that gate is client-side only — enforce it here too so a direct RPC call can't force a PR
+    // that was manually closed without merging into merged=true (and cascade-close its still-open
+    // linked issue), the way readyForReview's analogous guard does for its own transition.
+    if (row.state !== "open")
+      throw new ServiceError(405, "Pull Request is not open");
+    const gh = S.getGithubPull(row.id);
+    if (!gh?.github_merged || !gh.github_merged_at)
+      throw new ServiceError(422, "GitHub PR is not yet detected as merged");
+    const actor = actorFor(sessionId);
+    const closedIssue = S.setMergedFromGithub(row.id, gh.github_merged_at);
+    S.emitEvent(r.id, "pull_request.merged", actor, {
+      number: row.number,
+      github_merged_at: gh.github_merged_at,
+    });
+    if (closedIssue != null) {
+      S.emitEvent(r.id, "issue.closed", actor, {
+        number: closedIssue,
+        closed_by_pull: row.number,
+      });
+    }
+    return { merged: true };
+  },
+
   async readyForReview(
     name: string,
     number: number,

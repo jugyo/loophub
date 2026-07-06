@@ -221,7 +221,26 @@ export function setMerged(
   sha: string,
   method: string,
 ): number | null {
-  const t = now();
+  return finishMerge(issueId, now(), sha, method);
+}
+
+// #813: close a PR whose merge happened on GitHub, not through gitMergePull — same end state as
+// setMerged (pulls.merged/merged_at, issue closed, linked issue closed) but with the GitHub-side
+// merge timestamp instead of "now" and no local merge commit sha.
+export function setMergedFromGithub(
+  issueId: number,
+  mergedAt: string,
+): number | null {
+  return finishMerge(issueId, mergedAt, null, "github");
+}
+
+function finishMerge(
+  issueId: number,
+  mergedAt: string,
+  sha: string | null,
+  method: string,
+): number | null {
+  const t = mergedAt;
   const pull = getPull(issueId);
   let closedIssue: number | null = null;
   let shouldCloseLinked = false;

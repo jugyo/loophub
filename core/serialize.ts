@@ -206,6 +206,10 @@ export interface GithubPullWire {
   branch: string | null;
   created_by: string | null;
   created_at: string;
+  // #813: whether lh-worker's polling (github-merge-sync.ts) has detected this GitHub PR as
+  // merged, and when — drives the "Mark as merged" action in the UI.
+  github_merged: boolean;
+  github_merged_at: string | null;
 }
 export function githubPullJSON(g: S.GithubPull): GithubPullWire;
 export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null;
@@ -217,6 +221,8 @@ export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null {
     branch: g.branch ?? null,
     created_by: g.created_by ?? null,
     created_at: g.created_at,
+    github_merged: !!g.github_merged,
+    github_merged_at: g.github_merged_at ?? null,
   };
 }
 

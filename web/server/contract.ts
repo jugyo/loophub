@@ -744,6 +744,16 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "pulls/markGithubMerged": {
+    description:
+      "Close a GitHub-linked PR (and its linked issue) as merged, without a local git merge, once lh-worker's polling has detected the GitHub PR as merged.",
+    params: params({ repo, number: positiveInt, session_id: sid }, [
+      "repo",
+      "number",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.pulls.markGithubMerged(p.repo, p.number, p.session_id),
+  },
   "pulls/readyForReview": {
     description:
       "Mark a pull request ready for re-review after addressing changes.",

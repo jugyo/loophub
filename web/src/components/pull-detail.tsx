@@ -46,6 +46,7 @@ import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useIssueComments } from "@/queries/issues";
 import {
+  useMarkGithubMerged,
   useMergePull,
   usePull,
   usePullComments,
@@ -397,20 +398,48 @@ function GithubPrAction({
     if (herdrRunning) setLaunching(false);
   }, [herdrRunning]);
 
+  // #813: lh-worker's polling (github-merge-sync.ts) detected the GitHub PR as merged, but the
+  // loophub PR hasn't gone through its own merge/close flow yet — offer a manual close that
+  // mirrors the local merge flow's end state without running a local git merge.
+  const markMerged = useMarkGithubMerged(owner, repo, pull.number);
+  const { showError } = useToast();
+  const [isMarkLoading, startMarkLoading] = useFixedLoading();
+  const isMarking = isMarkLoading || markMerged.isPending;
+
   const gh = pull.github_pull;
   if (gh) {
+    const canMarkMerged =
+      gh.github_merged && pull.state === "open" && !pull.merged;
     return (
-      <a
-        href={gh.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={`GitHub PR #${gh.number}`}
-        className="inline-flex h-9 items-center gap-1.5 rounded-md border bg-background px-3 text-sm font-medium hover:bg-muted"
-      >
-        <Github className="size-4" />
-        View PR on GitHub
-        <ExternalLink className="size-3.5 text-muted-foreground" />
-      </a>
+      <>
+        <a
+          href={gh.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`GitHub PR #${gh.number}`}
+          className="inline-flex h-9 items-center gap-1.5 rounded-md border bg-background px-3 text-sm font-medium hover:bg-muted"
+        >
+          <Github className="size-4" />
+          View PR on GitHub
+          <ExternalLink className="size-3.5 text-muted-foreground" />
+        </a>
+        {canMarkMerged ? (
+          <Button
+            disabled={isMarking}
+            title="Close this PR (and its linked issue) as merged, matching GitHub — no local git merge is run"
+            onClick={() => {
+              startMarkLoading();
+              markMerged.mutate(undefined, {
+                onError: (e) =>
+                  showError(failureMessage("Mark as merged failed", e)),
+              });
+            }}
+          >
+            {isMarking ? <Loader2 className="size-4 animate-spin" /> : null}
+            Mark as merged
+          </Button>
+        ) : null}
+      </>
     );
   }
   // A merged or closed loophub PR is past the point of exporting, so offer Create only while open.

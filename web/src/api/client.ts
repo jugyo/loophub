@@ -472,6 +472,19 @@ export function mergePull(
   });
 }
 
+export function markGithubMerged(
+  owner: string,
+  repo: string,
+  number: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ merged: boolean }>("pulls/markGithubMerged", {
+    repo: full(owner, repo),
+    number,
+    session_id: sessionId,
+  });
+}
+
 export function readyForReview(
   owner: string,
   repo: string,
