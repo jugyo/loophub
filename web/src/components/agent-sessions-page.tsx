@@ -37,7 +37,7 @@ export function AgentSessionsPage() {
   const { data, isLoading, isError } = useAgentSessions();
 
   return (
-    <div className="w-full">
+    <div className="mx-auto flex max-w-content flex-col">
       <h1 className="text-2xl font-semibold">Agent sessions</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Latest registered sessions, usage, API-equivalent cost, and linked work.

@@ -106,26 +106,28 @@ describe("StatsPage", () => {
     expect(sessions.getAttribute("href")).toBe("/stats/sessions");
   });
 
-  it("uses the full available width instead of the shared content cap", async () => {
+  it("uses the shared content cap for page width", async () => {
     renderStatsHub();
 
     const root = (
       await screen.findByRole("heading", { name: "Stats" })
     ).closest("div");
-    expect(root?.className).toContain("w-full");
-    expect(root?.className).not.toContain("max-w-content");
+    expect(root?.className).toContain("max-w-content");
+    expect(root?.className).toContain("mx-auto");
+    expect(root?.className).not.toContain("w-full");
   });
 });
 
 describe("DatabaseStatsPage", () => {
-  it("uses the full available width instead of the shared content cap", async () => {
+  it("uses the shared content cap for page width", async () => {
     renderDatabaseStats();
 
     const root = (
       await screen.findByRole("heading", { name: "DB Stats" })
     ).closest("div");
-    expect(root?.className).toContain("w-full");
-    expect(root?.className).not.toContain("max-w-content");
+    expect(root?.className).toContain("max-w-content");
+    expect(root?.className).toContain("mx-auto");
+    expect(root?.className).not.toContain("w-full");
   });
 
   it("shows the DB file size, WAL included, in human-readable units", async () => {
