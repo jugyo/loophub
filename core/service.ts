@@ -33,7 +33,6 @@ export {
   MAX_RETRO_BACKLOG_LIMIT,
   retros,
 } from "./service/retros.ts";
-export { reviewNotes } from "./service/review-notes.ts";
 export { reviews } from "./service/reviews.ts";
 export { sessions } from "./service/sessions.ts";
 export { settings } from "./service/settings.ts";

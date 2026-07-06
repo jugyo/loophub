@@ -16,7 +16,6 @@ context-isolated reviewer sessions (the install script symlinks them into `~/.cl
 | `lh-rebase-conflict` | `skills/lh-rebase-conflict/` | `/lh-rebase-conflict {pr id}` (resolve conflicts → re-review) |
 | `lh-merge-ready` | `skills/lh-merge-ready/` | `/lh-merge-ready {pr id}` (pre-merge check; human merges) |
 | `lh-retro` | `skills/lh-retro/` | `/lh-retro [{pr id}]` (retrospect a merged PR / backfill → save to retros DB) |
-| `lh-review-notes` | `skills/lh-review-notes/` | `/lh-review-notes [{base..commit}]` (per-file fact-based notes from the diff → save to review_notes) |
 | `create-github-pr` | `skills/create-github-pr/` | `/create-github-pr {pr id}` (export a LoopHub PR to a GitHub Draft PR → record back) |
 
 Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
@@ -31,12 +30,12 @@ command exactly.
   triggers (e.g. 起票) belong in the YAML `description` field only.
 - **Issue/PR output**: Skills with a `## Language` section localize **reader-facing text** to the
   user's language — do not embed localized templates in the skill body. For **PR-flow** output (PR
-  body, review comments, `review_notes`, hand-off summaries), the target language is the **PR's
-  language**, resolved in this order: linked issue → human-authored PR body/title → conversation →
-  English fallback. Each skill states this rule inline in its own `## Language` section so it stays
-  self-contained and host-portable (see `lh-dev` and `lh-pr-review`); keep the order consistent when
-  editing them. For **issue-only** skills with no PR yet (`lh-issue-create`, `lh-plan-to-issues`),
-  there is nothing to resolve against — localize the issue text to the **conversation language**.
+  body, review comments, hand-off summaries), the target language is the **PR's language**, resolved
+  in this order: linked issue → human-authored PR body/title → conversation → English fallback. Each
+  skill states this rule inline in its own `## Language` section so it stays self-contained and
+  host-portable (see `lh-dev` and `lh-pr-review`); keep the order consistent when editing them. For
+  **issue-only** skills with no PR yet (`lh-issue-create`, `lh-plan-to-issues`), there is nothing to
+  resolve against — localize the issue text to the **conversation language**.
   Interactive, non-persisted reports a skill prints back to the operator (e.g. `lh-merge-ready`'s
   pre-merge `## Report`) are session output, not a stored PR artifact, so they intentionally follow the
   **conversation language** too — by design, not an oversight.

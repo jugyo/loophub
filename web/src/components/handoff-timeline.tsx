@@ -41,8 +41,8 @@ export function HandoffTimeline({
   isLoading: boolean;
   isError: boolean;
 }) {
-  // Guarded against a non-array (the RPC mock returns {} for unstubbed methods, same as
-  // FilesChanged's reviewNotes guard) — otherwise `.map` below throws instead of rendering empty.
+  // Guarded against a non-array (the RPC mock returns {} for unstubbed methods) — otherwise `.map`
+  // below throws instead of rendering empty.
   const list = Array.isArray(handoffs) ? handoffs : [];
   // Hide entirely until there is something to show (a PR with no orchestration loop stays clean).
   if (!isLoading && !isError && list.length === 0) return null;

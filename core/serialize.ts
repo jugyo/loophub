@@ -533,40 +533,6 @@ export function reviewCommentJSON(m: S.ReviewCommentRow): ReviewCommentWire {
   };
 }
 
-// A per-file diff description note (review_notes; #204, PR-independent since #216). Identity is
-// the commit range (base_sha→commit_sha) + path; pull_request is an optional association to the
-// owning PR (null for a PR-independent note). A consumer compares commit_sha against the PR's live
-// head to decide staleness.
-export interface ReviewNoteWire {
-  id: number;
-  pull_request: { number: number } | null;
-  path: string;
-  base_sha: string;
-  commit_sha: string;
-  body: string;
-  user: UserWire;
-  created_at: string;
-  updated_at: string;
-}
-
-// Shape a `review_notes` row (#204). pull_request summarizes the owning PR by number so
-// consumers see the PR, not the internal row id. base_sha/commit_sha expose the diff range the
-// note is about; a consumer compares commit_sha against the PR's live head to decide staleness.
-export function reviewNoteJSON(n: S.ReviewNoteRow): ReviewNoteWire {
-  const prRow = n.issue_id != null ? S.getIssueById(n.issue_id) : null;
-  return {
-    id: n.id,
-    pull_request: prRow ? { number: prRow.number } : null,
-    path: n.path,
-    base_sha: n.base_sha,
-    commit_sha: n.commit_sha,
-    body: n.body,
-    user: { login: n.author },
-    created_at: n.created_at,
-    updated_at: n.updated_at,
-  };
-}
-
 // An orchestrator<->subagent handoff (#352), as shown in the PR detail's Handoffs section. `body`
 // is inline content (instruction / Verify report) when present; otherwise `src` references a
 // canonical copy (plan=PR, diff=commit) and `hash` is its content hash.

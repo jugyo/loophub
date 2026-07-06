@@ -20,10 +20,6 @@ export function usage(): void {
   lh issue list|view|create|import|update|comment|close|label  [--repo owner/repo]
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
-  lh pr note <m> --path <file> --body <text> [--base <sha>] [--commit <sha>]   # add a review note for a file on the PR's diff (range defaults to base..head)
-  lh pr notes <m> [--path <file>] [--commit <sha>]   lh pr note-edit <id> --body <text>   lh pr note-rm <id>   # list / edit / delete review notes
-  lh note add --path <file> --body <text> --base <sha> --commit <sha> [--pr <m>]   # add a PR-independent review note for a file on a commit range
-  lh note list [--pr <m>] [--path <file>] [--base <sha>] [--commit <sha>]   lh note get <id>   lh note edit <id> --body <text>   lh note rm <id>   # read / edit / delete review notes
   lh handoff record --phase <p> --dir <down|up> (--pr <m> | --issue <n>) (--body <text|-> | --src <ref> [--hash <sha>]) [--from <r>] [--to <r>] [--summary <text>] [--model <m>] [--cost <json>]   # record an orchestrator<->subagent handoff (PR + session)
   lh handoff list [--pr <m>] [--issue <n>] [--session <id>] [--json]   # list handoffs for a ref, chronological
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR
@@ -53,7 +49,6 @@ export function usage(): void {
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     lh pr review 3 --topic security --event pass --body "no issues found"
     echo '[{"path":"a.txt","line":2,"body":"typo"}]' | lh pr review 3 --comments -
-    lh pr note 3 --path src/app.ts --body "entry point; added auth guard. review: token refresh path"
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)
     lh events --since 0
     lh events --follow                 # tail events live (Ctrl-C to stop)

@@ -547,7 +547,6 @@ export const pulls = {
       reviews: S.listReviews(issueRow.id),
       review_comments: S.listReviewComments(issueRow.id),
       comments: S.listComments(issueRow.id),
-      review_notes: S.listReviewNotes(r.id, { issueId: issueRow.id }),
       events,
       session: sessionRow ? agentSessionJSON(sessionRow) : null,
     };

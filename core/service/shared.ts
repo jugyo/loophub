@@ -94,7 +94,6 @@ import {
   retroJSON,
   reviewCommentJSON,
   reviewJSON,
-  reviewNoteJSON,
   sessionUsageJSON,
 } from "../serialize.ts";
 import type {
@@ -300,7 +299,6 @@ export {
   retroJSON,
   reviewCommentJSON,
   reviewJSON,
-  reviewNoteJSON,
   revParse,
   rmSync,
   ServiceError,

@@ -25,7 +25,6 @@ import type {
   PullReview,
   Repo,
   RepoMergeMode,
-  ReviewNote,
   Stats,
   TerminalLaunchResult,
 } from "./types";
@@ -442,18 +441,6 @@ export function listPullComments(owner: string, repo: string, number: number) {
   });
 }
 
-/** Review notes (per-file diff descriptions) associated with a PR, across its commit ranges. */
-export function listPullReviewNotes(
-  owner: string,
-  repo: string,
-  number: number,
-) {
-  return rpc<ReviewNote[]>("reviewNotes/list", {
-    repo: full(owner, repo),
-    pr: number,
-  });
-}
-
 /** Orchestrator<->subagent handoffs (#352) recorded against a PR, chronological. */
 export function listPullHandoffs(owner: string, repo: string, number: number) {
   return rpc<Handoff[]>("handoffs/list", {
@@ -462,7 +449,7 @@ export function listPullHandoffs(owner: string, repo: string, number: number) {
   });
 }
 
-/** Read-only debug dump for a PR: raw DB rows, git facts, reviews, comments, notes, events. */
+/** Read-only debug dump for a PR: raw DB rows, git facts, reviews, comments, events. */
 export function getPullDebug(owner: string, repo: string, number: number) {
   return rpc<Record<string, unknown>>("pulls/debug", {
     repo: full(owner, repo),

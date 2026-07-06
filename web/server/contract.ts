@@ -432,80 +432,6 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.comments.create(p.repo, p.number, p.body, p.session_id),
   },
 
-  // ---- review notes (#204, PR-independent since #216) ----
-  "reviewNotes/list": {
-    description:
-      "List a repo's review notes (per-file diff descriptions), newest first. All filters optional: pr narrows to one PR, path to one file, base_sha/commit_sha to one diff range.",
-    params: params(
-      {
-        repo,
-        pr: positiveInt,
-        path: str,
-        base_sha: str,
-        commit_sha: str,
-      },
-      ["repo"],
-    ),
-    result: anyArray,
-    handler: (p) =>
-      svc.reviewNotes.list(p.repo, {
-        pr: p.pr,
-        path: p.path,
-        baseSha: p.base_sha,
-        commitSha: p.commit_sha,
-      }),
-  },
-  "reviewNotes/get": {
-    description: "Get a single review note by id.",
-    params: params({ repo, id: positiveInt }, ["repo", "id"]),
-    result: anyObject,
-    handler: (p) => svc.reviewNotes.get(p.repo, p.id),
-  },
-  "reviewNotes/create": {
-    description:
-      "Create a review note for a file on a commit range. PR-independent: pass base_sha + commit_sha. Or pass pr to associate the note with a PR and default the range to its base..head.",
-    params: params(
-      {
-        repo,
-        path: strNonEmpty,
-        body: strNonEmpty,
-        base_sha: str,
-        commit_sha: str,
-        pr: positiveInt,
-        session_id: sid,
-      },
-      ["repo", "path", "body"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.reviewNotes.create(
-        p.repo,
-        {
-          path: p.path,
-          body: p.body,
-          baseSha: p.base_sha,
-          commitSha: p.commit_sha,
-          pr: p.pr,
-        },
-        p.session_id,
-      ),
-  },
-  "reviewNotes/update": {
-    description: "Edit a review note's body.",
-    params: params(
-      { repo, id: positiveInt, body: strNonEmpty, session_id: sid },
-      ["repo", "id", "body"],
-    ),
-    result: anyObject,
-    handler: (p) => svc.reviewNotes.update(p.repo, p.id, p.body, p.session_id),
-  },
-  "reviewNotes/delete": {
-    description: "Delete a review note.",
-    params: params({ repo, id: positiveInt, session_id: sid }, ["repo", "id"]),
-    result: anyObject,
-    handler: (p) => svc.reviewNotes.remove(p.repo, p.id, p.session_id),
-  },
-
   // ---- handoffs (#352) ----
   "handoffs/list": {
     description:
@@ -831,7 +757,7 @@ export const methods: Record<string, MethodDef> = {
   },
   "pulls/debug": {
     description:
-      "Read-only debug dump for a PR: raw DB rows (issue/pull/linked issue/labels), git facts (refs, SHAs, diffstat, commits, files), reviews, comments, review notes, related events, and the dev session.",
+      "Read-only debug dump for a PR: raw DB rows (issue/pull/linked issue/labels), git facts (refs, SHAs, diffstat, commits, files), reviews, comments, related events, and the dev session.",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
     handler: (p) => svc.pulls.debug(p.repo, p.number),

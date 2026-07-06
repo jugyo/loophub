@@ -187,9 +187,6 @@ export function deleteRepo(owner: string, name: string): boolean {
   // New Issue pane links may be created before issue rows exist (issue_id NULL), so drop by repo_id
   // before the final repos delete to avoid orphaned rows blocking deletion.
   db.run(`DELETE FROM issue_herdr_panes WHERE repo_id = ?`, [repo.id]);
-  // Notes are deleted by repo_id (#216): this covers both PR-linked notes and PR-independent ones
-  // (issue_id NULL), so no separate issue_id sweep is needed.
-  db.run(`DELETE FROM review_notes WHERE repo_id = ?`, [repo.id]);
   // Issue group membership (#312) references issues(id) and issue_groups(id); drop it before the
   // issues delete so foreign_keys=ON does not reject. Then drop the groups before the repos delete,
   // since issue_groups.repo_id references repos(id).

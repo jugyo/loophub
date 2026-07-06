@@ -331,33 +331,6 @@ CREATE TABLE IF NOT EXISTS retros (
 CREATE INDEX IF NOT EXISTS idx_retros_repo ON retros(repo_id, id);
 CREATE INDEX IF NOT EXISTS idx_retros_pr   ON retros(pr_id);
 
--- Review notes (#204, made PR-independent in #216). A short description attached to a single
--- file, to help a reviewer (what the file is, what changed, what to look at). The note is bound
--- to a *diff range*: base_sha -> commit_sha. Storing both shas on the row makes "the note is
--- about the base->target diff" explicit in the model rather than implied by a PR's current refs.
--- Identity is (repo_id, base_sha, commit_sha, path) — a note stands on its own without a PR.
--- issue_id is an OPTIONAL association to a PR (an issues row with kind='pull'): set when a note
--- belongs to a PR, NULL for a PR-independent note (e.g. one generated from a bare commit range).
--- Notes are never auto-migrated when a head advances: a note whose commit_sha no longer matches
--- a PR head is simply "stale" (still retrievable; staleness is a consumer call).
--- Multiple notes per file are allowed (no UNIQUE on path) — like review_comments.
-CREATE TABLE IF NOT EXISTS review_notes (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  repo_id     INTEGER NOT NULL REFERENCES repos(id),
-  issue_id    INTEGER REFERENCES issues(id),
-  base_sha    TEXT NOT NULL,
-  commit_sha  TEXT NOT NULL,
-  path        TEXT NOT NULL,
-  body        TEXT NOT NULL,
-  author      TEXT NOT NULL,
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_review_notes_pr        ON review_notes(issue_id);
-CREATE INDEX IF NOT EXISTS idx_review_notes_pr_commit ON review_notes(issue_id, commit_sha);
-CREATE INDEX IF NOT EXISTS idx_review_notes_range      ON review_notes(repo_id, base_sha, commit_sha, path);
-
 -- Issue groups (#312). A bolt-on grouping of issues you want to work through in order, kept
 -- entirely separate from the issues table so the feature is trivially reversible (drop these two
 -- tables; the issues schema is never touched). A group is repo-scoped, like labels — UNIQUE on
@@ -633,62 +606,7 @@ if (
   tryExec("ALTER TABLE pulls DROP COLUMN session_id");
 }
 
-// review_notes.issue_id becomes nullable (#216): a note is now identified by
-// (repo_id, base_sha -> commit_sha, path) and a PR association is optional. Older DBs created the
-// column NOT NULL (#204), and SQLite cannot drop a column constraint in place — rebuild the table.
-// Guard on the live schema so the rebuild runs exactly once: only when issue_id is still NOT NULL.
-function reviewNotesIssueIdIsNotNull(): boolean {
-  try {
-    const cols = db.query("PRAGMA table_info(review_notes)").all() as Array<{
-      name: string;
-      notnull: number;
-    }>;
-    const col = cols.find((c) => c.name === "issue_id");
-    return !!col && col.notnull === 1;
-  } catch {
-    return false;
-  }
-}
-if (reviewNotesIssueIdIsNotNull()) {
-  // Drive the transaction with one exec per statement instead of a single multi-statement
-  // exec containing BEGIN..COMMIT. `db.exec` retries the whole string on SQLITE_BUSY (see
-  // withWriteRetry); a string that starts with BEGIN would, on retry, run BEGIN again inside
-  // the open transaction and throw "cannot start a transaction within a transaction", leaving
-  // the rebuild half-applied. BEGIN IMMEDIATE takes the write lock up front, so a BUSY there is
-  // retried cleanly (no transaction is open on failure) and the later statements cannot contend;
-  // any other error rolls back so the next startup re-runs the rebuild from a clean state.
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    db.exec(`
-      CREATE TABLE review_notes__new (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        repo_id     INTEGER NOT NULL REFERENCES repos(id),
-        issue_id    INTEGER REFERENCES issues(id),
-        base_sha    TEXT NOT NULL,
-        commit_sha  TEXT NOT NULL,
-        path        TEXT NOT NULL,
-        body        TEXT NOT NULL,
-        author      TEXT NOT NULL,
-        created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
-      );
-      INSERT INTO review_notes__new
-        SELECT id, repo_id, issue_id, base_sha, commit_sha, path, body, author, created_at, updated_at
-        FROM review_notes;
-      DROP TABLE review_notes;
-      ALTER TABLE review_notes__new RENAME TO review_notes;
-      CREATE INDEX IF NOT EXISTS idx_review_notes_pr        ON review_notes(issue_id);
-      CREATE INDEX IF NOT EXISTS idx_review_notes_pr_commit ON review_notes(issue_id, commit_sha);
-      CREATE INDEX IF NOT EXISTS idx_review_notes_range      ON review_notes(repo_id, base_sha, commit_sha, path);
-    `);
-    db.exec("COMMIT");
-  } catch (err) {
-    try {
-      db.exec("ROLLBACK");
-    } catch {}
-    throw err;
-  }
-}
+tryExec("DROP TABLE IF EXISTS review_notes");
 
 // repos.favorite (#457): user-marked "quick access" flag for a repo, surfaced in the repo list UI
 // (sorted first) independent of archived state. favorited_at is a companion nullable timestamp, set

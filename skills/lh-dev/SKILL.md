@@ -113,20 +113,14 @@ Example: `http://localhost:8730/r/jugyo/local-github/issues/73`
 
 ## Language
 
-**Reader-facing output** — PR title/body headings, user-facing summaries, and
-`review_notes` — must match the **PR's language**. Code, CLI,
-identifiers, and commit messages stay English.
+**Reader-facing output** — PR title/body headings and user-facing summaries — must match the **PR's
+language**. Code, CLI, identifiers, and commit messages stay English.
 
 Resolve the target language once, taking the first that applies: (1) the **linked issue**'s language
 (§1 already reads it — the primary signal, since the PR exists to satisfy that issue); (2) the
 human-authored part of the **PR body/title** (ignore tooling boilerplate like the empty draft
 placeholder and `Closes #n`); (3) the **conversation language**; (4) **English** as the fallback when
 none is determinable. Use the resolved language for every generated artifact in this flow.
-
-`review_notes` are a special case: their *content* is generated from the diff only (no PR/issue prose,
-to avoid biasing the factual summary — see #205), but the *language* still follows the resolved PR
-language, passed as a formatting directive ("write the summary in `<lang>`") rather than by feeding
-issue/PR text into the content input.
 
 ## Procedure
 

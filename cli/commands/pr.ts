@@ -166,57 +166,6 @@ export async function run(): Promise<void> {
       ),
     );
     console.log(`review submitted (${res.comments} line comment(s))`);
-  } else if (sub === "note") {
-    // Add a review note for a file on a PR's diff. Diff range defaults to the PR's base..head;
-    // pass --base/--commit to pin an explicit range.
-    if (!flags.path) fail("--path is required");
-    if (!flags.body) fail("--body is required");
-    const n = await runOp(async () =>
-      s.reviewNotes.create(
-        repo,
-        {
-          pr: Number(rest[0]),
-          path: flags.path as string,
-          body: flags.body as string,
-          ...(flags.base ? { baseSha: flags.base } : {}),
-          ...(flags.commit ? { commitSha: flags.commit } : {}),
-        },
-        await writeSession(),
-      ),
-    );
-    out(n);
-    if (!flags.json)
-      console.log(`note #${n.id} added on ${n.path} (${n.commit_sha})`);
-  } else if (sub === "notes") {
-    const notes = await runOp(() =>
-      s.reviewNotes.list(repo, {
-        pr: Number(rest[0]),
-        ...(flags.path ? { path: flags.path } : {}),
-        ...(flags.commit ? { commitSha: flags.commit } : {}),
-      }),
-    );
-    out(notes);
-    if (!flags.json)
-      notes.forEach((n: any) => {
-        console.log(`#${n.id}\t${n.path}\t${n.commit_sha}\t${n.body}`);
-      });
-  } else if (sub === "note-edit") {
-    if (!flags.body) fail("--body is required");
-    const n = await runOp(async () =>
-      s.reviewNotes.update(
-        repo,
-        Number(rest[0]),
-        flags.body as string,
-        await writeSession(),
-      ),
-    );
-    out(n);
-    if (!flags.json) console.log(`note #${n.id} updated`);
-  } else if (sub === "note-rm") {
-    await runOp(async () =>
-      s.reviewNotes.remove(repo, Number(rest[0]), await writeSession()),
-    );
-    console.log(`note #${rest[0]} deleted`);
   } else if (sub === "ready-for-review") {
     const p = await runOp(async () =>
       s.pulls.readyForReview(

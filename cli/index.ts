@@ -6,7 +6,6 @@ import * as handoffCmd from "./commands/handoff.ts";
 import * as herdrCmd from "./commands/herdr.ts";
 import * as infoCmd from "./commands/info.ts";
 import * as issueCmd from "./commands/issue.ts";
-import * as noteCmd from "./commands/note.ts";
 import * as prCmd from "./commands/pr.ts";
 import * as repoCmd from "./commands/repo.ts";
 import * as resumeCmd from "./commands/resume.ts";
@@ -26,7 +25,6 @@ async function main() {
   if (group === "session") return sessionCmd.run();
   if (group === "attachment") return attachmentCmd.run();
   if (group === "pr") return prCmd.run();
-  if (group === "note") return noteCmd.run();
   if (group === "handoff") return handoffCmd.run();
   if (group === "worktree") return worktreeCmd.run();
   if (group === "herdr") return herdrCmd.run();

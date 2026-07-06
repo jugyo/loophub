@@ -21,7 +21,6 @@ import type {
   PullLineComment,
   PullRequest,
   PullReview,
-  ReviewNote,
 } from "@/api/types";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { PullDevInfo } from "@/components/dev-info";
@@ -53,7 +52,6 @@ import {
   usePullFileAtRef,
   usePullFiles,
   usePullHandoffs,
-  usePullReviewNotes,
   usePullReviews,
   useReadyForReview,
   useSetPullState,
@@ -77,7 +75,6 @@ export function PullDetail({
   const reviewsQuery = usePullReviews(owner, repo, number);
   const lineCommentsQuery = usePullComments(owner, repo, number);
   const commentsQuery = useIssueComments(owner, repo, number);
-  const reviewNotesQuery = usePullReviewNotes(owner, repo, number);
   const handoffsQuery = usePullHandoffs(owner, repo, number);
 
   if (pullQuery.isLoading) {
@@ -124,8 +121,6 @@ export function PullDetail({
           number={number}
           files={filesQuery.data}
           lineComments={lineCommentsQuery.data}
-          reviewNotes={reviewNotesQuery.data}
-          currentHeadSha={pull.head.sha}
           isLoading={filesQuery.isLoading}
           isError={filesQuery.isError}
         />
@@ -708,8 +703,6 @@ function FilesChanged({
   number,
   files,
   lineComments,
-  reviewNotes,
-  currentHeadSha,
   isLoading,
   isError,
 }: {
@@ -718,8 +711,6 @@ function FilesChanged({
   number: number;
   files: PullFile[] | undefined;
   lineComments: PullLineComment[] | undefined;
-  reviewNotes: ReviewNote[] | undefined;
-  currentHeadSha: string | null;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -742,15 +733,6 @@ function FilesChanged({
     const list = byFile.get(c.path) ?? [];
     list.push(c);
     byFile.set(c.path, list);
-  }
-
-  // Review notes grouped by path so each file diff shows its own note(s). Guarded against a
-  // non-array (the RPC mock returns {} for unstubbed methods).
-  const notesByFile = new Map<string, ReviewNote[]>();
-  for (const n of Array.isArray(reviewNotes) ? reviewNotes : []) {
-    const list = notesByFile.get(n.path) ?? [];
-    list.push(n);
-    notesByFile.set(n.path, list);
   }
 
   // Whole-diff totals, summed from the per-file numstat already loaded here.
@@ -803,8 +785,6 @@ function FilesChanged({
               number={number}
               file={openFile}
               comments={byFile.get(openFile.filename) ?? []}
-              notes={notesByFile.get(openFile.filename) ?? []}
-              currentHeadSha={currentHeadSha}
               hasPreviousFile={hasPreviousFile}
               hasNextFile={hasNextFile}
               onPreviousFile={() => {
@@ -874,8 +854,6 @@ function DiffFileDialog({
   number,
   file,
   comments,
-  notes,
-  currentHeadSha,
   hasPreviousFile,
   hasNextFile,
   onPreviousFile,
@@ -887,8 +865,6 @@ function DiffFileDialog({
   number: number;
   file: PullFile;
   comments: PullLineComment[];
-  notes: ReviewNote[];
-  currentHeadSha: string | null;
   hasPreviousFile: boolean;
   hasNextFile: boolean;
   onPreviousFile: () => void;
@@ -983,8 +959,6 @@ function DiffFileDialog({
             number={number}
             file={file}
             comments={comments}
-            notes={notes}
-            currentHeadSha={currentHeadSha}
             mode={mode}
           />
         </div>
@@ -1027,8 +1001,6 @@ function FileDiffContent({
   number,
   file,
   comments,
-  notes,
-  currentHeadSha,
   mode,
 }: {
   owner: string;
@@ -1036,8 +1008,6 @@ function FileDiffContent({
   number: number;
   file: PullFile;
   comments: PullLineComment[];
-  notes: ReviewNote[];
-  currentHeadSha: string | null;
   mode: DiffDialogMode;
 }) {
   const lines = parsePatch(file.patch);
@@ -1055,15 +1025,6 @@ function FileDiffContent({
 
   return (
     <div>
-      {notes.map((n) => (
-        <ReviewNoteCard
-          key={n.id}
-          owner={owner}
-          repo={repo}
-          note={n}
-          currentHeadSha={currentHeadSha}
-        />
-      ))}
       {lines.length > 0 ? (
         <pre className="pr-diff overflow-x-auto text-xs leading-relaxed">
           {lines.map((l, i) => (
@@ -1132,47 +1093,6 @@ function MarkdownPreviewPane({
           {file.data?.content ?? ""}
         </Markdown>
       )}
-    </div>
-  );
-}
-
-// A per-file review note (#217): the factual "role / change summary / review points" for a
-// file's diff range, shown in-flow above the patch so reviewers read it as they read the diff.
-// The range (base→commit) is shown as short SHAs; a note whose commit_sha no longer matches the
-// PR's current head is marked STALE so a reviewer knows it describes an earlier commit.
-function ReviewNoteCard({
-  owner,
-  repo,
-  note,
-  currentHeadSha,
-}: {
-  owner: string;
-  repo: string;
-  note: ReviewNote;
-  currentHeadSha: string | null;
-}) {
-  const isStale = !!currentHeadSha && note.commit_sha !== currentHeadSha;
-  return (
-    <div className="m-2 rounded-md border border-sky-500/30 bg-sky-500/5 p-2">
-      <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
-        <span className="font-medium text-sky-700 dark:text-sky-300">
-          📝 Note
-        </span>
-        <code className="rounded bg-muted px-1 py-0.5">
-          {note.base_sha.slice(0, 7)}…{note.commit_sha.slice(0, 7)}
-        </code>
-        {isStale ? (
-          <Badge tone="review-rereview">STALE</Badge>
-        ) : (
-          <Badge tone="open">current</Badge>
-        )}
-        <span className="text-muted-foreground">
-          @{note.user.login} · {relativeTime(note.created_at)}
-        </span>
-      </div>
-      <Markdown owner={owner} repo={repo}>
-        {note.body}
-      </Markdown>
     </div>
   );
 }
