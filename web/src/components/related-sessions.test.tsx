@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RelatedSession } from "@/api/types";
 
-import { RelatedSessions } from "./related-sessions";
+import { RelatedSessions, TokenUsageSummary } from "./related-sessions";
 
 afterEach(() => {
   cleanup();
@@ -308,45 +308,9 @@ describe("RelatedSessions", () => {
     expect(li.textContent).not.toContain("Not resumable: not resumable");
   });
 
-  it("shows PR total usage and per-session cost with unknown costs as n/a", () => {
+  it("shows PR total usage and per-kind cost with unknown costs as n/a", () => {
     const { container } = render(
-      <RelatedSessions
-        owner="jugyo"
-        repo="loophub"
-        sessions={[
-          session({
-            id: "known",
-            kind: "dev",
-            usage: [
-              {
-                session_id: "known",
-                model: "claude-sonnet-4-6-20260601",
-                input_tokens: 100,
-                cache_creation_input_tokens: 20,
-                cache_read_input_tokens: 30,
-                output_tokens: 10,
-                cost_usd: 0.00061,
-                updated_at: "2026-06-01T00:00:00Z",
-              },
-            ],
-          }),
-          session({
-            id: "unknown",
-            kind: "review",
-            usage: [
-              {
-                session_id: "unknown",
-                model: "unknown-model",
-                input_tokens: 5,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0,
-                output_tokens: 5,
-                cost_usd: null,
-                updated_at: "2026-06-01T00:00:00Z",
-              },
-            ],
-          }),
-        ]}
+      <TokenUsageSummary
         usage={{
           sessions_with_usage: 2,
           input_tokens: 105,
@@ -356,6 +320,30 @@ describe("RelatedSessions", () => {
           total_tokens: 170,
           cost_usd: null,
           has_unknown_cost: true,
+          by_kind: [
+            {
+              kind: "dev",
+              sessions_with_usage: 1,
+              input_tokens: 100,
+              cache_creation_input_tokens: 20,
+              cache_read_input_tokens: 30,
+              output_tokens: 10,
+              total_tokens: 160,
+              cost_usd: 0.00061,
+              has_unknown_cost: false,
+            },
+            {
+              kind: "review",
+              sessions_with_usage: 1,
+              input_tokens: 5,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+              output_tokens: 5,
+              total_tokens: 10,
+              cost_usd: null,
+              has_unknown_cost: true,
+            },
+          ],
         }}
       />,
     );
@@ -365,9 +353,8 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain(
       "Some session costs are unavailable and counted as n/a.",
     );
-    expect(container.textContent).toContain("claude-sonnet-4-6-20260601");
-    expect(container.textContent).toContain("unknown-model");
+    expect(container.textContent).toContain("dev160 tokens · $0.0006");
+    expect(container.textContent).toContain("review10 tokens · n/a");
     expect(container.textContent).toContain("$0.0006");
-    expect(container.textContent).toContain("Costn/a");
   });
 });

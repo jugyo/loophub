@@ -29,7 +29,7 @@ import {
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
-import { useSetIssueState } from "@/queries/issues";
+import { type IssueListFilters, useSetIssueState } from "@/queries/issues";
 import { useSettings } from "@/queries/settings";
 import { useHerdrSessions } from "@/queries/terminal";
 
@@ -88,10 +88,12 @@ function RowLabels({
   labels,
   owner,
   repo,
+  state,
 }: {
   labels: Label[];
   owner: string;
   repo: string;
+  state?: IssueListFilters["state"];
 }) {
   if (labels.length === 0) return null;
   return (
@@ -102,6 +104,7 @@ function RowLabels({
           name={l.name}
           owner={owner}
           repo={repo}
+          state={state}
           className="shrink-0 whitespace-nowrap"
         />
       ))}
@@ -121,6 +124,7 @@ export function IssueRow({
   issue,
   repoLabel,
   showCreatedAt = false,
+  labelState,
 }: {
   owner: string;
   repo: string;
@@ -133,6 +137,8 @@ export function IssueRow({
    * visible timestamp matches the sort order.
    */
   showCreatedAt?: boolean;
+  /** Preserves the active issue-list state when label chips filter the list. */
+  labelState?: IssueListFilters["state"];
 }) {
   // Usually 0–1 linked PRs; when more than one exists they stack vertically, one
   // sub-row each. Fall back to the singular field for any response shape that
@@ -163,7 +169,12 @@ export function IssueRow({
           >
             {issue.title}
           </Link>
-          <RowLabels labels={issue.labels} owner={owner} repo={repo} />
+          <RowLabels
+            labels={issue.labels}
+            owner={owner}
+            repo={repo}
+            state={labelState}
+          />
         </div>
         {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
         <RowBuildButton owner={owner} repo={repo} issue={issue} />

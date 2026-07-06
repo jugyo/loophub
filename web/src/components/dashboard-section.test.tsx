@@ -25,13 +25,13 @@ function renderInRouter(ui: React.ReactNode) {
     path: "/",
     component: () => <>{ui}</>,
   });
-  const issuesRoute = createRoute({
+  const repoRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: "/r/$owner/$repo/issues",
+    path: "/r/$owner/$repo",
     component: () => null,
   });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, repoRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
   return render(<RouterProvider router={router} />);
@@ -56,7 +56,7 @@ describe("DashboardSection", () => {
       <DashboardSection<string>
         title="Open Issues"
         query={result<string>({ data: ["alpha", "beta"] })}
-        seeAllTo="/r/$owner/$repo/issues"
+        seeAllTo="/r/$owner/$repo"
         seeAllParams={{ owner: "me", repo: "proj" }}
         emptyText="No open issues."
         keyOf={(s) => s}
@@ -66,7 +66,7 @@ describe("DashboardSection", () => {
     expect(await screen.findByText("alpha")).toBeTruthy();
     expect(screen.getByText("beta")).toBeTruthy();
     const seeAll = screen.getByText("See all").closest("a");
-    expect(seeAll?.getAttribute("href")).toBe("/r/me/proj/issues");
+    expect(seeAll?.getAttribute("href")).toBe("/r/me/proj");
   });
 
   it("renders a footerNote below the list when provided", async () => {

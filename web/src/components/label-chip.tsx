@@ -1,5 +1,5 @@
-// Clickable label chip: navigates to the issues list filtered by this label
-// (`/r/:owner/:repo/issues?labels=<name>`). Shared by every place that renders a
+// Clickable label chip: navigates to the repo issue list filtered by this label
+// (`/r/:owner/:repo?labels=<name>`). Shared by every place that renders a
 // label (issue detail, list rows) so the chip stays visually identical and the
 // "click a label to filter" behaviour lives in one spot (#368). Colour and
 // shape come from the same helpers as the old static chips
@@ -15,18 +15,20 @@ export function LabelChip({
   name,
   owner,
   repo,
+  state,
   className,
 }: {
   name: string;
   owner: string;
   repo: string;
+  state?: "open" | "closed" | "all";
   className?: string;
 }) {
   return (
     <Link
-      to="/r/$owner/$repo/issues"
+      to="/r/$owner/$repo"
       params={{ owner, repo }}
-      search={{ labels: name }}
+      search={{ labels: name, state: state === "open" ? undefined : state }}
       title={`Filter issues by "${name}"`}
       onClick={(e) => e.stopPropagation()}
       className={cn(

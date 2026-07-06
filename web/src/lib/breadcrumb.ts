@@ -20,9 +20,8 @@ export interface Crumb {
  *   "/stats/db"                      -> [Home, Stats, DB Stats]
  *   "/stats/sessions"                -> [Home, Stats, Agent sessions]
  *   "/r/me/proj"                     -> [Home, me/proj]
- *   "/r/me/proj/issues"              -> [Home, me/proj, Issues]
- *   "/r/me/proj/issues/12"           -> [Home, me/proj, Issues, #12]
- *   "/r/me/proj/pulls/3"             -> [Home, me/proj, Pull requests, #3]
+ *   "/r/me/proj/issues/12"           -> [Home, me/proj, #12]
+ *   "/r/me/proj/pulls/3"             -> [Home, me/proj, #3]
  *   "/r/me/proj/merged"              -> [Home, me/proj, Merged]
  *   "/r/me/proj/settings"            -> [Home, me/proj, Settings]
  */
@@ -68,14 +67,15 @@ export function crumbsForPath(pathname: string): Crumb[] {
 
     const section = parts[3];
     const number = parts[4];
+    const detailSections = new Set(["issues", "pulls"]);
     const sections: Record<string, string> = {
-      issues: "Issues",
-      pulls: "Pull requests",
       merged: "Merged",
       settings: "Settings",
     };
 
-    if (section && sections[section]) {
+    if (section && detailSections.has(section) && number) {
+      crumbs.push({ label: `#${number}` });
+    } else if (section && sections[section]) {
       const sectionHref = `${repoHref}/${section}`;
       crumbs.push({
         label: sections[section],

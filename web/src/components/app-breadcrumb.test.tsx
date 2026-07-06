@@ -45,8 +45,8 @@ describe("AppBreadcrumb", () => {
       bodyVisible: true,
     });
     expect(await screen.findByText("me/proj")).toBeTruthy();
-    expect(screen.getByText("Issues")).toBeTruthy();
     expect(screen.getByText("#12")).toBeTruthy();
+    expect(screen.queryByText("Issues")).toBeNull();
   });
 
   it("hides the detail title while the body heading is visible", async () => {

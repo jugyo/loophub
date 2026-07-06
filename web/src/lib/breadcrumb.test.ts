@@ -32,12 +32,6 @@ describe("crumbsForPath", () => {
   });
 
   it("renders repo section routes", () => {
-    expect(labels("/r/me/proj/issues")).toEqual(["Home", "me/proj", "Issues"]);
-    expect(labels("/r/me/proj/pulls")).toEqual([
-      "Home",
-      "me/proj",
-      "Pull requests",
-    ]);
     expect(labels("/r/me/proj/merged")).toEqual(["Home", "me/proj", "Merged"]);
     expect(labels("/r/me/proj/settings")).toEqual([
       "Home",
@@ -47,18 +41,8 @@ describe("crumbsForPath", () => {
   });
 
   it("parses the issue/pull number into a #N crumb", () => {
-    expect(labels("/r/me/proj/issues/12")).toEqual([
-      "Home",
-      "me/proj",
-      "Issues",
-      "#12",
-    ]);
-    expect(labels("/r/me/proj/pulls/3")).toEqual([
-      "Home",
-      "me/proj",
-      "Pull requests",
-      "#3",
-    ]);
+    expect(labels("/r/me/proj/issues/12")).toEqual(["Home", "me/proj", "#12"]);
+    expect(labels("/r/me/proj/pulls/3")).toEqual(["Home", "me/proj", "#3"]);
   });
 
   it("links every crumb except the last", () => {

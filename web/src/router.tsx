@@ -2,9 +2,9 @@ import { createRouter } from "@tanstack/react-router";
 import { archivedRoute } from "./routes/archived";
 import { eventDebugRoute } from "./routes/event-debug";
 import { indexRoute } from "./routes/index";
-import { issueDetailRoute, issuesRoute } from "./routes/issues";
+import { issueDetailRoute } from "./routes/issues";
 import { mergedRoute } from "./routes/merged";
-import { pullDetailRoute, pullsRoute } from "./routes/pulls";
+import { pullDetailRoute } from "./routes/pulls";
 import { refRoute } from "./routes/ref";
 import { repoRoute } from "./routes/repo";
 import { repoSettingsRoute } from "./routes/repo-settings";
@@ -21,9 +21,7 @@ const routeTree = rootRoute.addChildren([
   eventDebugRoute,
   repoRoute,
   repoSettingsRoute,
-  issuesRoute,
   issueDetailRoute,
-  pullsRoute,
   pullDetailRoute,
   refRoute,
   mergedRoute,
