@@ -96,13 +96,6 @@ export async function run(): Promise<void> {
       ),
     );
     console.log(`merged: ${r.sha}`);
-  } else if (sub === "undo-main-merge") {
-    const r = await runOp(async () =>
-      s.pulls.undoMainMerge(repo, Number(rest[0]), await writeSession()),
-    );
-    out(r);
-    if (!flags.json)
-      console.log(`undone: main reset to ${r.sha} (audit #${r.audit_id})`);
   } else if (sub === "record-github-pr") {
     // #406: record the GitHub PR this loophub PR was exported to (used by the create-PR skill).
     // Also the general-purpose way to attach a GitHub PR created outside LoopHub back onto its

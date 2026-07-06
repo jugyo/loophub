@@ -4,7 +4,6 @@
 
 import { worktreeRoot } from "./config.ts";
 import {
-  commitParents,
   commitsAhead,
   diffStat,
   mergePreview,
@@ -12,8 +11,6 @@ import {
   revParse,
 } from "./git.ts";
 import { linkedRef } from "./links.ts";
-import type { MainMergeUndoStatus } from "./main-merge-undo.ts";
-import { assessMainMergeUndo } from "./main-merge-undo.ts";
 import type { MergeMode } from "./merge-mode.ts";
 import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
@@ -786,45 +783,6 @@ async function pullMergeFields(
   return { merge_mode, github_pull: githubPullJSON(S.getGithubPull(rowId)) };
 }
 
-async function pullMainMergeUndoStatus(
-  repo: S.Repo,
-  p: S.PullRow,
-): Promise<MainMergeUndoStatus> {
-  const withRepoWriteStatus = (status: MainMergeUndoStatus) =>
-    status.can_undo && S.isArchived(repo)
-      ? { ...status, can_undo: false, reason: "Repository is archived" }
-      : status;
-
-  if (!p.merged && p.base_ref !== "main") {
-    return withRepoWriteStatus(
-      assessMainMergeUndo({
-        merged: !!p.merged,
-        baseRef: p.base_ref,
-        mergeCommitSha: p.merge_commit_sha ?? null,
-        mergeMethod: p.merge_method ?? null,
-        currentBaseSha: null,
-        mergeParents: null,
-      }),
-    );
-  }
-  const [currentBaseSha, mergeParents] = await Promise.all([
-    revParse(repo.local_path, p.base_ref),
-    p.merge_commit_sha
-      ? commitParents(repo.local_path, p.merge_commit_sha)
-      : Promise.resolve(null),
-  ]);
-  return withRepoWriteStatus(
-    assessMainMergeUndo({
-      merged: !!p.merged,
-      baseRef: p.base_ref,
-      mergeCommitSha: p.merge_commit_sha ?? null,
-      mergeMethod: p.merge_method ?? null,
-      currentBaseSha,
-      mergeParents,
-    }),
-  );
-}
-
 // Issue list item with its linked PR enriched with status (working / review /
 // mergeable / diff totals) for the issue-list Pattern E sub-row. Async because
 // the status fields need a bounded git fan-out per linked PR; used only by the
@@ -1086,7 +1044,6 @@ export interface PullWire {
   review_state: S.ReviewState;
   changes_addressed_at: string | null;
   changes_addressed_by: string | null;
-  main_merge_undo?: MainMergeUndoStatus;
   labels: LabelWire[];
   comments: number;
   created_at: string;
@@ -1112,9 +1069,6 @@ export async function pullJSON(
   const p = S.getPull(row.id)!;
   const status = await pullStatusFields(repo, row);
   const mergeFields = await pullMergeFields(repo, row.id);
-  const mainMergeUndo = opts.withRelatedSessions
-    ? await pullMainMergeUndoStatus(repo, p)
-    : null;
 
   return {
     number: row.number,
@@ -1138,7 +1092,6 @@ export async function pullJSON(
     review_state: status.review_state,
     changes_addressed_at: p.changes_addressed_at ?? null,
     changes_addressed_by: p.changes_addressed_by ?? null,
-    ...(mainMergeUndo ? { main_merge_undo: mainMergeUndo } : {}),
     labels: S.issueLabels(row.id).map(labelJSON),
     comments: S.countComments(row.id),
     created_at: row.created_at,

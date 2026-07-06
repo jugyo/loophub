@@ -46,15 +46,6 @@ export async function revParse(
   return sha || null;
 }
 
-export async function commitParents(
-  repoPath: string,
-  sha: string,
-): Promise<string[] | null> {
-  const r = await git(repoPath, ["show", "-s", "--format=%P", sha]);
-  if (r.code !== 0) return null;
-  return r.stdout.trim() ? r.stdout.trim().split(/\s+/) : [];
-}
-
 export async function defaultBranch(repoPath: string): Promise<string> {
   // Prefer remote default (origin/HEAD) so feature-branch checkouts do not win at registration.
   const origin = await git(repoPath, [
@@ -314,11 +305,6 @@ export interface MergeResult {
   conflict?: boolean;
 }
 
-export interface UndoMainMergeResult {
-  undone: boolean;
-  previousSha?: string;
-}
-
 // .git/index.lock 競合は IDE/エディタの Git 連携など他プロセスが同じ checkout を
 // 一瞬触ると発生する一過性のエラー。本物の reset 失敗と区別してリトライ対象を絞る。
 export function isIndexLockError(stderr: string): boolean {
@@ -429,40 +415,6 @@ export async function mergePull(
   }
 
   return { merged: true, sha: newSha };
-}
-
-export async function undoMainMerge(
-  repoPath: string,
-  base: string,
-  mergeSha: string,
-  previousSha: string,
-  opts: MergeOptions = {},
-): Promise<UndoMainMergeResult> {
-  const upd = await git(repoPath, [
-    "update-ref",
-    `refs/heads/${base}`,
-    previousSha,
-    mergeSha,
-  ]);
-  if (upd.code !== 0) return { undone: false };
-
-  const sync = await syncPrimaryCheckoutIfOnBase(
-    repoPath,
-    base,
-    previousSha,
-    opts,
-  );
-  if (sync.needed && !sync.ok) {
-    await git(repoPath, [
-      "update-ref",
-      `refs/heads/${base}`,
-      mergeSha,
-      previousSha,
-    ]);
-    return { undone: false };
-  }
-
-  return { undone: true, previousSha };
 }
 
 export async function branchExists(

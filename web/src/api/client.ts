@@ -485,24 +485,6 @@ export function mergePull(
   });
 }
 
-export function undoMainMerge(
-  owner: string,
-  repo: string,
-  number: number,
-  sessionId: string = getSessionId(),
-) {
-  return rpc<{
-    undone: boolean;
-    sha: string;
-    audit_id: number;
-    event_error?: string;
-  }>("pulls/undoMainMerge", {
-    repo: full(owner, repo),
-    number,
-    session_id: sessionId,
-  });
-}
-
 export function readyForReview(
   owner: string,
   repo: string,

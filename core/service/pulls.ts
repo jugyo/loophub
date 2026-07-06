@@ -1,11 +1,9 @@
-import { assessMainMergeUndo } from "../main-merge-undo.ts";
 import type { GithubDeps } from "./shared.ts";
 import {
   actorFor,
   agentSessionJSON,
   clampPerPage,
   commitLog,
-  commitParents,
   commitsAhead,
   DEFAULT_LIST_PER_PAGE,
   diffFiles,
@@ -15,7 +13,6 @@ import {
   formatEvent,
   githubPullJSON,
   gitMergePull,
-  gitUndoMainMerge,
   isGithubRemoteUrl,
   issueOr404,
   MAX_LIST_PER_PAGE,
@@ -432,121 +429,12 @@ export const pulls = {
       sha: res.sha,
     });
     if (closedIssue != null) {
-      const event = S.emitEvent(r.id, "issue.closed", actor, {
+      S.emitEvent(r.id, "issue.closed", actor, {
         number: closedIssue,
         closed_by_pull: row.number,
       });
-      S.setLinkedIssueClosedEvent(row.id, event.id);
     }
     return { merged: true, sha: res.sha };
-  },
-
-  async undoMainMerge(name: string, number: number, sessionId?: string | null) {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const row = issueOr404(r, number, "pull");
-    const p = S.getPull(row.id)!;
-    const [currentBaseSha, mergeParents] = await Promise.all([
-      revParse(r.local_path, p.base_ref),
-      p.merge_commit_sha
-        ? commitParents(r.local_path, p.merge_commit_sha)
-        : Promise.resolve(null),
-    ]);
-    const status = assessMainMergeUndo({
-      merged: !!p.merged,
-      baseRef: p.base_ref,
-      mergeCommitSha: p.merge_commit_sha ?? null,
-      mergeMethod: p.merge_method ?? null,
-      currentBaseSha,
-      mergeParents,
-    });
-    if (!status.can_undo) {
-      throw new ServiceError(
-        status.current_main_sha !== status.merge_commit_sha ? 409 : 422,
-        `Cannot undo main merge: ${status.reason}`,
-      );
-    }
-
-    const actor = actorFor(sessionId);
-    const res = await gitUndoMainMerge(
-      r.local_path,
-      p.base_ref,
-      status.merge_commit_sha!,
-      status.previous_main_sha!,
-    );
-    if (!res.undone) {
-      throw new ServiceError(
-        409,
-        "Cannot undo main merge: main changed before undo completed; no DB changes were written",
-      );
-    }
-
-    let transition: {
-      audit: S.MainMergeUndoRow;
-      linkedIssueReopened: boolean;
-      linkedIssueNumber: number | null;
-    };
-    try {
-      transition = S.undoMainMerge({
-        repoId: r.id,
-        issueId: row.id,
-        linkedIssueId: p.linked_issue_id ?? null,
-        linkedIssueClosedEventId: p.linked_issue_closed_event_id ?? null,
-        baseRef: p.base_ref,
-        undoneFromSha: status.current_main_sha!,
-        previousMainSha: status.previous_main_sha!,
-        mergeCommitSha: status.merge_commit_sha!,
-        author: actor,
-        prMetadata: {
-          number: row.number,
-          title: row.title,
-          head_ref: p.head_ref,
-          base_ref: p.base_ref,
-          head_sha: p.head_sha ?? null,
-          merge_method: p.merge_method ?? null,
-          merged_at: p.merged_at ?? null,
-        },
-      });
-    } catch (err) {
-      const rollback = await gitUndoMainMerge(
-        r.local_path,
-        p.base_ref,
-        status.previous_main_sha!,
-        status.merge_commit_sha!,
-      );
-      throw new ServiceError(
-        500,
-        rollback.undone
-          ? `Cannot undo main merge: DB update failed after git reset; git rollback succeeded; ${(err as Error).message}`
-          : `Cannot undo main merge: DB update failed after git reset and git rollback failed; manual recovery required; ${(err as Error).message}`,
-      );
-    }
-    let eventError: string | undefined;
-    try {
-      S.emitEvent(r.id, "pull_request.main_merge_undone", actor, {
-        number: row.number,
-        audit_id: transition.audit.id,
-        merge_commit_sha: status.merge_commit_sha,
-        previous_main_sha: status.previous_main_sha,
-      });
-      if (
-        transition.linkedIssueReopened &&
-        transition.linkedIssueNumber != null
-      ) {
-        S.emitEvent(r.id, "issue.reopened", actor, {
-          number: transition.linkedIssueNumber,
-          reopened_by_pull: row.number,
-        });
-      }
-    } catch (err) {
-      eventError = (err as Error).message;
-    }
-    return {
-      undone: true,
-      sha: status.previous_main_sha,
-      audit_id: transition.audit.id,
-      ...(eventError ? { event_error: eventError } : {}),
-    };
   },
 
   async readyForReview(

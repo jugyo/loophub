@@ -772,16 +772,6 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
-  "pulls/undoMainMerge": {
-    description:
-      "Undo a PR merge only when the PR's recorded merge commit is the current tip of main (#764).",
-    params: params({ repo, number: positiveInt, session_id: sid }, [
-      "repo",
-      "number",
-    ]),
-    result: anyObject,
-    handler: (p) => svc.pulls.undoMainMerge(p.repo, p.number, p.session_id),
-  },
   "pulls/recordGithubPull": {
     description:
       "Record the GitHub PR a loophub PR was exported to (#406). Idempotent on the PR.",

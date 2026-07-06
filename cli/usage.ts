@@ -19,7 +19,7 @@ export function usage(): void {
   lh session usage recalculate [--session <id>] [--json]
   lh issue list|view|create|import|update|comment|close|label  [--repo owner/repo]
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
-  lh pr list|view|diff|create|update|comment|merge|undo-main-merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
   lh pr note <m> --path <file> --body <text> [--base <sha>] [--commit <sha>]   # add a review note for a file on the PR's diff (range defaults to base..head)
   lh pr notes <m> [--path <file>] [--commit <sha>]   lh pr note-edit <id> --body <text>   lh pr note-rm <id>   # list / edit / delete review notes
   lh note add --path <file> --body <text> --base <sha> --commit <sha> [--pr <m>]   # add a PR-independent review note for a file on a commit range
@@ -50,7 +50,6 @@ export function usage(): void {
     lh pr create --head feature-x --base main --title "impl" --issue 5 [--draft]
     lh pr comment 3 --body "starting work"
     lh pr merge 3 --method squash
-    lh pr undo-main-merge 3
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     lh pr review 3 --topic security --event pass --body "no issues found"
     echo '[{"path":"a.txt","line":2,"body":"typo"}]' | lh pr review 3 --comments -
