@@ -317,7 +317,7 @@ export interface SessionLinkedTarget {
 export interface AgentSession {
   id: string;
   agent: string;
-  session: string;
+  session?: string | null;
   name?: string;
   runtime?: string;
   kind?: string;

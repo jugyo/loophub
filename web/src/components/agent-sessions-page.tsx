@@ -68,10 +68,11 @@ function SessionsTable({ sessions }: { sessions: AgentSession[] }) {
 
   return (
     <div className="mt-6 overflow-x-auto">
-      <table className="min-w-[1040px] w-full text-sm">
+      <table className="min-w-[1180px] w-full text-sm">
         <thead>
           <tr className="border-b text-left text-xs uppercase text-muted-foreground">
             <th className="px-3 py-2 font-medium">Session</th>
+            <th className="px-3 py-2 font-medium">Session id</th>
             <th className="px-3 py-2 font-medium">Model</th>
             <th className="px-3 py-2 text-right font-medium">Input</th>
             <th className="px-3 py-2 text-right font-medium">Cache write</th>
@@ -110,6 +111,11 @@ function SessionsTable({ sessions }: { sessions: AgentSession[] }) {
                       ) : null}
                     </div>
                   </div>
+                </td>
+                <td className="max-w-[180px] break-all px-3 py-2 text-xs text-muted-foreground">
+                  {session.session ? (
+                    <code title={session.session}>{session.session}</code>
+                  ) : null}
                 </td>
                 <td className="max-w-[180px] break-words px-3 py-2 text-xs">
                   {modelLabel(session.usage)}

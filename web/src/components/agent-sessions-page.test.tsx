@@ -26,7 +26,6 @@ const SESSIONS: AgentSession[] = [
   {
     id: "s-old",
     agent: "reviewer",
-    session: "s-old",
     created_at: "2026-07-03T10:00:00Z",
     updated_at: "2026-07-03T12:00:00Z",
   },
@@ -163,8 +162,12 @@ describe("AgentSessionsPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Agent sessions" }),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("columnheader", { name: "Session id" }),
+    ).toBeTruthy();
     const rows = screen.getAllByRole("row");
     expect(within(rows[1]).getByText("dev #725")).toBeTruthy();
+    expect(within(rows[1]).getByText("s-new")).toBeTruthy();
     expect(within(rows[1]).getByText("gpt-5.5, gpt-5-mini")).toBeTruthy();
     expect(within(rows[1]).getByText("1,010")).toBeTruthy();
     expect(within(rows[1]).getByText("200")).toBeTruthy();
@@ -187,6 +190,7 @@ describe("AgentSessionsPage", () => {
     expect(pull.getAttribute("href")).toBe("/r/ju%20gyo/loop%23hub/pulls/735");
 
     expect(within(rows[2]).getAllByText("reviewer")).toHaveLength(2);
+    expect(within(rows[2]).getAllByRole("cell")[1].textContent).toBe("");
     expect(within(rows[2]).getAllByText("n/a").length).toBeGreaterThanOrEqual(
       3,
     );
