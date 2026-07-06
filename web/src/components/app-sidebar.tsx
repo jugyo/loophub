@@ -89,7 +89,7 @@ export function AppSidebar() {
 
   return (
     <aside className="relative flex h-full w-[var(--lh-sidebar-w)] shrink-0 flex-col border-r bg-card">
-      <div className="flex h-14 items-center justify-between gap-2 border-b px-4">
+      <div className="flex h-14 items-center justify-between gap-2 border-b pl-4 pr-2">
         <Link to="/" className="flex items-center gap-2 text-lg font-semibold">
           <Logo className="size-6" />
           LoopHub

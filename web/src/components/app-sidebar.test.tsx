@@ -134,6 +134,16 @@ describe("AppSidebar global navigation", () => {
     expect(header?.nextElementSibling?.textContent).toBe("Repositories");
   });
 
+  it("aligns the Settings utility icon with the footer utility icon inset", async () => {
+    const { container } = renderSidebar();
+    await screen.findByText("LoopHub");
+
+    const header = container.querySelector("aside > div:first-child");
+    const footer = container.querySelector("aside > div:nth-last-child(2)");
+    expect(header?.className).toContain("pr-2");
+    expect(footer?.className).toContain("p-2");
+  });
+
   it("keeps global utilities as icon links without top-level Home/Settings/Stats menu rows", async () => {
     renderSidebar();
 
