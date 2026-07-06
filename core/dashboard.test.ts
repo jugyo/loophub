@@ -59,17 +59,17 @@ describe("dashboard.overview", () => {
     // The linked-PR issue carries the enriched array (Pattern E sub-rows), not
     // just the bare singular summary: the element exposes the status/diff fields
     // (mergeable_state, changed_files) that issueJSON's summary omits.
-    const enriched = item(withPr.number);
+    const enriched = item(withPr.number)!;
     expect(Array.isArray(enriched.linked_pull_requests)).toBe(true);
-    expect(enriched.linked_pull_requests).toHaveLength(1);
-    expect(enriched.linked_pull_requests[0]).toHaveProperty("mergeable_state");
-    expect(enriched.linked_pull_requests[0]).toHaveProperty("changed_files");
+    expect(enriched.linked_pull_requests!).toHaveLength(1);
+    expect(enriched.linked_pull_requests![0]).toHaveProperty("mergeable_state");
+    expect(enriched.linked_pull_requests![0]).toHaveProperty("changed_files");
     expect(enriched.linked_pull_request?.number).toBe(
-      enriched.linked_pull_requests[0].number,
+      enriched.linked_pull_requests![0].number,
     );
 
     // An issue with no linked PR stays a one-row item: empty array, null singular.
-    const plain = item(noPr.number);
+    const plain = item(noPr.number)!;
     expect(plain.linked_pull_requests).toEqual([]);
     expect(plain.linked_pull_request).toBeNull();
   });
@@ -95,7 +95,7 @@ describe("dashboard.overview", () => {
     expect(before).toHaveProperty("github_pull", null);
     // issues.get (pullSummary path) mirrors the list.
     expect(
-      svc.issues.get("me/proj", issue.number).linked_pull_requests[0]
+      svc.issues.get("me/proj", issue.number).linked_pull_requests![0]
         .github_pull,
     ).toBeNull();
 
@@ -111,7 +111,7 @@ describe("dashboard.overview", () => {
       url: "https://github.com/me/proj/pull/99",
     });
     expect(
-      svc.issues.get("me/proj", issue.number).linked_pull_requests[0]
+      svc.issues.get("me/proj", issue.number).linked_pull_requests![0]
         .github_pull,
     ).toMatchObject({ number: 99 });
   });

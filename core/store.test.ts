@@ -95,7 +95,7 @@ test("issues, labels, comments, and review state round-trip through the adapter"
   // merge closes the PR and its linked issue
   const linkedNumber = S.setMerged(pr.id, "deadbeef", "squash");
   expect(linkedNumber).toBe(issue.number);
-  expect(S.getIssueById(issue.id).state).toBe("closed");
+  expect(S.getIssueById(issue.id)!.state).toBe("closed");
 });
 
 test("listIssues sorts by created_at by default and by updated_at when asked (#418, #751)", () => {
@@ -393,17 +393,19 @@ test("issueJSON includes all linked PR summaries while keeping the primary first
 
   const out = Serialize.issueJSON(issue, repo);
 
-  expect(out.linked_pull_requests.map((p: any) => p.number)).toEqual([
+  expect(out.linked_pull_requests!.map((p) => p.number)).toEqual([
     open.number,
     merged.number,
     closed.number,
     ...olderClosedNumbers,
   ]);
   expect(out.linked_pull_request?.number).toBe(open.number);
-  expect(out.linked_pull_requests.length).toBe(S.MAX_LINKED_PULLS + 3);
-  expect(
-    out.linked_pull_requests.map((p: any) => p.merged).slice(0, 3),
-  ).toEqual([false, true, false]);
+  expect(out.linked_pull_requests!.length).toBe(S.MAX_LINKED_PULLS + 3);
+  expect(out.linked_pull_requests!.map((p) => p.merged).slice(0, 3)).toEqual([
+    false,
+    true,
+    false,
+  ]);
 });
 
 test("registerAgentSession conflict surfaces as an error", () => {
@@ -435,17 +437,17 @@ test("registerAgentSession persists and updates the runtime column", () => {
     "claude-code",
   );
   expect(created.created).toBe(true);
-  expect(S.getAgentSession(id).runtime).toBe("claude-code");
+  expect(S.getAgentSession(id)!.runtime).toBe("claude-code");
 
   // Re-register the same (id, agent, external_session) without a runtime keeps the stored value
   // (runtime === undefined preserves it, mirroring how name is preserved).
   S.registerAgentSession(id, "lh-dev", "ext-rt");
-  expect(S.getAgentSession(id).runtime).toBe("claude-code");
+  expect(S.getAgentSession(id)!.runtime).toBe("claude-code");
 
   // A runtime-less insert leaves the column NULL (the pre-#164 / backward-compat shape).
   const id2 = "22222222-0000-0000-0000-000000000002";
   S.registerAgentSession(id2, "lh-dev", "ext-rt-2");
-  expect(S.getAgentSession(id2).runtime).toBeNull();
+  expect(S.getAgentSession(id2)!.runtime).toBeNull();
 });
 
 test("registerAgentSession persists and preserves the kind column (#298)", () => {
@@ -459,15 +461,15 @@ test("registerAgentSession persists and preserves the kind column (#298)", () =>
     "dev",
   );
   expect(created.created).toBe(true);
-  expect(S.getAgentSession(id).kind).toBe("dev");
+  expect(S.getAgentSession(id)!.kind).toBe("dev");
 
   // Re-register without a kind keeps the stored value (undefined preserves, like name/runtime).
   S.registerAgentSession(id, "lh-dev", "ext-kind");
-  expect(S.getAgentSession(id).kind).toBe("dev");
+  expect(S.getAgentSession(id)!.kind).toBe("dev");
 
   // setSessionKind overwrites it in place.
   S.setSessionKind(id, "review");
-  expect(S.getAgentSession(id).kind).toBe("review");
+  expect(S.getAgentSession(id)!.kind).toBe("review");
 });
 
 test("linkSession is idempotent and listSessionsForIssue orders newest link first (#298)", () => {
@@ -503,14 +505,14 @@ test("createPull and setPullSession record the dev session in session_links (#29
 
   // createPull with a session links it and stamps kind='dev'.
   S.createPull(pr.id, "p", "main", "sha1", issue.id, s1);
-  expect(S.getAgentSession(s1).kind).toBe("dev");
+  expect(S.getAgentSession(s1)!.kind).toBe("dev");
   let list = S.listSessionsForIssue(pr.id);
   expect(list.map((r: any) => r.id)).toEqual([s1]);
 
   // Re-attributing the PR to a newer session adds it to the list (1:N, not a replacement).
   S.registerAgentSession(s2, "lh-dev", "ext-s2", null, "claude-code");
   S.setPullSession(pr.id, s2);
-  expect(S.getAgentSession(s2).kind).toBe("dev");
+  expect(S.getAgentSession(s2)!.kind).toBe("dev");
   list = S.listSessionsForIssue(pr.id);
   expect(list.map((r: any) => r.id).sort()).toEqual([s1, s2].sort());
   // The primary dev session (resume anchor) is derived as the latest kind='dev' link (#316).

@@ -45,7 +45,7 @@ test("review note round-trips with its diff range and PR link", () => {
   expect(row.base_sha).toBe("base000");
   expect(row.commit_sha).toBe("head111");
 
-  const got = S.getReviewNoteById(row.id);
+  const got = S.getReviewNoteById(row.id)!;
   expect(got.path).toBe("core/app.ts");
   expect(got.issue_id).toBe(pr.id);
 
@@ -159,7 +159,7 @@ test("PR-independent note (issue_id NULL) round-trips and lists by commit range"
   expect(row.issue_id).toBeNull();
 
   // Serializer reports no PR for a PR-independent note.
-  const json = serialize.reviewNoteJSON(S.getReviewNoteById(row.id));
+  const json = serialize.reviewNoteJSON(S.getReviewNoteById(row.id)!);
   expect(json.pull_request).toBeNull();
   expect(json.base_sha).toBe("base777");
   expect(json.commit_sha).toBe("head888");
@@ -184,7 +184,7 @@ test("update edits body and bumps updated_at; delete removes the row", () => {
     body: "before",
     author: "bot",
   });
-  const updated = S.updateReviewNote(row.id, "after");
+  const updated = S.updateReviewNote(row.id, "after")!;
   expect(updated.body).toBe("after");
 
   S.deleteReviewNote(row.id);

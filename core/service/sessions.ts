@@ -74,7 +74,7 @@ function codexPeerStartsForPull(
 }
 
 function codexUsageTarget(
-  row: any,
+  row: S.AgentSessionRow,
   context?: CodexUsageTargetContext,
 ): {
   cwd: string;
@@ -86,14 +86,14 @@ function codexUsageTarget(
   if (startedAtMs == null) return null;
 
   const target = S.listSessionLinkedTargets(row.id).find(
-    (x: any) => x.kind === "pull",
+    (x) => x.kind === "pull",
   );
   if (!target) return null;
 
   try {
     const r = repoOr404(target.repo);
     const prRow = issueOr404(r, target.number, "pull");
-    const pull = S.getPull(prRow.id);
+    const pull = S.getPull(prRow.id)!;
     const identity = resolveWorktreeIdentity(pull.head_ref, prRow.number);
     const cwd =
       identity.scheme === "legacy-issue"
@@ -135,7 +135,10 @@ function codexSessionScanFingerprint(
   ].join("\0");
 }
 
-function codexCursorMatchesScan(cursor: any, scan: CodexRolloutScan): boolean {
+function codexCursorMatchesScan(
+  cursor: S.SessionUsageCursorRow | null,
+  scan: CodexRolloutScan,
+): boolean {
   if (!cursor?.transcript_path) return false;
   const paths = String(cursor.transcript_path).split("\n").filter(Boolean);
   if (paths.length === 0) return false;
@@ -329,8 +332,10 @@ export const sessions = {
       codexSessionsDir?: string;
     } = {},
   ) {
-    const rows = input.sessionId
-      ? [S.getAgentSession(input.sessionId)].filter(Boolean)
+    const rows: S.AgentSessionRow[] = input.sessionId
+      ? [S.getAgentSession(input.sessionId)].filter(
+          (row): row is S.AgentSessionRow => row !== null,
+        )
       : S.listAgentSessions();
     if (input.sessionId && rows.length === 0)
       throw new ServiceError(404, "Not Found");
@@ -346,7 +351,7 @@ export const sessions = {
         endedBeforeMs: number | null;
       }
     >();
-    for (const row of rows as any[]) {
+    for (const row of rows) {
       if (sessionRuntime(row) !== RUNTIME_CODEX) continue;
       const target = codexUsageTarget(row, codexTargetContext);
       if (target) codexTargets.set(row.id, target);
@@ -356,22 +361,20 @@ export const sessions = {
         ? createCodexRolloutScan(input.codexSessionsDir)
         : null;
     if (!input.sessionId) {
-      pruneCodexSessionScanFingerprints(
-        new Set((rows as any[]).map((row: any) => row.id)),
-      );
+      pruneCodexSessionScanFingerprints(new Set(rows.map((row) => row.id)));
     }
     const claudeIndex = rows.some(
-      (row: any) => sessionRuntime(row) !== RUNTIME_CODEX,
+      (row) => sessionRuntime(row) !== RUNTIME_CODEX,
     )
       ? createClaudeTranscriptIndex(
           input.projectsDir,
-          (rows as any[])
-            .filter((row: any) => sessionRuntime(row) !== RUNTIME_CODEX)
-            .map((row: any) => row.external_session),
+          rows
+            .filter((row) => sessionRuntime(row) !== RUNTIME_CODEX)
+            .map((row) => row.external_session),
         )
       : null;
 
-    const results = rows.map((row: any) => {
+    const results = rows.map((row) => {
       if (sessionRuntime(row) === RUNTIME_CODEX) {
         const target = codexTargets.get(row.id);
         if (!target) {
@@ -406,7 +409,7 @@ export const sessions = {
           return {
             session_id: row.id,
             status: "skipped",
-            transcript_path: cursor.transcript_path,
+            transcript_path: cursor!.transcript_path,
             messages: 0,
             models: S.listSessionUsage(row.id).map(sessionUsageJSON),
           };

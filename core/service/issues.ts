@@ -47,7 +47,7 @@ export const issues = {
     let rows = S.listIssues(r.id, kind, state, opts.sort ?? "created");
     if (labelsFilter.length) {
       rows = rows.filter((row) => {
-        const names = S.issueLabels(row.id).map((l: any) => l.name);
+        const names = S.issueLabels(row.id).map((l) => l.name);
         return labelsFilter.every((l) => names.includes(l));
       });
     }
@@ -94,7 +94,7 @@ export const issues = {
       input.title,
       input.body ?? "",
       actor,
-    ) as any;
+    );
     if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
     const launchId = process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
     if (launchId) {
@@ -105,7 +105,7 @@ export const issues = {
       });
     }
     S.emitEvent(r.id, "issue.opened", actor, { number: issue.number });
-    return issueJSON(S.getIssue(r.id, issue.number), r);
+    return issueJSON(S.getIssue(r.id, issue.number)!, r);
   },
 
   // #614: import a GitHub issue into this repo as a loophub issue — copy its title/body verbatim (no
@@ -140,7 +140,7 @@ export const issues = {
       );
     }
     const actor = actorFor(sessionId);
-    const issue = S.createIssue(r.id, "issue", gh.title, gh.body, actor) as any;
+    const issue = S.createIssue(r.id, "issue", gh.title, gh.body, actor);
     const link = S.recordGithubIssue({
       issueId: issue.id,
       owner: ref.owner,
@@ -157,7 +157,7 @@ export const issues = {
       number: issue.number,
       github: `${ref.owner}/${ref.repo}#${ref.number}`,
     });
-    const out = issueJSON(S.getIssue(r.id, issue.number), r) as any;
+    const out = issueJSON(S.getIssue(r.id, issue.number)!, r);
     out.github_issue = githubIssueJSON(link);
     return out;
   },
@@ -182,10 +182,10 @@ export const issues = {
     const actor = actorFor(sessionId);
     const wasOpen = row.state === "open";
 
-    const fields: Record<string, any> = {};
-    for (const k of ["title", "body", "state"] as const) {
-      if (patch[k] !== undefined) fields[k] = patch[k];
-    }
+    const fields: Parameters<typeof S.updateIssue>[1] = {};
+    if (patch.title !== undefined) fields.title = patch.title;
+    if (patch.body !== undefined) fields.body = patch.body;
+    if (patch.state !== undefined) fields.state = patch.state;
     if (Object.keys(fields).length) S.updateIssue(row.id, fields);
     if (patch.labels !== undefined) {
       S.setLabels(r.id, row.id, patch.labels);
@@ -223,7 +223,7 @@ export const issues = {
         },
       );
     }
-    return issueJSON(S.getIssue(r.id, row.number), r);
+    return issueJSON(S.getIssue(r.id, row.number)!, r);
   },
 
   addLabels(
@@ -255,7 +255,7 @@ export const issues = {
     const row = issueOr404(r, number);
     S.removeLabel(r.id, row.id, label);
     const actor = actorFor(sessionId);
-    const labels = S.issueLabels(row.id).map((l: any) => l.name);
+    const labels = S.issueLabels(row.id).map((l) => l.name);
     S.emitEvent(r.id, "issue.labeled", actor, { number: row.number, labels });
   },
 };

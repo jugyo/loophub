@@ -32,7 +32,7 @@ function commitOnBranch(branch: string) {
 // Push a session's created_at back by `seconds`, so a duration test isn't at the mercy of how fast
 // the test runs (store.now() has second resolution — a same-second start/end would round to 0).
 function backdateSession(sessionId: string, seconds: number) {
-  const session = S.getAgentSession(sessionId);
+  const session = S.getAgentSession(sessionId)!;
   const past = new Date(
     Date.parse(session.created_at) - seconds * 1000,
   ).toISOString();
@@ -49,9 +49,9 @@ function backdateSession(sessionId: string, seconds: number) {
 // updated_at — the exact regression this guards against.
 function backdateIssueClosedAt(prNumber: number, seconds: number) {
   const repoId = (S.getRepo("me", "proj") as { id: number }).id;
-  const issue = S.getIssue(repoId, prNumber);
+  const issue = S.getIssue(repoId, prNumber)!;
   const past = new Date(
-    Date.parse(issue.closed_at) - seconds * 1000,
+    Date.parse(issue.closed_at!) - seconds * 1000,
   ).toISOString();
   D.db.run(`UPDATE issues SET closed_at = ? WHERE id = ?`, [past, issue.id]);
 }

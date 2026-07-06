@@ -80,7 +80,7 @@ export const retros = {
       status,
       redacted: input.redacted,
       redactRuleset: input.redact_ruleset ?? null,
-    }) as any;
+    });
 
     const payload: {
       retro_id: number;
@@ -125,7 +125,7 @@ export const retros = {
     if (!Number.isFinite(limit) || limit < 1)
       limit = DEFAULT_RETRO_BACKLOG_LIMIT;
     limit = Math.min(limit, MAX_RETRO_BACKLOG_LIMIT);
-    return S.mergedPullsWithoutRetro(r.id, limit).map((row: any) => ({
+    return S.mergedPullsWithoutRetro(r.id, limit).map((row) => ({
       number: row.number,
       title: row.title,
       merged_at: row.merged_at ?? null,

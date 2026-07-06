@@ -260,9 +260,9 @@ test("sessions.register preserves an existing runtime on re-register without run
     session: id,
     runtime: "claude-code",
   });
-  expect(S.getAgentSession(id).runtime).toBe("claude-code");
+  expect(S.getAgentSession(id)!.runtime).toBe("claude-code");
 
   // Re-register the same (id, agent, session) with no runtime → existing runtime preserved.
   svc.sessions.register({ id, agent: "lh-dev", session: id });
-  expect(S.getAgentSession(id).runtime).toBe("claude-code");
+  expect(S.getAgentSession(id)!.runtime).toBe("claude-code");
 });

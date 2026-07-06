@@ -53,7 +53,7 @@ export const resume = {
   async resolve(name: string, prNumber: number): Promise<ResumeResolution> {
     const r = repoOr404(name);
     const prRow = issueOr404(r, prNumber, "pull");
-    const pull = S.getPull(prRow.id);
+    const pull = S.getPull(prRow.id)!;
     const headRef: string = pull.head_ref;
 
     // The PR's resume anchor is the latest kind='dev' session linked to it in session_links (#316),

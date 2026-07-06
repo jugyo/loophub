@@ -27,7 +27,7 @@ export const comments = {
     const row = issueOr404(r, number);
     if (!body) throw new ServiceError(422, "body is required");
     const actor = actorFor(sessionId);
-    const m = S.createComment(row.id, actor, body) as any;
+    const m = S.createComment(row.id, actor, body);
     S.emitEvent(r.id, "issue.commented", actor, {
       number: row.number,
       ...(sessionId ? { session_id: sessionId } : {}),
@@ -46,7 +46,7 @@ export const comments = {
     const row = issueOr404(r, number, "pull");
     if (!body) throw new ServiceError(422, "body is required");
     const actor = actorFor(sessionId);
-    const m = S.createComment(row.id, actor, body) as any;
+    const m = S.createComment(row.id, actor, body);
     S.emitEvent(r.id, "issue.commented", actor, {
       number: row.number,
       ...(sessionId ? { session_id: sessionId } : {}),

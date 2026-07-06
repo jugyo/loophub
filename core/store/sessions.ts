@@ -1,14 +1,42 @@
 import { db, now } from "../db.ts";
 
-// ---- agent sessions ----
-export function getAgentSession(id: string): any | null {
-  return db.query(`SELECT * FROM agent_sessions WHERE id = ?`).get(id) ?? null;
+export interface AgentSessionRow {
+  id: string;
+  agent: string;
+  external_session: string;
+  name: string | null;
+  runtime: string | null;
+  kind: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-export function listAgentSessions(): any[] {
+export type LinkedAgentSessionRow = AgentSessionRow & {
+  linked_at: string;
+};
+
+export interface SessionLinkedTargetRow {
+  repo_id: number;
+  repo: string;
+  kind: "issue" | "pull";
+  number: number;
+  title: string;
+  state: string;
+}
+
+// ---- agent sessions ----
+export function getAgentSession(id: string): AgentSessionRow | null {
+  return (
+    (db
+      .query(`SELECT * FROM agent_sessions WHERE id = ?`)
+      .get(id) as AgentSessionRow | null) ?? null
+  );
+}
+
+export function listAgentSessions(): AgentSessionRow[] {
   return db
     .query(`SELECT * FROM agent_sessions ORDER BY updated_at DESC`)
-    .all();
+    .all() as AgentSessionRow[];
 }
 
 export type RegisterConflict = "CONFLICT_ID" | "CONFLICT_PAIR";
@@ -20,7 +48,7 @@ export function registerAgentSession(
   name?: string | null,
   runtime?: string | null,
   kind?: string | null,
-): { session: any; created: boolean } {
+): { session: AgentSessionRow; created: boolean } {
   const existing = getAgentSession(id);
   const t = now();
   if (existing) {
@@ -42,7 +70,7 @@ export function registerAgentSession(
         id,
       ],
     );
-    return { session: getAgentSession(id), created: false };
+    return { session: getAgentSession(id) as AgentSessionRow, created: false };
   }
   const byPair = db
     .query(
@@ -63,7 +91,7 @@ export function registerAgentSession(
     t,
     t,
   );
-  return { session: getAgentSession(id), created: true };
+  return { session: getAgentSession(id) as AgentSessionRow, created: true };
 }
 
 // Set a session's kind in place (#298). Used when the kind becomes known at association time (e.g.
@@ -90,7 +118,7 @@ export function linkSession(sessionId: string, issueId: number) {
 // All sessions linked to an issues row (issue or PR), newest link first. Joins the bridge to the
 // session rows so callers get the full session (incl. kind/runtime) for the related-sessions list.
 // `linked_at` is the bridge row's created_at (when this session was attached to this target).
-export function listSessionsForIssue(issueId: number): any[] {
+export function listSessionsForIssue(issueId: number): LinkedAgentSessionRow[] {
   return db
     .query(
       // l.rowid DESC is the tiebreaker: now() is second-resolution, so links made in the same
@@ -101,10 +129,12 @@ export function listSessionsForIssue(issueId: number): any[] {
        WHERE l.issue_id = ?
        ORDER BY l.created_at DESC, l.rowid DESC`,
     )
-    .all(issueId);
+    .all(issueId) as LinkedAgentSessionRow[];
 }
 
-export function listSessionLinkedTargets(sessionId: string): any[] {
+export function listSessionLinkedTargets(
+  sessionId: string,
+): SessionLinkedTargetRow[] {
   return db
     .query(
       `SELECT
@@ -120,7 +150,7 @@ export function listSessionLinkedTargets(sessionId: string): any[] {
        WHERE l.session_id = ?
        ORDER BY r.full_name, i.kind, i.number`,
     )
-    .all(sessionId);
+    .all(sessionId) as SessionLinkedTargetRow[];
 }
 
 // Attribute a dev session to a PR row by recording it in the generalized session_links bridge

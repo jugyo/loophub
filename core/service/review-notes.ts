@@ -15,7 +15,7 @@ import {
 // (base_sha -> commit_sha) within a repo and a concrete file path; that tuple is its identity, so a
 // note stands on its own without a PR. A PR may be associated optionally (pass `pr`): the note then
 // also belongs to that PR and, if the range is omitted, defaults to the PR's current base/head.
-function reviewNoteOr404(r: S.Repo, id: number): any {
+function reviewNoteOr404(r: S.Repo, id: number): S.ReviewNoteRow {
   const n = S.getReviewNoteById(id);
   if (!n || n.repo_id !== r.id) throw new ServiceError(404, "Not Found");
   return n;
@@ -79,7 +79,7 @@ export const reviewNotes = {
       issueId = pr.id;
       // Default the range to the PR's current base/head, resolved to concrete SHAs so the note
       // records the exact range, not a moving ref.
-      const p = S.getPull(pr.id);
+      const p = S.getPull(pr.id)!;
       baseSha = baseSha ?? (await revParse(r.local_path, p.base_ref)) ?? null;
       commitSha =
         commitSha ?? (await revParse(r.local_path, p.head_ref)) ?? null;
@@ -116,8 +116,8 @@ export const reviewNotes = {
     const n = reviewNoteOr404(r, id);
     if (!body) throw new ServiceError(422, "body is required");
     const actor = actorFor(sessionId);
-    const row = S.updateReviewNote(n.id, body);
-    const pr = S.getIssueById(n.issue_id);
+    const row = S.updateReviewNote(n.id, body)!;
+    const pr = n.issue_id != null ? S.getIssueById(n.issue_id) : null;
     S.emitEvent(r.id, "pull_request.review_note_updated", actor, {
       number: pr?.number,
       path: n.path,
@@ -131,7 +131,7 @@ export const reviewNotes = {
     const n = reviewNoteOr404(r, id);
     const actor = actorFor(sessionId);
     S.deleteReviewNote(n.id);
-    const pr = S.getIssueById(n.issue_id);
+    const pr = n.issue_id != null ? S.getIssueById(n.issue_id) : null;
     S.emitEvent(r.id, "pull_request.review_note_deleted", actor, {
       number: pr?.number,
       path: n.path,

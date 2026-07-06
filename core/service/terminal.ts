@@ -271,7 +271,7 @@ async function resolveHerdrWorktreeTarget(
     }
     if (input.workflow === "github-pr-export" && input.prNumber) {
       const prRow = issueOr404(r, input.prNumber, "pull");
-      const headRef = S.getPull(prRow.id).head_ref;
+      const headRef = S.getPull(prRow.id)!.head_ref;
       const identity = resolveWorktreeIdentity(headRef, input.prNumber);
       return identity.scheme === "legacy-issue"
         ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)

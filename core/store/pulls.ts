@@ -1,15 +1,69 @@
 import { db, now } from "../db.ts";
+import type { IssueRow } from "./issues.ts";
 import { getIssueById, touchIssue } from "./issues.ts";
 import { linkSession, setSessionKind } from "./sessions.ts";
+
+export interface PullRow {
+  issue_id: number;
+  head_ref: string;
+  base_ref: string;
+  head_sha: string | null;
+  draft: number;
+  merged: number;
+  merged_at: string | null;
+  merge_commit_sha: string | null;
+  merge_method: string | null;
+  linked_issue_id: number | null;
+  changes_addressed_at: string | null;
+  changes_addressed_by: string | null;
+  linked_issue_closed_event_id: number | null;
+}
+
+export type LinkedPullIssueRow = IssueRow & {
+  merged: number;
+  merged_at: string | null;
+};
+
+export interface OpenPullSummaryRow {
+  issue_id: number;
+  number: number;
+  title: string;
+  head_ref: string;
+  base_ref: string;
+}
+
+export interface OpenPullSweepRow {
+  issue_id: number;
+  repo_id: number;
+  number: number;
+  author: string;
+  head_ref: string;
+  head_sha: string | null;
+  local_path: string;
+}
+
+export interface MainMergeUndoRow {
+  id: number;
+  repo_id: number;
+  pr_id: number;
+  linked_issue_id: number | null;
+  base_ref: string;
+  undone_from_sha: string;
+  previous_main_sha: string;
+  merge_commit_sha: string;
+  pr_metadata_json: string;
+  author: string;
+  created_at: string;
+}
 
 // ---- pulls ----
 export function listPulls(
   repoId: number,
   state: string,
   merged?: "only" | "exclude" | null,
-): any[] {
+): IssueRow[] {
   const conds = ["i.repo_id = ?", "i.kind = 'pull'"];
-  const params: any[] = [repoId];
+  const params: unknown[] = [repoId];
   if (state !== "all") {
     conds.push("i.state = ?");
     params.push(state);
@@ -30,7 +84,7 @@ export function listPulls(
        WHERE ${conds.join(" AND ")}
        ORDER BY ${order}`,
     )
-    .all(...params);
+    .all(...params) as IssueRow[];
 }
 
 export function createPull(
@@ -57,34 +111,34 @@ export function createPull(
   }
 }
 
-export function openPullLinkedToIssue(linkedIssueId: number): any | null {
-  return (
-    db
-      .query(
-        `SELECT i.*, p.merged
+export function openPullLinkedToIssue(
+  linkedIssueId: number,
+): (IssueRow & { merged: number }) | null {
+  return db
+    .query(
+      `SELECT i.*, p.merged
          FROM pulls p
          JOIN issues i ON i.id = p.issue_id
          WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
          LIMIT 1`,
-      )
-      .get(linkedIssueId) ?? null
-  );
+    )
+    .get(linkedIssueId) as (IssueRow & { merged: number }) | null;
 }
 
-export function linkedPullForIssue(linkedIssueId: number): any | null {
-  return (
-    db
-      .query(
-        `SELECT i.*, p.merged, p.merged_at
+export function linkedPullForIssue(
+  linkedIssueId: number,
+): LinkedPullIssueRow | null {
+  return db
+    .query(
+      `SELECT i.*, p.merged, p.merged_at
          FROM pulls p
          JOIN issues i ON i.id = p.issue_id
          WHERE p.linked_issue_id = ? AND i.kind = 'pull'
          ORDER BY CASE WHEN i.state = 'open' AND p.merged = 0 THEN 0 ELSE 1 END,
                   COALESCE(p.merged_at, i.updated_at) DESC
          LIMIT 1`,
-      )
-      .get(linkedIssueId) ?? null
-  );
+    )
+    .get(linkedIssueId) as LinkedPullIssueRow | null;
 }
 
 // Cap on linked PRs surfaced per issue row. Normally 0–1 exist; the cap only
@@ -99,7 +153,9 @@ export const MAX_LINKED_PULLS = 6;
 // linkedPullForIssue): open & unmerged ahead of merged/closed, then by recency.
 // Capped at MAX_LINKED_PULLS so the issue list can stack them without an
 // unbounded git fan-out.
-export function linkedPullsForIssue(linkedIssueId: number): any[] {
+export function linkedPullsForIssue(
+  linkedIssueId: number,
+): LinkedPullIssueRow[] {
   return db
     .query(
       `SELECT i.*, p.merged, p.merged_at
@@ -110,13 +166,15 @@ export function linkedPullsForIssue(linkedIssueId: number): any[] {
                 COALESCE(p.merged_at, i.updated_at) DESC
        LIMIT ?`,
     )
-    .all(linkedIssueId, MAX_LINKED_PULLS);
+    .all(linkedIssueId, MAX_LINKED_PULLS) as LinkedPullIssueRow[];
 }
 
 // Full linked-PR fan-out for issue detail. Unlike linkedPullsForIssue, this is
 // intentionally uncapped: the detail page is the place where the complete issue
 // history should be visible.
-export function allLinkedPullsForIssue(linkedIssueId: number): any[] {
+export function allLinkedPullsForIssue(
+  linkedIssueId: number,
+): LinkedPullIssueRow[] {
   return db
     .query(
       `SELECT i.*, p.merged, p.merged_at
@@ -126,11 +184,13 @@ export function allLinkedPullsForIssue(linkedIssueId: number): any[] {
        ORDER BY CASE WHEN i.state = 'open' AND p.merged = 0 THEN 0 ELSE 1 END,
                 COALESCE(p.merged_at, i.updated_at) DESC`,
     )
-    .all(linkedIssueId);
+    .all(linkedIssueId) as LinkedPullIssueRow[];
 }
 
-export function getPull(issueId: number): any {
-  return db.query(`SELECT * FROM pulls WHERE issue_id = ?`).get(issueId);
+export function getPull(issueId: number): PullRow | null {
+  return db
+    .query(`SELECT * FROM pulls WHERE issue_id = ?`)
+    .get(issueId) as PullRow | null;
 }
 
 export function setHeadSha(issueId: number, sha: string | null) {
@@ -146,7 +206,7 @@ export function setPullDraft(issueId: number, draft: boolean) {
   touchIssue(issueId);
 }
 
-export function listOpenPullsForRepo(repoId: number): any[] {
+export function listOpenPullsForRepo(repoId: number): OpenPullSummaryRow[] {
   return db
     .query(
       `SELECT p.issue_id, i.number, i.title, p.head_ref, p.base_ref
@@ -154,11 +214,11 @@ export function listOpenPullsForRepo(repoId: number): any[] {
        JOIN issues i ON i.id = p.issue_id
        WHERE i.repo_id = ? AND i.kind = 'pull' AND i.state = 'open' AND p.merged = 0`,
     )
-    .all(repoId);
+    .all(repoId) as OpenPullSummaryRow[];
 }
 
 // open な PR を repo パス付きで返す（ref スイープ用）
-export function openPulls(): any[] {
+export function openPulls(): OpenPullSweepRow[] {
   return db
     .query(
       `SELECT i.id AS issue_id, i.repo_id, i.number, i.author,
@@ -168,7 +228,7 @@ export function openPulls(): any[] {
        JOIN repos r ON r.id = i.repo_id
        WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0 AND r.archived = 0`,
     )
-    .all();
+    .all() as OpenPullSweepRow[];
 }
 
 export function setMerged(
@@ -233,7 +293,7 @@ export function undoMainMerge(input: {
   prMetadata: Record<string, unknown>;
   author: string;
 }): {
-  audit: any;
+  audit: MainMergeUndoRow;
   linkedIssueReopened: boolean;
   linkedIssueNumber: number | null;
 } {
@@ -276,7 +336,7 @@ export function undoMainMerge(input: {
         }),
         input.author,
         t,
-      );
+      ) as MainMergeUndoRow;
     db.run(
       `UPDATE pulls
        SET merged = 0, merged_at = NULL, merge_commit_sha = NULL, merge_method = NULL,
@@ -304,10 +364,10 @@ export function undoMainMerge(input: {
   }
 }
 
-export function listMainMergeUndos(issueId: number): any[] {
+export function listMainMergeUndos(issueId: number): MainMergeUndoRow[] {
   return db
     .query(`SELECT * FROM main_merge_undos WHERE pr_id = ? ORDER BY id ASC`)
-    .all(issueId);
+    .all(issueId) as MainMergeUndoRow[];
 }
 
 export function issueWasClosedByPull(
@@ -341,7 +401,7 @@ export function issueCloseEventIsCurrent(
   if (eventId == null) return false;
   const row = db
     .query(`SELECT * FROM events WHERE id = ? AND repo_id = ?`)
-    .get(eventId, repoId) as any;
+    .get(eventId, repoId) as { type: string; payload: string } | null;
   if (row?.type !== "issue.closed") return false;
   try {
     const payload = JSON.parse(row.payload);

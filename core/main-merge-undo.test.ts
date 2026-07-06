@@ -89,7 +89,7 @@ test("undoMainMerge rewinds main tip merge and reopens the PR and linked issue",
   expect(afterIssue.state).toBe("open");
 
   const repo = S.getRepo("me", "proj")!;
-  const rawPr = S.getIssue(repo.id, pr.number);
+  const rawPr = S.getIssue(repo.id, pr.number)!;
   const rawAudits = S.listMainMergeUndos(rawPr.id);
   expect(rawAudits).toHaveLength(1);
   expect(rawAudits[0]).toMatchObject({

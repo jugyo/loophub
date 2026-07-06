@@ -45,6 +45,96 @@ export function repoJSON(r: S.Repo) {
   };
 }
 
+interface UserWire {
+  login: string;
+}
+
+interface SessionUsageWire {
+  session_id: string;
+  model: string;
+  input_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+  updated_at: string;
+}
+
+interface SessionSubagentUsageWire extends SessionUsageWire {
+  source_id: string;
+  parent_source_id: string | null;
+  label: string | null;
+  kind: string;
+}
+
+interface AgentSessionWire {
+  [key: string]: unknown;
+  id: string;
+  agent: string;
+  session: string;
+  created_at: string;
+  updated_at: string;
+  name?: string;
+  runtime?: string;
+  kind?: string;
+  usage?: SessionUsageWire[];
+  subagent_usage?: SessionSubagentUsageWire[];
+  linked_targets?: ReturnType<typeof sessionLinkedTargetJSON>[];
+}
+
+interface RelatedSessionWire extends AgentSessionWire {
+  linked_at: string | null;
+  resume: { resumable: boolean; reason?: string };
+}
+
+interface LabelWire {
+  name: string;
+  color: string | null;
+}
+
+interface PullSummaryWire {
+  [key: string]: unknown;
+  number: number;
+  title: string;
+  state: string;
+  merged: boolean;
+  html_url: string;
+  github_pull: GithubPullWire | null;
+}
+
+interface IssueWire {
+  [key: string]: unknown;
+  number: number;
+  state: string;
+  title: string;
+  body: string;
+  user: UserWire;
+  labels: LabelWire[];
+  comments: number;
+  created_at: string;
+  updated_at: string;
+  pull_request?: { url: string };
+  linked_pull_requests?: PullSummaryWire[];
+  linked_pull_request?: PullSummaryWire | null;
+  github_issue?: GithubIssueWire | null;
+}
+
+interface RetroRubricWire {
+  severity: string;
+  id: string;
+  signal: string;
+  value?: string | number | null;
+  note?: string | null;
+}
+
+interface RetroFindingWire {
+  severity: string;
+  category: string;
+  note: string;
+  evidence_ref?: string | null;
+  proposed_action?: string | null;
+}
+
 // #406: shape a github_pulls row for the wire, or null. Keeps issue_id (an internal row id) off the
 // wire — consumers identify the PR by its own number, and read the GitHub side via number/url. The
 // overloads preserve non-nullness for callers (recordGithubPull) that always pass a real row.
@@ -98,10 +188,10 @@ export function githubIssueJSON(
 }
 
 export function agentSessionJSON(
-  row: any,
+  row: S.AgentSessionRow | S.LinkedAgentSessionRow,
   opts: { withLinkedTargets?: boolean } = {},
-) {
-  const out: any = {
+): AgentSessionWire {
+  const out: AgentSessionWire = {
     id: row.id,
     agent: row.agent,
     session: row.external_session,
@@ -124,7 +214,7 @@ export function agentSessionJSON(
   return out;
 }
 
-export function sessionLinkedTargetJSON(row: any) {
+export function sessionLinkedTargetJSON(row: S.SessionLinkedTargetRow) {
   return {
     repo: row.repo,
     kind: row.kind,
@@ -134,7 +224,7 @@ export function sessionLinkedTargetJSON(row: any) {
   };
 }
 
-export function sessionUsageJSON(row: any) {
+export function sessionUsageJSON(row: S.SessionUsageRow): SessionUsageWire {
   return {
     session_id: row.session_id,
     model: row.model,
@@ -147,7 +237,9 @@ export function sessionUsageJSON(row: any) {
   };
 }
 
-export function sessionSubagentUsageJSON(row: any) {
+export function sessionSubagentUsageJSON(
+  row: S.SessionSubagentUsageRow,
+): SessionSubagentUsageWire {
   return {
     session_id: row.session_id,
     source_id: row.source_id,
@@ -184,9 +276,9 @@ export function sessionSubagentUsageJSON(row: any) {
 // a session via `sessions.link`
 // to a PR that never had a dev session) would fall through and be mislabeled resumable.
 export function relatedSessionJSON(
-  row: any,
+  row: S.LinkedAgentSessionRow,
   opts: { container: "issue" | "pull"; primarySessionId?: string | null },
-): any {
+): RelatedSessionWire {
   const base = agentSessionJSON(row);
   const rr = resolveRuntimeResume(sessionRuntime(row), row.external_session);
   let resume: { resumable: boolean; reason?: string };
@@ -219,9 +311,9 @@ export function relatedSessionJSON(
 // re-enters — so only that row is marked directly resumable; pass it for PR containers, omit it for
 // issue containers.
 export function relatedSessionsJSON(
-  containerRow: any,
+  containerRow: S.IssueRow,
   opts: { primarySessionId?: string | null } = {},
-): any[] {
+): RelatedSessionWire[] {
   const container = containerRow.kind === "pull" ? "pull" : "issue";
   return S.listSessionsForIssue(containerRow.id).map((row) =>
     relatedSessionJSON(row, {
@@ -231,7 +323,9 @@ export function relatedSessionsJSON(
   );
 }
 
-export function relatedSessionsUsageJSON(sessions: any[]) {
+export function relatedSessionsUsageJSON(
+  sessions: Array<{ usage?: SessionUsageWire[] }>,
+) {
   const out = {
     sessions_with_usage: 0,
     input_tokens: 0,
@@ -266,7 +360,7 @@ export function relatedSessionsUsageJSON(sessions: any[]) {
   return out;
 }
 
-export function commentJSON(m: any) {
+export function commentJSON(m: S.CommentRow) {
   return {
     id: m.id,
     user: { login: m.author },
@@ -275,7 +369,7 @@ export function commentJSON(m: any) {
   };
 }
 
-export function reviewJSON(v: any) {
+export function reviewJSON(v: S.ReviewRow) {
   return {
     id: v.id,
     user: { login: v.author },
@@ -289,7 +383,7 @@ export function reviewJSON(v: any) {
   };
 }
 
-export function reviewCommentJSON(m: any) {
+export function reviewCommentJSON(m: S.ReviewCommentRow) {
   return {
     id: m.id,
     pull_request_review_id: m.review_id,
@@ -305,8 +399,8 @@ export function reviewCommentJSON(m: any) {
 // Shape a `review_notes` row (#204). pull_request summarizes the owning PR by number so
 // consumers see the PR, not the internal row id. base_sha/commit_sha expose the diff range the
 // note is about; a consumer compares commit_sha against the PR's live head to decide staleness.
-export function reviewNoteJSON(n: any) {
-  const prRow = S.getIssueById(n.issue_id);
+export function reviewNoteJSON(n: S.ReviewNoteRow) {
+  const prRow = n.issue_id != null ? S.getIssueById(n.issue_id) : null;
   return {
     id: n.id,
     pull_request: prRow ? { number: prRow.number } : null,
@@ -325,7 +419,7 @@ export function reviewNoteJSON(n: any) {
 // inline content (instruction prompt / Verify report) when present; src+hash reference a canonical
 // copy (plan=PR, diff=commit) when the substance lives elsewhere. cost is returned as-is (free-form
 // text the consumer parses). from/to mirror the orchestration roles.
-export function handoffJSON(h: any) {
+export function handoffJSON(h: S.HandoffRow) {
   const prRow = h.pr_id != null ? S.getIssueById(h.pr_id) : null;
   const issueRow = h.issue_id != null ? S.getIssueById(h.issue_id) : null;
   return {
@@ -348,13 +442,13 @@ export function handoffJSON(h: any) {
   };
 }
 
-export function labelJSON(l: any) {
+export function labelJSON(l: S.LabelRow): LabelWire {
   return { name: l.name, color: l.color };
 }
 
 // Shape an `issue_groups` row (#312). `members` is the count, not the rows, so a list/summary
 // stays cheap; the full ordered membership is fetched via the dedicated members procedure.
-export function issueGroupJSON(g: any) {
+export function issueGroupJSON(g: S.IssueGroupRow) {
   return {
     id: g.id,
     name: g.name,
@@ -365,7 +459,7 @@ export function issueGroupJSON(g: any) {
 }
 
 function linkedIssueSummary(repo: S.Repo, pullRowId: number) {
-  const p = S.getPull(pullRowId);
+  const p = S.getPull(pullRowId)!;
   if (!p?.linked_issue_id) return null;
   const linked = S.getIssueById(p.linked_issue_id);
   if (linked?.kind !== "issue") return null;
@@ -383,7 +477,7 @@ function linkedPullSummaries(repo: S.Repo, issueRowId: number) {
   );
 }
 
-function pullSummary(repo: S.Repo, pr: any) {
+function pullSummary(repo: S.Repo, pr: S.LinkedPullIssueRow): PullSummaryWire {
   return {
     number: pr.number,
     title: pr.title,
@@ -400,8 +494,8 @@ function pullSummary(repo: S.Repo, pr: any) {
 // issue list's linked-PR summary so both compute status identically. The git
 // fan-out (revParse/mergePreview/diffStat/status) is bounded — callers keep
 // their lists paginated.
-async function pullStatusFields(repo: S.Repo, row: any) {
-  const p = S.getPull(row.id);
+async function pullStatusFields(repo: S.Repo, row: S.IssueRow) {
+  const p = S.getPull(row.id)!;
   const headSha = await revParse(repo.local_path, p.head_ref);
   const baseSha = await revParse(repo.local_path, p.base_ref);
   const review_state = S.computeReviewState(row.id);
@@ -494,7 +588,7 @@ async function pullMergeFields(repo: S.Repo, rowId: number) {
   return { merge_mode, github_pull: githubPullJSON(S.getGithubPull(rowId)) };
 }
 
-async function pullMainMergeUndoStatus(repo: S.Repo, p: any) {
+async function pullMainMergeUndoStatus(repo: S.Repo, p: S.PullRow) {
   const withRepoWriteStatus = (
     status: ReturnType<typeof assessMainMergeUndo>,
   ) =>
@@ -536,7 +630,7 @@ async function pullMainMergeUndoStatus(repo: S.Repo, p: any) {
 // mergeable / diff totals) for the issue-list Pattern E sub-row. Async because
 // the status fields need a bounded git fan-out per linked PR; used only by the
 // paginated issues.list path, so issueJSON stays sync for detail/dashboard.
-export async function issueListItemJSON(row: any, repo: S.Repo) {
+export async function issueListItemJSON(row: S.IssueRow, repo: S.Repo) {
   const out = issueJSON(row, repo);
   if (row.kind !== "pull") {
     // All linked PRs (usually 0–1, occasionally more — see linkedPullsForIssue),
@@ -551,7 +645,10 @@ export async function issueListItemJSON(row: any, repo: S.Repo) {
   return out;
 }
 
-async function linkedPullDetail(repo: S.Repo, pr: any) {
+async function linkedPullDetail(
+  repo: S.Repo,
+  pr: S.LinkedPullIssueRow,
+): Promise<PullSummaryWire> {
   const status = await pullStatusFields(repo, pr);
   return {
     number: pr.number,
@@ -570,8 +667,8 @@ async function linkedPullDetail(repo: S.Repo, pr: any) {
   };
 }
 
-export function issueJSON(row: any, repo?: S.Repo) {
-  const out: any = {
+export function issueJSON(row: S.IssueRow, repo?: S.Repo): IssueWire {
+  const out: IssueWire = {
     number: row.number,
     state: row.state,
     title: row.title,
@@ -591,11 +688,11 @@ export function issueJSON(row: any, repo?: S.Repo) {
   return out;
 }
 
-function safeParseArray(json: string | null | undefined): any[] {
+function safeParseArray<T>(json: string | null | undefined): T[] {
   if (!json) return [];
   try {
     const v = JSON.parse(json);
-    return Array.isArray(v) ? v : [];
+    return Array.isArray(v) ? (v as T[]) : [];
   } catch {
     return [];
   }
@@ -604,7 +701,7 @@ function safeParseArray(json: string | null | undefined): any[] {
 // Shape a `retros` row into the wire object the CLI (and later JSON-RPC) reads.
 // pr / issue are summarized from their issues rows so consumers see numbers, not
 // internal row ids. rubric / findings are parsed back from their JSON columns.
-export function retroJSON(row: any) {
+export function retroJSON(row: S.RetroRow) {
   const prRow = row.pr_id != null ? S.getIssueById(row.pr_id) : null;
   const issueRow = row.issue_id != null ? S.getIssueById(row.issue_id) : null;
   return {
@@ -612,8 +709,8 @@ export function retroJSON(row: any) {
     pr: prRow ? { number: prRow.number, title: prRow.title } : null,
     issue: issueRow ? { number: issueRow.number, title: issueRow.title } : null,
     session_id: row.session_id ?? null,
-    rubric: safeParseArray(row.rubric_json),
-    findings: safeParseArray(row.findings_json),
+    rubric: safeParseArray<RetroRubricWire>(row.rubric_json),
+    findings: safeParseArray<RetroFindingWire>(row.findings_json),
     status: row.status,
     reviewed_by: row.reviewed_by ?? null,
     redacted: !!row.redacted,
@@ -676,8 +773,8 @@ export interface PullWorkDuration {
 // fallback the frontend renders as "N/A" — when there is no dev session to anchor the calculation.
 function pullWorkDuration(
   repo: S.Repo,
-  row: any,
-  p: any,
+  row: S.IssueRow,
+  p: S.PullRow,
   primarySessionId: string | null,
 ): PullWorkDuration {
   const naFields = {
@@ -758,10 +855,10 @@ function pullWorkDuration(
 
 export async function pullJSON(
   repo: S.Repo,
-  row: any,
+  row: S.IssueRow,
   opts: { withRelatedSessions?: boolean } = {},
 ) {
-  const p = S.getPull(row.id);
+  const p = S.getPull(row.id)!;
   const status = await pullStatusFields(repo, row);
   const mergeFields = await pullMergeFields(repo, row.id);
   const mainMergeUndo = opts.withRelatedSessions

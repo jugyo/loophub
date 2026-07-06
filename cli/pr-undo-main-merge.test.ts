@@ -189,8 +189,8 @@ test("lh pr undo-main-merge matches the JSON-RPC undo state transition", async (
   expect(viewIssue(rpc.issue).state).toBe(viewIssue(cli.issue).state);
 
   const repo = S.getRepo("me", "prundo")!;
-  const cliRow = S.getIssue(repo.id, cli.pr);
-  const rpcRow = S.getIssue(repo.id, rpc.pr);
+  const cliRow = S.getIssue(repo.id, cli.pr)!;
+  const rpcRow = S.getIssue(repo.id, rpc.pr)!;
   expect(S.listMainMergeUndos(cliRow.id)).toHaveLength(1);
   expect(S.listMainMergeUndos(rpcRow.id)).toHaveLength(1);
 });

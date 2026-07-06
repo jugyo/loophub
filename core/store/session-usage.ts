@@ -1,8 +1,34 @@
 import { db, now } from "../db.ts";
 import type { ModelUsage, SubagentUsage } from "../session-usage.ts";
 
+export interface SessionUsageRow {
+  session_id: string;
+  model: string;
+  input_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+  updated_at: string;
+}
+
+export interface SessionSubagentUsageRow extends SessionUsageRow {
+  source_id: string;
+  parent_source_id: string | null;
+  label: string | null;
+  kind: string;
+}
+
+export interface SessionUsageCursorRow {
+  session_id: string;
+  transcript_path: string;
+  cursor_offset: number;
+  mtime_ms: number;
+  updated_at: string;
+}
+
 // ---- session usage ----
-export function listSessionUsage(sessionId: string): any[] {
+export function listSessionUsage(sessionId: string): SessionUsageRow[] {
   return db
     .query(
       `SELECT *
@@ -10,10 +36,12 @@ export function listSessionUsage(sessionId: string): any[] {
        WHERE session_id = ?
        ORDER BY model`,
     )
-    .all(sessionId);
+    .all(sessionId) as SessionUsageRow[];
 }
 
-export function listSessionSubagentUsage(sessionId: string): any[] {
+export function listSessionSubagentUsage(
+  sessionId: string,
+): SessionSubagentUsageRow[] {
   return db
     .query(
       `SELECT *
@@ -21,7 +49,7 @@ export function listSessionSubagentUsage(sessionId: string): any[] {
        WHERE session_id = ?
        ORDER BY source_id, model`,
     )
-    .all(sessionId);
+    .all(sessionId) as SessionSubagentUsageRow[];
 }
 
 export function hasSessionSubagentUsage(sessionId: string): boolean {
@@ -35,22 +63,22 @@ export function hasSessionSubagentUsage(sessionId: string): boolean {
     .get(sessionId);
 }
 
-export function listAllSessionUsage(): any[] {
+export function listAllSessionUsage(): SessionUsageRow[] {
   return db
     .query(
       `SELECT *
        FROM session_usage
        ORDER BY session_id, model`,
     )
-    .all();
+    .all() as SessionUsageRow[];
 }
 
-export function getSessionUsageCursor(sessionId: string): any | null {
-  return (
-    db
-      .query(`SELECT * FROM session_usage_cursors WHERE session_id = ?`)
-      .get(sessionId) ?? null
-  );
+export function getSessionUsageCursor(
+  sessionId: string,
+): SessionUsageCursorRow | null {
+  return db
+    .query(`SELECT * FROM session_usage_cursors WHERE session_id = ?`)
+    .get(sessionId) as SessionUsageCursorRow | null;
 }
 
 export function resetSessionUsage(sessionId: string) {

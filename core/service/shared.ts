@@ -360,7 +360,7 @@ export function issueOr404(
   r: S.Repo,
   number: number,
   kind?: "issue" | "pull",
-): any {
+): S.IssueRow {
   const row = S.getIssue(r.id, number);
   if (!row || (kind && row.kind !== kind))
     throw new ServiceError(404, "Not Found");

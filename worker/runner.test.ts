@@ -170,7 +170,7 @@ test("log path stays under LOOPHUB_HOME/logs even for a repo name with path sepa
   const logsRoot = realpathSync(join(HOME, "logs"));
   const completed = S.listEvents(row.id, repo.id, 100).find(
     (e: any) => e.type === "workflow.run_completed",
-  );
+  )!;
   const logFile = realpathSync(JSON.parse(completed.payload).log);
   expect(logFile.startsWith(logsRoot)).toBe(true); // never escaped logs/
 

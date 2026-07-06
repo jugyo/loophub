@@ -34,7 +34,7 @@ export const events = {
       repoId = r.id;
     }
     const rows = S.listEvents(since, repoId, limit, labels, order);
-    return rows.map((row: any) => {
+    return rows.map((row) => {
       const repo =
         opts.repo ??
         (row.repo_id != null

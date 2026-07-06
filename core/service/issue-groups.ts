@@ -13,7 +13,7 @@ import {
 // A bolt-on, repo-scoped grouping of issues to work through in order (data model in db.ts/store.ts).
 // Membership is many-to-many with a per-group order; the issues table is never touched. Groups are
 // identified to callers by their numeric id (names are mutable and only unique within a repo).
-function issueGroupOr404(r: S.Repo, id: number): any {
+function issueGroupOr404(r: S.Repo, id: number): S.IssueGroupRow {
   const g = S.getIssueGroupById(id);
   if (!g || g.repo_id !== r.id) throw new ServiceError(404, "Not Found");
   return g;
@@ -22,7 +22,7 @@ function issueGroupOr404(r: S.Repo, id: number): any {
 // An issue group only collects real issues (kind='issue'), not PRs — PRs are tracked via their
 // linked issue. Resolve a member by issue *number* (the caller-facing identifier) like every other
 // issue-addressed procedure.
-function groupIssueOr404(r: S.Repo, number: number): any {
+function groupIssueOr404(r: S.Repo, number: number): S.IssueRow {
   return issueOr404(r, number, "issue");
 }
 
@@ -72,7 +72,7 @@ export const issueGroups = {
       group_id: row.id,
       name: trimmed,
     });
-    return issueGroupJSON(row);
+    return issueGroupJSON(row!);
   },
 
   rename(
@@ -95,7 +95,7 @@ export const issueGroups = {
       group_id: g.id,
       name: trimmed,
     });
-    return issueGroupJSON(row);
+    return issueGroupJSON(row!);
   },
 
   remove(name: string, id: number, sessionId?: string | null) {
@@ -130,7 +130,7 @@ export const issueGroups = {
         number: issue.number,
       });
     }
-    return issueGroupJSON(S.getIssueGroupById(g.id));
+    return issueGroupJSON(S.getIssueGroupById(g.id)!);
   },
 
   // Remove an issue (by number) from a group. No-op (no event) if it was not a member.
@@ -151,6 +151,6 @@ export const issueGroups = {
         number: issue.number,
       });
     }
-    return issueGroupJSON(S.getIssueGroupById(g.id));
+    return issueGroupJSON(S.getIssueGroupById(g.id)!);
   },
 };

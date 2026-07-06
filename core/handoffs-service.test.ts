@@ -112,7 +112,7 @@ test("a duplicate (pr_id, seq) is rejected by the UNIQUE index (concurrency back
   const S = await import("./store.ts");
   const { db, now } = await import("./db.ts");
   const repo = svc.repos.get("me/proj") as any;
-  const prRow = S.getIssue(repo.id, number);
+  const prRow = S.getIssue(repo.id, number)!;
   expect(() =>
     db.run(
       `INSERT INTO handoffs (repo_id, pr_id, seq, phase, direction, created_at)

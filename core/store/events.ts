@@ -2,22 +2,31 @@ import { db, now } from "../db.ts";
 import { formatEvent, publishEvent } from "../event-hub.ts";
 import { getRepoById } from "./repos.ts";
 
+export interface EventRow {
+  id: number;
+  repo_id: number | null;
+  type: string;
+  actor: string;
+  payload: string;
+  created_at: string;
+}
+
 // ---- events ----
 // Persist then publish LoopEvent to in-process hub (order matters for SSE replay consistency).
 export function emitEvent(
   repoId: number | null,
   type: string,
   actor: string,
-  payload: any,
-): any {
+  payload: unknown,
+): EventRow {
   const row = db
     .query(
       `INSERT INTO events (repo_id, type, actor, payload, created_at)
        VALUES (?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(repoId, type, actor, JSON.stringify(payload), now());
+    .get(repoId, type, actor, JSON.stringify(payload), now()) as EventRow;
   const repo = repoId !== null ? getRepoById(repoId) : null;
-  publishEvent(formatEvent(row as any, repo?.full_name));
+  publishEvent(formatEvent(row, repo?.full_name));
   return row;
 }
 // labels: when set, keep only events whose issue/PR (payload.number, same repo) currently
@@ -31,9 +40,9 @@ export function listEvents(
   limit: number,
   labels?: string[],
   order: "asc" | "desc" = "asc",
-): any[] {
+): EventRow[] {
   const clauses = ["id > ?"];
-  const params: any[] = [since];
+  const params: unknown[] = [since];
   if (repoId !== null) {
     clauses.push("repo_id = ?");
     params.push(repoId);
@@ -56,7 +65,7 @@ export function listEvents(
     .query(
       `SELECT * FROM events WHERE ${clauses.join(" AND ")} ORDER BY id ${dir} LIMIT ?`,
     )
-    .all(...params);
+    .all(...params) as EventRow[];
 }
 
 // The timestamp of the PR's earliest `pull_request.ready_for_review` event, or null if it never
@@ -89,7 +98,7 @@ export function eventsForPull(
   prNumber: number,
   linkedIssueNumber: number | null,
   limit = 200,
-): any[] {
+): EventRow[] {
   const numbers = [prNumber];
   if (linkedIssueNumber != null && linkedIssueNumber !== prNumber) {
     numbers.push(linkedIssueNumber);
@@ -103,5 +112,5 @@ export function eventsForPull(
               OR json_extract(payload, '$.pr_number') = ?)
        ORDER BY id DESC LIMIT ?`,
     )
-    .all(repoId, ...numbers, prNumber, limit);
+    .all(repoId, ...numbers, prNumber, limit) as EventRow[];
 }

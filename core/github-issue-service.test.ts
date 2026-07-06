@@ -89,7 +89,7 @@ test("import copies title/body verbatim and records the GitHub source link (#614
   expect(calls[0].repoPath).toBe(store.getRepo("me", "proj")!.local_path);
 
   // The link is retrievable from the store for the created issue.
-  const created = store.getIssue(store.getRepo("me", "proj")!.id, i.number);
+  const created = store.getIssue(store.getRepo("me", "proj")!.id, i.number)!;
   expect(store.getGithubIssue(created.id)).toMatchObject({ number: 42 });
 
   // Issue detail surfaces the link too (parity with PR detail's github_pull), off the cheap list path.

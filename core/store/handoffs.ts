@@ -24,6 +24,26 @@ export interface HandoffInput {
   cost?: string | null;
 }
 
+export interface HandoffRow {
+  id: number;
+  repo_id: number;
+  pr_id: number | null;
+  issue_id: number | null;
+  session_id: string | null;
+  seq: number;
+  phase: string;
+  direction: string;
+  from_role: string | null;
+  to_role: string | null;
+  body: string | null;
+  src: string | null;
+  hash: string | null;
+  summary: string | null;
+  model: string | null;
+  cost: string | null;
+  created_at: string;
+}
+
 // The next sequence number for a handoff's PRIMARY ref. Scope priority: the PR when present
 // (handoffs accumulate on the PR), else the generic issue, else the session — the same key the row
 // is filed under, and exactly what the UNIQUE partial indexes in db.ts enforce. Counting only rows
@@ -66,7 +86,7 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
-export function createHandoff(input: HandoffInput): any {
+export function createHandoff(input: HandoffInput): HandoffRow {
   // seq is MAX(seq)+1 read then INSERTed in two statements, so two processes (parallel
   // `lh handoff record` from concurrent subagents) can read the same MAX and pick the same seq.
   // The UNIQUE (ref, seq) partial index (db.ts) makes the loser's INSERT throw rather than
@@ -99,7 +119,7 @@ export function createHandoff(input: HandoffInput): any {
           input.model ?? null,
           input.cost ?? null,
           now(),
-        );
+        ) as HandoffRow;
     } catch (err) {
       if (isUniqueViolation(err) && attempt < 5) continue;
       throw err;
@@ -107,8 +127,10 @@ export function createHandoff(input: HandoffInput): any {
   }
 }
 
-export function getHandoffById(id: number): any {
-  return db.query(`SELECT * FROM handoffs WHERE id = ?`).get(id);
+export function getHandoffById(id: number): HandoffRow | null {
+  return db
+    .query(`SELECT * FROM handoffs WHERE id = ?`)
+    .get(id) as HandoffRow | null;
 }
 
 // List handoffs for a ref, in chronological order (seq asc, id breaking ties). All filters
@@ -117,9 +139,9 @@ export function getHandoffById(id: number): any {
 export function listHandoffs(
   repoId: number,
   opts: { prId?: number; issueId?: number; sessionId?: string } = {},
-): any[] {
+): HandoffRow[] {
   const conds = ["repo_id = ?"];
-  const params: any[] = [repoId];
+  const params: unknown[] = [repoId];
   if (opts.prId !== undefined) {
     conds.push("pr_id = ?");
     params.push(opts.prId);
@@ -137,5 +159,5 @@ export function listHandoffs(
       `SELECT * FROM handoffs WHERE ${conds.join(" AND ")}
        ORDER BY seq ASC, id ASC`,
     )
-    .all(...params);
+    .all(...params) as HandoffRow[];
 }

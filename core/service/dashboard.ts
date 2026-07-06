@@ -27,7 +27,7 @@ export const DASHBOARD_RECENT_ISSUES_LIMIT = 100;
 
 export const dashboard = {
   async overview() {
-    const issueRows: { repo: S.Repo; ref: RepoRef; row: any }[] = [];
+    const issueRows: { repo: S.Repo; ref: RepoRef; row: S.IssueRow }[] = [];
     for (const r of S.listRepos("active")) {
       const ref = repoRef(r);
       for (const row of S.listIssues(r.id, "issue", "open")) {

@@ -60,7 +60,7 @@ export const reviews = {
       input.body ?? "",
       headSha,
       topic,
-    ) as any;
+    );
     for (const cm of lineComments) {
       S.createReviewComment(row.id, v.id, actor, {
         path: cm.path,

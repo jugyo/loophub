@@ -164,7 +164,7 @@ test("startPullSweep fires pull_request.updated on head SHA change, no-ops when 
   try {
     const initialHead = await revParse(repoPath, "loophub/issue-x");
     await waitUntil(
-      () => S.getPull(pull.id).head_sha === initialHead,
+      () => S.getPull(pull.id)!.head_sha === initialHead,
       "pull sweep baseline head",
     );
     expect(countUpdates()).toBe(0);
@@ -174,7 +174,8 @@ test("startPullSweep fires pull_request.updated on head SHA change, no-ops when 
     await git(repoPath, ["commit", "-qam", "c2"]);
     const updatedHead = await revParse(repoPath, "loophub/issue-x");
     await waitUntil(
-      () => S.getPull(pull.id).head_sha === updatedHead && countUpdates() === 1,
+      () =>
+        S.getPull(pull.id)!.head_sha === updatedHead && countUpdates() === 1,
       "pull sweep updated head",
     );
     expect(countUpdates()).toBe(1);

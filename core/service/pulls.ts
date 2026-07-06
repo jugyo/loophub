@@ -77,7 +77,7 @@ export const pulls = {
     let rows = S.listPulls(r.id, state, opts.merged ?? null);
     if (opts.head || opts.base) {
       rows = rows.filter((row) => {
-        const p = S.getPull(row.id);
+        const p = S.getPull(row.id)!;
         if (!p) return false;
         if (opts.head && p.head_ref !== opts.head) return false;
         if (opts.base && p.base_ref !== opts.base) return false;
@@ -128,7 +128,7 @@ export const pulls = {
     // branch itself need not exist yet in git — revParse resolves a null sha for a missing ref
     // rather than throwing, which is what lets `lh dev` open the PR before the branch/worktree
     // exist (#463).
-    const row = S.createIssue(r.id, "pull", title, body, actor) as any;
+    const row = S.createIssue(r.id, "pull", title, body, actor);
     const head = input.head ?? input.headFromNumber!(row.number);
     const headSha = await revParse(r.local_path, head);
     S.createPull(
@@ -147,7 +147,7 @@ export const pulls = {
       linked_issue: linkedNumber ?? undefined,
       draft,
     });
-    return pullJSON(r, S.getIssue(r.id, row.number));
+    return pullJSON(r, S.getIssue(r.id, row.number)!);
   },
 
   update(
@@ -166,20 +166,25 @@ export const pulls = {
     ) {
       throw new ServiceError(422, 'state must be "open" or "closed"');
     }
-    const p = S.getPull(row.id);
+    const p = S.getPull(row.id)!;
     if (p?.merged && patch.state !== undefined) {
       throw new ServiceError(405, "Pull Request is already merged");
     }
     const actor = actorFor(sessionId);
-    S.updateIssue(row.id, patch);
+    const issuePatch: Parameters<typeof S.updateIssue>[1] = {
+      title: patch.title,
+      body: patch.body,
+      state: patch.state as "open" | "closed" | undefined,
+    };
+    S.updateIssue(row.id, issuePatch);
     S.emitEvent(r.id, "pull_request.updated", actor, { number: row.number });
-    return pullJSON(r, S.getIssue(r.id, row.number));
+    return pullJSON(r, S.getIssue(r.id, row.number)!);
   },
 
   async files(name: string, number: number) {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
-    const p = S.getPull(row.id);
+    const p = S.getPull(row.id)!;
     return diffFiles(r.local_path, p.base_ref, p.head_ref);
   },
 
@@ -195,7 +200,7 @@ export const pulls = {
   ) {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
-    const p = S.getPull(row.id);
+    const p = S.getPull(row.id)!;
     if (!(await pathInDiff(r.local_path, p.base_ref, p.head_ref, path))) {
       throw new ServiceError(404, "Not Found");
     }
@@ -306,7 +311,7 @@ export const pulls = {
     if (!isGithubRemoteUrl(await remoteUrl(r.local_path)))
       throw new ServiceError(422, "repo has no GitHub origin remote");
 
-    const p = S.getPull(row.id);
+    const p = S.getPull(row.id)!;
     const base = p.base_ref;
     const head = p.head_ref;
     // Refuse to push onto the base or head branch itself. `git push origin <head>:refs/heads/<branch>`
@@ -379,7 +384,7 @@ export const pulls = {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
-    const p = S.getPull(row.id);
+    const p = S.getPull(row.id)!;
     if (p.merged) throw new ServiceError(405, "Pull Request is already merged");
     // A diff-free PR (base..head empty) has nothing to merge — the UI disables the Merge
     // button for this state (#691), but merge-tree itself does not reject it (a diff-free
@@ -432,7 +437,7 @@ export const pulls = {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
-    const p = S.getPull(row.id);
+    const p = S.getPull(row.id)!;
     const [currentBaseSha, mergeParents] = await Promise.all([
       revParse(r.local_path, p.base_ref),
       p.merge_commit_sha
@@ -469,7 +474,7 @@ export const pulls = {
     }
 
     let transition: {
-      audit: any;
+      audit: S.MainMergeUndoRow;
       linkedIssueReopened: boolean;
       linkedIssueNumber: number | null;
     };
@@ -545,7 +550,7 @@ export const pulls = {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number, "pull");
-    const p = S.getPull(row.id);
+    const p = S.getPull(row.id)!;
     if (p.merged || row.state !== "open")
       throw new ServiceError(422, "Pull Request is not open");
     const actor = actorFor(sessionId);
@@ -566,7 +571,7 @@ export const pulls = {
         number: row.number,
         draft: false,
       });
-      return pullJSON(r, S.getIssue(r.id, row.number));
+      return pullJSON(r, S.getIssue(r.id, row.number)!);
     }
     const latest = S.latestSubstantiveReview(row.id);
     if (latest?.event !== "REQUEST_CHANGES") {
@@ -582,7 +587,7 @@ export const pulls = {
       number: row.number,
       draft: false,
     });
-    return pullJSON(r, S.getIssue(r.id, row.number));
+    return pullJSON(r, S.getIssue(r.id, row.number)!);
   },
 
   // Read-only debug dump: every piece of data a PR can be reached from, gathered into one
@@ -593,7 +598,7 @@ export const pulls = {
   async debug(name: string, number: number) {
     const r = repoOr404(name);
     const issueRow = issueOr404(r, number, "pull");
-    const pull = S.getPull(issueRow.id);
+    const pull = S.getPull(issueRow.id)!;
     const linkedIssue =
       pull.linked_issue_id != null
         ? (S.getIssueById(pull.linked_issue_id) ?? null)
@@ -616,7 +621,7 @@ export const pulls = {
       r.id,
       issueRow.number,
       linkedIssue?.number ?? null,
-    ).map((row: any) => formatEvent(row, r.full_name));
+    ).map((row) => formatEvent(row, r.full_name));
 
     // Serialize the session via agentSessionJSON (not the raw row) so a future secret-bearing
     // column on agent_sessions can't silently flow into the copyable debug dump. The PR's primary

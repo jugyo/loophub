@@ -111,7 +111,7 @@ describe("retros store + service", () => {
       r.id,
       "pull",
       opts.title,
-      issueId ? `Closes #${S.getIssueById(issueId).number}` : "",
+      issueId ? `Closes #${S.getIssueById(issueId)!.number}` : "",
       "bot",
     ) as any;
     // The implementation session is attributed to the PR row (pulls.session_id); retro resolves it

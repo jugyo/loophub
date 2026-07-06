@@ -86,6 +86,6 @@ test("the legacy dev-session pointer survives in session_links (resume anchor pr
 });
 
 test("the migrated session is stamped kind='dev'", () => {
-  const s = S.getAgentSession("11111111-0000-0000-0000-000000000001");
+  const s = S.getAgentSession("11111111-0000-0000-0000-000000000001")!;
   expect(s.kind).toBe("dev");
 });

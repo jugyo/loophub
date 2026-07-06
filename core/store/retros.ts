@@ -1,4 +1,5 @@
 import { db, now } from "../db.ts";
+import type { IssueRow } from "./issues.ts";
 
 // ---- retros ----
 export interface RetroInput {
@@ -13,7 +14,23 @@ export interface RetroInput {
   redactRuleset?: string | null;
 }
 
-export function createRetro(input: RetroInput): any {
+export interface RetroRow {
+  id: number;
+  repo_id: number | null;
+  issue_id: number | null;
+  pr_id: number | null;
+  session_id: string | null;
+  rubric_json: string;
+  findings_json: string;
+  status: string;
+  reviewed_by: string | null;
+  redacted: number;
+  redact_ruleset: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function createRetro(input: RetroInput): RetroRow {
   const t = now();
   return db
     .query(
@@ -34,19 +51,21 @@ export function createRetro(input: RetroInput): any {
       input.redactRuleset ?? null,
       t,
       t,
-    );
+    ) as RetroRow;
 }
 
-export function getRetroById(id: number): any {
-  return db.query(`SELECT * FROM retros WHERE id = ?`).get(id);
+export function getRetroById(id: number): RetroRow | null {
+  return db
+    .query(`SELECT * FROM retros WHERE id = ?`)
+    .get(id) as RetroRow | null;
 }
 
 export function listRetros(
   repoId: number,
   opts: { prId?: number | null; status?: string } = {},
-): any[] {
+): RetroRow[] {
   const conds = ["repo_id = ?"];
-  const params: any[] = [repoId];
+  const params: unknown[] = [repoId];
   if (opts.prId != null) {
     conds.push("pr_id = ?");
     params.push(opts.prId);
@@ -57,12 +76,15 @@ export function listRetros(
   }
   return db
     .query(`SELECT * FROM retros WHERE ${conds.join(" AND ")} ORDER BY id DESC`)
-    .all(...params);
+    .all(...params) as RetroRow[];
 }
 
 // Backfill targets: merged PRs in a repo with no retro row yet (design §5.1 —
 // "retro 済みかは retros 行の有無で判定"), newest merge first.
-export function mergedPullsWithoutRetro(repoId: number, limit: number): any[] {
+export function mergedPullsWithoutRetro(
+  repoId: number,
+  limit: number,
+): (IssueRow & { merged_at: string | null })[] {
   return db
     .query(
       `SELECT i.*, p.merged_at
@@ -73,5 +95,5 @@ export function mergedPullsWithoutRetro(repoId: number, limit: number): any[] {
        ORDER BY COALESCE(p.merged_at, i.updated_at) DESC, i.number DESC
        LIMIT ?`,
     )
-    .all(repoId, limit);
+    .all(repoId, limit) as (IssueRow & { merged_at: string | null })[];
 }

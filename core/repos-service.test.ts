@@ -84,7 +84,7 @@ test("rename changes owner/name, emits repo.renamed, and the old name 404s (#485
 
   const ev = S.listEvents(0, created.id, 100).find(
     (e: any) => e.type === "repo.renamed",
-  );
+  )!;
   expect(ev).toBeTruthy();
   expect(JSON.parse(ev.payload)).toEqual({
     full_name: "acme/rn-b",

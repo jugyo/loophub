@@ -15,7 +15,20 @@ export interface ReviewNoteInput {
   author: string;
 }
 
-export function createReviewNote(input: ReviewNoteInput): any {
+export interface ReviewNoteRow {
+  id: number;
+  repo_id: number;
+  issue_id: number | null;
+  base_sha: string;
+  commit_sha: string;
+  path: string;
+  body: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function createReviewNote(input: ReviewNoteInput): ReviewNoteRow {
   const t = now();
   return db
     .query(
@@ -33,11 +46,13 @@ export function createReviewNote(input: ReviewNoteInput): any {
       input.author,
       t,
       t,
-    );
+    ) as ReviewNoteRow;
 }
 
-export function getReviewNoteById(id: number): any {
-  return db.query(`SELECT * FROM review_notes WHERE id = ?`).get(id);
+export function getReviewNoteById(id: number): ReviewNoteRow | null {
+  return db
+    .query(`SELECT * FROM review_notes WHERE id = ?`)
+    .get(id) as ReviewNoteRow | null;
 }
 
 // List a repo's notes, newest first. All filters are optional: issueId narrows to one PR's notes,
@@ -52,9 +67,9 @@ export function listReviewNotes(
     baseSha?: string;
     commitSha?: string;
   } = {},
-): any[] {
+): ReviewNoteRow[] {
   const conds = ["repo_id = ?"];
-  const params: any[] = [repoId];
+  const params: unknown[] = [repoId];
   if (opts.issueId !== undefined) {
     conds.push("issue_id = ?");
     params.push(opts.issueId);
@@ -76,10 +91,13 @@ export function listReviewNotes(
       `SELECT * FROM review_notes WHERE ${conds.join(" AND ")}
        ORDER BY created_at DESC, id DESC`,
     )
-    .all(...params);
+    .all(...params) as ReviewNoteRow[];
 }
 
-export function updateReviewNote(id: number, body: string): any {
+export function updateReviewNote(
+  id: number,
+  body: string,
+): ReviewNoteRow | null {
   db.run(`UPDATE review_notes SET body = ?, updated_at = ? WHERE id = ?`, [
     body,
     now(),

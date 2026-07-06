@@ -1,5 +1,19 @@
 import { db, now } from "../db.ts";
 
+export interface IssueRow {
+  id: number;
+  repo_id: number;
+  number: number;
+  kind: "issue" | "pull";
+  state: "open" | "closed";
+  title: string;
+  body: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+}
+
 export interface IssueHerdrPane {
   launch_id: string;
   repo_id: number;
@@ -26,7 +40,7 @@ export function createIssue(
   title: string,
   body: string,
   author: string,
-): any {
+): IssueRow {
   const number = nextNumber(repoId);
   const t = now();
   return db
@@ -34,7 +48,7 @@ export function createIssue(
       `INSERT INTO issues (repo_id, number, kind, state, title, body, author, created_at, updated_at)
        VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(repoId, number, kind, title, body, author, t, t);
+    .get(repoId, number, kind, title, body, author, t, t) as IssueRow;
 }
 
 export function upsertIssueHerdrPane(input: {
@@ -86,10 +100,10 @@ export function getIssueHerdrPane(issueId: number): IssueHerdrPane | null {
   );
 }
 
-export function getIssue(repoId: number, number: number): any {
+export function getIssue(repoId: number, number: number): IssueRow | null {
   return db
     .query(`SELECT * FROM issues WHERE repo_id = ? AND number = ?`)
-    .get(repoId, number);
+    .get(repoId, number) as IssueRow | null;
 }
 
 export function listIssues(
@@ -97,9 +111,9 @@ export function listIssues(
   kind: "issue" | "pull" | "any",
   state: string,
   sort: "updated" | "created" = "created",
-): any[] {
+): IssueRow[] {
   const conds = ["repo_id = ?"];
-  const params: any[] = [repoId];
+  const params: unknown[] = [repoId];
   if (kind !== "any") {
     conds.push("kind = ?");
     params.push(kind);
@@ -116,13 +130,16 @@ export function listIssues(
     .query(
       `SELECT * FROM issues WHERE ${conds.join(" AND ")} ORDER BY ${orderBy}`,
     )
-    .all(...params);
+    .all(...params) as IssueRow[];
 }
 
-export function updateIssue(id: number, fields: Record<string, any>) {
+export function updateIssue(
+  id: number,
+  fields: { title?: string; body?: string; state?: "open" | "closed" },
+) {
   const sets: string[] = [];
-  const params: any[] = [];
-  for (const k of ["title", "body", "state"]) {
+  const params: unknown[] = [];
+  for (const k of ["title", "body", "state"] as const) {
     if (fields[k] !== undefined) {
       sets.push(`${k} = ?`);
       params.push(fields[k]);
@@ -149,8 +166,10 @@ export function updateIssue(id: number, fields: Record<string, any>) {
   db.run(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?`, params);
 }
 
-export function getIssueById(id: number): any {
-  return db.query(`SELECT * FROM issues WHERE id = ?`).get(id);
+export function getIssueById(id: number): IssueRow | null {
+  return db
+    .query(`SELECT * FROM issues WHERE id = ?`)
+    .get(id) as IssueRow | null;
 }
 
 export function touchIssue(id: number) {

@@ -2,8 +2,31 @@ import { db, now } from "../db.ts";
 import { touchIssue } from "./issues.ts";
 import { getPull } from "./pulls.ts";
 
+export interface ReviewRow {
+  id: number;
+  issue_id: number;
+  author: string;
+  event: string;
+  body: string;
+  head_sha: string | null;
+  topic: string | null;
+  created_at: string;
+}
+
+export interface ReviewCommentRow {
+  id: number;
+  issue_id: number;
+  review_id: number | null;
+  author: string;
+  body: string;
+  path: string;
+  line: number | null;
+  side: string | null;
+  created_at: string;
+}
+
 // ---- reviews ----
-export function listReviews(issueId: number): any[] {
+export function listReviews(issueId: number): ReviewRow[] {
   return (
     db
       // id ASC is a deterministic tiebreaker: now() has 1-second resolution, so
@@ -13,7 +36,7 @@ export function listReviews(issueId: number): any[] {
       .query(
         `SELECT * FROM reviews WHERE issue_id = ? ORDER BY created_at ASC, id ASC`,
       )
-      .all(issueId)
+      .all(issueId) as ReviewRow[]
   );
 }
 export function createReview(
@@ -23,13 +46,13 @@ export function createReview(
   body: string,
   headSha: string | null = null,
   topic: string | null = null,
-): any {
+): ReviewRow {
   return db
     .query(
       `INSERT INTO reviews (issue_id, author, event, body, head_sha, topic, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(issueId, author, event, body, headSha, topic, now());
+    .get(issueId, author, event, body, headSha, topic, now()) as ReviewRow;
 }
 
 export type ReviewState =
@@ -40,7 +63,7 @@ export type ReviewState =
   | "STALE"
   | null;
 
-export function latestSubstantiveReview(issueId: number): any | null {
+export function latestSubstantiveReview(issueId: number): ReviewRow | null {
   const reviews = listReviews(issueId);
   for (let i = reviews.length - 1; i >= 0; i--) {
     const event = reviews[i].event;
@@ -50,7 +73,7 @@ export function latestSubstantiveReview(issueId: number): any | null {
 }
 
 export function computeReviewState(issueId: number): ReviewState {
-  const p = getPull(issueId);
+  const p = getPull(issueId)!;
   const latest = latestSubstantiveReview(issueId);
   if (!latest) {
     return listReviews(issueId).some((r) => r.event === "COMMENT")
@@ -87,10 +110,10 @@ export interface ReviewGate {
 }
 
 export function computeReviewGate(issueId: number): ReviewGate {
-  const p = getPull(issueId);
+  const p = getPull(issueId)!;
   // ASC order (listReviews) → the last write per topic wins = latest substantive
   // review for that topic.
-  const latestByTopic = new Map<string | null, any>();
+  const latestByTopic = new Map<string | null, ReviewRow>();
   for (const r of listReviews(issueId)) {
     if (r.event === "PASS" || r.event === "REQUEST_CHANGES")
       latestByTopic.set(r.topic ?? null, r);
@@ -131,7 +154,7 @@ export function createReviewComment(
   reviewId: number,
   author: string,
   c: { path: string; line?: number; side?: string; body: string },
-): any {
+): ReviewCommentRow {
   return db
     .query(
       `INSERT INTO review_comments (issue_id, review_id, author, body, path, line, side, created_at)
@@ -146,13 +169,13 @@ export function createReviewComment(
       c.line ?? null,
       c.side ?? "RIGHT",
       now(),
-    );
+    ) as ReviewCommentRow;
 }
 
-export function listReviewComments(issueId: number): any[] {
+export function listReviewComments(issueId: number): ReviewCommentRow[] {
   return db
     .query(
       `SELECT * FROM review_comments WHERE issue_id = ? ORDER BY created_at ASC`,
     )
-    .all(issueId);
+    .all(issueId) as ReviewCommentRow[];
 }

@@ -1212,7 +1212,7 @@ async function main() {
       );
       out(i);
       if (!flags.json)
-        console.log(`imported #${i.number} from ${i.github_issue.url}`);
+        console.log(`imported #${i.number} from ${i.github_issue!.url}`);
     } else if (sub === "update") {
       const patch: { title?: string; body?: string } = {};
       if (flags.title !== undefined) patch.title = flags.title;

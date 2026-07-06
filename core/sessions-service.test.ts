@@ -355,12 +355,12 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   const first = svc.sessions.usageSync({ sessionId, projectsDir });
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(first.sessions[0].messages).toBe(1);
-  expect(svc.sessions.get(sessionId).usage[0]).toMatchObject({
+  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
     model: "claude-sonnet-4-6-20260601",
     input_tokens: 100,
     output_tokens: 10,
   });
-  expect(svc.sessions.get(sessionId).usage[0].cost_usd).toBeCloseTo(0.000615);
+  expect(svc.sessions.get(sessionId).usage![0].cost_usd).toBeCloseTo(0.000615);
 
   chmodSync(transcript, 0);
   try {
@@ -388,7 +388,7 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
 
   const second = svc.sessions.usageSync({ sessionId, projectsDir });
   expect(second.sessions[0].messages).toBe(1);
-  expect(svc.sessions.get(sessionId).usage[0]).toMatchObject({
+  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
     input_tokens: 107,
     output_tokens: 13,
   });
@@ -594,13 +594,13 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
   const first = svc.sessions.usageSync({ sessionId, codexSessionsDir });
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(first.sessions[0].messages).toBe(2);
-  expect(svc.sessions.get(sessionId).usage[0]).toMatchObject({
+  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
     model: "gpt-5.5",
     input_tokens: 110,
     cache_read_input_tokens: 20,
     output_tokens: 7,
   });
-  expect(svc.sessions.get(sessionId).usage[0].cost_usd).toBeCloseTo(0.00077);
+  expect(svc.sessions.get(sessionId).usage![0].cost_usd).toBeCloseTo(0.00077);
   expect((svc.sessions.get(sessionId) as any).subagent_usage[0]).toMatchObject({
     source_id: "subagent-thread",
     parent_source_id: "root-thread",
@@ -798,7 +798,7 @@ test("sessions.usageSync invalidates Codex fast skip when peer windows change", 
       codexSessionsDir,
     });
     expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-    expect(svc.sessions.get(firstSessionId).usage[0]).toMatchObject({
+    expect(svc.sessions.get(firstSessionId).usage![0]).toMatchObject({
       input_tokens: 10,
       output_tokens: 1,
     });
@@ -857,7 +857,7 @@ test("sessions.usageSync leaves ambiguous same-window Codex root rollouts missin
 
   const first = svc.sessions.usageSync({ sessionId, codexSessionsDir });
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-  expect(svc.sessions.get(sessionId).usage[0]).toMatchObject({
+  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
     input_tokens: 10,
     output_tokens: 1,
   });
@@ -967,7 +967,7 @@ test("sessions.usageSync keeps child Codex rollouts linked to a root before the 
     codexSessionsDir,
   });
   expect(result).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-  expect(svc.sessions.get(firstSessionId).usage[0]).toMatchObject({
+  expect(svc.sessions.get(firstSessionId).usage![0]).toMatchObject({
     input_tokens: 30,
     output_tokens: 3,
   });
