@@ -119,15 +119,15 @@ describe("StatsPage", () => {
 });
 
 describe("DatabaseStatsPage", () => {
-  it("uses the shared content cap for page width", async () => {
+  it("uses the full available page width", async () => {
     renderDatabaseStats();
 
     const root = (
       await screen.findByRole("heading", { name: "DB Stats" })
     ).closest("div");
-    expect(root?.className).toContain("max-w-content");
-    expect(root?.className).toContain("mx-auto");
-    expect(root?.className).not.toContain("w-full");
+    expect(root?.className).toContain("w-full");
+    expect(root?.className).not.toContain("max-w-content");
+    expect(root?.className).not.toContain("mx-auto");
   });
 
   it("shows the DB file size, WAL included, in human-readable units", async () => {

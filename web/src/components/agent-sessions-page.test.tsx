@@ -143,15 +143,15 @@ describe("formatCost", () => {
 });
 
 describe("AgentSessionsPage", () => {
-  it("uses the shared content cap for page width", async () => {
+  it("uses the full available page width", async () => {
     renderPage();
 
     const root = (
       await screen.findByRole("heading", { name: "Agent sessions" })
     ).closest("div");
-    expect(root?.className).toContain("max-w-content");
-    expect(root?.className).toContain("mx-auto");
-    expect(root?.className).not.toContain("w-full");
+    expect(root?.className).toContain("w-full");
+    expect(root?.className).not.toContain("max-w-content");
+    expect(root?.className).not.toContain("mx-auto");
   });
 
   it("shows sessions by updated time with usage totals, cost, and linked work", async () => {

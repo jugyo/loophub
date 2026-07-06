@@ -90,7 +90,7 @@ export function DatabaseStatsPage() {
   const { data, isLoading, isError } = useStats();
 
   return (
-    <div className="mx-auto flex max-w-content flex-col">
+    <div className="flex w-full flex-col">
       <h1 className="text-2xl font-semibold">DB Stats</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Database statistics for this LoopHub server.
