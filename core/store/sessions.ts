@@ -1,4 +1,5 @@
 import { db, now } from "../db.ts";
+import { listSessionUsage } from "./session-usage.ts";
 
 export interface AgentSessionRow {
   id: string;
@@ -14,6 +15,12 @@ export interface AgentSessionRow {
 export type LinkedAgentSessionRow = AgentSessionRow & {
   linked_at: string;
 };
+
+export interface PullAgentSummary {
+  agent: string;
+  runtime: string | null;
+  models: string[];
+}
 
 export interface SessionLinkedTargetRow {
   repo_id: number;
@@ -181,6 +188,18 @@ export function primaryDevSessionForPull(issueId: number): string | null {
     )
     .get(issueId) as { id: string } | null;
   return row?.id ?? null;
+}
+
+export function pullAgentSummary(issueId: number): PullAgentSummary | null {
+  const sessionId = primaryDevSessionForPull(issueId);
+  if (!sessionId) return null;
+  const session = getAgentSession(sessionId);
+  if (!session) return null;
+  return {
+    agent: session.agent,
+    runtime: session.runtime,
+    models: listSessionUsage(sessionId).map((row) => row.model),
+  };
 }
 
 export function authorFromSession(

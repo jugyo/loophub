@@ -838,3 +838,81 @@ describe("agent cost display (#783)", () => {
     expect(badge.className).not.toContain("text-destructive");
   });
 });
+
+// #842: the linked-PR sub-row shows the agent runtime/model as compact metadata between the
+// status word and usage/cost. IssueRow is shared by home, repo dashboard, and the dedicated list.
+describe("linked PR agent metadata (#842)", () => {
+  it("separates linked PR sub-row elements with middle dots", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
+        },
+      ],
+    };
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({
+              mergeable_state: "blocked",
+              agent_runtime: "claude-code",
+              agent_model: "opus",
+              github_pull: {
+                number: 99,
+                url: "https://github.com/me/proj/pull/99",
+                branch: null,
+                created_by: null,
+                created_at: "2026-01-01T00:00:00Z",
+                github_merged: false,
+                github_merged_at: null,
+              },
+              total_tokens: 12345,
+              cost_usd: 4.5,
+            }),
+          ],
+        })}
+      />,
+    );
+
+    const metadata = await screen.findByText("Claude Code · opus");
+    expect(metadata.className).toContain("text-muted-foreground");
+    const rowText = metadata.closest("div")?.textContent ?? "";
+    expect(rowText).toBe(
+      "PR #10·GH #99·working·Claude Code · opus·12.3k tok · $4.50·working",
+    );
+  });
+
+  it("shows only the known half and stays quiet when both are unknown", async () => {
+    renderInRouter(
+      <div>
+        <IssueRow
+          owner="me"
+          repo="proj"
+          issue={makeIssue({
+            number: 1,
+            linked_pull_requests: [
+              makePull({ number: 10, agent_runtime: "codex" }),
+            ],
+          })}
+        />
+        <IssueRow
+          owner="me"
+          repo="proj"
+          issue={makeIssue({
+            number: 2,
+            linked_pull_requests: [makePull({ number: 11 })],
+          })}
+        />
+      </div>,
+    );
+
+    expect(await screen.findByText("Codex")).toBeTruthy();
+    expect(screen.queryByText(/unknown/i)).toBeNull();
+  });
+});

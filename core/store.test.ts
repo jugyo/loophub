@@ -573,6 +573,59 @@ test("sessionUsageTotalsForIssue aggregates tokens/cost across every linked sess
   });
 });
 
+test("pullAgentSummary returns the primary dev session runtime and usage models (#842)", () => {
+  const repo = S.createRepo("me/agent-summary", "/tmp/agent-summary");
+  const pr = S.createIssue(repo.id, "pull", "p", "", "bot") as any;
+  const review = "77777777-0000-0000-0000-000000000001";
+  const oldDev = "77777777-0000-0000-0000-000000000002";
+  const newDev = "77777777-0000-0000-0000-000000000003";
+
+  expect(S.pullAgentSummary(pr.id)).toBeNull();
+
+  S.registerAgentSession(
+    review,
+    "reviewer",
+    "ext-review",
+    null,
+    "codex",
+    "review",
+  );
+  S.registerAgentSession(
+    oldDev,
+    "lh-dev",
+    "ext-old",
+    null,
+    "claude-code",
+    "dev",
+  );
+  S.registerAgentSession(newDev, "lh-dev", "ext-new", null, "codex", "dev");
+  S.linkSession(review, pr.id);
+  S.linkSession(oldDev, pr.id);
+  S.setPullSession(pr.id, newDev);
+  S.upsertSessionUsage(oldDev, {
+    model: "claude-opus-4-8",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 0.01,
+  });
+  S.upsertSessionUsage(newDev, {
+    model: "gpt-5.5",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 0.01,
+  });
+
+  expect(S.pullAgentSummary(pr.id)).toEqual({
+    agent: "lh-dev",
+    runtime: "codex",
+    models: ["gpt-5.5"],
+  });
+});
+
 test("emitEvent persists and listEvents filters by since/order", () => {
   const repo = S.createRepo("me/ev", "/tmp/ev");
   S.emitEvent(repo.id, "issue.opened", "me", { number: 1 });

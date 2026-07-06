@@ -137,6 +137,8 @@ export interface IssueListPullSummaryWire extends PullSummaryWire {
   additions: number;
   deletions: number;
   changed_files: number;
+  agent_runtime?: string;
+  agent_model?: string;
 }
 
 // Herdr pane captured from the New Issue flow (#670). Narrowed from the `issue_herdr_panes` row —
@@ -810,6 +812,9 @@ async function linkedPullDetail(
 ): Promise<IssueListPullSummaryWire> {
   const status = await pullStatusFields(repo, pr);
   const usageTotals = S.sessionUsageTotalsForIssue(pr.id);
+  const agent = S.pullAgentSummary(pr.id);
+  const runtime = agent ? sessionRuntime(agent) : null;
+  const model = agent?.models.length ? agent.models.join(", ") : null;
   return {
     number: pr.number,
     title: pr.title,
@@ -822,6 +827,8 @@ async function linkedPullDetail(
     additions: status.additions,
     deletions: status.deletions,
     changed_files: status.changed_files,
+    ...(runtime ? { agent_runtime: runtime } : {}),
+    ...(model ? { agent_model: model } : {}),
     // #629: the exported GitHub PR (if any), so the issue-list linked-PR sub-row can show a GH badge.
     github_pull: githubPullJSON(S.getGithubPull(pr.id)),
     // #783: agent cost (total tokens + cost) for the sub-row, or omitted when no linked session

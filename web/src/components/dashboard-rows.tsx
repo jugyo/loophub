@@ -4,14 +4,19 @@
 
 import { Link } from "@tanstack/react-router";
 import { Check, Loader2, MoreHorizontal, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
-import { HerdrBadge, isPullHerdrWorking } from "@/components/herdr-badge";
+import {
+  findPullHerdrWorkspace,
+  HerdrBadge,
+  isPullHerdrWorking,
+} from "@/components/herdr-badge";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
+import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import {
   type Badge as BadgeData,
   issueBuildButtonState,
@@ -358,9 +363,15 @@ function LinkedPullSubRow({
   pull: LinkedPull;
 }) {
   const { data: herdrSessions } = useHerdrSessions();
+  const repoFullName = `${owner}/${repo}`;
   const agentWorking = isPullHerdrWorking(
     herdrSessions,
-    `${owner}/${repo}`,
+    repoFullName,
+    pull.number,
+  );
+  const hasHerdrWorkspace = !!findPullHerdrWorkspace(
+    herdrSessions,
+    repoFullName,
     pull.number,
   );
   const status = linkedPullStatus(pull, { agentWorking });
@@ -371,39 +382,99 @@ function LinkedPullSubRow({
   // pass 済みなら、緑にまとめられた未マージ群の中から一目で識別できるよう
   // ステータス語にチェックアイコンを添える。他の未マージ状態には出さない。
   const passed = status?.tone === "review-passed";
-  return (
-    <div className="flex items-center gap-2 pl-7 text-xs text-muted-foreground">
-      <Link
-        to="/r/$owner/$repo/pulls/$number"
-        params={{ owner, repo, number: String(pull.number) }}
+  const runtimeMetadata = agentRuntimeMetadataLabel(
+    pull.agent_runtime,
+    pull.agent_model,
+  );
+  const items = [
+    <Link
+      key="pr"
+      to="/r/$owner/$repo/pulls/$number"
+      params={{ owner, repo, number: String(pull.number) }}
+      className={cn(
+        badgeVariants({ tone: pillTone }),
+        "shrink-0 hover:opacity-80",
+      )}
+    >
+      PR #{pull.number}
+    </Link>,
+    pull.github_pull ? (
+      <LinkedGithubPrBadge key="github" github_pull={pull.github_pull} />
+    ) : null,
+    status ? (
+      <span
+        key="status"
         className={cn(
-          badgeVariants({ tone: pillTone }),
-          "shrink-0 hover:opacity-80",
+          "flex shrink-0 items-center gap-0.5 font-medium",
+          STATUS_TEXT[linkedPullWordTone(status.tone)],
         )}
+        title={status.title}
       >
-        PR #{pull.number}
-      </Link>
-      <LinkedGithubPrBadge github_pull={pull.github_pull} />
-      {status ? (
-        <span
-          className={cn(
-            "flex shrink-0 items-center gap-0.5 font-medium",
-            STATUS_TEXT[linkedPullWordTone(status.tone)],
-          )}
-          title={status.title}
-        >
-          {passed ? (
-            <Check
-              className="size-3.5 text-green-600 dark:text-green-400"
-              aria-label="passed"
-            />
+        {passed ? (
+          <Check
+            className="size-3.5 text-green-600 dark:text-green-400"
+            aria-label="passed"
+          />
+        ) : null}
+        {status.label}
+      </span>
+    ) : null,
+    runtimeMetadata ? (
+      <AgentRuntimeMetadata key="agent" label={runtimeMetadata} />
+    ) : null,
+    pull.total_tokens != null ? (
+      <AgentCostBadge
+        key="cost"
+        totalTokens={pull.total_tokens}
+        costUsd={pull.cost_usd}
+      />
+    ) : null,
+    hasHerdrWorkspace ? (
+      <HerdrBadge key="herdr" owner={owner} repo={repo} pull={pull.number} />
+    ) : null,
+  ].filter((item): item is ReactNode => item !== null);
+  return (
+    <div className="flex items-center gap-1.5 pl-7 text-xs text-muted-foreground">
+      {items.map((item, index) => (
+        <Fragment key={index}>
+          {index > 0 ? (
+            <span aria-hidden="true" className="shrink-0 text-muted-foreground">
+              ·
+            </span>
           ) : null}
-          {status.label}
-        </span>
-      ) : null}
-      <AgentCostBadge totalTokens={pull.total_tokens} costUsd={pull.cost_usd} />
-      <HerdrBadge owner={owner} repo={repo} pull={pull.number} />
+          {item}
+        </Fragment>
+      ))}
     </div>
+  );
+}
+
+function agentRuntimeLabel(runtime: string): string {
+  if (runtime === "claude-code" || runtime === "codex") {
+    return CODING_AGENT_LABELS[runtime];
+  }
+  return runtime;
+}
+
+function agentRuntimeMetadataLabel(
+  runtime?: string,
+  model?: string,
+): string | null {
+  const parts = [
+    runtime ? agentRuntimeLabel(runtime) : null,
+    model?.trim() || null,
+  ].filter((part): part is string => !!part);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function AgentRuntimeMetadata({ label }: { label: string }) {
+  return (
+    <span
+      className="min-w-0 max-w-52 shrink truncate text-muted-foreground"
+      title={label}
+    >
+      {label}
+    </span>
   );
 }
 

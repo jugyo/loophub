@@ -118,7 +118,7 @@ describe("dashboard.overview", () => {
     ).toMatchObject({ number: 99 });
   });
 
-  test("linked PR carries agent cost (total tokens + cost) once its session has usage (#783)", async () => {
+  test("linked PR carries agent runtime/model and cost once its session has usage (#783, #842)", async () => {
     const issue = svc.issues.create("me/proj", { title: "gets agent cost" });
     await svc.dev.openPr(
       "me/proj",
@@ -138,6 +138,8 @@ describe("dashboard.overview", () => {
     const before = linkedPull(await svc.dashboard.overview());
     expect(before.total_tokens).toBeUndefined();
     expect(before.cost_usd).toBeUndefined();
+    expect(before.agent_runtime).toBe("claude-code");
+    expect(before.agent_model).toBeUndefined();
 
     // "sess-1" is already linked to the PR's issue row as its dev session (openPr ->
     // setPullSession above), so recording usage against it is enough for the aggregate query to
@@ -154,5 +156,7 @@ describe("dashboard.overview", () => {
     const after = linkedPull(await svc.dashboard.overview());
     expect(after.total_tokens).toBe(200);
     expect(after.cost_usd).toBe(1.23);
+    expect(after.agent_runtime).toBe("claude-code");
+    expect(after.agent_model).toBe("claude-sonnet-5");
   });
 });

@@ -47,6 +47,8 @@ export type LinkedPull = PullSummaryWire &
       | "additions"
       | "deletions"
       | "changed_files"
+      | "agent_runtime"
+      | "agent_model"
     >
   >;
 
