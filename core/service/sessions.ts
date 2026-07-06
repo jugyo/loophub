@@ -302,9 +302,9 @@ export const sessions = {
   },
 
   list() {
-    return S.listAgentSessions().map((row) =>
-      agentSessionJSON(row, { withLinkedTargets: true }),
-    );
+    return S.listAgentSessions()
+      .map((row) => agentSessionJSON(row, { withLinkedTargets: true }))
+      .filter((session) => (session.usage?.length ?? 0) > 0);
   },
 
   get(id: string) {

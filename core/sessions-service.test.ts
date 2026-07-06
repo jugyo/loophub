@@ -192,6 +192,13 @@ test("sessions.listFor a PR marks the primary dev session resumable", () => {
 });
 
 test("sessions.list includes linked targets for the sessions page", () => {
+  D.db.run(
+    `INSERT INTO session_usage
+     (session_id, model, input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, cost_usd, updated_at)
+     VALUES (?, ?, 0, 0, 0, 0, 0.0, ?)`,
+    [REVIEW_UUID, "gpt-5", new Date().toISOString()],
+  );
+
   const list = svc.sessions.list() as any[];
   const review = list.find((s) => s.id === REVIEW_UUID);
   expect(review.linked_targets).toEqual([
@@ -203,6 +210,36 @@ test("sessions.list includes linked targets for the sessions page", () => {
       state: "open",
     },
   ]);
+});
+
+test("sessions.list excludes sessions without usage", () => {
+  const noUsageSession = "eeeeeeee-0000-0000-0000-000000000010";
+  const withUsageSession = "ffffffff-0000-0000-0000-000000000011";
+  svc.sessions.register({
+    id: noUsageSession,
+    agent: "lh-dev",
+    session: noUsageSession,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  svc.sessions.register({
+    id: withUsageSession,
+    agent: "lh-dev",
+    session: withUsageSession,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+
+  D.db.run(
+    `INSERT INTO session_usage
+     (session_id, model, input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, cost_usd, updated_at)
+     VALUES (?, ?, 0, 0, 0, 0, 0.0, ?)`,
+    [withUsageSession, "gpt-5", new Date().toISOString()],
+  );
+
+  const list = svc.sessions.list() as any[];
+  expect(list.some((s) => s.id === noUsageSession)).toBe(false);
+  expect(list.some((s) => s.id === withUsageSession)).toBe(true);
 });
 
 test("a session linked to a PR with no primary dev session is NOT resumable (not-anchor)", async () => {
