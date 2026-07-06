@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
-import { updateConfig } from "../config.ts";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { updateAgentAutoModeOnBuild, updateConfig } from "../config.ts";
 import {
   acquireHerdrWorktreeTab,
   buildHerdrLaunchPlan,
@@ -27,6 +27,27 @@ import {
 } from "./terminal-launch.ts";
 
 describe("herdr terminal launch", () => {
+  // commandForHerdrLaunch reads codingAgent/autoModeOnBuild from config.json when the caller
+  // doesn't override them (#660, #809) — isolate LOOPHUB_HOME per test so these tests assert
+  // against a clean default config instead of whatever is in the developer's real ~/.loophub.
+  let prevHome: string | undefined;
+  let home: string;
+
+  beforeEach(() => {
+    prevHome = process.env.LOOPHUB_HOME;
+    home = mkdtempSync(join(tmpdir(), "lh-terminal-launch-"));
+    process.env.LOOPHUB_HOME = home;
+  });
+
+  afterEach(() => {
+    if (prevHome === undefined) {
+      delete process.env.LOOPHUB_HOME;
+    } else {
+      process.env.LOOPHUB_HOME = prevHome;
+    }
+    rmSync(home, { recursive: true, force: true });
+  });
+
   test("builds deterministic path-safe Herdr session names from repo and path", () => {
     const a = herdrSessionName({
       full_name: "loophub/loophub",
@@ -80,7 +101,7 @@ describe("herdr terminal launch", () => {
         codingAgent: "codex",
       }),
     ).toBe(
-      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(process.env.LOOPHUB_HOME ?? join(homedir(), ".loophub"))}]' '/create-github-pr 451'`,
+      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/create-github-pr 451'`,
     );
     expect(
       commandForHerdrLaunch({
@@ -93,37 +114,75 @@ describe("herdr terminal launch", () => {
   });
 
   test("reads codingAgent config for GitHub PR export launches when no override is passed (#660)", () => {
-    const prevHome = process.env.LOOPHUB_HOME;
-    const home = mkdtempSync(join(tmpdir(), "lh-terminal-launch-"));
-    process.env.LOOPHUB_HOME = home;
-    try {
-      updateConfig({ codingAgent: "codex" });
-      expect(
-        commandForHerdrLaunch({
-          repo: "jugyo/loophub",
-          workflow: "github-pr-export",
-          prNumber: 451,
-        }),
-      ).toBe(
-        `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/create-github-pr 451'`,
-      );
+    updateConfig({ codingAgent: "codex" });
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "github-pr-export",
+        prNumber: 451,
+      }),
+    ).toBe(
+      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/create-github-pr 451'`,
+    );
 
-      updateConfig({ codingAgent: "claude-code" });
-      expect(
-        commandForHerdrLaunch({
-          repo: "jugyo/loophub",
-          workflow: "github-pr-export",
-          prNumber: 451,
-        }),
-      ).toBe("claude '/create-github-pr 451'");
-    } finally {
-      if (prevHome === undefined) {
-        delete process.env.LOOPHUB_HOME;
-      } else {
-        process.env.LOOPHUB_HOME = prevHome;
-      }
-      rmSync(home, { recursive: true, force: true });
-    }
+    updateConfig({ codingAgent: "claude-code" });
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "github-pr-export",
+        prNumber: 451,
+      }),
+    ).toBe("claude '/create-github-pr 451'");
+  });
+
+  test("applies the agent's autoModeOnBuild setting to GitHub PR export launches (#809)", () => {
+    // claude-code: --auto's equivalent is --permission-mode auto, same as lh dev --auto
+    // (buildClaudeArgs) — off by default (autoModeOnBuild unset).
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "github-pr-export",
+        prNumber: 451,
+        codingAgent: "claude-code",
+      }),
+    ).toBe("claude '/create-github-pr 451'");
+
+    updateAgentAutoModeOnBuild("claude-code", true);
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "github-pr-export",
+        prNumber: 451,
+        codingAgent: "claude-code",
+      }),
+    ).toBe("claude '--permission-mode' 'auto' '/create-github-pr 451'");
+
+    // codex: auto mode swaps the sandboxed --sandbox args for the same unsandboxed bypass
+    // flag lh dev --auto uses (buildCodexArgs), rather than adding a flag on top.
+    updateAgentAutoModeOnBuild("codex", true);
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "github-pr-export",
+        prNumber: 451,
+        codingAgent: "codex",
+      }),
+    ).toBe(
+      "codex '--dangerously-bypass-approvals-and-sandbox' '/create-github-pr 451'",
+    );
+
+    // claude-code's setting must not leak into codex's launch, and vice versa (#593 parity).
+    updateAgentAutoModeOnBuild("claude-code", false);
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "github-pr-export",
+        prNumber: 451,
+        codingAgent: "codex",
+      }),
+    ).toBe(
+      "codex '--dangerously-bypass-approvals-and-sandbox' '/create-github-pr 451'",
+    );
   });
 
   test("shell-quotes repo names in generated workflows", () => {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type CodingAgent, codingAgent } from "../config.ts";
+import { autoModeOnBuild, type CodingAgent, codingAgent } from "../config.ts";
 import { buildCodexSandboxArgs } from "./codex-launch.ts";
 
 export interface TerminalLaunchRepo {
@@ -113,11 +113,25 @@ export function commandForHerdrLaunch(input: {
   }
   if (input.workflow === "github-pr-export" && input.prNumber) {
     const command = shellArg(`/create-github-pr ${input.prNumber}`);
-    if ((input.codingAgent ?? codingAgent()) === "codex") {
-      const sandboxArgs = buildCodexSandboxArgs().map(shellArg).join(" ");
-      return `codex ${sandboxArgs} ${command}`;
+    const agent = input.codingAgent ?? codingAgent();
+    // Same auto-mode wiring as the Build button (lh dev --auto / autoModeOnBuild,
+    // cli/dev.ts's buildClaudeArgs / buildCodexArgs) so `git push` / `gh pr create` inside
+    // /create-github-pr don't hit permission prompts when auto mode is enabled for this agent.
+    const auto = autoModeOnBuild(agent);
+    if (agent === "codex") {
+      const codexArgs = (
+        auto
+          ? ["--dangerously-bypass-approvals-and-sandbox"]
+          : buildCodexSandboxArgs()
+      )
+        .map(shellArg)
+        .join(" ");
+      return `codex ${codexArgs} ${command}`;
     }
-    return `claude ${command}`;
+    const claudeArgs = auto
+      ? `${shellArg("--permission-mode")} ${shellArg("auto")} `
+      : "";
+    return `claude ${claudeArgs}${command}`;
   }
   if (input.workflow === "resume" && input.session) {
     const resume = `claude --resume ${shellArg(input.session)}`;
