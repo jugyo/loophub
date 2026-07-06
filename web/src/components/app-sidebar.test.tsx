@@ -99,6 +99,11 @@ function renderSidebar() {
     path: "/archived",
     component: () => null,
   });
+  const eventDebugRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/debug/events",
+    component: () => null,
+  });
   const repoRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/r/$owner/$repo",
@@ -110,6 +115,7 @@ function renderSidebar() {
       settingsRoute,
       statsRoute,
       archivedRoute,
+      eventDebugRoute,
       repoRoute,
     ]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
@@ -117,6 +123,27 @@ function renderSidebar() {
 
   return render(<RouterProvider router={router} />);
 }
+
+describe("AppSidebar global navigation", () => {
+  it("keeps global utilities as icon links without top-level Home/Settings/Stats menu rows", async () => {
+    renderSidebar();
+
+    expect(
+      (await screen.findByRole("link", { name: "Settings" })).getAttribute(
+        "href",
+      ),
+    ).toBe("/settings");
+    expect(
+      screen.getByRole("link", { name: "Stats" }).getAttribute("href"),
+    ).toBe("/stats");
+    expect(
+      screen.getByRole("link", { name: "Event debug" }).getAttribute("href"),
+    ).toBe("/debug/events");
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
+    expect(screen.queryByText("Settings")).toBeNull();
+    expect(screen.queryByText("Stats")).toBeNull();
+  });
+});
 
 describe("AppSidebar repositories", () => {
   it("sorts favorites before non-favorites, alphabetically within each group", async () => {

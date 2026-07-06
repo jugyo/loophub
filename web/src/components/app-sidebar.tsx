@@ -1,16 +1,8 @@
 // Sidebar: active repo list (GET /user/repos, archived excluded — same as v1),
-// plus links to Home and Archived. Repo screens land in later UI issues.
+// plus global utility links. Repo screens land in later UI issues.
 
 import { Link } from "@tanstack/react-router";
-import {
-  Activity,
-  Bot,
-  Database,
-  Home,
-  Loader2,
-  Settings,
-  Star,
-} from "lucide-react";
+import { Activity, Bot, Database, Loader2, Settings, Star } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -97,26 +89,15 @@ export function AppSidebar() {
 
   return (
     <aside className="relative flex h-full w-[var(--lh-sidebar-w)] shrink-0 flex-col border-r bg-card">
-      <div className="flex h-14 items-center px-4">
+      <div className="flex h-14 items-center justify-between gap-2 px-4">
         <Link to="/" className="flex items-center gap-2 text-lg font-semibold">
           <Logo className="size-6" />
           LoopHub
         </Link>
+        <IconSidebarLink to="/settings" label="Settings">
+          <Settings className="size-4" />
+        </IconSidebarLink>
       </div>
-
-      {/* Section divider (#504): `border-b` closes off the nav block the same way the footer's
-          `border-t` closes off the repo list, so the sidebar's sections read distinctly. */}
-      <nav className="flex flex-col gap-1 border-b p-2">
-        <SidebarLink to="/" icon={<Home className="size-4" />}>
-          Home
-        </SidebarLink>
-        <SidebarLink to="/settings" icon={<Settings className="size-4" />}>
-          Settings
-        </SidebarLink>
-        <SidebarLink to="/stats" icon={<Database className="size-4" />}>
-          Stats
-        </SidebarLink>
-      </nav>
 
       <div className="px-4 pb-1 pt-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Repositories
@@ -174,17 +155,14 @@ export function AppSidebar() {
       {/* Fixed footer (#371): the theme toggle lives here, below the scrolling repo list. */}
       <div className="flex shrink-0 items-center justify-between gap-2 border-t p-2">
         <ThemeToggle />
-        <Link
-          to="/debug/events"
-          title="Event debug"
-          aria-label="Event debug"
-          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          activeProps={{
-            className: "bg-accent text-accent-foreground",
-          }}
-        >
-          <Activity className="size-4" />
-        </Link>
+        <div className="flex items-center gap-1">
+          <IconSidebarLink to="/stats" label="Stats">
+            <Database className="size-4" />
+          </IconSidebarLink>
+          <IconSidebarLink to="/debug/events" label="Event debug">
+            <Activity className="size-4" />
+          </IconSidebarLink>
+        </div>
       </div>
 
       {/* Drag handle along the sidebar's right edge (#378). Invisible — the visible separator is
@@ -220,30 +198,28 @@ export function compareSidebarRepos(a: Repo, b: Repo): number {
   });
 }
 
-function SidebarLink({
+function IconSidebarLink({
   to,
-  icon,
-  title,
+  label,
   children,
 }: {
   to: string;
-  icon?: React.ReactNode;
-  title?: string;
+  label: string;
   children: React.ReactNode;
 }) {
   return (
     <Link
       to={to}
-      title={title}
+      title={label}
+      aria-label={label}
       className={cn(
-        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground",
+        "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
       )}
       activeProps={{
-        className: "bg-accent text-accent-foreground font-medium",
+        className: "bg-accent text-accent-foreground",
       }}
       activeOptions={{ exact: to === "/" }}
     >
-      {icon}
       {children}
     </Link>
   );
