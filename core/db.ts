@@ -156,7 +156,8 @@ CREATE TABLE IF NOT EXISTS pulls (
   merged          INTEGER NOT NULL DEFAULT 0,
   merged_at       TEXT,
   merge_commit_sha TEXT,
-  merge_method    TEXT
+  merge_method    TEXT,
+  linked_issue_closed_event_id INTEGER REFERENCES events(id)
 );
 
 CREATE TABLE IF NOT EXISTS comments (
@@ -478,6 +479,26 @@ CREATE TABLE IF NOT EXISTS github_issues (
 
 CREATE INDEX IF NOT EXISTS idx_github_issues_source ON github_issues(owner, repo, number);
 
+-- Audit log for the narrow "undo the immediate main merge" operation (#764).
+-- The operation rewinds main from a recorded PR merge commit back to that commit's first parent.
+-- Keep both git facts and a PR metadata snapshot so the destructive action is inspectable even
+-- after the PR row is reopened and its merged fields are cleared.
+CREATE TABLE IF NOT EXISTS main_merge_undos (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id           INTEGER NOT NULL REFERENCES repos(id),
+  pr_id             INTEGER NOT NULL REFERENCES issues(id),
+  linked_issue_id   INTEGER REFERENCES issues(id),
+  base_ref          TEXT NOT NULL,
+  undone_from_sha   TEXT NOT NULL,
+  previous_main_sha TEXT NOT NULL,
+  merge_commit_sha  TEXT NOT NULL,
+  pr_metadata_json  TEXT NOT NULL,
+  author            TEXT NOT NULL,
+  created_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_main_merge_undos_pr ON main_merge_undos(pr_id, id);
+
 -- New Issue Herdr pane links (#670). A web New Issue launch creates a Herdr pane before an issue
 -- exists, while lh issue create creates the issue from inside that pane later. launch_id is the
 -- durable correlation key both sides know; issue_id and pane_id can arrive in either order.
@@ -546,6 +567,50 @@ tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_by TEXT");
 // just-opened PR is not yet reviewable; draft=1 marks "still being worked", flipped to 0 (ready) by
 // `lh pr ready-for-review`. Pre-existing PRs (and plain `lh pr create`) default to ready (0).
 tryExec("ALTER TABLE pulls ADD COLUMN draft INTEGER NOT NULL DEFAULT 0");
+tryExec(
+  "ALTER TABLE pulls ADD COLUMN linked_issue_closed_event_id INTEGER REFERENCES events(id)",
+);
+try {
+  const rows = db
+    .query(
+      `SELECT e.id, e.repo_id, e.payload
+       FROM events e
+       WHERE e.type = 'issue.closed'
+       ORDER BY e.id ASC`,
+    )
+    .all() as Array<{ id: number; repo_id: number; payload: string }>;
+  for (const row of rows) {
+    let payload: { number?: unknown; closed_by_pull?: unknown };
+    try {
+      payload = JSON.parse(row.payload);
+    } catch {
+      continue;
+    }
+    if (
+      !Number.isInteger(payload.number) ||
+      !Number.isInteger(payload.closed_by_pull)
+    ) {
+      continue;
+    }
+    db.run(
+      `UPDATE pulls
+       SET linked_issue_closed_event_id = ?
+       WHERE issue_id = (
+           SELECT pr.id
+           FROM issues pr
+           JOIN pulls p ON p.issue_id = pr.id
+           JOIN issues linked ON linked.id = p.linked_issue_id
+           WHERE pr.repo_id = ?
+             AND pr.kind = 'pull'
+             AND p.merged = 1
+             AND pr.number = ?
+             AND linked.number = ?
+           LIMIT 1
+         )`,
+      [row.id, row.repo_id, payload.closed_by_pull, payload.number],
+    );
+  }
+} catch {}
 // reviews.head_sha records the PR head a review was made against, so a PASS
 // can be marked stale once the branch advances past that commit.
 tryExec("ALTER TABLE reviews ADD COLUMN head_sha TEXT");

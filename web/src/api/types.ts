@@ -420,6 +420,14 @@ export interface PullRequest {
   changes_addressed_at: string | null;
   changes_addressed_by: string | null;
   merge_commit_sha: string | null;
+  main_merge_undo?: {
+    can_undo: boolean;
+    reason: string | null;
+    base_ref: string;
+    current_main_sha: string | null;
+    merge_commit_sha: string | null;
+    previous_main_sha: string | null;
+  };
   /** Diff totals for the PR (base...head), aggregated from numstat. */
   additions: number;
   deletions: number;

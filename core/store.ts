@@ -650,10 +650,22 @@ export function setMerged(
   sha: string,
   method: string,
 ): number | null {
-  const pull = getPull(issueId);
   const t = now();
+  const pull = getPull(issueId);
+  let closedIssue: number | null = null;
+  let shouldCloseLinked = false;
+  if (pull?.linked_issue_id) {
+    const linked = getIssueById(pull.linked_issue_id);
+    if (linked?.state === "open") {
+      shouldCloseLinked = true;
+      closedIssue = linked.number;
+    }
+  }
   db.run(
-    `UPDATE pulls SET merged = 1, merged_at = ?, merge_commit_sha = ?, merge_method = ? WHERE issue_id = ?`,
+    `UPDATE pulls
+     SET merged = 1, merged_at = ?, merge_commit_sha = ?, merge_method = ?,
+         linked_issue_closed_event_id = NULL
+     WHERE issue_id = ?`,
     [t, sha, method, issueId],
   );
   // Sets closed_at alongside state (not via updateIssue, which this bypasses) so the "closed_at is
@@ -664,17 +676,167 @@ export function setMerged(
     `UPDATE issues SET state = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
     [t, t, issueId],
   );
-  if (pull?.linked_issue_id) {
-    const linked = getIssueById(pull.linked_issue_id);
-    if (linked?.state === "open") {
-      db.run(
-        `UPDATE issues SET state = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
-        [t, t, linked.id],
-      );
-      return linked.number;
-    }
+  if (pull?.linked_issue_id && shouldCloseLinked) {
+    db.run(
+      `UPDATE issues SET state = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
+      [t, t, pull.linked_issue_id],
+    );
   }
-  return null;
+  return closedIssue;
+}
+
+export function setLinkedIssueClosedEvent(
+  issueId: number,
+  eventId: number | null,
+) {
+  db.run(
+    `UPDATE pulls SET linked_issue_closed_event_id = ? WHERE issue_id = ?`,
+    [eventId, issueId],
+  );
+}
+
+export function undoMainMerge(input: {
+  repoId: number;
+  issueId: number;
+  linkedIssueId?: number | null;
+  linkedIssueClosedEventId?: number | null;
+  baseRef: string;
+  undoneFromSha: string;
+  previousMainSha: string;
+  mergeCommitSha: string;
+  prMetadata: Record<string, unknown>;
+  author: string;
+}): {
+  audit: any;
+  linkedIssueReopened: boolean;
+  linkedIssueNumber: number | null;
+} {
+  const t = now();
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    let linkedIssueReopened = false;
+    let linkedIssueNumber: number | null = null;
+    if (input.linkedIssueId != null) {
+      const linked = getIssueById(input.linkedIssueId);
+      linkedIssueNumber = linked?.number ?? null;
+      linkedIssueReopened =
+        linked?.state === "closed" &&
+        linkedIssueNumber != null &&
+        issueCloseEventIsCurrent(
+          input.repoId,
+          linkedIssueNumber,
+          input.linkedIssueClosedEventId ?? null,
+        );
+    }
+    const audit = db
+      .query(
+        `INSERT INTO main_merge_undos
+           (repo_id, pr_id, linked_issue_id, base_ref, undone_from_sha, previous_main_sha,
+            merge_commit_sha, pr_metadata_json, author, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         RETURNING *`,
+      )
+      .get(
+        input.repoId,
+        input.issueId,
+        input.linkedIssueId ?? null,
+        input.baseRef,
+        input.undoneFromSha,
+        input.previousMainSha,
+        input.mergeCommitSha,
+        JSON.stringify({
+          ...input.prMetadata,
+          linked_issue_reopened: linkedIssueReopened,
+        }),
+        input.author,
+        t,
+      );
+    db.run(
+      `UPDATE pulls
+       SET merged = 0, merged_at = NULL, merge_commit_sha = NULL, merge_method = NULL,
+           linked_issue_closed_event_id = NULL
+       WHERE issue_id = ?`,
+      [input.issueId],
+    );
+    db.run(
+      `UPDATE issues SET state = 'open', closed_at = NULL, updated_at = ? WHERE id = ?`,
+      [t, input.issueId],
+    );
+    if (input.linkedIssueId != null && linkedIssueReopened) {
+      db.run(
+        `UPDATE issues SET state = 'open', closed_at = NULL, updated_at = ? WHERE id = ?`,
+        [t, input.linkedIssueId],
+      );
+    }
+    db.exec("COMMIT");
+    return { audit, linkedIssueReopened, linkedIssueNumber };
+  } catch (err) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {}
+    throw err;
+  }
+}
+
+export function listMainMergeUndos(issueId: number): any[] {
+  return db
+    .query(`SELECT * FROM main_merge_undos WHERE pr_id = ? ORDER BY id ASC`)
+    .all(issueId);
+}
+
+export function issueWasClosedByPull(
+  repoId: number,
+  issueNumber: number,
+  pullNumber: number,
+): boolean {
+  const rows = db
+    .query(
+      `SELECT payload FROM events WHERE repo_id = ? AND type = 'issue.closed'`,
+    )
+    .all(repoId) as { payload: string }[];
+  return rows.some((row) => {
+    try {
+      const payload = JSON.parse(row.payload);
+      return (
+        payload?.number === issueNumber &&
+        payload?.closed_by_pull === pullNumber
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
+export function issueCloseEventIsCurrent(
+  repoId: number,
+  issueNumber: number,
+  eventId: number | null,
+): boolean {
+  if (eventId == null) return false;
+  const row = db
+    .query(`SELECT * FROM events WHERE id = ? AND repo_id = ?`)
+    .get(eventId, repoId) as any;
+  if (row?.type !== "issue.closed") return false;
+  try {
+    const payload = JSON.parse(row.payload);
+    if (payload?.number !== issueNumber) return false;
+  } catch {
+    return false;
+  }
+  const later = db
+    .query(
+      `SELECT payload FROM events
+       WHERE repo_id = ? AND id > ? AND type IN ('issue.closed', 'issue.reopened')
+       ORDER BY id ASC`,
+    )
+    .all(repoId, eventId) as { payload: string }[];
+  return !later.some((event) => {
+    try {
+      return JSON.parse(event.payload)?.number === issueNumber;
+    } catch {
+      return false;
+    }
+  });
 }
 
 // ---- comments ----

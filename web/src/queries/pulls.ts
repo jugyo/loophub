@@ -16,6 +16,7 @@ import {
   mergePull,
   patchPull,
   readyForReview,
+  undoMainMerge,
 } from "@/api/client";
 import { queryKeys } from "./keys";
 
@@ -159,6 +160,19 @@ function invalidatePull(
   qc.invalidateQueries({ queryKey: queryKeys.pulls(full(owner, repo)) });
 }
 
+function invalidatePullAndIssueSurfaces(
+  qc: ReturnType<typeof useQueryClient>,
+  owner: string,
+  repo: string,
+  number: number,
+) {
+  const repoFull = full(owner, repo);
+  invalidatePull(qc, owner, repo, number);
+  qc.invalidateQueries({ queryKey: queryKeys.issues(repoFull) });
+  qc.invalidateQueries({ queryKey: ["issue", repoFull] });
+  qc.invalidateQueries({ queryKey: queryKeys.dashboard() });
+}
+
 /** Merge a PR, then invalidate the PR + lists. */
 export function useMergePull(owner: string, repo: string, number: number) {
   const qc = useQueryClient();
@@ -166,6 +180,15 @@ export function useMergePull(owner: string, repo: string, number: number) {
     mutationFn: (mergeMethod: "squash" | "merge" | "rebase") =>
       mergePull(owner, repo, number, mergeMethod),
     onSuccess: () => invalidatePull(qc, owner, repo, number),
+  });
+}
+
+/** Undo a just-created main merge, then invalidate the PR + lists. */
+export function useUndoMainMerge(owner: string, repo: string, number: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => undoMainMerge(owner, repo, number),
+    onSuccess: () => invalidatePullAndIssueSurfaces(qc, owner, repo, number),
   });
 }
 

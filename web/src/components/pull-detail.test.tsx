@@ -127,6 +127,11 @@ function mockFetch(
     "reviewNotes/list": () => [],
     "comments/list": () => comments,
     "pulls/merge": () => ({ merged: true, sha: "c" }),
+    "pulls/undoMainMerge": () => ({
+      undone: true,
+      sha: "before-main",
+      audit_id: 1,
+    }),
     "pulls/update": (p) => ({ ...pull, state: p.state }),
     ...extraHandlers,
   });
@@ -497,6 +502,135 @@ describe("PullDetail", () => {
       expect(call).toBeTruthy();
       expect(call!.params.merge_method).toBe("squash");
     });
+  });
+
+  it("undoes a merged main PR when the server marks the immediate merge undo available", async () => {
+    renderDetail({
+      "pulls/get": () => ({
+        ...pull,
+        state: "closed",
+        merged: true,
+        merge_commit_sha: "merge-main",
+        main_merge_undo: {
+          can_undo: true,
+          reason: null,
+          base_ref: "main",
+          current_main_sha: "merge-main",
+          merge_commit_sha: "merge-main",
+          previous_main_sha: "before-main",
+        },
+      }),
+    });
+
+    const button = await screen.findByRole("button", {
+      name: /Undo main merge/i,
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      const call = rpcCall("pulls/undoMainMerge");
+      expect(call).toBeTruthy();
+      expect(call!.params.number).toBe(30);
+    });
+  });
+
+  it("shows the main merge undo reason when the PR no longer satisfies the tip-only condition", async () => {
+    renderDetail({
+      "pulls/get": () => ({
+        ...pull,
+        state: "closed",
+        merged: true,
+        merge_commit_sha: "merge-main",
+        main_merge_undo: {
+          can_undo: false,
+          reason:
+            "main now points to later, not the PR merge commit merge-main",
+          base_ref: "main",
+          current_main_sha: "later",
+          merge_commit_sha: "merge-main",
+          previous_main_sha: "before-main",
+        },
+      }),
+    });
+
+    const button = (await screen.findByRole("button", {
+      name: /Undo main merge/i,
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe(
+      "main now points to later, not the PR merge commit merge-main",
+    );
+    expect(
+      screen.getByText(
+        "main now points to later, not the PR merge commit merge-main",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(button);
+    expect(rpcCall("pulls/undoMainMerge")).toBeFalsy();
+  });
+
+  it("surfaces a main merge undo failure in the app toast", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({
+        "pulls/get": () => ({
+          ...pull,
+          state: "closed",
+          merged: true,
+          merge_commit_sha: "merge-main",
+          main_merge_undo: {
+            can_undo: true,
+            reason: null,
+            base_ref: "main",
+            current_main_sha: "merge-main",
+            merge_commit_sha: "merge-main",
+            previous_main_sha: "before-main",
+          },
+        }),
+        "pulls/undoMainMerge": () => {
+          throw new RpcFault(409, "main changed before undo completed");
+        },
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => (
+        <ToastProvider>
+          <ToastViewport />
+          <PullDetail owner="me" repo="proj" number={30} />
+        </ToastProvider>
+      ),
+    });
+    const issuesRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/r/$owner/$repo/issues/$number",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute, issuesRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Undo main merge/i }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Undo failed: main changed before undo completed",
+      ),
+    ).toBeTruthy();
   });
 
   it("shows a fixed-duration loading state on Merge and re-enables it once loading and the mutation both settle (#560)", async () => {

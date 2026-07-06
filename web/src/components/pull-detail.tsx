@@ -13,6 +13,7 @@ import {
   ExternalLink,
   Github,
   Loader2,
+  RotateCcw,
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -54,6 +55,7 @@ import {
   usePullReviews,
   useReadyForReview,
   useSetPullState,
+  useUndoMainMerge,
 } from "@/queries/pulls";
 import { useHerdrSessions } from "@/queries/terminal";
 
@@ -183,6 +185,7 @@ function PullHeader({
   pull: PullRequest;
 }) {
   const merge = useMergePull(owner, repo, pull.number);
+  const undoMainMerge = useUndoMainMerge(owner, repo, pull.number);
   const ready = useReadyForReview(owner, repo, pull.number);
   const setState = useSetPullState(owner, repo, pull.number);
   const { showError } = useToast();
@@ -222,6 +225,11 @@ function PullHeader({
   // ready, or an already-ready PR resubmitting after change requests. Draft takes precedence.
   const canReady =
     canAct && (pull.draft || pull.review_state === "CHANGES_REQUESTED");
+  const mainMergeUndo = pull.main_merge_undo;
+  const showUndoMainMerge = pull.base.ref === "main" && !!mainMergeUndo;
+  const canUndoMainMerge = !!mainMergeUndo?.can_undo;
+  const undoMainMergeReason =
+    mainMergeUndo?.reason ?? "Main merge undo status is unavailable.";
   const mergeBlockedReason = hasConflict
     ? "Cannot merge: this PR has conflicts with the base branch."
     : hasNoCommits
@@ -296,6 +304,32 @@ function PullHeader({
             ) : null}
             {pull.state === "open" ? "Close" : "Reopen"}
           </Button>
+        ) : null}
+        {showUndoMainMerge ? (
+          <div className="flex max-w-full flex-col items-end gap-1">
+            <Button
+              variant="secondary"
+              disabled={!canUndoMainMerge || undoMainMerge.isPending}
+              title={canUndoMainMerge ? undefined : undoMainMergeReason}
+              onClick={() =>
+                undoMainMerge.mutate(undefined, {
+                  onError: (e) => showError(failureMessage("Undo failed", e)),
+                })
+              }
+            >
+              {undoMainMerge.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RotateCcw className="size-4" />
+              )}
+              Undo main merge
+            </Button>
+            {!canUndoMainMerge ? (
+              <p className="max-w-80 text-right text-xs text-muted-foreground">
+                {undoMainMergeReason}
+              </p>
+            ) : null}
+          </div>
         ) : null}
         {canReady ? (
           <Button
