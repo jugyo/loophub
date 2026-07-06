@@ -1,9 +1,9 @@
 # LoopHub agent skills
 
 Skill `name` values use **lowercase letters, digits, and hyphens (`-`) only**. `name` = directory name =
-chat invocation (e.g. `/lh-pr-review`). These skills are **host-agnostic**: they run under Cursor,
-Claude Code, or any agent host that supports `/name` invocation and readonly subagents (the install
-script symlinks them into `~/.claude/skills/`).
+chat invocation (e.g. `/lh-pr-review`). These skills are **host-agnostic**: they run under Codex,
+Cursor, Claude Code, or any agent host that supports `/name` invocation and readonly,
+context-isolated reviewer sessions (the install script symlinks them into `~/.claude/skills/`).
 
 | Skill `name` | Directory | Invocation |
 |--------------|-------------|------------|
@@ -42,12 +42,13 @@ command exactly.
   **conversation language** too — by design, not an oversight.
 - **PR evidence**: PR bodies require an **Evidence** section (test output excerpts, screenshots for UI,
   CLI snippets, or explicit N/A). Enforced at PR creation — see `lh-dev` § PR (step 5).
-- **Reviewers are role-based, not vendor-based**: reference review subagents by **role** (Quality,
-  Security, Documentation, Acceptance), never by a product name. `lh-pr-review` § Reviewer roles &
-  host mapping resolves each role to a host mechanism (Cursor `bugbot`/`security-review`, Claude Code
-  `code-reviewer`/`general-purpose` + `/security-review`) with a `general-purpose` fallback so a
-  missing vendor reviewer never blocks review. Documentation runs only for changed documentation files
-  and checks reader fit, not implementation correctness.
+- **Reviewers are role-based, not vendor-based**: reference reviewers by **role** (Quality, Security,
+  Documentation, Acceptance), never by a product name. `lh-pr-review` § Reviewer roles & host mapping
+  resolves each role to a context-isolated host mechanism (Codex `codex exec`, Cursor
+  `bugbot`/`security-review`, Claude Code `code-reviewer`/`general-purpose` + `/security-review`) with
+  an isolated `general-purpose` fallback so a missing vendor reviewer never blocks review.
+  Documentation runs only for changed documentation files and checks reader fit, not implementation
+  correctness.
 
 ## Skill chain
 

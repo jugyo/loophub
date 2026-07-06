@@ -2,21 +2,22 @@
 name: lh-pr-review
 description: >-
   Review a LoopHub PR with quality, security, documentation, and acceptance reviewers, selected by
-  what the PR diff changes (host-mapped subagents), fix findings on the head branch, and re-review
-  until pass. Use when the user runs /lh-pr-review {pr id}, when asked to review a LoopHub PR, or
-  after issue-dev creates a PR. Posts a per-topic lh pr review each round. Does not merge. Add
+  what the PR diff changes (host-mapped isolated reviewer sessions), fix findings on the head branch,
+  and re-review until pass. Use when the user runs /lh-pr-review {pr id}, when asked to review a
+  LoopHub PR, or after issue-dev creates a PR. Posts a per-topic lh pr review each round. Does not merge. Add
   --review-only for a single review without the fix loop.
 ---
 
 # LoopHub PR review
 
 Review a PR with up to four reviewers — **quality, security, documentation, acceptance** (run as
-readonly subagents, mapped to whatever the host provides) — **selected by what the PR diff actually
-changes**, per [Review selection policy](#review-selection-policy); if findings exist, **fix on head in
-this session (parent agent)** → test → **re-review** until **`pass`**. Do not merge.
+readonly, context-isolated reviewer sessions mapped to whatever the host provides) — **selected by what
+the PR diff actually changes**, per [Review selection policy](#review-selection-policy); if findings
+exist, **fix on head in this session (parent agent)** → test → **re-review** until **`pass`**. Do not
+merge.
 
 Vendor-agnostic by design: the reviewer **roles** are fixed, but their **mechanism** is resolved per
-host (Cursor, Claude Code, …). See [Reviewer roles & host mapping](#reviewer-roles--host-mapping).
+host (Codex, Cursor, Claude Code, ...). See [Reviewer roles & host mapping](#reviewer-roles--host-mapping).
 
 Distinct from Cursor's built-in `/loop` (scheduled wake). Here, "loop" means **review → fix → review**.
 
@@ -71,17 +72,17 @@ Which PR should I review? (e.g. /lh-pr-review 42)
 | Loop control, fixes | **Parent (this session)** |
 | LoopHub context | Parent |
 | Checkout head branch | Parent |
-| Quality review (bugs, correctness) | Quality reviewer subagent (host-mapped) |
-| Security review | Security reviewer subagent (host-mapped) |
-| Documentation review (reader fit) | Documentation reviewer subagent (general-purpose + Documentation prompt) |
-| Acceptance review (issue requirement / spec / AC) | Acceptance reviewer subagent (general-purpose + Acceptance prompt) |
+| Quality review (bugs, correctness) | Quality reviewer session (host-mapped) |
+| Security review | Security reviewer session (host-mapped) |
+| Documentation review (reader fit) | Documentation reviewer session (generic reviewer + Documentation prompt) |
+| Acceptance review (issue requirement / spec / AC) | Acceptance reviewer session (generic reviewer + Acceptance prompt) |
 | Issue scope alignment, test check | Parent |
 | Code fixes, commits | **Parent (fix phase only)** |
 | Post `lh pr review --topic <aspect>` | Parent (**once per topic per round** — see A.5) |
 
-Reviewer subagents are **readonly** — **no fixes**, **no posts**. They are launched through the host's
-subagent mechanism; the concrete `subagent_type` is chosen at runtime per
-[Reviewer roles & host mapping](#reviewer-roles--host-mapping).
+Reviewer sessions are **readonly** — **no fixes**, **no posts**. They are launched through a
+host-specific mechanism that must not inherit the parent conversation history; the concrete mechanism is
+chosen at runtime per [Reviewer roles & host mapping](#reviewer-roles--host-mapping).
 
 ## Reviewer roles & host mapping
 
@@ -126,24 +127,45 @@ review set ran."
 
 ### Capability detection (pick the best available mechanism)
 
-At launch, map each role to the **first available** mechanism for the current host, degrading left→right.
-Never hard-fail because a vendor-specific reviewer is absent — always run **every role selected by**
-[Review selection policy](#review-selection-policy) via *some* readonly subagent.
+At launch, map each role to the **first available** mechanism for the current host, degrading left to
+right. Never hard-fail because a vendor-specific reviewer is absent — always run **every role selected
+by** [Review selection policy](#review-selection-policy) via *some* readonly reviewer session.
 
-| Role | Cursor | Claude Code | Generic fallback (any host) |
-|------|--------|-------------|------------------------------|
-| Quality | `subagent_type: "bugbot"` | `subagent_type: "code-reviewer"` if present, else `general-purpose` | `general-purpose` subagent + Quality prompt |
-| Security | `subagent_type: "security-review"` | `general-purpose` running the `/security-review` skill — fall back to a `code-review` security pass only if `/security-review` is unavailable | `general-purpose` subagent + Security prompt |
-| Documentation | `general-purpose` + Documentation prompt | `general-purpose` + Documentation prompt | `general-purpose` subagent + Documentation prompt |
-| Acceptance | `general-purpose` + Acceptance prompt | `general-purpose` + Acceptance prompt | `general-purpose` subagent + Acceptance prompt |
+**Context isolation is mandatory.** Reviewer launch must use a mechanism that starts from a fresh
+context and receives only the reviewer role prompt, objective repository references (repository path,
+base branch, and `lh pr diff` output), and role-specific inputs. Do not pass the parent conversation
+transcript, implementation notes, test logs, or the implementer's self-summary. Do not launch reviewers
+as forks of the parent conversation. A host path that can only fork the parent history is allowed only
+as a degraded fallback, and the A.4 review body must explicitly say `degraded: inherited parent
+history` for that role.
+
+| Role | Codex | Cursor | Claude Code | Generic fallback (any host) |
+|------|-------|--------|-------------|------------------------------|
+| Quality | fresh non-interactive `codex exec` session + Quality prompt + diff | isolated `subagent_type: "bugbot"` + diff | isolated `subagent_type: "code-reviewer"` + diff if present, else isolated `general-purpose` + Quality prompt + diff | isolated `general-purpose` reviewer + Quality prompt + diff |
+| Security | fresh non-interactive `codex exec` session + Security prompt + diff | isolated `subagent_type: "security-review"` + diff | isolated `general-purpose` running the `/security-review` skill + diff — fall back to a `code-review` security pass only if `/security-review` is unavailable | isolated `general-purpose` reviewer + Security prompt + diff |
+| Documentation | fresh non-interactive `codex exec` session + Documentation prompt + diff | isolated `general-purpose` + Documentation prompt + diff | isolated `general-purpose` + Documentation prompt + diff | isolated `general-purpose` reviewer + Documentation prompt + diff |
+| Acceptance | fresh non-interactive `codex exec` session + Acceptance prompt + diff + linked issue Goal/AC | isolated `general-purpose` + Acceptance prompt + diff + linked issue Goal/AC | isolated `general-purpose` + Acceptance prompt + diff + linked issue Goal/AC | isolated `general-purpose` reviewer + Acceptance prompt + diff + linked issue Goal/AC |
 
 Documentation and Acceptance are **not** vendor products — there are no specialized reviewers for them.
-On every host they run as `general-purpose` subagents fed the Documentation and Acceptance prompts
+On every host they run as generic isolated reviewers fed the Documentation and Acceptance prompts
 (A.3), when [Review selection policy](#review-selection-policy) selects them.
 
-Detection rule: if the named subagent type is unavailable in this host, fall to the next column. The
+Detection rule: if the named reviewer type is unavailable in this host, fall to the next column. The
 **prompt and expected output below are identical** regardless of which mechanism wins, so synthesis
 (A.4) does not depend on the host.
+
+Codex reviewer launch uses `codex exec` in non-interactive mode. Feed the complete reviewer prompt on
+stdin, set the reviewer cwd to the PR worktree, prefer read-only sandboxing, and use `--ephemeral` so
+the review does not create a resumable child conversation:
+
+```sh
+codex exec --cd "<worktree>" --sandbox read-only --ephemeral --json \
+  --output-last-message "/tmp/lh-pr-<m>-<role>.json" -
+```
+
+Claude Code Task subagents have their own context window and return only their final result to the
+caller. Treat that as the normal isolated path, but still include the full diff in the task prompt so
+the reviewer does not need the parent transcript to reconstruct scope.
 
 **Record what actually ran.** Whichever mechanism each role resolves to, name it in the A.4 review body
 (e.g. `Security: general-purpose + Security prompt — degraded`). A degraded path is allowed (review must
@@ -169,7 +191,7 @@ identifiers, and severity keywords (`pass` / `request_changes` / `comment`) stay
 Resolve the target language once in A.1 (which already reads the PR and, when linked, the issue),
 taking the first that applies: (1) the **linked issue**'s language (the primary signal); (2) the
 human-authored part of the **PR body/title** (ignore tooling boilerplate); (3) the **conversation
-language**; (4) **English** as the fallback when none is determinable. The reviewer subagents return
+language**; (4) **English** as the fallback when none is determinable. The reviewer sessions return
 structured JSON regardless; the parent localizes the prose when synthesizing (A.4) and posting (A.5).
 
 ## Full loop
@@ -198,7 +220,7 @@ Default `max_rounds` **5**. Stop loop if the same finding persists two rounds in
 
 ## Phase A — Review (each round)
 
-Do **not** edit code during review (before or after subagent launch).
+Do **not** edit code during review (before or after reviewer launch).
 
 ### A.1 Context (parent)
 
@@ -260,7 +282,7 @@ fi
 - Cannot add worktree (dirty / conflict) → blocker. Stash only after user confirmation
 - Pass `--repo owner/name` on all CLI calls from inside the worktree (`resolveRepo()` omits it only
   when cwd is the repo root)
-- Pass the **working cwd (worktree absolute path)** as the reviewer subagents' repository path (see
+- Pass the **working cwd (worktree absolute path)** as the reviewer sessions' repository path (see
   [reviewer-prompts.md](reviewer-prompts.md), "Repository path")
 
 ### A.2.5 Skills lint (parent, when PR touches `skills/`)
@@ -283,30 +305,37 @@ for routing triggers. Localized issue/PR templates belong in user output, not in
 
 Apply [Review selection policy](#review-selection-policy) to A.1's `hasCodeChanges` / `hasDocChanges` /
 `touchesSkills` flags and linked-issue presence to decide which of **Quality**, **Security**,
-**Documentation**, **Acceptance** run this round. Launch the selected roles as **readonly subagents in
-one message**; each runs once per round. Record which roles were skipped, and why, for A.4. Resolve each
-launched role's `subagent_type` via [Reviewer roles & host mapping](#reviewer-roles--host-mapping) —
-e.g. on Cursor `bugbot` / `security-review` / `general-purpose` / `general-purpose`, on Claude Code
-`code-reviewer` (or `general-purpose`) / `general-purpose` running `/security-review` /
-`general-purpose` / `general-purpose`.
+**Documentation**, **Acceptance** run this round. Launch the selected roles as **readonly,
+context-isolated reviewer sessions in parallel**; each runs once per round. Record which roles were
+skipped, and why, for A.4. Resolve each launched role's mechanism via
+[Reviewer roles & host mapping](#reviewer-roles--host-mapping) — e.g. on Codex, separate
+non-interactive `codex exec` invocations; on Cursor, `bugbot` / `security-review` / `general-purpose` /
+`general-purpose`; on Claude Code, isolated Task subagents using `code-reviewer` (or
+`general-purpose`) / `general-purpose` running `/security-review` / `general-purpose` /
+`general-purpose`.
 `description: "<Quality|Security|Documentation|Acceptance> review PR #<m> round <round>"`.
 
 Load each launched role's full prompt text from
 [`reviewer-prompts.md`](reviewer-prompts.md) — one shared Quality/Security prompt, plus a distinct
 Documentation prompt (fed the changed documentation files) and Acceptance prompt (fed the linked
-issue's Goal and AC). All three return the same findings JSON shape.
+issue's Goal and AC). Append the full `lh pr diff <m> --repo <repo>` output to every reviewer prompt.
+The parent may also include a compact metadata header (PR number, base/head refs, changed path list,
+round), but must not include the parent conversation transcript, implementation notes, test logs, the
+implementer's self-summary, or any other inherited history. Do not restrict the reviewers' independent
+repository exploration; the diff is the starting scope and objective input, not a ban on reading related
+files when needed. All three return the same findings JSON shape.
 
-Structured JSON output keeps A.4 merge/dedupe deterministic across hosts. If the host cannot pass a
-structured diff to the subagent, substitute a natural-language change description; the JSON return shape
-is unchanged.
+Structured JSON output keeps A.4 merge/dedupe deterministic across hosts. If a host cannot pass the
+literal diff body to the reviewer, mark that role as degraded in A.4 and substitute a natural-language
+change description; the JSON return shape is unchanged.
 
-On failure: retry once (re-resolve to the next mechanism in the mapping if the subagent type itself is
+On failure: retry once (re-resolve to the next mechanism in the mapping if the reviewer type itself is
 the failure).
 
 #### Optional: false-positive filter (high-noise diffs)
 
 When a reviewer returns many low-confidence findings, run a brief **adversarial verify** pass before
-posting: spawn one readonly skeptic subagent (any available type) prompted to *refute* each
+posting: spawn one readonly skeptic reviewer session (any available isolated type) prompted to *refute* each
 borderline finding (`{ "kept": bool, "reason": "<why>" }`). Guardrails so real signal is never lost:
 
 - **Never delete.** Refuted findings are not dropped — move them to a **`suppressed (low-confidence)`**
@@ -410,7 +439,7 @@ If overall `pass` or `--review-only` → full completion report. Otherwise → P
 
 ## Phase B — Fix (parent, fix phase only)
 
-**Do not call subagents.** Parent fixes directly on head.
+**Do not call reviewer sessions.** Parent fixes directly on head.
 
 ### B.1 Fix queue
 
@@ -502,5 +531,5 @@ lh-issue-create → (implementation) → lh-pr-review → lh-merge-ready → (hu
 ## Prohibited
 
 - Do **not** edit code during review phase (except fix phase)
-- Do not delegate fixes or `lh pr review` to subagents
+- Do not delegate fixes or `lh pr review` to reviewer sessions
 - Do not merge (final merge is human)
