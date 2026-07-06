@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { buildCodexSandboxArgs } from "../core/codex-launch.ts";
 import { isClaudeSessionId } from "../core/resume.ts";
+import { buildCodexSandboxArgs } from "../core/terminal/codex-launch.ts";
 import {
   legacyWorktreeBranch,
   legacyWorktreePath,

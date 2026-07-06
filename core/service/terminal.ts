@@ -304,7 +304,7 @@ function herdrRunner(cwd: string): HerdrCmdRunner {
 }
 
 // Opens (or reuses) the herdr workspace pinned to `worktreeCheckoutPath` and returns a tab safe to
-// pass to `agent start --tab`. The parsing-heavy dance lives in core/terminal-launch.ts's
+// pass to `agent start --tab`. The parsing-heavy dance lives in core/terminal/terminal-launch.ts's
 // acquireHerdrWorktreeTab so `lh dev --herdr` reuses it (#674); this thin wrapper just binds it to
 // runHerdr at the repo's local path. `cwd` is where the herdr client is spawned — irrelevant to the
 // `--session`-scoped calls themselves, but kept as r.local_path for consistency with the rest of

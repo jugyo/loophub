@@ -56,23 +56,6 @@ import {
   realGithubDeps,
   realGithubIssueDeps,
 } from "../github.ts";
-import { parseHerdrInactiveCleanupCandidates } from "../herdr-inactive-cleanup.ts";
-import {
-  type HerdrAgent,
-  type HerdrPullWorkspace,
-  herdrPullWorkspacesFromAgentList,
-  NO_PANE_ID_PREFIX,
-  paneRunsClaudeResume,
-  parseHerdrAgentList,
-  parseHerdrAgentPlacements,
-  parseHerdrAgentRead,
-  parseHerdrPaneLayout,
-  parseHerdrPaneProcessInfo,
-  parseHerdrSessionList,
-  parseHerdrTabList,
-  parseHerdrWorkspaceList,
-  reposWithRunningSession,
-} from "../herdr-status.ts";
 import { parseClosingIssueNumber } from "../links.ts";
 import {
   effectiveMergeMode,
@@ -137,6 +120,23 @@ import {
 } from "../session-usage.ts";
 import { databaseSize, repoCounts, tableRowCounts } from "../stats.ts";
 import * as S from "../store.ts";
+import { parseHerdrInactiveCleanupCandidates } from "../terminal/herdr-inactive-cleanup.ts";
+import {
+  type HerdrAgent,
+  type HerdrPullWorkspace,
+  herdrPullWorkspacesFromAgentList,
+  NO_PANE_ID_PREFIX,
+  paneRunsClaudeResume,
+  parseHerdrAgentList,
+  parseHerdrAgentPlacements,
+  parseHerdrAgentRead,
+  parseHerdrPaneLayout,
+  parseHerdrPaneProcessInfo,
+  parseHerdrSessionList,
+  parseHerdrTabList,
+  parseHerdrWorkspaceList,
+  reposWithRunningSession,
+} from "../terminal/herdr-status.ts";
 import {
   acquireHerdrWorktreeTab as acquireHerdrWorktreeTabCore,
   buildHerdrLaunchPlan,
@@ -159,7 +159,7 @@ import {
   parseHerdrTabId,
   parseHerdrWorkspaceId,
   type TerminalLaunchRepo,
-} from "../terminal-launch.ts";
+} from "../terminal/terminal-launch.ts";
 import { sweepPullUpdates } from "../watcher.ts";
 import {
   legacyWorktreePath,

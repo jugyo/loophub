@@ -1,6 +1,6 @@
 import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
-import { HERDR_INACTIVE_CLEANUP_INTERVAL_MS } from "../core/herdr-inactive-cleanup.ts";
 import { events, sessions, terminal } from "../core/service.ts";
+import { HERDR_INACTIVE_CLEANUP_INTERVAL_MS } from "../core/terminal/herdr-inactive-cleanup.ts";
 import { sweepPullUpdates } from "../core/watcher.ts";
 import { workerLog } from "./logger.ts";
 

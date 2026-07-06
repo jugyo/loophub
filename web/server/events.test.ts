@@ -289,7 +289,9 @@ test("startHerdrInactiveCleanup periodically closes old inactive Herdr panes onl
   const { startHerdrInactiveCleanup } = await import(
     "../../worker/maintenance.ts"
   );
-  const { herdrSessionName } = await import("../../core/terminal-launch.ts");
+  const { herdrSessionName } = await import(
+    "../../core/terminal/terminal-launch.ts"
+  );
 
   const repoPath = mkdtempSync(join(tmpdir(), "lh-herdr-cleanup-repo-"));
   const repo = S.createRepo("me/herdr-cleanup", repoPath);

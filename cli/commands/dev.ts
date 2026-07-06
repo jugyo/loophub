@@ -26,7 +26,7 @@ import {
   herdrWorkspaceFocusArgv,
   parseHerdrRootPaneId,
   parseHerdrTabId,
-} from "../../core/terminal-launch.ts";
+} from "../../core/terminal/terminal-launch.ts";
 import { flags, sub } from "../args.ts";
 import { display, fail, resolveRepo, run as runOp, svc } from "../context.ts";
 import {

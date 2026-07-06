@@ -3,11 +3,12 @@
 // crosses a process boundary, so every parser here is defensive — malformed or
 // unexpected output yields an empty result instead of throwing, because "herdr said
 // something we don't understand" must degrade to "no sessions", never to a 500.
+
+import { pullNumberFromWorktreePath } from "../worktree-path.ts";
 import {
   herdrSessionName,
   type TerminalLaunchRepo,
 } from "./terminal-launch.ts";
-import { pullNumberFromWorktreePath } from "./worktree-path.ts";
 
 /** One agent inside a herdr session, as shown in the sidebar. */
 export interface HerdrAgent {

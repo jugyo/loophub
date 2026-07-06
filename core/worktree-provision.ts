@@ -12,7 +12,7 @@ import {
 // Provisions the on-disk git worktree for a PR's (or, under scheme "legacy-issue", an issue's)
 // dev loop. Originally `cli/dev.ts`-only; lives in core so `core/service.ts` can provision a
 // worktree ahead of a herdr launch (terminal.launch), not just the `lh dev` CLI process — see
-// `core/terminal-launch.ts` / the herdr worktree-open flow.
+// `core/terminal/terminal-launch.ts` / the herdr worktree-open flow.
 
 // Resolve symlinks when the path exists; fall back to lexical normalization otherwise.
 function canonical(p: string): string {

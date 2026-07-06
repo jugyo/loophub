@@ -1,4 +1,4 @@
-import { configDir } from "./config.ts";
+import { configDir } from "../config.ts";
 
 export function buildCodexSandboxArgs(loopHubHome = configDir()): string[] {
   return [

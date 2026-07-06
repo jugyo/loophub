@@ -39,7 +39,7 @@ function initGitRepo(): string {
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
-  ({ herdrSessionName } = await import("./terminal-launch.ts"));
+  ({ herdrSessionName } = await import("./terminal/terminal-launch.ts"));
   ({ worktreeRoot } = await import("./config.ts"));
   ({ worktreePath } = await import("./worktree-path.ts"));
   mkdirSync(FAKE_BIN);

@@ -1,5 +1,5 @@
+import { pullNumberFromWorktreePath } from "../worktree-path.ts";
 import { HERDR_ID } from "./terminal-launch.ts";
-import { pullNumberFromWorktreePath } from "./worktree-path.ts";
 
 export const HERDR_INACTIVE_CLEANUP_INTERVAL_MS = 60_000;
 export const HERDR_INACTIVE_CLEANUP_THRESHOLD_MS = 10 * 60_000;

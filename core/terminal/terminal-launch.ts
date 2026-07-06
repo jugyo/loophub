@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
+import { type CodingAgent, codingAgent } from "../config.ts";
 import { buildCodexSandboxArgs } from "./codex-launch.ts";
-import { type CodingAgent, codingAgent } from "./config.ts";
 
 export interface TerminalLaunchRepo {
   full_name: string;
