@@ -16,6 +16,7 @@ import type {
   LinkedIssueWire,
   PullSummaryWire,
   PullWire,
+  RelatedSessionsUsageByKindWire,
   RelatedSessionsUsageWire,
   RelatedSessionWire,
   RepoWire,
@@ -262,6 +263,8 @@ export type PullRequest = PullWire;
 export type RelatedSession = RelatedSessionWire;
 
 export type RelatedSessionsUsage = RelatedSessionsUsageWire;
+
+export type RelatedSessionsUsageByKind = RelatedSessionsUsageByKindWire;
 
 /** Minimal repo identity attached to aggregated dashboard items. */
 export interface RepoRef {

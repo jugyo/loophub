@@ -387,7 +387,7 @@ export function relatedSessionsJSON(
   );
 }
 
-export interface RelatedSessionsUsageWire {
+export interface UsageTotalsWire {
   sessions_with_usage: number;
   input_tokens: number;
   cache_creation_input_tokens: number;
@@ -399,9 +399,19 @@ export interface RelatedSessionsUsageWire {
   has_unknown_cost: boolean;
 }
 
-export function relatedSessionsUsageJSON(
+// Same totals as UsageTotalsWire, scoped to sessions of one `kind` (dev/review/issue-create/...).
+export interface RelatedSessionsUsageByKindWire extends UsageTotalsWire {
+  kind: string;
+}
+
+export interface RelatedSessionsUsageWire extends UsageTotalsWire {
+  // Per-`kind` breakdown of the same totals (#810), sessions with no usage rows excluded.
+  by_kind: RelatedSessionsUsageByKindWire[];
+}
+
+function sumUsageTotals(
   sessions: Array<{ usage?: SessionUsageWire[] }>,
-): RelatedSessionsUsageWire {
+): UsageTotalsWire {
   const out = {
     sessions_with_usage: 0,
     input_tokens: 0,
@@ -434,6 +444,23 @@ export function relatedSessionsUsageJSON(
   out.cost_usd =
     out.sessions_with_usage === 0 || out.has_unknown_cost ? null : knownCost;
   return out;
+}
+
+export function relatedSessionsUsageJSON(
+  sessions: Array<{ kind?: string; usage?: SessionUsageWire[] }>,
+): RelatedSessionsUsageWire {
+  const byKind = new Map<string, Array<{ usage?: SessionUsageWire[] }>>();
+  for (const session of sessions) {
+    const kind = session.kind ?? "unknown";
+    const bucket = byKind.get(kind);
+    if (bucket) bucket.push(session);
+    else byKind.set(kind, [session]);
+  }
+  const by_kind = Array.from(byKind.entries())
+    .map(([kind, group]) => ({ kind, ...sumUsageTotals(group) }))
+    .filter((entry) => entry.sessions_with_usage > 0)
+    .sort((a, b) => a.kind.localeCompare(b.kind));
+  return { ...sumUsageTotals(sessions), by_kind };
 }
 
 export interface CommentWire {

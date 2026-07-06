@@ -1117,6 +1117,21 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
     cost_usd: null,
     has_unknown_cost: true,
   });
+  expect(pull.related_sessions_usage.by_kind).toMatchObject([
+    {
+      kind: "dev",
+      sessions_with_usage: 1,
+      total_tokens: 160,
+      has_unknown_cost: false,
+    },
+    {
+      kind: "review",
+      sessions_with_usage: 1,
+      total_tokens: 10,
+      cost_usd: null,
+      has_unknown_cost: true,
+    },
+  ]);
 
   rmSync(projectsDir, { recursive: true, force: true });
 });

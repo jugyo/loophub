@@ -31,7 +31,10 @@ import { isPullHerdrWorking } from "@/components/herdr-badge";
 import { Markdown } from "@/components/markdown";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { PullHerdrSection } from "@/components/pull-herdr-section";
-import { RelatedSessions } from "@/components/related-sessions";
+import {
+  RelatedSessions,
+  TokenUsageSummary,
+} from "@/components/related-sessions";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
@@ -150,12 +153,15 @@ export function PullDetail({
         {/* Above Sessions (#609): the live herdr terminal outranks the historical session
             list when deciding where to jump. Hides itself when no herdr session runs this PR. */}
         <PullHerdrSection owner={owner} repo={repo} pull={number} />
+        {(pull.related_sessions?.length ?? 0) > 0 &&
+        pull.related_sessions_usage ? (
+          <TokenUsageSummary usage={pull.related_sessions_usage} />
+        ) : null}
         <RelatedSessions
           owner={owner}
           repo={repo}
           pullNumber={number}
           sessions={pull.related_sessions}
-          usage={pull.related_sessions_usage}
           cwd={pull.worktree_path ?? undefined}
         />
         <HandoffTimeline
