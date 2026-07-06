@@ -8,6 +8,7 @@ import type {
   CodingAgent,
   HerdrAgent,
   HerdrCmdRunner,
+  HerdrIssueWorkspace,
   HerdrPullWorkspace,
   TerminalLaunchRepo,
 } from "./shared.ts";
@@ -22,6 +23,7 @@ import {
   HERDR_ID,
   herdrAgentFocusArgv,
   herdrCommandLine,
+  herdrIssueWorkspacesFromAgentList,
   herdrPaneCloseArgv,
   herdrPullWorkspacesFromAgentList,
   herdrSessionName,
@@ -242,6 +244,10 @@ export interface HerdrRepoSessions {
   // Running herdr workspaces pinned to a PR's worktree, keyed back to their PR number (#579) —
   // drives the issue-list "Herdr running" badge and its click-to-focus action.
   pull_workspaces: HerdrPullWorkspace[];
+  // Same running workspaces resolved to the *issue* each PR closes (#821) — drives the
+  // issue-detail "Agents" section (issue-herdr-section.tsx), the issue-keyed counterpart of
+  // pull_workspaces. Built from pull_workspaces via the DB PR→issue link (see sweepHerdrSessions).
+  issue_workspaces: HerdrIssueWorkspace[];
 }
 
 // Coalesces concurrent terminal.sessions calls onto one herdr sweep. Every client polls this
@@ -863,11 +869,31 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
         worktreeRoot(),
         repo.full_name,
       );
+      // PR→issue for the pulls a workspace resolves to, so herdrIssueWorkspacesFromAgentList can
+      // key the same panes by issue number (#821). The link is the PR's linked_issue_id, recorded
+      // when `lh dev` opened the PR (`Closes #<n>`); a PR with no linked issue is simply absent
+      // from the map and skipped there, matching the parser's degrade-to-empty tolerance.
+      const pullToIssue = new Map<number, number>();
+      for (const w of pullWorkspaces) {
+        const prRow = S.getIssue(repo.id, w.pull);
+        if (prRow?.kind !== "pull") continue;
+        const pull = S.getPull(prRow.id);
+        if (pull?.linked_issue_id == null) continue;
+        const linkedIssue = S.getIssueById(pull.linked_issue_id);
+        if (linkedIssue) pullToIssue.set(w.pull, linkedIssue.number);
+      }
+      const issueWorkspaces = herdrIssueWorkspacesFromAgentList(
+        agentsOut,
+        worktreeRoot(),
+        repo.full_name,
+        pullToIssue,
+      );
       return {
         repo: repo.full_name,
         session_name: sessionName,
         agents,
         pull_workspaces: pullWorkspaces,
+        issue_workspaces: issueWorkspaces,
       };
     }),
   );

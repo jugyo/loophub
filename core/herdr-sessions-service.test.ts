@@ -135,6 +135,7 @@ test("terminal.sessions groups running herdr agents by repo and drops agentless 
           },
         ],
         pull_workspaces: [],
+        issue_workspaces: [],
       },
     ]);
   } finally {
@@ -198,6 +199,81 @@ test("terminal.sessions maps a running agent's cwd back to its PR (#579)", async
           },
         ],
         pull_workspaces: [{ pull: 12, pane_id: "wP:p2", status: "working" }],
+        // PR 12 has no linked issue here, so nothing resolves to an issue.
+        issue_workspaces: [],
+      },
+    ]);
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+// #821: the issue-detail Agents section needs each running agent keyed back to the *issue* its PR
+// closes, not just the PR. terminal.sessions composes cwd→PR (as in #579 above) with the PR's
+// linked_issue_id (recorded when `lh dev` opened the PR) to fill issue_workspaces.
+test("terminal.sessions maps a running agent's PR back to its linked issue (#821)", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/issue-workspace",
+  });
+  const sessionName = herdrSessionName(repo);
+  // Sequential numbers per repo: #1 = the issue, #2 = the PR that closes it. The PR is created
+  // directly in the store (a bare temp repo has no head branch for pulls.create) and linked to the
+  // issue via linked_issue_id, mirroring what `lh dev` records when it opens the PR.
+  const issue = S.createIssue(repo.id, "issue", "the issue", "", "me");
+  const pr = S.createIssue(repo.id, "pull", "the PR", "", "me");
+  // createPull(issueId, head, base, headSha, linkedIssueId): the issue link is the 5th arg.
+  S.createPull(pr.id, "loophub/pr-2", "main", null, issue.id);
+  const prWorktree = worktreePath(worktreeRoot(), repo.full_name, pr.number);
+
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: `dev #${pr.number}`,
+          pane_id: "wI:p2",
+          foreground_cwd: prWorktree,
+        },
+      ],
+    },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `printf '%s' '${agents}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    const result = await svc.terminal.sessions();
+    expect(result.repos).toEqual([
+      {
+        repo: "me/issue-workspace",
+        session_name: sessionName,
+        agents: [
+          {
+            id: "wI:p2",
+            name: `dev #${pr.number}`,
+            status: "working",
+            pull: pr.number,
+            pull_closed: false,
+          },
+        ],
+        pull_workspaces: [
+          { pull: pr.number, pane_id: "wI:p2", status: "working" },
+        ],
+        issue_workspaces: [
+          { issue: issue.number, pane_id: "wI:p2", status: "working" },
+        ],
       },
     ]);
   } finally {

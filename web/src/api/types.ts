@@ -147,12 +147,30 @@ export interface HerdrPullWorkspace {
   status: string;
 }
 
+/**
+ * A running herdr agent's pane resolved to the *issue* its PR closes (`terminal/sessions`, #821 —
+ * the issue-detail Agents section). Issue-keyed counterpart of HerdrPullWorkspace; `pane_id` is a
+ * valid `terminal/focusAgent` target.
+ */
+export interface HerdrIssueWorkspace {
+  issue: number;
+  pane_id: string;
+  /** Raw herdr agent_status (known values: working | blocked | done | idle), same as HerdrAgent.status. */
+  status: string;
+}
+
 /** A repo's running herdr session and its agents (`terminal/sessions`, #495). */
 export interface HerdrRepoSessions {
   repo: string;
   session_name: string;
   agents: HerdrAgent[];
   pull_workspaces: HerdrPullWorkspace[];
+  /**
+   * Running agents resolved to the issue their PR closes (#821), driving the issue-detail Agents
+   * section. Optional here (required on the server): absent in payloads from a server predating
+   * #821 — findIssueHerdrWorkspace treats a missing value as an empty list.
+   */
+  issue_workspaces?: HerdrIssueWorkspace[];
 }
 
 export interface HerdrSessions {

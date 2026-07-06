@@ -19,6 +19,7 @@ import { IssueRow } from "@/components/dashboard-rows";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
 import { HerdrBadge, isPullHerdrWorking } from "@/components/herdr-badge";
+import { IssueHerdrSection } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { Markdown } from "@/components/markdown";
@@ -88,6 +89,8 @@ export function IssueDetail({
       <LinkedPullSummary owner={owner} repo={repo} issue={issue} />
 
       <GroupedIssues owner={owner} repo={repo} number={number} />
+
+      <IssueHerdrSection owner={owner} repo={repo} issue={number} />
 
       <RelatedSessions
         owner={owner}

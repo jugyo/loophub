@@ -120,7 +120,9 @@ import * as S from "../store.ts";
 import { parseHerdrInactiveCleanupCandidates } from "../terminal/herdr-inactive-cleanup.ts";
 import {
   type HerdrAgent,
+  type HerdrIssueWorkspace,
   type HerdrPullWorkspace,
+  herdrIssueWorkspacesFromAgentList,
   herdrPullWorkspacesFromAgentList,
   NO_PANE_ID_PREFIX,
   paneRunsClaudeResume,
@@ -182,6 +184,7 @@ export type {
   GithubIssueDeps,
   HerdrAgent,
   HerdrCmdRunner,
+  HerdrIssueWorkspace,
   HerdrPullWorkspace,
   LoopEvent,
   MergeMode,
@@ -231,6 +234,7 @@ export {
   handoffJSON,
   herdrAgentFocusArgv,
   herdrCommandLine,
+  herdrIssueWorkspacesFromAgentList,
   herdrPaneCloseArgv,
   herdrPaneJSON,
   herdrPullWorkspacesFromAgentList,
