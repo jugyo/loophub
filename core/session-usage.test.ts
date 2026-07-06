@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import {
   aggregateUsage,
   calculateCostUsd,
+  parseClaudeSubagentJsonl,
   parseClaudeUsageJsonl,
   parseCodexRolloutJsonl,
 } from "./session-usage.ts";
@@ -44,6 +45,78 @@ test("parseClaudeUsageJsonl extracts assistant usage and dedupes message ids", (
     model: "claude-sonnet-4-6-20260601",
     input_tokens: 100,
   });
+});
+
+test("parseClaudeSubagentJsonl extracts sidechain metadata and usage", () => {
+  const text = [
+    JSON.stringify({
+      type: "user",
+      isSidechain: true,
+      agentId: "agent-1",
+      sessionId: "parent-session",
+      message: { content: "Role: Security reviewer\nCheck the diff." },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      isSidechain: true,
+      agentId: "agent-1",
+      attributionAgent: "general-purpose",
+      message: {
+        id: "msg_1",
+        model: "claude-haiku-3-5-20241022",
+        usage: {
+          input_tokens: 10,
+          cache_creation_input_tokens: 2,
+          cache_read_input_tokens: 3,
+          output_tokens: 4,
+        },
+      },
+    }),
+  ].join("\n");
+
+  const parsed = parseClaudeSubagentJsonl(text, "fallback");
+  expect(parsed).toMatchObject({
+    sourceId: "agent-1",
+    parentSourceId: "parent-session",
+    label: "Security reviewer",
+    kind: "claude-sidechain",
+  });
+  expect(parsed.entries[0]).toMatchObject({
+    message_id: "msg_1",
+    model: "claude-haiku-3-5-20241022",
+    input_tokens: 10,
+    output_tokens: 4,
+  });
+});
+
+test("parseClaudeSubagentJsonl does not persist arbitrary prompt role text", () => {
+  const text = [
+    JSON.stringify({
+      type: "user",
+      isSidechain: true,
+      agentId: "agent-1",
+      sessionId: "parent-session",
+      message: { content: "Role: customer password hunter\nSecret task." },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      isSidechain: true,
+      agentId: "agent-1",
+      attributionAgent: "general-purpose",
+      message: {
+        id: "msg_1",
+        model: "claude-haiku-3-5-20241022",
+        usage: {
+          input_tokens: 10,
+          output_tokens: 4,
+        },
+      },
+    }),
+  ].join("\n");
+
+  expect(parseClaudeSubagentJsonl(text, "fallback").label).toBe(
+    "general-purpose",
+  );
 });
 
 test("aggregateUsage computes known model cost and leaves unknown models null", () => {

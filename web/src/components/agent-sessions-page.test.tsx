@@ -61,6 +61,22 @@ const SESSIONS: AgentSession[] = [
         updated_at: "2026-07-04T12:00:00Z",
       },
     ],
+    subagent_usage: [
+      {
+        session_id: "s-new",
+        source_id: "subagent-thread",
+        parent_source_id: "root-thread",
+        label: "Security reviewer",
+        kind: "codex-child-rollout",
+        model: "gpt-5.5",
+        input_tokens: 100,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 200,
+        output_tokens: 50,
+        cost_usd: 0.002,
+        updated_at: "2026-07-04T12:00:00Z",
+      },
+    ],
     linked_targets: [
       {
         repo: "jugyo/loophub",
@@ -146,7 +162,11 @@ describe("AgentSessionsPage", () => {
     expect(within(rows[1]).getByText("430")).toBeTruthy();
     expect(within(rows[1]).getByText("4,660")).toBeTruthy();
     expect(within(rows[1]).getByText("$0.01")).toBeTruthy();
-    expect(within(rows[1]).getByText("n/a")).toBeTruthy();
+    expect(within(rows[1]).getByText("Security reviewer")).toBeTruthy();
+    expect(
+      within(rows[1]).getByText("in 100 · cw 0 · cr 200 · out 50"),
+    ).toBeTruthy();
+    expect(within(rows[1]).getByText("350 · $0.0020")).toBeTruthy();
     expect(within(rows[1]).getByTitle("2026-07-04T12:00:00Z").textContent).toBe(
       "1h ago",
     );

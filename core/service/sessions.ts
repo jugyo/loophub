@@ -1,4 +1,9 @@
-import type { CodexRolloutScan, UsageEntry } from "./shared.ts";
+import type {
+  ClaudeSubagentTranscript,
+  ClaudeSubagentTranscriptCandidate,
+  CodexRolloutScan,
+  UsageEntry,
+} from "./shared.ts";
 import {
   actorFor,
   agentSessionJSON,
@@ -7,10 +12,12 @@ import {
   createClaudeTranscriptIndex,
   createCodexRolloutScan,
   ensureWritable,
+  findClaudeSubagentTranscriptCandidates,
   findClaudeTranscript,
   findCodexRollouts,
   issueOr404,
   legacyWorktreePath,
+  parseClaudeSubagentTranscript,
   parseClaudeUsageJsonl,
   RUNTIME_CODEX,
   readTranscriptSlice,
@@ -144,6 +151,73 @@ function codexCursorMatchesScan(cursor: any, scan: CodexRolloutScan): boolean {
   }
 
   return cursor.cursor_offset === size && cursor.mtime_ms === mtimeMs;
+}
+
+function transcriptSetStats(
+  transcript: { path: string; size: number; mtimeMs: number },
+  subagents: ClaudeSubagentTranscriptCandidate[],
+) {
+  const files = [transcript, ...subagents];
+  return {
+    transcriptPath: [
+      transcript.path,
+      ...subagents.map(
+        (x) => `subagent:${x.fallbackSourceId}:${x.size}:${x.mtimeMs}`,
+      ),
+    ].join("\n"),
+    size: files.reduce((sum, x) => sum + x.size, 0),
+    mtimeMs: Math.max(...files.map((x) => x.mtimeMs)),
+  };
+}
+
+function saveClaudeSubagentUsage(
+  sessionId: string,
+  subagents: ClaudeSubagentTranscript[],
+): void {
+  for (const subagent of subagents) {
+    for (const usage of aggregateUsage(subagent.entries)) {
+      S.upsertSessionSubagentUsage(sessionId, {
+        source_id: subagent.sourceId,
+        parent_source_id: subagent.parentSourceId,
+        label: subagent.label,
+        kind: subagent.kind,
+        ...usage,
+      });
+    }
+  }
+}
+
+function parseClaudeSubagentTranscripts(
+  files: ClaudeSubagentTranscriptCandidate[],
+): ClaudeSubagentTranscript[] {
+  return files
+    .map(parseClaudeSubagentTranscript)
+    .filter((x): x is ClaudeSubagentTranscript => x != null);
+}
+
+function saveCodexSubagentUsage(
+  sessionId: string,
+  rollouts: {
+    path: string;
+    threadId: string | null;
+    parentThreadId: string | null;
+    entries: UsageEntry[];
+  }[],
+): void {
+  for (const rollout of rollouts) {
+    if (!rollout.parentThreadId) continue;
+    const fallbackId = rollout.path.split(/[\\/]/).pop() ?? "unknown-rollout";
+    const sourceId = rollout.threadId ?? `rollout:${fallbackId}`;
+    for (const usage of aggregateUsage(rollout.entries)) {
+      S.upsertSessionSubagentUsage(sessionId, {
+        source_id: sourceId,
+        parent_source_id: rollout.parentThreadId,
+        label: rollout.threadId ? `Codex thread ${rollout.threadId}` : null,
+        kind: "codex-child-rollout",
+        ...usage,
+      });
+    }
+  }
 }
 
 export const sessions = {
@@ -321,6 +395,14 @@ export const sessions = {
           codexSessionScanFingerprints.get(row.id) === scanFingerprint &&
           codexCursorMatchesScan(cursor, codexScan)
         ) {
+          if (!S.hasSessionSubagentUsage(row.id)) {
+            const rollouts = findCodexRollouts({
+              ...target,
+              sessionsDir: input.codexSessionsDir,
+              scan: codexScan,
+            });
+            saveCodexSubagentUsage(row.id, rollouts);
+          }
           return {
             session_id: row.id,
             status: "skipped",
@@ -355,6 +437,9 @@ export const sessions = {
           cursor.cursor_offset === size &&
           cursor.mtime_ms === mtimeMs;
         if (unchanged) {
+          if (!S.hasSessionSubagentUsage(row.id)) {
+            saveCodexSubagentUsage(row.id, rollouts);
+          }
           if (scanFingerprint) {
             codexSessionScanFingerprints.set(row.id, scanFingerprint);
           }
@@ -372,6 +457,7 @@ export const sessions = {
         for (const usage of aggregateUsage(fresh)) {
           S.upsertSessionUsage(row.id, usage);
         }
+        saveCodexSubagentUsage(row.id, rollouts);
         for (const usage of S.listSessionUsage(row.id)) {
           S.rewriteSessionUsageCost(
             row.id,
@@ -412,34 +498,46 @@ export const sessions = {
         };
       }
 
+      const subagentCandidates =
+        findClaudeSubagentTranscriptCandidates(transcript);
+      const transcriptStats = transcriptSetStats(
+        transcript,
+        subagentCandidates,
+      );
       const cursor = S.getSessionUsageCursor(row.id);
-      const sameFile = cursor?.transcript_path === transcript.path;
+      const sameFile =
+        cursor?.transcript_path === transcriptStats.transcriptPath;
       const unchanged =
         !input.full &&
         sameFile &&
-        cursor.cursor_offset === transcript.size &&
-        cursor.mtime_ms === transcript.mtimeMs;
+        cursor.cursor_offset === transcriptStats.size &&
+        cursor.mtime_ms === transcriptStats.mtimeMs;
       if (unchanged) {
         return {
           session_id: row.id,
           status: "skipped",
-          transcript_path: transcript.path,
+          transcript_path: transcriptStats.transcriptPath,
           messages: 0,
           models: S.listSessionUsage(row.id).map(sessionUsageJSON),
         };
       }
 
+      const subagents = parseClaudeSubagentTranscripts(subagentCandidates);
       const canContinue =
         !input.full &&
+        subagentCandidates.length === 0 &&
         sameFile &&
         cursor &&
         cursor.cursor_offset < transcript.size;
       const offset = canContinue ? cursor.cursor_offset : 0;
       if (!canContinue) S.resetSessionUsage(row.id);
 
-      const parsed = parseClaudeUsageJsonl(
-        readTranscriptSlice(transcript.path, offset),
-      );
+      const parsed = canContinue
+        ? parseClaudeUsageJsonl(readTranscriptSlice(transcript.path, offset))
+        : [
+            ...parseClaudeUsageJsonl(readTranscriptSlice(transcript.path, 0)),
+            ...subagents.flatMap((subagent) => subagent.entries),
+          ];
       const fresh: UsageEntry[] = [];
       for (const entry of parsed) {
         if (S.insertSessionUsageMessage(row.id, entry.message_id))
@@ -449,6 +547,7 @@ export const sessions = {
       for (const usage of aggregateUsage(fresh)) {
         S.upsertSessionUsage(row.id, usage);
       }
+      if (!canContinue) saveClaudeSubagentUsage(row.id, subagents);
       for (const usage of S.listSessionUsage(row.id)) {
         S.rewriteSessionUsageCost(
           row.id,
@@ -459,15 +558,15 @@ export const sessions = {
 
       S.upsertSessionUsageCursor({
         sessionId: row.id,
-        transcriptPath: transcript.path,
-        cursorOffset: transcript.size,
-        mtimeMs: transcript.mtimeMs,
+        transcriptPath: transcriptStats.transcriptPath,
+        cursorOffset: transcriptStats.size,
+        mtimeMs: transcriptStats.mtimeMs,
       });
 
       return {
         session_id: row.id,
         status: fresh.length ? "updated" : "skipped",
-        transcript_path: transcript.path,
+        transcript_path: transcriptStats.transcriptPath,
         messages: fresh.length,
         models: S.listSessionUsage(row.id).map(sessionUsageJSON),
       };

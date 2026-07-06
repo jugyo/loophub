@@ -26,20 +26,14 @@ afterEach(() => {
 describe("ThemeToggle", () => {
   it("toggles the theme and persists the choice", () => {
     render(<ThemeToggle />);
-    const button = screen.getByRole("button", {
-      name: /switch to light theme/i,
-    });
+    const button = screen.getByRole("button", { name: /light theme/i });
 
     fireEvent.click(button);
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
-    expect(
-      screen.getByRole("button", { name: /switch to dark theme/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /dark theme/i })).toBeTruthy();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /switch to dark theme/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /dark theme/i }));
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });

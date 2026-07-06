@@ -162,16 +162,21 @@ test("startPullSweep fires pull_request.updated on head SHA change, no-ops when 
 
   const stop = startPullSweep(20);
   try {
-    await new Promise((r) => setTimeout(r, 60)); // first tick records baseline, emits nothing
-    expect(countUpdates()).toBe(0);
-    expect(S.getPull(pull.id).head_sha).toBe(
-      await revParse(repoPath, "loophub/issue-x"),
+    const initialHead = await revParse(repoPath, "loophub/issue-x");
+    await waitUntil(
+      () => S.getPull(pull.id).head_sha === initialHead,
+      "pull sweep baseline head",
     );
+    expect(countUpdates()).toBe(0);
 
     // New commit moves the branch head -> next sweep should emit exactly one update.
     writeFileSync(join(repoPath, "f.txt"), "c2\n");
     await git(repoPath, ["commit", "-qam", "c2"]);
-    await new Promise((r) => setTimeout(r, 60));
+    const updatedHead = await revParse(repoPath, "loophub/issue-x");
+    await waitUntil(
+      () => S.getPull(pull.id).head_sha === updatedHead && countUpdates() === 1,
+      "pull sweep updated head",
+    );
     expect(countUpdates()).toBe(1);
 
     // No further commits -> unchanged head is a no-op (no new DB write).

@@ -260,6 +260,25 @@ CREATE TABLE IF NOT EXISTS session_usage (
   PRIMARY KEY (session_id, model)
 );
 
+CREATE TABLE IF NOT EXISTS session_usage_subagents (
+  session_id                  TEXT NOT NULL REFERENCES agent_sessions(id),
+  source_id                   TEXT NOT NULL,
+  parent_source_id            TEXT,
+  label                       TEXT,
+  kind                        TEXT NOT NULL,
+  model                       TEXT NOT NULL,
+  input_tokens                INTEGER NOT NULL DEFAULT 0,
+  cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_input_tokens     INTEGER NOT NULL DEFAULT 0,
+  output_tokens               INTEGER NOT NULL DEFAULT 0,
+  cost_usd                    REAL,
+  updated_at                  TEXT NOT NULL,
+  PRIMARY KEY (session_id, source_id, model)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_usage_subagents_session
+  ON session_usage_subagents(session_id);
+
 CREATE TABLE IF NOT EXISTS session_usage_cursors (
   session_id      TEXT PRIMARY KEY REFERENCES agent_sessions(id),
   transcript_path TEXT NOT NULL,

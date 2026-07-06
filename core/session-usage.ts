@@ -20,6 +20,13 @@ export interface ModelUsage extends TokenUsage {
   cost_usd: number | null;
 }
 
+export interface SubagentUsage extends ModelUsage {
+  source_id: string;
+  parent_source_id: string | null;
+  label: string | null;
+  kind: string;
+}
+
 export interface UsagePrice {
   input: number;
   cacheCreation: number;
@@ -31,6 +38,18 @@ export interface TranscriptCandidate {
   path: string;
   size: number;
   mtimeMs: number;
+}
+
+export interface ClaudeSubagentTranscript extends TranscriptCandidate {
+  sourceId: string;
+  parentSourceId: string | null;
+  label: string | null;
+  kind: "claude-sidechain";
+  entries: UsageEntry[];
+}
+
+export interface ClaudeSubagentTranscriptCandidate extends TranscriptCandidate {
+  fallbackSourceId: string;
 }
 
 export interface ClaudeTranscriptIndex {
@@ -203,6 +222,45 @@ export function parseClaudeUsageJsonl(text: string): UsageEntry[] {
   return entries;
 }
 
+export function parseClaudeSubagentJsonl(
+  text: string,
+  fallbackSourceId: string,
+): Omit<ClaudeSubagentTranscript, "path" | "size" | "mtimeMs"> {
+  let sourceId: string | null = null;
+  let parentSourceId: string | null = null;
+  let attributionAgent: string | null = null;
+  let attributionSkill: string | null = null;
+  let roleLabel: string | null = null;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let row: any;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    sourceId ??= stringValue(row?.agentId);
+    parentSourceId ??= stringValue(row?.sessionId);
+    attributionAgent ??= stringValue(row?.attributionAgent);
+    attributionSkill ??= stringValue(row?.attributionSkill);
+    roleLabel ??= knownRoleLabelFromPrompt(row?.message?.content);
+  }
+
+  const label =
+    roleLabel ??
+    (attributionAgent && attributionSkill
+      ? `${attributionAgent} / ${attributionSkill}`
+      : (attributionAgent ?? attributionSkill ?? sourceId ?? fallbackSourceId));
+  return {
+    sourceId: sourceId ?? fallbackSourceId,
+    parentSourceId,
+    label: truncateLabel(label),
+    kind: "claude-sidechain",
+    entries: parseClaudeUsageJsonl(text),
+  };
+}
+
 function objectValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -211,6 +269,32 @@ function objectValue(value: unknown): Record<string, unknown> | null {
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function truncateLabel(value: string | null, max = 160): string | null {
+  if (!value) return null;
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (!compact) return null;
+  return compact.length > max ? `${compact.slice(0, max - 1)}...` : compact;
+}
+
+function knownRoleLabelFromPrompt(content: unknown): string | null {
+  if (typeof content !== "string") return null;
+  const firstLine = content
+    .split(/\r?\n/)
+    .find((line) => line.trim())
+    ?.trim();
+  const match = /^Role:\s*([A-Za-z][A-Za-z /_-]{0,80})(?:\s*\(|\s*[-—]|$)/.exec(
+    firstLine ?? "",
+  );
+  const role = match?.[1]?.toLowerCase();
+  if (!role) return null;
+  if (/\bquality\b|\bbugbot\b/.test(role)) return "Quality reviewer";
+  if (/\bsecurity\b/.test(role)) return "Security reviewer";
+  if (/\bacceptance\b/.test(role)) return "Acceptance reviewer";
+  if (/\bdocumentation\b|\bdocs?\b/.test(role)) return "Documentation reviewer";
+  if (/\bcode\b/.test(role)) return "Code reviewer";
+  return null;
 }
 
 function rolloutPayload(row: Record<string, unknown>): Record<string, unknown> {
@@ -421,6 +505,53 @@ export function findClaudeTranscript(
   }
   matches.sort((a, b) => b.mtimeMs - a.mtimeMs);
   return matches[0] ?? null;
+}
+
+export function findClaudeSubagentTranscriptCandidates(
+  transcript: TranscriptCandidate,
+): ClaudeSubagentTranscriptCandidate[] {
+  const sessionDir = transcript.path.replace(/\.jsonl$/, "");
+  const subagentsDir = join(sessionDir, "subagents");
+  if (!existsSync(subagentsDir)) return [];
+  const out: ClaudeSubagentTranscriptCandidate[] = [];
+  for (const dirent of readdirSync(subagentsDir, { withFileTypes: true })) {
+    if (!dirent.isFile() || !dirent.name.endsWith(".jsonl")) continue;
+    const path = join(subagentsDir, dirent.name);
+    const st = statSync(path);
+    if (!st.isFile()) continue;
+    out.push({
+      path,
+      size: st.size,
+      mtimeMs: st.mtimeMs,
+      fallbackSourceId: dirent.name.replace(/\.jsonl$/, ""),
+    });
+  }
+  out.sort((a, b) => a.path.localeCompare(b.path));
+  return out;
+}
+
+export function parseClaudeSubagentTranscript(
+  file: ClaudeSubagentTranscriptCandidate,
+): ClaudeSubagentTranscript | null {
+  const parsed = parseClaudeSubagentJsonl(
+    readFileSync(file.path, "utf8"),
+    file.fallbackSourceId,
+  );
+  if (parsed.entries.length === 0) return null;
+  return {
+    path: file.path,
+    size: file.size,
+    mtimeMs: file.mtimeMs,
+    ...parsed,
+  };
+}
+
+export function findClaudeSubagentTranscripts(
+  transcript: TranscriptCandidate,
+): ClaudeSubagentTranscript[] {
+  return findClaudeSubagentTranscriptCandidates(transcript)
+    .map(parseClaudeSubagentTranscript)
+    .filter((x): x is ClaudeSubagentTranscript => x != null);
 }
 
 export function readTranscriptSlice(path: string, offset: number): string {

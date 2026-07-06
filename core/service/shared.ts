@@ -113,14 +113,22 @@ import {
   reviewNoteJSON,
   sessionUsageJSON,
 } from "../serialize.ts";
-import type { CodexRolloutScan, UsageEntry } from "../session-usage.ts";
+import type {
+  ClaudeSubagentTranscript,
+  ClaudeSubagentTranscriptCandidate,
+  CodexRolloutScan,
+  UsageEntry,
+} from "../session-usage.ts";
 import {
   aggregateUsage,
   calculateCostUsd,
   createClaudeTranscriptIndex,
   createCodexRolloutScan,
+  findClaudeSubagentTranscriptCandidates,
+  findClaudeSubagentTranscripts,
   findClaudeTranscript,
   findCodexRollouts,
+  parseClaudeSubagentTranscript,
   parseClaudeUsageJsonl,
   readTranscriptSlice,
 } from "../session-usage.ts";
@@ -164,6 +172,8 @@ import {
 
 export * as S from "../store.ts";
 export type {
+  ClaudeSubagentTranscript,
+  ClaudeSubagentTranscriptCandidate,
   CodexRolloutScan,
   CodingAgent,
   FollowOptions,
@@ -207,6 +217,8 @@ export {
   effectiveMergeMode,
   existsSync,
   fileAtRef,
+  findClaudeSubagentTranscriptCandidates,
+  findClaudeSubagentTranscripts,
   findClaudeTranscript,
   findCodexRollouts,
   followEvents,
@@ -242,6 +254,7 @@ export {
   NO_PANE_ID_PREFIX,
   normalizeMergeMode,
   paneRunsClaudeResume,
+  parseClaudeSubagentTranscript,
   parseClaudeUsageJsonl,
   parseClosingIssueNumber,
   parseGithubIssueUrl,

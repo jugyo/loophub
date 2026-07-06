@@ -376,6 +376,95 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   rmSync(projectsDir, { recursive: true, force: true });
 });
 
+test("sessions.usageSync imports Claude sidechain usage as subagent detail", () => {
+  const sessionId = "99999999-0000-0000-0000-0000000000cc";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-pr-review",
+    session: sessionId,
+    runtime: "claude-code",
+    kind: "review",
+  });
+  const projectsDir = mkdtempSync(join(tmpdir(), "lh-claude-subagents-"));
+  const projectDir = join(projectsDir, "repo-worktree");
+  const subagentDir = join(projectDir, sessionId, "subagents");
+  mkdirSync(subagentDir, { recursive: true });
+  writeFileSync(
+    join(projectDir, `${sessionId}.jsonl`),
+    assistantLine("parent_msg", "claude-sonnet-4-6-20260601", {
+      input_tokens: 100,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 10,
+      output_tokens: 5,
+    }),
+  );
+  const subagentPath = join(subagentDir, "agent-security.jsonl");
+  writeFileSync(
+    subagentPath,
+    [
+      JSON.stringify({
+        type: "user",
+        isSidechain: true,
+        agentId: "agent-security",
+        sessionId,
+        message: { content: "Role: Security reviewer\nReview only." },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        isSidechain: true,
+        agentId: "agent-security",
+        attributionAgent: "general-purpose",
+        message: {
+          id: "sub_msg",
+          model: "claude-haiku-3-5-20241022",
+          usage: {
+            input_tokens: 20,
+            cache_creation_input_tokens: 2,
+            cache_read_input_tokens: 3,
+            output_tokens: 4,
+          },
+        },
+      }),
+    ].join("\n"),
+  );
+
+  const synced = svc.sessions.usageSync({ sessionId, projectsDir });
+  expect(synced).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
+  expect(synced.sessions[0].messages).toBe(2);
+  const session = svc.sessions.get(sessionId) as any;
+  expect(session.usage).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        model: "claude-sonnet-4-6-20260601",
+        input_tokens: 100,
+      }),
+      expect.objectContaining({
+        model: "claude-haiku-3-5-20241022",
+        input_tokens: 20,
+      }),
+    ]),
+  );
+  expect(session.subagent_usage[0]).toMatchObject({
+    source_id: "agent-security",
+    parent_source_id: sessionId,
+    label: "Security reviewer",
+    kind: "claude-sidechain",
+    model: "claude-haiku-3-5-20241022",
+    input_tokens: 20,
+    output_tokens: 4,
+  });
+
+  chmodSync(subagentPath, 0);
+  try {
+    const unchanged = svc.sessions.usageSync({ sessionId, projectsDir });
+    expect(unchanged).toMatchObject({ synced: 0, skipped: 1, missing: 0 });
+  } finally {
+    chmodSync(subagentPath, 0o600);
+  }
+
+  rmSync(projectsDir, { recursive: true, force: true });
+});
+
 test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd", async () => {
   const issue = svc.issues.create("me/proj", { title: "codex usage" });
   const sessionId = "99999999-0000-0000-0000-0000000000cd";
@@ -475,6 +564,27 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
     output_tokens: 7,
   });
   expect(svc.sessions.get(sessionId).usage[0].cost_usd).toBeCloseTo(0.00077);
+  expect((svc.sessions.get(sessionId) as any).subagent_usage[0]).toMatchObject({
+    source_id: "subagent-thread",
+    parent_source_id: "root-thread",
+    label: "Codex thread subagent-thread",
+    kind: "codex-child-rollout",
+    model: "gpt-5.5",
+    input_tokens: 30,
+    output_tokens: 2,
+  });
+  D.db.run(`DELETE FROM session_usage_subagents WHERE session_id = ?`, [
+    sessionId,
+  ]);
+  const backfilled = svc.sessions.usageSync({ sessionId, codexSessionsDir });
+  expect(backfilled).toMatchObject({ synced: 0, skipped: 1, missing: 0 });
+  expect((svc.sessions.get(sessionId) as any).subagent_usage[0]).toMatchObject({
+    source_id: "subagent-thread",
+    parent_source_id: "root-thread",
+    kind: "codex-child-rollout",
+    input_tokens: 30,
+    output_tokens: 2,
+  });
 
   const rolloutFiles = [
     join(dayDir, "rollout-main.jsonl"),

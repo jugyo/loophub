@@ -111,6 +111,9 @@ export function agentSessionJSON(
   if (row.kind) out.kind = row.kind;
   const usage = S.listSessionUsage(row.id);
   if (usage.length) out.usage = usage.map(sessionUsageJSON);
+  const subagentUsage = S.listSessionSubagentUsage(row.id);
+  if (subagentUsage.length)
+    out.subagent_usage = subagentUsage.map(sessionSubagentUsageJSON);
   if (opts.withLinkedTargets) {
     const linkedTargets = S.listSessionLinkedTargets(row.id);
     if (linkedTargets.length)
@@ -132,6 +135,23 @@ export function sessionLinkedTargetJSON(row: any) {
 export function sessionUsageJSON(row: any) {
   return {
     session_id: row.session_id,
+    model: row.model,
+    input_tokens: row.input_tokens,
+    cache_creation_input_tokens: row.cache_creation_input_tokens,
+    cache_read_input_tokens: row.cache_read_input_tokens,
+    output_tokens: row.output_tokens,
+    cost_usd: row.cost_usd ?? null,
+    updated_at: row.updated_at,
+  };
+}
+
+export function sessionSubagentUsageJSON(row: any) {
+  return {
+    session_id: row.session_id,
+    source_id: row.source_id,
+    parent_source_id: row.parent_source_id ?? null,
+    label: row.label ?? null,
+    kind: row.kind,
     model: row.model,
     input_tokens: row.input_tokens,
     cache_creation_input_tokens: row.cache_creation_input_tokens,

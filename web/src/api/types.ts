@@ -298,6 +298,13 @@ export interface SessionUsage {
   updated_at: string;
 }
 
+export interface SessionSubagentUsage extends SessionUsage {
+  source_id: string;
+  parent_source_id: string | null;
+  label: string | null;
+  kind: string;
+}
+
 export interface SessionLinkedTarget {
   repo: string;
   kind: "issue" | "pull";
@@ -317,6 +324,7 @@ export interface AgentSession {
   created_at: string;
   updated_at: string;
   usage?: SessionUsage[];
+  subagent_usage?: SessionSubagentUsage[];
   linked_targets?: SessionLinkedTarget[];
 }
 
@@ -478,6 +486,8 @@ export interface RelatedSession {
   linked_at: string | null;
   /** Model-level token usage and API-equivalent cost, when synced for this session. */
   usage?: SessionUsage[];
+  /** Subagent-level usage detail; drill-down only, not added to aggregate totals again. */
+  subagent_usage?: SessionSubagentUsage[];
   resume: { resumable: boolean; reason?: string };
 }
 

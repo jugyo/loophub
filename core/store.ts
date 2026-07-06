@@ -1,6 +1,6 @@
 import { db, now } from "./db.ts";
 import { formatEvent, publishEvent } from "./event-hub.ts";
-import type { ModelUsage } from "./session-usage.ts";
+import type { ModelUsage, SubagentUsage } from "./session-usage.ts";
 import { assertSafeRepoSegments } from "./worktree-path.ts";
 
 export interface Repo {
@@ -930,6 +930,28 @@ export function listSessionUsage(sessionId: string): any[] {
     .all(sessionId);
 }
 
+export function listSessionSubagentUsage(sessionId: string): any[] {
+  return db
+    .query(
+      `SELECT *
+       FROM session_usage_subagents
+       WHERE session_id = ?
+       ORDER BY source_id, model`,
+    )
+    .all(sessionId);
+}
+
+export function hasSessionSubagentUsage(sessionId: string): boolean {
+  return !!db
+    .query(
+      `SELECT 1 AS ok
+       FROM session_usage_subagents
+       WHERE session_id = ?
+       LIMIT 1`,
+    )
+    .get(sessionId);
+}
+
 export function listAllSessionUsage(): any[] {
   return db
     .query(
@@ -950,6 +972,9 @@ export function getSessionUsageCursor(sessionId: string): any | null {
 
 export function resetSessionUsage(sessionId: string) {
   db.run(`DELETE FROM session_usage WHERE session_id = ?`, [sessionId]);
+  db.run(`DELETE FROM session_usage_subagents WHERE session_id = ?`, [
+    sessionId,
+  ]);
   db.run(`DELETE FROM session_usage_cursors WHERE session_id = ?`, [sessionId]);
   db.run(`DELETE FROM session_usage_messages WHERE session_id = ?`, [
     sessionId,
@@ -1000,6 +1025,43 @@ export function upsertSessionUsage(sessionId: string, usage: ModelUsage) {
       usage.output_tokens,
       usage.cost_usd,
       t,
+    ],
+  );
+}
+
+export function upsertSessionSubagentUsage(
+  sessionId: string,
+  usage: SubagentUsage,
+) {
+  db.run(
+    `INSERT INTO session_usage_subagents
+       (session_id, source_id, parent_source_id, label, kind, model,
+        input_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+        output_tokens, cost_usd, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(session_id, source_id, model) DO UPDATE SET
+       parent_source_id = excluded.parent_source_id,
+       label = excluded.label,
+       kind = excluded.kind,
+       input_tokens = excluded.input_tokens,
+       cache_creation_input_tokens = excluded.cache_creation_input_tokens,
+       cache_read_input_tokens = excluded.cache_read_input_tokens,
+       output_tokens = excluded.output_tokens,
+       cost_usd = excluded.cost_usd,
+       updated_at = excluded.updated_at`,
+    [
+      sessionId,
+      usage.source_id,
+      usage.parent_source_id,
+      usage.label,
+      usage.kind,
+      usage.model,
+      usage.input_tokens,
+      usage.cache_creation_input_tokens,
+      usage.cache_read_input_tokens,
+      usage.output_tokens,
+      usage.cost_usd,
+      now(),
     ],
   );
 }
