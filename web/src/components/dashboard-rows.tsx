@@ -335,8 +335,8 @@ const STATUS_TEXT: Record<StatusWordTone, string> = {
 };
 
 // Muted sub-row under an issue title carrying its linked PR: a toned `PR #n`
-// link pill, the single status word, and the diff total. Its own PR link (not
-// the issue title link), so the row exposes two distinct destinations.
+// link pill and the single status word. Its own PR link (not the issue title
+// link), so the row exposes two distinct destinations.
 function LinkedPullSubRow({
   owner,
   repo,
@@ -360,7 +360,6 @@ function LinkedPullSubRow({
   // pass 済みなら、緑にまとめられた未マージ群の中から一目で識別できるよう
   // ステータス語にチェックアイコンを添える。他の未マージ状態には出さない。
   const passed = status?.tone === "review-passed";
-  const files = pull.changed_files ?? 0;
   return (
     <div className="flex items-center gap-2 pl-7 text-xs text-muted-foreground">
       <Link
@@ -390,12 +389,6 @@ function LinkedPullSubRow({
           ) : null}
           {status.label}
         </span>
-      ) : null}
-      {files > 0 ? (
-        <DiffStat
-          additions={pull.additions ?? 0}
-          deletions={pull.deletions ?? 0}
-        />
       ) : null}
       <AgentCostBadge totalTokens={pull.total_tokens} costUsd={pull.cost_usd} />
       <HerdrBadge owner={owner} repo={repo} pull={pull.number} />
