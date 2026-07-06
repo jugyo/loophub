@@ -9,7 +9,6 @@
 
 import { Bot } from "lucide-react";
 import type {
-  HerdrIssueWorkspace,
   HerdrPullWorkspace,
   HerdrRepoSessions,
   HerdrSessions,
@@ -34,29 +33,6 @@ export function findPullHerdrWorkspace(
   for (const group of groups) {
     if (group.repo !== repo) continue;
     const workspace = group.pull_workspaces.find((w) => w.pull === pull);
-    if (workspace) return { group, workspace };
-  }
-  return null;
-}
-
-/**
- * The herdr session group and agent pane working `owner/repo`'s issue `#issue`, or null when
- * herdr reports none. Issue-keyed counterpart of findPullHerdrWorkspace (#821), backing the
- * issue-detail Agents section. Guarded against a non-array `repos` / `issue_workspaces` (the RPC
- * mock returns {} for unstubbed methods; older payloads may omit the field).
- */
-export function findIssueHerdrWorkspace(
-  data: HerdrSessions | undefined,
-  repo: string,
-  issue: number,
-): { group: HerdrRepoSessions; workspace: HerdrIssueWorkspace } | null {
-  const groups = Array.isArray(data?.repos) ? data.repos : [];
-  for (const group of groups) {
-    if (group.repo !== repo) continue;
-    const workspaces = Array.isArray(group.issue_workspaces)
-      ? group.issue_workspaces
-      : [];
-    const workspace = workspaces.find((w) => w.issue === issue);
     if (workspace) return { group, workspace };
   }
   return null;

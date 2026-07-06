@@ -204,7 +204,7 @@ describe("IssueDetail", () => {
     expect(screen.queryByText(/^PR #/)).toBeNull();
   });
 
-  it("shows the New Issue Herdr pane focus button when a pane is linked", async () => {
+  it("shows the New Issue Herdr pane in the Agents section and focuses it", async () => {
     renderDetail(
       () => ({
         ...issue,
@@ -221,9 +221,11 @@ describe("IssueDetail", () => {
       },
     );
 
-    const button = await screen.findByRole("button", {
-      name: "Open in Herdr for issue #12",
-    });
+    expect(await screen.findByRole("heading", { name: "Agents" })).toBeTruthy();
+    expect(screen.getByText("me-proj-12345678")).toBeTruthy();
+    expect(screen.getByText("New Issue pane")).toBeTruthy();
+
+    const button = screen.getByRole("button", { name: "Open in Herdr" });
     fireEvent.click(button);
     await waitFor(() => {
       expect(rpcCall("terminal/focusAgent")?.params).toEqual({
@@ -233,15 +235,57 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("hides the New Issue Herdr pane focus button when no pane is linked", async () => {
+  it("hides the Agents section when no New Issue Herdr pane is linked", async () => {
     renderDetail(() => ({ ...issue, herdr_pane: null }));
 
     await screen.findByText("ui2: issue detail");
-    expect(
-      screen.queryByRole("button", {
-        name: "Open in Herdr for issue #12",
+    expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
+  });
+
+  it("does not aggregate linked-PR worktree agents into issue Agents", async () => {
+    renderDetail(() => ({ ...issue, herdr_pane: null }), undefined, false, {
+      "terminal/sessions": () => ({
+        repos: [
+          {
+            repo: "me/proj",
+            session_name: "lh-me-proj",
+            agents: [{ id: "%7", name: "dev #12", status: "working" }],
+            issue_workspaces: [{ issue: 12, pane_id: "%7", status: "working" }],
+            pull_workspaces: [{ pull: 30, pane_id: "%7", status: "working" }],
+          },
+        ],
       }),
-    ).toBeNull();
+    });
+
+    expect(await screen.findByText("PR #30")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Focus terminal for PR #30" }),
+    ).toBeTruthy();
+  });
+
+  it("does not render the issue Sessions section", async () => {
+    renderDetail(() => ({
+      ...issue,
+      related_sessions: [
+        {
+          id: "session-1",
+          agent: "lh-issue-create",
+          session: "session-1",
+          created_at: "2026-06-17T10:00:00Z",
+          updated_at: "2026-06-17T10:00:00Z",
+          kind: "issue-create",
+          linked_at: "2026-06-17T11:00:00Z",
+          resume: { resumable: true },
+        },
+      ],
+    }));
+
+    await screen.findByText("ui2: issue detail");
+    expect(screen.queryByRole("heading", { name: "Sessions" })).toBeNull();
+    expect(screen.queryByText("lh-issue-create")).toBeNull();
   });
 
   it("renders every linked PR from the detail response array", async () => {
