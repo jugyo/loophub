@@ -144,6 +144,16 @@ describe("formatCost", () => {
 });
 
 describe("AgentSessionsPage", () => {
+  it("uses the full available width instead of the shared content cap", async () => {
+    renderPage();
+
+    const root = (
+      await screen.findByRole("heading", { name: "Agent sessions" })
+    ).closest("div");
+    expect(root?.className).toContain("w-full");
+    expect(root?.className).not.toContain("max-w-content");
+  });
+
   it("shows sessions by updated time with usage totals, cost, and linked work", async () => {
     vi.spyOn(Date, "now").mockReturnValue(
       new Date("2026-07-04T13:00:00Z").getTime(),

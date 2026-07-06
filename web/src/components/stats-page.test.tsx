@@ -105,9 +105,29 @@ describe("StatsPage", () => {
     const sessions = screen.getByRole("link", { name: /agent sessions/i });
     expect(sessions.getAttribute("href")).toBe("/stats/sessions");
   });
+
+  it("uses the full available width instead of the shared content cap", async () => {
+    renderStatsHub();
+
+    const root = (
+      await screen.findByRole("heading", { name: "Stats" })
+    ).closest("div");
+    expect(root?.className).toContain("w-full");
+    expect(root?.className).not.toContain("max-w-content");
+  });
 });
 
 describe("DatabaseStatsPage", () => {
+  it("uses the full available width instead of the shared content cap", async () => {
+    renderDatabaseStats();
+
+    const root = (
+      await screen.findByRole("heading", { name: "DB Stats" })
+    ).closest("div");
+    expect(root?.className).toContain("w-full");
+    expect(root?.className).not.toContain("max-w-content");
+  });
+
   it("shows the DB file size, WAL included, in human-readable units", async () => {
     renderDatabaseStats();
     // "1.0 MB" appears twice: the DB file row and the Total row (1 MB + 2 KB
