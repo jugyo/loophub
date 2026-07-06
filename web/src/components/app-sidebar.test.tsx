@@ -125,6 +125,15 @@ function renderSidebar() {
 }
 
 describe("AppSidebar global navigation", () => {
+  it("separates the brand header from the navigation area with a divider", async () => {
+    const { container } = renderSidebar();
+    await screen.findByText("LoopHub");
+
+    const header = container.querySelector("aside > div:first-child");
+    expect(header?.className).toContain("border-b");
+    expect(header?.nextElementSibling?.textContent).toBe("Repositories");
+  });
+
   it("keeps global utilities as icon links without top-level Home/Settings/Stats menu rows", async () => {
     renderSidebar();
 
