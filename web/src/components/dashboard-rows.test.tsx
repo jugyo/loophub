@@ -769,4 +769,72 @@ describe("agent cost display (#783)", () => {
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
     expect(screen.queryByText(/tok ·/)).toBeNull();
   });
+
+  // #796: two-stage highlight above the cost thresholds ($10 warning, $30 critical), tuned from the
+  // observed past-PR cost distribution (p75 ≈ $10, p95 ≈ $27).
+  it("shows the default (unhighlighted) style at or below the warning threshold", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ total_tokens: 1000, cost_usd: 10 }),
+          ],
+        })}
+      />,
+    );
+    const badge = await screen.findByText("1k tok · $10.00");
+    expect(badge.className).not.toContain("text-amber");
+    expect(badge.className).not.toContain("text-destructive");
+  });
+
+  it("highlights warning (amber) above $10 up to $30", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ total_tokens: 1000, cost_usd: 15 }),
+          ],
+        })}
+      />,
+    );
+    const badge = await screen.findByText("1k tok · $15.00");
+    expect(badge.className).toContain("text-amber-600");
+  });
+
+  it("highlights critical (destructive) above $30", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ total_tokens: 1000, cost_usd: 35 }),
+          ],
+        })}
+      />,
+    );
+    const badge = await screen.findByText("1k tok · $35.00");
+    expect(badge.className).toContain("text-destructive");
+  });
+
+  it("does not highlight when cost is unknown (null)", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ total_tokens: 1000, cost_usd: null }),
+          ],
+        })}
+      />,
+    );
+    const badge = await screen.findByText("1k tok · n/a");
+    expect(badge.className).not.toContain("text-amber");
+    expect(badge.className).not.toContain("text-destructive");
+  });
 });

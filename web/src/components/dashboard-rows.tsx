@@ -403,9 +403,16 @@ function LinkedPullSubRow({
   );
 }
 
+// Cost thresholds for AgentCostBadge's warning/critical highlight (#796), tuned from the observed
+// past-PR cost distribution (p75 ≈ $10, p95 ≈ $27): above the p75-ish mark is "warning", above the
+// p95-ish mark is "critical".
+const AGENT_COST_WARNING_THRESHOLD_USD = 10;
+const AGENT_COST_CRITICAL_THRESHOLD_USD = 30;
+
 // Agent cost for the PR's linked sessions (#783): compact token count + cost, shown only once the
 // PR has usage to report. Hidden (not "n/a") otherwise, so PRs with no agent session don't add noise
-// to every row.
+// to every row. Colour escalates past the cost thresholds above (#796) so unusually expensive PRs
+// stand out at a glance; a null costUsd never triggers the highlight.
 function AgentCostBadge({
   totalTokens,
   costUsd,
@@ -415,9 +422,19 @@ function AgentCostBadge({
 }) {
   if (totalTokens == null) return null;
   const cost = formatCost(costUsd ?? null);
+  const isCritical =
+    costUsd != null && costUsd > AGENT_COST_CRITICAL_THRESHOLD_USD;
+  const isWarning =
+    !isCritical &&
+    costUsd != null &&
+    costUsd > AGENT_COST_WARNING_THRESHOLD_USD;
   return (
     <span
-      className="shrink-0 font-mono tabular-nums"
+      className={cn(
+        "shrink-0 font-mono tabular-nums",
+        isCritical && "text-destructive",
+        isWarning && "text-amber-600 dark:text-amber-400",
+      )}
       title={`${formatTokenCount(totalTokens)} tokens · ${cost}`}
     >
       {formatTokenCountShort(totalTokens)} tok · {cost}
