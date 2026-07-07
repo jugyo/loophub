@@ -275,6 +275,34 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
                         </dd>
                       </div>
                     </dl>
+                    {k.subagents?.length ? (
+                      <div className="ml-2 flex flex-col gap-1.5 border-l pl-2">
+                        <div className="text-xs font-medium text-muted-foreground">
+                          Subagents included in total
+                        </div>
+                        <ul className="flex flex-col gap-1.5">
+                          {k.subagents.map((subagent) => (
+                            <li
+                              key={`${subagent.session_id}:${subagent.source_id}`}
+                              className="min-w-0"
+                              title={subagent.source_id}
+                            >
+                              <div className="flex min-w-0 items-baseline justify-between gap-2">
+                                <span className="truncate text-xs font-medium">
+                                  {subagent.label ?? subagent.source_id}
+                                </span>
+                                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                  {formatCost(subagent.cost_usd)}
+                                </span>
+                              </div>
+                              <div className="truncate text-xs tabular-nums text-muted-foreground">
+                                {formatTokenCount(subagent.total_tokens)} tokens
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                   </li>
                 );
               })}

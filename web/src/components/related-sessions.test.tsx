@@ -331,6 +331,22 @@ describe("RelatedSessions", () => {
               total_tokens: 160,
               cost_usd: 0.00061,
               has_unknown_cost: false,
+              subagents: [
+                {
+                  session_id: "dev-session",
+                  source_id: "agent-security",
+                  label: "Security reviewer",
+                  kind: "claude-sidechain",
+                  sessions_with_usage: 1,
+                  input_tokens: 20,
+                  cache_creation_input_tokens: 2,
+                  cache_read_input_tokens: 3,
+                  output_tokens: 5,
+                  total_tokens: 30,
+                  cost_usd: 0.0002,
+                  has_unknown_cost: false,
+                },
+              ],
             },
             {
               kind: "review",
@@ -357,6 +373,9 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain(
       "Implementation1 session94%Tokens160Cost$0.0006",
     );
+    expect(container.textContent).toContain(
+      "Subagents included in totalSecurity reviewer$0.000230 tokens",
+    );
     expect(container.textContent).toContain("Review1 session6%Tokens10Costn/a");
     expect(container.textContent).toContain("$0.0006");
   });
@@ -382,5 +401,6 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain("Total costn/a");
     expect(container.textContent).toContain("No token usage recorded yet.");
     expect(container.textContent).not.toContain("By category");
+    expect(container.textContent).not.toContain("Subagents included in total");
   });
 });

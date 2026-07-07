@@ -464,9 +464,19 @@ export interface UsageTotalsWire {
   has_unknown_cost: boolean;
 }
 
+export interface RelatedSessionsSubagentUsageWire extends UsageTotalsWire {
+  session_id: string;
+  source_id: string;
+  label: string | null;
+  kind: string;
+}
+
 // Same totals as UsageTotalsWire, scoped to sessions of one `kind` (dev/review/issue-create/...).
 export interface RelatedSessionsUsageByKindWire extends UsageTotalsWire {
   kind: string;
+  // Per-subagent totals nested under the parent session kind. Omitted when none exist so PR detail
+  // does not show empty subagent headings for ordinary sessions.
+  subagents?: RelatedSessionsSubagentUsageWire[];
 }
 
 export interface RelatedSessionsUsageWire extends UsageTotalsWire {
@@ -474,11 +484,21 @@ export interface RelatedSessionsUsageWire extends UsageTotalsWire {
   by_kind: RelatedSessionsUsageByKindWire[];
 }
 
-function sumUsageTotals(
-  sessions: Array<{ usage?: SessionUsageWire[] }>,
+type UsageLikeWire = Pick<
+  SessionUsageWire,
+  | "input_tokens"
+  | "cache_creation_input_tokens"
+  | "cache_read_input_tokens"
+  | "output_tokens"
+  | "cost_usd"
+>;
+
+function sumUsageRows(
+  rows: UsageLikeWire[],
+  sessionsWithUsage: number,
 ): UsageTotalsWire {
   const out = {
-    sessions_with_usage: 0,
+    sessions_with_usage: sessionsWithUsage,
     input_tokens: 0,
     cache_creation_input_tokens: 0,
     cache_read_input_tokens: 0,
@@ -488,33 +508,83 @@ function sumUsageTotals(
     has_unknown_cost: false,
   };
   let knownCost = 0;
-  for (const session of sessions) {
-    const usage = Array.isArray(session.usage) ? session.usage : [];
-    if (usage.length === 0) continue;
-    out.sessions_with_usage += 1;
-    for (const row of usage) {
-      out.input_tokens += row.input_tokens;
-      out.cache_creation_input_tokens += row.cache_creation_input_tokens;
-      out.cache_read_input_tokens += row.cache_read_input_tokens;
-      out.output_tokens += row.output_tokens;
-      out.total_tokens +=
-        row.input_tokens +
-        row.cache_creation_input_tokens +
-        row.cache_read_input_tokens +
-        row.output_tokens;
-      if (row.cost_usd == null) out.has_unknown_cost = true;
-      else knownCost += row.cost_usd;
-    }
+  for (const row of rows) {
+    out.input_tokens += row.input_tokens;
+    out.cache_creation_input_tokens += row.cache_creation_input_tokens;
+    out.cache_read_input_tokens += row.cache_read_input_tokens;
+    out.output_tokens += row.output_tokens;
+    out.total_tokens +=
+      row.input_tokens +
+      row.cache_creation_input_tokens +
+      row.cache_read_input_tokens +
+      row.output_tokens;
+    if (row.cost_usd == null) out.has_unknown_cost = true;
+    else knownCost += row.cost_usd;
   }
-  out.cost_usd =
-    out.sessions_with_usage === 0 || out.has_unknown_cost ? null : knownCost;
+  out.cost_usd = rows.length === 0 || out.has_unknown_cost ? null : knownCost;
   return out;
 }
 
+function sumUsageTotals(
+  sessions: Array<{ usage?: SessionUsageWire[] }>,
+): UsageTotalsWire {
+  const rows: SessionUsageWire[] = [];
+  let sessionsWithUsage = 0;
+  for (const session of sessions) {
+    const usage = Array.isArray(session.usage) ? session.usage : [];
+    if (usage.length === 0) continue;
+    sessionsWithUsage += 1;
+    rows.push(...usage);
+  }
+  return sumUsageRows(rows, sessionsWithUsage);
+}
+
+function subagentUsageBreakdown(
+  sessions: Array<{
+    subagent_usage?: SessionSubagentUsageWire[];
+  }>,
+): RelatedSessionsSubagentUsageWire[] {
+  const bySource = new Map<string, SessionSubagentUsageWire[]>();
+  for (const session of sessions) {
+    const usage = Array.isArray(session.subagent_usage)
+      ? session.subagent_usage
+      : [];
+    for (const row of usage) {
+      const key = `${row.session_id}\0${row.source_id}`;
+      const bucket = bySource.get(key);
+      if (bucket) bucket.push(row);
+      else bySource.set(key, [row]);
+    }
+  }
+
+  return Array.from(bySource.values())
+    .map((rows) => {
+      const first = rows[0];
+      return {
+        session_id: first.session_id,
+        source_id: first.source_id,
+        label: first.label,
+        kind: first.kind,
+        ...sumUsageRows(rows, 1),
+      };
+    })
+    .sort((a, b) => b.total_tokens - a.total_tokens);
+}
+
 export function relatedSessionsUsageJSON(
-  sessions: Array<{ kind?: string; usage?: SessionUsageWire[] }>,
+  sessions: Array<{
+    kind?: string;
+    usage?: SessionUsageWire[];
+    subagent_usage?: SessionSubagentUsageWire[];
+  }>,
 ): RelatedSessionsUsageWire {
-  const byKind = new Map<string, Array<{ usage?: SessionUsageWire[] }>>();
+  const byKind = new Map<
+    string,
+    Array<{
+      usage?: SessionUsageWire[];
+      subagent_usage?: SessionSubagentUsageWire[];
+    }>
+  >();
   for (const session of sessions) {
     const kind = session.kind ?? "unknown";
     const bucket = byKind.get(kind);
@@ -522,7 +592,14 @@ export function relatedSessionsUsageJSON(
     else byKind.set(kind, [session]);
   }
   const by_kind = Array.from(byKind.entries())
-    .map(([kind, group]) => ({ kind, ...sumUsageTotals(group) }))
+    .map(([kind, group]) => {
+      const subagents = subagentUsageBreakdown(group);
+      return {
+        kind,
+        ...sumUsageTotals(group),
+        ...(subagents.length ? { subagents } : {}),
+      };
+    })
     .filter((entry) => entry.sessions_with_usage > 0)
     .sort((a, b) => a.kind.localeCompare(b.kind));
   return { ...sumUsageTotals(sessions), by_kind };

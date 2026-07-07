@@ -1069,6 +1069,8 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
   const projectsDir = mkdtempSync(join(tmpdir(), "lh-pr-usage-projects-"));
   const projectDir = join(projectsDir, "repo-worktree");
   mkdirSync(projectDir);
+  const devSubagentDir = join(projectDir, devSessionId, "subagents");
+  mkdirSync(devSubagentDir, { recursive: true });
   writeFileSync(
     join(projectDir, `${devSessionId}.jsonl`),
     assistantLine("known_msg", "claude-sonnet-4-6-20260601", {
@@ -1077,6 +1079,34 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
       cache_read_input_tokens: 30,
       output_tokens: 10,
     }),
+  );
+  writeFileSync(
+    join(devSubagentDir, "agent-security.jsonl"),
+    [
+      JSON.stringify({
+        type: "user",
+        isSidechain: true,
+        agentId: "agent-security",
+        sessionId: devSessionId,
+        message: { content: "Role: Security reviewer\nReview only." },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        isSidechain: true,
+        agentId: "agent-security",
+        attributionAgent: "general-purpose",
+        message: {
+          id: "sub_msg",
+          model: "claude-haiku-3-5-20241022",
+          usage: {
+            input_tokens: 7,
+            cache_creation_input_tokens: 1,
+            cache_read_input_tokens: 2,
+            output_tokens: 3,
+          },
+        },
+      }),
+    ].join("\n"),
   );
   writeFileSync(
     join(projectDir, `${reviewSessionId}.jsonl`),
@@ -1096,11 +1126,15 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
   const review = pull.related_sessions.find(
     (s: any) => s.id === reviewSessionId,
   );
-  expect(dev.usage[0]).toMatchObject({
-    model: "claude-sonnet-4-6-20260601",
-    input_tokens: 100,
-    output_tokens: 10,
-  });
+  expect(dev.usage).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        model: "claude-sonnet-4-6-20260601",
+        input_tokens: 100,
+        output_tokens: 10,
+      }),
+    ]),
+  );
   expect(review.usage[0]).toMatchObject({
     model: "unknown-model",
     input_tokens: 5,
@@ -1109,11 +1143,11 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
   });
   expect(pull.related_sessions_usage).toMatchObject({
     sessions_with_usage: 2,
-    input_tokens: 105,
-    cache_creation_input_tokens: 20,
-    cache_read_input_tokens: 30,
-    output_tokens: 15,
-    total_tokens: 170,
+    input_tokens: 112,
+    cache_creation_input_tokens: 21,
+    cache_read_input_tokens: 32,
+    output_tokens: 18,
+    total_tokens: 183,
     cost_usd: null,
     has_unknown_cost: true,
   });
@@ -1121,8 +1155,23 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
     {
       kind: "dev",
       sessions_with_usage: 1,
-      total_tokens: 160,
+      total_tokens: 173,
       has_unknown_cost: false,
+      subagents: [
+        {
+          session_id: devSessionId,
+          source_id: "agent-security",
+          label: "Security reviewer",
+          kind: "claude-sidechain",
+          sessions_with_usage: 1,
+          input_tokens: 7,
+          cache_creation_input_tokens: 1,
+          cache_read_input_tokens: 2,
+          output_tokens: 3,
+          total_tokens: 13,
+          has_unknown_cost: false,
+        },
+      ],
     },
     {
       kind: "review",
