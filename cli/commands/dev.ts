@@ -434,7 +434,13 @@ export async function run(): Promise<void> {
     // resolved (herdr not running, worktree_not_found, …).
     let tabId: string | null = null;
     let rootPaneId: string | null = null;
+    // The fresh single-tab workspace this launch *owns* (cleanup target on failure) — set only when
+    // acquireHerdrWorktreeTab created one, null for a reused workspace.
     let workspaceId: string | null = null;
+    // The target worktree's workspace, used as the `--workspace` placement fallback when tabId came
+    // back null (#873). Set whether the workspace was freshly opened or reused; only ever absent on
+    // the plain repo-root tab-create fallback below (which has no worktree workspace at all).
+    let placementWorkspaceId: string | null = null;
     let createdWorkspace = false;
     const acquired = await acquireHerdrWorktreeTab(
       repoRef,
@@ -443,6 +449,7 @@ export async function run(): Promise<void> {
     );
     if (acquired) {
       ({ tabId, rootPaneId, workspaceId, createdWorkspace } = acquired);
+      placementWorkspaceId = acquired.targetWorkspaceId;
     } else {
       const out = await runHerdrCmd(herdrTabCreateArgv(repoRef), {
         captureStdout: true,
@@ -451,30 +458,27 @@ export async function run(): Promise<void> {
         tabId = parseHerdrTabId(out.stdout);
         rootPaneId = parseHerdrRootPaneId(out.stdout);
         // A zero-exit create with no parseable tab id means herdr made a real tab but its output
-        // shape drifted: tabId stays null, so the agent splits the focused pane and the new tab
-        // is orphaned with no id to close it. Surface it (mirrors launchIssueDevHerdr's server-
-        // side warning) so the drift is noticed instead of leaking silently.
+        // shape drifted: tabId stays null, and with no worktree workspace to fall back to (this is
+        // the plain repo-root path) the agent splits the focused pane and the new tab is orphaned
+        // with no id to close it. Surface it (mirrors launchIssueDevHerdr's server-side warning) so
+        // the drift is noticed instead of leaking silently.
         if (!tabId)
           console.error(
             "herdr tab create succeeded but its output had no usable tab id; falling back to split placement",
           );
       }
     }
-    // A freshly created workspace whose seed tab id failed to parse can never be targeted (the
-    // plan routes the agent in via --tab), so close it now rather than leaking it.
-    if (workspaceId && !tabId) {
-      await runHerdrCmd(herdrWorkspaceCloseArgv(repoRef, workspaceId));
-      workspaceId = null;
-      rootPaneId = null;
-    }
     // The pane is pinned to the worktree (not repo.local_path) but keeps the repo's herdr
     // session name, so it lands alongside every other launch for this repo (Build button,
-    // resume, …) in the same `herdr session attach`.
+    // resume, …) in the same `herdr session attach`. When tabId failed to parse but the worktree's
+    // workspace was opened/reused, `--workspace placementWorkspaceId` keeps the agent inside that
+    // workspace instead of splitting whatever (possibly unrelated) pane is focused (#873).
     const plan = buildHerdrLaunchPlan({
       repo: repoRef,
       command,
       label: sessionName,
       tabId,
+      workspaceId: placementWorkspaceId,
       cwd: worktree,
     });
     const herdrProc = spawnSync(plan.argv[0], plan.argv.slice(1), {
@@ -531,6 +535,10 @@ export async function run(): Promise<void> {
       await runHerdrCmd(herdrWorkspaceFocusArgv(repoRef, workspaceId));
     } else if (tabId) {
       await runHerdrCmd(herdrTabFocusArgv(repoRef, tabId));
+    } else if (placementWorkspaceId) {
+      // Reused workspace whose new tab id failed to parse: the agent launched via
+      // `--workspace placementWorkspaceId`, so bring that workspace forward (#873).
+      await runHerdrCmd(herdrWorkspaceFocusArgv(repoRef, placementWorkspaceId));
     }
     if (tabId && rootPaneId) {
       await runHerdrCmd(herdrPaneCloseArgv(repoRef, rootPaneId));

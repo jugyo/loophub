@@ -160,6 +160,15 @@ export function herdrTabCreateArgv(repo: TerminalLaunchRepo): string[] {
 // by the launched command (#551). The path must already be a registered git worktree — herdr
 // replies `worktree_not_found` otherwise, which callers treat like any other best-effort herdr
 // failure (fall back to the plain tab-create launch).
+//
+// `--cwd repo.local_path` pins the *source* workspace of the open to the repo's parent checkout
+// (#873). Without it herdr sources the open from whatever workspace is currently focused, and when
+// that focus sits on *another* PR's linked-worktree workspace herdr refuses the open outright
+// (`linked_worktree_source`: "New and open worktree actions start from the repo parent workspace").
+// That refusal is exactly what used to drop the Build launch into the plain tab-create fallback,
+// which then created its tab inside the focused (other PR's) workspace — the reported bug. Pinning
+// the source to the repo root makes the open originate from the repo parent workspace regardless of
+// focus, so the target worktree's own workspace is opened as intended.
 export function herdrWorktreeOpenArgv(
   repo: TerminalLaunchRepo,
   worktreeCheckoutPath: string,
@@ -170,6 +179,8 @@ export function herdrWorktreeOpenArgv(
     herdrSessionName(repo),
     "worktree",
     "open",
+    "--cwd",
+    repo.local_path,
     "--path",
     worktreeCheckoutPath,
     "--no-focus",
@@ -435,9 +446,14 @@ export function buildHerdrLaunchPlan(input: {
   repo: TerminalLaunchRepo;
   command: string;
   label?: string;
-  // Tab to start the agent in. Omitted (tab creation failed) falls back to Herdr's default
-  // placement, which splits the focused pane.
+  // Tab to start the agent in (`--tab`). Preferred placement: it pins the agent to one exact tab.
   tabId?: string | null;
+  // Workspace to start the agent in (`--workspace`) when no tab id is available — a weaker but still
+  // safe placement that keeps the agent inside the target worktree's own workspace instead of
+  // letting herdr fall back to splitting whatever pane is currently focused (which may belong to an
+  // unrelated PR, #873). Ignored when tabId is set. When both are absent the launch omits any
+  // placement selector and herdr splits the focused pane — the genuine last resort.
+  workspaceId?: string | null;
   // Overrides repo.local_path as the agent's --cwd (e.g. a PR worktree, #584's `lh dev --herdr`)
   // without changing the herdr session name, which stays derived from the repo so every launch
   // for it — worktree-pinned or not — lands in the same herdr session.
@@ -455,7 +471,11 @@ export function buildHerdrLaunchPlan(input: {
     agentName,
     "--cwd",
     cwd,
-    ...(input.tabId ? ["--tab", input.tabId] : []),
+    ...(input.tabId
+      ? ["--tab", input.tabId]
+      : input.workspaceId
+        ? ["--workspace", input.workspaceId]
+        : []),
     "--no-focus",
     "--",
     "zsh",
@@ -489,6 +509,11 @@ export interface HerdrWorktreeTab {
   // `worktree open`), whose sole tab herdr refuses to close via `tab close` — the caller closes the
   // workspace instead on failure. Null when an existing workspace was merely reused.
   workspaceId: string | null;
+  // The worktree's own workspace id in *both* cases (fresh open or reuse) — the placement target
+  // used for `agent start --workspace` when tabId came back null (#873), so the launch still lands
+  // in this worktree's workspace instead of splitting an unrelated focused pane. Distinct from
+  // workspaceId above, which is only the fresh-open workspace this launch *owns and must clean up*.
+  targetWorkspaceId: string | null;
   createdWorkspace: boolean;
 }
 
@@ -517,6 +542,7 @@ export async function acquireHerdrWorktreeTab(
       tabId: parseHerdrTabId(openRes.stdout),
       rootPaneId: parseHerdrRootPaneId(openRes.stdout),
       workspaceId: opened.workspaceId,
+      targetWorkspaceId: opened.workspaceId,
       createdWorkspace: true,
     };
   }
@@ -536,6 +562,9 @@ export async function acquireHerdrWorktreeTab(
     // The reused workspace predates this call, so it is not ours to close on failure — only the
     // freshly added tab (if its id parsed) is.
     workspaceId: null,
+    // …but it is still the correct placement target: a launch whose new tab's id failed to parse
+    // can fall back to `agent start --workspace <this>` and stay in the worktree's workspace (#873).
+    targetWorkspaceId: opened.workspaceId,
     createdWorkspace: false,
   };
 }

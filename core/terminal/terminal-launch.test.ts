@@ -259,6 +259,35 @@ describe("herdr terminal launch", () => {
     }
   });
 
+  // #873: no tab id but a known worktree workspace — place via --workspace so the agent stays in
+  // that workspace instead of splitting whatever pane is currently focused (an unrelated PR's).
+  test("falls back to --workspace when tabId is null but a workspace id is given", () => {
+    const plan = buildHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      command: "lh dev 'jugyo/loophub/444'",
+      label: "dev #444",
+      tabId: null,
+      workspaceId: "w9",
+      cwd: "/repo/worktrees/pr-42",
+    });
+    expect(plan.argv).not.toContain("--tab");
+    expect(plan.argv).toContain("--workspace");
+    expect(plan.argv[plan.argv.indexOf("--workspace") + 1]).toBe("w9");
+  });
+
+  // A usable tab id wins: --tab is exact placement, so a workspace id is redundant and omitted.
+  test("prefers --tab over --workspace when both are available", () => {
+    const plan = buildHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      command: "lh dev 'jugyo/loophub/444'",
+      label: "dev #444",
+      tabId: "w9:t2",
+      workspaceId: "w9",
+    });
+    expect(plan.argv).toContain("--tab");
+    expect(plan.argv).not.toContain("--workspace");
+  });
+
   test("builds Herdr tab create/close argv scoped to the repo session", () => {
     const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
     const sessionName = herdrSessionName(repo);
@@ -579,6 +608,10 @@ describe("herdr terminal launch", () => {
       sessionName,
       "worktree",
       "open",
+      // #873: source the open from the repo parent workspace, so herdr doesn't refuse it
+      // (`linked_worktree_source`) when another PR's linked-worktree workspace is focused.
+      "--cwd",
+      "/repo/main",
       "--path",
       "/wt/pr-42",
       "--no-focus",
@@ -668,6 +701,7 @@ describe("acquireHerdrWorktreeTab", () => {
       tabId: "wB:t1",
       rootPaneId: "wB:p1",
       workspaceId: "wB",
+      targetWorkspaceId: "wB",
       createdWorkspace: true,
     });
     // Only the open call — a first-time open's seed tab is usable as-is, no follow-up tab create.
@@ -691,6 +725,8 @@ describe("acquireHerdrWorktreeTab", () => {
       rootPaneId: "w7:p3",
       // A reused workspace predates this call, so it is not ours to close on failure.
       workspaceId: null,
+      // …but it is still the placement target for the `--workspace` fallback (#873).
+      targetWorkspaceId: "w7",
       createdWorkspace: false,
     });
     expect(calls).toEqual([
