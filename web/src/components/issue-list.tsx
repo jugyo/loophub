@@ -3,7 +3,7 @@
 // events via the issues query key (event-keys.ts).
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
@@ -11,6 +11,8 @@ import { RepoHerdrCommand } from "@/components/repo-herdr-command";
 import { RepoSettingsLink } from "@/components/repo-settings-link";
 import { ScheduledTasksLink } from "@/components/scheduled-tasks-link";
 import { Button } from "@/components/ui/button";
+import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
+import { cn } from "@/lib/utils";
 import {
   DEFAULT_ISSUE_FILTERS,
   type IssueListFilters,
@@ -26,6 +28,17 @@ const STATE_TABS: {
   { value: "closed", label: "Closed" },
   { value: "all", label: "All" },
 ];
+
+function parseLabelsParam(labels: string): string[] {
+  return labels
+    .split(",")
+    .map((label) => label.trim())
+    .filter(Boolean);
+}
+
+function labelsParamFromList(labels: string[]): string | undefined {
+  return labels.length > 0 ? labels.join(",") : undefined;
+}
 
 export function IssueList({
   owner,
@@ -81,20 +94,34 @@ export function IssueList({
     });
   }
 
-  function selectLabel(nextLabel: string) {
+  const selectedLabels = useMemo(() => parseLabelsParam(labels), [labels]);
+
+  function navigateWithLabels(nextLabels: string[]) {
     navigate({
       to: "/r/$owner/$repo",
       params: { owner, repo },
       search: {
-        labels: nextLabel || undefined,
+        labels: labelsParamFromList(nextLabels),
         state: state === "open" ? undefined : state,
       },
     });
   }
 
+  function addSelectedLabel(nextLabel: string) {
+    if (!nextLabel || selectedLabels.includes(nextLabel)) return;
+    navigateWithLabels([...selectedLabels, nextLabel]);
+  }
+
+  function removeSelectedLabel(labelToRemove: string) {
+    navigateWithLabels(
+      selectedLabels.filter((label) => label !== labelToRemove),
+    );
+  }
+
   const labelOptions = labelsQuery.data ?? [];
-  const hasCurrentLabelOption =
-    labels === "" || labelOptions.some((label) => label.name === labels);
+  const availableLabelOptions = labelOptions.filter(
+    (label) => !selectedLabels.includes(label.name),
+  );
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-4">
@@ -143,22 +170,60 @@ export function IssueList({
           })}
         </div>
         {labelFilterMode === "select" ? (
-          <select
-            aria-label="Label filter"
-            value={labels}
-            onChange={(e) => selectLabel(e.target.value)}
-            className="h-9 min-w-48 flex-1 rounded-md border bg-background px-2 text-sm"
-          >
-            <option value="">All labels</option>
-            {!hasCurrentLabelOption ? (
-              <option value={labels}>{labels}</option>
+          <div className="flex min-h-9 min-w-64 flex-1 flex-wrap items-center gap-1 rounded-md border bg-background px-2 py-1">
+            {selectedLabels.length > 0 ? (
+              <div
+                aria-label="Selected labels"
+                className="flex min-w-0 flex-wrap items-center gap-1"
+              >
+                {selectedLabels.map((label) => (
+                  <span
+                    key={label}
+                    className={cn(
+                      LABEL_CHIP_BASE_CLASS,
+                      labelColorClass(label),
+                      "h-6 max-w-48 gap-1 pr-1",
+                    )}
+                  >
+                    <span className="truncate">{label}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${label} label filter`}
+                      onClick={() => removeSelectedLabel(label)}
+                      className="inline-flex size-4 shrink-0 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/15"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
             ) : null}
-            {labelOptions.map((label) => (
-              <option key={label.name} value={label.name}>
-                {label.name}
+            <select
+              aria-label="Label filter"
+              value=""
+              onChange={(e) => addSelectedLabel(e.target.value)}
+              className="h-7 min-w-32 flex-1 border-0 bg-transparent px-1 text-sm outline-none"
+            >
+              <option value="">
+                {selectedLabels.length > 0 ? "Add label" : "All labels"}
               </option>
-            ))}
-          </select>
+              {availableLabelOptions.map((label) => (
+                <option key={label.name} value={label.name}>
+                  {label.name}
+                </option>
+              ))}
+            </select>
+            {selectedLabels.length > 0 ? (
+              <button
+                type="button"
+                aria-label="Clear label filters"
+                onClick={() => navigateWithLabels([])}
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            ) : null}
+          </div>
         ) : (
           <>
             <input

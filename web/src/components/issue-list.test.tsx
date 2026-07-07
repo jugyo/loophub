@@ -202,7 +202,7 @@ describe("IssueList", () => {
     );
   });
 
-  it("renders a dropdown label filter and applies selection immediately in select mode", async () => {
+  it("renders a dropdown label filter and adds selected labels immediately in select mode", async () => {
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
@@ -241,7 +241,7 @@ describe("IssueList", () => {
     );
   });
 
-  it("clears the dropdown label filter with the all-labels option", async () => {
+  it("adds another label to the selected label filters", async () => {
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
@@ -258,15 +258,92 @@ describe("IssueList", () => {
         owner="me"
         repo="proj"
         labelsParam="bug"
+        stateParam="all"
         labelFilterMode="select"
       />,
-      "/r/me/proj?labels=bug",
+      "/r/me/proj?labels=bug&state=all",
     );
 
     const select = await screen.findByRole("combobox", {
       name: "Label filter",
     });
-    fireEvent.change(select, { target: { value: "" } });
+    expect(screen.getByLabelText("Selected labels").textContent).toContain(
+      "bug",
+    );
+
+    fireEvent.change(select, { target: { value: "ui" } });
+
+    await waitFor(() =>
+      expect(
+        router.state.location.pathname + router.state.location.searchStr,
+      ).toBe("/r/me/proj?labels=bug%2Cui&state=all"),
+    );
+  });
+
+  it("removes selected dropdown label filters individually", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [],
+        "labels/list": () => [
+          { name: "bug", color: null },
+          { name: "ui", color: null },
+        ],
+      }),
+    );
+
+    const { router } = renderIssueList(
+      <IssueList
+        owner="me"
+        repo="proj"
+        labelsParam="bug,ui"
+        stateParam="all"
+        labelFilterMode="select"
+      />,
+      "/r/me/proj?labels=bug,ui&state=all",
+    );
+
+    await screen.findByText("No issues.");
+    expect(screen.getByLabelText("Selected labels").textContent).toContain(
+      "bug",
+    );
+    expect(screen.getByLabelText("Selected labels").textContent).toContain(
+      "ui",
+    );
+
+    fireEvent.click(screen.getByLabelText("Remove bug label filter"));
+
+    await waitFor(() =>
+      expect(
+        router.state.location.pathname + router.state.location.searchStr,
+      ).toBe("/r/me/proj?labels=ui&state=all"),
+    );
+  });
+
+  it("clears all selected dropdown label filters", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [],
+        "labels/list": () => [
+          { name: "bug", color: null },
+          { name: "ui", color: null },
+        ],
+      }),
+    );
+
+    const { router } = renderIssueList(
+      <IssueList
+        owner="me"
+        repo="proj"
+        labelsParam="bug,ui"
+        labelFilterMode="select"
+      />,
+      "/r/me/proj?labels=bug,ui",
+    );
+
+    await screen.findByText("No open issues.");
+    fireEvent.click(screen.getByLabelText("Clear label filters"));
 
     await waitFor(() =>
       expect(
