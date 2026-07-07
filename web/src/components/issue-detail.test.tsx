@@ -123,15 +123,26 @@ function renderDetail(
     path: "/r/$owner/$repo/issues/$number",
     component: () => null,
   });
+  const issueListRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/issues",
+    component: () => null,
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, pullsRoute, issuesRoute]),
+    routeTree: rootRoute.addChildren([
+      indexRoute,
+      pullsRoute,
+      issuesRoute,
+      issueListRoute,
+    ]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { ...rendered, router };
 }
 
 describe("IssueDetail", () => {
@@ -161,6 +172,26 @@ describe("IssueDetail", () => {
 
     expect(commentsSection?.className).toContain("pb-6");
     expect(commentsSection?.textContent).toContain("Looks good.");
+  });
+
+  it("returns to the issue list with u unless a modal dialog is open", async () => {
+    const { router } = renderDetail();
+
+    expect(await screen.findByText("ui2: issue detail")).toBeTruthy();
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.appendChild(dialog);
+
+    fireEvent.keyDown(window, { key: "u" });
+    expect(router.state.location.pathname).toBe("/");
+
+    dialog.remove();
+    fireEvent.keyDown(window, { key: "u" });
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/r/me/proj/issues"),
+    );
   });
 
   it("shows linked PR summary as working while a herdr terminal is working", async () => {

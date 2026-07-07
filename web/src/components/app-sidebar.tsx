@@ -15,6 +15,7 @@ import type { HerdrSessions, Repo } from "@/api/types";
 import { Logo } from "@/components/logo";
 import { SidebarHerdrSessions } from "@/components/sidebar-herdr-sessions";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { compareSidebarRepos } from "@/lib/repo-sort";
 import { cn } from "@/lib/utils";
 import { useRepos, useSetRepoFavorite } from "@/queries/repos";
 import { useHerdrSessions } from "@/queries/terminal";
@@ -189,13 +190,6 @@ export function countRepoHerdrAgents(
       .filter((group) => group.repo === repoFullName)
       .reduce((total, group) => total + group.agents.length, 0) ?? 0
   );
-}
-
-export function compareSidebarRepos(a: Repo, b: Repo): number {
-  if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
-  return a.full_name.localeCompare(b.full_name, undefined, {
-    sensitivity: "base",
-  });
 }
 
 function IconSidebarLink({

@@ -3,7 +3,7 @@
 // — comment posting and close/reopen. Body and comments are stored as plain
 // Markdown and rendered as GFM via <Markdown>.
 
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Loader2, Play } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
@@ -33,6 +33,11 @@ import {
   linkedPullStatus,
   stateBadge,
 } from "@/lib/badges";
+import {
+  hasPlainShortcutModifiers,
+  isEditableShortcutTarget,
+  isShortcutOverlayActive,
+} from "@/lib/keyboard-shortcuts";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
@@ -57,8 +62,28 @@ export function IssueDetail({
   repo: string;
   number: number;
 }) {
+  const navigate = useNavigate();
   const issueQuery = useIssue(owner, repo, number);
   const commentsQuery = useIssueComments(owner, repo, number);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (
+        event.defaultPrevented ||
+        event.key !== "u" ||
+        hasPlainShortcutModifiers(event) ||
+        isEditableShortcutTarget(event.target) ||
+        isShortcutOverlayActive(event.target)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      navigate({ to: "/r/$owner/$repo/issues", params: { owner, repo } });
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [navigate, owner, repo]);
 
   if (issueQuery.isLoading) {
     return (

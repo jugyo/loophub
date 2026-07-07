@@ -23,15 +23,17 @@ export const repoRoute = createRoute({
   component: RepoPage,
   // The repo top is the canonical issue list. Keep default open issues clean,
   // while allowing shared links to a label filter or the closed tab.
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { labels?: string; state?: "closed" | "all" } => {
-    const labels =
-      typeof search.labels === "string" ? search.labels.trim() : "";
-    const state =
-      search.state === "closed" || search.state === "all"
-        ? search.state
-        : undefined;
-    return { ...(labels ? { labels } : {}), ...(state ? { state } : {}) };
-  },
+  validateSearch: validateIssueListSearch,
 });
+
+export function validateIssueListSearch(search: Record<string, unknown>): {
+  labels?: string;
+  state?: "closed" | "all";
+} {
+  const labels = typeof search.labels === "string" ? search.labels.trim() : "";
+  const state =
+    search.state === "closed" || search.state === "all"
+      ? search.state
+      : undefined;
+  return { ...(labels ? { labels } : {}), ...(state ? { state } : {}) };
+}

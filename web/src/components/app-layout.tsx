@@ -7,17 +7,20 @@ import { AppBreadcrumb } from "@/components/app-breadcrumb";
 import { AppSidebar } from "@/components/app-sidebar";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { DetailTitleProvider } from "@/components/detail-title";
+import { RepoSwitcher } from "@/components/repo-switcher";
 import {
   TerminalControllerProvider,
   TerminalLaunchErrorDialog,
 } from "@/components/terminal-controller";
 import { ToastProvider, ToastViewport } from "@/components/toast";
+import { useIssueKeyboardNavigation } from "@/lib/use-issue-keyboard-navigation";
 import { useScrollToTop } from "@/lib/use-scroll-to-top";
 
 export function AppLayout() {
   // Reset the content scroll position to the top on every route change (#277).
   const mainRef = useRef<HTMLElement>(null);
   useScrollToTop(mainRef);
+  useIssueKeyboardNavigation(mainRef);
   return (
     // TerminalControllerProvider wraps the content so New Issue / Build / Resume buttons can
     // launch a Herdr session via useTerminalLauncher() and surface its launch feedback / error
@@ -42,6 +45,7 @@ export function AppLayout() {
           {/* Floating "New issue" launcher. Fixed-positioned, so it is rendered at the shell level
               rather than inside the header; it hides itself on non-repo screens (home / archived). */}
           <CreateIssueButton />
+          <RepoSwitcher />
           <TerminalLaunchErrorDialog />
           {/* Operation feedback (#574): a floating toast above the content, with an explicit
               lifetime independent of any one screen's components (mirrors the old ErrorBanner). */}

@@ -152,10 +152,16 @@ export function IssueRow({
     issue.linked_pull_requests ??
     (issue.linked_pull_request ? [issue.linked_pull_request] : []);
   return (
-    <div className="group flex flex-col gap-1 px-3 py-2 text-sm hover:bg-accent">
+    <div
+      data-issue-row
+      tabIndex={-1}
+      aria-label={`Issue #${issue.number}: ${issue.title}`}
+      className="group flex flex-col gap-1 px-3 py-2 text-sm hover:bg-accent focus:bg-accent focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring"
+    >
       <div className="flex items-center gap-2">
         <RepoChip label={repoLabel} owner={owner} repo={repo} />
         <Link
+          data-issue-row-link
           to="/r/$owner/$repo/issues/$number"
           params={{ owner, repo, number: String(issue.number) }}
           className="shrink-0 text-muted-foreground hover:underline"
