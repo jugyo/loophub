@@ -443,7 +443,7 @@ describe("IssueRow overflow menu (#582)", () => {
 });
 
 // #265: the linked-PR sub-row paints two independent colour axes — the `PR #n`
-// pill carries the PR lifecycle (open=green / merged=purple / closed=grey) and
+// pill carries the PR lifecycle (open=primary / merged=purple / closed=grey) and
 // the status word its state-specific signal (conflict/changes=red, passed=
 // green, the rest muted). These assert the actually-rendered DOM classes.
 describe("LinkedPullSubRow two-axis colours (#265)", () => {
@@ -461,14 +461,14 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
   it("labels a fresh open PR (no review/conflict, status computed) as working", async () => {
     // Previously fell to null → bare pill. Now reads working (muted word).
     const pill = await renderPull({ mergeable_state: "blocked" });
-    expect(pill.className).toContain("text-green-600"); // open pill = green
+    expect(pill.className).toContain("text-link"); // open pill = primary
     const word = screen.getByText("working");
     expect(word.className).toContain("text-muted-foreground");
   });
 
-  it("paints a conflict word red while the pill stays green (open)", async () => {
+  it("paints a conflict word red while the pill stays primary (open)", async () => {
     const pill = await renderPull({ mergeable_state: "conflict" });
-    expect(pill.className).toContain("text-green-600"); // lifecycle: open
+    expect(pill.className).toContain("text-link"); // lifecycle: open
     expect(screen.getByText("conflict").className).toContain(
       "text-destructive",
     );
@@ -479,12 +479,12 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
     expect(screen.getByText("changes").className).toContain("text-destructive");
   });
 
-  it("paints a passed word green on a green pill", async () => {
+  it("paints a passed word green on a primary pill", async () => {
     const pill = await renderPull({
       review_state: "PASSED",
       mergeable_state: "clean",
     });
-    expect(pill.className).toContain("text-green-600");
+    expect(pill.className).toContain("text-link");
     expect(screen.getByText("passed").className).toContain("text-green-600");
   });
 
@@ -904,6 +904,7 @@ describe("linked PR agent metadata (#842)", () => {
                 pushed_sha: null,
                 github_merged: false,
                 github_merged_at: null,
+                pushed_sha: null,
               },
               total_tokens: 12345,
               cost_usd: 4.5,

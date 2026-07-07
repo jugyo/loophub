@@ -391,12 +391,12 @@ function LinkedPullSubRow({
     pull.number,
   );
   const status = linkedPullStatus(pull, { agentWorking });
-  // Two independent colour axes: the pill carries the PR lifecycle (open=green /
+  // Two independent colour axes: the pill carries the PR lifecycle (open=primary /
   // merged=purple / closed=grey), the status word its state-specific signal
   // (STATUS_TEXT). A muted pill when status is null (issue-detail summary path).
   const pillTone = status ? linkedPullPillTone(pull) : "unknown";
-  // pass 済みなら、緑にまとめられた未マージ群の中から一目で識別できるよう
-  // ステータス語にチェックアイコンを添える。他の未マージ状態には出さない。
+  // A passed review gets a check icon next to its green status word so it remains
+  // distinguishable from other unmerged PR states.
   const passed = status?.tone === "review-passed";
   // #863: force-stopped-for-cost flag, shown as a badge so a stalled PR stands out in the issue list.
   const costStopped = costStoppedBadge(pull);

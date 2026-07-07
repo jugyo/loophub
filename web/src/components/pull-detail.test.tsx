@@ -1509,6 +1509,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
         pushed_sha: null,
         github_merged: false,
         github_merged_at: null,
+        pushed_sha: null,
       },
     });
     const link = await screen.findByRole("link", {

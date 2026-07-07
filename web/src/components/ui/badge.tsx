@@ -1,5 +1,5 @@
-// Status badge pill. Tones mirror the v1 UI badge palette (src/ui.html) for
-// state / review / conflict parity.
+// Status badge pill. Neutral/destructive/success tones stay semantic; active work states use the
+// shared primary theme tokens so badges align with the rest of the UI chrome.
 
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
@@ -10,7 +10,7 @@ const badgeVariants = cva(
   {
     variants: {
       tone: {
-        open: "border-green-600/60 text-green-600 dark:text-green-400",
+        open: "border-primary-border bg-primary-subtle text-link",
         closed: "border-border text-muted-foreground",
         draft:
           "border-border bg-muted text-muted-foreground dark:text-muted-foreground",
@@ -21,18 +21,16 @@ const badgeVariants = cva(
         "review-rereview":
           "border-amber-500/60 text-amber-600 dark:text-amber-400",
         "review-commented": "border-border text-muted-foreground",
-        mergeable: "border-green-600/60 text-green-600 dark:text-green-400",
+        mergeable: "border-primary-border bg-primary-subtle text-link",
         conflict: "border-destructive/50 text-destructive",
-        working:
-          "border-sky-500/50 bg-sky-500/10 text-sky-600 dark:text-sky-300",
+        working: "border-primary-border bg-primary-subtle text-link",
         // #863: a PR whose dev agent was force-stopped for exceeding its cost limit. A filled
         // destructive tone — the escalation of AgentCostBadge's amber/red cost highlight — so a
         // stalled PR stands out from the other status badges.
         "cost-stopped":
           "border-destructive/50 bg-destructive/10 text-destructive",
         unknown: "border-border text-muted-foreground",
-        agent:
-          "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-300",
+        agent: "border-primary-border bg-primary-subtle text-link",
       },
     },
     defaultVariants: { tone: "closed" },

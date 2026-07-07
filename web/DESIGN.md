@@ -23,25 +23,29 @@ than reaching for the raw HSL values.
 
 ### Color palette
 
-This is the shadcn/ui default **slate** theme. Colors are stored as bare HSL
+The neutral shell is based on the shadcn/ui slate scale, with LoopHub's primary
+interaction color set to a blue-purple theme. Colors are stored as bare HSL
 channels (`H S% L%`) and wrapped with `hsl(var(--token))` in the Tailwind
-config, so opacity modifiers (`bg-primary/90`) work. A v1 design-token port is
-out of scope.
+config, so opacity modifiers (`bg-primary/90`) work.
 
 | Token | Tailwind name | Role |
 |-------|---------------|------|
 | `--background` / `--foreground` | `background` / `foreground` | Page base + body text |
 | `--card` / `--card-foreground` | `card` / `card-foreground` | Raised surfaces (sidebar) |
-| `--primary` / `--primary-foreground` | `primary` / `primary-foreground` | Primary action; GitHub-style green (`#1f883d` light, `#238636` dark) |
+| `--primary` / `--primary-foreground` | `primary` / `primary-foreground` | Primary action color and readable foreground |
+| `--primary-hover` / `--primary-active` | `primary-hover` / `primary-active` | Primary action interaction states |
+| `--primary-subtle` / `--primary-border` | `primary-subtle` / `primary-border` | Selected-state fills, themed badges, and primary borders |
+| `--link` | `link` | Links; aligned to the blue-purple primary family |
 | `--secondary` / `--secondary-foreground` | `secondary` / `secondary-foreground` | Secondary buttons |
 | `--muted` / `--muted-foreground` | `muted` / `muted-foreground` | Muted backgrounds + de-emphasized text |
-| `--accent` / `--accent-foreground` | `accent` / `accent-foreground` | Hover/active highlight |
+| `--accent` / `--accent-foreground` | `accent` / `accent-foreground` | Hover/active highlight, derived from the primary subtle theme |
 | `--destructive` / `--destructive-foreground` | `destructive` / `destructive-foreground` | Errors, conflicts, dangerous actions |
 | `--border` / `--input` / `--ring` | `border` / `input` / `ring` | Borders, inputs, focus ring |
 
-Badge accent colors (green/purple/amber/violet) are the exception: they use
-Tailwind's built-in palette directly rather than theme tokens — see
-[Badge tones](#badge-tones).
+Outcome badge tones (`merged`, `review-passed`, `review-changes`,
+`review-rereview`, `conflict`, `cost-stopped`) use Tailwind's built-in palette
+directly. Active/open work-state tones (`open`, `mergeable`, `working`,
+`agent`) use the primary theme tokens — see [Badge tones](#badge-tones).
 
 ### Light / dark theme
 
@@ -130,7 +134,7 @@ Only the primitives actually used by the shell are vendored, each kept minimal
 (cva) for variants and `cn()` for class merging.
 
 - **Button** ([`ui/button.tsx`](./src/components/ui/button.tsx)) — variants
-  `default` (primary green), `ghost`, `secondary`; sizes `default` (`h-9`),
+  `default` (primary blue-purple), `ghost`, `secondary`; sizes `default` (`h-9`),
   `sm` (`h-8`), `icon` (`h-9 w-9`). Default+default is the standard action
   button.
 - **Badge** ([`ui/badge.tsx`](./src/components/ui/badge.tsx)) — status pill;
@@ -143,14 +147,15 @@ variants in use.
 
 ### Badge tones
 
-`Badge` takes a `tone` (default `closed`). Tones mirror the v1 UI palette for
-parity. The tone for a given issue/PR is computed by the pure helpers in
+`Badge` takes a `tone` (default `closed`). Outcome tones keep their established
+semantic colors, while active/open work-state tones use the primary theme. The
+tone for a given issue/PR is computed by the pure helpers in
 [`src/lib/badges.ts`](./src/lib/badges.ts) (`issueBadges`, `pullBadges`), not
 chosen ad hoc at the call site.
 
 | Tone | Meaning | Color |
 |------|---------|-------|
-| `open` | Open issue | Green outline |
+| `open` | Open issue | Primary themed outline + tint |
 | `closed` | Closed issue / closed PR (also the default) | Muted outline |
 | `merged` | Merged PR | Purple outline |
 | `review-passed` | PR review `PASSED` | Green outline |
@@ -158,10 +163,14 @@ chosen ad hoc at the call site.
 | `review-rereview` | PR review `READY_FOR_RE_REVIEW` | Amber outline |
 | `review-commented` | PR review `COMMENTED` | Muted outline |
 | `conflict` | Open PR with `mergeable_state: conflict` | Destructive outline |
-| `agent` | Assigned agent session (`@name`) | Violet, filled tint |
+| `mergeable` | Open PR with `mergeable_state: clean` | Primary themed outline + tint |
+| `working` | Open PR with active or dirty worktree work | Primary themed outline + tint |
+| `cost-stopped` | Open PR stopped after exceeding cost limit | Destructive outline + tint |
+| `agent` | Assigned agent session (`@name`) | Primary themed outline + tint |
 
-Badges are outline pills (`rounded-full border`, `text-[11px]`) except `agent`,
-which adds a faint fill to stand out as an actor.
+Badges are compact pills (`rounded-full border`, `text-[11px]`). Work-state and
+cost-stopped tones add a subtle fill so active states stand out without changing
+layout.
 
 ---
 

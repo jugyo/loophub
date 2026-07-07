@@ -133,8 +133,8 @@ export function IssueList({
                 }}
                 className={
                   active
-                    ? "rounded-sm bg-background px-3 py-1 text-sm font-medium text-foreground shadow-sm"
-                    : "rounded-sm px-3 py-1 text-sm text-muted-foreground hover:text-foreground"
+                    ? "rounded-sm bg-accent px-3 py-1 text-sm font-medium text-accent-foreground shadow-sm"
+                    : "rounded-sm px-3 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 }
               >
                 {tab.label}

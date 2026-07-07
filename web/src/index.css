@@ -2,29 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
-/* shadcn/ui default theme tokens (slate). v1 design-token port is out of scope. */
+/* LoopHub web theme tokens. Colors are stored as bare HSL channels so Tailwind opacity
+   modifiers keep working through hsl(var(--token) / <alpha-value>). */
 @layer base {
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
-    /* GitHub-style green primary action button (#1f883d) */
-    --primary: 137 63% 33%;
+    --primary: 244 57% 50%;
+    --primary-hover: 243 58% 42%;
+    --primary-active: 243 67% 35%;
+    --primary-subtle: 226 100% 97%;
+    --primary-border: 229 96% 85%;
     --primary-foreground: 0 0% 100%;
-    /* GitHub-style blue link color (#0969da); independent of --primary */
-    --link: 212 92% 45%;
+    --link: 244 57% 50%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: var(--primary-subtle);
+    --accent-foreground: 243 58% 28%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --ring: var(--primary);
     --radius: 0.5rem;
     /* Left sidebar width — single source of truth shared by the sidebar (its width) and the
        bottom terminal pane (its left offset, so the pane sits beside the sidebar, not over it). */
@@ -36,22 +39,24 @@
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
-    /* GitHub-style green primary action button (#238636) */
-    --primary: 131 59% 40%;
-    --primary-foreground: 0 0% 100%;
-    /* GitHub-style blue link color (#2f81f7); independent of --primary */
-    --link: 215 92% 58%;
+    --primary: 238 84% 67%;
+    --primary-hover: 229 96% 77%;
+    --primary-active: 239 84% 62%;
+    --primary-subtle: 242 47% 16%;
+    --primary-border: 239 84% 67%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --link: 229 96% 77%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: var(--primary-subtle);
+    --accent-foreground: 226 100% 94%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --ring: var(--primary);
   }
 }
 
