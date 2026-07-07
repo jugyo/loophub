@@ -3,7 +3,7 @@
 // (../lib/badges.ts).
 
 import { Link } from "@tanstack/react-router";
-import { Check, Loader2, MoreHorizontal, Play } from "lucide-react";
+import { Check, Loader2, MoreHorizontal, Play, Timer } from "lucide-react";
 import {
   Fragment,
   type ReactElement,
@@ -38,7 +38,7 @@ import {
   formatTokenCount,
   formatTokenCountShort,
 } from "@/lib/session-usage";
-import { relativeTime } from "@/lib/time";
+import { formatDuration, relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
 import { type IssueListFilters, useSetIssueState } from "@/queries/issues";
@@ -456,6 +456,9 @@ function LinkedPullSubRow({
         costUsd={pull.cost_usd}
       />
     ) : null,
+    pull.work_duration_total ? (
+      <WorkDurationBadge key="work-duration" total={pull.work_duration_total} />
+    ) : null,
     hasHerdrWorkspace ? (
       <HerdrBadge key="herdr" owner={owner} repo={repo} pull={pull.number} />
     ) : null,
@@ -540,6 +543,37 @@ function AgentCostBadge({
       title={`${formatTokenCount(totalTokens)} tokens · ${cost}`}
     >
       {formatTokenCountShort(totalTokens)} tok · {cost}
+    </span>
+  );
+}
+
+// #882: total work duration for the issue-list PR sub-row — the same `pullWorkDuration().total` as
+// the PR-detail sidebar (#456), shown muted/compact next to the cost badge so a reader can tell a
+// quick fix from a long-running loop without opening the PR. The basis (in progress / merged / …)
+// only shows in the tooltip; the row itself stays to a single "2h 15m" so it never crowds.
+const WORK_BASIS_LABEL: Record<
+  NonNullable<LinkedPull["work_duration_total"]>["basis"],
+  string
+> = {
+  merged: "merged",
+  closed: "closed",
+  in_review: "in review",
+  in_progress: "in progress",
+};
+
+function WorkDurationBadge({
+  total,
+}: {
+  total: NonNullable<LinkedPull["work_duration_total"]>;
+}) {
+  const text = formatDuration(total.seconds);
+  return (
+    <span
+      className="flex shrink-0 items-center gap-0.5 tabular-nums"
+      title={`Total work time: ${text} (${WORK_BASIS_LABEL[total.basis]})`}
+    >
+      <Timer className="size-3" aria-hidden="true" />
+      {text}
     </span>
   );
 }

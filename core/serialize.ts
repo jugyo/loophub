@@ -150,6 +150,10 @@ export interface IssueListPullSummaryWire extends PullSummaryWire {
   changed_files: number;
   agent_runtime?: string;
   agent_model?: string;
+  // #882: the PR's total work duration for the sub-row — the same `pullWorkDuration().total` shown
+  // in the PR-detail sidebar (#456), not a new calculation. Omitted when there is no dev session to
+  // anchor from (the detail path renders that as "N/A"; the sub-row just drops the item).
+  work_duration_total?: { seconds: number; basis: PullWorkDurationBasis };
 }
 
 // Herdr pane captured from the New Issue flow (#670). Narrowed from the `issue_herdr_panes` row —
@@ -720,6 +724,9 @@ function pullSummary(repo: S.Repo, pr: S.LinkedPullIssueRow): PullSummaryWire {
 // fan-out (revParse/mergePreview/diffStat/status) is bounded — callers keep
 // their lists paginated.
 interface PullStatusFields {
+  // The PR row this status was computed from — already fetched here, so callers reuse it instead of
+  // a second S.getPull for the same id (e.g. linkedPullDetail's #882 work-duration lookup).
+  pull: S.PullRow;
   headSha: string | null;
   baseSha: string | null;
   mergeable: boolean | null;
@@ -804,6 +811,7 @@ async function pullStatusFields(
     worktree_path = null;
   }
   return {
+    pull: p,
     headSha,
     baseSha,
     mergeable,
@@ -870,6 +878,16 @@ async function linkedPullDetail(
   const agent = S.pullAgentSummary(pr.id);
   const runtime = agent ? sessionRuntime(agent) : null;
   const model = agent?.models.length ? agent.models.join(", ") : null;
+  // #882: total work duration for the sub-row, computed with the same pullWorkDuration used by the
+  // PR-detail sidebar (#456). Reuses the PullRow status already fetched (no second S.getPull) plus one
+  // primaryDevSessionForPull lookup, so per-row cost stays on par with #783's usage total and the list
+  // stays bounded. Only `total` is surfaced here; phase breakdown stays detail-only.
+  const workTotal = pullWorkDuration(
+    repo,
+    pr,
+    status.pull,
+    S.primaryDevSessionForPull(pr.id),
+  ).total;
   return {
     number: pr.number,
     title: pr.title,
@@ -894,6 +912,15 @@ async function linkedPullDetail(
       ? {
           total_tokens: usageTotals.total_tokens,
           cost_usd: usageTotals.cost_usd,
+        }
+      : {}),
+    // #882: total work duration, omitted when there is no dev session to anchor from.
+    ...(workTotal && workTotal.seconds != null && workTotal.basis != null
+      ? {
+          work_duration_total: {
+            seconds: workTotal.seconds,
+            basis: workTotal.basis,
+          },
         }
       : {}),
   };

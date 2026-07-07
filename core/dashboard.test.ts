@@ -159,4 +159,30 @@ describe("dashboard.overview", () => {
     expect(after.agent_runtime).toBe("claude-code");
     expect(after.agent_model).toBe("claude-sonnet-5");
   });
+
+  test("linked PR carries work_duration_total using the #456 total (#882)", async () => {
+    const issue = svc.issues.create("me/proj", { title: "gets work duration" });
+    await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
+
+    const linkedPull = (o: any) =>
+      o.issues.find((i: any) => i.issue.number === issue.number)?.issue
+        .linked_pull_requests[0];
+
+    // A PR with a dev session but no ready_for_review yet reports its still-growing total under the
+    // `in_progress` basis — the same `pullWorkDuration().total` the detail sidebar shows, not a new
+    // calculation. Only `total` (seconds + basis) is on the sub-row; no phase breakdown.
+    const linked = linkedPull(await svc.dashboard.overview());
+    expect(linked.work_duration_total).toMatchObject({ basis: "in_progress" });
+    expect(linked.work_duration_total.seconds).toBeGreaterThanOrEqual(0);
+    expect(linked).not.toHaveProperty("implementation");
+    expect(linked).not.toHaveProperty("review");
+  });
 });

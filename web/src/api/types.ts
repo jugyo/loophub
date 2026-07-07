@@ -50,6 +50,7 @@ export type LinkedPull = PullSummaryWire &
       | "changed_files"
       | "agent_runtime"
       | "agent_model"
+      | "work_duration_total"
     >
   >;
 
