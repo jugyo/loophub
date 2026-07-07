@@ -23,7 +23,7 @@ core/    Pure domain library (Node): db, config, store, git, event-hub, links, w
 cli/     `lh` command — commands/ grouped by noun; imports core directly, no HTTP
 web/     `lh-web` process: core + JSON-RPC 2.0 + SSE, plus the SPA
 worker/  `lh-worker` resident process: tails shared events, runs per-repo workflow.yml,
-         and owns maintenance sweep loops (PR sweep, usage, herdr inactive cleanup, GitHub merge sync)
+         and owns maintenance sweep loops (PR sweep, usage, GitHub merge sync, cost stop, scheduled tasks)
 ```
 
 ### Responsibility split (core vs cli)

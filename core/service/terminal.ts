@@ -49,7 +49,6 @@ import {
   parseHerdrAgentPaneId,
   parseHerdrAgentPlacements,
   parseHerdrAgentRead,
-  parseHerdrInactiveCleanupCandidates,
   parseHerdrPaneKillTarget,
   parseHerdrPaneLayout,
   parseHerdrPaneProcessInfo,
@@ -646,11 +645,21 @@ export const terminal = {
     return herdrSessionsInflight;
   },
 
-  async cleanupInactiveAgents(): Promise<{
+  async cleanupClosedIssueNewIssueAgent(input: {
+    repo: string;
+    issueNumber: number;
+  }): Promise<{
     closed: number;
+    skipped: number;
     failed: number;
   }> {
-    return cleanupInactiveHerdrAgents();
+    if (!input.repo) throw new ServiceError(422, "repo is required");
+    if (!Number.isFinite(input.issueNumber) || input.issueNumber <= 0)
+      throw new ServiceError(422, "issueNumber is required");
+    return cleanupClosedIssueNewIssueAgentImpl(
+      input.repo,
+      Math.trunc(input.issueNumber),
+    );
   },
 
   // Send Esc to `lh dev` agents that have exceeded the top-level cost limit (#832). Worker-owned
@@ -750,10 +759,8 @@ export const terminal = {
     await killPaneForegroundProcess(r, input.paneId);
     // Best-effort tidy-up: the process is already dead either way, so a `confirmation_required`
     // refusal here (or any other herdr failure) must not undo the kill the caller already got —
-    // this only saves the now-empty pane from lingering in the sidebar. Bounded the same as
-    // cleanupInactiveHerdrAgents's equivalent tidy-up call below: a fire-and-forget spawn with no
-    // timeout can never be killed if the herdr client wedges on its session socket (the same
-    // failure mode runHerdr's own timeoutMs guard exists for).
+    // this only saves the now-empty pane from lingering in the sidebar. Keep the fire-and-forget
+    // call bounded so a wedged herdr client cannot outlive runHerdr's timeout guard.
     const argv = herdrPaneCloseArgv(r, input.paneId);
     runHerdr(argv[0], argv.slice(1), r.local_path, { timeoutMs: 10_000 }).catch(
       () => {},
@@ -958,19 +965,13 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
 async function killPaneForegroundProcess(
   repo: TerminalLaunchRepo,
   paneId: string,
+  sessionName = herdrSessionName(repo),
 ): Promise<void> {
   let infoOut: string;
   try {
     infoOut = await runHerdr(
       "herdr",
-      [
-        "--session",
-        herdrSessionName(repo),
-        "pane",
-        "process-info",
-        "--pane",
-        paneId,
-      ],
+      ["--session", sessionName, "pane", "process-info", "--pane", paneId],
       repo.local_path,
       { captureStdout: true, timeoutMs: 10_000 },
     );
@@ -1002,69 +1003,32 @@ async function killPaneForegroundProcess(
   }
 }
 
-async function cleanupInactiveHerdrAgents(): Promise<{
-  closed: number;
-  failed: number;
-}> {
-  let listOut: string;
-  try {
-    listOut = await runHerdrCapture(["session", "list", "--json"]);
-  } catch {
-    return { closed: 0, failed: 0 };
+async function cleanupClosedIssueNewIssueAgentImpl(
+  repoName: string,
+  issueNumber: number,
+): Promise<{ closed: number; skipped: number; failed: number }> {
+  const repo = repoOr404(repoName);
+  const issue = S.getIssue(repo.id, issueNumber);
+  if (issue?.kind !== "issue" || issue.state !== "closed") {
+    return { closed: 0, skipped: 1, failed: 0 };
   }
-  const running = parseHerdrSessionList(listOut);
-  if (running.length === 0) return { closed: 0, failed: 0 };
+  const pane = S.getIssueHerdrPane(issue.id);
+  if (!pane?.pane_id) return { closed: 0, skipped: 1, failed: 0 };
+  if (!HERDR_ID.test(pane.pane_id)) return { closed: 0, skipped: 0, failed: 1 };
 
-  let closed = 0;
-  let failed = 0;
-  const matched = reposWithRunningSession(S.listRepos("active"), running);
-  for (const { repo, sessionName } of matched) {
-    let agentsOut: string;
-    try {
-      agentsOut = await runHerdrCapture([
-        "--session",
-        sessionName,
-        "agent",
-        "list",
-      ]);
-    } catch {
-      continue;
-    }
-    const closedByPull = new Map<number, boolean>();
-    const isPullClosed = (pull: number): boolean => {
-      const cached = closedByPull.get(pull);
-      if (cached !== undefined) return cached;
-      const row = S.getIssue(repo.id, pull);
-      const closed = !!row && row.kind === "pull" && row.state !== "open";
-      closedByPull.set(pull, closed);
-      return closed;
-    };
-    for (const candidate of parseHerdrInactiveCleanupCandidates(
-      agentsOut,
-      Date.now(),
-      {
-        worktreeRoot: worktreeRoot(),
-        fullName: repo.full_name,
-        isPullClosed,
-      },
-    )) {
-      try {
-        await killPaneForegroundProcess(repo, candidate.paneId);
-        closed++;
-      } catch {
-        failed++;
-        continue;
-      }
-      // Best-effort tidy-up, same as killAgent above: the process is already dead either way, so
-      // a `confirmation_required` refusal here must not undo the successful kill — this only
-      // saves the now-empty pane from lingering in the sidebar.
-      const argv = herdrPaneCloseArgv(repo, candidate.paneId);
-      runHerdr(argv[0], argv.slice(1), repo.local_path, {
-        timeoutMs: 10_000,
-      }).catch(() => {});
-    }
+  const sessionName = pane.session_name ?? herdrSessionName(repo);
+  try {
+    await killPaneForegroundProcess(repo, pane.pane_id, sessionName);
+  } catch {
+    return { closed: 0, skipped: 0, failed: 1 };
   }
-  return { closed, failed };
+  runHerdr(
+    "herdr",
+    ["--session", sessionName, "pane", "close", pane.pane_id],
+    repo.local_path,
+    { timeoutMs: 10_000 },
+  ).catch(() => {});
+  return { closed: 1, skipped: 0, failed: 0 };
 }
 
 // herdr key name sent to a pane to interrupt (cancel the current turn of) a running claude/codex
@@ -1073,13 +1037,12 @@ async function cleanupInactiveHerdrAgents(): Promise<{
 const COST_STOP_KEY = "Escape";
 
 // Stop `lh dev` implementation agents whose top-level cumulative cost has passed the limit (#832),
-// by sending Esc to their herdr pane — no kill. Mirrors cleanupInactiveHerdrAgents' enumeration:
-// running herdr sessions → active repos → each pane the `agent list` resolves to a `pr-<n>`
-// worktree. For each such pane we resolve the PR's primary dev session, read its top-level cost,
-// and let decideCostStop judge. A pane that doesn't map to an open PR with a linked dev session is
-// left alone (so unrelated terminals are never stopped); ambiguous cost (unknown/no session) is a
-// retryable no-op, not a stop. A stop emits `dev.cost_stopped`, which both records the reason and
-// guards against re-sending Esc on later ticks.
+// by sending Esc to their herdr pane — no kill. It enumerates running herdr sessions → active repos
+// → each pane the `agent list` resolves to a `pr-<n>` worktree. For each such pane we resolve the
+// PR's primary dev session, read its top-level cost, and let decideCostStop judge. A pane that
+// doesn't map to an open PR with a linked dev session is left alone (so unrelated terminals are
+// never stopped); ambiguous cost (unknown/no session) is a retryable no-op, not a stop. A stop emits
+// `dev.cost_stopped`, which both records the reason and guards against re-sending Esc on later ticks.
 async function enforceDevCostLimitsImpl(): Promise<{
   stopped: number;
   skipped: number;

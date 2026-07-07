@@ -22,7 +22,6 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     M.normalizeMaintenanceLoopOptions({
       sweepMs: 0,
       usageSweepMs: Number.NaN,
-      herdrInactiveCleanupMs: Number.POSITIVE_INFINITY,
       githubMergeSweepMs: 0,
       costStopSweepMs: Number.NaN,
       scheduledTaskSweepMs: Number.NaN,
@@ -30,7 +29,6 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
   ).toEqual({
     sweepMs: 0,
     usageSweepMs: M.DEFAULT_USAGE_SWEEP_MS,
-    herdrInactiveCleanupMs: M.DEFAULT_HERDR_INACTIVE_CLEANUP_MS,
     githubMergeSweepMs: 0,
     costStopSweepMs: M.DEFAULT_COST_STOP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
@@ -39,7 +37,6 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
   expect(M.normalizeMaintenanceLoopOptions()).toEqual({
     sweepMs: M.DEFAULT_SWEEP_MS,
     usageSweepMs: M.DEFAULT_USAGE_SWEEP_MS,
-    herdrInactiveCleanupMs: M.DEFAULT_HERDR_INACTIVE_CLEANUP_MS,
     githubMergeSweepMs: M.DEFAULT_GITHUB_MERGE_SWEEP_MS,
     costStopSweepMs: M.DEFAULT_COST_STOP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
@@ -51,7 +48,6 @@ test("maintenance summary reports disabled loops as off", () => {
     M.maintenanceSummary({
       sweepMs: 0,
       usageSweepMs: 25,
-      herdrInactiveCleanupMs: 0,
       githubMergeSweepMs: 0,
       costStopSweepMs: 0,
       scheduledTaskSweepMs: 0,
@@ -59,7 +55,6 @@ test("maintenance summary reports disabled loops as off", () => {
   ).toEqual({
     pullSweep: "off",
     usageSweep: "25ms",
-    herdrInactiveCleanup: "off",
     githubMergeSweep: "off",
     costStopSweep: "off",
     scheduledTaskSweep: "off",

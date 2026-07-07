@@ -6,7 +6,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { logsDir, workerCursorPath } from "../core/config.ts";
 import { worktreeList } from "../core/git.ts";
-import { events, pulls, type Repo, repos } from "../core/service.ts";
+import { events, pulls, type Repo, repos, terminal } from "../core/service.ts";
 import { resolveStartCursor, writeCursor } from "../core/worker-cursor.ts";
 import {
   buildRunEnv,
@@ -103,18 +103,40 @@ async function prWorktreePath(repo: Repo, prNumber: number): Promise<string> {
 // per-step start/finish are recorded as `workflow.run_started` / `workflow.run_completed`
 // events (visible on the Web timeline) and full output goes to the log file.
 export async function dispatchEvent(row: EventRow): Promise<void> {
-  if (!isSupported(row.type) || row.repo_id == null) return;
+  if (row.repo_id == null) return;
   const repo = repos.getById(row.repo_id);
   if (!repo) return;
+
+  const payload = parsePayload(row.payload);
+  const number =
+    typeof payload?.number === "number" ? payload.number : undefined;
+
+  if (row.type === "issue.closed" && number !== undefined) {
+    try {
+      const result = await terminal.cleanupClosedIssueNewIssueAgent({
+        repo: repo.full_name,
+        issueNumber: number,
+      });
+      if (result.failed > 0) {
+        console.error(
+          `lh-worker: issue close herdr cleanup failed for ${repo.full_name}#${number}`,
+        );
+      }
+    } catch (e) {
+      console.error(
+        `lh-worker: issue close herdr cleanup error (event ${row.id}):`,
+        e,
+      );
+    }
+  }
+
+  if (!isSupported(row.type)) return;
 
   const workflow = loadWorkflow(repo.local_path);
   if (!workflow) return;
   const steps = stepsFor(workflow, row.type);
   if (steps.length === 0) return;
 
-  const payload = parsePayload(row.payload);
-  const number =
-    typeof payload?.number === "number" ? payload.number : undefined;
   const isPull = row.type.startsWith("pull_request.");
   const issueNumber = isPull ? undefined : number;
   const prNumber = isPull ? number : undefined;

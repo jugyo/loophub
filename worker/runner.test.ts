@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -9,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { git, worktreeAdd } from "../core/git.ts";
 import { WORKFLOW_PATH } from "../core/workflow.ts";
 
@@ -33,6 +34,15 @@ async function makeRepo(workflowYml: string): Promise<string> {
   mkdirSync(join(p, ".loophub"), { recursive: true });
   writeFileSync(join(p, WORKFLOW_PATH), workflowYml);
   return p;
+}
+
+async function waitUntil(check: () => boolean, label: string): Promise<void> {
+  const deadline = Date.now() + 2000;
+  while (!check()) {
+    if (Date.now() > deadline)
+      throw new Error(`timed out waiting for: ${label}`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
 }
 
 beforeAll(async () => {
@@ -152,6 +162,75 @@ test("events without a workflow.yml or unsupported types are no-ops", async () =
   const row = S.emitEvent(repo.id, "issue.opened", "me", { number: 1 });
   await expect(R.dispatchEvent(row)).resolves.toBeUndefined();
   rmSync(repoPath, { recursive: true, force: true });
+});
+
+test("issue.closed cleans only the linked New Issue Herdr pane, even without workflow.yml", async () => {
+  const repoPath = mkdtempSync(join(tmpdir(), "lh-repo-"));
+  await git(repoPath, ["init", "-q", "-b", "main"]);
+  const repo = S.createRepo("jugyo/new-issue-cleanup", repoPath);
+  const target = S.createIssue(repo.id, "issue", "target", "", "me") as any;
+  const other = S.createIssue(repo.id, "issue", "other", "", "me") as any;
+  S.updateIssue(target.id, { state: "closed" });
+  S.updateIssue(other.id, { state: "closed" });
+  S.upsertIssueHerdrPane({
+    launchId: "target-launch",
+    repoId: repo.id,
+    issueId: target.id,
+    paneId: "wTarget:p1",
+    sessionName: "target-session",
+  });
+  S.upsertIssueHerdrPane({
+    launchId: "other-launch",
+    repoId: repo.id,
+    issueId: other.id,
+    paneId: "wOther:p1",
+    sessionName: "other-session",
+  });
+
+  const fakeBin = mkdtempSync(join(tmpdir(), "lh-herdr-close-"));
+  const callsFile = join(fakeBin, "calls.txt");
+  writeFileSync(
+    join(fakeBin, "herdr"),
+    [
+      "#!/bin/sh",
+      `echo "$*" >> '${callsFile}'`,
+      `if [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":999999}}}'; exit 0; fi`,
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(fakeBin, "herdr"), 0o755);
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fakeBin}:${originalPath}`;
+  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+  try {
+    const row = S.emitEvent(repo.id, "issue.closed", "me", {
+      number: target.number,
+    });
+
+    await R.dispatchEvent(row);
+    await waitUntil(
+      () =>
+        existsSync(callsFile) &&
+        readFileSync(callsFile, "utf8").includes("pane close wTarget:p1"),
+      "linked New Issue pane close",
+    );
+
+    expect(killSpy).toHaveBeenCalledWith(-999999, "SIGKILL");
+    const calls = readFileSync(callsFile, "utf8");
+    expect(calls).toContain(
+      "--session target-session pane process-info --pane wTarget:p1",
+    );
+    expect(calls).toContain("--session target-session pane close wTarget:p1");
+    expect(calls).not.toContain("wOther:p1");
+    expect(calls).not.toContain("other-session");
+  } finally {
+    killSpy.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fakeBin, { recursive: true, force: true });
+    rmSync(repoPath, { recursive: true, force: true });
+  }
 });
 
 test("log path stays under LOOPHUB_HOME/logs even for a repo name with path separators", async () => {

@@ -121,7 +121,6 @@ import {
 } from "../session-usage.ts";
 import { databaseSize, repoCounts, tableRowCounts } from "../stats.ts";
 import * as S from "../store.ts";
-import { parseHerdrInactiveCleanupCandidates } from "../terminal/herdr-inactive-cleanup.ts";
 import {
   type HerdrAgent,
   type HerdrIssueWorkspace,
@@ -278,7 +277,6 @@ export {
   parseHerdrAgentPaneId,
   parseHerdrAgentPlacements,
   parseHerdrAgentRead,
-  parseHerdrInactiveCleanupCandidates,
   parseHerdrPaneKillTarget,
   parseHerdrPaneLayout,
   parseHerdrPaneProcessInfo,

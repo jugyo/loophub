@@ -1,16 +1,13 @@
 import {
   appendFileSync,
-  chmodSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, expect, test } from "vitest";
 import { git, revParse } from "../../core/git.ts";
 
 // Isolate the DB before store.ts -> db.ts runs its import-time setup.
@@ -282,118 +279,5 @@ test("startUsageSweep syncs changed session usage and emits linked target events
     stop();
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
-  }
-});
-
-test("startHerdrInactiveCleanup periodically closes old inactive Herdr panes only", async () => {
-  const { startHerdrInactiveCleanup } = await import(
-    "../../worker/maintenance.ts"
-  );
-  const { herdrSessionName } = await import(
-    "../../core/terminal/terminal-launch.ts"
-  );
-
-  const repoPath = mkdtempSync(join(tmpdir(), "lh-herdr-cleanup-repo-"));
-  const repo = S.createRepo("me/herdr-cleanup", repoPath);
-  const sessionName = herdrSessionName(repo);
-
-  const FAKE_BIN = mkdtempSync(join(tmpdir(), "lh-herdr-cleanup-bin-"));
-  const CALLS_FILE = join(FAKE_BIN, "calls.txt");
-  const sessionList = JSON.stringify({
-    sessions: [{ default: false, name: sessionName, running: true }],
-  });
-  const agents = JSON.stringify({
-    result: {
-      agents: [
-        {
-          agent_status: "inactive",
-          inactive_seconds: 601,
-          name: "old inactive",
-          pane_id: "w1:p1",
-        },
-        {
-          agent_status: "inactive",
-          inactive_seconds: 30,
-          name: "new inactive",
-          pane_id: "w1:p2",
-        },
-        {
-          agent_status: "inactive",
-          name: "unknown age",
-          pane_id: "w1:p3",
-        },
-        {
-          agent_status: "working",
-          inactive_seconds: 3600,
-          name: "working",
-          pane_id: "w1:p4",
-        },
-      ],
-    },
-  });
-  writeFileSync(
-    join(FAKE_BIN, "herdr"),
-    [
-      "#!/bin/sh",
-      `echo "$*" >> ${CALLS_FILE}`,
-      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
-      `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
-      // #805: cleanup kills the pane's foreground process (via process-info) instead of asking
-      // herdr to close the pane directly, so it can never hit herdr's `confirmation_required`
-      // refusal for a worktree-linked workspace's last pane.
-      `if [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":999999}}}'; exit 0; fi`,
-      "exit 0",
-      "",
-    ].join("\n"),
-  );
-  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
-
-  async function waitUntil(check: () => boolean, label: string): Promise<void> {
-    const deadline = Date.now() + 2000;
-    while (!check()) {
-      if (Date.now() > deadline)
-        throw new Error(`timed out waiting for: ${label}`);
-      await new Promise((r) => setTimeout(r, 10));
-    }
-  }
-
-  const ORIGINAL_PATH = process.env.PATH;
-  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
-  // Mocked rather than left to hit the real OS: the fake herdr's foreground_process_group_id is
-  // an arbitrary placeholder, not a pid this test actually owns, so signaling it for real would
-  // either no-op by luck (ESRCH) or, if that pid/pgid ever exists on the runner, SIGKILL an
-  // unrelated live process (#805 review).
-  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
-  const stop = startHerdrInactiveCleanup(20);
-  try {
-    await waitUntil(
-      () =>
-        existsSync(CALLS_FILE) &&
-        readFileSync(CALLS_FILE, "utf8").includes("pane close w1:p1"),
-      "inactive pane close",
-    );
-    expect(killSpy).toHaveBeenCalledWith(-999999, "SIGKILL");
-    const calls = readFileSync(CALLS_FILE, "utf8");
-    expect(calls).toContain(`--session ${sessionName} agent list`);
-    expect(calls).toContain(`--session ${sessionName} pane close w1:p1`);
-    expect(calls).not.toContain("pane close w1:p2");
-    expect(calls).not.toContain("pane close w1:p3");
-    expect(calls).not.toContain("pane close w1:p4");
-  } finally {
-    stop();
-    killSpy.mockRestore();
-    process.env.PATH = ORIGINAL_PATH;
-    rmSync(FAKE_BIN, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 20,
-    });
-    rmSync(repoPath, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 20,
-    });
   }
 });
