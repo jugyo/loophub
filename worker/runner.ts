@@ -16,6 +16,7 @@ import {
   stepsFor,
   type WorkflowStep,
 } from "../core/workflow.ts";
+import { workerLog } from "./logger.ts";
 
 const DEFAULT_POLL_MS = 1000;
 const PAGE = 100;
@@ -50,6 +51,38 @@ function parsePayload(payload: string): any {
 interface RunResult {
   exitCode: number | null;
   durationMs: number;
+}
+
+function workflowContextFields(input: {
+  repo: Repo;
+  row: EventRow;
+  issueNumber?: number;
+  prNumber?: number;
+}): string {
+  return [
+    `repo=${input.repo.full_name}`,
+    `event_id=${input.row.id}`,
+    `event_type=${input.row.type}`,
+    `issue=${input.issueNumber ?? "-"}`,
+    `pr=${input.prNumber ?? "-"}`,
+  ].join(" ");
+}
+
+function logWorkflowStepStarted(context: string, stepIndex: number) {
+  workerLog.info(
+    `lh-worker: workflow step started ${context} task=workflow-step-${stepIndex}`,
+  );
+}
+
+function logWorkflowStepCompleted(
+  context: string,
+  stepIndex: number,
+  result: RunResult,
+) {
+  const status = result.exitCode === 0 ? "completed" : "failed";
+  workerLog.info(
+    `lh-worker: workflow step ${status} ${context} task=workflow-step-${stepIndex} exit_code=${result.exitCode ?? "null"} duration_ms=${result.durationMs}`,
+  );
 }
 
 // Spawn one `run` step via `sh -c`, capturing stdout+stderr to the event's log file. Never
@@ -160,7 +193,16 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
   );
   mkdirSync(dirname(logFile), { recursive: true });
 
-  for (const step of steps) {
+  const context = workflowContextFields({
+    repo,
+    row,
+    issueNumber,
+    prNumber,
+  });
+
+  for (const [index, step] of steps.entries()) {
+    const stepIndex = index + 1;
+    logWorkflowStepStarted(context, stepIndex);
     events.emit(repo.id, "workflow.run_started", ACTOR, {
       number,
       source_event: row.id,
@@ -174,6 +216,7 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
       console.error(`lh-worker: step error (event ${row.id}):`, e);
       result = { exitCode: 1, durationMs: 0 };
     }
+    logWorkflowStepCompleted(context, stepIndex, result);
     events.emit(repo.id, "workflow.run_completed", ACTOR, {
       number,
       source_event: row.id,
@@ -203,6 +246,9 @@ export function startWorker(
   let cursor = resolveStartCursor(cursorPath, events.newestId());
   let stopped = false;
   let running = false;
+  workerLog.info(
+    `lh-worker: event tail started poll_ms=${pollMs} cursor=${cursor} page_size=${PAGE}`,
+  );
 
   const drain = async () => {
     if (stopped || running) return;

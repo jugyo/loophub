@@ -71,6 +71,7 @@ test("issue.opened runs steps in repo cwd with LH_* env; a failing step does not
     number: issue.number,
   });
 
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
   await R.dispatchEvent(row);
 
   // cwd was the repo's local_path and the env was populated.
@@ -94,6 +95,22 @@ test("issue.opened runs steps in repo cwd with LH_* env; a failing step does not
   // Full output is captured to the per-event log file.
   const logFile = JSON.parse(completed[0].payload).log;
   expect(existsSync(logFile)).toBe(true);
+
+  const stdoutLines = out.mock.calls.map(([message]) => String(message));
+  expect(stdoutLines).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining(
+        `lh-worker: workflow step started repo=jugyo/wf-issue event_id=${row.id} event_type=issue.opened issue=${issue.number} pr=- task=workflow-step-1`,
+      ),
+      expect.stringContaining(
+        `lh-worker: workflow step failed repo=jugyo/wf-issue event_id=${row.id} event_type=issue.opened issue=${issue.number} pr=- task=workflow-step-2 exit_code=3`,
+      ),
+      expect.stringContaining(
+        `lh-worker: workflow step completed repo=jugyo/wf-issue event_id=${row.id} event_type=issue.opened issue=${issue.number} pr=- task=workflow-step-3 exit_code=0`,
+      ),
+    ]),
+  );
+  out.mockRestore();
 
   rmSync(repoPath, { recursive: true, force: true });
 });

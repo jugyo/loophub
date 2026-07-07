@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-worker-maintenance-"));
 process.env.LOOPHUB_HOME = HOME;
@@ -16,6 +16,15 @@ beforeAll(async () => {
 afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
+
+async function waitUntil(check: () => boolean, label: string): Promise<void> {
+  const deadline = Date.now() + 2000;
+  while (!check()) {
+    if (Date.now() > deadline)
+      throw new Error(`timed out waiting for: ${label}`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
 
 test("maintenance loop options keep 0 as disabled and default invalid values", () => {
   expect(
@@ -59,4 +68,31 @@ test("maintenance summary reports disabled loops as off", () => {
     costStopSweep: "off",
     scheduledTaskSweep: "off",
   });
+});
+
+test("pull sweep logs start and completion to stdout", async () => {
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
+  const stop = M.startPullSweep(10);
+  try {
+    await waitUntil(
+      () =>
+        out.mock.calls.some(([message]) =>
+          String(message).includes("lh-worker: pull sweep started"),
+        ),
+      "pull sweep start log",
+    );
+    await waitUntil(
+      () =>
+        out.mock.calls.some(
+          ([message]) =>
+            String(message).includes(
+              "lh-worker: pull sweep completed duration_ms=",
+            ) && String(message).includes("emitted_events=0"),
+        ),
+      "pull sweep completion log",
+    );
+  } finally {
+    stop();
+    out.mockRestore();
+  }
 });

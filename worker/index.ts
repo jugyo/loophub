@@ -6,6 +6,8 @@
 // Like lh-web, it touches the DB through core, so it must carry the --experimental-sqlite flag
 // (the `lh-worker` npm script does). v1 is started via `npm run lh-worker`; an `lh worker`
 // subcommand is intentionally out of scope.
+
+import { workerLog } from "./logger.ts";
 import {
   DEFAULT_COST_STOP_SWEEP_MS,
   DEFAULT_GITHUB_MERGE_SWEEP_MS,
@@ -58,7 +60,7 @@ const maintenanceOptions = normalizeMaintenanceLoopOptions({
 const worker = startWorker({ pollMs });
 const maintenance = startMaintenanceLoops(maintenanceOptions);
 const summary = maintenanceSummary(maintenanceOptions);
-console.error(
+workerLog.info(
   `lh-worker started (events poll ${pollMs}ms; PR sweep ${summary.pullSweep}; usage sweep ${summary.usageSweep}; github merge sweep ${summary.githubMergeSweep}; cost stop sweep ${summary.costStopSweep}; scheduled task sweep ${summary.scheduledTaskSweep})`,
 );
 

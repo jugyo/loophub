@@ -64,6 +64,36 @@ function finiteOrDefault(value: number | undefined, fallback: number): number {
   return value === undefined || !Number.isFinite(value) ? fallback : value;
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function logLoopStarted(name: string): number {
+  workerLog.info(`lh-worker: ${name} started`);
+  return Date.now();
+}
+
+function logLoopCompleted(
+  name: string,
+  startedAt: number,
+  details: Record<string, number>,
+) {
+  const fields = Object.entries(details).map(
+    ([key, value]) => `${key}=${value}`,
+  );
+  workerLog.info(
+    `lh-worker: ${name} completed duration_ms=${Date.now() - startedAt}${
+      fields.length > 0 ? ` ${fields.join(" ")}` : ""
+    }`,
+  );
+}
+
+function logLoopFailed(name: string, startedAt: number, err: unknown) {
+  const message = `lh-worker: ${name} failed duration_ms=${Date.now() - startedAt} error=${errorMessage(err)}`;
+  workerLog.info(message);
+  workerLog.error(message);
+}
+
 export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
   return {
     pullSweep: opts.sweepMs > 0 ? `${opts.sweepMs}ms` : "off",
@@ -115,12 +145,14 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
   const tick = async () => {
     if (stopped || running) return;
     running = true;
+    const startedAt = logLoopStarted("pull sweep");
     try {
-      await sweepPullUpdates();
+      const emitted = await sweepPullUpdates();
+      logLoopCompleted("pull sweep", startedAt, {
+        emitted_events: emitted.length,
+      });
     } catch (err) {
-      workerLog.error(
-        `lh-worker: pull sweep error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      logLoopFailed("pull sweep", startedAt, err);
     } finally {
       running = false;
     }
@@ -147,12 +179,14 @@ export function startGithubMergeSweep(
   const tick = async () => {
     if (stopped || running) return;
     running = true;
+    const startedAt = logLoopStarted("github merge sweep");
     try {
-      await syncGithubMergeStatus();
+      const emitted = await syncGithubMergeStatus();
+      logLoopCompleted("github merge sweep", startedAt, {
+        emitted_events: emitted.length,
+      });
     } catch (err) {
-      workerLog.error(
-        `lh-worker: github merge sweep error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      logLoopFailed("github merge sweep", startedAt, err);
     } finally {
       running = false;
     }
@@ -178,6 +212,7 @@ export function startUsageSweep(
   const tick = async () => {
     if (stopped || running) return;
     running = true;
+    const startedAt = logLoopStarted("usage sweep");
     try {
       const result = sessions.usageSync();
       for (const session of result.sessions) {
@@ -200,10 +235,13 @@ export function startUsageSweep(
           });
         }
       }
+      logLoopCompleted("usage sweep", startedAt, {
+        synced: result.synced,
+        skipped: result.skipped,
+        missing: result.missing,
+      });
     } catch (err) {
-      workerLog.error(
-        `lh-worker: usage sweep error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      logLoopFailed("usage sweep", startedAt, err);
     } finally {
       running = false;
     }
@@ -230,16 +268,14 @@ export function startScheduledTaskSweep(
   const tick = async () => {
     if (stopped || running) return;
     running = true;
+    const startedAt = logLoopStarted("scheduled task sweep");
     try {
       const result = await scheduledTasks.sweep();
-      if (result.fired > 0)
-        workerLog.info(
-          `lh-worker: scheduled task sweep: fired ${result.fired}`,
-        );
+      logLoopCompleted("scheduled task sweep", startedAt, {
+        fired: result.fired,
+      });
     } catch (err) {
-      workerLog.error(
-        `lh-worker: scheduled task sweep error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      logLoopFailed("scheduled task sweep", startedAt, err);
     } finally {
       running = false;
     }
@@ -266,17 +302,16 @@ export function startCostStopSweep(
   const tick = async () => {
     if (stopped || running) return;
     running = true;
+    const startedAt = logLoopStarted("cost stop sweep");
     try {
       const result = await terminal.enforceDevCostLimits();
-      if (result.stopped > 0 || result.failed > 0) {
-        const message = `lh-worker: cost stop sweep: stopped ${result.stopped}, failed ${result.failed}`;
-        if (result.failed > 0) workerLog.error(message);
-        else workerLog.info(message);
-      }
+      logLoopCompleted("cost stop sweep", startedAt, {
+        stopped: result.stopped,
+        skipped: result.skipped,
+        failed: result.failed,
+      });
     } catch (err) {
-      workerLog.error(
-        `lh-worker: cost stop sweep error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      logLoopFailed("cost stop sweep", startedAt, err);
     } finally {
       running = false;
     }
