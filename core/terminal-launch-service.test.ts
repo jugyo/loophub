@@ -36,7 +36,7 @@ const herdr = vi.hoisted(() => ({
   script: [] as Array<(child: ScriptedChild) => void>,
 }));
 
-// `lh dev --herdr` spawns (#584): issue-dev (Build) launches now go through this instead of
+// `lh build --herdr` spawns (#584): issue-dev (Build) launches now go through this instead of
 // terminal.launch orchestrating herdr tabs/workspaces itself.
 const lhDev = vi.hoisted(() => ({
   calls: [] as string[][],
@@ -160,10 +160,10 @@ beforeEach(() => {
 });
 
 // issue-dev (Build): worktree/PR provisioning and the herdr launch itself are entirely
-// `lh dev --herdr`'s job now (#584) — terminal.launch just spawns it and reports the outcome, no
+// `lh build --herdr`'s job now (#584) — terminal.launch just spawns it and reports the outcome, no
 // tab/workspace orchestration of its own (unlike the other workflows below).
-describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
-  test("spawns `lh dev <repo>/<issue> --herdr` and reports the herdr session", async () => {
+describe("terminal.launch issue-dev spawns `lh build --herdr` (#584)", () => {
+  test("spawns `lh build <repo>/<issue> --herdr` and reports the herdr session", async () => {
     lhDev.script.push(exitWith(0));
 
     const result = await svc.terminal.launch({
@@ -172,7 +172,7 @@ describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
       issueNumber: 1,
     });
 
-    expect(lhDev.calls).toEqual([["lh", "dev", "me/proj/1", "--herdr"]]);
+    expect(lhDev.calls).toEqual([["lh", "build", "me/proj/1", "--herdr"]]);
     expect(herdr.calls).toHaveLength(0);
     expect(result).toMatchObject({ backend: "herdr" });
     expect(result.session_name).toBeTruthy();
@@ -230,7 +230,7 @@ describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
     });
 
     expect(lhDev.calls).toEqual([
-      ["lh", "dev", "me/proj/1", "--herdr", "--codex", "--model", "gpt-5.5"],
+      ["lh", "build", "me/proj/1", "--herdr", "--codex", "--model", "gpt-5.5"],
     ]);
   });
 
@@ -247,7 +247,7 @@ describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
 
     expect(lhDev.calls[0]).toEqual([
       "lh",
-      "dev",
+      "build",
       "me/proj/1",
       "--herdr",
       "--claude-code",
@@ -297,8 +297,8 @@ describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
         (e: unknown) => e as { message: string; data?: { command?: string } },
       );
 
-    expect(err?.message).toBe("lh dev exited with status 1");
-    expect(err?.data?.command).toBe("lh dev me/proj/1 --herdr");
+    expect(err?.message).toBe("lh build exited with status 1");
+    expect(err?.data?.command).toBe("lh build me/proj/1 --herdr");
   });
 
   test("reports lh missing from PATH distinctly from a launch failure", async () => {
@@ -333,9 +333,9 @@ describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
         (e: unknown) => e as { message: string },
       );
 
-    // The client-facing message stays generic — raw `lh dev` stderr can embed the server's
+    // The client-facing message stays generic — raw `lh build` stderr can embed the server's
     // absolute paths or a stack trace, so it must never reach the RPC caller.
-    expect(err?.message).toBe("lh dev exited with status 1");
+    expect(err?.message).toBe("lh build exited with status 1");
     expect(
       consoleError.mock.calls.some((call) =>
         String(call[0]).includes("error 404: Not Found"),
@@ -355,10 +355,10 @@ describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
         (e: unknown) => e as { message: string },
       );
 
-    expect(err?.message).toBe("lh dev was terminated by signal SIGKILL");
+    expect(err?.message).toBe("lh build was terminated by signal SIGKILL");
   });
 
-  test("times out and kills the child if lh dev hangs, logging any stderr it printed before wedging", async () => {
+  test("times out and kills the child if lh build hangs, logging any stderr it printed before wedging", async () => {
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
@@ -374,7 +374,7 @@ describe("terminal.launch issue-dev spawns `lh dev --herdr` (#584)", () => {
         issueNumber: 1,
       });
       const assertion = expect(pending).rejects.toMatchObject({
-        message: expect.stringMatching(/^lh dev timed out after \d+ms$/),
+        message: expect.stringMatching(/^lh build timed out after \d+ms$/),
       });
       await vi.advanceTimersByTimeAsync(120_000);
       await assertion;

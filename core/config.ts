@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Which coding agent `lh dev` launches by default (#516). Mirrors the `DevRuntime` values
+// Which coding agent `lh build` launches by default (#516). Mirrors the `DevRuntime` values
 // cli/dev.ts's --claude-code / --codex flags select between.
 export type CodingAgent = "claude-code" | "codex";
 
@@ -14,11 +14,11 @@ export interface AgentConfig {
   // Whether the Build button (issue row / issue detail) launches this agent with auto mode
   // (--auto for Claude Code, an equivalent flag for Codex). Default off (#499, #593).
   autoModeOnBuild?: boolean;
-  // Model this agent launches with when `lh dev --model` isn't passed explicitly (#594).
+  // Model this agent launches with when `lh build --model` isn't passed explicitly (#594).
   // Falls back to DEFAULT_AGENT_MODEL when unset.
   defaultModel?: string;
   // Reasoning effort paired with defaultModel in the Settings screen (#682). Falls back to
-  // DEFAULT_AGENT_EFFORT when unset. Not yet wired into `lh dev`'s spawn args — the Settings
+  // DEFAULT_AGENT_EFFORT when unset. Not yet wired into `lh build`'s spawn args — the Settings
   // screen only stores the model+effort pair for now.
   defaultEffort?: string;
 }
@@ -45,7 +45,7 @@ export interface GlobalConfig {
   url?: string;
   // Per-agent settings, keyed by CodingAgent (#593). Absent entries default to unset (off).
   agents?: Partial<Record<CodingAgent, AgentConfig>>;
-  // Default coding agent `lh dev` launches when neither --claude-code nor --codex is passed
+  // Default coding agent `lh build` launches when neither --claude-code nor --codex is passed
   // (#516). Default "claude-code".
   codingAgent?: CodingAgent;
 }
@@ -64,7 +64,7 @@ export function dbPath(): string {
   return process.env.LOOPHUB_DB ?? join(configDir(), "loophub.db");
 }
 
-// Root for `lh dev` worktrees. Override via LOOPHUB_WORKTREE_ROOT or config.json
+// Root for `lh build` worktrees. Override via LOOPHUB_WORKTREE_ROOT or config.json
 // `worktreeRoot`; default `$LOOPHUB_HOME/worktrees`.
 export function worktreeRoot(): string {
   if (process.env.LOOPHUB_WORKTREE_ROOT)
@@ -119,7 +119,7 @@ export function autoModeOnBuild(agent: CodingAgent): boolean {
   return false;
 }
 
-// Model `lh dev` launches `agent` with when --model isn't passed explicitly (#594). Falls back
+// Model `lh build` launches `agent` with when --model isn't passed explicitly (#594). Falls back
 // to DEFAULT_AGENT_MODEL when config.json has no override for this agent.
 export function agentModel(agent: CodingAgent): string {
   try {
@@ -149,7 +149,7 @@ export function normalizeCodingAgent(value: unknown): CodingAgent {
   return value === "codex" ? "codex" : "claude-code";
 }
 
-// The coding agent `lh dev` launches when neither --claude-code nor --codex is passed (#516).
+// The coding agent `lh build` launches when neither --claude-code nor --codex is passed (#516).
 // Default "claude-code".
 export function codingAgent(): CodingAgent {
   try {

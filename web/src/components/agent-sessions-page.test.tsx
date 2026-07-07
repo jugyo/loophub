@@ -32,7 +32,7 @@ const SESSIONS: AgentSession[] = [
   },
   {
     id: "s-new",
-    agent: "lh-dev",
+    agent: "lh-build",
     session: "s-new",
     name: "dev #725",
     runtime: "codex",

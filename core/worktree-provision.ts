@@ -11,7 +11,7 @@ import {
 
 // Provisions the on-disk git worktree for a PR's (or, under scheme "legacy-issue", an issue's)
 // dev loop. Originally `cli/dev.ts`-only; lives in core so `core/service.ts` can provision a
-// worktree ahead of a herdr launch (terminal.launch), not just the `lh dev` CLI process — see
+// worktree ahead of a herdr launch (terminal.launch), not just the `lh build` CLI process — see
 // `core/terminal/terminal-launch.ts` / the herdr worktree-open flow.
 
 // Resolve symlinks when the path exists; fall back to lexical normalization otherwise.
@@ -32,7 +32,7 @@ export interface ProvisionInput {
   scheme?: WorktreeScheme; // naming convention to use for path/branch; default "pr" (#463)
   headRef: string | null; // an explicit branch to check out; null => use the scheme's convention branch
   // Allow fabricating the scheme's convention branch fresh off the default branch when headRef is
-  // given and matches that convention but the branch doesn't exist. True only for a PR `lh dev`
+  // given and matches that convention but the branch doesn't exist. True only for a PR `lh build`
   // itself just opened this run (its branch genuinely never existed yet, #463); false (default)
   // for re-entering an already-established PR, where a missing convention branch means it was
   // deleted out-of-band and silently recreating it under the same name would discard history
@@ -43,7 +43,7 @@ export interface ProvisionInput {
 
 // `.claude/` (settings.json / settings.local.json) is usually untracked / gitignored, so a
 // worktree built from the committed tree lacks it — project/local permission rules go missing
-// in the Claude session `lh dev` launches. Mirror it from the primary checkout. Idempotent and
+// in the Claude session `lh build` launches. Mirror it from the primary checkout. Idempotent and
 // run on every provision (including worktree reuse) so the copy stays current; skipped silently
 // when the primary has no `.claude/`. Untracked at the destination too, so nothing leaks into PRs.
 function syncClaudeDir(repoPath: string, worktreePath: string): void {
@@ -94,7 +94,7 @@ export async function provisionWorktree(
         existingBranch: true,
       });
     } else if (headRef && headRef !== conventionBranch) {
-      // The caller expects a specific existing branch (e.g. a PR opened outside `lh dev`'s own
+      // The caller expects a specific existing branch (e.g. a PR opened outside `lh build`'s own
       // naming convention) that isn't ours to fabricate — its absence is a real error, not
       // something to paper over with a fresh branch under a different name.
       throw new Error(`branch "${headRef}" does not exist`);
@@ -107,7 +107,7 @@ export async function provisionWorktree(
         `branch "${headRef}" does not exist (it should already exist for this PR)`,
       );
     } else {
-      // Our own convention branch, not created yet (e.g. `lh dev` just opened this PR, #463) —
+      // Our own convention branch, not created yet (e.g. `lh build` just opened this PR, #463) —
       // create it fresh off the local default branch's current commit (no fetch).
       if (!(await branchExists(repoPath, defaultBranch))) {
         throw new Error(

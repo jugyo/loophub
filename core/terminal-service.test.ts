@@ -67,7 +67,7 @@ test("terminal.launch attaches a specific reason and the retryable herdr command
 
 // Build (issue-dev) used to open the PR and provision its worktree here, ahead of the herdr call
 // (#551), so herdr's `worktree open --path` had somewhere to point. That responsibility moved
-// entirely to `lh dev --herdr` (#584) — terminal.launch just spawns it now and does no git/PR
-// work of its own; see core/terminal-launch-service.test.ts's "issue-dev spawns `lh dev --herdr`"
+// entirely to `lh build --herdr` (#584) — terminal.launch just spawns it now and does no git/PR
+// work of its own; see core/terminal-launch-service.test.ts's "issue-dev spawns `lh build --herdr`"
 // suite for the (mocked-spawn) coverage of that call, and cli/dev.test.ts for worktree
 // provisioning itself.

@@ -130,14 +130,14 @@ export const pulls = {
       throw new ServiceError(422, "title, head, base are required");
     const actor = actorFor(sessionId);
     // Soft "one open PR per linked issue" guard: refuse a second open PR for an issue that already
-    // has one. This is the double-`lh dev` guard (not a DB constraint — see #186), so it
+    // has one. This is the double-`lh build` guard (not a DB constraint — see #186), so it
     // can be relaxed later to allow multiple proposal PRs per issue.
     const linkedIssueId = resolveLinkedIssueId(r, body, issue);
     const linkedNumber = issue ?? parseClosingIssueNumber(body);
     // Create the issue row first so a PR-number-derived head (headFromNumber) can be computed
     // from its assigned number; a plain string head is unaffected by this reordering. The head
     // branch itself need not exist yet in git — revParse resolves a null sha for a missing ref
-    // rather than throwing, which is what lets `lh dev` open the PR before the branch/worktree
+    // rather than throwing, which is what lets `lh build` open the PR before the branch/worktree
     // exist (#463).
     const row = S.createIssue(r.id, "pull", title, body, actor);
     const head = input.head ?? input.headFromNumber!(row.number);
@@ -152,7 +152,7 @@ export const pulls = {
       draft,
     );
     // Carry the draft flag (#413) on the payload so event-driven consumers can tell a WIP PR
-    // (`lh dev` opens drafts) from a reviewable one without a follow-up read.
+    // (`lh build` opens drafts) from a reviewable one without a follow-up read.
     S.emitEvent(r.id, "pull_request.opened", actor, {
       number: row.number,
       linked_issue: linkedNumber ?? undefined,
@@ -617,7 +617,7 @@ export const pulls = {
     const actor = actorFor(sessionId);
     // Two distinct "ready for review" transitions share this entry point, both ending in a
     // `pull_request.ready_for_review` event:
-    //   (a) draft → ready (#413): a `lh dev` PR opened at the start of work is now done. No prior
+    //   (a) draft → ready (#413): a `lh build` PR opened at the start of work is now done. No prior
     //       review is required — flipping the WIP flag is the whole transition.
     //   (b) re-review after change requests: an already-ready PR whose latest review is
     //       REQUEST_CHANGES is being resubmitted ("I addressed your feedback").

@@ -317,7 +317,9 @@ describe("IssueRow", () => {
       name: "Build issue #7",
     });
 
-    expect(button.title).toBe("Start `lh dev 7 --herdr --auto` in a terminal");
+    expect(button.title).toBe(
+      "Start `lh build 7 --herdr --auto` in a terminal",
+    );
   });
 
   it("shows a fixed-duration loading state on the Build button and re-enables it after", async () => {

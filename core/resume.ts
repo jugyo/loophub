@@ -4,7 +4,7 @@
 // the resolved session id and the on-disk worktree/branch facts.
 import { issueNumberFromBranch } from "./worktree-prune.ts";
 
-// The naming scheme that identifies where a PR's `lh dev` worktree lives on disk. "pr" is the
+// The naming scheme that identifies where a PR's `lh build` worktree lives on disk. "pr" is the
 // current (#463+) convention (core/worktree-path.ts worktreeBranch/worktreePath); "legacy-issue"
 // is the pre-#463 convention (legacyWorktreeBranch/legacyWorktreePath), kept recognizable so a
 // worktree provisioned before this change is not orphaned.
@@ -42,12 +42,13 @@ export function decideResume(input: ResumeInputs): ResumeDecision {
   return { ok: false, reason: "unrestorable" };
 }
 
-// The agent label `lh dev` registers its session under (cli/index.ts `sessions.register`). A
-// resumable Claude session is specifically one `lh dev` launched: it registers under this agent and
+// The agent label `lh build` registers its session under (cli/index.ts `sessions.register`). A
+// resumable Claude session is specifically one `lh build` launched: it registers under this agent and
 // stores the exact UUID it handed to `claude --session-id`. Another agent's external_session (e.g.
 // an impl-bot's runtime id) is that agent's own id, not a Claude session id, so resume must accept
 // only sessions registered under this agent — UUID shape alone does not prove Claude provenance.
-export const LH_DEV_SESSION_AGENT = "lh-dev";
+export const LH_BUILD_SESSION_AGENT = "lh-build";
+export const LEGACY_LH_DEV_SESSION_AGENT = "lh-dev";
 
 // The agent label and session kind for the New Issue AI flow (#299). `lh issue new` registers the
 // issue-create session under this agent with kind=SESSION_KIND_ISSUE_CREATE so it surfaces in the
@@ -66,7 +67,7 @@ export const ENV_ISSUE_CREATE_SESSION = "LOOPHUB_ISSUE_CREATE_SESSION";
 export const ENV_ISSUE_CREATE_HERDR_LAUNCH =
   "LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH";
 
-// A Claude session id is a UUID (`claude --session-id` requires one; `lh dev` stores the exact
+// A Claude session id is a UUID (`claude --session-id` requires one; `lh build` stores the exact
 // UUID it generates). `lh resume` reads a *stored* id and feeds it to `claude --resume <id>`, so
 // validate the shape before it reaches argv: claude's `-r, --resume [value]` takes an OPTIONAL
 // value, meaning a token starting with `-` would be misparsed as a separate flag rather than the
@@ -81,26 +82,31 @@ export function isClaudeSessionId(id: string | null | undefined): id is string {
 // ===== runtime (which agent runtime a session was launched in) =====
 //
 // A session's runtime decides how `lh resume` re-enters it. Before #164 the runtime was *inferred*
-// from the agent label (LH_DEV_SESSION_AGENT == Claude Code); sessions now carry an explicit
-// runtime so resume stays correct once `lh dev` can launch other runtimes (codex, ...). Only
+// from the agent label (LH_BUILD_SESSION_AGENT == Claude Code); sessions now carry an explicit
+// runtime so resume stays correct once `lh build` can launch other runtimes (codex, ...). Only
 // claude-code is actually resumable today — real multi-runtime support is out of scope for #164.
 export const RUNTIME_CLAUDE_CODE = "claude-code";
-// `lh dev --codex` launches the dev session in Codex instead (#458). Codex sessions are recorded
+// `lh build --codex` launches the dev session in Codex instead (#458). Codex sessions are recorded
 // with this runtime but are not resumable by `lh resume` (resolveRuntimeResume reports
 // unknown-runtime) — Codex resume support is a separate step.
 export const RUNTIME_CODEX = "codex";
 
 // The effective runtime of a session row, with backward-compat for sessions registered before the
-// runtime column existed. A null-runtime row registered under LH_DEV_SESSION_AGENT predates the
-// column and — by that era's invariant ("lh dev always launched Claude Code") — was a claude-code
-// session, so treat it as claude-code. Any other null-runtime row has unknown provenance (null).
+// runtime column existed. A null-runtime row registered under the build/dev session agent predates
+// the column and — by that era's invariant ("lh build always launched Claude Code") — was a
+// claude-code session, so treat it as claude-code. Any other null-runtime row has unknown provenance
+// (null).
 // An explicit runtime always wins over the fallback.
 export function sessionRuntime(
   row: { runtime?: string | null; agent?: string | null } | null | undefined,
 ): string | null {
   if (!row) return null;
   if (row.runtime) return row.runtime;
-  if (row.agent === LH_DEV_SESSION_AGENT) return RUNTIME_CLAUDE_CODE;
+  if (
+    row.agent === LH_BUILD_SESSION_AGENT ||
+    row.agent === LEGACY_LH_DEV_SESSION_AGENT
+  )
+    return RUNTIME_CLAUDE_CODE;
   return null;
 }
 

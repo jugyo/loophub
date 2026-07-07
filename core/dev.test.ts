@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md).
-const HOME = mkdtempSync(join(tmpdir(), "lh-dev-"));
+const HOME = mkdtempSync(join(tmpdir(), "lh-build-"));
 process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
@@ -28,7 +28,7 @@ beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
 
-  repoPath = mkdtempSync(join(tmpdir(), "lh-dev-repo-"));
+  repoPath = mkdtempSync(join(tmpdir(), "lh-build-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
   git(["config", "user.name", "tester"]);
@@ -37,7 +37,7 @@ beforeAll(async () => {
   git(["commit", "-qm", "init"]);
 
   await svc.repos.create({ path: repoPath, name: "me/proj" });
-  svc.sessions.register({ id: "sess-1", agent: "lh-dev", session: "sess-1" });
+  svc.sessions.register({ id: "sess-1", agent: "lh-build", session: "sess-1" });
 });
 
 afterAll(() => {
@@ -51,7 +51,7 @@ describe("dev.openPr", () => {
     expect(issue.number).toBe(1);
 
     // No explicit head: the PR's branch defaults to the PR-id convention (#463), derived from
-    // the PR's own number once assigned — `lh dev` relies on this default in production.
+    // the PR's own number once assigned — `lh build` relies on this default in production.
     const first = await svc.dev.openPr(
       "me/proj",
       { issue: issue.number, base: "main" },
@@ -62,7 +62,7 @@ describe("dev.openPr", () => {
     let pull = (await svc.pulls.get("me/proj", first.number)) as any;
     expect(pull.head.ref).toBe(`loophub/pr-${first.number}`);
     expect(pull.base.ref).toBe("main");
-    // `lh dev` opens the PR at the start of work, so it begins as a draft (#413).
+    // `lh build` opens the PR at the start of work, so it begins as a draft (#413).
     expect(pull.draft).toBe(true);
     expect(pull.linked_issue?.number).toBe(issue.number);
     expect(pull.body).toContain(`Closes #${issue.number}`);
@@ -109,8 +109,16 @@ describe("dev.openPr", () => {
   });
 
   test("attributes the session to the PR row and re-attaches on re-run", async () => {
-    svc.sessions.register({ id: "sess-a", agent: "lh-dev", session: "sess-a" });
-    svc.sessions.register({ id: "sess-b", agent: "lh-dev", session: "sess-b" });
+    svc.sessions.register({
+      id: "sess-a",
+      agent: "lh-build",
+      session: "sess-a",
+    });
+    svc.sessions.register({
+      id: "sess-b",
+      agent: "lh-build",
+      session: "sess-b",
+    });
     const issue = svc.issues.create("me/proj", { title: "feature B" });
 
     const first = await svc.dev.openPr(
@@ -141,8 +149,16 @@ describe("dev.openPr", () => {
   });
 
   test("attributeSession: false skips re-pointing an existing PR's session (#463: deferred until the caller's dev lock is won)", async () => {
-    svc.sessions.register({ id: "sess-c", agent: "lh-dev", session: "sess-c" });
-    svc.sessions.register({ id: "sess-d", agent: "lh-dev", session: "sess-d" });
+    svc.sessions.register({
+      id: "sess-c",
+      agent: "lh-build",
+      session: "sess-c",
+    });
+    svc.sessions.register({
+      id: "sess-d",
+      agent: "lh-build",
+      session: "sess-d",
+    });
     const issue = svc.issues.create("me/proj", { title: "feature deferred" });
 
     const first = await svc.dev.openPr(
@@ -153,7 +169,7 @@ describe("dev.openPr", () => {
     expect(prSession(first.number)).toBe("sess-c");
 
     // Re-running with attributeSession: false reuses the open PR but must NOT re-point its
-    // session — the caller (lh dev) hasn't won its PR-keyed dev lock yet at this point, and a
+    // session — the caller (lh build) hasn't won its PR-keyed dev lock yet at this point, and a
     // losing concurrent launch must never be allowed to overwrite the eventual winner's pointer.
     const second = await svc.dev.openPr(
       "me/proj",
@@ -177,7 +193,7 @@ describe("dev.openPr", () => {
       },
       "sess-1",
     );
-    // `lh dev` is idempotent: re-opening reuses the existing PR rather than erroring.
+    // `lh build` is idempotent: re-opening reuses the existing PR rather than erroring.
     const reuse = await svc.dev.openPr(
       "me/proj",
       {
@@ -220,12 +236,16 @@ describe("dev.openPr", () => {
 });
 
 describe("dev.attachSession", () => {
-  // #463: `lh dev <issue>` defers session attribution for a reused PR from openPr to a later
+  // #463: `lh build <issue>` defers session attribution for a reused PR from openPr to a later
   // attachSession call (after its dev lock is won). openPr's reuse branch used to emit
   // pull_request.updated on re-attribution so the PR detail's related-sessions list (SSE-driven)
   // refreshes; attachSession must emit the same event or that live-refresh silently regresses.
   test("re-points the session and emits pull_request.updated", async () => {
-    svc.sessions.register({ id: "sess-e", agent: "lh-dev", session: "sess-e" });
+    svc.sessions.register({
+      id: "sess-e",
+      agent: "lh-build",
+      session: "sess-e",
+    });
     const pr = await svc.dev.openPr(
       "me/proj",
       {
@@ -235,7 +255,11 @@ describe("dev.attachSession", () => {
       "sess-e",
     );
 
-    svc.sessions.register({ id: "sess-f", agent: "lh-dev", session: "sess-f" });
+    svc.sessions.register({
+      id: "sess-f",
+      agent: "lh-build",
+      session: "sess-f",
+    });
     svc.dev.attachSession("me/proj", pr.number, "sess-f");
     expect(prSession(pr.number)).toBe("sess-f");
 

@@ -32,7 +32,7 @@ beforeAll(async () => {
   git(["remote", "add", "origin", "https://github.com/me/proj.git"]);
 
   await svc.repos.create({ path: repoPath, name: "me/proj" });
-  svc.sessions.register({ id: "sess-1", agent: "lh-dev", session: "sess-1" });
+  svc.sessions.register({ id: "sess-1", agent: "lh-build", session: "sess-1" });
 });
 
 afterAll(() => {

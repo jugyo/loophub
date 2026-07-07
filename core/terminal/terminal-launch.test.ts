@@ -136,7 +136,7 @@ describe("herdr terminal launch", () => {
   });
 
   test("applies the agent's autoModeOnBuild setting to GitHub PR export launches (#809)", () => {
-    // claude-code: --auto's equivalent is --permission-mode auto, same as lh dev --auto
+    // claude-code: --auto's equivalent is --permission-mode auto, same as lh build --auto
     // (buildClaudeArgs) — off by default (autoModeOnBuild unset).
     expect(
       commandForHerdrLaunch({
@@ -158,7 +158,7 @@ describe("herdr terminal launch", () => {
     ).toBe("claude '--permission-mode' 'auto' '/lh-create-github-pr 451'");
 
     // codex: auto mode swaps the sandboxed --sandbox args for the same unsandboxed bypass
-    // flag lh dev --auto uses (buildCodexArgs), rather than adding a flag on top.
+    // flag lh build --auto uses (buildCodexArgs), rather than adding a flag on top.
     updateAgentAutoModeOnBuild("codex", true);
     expect(
       commandForHerdrLaunch({
@@ -209,7 +209,7 @@ describe("herdr terminal launch", () => {
   test("builds Herdr agent start argv without shell interpolation", () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "lh dev 'jugyo/loophub/444'",
+      command: "lh build 'jugyo/loophub/444'",
       label: "dev #444",
       tabId: "w1:t2",
     });
@@ -228,7 +228,7 @@ describe("herdr terminal launch", () => {
       "--",
       "zsh",
       "-lc",
-      "lh dev 'jugyo/loophub/444'",
+      "lh build 'jugyo/loophub/444'",
     ]);
   });
 
@@ -251,7 +251,7 @@ describe("herdr terminal launch", () => {
     for (const tabId of [undefined, null]) {
       const plan = buildHerdrLaunchPlan({
         repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-        command: "lh dev 'jugyo/loophub/444'",
+        command: "lh build 'jugyo/loophub/444'",
         label: "dev #444",
         tabId,
       });
@@ -264,7 +264,7 @@ describe("herdr terminal launch", () => {
   test("falls back to --workspace when tabId is null but a workspace id is given", () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "lh dev 'jugyo/loophub/444'",
+      command: "lh build 'jugyo/loophub/444'",
       label: "dev #444",
       tabId: null,
       workspaceId: "w9",
@@ -279,7 +279,7 @@ describe("herdr terminal launch", () => {
   test("prefers --tab over --workspace when both are available", () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "lh dev 'jugyo/loophub/444'",
+      command: "lh build 'jugyo/loophub/444'",
       label: "dev #444",
       tabId: "w9:t2",
       workspaceId: "w9",
@@ -530,7 +530,7 @@ describe("herdr terminal launch", () => {
     const longTitle = `Issue #444 - ${"a very long issue title ".repeat(6)}`;
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "lh dev 'jugyo/loophub/444'",
+      command: "lh build 'jugyo/loophub/444'",
       label: longTitle,
     });
     const agentName = plan.argv[5];
@@ -540,7 +540,7 @@ describe("herdr terminal launch", () => {
 
     const multiline = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "lh dev 'jugyo/loophub/444'",
+      command: "lh build 'jugyo/loophub/444'",
       label: "Issue #444 -\n  line two",
     });
     expect(multiline.argv[5]).toBe("Issue #444 - line two");
@@ -552,7 +552,7 @@ describe("herdr terminal launch", () => {
     const label = `${"a".repeat(79)}\u{1F600}\u{1F601}`;
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "lh dev 'jugyo/loophub/444'",
+      command: "lh build 'jugyo/loophub/444'",
       label,
     });
     const agentName = plan.argv[5];
@@ -567,7 +567,7 @@ describe("herdr terminal launch", () => {
       "Issue #444 - evil\x1b[31mtitle\x1b[0m\u200Ewith\u202Ehidden\u2066marks";
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "lh dev 'jugyo/loophub/444'",
+      command: "lh build 'jugyo/loophub/444'",
       label,
     });
     // The ESC control byte itself is replaced with a space (so it can no longer start an escape
@@ -582,7 +582,7 @@ describe("herdr terminal launch", () => {
   test("turns a bare newline/tab between words into a space instead of deleting it", () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "lh dev 'jugyo/loophub/444'",
+      command: "lh build 'jugyo/loophub/444'",
       label: "line1\nline2\tline3",
     });
     expect(plan.argv[5]).toBe("line1 line2 line3");
@@ -591,7 +591,7 @@ describe("herdr terminal launch", () => {
   test("does not leave a double space when an unsafe char sits between two whitespace runs", () => {
     const plan = buildHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
-      command: "lh dev 'jugyo/loophub/444'",
+      command: "lh build 'jugyo/loophub/444'",
       label: "a \x01 b",
     });
     expect(plan.argv[5]).toBe("a b");
@@ -667,7 +667,7 @@ describe("herdr terminal launch", () => {
   });
 });
 
-// #674: `lh dev --herdr` (the Build button) reuses this same open+tab-create dance so it lands in
+// #674: `lh build --herdr` (the Build button) reuses this same open+tab-create dance so it lands in
 // the worktree's own herdr workspace instead of splitting the focused pane. The orchestration is
 // spawn-agnostic via an injected runner, so these exercise it with a scripted fake.
 describe("acquireHerdrWorktreeTab", () => {

@@ -3,7 +3,7 @@ import type { GitResult } from "./git.ts";
 import { pullWorktreeDirty } from "./pull-worktree.ts";
 
 const ROOT = "/wt-root";
-// Deterministic worktree dir for the lh-dev convention head below (PR 9, #463).
+// Deterministic worktree dir for the lh-build convention head below (PR 9, #463).
 const WT = "/wt-root/me/repo/pr-9";
 
 function result(stdout: string, code = 0): GitResult {

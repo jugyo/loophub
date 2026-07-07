@@ -154,7 +154,7 @@ export const repos = {
     }
 
     // Dev locks are keyed by full_name too (<home>/dev-locks/<full_name>/pr-<n>.json,
-    // cli/dev.ts devLockPath) and can exist before the worktree does — `lh dev` claims the
+    // cli/dev.ts devLockPath) and can exist before the worktree does — `lh build` claims the
     // lock first. Refuse while any lock file remains so an in-flight dev session isn't
     // orphaned under the old name; stale lock files must be removed by hand first.
     const lockDir = join(configDir(), "dev-locks", r.full_name);

@@ -3,7 +3,7 @@
 // enumeration + session usage; keeping the judgement here makes it unit-testable without herdr or
 // the DB, mirroring how core/worktree-prune.ts backs `lh worktree prune`.
 
-// Default top-level cumulative cost (USD) at which a `lh dev` implementation agent is stopped.
+// Default top-level cumulative cost (USD) at which a `lh build` implementation agent is stopped.
 // Adding a UI to change the limit is out of scope (#832); an env override exists for operators and
 // tests only.
 export const DEFAULT_DEV_COST_LIMIT_USD = 10;

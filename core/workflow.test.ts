@@ -18,13 +18,13 @@ test("parseWorkflow reads the flat on.<event> -> run[] schema", () => {
 on:
   issue.opened:
     - run: ./scripts/triage.sh
-    - run: lh dev "$LH_ISSUE_NUMBER"
+    - run: lh build "$LH_ISSUE_NUMBER"
   pull_request.opened:
     - run: npm test
 `);
   expect(stepsFor(wf, "issue.opened").map((s) => s.run)).toEqual([
     "./scripts/triage.sh",
-    'lh dev "$LH_ISSUE_NUMBER"',
+    'lh build "$LH_ISSUE_NUMBER"',
   ]);
   expect(stepsFor(wf, "pull_request.opened")).toEqual([{ run: "npm test" }]);
   expect(stepsFor(wf, "issue.closed")).toEqual([]);

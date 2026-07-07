@@ -103,7 +103,7 @@ describe("retros store + service", () => {
       ) as any;
       issueId = issue.id;
       if (opts.session) {
-        S.registerAgentSession(opts.session, "lh-dev", opts.session);
+        S.registerAgentSession(opts.session, "lh-build", opts.session);
         sessionRowId = opts.session;
       }
     }

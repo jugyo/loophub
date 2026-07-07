@@ -11,7 +11,7 @@ context-isolated reviewer sessions (install them with `npx skills add`).
 | `lh-issue-create` | `skills/lh-issue-create/` | `/lh-issue-create` |
 | `lh-issue-import` | `skills/lh-issue-import/` | `/lh-issue-import {github-issue-url}` (copy a GitHub issue into LoopHub → link) |
 | `lh-plan-to-issues` | `skills/lh-plan-to-issues/` | `/lh-plan-to-issues` |
-| `lh-dev` | `skills/lh-dev/` | `/lh-dev {issue id}` (implement → PR → review loop; `lh dev` provisions the worktree) |
+| `lh-build` | `skills/lh-build/` | `/lh-build {issue id}` (implement → PR → review loop; `lh build` provisions the worktree) |
 | `lh-pr-review` | `skills/lh-pr-review/` | `/lh-pr-review {pr id}` (review → fix → re-review loop) |
 | `lh-rebase-conflict` | `skills/lh-rebase-conflict/` | `/lh-rebase-conflict {pr id}` (resolve conflicts → re-review) |
 | `lh-merge-ready` | `skills/lh-merge-ready/` | `/lh-merge-ready {pr id}` (pre-merge check; human merges) |
@@ -36,14 +36,14 @@ still invoke `/create-github-pr <pr>` directly; do not add it to new customizati
   body, review comments, hand-off summaries), the target language is the **PR's language**, resolved
   in this order: linked issue → human-authored PR body/title → conversation → English fallback. Each
   skill states this rule inline in its own `## Language` section so it stays self-contained and
-  host-portable (see `lh-dev` and `lh-pr-review`); keep the order consistent when editing them. For
+  host-portable (see `lh-build` and `lh-pr-review`); keep the order consistent when editing them. For
   **issue-only** skills with no PR yet (`lh-issue-create`, `lh-plan-to-issues`), there is nothing to
   resolve against — localize the issue text to the **conversation language**.
   Interactive, non-persisted reports a skill prints back to the operator (e.g. `lh-merge-ready`'s
   pre-merge `## Report`) are session output, not a stored PR artifact, so they intentionally follow the
   **conversation language** too — by design, not an oversight.
 - **PR evidence**: PR bodies require an **Evidence** section (test output excerpts, screenshots for UI,
-  CLI snippets, or explicit N/A). Enforced at PR creation — see `lh-dev` § PR (step 5).
+  CLI snippets, or explicit N/A). Enforced at PR creation — see `lh-build` § PR (step 5).
 - **Reviewers are role-based, not vendor-based**: reference reviewers by **role** (Quality, Security,
   Documentation, Acceptance), never by a product name. `lh-pr-review` § Reviewer roles & host mapping
   resolves each role to a context-isolated host mechanism (Codex `codex exec`, Cursor
@@ -56,12 +56,12 @@ still invoke `/create-github-pr <pr>` directly; do not add it to new customizati
 
 ```text
 repo-add (one-time) → issue-create / plan-to-issues
-  → lh-dev (implement → PR → review loop) → merge-ready → (human merge)
+  → lh-build (implement → PR → review loop) → merge-ready → (human merge)
 
 rebase-conflict resolves conflicts on a PR head, then resumes pr-review.
 ```
 
-`lh-dev` drives implementation (launched by `lh dev`, which opens the linked PR and provisions its
+`lh-build` drives implementation (launched by `lh build`, which opens the linked PR and provisions its
 PR-keyed worktree (`pr-<m>`, #463) — the PR's existence is the "taken" signal, the session is
 attributed to the PR row); these
 skills cover registration, issue authoring, implementation, review, conflict resolution, and the
@@ -84,5 +84,5 @@ skill before installing — it becomes instructions your agent follows.
 ```sh
 npx skills add owner/repo                 # from GitHub
 npx skills add .                          # from a local checkout (this repo's root)
-npx skills add owner/repo --skill lh-dev  # install one skill by name
+npx skills add owner/repo --skill lh-build  # install one skill by name
 ```

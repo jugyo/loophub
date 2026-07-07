@@ -28,7 +28,7 @@ The `ready-to-build` label means "another agent can pick this up later" — not 
 **Exception — herdr mode only (see § 5).** In herdr mode this skill asks once, after reporting
 creation, whether to start now. Only an explicit "yes" launches anything, and even then this
 skill session itself still never implements — it starts a **new** herdr tab/agent to run
-`lh dev`, the same way the Web UI's Build button does. That is "suggest, then act on consent",
+`lh build`, the same way the Web UI's Build button does. That is "suggest, then act on consent",
 not "continue to the next skill yourself".
 
 **The output of this skill is always an issue — never the change itself, whatever the request is.**
@@ -65,11 +65,11 @@ Stop **immediately** when all of the following are true (do not start extra work
 ```text
 ❌ After creating an issue, "while I'm here" cut a branch and start coding
 ❌ Read code to write AC, then fix problems found on the spot
-❌ Auto-start grab / issue-dev because you see the skill chain
+❌ Auto-start grab / lh-build because you see the skill chain
 ❌ "Let's stop using labels" / "fix this skill so it…" → edit the policy or skill file directly
 ❌ Treat any request that "reads like implementation" as a license to apply the change here
 ❌ Ask "start now?" in builtin mode (`HERDR_ENV` not `1`) — that question is herdr-only
-❌ In herdr mode, skip asking and launch `lh dev` anyway, or implement inside this session instead
+❌ In herdr mode, skip asking and launch `lh build` anyway, or implement inside this session instead
    of a new herdr tab/agent
 ✅ Create issue → report number → stop (implementation needs explicit user or separate skill)
 ✅ herdr mode: ask once whether to start now → only on "yes", launch a new herdr tab/agent
@@ -294,27 +294,27 @@ After creation:
 3. **Stop** — skill work is complete at this point, unless herdr mode applies below
 
 **Builtin mode (default).** When `HERDR_ENV` is unset or not `1`, do **not** start implementation
-on your own and do **not** ask. The user runs `lh dev <issue-id>` themselves in a shell to begin
+on your own and do **not** ask. The user runs `lh build <issue-id>` themselves in a shell to begin
 implementation; no prompting from this skill is needed. (Only implement in-skill if the user
 explicitly asked to both create and implement in the same message.)
 
-For unattended (AFK) runs, recommend `--sandbox` — only then does `lh dev` enable auto mode
-(`acceptEdits`); without it the session uses Claude's normal approval mode:
+For unattended (AFK) runs, recommend `--auto`. `--sandbox` is a separate launch option, not the
+trigger for unattended mode:
 
 ```sh
-lh dev --sandbox <issue-id>
+lh build --auto <issue-id>
 ```
 
 **herdr mode.** When `HERDR_ENV=1` — the same detection the `herdr` skill uses (`echo $HERDR_ENV`)
 — ask once, right after reporting creation, whether to start now. This is the Build button's
 question, asked proactively instead of waiting for the user to click it:
 
-> Start working on this now? (opens a new herdr tab running `lh dev`)
+> Start working on this now? (opens a new herdr tab running `lh build`)
 
 - **Declines, or doesn't answer**: stop exactly as in builtin mode above — issue only, no
   implementation, no further prompting.
 - **Agrees**: launch the same flow the Web UI's **Build** button triggers — a new herdr tab +
-  agent running `lh dev '<repo>/<n>'`. There is no CLI/RPC entry point for that reachable from a
+  agent running `lh build '<repo>/<n>'`. There is no CLI/RPC entry point for that reachable from a
   skill session, so drive the `herdr` CLI directly instead. `herdr agent start` is a documented
   subcommand of the `herdr` binary itself (`herdr agent --help`), used here the same session-less
   way as the `herdr tab create` call below — both target the currently running instance from
@@ -324,32 +324,32 @@ question, asked proactively instead of waiting for the user to click it:
   ```sh
   AUTO=$(jq -r '.autoModeOnBuild // false' "${LOOPHUB_HOME:-$HOME/.loophub}/config.json" 2>/dev/null)
   TARGET=$(printf '%q' "<repo>/<n>")   # safe against shell metacharacters before the zsh -lc re-parse below
-  CMD="lh dev $TARGET"; [ "$AUTO" = "true" ] && CMD="$CMD --auto"
+  CMD="lh build $TARGET"; [ "$AUTO" = "true" ] && CMD="$CMD --auto"
   CREATE=$(herdr tab create --cwd "$(pwd)" --no-focus)
   TAB_ID=$(echo "$CREATE" | jq -r '.result.tab.tab_id')
   ROOT_PANE_ID=$(echo "$CREATE" | jq -r '.result.root_pane.pane_id')
-  herdr agent start "lh dev #<n>" --cwd "$(pwd)" --tab "$TAB_ID" --no-focus -- zsh -lc "$CMD" \
+  herdr agent start "lh build #<n>" --cwd "$(pwd)" --tab "$TAB_ID" --no-focus -- zsh -lc "$CMD" \
     && herdr pane close "$ROOT_PANE_ID"   # only drop the seeded empty pane once the agent's own pane exists
   ```
 
   Assumes this skill is running from the repo's checkout root, not a worktree — true for
-  `lh-issue-create` (worktrees only exist for issue-dev sessions). If the `herdr` calls fail
+  `lh-issue-create` (worktrees only exist for lh-build sessions). If the `herdr` calls fail
   (unexpected outside a real herdr pane, or a transient CLI error), report the failure and fall
-  back to the builtin-mode guidance above (`lh dev <issue-id>` for the user to run themselves)
+  back to the builtin-mode guidance above (`lh build <issue-id>` for the user to run themselves)
   rather than leaving the user stuck.
 
 ## Follow-on work
 
 ```text
-lh-issue-create → [stop] → user runs `lh dev --sandbox <issue-id>` in a shell → lh-pr-review → ...
+lh-issue-create → [stop] → user runs `lh build --auto <issue-id>` in a shell → lh-pr-review → ...
 ```
 
 **Builtin mode.** Do **not** auto-chain to implementation. After creating the issue, the user
-starts implementation themselves by running `lh dev <issue-id>` in a shell. Only implement inside
+starts implementation themselves by running `lh build <issue-id>` in a shell. Only implement inside
 this skill if the user explicitly asked to both create and implement in the same message.
 
 **herdr mode.** After creation, ask once (§5); on explicit consent, chain by launching a **new**
-herdr tab/agent running `lh dev` — not by implementing inside this session. On decline or silence,
+herdr tab/agent running `lh build` — not by implementing inside this session. On decline or silence,
 same as builtin mode.
 
 ## Prohibited

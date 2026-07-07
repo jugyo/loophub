@@ -46,7 +46,7 @@ export const settings = {
       // together with any of them, ignored otherwise.
       agent?: CodingAgent;
       autoModeOnBuild?: boolean;
-      // Default model this agent launches with when `lh dev --model` is omitted (#594).
+      // Default model this agent launches with when `lh build --model` is omitted (#594).
       model?: string;
       // Default effort paired with model in the Settings screen (#682).
       effort?: string;

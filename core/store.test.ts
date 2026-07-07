@@ -431,7 +431,7 @@ test("registerAgentSession persists and updates the runtime column", () => {
   // Insert with an explicit runtime.
   const created = S.registerAgentSession(
     id,
-    "lh-dev",
+    "lh-build",
     "ext-rt",
     null,
     "claude-code",
@@ -441,12 +441,12 @@ test("registerAgentSession persists and updates the runtime column", () => {
 
   // Re-register the same (id, agent, external_session) without a runtime keeps the stored value
   // (runtime === undefined preserves it, mirroring how name is preserved).
-  S.registerAgentSession(id, "lh-dev", "ext-rt");
+  S.registerAgentSession(id, "lh-build", "ext-rt");
   expect(S.getAgentSession(id)!.runtime).toBe("claude-code");
 
   // A runtime-less insert leaves the column NULL (the pre-#164 / backward-compat shape).
   const id2 = "22222222-0000-0000-0000-000000000002";
-  S.registerAgentSession(id2, "lh-dev", "ext-rt-2");
+  S.registerAgentSession(id2, "lh-build", "ext-rt-2");
   expect(S.getAgentSession(id2)!.runtime).toBeNull();
 });
 
@@ -454,7 +454,7 @@ test("registerAgentSession persists and preserves the kind column (#298)", () =>
   const id = "33333333-0000-0000-0000-000000000001";
   const created = S.registerAgentSession(
     id,
-    "lh-dev",
+    "lh-build",
     "ext-kind",
     null,
     "claude-code",
@@ -464,7 +464,7 @@ test("registerAgentSession persists and preserves the kind column (#298)", () =>
   expect(S.getAgentSession(id)!.kind).toBe("dev");
 
   // Re-register without a kind keeps the stored value (undefined preserves, like name/runtime).
-  S.registerAgentSession(id, "lh-dev", "ext-kind");
+  S.registerAgentSession(id, "lh-build", "ext-kind");
   expect(S.getAgentSession(id)!.kind).toBe("dev");
 
   // setSessionKind overwrites it in place.
@@ -477,7 +477,7 @@ test("linkSession is idempotent and listSessionsForIssue orders newest link firs
   const issue = S.createIssue(repo.id, "issue", "i", "", "me") as any;
   const a = "44444444-0000-0000-0000-00000000000a";
   const b = "44444444-0000-0000-0000-00000000000b";
-  S.registerAgentSession(a, "lh-dev", "ext-a", null, "claude-code", "dev");
+  S.registerAgentSession(a, "lh-build", "ext-a", null, "claude-code", "dev");
   S.registerAgentSession(b, "reviewer", "ext-b", null, null, "review");
 
   S.linkSession(a, issue.id);
@@ -501,7 +501,7 @@ test("createPull and setPullSession record the dev session in session_links (#29
   const pr = S.createIssue(repo.id, "pull", "p", "Closes #1", "bot") as any;
   const s1 = "55555555-0000-0000-0000-000000000001";
   const s2 = "55555555-0000-0000-0000-000000000002";
-  S.registerAgentSession(s1, "lh-dev", "ext-s1", null, "claude-code");
+  S.registerAgentSession(s1, "lh-build", "ext-s1", null, "claude-code");
 
   // createPull with a session links it and stamps kind='dev'.
   S.createPull(pr.id, "p", "main", "sha1", issue.id, s1);
@@ -510,7 +510,7 @@ test("createPull and setPullSession record the dev session in session_links (#29
   expect(list.map((r: any) => r.id)).toEqual([s1]);
 
   // Re-attributing the PR to a newer session adds it to the list (1:N, not a replacement).
-  S.registerAgentSession(s2, "lh-dev", "ext-s2", null, "claude-code");
+  S.registerAgentSession(s2, "lh-build", "ext-s2", null, "claude-code");
   S.setPullSession(pr.id, s2);
   expect(S.getAgentSession(s2)!.kind).toBe("dev");
   list = S.listSessionsForIssue(pr.id);
@@ -528,8 +528,8 @@ test("sessionUsageTotalsForIssue aggregates tokens/cost across every linked sess
 
   const s1 = "66666666-0000-0000-0000-000000000001";
   const s2 = "66666666-0000-0000-0000-000000000002";
-  S.registerAgentSession(s1, "lh-dev", "ext-t1");
-  S.registerAgentSession(s2, "lh-dev", "ext-t2");
+  S.registerAgentSession(s1, "lh-build", "ext-t1");
+  S.registerAgentSession(s2, "lh-build", "ext-t2");
   S.linkSession(s1, pr.id);
   S.linkSession(s2, pr.id);
 
@@ -592,13 +592,13 @@ test("pullAgentSummary returns the primary dev session runtime and usage models 
   );
   S.registerAgentSession(
     oldDev,
-    "lh-dev",
+    "lh-build",
     "ext-old",
     null,
     "claude-code",
     "dev",
   );
-  S.registerAgentSession(newDev, "lh-dev", "ext-new", null, "codex", "dev");
+  S.registerAgentSession(newDev, "lh-build", "ext-new", null, "codex", "dev");
   S.linkSession(review, pr.id);
   S.linkSession(oldDev, pr.id);
   S.setPullSession(pr.id, newDev);
@@ -620,7 +620,7 @@ test("pullAgentSummary returns the primary dev session runtime and usage models 
   });
 
   expect(S.pullAgentSummary(pr.id)).toEqual({
-    agent: "lh-dev",
+    agent: "lh-build",
     runtime: "codex",
     models: ["gpt-5.5"],
   });
@@ -628,7 +628,7 @@ test("pullAgentSummary returns the primary dev session runtime and usage models 
 
 test("sessionUsageCostForSession sums top-level cost, null when unknown or empty (#832)", () => {
   const s = "88888888-0000-0000-0000-000000000001";
-  S.registerAgentSession(s, "lh-dev", "ext-cost1");
+  S.registerAgentSession(s, "lh-build", "ext-cost1");
 
   // No usage rows yet: indeterminate → null, not 0.
   expect(S.sessionUsageCostForSession(s)).toBeNull();

@@ -195,7 +195,7 @@ export const methods: Record<string, MethodDef> = {
   },
   "terminal/launch": {
     description:
-      "Launch a terminal workflow as a named Herdr session. issue-dev (Build) spawns `lh dev --herdr` and lets it provision the worktree/PR and the herdr pane itself (#584); the other workflows are orchestrated by this RPC directly.",
+      "Launch a terminal workflow as a named Herdr session. issue-dev (Build) spawns `lh build --herdr` and lets it provision the worktree/PR and the herdr pane itself (#584); the other workflows are orchestrated by this RPC directly.",
     params: params(
       {
         repo,

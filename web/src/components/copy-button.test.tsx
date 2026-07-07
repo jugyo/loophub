@@ -9,10 +9,10 @@ describe("CopyButton", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
 
-    render(<CopyButton value="lh dev jugyo/loophub/150" />);
+    render(<CopyButton value="lh build jugyo/loophub/150" />);
     fireEvent.click(screen.getByRole("button", { name: /copy/i }));
 
-    expect(writeText).toHaveBeenCalledWith("lh dev jugyo/loophub/150");
+    expect(writeText).toHaveBeenCalledWith("lh build jugyo/loophub/150");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /copied/i })).toBeTruthy(),
     );

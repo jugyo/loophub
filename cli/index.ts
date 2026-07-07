@@ -1,6 +1,6 @@
 import { group } from "./args.ts";
 import * as attachmentCmd from "./commands/attachment.ts";
-import * as devCmd from "./commands/dev.ts";
+import * as buildCmd from "./commands/build.ts";
 import * as eventsCmd from "./commands/events.ts";
 import * as handoffCmd from "./commands/handoff.ts";
 import * as herdrCmd from "./commands/herdr.ts";
@@ -18,7 +18,7 @@ import { usage } from "./usage.ts";
 // ---- dispatch ----
 async function main() {
   if (group === "info") return infoCmd.run();
-  if (group === "dev") return devCmd.run();
+  if (group === "build") return buildCmd.run();
   if (group === "resume") return resumeCmd.run();
   if (group === "repo") return repoCmd.run();
   if (group === "issue") return issueCmd.run();

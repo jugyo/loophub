@@ -13,11 +13,11 @@ Final guard **before a human merges**. Confirm `review_state == PASSED` and no c
 (`mergeable_state != conflict`). If clear, **present `lh pr merge` steps only**.
 
 The preceding `lh-pr-review` (same session) already covered acceptance criteria, scope, and
-green tests; the PR Evidence section was required at creation (`lh-dev` § PR). Merge-ready does
+green tests; the PR Evidence section was required at creation (`lh-build` § PR). Merge-ready does
 not re-check them.
 
 As the **last block of its report**, merge-ready also surfaces the change's **evidence
-screenshots**: it reads the persistent evidence directory (`lh-dev` and `lh-pr-review` write here
+screenshots**: it reads the persistent evidence directory (`lh-build` and `lh-pr-review` write here
 during implementation and fixes), validates each image, and prints the **paths** of the valid
 ones — or states there is none — so a human can eyeball the change before merging.
 
@@ -178,7 +178,7 @@ trailing [Evidence screenshots](#evidence-screenshots-last-block) block:
 
 Append this as the **last block merge-ready itself emits** — in **both** the mergeable and the
 not-mergeable case — so the change's visual evidence is grouped at the end. (When chained from
-`lh-dev`, its final PR-URL line still follows; see the closing note below.)
+`lh-build`, its final PR-URL line still follows; see the closing note below.)
 
 1. **List** the persistent evidence directory for this PR:
 
@@ -188,7 +188,7 @@ not-mergeable case — so the change's visual evidence is grouped at the end. (W
    ```
 
    `<n>` is the linked issue (PR body `closes #<n>` / the `--issue` link from step 1) — the
-   directory is keyed by the **linked issue number**, not the `pr-<m>` worktree name, so `lh-dev`,
+   directory is keyed by the **linked issue number**, not the `pr-<m>` worktree name, so `lh-build`,
    `lh-pr-review`, and this skill all resolve the same directory. For a PR with no linked issue,
    use `pr-<m>` instead.
 
@@ -213,7 +213,7 @@ not-mergeable case — so the change's visual evidence is grouped at the end. (W
    ```
 
 Localize the heading and the "none" line to the conversation language (see [Language](#language));
-keep paths verbatim. When chained from `lh-dev`, its final PR-URL line (`lh-dev` § 9) still follows
+keep paths verbatim. When chained from `lh-build`, its final PR-URL line (`lh-build` § 9) still follows
 this block.
 
 ## Called from other skills

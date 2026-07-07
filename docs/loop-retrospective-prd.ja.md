@@ -37,7 +37,7 @@
 flowchart TD
     subgraph dev["dev loop（既存）"]
         direction LR
-        I([issue]) --> D["lh-dev → 実装 → PR"] --> RV[lh-pr-review] --> MR[lh-merge-ready] --> HM([人がマージ])
+        I([issue]) --> D["lh-build → 実装 → PR"] --> RV[lh-pr-review] --> MR[lh-merge-ready] --> HM([人がマージ])
     end
     dev -->|"PR マージ後（手動 /lh-retro → 将来は pull_request.merged で自動）"| R1["1. 振り返り retro<br/>rubric 採点 + 自由記述<br/>入力: セッション + イベント + diff"]
     R1 --> R2["2. 知見の蓄積<br/>retros（DB） + decision log"]
@@ -161,7 +161,7 @@ gaming を招くため避ける。§7)。
 | d. canon 追記 | 外部ベストプラクティスとの差分 | #74 の canon docs へ追記 | 人間承認 |
 
 集約(digest)→ クラスタ → 改善提案ドラフト → 上記 a–d のいずれかへ、を Phase 2 で設計する。
-**ドッグフーディング**: 改善提案が issue 化(経路 c)されると、その issue は通常の `lh-dev`
+**ドッグフーディング**: 改善提案が issue 化(経路 c)されると、その issue は通常の `lh-build`
 ループで実装される — ループ改善ループ自身が LoopHub のループで回る。
 
 Phase 1 はここへ流す**素材(retros + decision log)を正しく貯める**ことに専念する。

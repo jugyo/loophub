@@ -163,7 +163,7 @@ export interface HerdrIssueWorkspace {
  * not surface a launched agent's env, so an `--env` issue marker would be invisible here). So the
  * issue binding is resolved in two already-recorded-at-launch hops: the pane's cwd structurally
  * records its PR (`pr-<n>`, set when the worktree is provisioned), and the PR→issue link is
- * recorded when `lh dev` opens the PR (`Closes #<n>`). This function composes them — it reuses
+ * recorded when `lh build` opens the PR (`Closes #<n>`). This function composes them — it reuses
  * herdrPullWorkspacesFromAgentList to resolve cwd→PR, then maps PR→issue through `pullToIssue`,
  * which the caller builds from the DB's PR↔issue links (kept out of this pure parser so it stays
  * unit-testable without a DB).

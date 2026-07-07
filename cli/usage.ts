@@ -4,7 +4,7 @@ export function usage(): void {
   console.log(`lh — LoopHub CLI
 
   lh info [--json]                                 # resolved env: baseUrl (Web UI), home, dbPath
-  lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, passed through to the claude/codex CLI verbatim, defaults to the configured per-agent model when omitted; --auto: auto mode without the sandbox (claude-code: --permission-mode auto; codex: --dangerously-bypass-approvals-and-sandbox); --herdr: after setup, hand off to a herdr pane instead of blocking this process; --force: launch even if another session holds it)
+  lh build <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]   # start one issue in an interactive agent session (--claude-code: Claude Code, the default; --codex: Codex instead; --model: session model, passed through to the claude/codex CLI verbatim, defaults to the configured per-agent model when omitted; --auto: auto mode without the sandbox (claude-code: --permission-mode auto; codex: --dangerously-bypass-approvals-and-sandbox); --herdr: after setup, hand off to a herdr pane instead of blocking this process; --force: launch even if another session holds it)
   lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]   # re-enter the Claude session a PR was developed in (claude --resume in its worktree)
   lh repo add <path> [--name owner/repo]
   lh repo list [--archived false|true|all]
@@ -24,7 +24,7 @@ export function usage(): void {
   lh handoff list [--pr <m>] [--issue <n>] [--session <id>] [--json]   # list handoffs for a ref, chronological
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR
   lh retro list [--pr <m>] [--status draft]   lh retro view <id>   lh retro pending [--limit N]   # read retros / list merged PRs without one
-  lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-dev worktrees (issue closed / PR merged, clean tree)
+  lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-build worktrees (issue closed / PR merged, clean tree)
   lh herdr [--repo owner/name] [--json]                      # show the repo's herdr session as workspace -> tab -> agent(PR)
   lh herdr focus <pr> [--repo owner/name]                     # focus the pane of the running agent for that PR's worktree
   lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image(s), print embed markdown
@@ -33,12 +33,12 @@ export function usage(): void {
 
   common: --session-id <uuid>  --json
   examples:
-    lh dev 42
-    lh dev jugyo/loophub/42        # owner/repo/id form: start from outside the repo, no --repo needed
-    lh dev --sandbox 42            # boolean flags and the issue id may appear in any order
-    lh dev --auto 42               # auto mode (--permission-mode auto) without the sandbox
-    lh dev --codex 42              # same worktree/PR/session preparation, but launch Codex instead of Claude Code
-    lh dev --codex --auto 42       # Codex's auto-mode equivalent (--dangerously-bypass-approvals-and-sandbox)
+    lh build 42
+    lh build jugyo/loophub/42        # owner/repo/id form: start from outside the repo, no --repo needed
+    lh build --sandbox 42            # boolean flags and the issue id may appear in any order
+    lh build --auto 42               # auto mode (--permission-mode auto) without the sandbox
+    lh build --codex 42              # same worktree/PR/session preparation, but launch Codex instead of Claude Code
+    lh build --codex --auto 42       # Codex's auto-mode equivalent (--dangerously-bypass-approvals-and-sandbox)
     lh repo add . --name me/proj
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"

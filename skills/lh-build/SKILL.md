@@ -1,12 +1,12 @@
 ---
-name: lh-dev
+name: lh-build
 description: >-
   Implement or fix from a LoopHub issue, then run the PR review-fix loop in the same session.
-  Starts ONLY when the user explicitly runs /lh-dev, asks to implement/fix, or LoopHub
-  dispatch/cron starts issue-dev — NOT after issue-create alone. Do not merge.
+  Starts ONLY when the user explicitly runs /lh-build, asks to implement/fix, or LoopHub
+  dispatch/cron starts lh-build — NOT after issue-create alone. Do not merge.
 ---
 
-# LoopHub issue dev
+# LoopHub issue build
 
 Implement or fix per the issue, open a PR, then **by default** continue in the same session:
 **PR → `lh-pr-review` → `lh-merge-ready`** (human merge). **Do not merge.**
@@ -20,9 +20,9 @@ creation skill (`lh-issue-create`, `lh-plan-to-issues`, `to-issues`).
 
 | Condition | Example |
 |-----------|---------|
-| User runs `/lh-dev <n>` | `/lh-dev 42` |
+| User runs `/lh-build <n>` | `/lh-build 42` |
 | User explicitly asks to **implement / fix / start** | "implement this", "fix it", "continue implementation", "fix #42" |
-| LoopHub dispatch / cron starts issue-dev | `issue.labeled`, etc. |
+| LoopHub dispatch / cron starts lh-build | `issue.labeled`, etc. |
 
 ### Do not start
 
@@ -40,14 +40,14 @@ user chooses implementation.
 
 ## Invocation
 
-`/lh-dev <issue id>` — take the issue number from the argument and start on it directly (**no
+`/lh-build <issue id>` — take the issue number from the argument and start on it directly (**no
 selection UI**). If the id is **omitted**, present a selection UI (see § Selecting an issue).
 
 **If the startup guard is not satisfied, stop here** — even if you know the issue number.
 
 ### Selecting an issue (no id given)
 
-When `/lh-dev` is run **without** an issue id, do not guess — let the user pick via the built-in
+When `/lh-build` is run **without** an issue id, do not guess — let the user pick via the built-in
 `AskUserQuestion` UI:
 
 1. **A just-created issue takes priority.** If an issue was created earlier in *this same
@@ -84,7 +84,7 @@ If no candidate issues are found (empty list), say so and ask the user for an is
 | Caller | Continue? |
 |--------|-----------|
 | `lh-issue-create` / `lh-plan-to-issues` / `to-issues` | ❌ No auto-continue; separate explicit user request only |
-| LoopHub dispatch / cron | ✅ Start issue-dev |
+| LoopHub dispatch / cron | ✅ Start lh-build |
 
 ## LoopHub
 
@@ -93,7 +93,7 @@ If no candidate issues are found (empty list), say so and ask the user for an is
 - **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
 - **Auto-sync**: `lh-web` sweeps open PRs' head SHAs and auto-fires `pull_request.updated` — after
   committing, rebasing, or merging on a PR head, no manual sync call is needed
-- `--session-id` — attribution for comments and other writes (`lh dev` attributes the session to the linked PR row for you)
+- `--session-id` — attribution for comments and other writes (`lh build` attributes the session to the linked PR row for you)
 
 ### Web URL (for reporting)
 
@@ -155,20 +155,20 @@ way you can't resolve, flag it rather than guess.
 Do not proceed to step 2 until this summary is written (in the chat response for interactive sessions,
 or in the session log for AFK/cron).
 
-### 2. Worktree & session (already provisioned by `lh dev`)
+### 2. Worktree & session (already provisioned by `lh build`)
 
-When launched via `lh dev <n>`, the session **starts already inside the PR worktree** with the setup
+When launched via `lh build <n>`, the session **starts already inside the PR worktree** with the setup
 below done for you — do **not** redo it:
 
 - **Worktree**: provisioned at `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` on branch
-  `loophub/pr-<m>` (off `main`) — keyed by the **linked PR's number** `<m>`, not the issue number
-  (#463: `lh dev` opens the PR first and derives the branch/worktree name from it, so two PRs for
-  the same issue never collide); the session's cwd is already there.
-- **Session**: registered (agent `lh-dev`). The dev session is attributed to the **PR row**
-  (`pulls.session_id`) when `lh dev` opens or re-enters the PR — that is what `lh resume` / retro
-  resolve from. There is no issue-assignee step (removed in #186); "who is working this issue" is the
-  linked PR's existence, not a separate assignee.
-- **Draft PR**: `lh dev` **already opened a linked PR** for this issue at the start of work
+  `loophub/pr-<m>` (off the repo's configured default branch) — keyed by the **linked PR's number**
+  `<m>`, not the issue number (#463: `lh build` opens the PR first and derives the branch/worktree
+  name from it, so two PRs for the same issue never collide); the session's cwd is already there.
+- **Session**: registered (agent `lh-build`). The dev session is linked to the **PR** through
+  session links when `lh build` opens or re-enters the PR — that is what `lh resume` / retro resolve
+  through `primaryDevSessionForPull`. There is no issue-assignee step (removed in #186); "who is
+  working this issue" is the linked PR's existence, not a separate assignee.
+- **Draft PR**: `lh build` **already opened a linked PR** for this issue at the start of work
   (idempotent — re-running finds the existing PR rather than opening a second one). It is a
   normal open PR with a placeholder body (a localized
   implementation-plan heading plus `Closes #<n>`) and may have 0 commits. **A linked PR already
@@ -195,8 +195,8 @@ need to flag a blocker or hand-off for a human watching the UI.
 Before modifying source files, inspect enough of the relevant code to make a concrete plan, then update
 the linked PR body's implementation-plan section. Preserve all existing PR body content such as the
 issue link, purpose text, Evidence gate, and `Closes #<n>`; replace or fill only the implementation
-plan placeholder. This is required for both `lh dev --codex` and the default runtime because both
-launch the same `/lh-dev` flow after the draft PR exists.
+plan placeholder. This is required for both `lh build --codex` and the default runtime because both
+launch the same `/lh-build` flow after the draft PR exists.
 
 Keep the plan short and reviewable. Include:
 
@@ -213,15 +213,15 @@ until this PR-body update has succeeded.
 
 #### Another session already owns the issue
 
-The double-`lh dev` guard is a **soft open-PR check** (at most one open PR per linked issue; not a DB
+The double-`lh build` guard is a **soft open-PR check** (at most one open PR per linked issue; not a DB
 constraint, so it can be relaxed later for multiple proposal PRs) plus the host-local dev lock — `lh
-dev` is idempotent and reuses the existing open PR rather than opening a second. But if you find a
+build` is idempotent and reuses the existing open PR rather than opening a second. But if you find a
 **different active session** is genuinely working the same issue (not just a
 stale re-launch of your own), **stop** and ask the human whether to wait, pick another issue, or take
 over. Do not edit in parallel.
 
-Two rare branches of this step — launching **without** `lh dev`, and running a **parallel LoopHub
-server** to exercise server-side changes — are moved out to `skills/lh-dev/advanced-launch.md`; open
+Two rare branches of this step — launching **without** `lh build`, and running a **parallel LoopHub
+server** to exercise server-side changes — are moved out to `skills/lh-build/advanced-launch.md`; open
 it only if one applies.
 
 ### 3. Implement
@@ -261,7 +261,7 @@ Do not open a PR with checkboxes only — reviewers need proof you ran the verif
 
 #### Visual evidence check
 
-`lh dev` opens the draft PR before the agent starts. Run this check before completing that PR
+`lh build` opens the draft PR before the agent starts. Run this check before completing that PR
 (updating the body and marking it ready); on the fallback path where you create the PR yourself, run
 it before `lh pr create`. The draft PR body starts with a Visual evidence gate TODO so this check is
 visible from PR creation.
@@ -269,7 +269,7 @@ visible from PR creation.
 1. Check what changed:
 
    ```sh
-   git diff --name-only --diff-filter=ACMR main...HEAD
+   git diff --name-only --diff-filter=ACMR <default-branch>...HEAD
    git status --short
    ```
 
@@ -381,9 +381,9 @@ scrub note above).
 
 No push required (LoopHub reads the same `.git` directly). Default uses the production server (`:8730`).
 
-**`lh dev` already opened a linked PR at the start of work (§2).** Your job here is **not** to create a
+**`lh build` already opened a linked PR at the start of work (§2).** Your job here is **not** to create a
 PR — it is to **fill in that PR's body** with the real Summary / Acceptance criteria / Test plan /
-Evidence, replacing the placeholder implementation-plan body that `lh dev` generated. `lh dev` opened
+Evidence, replacing the placeholder implementation-plan body that `lh build` generated. `lh build` opened
 the PR as a **draft** (#413), so it is already open but still marked WIP; filling the body **and**
 flipping it to ready (the closing step below) is what readies it for review (§7). Do **not** run
 `lh pr create` on the normal path — that would create a duplicate.
@@ -438,26 +438,26 @@ the one above.
 | Acceptance criteria | Mirror the issue's AC as a checklist; check **only** items this PR actually satisfies (unmet / out-of-scope stay unchecked with a one-line reason) |
 | Test plan | Verification performed (checked items you actually ran) |
 | Evidence | Concrete proof from step 4 — test output excerpt, screenshots, CLI snippets, or explicit N/A |
-| `Closes #<n>` | Issue number — already in the placeholder body from `lh dev`; keep it |
+| `Closes #<n>` | Issue number — already in the placeholder body from `lh build`; keep it |
 
 The **Acceptance criteria** section mirrors the issue's AC verbatim as a checklist. Tick an item only
 when the PR genuinely meets it; leave anything unmet or out of scope unchecked and append a one-line
 reason. This is the human- and reviewer-facing record that the PR satisfies the issue — `lh-pr-review`
 runs an Acceptance reviewer against the same AC.
 
-The issue↔PR link and `Closes #<n>` were set when `lh dev` opened the draft PR, so you do not pass
+The issue↔PR link and `Closes #<n>` were set when `lh build` opened the draft PR, so you do not pass
 `--issue` to `lh pr update`. Keep `Closes #<n>` in the body. No manual issue comment needed.
 
 #### Fallback: no linked PR exists
 
 The draft PR is normally already there (§2). Only if `lh issue view <n>` shows **no linked PR** (e.g.
-`lh dev` failed before opening it, or a manual launch) do you create one yourself — this is the
+`lh build` failed before opening it, or a manual launch) do you create one yourself — this is the
 exception, not the default path:
 
 ```sh
 # --head is the worktree's current branch (git rev-parse --abbrev-ref HEAD)
-lh pr create --repo <repo> --head <branch> --base main \
-  --title "..." --issue <n> --actor impl-bot \
+lh pr create --repo <repo> --head <branch> --base <default-branch> --draft \
+  --title "..." --issue <n> \
   --body "$(cat <<'EOF'
 ... same required sections as above ...
 Closes #<n>
@@ -500,11 +500,11 @@ When running a **parallel server** (`advanced-launch.md`), prefix
 `LOOPHUB_URL=http://localhost:8731`. This clears the draft flag so the PR reads as **ready** in
 events and `lh pr list` / view — distinguishing it from a PR
 left in draft (an abandoned WIP attempt). This is the draft→ready transition only; `lh pr ready-for-review`
-also has a *re-review after change requests* mode, but the lh-dev flow does not use it (§7 delegates to
+also has a *re-review after change requests* mode, but the lh-build flow does not use it (§7 delegates to
 `lh-pr-review`, which re-reviews by re-running its reviewers, posting `lh pr comment` only for
 visibility).
 
-Run this **only when the PR is still a draft** — i.e. the normal `lh dev` path, where it succeeds. Do
+Run this **only when the PR is still a draft** — i.e. the normal `lh build` path, where it succeeds. Do
 **not** skip it there when going straight to review: `lh-pr-review` should run against a ready PR, and a
 PR left in draft signals "implementation not finished". On the fallback path where you created the PR
 yourself **non-draft** (§5 "no linked PR exists"), it is already ready — **skip this step**: running
@@ -561,7 +561,7 @@ markdown link, on its own, so the human can click it immediately:
 ## Skill chain (full)
 
 ```text
-lh-dev → lh-pr-review → lh-merge-ready → (human merge)
+lh-build → lh-pr-review → lh-merge-ready → (human merge)
 ```
 
 ## PR creation outside this skill
@@ -578,14 +578,14 @@ Do not stop at commit or `lh pr create` alone.
 
 ## Conflicts
 
-On the worktree head: `git rebase main` (or `merge main`) → commit. Auto-sync (see [§
-LoopHub](#loophub)) picks it up — no manual sync needed.
+On the worktree head: `git rebase <default-branch>` (or `merge <default-branch>`) → commit.
+Auto-sync (see [§ LoopHub](#loophub)) picks it up — no manual sync needed.
 
 ## Prohibited
 
 - Do not merge
-- Do not work on main
-- Do not edit source outside the PR worktree (`lh dev` starts you inside it; on a manual launch, `cd`
+- Do not work on the repo's default branch
+- Do not edit source outside the PR worktree (`lh build` starts you inside it; on a manual launch, `cd`
   into the worktree first)
 - Do not auto-start after issue creation without consent (startup guard violation)
 - Do not "implement while you're here" without user confirmation

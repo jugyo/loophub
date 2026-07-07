@@ -93,24 +93,31 @@ test("isClaudeSessionId rejects flag-like, malformed, and empty ids", () => {
   expect(isClaudeSessionId(undefined)).toBe(false);
 });
 
-// sessionRuntime: explicit runtime wins; a runtime-less lh-dev row is the backward-compat
+// sessionRuntime: explicit runtime wins; a runtime-less lh-build row is the modern fallback, and a
+// runtime-less lh-dev row is the backward-compat
 // claude-code case; any other runtime-less row is unknown provenance (null).
 test("sessionRuntime prefers the explicit runtime column", () => {
-  expect(sessionRuntime({ runtime: "claude-code", agent: "lh-dev" })).toBe(
+  expect(sessionRuntime({ runtime: "claude-code", agent: "lh-build" })).toBe(
     RUNTIME_CLAUDE_CODE,
   );
   // an explicit (even if unsupported) runtime is returned verbatim, not overridden by the fallback
-  expect(sessionRuntime({ runtime: "codex", agent: "lh-dev" })).toBe("codex");
+  expect(sessionRuntime({ runtime: "codex", agent: "lh-build" })).toBe("codex");
 });
 
-test("sessionRuntime falls back to claude-code for a pre-runtime lh-dev session", () => {
+test("sessionRuntime falls back to claude-code for a pre-runtime lh-build session", () => {
+  expect(sessionRuntime({ runtime: null, agent: "lh-build" })).toBe(
+    RUNTIME_CLAUDE_CODE,
+  );
+  expect(sessionRuntime({ agent: "lh-build" })).toBe(RUNTIME_CLAUDE_CODE);
+});
+
+test("sessionRuntime preserves the legacy lh-dev fallback for old rows", () => {
   expect(sessionRuntime({ runtime: null, agent: "lh-dev" })).toBe(
     RUNTIME_CLAUDE_CODE,
   );
-  expect(sessionRuntime({ agent: "lh-dev" })).toBe(RUNTIME_CLAUDE_CODE);
 });
 
-test("sessionRuntime is null for a runtime-less non-lh-dev session and for no row", () => {
+test("sessionRuntime is null for a runtime-less non-build session and for no row", () => {
   expect(sessionRuntime({ runtime: null, agent: "impl-bot" })).toBeNull();
   expect(sessionRuntime(null)).toBeNull();
   expect(sessionRuntime(undefined)).toBeNull();

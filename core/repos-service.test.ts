@@ -136,7 +136,7 @@ test("rename is refused while a worktree exists under the current name (#485)", 
   await git(path, ["commit", "-qm", "base"]);
   await svc.repos.create({ path, name: "me/rn-busy" });
 
-  // Same layout `lh dev` provisions: <worktreeRoot>/<full_name>/pr-<n>.
+  // Same layout `lh build` provisions: <worktreeRoot>/<full_name>/pr-<n>.
   const wt = join(HOME, "worktrees", "me", "rn-busy", "pr-1");
   await worktreeAdd(path, wt, "loophub/pr-1", "main");
 

@@ -55,7 +55,7 @@ export async function run(): Promise<void> {
     // `lh issue new` files an issue *with an AI session* (#299): it launches the configured
     // coding-agent runtime (#658) running the `/lh-issue-create` skill, records the session as
     // kind=issue-create, and later links it to the created issue. The New Issue button runs this.
-    // Mirrors `lh dev`: register the session, then spawn the resolved runtime — here in the repo
+    // Mirrors `lh build`: register the session, then spawn the resolved runtime — here in the repo
     // root (no worktree; filing an issue does not touch a branch).
     const r = await runOp(() => s.repos.get(repo));
     const sessionId = randomUUID();

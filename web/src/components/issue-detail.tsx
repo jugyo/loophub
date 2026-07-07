@@ -199,7 +199,7 @@ function IssueHeader({
 
 // The Build button plus its agent/model dropdown (#637). The plain button launches with the
 // Settings defaults (unchanged behavior); the chevron opens a panel to pick a coding agent and
-// model for a single launch, which spawns `lh dev <n> --herdr [--auto] --claude-code|--codex
+// model for a single launch, which spawns `lh build <n> --herdr [--auto] --claude-code|--codex
 // --model <name>` without touching the persisted `codingAgent` / per-agent `defaultModel`. The
 // autoMode/tooltip still reflect the resolved default agent, since that is what a plain click runs.
 function BuildControls({
@@ -224,8 +224,8 @@ function BuildControls({
   // Display-only tooltip for the plain button: it never reaches the wire, it only shows what a
   // default (no-override) click runs (#584, #593).
   const buildCommand = autoModeOnBuild
-    ? `lh dev ${issue.number} --herdr --auto`
-    : `lh dev ${issue.number} --herdr`;
+    ? `lh build ${issue.number} --herdr --auto`
+    : `lh build ${issue.number} --herdr`;
 
   // Close the dropdown on outside click / Escape (mirrors PullDebugMenu's native dismissal).
   useEffect(() => {
@@ -245,7 +245,7 @@ function BuildControls({
   }, [menuOpen]);
 
   // `override` set => the dropdown launch (one-shot agent/model); undefined => the plain button
-  // (default resolution). A blank model is omitted so `lh dev` falls back to the per-agent default.
+  // (default resolution). A blank model is omitted so `lh build` falls back to the per-agent default.
   function build(override?: { agent: CodingAgent; model: string }) {
     startBuildLoading();
     setMenuOpen(false);

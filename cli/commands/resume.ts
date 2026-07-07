@@ -54,12 +54,12 @@ export async function run(): Promise<void> {
   // `lh resume <PR id>` re-enters the Claude session a PR was developed in. Resolution
   // (session id + worktree/branch + restorability) lives in core (service.resume.resolve);
   // the CLI provisions the worktree (idempotent restore) and spawns `claude --resume`, mirroring
-  // the `lh dev` spawn (inherited env carries the NODE_OPTIONS conventions; cwd = worktree).
+  // the `lh build` spawn (inherited env carries the NODE_OPTIONS conventions; cwd = worktree).
   const target = sub;
   const usageLine =
     "usage: lh resume <owner>/<repo>/<pr> | <pr> [--repo owner/name]";
   if (!target) fail(usageLine);
-  // The positional accepts the same forms as `lh dev`: a bare <pr> (repo from --repo/cwd) or
+  // The positional accepts the same forms as `lh build`: a bare <pr> (repo from --repo/cwd) or
   // <owner>/<repo>/<pr> (carries the repo so resume can run from outside the checkout).
   let parsed: { repo?: string; id: number };
   try {
@@ -92,7 +92,7 @@ export async function run(): Promise<void> {
     if (resolution.reason === "no-session") {
       fail(
         `PR #${prNumber}: no Claude session is recorded for this PR, so there is nothing to ` +
-          `resume.\n(A resumable session id is saved when work starts via \`lh dev\`.)`,
+          `resume.\n(A resumable session id is saved when work starts via \`lh build\`.)`,
       );
     }
     if (resolution.reason === "unknown-runtime") {
@@ -109,7 +109,7 @@ export async function run(): Promise<void> {
   }
 
   // Idempotent worktree restore: reuse the existing worktree, or re-attach it from the surviving
-  // branch (same provisionWorktree path `lh dev` uses for a removed-but-branch-present worktree).
+  // branch (same provisionWorktree path `lh build` uses for a removed-but-branch-present worktree).
   // allowCreatingConventionBranch is left at its default (false): decideResume already refused
   // "unrestorable" (worktree and branch both gone) above, so provisionWorktree never needs to
   // fabricate a branch here — it only ever reattaches an existing worktree or branch.

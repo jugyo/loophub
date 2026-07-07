@@ -201,14 +201,14 @@ export interface HerdrAgentRead {
   rows: number | null;
 }
 
-/** Coding agent `lh dev` launches by default when neither --claude-code nor --codex is passed (#516). */
+/** Coding agent `lh build` launches by default when neither --claude-code nor --codex is passed (#516). */
 export type CodingAgent = "claude-code" | "codex";
 
 /** Per-agent settings (#593, #594, #682). */
 export interface AgentSettings {
   // Whether the Build button launches this agent with auto mode (#499, #593).
   autoModeOnBuild: boolean;
-  // Model this agent launches with when `lh dev --model` isn't passed explicitly (#594).
+  // Model this agent launches with when `lh build --model` isn't passed explicitly (#594).
   model: string;
   // Reasoning effort paired with model in the Settings screen (#682).
   effort: string;
@@ -218,7 +218,7 @@ export interface AgentSettings {
 export interface GlobalSettings {
   // Per-agent settings, keyed by CodingAgent (#593).
   agents: Record<CodingAgent, AgentSettings>;
-  // Default coding agent `lh dev` launches (#516).
+  // Default coding agent `lh build` launches (#516).
   codingAgent: CodingAgent;
 }
 

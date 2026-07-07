@@ -44,8 +44,8 @@ Dispatch / cron must pass `<pr id>` explicitly (no inference).
 
 ## Worktree rules
 
-Work on the PR's existing head branch (`head.ref` — `loophub/pr-<m>` for `lh dev` PRs), never on
-the main checkout. If the head branch already has a worktree — e.g. the `lh dev` one at
+Work on the PR's existing head branch (`head.ref` — `loophub/pr-<m>` for `lh build` PRs), never on
+the main checkout. If the head branch already has a worktree — e.g. the `lh build` one at
 `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` — **reuse it** (no new worktree needed). Otherwise,
 add one under `.worktrees/<head.ref>` from repo root (see step 2 for the exact bootstrap procedure).
 
@@ -143,7 +143,7 @@ Skip pr-review only if user said "stop at rebase".
 
 | Item | issue-dev | rebase-conflict |
 |------|-----------|-----------------|
-| worktree location | `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` (provisioned by `lh dev`) | that one reused, or `.worktrees/<head.ref>` |
+| worktree location | `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` (provisioned by `lh build`) | that one reused, or `.worktrees/<head.ref>` |
 | rebase command | `git rebase main` | same |
 | merge | do not | do not |
 | review | pr-review after PR create | pr-review after resolution |

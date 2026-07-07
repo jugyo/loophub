@@ -61,7 +61,7 @@ beforeAll(() => {
     "--id",
     SESSION_ID,
     "--agent",
-    "lh-dev",
+    "lh-build",
     "--session",
     SESSION_ID,
     "--runtime",

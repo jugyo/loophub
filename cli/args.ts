@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 
 // ---- arg parsing ----
 // Declare each flag's type so boolean flags (--sandbox/--verbose/--json) never swallow the
-// next token: `lh dev --sandbox 123` and `lh dev 123 --sandbox` parse identically, and
+// next token: `lh build --sandbox 123` and `lh build 123 --sandbox` parse identically, and
 // `--repo=me/x` works. strict:false keeps the old lenient behavior for any undeclared flag.
 export type Flags = {
   repo?: string;

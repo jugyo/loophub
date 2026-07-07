@@ -19,7 +19,7 @@ import {
 // so existing cli/dev.ts callers and tests keep importing it from this module.
 export { type ProvisionInput, provisionWorktree };
 
-// `lh dev` provisions an isolated git worktree (outside the sandbox) and launches an
+// `lh build` provisions an isolated git worktree (outside the sandbox) and launches an
 // interactive Claude session in it. Everything here is pure CLI-side policy — it imports
 // git plumbing from core but no DB — so it can be unit-tested and later moved to a
 // swappable same-repo runner without touching core.
@@ -168,10 +168,10 @@ export function buildManagedSettings({
 // which is not a real `claude` flag — `claude` silently dropped the whole JSON, so neither the
 // sandbox nor auto mode ever took effect.) Centralized here so the displayed spawn command line
 // (formatSpawnCommand) and the real spawn share one source of truth.
-// Parse the `lh dev` positional target. Two accepted forms:
+// Parse the `lh build` positional target. Two accepted forms:
 //   <id>                  e.g. "116"            → { id: 116 }            (repo from cwd/--repo)
 //   <owner>/<repo>/<id>   e.g. "jugyo/lh/116"   → { repo: "jugyo/lh", id: 116 }
-// The owner/repo/id form lets `lh dev` start from outside the target repo's working directory
+// The owner/repo/id form lets `lh build` start from outside the target repo's working directory
 // without `--repo`; the bare-id form is the shorthand that defers repo resolution to the caller
 // (resolveRepo: cwd match or --repo). A malformed target (non-numeric id, wrong segment count,
 // or an empty owner/repo segment) throws a usage error. Pure so it can be unit-tested.
@@ -201,14 +201,14 @@ export function parseDevTarget(target: string): { repo?: string; id: number } {
 
 // ---- runtime selection ----
 //
-// `lh dev` can launch the interactive dev session in Claude Code (default) or Codex (#458).
+// `lh build` can launch the interactive dev session in Claude Code (default) or Codex (#458).
 // The worktree/PR/session preparation is runtime-independent; only the final spawn differs.
 export type DevRuntime = "claude-code" | "codex";
 
 // Resolve the runtime from the mutually-exclusive `--claude-code` / `--codex` flags. Passing
 // both is ambiguous — fail loudly rather than pick one. When neither flag is passed, `defaultRuntime`
 // (the `codingAgent` app setting, #516) decides; omitting it too falls back to the historical
-// default (Claude Code), so plain `lh dev <id>` behavior is unchanged for callers that don't pass it
+// default (Claude Code), so plain `lh build <id>` behavior is unchanged for callers that don't pass it
 // (e.g. existing tests).
 export function resolveDevRuntime(flags: {
   claudeCode?: boolean;
@@ -226,7 +226,7 @@ export function resolveDevRuntime(flags: {
 }
 
 // Build the `codex` argv for the interactive dev session. Codex takes the initial prompt as a
-// positional (`codex [PROMPT]`), so the same `/lh-dev <id>` slash command Claude receives is
+// positional (`codex [PROMPT]`), so the same `/lh-build <id>` slash command Claude receives is
 // handed to Codex verbatim — the rest of the context (worktree cwd, registered session, linked
 // PR) is prepared before spawn and is runtime-independent. Codex has no `--session-id` /
 // `--name` / `--settings` equivalents. Sandboxed launches receive a Codex config override that
@@ -507,16 +507,16 @@ export {
 
 // ---- dev lock (single-host duplicate-launch guard) ----
 //
-// A `lh dev` worktree is deterministic per PR (#463 — previously per issue), so a second
-// `lh dev` targeting the same PR reuses the *same* worktree — two live sessions editing one tree
+// A `lh build` worktree is deterministic per PR (#463 — previously per issue), so a second
+// `lh build` targeting the same PR reuses the *same* worktree — two live sessions editing one tree
 // clobber each other. We guard this with a lock file keyed by (repo, PR) under LOOPHUB_HOME
-// recording the running `lh dev` process: `lh dev` launches `claude` via a blocking `spawnSync`,
+// recording the running `lh build` process: `lh build` launches `claude` via a blocking `spawnSync`,
 // so the `lh` process is alive for exactly the session's lifetime, making its PID a precise
 // liveness signal. A new launch that finds a lock whose PID is still alive refuses (unless
 // --force); one whose PID is gone (crash / Ctrl-C) treats it as stale and reclaims it — so a
 // finished/interrupted session never blocks a relaunch. Keying by PR (not issue) means two PRs
-// linked to the same issue can now run `lh dev` concurrently without colliding; a second
-// concurrent `lh dev <issue>` racing to open the *first* PR for that issue is not separately
+// linked to the same issue can now run `lh build` concurrently without colliding; a second
+// concurrent `lh build <issue>` racing to open the *first* PR for that issue is not separately
 // guarded — out of scope for #463. The lock is host-local by design (cross-host exclusion is out
 // of scope) and lives outside the worktree, so it never leaks into a PR. Pure decision logic is
 // split from the fs/PID side effects so it can be unit-tested.
@@ -590,7 +590,7 @@ export function acquireDevLock(
 }
 
 // Read + parse the lock file. Missing / unreadable / malformed all collapse to null (no lock),
-// so a corrupt or partial lock never wedges `lh dev` — it's treated as free and reclaimed. The
+// so a corrupt or partial lock never wedges `lh build` — it's treated as free and reclaimed. The
 // full shape is validated (not just `pid`), so a truncated `{"pid":N}` doesn't slip through and
 // surface as `undefined` fields in the block message.
 export function readDevLock(path: string): DevLock | null {

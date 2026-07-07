@@ -8,7 +8,7 @@ available.
 
 ## Baseline
 
-Issue #760 cites PR #756 (`/lh-dev 749`) as the baseline:
+Issue #760 cites PR #756 (`/lh-build 749`) as the baseline:
 
 - Total run cost: 96.6M tokens / $90.01
 - Reviewer subagents: 85.9M tokens, about 88% of the run
@@ -16,7 +16,7 @@ Issue #760 cites PR #756 (`/lh-dev 749`) as the baseline:
 
 ## Post-change run
 
-This PR was implemented through `/lh-dev 760`, then reviewed with the updated `lh-pr-review` flow. The
+This PR was implemented through `/lh-build 760`, then reviewed with the updated `lh-pr-review` flow. The
 selected reviewers were:
 
 - Quality: ran because the diff touches `skills/`
@@ -48,9 +48,9 @@ The `codex exec --json` `turn.completed` events reported:
 All three reviewers were below 1M tokens. The largest reviewer, Quality, used about 0.235M
 input/cache/output tokens, compared with the 15-19M/reviewer baseline from issue #760.
 
-## Main `lh-dev` session usage
+## Main `lh-build` session usage
 
-LoopHub recorded the parent `/lh-dev 760` session usage for PR #761 as:
+LoopHub recorded the parent `/lh-build 760` session usage for PR #761 as:
 
 ```text
 input_tokens=188,060
@@ -62,4 +62,4 @@ cost_usd=2.858644
 ```
 
 The parent-session total is not the reviewer-per-session metric; it is included to tie this evidence to
-the `/lh-dev 760` run visible from PR #761.
+the `/lh-build 760` run visible from PR #761.

@@ -157,12 +157,12 @@ transcript を抱え込まない方針とする。decision log は次の三層:
 
 #### 4.3.1 セッションの特定とアクセス
 
-- **PR → 実装セッションの紐付け**: セッションは **PR 行**(`pulls.session_id`)に載る。`lh dev` が
-  PR を開く / 再入する際に、起動する実装セッションを PR 行へ帰属させる(#186 で issue の assignee
-  経路から移設)。したがって経路は **PR → `pulls.session_id`** で完結し、`linked_issue_id` は
-  retro が記録する issue 番号にのみ使う。**session 帰属の無い PR では session を特定できず**、その
-  場合 `retros.session_id` は NULL のまま(§4.2 の「判れば」)で、retro はイベント/PR データのみで
-  成立させる。
+- **PR → 実装セッションの紐付け**: セッションは `agent_sessions.kind='dev'` の行として登録され、
+  PR との関係は `session_links` に記録される。`lh build` が PR を開く / 再入する際に、起動する
+  実装セッションを linked PR へ帰属させる(#316 で `pulls.session_id` は廃止)。したがって経路は
+  **PR → `primaryDevSessionForPull`** で完結し、`linked_issue_id` は retro が記録する issue 番号に
+  のみ使う。**session 帰属の無い PR では session を特定できず**、その場合 `retros.session_id` は
+  NULL のまま(§4.2 の「判れば」)で、retro はイベント/PR データのみで成立させる。
 - **本文アクセスは cc-session-finder 優先**: セッション本文(transcript)は LoopHub に
   コピーせず、利用可能なら **cc-session-finder MCP**(ローカル索引、read-only)で session_id
   から引く。retro は別セッション・後追い(`pull_request.merged` 後)で実行されるが、
@@ -250,7 +250,7 @@ transcript は tool 出力にファイル内容・トークン・絶対パスを
   「X にした、理由は Y」を抽出 → `retros.findings_json` / rubric の根拠に使う。**実装
   セッションへの追加負荷ゼロ**、かつその場の発言を読むので事後正当化バイアスが無い。
 
-かつては active 記録(`lh dev note` → `dev.note` イベント)も併設していたが、実質使われず
+かつては active 記録(`lh build note` → `dev.note` イベント)も併設していたが、実質使われず
 #607 で機構ごと削除した。根拠の取得は passive 抽出に一本化する。
 
 ---
@@ -284,7 +284,7 @@ transcript は tool 出力にファイル内容・トークン・絶対パスを
 5. **(任意)LoopHub 保存フォールバック** — cc-session-finder が無い環境向けに `SessionEnd`
    hook + `session_artifacts` + redaction(§4.3.2)。必要になったときだけ。
 
-(旧 6 の active decision log — `lh dev note` / `dev.note` — は実質使われず #607 で削除。)
+(旧 6 の active decision log — `lh build note` / `dev.note` — は実質使われず #607 で削除。)
 
 依存順: 1 →(2 と 3 は並行可)→ 4 →(5 は任意)。4 は cc-session-finder があれば保存実装
 (5)抜きで成立する。1 だけでも価値が出る縦切りにしてある。

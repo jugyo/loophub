@@ -7,7 +7,7 @@
 // section is intentionally square-cornered.
 //
 // Commands use the fully-qualified `owner/repo/<id>` form so they are copy-pasteable
-// from anywhere (both `lh dev` and `lh resume` accept it — see cli/index.ts usage).
+// from anywhere (both `lh build` and `lh resume` accept it — see cli/index.ts usage).
 
 import { Terminal } from "lucide-react";
 import { CopyButton } from "@/components/copy-button";
@@ -56,18 +56,18 @@ export function IssueDevInfo({
   number: number;
 }) {
   const id = `${owner}/${repo}/${number}`;
-  // `lh dev --sandbox` is intentionally NOT surfaced here: the sandboxed variant is a hidden flag for
+  // `lh build --sandbox` is intentionally NOT surfaced here: the sandboxed variant is a hidden flag for
   // now because Claude Code's macOS sandbox is broken on this platform (every Bash command fails with
   // `E2BIG: argument list too long, posix_spawn '/bin/zsh'` — an upstream bug, see #343/#342).
-  // `lh dev --auto` (#366) is the working AFK path: it skips the sandbox and runs in auto mode
+  // `lh build --auto` (#366) is the working AFK path: it skips the sandbox and runs in auto mode
   // (`acceptEdits`), so it is safe to advertise here alongside the normal launch.
   return (
     <DevInfo
       commands={[
-        { label: "Start or resume a dev session", command: `lh dev ${id}` },
+        { label: "Start or resume a dev session", command: `lh build ${id}` },
         {
           label: "Start in auto mode (unattended)",
-          command: `lh dev --auto ${id}`,
+          command: `lh build --auto ${id}`,
           note: "Runs without the sandbox in auto mode (acceptEdits) for unattended/AFK runs.",
         },
       ]}
@@ -78,7 +78,7 @@ export function IssueDevInfo({
 // PR: how to pick the dev session back up where it left off. The header's Resume button (#276) is
 // the one-click path (it launches this same command as a Herdr session, shown only when resume is
 // actually possible); this copy command stays as the always-present, copy-paste-anywhere reference —
-// mirroring how the issue keeps its `lh dev` copy command alongside the Build button.
+// mirroring how the issue keeps its `lh build` copy command alongside the Build button.
 export function PullDevInfo({
   owner,
   repo,

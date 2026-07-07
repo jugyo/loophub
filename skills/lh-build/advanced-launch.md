@@ -1,24 +1,25 @@
-Reference for `lh-dev/SKILL.md` § 2 (Worktree & session) — the two branches below are rare; most
-`lh-dev` runs never reach either.
+Reference for `lh-build/SKILL.md` § 2 (Worktree & session) — the two branches below are rare; most
+`lh-build` runs never reach either.
 
-## Manual launch (not via `lh dev`)
+## Manual launch (not via `lh build`)
 
-Only if you arrived here **without** `lh dev` (ad-hoc, or a host that doesn't use the launcher): set up
+Only if you arrived here **without** `lh build` (ad-hoc, or a host that doesn't use the launcher): set up
 the worktree and the linked draft PR yourself first, then continue. Opening the linked draft PR records
-the session on the PR (`pulls.session_id`); there is no separate assign step.
+the session through the PR's session links; there is no separate assign step.
 
 ```sh
-# `lh dev` derives the branch/worktree name from the PR number (`loophub/pr-<m>`), which is not
+# `lh build` derives the branch/worktree name from the PR number (`loophub/pr-<m>`), which is not
 # known until the PR row exists — a manual launch can't reproduce that, so pick a branch name
 # yourself (any name works; `--head` below just has to match it).
-git worktree add ~/.loophub/worktrees/<owner>/<repo>/<branch> -b <branch> main
+BASE="<default-branch>"
+git worktree add ~/.loophub/worktrees/<owner>/<repo>/<branch> -b <branch> "$BASE"
 cd ~/.loophub/worktrees/<owner>/<repo>/<branch>
 SID="$(uuidgen)"
-lh session register --id "$SID" --agent impl-bot --session "$SID"
-# Open the linked draft PR. `--session-id "$SID"` attributes the session to the PR row
-# (`pulls.session_id`) — the basis for `lh resume` / retro. The soft open-PR check makes this the
-# point at which the issue is "taken": a second open PR for the same issue is refused (422).
-lh pr create --repo <repo> --head <branch> --base main --title "..." --issue <n> --session-id "$SID"
+lh session register --id "$SID" --agent lh-build --session "$SID" --runtime claude-code --kind dev
+# Open the linked draft PR. `--session-id "$SID"` links the session to the PR, which is the basis for
+# `lh resume` / retro. The soft open-PR check makes this the point at which the issue is "taken": a
+# second open PR for the same issue is refused (422).
+lh pr create --repo <repo> --head <branch> --base "$BASE" --title "..." --issue <n> --draft --session-id "$SID"
 ```
 
 ## Parallel LoopHub server (only when developing LoopHub itself)

@@ -201,7 +201,7 @@ test("buildClaudeArgs adds auto mode only when sandbox managed-settings are pres
   const sandboxed = buildClaudeArgs({
     sessionId: "sid-1",
     managedSettings: "{}",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
   });
   const i = sandboxed.indexOf("--permission-mode");
   expect(i).toBeGreaterThanOrEqual(0);
@@ -211,7 +211,7 @@ test("buildClaudeArgs adds auto mode only when sandbox managed-settings are pres
   // so an unattended session never auto-edits without the sandbox guard rails.
   const plain = buildClaudeArgs({
     sessionId: "sid-1",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
   });
   expect(plain.indexOf("--permission-mode")).toBe(-1);
 });
@@ -222,7 +222,7 @@ test("buildClaudeArgs adds auto mode when --auto is set without the sandbox", ()
   const auto = buildClaudeArgs({
     sessionId: "sid-1",
     auto: true,
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
   });
   const i = auto.indexOf("--permission-mode");
   expect(i).toBeGreaterThanOrEqual(0);
@@ -234,7 +234,7 @@ test("buildClaudeArgs adds auto mode when --auto is set without the sandbox", ()
   const off = buildClaudeArgs({
     sessionId: "sid-1",
     auto: false,
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
   });
   expect(off.indexOf("--permission-mode")).toBe(-1);
 });
@@ -243,14 +243,14 @@ test("buildClaudeArgs carries session id, managed settings, and the slash comman
   const args = buildClaudeArgs({
     sessionId: "sid-1",
     managedSettings: "{}",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
   });
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
   // The settings JSON must ride on `--settings` (the real claude flag), not the long-gone
   // `--managed-settings`, which claude silently dropped — sandbox + auto mode never applied.
   expect(args[args.indexOf("--settings") + 1]).toBe("{}");
   expect(args.indexOf("--managed-settings")).toBe(-1);
-  expect(args[args.length - 1]).toBe("/lh-dev 42");
+  expect(args[args.length - 1]).toBe("/lh-build 42");
 });
 
 test("buildResumeArgs resumes a UUID session id with no extra flags", () => {
@@ -273,13 +273,13 @@ test("buildResumeArgs rejects a flag-like / non-UUID session id (argv injection 
 test("buildClaudeArgs omits --settings when not provided (no-sandbox mode)", () => {
   const args = buildClaudeArgs({
     sessionId: "sid-1",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
   });
   expect(args.indexOf("--settings")).toBe(-1);
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
   // No sandbox → no auto mode.
   expect(args.indexOf("--permission-mode")).toBe(-1);
-  expect(args[args.length - 1]).toBe("/lh-dev 42");
+  expect(args[args.length - 1]).toBe("/lh-build 42");
 });
 
 test("buildClaudeArgs sets --name to the session name and keeps the slash command last", () => {
@@ -323,17 +323,17 @@ test("buildClaudeArgs omits --name when the session name is only control charact
 test("buildClaudeArgs passes --model through verbatim and keeps the slash command last", () => {
   const args = buildClaudeArgs({
     sessionId: "sid-1",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
     model: "sonnet",
   });
   expect(args[args.indexOf("--model") + 1]).toBe("sonnet");
-  expect(args[args.length - 1]).toBe("/lh-dev 42");
+  expect(args[args.length - 1]).toBe("/lh-build 42");
 });
 
 test("buildClaudeArgs omits --model when not provided (backend default model)", () => {
   const args = buildClaudeArgs({
     sessionId: "sid-1",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
   });
   expect(args.indexOf("--model")).toBe(-1);
 });
@@ -341,7 +341,7 @@ test("buildClaudeArgs omits --model when not provided (backend default model)", 
 test("buildClaudeArgs strips control characters from the model before argv", () => {
   const args = buildClaudeArgs({
     sessionId: "sid-1",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
     model: "\x1b]0;x\x07sonnet\r",
   });
   expect(args[args.indexOf("--model") + 1]).toBe("sonnet");
@@ -350,7 +350,7 @@ test("buildClaudeArgs strips control characters from the model before argv", () 
 test("buildClaudeArgs omits --model when the model is only control characters", () => {
   const args = buildClaudeArgs({
     sessionId: "sid-1",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
     model: "\x1b[0m\r\x07",
   });
   expect(args.indexOf("--model")).toBe(-1);
@@ -366,13 +366,13 @@ function plan(overrides: Partial<Parameters<typeof formatLaunchPlan>[0]> = {}) {
   const claudeArgs = buildClaudeArgs({
     sessionId: "sid-1",
     managedSettings: json,
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
   });
   return formatLaunchPlan({
     repo: "me/proj",
     worktree: "/root/me/proj/issue-42",
     sessionId: "sid-1",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
     managedSettings: json,
     claudeArgs,
     ...overrides,
@@ -384,7 +384,7 @@ test("formatLaunchPlan shows context (repo / worktree / session / command)", () 
   expect(out).toContain("repo:        me/proj");
   expect(out).toContain("worktree:    /root/me/proj/issue-42");
   expect(out).toContain("session-id:  sid-1");
-  expect(out).toContain("command:     /lh-dev 42");
+  expect(out).toContain("command:     /lh-build 42");
 });
 
 test("formatLaunchPlan summarizes the managed sandbox settings (not raw JSON)", () => {
@@ -412,13 +412,13 @@ test("formatLaunchPlan shows no permission mode for a no-sandbox launch", () => 
   // plan must consistently report both as (default) — Claude's normal approval mode.
   const claudeArgs = buildClaudeArgs({
     sessionId: "sid-1",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
   });
   const out = formatLaunchPlan({
     repo: "me/proj",
     worktree: "/root/me/proj/issue-42",
     sessionId: "sid-1",
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
     managedSettings: "{}",
     claudeArgs,
   });
@@ -432,7 +432,7 @@ test("formatLaunchPlan tolerates missing managed-settings fields without throwin
     repo: "me/proj",
     worktree: "/wt",
     sessionId: "sid",
-    slashCommand: "/lh-dev 1",
+    slashCommand: "/lh-build 1",
     managedSettings: "{}",
     claudeArgs: [], // no --permission-mode
   });
@@ -492,7 +492,7 @@ test("resolveDevRuntime prefers an explicit flag over defaultRuntime (#516)", ()
 test("buildCodexArgs grants LOOPHUB_HOME as a sandbox writable root before the prompt", () => {
   expect(
     buildCodexArgs({
-      slashCommand: "/lh-dev 42",
+      slashCommand: "/lh-build 42",
       loopHubHome: "/tmp/lh-home",
     }),
   ).toEqual([
@@ -500,14 +500,14 @@ test("buildCodexArgs grants LOOPHUB_HOME as a sandbox writable root before the p
     "workspace-write",
     "-c",
     'sandbox_workspace_write.writable_roots=["/tmp/lh-home"]',
-    "/lh-dev 42",
+    "/lh-build 42",
   ]);
 });
 
 test("buildCodexArgs JSON-escapes the writable LOOPHUB_HOME path", () => {
   expect(
     buildCodexArgs({
-      slashCommand: "/lh-dev 42",
+      slashCommand: "/lh-build 42",
       loopHubHome: '/tmp/lh home/quote"dir',
     }),
   ).toContain(
@@ -519,7 +519,7 @@ test("buildCodexArgs uses the effective LOOPHUB_HOME by default", () => {
   const previous = process.env.LOOPHUB_HOME;
   process.env.LOOPHUB_HOME = "/tmp/lh-env-home";
   try {
-    expect(buildCodexArgs({ slashCommand: "/lh-dev 42" })).toContain(
+    expect(buildCodexArgs({ slashCommand: "/lh-build 42" })).toContain(
       'sandbox_workspace_write.writable_roots=["/tmp/lh-env-home"]',
     );
   } finally {
@@ -531,26 +531,26 @@ test("buildCodexArgs uses the effective LOOPHUB_HOME by default", () => {
 test("buildCodexArgs adds --dangerously-bypass-approvals-and-sandbox when auto is set", () => {
   expect(
     buildCodexArgs({
-      slashCommand: "/lh-dev 42",
+      slashCommand: "/lh-build 42",
       auto: true,
       loopHubHome: "/tmp/lh-home",
     }),
-  ).toEqual(["--dangerously-bypass-approvals-and-sandbox", "/lh-dev 42"]);
+  ).toEqual(["--dangerously-bypass-approvals-and-sandbox", "/lh-build 42"]);
 });
 
 test("buildCodexArgs passes --model through verbatim and keeps the slash command last (#594)", () => {
   const args = buildCodexArgs({
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
     model: "gpt-5.5",
     loopHubHome: "/tmp/lh-home",
   });
   expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
-  expect(args[args.length - 1]).toBe("/lh-dev 42");
+  expect(args[args.length - 1]).toBe("/lh-build 42");
 });
 
 test("buildCodexArgs omits --model when not provided (backend default model) (#594)", () => {
   const args = buildCodexArgs({
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
     loopHubHome: "/tmp/lh-home",
   });
   expect(args.indexOf("--model")).toBe(-1);
@@ -558,7 +558,7 @@ test("buildCodexArgs omits --model when not provided (backend default model) (#5
 
 test("buildCodexArgs strips control characters from the model before argv (#594)", () => {
   const args = buildCodexArgs({
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
     model: "\x1b]0;x\x07gpt-5.5\r",
     loopHubHome: "/tmp/lh-home",
   });
@@ -619,11 +619,11 @@ test("formatSpawnCommand shell-escapes embedded single quotes", () => {
 
 test("formatSpawnCommand renders the codex binary when bin is given", () => {
   const args = buildCodexArgs({
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
     loopHubHome: "/tmp/lh-home",
   });
   expect(formatSpawnCommand(args, { bin: "codex" })).toBe(
-    "codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[\"/tmp/lh-home\"]' '/lh-dev 42'",
+    "codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[\"/tmp/lh-home\"]' '/lh-build 42'",
   );
 });
 
@@ -645,7 +645,7 @@ test("formatSpawnCommand matches the argv handed to spawnSync (single source of 
   const claudeArgs = buildClaudeArgs({
     sessionId: "sid-1",
     managedSettings: json,
-    slashCommand: "/lh-dev 42",
+    slashCommand: "/lh-build 42",
     sessionName: "#42 title",
   });
   const line = formatSpawnCommand(claudeArgs);
@@ -661,7 +661,7 @@ test("formatLaunchPlan handles --permission-mode flag with no value (defensive)"
     repo: "me/proj",
     worktree: "/wt",
     sessionId: "sid",
-    slashCommand: "/lh-dev 1",
+    slashCommand: "/lh-build 1",
     managedSettings: json,
     claudeArgs: ["--session-id", "sid", "--permission-mode"], // flag, no value
   });
@@ -729,7 +729,7 @@ test("legacy worktree path and branch are deterministic from the issue number (p
 // ---- worktree provisioning ----
 
 async function makeRepo(): Promise<string> {
-  const p = mkdtempSync(join(tmpdir(), "lh-dev-wt-"));
+  const p = mkdtempSync(join(tmpdir(), "lh-build-wt-"));
   await git(p, ["init", "-q", "-b", "main"]);
   await git(p, ["config", "user.email", "t@t.local"]);
   await git(p, ["config", "user.name", "tester"]);
@@ -740,7 +740,7 @@ async function makeRepo(): Promise<string> {
 }
 
 function tmpRoot(): string {
-  return mkdtempSync(join(tmpdir(), "lh-dev-root-"));
+  return mkdtempSync(join(tmpdir(), "lh-build-root-"));
 }
 
 function provision(
@@ -820,7 +820,7 @@ test("creates the convention branch fresh when allowCreatingConventionBranch is 
   const repo = await makeRepo();
   const root = tmpRoot();
   // dev.openPr records head_ref = loophub/pr-<n> before the branch/worktree are provisioned;
-  // `lh dev` then passes that same headRef in here (with allowCreatingConventionBranch, since
+  // `lh build` then passes that same headRef in here (with allowCreatingConventionBranch, since
   // this is an issue target's own just-resolved PR) — it must be created, not rejected.
   const path = await provision(
     repo,
@@ -852,7 +852,7 @@ test("refuses to fabricate the convention branch when allowCreatingConventionBra
   const root = tmpRoot();
   // headRef matches the PR-id convention but the branch was never created (or was deleted
   // out-of-band) and the caller has not asserted this is a brand-new PR's own branch — a direct
-  // `lh dev <pr>` re-entering an established PR must refuse rather than silently start on a
+  // `lh build <pr>` re-entering an established PR must refuse rather than silently start on a
   // fresh, empty branch under the same name.
   await expect(provision(repo, root, 11, "loophub/pr-11")).rejects.toThrow(
     /branch "loophub\/pr-11" does not exist/,
@@ -1005,7 +1005,7 @@ test("refuses to overwrite a path that exists but is not a git worktree", async 
 });
 
 test("errors when the default branch cannot be resolved (no commits)", async () => {
-  const repo = mkdtempSync(join(tmpdir(), "lh-dev-empty-"));
+  const repo = mkdtempSync(join(tmpdir(), "lh-build-empty-"));
   await git(repo, ["init", "-q", "-b", "main"]);
   const root = tmpRoot();
   await expect(provision(repo, root, 7)).rejects.toThrow(
@@ -1019,7 +1019,7 @@ test("errors when the default branch cannot be resolved (no commits)", async () 
 
 const CLI = join(import.meta.dirname, "index.ts");
 
-function dev(args: string[]) {
+function cli(group: string, args: string[]) {
   const r = spawnSync(
     process.execPath,
     [
@@ -1028,7 +1028,7 @@ function dev(args: string[]) {
       "--import",
       "tsx",
       CLI,
-      "dev",
+      group,
       ...args,
     ],
     { encoding: "utf8" },
@@ -1036,40 +1036,51 @@ function dev(args: string[]) {
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status ?? 0 };
 }
 
+function build(args: string[]) {
+  return cli("build", args);
+}
+
 test("missing issue number prints usage and exits non-zero", () => {
-  const { stderr, exitCode } = dev(["--repo", "me/proj"]);
+  const { stderr, exitCode } = build(["--repo", "me/proj"]);
   expect(exitCode).not.toBe(0);
-  expect(stderr).toContain("usage: lh dev");
+  expect(stderr).toContain("usage: lh build");
 });
 
 test("non-numeric issue number is rejected", () => {
-  const { stderr, exitCode } = dev(["foo", "--repo", "me/proj"]);
+  const { stderr, exitCode } = build(["foo", "--repo", "me/proj"]);
   expect(exitCode).not.toBe(0);
   expect(stderr).toContain("invalid issue id");
 });
 
 test("malformed owner/repo/id target is rejected with usage", () => {
   // two segments is neither <id> nor <owner>/<repo>/<id>
-  const { stderr, exitCode } = dev(["me/proj"]);
+  const { stderr, exitCode } = build(["me/proj"]);
   expect(exitCode).not.toBe(0);
   expect(stderr).toContain("invalid target");
-  expect(stderr).toContain("usage: lh dev");
+  expect(stderr).toContain("usage: lh build");
 });
 
 test("owner/repo/id with non-numeric id is rejected", () => {
-  const { stderr, exitCode } = dev(["jugyo/loophub/foo"]);
+  const { stderr, exitCode } = build(["jugyo/loophub/foo"]);
   expect(exitCode).not.toBe(0);
   expect(stderr).toContain("invalid target");
 });
 
 test("positional repo conflicting with --repo is a hard error (before DB access)", () => {
-  const { stderr, exitCode } = dev([
+  const { stderr, exitCode } = build([
     "jugyo/loophub/42",
     "--repo",
     "other/repo",
   ]);
   expect(exitCode).not.toBe(0);
   expect(stderr).toContain("conflicting repo");
+});
+
+test("removed lh dev command no longer reaches the build flow", () => {
+  const { stdout, stderr, exitCode } = cli("dev", ["42", "--repo", "me/proj"]);
+  expect(exitCode).not.toBe(0);
+  expect(`${stdout}\n${stderr}`).toContain("lh build");
+  expect(stderr).not.toContain("#42");
 });
 
 // ---- dev lock (pure / fs) ----
@@ -1109,7 +1120,7 @@ const sampleLock = (over: Partial<Record<string, unknown>> = {}) => ({
 });
 
 test("acquireDevLock claims a free path and round-trips via readDevLock", () => {
-  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const dir = mkdtempSync(join(tmpdir(), "lh-buildlock-"));
   const path = join(dir, "deep", "issue-1.json"); // parent dir does not exist yet
   const lock = sampleLock();
   expect(acquireDevLock(path, lock, () => true)).toEqual({ ok: true }); // creates parent dirs
@@ -1118,7 +1129,7 @@ test("acquireDevLock claims a free path and round-trips via readDevLock", () => 
 });
 
 test("acquireDevLock blocks when a live holder owns the lock", () => {
-  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const dir = mkdtempSync(join(tmpdir(), "lh-buildlock-"));
   const path = join(dir, "issue-1.json");
   const held = sampleLock({ pid: 111 });
   expect(acquireDevLock(path, held, () => true)).toEqual({ ok: true });
@@ -1130,7 +1141,7 @@ test("acquireDevLock blocks when a live holder owns the lock", () => {
 });
 
 test("acquireDevLock reclaims a stale (dead-pid) lock", () => {
-  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const dir = mkdtempSync(join(tmpdir(), "lh-buildlock-"));
   const path = join(dir, "issue-1.json");
   acquireDevLock(path, sampleLock({ pid: 111 }), () => true);
   const fresh = sampleLock({ pid: 222 });
@@ -1140,7 +1151,7 @@ test("acquireDevLock reclaims a stale (dead-pid) lock", () => {
 });
 
 test("acquireDevLock reclaims a malformed/partial lock instead of treating it as held", () => {
-  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const dir = mkdtempSync(join(tmpdir(), "lh-buildlock-"));
   const path = join(dir, "issue-1.json");
   writeFileSync(path, JSON.stringify({ pid: 333 })); // partial: only pid, no other fields
   const fresh = sampleLock({ pid: 444 });
@@ -1151,7 +1162,7 @@ test("acquireDevLock reclaims a malformed/partial lock instead of treating it as
 });
 
 test("acquireDevLock with --force overrides a live holder", () => {
-  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const dir = mkdtempSync(join(tmpdir(), "lh-buildlock-"));
   const path = join(dir, "issue-1.json");
   acquireDevLock(path, sampleLock({ pid: 111 }), () => true);
   const fresh = sampleLock({ pid: 222 });
@@ -1163,13 +1174,13 @@ test("acquireDevLock with --force overrides a live holder", () => {
 });
 
 test("readDevLock: missing, malformed, and partial all read as no lock; remove is idempotent", () => {
-  const dir = mkdtempSync(join(tmpdir(), "lh-devlock-"));
+  const dir = mkdtempSync(join(tmpdir(), "lh-buildlock-"));
   const path = join(dir, "issue-1.json");
 
   // Missing file → null (no lock).
   expect(readDevLock(join(dir, "nope.json"))).toBeNull();
 
-  // Malformed JSON / wrong shape / partial → null, so a corrupt lock never wedges `lh dev`.
+  // Malformed JSON / wrong shape / partial → null, so a corrupt lock never wedges `lh build`.
   writeFileSync(path, "not json");
   expect(readDevLock(path)).toBeNull();
   writeFileSync(path, JSON.stringify({ no: "pid" }));

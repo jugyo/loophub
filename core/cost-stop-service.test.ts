@@ -91,7 +91,7 @@ function makePrWithDevCost(repoName: string, costUsd: number | null) {
     number: number;
   };
   const sessionId = `dev-${repoName.replace(/\W/g, "")}`;
-  S.registerAgentSession(sessionId, "lh-dev", `ext-${sessionId}`);
+  S.registerAgentSession(sessionId, "lh-build", `ext-${sessionId}`);
   S.createPull(
     pr.id,
     `loophub/pr-${pr.number}`,

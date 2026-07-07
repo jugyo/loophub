@@ -89,11 +89,11 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("a dev session opened via lh dev surfaces in the PR's related_sessions and is resumable", async () => {
+test("a dev session opened via lh build surfaces in the PR's related_sessions and is resumable", async () => {
   const issue = svc.issues.create("me/proj", { title: "feature" });
   svc.sessions.register({
     id: DEV_UUID,
-    agent: "lh-dev",
+    agent: "lh-build",
     session: DEV_UUID,
     runtime: "claude-code",
     kind: "dev",
@@ -118,7 +118,7 @@ test("a second dev session is added (1:N) and the older one is marked superseded
   // Re-enter the same PR with a new session: latest becomes the resume anchor, both stay listed.
   svc.sessions.register({
     id: "aaaaaaaa-0000-0000-0000-000000000099",
-    agent: "lh-dev",
+    agent: "lh-build",
     session: "aaaaaaaa-0000-0000-0000-000000000099",
     runtime: "claude-code",
     kind: "dev",
@@ -217,14 +217,14 @@ test("sessions.list excludes sessions without usage", () => {
   const withUsageSession = "ffffffff-0000-0000-0000-000000000011";
   svc.sessions.register({
     id: noUsageSession,
-    agent: "lh-dev",
+    agent: "lh-build",
     session: noUsageSession,
     runtime: "claude-code",
     kind: "dev",
   });
   svc.sessions.register({
     id: withUsageSession,
-    agent: "lh-dev",
+    agent: "lh-build",
     session: withUsageSession,
     runtime: "claude-code",
     kind: "dev",
@@ -333,7 +333,7 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   const sessionId = "99999999-0000-0000-0000-000000000001";
   svc.sessions.register({
     id: sessionId,
-    agent: "lh-dev",
+    agent: "lh-build",
     session: sessionId,
     runtime: "claude-code",
     kind: "dev",
@@ -507,7 +507,7 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
   const sessionId = "99999999-0000-0000-0000-0000000000cd";
   svc.sessions.register({
     id: sessionId,
-    agent: "lh-dev",
+    agent: "lh-build",
     session: sessionId,
     runtime: "codex",
     kind: "dev",
@@ -661,7 +661,7 @@ test("sessions.usageSync reuses unchanged Codex rollouts for hundreds of session
   for (const sessionId of sessionIds) {
     svc.sessions.register({
       id: sessionId,
-      agent: "lh-dev",
+      agent: "lh-build",
       session: sessionId,
       runtime: "codex",
       kind: "dev",
@@ -737,7 +737,7 @@ test("sessions.usageSync invalidates Codex fast skip when peer windows change", 
   for (const sessionId of [firstSessionId, secondSessionId]) {
     svc.sessions.register({
       id: sessionId,
-      agent: "lh-dev",
+      agent: "lh-build",
       session: sessionId,
       runtime: "codex",
       kind: "dev",
@@ -826,7 +826,7 @@ test("sessions.usageSync leaves ambiguous same-window Codex root rollouts missin
   const sessionId = "99999999-0000-0000-0000-0000000000ce";
   svc.sessions.register({
     id: sessionId,
-    agent: "lh-dev",
+    agent: "lh-build",
     session: sessionId,
     runtime: "codex",
     kind: "dev",
@@ -890,7 +890,7 @@ test("sessions.usageSync keeps child Codex rollouts linked to a root before the 
   for (const sessionId of [firstSessionId, secondSessionId]) {
     svc.sessions.register({
       id: sessionId,
-      agent: "lh-dev",
+      agent: "lh-build",
       session: sessionId,
       runtime: "codex",
       kind: "dev",
@@ -982,7 +982,7 @@ test("sessions.usageSync leaves same-second Codex peer sessions missing", async 
   for (const sessionId of [firstSessionId, secondSessionId]) {
     svc.sessions.register({
       id: sessionId,
-      agent: "lh-dev",
+      agent: "lh-build",
       session: sessionId,
       runtime: "codex",
       kind: "dev",
@@ -1040,7 +1040,7 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
   const reviewSessionId = "77777777-0000-0000-0000-000000000002";
   svc.sessions.register({
     id: devSessionId,
-    agent: "lh-dev",
+    agent: "lh-build",
     session: devSessionId,
     runtime: "claude-code",
     kind: "dev",

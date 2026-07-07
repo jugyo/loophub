@@ -2,8 +2,8 @@
 // git/DB side effects so the guard and the keep/remove/skip decision are unit-testable in
 // isolation; the CLI layer feeds it the resolved issue/PR state, dirtiness and cwd flag.
 
-// Legacy (pre-#463) branch convention created by `lh dev`: loophub/issue-<n> (see
-// core/worktree-path.ts legacyWorktreeBranch). `lh dev` no longer creates these, but a worktree
+// Legacy (pre-#463) branch convention created by `lh build`: loophub/issue-<n> (see
+// core/worktree-path.ts legacyWorktreeBranch). `lh build` no longer creates these, but a worktree
 // provisioned before #463 may still be on disk, so prune must keep recognizing it.
 const LEGACY_LOOPHUB_BRANCH_RE = /^loophub\/issue-(\d+)$/;
 
@@ -27,7 +27,7 @@ export function prNumberFromBranch(branch: string | null): number | null {
   return m ? Number(m[1]) : null;
 }
 
-// `.claude/` is mirrored into every lh-dev worktree by provisionWorktree (syncClaudeDir) and is
+// `.claude/` is mirrored into every lh-build worktree by provisionWorktree (syncClaudeDir) and is
 // not gitignored, so `git status --porcelain --untracked-files=normal` always reports it as an
 // untracked entry. It is LoopHub-injected, never user work, so it must not count toward the
 // clean-tree guard — otherwise every worktree would look dirty and prune would skip them all.

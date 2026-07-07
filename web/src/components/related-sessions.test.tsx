@@ -11,7 +11,7 @@ afterEach(() => {
 function session(over: Partial<RelatedSession>): RelatedSession {
   return {
     id: "id",
-    agent: "lh-dev",
+    agent: "lh-build",
     session: "ext",
     created_at: "2026-06-01T00:00:00Z",
     updated_at: "2026-06-01T00:00:00Z",

@@ -112,7 +112,7 @@ test("no dev session linked: work_duration falls back to N/A across the board", 
 });
 
 test("draft PR with a dev session, not yet ready: total/implementation are in_progress, review is null", async () => {
-  svc.sessions.register({ id: "sess-a", agent: "lh-dev", session: "sess-a" });
+  svc.sessions.register({ id: "sess-a", agent: "lh-build", session: "sess-a" });
   const issue = svc.issues.create("me/proj", { title: "in progress" });
   const { number } = await svc.dev.openPr(
     "me/proj",
@@ -138,7 +138,7 @@ test("draft PR with a dev session, not yet ready: total/implementation are in_pr
 });
 
 test("ready for review but not merged: total is in_review and keeps growing, implementation freezes at the ready event", async () => {
-  svc.sessions.register({ id: "sess-b", agent: "lh-dev", session: "sess-b" });
+  svc.sessions.register({ id: "sess-b", agent: "lh-build", session: "sess-b" });
   const issue = svc.issues.create("me/proj", { title: "ready flow" });
   const { number } = await svc.dev.openPr(
     "me/proj",
@@ -171,7 +171,7 @@ test("ready for review but not merged: total is in_review and keeps growing, imp
 });
 
 test("merged PR: total/implementation/review split into distinguishable, frozen windows", async () => {
-  svc.sessions.register({ id: "sess-c", agent: "lh-dev", session: "sess-c" });
+  svc.sessions.register({ id: "sess-c", agent: "lh-build", session: "sess-c" });
   const issue = svc.issues.create("me/proj", { title: "merged flow" });
   const headRef = `loophub/issue-${issue.number}`;
   // dev.openPr only records the head ref on the row; it does not create the git branch (that is
@@ -207,7 +207,7 @@ test("merged PR: total/implementation/review split into distinguishable, frozen 
 });
 
 test("merged without ever passing through ready_for_review: implementation covers the whole span, review stays null", async () => {
-  svc.sessions.register({ id: "sess-f", agent: "lh-dev", session: "sess-f" });
+  svc.sessions.register({ id: "sess-f", agent: "lh-build", session: "sess-f" });
   const headRef = "loophub/issue-no-ready";
   git(["branch", headRef, "main"]);
   commitOnBranch(headRef);
@@ -234,7 +234,7 @@ test("merged without ever passing through ready_for_review: implementation cover
 });
 
 test("closed without merging: total/implementation are closed (not growing)", async () => {
-  svc.sessions.register({ id: "sess-d", agent: "lh-dev", session: "sess-d" });
+  svc.sessions.register({ id: "sess-d", agent: "lh-build", session: "sess-d" });
   const issue = svc.issues.create("me/proj", { title: "abandoned flow" });
   const { number } = await svc.dev.openPr(
     "me/proj",
@@ -266,7 +266,7 @@ test("closed without merging: total/implementation are closed (not growing)", as
 });
 
 test("closed without merging: a later title/body edit does not inflate the closed duration", async () => {
-  svc.sessions.register({ id: "sess-e", agent: "lh-dev", session: "sess-e" });
+  svc.sessions.register({ id: "sess-e", agent: "lh-build", session: "sess-e" });
   const issue = svc.issues.create("me/proj", {
     title: "abandoned then edited",
   });
@@ -310,7 +310,7 @@ test("closed without merging: a later title/body edit does not inflate the close
 });
 
 test("closed then reopened then closed again: total un-freezes on reopen and re-freezes at the new close time", async () => {
-  svc.sessions.register({ id: "sess-h", agent: "lh-dev", session: "sess-h" });
+  svc.sessions.register({ id: "sess-h", agent: "lh-build", session: "sess-h" });
   const issue = svc.issues.create("me/proj", { title: "reopen flow" });
   const { number } = await svc.dev.openPr(
     "me/proj",
@@ -347,7 +347,7 @@ test("closed then reopened then closed again: total un-freezes on reopen and re-
 });
 
 test("multiple ready_for_review events (re-review after changes requested): implementation/review anchor to the FIRST event only", async () => {
-  svc.sessions.register({ id: "sess-g", agent: "lh-dev", session: "sess-g" });
+  svc.sessions.register({ id: "sess-g", agent: "lh-build", session: "sess-g" });
   const issue = svc.issues.create("me/proj", { title: "re-review flow" });
   const headRef = `loophub/issue-${issue.number}`;
   git(["branch", headRef, "main"]);

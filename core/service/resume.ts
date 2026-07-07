@@ -57,13 +57,13 @@ export const resume = {
     const headRef: string = pull.head_ref;
 
     // The PR's resume anchor is the latest kind='dev' session linked to it in session_links (#316),
-    // recorded when `lh dev` opened the PR (the `lh dev <issue>` flow) or re-entered it directly
-    // (`lh dev <pr>`). #186 removed the old issue-assignee fallback — the PR is the single source of
+    // recorded when `lh build` opened the PR (the `lh build <issue>` flow) or re-entered it directly
+    // (`lh build <pr>`). #186 removed the old issue-assignee fallback — the PR is the single source of
     // truth; #316 derives it from session_links instead of a denormalized pulls.session_id column.
     const sessionRowId: string | null = S.primaryDevSessionForPull(prRow.id);
     const sessionRow = sessionRowId ? S.getAgentSession(sessionRowId) : null;
     // The session's runtime selects how to resume it. Prefer the explicit runtime column; fall back
-    // to "lh-dev agent + no runtime → claude-code" for sessions registered before the column
+    // to "lh-build agent + no runtime → claude-code" for sessions registered before the column
     // existed (sessionRuntime). resolveRuntimeResume then validates the stored id for that runtime —
     // claude-code needs a UUID for `claude --resume <id>` (guards argv injection); a runtime this
     // build cannot resume (e.g. a future codex session) is reported as unknown-runtime so the CLI

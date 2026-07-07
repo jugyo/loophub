@@ -253,7 +253,7 @@ export function startScheduledTaskSweep(
   };
 }
 
-// Stop `lh dev` agents that pass the top-level cost limit by sending Esc to their herdr pane
+// Stop `lh build` agents that pass the top-level cost limit by sending Esc to their herdr pane
 // (#832). This is worker-owned maintenance (not a UI cache invalidation): the enumeration, cost
 // judgement, keystroke, and dev.cost_stopped bookkeeping all live in terminal.enforceDevCostLimits;
 // this loop only schedules it and logs the outcome.

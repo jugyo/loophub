@@ -182,7 +182,7 @@ export function mergeableBadge(pr: PullRequest): Badge | null {
 }
 
 /**
- * "draft" badge for an open, unmerged WIP PR (#413). `lh dev` opens the PR at the start of work,
+ * "draft" badge for an open, unmerged WIP PR (#413). `lh build` opens the PR at the start of work,
  * so it stays draft until `lh pr ready-for-review` flips it; surfacing it keeps a still-in-progress
  * PR from reading as reviewable. Null for merged/closed PRs and once the PR is ready.
  */
@@ -196,7 +196,7 @@ export function draftBadge(pr: PullRequest): Badge | null {
 }
 
 /**
- * "working" badge for an open PR whose lh-dev worktree has uncommitted changes — a quick
+ * "working" badge for an open PR whose lh-build worktree has uncommitted changes — a quick
  * "actively being worked on" cue. Null for merged/closed PRs or when the flag is absent/false
  * (no worktree, clean tree, or an older server that doesn't send it).
  */

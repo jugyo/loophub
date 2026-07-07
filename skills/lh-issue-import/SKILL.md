@@ -23,7 +23,7 @@ does **not** include implementing the issue, opening a PR, or syncing anything b
 |----|--------|
 | Take a GitHub issue URL, run `lh issue import`, report the created LoopHub issue | Start implementation or open a PR |
 | Optionally help the user sharpen Goal / Acceptance criteria / Out of scope **on the created issue** (see below) | Summarize or rewrite the body during import (the copy is verbatim) |
-| **Suggest** follow-on skills (`/lh-dev`) in text | **Continue** to follow-on skills yourself |
+| **Suggest** follow-on skills (`/lh-build`) in text | **Continue** to follow-on skills yourself |
 
 ### Done when
 
@@ -73,7 +73,7 @@ a decision is genuinely ambiguous rather than inventing scope. Apply refinements
 skip it entirely for a body that is already actionable.
 
 Do **not** take ownership of the issue (open a PR, create a worktree, or edit source) — that is
-`/lh-dev`'s job, in a separate explicit request.
+`/lh-build`'s job, in a separate explicit request.
 
 ### 3. Report
 
@@ -82,7 +82,7 @@ Do **not** take ownership of the issue (open a PR, create a worktree, or edit so
 - Issue Web URL (`{baseUrl}/r/{owner}/{repo}/issues/{n}`) as a markdown link — get `baseUrl` from
   `lh info --json | jq -r .baseUrl`
 
-Then **stop**. If the user wants it implemented, they run `/lh-dev <n>` as a separate step.
+Then **stop**. If the user wants it implemented, they run `/lh-build <n>` as a separate step.
 
 ## Language
 
@@ -95,5 +95,5 @@ not translate it.
 
 - Do not summarize, translate, or rewrite the GitHub body during import (verbatim copy)
 - Do not implement, branch, or open a PR for the imported issue without a separate explicit request
-- Do not chain to `/lh-dev` or other skills automatically
+- Do not chain to `/lh-build` or other skills automatically
 - Do not sync anything back to GitHub (import is one-way)

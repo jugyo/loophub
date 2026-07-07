@@ -225,7 +225,7 @@ export function IssueRow({
   );
 }
 
-// Build button for an issue row: starts `lh dev <n>` in a terminal, the same
+// Build button for an issue row: starts `lh build <n>` in a terminal, the same
 // action as the issue-detail Build button (issue-detail.tsx). Always visible
 // (not hover-revealed) so the row layout is stable regardless of label presence.
 // Hidden (not replaced by a label — that's issue-detail.tsx only, by request)
@@ -246,16 +246,16 @@ function RowBuildButton({
   const [isLoading, startLoading] = useFixedLoading();
   const state = issueBuildButtonState(issue);
   if (state !== "build") return null;
-  // Display-only: the herdr backend builds and spawns `lh dev <n> --herdr [--auto]` itself
+  // Display-only: the herdr backend builds and spawns `lh build <n> --herdr [--auto]` itself
   // (core/service.ts's launchIssueDevHerdr, #584) — this string is never sent over the wire, it
   // only drives the button's tooltip so it reflects what actually runs. The Build button doesn't
-  // pick a runtime itself, so it inherits whichever agent `lh dev` resolves to (#593).
+  // pick a runtime itself, so it inherits whichever agent `lh build` resolves to (#593).
   const autoModeOnBuild = settings
     ? settings.agents[settings.codingAgent]?.autoModeOnBuild
     : false;
   const command = autoModeOnBuild
-    ? `lh dev ${issue.number} --herdr --auto`
-    : `lh dev ${issue.number} --herdr`;
+    ? `lh build ${issue.number} --herdr --auto`
+    : `lh build ${issue.number} --herdr`;
   return (
     <button
       type="button"

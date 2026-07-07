@@ -1,4 +1,4 @@
-// The deterministic `lh dev` worktree convention: path and branch are derived purely from
+// The deterministic `lh build` worktree convention: path and branch are derived purely from
 // the PR number (no slug), so any consumer can reconstruct them without a ledger. Keyed by PR
 // (not issue, #463) so multiple PRs linked to the same issue get independent worktrees instead
 // of colliding on one. Kept in core (not cli/dev.ts) so both the CLI and core/service.ts (e.g.
@@ -45,7 +45,7 @@ export function worktreePath(
 // ---- legacy (pre-#463) convention ----
 //
 // Before #463, worktree/branch were keyed by issue number: a second PR opened for the same
-// issue would collide on the first PR's worktree. `lh dev` no longer creates these, but a
+// issue would collide on the first PR's worktree. `lh build` no longer creates these, but a
 // worktree provisioned before this change may still be on disk, so resume/prune keep
 // recognizing it via these helpers rather than orphaning it.
 
@@ -65,7 +65,7 @@ export function legacyWorktreePath(
 // Reverse of worktreePath (#579 — matching a running herdr agent's cwd back to the PR whose
 // worktree it's running in, for the issue-list "Herdr running" badge). Only recognizes the
 // current pr-<n> convention directly under <worktreeRoot>/<fullName> — the legacy issue-<n>
-// convention is keyed by issue, not PR, and `lh dev` no longer creates it, so it's left
+// convention is keyed by issue, not PR, and `lh build` no longer creates it, so it's left
 // unmatched here (null) rather than resolved to a possibly-stale issue-to-PR link.
 const PR_DIR_RE = /^pr-(\d+)$/;
 

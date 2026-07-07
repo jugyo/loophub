@@ -67,7 +67,7 @@ LAN から開きたいときだけ `LOOPHUB_HOST=0.0.0.0` を指定する。
 on:
   issue.opened:
     - run: ./scripts/triage.sh
-    - run: lh dev "$LH_ISSUE_NUMBER"
+    - run: lh build "$LH_ISSUE_NUMBER" --herdr
   pull_request.opened:
     - run: npm test
 ```
@@ -85,7 +85,7 @@ npm run lh-worker               # events を tail（--poll-ms <ms> で間隔指�
   =「今から」処理し、再起動は永続値から継続する。あるコマンドが失敗しても後続 run / 後続イベントは止めない。
 
 > **run は即終了する前提**。worker は run を直列・同期実行し、完了するまで次のイベントを処理しない。
-> 重い処理(`lh dev` 等)は run 内で外部アプリへ起動を依頼して即 return する設計。長時間ブロックする run は
+> 重い処理(`lh build` 等)は run 内で外部アプリへ起動を依頼して即 return する設計。長時間ブロックする run は
 > 後続イベントを止めるため、自前でバックグラウンド化(`... &` / nohup)するか即終了させること。
 >
 > **run は worker の環境変数をそのまま継承する**。`workflow.yml` はリポジトリの VCS に入った任意シェルを

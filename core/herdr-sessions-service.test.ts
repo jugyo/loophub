@@ -305,7 +305,7 @@ test("terminal.sessions maps a running agent's cwd back to its PR (#579)", async
 
 // #821: the issue-detail Agents section needs each running agent keyed back to the *issue* its PR
 // closes, not just the PR. terminal.sessions composes cwd→PR (as in #579 above) with the PR's
-// linked_issue_id (recorded when `lh dev` opened the PR) to fill issue_workspaces.
+// linked_issue_id (recorded when `lh build` opened the PR) to fill issue_workspaces.
 test("terminal.sessions maps a running agent's PR back to its linked issue (#821)", async () => {
   const repo = await svc.repos.create({
     path: initGitRepo(),
@@ -314,7 +314,7 @@ test("terminal.sessions maps a running agent's PR back to its linked issue (#821
   const sessionName = herdrSessionName(repo);
   // Sequential numbers per repo: #1 = the issue, #2 = the PR that closes it. The PR is created
   // directly in the store (a bare temp repo has no head branch for pulls.create) and linked to the
-  // issue via linked_issue_id, mirroring what `lh dev` records when it opens the PR.
+  // issue via linked_issue_id, mirroring what `lh build` records when it opens the PR.
   const issue = S.createIssue(repo.id, "issue", "the issue", "", "me");
   const pr = S.createIssue(repo.id, "pull", "the PR", "", "me");
   // createPull(issueId, head, base, headSha, linkedIssueId): the issue link is the 5th arg.

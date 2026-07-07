@@ -214,7 +214,7 @@ test("startUsageSweep syncs changed session usage and emits linked target events
   const sessionId = "99999999-0000-0000-0000-000000000724";
   S.registerAgentSession(
     sessionId,
-    "lh-dev",
+    "lh-build",
     sessionId,
     "dev agent",
     "claude-code",

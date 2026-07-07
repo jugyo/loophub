@@ -8,7 +8,7 @@ import {
 } from "../../core/config.ts";
 import { gitCommonDir, gitDirOf } from "../../core/git.ts";
 import {
-  LH_DEV_SESSION_AGENT,
+  LH_BUILD_SESSION_AGENT,
   RUNTIME_CLAUDE_CODE,
   RUNTIME_CODEX,
   resolveWorktreeIdentity,
@@ -53,12 +53,12 @@ import {
 export async function run(): Promise<void> {
   const target = sub;
   const usageLine =
-    "usage: lh dev <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]";
+    "usage: lh build <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]";
   if (!target) {
     fail(usageLine);
   }
   // Parse the positional: bare <id> defers repo resolution to resolveRepo(); the
-  // <owner>/<repo>/<id> form carries the repo so `lh dev` can run from outside that repo.
+  // <owner>/<repo>/<id> form carries the repo so `lh build` can run from outside that repo.
   let parsed: { repo?: string; id: number };
   try {
     parsed = parseDevTarget(target);
@@ -82,7 +82,7 @@ export async function run(): Promise<void> {
   const n = parsed.id;
   const issue = String(n);
   const sessionId = randomUUID();
-  const slashCommand = `/lh-dev ${issue}`;
+  const slashCommand = `/lh-build ${issue}`;
 
   // Resolve the agent runtime (#458): Claude Code by default, Codex with --codex, or the
   // configured `codingAgent` app setting (#516) when neither flag is passed. Passing both
@@ -161,7 +161,7 @@ export async function run(): Promise<void> {
   await runOp(() =>
     s.sessions.register({
       id: sessionId,
-      agent: LH_DEV_SESSION_AGENT,
+      agent: LH_BUILD_SESSION_AGENT,
       session: sessionId,
       // Record which runtime the session we are about to spawn runs in, so `lh resume` picks
       // the resume command by runtime rather than inferring it from the agent. Codex sessions
@@ -184,7 +184,7 @@ export async function run(): Promise<void> {
   //
   // Attributing *this* session to the PR (session_links) is deferred until after the dev lock
   // is claimed below (see the attachSession call there): the lock is keyed by PR number, which
-  // isn't known until this resolves, so a losing concurrent `lh dev` racing on the same
+  // isn't known until this resolves, so a losing concurrent `lh build` racing on the same
   // already-open PR must not be allowed to re-point its session pointer before the lock
   // differentiates winner from loser — otherwise the winner's live session could be silently
   // orphaned from session_links and `lh resume` would resolve the loser's dead one instead.
@@ -194,7 +194,7 @@ export async function run(): Promise<void> {
     prNumber = item.number;
   } else {
     // Note: the dev lock below is keyed by PR number, which is not known until openPr resolves
-    // it — so, unlike before #463, two concurrent `lh dev <same-issue>` runs racing to reach
+    // it — so, unlike before #463, two concurrent `lh build <same-issue>` runs racing to reach
     // this call are not serialized by the lock (dev.openPr's own "one open PR per issue" guard
     // is a soft, non-transactional check-then-act — see core/service.ts pulls.create). Adding
     // issue-level concurrency control for this is explicitly out of scope for #463 (see the
@@ -223,9 +223,9 @@ export async function run(): Promise<void> {
 
   // Duplicate-launch guard: atomically claim this PR's worktree before any side effect
   // (provisioning). The worktree path/branch are deterministic from the PR (#463 — previously
-  // the issue), so a second concurrent `lh dev` targeting the same PR would share the same tree
+  // the issue), so a second concurrent `lh build` targeting the same PR would share the same tree
   // and clobber edits; two PRs linked to the same issue no longer collide. acquireDevLock
-  // exclusively creates the lock recording this process's pid; if a *live* `lh dev` already
+  // exclusively creates the lock recording this process's pid; if a *live* `lh build` already
   // holds it we refuse (unless --force). A stale lock (the previous session crashed / was
   // interrupted, so its pid is gone) is reclaimed, so a finished session never blocks a
   // relaunch. Host-local by design (cross-host exclusion is out of scope). The exit handler is
@@ -250,7 +250,7 @@ export async function run(): Promise<void> {
   if (!claim.ok) {
     const l = claim.held;
     fail(
-      `PR #${prNumber} is already being worked on by another \`lh dev\` session ` +
+      `PR #${prNumber} is already being worked on by another \`lh build\` session ` +
         `(pid ${l.pid}, since ${l.startedAt}).\n` +
         `  worktree: ${wtPath}\n` +
         `Launching a second session would share this worktree and clobber edits. ` +
@@ -260,7 +260,7 @@ export async function run(): Promise<void> {
   process.on("exit", () => removeDevLock(lockPath));
 
   // Now that this launch has won the dev lock, it is safe to point the PR's session pointer
-  // (session_links) at this session — no other concurrent `lh dev` can still be racing to do
+  // (session_links) at this session — no other concurrent `lh build` can still be racing to do
   // the same for this PR (see the note above). Idempotent and best-effort: a failure only
   // warns, since the PR itself is already resolved and the worktree can still be provisioned.
   try {
@@ -281,7 +281,7 @@ export async function run(): Promise<void> {
       headRef,
       // Only a PR `dev.openPr` genuinely just created THIS run may have its convention branch
       // fabricated fresh if missing — that branch is guaranteed to have never existed in git
-      // yet. Gating on "issue target" alone is not enough: re-running `lh dev <issue>` against
+      // yet. Gating on "issue target" alone is not enough: re-running `lh build <issue>` against
       // an already-existing (reused, not just-created) PR reaches this same code path, and its
       // convention branch missing there would mean it was deleted out-of-band — silently
       // fabricating a fresh one would discard whatever history it held, same risk as a direct
@@ -352,7 +352,7 @@ export async function run(): Promise<void> {
   // shows the linked PR (#336). buildClaudeArgs strips control chars from the title before argv.
   const sessionName = `#${prNumber} ${item.title}`;
   // The argv for the selected runtime (#458). Codex takes only the initial prompt (the same
-  // `/lh-dev <id>` slash command, run from the same worktree cwd); claude additionally carries
+  // `/lh-build <id>` slash command, run from the same worktree cwd); claude additionally carries
   // the session id / display name / sandbox settings, which have no Codex equivalent.
   const { bin: runtimeBin, args: runtimeArgs } = buildRuntimeLaunch({
     runtime,
@@ -405,7 +405,7 @@ export async function run(): Promise<void> {
   // runtime off to a herdr pane instead of blocking this process's own foreground with it —
   // mirrors the removed --kani flag, but launches *after* setup completes here rather than
   // relaunching itself first (#584), so there is no inner/outer recursion to avoid. This is
-  // also how the Build button's herdr launch works now: it just spawns `lh dev <id> --herdr`
+  // also how the Build button's herdr launch works now: it just spawns `lh build <id> --herdr`
   // and lets this branch do the rest (core/service.ts's launchIssueDevHerdr).
   if (flags.herdr === true) {
     const repoRef = { full_name: r.full_name, local_path: r.local_path };

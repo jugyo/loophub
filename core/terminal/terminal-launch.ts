@@ -81,7 +81,7 @@ export function displayArg(value: string): string {
 
 // The actual `herdr ...` invocation a caller can paste into their own shell to reproduce a launch
 // failure — distinct from HerdrLaunchPlan.command, which is only the inner workflow command herdr
-// would run once its session existed (e.g. "lh dev '...'"). That inner command doesn't depend on
+// would run once its session existed (e.g. "lh build '...'"). That inner command doesn't depend on
 // `herdr` at all, so it can't reproduce a herdr-specific failure.
 export function herdrCommandLine(plan: HerdrLaunchPlan): string {
   return plan.argv.map(displayArg).join(" ");
@@ -90,7 +90,7 @@ export function herdrCommandLine(plan: HerdrLaunchPlan): string {
 export function commandForHerdrLaunch(input: {
   repo: string;
   // "issue-dev" (the Build button) has no entry here: worktree/PR provisioning and the herdr
-  // launch itself are entirely `lh dev --herdr`'s responsibility (#584) — the server only spawns
+  // launch itself are entirely `lh build --herdr`'s responsibility (#584) — the server only spawns
   // it directly (see launchIssueDevHerdr in service.ts) rather than building a command string for
   // an agent-start pane the way the other workflows below do.
   workflow?: "issue-create" | "resume" | "github-pr-export";
@@ -114,7 +114,7 @@ export function commandForHerdrLaunch(input: {
   if (input.workflow === "github-pr-export" && input.prNumber) {
     const command = shellArg(`/lh-create-github-pr ${input.prNumber}`);
     const agent = input.codingAgent ?? codingAgent();
-    // Same auto-mode wiring as the Build button (lh dev --auto / autoModeOnBuild,
+    // Same auto-mode wiring as the Build button (lh build --auto / autoModeOnBuild,
     // cli/dev.ts's buildClaudeArgs / buildCodexArgs) so `git push` / `gh pr create` inside
     // /lh-create-github-pr don't hit permission prompts when auto mode is enabled for this agent.
     const auto = autoModeOnBuild(agent);
@@ -486,7 +486,7 @@ export function buildHerdrLaunchPlan(input: {
   // unrelated PR, #873). Ignored when tabId is set. When both are absent the launch omits any
   // placement selector and herdr splits the focused pane — the genuine last resort.
   workspaceId?: string | null;
-  // Overrides repo.local_path as the agent's --cwd (e.g. a PR worktree, #584's `lh dev --herdr`)
+  // Overrides repo.local_path as the agent's --cwd (e.g. a PR worktree, #584's `lh build --herdr`)
   // without changing the herdr session name, which stays derived from the repo so every launch
   // for it — worktree-pinned or not — lands in the same herdr session.
   cwd?: string;
@@ -524,7 +524,7 @@ export function buildHerdrLaunchPlan(input: {
 
 // An injected herdr command runner. Both callers of the worktree-launch orchestration below spawn
 // the `herdr` binary, but differently: lh-web runs it async (a synchronous spawn would stall the
-// single server process serving every client), while `lh dev --herdr` runs it in a short-lived CLI
+// single server process serving every client), while `lh build --herdr` runs it in a short-lived CLI
 // process. Injecting the runner lets the orchestration itself stay spawn-agnostic and unit-testable
 // with a scripted fake. Contract: never throw — a failed call resolves `ok:false` so the caller can
 // fall back, mirroring the best-effort tolerance every direct herdr call in this codebase already
@@ -556,7 +556,7 @@ export interface HerdrWorktreeTab {
 // gets a genuinely new (safely closeable) tab created inside it, since its existing tab may already
 // hold someone else's pane. Returns null when the initial `worktree open` fails outright
 // (worktree_not_found, timeout, unparseable output) — the caller then falls back to a plain
-// repo-root tab-create. Extracted from lh-web's terminal.launch so `lh dev --herdr` reuses the same
+// repo-root tab-create. Extracted from lh-web's terminal.launch so `lh build --herdr` reuses the same
 // parsing-heavy dance (core/service.ts wraps its async herdr runner around this).
 export async function acquireHerdrWorktreeTab(
   repo: TerminalLaunchRepo,

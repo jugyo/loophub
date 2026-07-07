@@ -840,7 +840,7 @@ async function pullStatusFields(
       // leave zeros — a diff stat failure must not break serialization
     }
   }
-  // "working" badge: real uncommitted changes in this PR's lh-dev worktree. Guarded so the
+  // "working" badge: real uncommitted changes in this PR's lh-build worktree. Guarded so the
   // git status only runs for an open PR whose worktree directory actually exists (see
   // pullWorktreeDirty); merged/closed and worktree-less PRs skip git.
   const linked = linkedIssueSummary(repo, row.id);
@@ -851,7 +851,7 @@ async function pullStatusFields(
     merged: !!p.merged,
     state: row.state,
   });
-  // Path of the existing `lh dev` worktree backing this PR (same convention as the
+  // Path of the existing `lh build` worktree backing this PR (same convention as the
   // "working" flag above), so a consumer can show / copy it without knowing worktreeRoot.
   // Null when the path is unsafe or the worktree directory has not been provisioned / was removed.
   let worktree_path: string | null = null;
@@ -1139,7 +1139,7 @@ export interface PullWorkDuration {
 }
 
 // How long the PR's dev session took (#456), split into three figures anchored at the primary dev
-// session's start (agent_sessions.created_at — set once at `lh dev`/`sessions.register` and never
+// session's start (agent_sessions.created_at — set once at `lh build`/`sessions.register` and never
 // touched again by resumes, so it is a stable start marker):
 //   - total: start → the clearest completion signal (see PullWorkDurationBasis), or now.
 //   - implementation: start → the first ready_for_review event — the phase before a
@@ -1242,7 +1242,7 @@ export interface PullWire {
   head: { ref: string; sha: string | null };
   base: { ref: string; sha: string | null };
   merged: boolean;
-  // draft (#413): true while the PR is WIP (opened by `lh dev` at the start of work);
+  // draft (#413): true while the PR is WIP (opened by `lh build` at the start of work);
   // cleared by `lh pr ready-for-review`. Lets list/view and consumers tell WIP from reviewable.
   draft: boolean;
   mergeable: boolean | null;
@@ -1293,7 +1293,7 @@ export async function pullJSON(
     head: { ref: p.head_ref, sha: status.headSha },
     base: { ref: p.base_ref, sha: status.baseSha },
     merged: !!p.merged,
-    // draft (#413): true while the PR is WIP (opened by `lh dev` at the start of work);
+    // draft (#413): true while the PR is WIP (opened by `lh build` at the start of work);
     // cleared by `lh pr ready-for-review`. Lets list/view and consumers tell WIP from reviewable.
     draft: !!p.draft,
     mergeable: status.mergeable,

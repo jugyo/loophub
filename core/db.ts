@@ -336,7 +336,7 @@ CREATE INDEX IF NOT EXISTS idx_retros_pr   ON retros(pr_id);
 -- instruction (direction='down') or the child's return (direction='up') — recorded out of the
 -- volatile conversation so a run's trajectory can be replayed, audited, and evaluated later
 -- (lh-build-design.ja.md §6.5; the harness "Observability" layer). Generic on purpose: any
--- orchestration (lh-dev today, lh-build the first real user, future skills) records through the
+-- orchestration (lh-build today, lh-build the first real user, future skills) records through the
 -- same protocol; no lh-build-specific column is required.
 --
 -- Linkage (the "ref"): a handoff binds to a PR (pr_id, the kind='pull' issues row) and/or its
@@ -536,7 +536,7 @@ tryExec("ALTER TABLE repos ADD COLUMN archived_at TEXT");
 // mode falls back to a per-repo default (github_pr when the repo has a GitHub remote, else merge —
 // see core/merge-mode.ts). The two modes are mutually exclusive in the UI.
 tryExec("ALTER TABLE repos ADD COLUMN merge_mode TEXT");
-// The issue assignee (`@lh-dev`, #186) and the denormalized pulls.session_id (#186) it migrated into
+// The issue assignee (`@lh-build`, #186) and the denormalized pulls.session_id (#186) it migrated into
 // are both retired; their one-time migration into session_links and final column drops are
 // consolidated in the guarded block at the end of this migration section (search "#316").
 //
@@ -549,7 +549,7 @@ tryExec("DROP INDEX IF EXISTS idx_pulls_open_linked_issue");
 tryExec("ALTER TABLE pulls DROP COLUMN open_linked_issue_id");
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_at TEXT");
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_by TEXT");
-// pulls.draft (#413): the PR's WIP lifecycle flag. `lh dev` opens a PR at the *start* of work, so a
+// pulls.draft (#413): the PR's WIP lifecycle flag. `lh build` opens a PR at the *start* of work, so a
 // just-opened PR is not yet reviewable; draft=1 marks "still being worked", flipped to 0 (ready) by
 // `lh pr ready-for-review`. Pre-existing PRs (and plain `lh pr create`) default to ready (0).
 tryExec("ALTER TABLE pulls ADD COLUMN draft INTEGER NOT NULL DEFAULT 0");
@@ -573,7 +573,7 @@ tryExec("ALTER TABLE reviews ADD COLUMN topic TEXT");
 tryExec("UPDATE reviews SET event = 'PASS' WHERE event = 'APPROVE'");
 // agent_sessions.runtime records which runtime launched the session (e.g. "claude-code"), so
 // `lh resume` picks the resume command by runtime instead of inferring it from the agent label.
-// Pre-existing rows get NULL and rely on the lh-dev → claude-code backward-compat fallback
+// Pre-existing rows get NULL and rely on the lh-build → claude-code backward-compat fallback
 // (core/resume.ts sessionRuntime).
 tryExec("ALTER TABLE agent_sessions ADD COLUMN runtime TEXT");
 // agent_sessions.kind labels the session's purpose (#298): "dev" / "review" / "issue-create" / …
@@ -601,8 +601,8 @@ if (
   tryExec(
     "ALTER TABLE pulls ADD COLUMN session_id TEXT REFERENCES agent_sessions(id)",
   );
-  // (#186) Backfill from the old assignee — prefer the PR's own assignee (direct `lh dev <pr>`) over
-  // the linked issue's (the common `lh dev <issue>` flow): seed the own-row value, then the
+  // (#186) Backfill from the old assignee — prefer the PR's own assignee (direct `lh build <pr>`) over
+  // the linked issue's (the common `lh build <issue>` flow): seed the own-row value, then the
   // linked-issue value for rows still NULL. No-op (and ignored) once the assignee column is gone.
   tryExec(
     `UPDATE pulls SET session_id = (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.issue_id)

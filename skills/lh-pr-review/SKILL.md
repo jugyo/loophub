@@ -258,11 +258,11 @@ policy](#review-selection-policy) gates on — apply that table in A.3.
 
 **Do not `git checkout head.ref` on the main checkout.** Bootstrap a worktree on the PR head instead:
 
-1. Record `head.ref` and repo absolute path (`local_path`) from `lh pr view <m>` (A.1). For `lh dev`
+1. Record `head.ref` and repo absolute path (`local_path`) from `lh pr view <m>` (A.1). For `lh build`
    PRs the head is `loophub/pr-<m>`, and its worktree usually already exists at
    `~/.loophub/worktrees/<owner>/<repo>/pr-<m>`.
 2. If a worktree already has `head.ref` checked out — the session's cwd (e.g. issue-dev → pr-review
-   chain), or the `lh dev` worktree above (`git worktree list`) — use that one (adding a second
+   chain), or the `lh build` worktree above (`git worktree list`) — use that one (adding a second
    worktree for a checked-out branch fails).
 3. Else `cd local_path` and check `.worktrees/<head.ref>`: exists → `cd` into it; missing →
    `git worktree add .worktrees/<head.ref> <head.ref>` then `cd`.
@@ -466,7 +466,7 @@ ${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/
 ```
 
 Key it by the **linked issue number** (`issue-<n>` — the issue the PR closes, not the `pr-<m>`
-worktree name; use `pr-<m>` when there is no linked issue) so `lh-dev` and `lh-merge-ready` resolve
+worktree name; use `pr-<m>` when there is no linked issue) so `lh-build` and `lh-merge-ready` resolve
 the same directory. Do not keep the screenshot only in the session scratchpad / `$TMPDIR` or the
 worktree — both can be cleared before `lh-merge-ready` reads the directory at the end of the chain.
 

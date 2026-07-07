@@ -102,7 +102,7 @@ export function registerAgentSession(
 }
 
 // Set a session's kind in place (#298). Used when the kind becomes known at association time (e.g.
-// `lh dev` stamps its session 'dev' when it links the PR). No-op if the session row is absent.
+// `lh build` stamps its session 'dev' when it links the PR). No-op if the session row is absent.
 export function setSessionKind(sessionId: string, kind: string) {
   db.run(`UPDATE agent_sessions SET kind = ?, updated_at = ? WHERE id = ?`, [
     kind,
@@ -163,7 +163,7 @@ export function listSessionLinkedTargets(
 // Attribute a dev session to a PR row by recording it in the generalized session_links bridge
 // (kind='dev'). `lh resume`/retro resolve the PR's implementation session from there (#186, #316).
 // The PR's related-sessions list accumulates every dev session that worked it; the *primary* anchor
-// is the latest-linked one (primaryDevSessionForPull) — a fresh `lh dev <pr>` re-links the session
+// is the latest-linked one (primaryDevSessionForPull) — a fresh `lh build <pr>` re-links the session
 // it is about to spawn, so latest-writer-wins still holds. As of #316 there is no denormalized
 // pulls.session_id to keep in sync; the link is the single source of truth.
 export function setPullSession(issueId: number, sessionId: string) {

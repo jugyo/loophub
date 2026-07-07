@@ -513,7 +513,7 @@ describe("IssueDetail", () => {
     expect(await screen.findByRole("button", { name: /^Build$/ })).toBeTruthy();
   });
 
-  it("launches `lh dev <n> --herdr` in a terminal when the Build button is clicked", async () => {
+  it("launches `lh build <n> --herdr` in a terminal when the Build button is clicked", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr);
 
@@ -534,7 +534,9 @@ describe("IssueDetail", () => {
 
     const button = await screen.findByRole("button", { name: /^Build$/ });
 
-    expect(button.title).toBe("Start `lh dev 12 --herdr --auto` in a terminal");
+    expect(button.title).toBe(
+      "Start `lh build 12 --herdr --auto` in a terminal",
+    );
   });
 
   it("shows a fixed-duration loading state on the Build button and re-enables it after", async () => {
