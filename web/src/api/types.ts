@@ -7,6 +7,7 @@ import type { MergeMode } from "../../../core/merge-mode.ts";
 import type {
   AgentSessionWire,
   CommentWire,
+  GithubPrStatusWire,
   GithubPullWire,
   HandoffWire,
   IssueGroupWire,
@@ -250,6 +251,9 @@ export type AgentSession = AgentSessionWire;
 
 /** The GitHub PR a loophub PR was exported to (#406), or null until the export skill records one. */
 export type GithubPull = GithubPullWire;
+
+/** GitHub-side status of a PR's linked GitHub PR (#850), fetched on demand via `pulls/githubStatus`. */
+export type GithubPrStatus = GithubPrStatusWire;
 
 export type Issue = IssueWire;
 

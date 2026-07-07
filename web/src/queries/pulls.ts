@@ -4,6 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  getGithubPrStatus,
   getPull,
   getPullDebug,
   getPullFileAtRef,
@@ -130,6 +131,24 @@ export function usePullHandoffs(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: [...queryKeys.pull(full(owner, repo), number), "handoffs"],
     queryFn: () => listPullHandoffs(owner, repo, number),
+  });
+}
+
+/**
+ * GitHub-side status (#850) of a PR's linked GitHub PR, for the detail sidebar. `enabled` gates the
+ * fetch so it only runs once the PR is known to have a linked GitHub PR (no point calling an endpoint
+ * that 404s otherwise). Keyed under the pull key so pull_request.* events refetch it via the prefix.
+ */
+export function useGithubPrStatus(
+  owner: string,
+  repo: string,
+  number: number,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: [...queryKeys.pull(full(owner, repo), number), "githubStatus"],
+    queryFn: () => getGithubPrStatus(owner, repo, number),
+    enabled,
   });
 }
 

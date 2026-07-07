@@ -283,3 +283,135 @@ export interface GithubMergeStatusDeps {
 export const realGithubMergeStatusDeps: GithubMergeStatusDeps = {
   fetchMergeStatus: fetchGithubPrMergeStatus,
 };
+
+// #850: the GitHub-side status of a PR already exported via github_pulls, for the PR-detail right
+// sidebar. Normalized to lowercase enums here (gh returns uppercase) so the wire/UI never re-derive
+// gh's raw shape. `merged` is redundant with state==="merged" but kept explicit for the UI. `comments`
+// counts conversation (issue) comments only; `reviews` counts submitted reviews — kept as two distinct
+// figures so the UI can label each and never conflate the two counts (#850 AC).
+export interface GhPrStatus {
+  state: "open" | "closed" | "merged";
+  isDraft: boolean;
+  merged: boolean;
+  mergeable: "mergeable" | "conflicting" | "unknown";
+  reviewDecision: "approved" | "changes_requested" | "review_required" | null;
+  checks: "success" | "failure" | "pending" | "none";
+  comments: number;
+  reviews: number;
+  updatedAt: string | null;
+}
+
+// Classify one statusCheckRollup entry. gh returns two shapes: CheckRun (has `status`+`conclusion`)
+// and StatusContext (has `state`). A CheckRun still running (status != COMPLETED) is pending; once
+// completed, only SUCCESS/NEUTRAL/SKIPPED count as passing. A StatusContext maps SUCCESS→pass,
+// PENDING/EXPECTED→pending, everything else (ERROR/FAILURE)→fail.
+function classifyCheck(item: {
+  status?: unknown;
+  conclusion?: unknown;
+  state?: unknown;
+}): "pass" | "fail" | "pending" {
+  if (typeof item.status === "string") {
+    if (item.status.toUpperCase() !== "COMPLETED") return "pending";
+    const c = (
+      typeof item.conclusion === "string" ? item.conclusion : ""
+    ).toUpperCase();
+    return c === "SUCCESS" || c === "NEUTRAL" || c === "SKIPPED"
+      ? "pass"
+      : "fail";
+  }
+  const s = (typeof item.state === "string" ? item.state : "").toUpperCase();
+  if (s === "SUCCESS") return "pass";
+  if (s === "PENDING" || s === "EXPECTED") return "pending";
+  return "fail";
+}
+
+// Roll a statusCheckRollup array up into a single overall verdict: any failing check wins (failure),
+// else any pending check (pending), else success; an empty rollup means no checks are configured.
+function rollupChecks(items: unknown): GhPrStatus["checks"] {
+  if (!Array.isArray(items) || items.length === 0) return "none";
+  let pending = false;
+  for (const it of items) {
+    const c = classifyCheck(it as Record<string, unknown>);
+    if (c === "fail") return "failure";
+    if (c === "pending") pending = true;
+  }
+  return pending ? "pending" : "success";
+}
+
+function lowerEnum<T extends string>(
+  v: unknown,
+  allowed: readonly T[],
+): T | null {
+  if (typeof v !== "string") return null;
+  const lower = v.toLowerCase() as T;
+  return allowed.includes(lower) ? lower : null;
+}
+
+// Fetch a GitHub PR's status by its URL (owner/repo/number resolve from the URL, so `repoPath`'s own
+// remote need not match — mirrors fetchGithubPrMergeStatus). Throws on any gh failure so the caller
+// can fall back to a cached value or surface the error, rather than reporting a transient failure as
+// a real status. `comments`/`reviews` request the full arrays (gh has no count-only projection); only
+// their lengths are kept.
+export async function fetchGithubPrStatus(
+  repoPath: string,
+  url: string,
+): Promise<GhPrStatus> {
+  const r = await gh(repoPath, [
+    "pr",
+    "view",
+    "--json",
+    "state,isDraft,mergeable,reviewDecision,statusCheckRollup,comments,reviews,updatedAt",
+    // Pass the URL after `--` so it can never be mistaken for a flag, matching viewPr — the value is
+    // already GitHub-validated at every write path, so this is defense-in-depth against that ever
+    // being loosened.
+    "--",
+    url,
+  ]);
+  if (r.code !== 0)
+    throw new Error(`gh pr view failed: ${r.stderr.trim() || r.stdout.trim()}`);
+  let j: {
+    state?: unknown;
+    isDraft?: unknown;
+    mergeable?: unknown;
+    reviewDecision?: unknown;
+    statusCheckRollup?: unknown;
+    comments?: unknown;
+    reviews?: unknown;
+    updatedAt?: unknown;
+  };
+  try {
+    j = JSON.parse(r.stdout);
+  } catch {
+    throw new Error(`gh pr view returned unparseable JSON: ${r.stdout.trim()}`);
+  }
+  const state =
+    lowerEnum(j.state, ["open", "closed", "merged"] as const) ?? "open";
+  return {
+    state,
+    isDraft: j.isDraft === true,
+    merged: state === "merged",
+    mergeable:
+      lowerEnum(j.mergeable, [
+        "mergeable",
+        "conflicting",
+        "unknown",
+      ] as const) ?? "unknown",
+    reviewDecision: lowerEnum(j.reviewDecision, [
+      "approved",
+      "changes_requested",
+      "review_required",
+    ] as const),
+    checks: rollupChecks(j.statusCheckRollup),
+    comments: Array.isArray(j.comments) ? j.comments.length : 0,
+    reviews: Array.isArray(j.reviews) ? j.reviews.length : 0,
+    updatedAt: typeof j.updatedAt === "string" ? j.updatedAt : null,
+  };
+}
+
+export interface GithubPrStatusDeps {
+  fetchStatus: typeof fetchGithubPrStatus;
+}
+
+export const realGithubPrStatusDeps: GithubPrStatusDeps = {
+  fetchStatus: fetchGithubPrStatus,
+};

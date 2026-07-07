@@ -11,6 +11,7 @@ import {
   remoteUrl,
   revParse,
 } from "./git.ts";
+import type { GhPrStatus } from "./github.ts";
 import { linkedRef } from "./links.ts";
 import type { MergeMode } from "./merge-mode.ts";
 import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
@@ -231,6 +232,42 @@ export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null {
     github_merged: !!g.github_merged,
     github_merged_at: g.github_merged_at ?? null,
     pushed_sha: g.pushed_sha ?? null,
+  };
+}
+
+// #850: the GitHub-side status of a PR's linked GitHub PR, for the PR-detail right sidebar. Sourced
+// on demand from `gh` (core/github.ts GhPrStatus) and cached in github_pull_status; `synced_at` is
+// when it was last fetched so the UI can show freshness. `comments` (conversation comments) and
+// `reviews` (submitted reviews) are separate counts, labeled distinctly in the UI so neither is
+// mistaken for the other.
+export interface GithubPrStatusWire {
+  state: "open" | "closed" | "merged";
+  is_draft: boolean;
+  merged: boolean;
+  mergeable: "mergeable" | "conflicting" | "unknown";
+  review_decision: "approved" | "changes_requested" | "review_required" | null;
+  checks: "success" | "failure" | "pending" | "none";
+  comments: number;
+  reviews: number;
+  updated_at: string | null;
+  synced_at: string;
+}
+
+export function githubPrStatusJSON(
+  gh: GhPrStatus,
+  syncedAt: string,
+): GithubPrStatusWire {
+  return {
+    state: gh.state,
+    is_draft: gh.isDraft,
+    merged: gh.merged,
+    mergeable: gh.mergeable,
+    review_decision: gh.reviewDecision,
+    checks: gh.checks,
+    comments: gh.comments,
+    reviews: gh.reviews,
+    updated_at: gh.updatedAt,
+    synced_at: syncedAt,
   };
 }
 

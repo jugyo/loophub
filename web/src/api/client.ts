@@ -11,6 +11,7 @@ import type {
   CodingAgent,
   DashboardOverview,
   FileAtRef,
+  GithubPrStatus,
   GithubPull,
   GlobalSettings,
   Handoff,
@@ -470,6 +471,14 @@ export function mergePull(
     number,
     merge_method: mergeMethod,
     session_id: sessionId,
+  });
+}
+
+/** GitHub-side status (#850) of a PR's linked GitHub PR. 404s when the PR has no linked GitHub PR. */
+export function getGithubPrStatus(owner: string, repo: string, number: number) {
+  return rpc<GithubPrStatus>("pulls/githubStatus", {
+    repo: full(owner, repo),
+    number,
   });
 }
 

@@ -27,6 +27,7 @@ import { CopyButton } from "@/components/copy-button";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
+import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { HandoffTimeline } from "@/components/handoff-timeline";
 import { isPullHerdrWorking } from "@/components/herdr-badge";
 import { Markdown } from "@/components/markdown";
@@ -48,6 +49,7 @@ import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useIssueComments } from "@/queries/issues";
 import {
+  useGithubPrStatus,
   useMarkGithubMerged,
   useMergePull,
   usePull,
@@ -80,6 +82,14 @@ export function PullDetail({
   const lineCommentsQuery = usePullComments(owner, repo, number);
   const commentsQuery = useIssueComments(owner, repo, number);
   const handoffsQuery = usePullHandoffs(owner, repo, number);
+  // Only fetch GitHub status once the PR is known to have a linked GitHub PR — the endpoint 404s
+  // otherwise, and the sidebar section is hidden anyway when github_pull is absent (#850).
+  const githubStatusQuery = useGithubPrStatus(
+    owner,
+    repo,
+    number,
+    !!pullQuery.data?.github_pull,
+  );
 
   if (pullQuery.isLoading) {
     return (
@@ -153,6 +163,14 @@ export function PullDetail({
             list when deciding where to jump. Hides itself when no herdr session runs this PR. */}
         <PullHerdrSection owner={owner} repo={repo} pull={number} />
         <WorktreeSection value={pull.worktree_path} />
+        {/* GitHub PR status (#850): only for a PR with a linked GitHub PR — hidden otherwise, the way
+            Sessions/Handoffs hide themselves. Fetched on demand; loading/error live in the section. */}
+        {pull.github_pull ? (
+          <GithubPrStatusSection
+            status={githubStatusQuery.data}
+            isLoading={githubStatusQuery.isLoading}
+          />
+        ) : null}
         {(pull.related_sessions?.length ?? 0) > 0 &&
         pull.related_sessions_usage ? (
           <TokenUsageSummary usage={pull.related_sessions_usage} />

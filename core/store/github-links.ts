@@ -121,6 +121,43 @@ export function setGithubPushed(issueId: number, sha: string): GithubPull {
     .get(sha, issueId) as GithubPull;
 }
 
+// #850: cached GitHub-side status for a PR's linked GitHub PR (the payload is core/github.ts
+// GhPrStatus as JSON; synced_at is when it was fetched).
+export interface GithubPullStatusCache {
+  issue_id: number;
+  payload: string;
+  synced_at: string;
+}
+
+// #850: read the cached GitHub PR status for a loophub PR, or null when never fetched.
+export function getGithubPullStatus(
+  issueId: number,
+): GithubPullStatusCache | null {
+  return (
+    (db
+      .query(`SELECT * FROM github_pull_status WHERE issue_id = ?`)
+      .get(issueId) as GithubPullStatusCache) ?? null
+  );
+}
+
+// #850: upsert the cached GitHub PR status. synced_at is stamped now() on every write so the service
+// can TTL against it; idempotent on issue_id (a re-fetch overwrites the previous snapshot).
+export function saveGithubPullStatus(
+  issueId: number,
+  payload: string,
+): GithubPullStatusCache {
+  return db
+    .query(
+      `INSERT INTO github_pull_status (issue_id, payload, synced_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(issue_id) DO UPDATE SET
+         payload = excluded.payload,
+         synced_at = excluded.synced_at
+       RETURNING *`,
+    )
+    .get(issueId, payload, now()) as GithubPullStatusCache;
+}
+
 // #614: the GitHub issue a loophub issue was imported from, or null.
 export function getGithubIssue(issueId: number): GithubIssue | null {
   return (

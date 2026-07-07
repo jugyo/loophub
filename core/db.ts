@@ -451,6 +451,18 @@ CREATE TABLE IF NOT EXISTS github_issues (
 
 CREATE INDEX IF NOT EXISTS idx_github_issues_source ON github_issues(owner, repo, number);
 
+-- A cache of a GitHub PR's live status (draft / review / checks / comment counts / merged), fetched
+-- on demand via gh for the PR-detail right sidebar (#850). 1:1 with a github_pulls row (keyed by the
+-- PR's issues row id). payload is the JSON of the normalized status (core/github.ts GhPrStatus) and
+-- synced_at is when it was fetched — the service serves this within a short TTL before hitting gh
+-- again, so it is a cache, not authoritative state (github_pulls.github_merged remains the
+-- authoritative merge signal that drives the "Mark as merged" action).
+CREATE TABLE IF NOT EXISTS github_pull_status (
+  issue_id   INTEGER PRIMARY KEY REFERENCES issues(id),
+  payload    TEXT NOT NULL,
+  synced_at  TEXT NOT NULL
+);
+
 -- New Issue Herdr pane links (#670). A web New Issue launch creates a Herdr pane before an issue
 -- exists, while lh issue create creates the issue from inside that pane later. launch_id is the
 -- durable correlation key both sides know; issue_id and pane_id can arrive in either order.

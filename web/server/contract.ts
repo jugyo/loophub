@@ -764,6 +764,13 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.pulls.markGithubMerged(p.repo, p.number, p.session_id),
   },
+  "pulls/githubStatus": {
+    description:
+      "GitHub-side status (draft / review / checks / comment counts / merged) of a PR's linked GitHub PR (#850). Fetched on demand via `gh` and cached; 404 when the PR has no linked GitHub PR.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.githubStatus(p.repo, p.number),
+  },
   "pulls/readyForReview": {
     description:
       "Mark a pull request ready for re-review after addressing changes.",

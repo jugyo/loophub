@@ -1,4 +1,4 @@
-import type { GithubDeps } from "./shared.ts";
+import type { GithubDeps, GithubPrStatusDeps } from "./shared.ts";
 import {
   actorFor,
   agentSessionJSON,
@@ -11,6 +11,7 @@ import {
   ensureWritable,
   fileAtRef,
   formatEvent,
+  githubPrStatusJSON,
   githubPullJSON,
   gitMergePull,
   isGithubRemoteUrl,
@@ -22,6 +23,7 @@ import {
   pathInDiff,
   pullJSON,
   realGithubDeps,
+  realGithubPrStatusDeps,
   remoteUrl,
   repoJSON,
   repoOr404,
@@ -29,6 +31,10 @@ import {
   S,
   ServiceError,
 } from "./shared.ts";
+
+// #850: how long a cached GitHub PR status is served before hitting `gh` again. On-demand from the
+// PR-detail sidebar, so a short TTL keeps the panel roughly live without spawning a `gh` per render.
+const GITHUB_PR_STATUS_TTL_MS = 60_000;
 
 // ===== pulls =====
 function resolveLinkedIssueId(
@@ -554,6 +560,46 @@ export const pulls = {
       });
     }
     return { merged: true };
+  },
+
+  // #850: the GitHub-side status (draft / review / checks / comment counts / merged) of a PR's linked
+  // GitHub PR, for the PR-detail right sidebar. Fetched on demand via `gh` and cached in
+  // github_pull_status with a short TTL — a cache hit within the TTL skips `gh`. On a `gh` failure a
+  // still-usable stale cache is returned rather than erroring (the UI surfaces `synced_at`); only a
+  // failure with no cache at all becomes a 502, which drives the sidebar's "fetch failed" state.
+  // `deps` is injectable so this is unit-testable without a GitHub remote. Throws 404 when the PR has
+  // no linked GitHub PR — the UI only calls this once `github_pull` is present.
+  async githubStatus(
+    name: string,
+    number: number,
+    deps: GithubPrStatusDeps = realGithubPrStatusDeps,
+  ) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const link = S.getGithubPull(row.id);
+    if (!link) throw new ServiceError(404, "PR has no linked GitHub PR");
+
+    const cached = S.getGithubPullStatus(row.id);
+    if (
+      cached &&
+      Date.now() - Date.parse(cached.synced_at) < GITHUB_PR_STATUS_TTL_MS
+    ) {
+      return githubPrStatusJSON(JSON.parse(cached.payload), cached.synced_at);
+    }
+
+    let status: Awaited<ReturnType<GithubPrStatusDeps["fetchStatus"]>>;
+    try {
+      status = await deps.fetchStatus(r.local_path, link.url);
+    } catch (e) {
+      if (cached)
+        return githubPrStatusJSON(JSON.parse(cached.payload), cached.synced_at);
+      throw new ServiceError(
+        502,
+        `failed to fetch GitHub PR status: ${(e as Error).message}`,
+      );
+    }
+    const saved = S.saveGithubPullStatus(row.id, JSON.stringify(status));
+    return githubPrStatusJSON(status, saved.synced_at);
   },
 
   async readyForReview(

@@ -50,9 +50,11 @@ import {
 import {
   type GithubDeps,
   type GithubIssueDeps,
+  type GithubPrStatusDeps,
   parseGithubIssueUrl,
   realGithubDeps,
   realGithubIssueDeps,
+  realGithubPrStatusDeps,
 } from "../github.ts";
 import { parseClosingIssueNumber } from "../links.ts";
 import {
@@ -81,6 +83,7 @@ import {
   agentSessionJSON,
   commentJSON,
   githubIssueJSON,
+  githubPrStatusJSON,
   githubPullJSON,
   handoffJSON,
   herdrPaneJSON,
@@ -183,6 +186,7 @@ export type {
   FollowOptions,
   GithubDeps,
   GithubIssueDeps,
+  GithubPrStatusDeps,
   HerdrAgent,
   HerdrCmdRunner,
   HerdrIssueWorkspace,
@@ -229,6 +233,7 @@ export {
   followEvents,
   formatEvent,
   githubIssueJSON,
+  githubPrStatusJSON,
   githubPullJSON,
   gitMergePull,
   HERDR_ID,
@@ -293,6 +298,7 @@ export {
   readTranscriptSlice,
   realGithubDeps,
   realGithubIssueDeps,
+  realGithubPrStatusDeps,
   realpathSync,
   relatedSessionsJSON,
   remoteUrl,
