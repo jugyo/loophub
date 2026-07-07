@@ -49,6 +49,7 @@ function makeRepo(overrides: Partial<Repo>): Repo {
     favorite: false,
     favorited_at: null,
     merge_mode: null,
+    herdr_session_name: "repo-abcd1234",
     ...overrides,
   };
 }

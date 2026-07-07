@@ -25,6 +25,7 @@ import {
   sessionRuntime,
 } from "./resume.ts";
 import * as S from "./store.ts";
+import { herdrSessionName } from "./terminal/terminal-launch.ts";
 import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
 
 export interface RepoWire {
@@ -43,6 +44,10 @@ export interface RepoWire {
   // resolves the null default against the GitHub remote) needs a git call, so it is served by the
   // dedicated repos/mergeMode procedure, not this sync serializer.
   merge_mode: MergeMode | null;
+  // #878: deterministic herdr session name for this repo (repoPart + hash of full_name/local_path),
+  // the same value every herdr launch derives (see herdrSessionName). Surfaced so the repo page can
+  // show a copyable `herdr --session <name>` start/connect command without a herdr call.
+  herdr_session_name: string;
 }
 
 export function repoJSON(r: S.Repo): RepoWire {
@@ -59,6 +64,7 @@ export function repoJSON(r: S.Repo): RepoWire {
     favorite: !!r.favorite,
     favorited_at: r.favorited_at ?? null,
     merge_mode: (r.merge_mode as MergeMode | null) ?? null,
+    herdr_session_name: herdrSessionName(r),
   };
 }
 

@@ -43,6 +43,7 @@ function repo(
     favorited_at: null,
     created_at: "2026-01-01T00:00:00Z",
     merge_mode: null,
+    herdr_session_name: "repo-abcd1234",
     ...overrides,
   };
 }

@@ -6,6 +6,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { IssueRow } from "@/components/dashboard-rows";
+import { RepoHerdrCommand } from "@/components/repo-herdr-command";
 import { RepoSettingsLink } from "@/components/repo-settings-link";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,10 +77,11 @@ export function IssueList({
   return (
     <div className="mx-auto flex max-w-content flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-semibold">
             {owner}/{repo}
           </h1>
+          <RepoHerdrCommand owner={owner} repo={repo} />
           <p className="text-sm text-muted-foreground">Issues</p>
         </div>
         <RepoSettingsLink owner={owner} repo={repo} />
