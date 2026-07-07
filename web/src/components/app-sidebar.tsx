@@ -14,7 +14,6 @@ import {
 import type { HerdrSessions, Repo } from "@/api/types";
 import { Logo } from "@/components/logo";
 import { SidebarHerdrSessions } from "@/components/sidebar-herdr-sessions";
-import { SidebarUsageSummary } from "@/components/sidebar-usage-summary";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { compareSidebarRepos } from "@/lib/repo-sort";
 import { cn } from "@/lib/utils";
@@ -153,11 +152,6 @@ export function AppSidebar() {
             same scroll area; renders nothing when herdr isn't in use. */}
         <SidebarHerdrSessions />
       </div>
-
-      {/* Usage summary (#839): Claude Code / Codex current-session & current-week spend, pinned
-          just above the footer. `shrink-0` so it never grows into the scrolling repo list — it only
-          trims the scroll area, keeping the nav and footer links in place. */}
-      <SidebarUsageSummary />
 
       {/* Fixed footer (#371): the theme toggle lives here, below the scrolling repo list. */}
       <div className="flex shrink-0 items-center justify-between gap-2 border-t p-2">

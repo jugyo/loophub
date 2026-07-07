@@ -42,10 +42,6 @@ vi.mock("@/components/sidebar-herdr-sessions", () => ({
   SidebarHerdrSessions: () => null,
 }));
 
-vi.mock("@/components/sidebar-usage-summary", () => ({
-  SidebarUsageSummary: () => null,
-}));
-
 import { AppSidebar, countRepoHerdrAgents } from "./app-sidebar";
 
 afterEach(() => {
