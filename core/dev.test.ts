@@ -66,6 +66,7 @@ describe("dev.openPr", () => {
     expect(pull.draft).toBe(true);
     expect(pull.linked_issue?.number).toBe(issue.number);
     expect(pull.body).toContain(`Closes #${issue.number}`);
+    expect(pull.body).toContain("**Visual evidence gate**: TODO");
     // The worktree path is copyable only after the directory exists; openPr runs before
     // provisioning, so a just-opened draft must not expose a stale/nonexistent path.
     const worktreePath = join(

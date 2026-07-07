@@ -14,6 +14,10 @@ function defaultDraftPrBody(issue: number): string {
     "",
     "<!-- 着手時に実装計画をここへ記入してください -->",
     "",
+    "## Evidence",
+    "",
+    "- **Visual evidence gate**: TODO - before ready-for-review, record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason.",
+    "",
     `Closes #${issue}`,
     "",
   ].join("\n");

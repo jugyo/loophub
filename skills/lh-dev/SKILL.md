@@ -237,6 +237,38 @@ While testing, **capture evidence for the PR body** (step 5):
 
 Do not open a PR with checkboxes only — reviewers need proof you ran the verification.
 
+#### Visual evidence check
+
+`lh dev` opens the draft PR before the agent starts. Run this check before completing that PR
+(updating the body and marking it ready); on the fallback path where you create the PR yourself, run
+it before `lh pr create`. The draft PR body starts with a Visual evidence gate TODO so this check is
+visible from PR creation.
+
+1. Check what changed:
+
+   ```sh
+   git diff --name-only --diff-filter=ACMR main...HEAD
+   git status --short
+   ```
+
+2. Treat the change as a **UI / visual candidate** when it touches UI surfaces, styling, rendered
+   docs, images, fonts, screenshots, or other files that affect what a human sees.
+3. Record the result in the PR Evidence section as **Visual evidence gate**:
+   - `UI / visual candidate: yes` -> capture a screenshot if possible, using available tools such
+     as Playwright, the browser tool, or `claude-in-chrome`; save it to the persistent evidence
+     directory, upload it with `lh attachment add`, and paste the embed markdown in the PR.
+   - `UI / visual candidate: yes, N/A` -> use only when a screenshot is unnecessary or cannot be
+     obtained; include the specific reason.
+   - `UI / visual candidate: no` -> include the reason, for example `N/A - backend/CLI-only change;
+     no rendered UI changed`.
+
+Do **not** run `lh pr ready-for-review` while a UI / visual candidate has neither screenshot embed
+markdown nor an explicit `N/A` reason in the PR body.
+
+Manual verification for this workflow: walk through a UI-like diff and confirm it would require
+`UI / visual candidate: yes` plus screenshot evidence or a specific `N/A` reason; walk through a
+non-UI diff and confirm it records `UI / visual candidate: no` with a reason.
+
 #### Evidence screenshots
 
 UI / visual evidence (screenshots) is stored in a **persistent evidence directory** so it
@@ -364,6 +396,7 @@ lh pr update <m> --repo <repo> \
 
 ## Evidence
 - **Tests**: `<command>` — excerpt, e.g. `42 pass, 0 fail` or the final summary line
+- **Visual evidence gate**: `UI / visual candidate: <yes|no>` — screenshot embed(s), or `N/A` with a specific reason
 - **UI / visual** (when applicable): embed markdown from `lh attachment add --file <path>` (`![name](/attachments/<sha256>)`), so it renders inline — not a filesystem path; one line on what it shows
 - **CLI / API** (when applicable): command + representative output snippet
 - **N/A** (docs-only / trivial): one line why substantive evidence does not apply — do not omit this section
@@ -421,12 +454,15 @@ lh pr view <m> --repo <repo>   # body must include Summary, Acceptance criteria,
 | Change type | Minimum evidence |
 |-------------|------------------|
 | Code / tests | Test command + green output excerpt (not "ran tests") |
-| UI / UX | Screenshot uploaded via `lh attachment add` → embed markdown (`![name](/attachments/<sha256>)`) + caption |
+| UI / UX | Visual evidence gate says `UI / visual candidate: yes`, plus screenshot uploaded via `lh attachment add` → embed markdown (`![name](/attachments/<sha256>)`) + caption, or explicit `N/A` reason |
 | CLI / API | Command + representative output |
 | Docs / skills only | Evidence section with **N/A** and one-line rationale |
 
 Empty Evidence or placeholder bullets (`TBD`, `TODO`, unchecked test plan only) → fix the body before
 step 6.
+
+If the visual evidence check found a UI / visual candidate and Evidence lacks both screenshot embed
+markdown and a specific `N/A` reason, the PR is not complete: do not mark it ready for review.
 
 #### Mark the PR ready for review (draft → ready)
 
