@@ -96,10 +96,7 @@ function renderDetail(
   autoModeOnBuild = false,
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
-  vi.stubGlobal(
-    "fetch",
-    mockFetch(getIssue, autoModeOnBuild, extraHandlers),
-  );
+  vi.stubGlobal("fetch", mockFetch(getIssue, autoModeOnBuild, extraHandlers));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -557,5 +554,4 @@ describe("IssueDetail", () => {
       expect(button.hasAttribute("disabled")).toBe(false);
     });
   });
-
 });

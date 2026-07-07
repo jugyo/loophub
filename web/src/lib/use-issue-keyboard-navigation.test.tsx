@@ -98,6 +98,17 @@ describe("useIssueKeyboardNavigation", () => {
     expect(screen.getByText("two")).toBeTruthy();
   });
 
+  it("opens the focused row with o", () => {
+    const { container } = render(<TestIssueRows />);
+    const rows = container.querySelectorAll<HTMLElement>("[data-issue-row]");
+
+    fireEvent.keyDown(window, { key: "j" });
+    fireEvent.keyDown(rows[0], { key: "j" });
+    fireEvent.keyDown(rows[1], { key: "o" });
+
+    expect(screen.getByText("two")).toBeTruthy();
+  });
+
   it("restores the previously selected row when the list re-appears", async () => {
     const { rerender } = render(<TestIssueRows />);
 
@@ -153,8 +164,10 @@ describe("useIssueKeyboardNavigation", () => {
     input.focus();
 
     fireEvent.keyDown(input, { key: "j" });
+    fireEvent.keyDown(input, { key: "o" });
 
     expect(document.activeElement).toBe(input);
+    expect(screen.queryByText("one")).toBeNull();
     expect(
       Array.from(container.querySelectorAll<HTMLElement>("[data-issue-row]")),
     ).not.toContain(document.activeElement);
@@ -166,8 +179,10 @@ describe("useIssueKeyboardNavigation", () => {
     menuItem.focus();
 
     fireEvent.keyDown(menuItem, { key: "ArrowDown" });
+    fireEvent.keyDown(menuItem, { key: "o" });
 
     expect(document.activeElement).toBe(menuItem);
+    expect(screen.queryByText("one")).toBeNull();
     expect(
       Array.from(container.querySelectorAll<HTMLElement>("[data-issue-row]")),
     ).not.toContain(document.activeElement);
@@ -179,8 +194,10 @@ describe("useIssueKeyboardNavigation", () => {
     trigger.focus();
 
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "o" });
 
     expect(document.activeElement).toBe(trigger);
+    expect(screen.queryByText("one")).toBeNull();
     expect(
       Array.from(container.querySelectorAll<HTMLElement>("[data-issue-row]")),
     ).not.toContain(document.activeElement);

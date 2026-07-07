@@ -8,6 +8,7 @@ import {
 const ISSUE_ROW_SELECTOR = "[data-issue-row]";
 const ISSUE_LINK_SELECTOR = "[data-issue-row-link]";
 const ISSUE_KEY_ATTR = "data-issue-key";
+const OPEN_ISSUE_KEYS = new Set(["Enter", "o"]);
 
 // Remembers the row the user last selected via keyboard so that returning to a
 // list (client-side navigation — e.g. opening an issue with Enter and coming
@@ -65,7 +66,7 @@ export function useIssueKeyboardNavigation(
         key !== "k" &&
         key !== "ArrowDown" &&
         key !== "ArrowUp" &&
-        key !== "Enter"
+        !OPEN_ISSUE_KEYS.has(key)
       ) {
         return;
       }
@@ -73,7 +74,7 @@ export function useIssueKeyboardNavigation(
       const currentRow = closestIssueRow(event.target);
       const currentIndex = currentRow ? rows.indexOf(currentRow) : -1;
 
-      if (key === "Enter") {
+      if (OPEN_ISSUE_KEYS.has(key)) {
         if (!currentRow) return;
         if (
           event.target instanceof Element &&
