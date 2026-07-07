@@ -81,7 +81,7 @@ describe("herdr terminal launch", () => {
         prNumber: 451,
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '/create-github-pr 451'");
+    ).toBe("claude '/lh-create-github-pr 451'");
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -101,7 +101,7 @@ describe("herdr terminal launch", () => {
         codingAgent: "codex",
       }),
     ).toBe(
-      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/create-github-pr 451'`,
+      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/lh-create-github-pr 451'`,
     );
     expect(
       commandForHerdrLaunch({
@@ -110,7 +110,7 @@ describe("herdr terminal launch", () => {
         prNumber: 451,
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '/create-github-pr 451'");
+    ).toBe("claude '/lh-create-github-pr 451'");
   });
 
   test("reads codingAgent config for GitHub PR export launches when no override is passed (#660)", () => {
@@ -122,7 +122,7 @@ describe("herdr terminal launch", () => {
         prNumber: 451,
       }),
     ).toBe(
-      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/create-github-pr 451'`,
+      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/lh-create-github-pr 451'`,
     );
 
     updateConfig({ codingAgent: "claude-code" });
@@ -132,7 +132,7 @@ describe("herdr terminal launch", () => {
         workflow: "github-pr-export",
         prNumber: 451,
       }),
-    ).toBe("claude '/create-github-pr 451'");
+    ).toBe("claude '/lh-create-github-pr 451'");
   });
 
   test("applies the agent's autoModeOnBuild setting to GitHub PR export launches (#809)", () => {
@@ -145,7 +145,7 @@ describe("herdr terminal launch", () => {
         prNumber: 451,
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '/create-github-pr 451'");
+    ).toBe("claude '/lh-create-github-pr 451'");
 
     updateAgentAutoModeOnBuild("claude-code", true);
     expect(
@@ -155,7 +155,7 @@ describe("herdr terminal launch", () => {
         prNumber: 451,
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '--permission-mode' 'auto' '/create-github-pr 451'");
+    ).toBe("claude '--permission-mode' 'auto' '/lh-create-github-pr 451'");
 
     // codex: auto mode swaps the sandboxed --sandbox args for the same unsandboxed bypass
     // flag lh dev --auto uses (buildCodexArgs), rather than adding a flag on top.
@@ -168,7 +168,7 @@ describe("herdr terminal launch", () => {
         codingAgent: "codex",
       }),
     ).toBe(
-      "codex '--dangerously-bypass-approvals-and-sandbox' '/create-github-pr 451'",
+      "codex '--dangerously-bypass-approvals-and-sandbox' '/lh-create-github-pr 451'",
     );
 
     // claude-code's setting must not leak into codex's launch, and vice versa (#593 parity).
@@ -181,7 +181,7 @@ describe("herdr terminal launch", () => {
         codingAgent: "codex",
       }),
     ).toBe(
-      "codex '--dangerously-bypass-approvals-and-sandbox' '/create-github-pr 451'",
+      "codex '--dangerously-bypass-approvals-and-sandbox' '/lh-create-github-pr 451'",
     );
   });
 

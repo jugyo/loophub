@@ -112,11 +112,11 @@ export function commandForHerdrLaunch(input: {
     return withEnv(`lh issue new --repo ${shellArg(input.repo)}`);
   }
   if (input.workflow === "github-pr-export" && input.prNumber) {
-    const command = shellArg(`/create-github-pr ${input.prNumber}`);
+    const command = shellArg(`/lh-create-github-pr ${input.prNumber}`);
     const agent = input.codingAgent ?? codingAgent();
     // Same auto-mode wiring as the Build button (lh dev --auto / autoModeOnBuild,
     // cli/dev.ts's buildClaudeArgs / buildCodexArgs) so `git push` / `gh pr create` inside
-    // /create-github-pr don't hit permission prompts when auto mode is enabled for this agent.
+    // /lh-create-github-pr don't hit permission prompts when auto mode is enabled for this agent.
     const auto = autoModeOnBuild(agent);
     if (agent === "codex") {
       const codexArgs = (

@@ -16,13 +16,16 @@ context-isolated reviewer sessions (install them with `npx skills add`).
 | `lh-rebase-conflict` | `skills/lh-rebase-conflict/` | `/lh-rebase-conflict {pr id}` (resolve conflicts → re-review) |
 | `lh-merge-ready` | `skills/lh-merge-ready/` | `/lh-merge-ready {pr id}` (pre-merge check; human merges) |
 | `lh-retro` | `skills/lh-retro/` | `/lh-retro [{pr id}]` (retrospect a merged PR / backfill → save to retros DB) |
-| `create-github-pr` | `skills/create-github-pr/` | `/create-github-pr {pr id}` (export a LoopHub PR to a GitHub Draft PR → record back) |
+| `lh-create-github-pr` | `skills/lh-create-github-pr/` | `/lh-create-github-pr {pr id}` (export a LoopHub PR to a GitHub Draft PR → record back) |
+| `create-github-pr` | `skills/create-github-pr/` | `/create-github-pr {pr id}` (deprecated compatibility alias for `lh-create-github-pr`) |
 
 Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
 
-`create-github-pr` intentionally drops the `lh-` prefix: the PR detail's **Create PR on GitHub** button
-dispatches `claude "/create-github-pr <pr>"`, so the directory name must match that hardcoded slash
-command exactly.
+`lh-create-github-pr` is part of the selectable `lh-*` LoopHub workflow-skill set. The PR detail's
+**Create PR on GitHub** button dispatches `/lh-create-github-pr <pr>` through the configured coding
+agent.
+`create-github-pr` remains as a deprecated compatibility alias for users or installed agents that
+still invoke `/create-github-pr <pr>` directly; do not add it to new customization pickers.
 
 ## Authoring
 
@@ -64,7 +67,7 @@ attributed to the PR row); these
 skills cover registration, issue authoring, implementation, review, conflict resolution, and the
 pre-merge check.
 
-`create-github-pr` is **outside** this chain: it is a separate, UI-triggered export action (the PR
+`lh-create-github-pr` is **outside** this chain: it is a separate, UI-triggered export action (the PR
 detail's **Create PR on GitHub** button for repos in `github_pr` merge mode). It pushes the PR's branch
 under a content-based name, opens a GitHub **Draft** PR, and records it back with
 `lh pr record-github-pr` so the button switches to **View PR on GitHub**. It does not merge or review.

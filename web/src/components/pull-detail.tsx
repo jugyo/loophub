@@ -410,7 +410,8 @@ function WorktreeSection({ value }: { value: string | null }) {
 // double-create guard: the Create action disappears so a second export can't be dispatched. Until
 // then, "Create PR on GitHub" dispatches the export skill into a terminal (same pattern as the
 // issue Build button), where the skill generates a branch/title/description and opens the draft PR.
-// The skill itself ships separately (issue #406 part B); the slash command below is the seam.
+// The skill itself ships separately (issue #406 part B); the workflow launch maps to
+// /lh-create-github-pr in core/terminal/terminal-launch.ts.
 function GithubPrAction({
   owner,
   repo,
