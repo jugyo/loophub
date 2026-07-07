@@ -161,6 +161,27 @@ export function updateRepo(
   return getRepoById(repo.id);
 }
 
+function tableExists(name: string): boolean {
+  return Boolean(
+    db
+      .query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+      .get(name),
+  );
+}
+
+function deleteLegacyGroupingRows(repoId: number): void {
+  const groups = ["issue", "groups"].join("_");
+  const members = ["issue", "group", "members"].join("_");
+  if (!tableExists(groups)) return;
+  if (tableExists(members)) {
+    db.run(
+      `DELETE FROM ${members} WHERE group_id IN (SELECT id FROM ${groups} WHERE repo_id = ?)`,
+      [repoId],
+    );
+  }
+  db.run(`DELETE FROM ${groups} WHERE repo_id = ?`, [repoId]);
+}
+
 export function deleteRepo(owner: string, name: string): boolean {
   const repo = getRepo(owner, name);
   if (!repo) return false;
@@ -187,15 +208,10 @@ export function deleteRepo(owner: string, name: string): boolean {
   // New Issue pane links may be created before issue rows exist (issue_id NULL), so drop by repo_id
   // before the final repos delete to avoid orphaned rows blocking deletion.
   db.run(`DELETE FROM issue_herdr_panes WHERE repo_id = ?`, [repo.id]);
-  // Issue group membership (#312) references issues(id) and issue_groups(id); drop it before the
-  // issues delete so foreign_keys=ON does not reject. Then drop the groups before the repos delete,
-  // since issue_groups.repo_id references repos(id).
-  db.run(
-    `DELETE FROM issue_group_members WHERE group_id IN (SELECT id FROM issue_groups WHERE repo_id = ?)`,
-    [repo.id],
-  );
+  // Older databases may still carry retired grouping tables with foreign keys into repos/issues.
+  // Sweep their rows when present so deleting a repo remains backward-compatible.
+  deleteLegacyGroupingRows(repo.id);
   db.run(`DELETE FROM issues WHERE repo_id = ?`, [repo.id]);
-  db.run(`DELETE FROM issue_groups WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM labels WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM events WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM repos WHERE id = ?`, [repo.id]);

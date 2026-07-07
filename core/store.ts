@@ -2,7 +2,6 @@ export * from "./store/comments.ts";
 export * from "./store/events.ts";
 export * from "./store/github-links.ts";
 export * from "./store/handoffs.ts";
-export * from "./store/issue-groups.ts";
 export * from "./store/issues.ts";
 export * from "./store/labels.ts";
 export * from "./store/pulls.ts";

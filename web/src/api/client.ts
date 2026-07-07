@@ -19,7 +19,6 @@ import type {
   HerdrSessions,
   Issue,
   IssueComment,
-  IssueGroupWithMembers,
   Label,
   LoopEvent,
   PullFile,
@@ -382,18 +381,6 @@ export function listLabels(owner: string, repo: string) {
 
 export function getIssue(owner: string, repo: string, number: number) {
   return rpc<Issue>("issues/get", { repo: full(owner, repo), number });
-}
-
-/** Groups this issue belongs to, each with its ordered members (#314). */
-export function listIssueGroupsForIssue(
-  owner: string,
-  repo: string,
-  number: number,
-) {
-  return rpc<IssueGroupWithMembers[]>("issueGroups/forIssue", {
-    repo: full(owner, repo),
-    number,
-  });
 }
 
 export function createIssue(

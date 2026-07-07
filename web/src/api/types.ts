@@ -10,7 +10,6 @@ import type {
   GithubPrStatusWire,
   GithubPullWire,
   HandoffWire,
-  IssueGroupWire,
   IssueListPullSummaryWire,
   IssueWire,
   LabelWire,
@@ -259,18 +258,6 @@ export type GithubPull = GithubPullWire;
 export type GithubPrStatus = GithubPrStatusWire;
 
 export type Issue = IssueWire;
-
-/** An issue group (#312): a repo-scoped, ordered collection of issues. */
-export type IssueGroup = IssueGroupWire;
-
-/**
- * A group an issue belongs to, paired with its ordered members (#314).
- * Returned by `issueGroups/forIssue`; `members` includes the queried issue itself.
- */
-export interface IssueGroupWithMembers {
-  group: IssueGroup;
-  members: Issue[];
-}
 
 /** A scheduled task (#880): a saved prompt an agent runs at one or more times of day. */
 export type ScheduledTask = ScheduledTaskWire;

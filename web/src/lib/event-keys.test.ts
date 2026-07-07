@@ -94,31 +94,6 @@ describe("queryKeysForEvent", () => {
     expect(keys).not.toContainEqual(["pulls"]);
   });
 
-  it("maps issue_group events to the repo's issue list + all issue details (#314)", () => {
-    // The issue-detail "other issues in the same group" list is a sub-key of the issue key, so a
-    // membership/rename/delete change must invalidate open issue details by prefix — the payload
-    // carries at most one issue number, but rename/delete affect every member of the group.
-    const keys = queryKeysForEvent(
-      ev({
-        type: "issue_group.issue_added",
-        repo: "me/proj",
-        payload: { group_id: 1, number: 12 },
-      }),
-    );
-    expect(keys).toContainEqual(["issues", "me/proj"]);
-    expect(keys).toContainEqual(["issue", "me/proj"]);
-    // It must NOT be misrouted by the issue.* branch (which would push the dashboard key).
-    expect(keys).not.toContainEqual(["dashboard"]);
-  });
-
-  it("falls back to broad issue keys for a repo-less issue_group event (#314)", () => {
-    const keys = queryKeysForEvent(
-      ev({ type: "issue_group.deleted", repo: undefined, payload: {} }),
-    );
-    expect(keys).toContainEqual(["issues"]);
-    expect(keys).toContainEqual(["issue"]);
-  });
-
   it("maps settings.updated to the settings view and terminal config, with no repo key (#474)", () => {
     const keys = queryKeysForEvent(
       ev({ type: "settings.updated", repo: undefined, payload: {} }),

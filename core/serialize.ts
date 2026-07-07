@@ -652,29 +652,6 @@ export function labelJSON(l: S.LabelRow): LabelWire {
   return { name: l.name, color: l.color };
 }
 
-// An issue group (#312): a repo-scoped, ordered collection of issues. `members` is the count, not
-// the rows, so a list/summary stays cheap; the full ordered membership is fetched via the
-// dedicated members procedure.
-export interface IssueGroupWire {
-  id: number;
-  name: string;
-  members: number;
-  created_at: string;
-  updated_at: string;
-}
-
-// Shape an `issue_groups` row (#312). `members` is the count, not the rows, so a list/summary
-// stays cheap; the full ordered membership is fetched via the dedicated members procedure.
-export function issueGroupJSON(g: S.IssueGroupRow): IssueGroupWire {
-  return {
-    id: g.id,
-    name: g.name,
-    members: S.countGroupMembers(g.id),
-    created_at: g.created_at,
-    updated_at: g.updated_at,
-  };
-}
-
 // Summary of the issue a PR closes (pull-detail `linked_issue`).
 export interface LinkedIssueWire {
   number: number;

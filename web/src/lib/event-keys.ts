@@ -34,19 +34,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   const { type, repo, payload } = event;
   const number = payload?.number;
 
-  if (type.startsWith("issue_group.")) {
-    // The issue-detail "other issues in the same group" list (#314) is a sub-key of the issue
-    // key, so a membership/rename/delete change must refetch open issue details. The payload
-    // carries at most one issue number, but the change can affect every member of the group
-    // (rename/delete touch all), so invalidate the repo's issue keys by prefix — not just one.
-    if (repo) {
-      keys.push([...queryKeys.issues(repo)]);
-      keys.push(["issue", repo]); // prefix: all open issue details for the repo
-    } else {
-      keys.push(["issues"]);
-      keys.push(["issue"]);
-    }
-  } else if (type.startsWith("issue.")) {
+  if (type.startsWith("issue.")) {
     if (repo) {
       keys.push([...queryKeys.issues(repo)]);
       keys.push([...queryKeys.labels(repo)]);

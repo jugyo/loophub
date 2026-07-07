@@ -18,7 +18,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
-import type { Issue, IssueComment, IssueGroupWithMembers } from "@/api/types";
+import type { Issue, IssueComment } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 
 // The Build button launches through the terminal backend abstraction; capture the call.
@@ -68,14 +68,12 @@ const comments: IssueComment[] = [
 
 function mockFetch(
   getIssue: () => Issue = () => issue,
-  getGroups: () => IssueGroupWithMembers[] = () => [],
   autoModeOnBuild = false,
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
   return mockRpcFetch({
     ...extraHandlers,
     "issues/get": getIssue,
-    "issueGroups/forIssue": getGroups,
     "comments/list": () => comments,
     "comments/create": (p) => ({
       id: 2,
@@ -95,13 +93,12 @@ function mockFetch(
 
 function renderDetail(
   getIssue?: () => Issue,
-  getGroups?: () => IssueGroupWithMembers[],
   autoModeOnBuild = false,
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
   vi.stubGlobal(
     "fetch",
-    mockFetch(getIssue, getGroups, autoModeOnBuild, extraHandlers),
+    mockFetch(getIssue, autoModeOnBuild, extraHandlers),
   );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -118,7 +115,6 @@ function renderDetail(
     path: "/r/$owner/$repo/pulls/$number",
     component: () => null,
   });
-  // The grouped-issues list (IssueRow) links to the issues route; register it too.
   const issuesRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/r/$owner/$repo/issues/$number",
@@ -204,7 +200,6 @@ describe("IssueDetail", () => {
           review_state: "CHANGES_REQUESTED",
         },
       }),
-      undefined,
       false,
       {
         "terminal/sessions": () => ({
@@ -268,7 +263,6 @@ describe("IssueDetail", () => {
           session_name: "me-proj-12345678",
         },
       }),
-      undefined,
       false,
       {
         "terminal/focusAgent": () => ({ ok: true }),
@@ -298,7 +292,7 @@ describe("IssueDetail", () => {
   });
 
   it("does not aggregate linked-PR worktree agents into issue Agents", async () => {
-    renderDetail(() => ({ ...issue, herdr_pane: null }), undefined, false, {
+    renderDetail(() => ({ ...issue, herdr_pane: null }), false, {
       "terminal/sessions": () => ({
         repos: [
           {
@@ -399,7 +393,7 @@ describe("IssueDetail", () => {
   // #609: the linked-PR row shows the same Herdr badge as the issue list, shown only while
   // herdr reports an agent running in that PR's worktree; clicking focuses its pane.
   it("shows the Herdr badge on the linked-PR row and focuses on click", async () => {
-    renderDetail(undefined, undefined, false, {
+    renderDetail(undefined, false, {
       "terminal/sessions": () => ({
         repos: [
           {
@@ -429,7 +423,7 @@ describe("IssueDetail", () => {
   });
 
   it("adds a bounce animation for blocked Herdr workspace status", async () => {
-    renderDetail(undefined, undefined, false, {
+    renderDetail(undefined, false, {
       "terminal/sessions": () => ({
         repos: [
           {
@@ -451,7 +445,7 @@ describe("IssueDetail", () => {
   });
 
   it("shows no Herdr badge on the linked-PR row when no herdr session runs the PR", async () => {
-    renderDetail(undefined, undefined, false, {
+    renderDetail(undefined, false, {
       "terminal/sessions": () => ({ repos: [] }),
     });
 
@@ -539,7 +533,7 @@ describe("IssueDetail", () => {
 
   it("shows the --auto command in the title when auto-mode-on-Build is enabled", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
-    renderDetail(() => noPr, undefined, true);
+    renderDetail(() => noPr, true);
 
     const button = await screen.findByRole("button", { name: /^Build$/ });
 
@@ -564,46 +558,4 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("lists other issues in the same group, excluding the current one", async () => {
-    const member = (number: number, title: string): Issue => ({
-      ...issue,
-      number,
-      title,
-      linked_pull_request: null,
-    });
-    const groups: IssueGroupWithMembers[] = [
-      {
-        group: {
-          id: 1,
-          name: "sprint-1",
-          members: 3,
-          created_at: "2026-06-17T10:00:00Z",
-          updated_at: "2026-06-17T10:00:00Z",
-        },
-        // Includes the current issue (#12); the UI must drop it.
-        members: [
-          member(12, "self"),
-          member(13, "next-a"),
-          member(14, "next-b"),
-        ],
-      },
-    ];
-    renderDetail(undefined, () => groups);
-
-    expect(await screen.findByText("next-a")).toBeTruthy();
-    const otherLink = screen.getByText("next-a").closest("a");
-    expect(otherLink?.getAttribute("href")).toBe("/r/me/proj/issues/13");
-    // The group heading reports the count of *other* members (2, not 3).
-    expect(screen.getByText(/Group: sprint-1/)).toBeTruthy();
-    expect(screen.getByText(/2 others/)).toBeTruthy();
-    // The current issue's title appears once (the header), not duplicated in the group list.
-    expect(screen.getAllByText("ui2: issue detail").length).toBe(1);
-  });
-
-  it("renders no group section when the issue belongs to no group", async () => {
-    renderDetail(undefined, () => []);
-
-    await screen.findByText("ui2: issue detail");
-    expect(screen.queryByText(/^Group:/)).toBeNull();
-  });
 });

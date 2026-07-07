@@ -331,33 +331,6 @@ CREATE TABLE IF NOT EXISTS retros (
 CREATE INDEX IF NOT EXISTS idx_retros_repo ON retros(repo_id, id);
 CREATE INDEX IF NOT EXISTS idx_retros_pr   ON retros(pr_id);
 
--- Issue groups (#312). A bolt-on grouping of issues you want to work through in order, kept
--- entirely separate from the issues table so the feature is trivially reversible (drop these two
--- tables; the issues schema is never touched). A group is repo-scoped, like labels — UNIQUE on
--- (repo_id, name). Membership is MANY-TO-MANY via issue_group_members, mirroring the issue_labels
--- precedent: an issue may belong to several groups, and the junction carries a per-group position
--- so members have a stable order (the feature's whole point is handling issues in a given order).
--- position is auto-appended on add; reordering is out of scope for #312.
-CREATE TABLE IF NOT EXISTS issue_groups (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  repo_id     INTEGER NOT NULL REFERENCES repos(id),
-  name        TEXT NOT NULL,
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL,
-  UNIQUE (repo_id, name)
-);
-
-CREATE TABLE IF NOT EXISTS issue_group_members (
-  group_id    INTEGER NOT NULL REFERENCES issue_groups(id),
-  issue_id    INTEGER NOT NULL REFERENCES issues(id),
-  position    INTEGER NOT NULL,
-  added_at    TEXT NOT NULL,
-  PRIMARY KEY (group_id, issue_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_issue_groups_repo    ON issue_groups(repo_id);
-CREATE INDEX IF NOT EXISTS idx_issue_group_members_issue ON issue_group_members(issue_id);
-
 -- Handoffs (#352). The orchestrator<->subagent handoff bus, made durable: each row is one
 -- explicit document passed between a parent orchestrator and a child subagent — the parent's
 -- instruction (direction='down') or the child's return (direction='up') — recorded out of the
