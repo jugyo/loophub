@@ -100,6 +100,12 @@ export function getIssueHerdrPane(issueId: number): IssueHerdrPane | null {
   );
 }
 
+export function listIssueHerdrPanes(repoId: number): IssueHerdrPane[] {
+  return db
+    .query(`SELECT * FROM issue_herdr_panes WHERE repo_id = ?`)
+    .all(repoId) as IssueHerdrPane[];
+}
+
 export function getIssue(repoId: number, number: number): IssueRow | null {
   return db
     .query(`SELECT * FROM issues WHERE repo_id = ? AND number = ?`)

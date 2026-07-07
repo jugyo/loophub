@@ -143,6 +143,101 @@ test("terminal.sessions groups running herdr agents by repo and drops agentless 
   }
 });
 
+test("terminal.sessions hides New Issue agents but keeps normal repo-root agents", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/new-issue-hidden",
+  });
+  const sessionName = herdrSessionName(repo);
+  const openPr = S.createIssue(repo.id, "pull", "open", "", "me");
+  S.createPull(openPr.id, "loophub/pr-1", "main", null);
+
+  S.upsertIssueHerdrPane({
+    launchId: "launch-new-issue",
+    repoId: repo.id,
+    paneId: "wN:p1",
+    sessionName,
+  });
+
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "New issue - abcdef12",
+          pane_id: "wN:p1",
+          foreground_cwd: repo.local_path,
+        },
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "New issue",
+          pane_id: "wN:p2",
+          foreground_cwd: repo.local_path,
+        },
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "dev #1",
+          pane_id: "wN:p3",
+          foreground_cwd: worktreePath(worktreeRoot(), repo.full_name, 1),
+        },
+        {
+          agent: "claude",
+          agent_status: "idle",
+          name: "repo shell",
+          pane_id: "wN:p4",
+          foreground_cwd: repo.local_path,
+        },
+      ],
+    },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `printf '%s' '${agents}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    const result = await svc.terminal.sessions();
+    expect(result.repos).toEqual([
+      {
+        repo: "me/new-issue-hidden",
+        session_name: sessionName,
+        agents: [
+          {
+            id: "wN:p3",
+            name: "dev #1",
+            status: "working",
+            pull: 1,
+            pull_closed: false,
+          },
+          {
+            id: "wN:p4",
+            name: "repo shell",
+            status: "idle",
+            pull: null,
+            pull_closed: false,
+          },
+        ],
+        pull_workspaces: [{ pull: 1, pane_id: "wN:p3", status: "working" }],
+        issue_workspaces: [],
+      },
+    ]);
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
 // #579: the issue-list Herdr badge needs to know which PR a running agent's terminal belongs
 // to. terminal.sessions resolves that from the same `agent list` output, without an extra
 // herdr shellout, by matching an agent's foreground_cwd against the PR's deterministic

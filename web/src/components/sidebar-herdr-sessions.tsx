@@ -2,8 +2,8 @@
 // repository list. Each agent row is a name (e.g. "dev #486"), a robot icon, colored status
 // text, a kill button (#521, experimental) that closes the agent's pane, and — on hover (#500) — a preview of
 // that agent's recent terminal output, fetched on demand via `terminal/agentRead`. Rows
-// whose worktree PR is merged/closed render muted (#611); so do no-PR "New issue" agents once
-// they go idle (#633). The kill button is shown only on those muted rows (#621, #633), where
+// whose worktree PR is merged/closed render muted (#611); so do no-PR idle agents.
+// The kill button is shown only on those muted rows (#621, #633), where
 // closing the no-longer-needed pane is the point. Renders
 // nothing while loading, on error, or when no session has agents, so the section never gets
 // in the way when herdr isn't in use.
@@ -74,8 +74,20 @@ function isStaleAgent(agent: HerdrAgent): boolean {
   );
 }
 
+function isIssueCreateAgentName(name: string): boolean {
+  return (
+    name === "New issue" ||
+    name.startsWith("New issue - ") ||
+    name.startsWith("New issue (")
+  );
+}
+
+export function isVisibleSidebarAgent(agent: HerdrAgent): boolean {
+  return !(agent.pull == null && isIssueCreateAgentName(agent.name));
+}
+
 // Order agents within a repo group so no-longer-needed ones sink to the bottom (#620,
-// #645): stale rows (worktree PR merged/closed, or no-PR New issue agents that went
+// #645): stale rows (worktree PR merged/closed, or no-PR agents that went
 // idle) go after active ones, keeping attention on the top. Reordering stays inside
 // the group (the input is one group's agents) and is stable — Array.prototype.sort is
 // stable on Node's V8, and the comparator only separates stale from active, so both
@@ -92,7 +104,15 @@ export function SidebarHerdrSessions() {
   // Hide on error too: react-query keeps the last successful data across a failed
   // refetch, and a stale "working" list is worse than no list while the server is
   // unreachable.
-  const groups = (!isError && data?.repos) || [];
+  const groups =
+    (!isError &&
+      data?.repos
+        .map((group) => ({
+          ...group,
+          agents: group.agents.filter(isVisibleSidebarAgent),
+        }))
+        .filter((group) => group.agents.length > 0)) ||
+    [];
   if (groups.length === 0) return null;
 
   return (
@@ -144,9 +164,9 @@ function AgentRow({ repo, agent }: { repo: string; agent: HerdrAgent }) {
   // button (#621) that closes the pane immediately (no confirm), since closing finished
   // work is low-risk. Active rows show no kill button at all. Two cases qualify:
   //   1. A PR-linked agent whose worktree PR is merged/closed (`pull_closed`, #611).
-  //   2. A "New issue" agent with no linked PR (`pull == null`) that has gone idle (#633):
-  //      pull_closed can never be true for it, so idle is the signal its work is done. A
-  //      no-PR agent still working/blocked/done stays a normal, active row.
+  //   2. A no-PR agent (`pull == null`) that has gone idle (#633): pull_closed can never be
+  //      true for it, so idle is the signal its work is done. A no-PR agent still
+  //      working/blocked/done stays a normal, active row.
   const stale = isStaleAgent(agent);
   const hasRowActions = canFocus || stale;
 

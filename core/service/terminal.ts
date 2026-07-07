@@ -257,6 +257,24 @@ export interface HerdrRepoSessions {
   issue_workspaces: HerdrIssueWorkspace[];
 }
 
+function isIssueCreateAgentName(name: string): boolean {
+  return (
+    name === "New issue" ||
+    name.startsWith("New issue - ") ||
+    name.startsWith("New issue (")
+  );
+}
+
+function isIssueCreateAgent(
+  agent: { id: string; name: string; pull: number | null },
+  issueCreatePaneIds: Set<string>,
+): boolean {
+  return (
+    issueCreatePaneIds.has(agent.id) ||
+    (agent.pull === null && isIssueCreateAgentName(agent.name))
+  );
+}
+
 // Coalesces concurrent terminal.sessions calls onto one herdr sweep. Every client polls this
 // RPC (15s interval per tab), so without sharing, N tabs would each spawn their own
 // `herdr session list` + per-repo `agent list` process trees against the same state.
@@ -864,9 +882,18 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
       // A running session with zero agents has nothing to show — drop the group so
       // the sidebar section only appears when there is actual agent activity.
       if (placements.length === 0) return null;
+      const issueCreatePaneIds = new Set(
+        S.listIssueHerdrPanes(repo.id)
+          .map((p) => p.pane_id)
+          .filter((paneId): paneId is string => !!paneId),
+      );
+      const visiblePlacements = placements.filter(
+        (agent) => !isIssueCreateAgent(agent, issueCreatePaneIds),
+      );
+      if (visiblePlacements.length === 0) return null;
       // One DB lookup per distinct PR number — several agents often share a worktree.
       const closedByPull = new Map<number, boolean>();
-      const agents = placements.map(({ id, name, status, pull }) => {
+      const agents = visiblePlacements.map(({ id, name, status, pull }) => {
         let closed = false;
         if (pull !== null) {
           let known = closedByPull.get(pull);

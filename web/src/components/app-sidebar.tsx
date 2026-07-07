@@ -13,7 +13,10 @@ import {
 } from "react";
 import type { HerdrSessions, Repo } from "@/api/types";
 import { Logo } from "@/components/logo";
-import { SidebarHerdrSessions } from "@/components/sidebar-herdr-sessions";
+import {
+  isVisibleSidebarAgent,
+  SidebarHerdrSessions,
+} from "@/components/sidebar-herdr-sessions";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { compareSidebarRepos } from "@/lib/repo-sort";
 import { cn } from "@/lib/utils";
@@ -188,7 +191,11 @@ export function countRepoHerdrAgents(
   return (
     sessions?.repos
       .filter((group) => group.repo === repoFullName)
-      .reduce((total, group) => total + group.agents.length, 0) ?? 0
+      .reduce(
+        (total, group) =>
+          total + group.agents.filter(isVisibleSidebarAgent).length,
+        0,
+      ) ?? 0
   );
 }
 

@@ -12,6 +12,7 @@ import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { HerdrAgentRead, HerdrSessions } from "@/api/types";
 import {
   agentPreviewFit,
+  isVisibleSidebarAgent,
   SidebarHerdrSessions,
   sortAgents,
 } from "./sidebar-herdr-sessions";
@@ -1037,55 +1038,59 @@ describe("SidebarHerdrSessions", () => {
     });
   });
 
-  // #633: a "New issue" agent has no linked PR (pull === null), so pull_closed can never be
-  // true for it. Once it goes idle it should gray out and get a kill button like a stale PR
-  // pane; while it's still active (working/blocked/done) it stays a normal row.
-  describe("no-PR New issue agents (#633)", () => {
-    it("grays out a no-PR agent and shows its kill button once it goes idle", async () => {
+  describe("no-PR agents", () => {
+    it("hides New issue agents from the global Agents list", async () => {
       renderWithSessions({
         repos: [
           {
             repo: "me/app",
             session_name: "me-app-12345678",
             agents: [
-              { id: "w1:p1", name: "New issue", status: "idle", pull: null },
+              {
+                id: "w1:p1",
+                name: "New issue - 12345678",
+                status: "working",
+                pull: null,
+              },
             ],
             pull_workspaces: [],
           },
         ],
       });
 
-      const name = await screen.findByText("New issue");
-      expect(name.className).toContain("text-muted-foreground");
-      const status = statusInRow("New issue", "idle");
-      expect(status.className).toContain("text-muted-foreground");
-      expect(status.className).not.toContain("text-green-500");
+      await waitFor(() => expect(screen.queryByText("Agents")).toBeNull());
+      expect(screen.queryByText("New issue - 12345678")).toBeNull();
       expect(
-        screen.getByRole("button", { name: "Close New issue's pane" }),
-      ).toBeTruthy();
+        screen.queryByRole("button", { name: /Close New issue/ }),
+      ).toBeNull();
     });
 
-    it("keeps a no-PR agent a normal row (no gray, no kill) while it is not idle", async () => {
+    it("keeps a non-New issue no-PR agent visible while it is not idle", async () => {
       renderWithSessions({
         repos: [
           {
             repo: "me/app",
             session_name: "me-app-12345678",
             agents: [
-              { id: "w1:p1", name: "New issue", status: "working", pull: null },
+              {
+                id: "w1:p1",
+                name: "repo shell",
+                status: "working",
+                pull: null,
+              },
             ],
             pull_workspaces: [],
           },
         ],
       });
 
-      const name = await screen.findByText("New issue");
+      const name = await screen.findByText("repo shell");
       expect(name.className).not.toContain("text-muted-foreground");
-      expect(statusInRow("New issue", "working").className).toContain(
+      expect(statusInRow("repo shell", "working").className).toContain(
         "text-yellow-500",
       );
       expect(
-        screen.queryByRole("button", { name: "Close New issue's pane" }),
+        screen.queryByRole("button", { name: "Close repo shell's pane" }),
       ).toBeNull();
     });
 
@@ -1120,7 +1125,7 @@ describe("SidebarHerdrSessions", () => {
       ).toBeNull();
     });
 
-    it("kills the no-PR idle agent's pane when its kill button is clicked", async () => {
+    it("kills a non-New issue no-PR idle agent's pane when its kill button is clicked", async () => {
       renderWithSessions(
         {
           repos: [
@@ -1128,7 +1133,7 @@ describe("SidebarHerdrSessions", () => {
               repo: "me/app",
               session_name: "me-app-12345678",
               agents: [
-                { id: "w1:p1", name: "New issue", status: "idle", pull: null },
+                { id: "w1:p1", name: "repo shell", status: "idle", pull: null },
               ],
               pull_workspaces: [],
             },
@@ -1139,7 +1144,7 @@ describe("SidebarHerdrSessions", () => {
       );
 
       fireEvent.click(
-        await screen.findByRole("button", { name: "Close New issue's pane" }),
+        await screen.findByRole("button", { name: "Close repo shell's pane" }),
       );
 
       await waitFor(() => {
@@ -1148,6 +1153,41 @@ describe("SidebarHerdrSessions", () => {
           paneId: "w1:p1",
         });
       });
+    });
+
+    it("classifies only New issue-shaped no-PR labels as hidden", () => {
+      expect(
+        isVisibleSidebarAgent({
+          id: "w1:p1",
+          name: "New issue (me/app)",
+          status: "working",
+          pull: null,
+        }),
+      ).toBe(false);
+      expect(
+        isVisibleSidebarAgent({
+          id: "w1:p2",
+          name: "New issue - 12345678",
+          status: "working",
+          pull: null,
+        }),
+      ).toBe(false);
+      expect(
+        isVisibleSidebarAgent({
+          id: "w1:p3",
+          name: "New issue - 12345678",
+          status: "working",
+          pull: 12,
+        }),
+      ).toBe(true);
+      expect(
+        isVisibleSidebarAgent({
+          id: "w1:p4",
+          name: "repo shell",
+          status: "working",
+          pull: null,
+        }),
+      ).toBe(true);
     });
   });
 });

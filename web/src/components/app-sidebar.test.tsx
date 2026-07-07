@@ -39,6 +39,13 @@ vi.mock("@/queries/terminal", () => ({
 }));
 
 vi.mock("@/components/sidebar-herdr-sessions", () => ({
+  isVisibleSidebarAgent: (agent: { name: string; pull?: number | null }) =>
+    !(
+      agent.pull == null &&
+      (agent.name === "New issue" ||
+        agent.name.startsWith("New issue - ") ||
+        agent.name.startsWith("New issue ("))
+    ),
   SidebarHerdrSessions: () => null,
 }));
 
@@ -192,7 +199,7 @@ describe("AppSidebar repositories", () => {
 });
 
 describe("AppSidebar Herdr repo counts", () => {
-  it("counts every Herdr agent for the matching repository", () => {
+  it("counts visible Herdr agents for the matching repository", () => {
     expect(
       countRepoHerdrAgents(
         {
@@ -205,6 +212,12 @@ describe("AppSidebar Herdr repo counts", () => {
                 { id: "%2", name: "idle", status: "idle" },
                 { id: "%3", name: "blocked", status: "blocked" },
                 { id: "%4", name: "done", status: "done" },
+                {
+                  id: "%5",
+                  name: "New issue - 12345678",
+                  status: "working",
+                  pull: null,
+                },
               ],
               pull_workspaces: [],
             },
