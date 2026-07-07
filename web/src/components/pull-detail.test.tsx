@@ -501,6 +501,22 @@ describe("PullDetail", () => {
     expect(screen.getByRole("button", { name: "Diff" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Base" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Head" })).toBeTruthy();
+    expect(
+      within(screen.getByRole("dialog", { name: /Diff for README.md/i }))
+        .getAllByRole("button")
+        .map(
+          (button) =>
+            button.getAttribute("aria-label") ?? button.textContent?.trim(),
+        ),
+    ).toEqual([
+      "Copy file path: README.md",
+      "Diff",
+      "Base",
+      "Head",
+      "Prev",
+      "Next",
+      "Close diff",
+    ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Head" }));
     expect(await screen.findByRole("heading", { name: "new" })).toBeTruthy();

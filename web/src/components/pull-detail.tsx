@@ -1020,8 +1020,8 @@ function DiffFileDialog({
         aria-label={`Diff for ${file.filename}`}
         className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-md border bg-background shadow-lg"
       >
-        <header className="flex items-center justify-between gap-3 border-b px-3 py-2">
-          <div className="min-w-0">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
+          <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1">
               <h3 className="min-w-0 truncate text-sm font-semibold">
                 {file.filename}
@@ -1038,17 +1038,7 @@ function DiffFileDialog({
               <DiffStat additions={file.additions} deletions={file.deletions} />
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="flex overflow-hidden rounded-md border text-xs">
-              <ModeButton disabled={!hasPreviousFile} onClick={onPreviousFile}>
-                <ChevronLeft className="size-3" />
-                Prev
-              </ModeButton>
-              <ModeButton disabled={!hasNextFile} onClick={onNextFile}>
-                Next
-                <ChevronRight className="size-3" />
-              </ModeButton>
-            </div>
+          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
             {isMarkdown ? (
               <div className="flex overflow-hidden rounded-md border text-xs">
                 <ModeButton
@@ -1071,6 +1061,16 @@ function DiffFileDialog({
                 </ModeButton>
               </div>
             ) : null}
+            <div className="flex overflow-hidden rounded-md border text-xs">
+              <ModeButton disabled={!hasPreviousFile} onClick={onPreviousFile}>
+                <ChevronLeft className="size-3" />
+                Prev
+              </ModeButton>
+              <ModeButton disabled={!hasNextFile} onClick={onNextFile}>
+                Next
+                <ChevronRight className="size-3" />
+              </ModeButton>
+            </div>
             <Button
               variant="secondary"
               size="sm"
