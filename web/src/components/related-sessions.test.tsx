@@ -353,8 +353,34 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain(
       "Some session costs are unavailable and counted as n/a.",
     );
-    expect(container.textContent).toContain("dev160 tokens · $0.0006");
-    expect(container.textContent).toContain("review10 tokens · n/a");
+    expect(container.textContent).toContain("By category2 categories");
+    expect(container.textContent).toContain(
+      "Implementation1 session94%Tokens160Cost$0.0006",
+    );
+    expect(container.textContent).toContain("Review1 session6%Tokens10Costn/a");
     expect(container.textContent).toContain("$0.0006");
+  });
+
+  it("shows an empty token usage state without noisy categories", () => {
+    const { container } = render(
+      <TokenUsageSummary
+        usage={{
+          sessions_with_usage: 0,
+          input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+          output_tokens: 0,
+          total_tokens: 0,
+          cost_usd: null,
+          has_unknown_cost: false,
+          by_kind: [],
+        }}
+      />,
+    );
+
+    expect(container.textContent).toContain("Total tokensn/a");
+    expect(container.textContent).toContain("Total costn/a");
+    expect(container.textContent).toContain("No token usage recorded yet.");
+    expect(container.textContent).not.toContain("By category");
   });
 });

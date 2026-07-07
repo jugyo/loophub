@@ -30,6 +30,12 @@ const KIND_TONE: Record<string, BadgeTone> = {
   "issue-create": "unknown",
 };
 
+const KIND_LABEL: Record<string, string> = {
+  dev: "Implementation",
+  review: "Review",
+  "issue-create": "Issue creation",
+};
+
 // The issue-create session kind (#299): no worktree, resumes from the repo root (herdr's default
 // cwd for a repo), so its Resume button needs no `cd` prefix.
 const SESSION_KIND_ISSUE_CREATE = "issue-create";
@@ -200,40 +206,98 @@ export function RelatedSessions({
 // computed for pulls (core/serialize.ts pullJSON).
 export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
   const hasUsage = usage.sessions_with_usage > 0;
+  const totalTokens = Math.max(usage.total_tokens, 0);
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold">Token usage</h2>
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md border bg-muted/30 p-3 text-sm">
-        <dt className="text-muted-foreground">Total tokens</dt>
-        <dd className="text-right font-medium tabular-nums">
-          {hasUsage ? formatTokenCount(usage.total_tokens) : "n/a"}
-        </dd>
-        <dt className="text-muted-foreground">Total cost</dt>
-        <dd className="text-right font-medium tabular-nums">
-          {formatCost(usage.cost_usd)}
-        </dd>
+      <div className="flex flex-col gap-3 rounded-md border bg-muted/30 p-3 text-sm">
+        <dl className="grid grid-cols-2 gap-2">
+          <div className="rounded-md border bg-background/60 p-2">
+            <dt className="text-xs text-muted-foreground">Total tokens</dt>
+            <dd className="mt-1 font-medium tabular-nums">
+              {hasUsage ? formatTokenCount(usage.total_tokens) : "n/a"}
+            </dd>
+          </div>
+          <div className="rounded-md border bg-background/60 p-2">
+            <dt className="text-xs text-muted-foreground">Total cost</dt>
+            <dd className="mt-1 font-medium tabular-nums">
+              {formatCost(usage.cost_usd)}
+            </dd>
+          </div>
+        </dl>
         {usage.by_kind.length > 0 ? (
-          <div className="col-span-2 mt-1 flex flex-col gap-1.5 border-t pt-2">
-            {usage.by_kind.map((k) => (
-              <div
-                key={k.kind}
-                className="flex items-center justify-between gap-2 text-xs"
-              >
-                <Badge tone={KIND_TONE[k.kind] ?? "unknown"}>{k.kind}</Badge>
-                <span className="tabular-nums text-muted-foreground">
-                  {formatTokenCount(k.total_tokens)} tokens ·{" "}
-                  {formatCost(k.cost_usd)}
-                </span>
-              </div>
-            ))}
+          <div className="flex flex-col gap-2 border-t pt-3">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="font-medium">By category</span>
+              <span className="text-muted-foreground">
+                {usage.by_kind.length} categories
+              </span>
+            </div>
+            <ul className="flex flex-col gap-2">
+              {usage.by_kind.map((k) => {
+                const share =
+                  totalTokens > 0 ? k.total_tokens / totalTokens : 0;
+                const percent = formatPercent(share);
+                const barPercent = share > 0 ? Math.max(2, share * 100) : 0;
+                return (
+                  <li key={k.kind} className="flex flex-col gap-1.5">
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Badge tone={KIND_TONE[k.kind] ?? "unknown"}>
+                          {KIND_LABEL[k.kind] ?? k.kind}
+                        </Badge>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {k.sessions_with_usage} session
+                          {k.sessions_with_usage === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-xs font-medium tabular-nums">
+                        {percent}
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${barPercent}%` }}
+                      />
+                    </div>
+                    <dl className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="min-w-0">
+                        <dt className="text-muted-foreground">Tokens</dt>
+                        <dd className="truncate font-medium tabular-nums">
+                          {formatTokenCount(k.total_tokens)}
+                        </dd>
+                      </div>
+                      <div className="min-w-0 text-right">
+                        <dt className="text-muted-foreground">Cost</dt>
+                        <dd className="truncate font-medium tabular-nums">
+                          {formatCost(k.cost_usd)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
-        ) : null}
+        ) : (
+          <div className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
+            No token usage recorded yet.
+          </div>
+        )}
         {usage.has_unknown_cost ? (
-          <div className="col-span-2 text-xs text-muted-foreground">
+          <p className="border-t pt-2 text-xs text-muted-foreground">
             Some session costs are unavailable and counted as n/a.
-          </div>
+          </p>
         ) : null}
-      </dl>
+      </div>
     </section>
   );
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0%";
+  const percent = value * 100;
+  if (percent < 1) return "<1%";
+  return `${Math.round(percent)}%`;
 }
