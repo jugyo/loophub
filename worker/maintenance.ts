@@ -1,5 +1,5 @@
 import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
-import { events, sessions, terminal } from "../core/service.ts";
+import { events, scheduledTasks, sessions, terminal } from "../core/service.ts";
 import { HERDR_INACTIVE_CLEANUP_INTERVAL_MS } from "../core/terminal/herdr-inactive-cleanup.ts";
 import { sweepPullUpdates } from "../core/watcher.ts";
 import { workerLog } from "./logger.ts";
@@ -17,6 +17,10 @@ export const DEFAULT_GITHUB_MERGE_SWEEP_MS = 60000;
 // dev.cost_stopped event, so a coarse interval is plenty and keeps the herdr `agent list` calls
 // infrequent.
 export const DEFAULT_COST_STOP_SWEEP_MS = 30000;
+// #880: scheduled tasks fire at minute-precision times of day, so a coarse tick is enough to catch a
+// due minute promptly. Each tick is only a cheap DB scan unless a task is actually due (then it
+// launches a herdr tab), so this stays infrequent.
+export const DEFAULT_SCHEDULED_TASK_SWEEP_MS = 30000;
 
 export interface MaintenanceLoopOptions {
   sweepMs?: number;
@@ -24,6 +28,7 @@ export interface MaintenanceLoopOptions {
   herdrInactiveCleanupMs?: number;
   githubMergeSweepMs?: number;
   costStopSweepMs?: number;
+  scheduledTaskSweepMs?: number;
 }
 
 export interface NormalizedMaintenanceLoopOptions {
@@ -32,6 +37,7 @@ export interface NormalizedMaintenanceLoopOptions {
   herdrInactiveCleanupMs: number;
   githubMergeSweepMs: number;
   costStopSweepMs: number;
+  scheduledTaskSweepMs: number;
 }
 
 export interface MaintenanceHandle {
@@ -56,6 +62,10 @@ export function normalizeMaintenanceLoopOptions(
       opts.costStopSweepMs,
       DEFAULT_COST_STOP_SWEEP_MS,
     ),
+    scheduledTaskSweepMs: finiteOrDefault(
+      opts.scheduledTaskSweepMs,
+      DEFAULT_SCHEDULED_TASK_SWEEP_MS,
+    ),
   };
 }
 
@@ -75,6 +85,8 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
       opts.githubMergeSweepMs > 0 ? `${opts.githubMergeSweepMs}ms` : "off",
     costStopSweep:
       opts.costStopSweepMs > 0 ? `${opts.costStopSweepMs}ms` : "off",
+    scheduledTaskSweep:
+      opts.scheduledTaskSweepMs > 0 ? `${opts.scheduledTaskSweepMs}ms` : "off",
   };
 }
 
@@ -95,6 +107,9 @@ export function startMaintenanceLoops(
       : () => {},
     normalized.costStopSweepMs > 0
       ? startCostStopSweep(normalized.costStopSweepMs)
+      : () => {},
+    normalized.scheduledTaskSweepMs > 0
+      ? startScheduledTaskSweep(normalized.scheduledTaskSweepMs)
       : () => {},
   ];
 
@@ -239,6 +254,42 @@ export function startHerdrInactiveCleanup(
     } catch (err) {
       workerLog.error(
         `lh-worker: herdr inactive cleanup error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// Fire scheduled tasks whose registered times have come due (#880). Each tick asks the core service
+// which registered times are due now (across all repos) and launches a herdr tab for each; the
+// once-per-day guarantee and the run-log bookkeeping live in scheduledTasks.sweep, so this loop only
+// schedules it and logs the outcome.
+export function startScheduledTaskSweep(
+  intervalMs = DEFAULT_SCHEDULED_TASK_SWEEP_MS,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    try {
+      const result = await scheduledTasks.sweep();
+      if (result.fired > 0)
+        workerLog.info(
+          `lh-worker: scheduled task sweep: fired ${result.fired}`,
+        );
+    } catch (err) {
+      workerLog.error(
+        `lh-worker: scheduled task sweep error: ${err instanceof Error ? err.message : String(err)}`,
       );
     } finally {
       running = false;

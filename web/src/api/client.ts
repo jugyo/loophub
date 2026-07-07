@@ -27,6 +27,9 @@ import type {
   PullReview,
   Repo,
   RepoMergeMode,
+  ScheduledTask,
+  ScheduledTaskRun,
+  ScheduledTaskWithRuns,
   Stats,
   TerminalLaunchResult,
 } from "./types";
@@ -199,6 +202,83 @@ export function setRepoMergeMode(
   return rpc<Repo>("repos/setMergeMode", {
     name: full(owner, repo),
     mode,
+    session_id: sessionId,
+  });
+}
+
+// --- scheduled tasks (#880) ---
+export interface ScheduledTaskInput {
+  title: string;
+  prompt: string;
+  agent: CodingAgent;
+  times: string[];
+  model?: string | null;
+  effort?: string | null;
+}
+
+export function listScheduledTasks(owner: string, repo: string) {
+  return rpc<ScheduledTask[]>("scheduledTasks/list", {
+    repo: full(owner, repo),
+  });
+}
+
+export function getScheduledTask(owner: string, repo: string, id: number) {
+  return rpc<ScheduledTaskWithRuns>("scheduledTasks/get", {
+    repo: full(owner, repo),
+    id,
+  });
+}
+
+export function createScheduledTask(
+  owner: string,
+  repo: string,
+  input: ScheduledTaskInput,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<ScheduledTask>("scheduledTasks/create", {
+    repo: full(owner, repo),
+    ...clean({ ...input }),
+    session_id: sessionId,
+  });
+}
+
+export function updateScheduledTask(
+  owner: string,
+  repo: string,
+  id: number,
+  patch: Partial<ScheduledTaskInput>,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<ScheduledTask>("scheduledTasks/update", {
+    repo: full(owner, repo),
+    id,
+    ...clean({ ...patch }),
+    session_id: sessionId,
+  });
+}
+
+export function deleteScheduledTask(
+  owner: string,
+  repo: string,
+  id: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ ok: true }>("scheduledTasks/delete", {
+    repo: full(owner, repo),
+    id,
+    session_id: sessionId,
+  });
+}
+
+export function runScheduledTask(
+  owner: string,
+  repo: string,
+  id: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<ScheduledTaskRun | null>("scheduledTasks/run", {
+    repo: full(owner, repo),
+    id,
     session_id: sessionId,
   });
 }

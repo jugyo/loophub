@@ -19,6 +19,9 @@ export const queryKeys = {
   agentSessions: () => ["agent-sessions"] as const,
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
+  scheduledTasks: (full: string) => ["scheduled-tasks", full] as const,
+  scheduledTask: (full: string, id: number) =>
+    ["scheduled-task", full, id] as const,
 };
 
 /**
@@ -100,6 +103,20 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["issue"]);
     }
     keys.push([...queryKeys.dashboard()]);
+  } else if (type.startsWith("scheduled_task.")) {
+    // Scheduled task CRUD (#880) alters the repo's task list for every connected client, not just
+    // the tab that made the change (whose mutation hook already invalidates onSuccess). The payload
+    // carries the task id, but create/delete change the whole list, so invalidate the list by prefix
+    // plus the specific task's detail when an id is present.
+    const id = payload?.id;
+    if (repo) {
+      keys.push([...queryKeys.scheduledTasks(repo)]);
+      if (typeof id === "number")
+        keys.push([...queryKeys.scheduledTask(repo, id)]);
+    } else {
+      keys.push(["scheduled-tasks"]);
+      keys.push(["scheduled-task"]);
+    }
   } else if (type === "settings.updated") {
     // Instance-level settings (#474) are global, not repo-scoped — refetch the settings view and
     // anything derived from it (e.g. the terminal launch backend) regardless of which repo/tab the

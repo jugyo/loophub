@@ -97,6 +97,8 @@ import {
   retroJSON,
   reviewCommentJSON,
   reviewJSON,
+  scheduledTaskJSON,
+  scheduledTaskRunJSON,
   sessionUsageJSON,
 } from "../serialize.ts";
 import type {
@@ -143,6 +145,7 @@ import {
 import {
   acquireHerdrWorktreeTab as acquireHerdrWorktreeTabCore,
   buildHerdrLaunchPlan,
+  buildScheduledTaskCommand,
   commandForHerdrLaunch,
   displayArg,
   HERDR_ID,
@@ -205,6 +208,7 @@ export {
   autoModeOnBuild,
   branchExists,
   buildHerdrLaunchPlan,
+  buildScheduledTaskCommand,
   calculateCostUsd,
   classifyWorktree,
   codingAgent,
@@ -314,6 +318,8 @@ export {
   revParse,
   rmSync,
   ServiceError,
+  scheduledTaskJSON,
+  scheduledTaskRunJSON,
   sessionRuntime,
   sessionUsageJSON,
   spawn,

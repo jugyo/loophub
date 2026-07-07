@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { IssueRow } from "@/components/dashboard-rows";
 import { RepoHerdrCommand } from "@/components/repo-herdr-command";
 import { RepoSettingsLink } from "@/components/repo-settings-link";
+import { ScheduledTasksLink } from "@/components/scheduled-tasks-link";
 import { Button } from "@/components/ui/button";
 import {
   DEFAULT_ISSUE_FILTERS,
@@ -84,7 +85,10 @@ export function IssueList({
           <RepoHerdrCommand owner={owner} repo={repo} />
           <p className="text-sm text-muted-foreground">Issues</p>
         </div>
-        <RepoSettingsLink owner={owner} repo={repo} />
+        <div className="flex items-center gap-1">
+          <ScheduledTasksLink owner={owner} repo={repo} />
+          <RepoSettingsLink owner={owner} repo={repo} />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

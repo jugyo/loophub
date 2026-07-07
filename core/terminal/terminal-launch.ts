@@ -140,6 +140,38 @@ export function commandForHerdrLaunch(input: {
   return "";
 }
 
+// Builds the inner shell command a scheduled task (#880) runs in its herdr pane: the saved prompt
+// handed to the agent's non-interactive mode. Claude uses `claude -p <prompt>` (print mode); Codex
+// uses `codex exec <prompt>`. A scheduled fire is unattended, so both launch in a no-approval-prompt
+// mode — there is no human to answer a mid-run prompt. Deliberately kept at the LIGHTER end: Codex
+// runs inside its normal workspace-write sandbox (buildCodexSandboxArgs, the same posture the
+// interactive Build button uses when auto mode is off) rather than the full
+// `--dangerously-bypass-approvals-and-sandbox`, which is not needed for non-interactive execution and
+// would be asymmetric with the claude branch's `--permission-mode auto` (mirroring buildClaudeArgs).
+// `model` applies to both; `effort` is a Codex-only reasoning knob (claude has no effort flag),
+// passed as its `model_reasoning_effort` config override. The prompt (and every interpolated value)
+// is single-quote-escaped before it reaches `zsh -lc`, so a crafted prompt cannot inject a command.
+export function buildScheduledTaskCommand(input: {
+  agent: CodingAgent;
+  prompt: string;
+  model?: string | null;
+  effort?: string | null;
+}): string {
+  const prompt = shellArg(input.prompt);
+  const model = input.model?.trim();
+  if (input.agent === "codex") {
+    const parts = ["codex", "exec", ...buildCodexSandboxArgs().map(shellArg)];
+    if (model) parts.push("--model", shellArg(model));
+    const effort = input.effort?.trim();
+    if (effort) parts.push("-c", shellArg(`model_reasoning_effort=${effort}`));
+    parts.push(prompt);
+    return parts.join(" ");
+  }
+  const parts = ["claude", "-p", prompt, "--permission-mode", "auto"];
+  if (model) parts.push("--model", shellArg(model));
+  return parts.join(" ");
+}
+
 // Creates the tab the agent will start in (`herdr agent start --tab <ID>`), so launches open
 // a new tab instead of splitting the currently focused pane (#489).
 export function herdrTabCreateArgv(repo: TerminalLaunchRepo): string[] {

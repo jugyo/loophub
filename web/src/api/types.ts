@@ -23,6 +23,8 @@ import type {
   RepoWire,
   ReviewCommentWire,
   ReviewWire,
+  ScheduledTaskRunWire,
+  ScheduledTaskWire,
   SessionLinkedTargetWire,
   SessionSubagentUsageWire,
   SessionUsageWire,
@@ -268,6 +270,17 @@ export type IssueGroup = IssueGroupWire;
 export interface IssueGroupWithMembers {
   group: IssueGroup;
   members: Issue[];
+}
+
+/** A scheduled task (#880): a saved prompt an agent runs at one or more times of day. */
+export type ScheduledTask = ScheduledTaskWire;
+
+/** One fire of a scheduled task (#880) — meta only; the output stays on the herdr side. */
+export type ScheduledTaskRun = ScheduledTaskRunWire;
+
+/** A scheduled task with its recent run log (returned by `scheduledTasks/get`). */
+export interface ScheduledTaskWithRuns extends ScheduledTask {
+  runs: ScheduledTaskRun[];
 }
 
 export type PullRequest = PullWire;

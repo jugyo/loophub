@@ -14,6 +14,14 @@ const strNonEmpty = { type: "string", minLength: 1 } as const;
 const sid = { type: "string", minLength: 1 } as const;
 const positiveInt = { type: "integer", minimum: 1 } as const;
 const stringArray = { type: "array", items: { type: "string" } } as const;
+// A model/effort override that may be explicitly cleared: a string, or null to fall back to the
+// per-agent application default (#880 scheduled tasks).
+const strOrNull = { type: ["string", "null"] } as const;
+// The coding agent a scheduled task launches (#880).
+const scheduledAgent = {
+  type: "string",
+  enum: ["claude-code", "codex"],
+} as const;
 const repo = strNonEmpty; // "owner/name" or bare "name"
 
 // A params schema: object, listed properties, given required keys, no extras.
@@ -571,6 +579,97 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) =>
       svc.issueGroups.removeIssue(p.repo, p.id, p.number, p.session_id),
+  },
+
+  // ---- scheduled tasks (#880) ----
+  "scheduledTasks/list": {
+    description: "List a repository's scheduled tasks.",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.scheduledTasks.list(p.repo),
+  },
+  "scheduledTasks/get": {
+    description: "Get one scheduled task by id, with its recent run log.",
+    params: params({ repo, id: positiveInt }, ["repo", "id"]),
+    result: anyObject,
+    handler: (p) => svc.scheduledTasks.get(p.repo, p.id),
+  },
+  "scheduledTasks/create": {
+    description:
+      "Create a scheduled task (title, prompt, agent, times, optional model/effort).",
+    params: params(
+      {
+        repo,
+        title: strNonEmpty,
+        prompt: strNonEmpty,
+        agent: scheduledAgent,
+        times: stringArray,
+        model: strOrNull,
+        effort: strOrNull,
+        session_id: sid,
+      },
+      ["repo", "title", "prompt", "agent", "times"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.scheduledTasks.create(
+        p.repo,
+        {
+          title: p.title,
+          prompt: p.prompt,
+          agent: p.agent,
+          times: p.times,
+          model: p.model,
+          effort: p.effort,
+        },
+        p.session_id,
+      ),
+  },
+  "scheduledTasks/update": {
+    description:
+      "Update a scheduled task's fields (only provided fields change).",
+    params: params(
+      {
+        repo,
+        id: positiveInt,
+        title: strNonEmpty,
+        prompt: strNonEmpty,
+        agent: scheduledAgent,
+        times: stringArray,
+        model: strOrNull,
+        effort: strOrNull,
+        session_id: sid,
+      },
+      ["repo", "id"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.scheduledTasks.update(
+        p.repo,
+        p.id,
+        {
+          title: p.title,
+          prompt: p.prompt,
+          agent: p.agent,
+          times: p.times,
+          model: p.model,
+          effort: p.effort,
+        },
+        p.session_id,
+      ),
+  },
+  "scheduledTasks/delete": {
+    description: "Delete a scheduled task and its run log.",
+    params: params({ repo, id: positiveInt, session_id: sid }, ["repo", "id"]),
+    result: anyObject,
+    handler: (p) => svc.scheduledTasks.delete(p.repo, p.id, p.session_id),
+  },
+  "scheduledTasks/run": {
+    description:
+      "Run a scheduled task immediately (Run now), without waiting for a registered time.",
+    params: params({ repo, id: positiveInt, session_id: sid }, ["repo", "id"]),
+    result: anyObject,
+    handler: (p) => svc.scheduledTasks.run(p.repo, p.id),
   },
 
   // ---- pulls ----

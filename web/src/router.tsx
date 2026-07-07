@@ -8,6 +8,7 @@ import { pullDetailRoute } from "./routes/pulls";
 import { refRoute } from "./routes/ref";
 import { repoRoute } from "./routes/repo";
 import { repoIssuesRoute } from "./routes/repo-issues";
+import { repoScheduledTasksRoute } from "./routes/repo-scheduled-tasks";
 import { repoSettingsRoute } from "./routes/repo-settings";
 import { rootRoute } from "./routes/root";
 import { sessionsRoute } from "./routes/sessions";
@@ -22,6 +23,7 @@ const routeTree = rootRoute.addChildren([
   eventDebugRoute,
   repoRoute,
   repoIssuesRoute,
+  repoScheduledTasksRoute,
   repoSettingsRoute,
   issueDetailRoute,
   pullDetailRoute,

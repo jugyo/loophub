@@ -9,5 +9,6 @@ export * from "./store/pulls.ts";
 export * from "./store/repos.ts";
 export * from "./store/retros.ts";
 export * from "./store/reviews.ts";
+export * from "./store/scheduled-tasks.ts";
 export * from "./store/session-usage.ts";
 export * from "./store/sessions.ts";
