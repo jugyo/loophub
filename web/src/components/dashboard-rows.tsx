@@ -161,6 +161,9 @@ export function IssueRow({
   return (
     <div
       data-issue-row
+      // Stable identity so keyboard selection can be restored when the list
+      // re-appears after opening an issue and navigating back (#869).
+      data-issue-key={`${owner}/${repo}#${issue.number}`}
       tabIndex={-1}
       aria-label={`Issue #${issue.number}: ${issue.title}`}
       className="group flex flex-col gap-1 px-3 py-2 text-sm hover:bg-accent focus:bg-accent focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring"

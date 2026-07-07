@@ -1,11 +1,28 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { useRef, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useIssueKeyboardNavigation } from "./use-issue-keyboard-navigation";
 
 afterEach(cleanup);
 
-function TestIssueRows({ showMenu = false }: { showMenu?: boolean }) {
+function TestIssueRows({
+  showMenu = false,
+  showRows = true,
+  // Bumping this remounts the second row (React key change), replacing its DOM
+  // node while keeping the same data-issue-key — mimics a list remount / filter
+  // swap that keeps the selected issue.
+  rowGen = 0,
+}: {
+  showMenu?: boolean;
+  showRows?: boolean;
+  rowGen?: number;
+}) {
   const mainRef = useRef<HTMLElement>(null);
   const [opened, setOpened] = useState("");
   useIssueKeyboardNavigation(mainRef);
@@ -24,30 +41,39 @@ function TestIssueRows({ showMenu = false }: { showMenu?: boolean }) {
           </button>
         </>
       ) : null}
-      <div data-issue-row tabIndex={-1}>
-        <a
-          href="/issues/1"
-          data-issue-row-link
-          onClick={(event) => {
-            event.preventDefault();
-            setOpened("one");
-          }}
-        >
-          One
-        </a>
-      </div>
-      <div data-issue-row tabIndex={-1}>
-        <a
-          href="/issues/2"
-          data-issue-row-link
-          onClick={(event) => {
-            event.preventDefault();
-            setOpened("two");
-          }}
-        >
-          Two
-        </a>
-      </div>
+      {showRows ? (
+        <>
+          <div data-issue-row data-issue-key="o/r#1" tabIndex={-1}>
+            <a
+              href="/issues/1"
+              data-issue-row-link
+              onClick={(event) => {
+                event.preventDefault();
+                setOpened("one");
+              }}
+            >
+              One
+            </a>
+          </div>
+          <div
+            key={`row2-${rowGen}`}
+            data-issue-row
+            data-issue-key="o/r#2"
+            tabIndex={-1}
+          >
+            <a
+              href="/issues/2"
+              data-issue-row-link
+              onClick={(event) => {
+                event.preventDefault();
+                setOpened("two");
+              }}
+            >
+              Two
+            </a>
+          </div>
+        </>
+      ) : null}
       <output>{opened}</output>
     </main>
   );
@@ -70,6 +96,55 @@ describe("useIssueKeyboardNavigation", () => {
     fireEvent.keyDown(rows[0], { key: "ArrowDown" });
     fireEvent.keyDown(rows[1], { key: "Enter" });
     expect(screen.getByText("two")).toBeTruthy();
+  });
+
+  it("restores the previously selected row when the list re-appears", async () => {
+    const { rerender } = render(<TestIssueRows />);
+
+    // Select the second row, then leave the list (rows unmount). Flush so the
+    // MutationObserver observes the removal before the list re-appears, matching
+    // real navigation where the two happen on separate ticks.
+    fireEvent.keyDown(window, { key: "j" });
+    fireEvent.keyDown(document.activeElement ?? window, { key: "j" });
+    rerender(<TestIssueRows showRows={false} />);
+    await waitFor(() =>
+      expect(document.querySelectorAll("[data-issue-row]")).toHaveLength(0),
+    );
+
+    // Return to the list: the second row is selected again.
+    rerender(<TestIssueRows showRows={true} />);
+    await waitFor(() => {
+      const active = document.activeElement as HTMLElement | null;
+      expect(active?.getAttribute("data-issue-key")).toBe("o/r#2");
+    });
+  });
+
+  it("re-restores focus when the selected row's node is replaced in place", async () => {
+    const { rerender } = render(<TestIssueRows />);
+
+    // Select the second row, leave the list, and return so the restore latch is
+    // engaged (restored=true for the old boolean latch).
+    fireEvent.keyDown(window, { key: "j" });
+    fireEvent.keyDown(document.activeElement ?? window, { key: "j" });
+    rerender(<TestIssueRows showRows={false} />);
+    await waitFor(() =>
+      expect(document.querySelectorAll("[data-issue-row]")).toHaveLength(0),
+    );
+    rerender(<TestIssueRows showRows={true} />);
+    const restoredNode = await waitFor(() => {
+      const active = document.activeElement as HTMLElement | null;
+      expect(active?.getAttribute("data-issue-key")).toBe("o/r#2");
+      return active;
+    });
+
+    // A single-commit remount replaces the focused row's node (same key). Focus
+    // must land on the fresh node, not be dropped to <body>.
+    rerender(<TestIssueRows showRows={true} rowGen={1} />);
+    await waitFor(() => {
+      const active = document.activeElement as HTMLElement | null;
+      expect(active?.getAttribute("data-issue-key")).toBe("o/r#2");
+      expect(active).not.toBe(restoredNode);
+    });
   });
 
   it("ignores shortcuts while an editable field has focus", () => {
