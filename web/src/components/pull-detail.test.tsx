@@ -14,6 +14,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
@@ -210,6 +211,39 @@ describe("PullDetail", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy(),
     );
+  });
+
+  it("shows the PR worktree path in the sidebar with a copy button", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const worktreePath = "/Users/me/.loophub/worktrees/me/proj/pr-30";
+    renderDetail({
+      "pulls/get": () => ({ ...pull, worktree_path: worktreePath }),
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: "Worktree" })
+    ).closest("section")!;
+    expect(within(section).getByText(worktreePath)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(
+        within(section).getByRole("button", { name: "Copy worktree path" }),
+      );
+    });
+    expect(writeText).toHaveBeenCalledWith(worktreePath);
+  });
+
+  it("shows an unavailable worktree sidebar state without an empty copy action", async () => {
+    renderDetail();
+
+    const section = (
+      await screen.findByRole("heading", { name: "Worktree" })
+    ).closest("section")!;
+    expect(within(section).getByText("Unavailable")).toBeTruthy();
+    expect(
+      within(section).queryByRole("button", { name: "Copy worktree path" }),
+    ).toBeNull();
   });
 
   it("renders files changed before reviews in the main PR flow", async () => {

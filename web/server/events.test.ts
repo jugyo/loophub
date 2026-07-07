@@ -383,7 +383,17 @@ test("startHerdrInactiveCleanup periodically closes old inactive Herdr panes onl
     stop();
     killSpy.mockRestore();
     process.env.PATH = ORIGINAL_PATH;
-    rmSync(FAKE_BIN, { recursive: true, force: true });
-    rmSync(repoPath, { recursive: true, force: true });
+    rmSync(FAKE_BIN, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 20,
+    });
+    rmSync(repoPath, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 20,
+    });
   }
 });

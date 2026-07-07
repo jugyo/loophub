@@ -150,6 +150,7 @@ export function PullDetail({
         {/* Above Sessions (#609): the live herdr terminal outranks the historical session
             list when deciding where to jump. Hides itself when no herdr session runs this PR. */}
         <PullHerdrSection owner={owner} repo={repo} pull={number} />
+        <WorktreeSection value={pull.worktree_path} />
         {(pull.related_sessions?.length ?? 0) > 0 &&
         pull.related_sessions_usage ? (
           <TokenUsageSummary usage={pull.related_sessions_usage} />
@@ -361,6 +362,26 @@ function PullHeader({
         )}
       </div>
     </div>
+  );
+}
+
+function WorktreeSection({ value }: { value: string | null }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">Worktree</h2>
+      {value ? (
+        <div className="flex items-start gap-2 rounded-md border p-3 text-sm">
+          <code className="min-w-0 flex-1 break-all rounded bg-muted px-1.5 py-1 text-xs">
+            {value}
+          </code>
+          <CopyButton value={value} label="Copy worktree path" />
+        </div>
+      ) : (
+        <p className="rounded-md border p-3 text-sm text-muted-foreground">
+          Unavailable
+        </p>
+      )}
+    </section>
   );
 }
 

@@ -4,7 +4,13 @@
 
 import { Link } from "@tanstack/react-router";
 import { Check, Loader2, MoreHorizontal, Play } from "lucide-react";
-import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactElement,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import {
@@ -438,7 +444,7 @@ function LinkedPullSubRow({
     hasHerdrWorkspace ? (
       <HerdrBadge key="herdr" owner={owner} repo={repo} pull={pull.number} />
     ) : null,
-  ].filter((item): item is ReactNode => item !== null);
+  ].filter((item): item is ReactElement => item !== null);
   return (
     <div className="flex items-center gap-1.5 pl-7 text-xs text-muted-foreground">
       {items.map((item, index) => (

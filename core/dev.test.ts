@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -59,18 +59,26 @@ describe("dev.openPr", () => {
     );
     expect(first.created).toBe(true);
 
-    const pull = (await svc.pulls.get("me/proj", first.number)) as any;
+    let pull = (await svc.pulls.get("me/proj", first.number)) as any;
     expect(pull.head.ref).toBe(`loophub/pr-${first.number}`);
     expect(pull.base.ref).toBe("main");
     // `lh dev` opens the PR at the start of work, so it begins as a draft (#413).
     expect(pull.draft).toBe(true);
     expect(pull.linked_issue?.number).toBe(issue.number);
     expect(pull.body).toContain(`Closes #${issue.number}`);
-    // The deterministic `lh dev` worktree path is surfaced for the terminal PR region (#270):
-    // <worktreeRoot>/<owner>/<repo>/pr-<n>, derived from the PR's own number (#463).
-    expect(pull.worktree_path).toBe(
-      join(HOME, "worktrees", "me", "proj", `pr-${first.number}`),
+    // The worktree path is copyable only after the directory exists; openPr runs before
+    // provisioning, so a just-opened draft must not expose a stale/nonexistent path.
+    const worktreePath = join(
+      HOME,
+      "worktrees",
+      "me",
+      "proj",
+      `pr-${first.number}`,
     );
+    expect(pull.worktree_path).toBeNull();
+    mkdirSync(worktreePath, { recursive: true });
+    pull = (await svc.pulls.get("me/proj", first.number)) as any;
+    expect(pull.worktree_path).toBe(worktreePath);
 
     // Second call finds the existing open PR and does not create another.
     const second = await svc.dev.openPr(

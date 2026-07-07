@@ -2,6 +2,7 @@
 // (CLI now, JSON-RPC clients later) read. Kept separate from service.ts so the
 // shaping is reusable and side-effect free.
 
+import { statSync } from "node:fs";
 import { worktreeRoot } from "./config.ts";
 import {
   commitsAhead,
@@ -735,16 +736,17 @@ async function pullStatusFields(
     merged: !!p.merged,
     state: row.state,
   });
-  // Deterministic path of the `lh dev` worktree backing this PR (same convention as the
+  // Path of the existing `lh dev` worktree backing this PR (same convention as the
   // "working" flag above), so a consumer can show / copy it without knowing worktreeRoot.
-  // Pure path math (no fs); null only for a crafted repo name that can't form a safe path.
+  // Null when the path is unsafe or the worktree directory has not been provisioned / was removed.
   let worktree_path: string | null = null;
   try {
     const identity = resolveWorktreeIdentity(p.head_ref, row.number);
-    worktree_path =
+    const candidate =
       identity.scheme === "legacy-issue"
         ? legacyWorktreePath(worktreeRoot(), repo.full_name, identity.number)
         : worktreePath(worktreeRoot(), repo.full_name, identity.number);
+    worktree_path = statSync(candidate).isDirectory() ? candidate : null;
   } catch {
     worktree_path = null;
   }
