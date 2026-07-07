@@ -134,6 +134,36 @@ test("issues.list defaults to newest-created order and keeps label filters (#751
   ]);
 });
 
+test("issues.list advances lookahead pages by the visible issue-list size (#906)", async () => {
+  const repo = S.createRepo("me/list-lookahead", "/tmp/list-lookahead");
+  for (let i = 1; i <= 201; i += 1) {
+    S.createIssue(repo.id, "issue", `lookahead ${i}`, "", "me");
+  }
+
+  const page1 = (await svc.issues.list("me/list-lookahead", {
+    kind: "issue",
+    state: "open",
+    perPage: 101,
+    page: 1,
+  })) as any[];
+  const page2 = (await svc.issues.list("me/list-lookahead", {
+    kind: "issue",
+    state: "open",
+    perPage: 101,
+    page: 2,
+  })) as any[];
+  const page3 = (await svc.issues.list("me/list-lookahead", {
+    kind: "issue",
+    state: "open",
+    perPage: 101,
+    page: 3,
+  })) as any[];
+
+  expect(page1).toHaveLength(101);
+  expect(page2).toHaveLength(101);
+  expect(page3).toHaveLength(1);
+});
+
 test("issues.create links a New Issue Herdr pane through the launch id (#670)", () => {
   const repo = S.getRepo("me", "proj");
   if (!repo) throw new Error("repo missing");

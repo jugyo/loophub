@@ -22,6 +22,8 @@ import {
   ServiceError,
 } from "./shared.ts";
 
+const ISSUE_LIST_LOOKAHEAD_MAX = MAX_LIST_PER_PAGE + 1;
+
 // ===== issues =====
 export const issues = {
   async list(
@@ -42,7 +44,7 @@ export const issues = {
     const perPage = clampPerPage(
       opts.perPage,
       DEFAULT_LIST_PER_PAGE,
-      MAX_LIST_PER_PAGE,
+      ISSUE_LIST_LOOKAHEAD_MAX,
     );
     const page = opts.page && opts.page >= 1 ? opts.page : 1;
     let rows = S.listIssues(r.id, kind, state, opts.sort ?? "created");
@@ -55,9 +57,16 @@ export const issues = {
     // Enrich each issue's linked PR with status (working / review / mergeable /
     // diff totals) for the issue-list sub-row. Async git fan-out, bounded by the
     // pagination slice above; other surfaces keep the sync issueJSON summary.
-    return Promise.all(
-      paginate(rows, perPage, page).map((row) => issueListItemJSON(row, r)),
-    );
+    // The repo issue list asks for 101 rows to render 100 and use one as
+    // lookahead, so those pages advance by the visible page size.
+    const pageRows =
+      perPage === ISSUE_LIST_LOOKAHEAD_MAX
+        ? rows.slice(
+            (page - 1) * MAX_LIST_PER_PAGE,
+            (page - 1) * MAX_LIST_PER_PAGE + perPage,
+          )
+        : paginate(rows, perPage, page);
+    return Promise.all(pageRows.map((row) => issueListItemJSON(row, r)));
   },
 
   // Issue detail. Unlike the list/summary `issueJSON` (where `comments` is just a count),

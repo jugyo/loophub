@@ -93,6 +93,20 @@ function issue(overrides: Partial<Issue> = {}): Issue {
   };
 }
 
+function issues(count: number, start = 1): Issue[] {
+  return Array.from({ length: count }, (_value, index) => {
+    const number = start + index;
+    return issue({ number, title: `Issue ${number}` });
+  });
+}
+
+function rpcCalls(method: string): { method: string; params: any }[] {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  return fetchMock.mock.calls
+    .map((c) => JSON.parse(String((c[1] as RequestInit).body)))
+    .filter((body) => body.method === method);
+}
+
 describe("IssueList", () => {
   it("renders open and closed issue tabs on the repo top route", async () => {
     vi.stubGlobal("fetch", mockRpcFetch({ "issues/list": () => [] }));
@@ -174,6 +188,8 @@ describe("IssueList", () => {
         kind: "issue",
         state: "all",
         labels: ["bug", "ui"],
+        perPage: 101,
+        page: 1,
       }),
     );
     expect(
@@ -369,5 +385,79 @@ describe("IssueList", () => {
 
     const chip = await screen.findByRole("link", { name: "bug" });
     expect(chip.getAttribute("href")).toBe("/r/me/proj?labels=bug&state=all");
+  });
+
+  it("shows at most 100 issues initially and offers load more when more exist", async () => {
+    vi.stubGlobal("fetch", mockRpcFetch({ "issues/list": () => issues(101) }));
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("Issue 100")).toBeTruthy();
+    expect(screen.queryByText("Issue 101")).toBeNull();
+    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+  });
+
+  it("does not show load more when the first page has exactly 100 issues", async () => {
+    vi.stubGlobal("fetch", mockRpcFetch({ "issues/list": () => issues(100) }));
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("Issue 100")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
+  it("loads the next 100 issues with the existing filters", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": (params) =>
+          params.page === 1 ? issues(101) : issues(100, 101),
+      }),
+    );
+
+    renderIssueList(
+      <IssueList owner="me" repo="proj" labelsParam="bug" stateParam="all" />,
+      "/r/me/proj?labels=bug&state=all",
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+
+    expect(await screen.findByText("Issue 101")).toBeTruthy();
+    expect(await screen.findByText("Issue 200")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    await waitFor(() =>
+      expect(rpcCalls("issues/list").at(-1)?.params).toMatchObject({
+        repo: "me/proj",
+        kind: "issue",
+        state: "all",
+        labels: ["bug"],
+        perPage: 101,
+        page: 2,
+      }),
+    );
+  });
+
+  it("keeps load more available when the next page has a lookahead item", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": (params) => {
+          if (params.page === 1) return issues(101);
+          if (params.page === 2) return issues(101, 101);
+          return issues(1, 201);
+        },
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+
+    expect(await screen.findByText("Issue 200")).toBeTruthy();
+    expect(screen.queryByText("Issue 201")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+    expect(await screen.findByText("Issue 201")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 });

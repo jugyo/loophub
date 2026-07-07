@@ -15,6 +15,7 @@ import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_ISSUE_FILTERS,
+  ISSUE_LIST_PAGE_SIZE,
   type IssueListFilters,
   useIssuesList,
   useLabelsList,
@@ -70,6 +71,10 @@ export function IssueList({
   const query = useIssuesList(owner, repo, filters);
   const labelsQuery = useLabelsList(owner, repo, labelFilterMode === "select");
   const navigate = useNavigate();
+  const visibleIssues = useMemo(() => {
+    const pages = query.data?.pages ?? [];
+    return pages.flatMap((page) => page.slice(0, ISSUE_LIST_PAGE_SIZE));
+  }, [query.data]);
 
   // The `labels` URL param is the single source of truth for the labels filter,
   // so a label chip elsewhere and the Apply button below agree and the filtered
@@ -253,7 +258,7 @@ export function IssueList({
           Failed to load.
           {query.error instanceof Error ? ` ${query.error.message}` : null}
         </div>
-      ) : !query.data || query.data.length === 0 ? (
+      ) : visibleIssues.length === 0 ? (
         <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
           {state === "closed"
             ? "No closed issues."
@@ -262,18 +267,34 @@ export function IssueList({
               : "No open issues."}
         </p>
       ) : (
-        <ul className="flex flex-col divide-y rounded-md border">
-          {query.data.map((issue) => (
-            <li key={issue.number}>
-              <IssueRow
-                owner={owner}
-                repo={repo}
-                issue={issue}
-                labelState={state}
-              />
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-col gap-3">
+          <ul className="flex flex-col divide-y rounded-md border">
+            {visibleIssues.map((issue) => (
+              <li key={issue.number}>
+                <IssueRow
+                  owner={owner}
+                  repo={repo}
+                  issue={issue}
+                  labelState={state}
+                />
+              </li>
+            ))}
+          </ul>
+          {query.hasNextPage ? (
+            <div className="flex justify-center">
+              <Button
+                variant="secondary"
+                onClick={() => query.fetchNextPage()}
+                disabled={query.isFetchingNextPage}
+              >
+                {query.isFetchingNextPage ? (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : null}
+                Load more
+              </Button>
+            </div>
+          ) : null}
+        </div>
       )}
     </div>
   );

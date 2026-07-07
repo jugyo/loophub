@@ -2,7 +2,12 @@
 // from the shared factory (./keys), so the event invalidation map
 // (../lib/event-keys.ts) refetches these lists and details on change.
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   createIssue,
   getIssue,
@@ -28,23 +33,36 @@ export const DEFAULT_ISSUE_FILTERS: IssueListFilters = {
   labels: "",
 };
 
+export const ISSUE_LIST_PAGE_SIZE = 100;
+const ISSUE_LIST_FETCH_SIZE = ISSUE_LIST_PAGE_SIZE + 1;
+
+function hasMoreIssuePages(pages: Awaited<ReturnType<typeof listIssues>>[]) {
+  const lastPage = pages.at(-1) ?? [];
+  return lastPage.length > ISSUE_LIST_PAGE_SIZE;
+}
+
 /** Issue list with v1-parity state + labels filters (PRs excluded). */
 export function useIssuesList(
   owner: string,
   repo: string,
   filters: IssueListFilters,
 ) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: [...queryKeys.issues(full(owner, repo)), "list", filters],
-    queryFn: () => {
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({
         kind: "issue",
         state: filters.state,
+        per_page: String(ISSUE_LIST_FETCH_SIZE),
+        page: String(pageParam),
       });
       const labels = filters.labels.trim();
       if (labels) params.set("labels", labels);
       return listIssues(owner, repo, params.toString());
     },
+    getNextPageParam: (_lastPage, allPages) =>
+      hasMoreIssuePages(allPages) ? allPages.length + 1 : undefined,
   });
 }
 
