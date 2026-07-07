@@ -3,7 +3,7 @@
 Skill `name` values use **lowercase letters, digits, and hyphens (`-`) only**. `name` = directory name =
 chat invocation (e.g. `/lh-pr-review`). These skills are **host-agnostic**: they run under Codex,
 Cursor, Claude Code, or any agent host that supports `/name` invocation and readonly,
-context-isolated reviewer sessions (the install script symlinks them into `~/.claude/skills/`).
+context-isolated reviewer sessions (install them with `npx skills add`).
 
 | Skill `name` | Directory | Invocation |
 |--------------|-------------|------------|
@@ -74,32 +74,12 @@ GitHub PR number is derived from the URL when `--number` is omitted.
 
 ## Install
 
-### `npx skills add`
-
-Matches the layout the [`skills` CLI](https://github.com/vercel-labs/skills) expects
-(`skills/<name>/SKILL.md`). Review a skill before installing — it becomes instructions your agent
-follows.
+Install with `npx skills add`, which matches the layout the
+[`skills` CLI](https://github.com/vercel-labs/skills) expects (`skills/<name>/SKILL.md`). Review a
+skill before installing — it becomes instructions your agent follows.
 
 ```sh
 npx skills add owner/repo                 # from GitHub
 npx skills add .                          # from a local checkout (this repo's root)
 npx skills add owner/repo --skill lh-dev  # install one skill by name
-```
-
-### `install.sh`
-
-Symlinks every skill into `~/.claude/skills/` in one go:
-
-```sh
-./skills/install.sh
-```
-
-Or do it by hand — mirror what `install.sh` does (symlink every directory that has a `SKILL.md`, so
-the list never goes stale; `-sfn` replaces an existing symlink instead of nesting inside a directory):
-
-```sh
-for dir in "$PWD"/skills/*/; do
-  [ -f "$dir/SKILL.md" ] || continue
-  ln -sfn "${dir%/}" "$HOME/.claude/skills/$(basename "$dir")"
-done
 ```
