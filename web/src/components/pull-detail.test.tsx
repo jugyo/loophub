@@ -39,6 +39,7 @@ import { ToastProvider, ToastViewport } from "./toast";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   launchTerminal.mockClear();
 });
@@ -191,6 +192,24 @@ describe("PullDetail", () => {
     // Bidirectional link back to the issue this PR closes.
     const linked = screen.getByText("#153").closest("a");
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
+  });
+
+  it("copies the head branch from the PR header with visible feedback", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    renderDetail();
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Copy branch name: issue-153",
+      }),
+    );
+
+    expect(writeText).toHaveBeenCalledWith("issue-153");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy(),
+    );
   });
 
   it("renders files changed before reviews in the main PR flow", async () => {

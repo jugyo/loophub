@@ -22,6 +22,7 @@ import type {
   PullRequest,
   PullReview,
 } from "@/api/types";
+import { CopyButton } from "@/components/copy-button";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
@@ -248,9 +249,16 @@ function PullHeader({
       <div className="text-sm text-muted-foreground">
         @{pull.user.login} · opened {relativeTime(pull.created_at)} · wants to
         merge{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-xs">
-          {pull.head.ref}
-        </code>{" "}
+        <span className="inline-flex items-center gap-1 align-middle">
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">
+            {pull.head.ref}
+          </code>
+          <CopyButton
+            value={pull.head.ref}
+            label={`Copy branch name: ${pull.head.ref}`}
+            className="size-6"
+          />
+        </span>{" "}
         →{" "}
         <code className="rounded bg-muted px-1 py-0.5 text-xs">
           {pull.base.ref}
