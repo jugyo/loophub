@@ -14,6 +14,7 @@ import {
   DEFAULT_ISSUE_FILTERS,
   type IssueListFilters,
   useIssuesList,
+  useLabelsList,
 } from "@/queries/issues";
 
 const STATE_TABS: {
@@ -30,6 +31,7 @@ export function IssueList({
   repo,
   labelsParam,
   stateParam,
+  labelFilterMode = "text",
 }: {
   owner: string;
   repo: string;
@@ -37,6 +39,8 @@ export function IssueList({
   labelsParam?: string;
   /** `state` search param — omitted for open, `closed` or `all` for the other tabs. */
   stateParam?: IssueListFilters["state"];
+  /** Repo top uses the dropdown requested in #884; secondary issue lists keep the legacy text filter. */
+  labelFilterMode?: "text" | "select";
 }) {
   const labels = labelsParam ?? "";
   const state = stateParam ?? DEFAULT_ISSUE_FILTERS.state;
@@ -50,6 +54,7 @@ export function IssueList({
   );
   const [draftLabels, setDraftLabels] = useState(labelsParam ?? "");
   const query = useIssuesList(owner, repo, filters);
+  const labelsQuery = useLabelsList(owner, repo, labelFilterMode === "select");
   const navigate = useNavigate();
 
   // The `labels` URL param is the single source of truth for the labels filter,
@@ -74,6 +79,21 @@ export function IssueList({
       },
     });
   }
+
+  function selectLabel(nextLabel: string) {
+    navigate({
+      to: "/r/$owner/$repo",
+      params: { owner, repo },
+      search: {
+        labels: nextLabel || undefined,
+        state: state === "open" ? undefined : state,
+      },
+    });
+  }
+
+  const labelOptions = labelsQuery.data ?? [];
+  const hasCurrentLabelOption =
+    labels === "" || labelOptions.some((label) => label.name === labels);
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-4">
@@ -121,19 +141,40 @@ export function IssueList({
             );
           })}
         </div>
-        <input
-          aria-label="Labels filter"
-          placeholder="Labels (comma-separated)"
-          value={draftLabels}
-          onChange={(e) => setDraftLabels(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") apply();
-          }}
-          className="h-9 min-w-48 flex-1 rounded-md border bg-background px-2 text-sm"
-        />
-        <Button variant="secondary" onClick={apply}>
-          Apply
-        </Button>
+        {labelFilterMode === "select" ? (
+          <select
+            aria-label="Label filter"
+            value={labels}
+            onChange={(e) => selectLabel(e.target.value)}
+            className="h-9 min-w-48 flex-1 rounded-md border bg-background px-2 text-sm"
+          >
+            <option value="">All labels</option>
+            {!hasCurrentLabelOption ? (
+              <option value={labels}>{labels}</option>
+            ) : null}
+            {labelOptions.map((label) => (
+              <option key={label.name} value={label.name}>
+                {label.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <>
+            <input
+              aria-label="Labels filter"
+              placeholder="Labels (comma-separated)"
+              value={draftLabels}
+              onChange={(e) => setDraftLabels(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") apply();
+              }}
+              className="h-9 min-w-48 flex-1 rounded-md border bg-background px-2 text-sm"
+            />
+            <Button variant="secondary" onClick={apply}>
+              Apply
+            </Button>
+          </>
+        )}
       </div>
 
       {query.isLoading ? (

@@ -13,6 +13,7 @@ function RepoPage() {
       repo={repo}
       labelsParam={labels}
       stateParam={state}
+      labelFilterMode="select"
     />
   );
 }

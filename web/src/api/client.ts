@@ -20,6 +20,7 @@ import type {
   Issue,
   IssueComment,
   IssueGroupWithMembers,
+  Label,
   LoopEvent,
   PullFile,
   PullLineComment,
@@ -373,6 +374,10 @@ export function listIssues(owner: string, repo: string, query = "") {
       sort: sp.get("sort") ?? undefined,
     }),
   );
+}
+
+export function listLabels(owner: string, repo: string) {
+  return rpc<Label[]>("labels/list", { repo: full(owner, repo) });
 }
 
 export function getIssue(owner: string, repo: string, number: number) {

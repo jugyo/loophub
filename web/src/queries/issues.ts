@@ -9,6 +9,7 @@ import {
   listIssueComments,
   listIssueGroupsForIssue,
   listIssues,
+  listLabels,
   patchIssue,
   postIssueComment,
 } from "@/api/client";
@@ -44,6 +45,15 @@ export function useIssuesList(
       if (labels) params.set("labels", labels);
       return listIssues(owner, repo, params.toString());
     },
+  });
+}
+
+/** Labels available in this repo, for issue filters and editors. */
+export function useLabelsList(owner: string, repo: string, enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.labels(full(owner, repo))],
+    queryFn: () => listLabels(owner, repo),
+    enabled,
   });
 }
 

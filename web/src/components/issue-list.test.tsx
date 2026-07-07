@@ -164,6 +164,79 @@ describe("IssueList", () => {
     );
   });
 
+  it("renders a dropdown label filter and applies selection immediately in select mode", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [],
+        "labels/list": () => [
+          { name: "bug", color: null },
+          { name: "ui", color: null },
+        ],
+      }),
+    );
+
+    const { router } = renderIssueList(
+      <IssueList
+        owner="me"
+        repo="proj"
+        stateParam="all"
+        labelFilterMode="select"
+      />,
+      "/r/me/proj?state=all",
+    );
+
+    await screen.findByText("No issues.");
+    const select = await screen.findByRole("combobox", {
+      name: "Label filter",
+    });
+
+    expect(screen.queryByLabelText("Labels filter")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
+
+    fireEvent.change(select, { target: { value: "bug" } });
+
+    await waitFor(() =>
+      expect(
+        router.state.location.pathname + router.state.location.searchStr,
+      ).toBe("/r/me/proj?labels=bug&state=all"),
+    );
+  });
+
+  it("clears the dropdown label filter with the all-labels option", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [],
+        "labels/list": () => [
+          { name: "bug", color: null },
+          { name: "ui", color: null },
+        ],
+      }),
+    );
+
+    const { router } = renderIssueList(
+      <IssueList
+        owner="me"
+        repo="proj"
+        labelsParam="bug"
+        labelFilterMode="select"
+      />,
+      "/r/me/proj?labels=bug",
+    );
+
+    const select = await screen.findByRole("combobox", {
+      name: "Label filter",
+    });
+    fireEvent.change(select, { target: { value: "" } });
+
+    await waitFor(() =>
+      expect(
+        router.state.location.pathname + router.state.location.searchStr,
+      ).toBe("/r/me/proj"),
+    );
+  });
+
   it("preserves the all-state tab when clicking a row label chip", async () => {
     vi.stubGlobal(
       "fetch",

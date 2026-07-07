@@ -1506,6 +1506,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
         branch: "feature/x",
         created_by: "impl-bot",
         created_at: "2026-06-19T00:00:00Z",
+        pushed_sha: null,
         github_merged: false,
         github_merged_at: null,
       },

@@ -901,6 +901,7 @@ describe("linked PR agent metadata (#842)", () => {
                 branch: null,
                 created_by: null,
                 created_at: "2026-01-01T00:00:00Z",
+                pushed_sha: null,
                 github_merged: false,
                 github_merged_at: null,
               },

@@ -12,6 +12,7 @@ import type { LoopEvent } from "@/api/types";
 export const queryKeys = {
   repos: () => ["repos"] as const,
   repo: (full: string) => ["repo", full] as const,
+  labels: (full: string) => ["labels", full] as const,
   issues: (full: string) => ["issues", full] as const,
   issue: (full: string, number: number) => ["issue", full, number] as const,
   pulls: (full: string) => ["pulls", full] as const,
@@ -48,11 +49,13 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   } else if (type.startsWith("issue.")) {
     if (repo) {
       keys.push([...queryKeys.issues(repo)]);
+      keys.push([...queryKeys.labels(repo)]);
       if (typeof number === "number") {
         keys.push([...queryKeys.issue(repo, number)]);
       }
     } else {
       keys.push(["issues"]);
+      keys.push(["labels"]);
       keys.push(["issue"]);
     }
     keys.push([...queryKeys.dashboard()]); // cross-repo top page

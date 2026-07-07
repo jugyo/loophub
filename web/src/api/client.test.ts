@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, eventsUrl, listIssues, listRepos, rpc } from "./client";
+import {
+  ApiError,
+  eventsUrl,
+  listIssues,
+  listLabels,
+  listRepos,
+  rpc,
+} from "./client";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -126,6 +133,15 @@ describe("typed methods translate to contract params", () => {
       state: "open",
       labels: ["bug", "ui"],
       perPage: 20,
+    });
+  });
+
+  it("listLabels maps owner/repo to the labels/list contract", async () => {
+    const fetchMock = mockRpc([]);
+    await listLabels("me", "proj");
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "labels/list",
+      params: { repo: "me/proj" },
     });
   });
 });
