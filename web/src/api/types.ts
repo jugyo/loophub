@@ -67,6 +67,8 @@ export type PullLineComment = ReviewCommentWire;
 /** A changed file with its unified-diff patch (GET .../pulls/{number}/files). */
 export interface PullFile {
   filename: string;
+  previousFilename?: string;
+  headFilename?: string;
   status: string;
   additions: number;
   deletions: number;

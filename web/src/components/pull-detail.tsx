@@ -935,12 +935,55 @@ function FileSummaryRow({
 // Markdown files can switch the same diff dialog between the patch and base/head rendered previews.
 const MARKDOWN_FILENAME = /\.(md|markdown)$/i;
 
-// `file.filename` for a rename comes from git numstat's mangled "old => new" / "dir/{old =>
-// new}" path column (core/git.ts diffFiles), not a real path — `git show <ref>:<path>` can't
-// resolve it. Exclude renamed files from Preview rather than resolving the wrong or a missing
-// blob (fixing this properly needs diffFiles() to expose the real per-side rename paths, which
-// is out of scope here).
+// `file.filename` for a rename is git numstat's display label ("old => new" / "dir/{old =>
+// new}"), not a real path. The copy button can use `headFilename`, but the Markdown Preview
+// path still points at `file.filename`, so keep previews off for synthetic rename labels.
 const RENAMED_FILENAME = / => /;
+
+function isSyntheticRenameFilename(file: PullFile) {
+  return (
+    file.status === "renamed" ||
+    (RENAMED_FILENAME.test(file.filename) && !file.patch?.trim())
+  );
+}
+
+function renameTargetPath(filename: string) {
+  const braced = /^(.*)\{(.+) => (.+)\}(.*)$/.exec(filename);
+  if (braced) return `${braced[1]}${braced[3]}${braced[4]}`;
+  const direct = /^.+ => (.+)$/.exec(filename);
+  return direct?.[1] ?? null;
+}
+
+function copyFilename(file: PullFile) {
+  if (file.headFilename) return file.headFilename;
+  if (isSyntheticRenameFilename(file)) {
+    return renameTargetPath(file.filename) ?? file.filename;
+  }
+  return file.filename;
+}
+
+const UNSAFE_COPY_PATH_CHAR = /[\p{Default_Ignorable_Code_Point}\p{Cc}\p{Cf}]/u;
+
+function visibleCopyPath(path: string) {
+  if (!UNSAFE_COPY_PATH_CHAR.test(path)) return path;
+  return Array.from(path, (char) => {
+    if (!UNSAFE_COPY_PATH_CHAR.test(char)) return char;
+    switch (char) {
+      case "\n":
+        return "\\n";
+      case "\r":
+        return "\\r";
+      case "\t":
+        return "\\t";
+      default: {
+        const codePoint = char.codePointAt(0) ?? 0;
+        return codePoint > 0xffff
+          ? `\\u{${codePoint.toString(16)}}`
+          : `\\u${codePoint.toString(16).padStart(4, "0")}`;
+      }
+    }
+  }).join("");
+}
 
 type DiffDialogMode = "diff" | "base" | "head";
 
@@ -968,9 +1011,9 @@ function DiffFileDialog({
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<DiffDialogMode>("diff");
+  const copyPath = visibleCopyPath(copyFilename(file));
   const isMarkdown =
-    MARKDOWN_FILENAME.test(file.filename) &&
-    !RENAMED_FILENAME.test(file.filename);
+    MARKDOWN_FILENAME.test(file.filename) && !isSyntheticRenameFilename(file);
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -998,7 +1041,17 @@ function DiffFileDialog({
       >
         <header className="flex items-center justify-between gap-3 border-b px-3 py-2">
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold">{file.filename}</h3>
+            <div className="flex min-w-0 items-center gap-1">
+              <h3 className="min-w-0 truncate text-sm font-semibold">
+                {file.filename}
+              </h3>
+              <CopyButton
+                key={copyPath}
+                value={copyPath}
+                label={`Copy file path: ${copyPath}`}
+                className="size-6"
+              />
+            </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
               <span>{file.status}</span>
               <DiffStat additions={file.additions} deletions={file.deletions} />

@@ -308,6 +308,51 @@ describe("PullDetail", () => {
     expect(screen.queryByText("+const x = 1;")).toBeNull();
   });
 
+  it("copies the displayed file path from the diff dialog with visible feedback", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const multiFileDiff: PullFile[] = [
+      ...files,
+      {
+        filename: "web/src/b.ts",
+        status: "added",
+        additions: 1,
+        deletions: 0,
+        patch: "@@ -0,0 +1 @@\n+const y = 2;",
+      },
+    ];
+    renderDetail({ "pulls/files": () => multiFileDiff });
+
+    expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /Diff for web\/src\/a\.ts/i,
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Copy file path: web/src/a.ts",
+      }),
+    );
+
+    expect(writeText).toHaveBeenCalledWith("web/src/a.ts");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Copied" }),
+      ).toBeTruthy(),
+    );
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /Next/i }));
+    const nextDialog = await screen.findByRole("dialog", {
+      name: /Diff for web\/src\/b\.ts/i,
+    });
+    expect(
+      within(nextDialog).getByRole("button", {
+        name: "Copy file path: web/src/b.ts",
+      }),
+    ).toBeTruthy();
+  });
+
   it("moves between file diffs with Prev and Next without closing the dialog", async () => {
     const multiFileDiff: PullFile[] = [
       ...files,
@@ -470,7 +515,9 @@ describe("PullDetail", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("hides the Preview button for a renamed Markdown file (mangled numstat path, #436)", async () => {
+  it("hides Preview but copies the target path for a renamed Markdown file (mangled numstat path, #436)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
     // git numstat renders a cross-directory rename as "old => new" — this still ends in ".md" but
     // is not a resolvable git path, so `pulls.fileAtRef` would always report "missing" for it.
     const renamedFiles: PullFile[] = [
@@ -523,9 +570,245 @@ describe("PullDetail", () => {
     await screen.findByRole("dialog", {
       name: /Diff for docs\/old\.md => top\.md/i,
     });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Copy file path: top.md" }),
+      );
+    });
+    expect(writeText).toHaveBeenCalledWith("top.md");
     expect(screen.queryByRole("button", { name: /^Preview$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: "Base" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Head" })).toBeNull();
+  });
+
+  it("copies the target path for a braced renamed file path", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const renamedFiles: PullFile[] = [
+      {
+        filename: "sub/{old/name.md => new/name2.md}",
+        status: "renamed",
+        additions: 1,
+        deletions: 0,
+        patch: "",
+      },
+    ];
+    renderDetail({ "pulls/files": () => renamedFiles });
+
+    await screen.findByText("sub/{old/name.md => new/name2.md}");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /sub\/\{old\/name\.md => new\/name2\.md\}/i,
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /Diff for sub\/\{old\/name\.md => new\/name2\.md\}/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: sub/new/name2.md",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("sub/new/name2.md");
+  });
+
+  it("copies structured head filenames for renamed targets containing the rename marker text", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const renamedFiles: PullFile[] = [
+      {
+        filename: "old.txt => new => target.txt",
+        previousFilename: "old.txt",
+        headFilename: "new => target.txt",
+        status: "renamed",
+        additions: 0,
+        deletions: 0,
+        patch: "",
+      },
+    ];
+    renderDetail({ "pulls/files": () => renamedFiles });
+
+    await screen.findByText("old.txt => new => target.txt");
+    fireEvent.click(
+      screen.getByRole("button", { name: /old\.txt => new => target\.txt/i }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /Diff for old\.txt => new => target\.txt/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: new => target.txt",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("new => target.txt");
+  });
+
+  it("keeps the diff dialog copy button for a non-renamed file path containing the rename marker text", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const literalMarkerFiles: PullFile[] = [
+      {
+        filename: "docs/a => b.ts",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: "@@ -1 +1 @@\n-old\n+new",
+      },
+    ];
+    renderDetail({ "pulls/files": () => literalMarkerFiles });
+
+    await screen.findByText("docs/a => b.ts");
+    fireEvent.click(screen.getByRole("button", { name: /docs\/a => b\.ts/i }));
+    const dialog = await screen.findByRole("dialog", {
+      name: /Diff for docs\/a => b\.ts/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: docs/a => b.ts",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("docs/a => b.ts");
+  });
+
+  it("copies a visible escaped path for filenames with hidden control characters", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const controlCharFiles: PullFile[] = [
+      {
+        filename: "docs/readme\n\tinstall.md",
+        headFilename: "docs/readme\n\tinstall.md",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: "@@ -1 +1 @@\n-old\n+new",
+      },
+    ];
+    renderDetail({ "pulls/files": () => controlCharFiles });
+
+    await screen.findByText("docs/readme install.md");
+    fireEvent.click(
+      screen.getByRole("button", { name: /docs\/readme\s+install\.md/i }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /Diff for docs\/readme\s+install\.md/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: docs/readme\\n\\tinstall.md",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("docs/readme\\n\\tinstall.md");
+  });
+
+  it("copies a visible escaped path for filenames with zero-width characters", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const zeroWidthFiles: PullFile[] = [
+      {
+        filename: "docs/readme\u200binstall.md",
+        headFilename: "docs/readme\u200binstall.md",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: "@@ -1 +1 @@\n-old\n+new",
+      },
+    ];
+    renderDetail({ "pulls/files": () => zeroWidthFiles });
+
+    await screen.findByText("docs/readme\u200binstall.md");
+    fireEvent.click(
+      screen.getByRole("button", { name: /docs\/readme.*install\.md/i }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /Diff for docs\/readme.*install\.md/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: docs/readme\\u200binstall.md",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("docs/readme\\u200binstall.md");
+  });
+
+  it("copies a visible escaped path for filenames with default-ignorable characters", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const defaultIgnorableFiles: PullFile[] = [
+      {
+        filename: "docs/readme\ufe0finstall.md",
+        headFilename: "docs/readme\ufe0finstall.md",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: "@@ -1 +1 @@\n-old\n+new",
+      },
+    ];
+    renderDetail({ "pulls/files": () => defaultIgnorableFiles });
+
+    await screen.findByText("docs/readme\uFE0Finstall.md");
+    fireEvent.click(
+      screen.getByRole("button", { name: /docs\/readme.*install\.md/i }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /Diff for docs\/readme.*install\.md/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: docs/readme\\ufe0finstall.md",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("docs/readme\\ufe0finstall.md");
+  });
+
+  it("copies a braced escape for supplementary default-ignorable characters", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const supplementaryFiles: PullFile[] = [
+      {
+        filename: "docs/readme\u{e0100}install.md",
+        headFilename: "docs/readme\u{e0100}install.md",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: "@@ -1 +1 @@\n-old\n+new",
+      },
+    ];
+    renderDetail({ "pulls/files": () => supplementaryFiles });
+
+    await screen.findByText("docs/readme\u{e0100}install.md");
+    fireEvent.click(
+      screen.getByRole("button", { name: /docs\/readme.*install\.md/i }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /Diff for docs\/readme.*install\.md/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: docs/readme\\u{e0100}install.md",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("docs/readme\\u{e0100}install.md");
   });
 
   it("closes the PR via PATCH state=closed without merging", async () => {

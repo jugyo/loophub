@@ -117,6 +117,8 @@ export async function gitDirOf(repoPath: string): Promise<string> {
 
 export interface DiffFile {
   filename: string;
+  previousFilename?: string;
+  headFilename?: string;
   status: string; // modified | added | removed | renamed
   additions: number;
   deletions: number;
@@ -140,30 +142,96 @@ export async function diffFiles(
 ): Promise<DiffFile[]> {
   const range = `${base}...${head}`;
   const numstat = await git(repoPath, ["diff", "--numstat", range]);
-  const namestatus = await git(repoPath, ["diff", "--name-status", range]);
+  const numstatZ = await git(repoPath, ["diff", "--numstat", "-z", range]);
+  const namestatus = await git(repoPath, [
+    "diff",
+    "--name-status",
+    "-z",
+    range,
+  ]);
+  const statusByFile = parseNameStatusZ(namestatus.stdout);
 
-  const statusByFile: Record<string, string> = {};
-  for (const line of namestatus.stdout.split("\n")) {
-    if (!line.trim()) continue;
-    const parts = line.split("\t");
-    const code = parts[0][0];
-    const file = parts[parts.length - 1];
-    statusByFile[file] = STATUS_MAP[code] ?? "changed";
-  }
-
+  const structured = parseNumstatZ(numstatZ.stdout);
   const files: DiffFile[] = [];
-  for (const line of numstat.stdout.split("\n")) {
+  for (const [index, line] of numstat.stdout.split("\n").entries()) {
     if (!line.trim()) continue;
     const [add, del, ...rest] = line.split("\t");
     const filename = rest.join("\t");
-    const patch = await git(repoPath, ["diff", range, "--", filename]);
+    const paths = structured[index];
+    const headFilename = paths?.headFilename ?? paths?.filename ?? filename;
+    const displayFilename = paths?.previousFilename
+      ? filename
+      : (paths?.filename ?? filename);
+    const status =
+      statusByFile[headFilename] ?? statusByFile[displayFilename] ?? "modified";
+    const patchPaths =
+      paths?.previousFilename && status === "renamed"
+        ? [paths.previousFilename, headFilename]
+        : [headFilename];
+    const patch = await git(repoPath, ["diff", range, "--", ...patchPaths]);
     files.push({
-      filename,
-      status: statusByFile[filename] ?? "modified",
+      filename: displayFilename,
+      previousFilename: paths?.previousFilename,
+      headFilename,
+      status,
       additions: add === "-" ? 0 : Number(add),
       deletions: del === "-" ? 0 : Number(del),
       patch: stripDiffHeader(patch.stdout),
     });
+  }
+  return files;
+}
+
+function parseNameStatusZ(stdout: string): Record<string, string> {
+  const fields = stdout.split("\0");
+  if (fields.at(-1) === "") fields.pop();
+  const statusByFile: Record<string, string> = {};
+  for (let i = 0; i < fields.length; ) {
+    const statusField = fields[i++];
+    if (!statusField) continue;
+    const code = statusField[0];
+    const status = STATUS_MAP[code] ?? "changed";
+    if (code === "R" || code === "C") {
+      i += 1; // previous path
+      const headFilename = fields[i++];
+      if (headFilename) statusByFile[headFilename] = status;
+      continue;
+    }
+    const filename = fields[i++];
+    if (filename) statusByFile[filename] = status;
+  }
+  return statusByFile;
+}
+
+function parseNumstatZ(stdout: string): Array<{
+  filename: string;
+  previousFilename?: string;
+  headFilename?: string;
+}> {
+  const fields = stdout.split("\0");
+  if (fields.at(-1) === "") fields.pop();
+  const files: Array<{
+    filename: string;
+    previousFilename?: string;
+    headFilename?: string;
+  }> = [];
+  for (let i = 0; i < fields.length; i++) {
+    const [add, del, ...pathParts] = fields[i].split("\t");
+    const path = pathParts.join("\t");
+    if (add == null || del == null || pathParts.length === 0) continue;
+    if (path === "") {
+      const previousFilename = fields[++i];
+      const headFilename = fields[++i];
+      if (previousFilename && headFilename) {
+        files.push({
+          filename: headFilename,
+          previousFilename,
+          headFilename,
+        });
+      }
+      continue;
+    }
+    files.push({ filename: path, headFilename: path });
   }
   return files;
 }

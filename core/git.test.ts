@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
+  diffFiles,
   diffStat,
   fileAtRef,
   git,
@@ -253,6 +254,162 @@ test("diffStat aggregates additions, deletions and changed files", async () => {
   // No diff against itself → all zeros.
   const empty = await diffStat(p, "feat", "feat");
   expect(empty).toEqual({ additions: 0, deletions: 0, changedFiles: 0 });
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("diffFiles exposes structured rename target paths", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-difffiles-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "old.txt"), "old\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  await git(p, ["mv", "old.txt", "new => target.txt"]);
+  await git(p, ["commit", "-qm", "rename"]);
+
+  const files = await diffFiles(p, "main", "feat");
+  expect(files).toEqual([
+    expect.objectContaining({
+      filename: "old.txt => new => target.txt",
+      previousFilename: "old.txt",
+      headFilename: "new => target.txt",
+      status: "renamed",
+    }),
+  ]);
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("diffFiles keeps rename edits as old-vs-new patches", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-difffiles-rename-edit-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "old.txt"), "one\ntwo\nthree\nfour\nfive\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  await git(p, ["mv", "old.txt", "new.txt"]);
+  writeFileSync(join(p, "new.txt"), "one\ntwo\nTHREE\nfour\nfive\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "rename and edit"]);
+
+  const files = await diffFiles(p, "main", "feat");
+  expect(files).toEqual([
+    expect.objectContaining({
+      filename: "old.txt => new.txt",
+      previousFilename: "old.txt",
+      headFilename: "new.txt",
+      status: "renamed",
+      patch: expect.stringContaining("-three"),
+    }),
+  ]);
+  expect(files[0].patch).toContain("+THREE");
+  expect(files[0].patch).not.toContain("@@ -0,0");
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("diffFiles keeps copied-file patches scoped to the copy target", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-difffiles-copy-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  await git(p, ["config", "diff.renames", "copies"]);
+  writeFileSync(join(p, "source.txt"), "one\ntwo\nthree\nfour\nfive\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  writeFileSync(join(p, "copy.txt"), "one\ntwo\nthree\nfour\nfive\n");
+  writeFileSync(join(p, "source.txt"), "one\ntwo\nTHREE\nfour\nfive\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "copy and edit source"]);
+
+  const files = await diffFiles(p, "main", "feat");
+  const copied = files.find((file) => file.status === "copied");
+  expect(copied).toEqual(
+    expect.objectContaining({
+      filename: "source.txt => copy.txt",
+      previousFilename: "source.txt",
+      headFilename: "copy.txt",
+      patch: expect.stringContaining("+one"),
+    }),
+  );
+  expect(copied?.patch).toContain("@@ -0,0");
+  expect(copied?.patch).not.toContain("-three");
+  expect(copied?.patch).not.toContain("+THREE");
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("diffFiles preserves tabs in structured filenames", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-difffiles-tab-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "a\tb.txt"), "old\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  writeFileSync(join(p, "a\tb.txt"), "new\n");
+  await git(p, ["commit", "-am", "change tab path"]);
+
+  const files = await diffFiles(p, "main", "feat");
+  expect(files).toEqual([
+    expect.objectContaining({
+      filename: "a\tb.txt",
+      headFilename: "a\tb.txt",
+      status: "modified",
+    }),
+  ]);
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("diffFiles preserves statuses for quoted paths", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-difffiles-status-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "delete\nfile.txt"), "delete\n");
+  writeFileSync(join(p, "old\nname.txt"), "rename\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  rmSync(join(p, "delete\nfile.txt"));
+  writeFileSync(join(p, "add\nfile.txt"), "add\n");
+  await git(p, ["mv", "old\nname.txt", "new\nname.txt"]);
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "quoted paths"]);
+
+  const files = await diffFiles(p, "main", "feat");
+  expect(files).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        filename: "add\nfile.txt",
+        headFilename: "add\nfile.txt",
+        status: "added",
+      }),
+      expect.objectContaining({
+        filename: "delete\nfile.txt",
+        headFilename: "delete\nfile.txt",
+        status: "removed",
+      }),
+      expect.objectContaining({
+        previousFilename: "old\nname.txt",
+        headFilename: "new\nname.txt",
+        status: "renamed",
+      }),
+    ]),
+  );
 
   rmSync(p, { recursive: true, force: true });
 });
