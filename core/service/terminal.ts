@@ -1,4 +1,10 @@
 import {
+  COST_STOP_REASON,
+  DEV_COST_STOPPED_EVENT,
+  decideCostStop,
+  devCostLimitUsd,
+} from "../cost-stop.ts";
+import {
   runHerdr,
   runHerdrCapture,
   runHerdrLaunch,
@@ -25,6 +31,7 @@ import {
   herdrCommandLine,
   herdrIssueWorkspacesFromAgentList,
   herdrPaneCloseArgv,
+  herdrPaneSendKeysArgv,
   herdrPullWorkspacesFromAgentList,
   herdrSessionName,
   herdrTabCloseArgv,
@@ -628,6 +635,16 @@ export const terminal = {
     return cleanupInactiveHerdrAgents();
   },
 
+  // Send Esc to `lh dev` agents that have exceeded the top-level cost limit (#832). Worker-owned
+  // maintenance, invoked by startCostStopSweep. Never kills; records `dev.cost_stopped` per stop.
+  async enforceDevCostLimits(): Promise<{
+    stopped: number;
+    skipped: number;
+    failed: number;
+  }> {
+    return enforceDevCostLimitsImpl();
+  },
+
   // Recent terminal output for one herdr agent, for the sidebar hover preview (#500).
   // `target` is whatever the client sends as a herdr `agent read` target — usually a
   // pane_id, since herdr only resolves an agent *name* target when it's unique within
@@ -1021,4 +1038,110 @@ async function cleanupInactiveHerdrAgents(): Promise<{
     }
   }
   return { closed, failed };
+}
+
+// herdr key name sent to a pane to interrupt (cancel the current turn of) a running claude/codex
+// agent (#832). Kept as a single literal so §Test can adjust it to herdr's actual Esc key name in
+// one place. Never derived from process output — sent verbatim to `pane send-keys`.
+const COST_STOP_KEY = "Escape";
+
+// Stop `lh dev` implementation agents whose top-level cumulative cost has passed the limit (#832),
+// by sending Esc to their herdr pane — no kill. Mirrors cleanupInactiveHerdrAgents' enumeration:
+// running herdr sessions → active repos → each pane the `agent list` resolves to a `pr-<n>`
+// worktree. For each such pane we resolve the PR's primary dev session, read its top-level cost,
+// and let decideCostStop judge. A pane that doesn't map to an open PR with a linked dev session is
+// left alone (so unrelated terminals are never stopped); ambiguous cost (unknown/no session) is a
+// retryable no-op, not a stop. A stop emits `dev.cost_stopped`, which both records the reason and
+// guards against re-sending Esc on later ticks.
+async function enforceDevCostLimitsImpl(): Promise<{
+  stopped: number;
+  skipped: number;
+  failed: number;
+}> {
+  let listOut: string;
+  try {
+    listOut = await runHerdrCapture(["session", "list", "--json"]);
+  } catch {
+    return { stopped: 0, skipped: 0, failed: 0 };
+  }
+  const running = parseHerdrSessionList(listOut);
+  if (running.length === 0) return { stopped: 0, skipped: 0, failed: 0 };
+
+  const limitUsd = devCostLimitUsd();
+  let stopped = 0;
+  let skipped = 0;
+  let failed = 0;
+  const matched = reposWithRunningSession(S.listRepos("active"), running);
+  for (const { repo, sessionName } of matched) {
+    let agentsOut: string;
+    try {
+      agentsOut = await runHerdrCapture([
+        "--session",
+        sessionName,
+        "agent",
+        "list",
+      ]);
+    } catch {
+      continue;
+    }
+    for (const pane of herdrPullWorkspacesFromAgentList(
+      agentsOut,
+      worktreeRoot(),
+      repo.full_name,
+    )) {
+      // Only a pane whose cwd resolves to an open PR row is a candidate — an unrelated terminal
+      // (or a pane on a closed/merged PR) has no such mapping and is never touched (AC5).
+      const prRow = S.getIssue(repo.id, pane.pull);
+      if (prRow?.kind !== "pull" || prRow.state !== "open") {
+        skipped++;
+        continue;
+      }
+      const sessionId = S.primaryDevSessionForPull(prRow.id);
+      const costUsd = sessionId
+        ? S.sessionUsageCostForSession(sessionId)
+        : null;
+      const decision = decideCostStop({
+        costUsd,
+        limitUsd,
+        // Guard per dev session (not per PR): without a session there is nothing to have stopped.
+        alreadyStopped:
+          sessionId !== null &&
+          S.hasCostStopEvent(repo.id, pane.pull, sessionId),
+        hasDevSession: sessionId !== null,
+      });
+      if (decision.action !== "stop") {
+        skipped++;
+        continue;
+      }
+      // Guard the herdr-supplied pane id before it reaches an argv, same trust boundary as killAgent.
+      if (!HERDR_ID.test(pane.pane_id)) {
+        failed++;
+        continue;
+      }
+      try {
+        const argv = herdrPaneSendKeysArgv(repo, pane.pane_id, COST_STOP_KEY);
+        await runHerdr(argv[0], argv.slice(1), repo.local_path, {
+          timeoutMs: 10_000,
+        });
+      } catch {
+        // Couldn't deliver the keystroke (herdr gone, pane vanished): don't record a stop, so the
+        // next sweep retries — the ambiguous-live-state → retryable rule (AC6).
+        failed++;
+        continue;
+      }
+      // Persist the stop reason: a human can see from the event log why the agent stopped, and the
+      // next tick's hasCostStopEvent guard skips this session (no repeated Esc for the same dev
+      // session; a later resumed session is guarded independently).
+      S.emitEvent(repo.id, DEV_COST_STOPPED_EVENT, "lh-worker", {
+        number: pane.pull,
+        pr: pane.pull,
+        session_id: sessionId,
+        reason: COST_STOP_REASON,
+        cost_usd: decision.costUsd,
+        limit_usd: limitUsd,
+      });
+      stopped++;
+    }
+  }
+  return { stopped, skipped, failed };
 }

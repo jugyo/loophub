@@ -332,6 +332,27 @@ export function herdrPaneCloseArgv(
   ];
 }
 
+// Sends a key press to a pane (#832's cost-limit stop). Unlike herdrPaneCloseArgv this doesn't
+// touch pane/tab state — it just injects a keystroke (e.g. `Escape`) into whatever the pane is
+// running, which for an idle claude/codex TUI cancels the current turn without killing the agent
+// (the issue's "auto で kill しない、Esc を送る程度に留める"). The `key` is a herdr key name, not
+// arbitrary text; callers pass a fixed literal, never process output.
+export function herdrPaneSendKeysArgv(
+  repo: TerminalLaunchRepo,
+  paneId: string,
+  key: string,
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "pane",
+    "send-keys",
+    paneId,
+    key,
+  ];
+}
+
 // Observed shape is `w1:t2` for tabs and `w1:p1Q` for panes. The strict pattern (in particular
 // no leading `-`) keeps a value from child-process stdout from being spliced into an argv as
 // something herdr would parse as a flag, or from echoing arbitrary process output back to

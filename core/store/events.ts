@@ -89,6 +89,28 @@ export function firstReadyForReviewAt(
   return row?.created_at ?? null;
 }
 
+// Whether a `dev.cost_stopped` event already exists for a specific dev session on a PR (#832). The
+// cost-stop sweep uses this as its idempotency guard: once a session has been stopped for exceeding
+// the cost limit, it must not be sent another Esc on every subsequent tick. Keyed on the PR number
+// *and* the session_id, so the guard is per dev session, not per PR — a PR that is resumed under a
+// new dev session (a new primary dev session) starts with a fresh budget and can be stopped again,
+// rather than being permanently exempt because an earlier session was once stopped.
+export function hasCostStopEvent(
+  repoId: number,
+  prNumber: number,
+  sessionId: string,
+): boolean {
+  return !!db
+    .query(
+      `SELECT 1 AS ok FROM events
+       WHERE repo_id = ? AND type = 'dev.cost_stopped'
+         AND json_extract(payload, '$.number') = ?
+         AND json_extract(payload, '$.session_id') = ?
+       LIMIT 1`,
+    )
+    .get(repoId, prNumber, sessionId);
+}
+
 // Events related to a single PR, newest first. Matches a repo's events whose payload targets
 // the PR's own number (pull_request.*), its pr_number (handoff.recorded), or the linked issue's
 // number (issue.*) — the union of every number a PR's data is filed under. Used by the debug

@@ -118,6 +118,30 @@ export function sessionUsageTotalsForIssue(
   return { total_tokens, cost_usd };
 }
 
+// Top-level cumulative cost (USD) for a single session, summed across its per-model `session_usage`
+// rows. This reads the top-level total only — never `session_usage_subagents` — matching #832's
+// rule to base the cost-stop decision on top-level usage and not fall back to subagent usage.
+// Returns null when the cost is indeterminate: no usage rows yet (nothing to judge), or any row has
+// an unknown (null) cost from an unpriced model — the cost-stop sweep treats null as "don't stop".
+export function sessionUsageCostForSession(sessionId: string): number | null {
+  const row = db
+    .query(
+      `SELECT
+         SUM(cost_usd) AS cost_usd_sum,
+         SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END) AS unknown_cost_rows,
+         COUNT(*) AS row_count
+       FROM session_usage
+       WHERE session_id = ?`,
+    )
+    .get(sessionId) as {
+    cost_usd_sum: number | null;
+    unknown_cost_rows: number;
+    row_count: number;
+  };
+  if (row.row_count === 0 || row.unknown_cost_rows > 0) return null;
+  return row.cost_usd_sum ?? 0;
+}
+
 export function getSessionUsageCursor(
   sessionId: string,
 ): SessionUsageCursorRow | null {

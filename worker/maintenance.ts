@@ -12,12 +12,18 @@ export const DEFAULT_HERDR_INACTIVE_CLEANUP_MS =
 // rate limits), unlike the other sweeps here which only touch local git/DB — so this defaults to
 // a much coarser interval than DEFAULT_SWEEP_MS.
 export const DEFAULT_GITHUB_MERGE_SWEEP_MS = 60000;
+// #832: cost changes slowly (usage is itself refreshed only every DEFAULT_USAGE_SWEEP_MS), and the
+// action — sending Esc once a dev agent passes the limit — is idempotent per PR via the
+// dev.cost_stopped event, so a coarse interval is plenty and keeps the herdr `agent list` calls
+// infrequent.
+export const DEFAULT_COST_STOP_SWEEP_MS = 30000;
 
 export interface MaintenanceLoopOptions {
   sweepMs?: number;
   usageSweepMs?: number;
   herdrInactiveCleanupMs?: number;
   githubMergeSweepMs?: number;
+  costStopSweepMs?: number;
 }
 
 export interface NormalizedMaintenanceLoopOptions {
@@ -25,6 +31,7 @@ export interface NormalizedMaintenanceLoopOptions {
   usageSweepMs: number;
   herdrInactiveCleanupMs: number;
   githubMergeSweepMs: number;
+  costStopSweepMs: number;
 }
 
 export interface MaintenanceHandle {
@@ -45,6 +52,10 @@ export function normalizeMaintenanceLoopOptions(
       opts.githubMergeSweepMs,
       DEFAULT_GITHUB_MERGE_SWEEP_MS,
     ),
+    costStopSweepMs: finiteOrDefault(
+      opts.costStopSweepMs,
+      DEFAULT_COST_STOP_SWEEP_MS,
+    ),
   };
 }
 
@@ -62,6 +73,8 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
         : "off",
     githubMergeSweep:
       opts.githubMergeSweepMs > 0 ? `${opts.githubMergeSweepMs}ms` : "off",
+    costStopSweep:
+      opts.costStopSweepMs > 0 ? `${opts.costStopSweepMs}ms` : "off",
   };
 }
 
@@ -79,6 +92,9 @@ export function startMaintenanceLoops(
       : () => {},
     normalized.githubMergeSweepMs > 0
       ? startGithubMergeSweep(normalized.githubMergeSweepMs)
+      : () => {},
+    normalized.costStopSweepMs > 0
+      ? startCostStopSweep(normalized.costStopSweepMs)
       : () => {},
   ];
 
@@ -223,6 +239,43 @@ export function startHerdrInactiveCleanup(
     } catch (err) {
       workerLog.error(
         `lh-worker: herdr inactive cleanup error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// Stop `lh dev` agents that pass the top-level cost limit by sending Esc to their herdr pane
+// (#832). Like startHerdrInactiveCleanup this is worker-owned maintenance (not a UI cache
+// invalidation): the enumeration, cost judgement, keystroke, and dev.cost_stopped bookkeeping all
+// live in terminal.enforceDevCostLimits; this loop only schedules it and logs the outcome.
+export function startCostStopSweep(
+  intervalMs = DEFAULT_COST_STOP_SWEEP_MS,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    try {
+      const result = await terminal.enforceDevCostLimits();
+      if (result.stopped > 0 || result.failed > 0) {
+        const message = `lh-worker: cost stop sweep: stopped ${result.stopped}, failed ${result.failed}`;
+        if (result.failed > 0) workerLog.error(message);
+        else workerLog.info(message);
+      }
+    } catch (err) {
+      workerLog.error(
+        `lh-worker: cost stop sweep error: ${err instanceof Error ? err.message : String(err)}`,
       );
     } finally {
       running = false;
