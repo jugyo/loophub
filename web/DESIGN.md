@@ -28,6 +28,10 @@ interaction color set to a blue-purple theme. Colors are stored as bare HSL
 channels (`H S% L%`) and wrapped with `hsl(var(--token))` in the Tailwind
 config, so opacity modifiers (`bg-primary/90`) work.
 
+Dark-theme primary button states and supporting text tokens are covered by
+contrast assertions in `src/lib/theme.test.ts`. Keep those checks green when
+adjusting dark color tokens.
+
 | Token | Tailwind name | Role |
 |-------|---------------|------|
 | `--background` / `--foreground` | `background` / `foreground` | Page base + body text |

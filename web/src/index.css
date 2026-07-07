@@ -39,9 +39,9 @@
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
-    --primary: 238 84% 67%;
+    --primary: 238 84% 69%;
     --primary-hover: 229 96% 77%;
-    --primary-active: 239 84% 62%;
+    --primary-active: 239 84% 67%;
     --primary-subtle: 242 47% 16%;
     --primary-border: 239 84% 67%;
     --primary-foreground: 222.2 84% 4.9%;
@@ -54,8 +54,8 @@
     --accent-foreground: 226 100% 94%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
+    --border: 217 28% 25%;
+    --input: 217 28% 25%;
     --ring: var(--primary);
   }
 }
