@@ -17,11 +17,18 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue } from "@/api/types";
+
+const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
+vi.mock("@/components/terminal-controller", () => ({
+  useTerminalLauncher: () => ({ launchTerminal }),
+}));
+
 import { IssueList } from "./issue-list";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  launchTerminal.mockClear();
 });
 
 function renderIssueList(ui: React.ReactNode, initialPath = "/r/me/proj") {
@@ -114,6 +121,37 @@ describe("IssueList", () => {
     expect(
       screen.getByRole("link", { name: /settings/i }).getAttribute("href"),
     ).toBe("/r/me/proj/settings");
+    const newIssue = screen.getByRole("button", { name: /new issue/i });
+    const issueControls = screen.getByRole("tablist", {
+      name: "Issue state",
+    }).parentElement;
+    expect(issueControls?.contains(newIssue)).toBe(true);
+  });
+
+  it("launches issue creation from the issue list header", async () => {
+    vi.stubGlobal("fetch", mockRpcFetch({ "issues/list": () => [] }));
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /new issue/i }));
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
+      workflow: "issue-create",
+    });
+  });
+
+  it("keeps the New issue button visible when issues are listed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({ "issues/list": () => [issue({ title: "Existing" })] }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("Existing")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /new issue/i })).toBeTruthy();
   });
 
   it("uses state and labels search params for the list query", async () => {

@@ -5,7 +5,6 @@ import { Outlet } from "@tanstack/react-router";
 import { useRef } from "react";
 import { AppBreadcrumb } from "@/components/app-breadcrumb";
 import { AppSidebar } from "@/components/app-sidebar";
-import { CreateIssueButton } from "@/components/create-issue-button";
 import { DetailTitleProvider } from "@/components/detail-title";
 import { RepoSwitcher } from "@/components/repo-switcher";
 import {
@@ -42,9 +41,6 @@ export function AppLayout() {
               </main>
             </div>
           </DetailTitleProvider>
-          {/* Floating "New issue" launcher. Fixed-positioned, so it is rendered at the shell level
-              rather than inside the header; it hides itself on non-repo screens (home / archived). */}
-          <CreateIssueButton />
           <RepoSwitcher />
           <TerminalLaunchErrorDialog />
           {/* Operation feedback (#574): a floating toast above the content, with an explicit

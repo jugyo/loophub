@@ -5,6 +5,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
 import { RepoHerdrCommand } from "@/components/repo-herdr-command";
 import { RepoSettingsLink } from "@/components/repo-settings-link";
@@ -175,6 +176,7 @@ export function IssueList({
             </Button>
           </>
         )}
+        <CreateIssueButton repo={`${owner}/${repo}`} />
       </div>
 
       {query.isLoading ? (
