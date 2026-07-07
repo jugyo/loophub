@@ -11,6 +11,7 @@ import type {
   CodingAgent,
   DashboardOverview,
   FileAtRef,
+  GithubPull,
   GlobalSettings,
   Handoff,
   HerdrAgentRead,
@@ -479,6 +480,19 @@ export function markGithubMerged(
   sessionId: string = getSessionId(),
 ) {
   return rpc<{ merged: boolean }>("pulls/markGithubMerged", {
+    repo: full(owner, repo),
+    number,
+    session_id: sessionId,
+  });
+}
+
+export function pushGithubPull(
+  owner: string,
+  repo: string,
+  number: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<GithubPull>("pulls/pushGithubPull", {
     repo: full(owner, repo),
     number,
     session_id: sessionId,

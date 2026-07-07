@@ -213,6 +213,10 @@ export interface GithubPullWire {
   // merged, and when — drives the "Mark as merged" action in the UI.
   github_merged: boolean;
   github_merged_at: string | null;
+  // #848: the loophub head SHA last pushed to the GitHub branch (null if never pushed from here).
+  // The PR-detail "push local changes" button compares this against the PR's live head.sha: they
+  // differ exactly when commits added after the export have not yet reached the GitHub branch.
+  pushed_sha: string | null;
 }
 export function githubPullJSON(g: S.GithubPull): GithubPullWire;
 export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null;
@@ -226,6 +230,7 @@ export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null {
     created_at: g.created_at,
     github_merged: !!g.github_merged,
     github_merged_at: g.github_merged_at ?? null,
+    pushed_sha: g.pushed_sha ?? null,
   };
 }
 

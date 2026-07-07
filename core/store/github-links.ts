@@ -9,6 +9,8 @@ export interface GithubPull {
   created_at: string;
   github_merged: number;
   github_merged_at: string | null;
+  // #848: the loophub head SHA last pushed to the GitHub branch, or null if never pushed from here.
+  pushed_sha: string | null;
 }
 
 export interface GithubIssue {
@@ -106,6 +108,17 @@ export function setGithubMerged(issueId: number, mergedAt: string): GithubPull {
        WHERE issue_id = ? RETURNING *`,
     )
     .get(mergedAt, issueId) as GithubPull;
+}
+
+// #848: record the loophub head SHA just pushed to the GitHub branch, so a later diff against the
+// PR's live head reveals whether local commits added after the export are still unpushed. Idempotent
+// — re-pushing the same head re-sets the same value. Requires an existing link (caller guards).
+export function setGithubPushed(issueId: number, sha: string): GithubPull {
+  return db
+    .query(
+      `UPDATE github_pulls SET pushed_sha = ? WHERE issue_id = ? RETURNING *`,
+    )
+    .get(sha, issueId) as GithubPull;
 }
 
 // #614: the GitHub issue a loophub issue was imported from, or null.

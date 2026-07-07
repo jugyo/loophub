@@ -143,6 +143,15 @@ export async function run(): Promise<void> {
     );
     out(g);
     if (!flags.json) console.log(`created GitHub PR #${g.number} — ${g.url}`);
+  } else if (sub === "push-github-pr") {
+    // #848: push the current head to the branch of the already-recorded GitHub PR, so local commits
+    // added after the export reach GitHub without re-creating the PR. Requires an existing github_pull.
+    const g = await runOp(async () =>
+      s.pulls.pushGithubPull(repo, Number(rest[0]), await writeSession()),
+    );
+    out(g);
+    if (!flags.json)
+      console.log(`pushed to GitHub PR #${g.number} branch ${g.branch}`);
   } else if (sub === "review") {
     let comments: any;
     if (flags.comments) {

@@ -636,6 +636,13 @@ tryExec(
 );
 tryExec("ALTER TABLE github_pulls ADD COLUMN github_merged_at TEXT");
 
+// github_pulls.pushed_sha (#848): the loophub-side head SHA last pushed to the GitHub branch —
+// recorded when the export (createGithubPull) or the "push local changes" action (pushGithubPull)
+// pushes. Comparing it against the PR's live head SHA is how the UI tells whether local commits
+// added after the export have not yet reached GitHub (and so whether to offer the push button). Null
+// for links recorded without a push (record-github-pr) or created before this column existed.
+tryExec("ALTER TABLE github_pulls ADD COLUMN pushed_sha TEXT");
+
 export function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "Z");
 }

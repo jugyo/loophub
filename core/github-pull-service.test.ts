@@ -428,6 +428,107 @@ test("createGithubPull requires a GitHub origin remote (#411)", async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+// #848: pushGithubPull re-pushes the current head to the already-recorded GitHub branch.
+test("createGithubPull records the pushed head SHA so unpushed changes are detectable (#848)", async () => {
+  const number = await openPull();
+  const { deps } = fakeDeps({
+    createResult: { number: 300, url: "https://github.com/me/proj/pull/300" },
+  });
+  await svc.pulls.createGithubPull(
+    "me/proj",
+    number,
+    { branch: "feature/sha", title: "t", body: "b" },
+    null,
+    deps as any,
+  );
+  const after = (await svc.pulls.get("me/proj", number)) as any;
+  // pushed_sha == the PR's live head at export time: no unpushed changes right after creating.
+  expect(after.github_pull.pushed_sha).toBe(after.head.sha);
+});
+
+test("pushGithubPull pushes the head to the recorded branch and updates pushed_sha (#848)", async () => {
+  const number = await openPull();
+  const { deps, calls } = fakeDeps({
+    createResult: { number: 301, url: "https://github.com/me/proj/pull/301" },
+  });
+  await svc.pulls.createGithubPull(
+    "me/proj",
+    number,
+    { branch: "feature/repush", title: "t", body: "b" },
+    null,
+    deps as any,
+  );
+  const created = (await svc.pulls.get("me/proj", number)) as any;
+  const firstSha = created.head.sha;
+
+  // A new commit moves the PR's head past what was exported — now there are unpushed changes.
+  git(["checkout", "-q", "feature"]);
+  writeFileSync(join(repoPath, "c.txt"), "z\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "more work"]);
+  git(["checkout", "-q", "main"]);
+  const moved = (await svc.pulls.get("me/proj", number)) as any;
+  expect(moved.head.sha).not.toBe(firstSha);
+  expect(moved.github_pull.pushed_sha).toBe(firstSha); // still the old pushed SHA
+
+  const rec = await svc.pulls.pushGithubPull(
+    "me/proj",
+    number,
+    null,
+    deps as any,
+  );
+  expect(rec).toMatchObject({
+    number: 301,
+    branch: "feature/repush",
+    pushed_sha: moved.head.sha,
+  });
+  // Pushed the internal head ref under the recorded content-based branch (no new gh create).
+  expect(calls.push.at(-1)).toMatchObject({
+    head: "feature",
+    branch: "feature/repush",
+  });
+  expect(calls.create).toHaveLength(1); // only the original create, none from the push
+
+  const afterPush = (await svc.pulls.get("me/proj", number)) as any;
+  expect(afterPush.github_pull.pushed_sha).toBe(moved.head.sha);
+});
+
+test("pushGithubPull refuses a PR with no recorded GitHub PR (#848)", async () => {
+  const number = await openPull();
+  const { deps, calls } = fakeDeps({});
+  await expect(
+    svc.pulls.pushGithubPull("me/proj", number, null, deps as any),
+  ).rejects.toThrow(/no GitHub PR to push to/);
+  expect(calls.push).toHaveLength(0);
+});
+
+test("pushGithubPull refuses a recorded PR that has no branch to push to (#848)", async () => {
+  const number = await openPull();
+  // record-github-pr may attach a link without a branch — nothing to push onto.
+  svc.pulls.recordGithubPull("me/proj", number, {
+    url: "https://github.com/me/proj/pull/302",
+  });
+  const { deps, calls } = fakeDeps({});
+  await expect(
+    svc.pulls.pushGithubPull("me/proj", number, null, deps as any),
+  ).rejects.toThrow(/no branch to push to/);
+  expect(calls.push).toHaveLength(0);
+});
+
+test("pushGithubPull rejects a recorded branch with injection-prone characters (#848)", async () => {
+  const number = await openPull();
+  // record-github-pr stores the branch unvalidated; pushGithubPull re-checks it before pushing.
+  svc.pulls.recordGithubPull("me/proj", number, {
+    url: "https://github.com/me/proj/pull/303",
+    branch: "--force",
+  });
+  const { deps, calls } = fakeDeps({});
+  await expect(
+    svc.pulls.pushGithubPull("me/proj", number, null, deps as any),
+  ).rejects.toThrow(/invalid characters/);
+  expect(calls.push).toHaveLength(0);
+});
+
 test("removeRepo sweeps github_pulls so repo removal does not fail the FK (#406)", async () => {
   // Isolated git repo + LoopHub repo so removal does not disturb the shared me/proj fixture.
   const dir = mkdtempSync(join(tmpdir(), "lh-ghpr-rm-"));

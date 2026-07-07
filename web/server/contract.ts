@@ -744,6 +744,16 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "pulls/pushGithubPull": {
+    description:
+      "Push the loophub PR's current head to the branch of its already-recorded GitHub PR (#848), so commits added locally after the export reach GitHub without re-creating the PR. Records the pushed head SHA.",
+    params: params({ repo, number: positiveInt, session_id: sid }, [
+      "repo",
+      "number",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.pulls.pushGithubPull(p.repo, p.number, p.session_id),
+  },
   "pulls/markGithubMerged": {
     description:
       "Close a GitHub-linked PR (and its linked issue) as merged, without a local git merge, once lh-worker's polling has detected the GitHub PR as merged.",

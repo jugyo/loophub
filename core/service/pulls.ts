@@ -365,17 +365,99 @@ export const pulls = {
         `GitHub returned an unexpected PR URL: ${gh.url}`,
       );
     const actor = actorFor(sessionId);
-    const rec = S.recordGithubPull({
+    S.recordGithubPull({
       issueId: row.id,
       number: gh.number,
       url: trimmedUrl,
       branch,
       createdBy: actor,
     });
+    // #848: remember which head SHA we just pushed, so the UI can later tell when local commits added
+    // after this export have not yet reached the GitHub branch (head resolves — the push above needed
+    // it — but tolerate a null defensively rather than throw after the PR is already created).
+    const pushedSha = await revParse(repoPath, head);
+    const rec = pushedSha
+      ? S.setGithubPushed(row.id, pushedSha)
+      : S.getGithubPull(row.id)!;
     S.emitEvent(r.id, "pull_request.github_pr_recorded", actor, {
       number: row.number,
       github_number: gh.number,
       url: rec.url,
+    });
+    return githubPullJSON(rec);
+  },
+
+  // #848: push the loophub PR's current head to the branch of its already-recorded GitHub PR, so
+  // commits added locally after the export reach GitHub without re-creating the PR. Mirrors
+  // createGithubPull's push (same `pushBranch` refspec, same GitHub-origin requirement), but requires
+  // an existing link and reuses its stored branch instead of taking a new one. Records the pushed head
+  // SHA (pushed_sha) so the button that offers this action hides once GitHub is up to date. git push +
+  // the DB update live here in core (AGENTS.md); `deps` is injectable so this is unit-testable.
+  async pushGithubPull(
+    name: string,
+    number: number,
+    sessionId?: string | null,
+    deps: GithubDeps = realGithubDeps,
+  ) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+
+    const gh = S.getGithubPull(row.id);
+    if (!gh)
+      throw new ServiceError(409, `PR #${number} has no GitHub PR to push to`);
+    if (!gh.branch)
+      throw new ServiceError(
+        422,
+        "the recorded GitHub PR has no branch to push to",
+      );
+    // Defense-in-depth: re-validate the stored branch with the same charset guard createGithubPull
+    // applies before pushing. createGithubPull already rejects injection-prone names, but a branch
+    // recorded via record-github-pr (#487) is stored unvalidated — re-check here so a crafted value
+    // can never reach `git push` as a flag/refspec (pushBranch's `refs/heads/` prefix already anchors
+    // it, so this is belt-and-suspenders, not the sole defense).
+    if (
+      gh.branch.startsWith("-") ||
+      gh.branch.includes("..") ||
+      !/^[A-Za-z0-9._/-]+$/.test(gh.branch)
+    )
+      throw new ServiceError(
+        422,
+        "the recorded GitHub branch has invalid characters",
+      );
+
+    const p = S.getPull(row.id)!;
+    // Only push while the loophub PR is genuinely open — a merged/closed PR is past the point of
+    // syncing more commits. The UI hides the button in these states, but guard here too so a direct
+    // RPC can't push onto the GitHub branch of a PR that's already done.
+    if (p.merged || row.state !== "open")
+      throw new ServiceError(405, "Pull Request is not open");
+
+    // Require a GitHub origin so the push targets GitHub (mirrors createGithubPull).
+    if (!isGithubRemoteUrl(await remoteUrl(r.local_path)))
+      throw new ServiceError(422, "repo has no GitHub origin remote");
+
+    // Run from the main checkout, not the worktree (shared refs, origin lives here, worktree may be
+    // pruned) — the same location resolution createGithubPull uses.
+    const repoPath = r.local_path;
+    const head = p.head_ref;
+
+    try {
+      await deps.push(repoPath, head, gh.branch);
+    } catch (e) {
+      throw new ServiceError(
+        502,
+        `failed to push branch: ${(e as Error).message}`,
+      );
+    }
+
+    const actor = actorFor(sessionId);
+    const pushedSha = await revParse(repoPath, head);
+    const rec = pushedSha ? S.setGithubPushed(row.id, pushedSha) : gh;
+    S.emitEvent(r.id, "pull_request.github_pr_pushed", actor, {
+      number: row.number,
+      github_number: gh.number,
+      sha: pushedSha,
     });
     return githubPullJSON(rec);
   },

@@ -15,6 +15,7 @@ import {
   markGithubMerged,
   mergePull,
   patchPull,
+  pushGithubPull,
   readyForReview,
 } from "@/api/client";
 import { queryKeys } from "./keys";
@@ -170,6 +171,15 @@ export function useMarkGithubMerged(
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => markGithubMerged(owner, repo, number),
+    onSuccess: () => invalidatePull(qc, owner, repo, number),
+  });
+}
+
+/** Push local changes to the linked GitHub PR's branch, then invalidate the PR + lists (#848). */
+export function usePushGithubPull(owner: string, repo: string, number: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => pushGithubPull(owner, repo, number),
     onSuccess: () => invalidatePull(qc, owner, repo, number),
   });
 }
