@@ -174,7 +174,8 @@ below done for you — do **not** redo it:
   implementation-plan heading plus `Closes #<n>`) and may have 0 commits. **A linked PR already
   existing is the expected state, not an
   anomaly** — do not be surprised by it, do not create a second one, and do not stop to ask about it.
-  You fill in its body at §5.
+  First fill only its implementation-plan section before source edits (below); later, at §5, replace
+  the placeholder PR body with the complete Summary / Acceptance criteria / Test plan / Evidence.
 
 So skip straight to implementing (§3). Verify the setup once:
 
@@ -188,6 +189,27 @@ outside the main checkout, so `resolveRepo()` cannot infer the repo from cwd.
 
 Progress is already visible via the linked PR; post `lh issue comment <n> --repo <repo>` only if you
 need to flag a blocker or hand-off for a human watching the UI.
+
+#### Record the implementation plan before source edits
+
+Before modifying source files, inspect enough of the relevant code to make a concrete plan, then update
+the linked PR body's implementation-plan section. Preserve all existing PR body content such as the
+issue link, purpose text, Evidence gate, and `Closes #<n>`; replace or fill only the implementation
+plan placeholder. This is required for both `lh dev --codex` and the default runtime because both
+launch the same `/lh-dev` flow after the draft PR exists.
+
+Keep the plan short and reviewable. Include:
+
+- Planned files or areas to change
+- Existing API / component / module you will reuse
+- Scope boundaries or things you will not change
+- Tests you will update or run
+
+After reading the current body with `lh pr view <m> --repo <repo> --json`, update the PR with the same
+complete body plus the filled implementation plan. In a shell, use the same HEREDOC style shown in §5:
+`lh pr update <m> --repo <repo> --body "$(cat <<'EOF' ... EOF)"`. In a tool/API context, pass the
+equivalent complete multiline body through that tool's argument API. Do not proceed to source edits
+until this PR-body update has succeeded.
 
 #### Another session already owns the issue
 

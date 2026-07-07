@@ -12,7 +12,8 @@ function defaultDraftPrBody(issue: number): string {
   return [
     "## 実装計画",
     "",
-    "<!-- 着手時に実装計画をここへ記入してください -->",
+    "<!-- /lh-dev は source edit 前にここを短い実装プランで更新してください。",
+    "含める内容: 変更予定ファイル/領域、再利用する既存 API/component/module、スコープ境界、更新・実行するテスト。 -->",
     "",
     "## Evidence",
     "",

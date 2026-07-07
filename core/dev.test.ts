@@ -66,6 +66,12 @@ describe("dev.openPr", () => {
     expect(pull.draft).toBe(true);
     expect(pull.linked_issue?.number).toBe(issue.number);
     expect(pull.body).toContain(`Closes #${issue.number}`);
+    expect(pull.body).toContain("## 実装計画");
+    expect(pull.body).toContain("source edit 前");
+    expect(pull.body).toContain("変更予定ファイル/領域");
+    expect(pull.body).toContain("再利用する既存 API/component/module");
+    expect(pull.body).toContain("スコープ境界");
+    expect(pull.body).toContain("更新・実行するテスト");
     expect(pull.body).toContain("**Visual evidence gate**: TODO");
     // The worktree path is copyable only after the directory exists; openPr runs before
     // provisioning, so a just-opened draft must not expose a stale/nonexistent path.
