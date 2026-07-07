@@ -69,6 +69,7 @@ function issue(overrides: Partial<Issue> = {}): Issue {
       merged: false,
       html_url: "/pulls/10",
       github_pull: null,
+      cost_stopped: false,
     },
     linked_pull_requests: [
       {
@@ -78,6 +79,7 @@ function issue(overrides: Partial<Issue> = {}): Issue {
         merged: false,
         html_url: "/pulls/10",
         github_pull: null,
+        cost_stopped: false,
       },
     ],
     ...overrides,

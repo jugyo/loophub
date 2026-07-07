@@ -696,6 +696,32 @@ test("hasCostStopEvent detects a dev.cost_stopped event per session/PR/repo (#83
   expect(S.hasCostStopEvent(other.id, 7, sess)).toBe(false);
 });
 
+test("hasAnyCostStopEvent detects a dev.cost_stopped event per PR, any session (#863)", () => {
+  const repo = S.createRepo("me/anycoststop", "/tmp/anycoststop");
+  const other = S.createRepo("me/anycoststop2", "/tmp/anycoststop2");
+  const sess = "bbbbbbbb-0000-0000-0000-000000000001";
+
+  expect(S.hasAnyCostStopEvent(repo.id, 9)).toBe(false);
+
+  S.emitEvent(repo.id, "dev.cost_stopped", "lh-worker", {
+    number: 9,
+    session_id: sess,
+    reason: "cost_limit_exceeded",
+    cost_usd: 15,
+    limit_usd: 10,
+  });
+  // Unlike the per-session guard, this is session-agnostic: the PR has been stopped, full stop.
+  expect(S.hasAnyCostStopEvent(repo.id, 9)).toBe(true);
+
+  // Scoped by PR number and by repo — a different PR or repo is unaffected.
+  expect(S.hasAnyCostStopEvent(repo.id, 8)).toBe(false);
+  expect(S.hasAnyCostStopEvent(other.id, 9)).toBe(false);
+
+  // A different event type on the same PR doesn't count as a cost stop.
+  S.emitEvent(repo.id, "pull_request.updated", "lh-worker", { number: 10 });
+  expect(S.hasAnyCostStopEvent(repo.id, 10)).toBe(false);
+});
+
 test("emitEvent persists and listEvents filters by since/order", () => {
   const repo = S.createRepo("me/ev", "/tmp/ev");
   S.emitEvent(repo.id, "issue.opened", "me", { number: 1 });

@@ -127,6 +127,9 @@ export interface PullSummaryWire {
   // the summed cost, or absent/null when no linked session has usage yet / has an unknown cost.
   total_tokens?: number;
   cost_usd?: number | null;
+  // #863: the PR has at least one `dev.cost_stopped` event — its dev agent was force-stopped for
+  // exceeding the cost limit. Drives the "cost stopped" badge on every surface that shows the PR.
+  cost_stopped: boolean;
 }
 
 // Extra fields present only on the issue-list linked-PR sub-row (issueListItemJSON's
@@ -700,6 +703,8 @@ function pullSummary(repo: S.Repo, pr: S.LinkedPullIssueRow): PullSummaryWire {
     html_url: linkedRef(repo, "pulls", pr.number).html_url,
     // #629: the exported GitHub PR (if any), so the issue-detail linked-PR row can show a GH badge.
     github_pull: githubPullJSON(S.getGithubPull(pr.id)),
+    // #863: whether this PR was force-stopped for exceeding its cost limit.
+    cost_stopped: S.hasAnyCostStopEvent(repo.id, pr.number),
   };
 }
 
@@ -875,6 +880,8 @@ async function linkedPullDetail(
     ...(model ? { agent_model: model } : {}),
     // #629: the exported GitHub PR (if any), so the issue-list linked-PR sub-row can show a GH badge.
     github_pull: githubPullJSON(S.getGithubPull(pr.id)),
+    // #863: whether this PR was force-stopped for exceeding its cost limit.
+    cost_stopped: S.hasAnyCostStopEvent(repo.id, pr.number),
     // #783: agent cost (total tokens + cost) for the sub-row, or omitted when no linked session
     // has usage yet.
     ...(usageTotals
@@ -1100,6 +1107,9 @@ export interface PullWire {
   updated_at: string;
   linked_issue: LinkedIssueWire | null;
   worktree_path: string | null;
+  // #863: the PR has at least one `dev.cost_stopped` event — its dev agent was force-stopped for
+  // exceeding the cost limit. Drives the "cost stopped" badge on the PR list row and detail header.
+  cost_stopped: boolean;
   // #406: the effective write action for this PR ('merge' | 'github_pr') and the GitHub PR it was
   // exported to (null until the export skill records one). The UI swaps Merge ⟷ Create/View PR.
   merge_mode: MergeMode;
@@ -1148,6 +1158,8 @@ export async function pullJSON(
     updated_at: row.updated_at,
     linked_issue: status.linked,
     worktree_path: status.worktree_path,
+    // #863: whether this PR was force-stopped for exceeding its cost limit.
+    cost_stopped: S.hasAnyCostStopEvent(repo.id, row.number),
     // #406: the effective write action for this PR ('merge' | 'github_pr') and the GitHub PR it was
     // exported to (null until the export skill records one). The UI swaps Merge ⟷ Create/View PR.
     merge_mode: mergeFields.merge_mode,

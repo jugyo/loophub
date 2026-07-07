@@ -28,6 +28,7 @@ import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CODING_AGENT_LABELS, MODEL_SUGGESTIONS } from "@/lib/agent-models";
 import {
+  costStoppedBadge,
   issueBuildButtonState,
   linkedPullStateBadge,
   linkedPullStatus,
@@ -495,6 +496,8 @@ function LinkedPullRow({
   // back to the always-available state badge (open/merged/closed).
   const status =
     linkedPullStatus(pull, { agentWorking }) ?? linkedPullStateBadge(pull);
+  // #863: force-stopped-for-cost flag for the issue-detail linked-PR row.
+  const costStopped = costStoppedBadge(pull);
   return (
     <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
       <Link
@@ -508,6 +511,15 @@ function LinkedPullRow({
         PR #{pull.number}
       </Link>
       <LinkedGithubPrBadge github_pull={pull.github_pull} />
+      {costStopped ? (
+        <Badge
+          tone={costStopped.tone}
+          title={costStopped.title}
+          className="shrink-0"
+        >
+          {costStopped.label}
+        </Badge>
+      ) : null}
       <span
         className="shrink-0 font-medium text-muted-foreground"
         title={status.title}

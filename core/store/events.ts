@@ -111,6 +111,21 @@ export function hasCostStopEvent(
     .get(repoId, prNumber, sessionId);
 }
 
+// Whether *any* `dev.cost_stopped` event exists for a PR, regardless of session (#863). Drives the
+// "cost stopped" badge shown wherever the PR appears: unlike hasCostStopEvent (the per-session
+// idempotency guard for the stop sweep), this asks the display question — "has this PR ever been
+// stopped for exceeding its cost limit?" — so a human can spot a stalled PR at a glance.
+export function hasAnyCostStopEvent(repoId: number, prNumber: number): boolean {
+  return !!db
+    .query(
+      `SELECT 1 AS ok FROM events
+       WHERE repo_id = ? AND type = 'dev.cost_stopped'
+         AND json_extract(payload, '$.number') = ?
+       LIMIT 1`,
+    )
+    .get(repoId, prNumber);
+}
+
 // Events related to a single PR, newest first. Matches a repo's events whose payload targets
 // the PR's own number (pull_request.*), its pr_number (handoff.recorded), or the linked issue's
 // number (issue.*) — the union of every number a PR's data is filed under. Used by the debug

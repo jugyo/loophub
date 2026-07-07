@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Issue, LinkedPull, PullRequest } from "@/api/types";
 import {
+  costStoppedBadge,
   draftBadge,
   issueBadges,
   issueBuildButtonState,
@@ -59,6 +60,7 @@ function pull(partial: Partial<PullRequest> = {}): PullRequest {
     updated_at: "2026-01-01T00:00:00Z",
     linked_issue: null,
     worktree_path: null,
+    cost_stopped: false,
     merge_mode: "merge",
     github_pull: null,
     ...partial,
@@ -163,6 +165,48 @@ describe("draftBadge (#413)", () => {
   });
 });
 
+describe("costStoppedBadge (#863)", () => {
+  it("shows a cost-stopped badge on an open PR with the flag set", () => {
+    const badge = costStoppedBadge(pull({ cost_stopped: true }));
+    expect(badge?.tone).toBe("cost-stopped");
+    expect(badge?.label).toBe("over budget");
+    // AC: the tooltip conveys that the stop was due to the cost limit.
+    expect(badge?.title).toMatch(/cost limit/i);
+  });
+
+  it("does not show when the PR was never stopped", () => {
+    expect(costStoppedBadge(pull({ cost_stopped: false }))).toBeNull();
+    // Absent flag (older server) reads as not stopped.
+    expect(costStoppedBadge(pull())).toBeNull();
+  });
+
+  it("does not show on merged or closed PRs even if flagged", () => {
+    expect(
+      costStoppedBadge(pull({ cost_stopped: true, merged: true })),
+    ).toBeNull();
+    expect(
+      costStoppedBadge(pull({ cost_stopped: true, state: "closed" })),
+    ).toBeNull();
+  });
+
+  it("is included first in pullBadges / pullDetailBadges for a stopped PR", () => {
+    expect(pullBadges(pull({ cost_stopped: true }))[0]?.tone).toBe(
+      "cost-stopped",
+    );
+    expect(pullDetailBadges(pull({ cost_stopped: true }))[0]?.tone).toBe(
+      "cost-stopped",
+    );
+  });
+
+  it("does not add the badge to a non-stopped PR's badge list", () => {
+    expect(
+      pullBadges(pull({ cost_stopped: false })).some(
+        (b) => b.tone === "cost-stopped",
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("linkedPullStatus", () => {
   function linked(partial: Partial<LinkedPull> = {}): LinkedPull {
     return {
@@ -172,6 +216,7 @@ describe("linkedPullStatus", () => {
       merged: false,
       html_url: "/pulls/2",
       github_pull: null,
+      cost_stopped: false,
       ...partial,
     };
   }
@@ -314,6 +359,7 @@ describe("linkedPullStateBadge (#269 detail summary)", () => {
       merged: false,
       html_url: "/pulls/2",
       github_pull: null,
+      cost_stopped: false,
       ...partial,
     };
   }
@@ -349,6 +395,7 @@ describe("linkedPullPillTone (lifecycle axis)", () => {
       merged: false,
       html_url: "/pulls/2",
       github_pull: null,
+      cost_stopped: false,
       ...partial,
     };
   }
@@ -396,6 +443,7 @@ describe("primaryLinkedPull (#598)", () => {
       merged: false,
       html_url: "/pulls/2",
       github_pull: null,
+      cost_stopped: false,
       ...partial,
     };
   }
@@ -432,6 +480,7 @@ describe("issueBuildButtonState (#598)", () => {
       merged: false,
       html_url: "/pulls/2",
       github_pull: null,
+      cost_stopped: false,
       ...partial,
     };
   }

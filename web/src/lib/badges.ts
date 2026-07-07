@@ -28,6 +28,7 @@ export type BadgeTone =
   | "mergeable"
   | "conflict"
   | "working"
+  | "cost-stopped"
   | "unknown"
   // Violet tone, used by the related-sessions "dev" and handoff "code" badges.
   | "agent";
@@ -214,6 +215,29 @@ export function workingBadge(
   };
 }
 
+/**
+ * "over budget" badge for a PR whose dev agent was force-stopped for exceeding its cost limit
+ * (#863, driven by the `dev.cost_stopped` event surfaced as `cost_stopped`). The conceptual
+ * escalation of the amber/red AgentCostBadge cost highlight: a stopped PR is stalled and needs a
+ * human, so it is flagged wherever the PR appears. Null when the flag is absent/false (never
+ * stopped, or an older server that doesn't send it).
+ */
+export function costStoppedBadge(pull: {
+  cost_stopped?: boolean;
+  merged?: boolean;
+  state?: "open" | "closed";
+}): Badge | null {
+  // Like draft/working, a transient "needs attention" cue for an open PR: once the PR is
+  // merged/closed the stall is resolved, so the badge is suppressed rather than left as stale noise
+  // next to a "merged"/"closed" badge.
+  if (!pull.cost_stopped || pull.merged || pull.state === "closed") return null;
+  return {
+    tone: "cost-stopped",
+    label: "over budget",
+    title: "Stopped — agent cost limit exceeded",
+  };
+}
+
 /** All badges for an issue row. */
 export function issueBadges(issue: Issue): Badge[] {
   const badges: Badge[] = [];
@@ -230,6 +254,10 @@ export function pullBadges(
   const badges: Badge[] = [];
   const status = resolvePullStatus(pr, options);
   const isWorking = status.isWorktreeWorking || status.isAgentWorking;
+  // #863: a stopped-for-cost PR is stalled and needs a human — flag it first, ahead of the
+  // routine draft/working/review badges. Suppressed on merged/closed PRs (costStoppedBadge).
+  const costStopped = costStoppedBadge(pr);
+  if (costStopped) badges.push(costStopped);
   const draft = draftBadge(pr);
   if (draft) badges.push(draft);
   const working = isWorking ? workingBadge(pr, options) : null;
@@ -269,6 +297,9 @@ export function pullDetailBadges(
 ): Badge[] {
   const badges: Badge[] = [];
   const status = resolvePullStatus(pr, options);
+  // #863: flag a stopped-for-cost PR first, ahead of the routine badges (see pullBadges).
+  const costStopped = costStoppedBadge(pr);
+  if (costStopped) badges.push(costStopped);
   const draft = draftBadge(pr);
   if (draft) badges.push(draft);
   const working = options.agentWorking

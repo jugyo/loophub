@@ -76,6 +76,7 @@ const pull: PullRequest = {
     html_url: "/issues/153",
   },
   worktree_path: null,
+  cost_stopped: false,
   merge_mode: "merge",
   github_pull: null,
 };
@@ -193,6 +194,21 @@ describe("PullDetail", () => {
     // Bidirectional link back to the issue this PR closes.
     const linked = screen.getByText("#153").closest("a");
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
+  });
+
+  // #863: a cost-stopped PR shows an "over budget" badge in the PR-detail header.
+  it("shows a cost-stopped badge in the header when the PR was stopped", async () => {
+    renderDetail({ "pulls/get": () => ({ ...pull, cost_stopped: true }) });
+    const badge = await screen.findByTitle(
+      "Stopped — agent cost limit exceeded",
+    );
+    expect(badge.textContent).toBe("over budget");
+  });
+
+  it("shows no cost-stopped badge in the header for a PR that was never stopped", async () => {
+    renderDetail();
+    await screen.findByText("ui2: PR detail");
+    expect(screen.queryByText("over budget")).toBeNull();
   });
 
   it("copies the head branch from the PR header with visible feedback", async () => {

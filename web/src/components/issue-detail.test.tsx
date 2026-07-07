@@ -53,6 +53,7 @@ const issue: Issue = {
     merged: false,
     html_url: "/pulls/30",
     github_pull: null,
+    cost_stopped: false,
   },
 };
 
@@ -227,6 +228,28 @@ describe("IssueDetail", () => {
     expect(ctx.queryByText("changes")).toBeNull();
   });
 
+  // #863: a cost-stopped PR shows an "over budget" badge on the issue-detail linked-PR row.
+  it("shows a cost-stopped badge on the linked-PR row when the PR was stopped", async () => {
+    renderDetail(() => ({
+      ...issue,
+      linked_pull_request: {
+        ...issue.linked_pull_request!,
+        cost_stopped: true,
+      },
+    }));
+
+    const badge = await screen.findByTitle(
+      "Stopped — agent cost limit exceeded",
+    );
+    expect(badge.textContent).toBe("over budget");
+  });
+
+  it("shows no cost-stopped badge on a linked PR that was never stopped", async () => {
+    renderDetail();
+    await screen.findByText("PR #30");
+    expect(screen.queryByText("over budget")).toBeNull();
+  });
+
   it("hides the linked-PR summary when no PR is linked", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr);
@@ -329,6 +352,7 @@ describe("IssueDetail", () => {
         merged: false,
         html_url: "/pulls/31",
         github_pull: null,
+        cost_stopped: false,
       },
       linked_pull_requests: [
         {
@@ -338,6 +362,7 @@ describe("IssueDetail", () => {
           merged: false,
           html_url: "/pulls/31",
           github_pull: null,
+          cost_stopped: false,
         },
         {
           number: 30,
@@ -346,6 +371,7 @@ describe("IssueDetail", () => {
           merged: true,
           html_url: "/pulls/30",
           github_pull: null,
+          cost_stopped: false,
         },
         {
           number: 29,
@@ -354,6 +380,7 @@ describe("IssueDetail", () => {
           merged: false,
           html_url: "/pulls/29",
           github_pull: null,
+          cost_stopped: false,
         },
       ],
     };

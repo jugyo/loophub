@@ -25,6 +25,7 @@ import { Badge, badgeVariants } from "@/components/ui/badge";
 import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import {
   type Badge as BadgeData,
+  costStoppedBadge,
   issueBuildButtonState,
   linkedPullPillTone,
   linkedPullStatus,
@@ -394,6 +395,8 @@ function LinkedPullSubRow({
   // pass 済みなら、緑にまとめられた未マージ群の中から一目で識別できるよう
   // ステータス語にチェックアイコンを添える。他の未マージ状態には出さない。
   const passed = status?.tone === "review-passed";
+  // #863: force-stopped-for-cost flag, shown as a badge so a stalled PR stands out in the issue list.
+  const costStopped = costStoppedBadge(pull);
   const runtimeMetadata = agentRuntimeMetadataLabel(
     pull.agent_runtime,
     pull.agent_model,
@@ -430,6 +433,15 @@ function LinkedPullSubRow({
         ) : null}
         {status.label}
       </span>
+    ) : null,
+    costStopped ? (
+      <Badge
+        key="cost-stopped"
+        tone={costStopped.tone}
+        title={costStopped.title}
+      >
+        {costStopped.label}
+      </Badge>
     ) : null,
     runtimeMetadata ? (
       <AgentRuntimeMetadata key="agent" label={runtimeMetadata} />

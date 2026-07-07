@@ -25,6 +25,11 @@ const badgeVariants = cva(
         conflict: "border-destructive/50 text-destructive",
         working:
           "border-sky-500/50 bg-sky-500/10 text-sky-600 dark:text-sky-300",
+        // #863: a PR whose dev agent was force-stopped for exceeding its cost limit. A filled
+        // destructive tone — the escalation of AgentCostBadge's amber/red cost highlight — so a
+        // stalled PR stands out from the other status badges.
+        "cost-stopped":
+          "border-destructive/50 bg-destructive/10 text-destructive",
         unknown: "border-border text-muted-foreground",
         agent:
           "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-300",

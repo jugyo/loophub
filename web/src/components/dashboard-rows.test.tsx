@@ -136,6 +136,7 @@ function makePull(overrides: Partial<LinkedPull> = {}): LinkedPull {
     merged: false,
     html_url: "/pulls/10",
     github_pull: null,
+    cost_stopped: false,
     ...overrides,
   };
 }
@@ -836,6 +837,37 @@ describe("agent cost display (#783)", () => {
     const badge = await screen.findByText("1k tok · n/a");
     expect(badge.className).not.toContain("text-amber");
     expect(badge.className).not.toContain("text-destructive");
+  });
+});
+
+// #863: a PR force-stopped for exceeding its cost limit gets an "over budget" badge on the
+// issue-list linked-PR sub-row (LinkedPullSubRow), so a stalled PR is spotted at a glance.
+describe("cost-stopped badge on the linked-PR sub-row (#863)", () => {
+  it("shows the badge on a stopped PR", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ cost_stopped: true })],
+        })}
+      />,
+    );
+    expect(await screen.findByText("over budget")).toBeTruthy();
+  });
+
+  it("does not show the badge on a PR that was never stopped", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ cost_stopped: false })],
+        })}
+      />,
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(screen.queryByText("over budget")).toBeNull();
   });
 });
 
