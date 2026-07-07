@@ -1102,7 +1102,7 @@ describe("PullDetail", () => {
         state: "REQUEST_CHANGES",
         body: "needs work",
         head_sha: "old1234deadbeef",
-        topic: null,
+        topic: "quality",
         submitted_at: "2026-06-18T10:00:00Z",
       },
       {
@@ -1162,16 +1162,24 @@ describe("PullDetail", () => {
 
     // Existing per-commit state badges are preserved.
     expect(screen.getByText("current")).toBeTruthy();
-    expect(screen.getByText("STALE")).toBeTruthy();
+    expect(screen.queryByText("STALE")).toBeNull();
 
     // Each summary carries a collapsed verdict: PASS → "passed" on the
-    // current group, REQUEST_CHANGES → "changes requested" on the stale group.
+    // current group, REQUEST_CHANGES → "changes requested" on the old group.
     expect(currentGroup?.querySelector("summary")?.textContent).toContain(
       "passed",
     );
     expect(staleGroup?.querySelector("summary")?.textContent).toContain(
       "changes requested",
     );
+    expect(staleGroup?.querySelector("summary")?.textContent).not.toContain(
+      "STALE",
+    );
+    expect(staleGroup).toBeTruthy();
+    const staleGroupContent = within(staleGroup as HTMLElement);
+    expect(staleGroupContent.getByText("needs work")).toBeTruthy();
+    expect(staleGroupContent.getByText("@design-bot")).toBeTruthy();
+    expect(staleGroupContent.getByText("quality")).toBeTruthy();
   });
 
   it("keeps all groups collapsed when no review targets the current head (#268)", async () => {

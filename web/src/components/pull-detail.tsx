@@ -688,11 +688,7 @@ function ReviewCommitGroup({
         ) : (
           <span className="font-medium">unknown commit</span>
         )}
-        {group.isCurrent ? (
-          <Badge tone="open">current</Badge>
-        ) : group.headSha ? (
-          <Badge tone="review-rereview">STALE</Badge>
-        ) : null}
+        {group.isCurrent ? <Badge tone="open">current</Badge> : null}
         <Badge tone={verdict.tone}>{verdict.label}</Badge>
         <span className="text-xs text-muted-foreground">
           {count} review{count === 1 ? "" : "s"}
