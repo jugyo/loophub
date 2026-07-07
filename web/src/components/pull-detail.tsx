@@ -421,32 +421,6 @@ function GithubPrAction({
   pull: PullRequest;
 }) {
   const { launchTerminal } = useTerminalLauncher();
-  // #797: give the export a persistent, reload-surviving in-progress state — the issue Build button
-  // gets this for free from "linked PR is open", but export had no equivalent until github_pull lands.
-  // The github-pr-export skill runs in a herdr workspace pinned to this PR's worktree
-  // (core/service/terminal.ts), so an *actively working* agent on this PR IS the live-export signal.
-  // It comes from the shared terminal/sessions poll, so it survives a reload while the export runs.
-  // Gate on status === "working" (isPullHerdrWorking), NOT mere workspace existence: the export is an
-  // interactive `claude /create-github-pr` that stays alive as an idle/done pane after its turn
-  // (terminal-launch.ts), and inactive-cleanup won't close a done pane on an open PR — so an
-  // existence check would never clear on a failed export, freezing the button. Keying on "working"
-  // means a finished/failed export (idle/done) stops reading as in-progress, so it never sticks (AC4).
-  // github_pull landing takes over below regardless.
-  const { data: herdrSessions } = useHerdrSessions();
-  const herdrRunning = isPullHerdrWorking(
-    herdrSessions,
-    `${owner}/${repo}`,
-    pull.number,
-  );
-  // Optimistic bridge for the click→poll gap: terminal/sessions lags a few seconds behind the click,
-  // so reflect in-progress immediately (AC: "disabled right after click") and hand off to the
-  // herdrRunning signal once it reports the agent. Cleared on launch failure (onError below) so a
-  // failed dispatch doesn't leave the button stuck before any workspace ever appears.
-  const [launching, setLaunching] = useState(false);
-  useEffect(() => {
-    if (herdrRunning) setLaunching(false);
-  }, [herdrRunning]);
-
   // #813: lh-worker's polling (github-merge-sync.ts) detected the GitHub PR as merged, but the
   // loophub PR hasn't gone through its own merge/close flow yet — offer a manual close that
   // mirrors the local merge flow's end state without running a local git merge.
@@ -529,29 +503,17 @@ function GithubPrAction({
   }
   // A merged or closed loophub PR is past the point of exporting, so offer Create only while open.
   if (pull.state !== "open" || pull.merged) return null;
-
-  // Export dispatched and still running (or just clicked): a disabled label, no spinner (per AC).
-  if (launching || herdrRunning) {
-    return (
-      <Button disabled title="Creating a PR on GitHub via the export skill…">
-        <Github className="size-4" />
-        Creating…
-      </Button>
-    );
-  }
   return (
     <Button
       title="Create a PR on GitHub from this branch via the export skill"
-      onClick={() => {
-        setLaunching(true);
+      onClick={() =>
         launchTerminal({
           repo: `${owner}/${repo}`,
           label: `PR #${pull.number} - ${pull.title}`,
           workflow: "github-pr-export",
           prNumber: pull.number,
-          onError: () => setLaunching(false),
-        });
-      }}
+        })
+      }
     >
       <Github className="size-4" />
       Create PR on GitHub

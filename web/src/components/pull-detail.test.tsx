@@ -1421,10 +1421,7 @@ describe("PullDetail", () => {
 
 // #406: the PR-detail write action follows the PR's effective merge_mode. Render with an overridden
 // pull so we can exercise each mode without touching the shared fixture.
-function renderDetailWithPull(
-  override: Partial<PullRequest>,
-  opts: { herdrSessions?: unknown } = {},
-) {
+function renderDetailWithPull(override: Partial<PullRequest>) {
   vi.stubGlobal(
     "fetch",
     mockRpcFetch({
@@ -1433,9 +1430,6 @@ function renderDetailWithPull(
       "reviews/list": () => reviews,
       "reviews/listComments": () => lineComments,
       "comments/list": () => comments,
-      ...(opts.herdrSessions
-        ? { "terminal/sessions": () => opts.herdrSessions }
-        : {}),
     }),
   );
   const queryClient = new QueryClient({
@@ -1485,92 +1479,6 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(opts.repo).toBe("me/proj");
     expect(opts.workflow).toBe("github-pr-export");
     expect(opts.prNumber).toBe(30);
-  });
-
-  it("shows a disabled 'Creating…' state right after clicking (#797)", async () => {
-    renderDetailWithPull({ merge_mode: "github_pr", github_pull: null });
-    const button = await screen.findByRole("button", {
-      name: /Create PR on GitHub/i,
-    });
-    fireEvent.click(button);
-    // Optimistic: in-progress immediately, before terminal/sessions reports the agent.
-    const creating = await screen.findByRole("button", { name: /Creating/i });
-    expect((creating as HTMLButtonElement).disabled).toBe(true);
-    expect(
-      screen.queryByRole("button", { name: /Create PR on GitHub/i }),
-    ).toBeNull();
-  });
-
-  it("stays in-progress on reload while a herdr workspace runs the export (#797)", async () => {
-    // No click here — a fresh render (i.e. after reload) with terminal/sessions reporting a
-    // workspace pinned to this PR must still read as in-progress, proving the state is data-driven
-    // and not just the transient post-click flag.
-    renderDetailWithPull(
-      { merge_mode: "github_pr", github_pull: null },
-      {
-        herdrSessions: {
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "loophub-me-proj",
-              agents: [],
-              pull_workspaces: [{ pull: 30, pane_id: "%1", status: "working" }],
-            },
-          ],
-        },
-      },
-    );
-    const creating = await screen.findByRole("button", { name: /Creating/i });
-    expect((creating as HTMLButtonElement).disabled).toBe(true);
-    expect(
-      screen.queryByRole("button", { name: /Create PR on GitHub/i }),
-    ).toBeNull();
-  });
-
-  it("recovers to Create when the export agent finished/failed (idle/done pane, #797 AC4)", async () => {
-    // The export runs an interactive `claude /create-github-pr` that lingers as an idle/done pane
-    // after it finishes — success OR failure — so an existence-only signal would freeze forever.
-    // Keying on status === "working" means a done pane with github_pull still null (a failed export)
-    // reads as NOT in-progress, so the button returns to a clickable "Create PR on GitHub".
-    renderDetailWithPull(
-      { merge_mode: "github_pr", github_pull: null },
-      {
-        herdrSessions: {
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "loophub-me-proj",
-              agents: [],
-              pull_workspaces: [{ pull: 30, pane_id: "%1", status: "done" }],
-            },
-          ],
-        },
-      },
-    );
-    await screen.findByRole("button", { name: /Create PR on GitHub/i });
-    expect(screen.queryByRole("button", { name: /Creating/i })).toBeNull();
-  });
-
-  it("offers Create (not in-progress) when the running herdr workspace is another PR (#797)", async () => {
-    // A workspace for a different PR must not make this PR read as exporting — the self-healing
-    // signal is scoped to this PR's worktree, so an unrelated agent leaves the button clickable.
-    renderDetailWithPull(
-      { merge_mode: "github_pr", github_pull: null },
-      {
-        herdrSessions: {
-          repos: [
-            {
-              repo: "me/proj",
-              session_name: "loophub-me-proj",
-              agents: [],
-              pull_workspaces: [{ pull: 99, pane_id: "%2", status: "working" }],
-            },
-          ],
-        },
-      },
-    );
-    await screen.findByRole("button", { name: /Create PR on GitHub/i });
-    expect(screen.queryByRole("button", { name: /Creating/i })).toBeNull();
   });
 
   it("swaps to a View PR on GitHub link once exported (double-create guard)", async () => {
