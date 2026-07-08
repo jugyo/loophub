@@ -89,6 +89,16 @@ minimal recommended set (type-aware checks stay with `npm run typecheck`).
 - Keep tests deterministic and self-contained: create a temp git repo / HOME, assert, and
   clean up in `afterAll`.
 
+## Visual evidence
+
+For UI or visual changes, do not mark screenshot evidence as N/A only because the in-app browser
+or Chrome is unavailable. First check whether Playwright MCP is available. When it is, capture the
+screenshot with Playwright MCP, save it under
+`${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/`, upload it with
+`lh attachment add --file <path>`, and embed the printed attachment markdown in the PR Evidence
+section. Use screenshot N/A only when Playwright MCP is unavailable or unsuitable and every other
+practical capture path is blocked; record the alternative verification and the specific reason.
+
 ## Data location
 
 State lives in `LOOPHUB_HOME` (default `~/.loophub`), SQLite at `LOOPHUB_DB`

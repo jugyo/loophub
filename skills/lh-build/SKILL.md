@@ -276,11 +276,15 @@ visible from PR creation.
 2. Treat the change as a **UI / visual candidate** when it touches UI surfaces, styling, rendered
    docs, images, fonts, screenshots, or other files that affect what a human sees.
 3. Record the result in the PR Evidence section as **Visual evidence gate**:
-   - `UI / visual candidate: yes` -> capture a screenshot if possible, using available tools such
-     as Playwright, the browser tool, or `claude-in-chrome`; save it to the persistent evidence
-     directory, upload it with `lh attachment add`, and paste the embed markdown in the PR.
+   - `UI / visual candidate: yes` -> capture a screenshot if possible. Check Playwright MCP first
+     when it is available in the host, then fall back to other available browser tools such as
+     `claude-in-chrome`, the in-app browser, Chrome, or headless Playwright CLI. Save the screenshot
+     to the persistent evidence directory, upload it with `lh attachment add`, and paste the embed
+     markdown in the PR.
    - `UI / visual candidate: yes, N/A` -> use only when a screenshot is unnecessary or cannot be
-     obtained; include the specific reason.
+     obtained. Failure to access the in-app browser or Chrome is not enough by itself; confirm
+     Playwright MCP is also unavailable or unsuitable, then include the alternative verification and
+     the specific reason.
    - `UI / visual candidate: no` -> include the reason, for example `N/A - backend/CLI-only change;
      no rendered UI changed`.
 
@@ -311,18 +315,37 @@ ${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/
 - This skill and `lh-pr-review` (Phase B) write here; `lh-merge-ready` reads the directory,
   validates each image, and prints the valid paths at the end of its report.
 
-##### Capture method: claude-in-chrome vs. headless Playwright
+##### Capture method: Playwright MCP, claude-in-chrome, or headless Playwright
 
-Two ways to produce the screenshot itself before it goes through the evidence flow above:
+Prefer Playwright MCP for UI / visual screenshots when the host exposes it. It is designed for
+browser automation from the agent session and can capture the current page or a navigated URL without
+depending on the user's Chrome session. Tool names vary by host, so inspect the current host's
+available Playwright MCP tools before use; common operations are navigate, resize, snapshot, and
+take screenshot.
+
+When using Playwright MCP:
+
+1. Navigate or select the target page and set a stable viewport when relevant.
+2. Capture a full-page or element screenshot.
+3. Write or copy the screenshot into
+   `${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/`.
+4. Confirm the image does not contain secrets or PII.
+5. Run `lh attachment add --file <path>` and paste the printed
+   `![name](/attachments/<sha256>)` markdown into the PR Evidence section with a short caption.
+
+If Playwright MCP is not available or cannot exercise the page, use another capture path:
 
 | Method | Use when |
 |--------|----------|
 | **`claude-in-chrome`** (MCP tool) | Interactive verification in the operator's real, already-logged-in Chrome session — clicking through a flow, confirming something visually, or exercising a page that needs a live human-authenticated session. Requires a display and the extension. |
+| **In-app browser / Chrome tools** | The target is already open in the UI, or the verification depends on a browser session the host can control directly. |
 | **Headless Playwright** (`npx playwright screenshot`, below) | AFK / cron / sandbox / CI evidence capture with no display attached, or scripted repeatable screenshots. Runs headless by default, so it works in environments without a display (confirmed in a sandboxed worktree with no display: `npx --yes playwright@1.61.1 screenshot --browser=chromium <url> out.png` produced a valid PNG). |
 
-This is additive, not a replacement — interactive verification during implementation should still use
-`claude-in-chrome`; reach for headless Playwright when no display/session is available or the capture
-needs to be scripted.
+This is additive, not a replacement. Interactive verification during implementation can still use
+`claude-in-chrome` or Chrome when that is the best path, but do not declare screenshot evidence
+unavailable until Playwright MCP has also been checked. If Playwright MCP is unavailable and every
+other capture path is blocked, record the alternative verification performed and the concrete N/A
+reason in the PR Evidence section.
 
 Playwright is **not** a project dependency — its CLI is invoked via `npx`, which resolves from npm's
 cache without touching `package.json`:
