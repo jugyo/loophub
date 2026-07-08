@@ -29,7 +29,7 @@ export function AppLayout() {
         <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
           <AppTopbar />
           <DetailTitleProvider>
-            <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <header className="flex h-11 shrink-0 items-center gap-4 border-b px-4 sm:px-6">
                 <AppBreadcrumb />
               </header>
