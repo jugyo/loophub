@@ -63,6 +63,17 @@ export function hasSessionSubagentUsage(sessionId: string): boolean {
     .get(sessionId);
 }
 
+export function deleteSessionSubagentUsageByKind(
+  sessionId: string,
+  kind: string,
+) {
+  db.run(
+    `DELETE FROM session_usage_subagents
+     WHERE session_id = ? AND kind = ?`,
+    [sessionId, kind],
+  );
+}
+
 export function listAllSessionUsage(): SessionUsageRow[] {
   return db
     .query(

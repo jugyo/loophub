@@ -104,6 +104,7 @@ import type {
   ClaudeSubagentTranscript,
   ClaudeSubagentTranscriptCandidate,
   CodexRolloutScan,
+  ModelUsage,
   UsageEntry,
 } from "../session-usage.ts";
 import {
@@ -194,6 +195,7 @@ export type {
   HerdrPullWorkspace,
   LoopEvent,
   MergeMode,
+  ModelUsage,
   TerminalLaunchRepo,
   UsageEntry,
 };

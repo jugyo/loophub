@@ -1,7 +1,7 @@
 import type {
   ClaudeSubagentTranscript,
   ClaudeSubagentTranscriptCandidate,
-  CodexRolloutScan,
+  ModelUsage,
   UsageEntry,
 } from "./shared.ts";
 import {
@@ -32,58 +32,27 @@ import {
   worktreeRoot,
 } from "./shared.ts";
 
-// ===== agent sessions =====
-function timestampMs(value: unknown): number | null {
-  if (typeof value !== "string") return null;
-  const ms = Date.parse(value);
-  return Number.isFinite(ms) ? ms : null;
+function codexUsageOwnerForPull(
+  pullIssueId: number,
+  fallbackSessionId: string,
+): string {
+  const primarySessionId = S.primaryDevSessionForPull(pullIssueId);
+  const primary = primarySessionId ? S.getAgentSession(primarySessionId) : null;
+  if (primary && sessionRuntime(primary) === RUNTIME_CODEX)
+    return primarySessionId!;
+  return (
+    S.listSessionsForIssue(pullIssueId).find(
+      (session) => sessionRuntime(session) === RUNTIME_CODEX,
+    )?.id ?? fallbackSessionId
+  );
 }
 
-interface CodexUsageTargetContext {
-  peersByPullId: Map<
-    number,
-    {
-      counts: Map<number, number>;
-      sortedStarts: number[];
-    }
-  >;
-}
-
-function codexPeerStartsForPull(
-  pullId: number,
-  context?: CodexUsageTargetContext,
-): {
-  counts: Map<number, number>;
-  sortedStarts: number[];
-} {
-  const cached = context?.peersByPullId.get(pullId);
-  if (cached) return cached;
-  const counts = new Map<number, number>();
-  for (const session of S.listSessionsForIssue(pullId)) {
-    if (sessionRuntime(session) !== RUNTIME_CODEX) continue;
-    const startedAtMs = timestampMs(session.created_at);
-    if (startedAtMs == null) continue;
-    counts.set(startedAtMs, (counts.get(startedAtMs) ?? 0) + 1);
-  }
-  const result = {
-    counts,
-    sortedStarts: [...counts.keys()].sort((a, b) => a - b),
-  };
-  context?.peersByPullId.set(pullId, result);
-  return result;
-}
-
-function codexUsageTarget(
-  row: S.AgentSessionRow,
-  context?: CodexUsageTargetContext,
-): {
+function codexUsageTarget(row: S.AgentSessionRow): {
   cwd: string;
-  startedAtMs: number;
-  endedBeforeMs: number | null;
+  ownerSessionId: string;
+  pullIssueId: number;
 } | null {
   if (sessionRuntime(row) !== RUNTIME_CODEX) return null;
-  const startedAtMs = timestampMs(row.created_at);
-  if (startedAtMs == null) return null;
 
   const target = S.listSessionLinkedTargets(row.id).find(
     (x) => x.kind === "pull",
@@ -99,61 +68,11 @@ function codexUsageTarget(
       identity.scheme === "legacy-issue"
         ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
         : worktreePath(worktreeRoot(), r.full_name, identity.number);
-    const peerStarts = codexPeerStartsForPull(prRow.id, context);
-    if ((peerStarts.counts.get(startedAtMs) ?? 0) > 1) return null;
-    const nextStart =
-      peerStarts.sortedStarts.find((ms: number): boolean => ms > startedAtMs) ??
-      null;
-    return { cwd, startedAtMs, endedBeforeMs: nextStart };
+    const ownerSessionId = codexUsageOwnerForPull(prRow.id, row.id);
+    return { cwd, ownerSessionId, pullIssueId: prRow.id };
   } catch {
     return null;
   }
-}
-
-const codexSessionScanFingerprints = new Map<string, string>();
-
-function pruneCodexSessionScanFingerprints(sessionIds: Set<string>): void {
-  for (const sessionId of codexSessionScanFingerprints.keys()) {
-    if (!sessionIds.has(sessionId))
-      codexSessionScanFingerprints.delete(sessionId);
-  }
-}
-
-function codexSessionScanFingerprint(
-  scan: CodexRolloutScan,
-  target: {
-    cwd: string;
-    startedAtMs: number;
-    endedBeforeMs: number | null;
-  },
-): string {
-  return [
-    scan.fingerprint,
-    target.cwd,
-    target.startedAtMs,
-    target.endedBeforeMs ?? "",
-  ].join("\0");
-}
-
-function codexCursorMatchesScan(
-  cursor: S.SessionUsageCursorRow | null,
-  scan: CodexRolloutScan,
-): boolean {
-  if (!cursor?.transcript_path) return false;
-  const paths = String(cursor.transcript_path).split("\n").filter(Boolean);
-  if (paths.length === 0) return false;
-
-  const byPath = new Map(scan.files.map((file) => [file.path, file]));
-  let size = 0;
-  let mtimeMs = 0;
-  for (const path of paths) {
-    const file = byPath.get(path);
-    if (!file) return false;
-    size += file.size;
-    mtimeMs = Math.max(mtimeMs, file.mtimeMs);
-  }
-
-  return cursor.cursor_offset === size && cursor.mtime_ms === mtimeMs;
 }
 
 function transcriptSetStats(
@@ -207,6 +126,7 @@ function saveCodexSubagentUsage(
     entries: UsageEntry[];
   }[],
 ): void {
+  S.deleteSessionSubagentUsageByKind(sessionId, "codex-child-rollout");
   for (const rollout of rollouts) {
     if (!rollout.parentThreadId) continue;
     const fallbackId = rollout.path.split(/[\\/]/).pop() ?? "unknown-rollout";
@@ -220,6 +140,42 @@ function saveCodexSubagentUsage(
         ...usage,
       });
     }
+  }
+}
+
+function codexTargetKey(target: {
+  ownerSessionId: string;
+  pullIssueId: number;
+}): string {
+  return `${target.pullIssueId}\0${target.ownerSessionId}`;
+}
+
+function modelUsageEqualsStored(
+  expected: ModelUsage[],
+  actual: S.SessionUsageRow[],
+): boolean {
+  if (expected.length !== actual.length) return false;
+  const actualByModel = new Map(actual.map((row) => [row.model, row]));
+  return expected.every((usage) => {
+    const row = actualByModel.get(usage.model);
+    return (
+      row?.input_tokens === usage.input_tokens &&
+      row.cache_creation_input_tokens === usage.cache_creation_input_tokens &&
+      row.cache_read_input_tokens === usage.cache_read_input_tokens &&
+      row.output_tokens === usage.output_tokens &&
+      row.cost_usd === usage.cost_usd
+    );
+  });
+}
+
+function clearOtherCodexUsageForPull(
+  pullIssueId: number,
+  ownerSessionId: string,
+): void {
+  for (const session of S.listSessionsForIssue(pullIssueId)) {
+    if (session.id === ownerSessionId) continue;
+    if (sessionRuntime(session) !== RUNTIME_CODEX) continue;
+    S.resetSessionUsage(session.id);
   }
 }
 
@@ -350,29 +306,23 @@ export const sessions = {
     if (input.sessionId && rows.length === 0)
       throw new ServiceError(404, "Not Found");
 
-    const codexTargetContext: CodexUsageTargetContext = {
-      peersByPullId: new Map(),
-    };
     const codexTargets = new Map<
       string,
       {
         cwd: string;
-        startedAtMs: number;
-        endedBeforeMs: number | null;
+        ownerSessionId: string;
+        pullIssueId: number;
       }
     >();
     for (const row of rows) {
       if (sessionRuntime(row) !== RUNTIME_CODEX) continue;
-      const target = codexUsageTarget(row, codexTargetContext);
-      if (target) codexTargets.set(row.id, target);
+      const target = codexUsageTarget(row);
+      if (target) codexTargets.set(codexTargetKey(target), target);
     }
     const codexScan =
       codexTargets.size > 0
         ? createCodexRolloutScan(input.codexSessionsDir)
         : null;
-    if (!input.sessionId) {
-      pruneCodexSessionScanFingerprints(new Set(rows.map((row) => row.id)));
-    }
     const claudeIndex = rows.some(
       (row) => sessionRuntime(row) !== RUNTIME_CODEX,
     )
@@ -386,10 +336,12 @@ export const sessions = {
 
     const results = rows.map((row) => {
       if (sessionRuntime(row) === RUNTIME_CODEX) {
-        const target = codexTargets.get(row.id);
+        const rowTarget = codexUsageTarget(row);
+        const target = rowTarget
+          ? codexTargets.get(codexTargetKey(rowTarget))
+          : null;
         if (!target) {
           S.resetSessionUsage(row.id);
-          codexSessionScanFingerprints.delete(row.id);
           return {
             session_id: row.id,
             status: "missing",
@@ -398,41 +350,23 @@ export const sessions = {
           };
         }
 
-        const cursor = S.getSessionUsageCursor(row.id);
-        const scanFingerprint =
-          codexScan && codexSessionScanFingerprint(codexScan, target);
-        if (
-          !input.full &&
-          codexScan &&
-          scanFingerprint &&
-          codexSessionScanFingerprints.get(row.id) === scanFingerprint &&
-          codexCursorMatchesScan(cursor, codexScan)
-        ) {
-          if (!S.hasSessionSubagentUsage(row.id)) {
-            const rollouts = findCodexRollouts({
-              ...target,
-              sessionsDir: input.codexSessionsDir,
-              scan: codexScan,
-            });
-            saveCodexSubagentUsage(row.id, rollouts);
-          }
+        if (row.id !== target.ownerSessionId) {
+          S.resetSessionUsage(row.id);
           return {
             session_id: row.id,
             status: "skipped",
-            transcript_path: cursor!.transcript_path,
             messages: 0,
-            models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+            models: [],
           };
         }
 
         const rollouts = findCodexRollouts({
-          ...target,
+          cwd: target.cwd,
           sessionsDir: input.codexSessionsDir,
           scan: codexScan ?? undefined,
         });
         if (rollouts.length === 0) {
           S.resetSessionUsage(row.id);
-          codexSessionScanFingerprints.delete(row.id);
           return {
             session_id: row.id,
             status: "missing",
@@ -442,20 +376,17 @@ export const sessions = {
         }
 
         const transcriptPath = rollouts.map((x) => x.path).join("\n");
-        const size = rollouts.reduce((sum, x) => sum + x.size, 0);
-        const mtimeMs = Math.max(...rollouts.map((x) => x.mtimeMs));
-        const unchanged =
+        const fresh = rollouts.flatMap((x) => x.entries);
+        const aggregated = aggregateUsage(fresh);
+        const topLevelUnchanged =
           !input.full &&
-          cursor?.transcript_path === transcriptPath &&
-          cursor.cursor_offset === size &&
-          cursor.mtime_ms === mtimeMs;
-        if (unchanged) {
-          if (!S.hasSessionSubagentUsage(row.id)) {
-            saveCodexSubagentUsage(row.id, rollouts);
-          }
-          if (scanFingerprint) {
-            codexSessionScanFingerprints.set(row.id, scanFingerprint);
-          }
+          modelUsageEqualsStored(aggregated, S.listSessionUsage(row.id));
+        if (topLevelUnchanged) {
+          saveCodexSubagentUsage(row.id, rollouts);
+          clearOtherCodexUsageForPull(
+            target.pullIssueId,
+            target.ownerSessionId,
+          );
           return {
             session_id: row.id,
             status: "skipped",
@@ -466,8 +397,8 @@ export const sessions = {
         }
 
         S.resetSessionUsage(row.id);
-        const fresh = rollouts.flatMap((x) => x.entries);
-        for (const usage of aggregateUsage(fresh)) {
+        clearOtherCodexUsageForPull(target.pullIssueId, target.ownerSessionId);
+        for (const usage of aggregated) {
           S.upsertSessionUsage(row.id, usage);
         }
         saveCodexSubagentUsage(row.id, rollouts);
@@ -477,15 +408,6 @@ export const sessions = {
             usage.model,
             calculateCostUsd(usage.model, usage),
           );
-        }
-        S.upsertSessionUsageCursor({
-          sessionId: row.id,
-          transcriptPath,
-          cursorOffset: size,
-          mtimeMs,
-        });
-        if (scanFingerprint) {
-          codexSessionScanFingerprints.set(row.id, scanFingerprint);
         }
 
         return {

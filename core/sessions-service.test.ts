@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -558,6 +559,22 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
     ),
   );
   writeFileSync(
+    join(dayDir, "rollout-peer-root.jsonl"),
+    codexRollout(
+      worktree,
+      "gpt-5.5",
+      {
+        input_tokens: 40,
+        cached_input_tokens: 10,
+        output_tokens: 3,
+      },
+      {
+        startedAt: rolloutStartedAt,
+        id: "peer-root-thread",
+      },
+    ),
+  );
+  writeFileSync(
     join(dayDir, "rollout-other-cwd.jsonl"),
     codexRollout(
       "/tmp/other-worktree",
@@ -573,34 +590,17 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
       },
     ),
   );
-  const stale = join(dayDir, "rollout-stale.jsonl");
-  writeFileSync(
-    stale,
-    codexRollout(
-      worktree,
-      "gpt-5.5",
-      {
-        input_tokens: 1000,
-        cached_input_tokens: 0,
-        output_tokens: 1000,
-      },
-      {
-        startedAt: "2000-01-01T00:00:00.000Z",
-        id: "stale-thread",
-      },
-    ),
-  );
 
   const first = svc.sessions.usageSync({ sessionId, codexSessionsDir });
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-  expect(first.sessions[0].messages).toBe(2);
+  expect(first.sessions[0].messages).toBe(3);
   expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
     model: "gpt-5.5",
-    input_tokens: 110,
-    cache_read_input_tokens: 20,
-    output_tokens: 7,
+    input_tokens: 140,
+    cache_read_input_tokens: 30,
+    output_tokens: 10,
   });
-  expect(svc.sessions.get(sessionId).usage![0].cost_usd).toBeCloseTo(0.00077);
+  expect(svc.sessions.get(sessionId).usage![0].cost_usd).toBeCloseTo(0.001015);
   expect((svc.sessions.get(sessionId) as any).subagent_usage[0]).toMatchObject({
     source_id: "subagent-thread",
     parent_source_id: "root-thread",
@@ -626,9 +626,62 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
   const rolloutFiles = [
     join(dayDir, "rollout-main.jsonl"),
     join(dayDir, "rollout-subagent.jsonl"),
+    join(dayDir, "rollout-peer-root.jsonl"),
     join(dayDir, "rollout-other-cwd.jsonl"),
-    stale,
   ];
+  writeFileSync(
+    join(dayDir, "rollout-subagent.jsonl"),
+    codexRollout(
+      worktree,
+      "gpt-5.5",
+      {
+        input_tokens: 35,
+        cached_input_tokens: 0,
+        output_tokens: 2,
+        reasoning_output_tokens: 1,
+      },
+      {
+        startedAt: rolloutStartedAt,
+        id: "subagent-thread",
+        parentThreadId: "root-thread",
+      },
+    ),
+  );
+  writeFileSync(
+    join(dayDir, "rollout-peer-root.jsonl"),
+    codexRollout(
+      worktree,
+      "gpt-5.5",
+      {
+        input_tokens: 35,
+        cached_input_tokens: 10,
+        output_tokens: 3,
+      },
+      {
+        startedAt: rolloutStartedAt,
+        id: "peer-root-thread",
+      },
+    ),
+  );
+  const changedMtime = new Date(Date.now() + 5000);
+  utimesSync(
+    join(dayDir, "rollout-subagent.jsonl"),
+    changedMtime,
+    changedMtime,
+  );
+  utimesSync(
+    join(dayDir, "rollout-peer-root.jsonl"),
+    changedMtime,
+    changedMtime,
+  );
+  const detailChanged = svc.sessions.usageSync({ sessionId, codexSessionsDir });
+  expect(detailChanged).toMatchObject({ synced: 0, skipped: 1, missing: 0 });
+  expect((svc.sessions.get(sessionId) as any).subagent_usage[0]).toMatchObject({
+    source_id: "subagent-thread",
+    input_tokens: 35,
+    output_tokens: 2,
+  });
+
   for (const file of rolloutFiles) chmodSync(file, 0);
   try {
     const unchanged = svc.sessions.usageSync({ sessionId, codexSessionsDir });
@@ -643,14 +696,42 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
     full: true,
   });
   expect(full.sessions[0].models[0]).toMatchObject({
-    input_tokens: 110,
-    output_tokens: 7,
+    input_tokens: 140,
+    output_tokens: 10,
   });
+
+  for (const file of rolloutFiles) rmSync(file, { force: true });
+  const missing = svc.sessions.usageSync({ sessionId, codexSessionsDir });
+  expect(missing).toMatchObject({ synced: 0, skipped: 0, missing: 1 });
+  expect(svc.sessions.get(sessionId).usage ?? []).toEqual([]);
+  expect((svc.sessions.get(sessionId) as any).subagent_usage ?? []).toEqual([]);
 
   rmSync(codexSessionsDir, { recursive: true, force: true });
 });
 
-test("sessions.usageSync reuses unchanged Codex rollouts for hundreds of sessions", async () => {
+test("sessions.usageSync clears stale Codex usage when no PR worktree target resolves", () => {
+  const sessionId = "99999999-0000-0000-0000-0000000000e1";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    runtime: "codex",
+    kind: "dev",
+  });
+  D.db.run(
+    `INSERT INTO session_usage
+     (session_id, model, input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, cost_usd, updated_at)
+     VALUES (?, ?, 100, 0, 0, 10, 0.01, ?)`,
+    [sessionId, "gpt-5.5", new Date().toISOString()],
+  );
+
+  const result = svc.sessions.usageSync({ sessionId });
+  expect(result).toMatchObject({ synced: 0, skipped: 0, missing: 1 });
+  expect(result.sessions[0].models).toEqual([]);
+  expect(svc.sessions.get(sessionId).usage ?? []).toEqual([]);
+});
+
+test("sessions.usageSync records one Codex worktree aggregate for hundreds of linked sessions", async () => {
   const issue = svc.issues.create("me/proj", { title: "many codex sessions" });
   const sessionCount = 200;
   const sessionIds = Array.from(
@@ -716,7 +797,18 @@ test("sessions.usageSync reuses unchanged Codex rollouts for hundreds of session
       sessionIds.includes(x.session_id),
     );
     expect(firstStatuses).toHaveLength(sessionCount);
-    expect(firstStatuses.every((x: any) => x.status === "updated")).toBe(true);
+    expect(
+      firstStatuses.filter((x: any) => x.status === "updated"),
+    ).toHaveLength(1);
+    expect(
+      firstStatuses.filter((x: any) => x.status === "skipped"),
+    ).toHaveLength(sessionCount - 1);
+    const primarySessionId = sessionIds[sessionIds.length - 1];
+    expect(svc.sessions.get(primarySessionId).usage![0]).toMatchObject({
+      input_tokens: 21900,
+      output_tokens: 200,
+    });
+    expect(svc.sessions.get(sessionIds[0]).usage ?? []).toEqual([]);
 
     for (const file of rolloutFiles) chmodSync(file, 0);
     const second = svc.sessions.usageSync({ codexSessionsDir });
@@ -730,98 +822,9 @@ test("sessions.usageSync reuses unchanged Codex rollouts for hundreds of session
   }
 });
 
-test("sessions.usageSync invalidates Codex fast skip when peer windows change", async () => {
-  const issue = svc.issues.create("me/proj", { title: "codex peer window" });
-  const firstSessionId = "99999999-0000-0000-0000-0000000000d3";
-  const secondSessionId = "99999999-0000-0000-0000-0000000000d4";
-  for (const sessionId of [firstSessionId, secondSessionId]) {
-    svc.sessions.register({
-      id: sessionId,
-      agent: "lh-build",
-      session: sessionId,
-      runtime: "codex",
-      kind: "dev",
-    });
-  }
-  const opened = await svc.dev.openPr(
-    "me/proj",
-    { issue: issue.number, base: "main" },
-    firstSessionId,
-  );
-  svc.sessions.link("me/proj", {
-    sessionId: secondSessionId,
-    pr: opened.number,
-  });
-  D.db.run(`UPDATE agent_sessions SET created_at = ? WHERE id = ?`, [
-    "2026-07-05T02:00:00.000Z",
-    firstSessionId,
-  ]);
-  D.db.run(`UPDATE agent_sessions SET created_at = ? WHERE id = ?`, [
-    "2026-07-05T02:00:02.000Z",
-    secondSessionId,
-  ]);
-
-  const worktree = join(HOME, "worktrees", "me", "proj", `pr-${opened.number}`);
-  const codexSessionsDir = mkdtempSync(join(tmpdir(), "lh-codex-peer-window-"));
-  const dayDir = join(codexSessionsDir, "2026", "07", "05");
-  mkdirSync(dayDir, { recursive: true });
-  writeFileSync(
-    join(dayDir, "rollout-root-a.jsonl"),
-    codexRollout(
-      worktree,
-      "gpt-5.5",
-      {
-        input_tokens: 10,
-        cached_input_tokens: 0,
-        output_tokens: 1,
-      },
-      { startedAt: "2026-07-05T02:00:01.000Z", id: "root-a" },
-    ),
-  );
-  writeFileSync(
-    join(dayDir, "rollout-root-b.jsonl"),
-    codexRollout(
-      worktree,
-      "gpt-5.5",
-      {
-        input_tokens: 20,
-        cached_input_tokens: 0,
-        output_tokens: 2,
-      },
-      { startedAt: "2026-07-05T02:00:03.000Z", id: "root-b" },
-    ),
-  );
-
-  try {
-    const first = svc.sessions.usageSync({
-      sessionId: firstSessionId,
-      codexSessionsDir,
-    });
-    expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-    expect(svc.sessions.get(firstSessionId).usage![0]).toMatchObject({
-      input_tokens: 10,
-      output_tokens: 1,
-    });
-
-    D.db.run(`UPDATE agent_sessions SET created_at = ? WHERE id = ?`, [
-      "2026-07-05T02:00:04.000Z",
-      secondSessionId,
-    ]);
-
-    const second = svc.sessions.usageSync({
-      sessionId: firstSessionId,
-      codexSessionsDir,
-    });
-    expect(second).toMatchObject({ synced: 0, skipped: 0, missing: 1 });
-    expect(svc.sessions.get(firstSessionId).usage ?? []).toEqual([]);
-  } finally {
-    rmSync(codexSessionsDir, { recursive: true, force: true });
-  }
-});
-
-test("sessions.usageSync leaves ambiguous same-window Codex root rollouts missing", async () => {
+test("sessions.usageSync keeps multiple same-worktree Codex roots aggregated", async () => {
   const issue = svc.issues.create("me/proj", {
-    title: "ambiguous codex usage",
+    title: "multi-root codex usage",
   });
   const sessionId = "99999999-0000-0000-0000-0000000000ce";
   svc.sessions.register({
@@ -877,25 +880,33 @@ test("sessions.usageSync leaves ambiguous same-window Codex root rollouts missin
   );
 
   const result = svc.sessions.usageSync({ sessionId, codexSessionsDir });
-  expect(result).toMatchObject({ synced: 0, skipped: 0, missing: 1 });
-  expect(svc.sessions.get(sessionId).usage ?? []).toEqual([]);
+  expect(result).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
+  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+    input_tokens: 30,
+    output_tokens: 3,
+  });
 
   rmSync(codexSessionsDir, { recursive: true, force: true });
 });
 
-test("sessions.usageSync keeps child Codex rollouts linked to a root before the peer window", async () => {
-  const issue = svc.issues.create("me/proj", { title: "codex child overlap" });
+test("sessions.usageSync sums all Codex rollouts in the PR worktree without peer windows", async () => {
+  const issue = svc.issues.create("me/proj", { title: "codex worktree total" });
   const firstSessionId = "99999999-0000-0000-0000-0000000000d1";
   const secondSessionId = "99999999-0000-0000-0000-0000000000d2";
-  for (const sessionId of [firstSessionId, secondSessionId]) {
-    svc.sessions.register({
-      id: sessionId,
-      agent: "lh-build",
-      session: sessionId,
-      runtime: "codex",
-      kind: "dev",
-    });
-  }
+  svc.sessions.register({
+    id: firstSessionId,
+    agent: "lh-build",
+    session: firstSessionId,
+    runtime: "codex",
+    kind: "dev",
+  });
+  svc.sessions.register({
+    id: secondSessionId,
+    agent: "reviewer",
+    session: secondSessionId,
+    runtime: "codex",
+    kind: "review",
+  });
   const opened = await svc.dev.openPr(
     "me/proj",
     { issue: issue.number, base: "main" },
@@ -968,26 +979,39 @@ test("sessions.usageSync keeps child Codex rollouts linked to a root before the 
   });
   expect(result).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(svc.sessions.get(firstSessionId).usage![0]).toMatchObject({
-    input_tokens: 30,
-    output_tokens: 3,
+    input_tokens: 1030,
+    output_tokens: 103,
+  });
+  expect(
+    (svc.sessions.get(firstSessionId) as any).subagent_usage[0],
+  ).toMatchObject({
+    source_id: "child",
+    parent_source_id: "root",
+    input_tokens: 20,
+    output_tokens: 2,
   });
 
   rmSync(codexSessionsDir, { recursive: true, force: true });
 });
 
-test("sessions.usageSync leaves same-second Codex peer sessions missing", async () => {
-  const issue = svc.issues.create("me/proj", { title: "same second codex" });
+test("sessions.usageSync stores Codex worktree usage on the primary PR session only", async () => {
+  const issue = svc.issues.create("me/proj", { title: "primary codex usage" });
   const firstSessionId = "99999999-0000-0000-0000-0000000000cf";
   const secondSessionId = "99999999-0000-0000-0000-0000000000d0";
-  for (const sessionId of [firstSessionId, secondSessionId]) {
-    svc.sessions.register({
-      id: sessionId,
-      agent: "lh-build",
-      session: sessionId,
-      runtime: "codex",
-      kind: "dev",
-    });
-  }
+  svc.sessions.register({
+    id: firstSessionId,
+    agent: "lh-build",
+    session: firstSessionId,
+    runtime: "codex",
+    kind: "dev",
+  });
+  svc.sessions.register({
+    id: secondSessionId,
+    agent: "reviewer",
+    session: secondSessionId,
+    runtime: "codex",
+    kind: "review",
+  });
   const opened = await svc.dev.openPr(
     "me/proj",
     { issue: issue.number, base: "main" },
@@ -1022,14 +1046,102 @@ test("sessions.usageSync leaves same-second Codex peer sessions missing", async 
     ),
   );
 
-  expect(
-    svc.sessions.usageSync({ sessionId: firstSessionId, codexSessionsDir }),
-  ).toMatchObject({ synced: 0, skipped: 0, missing: 1 });
-  expect(
-    svc.sessions.usageSync({ sessionId: secondSessionId, codexSessionsDir }),
-  ).toMatchObject({ synced: 0, skipped: 0, missing: 1 });
-  expect(svc.sessions.get(firstSessionId).usage ?? []).toEqual([]);
+  const result = svc.sessions.usageSync({ codexSessionsDir });
+  const statuses = result.sessions.filter((x: any) =>
+    [firstSessionId, secondSessionId].includes(x.session_id),
+  );
+  expect(statuses).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        session_id: firstSessionId,
+        status: "updated",
+      }),
+      expect.objectContaining({
+        session_id: secondSessionId,
+        status: "skipped",
+      }),
+    ]),
+  );
+  expect(svc.sessions.get(firstSessionId).usage![0]).toMatchObject({
+    input_tokens: 10,
+    output_tokens: 1,
+  });
   expect(svc.sessions.get(secondSessionId).usage ?? []).toEqual([]);
+
+  rmSync(codexSessionsDir, { recursive: true, force: true });
+});
+
+test("sessions.usageSync preserves Codex worktree usage when the PR primary session is non-Codex", async () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "mixed runtime codex usage",
+  });
+  const devSessionId = "99999999-0000-0000-0000-0000000000d5";
+  const codexSessionId = "99999999-0000-0000-0000-0000000000d6";
+  svc.sessions.register({
+    id: devSessionId,
+    agent: "lh-build",
+    session: devSessionId,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  svc.sessions.register({
+    id: codexSessionId,
+    agent: "reviewer",
+    session: codexSessionId,
+    runtime: "codex",
+    kind: "review",
+  });
+  const opened = await svc.dev.openPr(
+    "me/proj",
+    { issue: issue.number, base: "main" },
+    devSessionId,
+  );
+  svc.sessions.link("me/proj", {
+    sessionId: codexSessionId,
+    pr: opened.number,
+  });
+
+  const worktree = join(HOME, "worktrees", "me", "proj", `pr-${opened.number}`);
+  const codexSessionsDir = mkdtempSync(join(tmpdir(), "lh-codex-mixed-"));
+  const dayDir = join(codexSessionsDir, "2026", "07", "05");
+  mkdirSync(dayDir, { recursive: true });
+  writeFileSync(
+    join(dayDir, "rollout-review.jsonl"),
+    codexRollout(
+      worktree,
+      "gpt-5.5",
+      {
+        input_tokens: 50,
+        cached_input_tokens: 10,
+        output_tokens: 4,
+      },
+      { startedAt: "2026-07-05T00:00:01.000Z", id: "review-root" },
+    ),
+  );
+
+  const result = svc.sessions.usageSync({ codexSessionsDir });
+  expect(result.sessions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        session_id: codexSessionId,
+        status: "updated",
+      }),
+    ]),
+  );
+  expect(svc.sessions.get(devSessionId).usage ?? []).toEqual([]);
+  expect(svc.sessions.get(codexSessionId).usage![0]).toMatchObject({
+    input_tokens: 40,
+    cache_read_input_tokens: 10,
+    output_tokens: 4,
+  });
+  const pull = (await svc.pulls.get("me/proj", opened.number)) as any;
+  expect(pull.related_sessions_usage).toMatchObject({
+    sessions_with_usage: 1,
+    input_tokens: 40,
+    cache_read_input_tokens: 10,
+    output_tokens: 4,
+    total_tokens: 54,
+  });
 
   rmSync(codexSessionsDir, { recursive: true, force: true });
 });

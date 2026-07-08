@@ -687,8 +687,6 @@ function parsedRolloutsByCwd(
 
 export function findCodexRollouts(input: {
   cwd: string;
-  startedAtMs: number;
-  endedBeforeMs?: number | null;
   sessionsDir?: string;
   scan?: CodexRolloutScan;
 }): CodexRolloutCandidate[] {
@@ -696,19 +694,8 @@ export function findCodexRollouts(input: {
     input.scan ??
     createCodexRolloutScan(input.sessionsDir ?? defaultCodexSessionsDir());
   if (!input.cwd || scan.files.length === 0) return [];
-  const startedAtMs = Number.isFinite(input.startedAtMs)
-    ? input.startedAtMs
-    : 0;
-  const endedBeforeMs =
-    typeof input.endedBeforeMs === "number" &&
-    Number.isFinite(input.endedBeforeMs)
-      ? input.endedBeforeMs
-      : null;
-  const candidates: CodexRolloutCandidate[] = [];
-
-  for (const parsed of parsedRolloutsByCwd(scan).get(input.cwd) ?? []) {
-    if (parsed.startedAtMs < startedAtMs) continue;
-    candidates.push({
+  return (parsedRolloutsByCwd(scan).get(input.cwd) ?? [])
+    .map((parsed) => ({
       path: parsed.path,
       size: parsed.size,
       mtimeMs: parsed.mtimeMs,
@@ -716,22 +703,6 @@ export function findCodexRollouts(input: {
       threadId: parsed.threadId,
       parentThreadId: parsed.parentThreadId,
       entries: parsed.entries,
-    });
-  }
-
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
-  const roots = candidates.filter(
-    (x) =>
-      !x.parentThreadId &&
-      (endedBeforeMs == null || x.startedAtMs < endedBeforeMs),
-  );
-  if (roots.length !== 1) return [];
-  const root = roots[0];
-  return candidates.filter(
-    (x) =>
-      x.path === root.path ||
-      (root.threadId != null &&
-        x.parentThreadId === root.threadId &&
-        x.startedAtMs >= root.startedAtMs),
-  );
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
