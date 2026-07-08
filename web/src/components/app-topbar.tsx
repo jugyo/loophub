@@ -18,8 +18,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { compareSidebarRepos } from "@/lib/repo-sort";
@@ -48,8 +46,6 @@ export function AppTopbar() {
   const currentRepoInList =
     currentRepo != null && repos.some((repo) => repo.full_name === currentRepo);
   const selectedRepoLabel = currentRepoInList ? currentRepo : "";
-  const favoriteRepos = repos.filter((repo) => repo.favorite);
-  const otherRepos = repos.filter((repo) => !repo.favorite);
   const disabled = isLoading || repos.length === 0;
   const repositoryLabel = selectedRepoLabel
     ? `Repository: ${selectedRepoLabel}`
@@ -109,8 +105,7 @@ export function AppTopbar() {
             className="max-h-[min(28rem,calc(100vh-5rem))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-72 overflow-y-auto"
           >
             <RepoMenuGroup
-              label={favoriteRepos.length > 0 ? "Favorites" : "Repositories"}
-              repos={favoriteRepos.length > 0 ? favoriteRepos : otherRepos}
+              repos={repos}
               currentRepo={currentRepo}
               onSelect={(repo) => {
                 const { owner, name } = splitRepoName(repo);
@@ -120,23 +115,6 @@ export function AppTopbar() {
                 });
               }}
             />
-            {favoriteRepos.length > 0 && otherRepos.length > 0 ? (
-              <>
-                <DropdownMenuSeparator />
-                <RepoMenuGroup
-                  label="Other repositories"
-                  repos={otherRepos}
-                  currentRepo={currentRepo}
-                  onSelect={(repo) => {
-                    const { owner, name } = splitRepoName(repo);
-                    navigate({
-                      to: "/r/$owner/$repo",
-                      params: { owner, repo: name },
-                    });
-                  }}
-                />
-              </>
-            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -161,19 +139,16 @@ export function AppTopbar() {
 }
 
 function RepoMenuGroup({
-  label,
   repos,
   currentRepo,
   onSelect,
 }: {
-  label: string;
   repos: Repo[];
   currentRepo: string | null;
   onSelect: (repo: Repo) => void;
 }) {
   return (
     <DropdownMenuGroup>
-      <DropdownMenuLabel>{label}</DropdownMenuLabel>
       {repos.map((repo) => {
         const selected = repo.full_name === currentRepo;
         return (

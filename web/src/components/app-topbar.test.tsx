@@ -167,7 +167,7 @@ describe("AppTopbar", () => {
     expect(themeIndex).toBe(headerItems.length - 1);
   });
 
-  it("shows the current repository and switches to another active repository", async () => {
+  it("shows repository items without section headers and switches repositories", async () => {
     reposData.value = [
       repo("me/zulu", 1),
       repo("me/alpha", 2, { favorite: true }),
@@ -182,7 +182,13 @@ describe("AppTopbar", () => {
 
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
 
-    expect(await screen.findByText("Favorites")).toBeTruthy();
+    expect(
+      await screen.findByRole("menuitem", { name: /me\/alpha/ }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Favorites")).toBeNull();
+    expect(screen.queryByText("Repositories")).toBeNull();
+    expect(screen.queryByText("Other repositories")).toBeNull();
+    expect(screen.queryByRole("separator")).toBeNull();
     const currentItem = screen.getByRole("menuitem", { name: /me\/zulu/ });
     const favoriteItem = screen.getByRole("menuitem", { name: /me\/alpha/ });
     expect(currentItem.className).toContain("bg-accent");
