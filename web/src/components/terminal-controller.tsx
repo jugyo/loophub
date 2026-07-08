@@ -88,7 +88,7 @@ export function TerminalControllerProvider({
 export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
   const ctx = useContext(TerminalControllerContext);
   const launch = useLaunchTerminalWorkflow();
-  const { showSuccess, showError } = useToast();
+  const { showError } = useToast();
   const launchTerminal = useCallback<OpenTerminal>(
     (opts) => {
       if (!opts?.repo) {
@@ -112,20 +112,6 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
           model: opts.model,
         },
         {
-          onSuccess: (result) => {
-            if (opts.workflow === "issue-dev") return;
-
-            // Resume dedup (#578): the backend switched focus to an already-running terminal
-            // instead of starting a new one — say so instead of the generic "Launched in ..."
-            // message, which would misleadingly imply a fresh agent just started.
-            if (result.focused) {
-              showSuccess("Switched to the existing terminal.");
-              return;
-            }
-            const session = result.session_name ?? "Herdr";
-            const attach = result.attach ? ` Attach: ${result.attach}` : "";
-            showSuccess(`Launched in ${session}.${attach}`);
-          },
           onError: (e) =>
             ctx?.showHerdrLaunchError({
               reason: e instanceof Error ? e.message : "Herdr launch failed.",
@@ -135,7 +121,7 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
         },
       );
     },
-    [ctx, launch, showSuccess, showError],
+    [ctx, launch, showError],
   );
   return { launchTerminal };
 }

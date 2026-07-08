@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 describe("TerminalController", () => {
-  it("does not show a success toast after a Build launch succeeds (#680)", async () => {
+  it("does not show a toast after a Build launch succeeds (#680)", async () => {
     // ToastProvider clears on route change, so it needs a real router in the tree (matches
     // toast.test.tsx / pull-detail.test.tsx).
     const rootRoute = createRootRoute({ component: Outlet });
@@ -106,13 +106,12 @@ describe("TerminalController", () => {
         agent: undefined,
         model: undefined,
       },
-      expect.objectContaining({ onSuccess: expect.any(Function) }),
+      expect.objectContaining({ onError: expect.any(Function) }),
     );
-    expect(screen.queryByText(/^Launched in/)).toBeNull();
-    expect(screen.queryByText("Switched to the existing terminal.")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("shows the Herdr session name and attach command after a non-Build launch succeeds", async () => {
+  it("does not show a toast after a non-Build launch succeeds", async () => {
     // ToastProvider clears on route change, so it needs a real router in the tree (matches
     // toast.test.tsx / pull-detail.test.tsx).
     const rootRoute = createRootRoute({ component: Outlet });
@@ -136,14 +135,10 @@ describe("TerminalController", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Launch" }));
 
-    expect(
-      screen.getByText(
-        "Launched in jugyo-loophub-deadbeef. Attach: herdr attach jugyo-loophub-deadbeef",
-      ),
-    ).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("shows a 'switched to existing terminal' message instead of the launch message when the backend focused an existing pane (#578)", async () => {
+  it("does not show a toast when the backend focused an existing pane (#578)", async () => {
     launchMutation.mutate.mockImplementationOnce((_input, opts) => {
       opts?.onSuccess?.({
         session_name: "jugyo-loophub-deadbeef",
@@ -174,8 +169,7 @@ describe("TerminalController", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Launch" }));
 
-    expect(screen.getByText("Switched to the existing terminal.")).toBeTruthy();
-    expect(screen.queryByText(/^Launched in/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows an overlay dialog with the reason, example command, and session-creation hint when the launch fails (#483)", () => {

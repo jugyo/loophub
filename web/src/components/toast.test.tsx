@@ -23,22 +23,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// A tiny harness: buttons that raise a success/error toast, plus a "go" button that navigates to
-// a second route. Both the viewport and the controls live under one ToastProvider/router so a
+// A tiny harness: a button that raises an error toast, plus a "go" button that navigates to a
+// second route. Both the viewport and the controls live under one ToastProvider/router so a
 // navigation is a real route change for the provider's clear-on-route-change effect.
 function Controls() {
-  const { showError, showSuccess } = useToast();
+  const { showError } = useToast();
   const navigate = useNavigate();
   return (
     <>
       <button type="button" onClick={() => showError("Merge failed: boom")}>
         show error
-      </button>
-      <button
-        type="button"
-        onClick={() => showSuccess("Launched in jugyo-loophub-deadbeef.")}
-      >
-        show success
       </button>
       {/* Use a real registered app route so the typed navigate() type-checks under the web build. */}
       <button type="button" onClick={() => navigate({ to: "/archived" })}>
@@ -85,62 +79,19 @@ describe("Toast", () => {
     expect(screen.queryByText("Merge failed: boom")).toBeNull();
   });
 
-  it("shows a success toast and dismisses it via the close button", async () => {
-    renderToasts();
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "show success" }),
-    );
-    expect(
-      screen.getByText("Launched in jugyo-loophub-deadbeef."),
-    ).toBeTruthy();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /Dismiss notification/i }),
-    );
-    expect(
-      screen.queryByText("Launched in jugyo-loophub-deadbeef."),
-    ).toBeNull();
-  });
-
-  it("shows both an error and a success toast at once", async () => {
-    renderToasts();
-
-    fireEvent.click(await screen.findByRole("button", { name: "show error" }));
-    fireEvent.click(screen.getByRole("button", { name: "show success" }));
-
-    expect(screen.getByText("Merge failed: boom")).toBeTruthy();
-    expect(
-      screen.getByText("Launched in jugyo-loophub-deadbeef."),
-    ).toBeTruthy();
-  });
-
-  it("auto-dismisses an error toast after 8s and a success toast after 12s", async () => {
+  it("auto-dismisses an error toast after 8s", async () => {
     // shouldAdvanceTime keeps real time flowing so Testing Library's async queries still resolve,
     // while advanceTimersByTime lets us jump the auto-dismiss timeouts deterministically.
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderToasts();
 
     fireEvent.click(await screen.findByRole("button", { name: "show error" }));
-    fireEvent.click(screen.getByRole("button", { name: "show success" }));
 
     act(() => {
       vi.advanceTimersByTime(8000);
     });
     await waitFor(() => {
       expect(screen.queryByText("Merge failed: boom")).toBeNull();
-    });
-    expect(
-      screen.getByText("Launched in jugyo-loophub-deadbeef."),
-    ).toBeTruthy();
-
-    act(() => {
-      vi.advanceTimersByTime(4000);
-    });
-    await waitFor(() => {
-      expect(
-        screen.queryByText("Launched in jugyo-loophub-deadbeef."),
-      ).toBeNull();
     });
   });
 
