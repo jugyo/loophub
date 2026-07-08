@@ -3,6 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  createRepo,
   getRepo,
   getRepoMergeMode,
   listRepos,
@@ -28,6 +29,17 @@ export function useArchivedRepos() {
   return useQuery({
     queryKey: [...queryKeys.repos(), "archived"],
     queryFn: () => listRepos("true"),
+  });
+}
+
+export function useCreateRepo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { path: string; name: string }) =>
+      createRepo(input.path, input.name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.repos() });
+    },
   });
 }
 

@@ -62,9 +62,13 @@ export const methods: Record<string, MethodDef> = {
   // ---- repos ----
   "repos/create": {
     description: "Register a local git repository.",
-    params: params({ path: strNonEmpty, name: strNonEmpty }, ["path", "name"]),
+    params: params({ path: strNonEmpty, name: strNonEmpty, session_id: sid }, [
+      "path",
+      "name",
+    ]),
     result: anyObject,
-    handler: (p) => svc.repos.create({ path: p.path, name: p.name }),
+    handler: (p) =>
+      svc.repos.create({ path: p.path, name: p.name }, p.session_id),
   },
   "repos/list": {
     description: "List registered repositories.",

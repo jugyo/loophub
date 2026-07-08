@@ -44,7 +44,10 @@ export const repos = {
     return S.getRepo(owner, name);
   },
 
-  async create(input: { path: string; name: string }) {
+  async create(
+    input: { path: string; name: string },
+    sessionId?: string | null,
+  ) {
     const { path, name } = input;
     if (!path || !name)
       throw new ServiceError(422, "path and name are required");
@@ -57,7 +60,11 @@ export const repos = {
     if (S.getRepo(owner, rname))
       throw new ServiceError(422, `already registered: ${owner}/${rname}`);
     const branch = await defaultBranch(abs);
-    return repoJSON(S.createRepo(name, abs, branch));
+    const created = S.createRepo(name, abs, branch);
+    S.emitEvent(created.id, "repo.created", actorFor(sessionId), {
+      full_name: created.full_name,
+    });
+    return repoJSON(created);
   },
 
   list(archived: "active" | "archived" | "all" = "active") {

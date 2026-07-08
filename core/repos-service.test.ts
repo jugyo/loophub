@@ -42,6 +42,22 @@ test("setFavorite toggles favorite, emits favorited/unfavorited events (#457)", 
   expect(unfavorited.favorited_at).toBeNull();
 });
 
+test("create emits repo.created so other web sessions refresh repo lists", async () => {
+  const created = await svc.repos.create(
+    { path: initGitRepo(), name: "me/create-event" },
+    "web-session-1",
+  );
+
+  const ev = S.listEvents(0, created.id, 100).find(
+    (e: any) => e.type === "repo.created",
+  )!;
+  expect(ev).toBeTruthy();
+  expect(ev.actor).toBe("unknown");
+  expect(JSON.parse(ev.payload)).toEqual({
+    full_name: "me/create-event",
+  });
+});
+
 test("setFavorite rejects a non-boolean favorite value (#457)", async () => {
   await svc.repos.create({ path: initGitRepo(), name: "me/fav-svc-bad" });
   expect(() =>

@@ -127,7 +127,7 @@ function renderTopbar(initialPath = "/") {
 }
 
 describe("AppTopbar", () => {
-  it("renders the required top-level links with Archived next to the repository picker", async () => {
+  it("renders the required top-level links without Archived in the topbar", async () => {
     const { container } = renderTopbar();
     await screen.findByRole("link", { name: /LoopHub/ });
 
@@ -141,26 +141,19 @@ describe("AppTopbar", () => {
       screen.getByRole("link", { name: "Settings" }).getAttribute("href"),
     ).toBe("/settings");
     expect(
-      screen
-        .getByRole("link", { name: "Archived repositories" })
-        .getAttribute("href"),
-    ).toBe("/archived");
+      screen.queryByRole("link", { name: "Archived repositories" }),
+    ).toBeNull();
 
     const headerItems = [...container.querySelectorAll("header > *")];
     const repoPickerIndex = headerItems.findIndex((node) =>
       node.querySelector?.("[aria-label='Repository']"),
     );
-    const archivedIndex = headerItems.findIndex((node) =>
-      node.getAttribute("aria-label")?.includes("Archived"),
-    );
     const themeIndex = headerItems.findIndex(
       (node) => node.getAttribute("aria-label") === "Theme",
     );
     expect(repoPickerIndex).toBeGreaterThan(-1);
-    expect(archivedIndex).toBeGreaterThan(-1);
     expect(themeIndex).toBeGreaterThan(-1);
-    expect(archivedIndex).toBe(repoPickerIndex + 1);
-    expect(archivedIndex).toBeLessThan(themeIndex);
+    expect(themeIndex).toBeGreaterThan(repoPickerIndex);
   });
 
   it("shows the current repository and switches to another active repository", async () => {

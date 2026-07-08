@@ -1,7 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Activity,
-  Archive,
   BarChart3,
   ChevronsUpDown,
   Loader2,
@@ -34,9 +33,8 @@ export function AppTopbar() {
     () => [...(data ?? [])].sort(compareSidebarRepos),
     [data],
   );
-  const currentRepoInList = repos.some(
-    (repo) => repo.full_name === currentRepo,
-  );
+  const currentRepoInList =
+    currentRepo != null && repos.some((repo) => repo.full_name === currentRepo);
   const selectValue = currentRepoInList ? currentRepo : "";
 
   return (
@@ -94,10 +92,6 @@ export function AppTopbar() {
         )}
       </div>
 
-      <IconTopbarLink to="/archived" label="Archived repositories">
-        <Archive className="size-4" />
-      </IconTopbarLink>
-
       <div className="hidden min-w-4 flex-1 md:block" aria-hidden="true" />
 
       <ThemeToggle />
@@ -111,32 +105,6 @@ export function AppTopbar() {
         <Settings className="size-4" />
       </TopbarLink>
     </header>
-  );
-}
-
-function IconTopbarLink({
-  to,
-  label,
-  children,
-}: {
-  to: string;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      to={to}
-      title={label}
-      aria-label={label}
-      className={cn(
-        "inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-      )}
-      activeProps={{
-        className: "bg-accent text-accent-foreground",
-      }}
-    >
-      {children}
-    </Link>
   );
 }
 

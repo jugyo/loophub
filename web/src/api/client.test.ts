@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  createRepo,
   eventsUrl,
   listIssues,
   listLabels,
@@ -117,6 +118,19 @@ describe("typed methods translate to contract params", () => {
     expect(lastRequest(fetchMock).body).toMatchObject({
       method: "repos/list",
       params: { archived: "all" },
+    });
+  });
+
+  it("createRepo includes the browser session id for repo.created attribution", async () => {
+    const fetchMock = mockRpc({ id: 1 });
+    await createRepo("/work/app", "me/app", "session-1");
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "repos/create",
+      params: {
+        path: "/work/app",
+        name: "me/app",
+        session_id: "session-1",
+      },
     });
   });
 

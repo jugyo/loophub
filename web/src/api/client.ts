@@ -143,6 +143,14 @@ export function listRepos(archived: "false" | "true" | "all" = "false") {
   return rpc<Repo[]>("repos/list", { archived: map[archived] });
 }
 
+export function createRepo(
+  path: string,
+  name: string,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Repo>("repos/create", { path, name, session_id: sessionId });
+}
+
 export function getRepo(owner: string, repo: string) {
   return rpc<Repo>("repos/get", { name: full(owner, repo) });
 }
