@@ -9,6 +9,9 @@ convention changes.
   are written in English by default. (Conversation with the user may be in Japanese.)
 - Match the surrounding code's style, naming, and comment density. Prefer small, focused
   changes over broad rewrites.
+- Current Web UI work primarily targets desktop environments. Unless a requirement
+  explicitly asks for it, do not add mobile-only layouts or responsive behavior to an
+  unrelated change; treat mobile support as separate, intentional scope.
 - No build step during development — TypeScript runs directly via `tsx`.
 
 ## What this project is
