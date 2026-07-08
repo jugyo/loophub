@@ -22,6 +22,10 @@ const scheduledAgent = {
   type: "string",
   enum: ["claude-code", "codex"],
 } as const;
+const inboxMessageState = {
+  type: "string",
+  enum: ["unread", "read", "archived", "deleted"],
+} as const;
 const repo = strNonEmpty; // "owner/name" or bare "name"
 
 // A params schema: object, listed properties, given required keys, no extras.
@@ -335,6 +339,21 @@ export const methods: Record<string, MethodDef> = {
     params: params({ id: sid }, ["id"]),
     result: anyObject,
     handler: (p) => svc.sessions.get(p.id),
+  },
+
+  // ---- inbox ----
+  "inbox/list": {
+    description:
+      "List Inbox messages across repositories, unread first by default.",
+    params: params({ state: inboxMessageState, limit: positiveInt }),
+    result: anyArray,
+    handler: (p) => svc.inbox.listAll({ state: p.state, limit: p.limit }),
+  },
+  "inbox/get": {
+    description: "Get one Inbox message by id.",
+    params: params({ id: positiveInt }, ["id"]),
+    result: anyObject,
+    handler: (p) => svc.inbox.get(p.id),
   },
 
   // ---- issues ----

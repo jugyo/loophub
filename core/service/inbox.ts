@@ -1,6 +1,8 @@
 import {
+  clampPerPage,
   ensureWritable,
   inboxMessageJSON,
+  MAX_LIST_PER_PAGE,
   repoOr404,
   S,
   ServiceError,
@@ -131,6 +133,30 @@ export const inbox = {
     ) {
       throw new ServiceError(422, "invalid inbox message state");
     }
-    return S.listInboxMessages(r.id, opts).map(inboxMessageJSON);
+    const limit = clampPerPage(opts.limit, 50, MAX_LIST_PER_PAGE);
+    return S.listInboxMessages(r.id, { ...opts, limit }).map(inboxMessageJSON);
+  },
+
+  listAll(opts: { state?: S.InboxMessageState; limit?: number } = {}): any[] {
+    if (
+      opts.state &&
+      !INBOX_MESSAGE_STATES.includes(opts.state as S.InboxMessageState)
+    ) {
+      throw new ServiceError(422, "invalid inbox message state");
+    }
+    const limit = clampPerPage(
+      opts.limit,
+      MAX_LIST_PER_PAGE,
+      MAX_LIST_PER_PAGE,
+    );
+    return S.listInboxMessagesAcrossRepos({ ...opts, limit }).map(
+      inboxMessageJSON,
+    );
+  },
+
+  get(id: number): any {
+    const row = S.getInboxMessageById(id);
+    if (!row) throw new ServiceError(404, "inbox message not found");
+    return inboxMessageJSON(row);
   },
 };

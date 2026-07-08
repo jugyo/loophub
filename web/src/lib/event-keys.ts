@@ -2,6 +2,7 @@
 // event polling hook stays dumb. event.type prefixes:
 //   issue.*          -> issue / issues lists
 //   pull_request.*   -> pull / pulls lists
+//   inbox.message.*  -> inbox message list / detail
 //   repo.*           -> repos list (+ old-name keys on repo.renamed)
 //   agent_session.*  -> agent-sessions
 // See ../../../API.md for the full event type list.
@@ -17,6 +18,8 @@ export const queryKeys = {
   issue: (full: string, number: number) => ["issue", full, number] as const,
   pulls: (full: string) => ["pulls", full] as const,
   pull: (full: string, number: number) => ["pull", full, number] as const,
+  inbox: () => ["inbox"] as const,
+  inboxMessage: (id: number) => ["inbox-message", id] as const,
   agentSessions: () => ["agent-sessions"] as const,
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
@@ -108,6 +111,10 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["scheduled-tasks"]);
       keys.push(["scheduled-task"]);
     }
+  } else if (type.startsWith("inbox.message.")) {
+    keys.push([...queryKeys.inbox()]);
+    const id = payload?.id;
+    if (typeof id === "number") keys.push([...queryKeys.inboxMessage(id)]);
   } else if (type === "settings.updated") {
     // Instance-level settings (#474) are global, not repo-scoped — refetch the settings view and
     // anything derived from it (e.g. the terminal launch backend) regardless of which repo/tab the

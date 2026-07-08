@@ -13,6 +13,7 @@ let dispatch: typeof import("./rpc.ts").dispatch;
 let dispatchRaw: typeof import("./rpc.ts").dispatchRaw;
 let ERROR_CODES: typeof import("./rpc.ts").ERROR_CODES;
 let db: typeof import("../../core/db.ts").db;
+let svc: typeof import("../../core/service.ts");
 let repoPath: string;
 
 function git(args: string[]) {
@@ -26,6 +27,7 @@ async function call(method: string, params?: any, id: any = 1) {
 beforeAll(async () => {
   ({ dispatch, dispatchRaw, ERROR_CODES } = await import("./rpc.ts"));
   ({ db } = await import("../../core/db.ts"));
+  svc = await import("../../core/service.ts");
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-rpc-repo-"));
   git(["init", "-q", "-b", "main"]);
@@ -188,6 +190,48 @@ test("dashboard/overview lists recent open issues newest-created first, tagged w
   expect(
     r2.result.issues.some((it: any) => it.issue.title === "stamped-oldest"),
   ).toBe(false);
+});
+
+test("inbox/list and inbox/get expose Inbox messages through JSON-RPC", async () => {
+  const first = svc.inbox.send("me/proj", {
+    from: { kind: "agent", repo: "me/proj", actor: "impl-bot" },
+    title: "Ready for review",
+    body: "PR #12 is ready.\nPlease check the evidence.",
+    label: "review",
+  });
+  const second = svc.inbox.send("me/proj", {
+    from: { kind: "agent", repo: "me/proj", actor: "verifier" },
+    to: { kind: "human" },
+    title: "Follow-up",
+    body: "One more thing",
+  });
+  db.run("UPDATE inbox_messages SET state = ? WHERE id = ?", [
+    "read",
+    first.id,
+  ]);
+
+  const listed: any = await call("inbox/list", {});
+  expect(listed.result.map((m: any) => m.id)).toEqual(
+    expect.arrayContaining([first.id, second.id]),
+  );
+  const listFirst = listed.result.find((m: any) => m.id === first.id);
+  expect(listFirst).toMatchObject({
+    repo: { name: "me/proj" },
+    to: null,
+    label: "review",
+    title: "Ready for review",
+    body: "PR #12 is ready.\nPlease check the evidence.",
+    state: "read",
+  });
+
+  const got: any = await call("inbox/get", { id: second.id });
+  expect(got.result).toMatchObject({
+    id: second.id,
+    repo: { name: "me/proj" },
+    from: { kind: "agent", repo: "me/proj", actor: "verifier" },
+    to: { kind: "human" },
+    state: "unread",
+  });
 });
 
 test("dispatchRaw turns invalid JSON into -32700", async () => {

@@ -10,6 +10,7 @@ import type {
   GithubPrStatusWire,
   GithubPullWire,
   HandoffWire,
+  InboxJsonObject,
   InboxMessageWire,
   IssueListPullSummaryWire,
   IssueWire,
@@ -95,6 +96,8 @@ export interface FileAtRef {
 export type Handoff = HandoffWire;
 
 export type InboxMessage = InboxMessageWire;
+
+export type { InboxJsonObject };
 
 export type Repo = RepoWire;
 

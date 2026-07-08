@@ -17,6 +17,7 @@ import type {
   Handoff,
   HerdrAgentRead,
   HerdrSessions,
+  InboxMessage,
   Issue,
   IssueComment,
   Label,
@@ -323,6 +324,17 @@ export function getStats() {
 // Agent session inventory for the /sessions page.
 export function getAgentSessions() {
   return rpc<AgentSession[]>("sessions/list");
+}
+
+// --- inbox ---
+export function listInboxMessages(
+  input: { state?: InboxMessage["state"]; limit?: number } = {},
+) {
+  return rpc<InboxMessage[]>("inbox/list", clean(input));
+}
+
+export function getInboxMessage(id: number) {
+  return rpc<InboxMessage>("inbox/get", { id });
 }
 
 // --- terminal launch ---

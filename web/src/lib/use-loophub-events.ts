@@ -67,6 +67,8 @@ function invalidateReconnectQueries(queryClient: QueryClient): void {
     ["issue"],
     ["pulls"],
     ["pull"],
+    queryKeys.inbox(),
+    ["inbox-message"],
     queryKeys.agentSessions(),
     queryKeys.events(),
     queryKeys.dashboard(),

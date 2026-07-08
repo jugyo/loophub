@@ -16,6 +16,7 @@ export interface Crumb {
  *   "/"                              -> [Home]
  *   "/archived"                      -> [Home, Archived]
  *   "/settings"                      -> [Home, Settings]
+ *   "/inbox"                         -> [Home, Inbox]
  *   "/stats"                         -> [Home, Stats]
  *   "/stats/db"                      -> [Home, Stats, DB Stats]
  *   "/stats/sessions"                -> [Home, Stats, Agent sessions]
@@ -40,6 +41,11 @@ export function crumbsForPath(pathname: string): Crumb[] {
 
   if (parts[0] === "settings") {
     crumbs.push({ label: "Settings" });
+    return crumbs;
+  }
+
+  if (parts[0] === "inbox") {
+    crumbs.push({ label: "Inbox" });
     return crumbs;
   }
 

@@ -49,6 +49,16 @@ export function getInboxMessageById(id: number): InboxMessageRow | null {
     .get(id) as InboxMessageRow | null;
 }
 
+function stateRankSql(): string {
+  return `CASE state
+    WHEN 'unread' THEN 0
+    WHEN 'read' THEN 1
+    WHEN 'archived' THEN 2
+    WHEN 'deleted' THEN 3
+    ELSE 4
+  END`;
+}
+
 export function listInboxMessages(
   repoId: number,
   opts: { state?: InboxMessageState; limit?: number } = {},
@@ -67,7 +77,28 @@ export function listInboxMessages(
     .query(
       `SELECT * FROM inbox_messages
        WHERE repo_id = ?
-       ORDER BY id DESC LIMIT ?`,
+       ORDER BY ${stateRankSql()}, id DESC LIMIT ?`,
     )
     .all(repoId, limit) as InboxMessageRow[];
+}
+
+export function listInboxMessagesAcrossRepos(
+  opts: { state?: InboxMessageState; limit?: number } = {},
+): InboxMessageRow[] {
+  const limit = opts.limit ?? 100;
+  if (opts.state) {
+    return db
+      .query(
+        `SELECT * FROM inbox_messages
+         WHERE state = ?
+         ORDER BY id DESC LIMIT ?`,
+      )
+      .all(opts.state, limit) as InboxMessageRow[];
+  }
+  return db
+    .query(
+      `SELECT * FROM inbox_messages
+       ORDER BY ${stateRankSql()}, id DESC LIMIT ?`,
+    )
+    .all(limit) as InboxMessageRow[];
 }

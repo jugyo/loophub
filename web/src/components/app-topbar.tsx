@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   ChevronsUpDown,
+  Inbox,
   Loader2,
   Settings,
   Star,
@@ -143,6 +144,9 @@ export function AppTopbar() {
       <div className="hidden min-w-4 flex-1 md:block" aria-hidden="true" />
 
       <ThemeToggle />
+      <TopbarLink to="/inbox" label="Inbox">
+        <Inbox className="size-4" />
+      </TopbarLink>
       <TopbarLink to="/stats" label="Stats">
         <BarChart3 className="size-4" />
       </TopbarLink>

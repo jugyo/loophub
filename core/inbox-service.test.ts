@@ -10,29 +10,35 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
-let repoPath: string;
+const repoDirs: string[] = [];
 
-function git(args: string[]) {
-  return spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
+function initGitRepo(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  repoDirs.push(dir);
+  const g = (args: string[]) =>
+    spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@t.local"]);
+  g(["config", "user.name", "tester"]);
+  writeFileSync(join(dir, "a.txt"), "x\n");
+  g(["add", "-A"]);
+  g(["commit", "-qm", "init"]);
+  return dir;
 }
 
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
-  repoPath = mkdtempSync(join(tmpdir(), "lh-inbox-repo-"));
-  git(["init", "-q", "-b", "main"]);
-  git(["config", "user.email", "t@t.local"]);
-  git(["config", "user.name", "tester"]);
-  writeFileSync(join(repoPath, "a.txt"), "x\n");
-  git(["add", "-A"]);
-  git(["commit", "-qm", "init"]);
+  const repoPath = initGitRepo("lh-inbox-repo-");
 
   await svc.repos.create({ path: repoPath, name: "me/inbox" });
 });
 
 afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
-  rmSync(repoPath, { recursive: true, force: true });
+  for (const dir of repoDirs) {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("send persists an unread repo-scoped message with optional label and no target", () => {
@@ -102,4 +108,33 @@ test("send rejects missing or malformed source", () => {
       body: "body",
     }),
   ).toThrow(/from\.run_id/);
+});
+
+test("list endpoints clamp large limits", async () => {
+  const dir = initGitRepo("lh-inbox-cap-");
+  await svc.repos.create({ path: dir, name: "me/inbox-cap" });
+
+  for (let i = 0; i < 105; i++) {
+    svc.inbox.send("me/inbox-cap", {
+      from: { kind: "agent", repo: "me/inbox-cap", actor: "impl-bot" },
+      title: `Message ${i}`,
+      body: `body ${i}`,
+    });
+  }
+
+  expect(svc.inbox.list("me/inbox-cap", { limit: 1000 })).toHaveLength(100);
+  expect(svc.inbox.listAll({ limit: 1000 })).toHaveLength(100);
+});
+
+test("removeRepo sweeps inbox messages so repo removal does not fail the FK", async () => {
+  const dir = initGitRepo("lh-inbox-rm-");
+  await svc.repos.create({ path: dir, name: "me/inbox-rm" });
+  svc.inbox.send("me/inbox-rm", {
+    from: { kind: "agent", repo: "me/inbox-rm", actor: "impl-bot" },
+    title: "Remove me",
+    body: "This message should not block repo deletion.",
+  });
+
+  expect(() => svc.repos.remove("me/inbox-rm")).not.toThrow();
+  expect(() => svc.repos.get("me/inbox-rm")).toThrow();
 });

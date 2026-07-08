@@ -165,4 +165,17 @@ describe("queryKeysForEvent", () => {
     // The new name's repo key comes from the generic repo tail.
     expect(keys).toContainEqual(["repo", "acme/renamed"]);
   });
+
+  it("maps inbox message events to Inbox list and message detail queries", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "inbox.message.created",
+        repo: "me/proj",
+        payload: { id: 42 },
+      }),
+    );
+    expect(keys).toContainEqual(["inbox"]);
+    expect(keys).toContainEqual(["inbox-message", 42]);
+    expect(keys).toContainEqual(["repo", "me/proj"]);
+  });
 });
