@@ -11,6 +11,7 @@ context-isolated reviewer sessions (install them with `npx skills add`).
 | `lh-issue-create` | `skills/lh-issue-create/` | `/lh-issue-create` |
 | `lh-issue-import` | `skills/lh-issue-import/` | `/lh-issue-import {github-issue-url}` (copy a GitHub issue into LoopHub → link) |
 | `lh-plan-to-issues` | `skills/lh-plan-to-issues/` | `/lh-plan-to-issues` |
+| `lh-scheduled-task-create` | `skills/lh-scheduled-task-create/` | `/lh-scheduled-task-create` (create a scheduled task → verify → stop) |
 | `lh-build` | `skills/lh-build/` | `/lh-build {issue id}` (implement → PR → review loop; `lh build` provisions the worktree) |
 | `lh-pr-review` | `skills/lh-pr-review/` | `/lh-pr-review {pr id}` (review → fix → re-review loop) |
 | `lh-rebase-conflict` | `skills/lh-rebase-conflict/` | `/lh-rebase-conflict {pr id}` (resolve conflicts → re-review) |
@@ -58,14 +59,15 @@ still invoke `/create-github-pr <pr>` directly; do not add it to new customizati
 repo-add (one-time) → issue-create / plan-to-issues
   → lh-build (implement → PR → review loop) → merge-ready → (human merge)
 
+scheduled-task-create is a standalone operations path: create scheduled task → verify → stop.
 rebase-conflict resolves conflicts on a PR head, then resumes pr-review.
 ```
 
 `lh-build` drives implementation (launched by `lh build`, which opens the linked PR and provisions its
 PR-keyed worktree (`pr-<m>`, #463) — the PR's existence is the "taken" signal, the session is
 attributed to the PR row); these
-skills cover registration, issue authoring, implementation, review, conflict resolution, and the
-pre-merge check.
+skills cover registration, issue authoring, scheduled-task registration, implementation, review,
+conflict resolution, and the pre-merge check.
 
 `lh-create-github-pr` is **outside** this chain: it is a separate, UI-triggered export action (the PR
 detail's **Create PR on GitHub** button for repos in `github_pr` merge mode). It pushes the PR's branch
