@@ -41,13 +41,8 @@ function renderIssueList(ui: React.ReactNode, initialPath = "/r/me/proj") {
     path: "/r/$owner/$repo",
     component: () => <>{ui}</>,
   });
-  const settingsRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/r/$owner/$repo/settings",
-    component: () => null,
-  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([repoRoute, settingsRoute]),
+    routeTree: rootRoute.addChildren([repoRoute]),
     history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
   const rendered = render(
@@ -132,9 +127,6 @@ describe("IssueList", () => {
         .closest("a")
         ?.getAttribute("href"),
     ).toBe("/r/me/proj?state=all");
-    expect(
-      screen.getByRole("link", { name: /settings/i }).getAttribute("href"),
-    ).toBe("/r/me/proj/settings");
     const newIssue = screen.getByRole("button", { name: /new issue/i });
     const issueControls = screen.getByRole("tablist", {
       name: "Issue state",

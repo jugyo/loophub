@@ -4,7 +4,6 @@
 // registered time once per day. Same RPCs/hooks as the CLI would use (scheduledTasks/*); this is the
 // management UI.
 
-import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CodingAgent, ScheduledTask } from "@/api/types";
@@ -49,20 +48,11 @@ export function ScheduledTasksPage({
 
   return (
     <div className="mx-auto max-w-content">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Scheduled tasks</h1>
-          <p className="text-sm text-muted-foreground">
-            {owner}/{repo}
-          </p>
-        </div>
-        <Link
-          to="/r/$owner/$repo"
-          params={{ owner, repo }}
-          className="inline-flex items-center rounded-md px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
-        >
-          ← Back to issues
-        </Link>
+      <div>
+        <h1 className="text-2xl font-semibold">Scheduled tasks</h1>
+        <p className="text-sm text-muted-foreground">
+          {owner}/{repo}
+        </p>
       </div>
 
       <p className="mt-2 text-sm text-muted-foreground">

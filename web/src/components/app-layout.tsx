@@ -1,4 +1,4 @@
-// App shell: fixed top navigation + main content area with a breadcrumb header.
+// App shell: fixed top navigation + main content area with route-level navigation.
 // Routes render into <Outlet/>. Screen content lands in later UI issues.
 
 import { Outlet } from "@tanstack/react-router";
@@ -7,6 +7,7 @@ import { AppBreadcrumb } from "@/components/app-breadcrumb";
 import { AppTopbar } from "@/components/app-topbar";
 import { DetailTitleProvider } from "@/components/detail-title";
 import { RepoSwitcher } from "@/components/repo-switcher";
+import { RepoTopbar } from "@/components/repo-topbar";
 import {
   TerminalControllerProvider,
   TerminalLaunchErrorDialog,
@@ -31,7 +32,7 @@ export function AppLayout() {
           <DetailTitleProvider>
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <header className="flex h-11 shrink-0 items-center gap-4 border-b px-4 sm:px-6">
-                <AppBreadcrumb />
+                <RepoTopbar fallback={<AppBreadcrumb />} />
               </header>
               <main
                 ref={mainRef}

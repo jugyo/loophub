@@ -8,8 +8,6 @@ import { useEffect, useMemo, useState } from "react";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
 import { RepoHerdrCommand } from "@/components/repo-herdr-command";
-import { RepoSettingsLink } from "@/components/repo-settings-link";
-import { ScheduledTasksLink } from "@/components/scheduled-tasks-link";
 import { Button } from "@/components/ui/button";
 import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
 import { cn } from "@/lib/utils";
@@ -130,18 +128,12 @@ export function IssueList({
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold">
-            {owner}/{repo}
-          </h1>
-          <RepoHerdrCommand owner={owner} repo={repo} />
-          <p className="text-sm text-muted-foreground">Issues</p>
-        </div>
-        <div className="flex items-center gap-1">
-          <ScheduledTasksLink owner={owner} repo={repo} />
-          <RepoSettingsLink owner={owner} repo={repo} />
-        </div>
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold">
+          {owner}/{repo}
+        </h1>
+        <RepoHerdrCommand owner={owner} repo={repo} />
+        <p className="text-sm text-muted-foreground">Issues</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
