@@ -15,6 +15,7 @@ export type {
   HerdrTreeWorkspace,
 } from "./service/herdr.ts";
 export { herdr } from "./service/herdr.ts";
+export { inbox } from "./service/inbox.ts";
 export { issues } from "./service/issues.ts";
 export { labels } from "./service/labels.ts";
 export { pulls } from "./service/pulls.ts";

@@ -10,6 +10,7 @@ import type {
   GithubPrStatusWire,
   GithubPullWire,
   HandoffWire,
+  InboxMessageWire,
   IssueListPullSummaryWire,
   IssueWire,
   LabelWire,
@@ -92,6 +93,8 @@ export interface FileAtRef {
 // is inline content (instruction / Verify report) when present; otherwise `src` references a
 // canonical copy (plan=PR, diff=commit) and `hash` is its content hash.
 export type Handoff = HandoffWire;
+
+export type InboxMessage = InboxMessageWire;
 
 export type Repo = RepoWire;
 

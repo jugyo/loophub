@@ -20,6 +20,7 @@ export function usage(): void {
   lh issue list|view|create|import|update|comment|close|label  [--repo owner/repo]
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh inbox send --from '<json>' --title <text> --body <text|-> [--to '<json>'] [--label <name>] [--repo owner/repo]   # send a human-facing Inbox message
   lh handoff record --phase <p> --dir <down|up> (--pr <m> | --issue <n>) (--body <text|-> | --src <ref> [--hash <sha>]) [--from <r>] [--to <r>] [--summary <text>] [--model <m>] [--cost <json>]   # record an orchestrator<->subagent handoff (PR + session)
   lh handoff list [--pr <m>] [--issue <n>] [--session <id>] [--json]   # list handoffs for a ref, chronological
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR
@@ -45,6 +46,7 @@ export function usage(): void {
     lh issue create --title "do the thing" --label ready-to-build
     lh pr create --head feature-x --base main --title "impl" --issue 5 [--draft]
     lh pr comment 3 --body "starting work"
+    lh inbox send --from '{"kind":"agent","repo":"me/proj","actor":"impl-bot"}' --title "Needs review" --body "PR is ready" --repo me/proj
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     lh pr review 3 --topic security --event pass --body "no issues found"

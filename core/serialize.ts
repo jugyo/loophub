@@ -725,6 +725,51 @@ export function handoffJSON(h: S.HandoffRow): HandoffWire {
   };
 }
 
+export type InboxJsonPrimitive = string | number | boolean | null;
+export type InboxJsonValue =
+  | InboxJsonPrimitive
+  | InboxJsonValue[]
+  | { [key: string]: InboxJsonValue };
+export type InboxJsonObject = { [key: string]: InboxJsonValue };
+
+export interface InboxMessageWire {
+  id: number;
+  repo: { name: string };
+  from: InboxJsonObject;
+  to: InboxJsonObject | null;
+  label: string | null;
+  title: string;
+  body: string;
+  state: S.InboxMessageState;
+  created_at: string;
+}
+
+function safeParseObject(raw: string | null): InboxJsonObject | null {
+  if (raw == null) return null;
+  try {
+    const value = JSON.parse(raw);
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      return value as InboxJsonObject;
+    }
+  } catch {}
+  return {};
+}
+
+export function inboxMessageJSON(m: S.InboxMessageRow): InboxMessageWire {
+  const repo = S.getRepoById(m.repo_id);
+  return {
+    id: m.id,
+    repo: { name: repo?.full_name ?? "" },
+    from: safeParseObject(m.from_json) ?? {},
+    to: safeParseObject(m.to_json),
+    label: m.label ?? null,
+    title: m.title,
+    body: m.body,
+    state: m.state,
+    created_at: m.created_at,
+  };
+}
+
 export function labelJSON(l: S.LabelRow): LabelWire {
   return { name: l.name, color: l.color };
 }
