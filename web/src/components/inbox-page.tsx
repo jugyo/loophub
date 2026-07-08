@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Trash2,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import type { InboxJsonObject, InboxMessage } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,49 @@ function compactJson(value: InboxJsonObject | null): string {
     .map((key) => `${key}:${String(value[key])}`);
   if (parts.length > 0) return parts.join(" ");
   return JSON.stringify(value);
+}
+
+function scheduledTaskSource(value: InboxJsonObject | null): {
+  repo: string;
+  taskId: number;
+  runId: number;
+} | null {
+  if (
+    value?.kind !== "scheduled_task" ||
+    typeof value.repo !== "string" ||
+    typeof value.task_id !== "number" ||
+    typeof value.run_id !== "number"
+  ) {
+    return null;
+  }
+  return { repo: value.repo, taskId: value.task_id, runId: value.run_id };
+}
+
+function scheduledTaskHref(repo: string): string {
+  const slash = repo.indexOf("/");
+  if (slash <= 0 || slash === repo.length - 1) return "#";
+  const owner = encodeURIComponent(repo.slice(0, slash));
+  const name = encodeURIComponent(repo.slice(slash + 1));
+  return `/r/${owner}/${name}/scheduled-tasks`;
+}
+
+function sourceView(value: InboxJsonObject | null): ReactNode {
+  const scheduled = scheduledTaskSource(value);
+  if (!scheduled) return compactJson(value);
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span>kind:scheduled_task repo:{scheduled.repo}</span>
+      <span>
+        <a
+          className="text-primary underline-offset-2 hover:underline"
+          href={scheduledTaskHref(scheduled.repo)}
+        >
+          Scheduled task #{scheduled.taskId}
+        </a>{" "}
+        run #{scheduled.runId}
+      </span>
+    </span>
+  );
 }
 
 function bodySummary(body: string): string {
@@ -199,7 +243,7 @@ function MessageRows({
           {message.repo.name || "-"}
         </td>
         <td className="max-w-[170px] break-words px-3 py-2 text-xs">
-          {compactJson(message.from)}
+          {sourceView(message.from)}
         </td>
         <td className="max-w-[150px] break-words px-3 py-2 text-xs text-muted-foreground">
           {compactJson(message.to)}

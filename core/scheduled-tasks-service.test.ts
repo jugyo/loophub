@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -235,5 +241,47 @@ test("sweep skips tasks whose repo is archived (matches the Run now guard)", asy
     expect(S.listScheduledTaskRuns(task.id)).toHaveLength(0);
   } finally {
     svc.repos.setArchived("me/sched", false);
+  }
+});
+
+test("launch failure creates a scheduled-task Inbox message", async () => {
+  clearTasks("me/sched");
+  const bin = mkdtempSync(join(tmpdir(), "lh-sched-bin-"));
+  const prevPath = process.env.PATH;
+  const herdr = join(bin, "herdr");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(herdr, "#!/bin/sh\nexit 9\n");
+  chmodSync(herdr, 0o755);
+  process.env.PATH = `${bin}:${prevPath ?? ""}`;
+  try {
+    const task = svc.scheduledTasks.create("me/sched", {
+      title: "Launch failure",
+      prompt: "p",
+      agent: "claude-code",
+      times: [],
+    });
+
+    const run = await svc.scheduledTasks.run("me/sched", task.id);
+
+    expect(run?.status).toBe("failure");
+    expect(run?.error).toBe("Herdr exited with status 9");
+    const messages = svc.inbox.list("me/sched");
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      label: "scheduled_task",
+      title: "Scheduled task launch failed: Launch failure",
+      from: {
+        kind: "scheduled_task",
+        repo: "me/sched",
+        task_id: task.id,
+        run_id: run?.id,
+      },
+    });
+    expect(messages[0].body).toContain(`Task ID: ${task.id}`);
+    expect(messages[0].body).toContain(`Run ID: ${run?.id}`);
+    expect(messages[0].body).toContain("Error: Herdr exited with status 9");
+  } finally {
+    process.env.PATH = prevPath;
+    rmSync(bin, { recursive: true, force: true });
   }
 });

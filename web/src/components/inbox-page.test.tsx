@@ -75,6 +75,12 @@ describe("InboxPage", () => {
     ).toBeTruthy();
     expect(screen.getByText("team/api")).toBeTruthy();
     expect(screen.getByText("kind:human")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Scheduled task #4" })
+        .getAttribute("href"),
+    ).toBe("/r/team/api/scheduled-tasks");
+    expect(screen.getByText("run #9")).toBeTruthy();
 
     await waitFor(() => {
       expect(rpcCall("inbox/list")?.params).toEqual({ limit: 100 });

@@ -1,4 +1,9 @@
+import {
+  SCHEDULED_TASK_INBOX_LABEL,
+  scheduledTaskInboxSource,
+} from "../scheduled-task-inbox.ts";
 import { runHerdrLaunch, runHerdrLaunchCapture } from "./herdr-runner.ts";
+import { inbox } from "./inbox.ts";
 import {
   actorFor,
   agentEffort,
@@ -135,6 +140,11 @@ async function fireScheduledTask(
     prompt: task.prompt,
     model: task.model?.trim() || agentModel(agent),
     effort: task.effort?.trim() || agentEffort(agent),
+    context: {
+      repo: repo.full_name,
+      taskId: task.id,
+      runId: run.id,
+    },
   });
 
   let tabId: string | null = null;
@@ -195,12 +205,34 @@ async function fireScheduledTask(
         () => {},
       );
     }
-    return scheduledTaskRunJSON(
-      S.finishScheduledTaskRun(run.id, {
-        status: "failure",
-        error: isServiceError(e) ? e.message : "herdr launch failed",
-      })!,
-    );
+    const error = isServiceError(e) ? e.message : "herdr launch failed";
+    const failed = S.finishScheduledTaskRun(run.id, {
+      status: "failure",
+      error,
+    })!;
+    inbox.send(repo.full_name, {
+      from: scheduledTaskInboxSource({
+        repo: repo.full_name,
+        taskId: task.id,
+        runId: run.id,
+      }),
+      label: SCHEDULED_TASK_INBOX_LABEL,
+      title: `Scheduled task launch failed: ${task.title}`,
+      body: [
+        `Scheduled task "${task.title}" failed to launch.`,
+        "",
+        `Repo: ${repo.full_name}`,
+        `Task ID: ${task.id}`,
+        `Run ID: ${run.id}`,
+        `Trigger: ${opts.trigger}`,
+        opts.scheduledTime ? `Scheduled time: ${opts.scheduledTime}` : null,
+        "",
+        `Error: ${error}`,
+      ]
+        .filter((line): line is string => line != null)
+        .join("\n"),
+    });
+    return scheduledTaskRunJSON(failed);
   }
 }
 

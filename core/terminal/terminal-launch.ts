@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import { autoModeOnBuild, type CodingAgent, codingAgent } from "../config.ts";
+import {
+  type ScheduledTaskInboxContext,
+  scheduledTaskInboxEnv,
+  scheduledTaskInboxPromptSuffix,
+} from "../scheduled-task-inbox.ts";
 import { buildCodexSandboxArgs } from "./codex-launch.ts";
 
 export interface TerminalLaunchRepo {
@@ -169,8 +174,17 @@ export function buildScheduledTaskCommand(input: {
   prompt: string;
   model?: string | null;
   effort?: string | null;
+  context?: ScheduledTaskInboxContext;
 }): string {
-  const prompt = shellArg(input.prompt);
+  const promptText = input.context
+    ? `${input.prompt.trimEnd()}${scheduledTaskInboxPromptSuffix(input.context)}`
+    : input.prompt;
+  const prompt = shellArg(promptText);
+  const envPrefix = input.context
+    ? `${Object.entries(scheduledTaskInboxEnv(input.context))
+        .map(([key, value]) => `${key}=${shellArg(value)}`)
+        .join(" ")} `
+    : "";
   const model = input.model?.trim();
   if (input.agent === "codex") {
     const parts = ["codex", "exec", ...buildCodexSandboxArgs().map(shellArg)];
@@ -178,11 +192,11 @@ export function buildScheduledTaskCommand(input: {
     const effort = input.effort?.trim();
     if (effort) parts.push("-c", shellArg(`model_reasoning_effort=${effort}`));
     parts.push(prompt);
-    return parts.join(" ");
+    return `${envPrefix}${parts.join(" ")}`;
   }
   const parts = ["claude", "-p", prompt, "--permission-mode", "auto"];
   if (model) parts.push("--model", shellArg(model));
-  return parts.join(" ");
+  return `${envPrefix}${parts.join(" ")}`;
 }
 
 // Creates the tab the agent will start in (`herdr agent start --tab <ID>`), so launches open
