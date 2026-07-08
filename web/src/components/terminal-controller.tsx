@@ -30,7 +30,12 @@ export interface OpenTerminalOptions {
   // Session label override; defaults to the repo name (or "~" for $HOME).
   label?: string;
   // Semantic workflow the Herdr session runs — it does not replay a literal shell command.
-  workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";
+  workflow?:
+    | "issue-dev"
+    | "issue-create"
+    | "scheduled-task-create"
+    | "resume"
+    | "github-pr-export";
   issueNumber?: number;
   prNumber?: number;
   session?: string;

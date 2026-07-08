@@ -70,7 +70,12 @@ import {
 export interface TerminalLaunchInput {
   repo: string;
   label?: string;
-  workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";
+  workflow?:
+    | "issue-dev"
+    | "issue-create"
+    | "scheduled-task-create"
+    | "resume"
+    | "github-pr-export";
   issueNumber?: number;
   prNumber?: number;
   session?: string;
@@ -424,13 +429,15 @@ export const terminal = {
       }
     }
 
-    // New Issue gets its own fresh workspace instead of a tab in the repo's existing default
-    // workspace (#544) — it has no worktree to pin to. The worktree-backed workflows
-    // (Build/issue-dev, resume, github-pr-export) instead open a workspace pinned to the PR's
-    // real worktree (#551, below). `herdr workspace create` seeds the workspace with one tab
-    // and one empty pane in the same output shape `herdr tab create` uses, so the tab/root-pane
-    // parsing below is unchanged either way.
-    const isNewWorkspace = input.workflow === "issue-create";
+    // New Issue and Scheduled Task creation get their own fresh workspaces instead of a tab in the
+    // repo's existing default workspace (#544/#935) — neither has a PR worktree to pin to. The
+    // worktree-backed workflows (Build/issue-dev, resume, github-pr-export) instead open a
+    // workspace pinned to the PR's real worktree (#551, below). `herdr workspace create` seeds the
+    // workspace with one tab and one empty pane in the same output shape `herdr tab create` uses,
+    // so the tab/root-pane parsing below is unchanged either way.
+    const isNewWorkspace =
+      input.workflow === "issue-create" ||
+      input.workflow === "scheduled-task-create";
     // Create a fresh tab (or workspace) first so the agent starts in it instead of splitting the
     // focused pane (#489). Best-effort: on any failure fall back to the tab-less launch (Herdr's
     // default split placement) rather than breaking the launch; a hard herdr failure still

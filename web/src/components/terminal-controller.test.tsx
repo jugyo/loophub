@@ -44,7 +44,12 @@ vi.mock("@/queries/terminal", () => ({
 function LaunchButton({
   workflow = "issue-dev",
 }: {
-  workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";
+  workflow?:
+    | "issue-dev"
+    | "issue-create"
+    | "scheduled-task-create"
+    | "resume"
+    | "github-pr-export";
 }) {
   const { launchTerminal } = useTerminalLauncher();
   return (

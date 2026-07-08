@@ -329,7 +329,12 @@ export function getAgentSessions() {
 export function launchTerminalWorkflow(input: {
   repo: string;
   label?: string;
-  workflow?: "issue-dev" | "issue-create" | "resume" | "github-pr-export";
+  workflow?:
+    | "issue-dev"
+    | "issue-create"
+    | "scheduled-task-create"
+    | "resume"
+    | "github-pr-export";
   issueNumber?: number;
   prNumber?: number;
   session?: string;

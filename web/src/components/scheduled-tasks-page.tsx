@@ -1,14 +1,16 @@
 // Scheduled tasks screen (/r/:owner/:repo/scheduled-tasks, #880). Lists a repo's scheduled tasks
-// and lets you create / edit / delete them and Run now. A task is a saved prompt an agent
-// (Claude Code / Codex) runs at one or more times of day; the worker fires each registered time
-// once per day. Same RPCs/hooks as the CLI would use (scheduledTasks/*); this is the management UI.
+// and lets you launch the create flow, edit / delete existing tasks, and Run now. A task is a saved
+// prompt an agent (Claude Code / Codex) runs at one or more times of day; the worker fires each
+// registered time once per day. Same RPCs/hooks as the CLI would use (scheduledTasks/*); this is the
+// management UI.
 
 import { Link } from "@tanstack/react-router";
+import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CodingAgent, ScheduledTask } from "@/api/types";
+import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button } from "@/components/ui/button";
 import {
-  useCreateScheduledTask,
   useDeleteScheduledTask,
   useRunScheduledTask,
   useScheduledTask,
@@ -30,6 +32,12 @@ function parseTimes(raw: string): string[] {
     .filter(Boolean);
 }
 
+function launchSuffix(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
+}
+
 export function ScheduledTasksPage({
   owner,
   repo,
@@ -38,7 +46,6 @@ export function ScheduledTasksPage({
   repo: string;
 }) {
   const { data: tasks, isLoading, isError } = useScheduledTasks(owner, repo);
-  const [creating, setCreating] = useState(false);
 
   return (
     <div className="mx-auto max-w-content">
@@ -65,16 +72,7 @@ export function ScheduledTasksPage({
       </p>
 
       <div className="mt-4">
-        {creating ? (
-          <TaskForm
-            owner={owner}
-            repo={repo}
-            onDone={() => setCreating(false)}
-            onCancel={() => setCreating(false)}
-          />
-        ) : (
-          <Button onClick={() => setCreating(true)}>New scheduled task</Button>
-        )}
+        <CreateScheduledTaskButton owner={owner} repo={repo} />
       </div>
 
       <div className="mt-6 flex flex-col gap-3">
@@ -93,6 +91,34 @@ export function ScheduledTasksPage({
         )}
       </div>
     </div>
+  );
+}
+
+function CreateScheduledTaskButton({
+  owner,
+  repo,
+}: {
+  owner: string;
+  repo: string;
+}) {
+  const { launchTerminal } = useTerminalLauncher();
+  const fullRepo = `${owner}/${repo}`;
+
+  return (
+    <Button
+      aria-label="New scheduled task"
+      title="New scheduled task"
+      onClick={() =>
+        launchTerminal({
+          repo: fullRepo,
+          label: `New scheduled task - ${launchSuffix()}`,
+          workflow: "scheduled-task-create",
+        })
+      }
+    >
+      <Plus className="size-4" />
+      New scheduled task
+    </Button>
   );
 }
 
@@ -260,7 +286,7 @@ function RunLog({
   );
 }
 
-// Shared create/edit form. When `task` is set it edits that task; otherwise it creates a new one.
+// Shared edit form for existing tasks. New tasks are created through a Herdr session.
 function TaskForm({
   owner,
   repo,
@@ -270,24 +296,20 @@ function TaskForm({
 }: {
   owner: string;
   repo: string;
-  task?: ScheduledTask;
+  task: ScheduledTask;
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const create = useCreateScheduledTask(owner, repo);
   const update = useUpdateScheduledTask(owner, repo);
-  const editing = task !== undefined;
 
-  const [title, setTitle] = useState(task?.title ?? "");
-  const [prompt, setPrompt] = useState(task?.prompt ?? "");
-  const [agent, setAgent] = useState<CodingAgent>(
-    (task?.agent as CodingAgent) ?? "claude-code",
-  );
-  const [times, setTimes] = useState((task?.times ?? []).join(", "));
-  const [model, setModel] = useState(task?.model ?? "");
-  const [effort, setEffort] = useState(task?.effort ?? "");
+  const [title, setTitle] = useState(task.title);
+  const [prompt, setPrompt] = useState(task.prompt);
+  const [agent, setAgent] = useState<CodingAgent>(task.agent as CodingAgent);
+  const [times, setTimes] = useState(task.times.join(", "));
+  const [model, setModel] = useState(task.model ?? "");
+  const [effort, setEffort] = useState(task.effort ?? "");
 
-  const mutation = editing ? update : create;
+  const mutation = update;
 
   async function onSubmit() {
     const input = {
@@ -299,11 +321,7 @@ function TaskForm({
       effort: effort.trim() || null,
     };
     try {
-      if (editing) {
-        await update.mutateAsync({ id: task.id, patch: input });
-      } else {
-        await create.mutateAsync(input);
-      }
+      await update.mutateAsync({ id: task.id, patch: input });
     } catch {
       return; // surfaced via mutation.error
     }
@@ -372,7 +390,9 @@ function TaskForm({
             type="text"
             className="rounded-md border bg-background px-3 py-1.5 text-sm"
             placeholder={
-              task ? `${task.default_model} (default)` : "agent default"
+              task.default_model
+                ? `${task.default_model} (default)`
+                : "agent default"
             }
             value={model}
             onChange={(e) => setModel(e.target.value)}
@@ -383,9 +403,7 @@ function TaskForm({
           <input
             type="text"
             className="rounded-md border bg-background px-3 py-1.5 text-sm"
-            placeholder={
-              task ? `${task.default_effort} (default)` : "agent default"
-            }
+            placeholder={`${task.default_effort} (default)`}
             value={effort}
             onChange={(e) => setEffort(e.target.value)}
           />
@@ -401,11 +419,7 @@ function TaskForm({
 
       <div className="flex gap-2">
         <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : editing
-              ? "Save changes"
-              : "Create task"}
+          {mutation.isPending ? "Saving…" : "Save changes"}
         </Button>
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel

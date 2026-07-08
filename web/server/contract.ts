@@ -205,7 +205,13 @@ export const methods: Record<string, MethodDef> = {
         repo,
         label: str,
         workflow: {
-          enum: ["issue-dev", "issue-create", "resume", "github-pr-export"],
+          enum: [
+            "issue-dev",
+            "issue-create",
+            "scheduled-task-create",
+            "resume",
+            "github-pr-export",
+          ],
         },
         issueNumber: positiveInt,
         prNumber: positiveInt,

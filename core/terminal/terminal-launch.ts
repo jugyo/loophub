@@ -93,7 +93,11 @@ export function commandForHerdrLaunch(input: {
   // launch itself are entirely `lh build --herdr`'s responsibility (#584) — the server only spawns
   // it directly (see launchIssueDevHerdr in service.ts) rather than building a command string for
   // an agent-start pane the way the other workflows below do.
-  workflow?: "issue-create" | "resume" | "github-pr-export";
+  workflow?:
+    | "issue-create"
+    | "scheduled-task-create"
+    | "resume"
+    | "github-pr-export";
   prNumber?: number;
   session?: string;
   cwd?: string;
@@ -110,6 +114,15 @@ export function commandForHerdrLaunch(input: {
   if (input.workflow === "issue-create") {
     // `lh issue new` is the recorded LoopHub entrypoint for the /lh-issue-create workflow.
     return withEnv(`lh issue new --repo ${shellArg(input.repo)}`);
+  }
+  if (input.workflow === "scheduled-task-create") {
+    const command = shellArg("/lh-scheduled-task-create");
+    const agent = input.codingAgent ?? codingAgent();
+    if (agent === "codex") {
+      const codexArgs = buildCodexSandboxArgs().map(shellArg).join(" ");
+      return `codex ${codexArgs} ${command}`;
+    }
+    return `claude ${command}`;
   }
   if (input.workflow === "github-pr-export" && input.prNumber) {
     const command = shellArg(`/lh-create-github-pr ${input.prNumber}`);
