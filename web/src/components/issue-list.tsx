@@ -128,19 +128,13 @@ export function IssueList({
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">
-          {owner}/{repo}
-        </h1>
-        <RepoHerdrCommand owner={owner} repo={repo} />
-        <p className="text-sm text-muted-foreground">Issues</p>
-      </div>
+      <RepoHerdrCommand owner={owner} repo={repo} />
 
       <div className="flex flex-wrap items-center gap-2">
         <div
           role="tablist"
           aria-label="Issue state"
-          className="flex h-9 shrink-0 items-center rounded-md border bg-muted p-1"
+          className="inline-flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto rounded-md border bg-muted p-0.5"
         >
           {STATE_TABS.map((tab) => {
             const active = state === tab.value;
@@ -155,11 +149,12 @@ export function IssueList({
                   labels: labels || undefined,
                   state: tab.value === "open" ? undefined : tab.value,
                 }}
-                className={
+                className={cn(
+                  "inline-flex h-7 shrink-0 items-center justify-center rounded-sm px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   active
-                    ? "rounded-sm bg-accent px-3 py-1 text-sm font-medium text-accent-foreground shadow-sm"
-                    : "rounded-sm px-3 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                }
+                    ? "bg-background text-foreground shadow-sm ring-1 ring-border"
+                    : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
+                )}
               >
                 {tab.label}
               </Link>

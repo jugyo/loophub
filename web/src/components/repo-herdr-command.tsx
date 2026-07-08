@@ -2,9 +2,9 @@
 // `herdr --session <name>` connects to the repo's existing herdr session if one is running and
 // starts it otherwise, so a single command covers both. The session name is the deterministic one
 // every LoopHub herdr launch derives (core/terminal-launch.ts's herdrSessionName), served on the
-// repo wire object (repo.herdr_session_name) so this needs no herdr call. Rendered between the
-// repo title and the "Issues" header with a one-line explanation, kept low-key (muted, small,
-// monospace command) so it doesn't compete with the issue list below.
+// repo wire object (repo.herdr_session_name) so this needs no herdr call. Rendered near the issue
+// list controls with a one-line explanation, kept low-key (muted, small, monospace command) so it
+// doesn't compete with the issue list below.
 
 import { Terminal } from "lucide-react";
 import { CopyButton } from "@/components/copy-button";

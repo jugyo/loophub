@@ -48,14 +48,7 @@ export function ScheduledTasksPage({
 
   return (
     <div className="mx-auto max-w-content">
-      <div>
-        <h1 className="text-2xl font-semibold">Scheduled tasks</h1>
-        <p className="text-sm text-muted-foreground">
-          {owner}/{repo}
-        </p>
-      </div>
-
-      <p className="mt-2 text-sm text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         A scheduled task runs a saved prompt with the chosen agent at one or
         more times of day. Each registered time fires once per day; use Run now
         to fire immediately.

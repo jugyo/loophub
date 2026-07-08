@@ -96,25 +96,27 @@ function renderSettings(initialArchived = false, patchFails = false) {
     routeTree: rootRoute.addChildren([indexRoute, settingsRoute]),
     history: createMemoryHistory({ initialEntries: ["/r/me/proj/settings"] }),
   });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { ...rendered, router };
 }
 
 describe("RepoSettingsPage", () => {
-  it("does not render a duplicate repo back link when the shell breadcrumb is present", async () => {
+  it("does not render a duplicate content heading or repo back link when the shell breadcrumb is present", async () => {
     renderSettings(false);
 
+    expect(await screen.findByRole("heading", { name: "Rename" })).toBeTruthy();
     expect(
-      await screen.findByRole("heading", { name: "me/proj settings" }),
-    ).toBeTruthy();
+      screen.queryByRole("heading", { name: "me/proj settings" }),
+    ).toBeNull();
     expect(screen.queryByRole("link", { name: /me\/proj/ })).toBeNull();
   });
 
   it("renames via the form and navigates to the renamed repo (#485)", async () => {
-    renderSettings(false);
+    const { router } = renderSettings(false);
     const input = (await screen.findByRole("textbox", {
       name: /new repository name/i,
     })) as HTMLInputElement;
@@ -137,9 +139,9 @@ describe("RepoSettingsPage", () => {
         new_name: "acme/other",
       });
     });
-    expect(
-      await screen.findByRole("heading", { name: "acme/other settings" }),
-    ).toBeTruthy();
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/r/acme/other/settings"),
+    );
   });
 
   it("shows the server error and keeps the form when rename fails (#485)", async () => {

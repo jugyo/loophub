@@ -76,6 +76,9 @@ describe("ScheduledTasksPage", () => {
     renderPage();
 
     expect(await screen.findByText("No scheduled tasks yet.")).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Scheduled tasks" }),
+    ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "New scheduled task" }));
 
     expect(launchTerminal).toHaveBeenCalledWith({

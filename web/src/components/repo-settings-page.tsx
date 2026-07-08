@@ -35,10 +35,6 @@ export function RepoSettingsPage({
 
   return (
     <div className="mx-auto max-w-content">
-      <h1 className="text-2xl font-semibold">
-        {owner}/{repo} settings
-      </h1>
-
       <RenameSection owner={owner} repo={repo} loaded={loaded} />
       <MergeModeSection owner={owner} repo={repo} />
       <ArchiveSection

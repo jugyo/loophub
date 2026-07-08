@@ -109,6 +109,7 @@ describe("IssueList", () => {
     renderIssueList(<IssueList owner="me" repo="proj" />);
 
     expect(await screen.findByText("No open issues.")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "me/proj" })).toBeNull();
     expect(
       screen
         .getByRole("tab", { name: "Open" })

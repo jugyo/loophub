@@ -51,21 +51,21 @@ export function RepoTopbar({ fallback }: { fallback: ReactNode }) {
   return (
     <nav
       aria-label="Repository navigation"
-      className="flex min-w-0 flex-1 items-center gap-3"
+      className="flex min-w-0 flex-1 items-stretch gap-2 self-stretch sm:gap-3"
     >
       <Link
         to="/r/$owner/$repo"
         params={{ owner, repo }}
         search={{}}
         activeOptions={{ exact: true }}
-        className="min-w-0 shrink rounded-md px-2 py-1 text-sm font-semibold hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="inline-flex min-w-0 shrink items-center rounded-md px-2 text-sm font-semibold hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         <span className="block truncate">{fullName}</span>
       </Link>
 
       <div
         aria-label={`${fullName} sections`}
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-md bg-muted p-0.5"
+        className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto border-b border-transparent"
       >
         {tabs.map((tab) => {
           const active = section === tab.section;
@@ -78,8 +78,10 @@ export function RepoTopbar({ fallback }: { fallback: ReactNode }) {
               activeOptions={{ exact: true }}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:px-3",
-                active && "bg-background text-foreground shadow-sm",
+                "-mb-px inline-flex h-11 shrink-0 items-center justify-center gap-1.5 border-b-2 px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:px-3",
+                active
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
               )}
             >
               {tab.icon}
