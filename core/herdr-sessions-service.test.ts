@@ -17,6 +17,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
+let db: typeof import("./db.ts").db;
 let herdrSessionName: (repo: {
   full_name: string;
   local_path: string;
@@ -39,6 +40,7 @@ function initGitRepo(): string {
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
+  ({ db } = await import("./db.ts"));
   ({ herdrSessionName } = await import("./terminal/terminal-launch.ts"));
   ({ worktreeRoot } = await import("./config.ts"));
   ({ worktreePath } = await import("./worktree-path.ts"));
@@ -778,6 +780,172 @@ test("terminal.killAgent surfaces a visible error when herdr is not installed", 
       message: "herdr command not found on PATH",
     });
   } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.cleanupClosedPullDevAgents kills expired closed and merged PR agents only", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/closed-pr-cleanup",
+  });
+  const sessionName = herdrSessionName(repo);
+  const old = new Date(Date.now() - 61 * 60 * 1000)
+    .toISOString()
+    .replace(/\.\d+Z$/, "Z");
+  const fresh = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+
+  const expiredMerged = S.createIssue(
+    repo.id,
+    "pull",
+    "expired merged",
+    "",
+    "me",
+  );
+  S.createPull(expiredMerged.id, "loophub/pr-1", "main", null);
+  S.registerAgentSession("session-expired-merged", "lh-dev", "external-1");
+  S.setPullSession(expiredMerged.id, "session-expired-merged");
+  S.setMergedFromGithub(expiredMerged.id, old);
+
+  const freshMerged = S.createIssue(repo.id, "pull", "fresh merged", "", "me");
+  S.createPull(freshMerged.id, "loophub/pr-2", "main", null);
+  S.registerAgentSession("session-fresh-merged", "lh-dev", "external-2");
+  S.setPullSession(freshMerged.id, "session-fresh-merged");
+  S.setMergedFromGithub(freshMerged.id, fresh);
+
+  const freshClosed = S.createIssue(repo.id, "pull", "fresh closed", "", "me");
+  S.createPull(freshClosed.id, "loophub/pr-3", "main", null);
+  S.registerAgentSession("session-fresh-closed", "lh-dev", "external-3");
+  S.setPullSession(freshClosed.id, "session-fresh-closed");
+  S.updateIssue(freshClosed.id, { state: "closed" });
+  db.run(`UPDATE issues SET closed_at = ?, updated_at = ? WHERE id = ?`, [
+    fresh,
+    fresh,
+    freshClosed.id,
+  ]);
+
+  const expiredClosed = S.createIssue(
+    repo.id,
+    "pull",
+    "expired closed",
+    "",
+    "me",
+  );
+  S.createPull(expiredClosed.id, "loophub/pr-4", "main", null);
+  S.registerAgentSession("session-expired-closed", "lh-dev", "external-4");
+  S.setPullSession(expiredClosed.id, "session-expired-closed");
+  S.updateIssue(expiredClosed.id, { state: "closed" });
+  db.run(`UPDATE issues SET closed_at = ?, updated_at = ? WHERE id = ?`, [
+    old,
+    old,
+    expiredClosed.id,
+  ]);
+
+  const unlinkedClosed = S.createIssue(
+    repo.id,
+    "pull",
+    "unlinked closed",
+    "",
+    "me",
+  );
+  S.createPull(unlinkedClosed.id, "loophub/pr-5", "main", null);
+  S.updateIssue(unlinkedClosed.id, { state: "closed" });
+  db.run(`UPDATE issues SET closed_at = ?, updated_at = ? WHERE id = ?`, [
+    old,
+    old,
+    unlinkedClosed.id,
+  ]);
+
+  const root = worktreeRoot();
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "dev #1",
+          pane_id: "wC:p1",
+          foreground_cwd: worktreePath(root, repo.full_name, 1),
+        },
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "dev #2",
+          pane_id: "wC:p2",
+          foreground_cwd: worktreePath(root, repo.full_name, 2),
+        },
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "dev #3",
+          pane_id: "wC:p3",
+          foreground_cwd: worktreePath(root, repo.full_name, 3),
+        },
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "dev #4",
+          pane_id: "wC:p4",
+          foreground_cwd: worktreePath(root, repo.full_name, 4),
+        },
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "dev #5",
+          pane_id: "wC:p5",
+          foreground_cwd: worktreePath(root, repo.full_name, 5),
+        },
+      ],
+    },
+  });
+  const CALLS_FILE = join(HOME, "closed-pr-cleanup-calls.txt");
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `echo "$@" >> ${CALLS_FILE}`,
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `if [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":999999}}}'; exit 0; fi`,
+      `printf '%s' '${agents}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+  try {
+    await expect(svc.terminal.cleanupClosedPullDevAgents()).resolves.toEqual({
+      killed: 2,
+      skipped: 3,
+      failed: 0,
+    });
+    expect(killSpy).toHaveBeenCalledTimes(2);
+    expect(killSpy).toHaveBeenNthCalledWith(1, -999999, "SIGKILL");
+    expect(killSpy).toHaveBeenNthCalledWith(2, -999999, "SIGKILL");
+    const { readFileSync } = await import("node:fs");
+    const calls = readFileSync(CALLS_FILE, "utf8");
+    expect(calls).toContain(
+      `--session ${sessionName} pane process-info --pane wC:p1`,
+    );
+    expect(calls).toContain(
+      `--session ${sessionName} pane process-info --pane wC:p4`,
+    );
+    expect(calls).not.toContain("process-info --pane wC:p2");
+    expect(calls).not.toContain("process-info --pane wC:p3");
+    expect(calls).not.toContain("process-info --pane wC:p5");
+
+    const events = S.listEvents(0, repo.id, 10);
+    const killed = events.filter((e) => e.type === "agent_session.killed");
+    expect(killed).toHaveLength(2);
+    expect(killed.map((e) => JSON.parse(e.payload).session_id).sort()).toEqual([
+      "session-expired-closed",
+      "session-expired-merged",
+    ]);
+  } finally {
+    killSpy.mockRestore();
     process.env.PATH = ORIGINAL_PATH;
   }
 });

@@ -102,6 +102,9 @@ const LH_DEV_HERDR_TIMEOUT_MS = 90_000;
 // server's absolute paths, a Node stack trace, or other detail that must not reach a non-loopback
 // client (#584 review).
 const LH_DEV_STDERR_TAIL_BYTES = 4 * 1024;
+const CLOSED_PULL_AGENT_GRACE_MS = 60 * 60 * 1000;
+const CLOSED_PULL_AGENT_KILLED_EVENT = "agent_session.killed";
+const CLOSED_PULL_AGENT_KILL_REASON = "pr_closed_grace_elapsed";
 function runLhDevLaunch(args: string[], cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn("lh", args, {
@@ -677,6 +680,17 @@ export const terminal = {
     return enforceDevCostLimitsImpl();
   },
 
+  // Kill `lh dev` agents whose PR has been closed/merged for at least one hour (#926). Reuses the
+  // same Herdr pane-kill primitive as the manual kill button and is scheduled by the existing worker
+  // agent-maintenance tick, not by a PR-specific timer.
+  async cleanupClosedPullDevAgents(): Promise<{
+    killed: number;
+    skipped: number;
+    failed: number;
+  }> {
+    return cleanupClosedPullDevAgentsImpl();
+  },
+
   // Recent terminal output for one herdr agent, for the sidebar hover preview (#500).
   // `target` is whatever the client sends as a herdr `agent read` target — usually a
   // pane_id, since herdr only resolves an agent *name* target when it's unique within
@@ -1034,6 +1048,110 @@ async function cleanupClosedIssueNewIssueAgentImpl(
     { timeoutMs: 10_000 },
   ).catch(() => {});
   return { closed: 1, skipped: 0, failed: 0 };
+}
+
+function closedPullAgentEligibleAt(
+  prRow: S.IssueRow,
+  pull: S.PullRow,
+): string | null {
+  if (pull.merged === 1) return pull.merged_at;
+  if (prRow.state === "closed") return prRow.closed_at;
+  return null;
+}
+
+function timestampPlus(value: string | null, ms: number): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed + ms;
+}
+
+async function cleanupClosedPullDevAgentsImpl(): Promise<{
+  killed: number;
+  skipped: number;
+  failed: number;
+}> {
+  let listOut: string;
+  try {
+    listOut = await runHerdrCapture(["session", "list", "--json"]);
+  } catch {
+    return { killed: 0, skipped: 0, failed: 0 };
+  }
+  const running = parseHerdrSessionList(listOut);
+  if (running.length === 0) return { killed: 0, skipped: 0, failed: 0 };
+
+  const nowMs = Date.now();
+  let killed = 0;
+  let skipped = 0;
+  let failed = 0;
+  const matched = reposWithRunningSession(S.listRepos("active"), running);
+  for (const { repo, sessionName } of matched) {
+    let agentsOut: string;
+    try {
+      agentsOut = await runHerdrCapture([
+        "--session",
+        sessionName,
+        "agent",
+        "list",
+      ]);
+    } catch {
+      continue;
+    }
+    for (const pane of herdrPullWorkspacesFromAgentList(
+      agentsOut,
+      worktreeRoot(),
+      repo.full_name,
+    )) {
+      const prRow = S.getIssue(repo.id, pane.pull);
+      if (prRow?.kind !== "pull") {
+        skipped++;
+        continue;
+      }
+      const pull = S.getPull(prRow.id);
+      if (!pull) {
+        skipped++;
+        continue;
+      }
+      const eligibleAt = timestampPlus(
+        closedPullAgentEligibleAt(prRow, pull),
+        CLOSED_PULL_AGENT_GRACE_MS,
+      );
+      if (eligibleAt === null || nowMs < eligibleAt) {
+        skipped++;
+        continue;
+      }
+      const sessionId = S.primaryDevSessionForPull(prRow.id);
+      if (sessionId === null) {
+        skipped++;
+        continue;
+      }
+      if (!HERDR_ID.test(pane.pane_id)) {
+        failed++;
+        continue;
+      }
+      try {
+        await killPaneForegroundProcess(repo, pane.pane_id, sessionName);
+      } catch {
+        failed++;
+        continue;
+      }
+      runHerdr(
+        "herdr",
+        ["--session", sessionName, "pane", "close", pane.pane_id],
+        repo.local_path,
+        { timeoutMs: 10_000 },
+      ).catch(() => {});
+      S.emitEvent(repo.id, CLOSED_PULL_AGENT_KILLED_EVENT, "lh-worker", {
+        number: pane.pull,
+        pr: pane.pull,
+        session_id: sessionId,
+        pane_id: pane.pane_id,
+        reason: CLOSED_PULL_AGENT_KILL_REASON,
+      });
+      killed++;
+    }
+  }
+  return { killed, skipped, failed };
 }
 
 // herdr key name sent to a pane to interrupt (cancel the current turn of) a running claude/codex

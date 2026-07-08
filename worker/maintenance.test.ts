@@ -8,9 +8,11 @@ process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let M: typeof import("./maintenance.ts");
+let svc: typeof import("../core/service.ts");
 
 beforeAll(async () => {
   M = await import("./maintenance.ts");
+  svc = await import("../core/service.ts");
 });
 
 afterAll(() => {
@@ -94,5 +96,26 @@ test("pull sweep logs start and completion to stdout", async () => {
   } finally {
     stop();
     out.mockRestore();
+  }
+});
+
+test("cost stop sweep also runs closed PR agent cleanup", async () => {
+  vi.useFakeTimers();
+  const costSpy = vi
+    .spyOn(svc.terminal, "enforceDevCostLimits")
+    .mockResolvedValue({ stopped: 0, skipped: 0, failed: 0 });
+  const cleanupSpy = vi
+    .spyOn(svc.terminal, "cleanupClosedPullDevAgents")
+    .mockResolvedValue({ killed: 1, skipped: 0, failed: 0 });
+  const stop = M.startCostStopSweep(10);
+  try {
+    await vi.advanceTimersByTimeAsync(10);
+    expect(costSpy).toHaveBeenCalledTimes(1);
+    expect(cleanupSpy).toHaveBeenCalledTimes(1);
+  } finally {
+    stop();
+    costSpy.mockRestore();
+    cleanupSpy.mockRestore();
+    vi.useRealTimers();
   }
 });

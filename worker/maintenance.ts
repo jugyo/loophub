@@ -289,10 +289,10 @@ export function startScheduledTaskSweep(
   };
 }
 
-// Stop `lh build` agents that pass the top-level cost limit by sending Esc to their herdr pane
-// (#832). This is worker-owned maintenance (not a UI cache invalidation): the enumeration, cost
-// judgement, keystroke, and dev.cost_stopped bookkeeping all live in terminal.enforceDevCostLimits;
-// this loop only schedules it and logs the outcome.
+// Maintain running build/dev agents from one worker-owned Herdr tick. Cost overages are stopped with
+// Esc (#832), and agents left running more than an hour after their PR closes are killed (#926). The
+// enumeration, decisions, keystroke/kill, and event bookkeeping live in core terminal services; this
+// loop only schedules them and logs outcomes.
 export function startCostStopSweep(
   intervalMs = DEFAULT_COST_STOP_SWEEP_MS,
 ): () => void {
@@ -304,11 +304,16 @@ export function startCostStopSweep(
     running = true;
     const startedAt = logLoopStarted("cost stop sweep");
     try {
-      const result = await terminal.enforceDevCostLimits();
+      const [costResult, closedPullResult] = await Promise.all([
+        terminal.enforceDevCostLimits(),
+        terminal.cleanupClosedPullDevAgents(),
+      ]);
       logLoopCompleted("cost stop sweep", startedAt, {
-        stopped: result.stopped,
-        skipped: result.skipped,
-        failed: result.failed,
+        stopped: costResult.stopped,
+        skipped: costResult.skipped,
+        closed_pr_killed: closedPullResult.killed,
+        closed_pr_skipped: closedPullResult.skipped,
+        failed: costResult.failed + closedPullResult.failed,
       });
     } catch (err) {
       logLoopFailed("cost stop sweep", startedAt, err);
