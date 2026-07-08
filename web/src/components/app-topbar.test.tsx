@@ -22,12 +22,21 @@ const reposData = vi.hoisted(() => ({
   isLoading: false,
   isError: false,
 }));
+const favoriteMutations = vi.hoisted(() => ({
+  calls: [] as Array<{ owner: string; repo: string; favorite: boolean }>,
+}));
 
 vi.mock("@/queries/repos", () => ({
   useRepos: () => ({
     data: reposData.value,
     isLoading: reposData.isLoading,
     isError: reposData.isError,
+  }),
+  useSetRepoFavorite: (owner: string, repo: string) => ({
+    isPending: false,
+    mutate: (favorite: boolean) => {
+      favoriteMutations.calls.push({ owner, repo, favorite });
+    },
   }),
 }));
 
@@ -44,6 +53,7 @@ afterEach(() => {
   reposData.value = [];
   reposData.isLoading = false;
   reposData.isError = false;
+  favoriteMutations.calls = [];
 });
 
 function repo(
@@ -163,16 +173,60 @@ describe("AppTopbar", () => {
     ];
     const { router } = renderTopbar("/r/me/zulu");
 
-    const select = (await screen.findByRole("combobox", {
-      name: "Repository",
-    })) as HTMLSelectElement;
-    expect(select.value).toBe("me/zulu");
+    const trigger = await screen.findByRole("button", {
+      name: "Repository: me/zulu",
+    });
+    expect(trigger.textContent).toContain("me/zulu");
+    expect(trigger.getAttribute("aria-label")).toBe("Repository: me/zulu");
 
-    fireEvent.change(select, { target: { value: "me/alpha" } });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+
+    expect(await screen.findByText("Favorites")).toBeTruthy();
+    const currentItem = screen.getByRole("menuitem", { name: /me\/zulu/ });
+    const favoriteItem = screen.getByRole("menuitem", { name: /me\/alpha/ });
+    expect(currentItem.className).toContain("bg-accent");
+    expect(currentItem.getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByText("Current")).toBeNull();
+    expect(screen.queryByText("Favorite")).toBeNull();
+    expect(
+      screen
+        .getByRole("button", {
+          name: "Remove from favorites: me/alpha",
+        })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    const addFavoriteButton = screen.getByRole("button", {
+      name: "Add to favorites: me/zulu",
+    });
+    expect(addFavoriteButton.className).toContain("opacity-0");
+    expect(addFavoriteButton.className).toContain("group-hover:opacity-100");
+
+    fireEvent.click(favoriteItem);
 
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/r/me/alpha"),
     );
+  });
+
+  it("toggles a repository favorite from the right-side star without navigating", async () => {
+    reposData.value = [repo("me/zulu", 1), repo("me/alpha", 2)];
+    const { router } = renderTopbar("/r/me/zulu");
+
+    const trigger = await screen.findByRole("button", {
+      name: "Repository: me/zulu",
+    });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Add to favorites: me/alpha",
+      }),
+    );
+
+    expect(favoriteMutations.calls).toEqual([
+      { owner: "me", repo: "alpha", favorite: true },
+    ]);
+    expect(router.state.location.pathname).toBe("/r/me/zulu");
   });
 
   it("keeps cached repository navigation enabled after a background refresh error", async () => {
@@ -180,16 +234,24 @@ describe("AppTopbar", () => {
     reposData.isError = true;
     const { router } = renderTopbar("/r/me/zulu");
 
-    const select = (await screen.findByRole("combobox", {
-      name: "Repository",
-    })) as HTMLSelectElement;
-    expect(select.disabled).toBe(false);
+    const trigger = await screen.findByRole("button", {
+      name: "Repository: me/zulu",
+    });
+    expect((trigger as HTMLButtonElement).disabled).toBe(false);
 
-    fireEvent.change(select, { target: { value: "me/alpha" } });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /me\/alpha/ }));
 
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/r/me/alpha"),
     );
+  });
+
+  it("disables the repository picker when no repositories are available", async () => {
+    renderTopbar();
+
+    const trigger = await screen.findByRole("button", { name: "Repository" });
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("does not render the old sidebar Agents list as top-level navigation", async () => {
