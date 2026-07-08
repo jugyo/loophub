@@ -46,25 +46,14 @@ export function RepoTopbar({ fallback }: { fallback: ReactNode }) {
   if (repoState == null) return fallback;
 
   const { owner, repo, section } = repoState;
-  const fullName = `${owner}/${repo}`;
 
   return (
     <nav
       aria-label="Repository navigation"
-      className="flex min-w-0 flex-1 items-stretch gap-2 self-stretch sm:gap-3"
+      className="flex min-w-0 flex-1 items-stretch self-stretch"
     >
-      <Link
-        to="/r/$owner/$repo"
-        params={{ owner, repo }}
-        search={{}}
-        activeOptions={{ exact: true }}
-        className="inline-flex min-w-0 shrink items-center rounded-md px-2 text-sm font-semibold hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      >
-        <span className="block truncate">{fullName}</span>
-      </Link>
-
       <div
-        aria-label={`${fullName} sections`}
+        aria-label="Repository sections"
         className="flex min-w-0 flex-1 items-end gap-1 overflow-hidden border-b border-transparent"
       >
         {tabs.map((tab) => {

@@ -84,16 +84,16 @@ describe("RepoTopbar", () => {
     ).toBeNull();
   });
 
-  it("shows the repo header as a link to the repo top", async () => {
+  it("does not show the repo name in the repository topbar", async () => {
     renderRepoTopbar("/r/me/proj/settings");
 
     const nav = await screen.findByRole("navigation", {
       name: "Repository navigation",
     });
-    const repoLink = screen.getByRole("link", { name: "me/proj" });
 
     expect(nav).toBeTruthy();
-    expect(repoLink.getAttribute("href")).toBe("/r/me/proj");
+    expect(screen.queryByRole("link", { name: "me/proj" })).toBeNull();
+    expect(screen.queryByText("me/proj")).toBeNull();
   });
 
   it("renders repository section tabs with links", async () => {
@@ -115,7 +115,7 @@ describe("RepoTopbar", () => {
     renderRepoTopbar("/r/me/proj");
 
     await screen.findByRole("navigation", { name: "Repository navigation" });
-    const sections = screen.getByLabelText("me/proj sections");
+    const sections = screen.getByLabelText("Repository sections");
 
     expect(sections.className).toContain("overflow-hidden");
     expect(sections.className).not.toContain("overflow-x-auto");
