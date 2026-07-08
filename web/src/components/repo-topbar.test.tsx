@@ -111,6 +111,16 @@ describe("RepoTopbar", () => {
     ).toBe("/r/me/proj/settings");
   });
 
+  it("does not make the repository section tabs a scrolling topbar region", async () => {
+    renderRepoTopbar("/r/me/proj");
+
+    await screen.findByRole("navigation", { name: "Repository navigation" });
+    const sections = screen.getByLabelText("me/proj sections");
+
+    expect(sections.className).toContain("overflow-hidden");
+    expect(sections.className).not.toContain("overflow-x-auto");
+  });
+
   it("marks the current repository section active", async () => {
     renderRepoTopbar("/r/me/proj/scheduled-tasks");
 
