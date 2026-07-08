@@ -355,6 +355,38 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.inbox.get(p.id),
   },
+  "inbox/read": {
+    description: "Mark one Inbox message as read.",
+    params: params({ id: positiveInt, session_id: sid }, ["id"]),
+    result: anyObject,
+    handler: (p) => svc.inbox.read(p.id, p.session_id),
+  },
+  "inbox/unread": {
+    description: "Mark one Inbox message as unread.",
+    params: params({ id: positiveInt, session_id: sid }, ["id"]),
+    result: anyObject,
+    handler: (p) => svc.inbox.unread(p.id, p.session_id),
+  },
+  "inbox/archive": {
+    description: "Archive one Inbox message.",
+    params: params({ id: positiveInt, session_id: sid }, ["id"]),
+    result: anyObject,
+    handler: (p) => svc.inbox.archive(p.id, p.session_id),
+  },
+  "inbox/unarchive": {
+    description:
+      "Move one archived Inbox message back to the active Inbox as read.",
+    params: params({ id: positiveInt, session_id: sid }, ["id"]),
+    result: anyObject,
+    handler: (p) => svc.inbox.unarchive(p.id, p.session_id),
+  },
+  "inbox/delete": {
+    description:
+      "Soft-delete one Inbox message by moving it to the deleted state.",
+    params: params({ id: positiveInt, session_id: sid }, ["id"]),
+    result: anyObject,
+    handler: (p) => svc.inbox.delete(p.id, p.session_id),
+  },
 
   // ---- issues ----
   "issues/list": {

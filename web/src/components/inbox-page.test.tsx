@@ -79,6 +79,9 @@ describe("InboxPage", () => {
     await waitFor(() => {
       expect(rpcCall("inbox/list")?.params).toEqual({ limit: 100 });
     });
+    expect(screen.getByText("Nightly report").className).toContain(
+      "text-muted-foreground",
+    );
   });
 
   it("expands a message row to show the full body", async () => {
@@ -98,5 +101,104 @@ describe("InboxPage", () => {
         );
       }),
     ).toBeTruthy();
+  });
+
+  it("marks active messages read, archives, and soft-deletes them", async () => {
+    const row = message();
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "inbox/list": () => [row],
+        "inbox/read": (params) => ({ ...row, id: params.id, state: "read" }),
+        "inbox/archive": (params) => ({
+          ...row,
+          id: params.id,
+          state: "archived",
+        }),
+        "inbox/delete": (params) => ({
+          ...row,
+          id: params.id,
+          state: "deleted",
+        }),
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <InboxPage />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Mark message read: Ready for review",
+      }),
+    );
+    await waitFor(() => {
+      expect(rpcCall("inbox/read")?.params).toMatchObject({ id: 1 });
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Archive message: Ready for review",
+      }),
+    );
+    await waitFor(() => {
+      expect(rpcCall("inbox/archive")?.params).toMatchObject({ id: 1 });
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Delete message: Ready for review",
+      }),
+    );
+    await waitFor(() => {
+      expect(rpcCall("inbox/delete")?.params).toMatchObject({ id: 1 });
+    });
+  });
+
+  it("shows archived messages and can unarchive them", async () => {
+    const active = message();
+    const archived = message({
+      id: 2,
+      title: "Archived report",
+      body: "Already handled.",
+      state: "archived",
+    });
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "inbox/list": (params) =>
+          params.state === "archived" ? [archived] : [active],
+        "inbox/unarchive": (params) => ({
+          ...archived,
+          id: params.id,
+          state: "read",
+        }),
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <InboxPage />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Archived" }));
+
+    expect(await screen.findByText("Archived report")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Unarchive message: Archived report",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(rpcCall("inbox/unarchive")?.params).toMatchObject({ id: 2 });
+    });
   });
 });

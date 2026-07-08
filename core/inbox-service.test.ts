@@ -126,6 +126,66 @@ test("list endpoints clamp large limits", async () => {
   expect(svc.inbox.listAll({ limit: 1000 })).toHaveLength(100);
 });
 
+test("state operations update messages, filter default lists, and emit update events", async () => {
+  const dir = initGitRepo("lh-inbox-state-");
+  await svc.repos.create({ path: dir, name: "me/inbox-state" });
+
+  const readMessage = svc.inbox.send("me/inbox-state", {
+    from: { kind: "agent", repo: "me/inbox-state", actor: "impl-bot" },
+    title: "Read me",
+    body: "body",
+  });
+  const archivedMessage = svc.inbox.send("me/inbox-state", {
+    from: { kind: "agent", repo: "me/inbox-state", actor: "impl-bot" },
+    title: "Archive me",
+    body: "body",
+  });
+  const deletedMessage = svc.inbox.send("me/inbox-state", {
+    from: { kind: "agent", repo: "me/inbox-state", actor: "impl-bot" },
+    title: "Delete me",
+    body: "body",
+  });
+
+  expect(svc.inbox.read(readMessage.id, "session-1").state).toBe("read");
+  expect(svc.inbox.archive(archivedMessage.id, "session-1").state).toBe(
+    "archived",
+  );
+  expect(svc.inbox.delete(deletedMessage.id, "session-1").state).toBe(
+    "deleted",
+  );
+
+  expect(
+    svc.inbox.list("me/inbox-state", { limit: 10 }).map((m) => m.id),
+  ).toEqual([readMessage.id]);
+  expect(svc.inbox.listAll({ limit: 100 }).map((m) => m.id)).not.toContain(
+    archivedMessage.id,
+  );
+  expect(svc.inbox.list("me/inbox-state", { state: "archived" })).toHaveLength(
+    1,
+  );
+  expect(svc.inbox.list("me/inbox-state", { state: "deleted" })).toHaveLength(
+    1,
+  );
+
+  expect(svc.inbox.unread(readMessage.id, "session-1").state).toBe("unread");
+  expect(svc.inbox.unarchive(archivedMessage.id, "session-1").state).toBe(
+    "read",
+  );
+
+  const repo = S.getRepo("me", "inbox-state")!;
+  const updateEvents = S.listEvents(0, repo.id, 100).filter(
+    (event) => event.type === "inbox.message.updated",
+  );
+  expect(updateEvents).toHaveLength(5);
+  expect(updateEvents.map((event) => JSON.parse(event.payload).state)).toEqual([
+    "read",
+    "archived",
+    "deleted",
+    "unread",
+    "read",
+  ]);
+});
+
 test("removeRepo sweeps inbox messages so repo removal does not fail the FK", async () => {
   const dir = initGitRepo("lh-inbox-rm-");
   await svc.repos.create({ path: dir, name: "me/inbox-rm" });

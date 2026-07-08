@@ -1,4 +1,5 @@
 import {
+  actorFor,
   clampPerPage,
   ensureWritable,
   inboxMessageJSON,
@@ -84,6 +85,19 @@ function sourceActor(source: JsonObject): string {
   return String(source.kind);
 }
 
+function requireState(value: unknown): S.InboxMessageState {
+  if (!INBOX_MESSAGE_STATES.includes(value as S.InboxMessageState)) {
+    throw new ServiceError(422, "invalid inbox message state");
+  }
+  return value as S.InboxMessageState;
+}
+
+function messageOr404(id: number): S.InboxMessageRow {
+  const row = S.getInboxMessageById(id);
+  if (!row) throw new ServiceError(404, "inbox message not found");
+  return row;
+}
+
 export const inbox = {
   send(
     name: string,
@@ -127,23 +141,13 @@ export const inbox = {
     opts: { state?: S.InboxMessageState; limit?: number } = {},
   ): any[] {
     const r = repoOr404(name);
-    if (
-      opts.state &&
-      !INBOX_MESSAGE_STATES.includes(opts.state as S.InboxMessageState)
-    ) {
-      throw new ServiceError(422, "invalid inbox message state");
-    }
+    if (opts.state) requireState(opts.state);
     const limit = clampPerPage(opts.limit, 50, MAX_LIST_PER_PAGE);
     return S.listInboxMessages(r.id, { ...opts, limit }).map(inboxMessageJSON);
   },
 
   listAll(opts: { state?: S.InboxMessageState; limit?: number } = {}): any[] {
-    if (
-      opts.state &&
-      !INBOX_MESSAGE_STATES.includes(opts.state as S.InboxMessageState)
-    ) {
-      throw new ServiceError(422, "invalid inbox message state");
-    }
+    if (opts.state) requireState(opts.state);
     const limit = clampPerPage(
       opts.limit,
       MAX_LIST_PER_PAGE,
@@ -155,8 +159,52 @@ export const inbox = {
   },
 
   get(id: number): any {
-    const row = S.getInboxMessageById(id);
-    if (!row) throw new ServiceError(404, "inbox message not found");
+    return inboxMessageJSON(messageOr404(id));
+  },
+
+  setState(
+    id: number,
+    state: S.InboxMessageState,
+    sessionId?: string | null,
+  ): any {
+    const nextState = requireState(state);
+    const current = messageOr404(id);
+    const repo = S.getRepoById(current.repo_id);
+    if (!repo) throw new ServiceError(404, "Not Found");
+    ensureWritable(repo);
+
+    const row =
+      current.state === nextState
+        ? current
+        : (S.updateInboxMessageState(id, nextState) ?? messageOr404(id));
+
+    if (current.state !== row.state) {
+      S.emitEvent(row.repo_id, "inbox.message.updated", actorFor(sessionId), {
+        id: row.id,
+        state: row.state,
+        previous_state: current.state,
+      });
+    }
     return inboxMessageJSON(row);
+  },
+
+  read(id: number, sessionId?: string | null): any {
+    return inbox.setState(id, "read", sessionId);
+  },
+
+  unread(id: number, sessionId?: string | null): any {
+    return inbox.setState(id, "unread", sessionId);
+  },
+
+  archive(id: number, sessionId?: string | null): any {
+    return inbox.setState(id, "archived", sessionId);
+  },
+
+  unarchive(id: number, sessionId?: string | null): any {
+    return inbox.setState(id, "read", sessionId);
+  },
+
+  delete(id: number, sessionId?: string | null): any {
+    return inbox.setState(id, "deleted", sessionId);
   },
 };

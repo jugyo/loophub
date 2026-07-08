@@ -1,11 +1,20 @@
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import {
+  Archive,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Mail,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import type { InboxJsonObject, InboxMessage } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { useInboxMessages } from "@/queries/inbox";
+import { useInboxMessageAction, useInboxMessages } from "@/queries/inbox";
 
 function compactJson(value: InboxJsonObject | null): string {
   if (!value) return "-";
@@ -27,11 +36,36 @@ function stateTone(state: InboxMessage["state"]): "open" | "closed" {
 }
 
 export function InboxPage() {
-  const { data, isLoading, isError } = useInboxMessages({ limit: 100 });
+  const [view, setView] = useState<"active" | "archived">("active");
+  const queryInput =
+    view === "archived"
+      ? ({ state: "archived", limit: 100 } as const)
+      : ({ limit: 100 } as const);
+  const { data, isLoading, isError } = useInboxMessages(queryInput);
 
   return (
     <div className="flex w-full flex-col">
-      <h1 className="text-2xl font-semibold">Inbox</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Inbox</h1>
+        <div className="inline-flex rounded-md border bg-background p-1">
+          <Button
+            type="button"
+            variant={view === "active" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setView("active")}
+          >
+            Active
+          </Button>
+          <Button
+            type="button"
+            variant={view === "archived" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setView("archived")}
+          >
+            Archived
+          </Button>
+        </div>
+      </div>
 
       {isLoading && (
         <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
@@ -44,15 +78,24 @@ export function InboxPage() {
         </div>
       )}
       {data && data.length === 0 && (
-        <p className="mt-6 text-sm text-muted-foreground">No Inbox messages.</p>
+        <p className="mt-6 text-sm text-muted-foreground">
+          No {view === "archived" ? "archived" : "active"} Inbox messages.
+        </p>
       )}
-      {data && data.length > 0 && <InboxTable messages={data} />}
+      {data && data.length > 0 && <InboxTable messages={data} view={view} />}
     </div>
   );
 }
 
-function InboxTable({ messages }: { messages: InboxMessage[] }) {
+function InboxTable({
+  messages,
+  view,
+}: {
+  messages: InboxMessage[];
+  view: "active" | "archived";
+}) {
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const action = useInboxMessageAction();
 
   function toggle(id: number) {
     setExpanded((current) => {
@@ -78,6 +121,9 @@ function InboxTable({ messages }: { messages: InboxMessage[] }) {
             <th className="px-3 py-2 font-medium">State</th>
             <th className="px-3 py-2 font-medium">Created</th>
             <th className="px-3 py-2 font-medium">Message</th>
+            <th className="w-[128px] px-3 py-2 font-medium">
+              <span className="sr-only">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -89,6 +135,11 @@ function InboxTable({ messages }: { messages: InboxMessage[] }) {
                 message={message}
                 expanded={isExpanded}
                 onToggle={() => toggle(message.id)}
+                view={view}
+                onAction={(nextAction) =>
+                  action.mutate({ id: message.id, action: nextAction })
+                }
+                actionPending={action.isPending}
               />
             );
           })}
@@ -102,10 +153,18 @@ function MessageRows({
   message,
   expanded,
   onToggle,
+  view,
+  onAction,
+  actionPending,
 }: {
   message: InboxMessage;
   expanded: boolean;
   onToggle: () => void;
+  view: "active" | "archived";
+  onAction: (
+    action: "read" | "unread" | "archive" | "unarchive" | "delete",
+  ) => void;
+  actionPending: boolean;
 }) {
   return (
     <>
@@ -157,16 +216,86 @@ function MessageRows({
           </time>
         </td>
         <td className="min-w-[320px] px-3 py-2">
-          <div className="font-medium">{message.title}</div>
+          <div
+            className={cn(
+              "font-medium",
+              message.state === "read" && "text-muted-foreground",
+            )}
+          >
+            {message.title}
+          </div>
           <div className="mt-1 break-words text-xs text-muted-foreground">
             {bodySummary(message.body)}
+          </div>
+        </td>
+        <td className="px-3 py-2">
+          <div className="flex items-center justify-end gap-1">
+            {view === "archived" ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                disabled={actionPending}
+                aria-label={`Unarchive message: ${message.title}`}
+                onClick={() => onAction("unarchive")}
+              >
+                <RotateCcw className="size-4" aria-hidden="true" />
+              </Button>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  disabled={actionPending}
+                  aria-label={
+                    message.state === "unread"
+                      ? `Mark message read: ${message.title}`
+                      : `Mark message unread: ${message.title}`
+                  }
+                  onClick={() =>
+                    onAction(message.state === "unread" ? "read" : "unread")
+                  }
+                >
+                  {message.state === "unread" ? (
+                    <Check className="size-4" aria-hidden="true" />
+                  ) : (
+                    <Mail className="size-4" aria-hidden="true" />
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  disabled={actionPending}
+                  aria-label={`Archive message: ${message.title}`}
+                  onClick={() => onAction("archive")}
+                >
+                  <Archive className="size-4" aria-hidden="true" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  disabled={actionPending}
+                  aria-label={`Delete message: ${message.title}`}
+                  onClick={() => onAction("delete")}
+                >
+                  <Trash2 className="size-4" aria-hidden="true" />
+                </Button>
+              </>
+            )}
           </div>
         </td>
       </tr>
       {expanded ? (
         <tr className="border-b bg-muted/30 align-top">
           <td />
-          <td colSpan={7} className="px-3 py-3">
+          <td colSpan={8} className="px-3 py-3">
             <pre className="whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-sm leading-6">
               {message.body}
             </pre>

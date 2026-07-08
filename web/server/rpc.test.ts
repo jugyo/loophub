@@ -192,7 +192,7 @@ test("dashboard/overview lists recent open issues newest-created first, tagged w
   ).toBe(false);
 });
 
-test("inbox/list and inbox/get expose Inbox messages through JSON-RPC", async () => {
+test("inbox/list, inbox/get, and state mutations expose Inbox messages through JSON-RPC", async () => {
   const first = svc.inbox.send("me/proj", {
     from: { kind: "agent", repo: "me/proj", actor: "impl-bot" },
     title: "Ready for review",
@@ -205,15 +205,23 @@ test("inbox/list and inbox/get expose Inbox messages through JSON-RPC", async ()
     title: "Follow-up",
     body: "One more thing",
   });
-  db.run("UPDATE inbox_messages SET state = ? WHERE id = ?", [
-    "read",
-    first.id,
-  ]);
+  const third = svc.inbox.send("me/proj", {
+    from: { kind: "agent", repo: "me/proj", actor: "cleaner" },
+    title: "Can be removed",
+    body: "Remove from active view",
+  });
+
+  const read: any = await call("inbox/read", { id: first.id });
+  expect(read.result.state).toBe("read");
+  const archived: any = await call("inbox/archive", { id: second.id });
+  expect(archived.result.state).toBe("archived");
+  const deleted: any = await call("inbox/delete", { id: third.id });
+  expect(deleted.result.state).toBe("deleted");
 
   const listed: any = await call("inbox/list", {});
-  expect(listed.result.map((m: any) => m.id)).toEqual(
-    expect.arrayContaining([first.id, second.id]),
-  );
+  expect(listed.result.map((m: any) => m.id)).toContain(first.id);
+  expect(listed.result.map((m: any) => m.id)).not.toContain(second.id);
+  expect(listed.result.map((m: any) => m.id)).not.toContain(third.id);
   const listFirst = listed.result.find((m: any) => m.id === first.id);
   expect(listFirst).toMatchObject({
     repo: { name: "me/proj" },
@@ -224,14 +232,20 @@ test("inbox/list and inbox/get expose Inbox messages through JSON-RPC", async ()
     state: "read",
   });
 
+  const archivedList: any = await call("inbox/list", { state: "archived" });
+  expect(archivedList.result.map((m: any) => m.id)).toContain(second.id);
+
   const got: any = await call("inbox/get", { id: second.id });
   expect(got.result).toMatchObject({
     id: second.id,
     repo: { name: "me/proj" },
     from: { kind: "agent", repo: "me/proj", actor: "verifier" },
     to: { kind: "human" },
-    state: "unread",
+    state: "archived",
   });
+
+  const unarchived: any = await call("inbox/unarchive", { id: second.id });
+  expect(unarchived.result.state).toBe("read");
 });
 
 test("dispatchRaw turns invalid JSON into -32700", async () => {

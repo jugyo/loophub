@@ -89,6 +89,21 @@ test("lh inbox send creates a message and can return JSON", () => {
     body: "PR is ready.\n",
     state: "unread",
   });
+
+  for (const [subcommand, state] of [
+    ["read", "read"],
+    ["unread", "unread"],
+    ["archive", "archived"],
+    ["unarchive", "read"],
+    ["delete", "deleted"],
+  ] as const) {
+    const updated = lh(["inbox", subcommand, String(message.id), "--json"]);
+    expect(updated.exitCode).toBe(0);
+    expect(JSON.parse(updated.stdout)).toMatchObject({
+      id: message.id,
+      state,
+    });
+  }
 });
 
 test("lh inbox send fails when --from is missing", () => {
@@ -112,4 +127,5 @@ test("usage lists inbox send", () => {
 
   expect(exitCode).toBe(0);
   expect(stdout).toContain("lh inbox send --from");
+  expect(stdout).toContain("lh inbox read|unread|archive|unarchive|delete");
 });

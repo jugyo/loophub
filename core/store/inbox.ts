@@ -49,6 +49,15 @@ export function getInboxMessageById(id: number): InboxMessageRow | null {
     .get(id) as InboxMessageRow | null;
 }
 
+export function updateInboxMessageState(
+  id: number,
+  state: InboxMessageState,
+): InboxMessageRow | null {
+  return db
+    .query(`UPDATE inbox_messages SET state = ? WHERE id = ? RETURNING *`)
+    .get(state, id) as InboxMessageRow | null;
+}
+
 function stateRankSql(): string {
   return `CASE state
     WHEN 'unread' THEN 0
@@ -76,7 +85,7 @@ export function listInboxMessages(
   return db
     .query(
       `SELECT * FROM inbox_messages
-       WHERE repo_id = ?
+       WHERE repo_id = ? AND state IN ('unread', 'read')
        ORDER BY ${stateRankSql()}, id DESC LIMIT ?`,
     )
     .all(repoId, limit) as InboxMessageRow[];
@@ -98,6 +107,7 @@ export function listInboxMessagesAcrossRepos(
   return db
     .query(
       `SELECT * FROM inbox_messages
+       WHERE state IN ('unread', 'read')
        ORDER BY ${stateRankSql()}, id DESC LIMIT ?`,
     )
     .all(limit) as InboxMessageRow[];

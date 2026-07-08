@@ -337,6 +337,41 @@ export function getInboxMessage(id: number) {
   return rpc<InboxMessage>("inbox/get", { id });
 }
 
+export function readInboxMessage(
+  id: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<InboxMessage>("inbox/read", { id, session_id: sessionId });
+}
+
+export function unreadInboxMessage(
+  id: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<InboxMessage>("inbox/unread", { id, session_id: sessionId });
+}
+
+export function archiveInboxMessage(
+  id: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<InboxMessage>("inbox/archive", { id, session_id: sessionId });
+}
+
+export function unarchiveInboxMessage(
+  id: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<InboxMessage>("inbox/unarchive", { id, session_id: sessionId });
+}
+
+export function deleteInboxMessage(
+  id: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<InboxMessage>("inbox/delete", { id, session_id: sessionId });
+}
+
 // --- terminal launch ---
 export function launchTerminalWorkflow(input: {
   repo: string;
