@@ -143,7 +143,6 @@ export function AppTopbar() {
 
       <div className="hidden min-w-4 flex-1 md:block" aria-hidden="true" />
 
-      <ThemeToggle />
       <TopbarLink to="/inbox" label="Inbox">
         <Inbox className="size-4" />
       </TopbarLink>
@@ -156,6 +155,7 @@ export function AppTopbar() {
       <TopbarLink to="/settings" label="Settings">
         <Settings className="size-4" />
       </TopbarLink>
+      <ThemeToggle />
     </header>
   );
 }

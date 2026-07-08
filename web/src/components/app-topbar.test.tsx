@@ -164,6 +164,7 @@ describe("AppTopbar", () => {
     expect(repoPickerIndex).toBeGreaterThan(-1);
     expect(themeIndex).toBeGreaterThan(-1);
     expect(themeIndex).toBeGreaterThan(repoPickerIndex);
+    expect(themeIndex).toBe(headerItems.length - 1);
   });
 
   it("shows the current repository and switches to another active repository", async () => {
