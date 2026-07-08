@@ -128,14 +128,14 @@ export interface HerdrAgent {
   status: string;
   /**
    * True when the PR whose worktree the agent's pane cwd resolves to is merged or
-   * closed (#611) — the sidebar grays such rows out. Absent/false when the PR is open
+   * closed (#611) — terminal-aware UI can mute such rows. Absent/false when the PR is open
    * or no PR could be resolved: both render as a normal row.
    */
   pull_closed?: boolean;
   /**
    * The PR number whose worktree the agent's pane cwd resolves to, or null when the
    * agent has no linked PR — a "New issue" agent running at the repo root (#633). Since
-   * pull_closed can never be true for a no-PR agent, the sidebar instead grays it out
+   * pull_closed can never be true for a no-PR agent, so terminal-aware UI can use idle
    * (and shows the kill button) once it goes idle. Absent in legacy payloads — treat a
    * missing value the same as null.
    */
@@ -186,7 +186,7 @@ export interface HerdrSessions {
 
 /**
  * Recent terminal output for one herdr agent (`terminal/agentRead`, #500), for the
- * sidebar hover preview. `output` is null when herdr isn't running, the session is
+ * terminal preview. `output` is null when herdr isn't running, the session is
  * gone, or the agent is no longer present — never an error.
  */
 export interface HerdrAgentRead {

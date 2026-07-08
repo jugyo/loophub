@@ -238,14 +238,14 @@ async function launchIssueDevHerdr(
   };
 }
 
-// A sidebar agent row: the parsed herdr agent plus what the DB knows about the PR its
+// A terminal-aware agent row: the parsed herdr agent plus what the DB knows about the PR its
 // worktree cwd resolves to (#611). `pull_closed` is true when that PR is merged or closed —
-// the sidebar grays those rows out so no-longer-needed agents stand out at a glance. An
+// clients can mute those rows so no-longer-needed agents stand out at a glance. An
 // agent with no resolvable PR (repo-root cwd, legacy worktree convention, or a pr-<n> dir
 // with no matching PR row) stays false: unknown must render as a normal row, not a stale one.
 export interface HerdrSessionAgent extends HerdrAgent {
   // The PR number the agent's worktree cwd resolves to, or null for a no-PR agent (a
-  // "New issue" agent at the repo root, #633). The sidebar needs this to gray a no-PR
+  // "New issue" agent at the repo root, #633). Clients use this to mute a no-PR
   // agent out on idle, since pull_closed is always false for it.
   pull: number | null;
   pull_closed: boolean;
@@ -640,9 +640,9 @@ export const terminal = {
     };
   },
 
-  // Running herdr sessions grouped by repo, for the sidebar status section (#495).
+  // Running herdr sessions grouped by repo, for terminal-aware UI surfaces (#495).
   // Read-only and deliberately failure-tolerant: herdr missing from PATH, no running
-  // sessions, or unparseable output all degrade to an empty list — the sidebar hides
+  // sessions, or unparseable output all degrade to an empty list — clients hide
   // the section instead of surfacing an error. Not gated on the configured launch
   // backend: sessions started outside LoopHub are just as real to a supervisor.
   sessions(): Promise<{ repos: HerdrRepoSessions[] }> {
@@ -691,12 +691,10 @@ export const terminal = {
     return cleanupClosedPullDevAgentsImpl();
   },
 
-  // Recent terminal output for one herdr agent, for the sidebar hover preview (#500).
+  // Recent terminal output for one herdr agent, for client-side terminal previews (#500).
   // `target` is whatever the client sends as a herdr `agent read` target — usually a
   // pane_id, since herdr only resolves an agent *name* target when it's unique within
-  // the session, and two label-less launches can share a display name (the sidebar
-  // client prefers pane_id for exactly this reason; see agentReadTarget() in
-  // web/src/components/sidebar-herdr-sessions.tsx). Same failure-tolerance as
+  // the session, and two label-less launches can share a display name. Same failure-tolerance as
   // sessions() above: herdr not running, the session gone, or the agent no longer
   // present all degrade to a null output instead of an error, so the client just
   // doesn't show a preview.
@@ -749,7 +747,7 @@ export const terminal = {
     return { output, cols: layout?.cols ?? null, rows: layout?.rows ?? null };
   },
 
-  // Kills the agent running in a pane — the sidebar kill button (#521). This used to be `pane
+  // Kills the agent running in a pane (#521). This used to be `pane
   // close` against the agent's pane_id, but herdr refuses that with a `confirmation_required`
   // error ("closing this pane would close a worktree group") whenever the pane is the last one
   // in a worktree-linked workspace — which every single-tab `lh build --herdr` launch is, by
@@ -778,7 +776,7 @@ export const terminal = {
     await killPaneForegroundProcess(r, input.paneId);
     // Best-effort tidy-up: the process is already dead either way, so a `confirmation_required`
     // refusal here (or any other herdr failure) must not undo the kill the caller already got —
-    // this only saves the now-empty pane from lingering in the sidebar. Keep the fire-and-forget
+    // this only saves the now-empty pane from lingering in clients. Keep the fire-and-forget
     // call bounded so a wedged herdr client cannot outlive runHerdr's timeout guard.
     const argv = herdrPaneCloseArgv(r, input.paneId);
     runHerdr(argv[0], argv.slice(1), r.local_path, { timeoutMs: 10_000 }).catch(
@@ -906,7 +904,7 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
         repo.full_name,
       );
       // A running session with zero agents has nothing to show — drop the group so
-      // the sidebar section only appears when there is actual agent activity.
+      // terminal-aware sections only appear when there is actual agent activity.
       if (placements.length === 0) return null;
       const issueCreatePaneIds = new Set(
         S.listIssueHerdrPanes(repo.id)

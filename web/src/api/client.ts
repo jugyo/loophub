@@ -333,12 +333,12 @@ export function launchTerminalWorkflow(input: {
   return rpc<TerminalLaunchResult>("terminal/launch", clean(input));
 }
 
-/** Running herdr sessions grouped by repo, for the sidebar status section (#495). */
+/** Running herdr sessions grouped by repo, for terminal-aware UI surfaces (#495). */
 export function getHerdrSessions() {
   return rpc<HerdrSessions>("terminal/sessions");
 }
 
-/** Recent terminal output for one herdr agent, for the sidebar hover preview (#500). */
+/** Recent terminal output for one herdr agent, for terminal previews (#500). */
 export function getHerdrAgentRead(input: {
   repo: string;
   target: string;
@@ -347,7 +347,7 @@ export function getHerdrAgentRead(input: {
   return rpc<HerdrAgentRead>("terminal/agentRead", clean(input));
 }
 
-/** Close the pane a herdr agent is running in — the sidebar kill button (#521). */
+/** Close the pane a herdr agent is running in (#521). */
 export function killHerdrAgent(input: { repo: string; paneId: string }) {
   return rpc<{ ok: true }>("terminal/killAgent", input);
 }

@@ -216,7 +216,7 @@ function ArchiveSection({
       return;
     }
     setConfirming(false);
-    // Archiving removes the repo from the active sidebar list; send the user
+    // Archiving removes the repo from active app-shell repo navigation; send the user
     // back home so they aren't left on a now-archived settings screen.
     if (!archived) navigate({ to: "/" });
   }
@@ -226,8 +226,8 @@ function ArchiveSection({
       <h2 className="text-sm font-medium">{action}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         {archived
-          ? "Unarchiving this repository makes it appear in the sidebar list again."
-          : "Archiving removes this repository from the sidebar list. You can unarchive it anytime."}
+          ? "Unarchiving this repository makes it appear in app navigation again."
+          : "Archiving removes this repository from app navigation. You can unarchive it anytime."}
       </p>
       <Button
         className="mt-3"
@@ -297,8 +297,8 @@ function ConfirmArchiveDialog({
         </h2>
         <p className="mt-3 text-sm text-muted-foreground">
           {archived
-            ? "Unarchiving this repository makes it appear in the sidebar list again."
-            : "Archiving removes this repository from the sidebar list. You can unarchive it anytime."}
+            ? "Unarchiving this repository makes it appear in app navigation again."
+            : "Archiving removes this repository from app navigation. You can unarchive it anytime."}
         </p>
         {error ? (
           <p className="mt-3 text-sm text-destructive">{error}</p>

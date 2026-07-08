@@ -37,7 +37,7 @@ export function useHerdrSessions() {
 }
 
 /**
- * Recent terminal output for one herdr agent, for the sidebar hover preview (#500).
+ * Recent terminal output for one herdr agent, for terminal previews (#500).
  * `enabled` gates the fetch on the caller's own hover debounce, so a quick pass over
  * a row never spawns a herdr process. `staleTime` then lets a second hover shortly
  * after reuse the cached preview instead of shelling out again — between the two,
@@ -59,7 +59,7 @@ export function useHerdrAgentRead(
 
 /**
  * Kill button mutation (#521): closes the pane a herdr agent is running in. Invalidates the
- * sessions list on success so the closed agent drops out of the sidebar without waiting for
+ * sessions list on success so the closed agent drops out of the UI without waiting for
  * the next terminal sessions poll.
  */
 export function useKillHerdrAgent() {

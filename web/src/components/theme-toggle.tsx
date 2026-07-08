@@ -1,4 +1,4 @@
-// Sidebar control that switches between light and dark themes. A compact segmented toggle:
+// Theme control that switches between light and dark themes. A compact segmented toggle:
 // Sun / Moon icons in a pill, the active theme's side highlighted. With only two themes,
 // selecting the inactive side is just a toggle, so it reuses useTheme().toggle as-is.
 

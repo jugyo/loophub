@@ -29,9 +29,6 @@
     --input: 214.3 31.8% 91.4%;
     --ring: var(--primary);
     --radius: 0.5rem;
-    /* Left sidebar width — single source of truth shared by the sidebar (its width) and the
-       bottom terminal pane (its left offset, so the pane sits beside the sidebar, not over it). */
-    --lh-sidebar-w: 16rem;
   }
 
   .dark {
@@ -77,7 +74,7 @@
      Mermaid diagrams (.mermaid-diagram, rendered in place of a code block),
      the PR diff view (.pr-diff), and the embedded terminal
      (.xterm-viewport) — rather than every scrollable area, so the rest of
-     the app (main content, left sidebar, dropdowns, etc.) keeps the
+     the app (main content, dropdowns, etc.) keeps the
      OS/browser default scrollbar. The terminal was previously excluded
      (#253); this change intentionally includes it as one of the thinned
      parts instead. */

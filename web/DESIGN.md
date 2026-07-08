@@ -35,7 +35,7 @@ adjusting dark color tokens.
 | Token | Tailwind name | Role |
 |-------|---------------|------|
 | `--background` / `--foreground` | `background` / `foreground` | Page base + body text |
-| `--card` / `--card-foreground` | `card` / `card-foreground` | Raised surfaces (sidebar) |
+| `--card` / `--card-foreground` | `card` / `card-foreground` | Raised surfaces (topbar and cards) |
 | `--primary` / `--primary-foreground` | `primary` / `primary-foreground` | Primary action color and readable foreground |
 | `--primary-hover` / `--primary-active` | `primary-hover` / `primary-active` | Primary action interaction states |
 | `--primary-subtle` / `--primary-border` | `primary-subtle` / `primary-border` | Selected-state fills, themed badges, and primary borders |
@@ -83,35 +83,26 @@ dashboard is the reference usage.
 
 ### App shell
 
-The shell is a fixed sidebar plus a scrolling main column with a breadcrumb
+The shell is a fixed topbar plus a scrolling main column with a breadcrumb
 header ([`src/components/app-layout.tsx`](./src/components/app-layout.tsx),
-[`app-sidebar.tsx`](./src/components/app-sidebar.tsx)).
+[`src/components/app-topbar.tsx`](./src/components/app-topbar.tsx)).
 
 | Dimension | Value | Where |
 |-----------|-------|-------|
-| Sidebar width | `w-64` | `app-sidebar.tsx` |
-| Header height | `h-14` | `app-layout.tsx` (content header) and `app-sidebar.tsx` (brand row) — kept equal so they align |
+| Topbar height | `h-14` | `app-topbar.tsx` |
+| Breadcrumb header height | `h-11` | `app-layout.tsx` |
 | Shell | `h-screen w-full overflow-hidden` | `app-layout.tsx` |
-| Main content padding | `p-6` | `app-layout.tsx` `<main>` |
+| Main content padding | `px-4 pt-6 sm:px-6` | `app-layout.tsx` `<main>` |
 
-The sidebar is `shrink-0` and the main column is `min-w-0 flex-1`; only `<main>`
-scrolls (`overflow-y-auto`).
+The topbar and breadcrumb header are `shrink-0`; the main column is
+`min-w-0 flex-1`, and only `<main>` scrolls (`overflow-y-auto`).
 
-#### Sidebar section dividers
+#### Shell dividers
 
-The sidebar's vertical sections (nav / repo list+Archived+herdr sessions /
-footer) are separated by a single-pixel `border` token, applied as `border-b`
-on the section above (nav) or `border-t` on the section below (footer) —
-whichever side owns the section's own wrapper element. This is the same token
-`divide-y` uses for in-list row separators, so section boundaries and row
-boundaries read as one consistent line weight/color across light and dark
-themes.
-
-Within the repo list+Archived+herdr sessions section, the herdr "Agents"
-sub-section (`SidebarHerdrSessions`) applies the same `border-t` token on its
-own wrapper when it renders. Since that component returns `null` when there
-are no herdr sessions to show, the divider only ever appears alongside the
-content it separates.
+The topbar and breadcrumb header are separated by a single-pixel `border`
+token (`border-b`). This is the same token `divide-y` uses for in-list row
+separators, so section boundaries and row boundaries read as one consistent
+line weight/color across light and dark themes.
 
 ### Dashboard sections
 
@@ -181,8 +172,8 @@ layout.
 ## State patterns
 
 List/section views handle the four TanStack Query states with a consistent
-look. `DashboardSection` is the reference implementation; `app-sidebar.tsx`
-follows the same shapes.
+look. `DashboardSection` is the reference implementation; app-shell controls
+use the same loading and error language where they fetch data.
 
 | State | Pattern |
 |-------|---------|
@@ -215,8 +206,6 @@ breadcrumb primitives deliberately omit dropdown affordances for now.
 
 Deliberately not addressed yet; listed so the gap is explicit, not forgotten.
 
-- **Responsive layout** — the shell assumes a desktop width; the fixed `w-64`
-  sidebar has no mobile/collapsed treatment.
 - **Accessibility** — beyond breadcrumb `aria-current` and the focus ring, no
   systematic a11y pass (focus traps, keyboard nav, contrast audit).
 - **Skeletons** — loading uses a spinner + text rather than content-shaped

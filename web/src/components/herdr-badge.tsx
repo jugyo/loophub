@@ -2,7 +2,7 @@
 // running for that PR's worktree (#579) — invisible (renders null) otherwise, so it never
 // implies a session that isn't there. Extracted from dashboard-rows.tsx (#609) so the
 // issue-detail linked-PR row can show the same badge. Reuses the same terminal/sessions poll
-// the sidebar section already runs (useHerdrSessions, #495): one shared 15s-interval query for
+// terminal-aware UI already runs (useHerdrSessions, #495): one shared 15s-interval query for
 // every row on the page, not one herdr shellout per row. Clicking switches herdr's focus to
 // that agent's pane via terminal/focusAgent (#578's `herdr agent focus`, reused here) instead
 // of launching a new terminal.

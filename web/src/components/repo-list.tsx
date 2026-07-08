@@ -45,7 +45,7 @@ export function RepoList({
   }
 
   // Favorites first, then by the owner/repository display string,
-  // case-insensitively, so the sidebar order is stable regardless of the
+  // case-insensitively, so app-shell repo order is stable regardless of the
   // API's return order.
   const sorted = [...repos].sort((a, b) => {
     if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;

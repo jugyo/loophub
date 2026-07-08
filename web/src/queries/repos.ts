@@ -1,4 +1,4 @@
-// Repo list query hooks. The app shell uses these for the sidebar; later UI
+// Repo list query hooks. The app shell uses these for the topbar; later UI
 // issues add issue/pull hooks alongside in this directory.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,7 +15,7 @@ import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
 
-/** Active (non-archived) repos for the sidebar. */
+/** Active (non-archived) repos for app-shell repository navigation. */
 export function useRepos() {
   return useQuery({
     queryKey: queryKeys.repos(),
@@ -40,7 +40,7 @@ export function useRepo(owner: string, repo: string) {
 }
 
 /**
- * Archive / unarchive a repo, then invalidate the repo + the sidebar and
+ * Archive / unarchive a repo, then invalidate the repo + the topbar and
  * archived repo lists so the new state shows everywhere.
  */
 export function useSetRepoArchived(owner: string, repo: string) {
@@ -55,7 +55,7 @@ export function useSetRepoArchived(owner: string, repo: string) {
 }
 
 /**
- * Favorite / unfavorite a repo, then invalidate the repo + the sidebar and
+ * Favorite / unfavorite a repo, then invalidate the repo + the topbar and
  * archived repo lists so the new state (and sort order) shows everywhere.
  */
 export function useSetRepoFavorite(owner: string, repo: string) {
@@ -70,7 +70,7 @@ export function useSetRepoFavorite(owner: string, repo: string) {
 }
 
 /**
- * Rename the repo's owner/name (#485). Invalidates the sidebar list; the caller
+ * Rename the repo's owner/name (#485). Invalidates the topbar repo list; the caller
  * navigates to the new /r/:owner/:repo URL, whose queries fetch fresh under the
  * new name (the old repo's cached entries just go stale and unused).
  */

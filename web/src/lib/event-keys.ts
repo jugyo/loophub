@@ -115,7 +115,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     keys.push(["settings"]);
     keys.push(["terminal", "config"]);
   } else if (type.startsWith("repo.")) {
-    // Repo metadata changes (archived/favorited/renamed/merge_mode, #485) alter the sidebar
+    // Repo metadata changes (archived/favorited/renamed/merge_mode, #485) alter the app-shell
     // list for every connected client, not just the tab that performed the mutation (whose
     // hook already invalidates onSuccess). repo.renamed additionally strands the old name's
     // repo-scoped caches — the event's `repo` field carries the NEW full_name — so invalidate

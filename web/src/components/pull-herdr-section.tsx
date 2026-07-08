@@ -41,7 +41,7 @@ export function PullHerdrSection({
   const { data, isError } = useHerdrSessions();
   const focus = useFocusHerdrAgent();
   const { showError } = useToast();
-  // Hide on error too (same as the sidebar Agents section): react-query keeps the last
+  // Hide on error too: react-query keeps the last
   // successful data across a failed refetch, and a stale session is worse than none while
   // the server is unreachable.
   const found = findPullHerdrWorkspace(
@@ -52,8 +52,7 @@ export function PullHerdrSection({
   if (!found) return null;
   const { group, workspace } = found;
   // The workspace only carries the pane id; the agent list has the display name for that
-  // pane (HerdrAgent.id is the pane id whenever herdr reported one — see
-  // sidebar-herdr-sessions.tsx's agentReadTarget). Missing match (synthetic id) just drops
+  // pane (HerdrAgent.id is the pane id whenever herdr reported one). Missing match drops
   // the name line; the session name and status still identify the terminal.
   const agent = group.agents.find((a) => a.id === workspace.pane_id);
 

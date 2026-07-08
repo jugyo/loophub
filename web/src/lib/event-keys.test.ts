@@ -135,7 +135,7 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["pull", "me/proj", 7]);
   });
 
-  it("maps repo.* events to the sidebar repos list (#485)", () => {
+  it("maps repo.* events to the app-shell repos list (#485)", () => {
     const keys = queryKeysForEvent(
       ev({
         type: "repo.archived",
