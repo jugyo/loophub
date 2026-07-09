@@ -374,15 +374,15 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain(
       "Some session costs are unavailable and counted as n/a.",
     );
-    expect(container.textContent).toContain("By category2 categories");
+    expect(container.textContent).toContain("By category");
     expect(container.textContent).toContain(
-      "Implementation1 session94%Tokens160Cost$0.0006Context72%",
+      "Implementation1 sessionTokens160Cost$0.0006Context72%",
     );
     expect(container.textContent).toContain(
-      "Subagents included in totalSecurity reviewer$0.000230 tokens",
+      "Subagents included in totalSecurity reviewer: $0.0002, 30 tokens",
     );
     expect(container.textContent).toContain(
-      "Review1 session6%Tokens10Costn/aContextn/a",
+      "Review1 sessionTokens10Costn/aContextn/a",
     );
     expect(container.textContent).toContain("$0.0006");
   });

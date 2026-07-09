@@ -206,118 +206,92 @@ export function RelatedSessions({
 // computed for pulls (core/serialize.ts pullJSON).
 export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
   const hasUsage = usage.sessions_with_usage > 0;
-  const totalTokens = Math.max(usage.total_tokens, 0);
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold">Token usage</h2>
-      <div className="flex flex-col gap-3 rounded-md border bg-muted/30 p-3 text-sm">
-        <dl className="grid grid-cols-3 gap-2">
-          <div className="rounded-md border bg-background/60 p-2">
+      <div className="flex flex-col gap-3 rounded-md border p-3 text-sm">
+        <dl className="flex flex-col gap-1.5">
+          <div className="flex items-baseline justify-between gap-3">
             <dt className="text-xs text-muted-foreground">Total tokens</dt>
-            <dd className="mt-1 font-medium tabular-nums">
+            <dd className="shrink-0 font-medium tabular-nums">
               {hasUsage ? formatTokenCount(usage.total_tokens) : "n/a"}
             </dd>
           </div>
-          <div className="rounded-md border bg-background/60 p-2">
+          <div className="flex items-baseline justify-between gap-3">
             <dt className="text-xs text-muted-foreground">Total cost</dt>
-            <dd className="mt-1 font-medium tabular-nums">
+            <dd className="shrink-0 font-medium tabular-nums">
               {formatCost(usage.cost_usd)}
             </dd>
           </div>
-          <div className="rounded-md border bg-background/60 p-2">
+          <div className="flex items-baseline justify-between gap-3">
             <dt className="text-xs text-muted-foreground">Max context</dt>
-            <dd className="mt-1 font-medium tabular-nums">
+            <dd className="shrink-0 font-medium tabular-nums">
               {formatContextPercent(usage.context_usage_percent)}
             </dd>
           </div>
         </dl>
         {usage.by_kind.length > 0 ? (
-          <div className="flex flex-col gap-2 border-t pt-3">
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="font-medium">By category</span>
-              <span className="text-muted-foreground">
-                {usage.by_kind.length} categories
-              </span>
-            </div>
+          <div className="border-t pt-3">
+            <h3 className="text-xs font-medium">By category</h3>
             <ul className="flex flex-col gap-2">
-              {usage.by_kind.map((k) => {
-                const share =
-                  totalTokens > 0 ? k.total_tokens / totalTokens : 0;
-                const percent = formatPercent(share);
-                const barPercent = share > 0 ? Math.max(2, share * 100) : 0;
-                return (
-                  <li key={k.kind} className="flex flex-col gap-1.5">
-                    <div className="flex min-w-0 items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <Badge tone={KIND_TONE[k.kind] ?? "unknown"}>
-                          {KIND_LABEL[k.kind] ?? k.kind}
-                        </Badge>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {k.sessions_with_usage} session
-                          {k.sessions_with_usage === 1 ? "" : "s"}
-                        </span>
-                      </div>
-                      <span className="shrink-0 text-xs font-medium tabular-nums">
-                        {percent}
-                      </span>
+              {usage.by_kind.map((k) => (
+                <li
+                  key={k.kind}
+                  className="border-t first:border-t-0 pt-2 first:pt-0"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Badge tone={KIND_TONE[k.kind] ?? "unknown"}>
+                      {KIND_LABEL[k.kind] ?? k.kind}
+                    </Badge>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {k.sessions_with_usage} session
+                      {k.sessions_with_usage === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <dl className="mt-1 flex flex-col gap-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-xs text-muted-foreground">Tokens</dt>
+                      <dd className="shrink-0 font-medium tabular-nums">
+                        {formatTokenCount(k.total_tokens)}
+                      </dd>
                     </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-primary"
-                        style={{ width: `${barPercent}%` }}
-                      />
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-xs text-muted-foreground">Cost</dt>
+                      <dd className="shrink-0 font-medium tabular-nums">
+                        {formatCost(k.cost_usd)}
+                      </dd>
                     </div>
-                    <dl className="grid grid-cols-3 gap-2 text-xs">
-                      <div className="min-w-0">
-                        <dt className="text-muted-foreground">Tokens</dt>
-                        <dd className="truncate font-medium tabular-nums">
-                          {formatTokenCount(k.total_tokens)}
-                        </dd>
-                      </div>
-                      <div className="min-w-0 text-right">
-                        <dt className="text-muted-foreground">Cost</dt>
-                        <dd className="truncate font-medium tabular-nums">
-                          {formatCost(k.cost_usd)}
-                        </dd>
-                      </div>
-                      <div className="min-w-0 text-right">
-                        <dt className="text-muted-foreground">Context</dt>
-                        <dd className="truncate font-medium tabular-nums">
-                          {formatContextPercent(k.context_usage_percent)}
-                        </dd>
-                      </div>
-                    </dl>
-                    {k.subagents?.length ? (
-                      <div className="ml-2 flex flex-col gap-1.5 border-l pl-2">
-                        <div className="text-xs font-medium text-muted-foreground">
-                          Subagents included in total
-                        </div>
-                        <ul className="flex flex-col gap-1.5">
-                          {k.subagents.map((subagent) => (
-                            <li
-                              key={`${subagent.session_id}:${subagent.source_id}`}
-                              className="min-w-0"
-                              title={subagent.source_id}
-                            >
-                              <div className="flex min-w-0 items-baseline justify-between gap-2">
-                                <span className="truncate text-xs font-medium">
-                                  {subagent.label ?? subagent.source_id}
-                                </span>
-                                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                                  {formatCost(subagent.cost_usd)}
-                                </span>
-                              </div>
-                              <div className="truncate text-xs tabular-nums text-muted-foreground">
-                                {formatTokenCount(subagent.total_tokens)} tokens
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-xs text-muted-foreground">Context</dt>
+                      <dd className="shrink-0 font-medium tabular-nums">
+                        {formatContextPercent(k.context_usage_percent)}
+                      </dd>
+                    </div>
+                  </dl>
+                  {k.subagents?.length ? (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      <div>Subagents included in total</div>
+                      <ul className="mt-1 flex flex-col gap-1">
+                        {k.subagents.map((subagent) => (
+                          <li
+                            key={`${subagent.session_id}:${subagent.source_id}`}
+                            className="flex min-w-0 items-baseline gap-1"
+                            title={subagent.source_id}
+                          >
+                            <span className="truncate">
+                              {subagent.label ?? subagent.source_id}:{" "}
+                            </span>
+                            <span className="shrink-0 tabular-nums">
+                              {formatCost(subagent.cost_usd)},{" "}
+                              {formatTokenCount(subagent.total_tokens)} tokens
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
             </ul>
           </div>
         ) : (
@@ -338,13 +312,6 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
       </div>
     </section>
   );
-}
-
-function formatPercent(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "0%";
-  const percent = value * 100;
-  if (percent < 1) return "<1%";
-  return `${Math.round(percent)}%`;
 }
 
 function formatContextPercent(value: number | null | undefined): string {
