@@ -156,17 +156,22 @@ describe("AppTopbar", () => {
       screen.queryByRole("link", { name: "Archived repositories" }),
     ).toBeNull();
 
-    const headerItems = [...container.querySelectorAll("header > *")];
-    const repoPickerIndex = headerItems.findIndex((node) =>
+    const rows = [...container.querySelectorAll("header > [role='group']")];
+    expect(rows).toHaveLength(2);
+    expect(rows[0].getAttribute("aria-label")).toBe("Primary topbar");
+    expect(rows[1].getAttribute("aria-label")).toBe("Secondary topbar");
+
+    const primaryItems = [...rows[0].children];
+    const repoPickerIndex = primaryItems.findIndex((node) =>
       node.querySelector?.("[aria-label='Repository']"),
     );
-    const themeIndex = headerItems.findIndex(
+    const themeIndex = primaryItems.findIndex(
       (node) => node.getAttribute("aria-label") === "Theme",
     );
     expect(repoPickerIndex).toBeGreaterThan(-1);
     expect(themeIndex).toBeGreaterThan(-1);
     expect(themeIndex).toBeGreaterThan(repoPickerIndex);
-    expect(themeIndex).toBe(headerItems.length - 1);
+    expect(themeIndex).toBe(primaryItems.length - 1);
   });
 
   it("opens the Cmd+K repository picker from the repository control", async () => {
@@ -243,6 +248,12 @@ describe("AppTopbar", () => {
     expect(summary.textContent).toContain("M $0.50");
     expect(summary.textContent).toContain("W $0.50");
     expect(summary.textContent).toContain("T $0.50");
+
+    const secondaryTopbar = screen.getByRole("group", {
+      name: "Secondary topbar",
+    });
+    expect(secondaryTopbar.contains(summary)).toBe(true);
+    expect(secondaryTopbar.className).toContain("justify-end");
   });
 
   it("keeps the topbar stable while agent costs load or fail", async () => {
