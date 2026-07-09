@@ -286,7 +286,7 @@
     },
     {
       "name": "settings/get",
-      "description": "Instance-level config.json settings (per-agent autoModeOnBuild/model/effort, codingAgent) (#474, #499, #516, #593, #594, #682).",
+      "description": "Instance-level config.json settings (per-agent autoModeOnBuild/model/effort, codingAgent, devCostLimitUsd) (#474, #499, #516, #593, #594, #682, #1027).",
       "params": {
         "type": "object",
         "properties": {},
@@ -299,7 +299,7 @@
     },
     {
       "name": "settings/update",
-      "description": "Update instance-level config.json settings, preserving unrelated fields. autoModeOnBuild/model/effort require agent (#474, #593, #594, #682).",
+      "description": "Update instance-level config.json settings, preserving unrelated fields. autoModeOnBuild/model/effort require agent (#474, #593, #594, #682, #1027).",
       "params": {
         "type": "object",
         "properties": {
@@ -325,6 +325,13 @@
               "claude-code",
               "codex"
             ]
+          },
+          "devCostLimitUsd": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1000,
+            "default": 10,
+            "description": "Per-task USD over-budget stop threshold for lh build agents. Omit to use the $10 default. JSON Schema enforces the positive and $1,000 maximum bounds; the service additionally rejects values with more than two decimal places."
           },
           "session_id": {
             "type": "string",

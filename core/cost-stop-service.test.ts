@@ -22,6 +22,7 @@ let herdrSessionName: (repo: {
   full_name: string;
   local_path: string;
 }) => string;
+let updateConfig: (patch: { devCostLimitUsd?: number }) => unknown;
 let worktreeRoot: () => string;
 let worktreePath: (root: string, fullName: string, pr: number) => string;
 
@@ -115,16 +116,15 @@ beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
   ({ herdrSessionName } = await import("./terminal/terminal-launch.ts"));
-  ({ worktreeRoot } = await import("./config.ts"));
+  ({ updateConfig, worktreeRoot } = await import("./config.ts"));
   ({ worktreePath } = await import("./worktree-path.ts"));
   mkdirSync(FAKE_BIN);
   // Deterministic limit for the whole file: over = $12, under = $5.
-  process.env.LOOPHUB_DEV_COST_LIMIT_USD = "10";
+  updateConfig({ devCostLimitUsd: 10 });
 });
 
 afterAll(() => {
   process.env.PATH = ORIGINAL_PATH;
-  delete process.env.LOOPHUB_DEV_COST_LIMIT_USD;
   rmSync(HOME, { recursive: true, force: true });
 });
 

@@ -228,6 +228,8 @@ export interface GlobalSettings {
   agents: Record<CodingAgent, AgentSettings>;
   // Default coding agent `lh build` launches (#516).
   codingAgent: CodingAgent;
+  // Per-task over-budget threshold for `lh build` implementation agents (#1027).
+  devCostLimitUsd: number;
 }
 
 /** Database statistics (`stats/get`, #587) for the /stats page. */

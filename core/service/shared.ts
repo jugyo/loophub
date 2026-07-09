@@ -19,10 +19,12 @@ import {
   type CodingAgent,
   codingAgent,
   configDir,
+  devCostLimitUsd,
   updateAgentAutoModeOnBuild,
   updateAgentDefaultEffort,
   updateAgentDefaultModel,
   updateConfig,
+  updateDevCostLimitUsd,
   worktreeRoot,
 } from "../config.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
@@ -230,6 +232,7 @@ export {
   databaseSize,
   decideResume,
   defaultBranch,
+  devCostLimitUsd,
   diffFiles,
   diffStat,
   displayArg,
@@ -336,6 +339,7 @@ export {
   updateAgentDefaultEffort,
   updateAgentDefaultModel,
   updateConfig,
+  updateDevCostLimitUsd,
   validateFindings,
   validateRubric,
   worktreeBranch,

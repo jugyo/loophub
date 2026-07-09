@@ -137,6 +137,26 @@ test("agentEffort defaults to DEFAULT_AGENT_EFFORT per agent and reflects update
   expect(agentEffort("codex")).toBe(DEFAULT_AGENT_EFFORT.codex); // unaffected
 });
 
+test("devCostLimitUsd defaults to $10 and reflects updateDevCostLimitUsd (#1027)", async () => {
+  const { DEFAULT_DEV_COST_LIMIT_USD, devCostLimitUsd, updateDevCostLimitUsd } =
+    await import("./config.ts");
+  expect(devCostLimitUsd()).toBe(DEFAULT_DEV_COST_LIMIT_USD);
+  expect(DEFAULT_DEV_COST_LIMIT_USD).toBe(10);
+
+  updateDevCostLimitUsd(2.5);
+  expect(devCostLimitUsd()).toBe(2.5);
+});
+
+test("devCostLimitUsd ignores malformed persisted values (#1027)", async () => {
+  const { DEFAULT_DEV_COST_LIMIT_USD, devCostLimitUsd, updateConfig } =
+    await import("./config.ts");
+
+  for (const bad of ["abc", 0, -5, Number.NaN]) {
+    updateConfig({ devCostLimitUsd: bad as number });
+    expect(devCostLimitUsd()).toBe(DEFAULT_DEV_COST_LIMIT_USD);
+  }
+});
+
 test("updateAgentDefaultEffort sets one agent without disturbing another's setting (#682)", async () => {
   const { agentEffort, updateAgentDefaultEffort } = await import("./config.ts");
 

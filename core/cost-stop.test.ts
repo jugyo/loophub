@@ -1,35 +1,5 @@
-import { afterEach, describe, expect, test } from "vitest";
-import {
-  DEFAULT_DEV_COST_LIMIT_USD,
-  decideCostStop,
-  devCostLimitUsd,
-} from "./cost-stop.ts";
-
-describe("devCostLimitUsd", () => {
-  const original = process.env.LOOPHUB_DEV_COST_LIMIT_USD;
-  afterEach(() => {
-    if (original === undefined) delete process.env.LOOPHUB_DEV_COST_LIMIT_USD;
-    else process.env.LOOPHUB_DEV_COST_LIMIT_USD = original;
-  });
-
-  test("defaults to $10 when unset", () => {
-    delete process.env.LOOPHUB_DEV_COST_LIMIT_USD;
-    expect(devCostLimitUsd()).toBe(DEFAULT_DEV_COST_LIMIT_USD);
-    expect(DEFAULT_DEV_COST_LIMIT_USD).toBe(10);
-  });
-
-  test("honors a finite positive override", () => {
-    process.env.LOOPHUB_DEV_COST_LIMIT_USD = "2.5";
-    expect(devCostLimitUsd()).toBe(2.5);
-  });
-
-  test("ignores malformed, zero, or negative overrides", () => {
-    for (const bad of ["", "abc", "0", "-5"]) {
-      process.env.LOOPHUB_DEV_COST_LIMIT_USD = bad;
-      expect(devCostLimitUsd()).toBe(DEFAULT_DEV_COST_LIMIT_USD);
-    }
-  });
-});
+import { describe, expect, test } from "vitest";
+import { decideCostStop } from "./cost-stop.ts";
 
 describe("decideCostStop", () => {
   const base = {

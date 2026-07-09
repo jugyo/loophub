@@ -12,6 +12,14 @@ export const SERVER_INFO = { name: "loophub", version: "0.0.0" } as const;
 const str = { type: "string" } as const;
 const strNonEmpty = { type: "string", minLength: 1 } as const;
 const sid = { type: "string", minLength: 1 } as const;
+const positiveNumber = { type: "number", exclusiveMinimum: 0 } as const;
+const devCostLimitUsd = {
+  ...positiveNumber,
+  maximum: 1000,
+  default: 10,
+  description:
+    "Per-task USD over-budget stop threshold for lh build agents. Omit to use the $10 default. JSON Schema enforces the positive and $1,000 maximum bounds; the service additionally rejects values with more than two decimal places.",
+} as const;
 const positiveInt = { type: "integer", minimum: 1 } as const;
 const stringArray = { type: "array", items: { type: "string" } } as const;
 // A model/effort override that may be explicitly cleared: a string, or null to fall back to the
@@ -170,20 +178,21 @@ export const methods: Record<string, MethodDef> = {
   // ---- global settings ----
   "settings/get": {
     description:
-      "Instance-level config.json settings (per-agent autoModeOnBuild/model/effort, codingAgent) (#474, #499, #516, #593, #594, #682).",
+      "Instance-level config.json settings (per-agent autoModeOnBuild/model/effort, codingAgent, devCostLimitUsd) (#474, #499, #516, #593, #594, #682, #1027).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.settings.get(),
   },
   "settings/update": {
     description:
-      "Update instance-level config.json settings, preserving unrelated fields. autoModeOnBuild/model/effort require agent (#474, #593, #594, #682).",
+      "Update instance-level config.json settings, preserving unrelated fields. autoModeOnBuild/model/effort require agent (#474, #593, #594, #682, #1027).",
     params: params({
       agent: { enum: ["claude-code", "codex"] },
       autoModeOnBuild: { type: "boolean" },
       model: strNonEmpty,
       effort: strNonEmpty,
       codingAgent: { enum: ["claude-code", "codex"] },
+      devCostLimitUsd,
       session_id: sid,
     }),
     result: anyObject,
@@ -195,6 +204,7 @@ export const methods: Record<string, MethodDef> = {
           model: p.model,
           effort: p.effort,
           codingAgent: p.codingAgent,
+          devCostLimitUsd: p.devCostLimitUsd,
         },
         p.session_id,
       ),

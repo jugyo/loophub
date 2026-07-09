@@ -362,6 +362,7 @@ export function updateSettings(
     model?: string;
     effort?: string;
     codingAgent?: CodingAgent;
+    devCostLimitUsd?: number;
   },
   sessionId: string = getSessionId(),
 ) {

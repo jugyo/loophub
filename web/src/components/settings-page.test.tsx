@@ -29,13 +29,16 @@ function mockFetch(
     codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
   },
   initialCodingAgent: CodingAgent = "claude-code",
+  initialDevCostLimitUsd = 10,
 ) {
   const agents = { ...initialAgents };
   let codingAgent = initialCodingAgent;
+  let devCostLimitUsd = initialDevCostLimitUsd;
   return mockRpcFetch({
     "settings/get": () => ({
       agents,
       codingAgent,
+      devCostLimitUsd,
     }),
     "settings/update": (p) => {
       if (p.agent && p.autoModeOnBuild !== undefined) {
@@ -57,7 +60,10 @@ function mockFetch(
         };
       }
       if (p.codingAgent) codingAgent = p.codingAgent;
-      return { agents, codingAgent };
+      if (p.devCostLimitUsd !== undefined) {
+        devCostLimitUsd = p.devCostLimitUsd as number;
+      }
+      return { agents, codingAgent, devCostLimitUsd };
     },
   });
 }
@@ -65,8 +71,12 @@ function mockFetch(
 function renderSettings(
   initialAgents?: Record<CodingAgent, AgentSettingsForTest>,
   initialCodingAgent: CodingAgent = "claude-code",
+  initialDevCostLimitUsd = 10,
 ) {
-  vi.stubGlobal("fetch", mockFetch(initialAgents, initialCodingAgent));
+  vi.stubGlobal(
+    "fetch",
+    mockFetch(initialAgents, initialCodingAgent, initialDevCostLimitUsd),
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -309,6 +319,41 @@ describe("SettingsPage", () => {
       }),
     );
 
+    expect(rpcCall("settings/update")).toBeUndefined();
+  });
+
+  it("shows and saves the task over-budget limit as a USD amount", async () => {
+    renderSettings(undefined, "claude-code", 12.5);
+    const input = (await screen.findByLabelText(
+      "Task over-budget limit in USD",
+    )) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe("12.50"));
+
+    fireEvent.change(input, { target: { value: "7.25" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const call = rpcCall("settings/update");
+      expect(call).toBeTruthy();
+      expect(call!.params).toMatchObject({ devCostLimitUsd: 7.25 });
+    });
+    await waitFor(() => expect(input.value).toBe("7.25"));
+  });
+
+  it("validates the task over-budget limit before saving", async () => {
+    renderSettings();
+    const input = (await screen.findByLabelText(
+      "Task over-budget limit in USD",
+    )) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "0" } });
+
+    expect(
+      await screen.findByText("Enter an amount greater than $0."),
+    ).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
     expect(rpcCall("settings/update")).toBeUndefined();
   });
 });

@@ -37,6 +37,9 @@ export const DEFAULT_AGENT_EFFORT: Record<CodingAgent, string> = {
   codex: "medium",
 };
 
+// Default top-level cumulative cost (USD) at which a `lh build` implementation agent is stopped.
+export const DEFAULT_DEV_COST_LIMIT_USD = 10;
+
 // Known config.json fields (#474). Fields are optional — any subset may be present, and
 // unrecognized fields written by a future version must round-trip through updateConfig
 // untouched (it merges into the raw parsed object, not this typed shape).
@@ -48,6 +51,8 @@ export interface GlobalConfig {
   // Default coding agent `lh build` launches when neither --claude-code nor --codex is passed
   // (#516). Default "claude-code".
   codingAgent?: CodingAgent;
+  // Per-task over-budget stop threshold for `lh build` implementation agents. Default $10.
+  devCostLimitUsd?: number;
 }
 
 // Read env at call time so parallel test files can set LOOPHUB_HOME/LOOPHUB_DB
@@ -145,6 +150,25 @@ export function agentEffort(agent: CodingAgent): string {
   return DEFAULT_AGENT_EFFORT[agent];
 }
 
+// Per-task over-budget stop threshold for `lh build` implementation agents (#1027). A malformed
+// persisted value is ignored rather than disabling the guard.
+export function devCostLimitUsd(): number {
+  try {
+    const cfg: GlobalConfig = JSON.parse(
+      readFileSync(join(configDir(), "config.json"), "utf8"),
+    );
+    const configured = cfg.devCostLimitUsd;
+    if (
+      typeof configured === "number" &&
+      Number.isFinite(configured) &&
+      configured > 0
+    ) {
+      return configured;
+    }
+  } catch {}
+  return DEFAULT_DEV_COST_LIMIT_USD;
+}
+
 export function normalizeCodingAgent(value: unknown): CodingAgent {
   return value === "codex" ? "codex" : "claude-code";
 }
@@ -238,4 +262,8 @@ export function updateAgentDefaultEffort(
       [agent]: { ...current.agents?.[agent], defaultEffort: effort },
     },
   });
+}
+
+export function updateDevCostLimitUsd(limitUsd: number): GlobalConfig {
+  return updateConfig({ devCostLimitUsd: limitUsd });
 }

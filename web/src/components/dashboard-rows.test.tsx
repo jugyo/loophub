@@ -70,6 +70,7 @@ afterEach(() => {
       codex: { autoModeOnBuild: false, model: "", effort: "" },
     },
     codingAgent: "claude-code",
+    devCostLimitUsd: 10,
   };
   herdrSessionsData.value = undefined;
 });
@@ -309,6 +310,7 @@ describe("IssueRow", () => {
         codex: { autoModeOnBuild: false, model: "", effort: "" },
       },
       codingAgent: "claude-code",
+      devCostLimitUsd: 10,
     };
     renderInRouter(
       <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,

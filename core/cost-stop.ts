@@ -3,27 +3,10 @@
 // enumeration + session usage; keeping the judgement here makes it unit-testable without herdr or
 // the DB, mirroring how core/worktree-prune.ts backs `lh worktree prune`.
 
-// Default top-level cumulative cost (USD) at which a `lh build` implementation agent is stopped.
-// Adding a UI to change the limit is out of scope (#832); an env override exists for operators and
-// tests only.
-export const DEFAULT_DEV_COST_LIMIT_USD = 10;
-
 // Stored as the `reason` on the dev.cost_stopped event so a human can later tell *why* the agent
 // was stopped from the event log alone (AC: 停止理由が event ログから分かる).
 export const COST_STOP_REASON = "cost_limit_exceeded";
 export const DEV_COST_STOPPED_EVENT = "dev.cost_stopped";
-
-// Resolve the limit from the environment, falling back to the default. Only a finite, positive
-// number overrides — a malformed LOOPHUB_DEV_COST_LIMIT_USD is ignored rather than disabling the
-// guard.
-export function devCostLimitUsd(): number {
-  const raw = process.env.LOOPHUB_DEV_COST_LIMIT_USD;
-  if (raw !== undefined && raw !== "") {
-    const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-  return DEFAULT_DEV_COST_LIMIT_USD;
-}
 
 export interface CostStopInput {
   // Top-level cumulative cost for the pane's dev session, in USD. null means the cost is unknown

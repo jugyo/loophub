@@ -5,13 +5,42 @@ import {
   agentModel,
   autoModeOnBuild,
   codingAgent,
+  devCostLimitUsd,
   S,
   ServiceError,
   updateAgentAutoModeOnBuild,
   updateAgentDefaultEffort,
   updateAgentDefaultModel,
   updateConfig,
+  updateDevCostLimitUsd,
 } from "./shared.ts";
+
+function hasAtMostTwoDecimalPlaces(value: number): boolean {
+  return Math.abs(value * 100 - Math.round(value * 100)) < 1e-9;
+}
+
+function validateAgentScopedSetting(
+  agent: CodingAgent | undefined,
+): asserts agent is CodingAgent {
+  if (agent !== "claude-code" && agent !== "codex") {
+    throw new ServiceError(422, "agent must be one of: claude-code, codex");
+  }
+}
+
+function validateDevCostLimitUsd(value: unknown): asserts value is number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new ServiceError(422, "devCostLimitUsd must be greater than 0");
+  }
+  if (value > 1000) {
+    throw new ServiceError(422, "devCostLimitUsd must be at most 1000");
+  }
+  if (!hasAtMostTwoDecimalPlaces(value)) {
+    throw new ServiceError(
+      422,
+      "devCostLimitUsd must use at most two decimal places",
+    );
+  }
+}
 
 // ===== global settings =====
 // Instance-level config.json settings, as opposed to the repo-scoped settings above (#474).
@@ -22,6 +51,7 @@ export const settings = {
       { autoModeOnBuild: boolean; model: string; effort: string }
     >;
     codingAgent: CodingAgent;
+    devCostLimitUsd: number;
   } {
     return {
       agents: {
@@ -37,6 +67,7 @@ export const settings = {
         },
       },
       codingAgent: codingAgent(),
+      devCostLimitUsd: devCostLimitUsd(),
     };
   },
 
@@ -51,6 +82,7 @@ export const settings = {
       // Default effort paired with model in the Settings screen (#682).
       effort?: string;
       codingAgent?: CodingAgent;
+      devCostLimitUsd?: number;
     },
     sessionId?: string | null,
   ): {
@@ -59,33 +91,25 @@ export const settings = {
       { autoModeOnBuild: boolean; model: string; effort: string }
     >;
     codingAgent: CodingAgent;
+    devCostLimitUsd: number;
   } {
     if (input.autoModeOnBuild !== undefined) {
       if (typeof input.autoModeOnBuild !== "boolean") {
         throw new ServiceError(422, "autoModeOnBuild must be a boolean");
       }
-      if (input.agent !== "claude-code" && input.agent !== "codex") {
-        throw new ServiceError(422, "agent must be one of: claude-code, codex");
-      }
-      updateAgentAutoModeOnBuild(input.agent, input.autoModeOnBuild);
+      validateAgentScopedSetting(input.agent);
     }
     if (input.model !== undefined) {
       if (typeof input.model !== "string" || !input.model.trim()) {
         throw new ServiceError(422, "model must be a non-empty string");
       }
-      if (input.agent !== "claude-code" && input.agent !== "codex") {
-        throw new ServiceError(422, "agent must be one of: claude-code, codex");
-      }
-      updateAgentDefaultModel(input.agent, input.model.trim());
+      validateAgentScopedSetting(input.agent);
     }
     if (input.effort !== undefined) {
       if (typeof input.effort !== "string" || !input.effort.trim()) {
         throw new ServiceError(422, "effort must be a non-empty string");
       }
-      if (input.agent !== "claude-code" && input.agent !== "codex") {
-        throw new ServiceError(422, "agent must be one of: claude-code, codex");
-      }
-      updateAgentDefaultEffort(input.agent, input.effort.trim());
+      validateAgentScopedSetting(input.agent);
     }
     if (
       input.codingAgent !== undefined &&
@@ -97,8 +121,30 @@ export const settings = {
         "codingAgent must be one of: claude-code, codex",
       );
     }
+    if (input.devCostLimitUsd !== undefined) {
+      validateDevCostLimitUsd(input.devCostLimitUsd);
+    }
+
+    if (input.autoModeOnBuild !== undefined) {
+      const agent = input.agent;
+      validateAgentScopedSetting(agent);
+      updateAgentAutoModeOnBuild(agent, input.autoModeOnBuild);
+    }
+    if (input.model !== undefined) {
+      const agent = input.agent;
+      validateAgentScopedSetting(agent);
+      updateAgentDefaultModel(agent, input.model.trim());
+    }
+    if (input.effort !== undefined) {
+      const agent = input.agent;
+      validateAgentScopedSetting(agent);
+      updateAgentDefaultEffort(agent, input.effort.trim());
+    }
     if (input.codingAgent !== undefined) {
       updateConfig({ codingAgent: input.codingAgent });
+    }
+    if (input.devCostLimitUsd !== undefined) {
+      updateDevCostLimitUsd(input.devCostLimitUsd);
     }
     const actor = actorFor(sessionId);
     S.emitEvent(null, "settings.updated", actor, input);

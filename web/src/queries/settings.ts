@@ -23,6 +23,7 @@ export function useUpdateSettings() {
       model?: string;
       effort?: string;
       codingAgent?: CodingAgent;
+      devCostLimitUsd?: number;
     }) => updateSettings(input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: settingsKeys.all });

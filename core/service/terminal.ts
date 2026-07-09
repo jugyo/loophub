@@ -2,7 +2,6 @@ import {
   COST_STOP_REASON,
   DEV_COST_STOPPED_EVENT,
   decideCostStop,
-  devCostLimitUsd,
 } from "../cost-stop.ts";
 import {
   runHerdr,
@@ -24,6 +23,7 @@ import {
   buildHerdrLaunchPlan,
   codingAgent,
   commandForHerdrLaunch,
+  devCostLimitUsd,
   displayArg,
   ENV_ISSUE_CREATE_HERDR_LAUNCH,
   HERDR_ID,
