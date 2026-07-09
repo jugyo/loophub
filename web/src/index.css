@@ -72,18 +72,20 @@
     --scrollbar-track: hsl(var(--muted) / 0.55);
     --scrollbar-thumb: hsl(var(--muted-foreground) / 0.38);
     --scrollbar-thumb-hover: hsl(var(--muted-foreground) / 0.58);
+    --scrollbar-size: 14px;
+    --scrollbar-dense-size: 12px;
   }
 
   /* Theme-aware default scrollbars (visual only: color, width, radius). Keep
      this low-specificity so component-specific scrollbar styles can override
      the app default when they need a different track or density. */
   :where(*) {
-    scrollbar-width: thin;
+    scrollbar-width: auto;
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   }
   :where(*)::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
   }
   :where(*)::-webkit-scrollbar-track {
     background: var(--scrollbar-track);
@@ -101,15 +103,15 @@
     background: var(--scrollbar-track);
   }
 
-  /* Denser scrollbars for content panes that already had intentional scrollbar
-     styling: Markdown code/table overflow, Mermaid diagrams, PR diffs, and the
-     embedded terminal. */
+  /* Pane-specific scrollbars for Markdown code/table overflow, Mermaid
+     diagrams, PR diffs, and the embedded terminal. These keep transparent
+     tracks while following the wider cross-browser width policy. */
   .markdown-body pre,
   .markdown-body table,
   .mermaid-diagram,
   .pr-diff,
   .xterm-viewport {
-    scrollbar-width: thin;
+    scrollbar-width: auto;
     scrollbar-color: var(--scrollbar-thumb) transparent;
   }
   .markdown-body pre::-webkit-scrollbar,
@@ -117,8 +119,8 @@
   .mermaid-diagram::-webkit-scrollbar,
   .pr-diff::-webkit-scrollbar,
   .xterm-viewport::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: var(--scrollbar-dense-size);
+    height: var(--scrollbar-dense-size);
   }
   .markdown-body pre::-webkit-scrollbar-track,
   .markdown-body table::-webkit-scrollbar-track,
