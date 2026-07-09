@@ -244,7 +244,9 @@ describe("IssueList", () => {
     expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
 
     fireEvent.pointerDown(picker);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "bug" }));
+    fireEvent.click(
+      await screen.findByRole("menuitemcheckbox", { name: "bug" }),
+    );
 
     await waitFor(() =>
       expect(
@@ -284,7 +286,18 @@ describe("IssueList", () => {
     );
 
     fireEvent.pointerDown(picker);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "ui" }));
+    // The already-selected label exposes its state to assistive tech.
+    expect(
+      (
+        await screen.findByRole("menuitemcheckbox", { name: "bug" })
+      ).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(
+      screen
+        .getByRole("menuitemcheckbox", { name: "ui" })
+        .getAttribute("aria-checked"),
+    ).toBe("false");
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "ui" }));
 
     await waitFor(() =>
       expect(

@@ -3,7 +3,7 @@
 // events via the issues query key (event-keys.ts).
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Loader2, X } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, Tag, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Issue } from "@/api/types";
 import { CreateIssueButton } from "@/components/create-issue-button";
@@ -12,6 +12,7 @@ import { RepoHerdrCommand } from "@/components/repo-herdr-command";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -170,10 +171,15 @@ export function IssueList({
     );
   }
 
+  function toggleSelectedLabel(labelToToggle: string) {
+    if (selectedLabels.includes(labelToToggle)) {
+      removeSelectedLabel(labelToToggle);
+    } else {
+      addSelectedLabel(labelToToggle);
+    }
+  }
+
   const labelOptions = labelsQuery.data ?? [];
-  const availableLabelOptions = labelOptions.filter(
-    (label) => !selectedLabels.includes(label.name),
-  );
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-4">
@@ -211,11 +217,87 @@ export function IssueList({
           })}
         </div>
         {labelFilterMode === "select" ? (
-          <div className="flex min-h-9 min-w-64 flex-1 flex-wrap items-center gap-1">
+          <div className="flex min-h-9 min-w-64 flex-1 flex-wrap items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  aria-label="Label filter"
+                  className="h-9 min-w-36 justify-between gap-2 border bg-background px-3 font-normal shadow-sm"
+                  disabled={labelsQuery.isLoading}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Tag
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">Labels</span>
+                    {selectedLabels.length > 0 ? (
+                      <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                        {selectedLabels.length}
+                      </span>
+                    ) : null}
+                  </span>
+                  <ChevronsUpDown
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="max-h-[min(20rem,calc(100vh-5rem))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 overflow-y-auto"
+              >
+                <DropdownMenuLabel>Filter by label</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {labelOptions.length > 0 ? (
+                  labelOptions.map((label) => {
+                    const selected = selectedLabels.includes(label.name);
+                    return (
+                      // menuitemcheckbox exposes the selection state to assistive
+                      // tech (aria-checked); preventDefault keeps the menu open so
+                      // several labels can be toggled without reopening — the
+                      // standard multi-select combobox behaviour.
+                      <DropdownMenuCheckboxItem
+                        key={label.name}
+                        checked={selected}
+                        className="gap-2"
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          toggleSelectedLabel(label.name);
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "size-4 shrink-0",
+                            selected ? "opacity-100" : "opacity-0",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span
+                          className={cn(
+                            LABEL_CHIP_BASE_CLASS,
+                            labelColorClass(label.name),
+                            "max-w-56",
+                          )}
+                        >
+                          <span className="truncate">{label.name}</span>
+                        </span>
+                      </DropdownMenuCheckboxItem>
+                    );
+                  })
+                ) : (
+                  <DropdownMenuItem disabled>
+                    No labels available
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             {selectedLabels.length > 0 ? (
               <div
                 aria-label="Selected labels"
-                className="flex min-w-0 flex-wrap items-center gap-1 rounded-md border bg-background px-2 py-1"
+                className="flex min-w-0 flex-wrap items-center gap-1"
               >
                 {selectedLabels.map((label) => (
                   <span
@@ -237,67 +319,16 @@ export function IssueList({
                     </button>
                   </span>
                 ))}
-              </div>
-            ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
+                <button
                   type="button"
-                  variant="secondary"
-                  aria-label="Label filter"
-                  className="min-w-36 justify-between border bg-background px-3 font-normal shadow-sm"
-                  disabled={labelsQuery.isLoading}
+                  aria-label="Clear label filters"
+                  onClick={() => navigateWithLabels([])}
+                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
-                  <span className="truncate">
-                    {selectedLabels.length > 0 ? "Add label" : "All labels"}
-                  </span>
-                  <ChevronDown
-                    className="size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="max-h-[min(20rem,calc(100vh-5rem))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 overflow-y-auto"
-              >
-                <DropdownMenuLabel>Filter by label</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {availableLabelOptions.length > 0 ? (
-                  availableLabelOptions.map((label) => (
-                    <DropdownMenuItem
-                      key={label.name}
-                      onSelect={() => addSelectedLabel(label.name)}
-                    >
-                      <span
-                        className={cn(
-                          LABEL_CHIP_BASE_CLASS,
-                          labelColorClass(label.name),
-                          "max-w-48",
-                        )}
-                      >
-                        <span className="truncate">{label.name}</span>
-                      </span>
-                    </DropdownMenuItem>
-                  ))
-                ) : (
-                  <DropdownMenuItem disabled>
-                    {selectedLabels.length > 0
-                      ? "All labels selected"
-                      : "No labels available"}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {selectedLabels.length > 0 ? (
-              <button
-                type="button"
-                aria-label="Clear label filters"
-                onClick={() => navigateWithLabels([])}
-                className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <X className="size-4" />
-              </button>
+                  <X className="size-3" />
+                  Clear
+                </button>
+              </div>
             ) : null}
           </div>
         ) : (
