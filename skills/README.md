@@ -10,6 +10,7 @@ context-isolated reviewer sessions (install them with `npx skills add`).
 | `lh-repo-add` | `skills/lh-repo-add/` | `/lh-repo-add` (register local git checkout) |
 | `lh-issue-create` | `skills/lh-issue-create/` | `/lh-issue-create` |
 | `lh-issue-import` | `skills/lh-issue-import/` | `/lh-issue-import {github-issue-url}` (copy a GitHub issue into LoopHub → link) |
+| `lh-inbox` | `skills/lh-inbox/` | `/lh-inbox` (send, inspect, and update LoopHub Inbox messages) |
 | `lh-plan-to-issues` | `skills/lh-plan-to-issues/` | `/lh-plan-to-issues` |
 | `lh-scheduled-task-create` | `skills/lh-scheduled-task-create/` | `/lh-scheduled-task-create` (create a scheduled task → verify → stop) |
 | `lh-build` | `skills/lh-build/` | `/lh-build {issue id}` (implement → PR → review loop; `lh build` provisions the worktree) |
