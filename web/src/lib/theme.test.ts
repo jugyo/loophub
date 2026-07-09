@@ -1,31 +1,18 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyTheme,
   getStoredTheme,
+  getThemeDefinition,
   resolveInitialTheme,
   setTheme,
+  THEME_APPEARANCE_STORAGE_KEY,
   THEME_STORAGE_KEY,
+  THEME_TOKEN_KEYS,
+  THEMES,
 } from "./theme";
 
 type Hsl = [number, number, number];
 type Rgb = [number, number, number];
-
-function parseThemeTokens(selector: ":root" | ".dark"): Record<string, string> {
-  const css = readFileSync(join(process.cwd(), "src/index.css"), "utf8");
-  const match = css.match(
-    new RegExp(`${selector.replace(".", "\\.")} \\{([\\s\\S]*?)\\n  \\}`),
-  );
-  if (!match) throw new Error(`Missing ${selector} theme tokens`);
-
-  return Object.fromEntries(
-    [...match[1].matchAll(/--([a-z-]+):\s*([^;]+);/g)].map(([, key, value]) => [
-      key,
-      value.trim(),
-    ]),
-  );
-}
 
 function resolveToken(tokens: Record<string, string>, key: string): string {
   const value = tokens[key];
@@ -103,11 +90,21 @@ function mockSystemTheme(prefersLight: boolean) {
 
 beforeEach(() => {
   localStorage.clear();
-  document.documentElement.classList.remove("dark");
+  document.documentElement.removeAttribute("class");
+  document.documentElement.removeAttribute("data-theme");
+  document.documentElement.removeAttribute("style");
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("THEMES", () => {
+  it("offers eight built-in themes with LoopHub labels for the defaults", () => {
+    expect(THEMES).toHaveLength(8);
+    expect(getThemeDefinition("light").label).toBe("LoopHub (Light)");
+    expect(getThemeDefinition("dark").label).toBe("LoopHub (Dark)");
+  });
 });
 
 describe("getStoredTheme", () => {
@@ -118,6 +115,11 @@ describe("getStoredTheme", () => {
   it("returns the stored value when valid", () => {
     localStorage.setItem(THEME_STORAGE_KEY, "light");
     expect(getStoredTheme()).toBe("light");
+  });
+
+  it("returns newly added theme ids when valid", () => {
+    localStorage.setItem(THEME_STORAGE_KEY, "forest");
+    expect(getStoredTheme()).toBe("forest");
   });
 
   it("ignores invalid stored values", () => {
@@ -162,12 +164,46 @@ describe("applyTheme", () => {
   it("adds the dark class for dark", () => {
     applyTheme("dark");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.classList.contains("theme-dark")).toBe(
+      true,
+    );
+    expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
   it("removes the dark class for light", () => {
     document.documentElement.classList.add("dark");
     applyTheme("light");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(document.documentElement.classList.contains("theme-light")).toBe(
+      true,
+    );
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  it("applies one theme class at a time", () => {
+    applyTheme("midnight");
+    applyTheme("solarized");
+
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(document.documentElement.classList.contains("theme-solarized")).toBe(
+      true,
+    );
+    expect(document.documentElement.classList.contains("theme-midnight")).toBe(
+      false,
+    );
+    expect(document.documentElement.dataset.theme).toBe("solarized");
+  });
+
+  it("applies the selected theme tokens as inline css variables", () => {
+    applyTheme("forest");
+    const tokens = getThemeDefinition("forest").tokens;
+
+    expect(
+      document.documentElement.style.getPropertyValue("--background"),
+    ).toBe(tokens.background);
+    expect(document.documentElement.style.getPropertyValue("--primary")).toBe(
+      tokens.primary,
+    );
   });
 });
 
@@ -175,11 +211,23 @@ describe("setTheme", () => {
   it("persists and applies the theme", () => {
     setTheme("light");
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+    expect(localStorage.getItem(THEME_APPEARANCE_STORAGE_KEY)).toBe("light");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
 
     setTheme("dark");
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    expect(localStorage.getItem(THEME_APPEARANCE_STORAGE_KEY)).toBe("dark");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
+  });
+
+  it("persists and applies a non-default theme", () => {
+    setTheme("midnight");
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("midnight");
+    expect(localStorage.getItem(THEME_APPEARANCE_STORAGE_KEY)).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.classList.contains("theme-midnight")).toBe(
+      true,
+    );
   });
 
   it("still applies the theme when persistence throws", () => {
@@ -193,8 +241,16 @@ describe("setTheme", () => {
 });
 
 describe("theme contrast tokens", () => {
+  it("defines a complete runtime token set for every theme", () => {
+    for (const theme of THEMES) {
+      expect(Object.keys(theme.tokens).sort()).toEqual(
+        [...THEME_TOKEN_KEYS].sort(),
+      );
+    }
+  });
+
   it("keeps dark primary button states readable", () => {
-    const dark = parseThemeTokens(".dark");
+    const dark = getThemeDefinition("dark").tokens;
 
     expectContrast(dark, "primary-foreground", "primary", 4.5);
     expectContrast(dark, "primary-foreground", "primary-hover", 4.5);
@@ -203,7 +259,7 @@ describe("theme contrast tokens", () => {
   });
 
   it("keeps dark supporting text and boundaries visible", () => {
-    const dark = parseThemeTokens(".dark");
+    const dark = getThemeDefinition("dark").tokens;
 
     expectContrast(dark, "foreground", "background", 7);
     expectContrast(dark, "muted-foreground", "background", 4.5);

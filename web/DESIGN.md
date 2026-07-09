@@ -16,10 +16,12 @@ Stack: React + TanStack Router/Query, Tailwind CSS, and a small set of
 
 ## Design tokens
 
-Tokens live as CSS custom properties in [`src/index.css`](./src/index.css) and
-are surfaced to Tailwind through [`tailwind.config.js`](./tailwind.config.js).
-Use the Tailwind utility (`bg-background`, `text-muted-foreground`, …) rather
-than reaching for the raw HSL values.
+Runtime theme tokens live in [`src/lib/theme.ts`](./src/lib/theme.ts), are
+applied as CSS custom properties on `<html>`, and are surfaced to Tailwind
+through [`tailwind.config.js`](./tailwind.config.js). Use the Tailwind utility
+(`bg-background`, `text-muted-foreground`, …) rather than reaching for the raw
+HSL values. [`src/index.css`](./src/index.css) keeps only the first-paint
+LoopHub Light/Dark fallback tokens and shared non-theme styles.
 
 ### Color palette
 
@@ -51,19 +53,26 @@ Outcome badge tones (`merged`, `review-passed`, `review-changes`,
 directly. Active/open work-state tones (`open`, `mergeable`, `working`,
 `agent`) use the primary theme tokens — see [Badge tones](#badge-tones).
 
-### Light / dark theme
+### UI themes
 
-Theming is **class-based** (`darkMode: ["class"]`). The `:root` block holds the
-light values; the `.dark` block overrides them. Switching themes means toggling
-the `dark` class on `<html>` — the tokens cascade automatically, so components
-never branch on theme.
+Theming is **class-based** (`darkMode: ["class"]`). Theme definitions live in
+`src/lib/theme.ts`; each theme has a stable persisted ID, a label, a light/dark
+appearance, and a complete token set. The built-in set currently exposes eight
+choices.
+`light` and `dark` remain valid stored IDs in `localStorage` (`lh_theme`) for
+existing users, but their reader-facing labels are `LoopHub (Light)` and
+`LoopHub (Dark)`. Add a non-default theme by extending `THEMES` in
+`src/lib/theme.ts`; the `Theme` union is derived from that array, and tests
+assert every theme provides all required tokens.
 
-The header **theme toggle** (`components/theme-toggle.tsx`) flips the class via
-`lib/theme.ts`, which persists the choice in `localStorage` (`lh_theme`). On
-first visit the initial theme follows the OS `prefers-color-scheme`; an inline
-guard in `index.html` applies the class before first paint to avoid a flash of
-the wrong theme (FOUC). Keep that inline guard in sync with
-`resolveInitialTheme()`.
+The header **theme selector** (`components/theme-toggle.tsx`) applies themes via
+`lib/theme.ts`, which sets `data-theme`, a `theme-*` class, and the `dark` class
+for dark-appearance themes, then writes the selected theme's token values onto
+`<html>`. Components should not branch on theme. On first visit the initial
+theme follows the OS `prefers-color-scheme`; an inline guard in `index.html`
+applies the persisted theme ID and stored light/dark appearance before first
+paint. When the app module starts, `src/main.tsx` reapplies the selected
+`theme.ts` token set before React renders.
 
 ### Radius
 

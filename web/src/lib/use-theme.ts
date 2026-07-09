@@ -1,19 +1,34 @@
-// React binding for the theme module. The `dark` class is already on <html>
-// (set by the inline FOUC guard); this hook tracks it as state and flips it.
+// React binding for the theme module. Theme classes are already on <html>
+// (set by the inline FOUC guard); this hook tracks and updates the selection.
 
 import { useCallback, useState } from "react";
-import { resolveInitialTheme, setTheme, type Theme } from "@/lib/theme";
+import {
+  getThemeDefinition,
+  setTheme as persistTheme,
+  resolveInitialTheme,
+  type Theme,
+} from "@/lib/theme";
 
-export function useTheme(): { theme: Theme; toggle: () => void } {
+export function useTheme(): {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+  toggle: () => void;
+} {
   const [theme, setThemeState] = useState<Theme>(resolveInitialTheme);
+
+  const setTheme = useCallback((next: Theme) => {
+    setThemeState(next);
+    persistTheme(next);
+  }, []);
 
   const toggle = useCallback(() => {
     setThemeState((prev) => {
-      const next: Theme = prev === "dark" ? "light" : "dark";
-      setTheme(next);
+      const next: Theme =
+        getThemeDefinition(prev).appearance === "dark" ? "light" : "dark";
+      persistTheme(next);
       return next;
     });
   }, []);
 
-  return { theme, toggle };
+  return { theme, setTheme, toggle };
 }

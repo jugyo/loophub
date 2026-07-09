@@ -6,23 +6,47 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>LoopHub</title>
     <!--
-      FOUC guard: set the theme class before first paint. Mirrors
-      resolveInitialTheme() in src/lib/theme.ts — stored choice wins, else the
-      OS preference, else dark. Keep the two in sync.
+      FOUC guard: set theme classes before first paint. Mirrors
+      resolveInitialTheme() / applyTheme() in src/lib/theme.ts — stored choice
+      wins, else the OS preference, else dark. Theme definitions live in
+      src/lib/theme.ts; this guard only trusts a persisted ID plus its
+      persisted light/dark appearance.
     -->
     <script>
       (() => {
-        let t;
+        const themeKey = "lh_theme";
+        const appearanceKey = "lh_theme_appearance";
+        const safeThemeId = (value) =>
+          /^[a-z0-9-]+$/.test(value || "") ? value : null;
+        const systemTheme = () =>
+          window.matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark";
+        let t = "dark";
+        let appearance = "dark";
         try {
-          t = localStorage.getItem("lh_theme");
-          if (t !== "light" && t !== "dark") {
-            t = window.matchMedia("(prefers-color-scheme: light)").matches
-              ? "light"
-              : "dark";
+          t = safeThemeId(localStorage.getItem(themeKey));
+          appearance = localStorage.getItem(appearanceKey);
+
+          if (appearance !== "light" && appearance !== "dark") {
+            if (t === "light" || t === "dark") {
+              appearance = t;
+            } else {
+              t = systemTheme();
+              appearance = t;
+            }
+          } else if (!t) {
+            t = systemTheme();
+            appearance = t;
           }
-          document.documentElement.classList.toggle("dark", t === "dark");
+
+          document.documentElement.classList.add(`theme-${t}`);
+          document.documentElement.classList.toggle("dark", appearance === "dark");
+          document.documentElement.dataset.theme = t;
         } catch {
+          document.documentElement.classList.add("theme-dark");
           document.documentElement.classList.add("dark");
+          document.documentElement.dataset.theme = "dark";
         }
       })();
     </script>

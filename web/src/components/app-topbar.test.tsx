@@ -43,6 +43,7 @@ vi.mock("@/queries/repos", () => ({
 vi.mock("@/lib/use-theme", () => ({
   useTheme: () => ({
     theme: "light",
+    setTheme: vi.fn(),
     toggle: vi.fn(),
   }),
 }));

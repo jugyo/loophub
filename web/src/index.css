@@ -2,10 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-/* LoopHub web theme tokens. Colors are stored as bare HSL channels so Tailwind opacity
-   modifiers keep working through hsl(var(--token) / <alpha-value>). */
+/* First-paint LoopHub theme fallback. Runtime theme tokens live in
+   src/lib/theme.ts; these light/dark defaults cover the page before JS loads.
+   Colors are stored as bare HSL channels so Tailwind opacity modifiers keep
+   working through hsl(var(--token) / <alpha-value>). */
 @layer base {
-  :root {
+  :root,
+  .theme-light {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;

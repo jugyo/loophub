@@ -1,53 +1,73 @@
-// Theme control that switches between light and dark themes. A compact segmented toggle:
-// Sun / Moon icons in a pill, the active theme's side highlighted. With only two themes,
-// selecting the inactive side is just a toggle, so it reuses useTheme().toggle as-is.
+// Theme control for the app shell. Multiple themes use a compact dropdown so
+// the header stays dense while keeping theme selection explicit.
 
-import { Moon, Sun } from "lucide-react";
+import { Check, Moon, Palette, Sun } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { getThemeDefinition, THEMES } from "@/lib/theme";
 import { useTheme } from "@/lib/use-theme";
 import { cn } from "@/lib/utils";
 
 export function ThemeToggle() {
-  const { theme, toggle } = useTheme();
-  const isDark = theme === "dark";
-
-  // Two themes only: picking the side that is not currently active is equivalent to a toggle;
-  // clicking the already-active side is a no-op.
-  const select = (target: "light" | "dark") => {
-    if ((target === "dark") !== isDark) toggle();
-  };
-
-  const item =
-    "inline-flex size-7 items-center justify-center rounded transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
-  const active = "bg-accent text-accent-foreground";
-  const inactive =
-    "text-muted-foreground hover:bg-accent hover:text-accent-foreground";
+  const { theme, setTheme } = useTheme();
+  const activeTheme = getThemeDefinition(theme);
 
   return (
-    <div
-      role="group"
-      aria-label="Theme"
-      className="inline-flex items-center gap-0.5 rounded-md border p-0.5"
-    >
-      <button
-        type="button"
-        onClick={() => select("light")}
-        aria-pressed={!isDark}
-        title="Light theme"
-        aria-label="Light theme"
-        className={cn(item, isDark ? inactive : active)}
-      >
-        <Sun className="size-4" />
-      </button>
-      <button
-        type="button"
-        onClick={() => select("dark")}
-        aria-pressed={isDark}
-        title="Dark theme"
-        aria-label="Dark theme"
-        className={cn(item, isDark ? active : inactive)}
-      >
-        <Moon className="size-4" />
-      </button>
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          aria-label="Theme"
+          title={`Theme: ${activeTheme.label}`}
+          className="border bg-background shadow-sm"
+        >
+          <Palette
+            className="size-4 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <span className="sr-only">Theme</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        {THEMES.map((candidate) => {
+          const selected = candidate.id === theme;
+          const Icon = candidate.appearance === "dark" ? Moon : Sun;
+
+          return (
+            <DropdownMenuItem
+              key={candidate.id}
+              onSelect={() => setTheme(candidate.id)}
+              aria-current={selected ? "true" : undefined}
+              className={cn(
+                "min-h-11 justify-between gap-3",
+                selected && "bg-accent text-accent-foreground",
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Icon className="size-4 shrink-0" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm">
+                    {candidate.label}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {candidate.description}
+                  </span>
+                </span>
+              </span>
+              {selected ? (
+                <Check className="size-4 shrink-0" aria-hidden="true" />
+              ) : null}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
