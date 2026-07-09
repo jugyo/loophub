@@ -517,6 +517,9 @@ export function buildHerdrLaunchPlan(input: {
   // without changing the herdr session name, which stays derived from the repo so every launch
   // for it — worktree-pinned or not — lands in the same herdr session.
   cwd?: string;
+  // Split an existing pane in the selected tab/workspace. Omitted for the tab-oriented launch
+  // flows that create a fresh tab first; PEVR child steps deliberately split the parent run tab.
+  split?: "right" | "down";
 }): HerdrLaunchPlan {
   const sessionName = herdrSessionName(input.repo);
   const agentName = normalizeAgentName(input.label || "LoopHub workflow");
@@ -535,6 +538,7 @@ export function buildHerdrLaunchPlan(input: {
       : input.workspaceId
         ? ["--workspace", input.workspaceId]
         : []),
+    ...(input.split ? ["--split", input.split] : []),
     "--no-focus",
     "--",
     "zsh",
@@ -547,6 +551,45 @@ export function buildHerdrLaunchPlan(input: {
     cwd,
     argv,
   };
+}
+
+export function buildPevrStepHerdrLaunchPlan(input: {
+  repo: TerminalLaunchRepo;
+  runId: number;
+  step: string;
+  sessionId: string;
+  worktree: string;
+  systemPromptPath: string;
+  userPrompt: string;
+  tabId?: string | null;
+  model?: string | null;
+  permissionMode?: "auto";
+}): HerdrLaunchPlan {
+  const env = [
+    `LOOPHUB_SESSION_ID=${shellArg(input.sessionId)}`,
+    `LOOPHUB_PEVR_RUN=${shellArg(String(input.runId))}`,
+    `LOOPHUB_PEVR_STEP=${shellArg(input.step)}`,
+  ].join(" ");
+  const parts = [
+    "claude",
+    "--session-id",
+    shellArg(input.sessionId),
+    ...(input.model?.trim() ? ["--model", shellArg(input.model.trim())] : []),
+    ...(input.permissionMode
+      ? ["--permission-mode", shellArg(input.permissionMode)]
+      : []),
+    "--append-system-prompt-file",
+    shellArg(input.systemPromptPath),
+    shellArg(input.userPrompt),
+  ];
+  return buildHerdrLaunchPlan({
+    repo: input.repo,
+    command: `${env} ${parts.join(" ")}`,
+    label: `pevr ${input.step} #${input.runId}`,
+    tabId: input.tabId,
+    cwd: input.worktree,
+    split: "down",
+  });
 }
 
 // An injected herdr command runner. Both callers of the worktree-launch orchestration below spawn

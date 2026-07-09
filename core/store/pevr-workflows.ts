@@ -161,3 +161,67 @@ export function getPevrRun(id: number): PevrRunRow | null {
     .query(`SELECT * FROM pevr_runs WHERE id = ?`)
     .get(id) as PevrRunRow | null;
 }
+
+export function updatePevrRun(
+  id: number,
+  patch: {
+    status?: string;
+    currentStep?: string;
+    reworkCount?: number;
+  },
+): PevrRunRow | null {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (patch.status !== undefined) {
+    sets.push("status = ?");
+    params.push(patch.status);
+  }
+  if (patch.currentStep !== undefined) {
+    sets.push("current_step = ?");
+    params.push(patch.currentStep);
+  }
+  if (patch.reworkCount !== undefined) {
+    sets.push("rework_count = ?");
+    params.push(patch.reworkCount);
+  }
+  sets.push("updated_at = ?");
+  params.push(now(), id);
+  db.run(`UPDATE pevr_runs SET ${sets.join(", ")} WHERE id = ?`, params);
+  return getPevrRun(id);
+}
+
+export function appendPevrRunStepSession(
+  id: number,
+  step: string,
+  sessionId: string,
+): PevrRunRow | null {
+  const run = getPevrRun(id);
+  if (!run) return null;
+  const parsed = parseStepSessions(run.step_sessions_json);
+  const sessions = parsed[step] ?? [];
+  parsed[step] = sessions.includes(sessionId)
+    ? sessions
+    : [...sessions, sessionId];
+  db.run(
+    `UPDATE pevr_runs SET step_sessions_json = ?, updated_at = ? WHERE id = ?`,
+    [JSON.stringify(parsed), now(), id],
+  );
+  return getPevrRun(id);
+}
+
+function parseStepSessions(value: string): Record<string, string[]> {
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    const out: Record<string, string[]> = {};
+    for (const [step, sessions] of Object.entries(parsed)) {
+      if (!Array.isArray(sessions)) continue;
+      out[step] = sessions.filter((x): x is string => typeof x === "string");
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}

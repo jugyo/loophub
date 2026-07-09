@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { agentModel } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { isClaudeSessionId, RUNTIME_CLAUDE_CODE } from "../../core/resume.ts";
+import { HERDR_ID } from "../../core/terminal/terminal-launch.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   display,
@@ -96,6 +97,13 @@ function workflowIdFlag(): number | undefined {
 }
 
 function parentContract(): string {
+  return contractText("parent");
+}
+
+function contractText(step: string): string {
+  if (!["parent", "plan", "execute", "verify", "reflect"].includes(step)) {
+    fail("step must be one of: plan, execute, verify, reflect");
+  }
   return readFileSync(
     join(
       import.meta.dirname,
@@ -104,7 +112,7 @@ function parentContract(): string {
       "core",
       "pevr",
       "contracts",
-      "parent.md",
+      `${step}.md`,
     ),
     "utf8",
   );
@@ -132,11 +140,20 @@ function assertWorkflowStartRuntime(): void {
 }
 
 function preflightParentLaunch(): void {
-  if (flags.herdr === true && !commandAvailable("herdr")) {
+  if (!commandAvailable("herdr")) {
     fail("PEVR workflow start v1 requires herdr on PATH");
   }
   if (!commandAvailable("claude")) {
     fail("PEVR workflow start v1 requires claude on PATH");
+  }
+}
+
+function preflightStepLaunch(): void {
+  if (!commandAvailable("herdr")) {
+    fail("PEVR workflow launch-step requires herdr on PATH");
+  }
+  if (!commandAvailable("claude")) {
+    fail("PEVR workflow launch-step requires claude on PATH");
   }
 }
 
@@ -168,12 +185,43 @@ function parentClaudeArgs(input: {
   ];
 }
 
+function inheritedHerdrTabId(): string | null {
+  if (flags["tab-id"] !== undefined) {
+    if (!HERDR_ID.test(flags["tab-id"])) fail("--tab-id is invalid");
+    return flags["tab-id"];
+  }
+  for (const value of [
+    process.env.HERDR_TAB_ID,
+    process.env.HERDR_TAB,
+    process.env.HERDR_PANE_TAB_ID,
+  ]) {
+    if (value && HERDR_ID.test(value)) return value;
+  }
+  return null;
+}
+
 function modelFlag(): string {
   if (flags.model !== undefined && typeof flags.model !== "string") {
     fail("--model requires a value");
   }
   const model = typeof flags.model === "string" ? flags.model.trim() : "";
   return model || agentModel("claude-code");
+}
+
+function positiveInt(value: string | undefined, name: string): number {
+  if (!value || !/^[0-9]+$/.test(value) || Number(value) <= 0) {
+    fail(`${name} must be a positive integer`);
+  }
+  return Number(value);
+}
+
+function nonNegativeInt(
+  value: string | undefined,
+  name: string,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^[0-9]+$/.test(value)) fail(`${name} must be a non-negative integer`);
+  return Number(value);
 }
 
 function launchParentHerdr(input: {
@@ -185,6 +233,7 @@ function launchParentHerdr(input: {
 }): void {
   const claudeArgs = parentClaudeArgs(input);
   const command = formatSpawnCommand(claudeArgs, { bin: "claude" });
+  const commandWithEnv = `LOOPHUB_SESSION_ID=${shQuote(input.sessionId)} ${command}`;
   const agentName = `pevr-${input.sessionId.slice(0, 8)}`;
   const launched = spawnSync(
     "herdr",
@@ -197,14 +246,14 @@ function launchParentHerdr(input: {
       "--",
       "zsh",
       "-lc",
-      command,
+      commandWithEnv,
     ],
     { encoding: "utf8", stdio: "inherit" },
   );
   if (launched.error) fail(`failed to launch herdr: ${launched.error.message}`);
   if ((launched.status ?? 0) !== 0) {
     fail(
-      `herdr exited with status ${launched.status}\n  reproduce: cd ${shQuote(input.worktree)} && ${command}`,
+      `herdr exited with status ${launched.status}\n  reproduce: cd ${shQuote(input.worktree)} && ${commandWithEnv}`,
     );
   }
   const attached = spawnSync("herdr", ["agent", "attach", agentName], {
@@ -212,22 +261,6 @@ function launchParentHerdr(input: {
   });
   if (attached.error) fail(`failed to attach herdr: ${attached.error.message}`);
   process.exit(attached.status ?? 0);
-}
-
-function launchParentForeground(input: {
-  worktree: string;
-  sessionId: string;
-  systemPromptPath: string;
-  userPrompt: string;
-  model: string;
-}): void {
-  const claudeArgs = parentClaudeArgs(input);
-  const proc = spawnSync("claude", claudeArgs, {
-    stdio: "inherit",
-    cwd: input.worktree,
-  });
-  if (proc.error) fail(`failed to launch claude: ${proc.error.message}`);
-  process.exit(proc.status ?? 0);
 }
 
 async function startWorkflow(): Promise<void> {
@@ -286,8 +319,105 @@ async function startWorkflow(): Promise<void> {
     userPrompt: result.parent.user_prompt,
     model,
   };
-  if (flags.herdr === true) launchParentHerdr(launchInput);
-  else launchParentForeground(launchInput);
+  launchParentHerdr(launchInput);
+}
+
+async function launchStep(): Promise<void> {
+  const runId = positiveInt(flags.run, "--run");
+  const step = flags.step;
+  if (!step) fail("--step is required");
+  const repo = await resolveRepo();
+  const note =
+    flags.note === "-"
+      ? await readStdin()
+      : typeof flags.note === "string"
+        ? flags.note
+        : undefined;
+  const s = await svc();
+  if (flags["no-launch"] === true) {
+    fail("--no-launch is not supported for workflow launch-step");
+  }
+  if (flags.json === true) {
+    fail("--json is not supported for workflow launch-step");
+  }
+  if (step === "plan" && flags.auto === true) {
+    fail("PEVR plan launch does not support --auto");
+  }
+  preflightStepLaunch();
+  const actorSessionId = await writeSession();
+  const result = await runOp(() =>
+    s.pevrRuns.launchStep(
+      repo,
+      {
+        run: runId,
+        step,
+        note,
+        contract: contractText(step),
+        model: modelFlag(),
+        auto: flags.auto === true,
+        tabId: inheritedHerdrTabId(),
+      },
+      actorSessionId,
+    ),
+  );
+  console.log(`launched PEVR ${result.step} step for run #${result.run.id}`);
+  console.log(`session\t${display(result.session_id)}`);
+  console.log(`worktree\t${display(result.worktree)}`);
+  console.log(`contract\t${display(result.system_prompt_path)}`);
+  for (const file of result.input_files) {
+    console.log(`input\t${display(file.path)}\t${file.description}`);
+  }
+  const confirm = () =>
+    runOp(() =>
+      s.pevrRuns.confirmStepLaunch(
+        repo,
+        {
+          run: result.run.id,
+          step: result.step,
+          sessionId: result.session_id,
+          inputFiles: result.input_files,
+          note,
+        },
+        actorSessionId,
+      ),
+    );
+  const launched = spawnSync(result.herdr.argv[0], result.herdr.argv.slice(1), {
+    encoding: "utf8",
+    stdio: "inherit",
+  });
+  if (launched.error) fail(`failed to launch herdr: ${launched.error.message}`);
+  if (launched.signal) {
+    fail(`herdr terminated by signal ${launched.signal}`);
+  }
+  if (launched.status == null || launched.status !== 0) {
+    fail(`herdr exited with status ${launched.status}`);
+  }
+  await confirm();
+}
+
+async function runUpdate(): Promise<void> {
+  if (rest[0] !== "update") usage();
+  const runId = positiveInt(flags.run, "--run");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).pevrRuns.update(
+      repo,
+      {
+        run: runId,
+        step: flags.step,
+        status: flags.status,
+        reworkCount: nonNegativeInt(flags["rework-count"], "--rework-count"),
+      },
+      await writeSession(),
+    ),
+  );
+  if (flags.json) out(result);
+  else {
+    console.log(`updated PEVR run #${result.run.id}`);
+    console.log(`status\t${display(result.run.status)}`);
+    console.log(`step\t${display(result.run.current_step)}`);
+    console.log(`rework_count\t${result.run.rework_count}`);
+  }
 }
 
 export async function run(): Promise<void> {
@@ -347,5 +477,9 @@ export async function run(): Promise<void> {
     else console.log(`deleted workflow "${name}"`);
   } else if (sub === "start") {
     await startWorkflow();
+  } else if (sub === "launch-step") {
+    await launchStep();
+  } else if (sub === "run") {
+    await runUpdate();
   } else usage();
 }

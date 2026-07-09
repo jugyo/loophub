@@ -77,6 +77,10 @@ export type Flags = {
   workflow?: string;
   "workflow-id"?: string;
   "no-launch"?: boolean;
+  run?: string;
+  note?: string;
+  "rework-count"?: string;
+  "tab-id"?: string;
 };
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
@@ -153,6 +157,10 @@ const { values, positionals } = parseArgs({
     workflow: { type: "string" },
     "workflow-id": { type: "string" },
     "no-launch": { type: "boolean" },
+    run: { type: "string" },
+    note: { type: "string" },
+    "rework-count": { type: "string" },
+    "tab-id": { type: "string" },
   },
 });
 export const flags = values as Flags;

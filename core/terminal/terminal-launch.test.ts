@@ -6,6 +6,7 @@ import { updateAgentAutoModeOnBuild, updateConfig } from "../config.ts";
 import {
   acquireHerdrWorktreeTab,
   buildHerdrLaunchPlan,
+  buildPevrStepHerdrLaunchPlan,
   commandForHerdrLaunch,
   type HerdrCmdRunner,
   herdrAgentFocusArgv,
@@ -315,6 +316,37 @@ describe("herdr terminal launch", () => {
     });
     expect(plan.argv).toContain("--tab");
     expect(plan.argv).not.toContain("--workspace");
+  });
+
+  test("builds PEVR step Herdr split launch argv and ambient env", () => {
+    const plan = buildPevrStepHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      runId: 12,
+      step: "plan",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      worktree: "/repo/worktrees/pr-7",
+      systemPromptPath: "/tmp/run/plan-contract.md",
+      userPrompt: "## Inputs\n- /tmp/run/plan/input/task.md - Task\n",
+      tabId: "w1:t2",
+      model: "sonnet",
+      permissionMode: "auto",
+    });
+
+    expect(plan.cwd).toBe("/repo/worktrees/pr-7");
+    expect(plan.argv).toContain("--split");
+    expect(plan.argv[plan.argv.indexOf("--split") + 1]).toBe("down");
+    expect(plan.argv).toContain("--tab");
+    expect(plan.command).toContain(
+      "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
+    );
+    expect(plan.command).toContain("LOOPHUB_PEVR_RUN='12'");
+    expect(plan.command).toContain("LOOPHUB_PEVR_STEP='plan'");
+    expect(plan.command).toContain(
+      "claude --session-id '11111111-1111-4111-8111-111111111111'",
+    );
+    expect(plan.command).toContain(
+      "--append-system-prompt-file '/tmp/run/plan-contract.md'",
+    );
   });
 
   test("builds Herdr tab create/close argv scoped to the repo session", () => {
