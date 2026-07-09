@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -402,6 +403,88 @@ describe("IssueList", () => {
     expect(screen.getByText("Branch issue")).toBeTruthy();
     expect(screen.getByText("Default branch issue")).toBeTruthy();
     expect(screen.queryByText("branch:null")).toBeNull();
+  });
+
+  it("groups issues by base branch with the default branch first", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "develop" }),
+        "issues/list": () => [
+          issue({
+            number: 1,
+            title: "Feature issue",
+            target_branch: "feature/a",
+          }),
+          issue({ number: 2, title: "Implicit default issue" }),
+          issue({
+            number: 3,
+            title: "Explicit default issue",
+            target_branch: "develop",
+          }),
+          issue({
+            number: 4,
+            title: "Other feature issue",
+            target_branch: "feature/b",
+          }),
+        ],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("Implicit default issue")).toBeTruthy();
+    expect(
+      screen.getAllByRole("heading").map((heading) => heading.textContent),
+    ).toEqual(["develop", "feature/a", "feature/b"]);
+
+    const defaultSection = screen.getByRole("heading", {
+      name: "develop",
+    }).parentElement;
+    expect(defaultSection?.textContent).toContain("Implicit default issue");
+    expect(defaultSection?.textContent).toContain("Explicit default issue");
+
+    const featureSection = screen.getByRole("heading", {
+      name: "feature/a",
+    }).parentElement;
+    expect(featureSection?.textContent).toContain("Feature issue");
+    expect(featureSection?.textContent).toContain("branch:feature/a");
+  });
+
+  it("waits for repo metadata before rendering branch groups", async () => {
+    let resolveRepo: (repo: { default_branch: string }) => void = () => {};
+    const repoPromise = new Promise<{ default_branch: string }>((resolve) => {
+      resolveRepo = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => repoPromise,
+        "issues/list": () => [
+          issue({ number: 1, title: "Implicit default issue" }),
+          issue({
+            number: 2,
+            title: "Feature issue",
+            target_branch: "feature/a",
+          }),
+        ],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("Loading…")).toBeTruthy();
+    expect(screen.queryByText("Implicit default issue")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "main" })).toBeNull();
+
+    await act(async () => {
+      resolveRepo({ default_branch: "develop" });
+    });
+
+    expect(
+      await screen.findByRole("heading", { name: "develop" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Implicit default issue")).toBeTruthy();
   });
 
   it("shows at most 100 issues initially and offers load more when more exist", async () => {

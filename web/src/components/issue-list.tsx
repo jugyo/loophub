@@ -5,6 +5,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Loader2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { Issue } from "@/api/types";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
 import { RepoHerdrCommand } from "@/components/repo-herdr-command";
@@ -18,6 +19,7 @@ import {
   useIssuesList,
   useLabelsList,
 } from "@/queries/issues";
+import { useRepo } from "@/queries/repos";
 
 const STATE_TABS: {
   value: IssueListFilters["state"];
@@ -37,6 +39,39 @@ function parseLabelsParam(labels: string): string[] {
 
 function labelsParamFromList(labels: string[]): string | undefined {
   return labels.length > 0 ? labels.join(",") : undefined;
+}
+
+function groupIssuesByBaseBranch(
+  issues: Issue[],
+  defaultBranch: string,
+): { branch: string; issues: Issue[] }[] {
+  const defaultGroup: { branch: string; issues: Issue[] } = {
+    branch: defaultBranch,
+    issues: [],
+  };
+  const branchGroups = new Map<string, Issue[]>();
+
+  for (const issue of issues) {
+    const branch = issue.target_branch?.trim();
+    if (!branch || branch === defaultBranch) {
+      defaultGroup.issues.push(issue);
+      continue;
+    }
+    const group = branchGroups.get(branch);
+    if (group) {
+      group.push(issue);
+    } else {
+      branchGroups.set(branch, [issue]);
+    }
+  }
+
+  return [
+    defaultGroup,
+    ...Array.from(branchGroups, ([branch, groupedIssues]) => ({
+      branch,
+      issues: groupedIssues,
+    })),
+  ].filter((group) => group.issues.length > 0);
 }
 
 export function IssueList({
@@ -68,11 +103,17 @@ export function IssueList({
   const [draftLabels, setDraftLabels] = useState(labelsParam ?? "");
   const query = useIssuesList(owner, repo, filters);
   const labelsQuery = useLabelsList(owner, repo, labelFilterMode === "select");
+  const repoQuery = useRepo(owner, repo);
   const navigate = useNavigate();
   const visibleIssues = useMemo(() => {
     const pages = query.data?.pages ?? [];
     return pages.flatMap((page) => page.slice(0, ISSUE_LIST_PAGE_SIZE));
   }, [query.data]);
+  const defaultBranch = repoQuery.data?.default_branch ?? "main";
+  const issueGroups = useMemo(
+    () => groupIssuesByBaseBranch(visibleIssues, defaultBranch),
+    [visibleIssues, defaultBranch],
+  );
 
   // The `labels` URL param is the single source of truth for the labels filter,
   // so a label chip elsewhere and the Apply button below agree and the filtered
@@ -236,14 +277,17 @@ export function IssueList({
         <CreateIssueButton repo={`${owner}/${repo}`} />
       </div>
 
-      {query.isLoading ? (
+      {query.isLoading || repoQuery.isLoading ? (
         <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading…
         </div>
-      ) : query.isError ? (
+      ) : query.isError || repoQuery.isError ? (
         <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
           Failed to load.
           {query.error instanceof Error ? ` ${query.error.message}` : null}
+          {repoQuery.error instanceof Error
+            ? ` ${repoQuery.error.message}`
+            : null}
         </div>
       ) : visibleIssues.length === 0 ? (
         <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
@@ -255,18 +299,25 @@ export function IssueList({
         </p>
       ) : (
         <div className="flex flex-col gap-3">
-          <ul className="flex flex-col divide-y rounded-md border">
-            {visibleIssues.map((issue) => (
-              <li key={issue.number}>
-                <IssueRow
-                  owner={owner}
-                  repo={repo}
-                  issue={issue}
-                  labelState={state}
-                />
-              </li>
-            ))}
-          </ul>
+          {issueGroups.map((group) => (
+            <section key={group.branch} className="flex flex-col gap-2">
+              <h2 className="px-1 text-sm font-semibold text-muted-foreground">
+                {group.branch}
+              </h2>
+              <ul className="flex flex-col divide-y rounded-md border">
+                {group.issues.map((issue) => (
+                  <li key={issue.number}>
+                    <IssueRow
+                      owner={owner}
+                      repo={repo}
+                      issue={issue}
+                      labelState={state}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
           {query.hasNextPage ? (
             <div className="flex justify-center">
               <Button
