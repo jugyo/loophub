@@ -320,6 +320,7 @@ describe("RelatedSessions", () => {
           total_tokens: 170,
           cost_usd: null,
           has_unknown_cost: true,
+          context_usage_percent: 72.4,
           by_kind: [
             {
               kind: "dev",
@@ -331,6 +332,7 @@ describe("RelatedSessions", () => {
               total_tokens: 160,
               cost_usd: 0.00061,
               has_unknown_cost: false,
+              context_usage_percent: 72.4,
               subagents: [
                 {
                   session_id: "dev-session",
@@ -345,6 +347,7 @@ describe("RelatedSessions", () => {
                   total_tokens: 30,
                   cost_usd: 0.0002,
                   has_unknown_cost: false,
+                  context_usage_percent: null,
                 },
               ],
             },
@@ -358,6 +361,7 @@ describe("RelatedSessions", () => {
               total_tokens: 10,
               cost_usd: null,
               has_unknown_cost: true,
+              context_usage_percent: null,
             },
           ],
         }}
@@ -366,17 +370,20 @@ describe("RelatedSessions", () => {
 
     expect(container.textContent).toContain("Total tokens170");
     expect(container.textContent).toContain("Total costn/a");
+    expect(container.textContent).toContain("Max context72%");
     expect(container.textContent).toContain(
       "Some session costs are unavailable and counted as n/a.",
     );
     expect(container.textContent).toContain("By category2 categories");
     expect(container.textContent).toContain(
-      "Implementation1 session94%Tokens160Cost$0.0006",
+      "Implementation1 session94%Tokens160Cost$0.0006Context72%",
     );
     expect(container.textContent).toContain(
       "Subagents included in totalSecurity reviewer$0.000230 tokens",
     );
-    expect(container.textContent).toContain("Review1 session6%Tokens10Costn/a");
+    expect(container.textContent).toContain(
+      "Review1 session6%Tokens10Costn/aContextn/a",
+    );
     expect(container.textContent).toContain("$0.0006");
   });
 
@@ -392,6 +399,7 @@ describe("RelatedSessions", () => {
           total_tokens: 0,
           cost_usd: null,
           has_unknown_cost: false,
+          context_usage_percent: null,
           by_kind: [],
         }}
       />,
@@ -402,5 +410,44 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain("No token usage recorded yet.");
     expect(container.textContent).not.toContain("By category");
     expect(container.textContent).not.toContain("Subagents included in total");
+    expect(container.textContent).not.toContain("Context usage is unavailable");
+  });
+
+  it("shows n/a when context usage is unavailable for recorded usage", () => {
+    const { container } = render(
+      <TokenUsageSummary
+        usage={{
+          sessions_with_usage: 1,
+          input_tokens: 10,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+          output_tokens: 2,
+          total_tokens: 12,
+          cost_usd: 0.001,
+          has_unknown_cost: false,
+          context_usage_percent: null,
+          by_kind: [
+            {
+              kind: "dev",
+              sessions_with_usage: 1,
+              input_tokens: 10,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+              output_tokens: 2,
+              total_tokens: 12,
+              cost_usd: 0.001,
+              has_unknown_cost: false,
+              context_usage_percent: null,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(container.textContent).toContain("Max contextn/a");
+    expect(container.textContent).toContain("Contextn/a");
+    expect(container.textContent).toContain(
+      "Context usage is unavailable for these sessions.",
+    );
   });
 });

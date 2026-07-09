@@ -163,7 +163,8 @@ function modelUsageEqualsStored(
       row.cache_creation_input_tokens === usage.cache_creation_input_tokens &&
       row.cache_read_input_tokens === usage.cache_read_input_tokens &&
       row.output_tokens === usage.output_tokens &&
-      row.cost_usd === usage.cost_usd
+      row.cost_usd === usage.cost_usd &&
+      row.context_usage_percent === (usage.context_usage_percent ?? null)
     );
   });
 }

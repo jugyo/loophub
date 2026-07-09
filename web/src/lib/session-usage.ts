@@ -57,6 +57,13 @@ export function usageTotal(usage: SessionUsage[] | undefined): SessionUsage {
         total.cache_read_input_tokens + row.cache_read_input_tokens,
       output_tokens: total.output_tokens + row.output_tokens,
       cost_usd: null,
+      context_usage_percent:
+        row.context_usage_percent == null
+          ? total.context_usage_percent
+          : Math.max(
+              total.context_usage_percent ?? 0,
+              row.context_usage_percent,
+            ),
       updated_at: total.updated_at,
     }),
     {
@@ -67,6 +74,7 @@ export function usageTotal(usage: SessionUsage[] | undefined): SessionUsage {
       cache_read_input_tokens: 0,
       output_tokens: 0,
       cost_usd: null,
+      context_usage_percent: null,
       updated_at: "",
     },
   );

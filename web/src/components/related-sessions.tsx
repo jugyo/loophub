@@ -211,7 +211,7 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
     <section className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold">Token usage</h2>
       <div className="flex flex-col gap-3 rounded-md border bg-muted/30 p-3 text-sm">
-        <dl className="grid grid-cols-2 gap-2">
+        <dl className="grid grid-cols-3 gap-2">
           <div className="rounded-md border bg-background/60 p-2">
             <dt className="text-xs text-muted-foreground">Total tokens</dt>
             <dd className="mt-1 font-medium tabular-nums">
@@ -222,6 +222,12 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
             <dt className="text-xs text-muted-foreground">Total cost</dt>
             <dd className="mt-1 font-medium tabular-nums">
               {formatCost(usage.cost_usd)}
+            </dd>
+          </div>
+          <div className="rounded-md border bg-background/60 p-2">
+            <dt className="text-xs text-muted-foreground">Max context</dt>
+            <dd className="mt-1 font-medium tabular-nums">
+              {formatContextPercent(usage.context_usage_percent)}
             </dd>
           </div>
         </dl>
@@ -261,7 +267,7 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
                         style={{ width: `${barPercent}%` }}
                       />
                     </div>
-                    <dl className="grid grid-cols-2 gap-2 text-xs">
+                    <dl className="grid grid-cols-3 gap-2 text-xs">
                       <div className="min-w-0">
                         <dt className="text-muted-foreground">Tokens</dt>
                         <dd className="truncate font-medium tabular-nums">
@@ -272,6 +278,12 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
                         <dt className="text-muted-foreground">Cost</dt>
                         <dd className="truncate font-medium tabular-nums">
                           {formatCost(k.cost_usd)}
+                        </dd>
+                      </div>
+                      <div className="min-w-0 text-right">
+                        <dt className="text-muted-foreground">Context</dt>
+                        <dd className="truncate font-medium tabular-nums">
+                          {formatContextPercent(k.context_usage_percent)}
                         </dd>
                       </div>
                     </dl>
@@ -318,6 +330,11 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
             Some session costs are unavailable and counted as n/a.
           </p>
         ) : null}
+        {hasUsage && usage.context_usage_percent == null ? (
+          <p className="border-t pt-2 text-xs text-muted-foreground">
+            Context usage is unavailable for these sessions.
+          </p>
+        ) : null}
       </div>
     </section>
   );
@@ -328,4 +345,11 @@ function formatPercent(value: number): string {
   const percent = value * 100;
   if (percent < 1) return "<1%";
   return `${Math.round(percent)}%`;
+}
+
+function formatContextPercent(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
+  if (value <= 0) return "0%";
+  if (value < 1) return "<1%";
+  return `${Math.round(value)}%`;
 }

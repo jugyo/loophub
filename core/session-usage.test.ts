@@ -129,6 +129,16 @@ test("aggregateUsage computes known model cost and leaves unknown models null", 
       cache_creation_input_tokens: 20,
       cache_read_input_tokens: 300,
       output_tokens: 10,
+      context_usage_percent: 42,
+    },
+    {
+      message_id: "msg_1b",
+      model: "claude-sonnet-4-6-20260601",
+      input_tokens: 1,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 1,
+      context_usage_percent: 55,
     },
     {
       message_id: "msg_2",
@@ -140,8 +150,10 @@ test("aggregateUsage computes known model cost and leaves unknown models null", 
     },
   ]);
 
-  expect(sonnet.cost_usd).toBeCloseTo(0.000615);
+  expect(sonnet.cost_usd).toBeCloseTo(0.000633);
+  expect(sonnet.context_usage_percent).toBe(55);
   expect(unknown.cost_usd).toBeNull();
+  expect(unknown.context_usage_percent).toBeNull();
   expect(calculateCostUsd("future-model", sonnet)).toBeNull();
 });
 
@@ -160,11 +172,15 @@ test("parseCodexRolloutJsonl extracts final cumulative token count", () => {
       payload: {
         type: "token_count",
         info: {
+          model_context_window: 200,
           total_token_usage: {
             input_tokens: 100,
             cached_input_tokens: 40,
             output_tokens: 10,
             reasoning_output_tokens: 5,
+          },
+          last_token_usage: {
+            total_tokens: 80,
           },
         },
       },
@@ -174,11 +190,15 @@ test("parseCodexRolloutJsonl extracts final cumulative token count", () => {
       payload: {
         type: "token_count",
         info: {
+          model_context_window: 200,
           total_token_usage: {
             input_tokens: 120,
             cached_input_tokens: 50,
             output_tokens: 12,
             reasoning_output_tokens: 6,
+          },
+          last_token_usage: {
+            total_tokens: 90,
           },
         },
       },
@@ -195,8 +215,40 @@ test("parseCodexRolloutJsonl extracts final cumulative token count", () => {
     input_tokens: 70,
     cache_read_input_tokens: 50,
     output_tokens: 12,
+    context_usage_percent: 45,
   });
   expect(calculateCostUsd("gpt-5.5", parsed.entries[0])).toBeCloseTo(0.000735);
+});
+
+test("parseCodexRolloutJsonl preserves zero context usage as 0%", () => {
+  const text = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { model: "gpt-5.5" },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          model_context_window: 200,
+          total_token_usage: {
+            input_tokens: 0,
+            cached_input_tokens: 0,
+            output_tokens: 0,
+          },
+          last_token_usage: {
+            total_tokens: 0,
+          },
+        },
+      },
+    }),
+  ].join("\n");
+
+  const parsed = parseCodexRolloutJsonl(text, "rollout");
+  expect(parsed.entries[0]).toMatchObject({
+    context_usage_percent: 0,
+  });
 });
 
 test("priceForModel prices gpt-5.3-codex-spark without breaking the gpt-5.4-mini/gpt-5.4 order", () => {

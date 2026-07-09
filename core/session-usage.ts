@@ -13,11 +13,13 @@ export interface TokenUsage {
 export interface UsageEntry extends TokenUsage {
   message_id: string;
   model: string;
+  context_usage_percent?: number | null;
 }
 
 export interface ModelUsage extends TokenUsage {
   model: string;
   cost_usd: number | null;
+  context_usage_percent?: number | null;
 }
 
 export interface SubagentUsage extends ModelUsage {
@@ -200,6 +202,18 @@ function tokenCount(value: unknown): number {
     : 0;
 }
 
+function positiveNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function nonNegativeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
+}
+
 export function parseClaudeUsageJsonl(text: string): UsageEntry[] {
   const entries: UsageEntry[] = [];
   const seen = new Set<string>();
@@ -359,6 +373,8 @@ export function parseCodexRolloutJsonl(
   let cwd: string | null = null;
   let model: string | null = null;
   let usage: TokenUsage | null = null;
+  let contextUsagePercent: number | null = null;
+  let modelContextWindow: number | null = null;
   let startedAtMs: number | null = null;
   let threadId: string | null = null;
   let parentThreadId: string | null = null;
@@ -391,8 +407,29 @@ export function parseCodexRolloutJsonl(
       continue;
     }
 
+    if (type === "task_started") {
+      modelContextWindow =
+        positiveNumber(payload.model_context_window) ?? modelContextWindow;
+      continue;
+    }
+
     if (type !== "token_count") continue;
     const info = objectValue(payload.info) ?? objectValue(row.info);
+    modelContextWindow =
+      positiveNumber(info?.model_context_window) ??
+      positiveNumber(payload.model_context_window) ??
+      modelContextWindow;
+    const lastUsage =
+      objectValue(info?.last_token_usage) ??
+      objectValue(payload.last_token_usage) ??
+      objectValue(row.last_token_usage);
+    const lastTotalTokens = nonNegativeNumber(lastUsage?.total_tokens);
+    if (modelContextWindow != null && lastTotalTokens != null) {
+      contextUsagePercent = Math.max(
+        contextUsagePercent ?? 0,
+        (lastTotalTokens / modelContextWindow) * 100,
+      );
+    }
     const total =
       objectValue(info?.total_token_usage) ??
       objectValue(payload.total_token_usage) ??
@@ -428,6 +465,7 @@ export function parseCodexRolloutJsonl(
       {
         message_id: messageId,
         model: model ?? "codex",
+        context_usage_percent: contextUsagePercent,
         ...usage,
       },
     ],
@@ -447,16 +485,30 @@ export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
 
 export function aggregateUsage(entries: UsageEntry[]): ModelUsage[] {
   const byModel = new Map<string, TokenUsage>();
+  const contextByModel = new Map<string, number>();
   for (const entry of entries) {
     byModel.set(
       entry.model,
       addUsage(byModel.get(entry.model) ?? ZERO_USAGE, entry),
     );
+    if (
+      typeof entry.context_usage_percent === "number" &&
+      Number.isFinite(entry.context_usage_percent)
+    ) {
+      contextByModel.set(
+        entry.model,
+        Math.max(
+          contextByModel.get(entry.model) ?? 0,
+          entry.context_usage_percent,
+        ),
+      );
+    }
   }
   return [...byModel.entries()].map(([model, usage]) => ({
     model,
     ...usage,
     cost_usd: calculateCostUsd(model, usage),
+    context_usage_percent: contextByModel.get(model) ?? null,
   }));
 }
 

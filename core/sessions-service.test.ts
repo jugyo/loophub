@@ -48,6 +48,8 @@ function codexRollout(
     startedAt?: string;
     id?: string;
     parentThreadId?: string;
+    modelContextWindow?: number;
+    lastTokenUsage?: Record<string, number>;
   } = {},
 ): string {
   const payload: Record<string, unknown> = {
@@ -57,6 +59,10 @@ function codexRollout(
   };
   if (opts.id) payload.id = opts.id;
   if (opts.parentThreadId) payload.parent_thread_id = opts.parentThreadId;
+  const tokenInfo: Record<string, unknown> = { total_token_usage: usage };
+  if (opts.modelContextWindow)
+    tokenInfo.model_context_window = opts.modelContextWindow;
+  if (opts.lastTokenUsage) tokenInfo.last_token_usage = opts.lastTokenUsage;
   return [
     JSON.stringify({
       type: "session_meta",
@@ -66,7 +72,7 @@ function codexRollout(
       type: "event_msg",
       payload: {
         type: "token_count",
-        info: { total_token_usage: usage },
+        info: tokenInfo,
       },
     }),
   ].join("\n");
@@ -1115,7 +1121,12 @@ test("sessions.usageSync preserves Codex worktree usage when the PR primary sess
         cached_input_tokens: 10,
         output_tokens: 4,
       },
-      { startedAt: "2026-07-05T00:00:01.000Z", id: "review-root" },
+      {
+        startedAt: "2026-07-05T00:00:01.000Z",
+        id: "review-root",
+        modelContextWindow: 100,
+        lastTokenUsage: { total_tokens: 73 },
+      },
     ),
   );
 
@@ -1133,6 +1144,7 @@ test("sessions.usageSync preserves Codex worktree usage when the PR primary sess
     input_tokens: 40,
     cache_read_input_tokens: 10,
     output_tokens: 4,
+    context_usage_percent: 73,
   });
   const pull = (await svc.pulls.get("me/proj", opened.number)) as any;
   expect(pull.related_sessions_usage).toMatchObject({
@@ -1141,6 +1153,7 @@ test("sessions.usageSync preserves Codex worktree usage when the PR primary sess
     cache_read_input_tokens: 10,
     output_tokens: 4,
     total_tokens: 54,
+    context_usage_percent: 73,
   });
 
   rmSync(codexSessionsDir, { recursive: true, force: true });
@@ -1232,6 +1245,14 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
 
   svc.sessions.usageSync({ sessionId: devSessionId, projectsDir });
   svc.sessions.usageSync({ sessionId: reviewSessionId, projectsDir });
+  D.db.run(
+    `UPDATE session_usage SET context_usage_percent = ? WHERE session_id = ?`,
+    [42, devSessionId],
+  );
+  D.db.run(
+    `UPDATE session_usage SET context_usage_percent = ? WHERE session_id = ?`,
+    [87, reviewSessionId],
+  );
 
   const pull = (await svc.pulls.get("me/proj", opened.number)) as any;
   const dev = pull.related_sessions.find((s: any) => s.id === devSessionId);
@@ -1262,6 +1283,7 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
     total_tokens: 183,
     cost_usd: null,
     has_unknown_cost: true,
+    context_usage_percent: 87,
   });
   expect(pull.related_sessions_usage.by_kind).toMatchObject([
     {
@@ -1269,6 +1291,7 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
       sessions_with_usage: 1,
       total_tokens: 173,
       has_unknown_cost: false,
+      context_usage_percent: 42,
       subagents: [
         {
           session_id: devSessionId,
@@ -1282,6 +1305,7 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
           output_tokens: 3,
           total_tokens: 13,
           has_unknown_cost: false,
+          context_usage_percent: null,
         },
       ],
     },
@@ -1291,6 +1315,7 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
       total_tokens: 10,
       cost_usd: null,
       has_unknown_cost: true,
+      context_usage_percent: 87,
     },
   ]);
 

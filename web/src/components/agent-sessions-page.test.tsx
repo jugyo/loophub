@@ -11,6 +11,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch } from "@/api/rpc-mock";
 import type { AgentSession } from "@/api/types";
+import { usageTotal } from "@/lib/session-usage";
 import {
   AgentSessionsPage,
   formatCost,
@@ -48,6 +49,7 @@ const SESSIONS: AgentSession[] = [
         cache_read_input_tokens: 3000,
         output_tokens: 400,
         cost_usd: 0.0123,
+        context_usage_percent: 20,
         updated_at: "2026-07-04T12:00:00Z",
       },
       {
@@ -58,6 +60,7 @@ const SESSIONS: AgentSession[] = [
         cache_read_input_tokens: 20,
         output_tokens: 30,
         cost_usd: 0.001,
+        context_usage_percent: 35,
         updated_at: "2026-07-04T12:00:00Z",
       },
     ],
@@ -74,6 +77,7 @@ const SESSIONS: AgentSession[] = [
         cache_read_input_tokens: 200,
         output_tokens: 50,
         cost_usd: 0.002,
+        context_usage_percent: null,
         updated_at: "2026-07-04T12:00:00Z",
       },
     ],
@@ -140,6 +144,13 @@ describe("formatCost", () => {
     expect(formatCost(0)).toBe("$0.00");
     expect(formatCost(0.0042)).toBe("$0.0042");
     expect(formatCost(0.0123)).toBe("$0.01");
+  });
+});
+
+describe("usageTotal", () => {
+  it("preserves the max context usage percent", () => {
+    expect(usageTotal(SESSIONS[1].usage).context_usage_percent).toBe(35);
+    expect(usageTotal(undefined).context_usage_percent).toBeNull();
   });
 });
 

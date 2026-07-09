@@ -9,6 +9,7 @@ export interface SessionUsageRow {
   cache_read_input_tokens: number;
   output_tokens: number;
   cost_usd: number | null;
+  context_usage_percent?: number | null;
   updated_at: string;
 }
 
@@ -196,8 +197,8 @@ export function upsertSessionUsage(sessionId: string, usage: ModelUsage) {
   db.run(
     `INSERT INTO session_usage
        (session_id, model, input_tokens, cache_creation_input_tokens,
-        cache_read_input_tokens, output_tokens, cost_usd, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        cache_read_input_tokens, output_tokens, cost_usd, context_usage_percent, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(session_id, model) DO UPDATE SET
        input_tokens = input_tokens + excluded.input_tokens,
        cache_creation_input_tokens =
@@ -206,6 +207,11 @@ export function upsertSessionUsage(sessionId: string, usage: ModelUsage) {
          cache_read_input_tokens + excluded.cache_read_input_tokens,
        output_tokens = output_tokens + excluded.output_tokens,
        cost_usd = excluded.cost_usd,
+       context_usage_percent = CASE
+         WHEN context_usage_percent IS NULL THEN excluded.context_usage_percent
+         WHEN excluded.context_usage_percent IS NULL THEN context_usage_percent
+         ELSE MAX(context_usage_percent, excluded.context_usage_percent)
+       END,
        updated_at = excluded.updated_at`,
     [
       sessionId,
@@ -215,6 +221,7 @@ export function upsertSessionUsage(sessionId: string, usage: ModelUsage) {
       usage.cache_read_input_tokens,
       usage.output_tokens,
       usage.cost_usd,
+      usage.context_usage_percent ?? null,
       t,
     ],
   );

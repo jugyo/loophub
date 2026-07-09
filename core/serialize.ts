@@ -81,6 +81,7 @@ export interface SessionUsageWire {
   cache_read_input_tokens: number;
   output_tokens: number;
   cost_usd: number | null;
+  context_usage_percent: number | null;
   updated_at: string;
 }
 
@@ -362,6 +363,7 @@ export function sessionUsageJSON(row: S.SessionUsageRow): SessionUsageWire {
     cache_read_input_tokens: row.cache_read_input_tokens,
     output_tokens: row.output_tokens,
     cost_usd: row.cost_usd ?? null,
+    context_usage_percent: row.context_usage_percent ?? null,
     updated_at: row.updated_at,
   };
 }
@@ -381,6 +383,7 @@ export function sessionSubagentUsageJSON(
     cache_read_input_tokens: row.cache_read_input_tokens,
     output_tokens: row.output_tokens,
     cost_usd: row.cost_usd ?? null,
+    context_usage_percent: row.context_usage_percent ?? null,
     updated_at: row.updated_at,
   };
 }
@@ -462,6 +465,8 @@ export interface UsageTotalsWire {
   // Null when any included usage row has an unknown model price.
   cost_usd: number | null;
   has_unknown_cost: boolean;
+  // Max observed current-context usage across included sessions/models. Null when unavailable.
+  context_usage_percent: number | null;
 }
 
 export interface RelatedSessionsSubagentUsageWire extends UsageTotalsWire {
@@ -491,6 +496,7 @@ type UsageLikeWire = Pick<
   | "cache_read_input_tokens"
   | "output_tokens"
   | "cost_usd"
+  | "context_usage_percent"
 >;
 
 function sumUsageRows(
@@ -506,6 +512,7 @@ function sumUsageRows(
     total_tokens: 0,
     cost_usd: null as number | null,
     has_unknown_cost: false,
+    context_usage_percent: null as number | null,
   };
   let knownCost = 0;
   for (const row of rows) {
@@ -520,6 +527,15 @@ function sumUsageRows(
       row.output_tokens;
     if (row.cost_usd == null) out.has_unknown_cost = true;
     else knownCost += row.cost_usd;
+    if (
+      typeof row.context_usage_percent === "number" &&
+      Number.isFinite(row.context_usage_percent)
+    ) {
+      out.context_usage_percent = Math.max(
+        out.context_usage_percent ?? 0,
+        row.context_usage_percent,
+      );
+    }
   }
   out.cost_usd = rows.length === 0 || out.has_unknown_cost ? null : knownCost;
   return out;
