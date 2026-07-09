@@ -1,6 +1,7 @@
 import { pulls } from "./pulls.ts";
 import {
   actorFor,
+  assertExistingLocalBranch,
   ensureWritable,
   issueOr404,
   repoOr404,
@@ -48,7 +49,7 @@ export const dev = {
   // distinct PR rows, each correctly attributed to its own creating session.
   async openPr(
     name: string,
-    input: { issue: number; head?: string; base: string; body?: string },
+    input: { issue: number; head?: string; base?: string; body?: string },
     sessionId?: string | null,
     opts: { attributeSession?: boolean } = {},
   ): Promise<{ created: boolean; number: number }> {
@@ -72,6 +73,10 @@ export const dev = {
       }
       return { created: false, number: existing.number };
     }
+    if (input.base == null && issueRow.target_branch) {
+      assertExistingLocalBranch(r.local_path, issueRow.target_branch);
+    }
+    const base = input.base ?? issueRow.target_branch ?? r.default_branch;
     const body = input.body ?? defaultDraftPrBody(input.issue);
     // `lh build` opens the PR at the *start* of work, so it begins as a draft (#413); the agent
     // flips it to ready via `lh pr ready-for-review` once the implementation is done.
@@ -82,7 +87,7 @@ export const dev = {
         body,
         head: input.head,
         headFromNumber: input.head ? undefined : worktreeBranch,
-        base: input.base,
+        base,
         issue: input.issue,
         draft: true,
       },

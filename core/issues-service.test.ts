@@ -30,6 +30,7 @@ beforeAll(async () => {
   writeFileSync(join(repoPath, "a.txt"), "x\n");
   git(["add", "-A"]);
   git(["commit", "-qm", "init"]);
+  git(["branch", "integration/stack"]);
 
   await svc.repos.create({ path: repoPath, name: "me/proj" });
 });
@@ -65,6 +66,44 @@ test("issues.get returns an empty comment_list when there are no comments", () =
   const detail = svc.issues.get("me/proj", issue.number) as any;
   expect(detail.comments).toBe(0);
   expect(detail.comment_list).toEqual([]);
+});
+
+test("issues.create stores and exposes a target branch", () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "branch-targeted",
+    target_branch: "integration/stack",
+  }) as any;
+
+  expect(issue.target_branch).toBe("integration/stack");
+  const detail = svc.issues.get("me/proj", issue.number) as any;
+  expect(detail.target_branch).toBe("integration/stack");
+});
+
+test("issues.create normalizes a blank target branch to null", () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "blank target",
+    target_branch: "   ",
+  }) as any;
+
+  expect(issue.target_branch).toBeNull();
+});
+
+test("issues.create rejects a missing target branch", () => {
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "missing target",
+      target_branch: "missing/stack",
+    }),
+  ).toThrow(/target_branch must name an existing local branch/);
+});
+
+test("issues.create rejects option-like target branches", () => {
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "option target",
+      target_branch: "--output=/tmp/lh-target-branch",
+    }),
+  ).toThrow(/target_branch must be a local branch name/);
 });
 
 test("issues.list defaults to newest-created order and keeps label filters (#751)", async () => {

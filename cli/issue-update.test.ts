@@ -68,6 +68,7 @@ beforeAll(() => {
   writeFileSync(join(repoPath, "a.txt"), "x\n");
   git(["add", "-A"]);
   git(["commit", "-qm", "init"]);
+  git(["branch", "integration/stack"]);
 
   const add = lh(["repo", "add", repoPath, "--name", REPO]);
   if (add.exitCode !== 0) throw new Error(`repo add failed: ${add.stderr}`);
@@ -96,6 +97,24 @@ test("lh issue update edits both title and body", () => {
   const i = viewJSON(n);
   expect(i.title).toBe("new title");
   expect(i.body).toBe("new body");
+});
+
+test("lh issue create accepts a target branch", () => {
+  const { stdout } = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "targeted issue",
+    "--target-branch",
+    "integration/stack",
+  ]);
+  const m = stdout.match(/created #(\d+)/);
+  if (!m) throw new Error(`create failed: ${stdout}`);
+
+  const issue = viewJSON(Number(m[1]));
+  expect(issue.target_branch).toBe("integration/stack");
 });
 
 test("lh issue update --title leaves body untouched", () => {

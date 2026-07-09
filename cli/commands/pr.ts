@@ -57,7 +57,7 @@ export async function run(): Promise<void> {
           title: flags.title ?? "",
           body: flags.body || "",
           head: flags.head ?? "",
-          base: flags.base || "main",
+          ...(flags.base ? { base: flags.base } : {}),
           ...(flags.issue ? { issue: Number(flags.issue) } : {}),
           ...(flags.draft ? { draft: true } : {}),
         },

@@ -2,7 +2,7 @@
 // input (throwing ServiceError with an HTTP-style status), mutates the store, emits
 // events, and returns serialized wire objects. The CLI calls these directly (S5); the
 // JSON-RPC layer (S2) will wrap the same procedures. No HTTP/Request types leak in here.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
@@ -329,6 +329,7 @@ export {
   sessionRuntime,
   sessionUsageJSON,
   spawn,
+  spawnSync,
   sweepPullUpdates,
   tableRowCounts,
   updateAgentAutoModeOnBuild,
@@ -361,6 +362,27 @@ export function repoOr404(name: string): S.Repo {
 
 export function ensureWritable(r: S.Repo): void {
   if (S.isArchived(r)) throw new ServiceError(403, "Repository is archived");
+}
+
+export function assertExistingLocalBranch(
+  repoPath: string,
+  branch: string,
+  label = "target_branch",
+): void {
+  if (branch.startsWith("-") || /[\0\r\n]/.test(branch)) {
+    throw new ServiceError(422, `${label} must be a local branch name`);
+  }
+  const result = spawnSync(
+    "git",
+    ["-C", repoPath, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+    { encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    throw new ServiceError(
+      422,
+      `${label} must name an existing local branch: ${branch}`,
+    );
+  }
 }
 
 export function actorFor(sessionId: string | null | undefined): string {

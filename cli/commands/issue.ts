@@ -122,7 +122,12 @@ export async function run(): Promise<void> {
     const i = await runOp(async () =>
       s.issues.create(
         repo,
-        { title: flags.title ?? "", body: flags.body || "", labels },
+        {
+          title: flags.title ?? "",
+          body: flags.body || "",
+          labels,
+          target_branch: flags["target-branch"],
+        },
         await writeSession(),
       ),
     );

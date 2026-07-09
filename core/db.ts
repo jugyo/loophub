@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS issues (
   state       TEXT NOT NULL DEFAULT 'open',
   title       TEXT NOT NULL,
   body        TEXT NOT NULL DEFAULT '',
+  target_branch TEXT,
   author      TEXT NOT NULL,
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL,
@@ -581,6 +582,7 @@ function columnExists(table: string, column: string): boolean {
 }
 
 tryExec("ALTER TABLE pulls ADD COLUMN head_sha TEXT");
+tryExec("ALTER TABLE issues ADD COLUMN target_branch TEXT");
 tryExec("ALTER TABLE review_comments ADD COLUMN review_id INTEGER");
 tryExec(
   "ALTER TABLE pulls ADD COLUMN linked_issue_id INTEGER REFERENCES issues(id)",

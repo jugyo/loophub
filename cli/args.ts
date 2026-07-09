@@ -25,6 +25,7 @@ export type Flags = {
   // (--archived), since strict:false resolves a value-less declared flag to true.
   archived?: string | boolean;
   "default-branch"?: string;
+  "target-branch"?: string;
   state?: string;
   label?: string;
   title?: string;
@@ -96,6 +97,7 @@ const { values, positionals } = parseArgs({
     name: { type: "string" },
     archived: { type: "string" },
     "default-branch": { type: "string" },
+    "target-branch": { type: "string" },
     state: { type: "string" },
     label: { type: "string" },
     title: { type: "string" },

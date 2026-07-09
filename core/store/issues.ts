@@ -8,6 +8,7 @@ export interface IssueRow {
   state: "open" | "closed";
   title: string;
   body: string;
+  target_branch: string | null;
   author: string;
   created_at: string;
   updated_at: string;
@@ -40,15 +41,26 @@ export function createIssue(
   title: string,
   body: string,
   author: string,
+  targetBranch?: string | null,
 ): IssueRow {
   const number = nextNumber(repoId);
   const t = now();
   return db
     .query(
-      `INSERT INTO issues (repo_id, number, kind, state, title, body, author, created_at, updated_at)
-       VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?) RETURNING *`,
+      `INSERT INTO issues (repo_id, number, kind, state, title, body, target_branch, author, created_at, updated_at)
+       VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(repoId, number, kind, title, body, author, t, t) as IssueRow;
+    .get(
+      repoId,
+      number,
+      kind,
+      title,
+      body,
+      targetBranch ?? null,
+      author,
+      t,
+      t,
+    ) as IssueRow;
 }
 
 export function upsertIssueHerdrPane(input: {

@@ -41,6 +41,7 @@ import {
   removeDevLock,
   resolveDevRuntime,
   validateDomain,
+  validateExistingLocalBranch,
   worktreeBranch,
   worktreePath,
 } from "./dev.ts";
@@ -719,6 +720,26 @@ test("worktreePath rejects repo names that would traverse out of the root", () =
   );
 });
 
+test("validateExistingLocalBranch accepts existing branches and rejects unsafe refs", async () => {
+  const repo = await makeRepo();
+  await git(repo, ["branch", "integration/stack"]);
+
+  await expect(
+    validateExistingLocalBranch(repo, "integration/stack", "PR base ref"),
+  ).resolves.toBeUndefined();
+  await expect(
+    validateExistingLocalBranch(repo, "missing/stack", "PR base ref"),
+  ).rejects.toThrow(/PR base ref must name an existing local branch/);
+  await expect(
+    validateExistingLocalBranch(repo, "--output=/tmp/lh-base", "PR base ref"),
+  ).rejects.toThrow(/PR base ref must be a local branch name/);
+  await expect(
+    validateExistingLocalBranch(repo, "main~0", "PR base ref"),
+  ).rejects.toThrow(/PR base ref must name an existing local branch/);
+
+  rmSync(repo, { recursive: true, force: true });
+});
+
 test("legacy worktree path and branch are deterministic from the issue number (pre-#463)", () => {
   expect(legacyWorktreeBranch(42)).toBe("loophub/issue-42");
   expect(legacyWorktreePath("/root", "me/loophub", 42)).toBe(
@@ -750,11 +771,12 @@ function provision(
   headRef: string | null = null,
   scheme?: "pr" | "legacy-issue",
   allowCreatingConventionBranch?: boolean,
+  defaultBranch = "main",
 ) {
   return provisionWorktree({
     repoPath: repo,
     fullName: "me/proj",
-    defaultBranch: "main",
+    defaultBranch,
     worktreeRoot: root,
     pr,
     scheme,
@@ -833,6 +855,29 @@ test("creates the convention branch fresh when allowCreatingConventionBranch is 
   expect(path).toBe(join(root, "me/proj", "pr-11"));
   const wt = (await worktreeList(repo)).find((w) => w.path.endsWith("pr-11"));
   expect(wt?.branch).toBe("loophub/pr-11");
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("creates a fresh convention branch from the supplied PR base branch", async () => {
+  const repo = await makeRepo();
+  await git(repo, ["checkout", "-q", "-b", "integration/stack"]);
+  writeFileSync(join(repo, "f.txt"), "integration\n");
+  await git(repo, ["commit", "-qam", "integration base"]);
+  await git(repo, ["checkout", "-q", "main"]);
+  const root = tmpRoot();
+
+  const path = await provision(
+    repo,
+    root,
+    12,
+    "loophub/pr-12",
+    undefined,
+    true,
+    "integration/stack",
+  );
+
+  expect(readFileSync(join(path, "f.txt"), "utf8")).toBe("integration\n");
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });

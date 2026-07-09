@@ -510,6 +510,7 @@ export const methods: Record<string, MethodDef> = {
         title: strNonEmpty,
         body: str,
         labels: stringArray,
+        target_branch: strOrNull,
         session_id: sid,
       },
       ["repo", "title"],
@@ -518,7 +519,12 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) =>
       svc.issues.create(
         p.repo,
-        { title: p.title, body: p.body, labels: p.labels },
+        {
+          title: p.title,
+          body: p.body,
+          labels: p.labels,
+          target_branch: p.target_branch,
+        },
         p.session_id,
       ),
   },
@@ -787,7 +793,7 @@ export const methods: Record<string, MethodDef> = {
         draft: { type: "boolean" },
         session_id: sid,
       },
-      ["repo", "title", "head", "base"],
+      ["repo", "title", "head"],
     ),
     result: anyObject,
     handler: (p) =>

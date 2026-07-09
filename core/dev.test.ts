@@ -11,6 +11,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
+let D: typeof import("./db.ts");
 let repoPath: string;
 
 function git(args: string[]) {
@@ -27,6 +28,7 @@ function prSession(prNumber: number): string | null {
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
+  D = await import("./db.ts");
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-build-repo-"));
   git(["init", "-q", "-b", "main"]);
@@ -35,10 +37,22 @@ beforeAll(async () => {
   writeFileSync(join(repoPath, "a.txt"), "x\n");
   git(["add", "-A"]);
   git(["commit", "-qm", "init"]);
+  git(["branch", "integration/stack"]);
 
   await svc.repos.create({ path: repoPath, name: "me/proj" });
   svc.sessions.register({ id: "sess-1", agent: "lh-build", session: "sess-1" });
 });
+
+function poisonTargetBranch(issueNumber: number, targetBranch: string): void {
+  const repo = S.getRepo("me", "proj");
+  if (!repo) throw new Error("repo missing");
+  const issue = S.getIssue(repo.id, issueNumber);
+  if (!issue) throw new Error("issue missing");
+  D.db.run("UPDATE issues SET target_branch = ? WHERE id = ?", [
+    targetBranch,
+    issue.id,
+  ]);
+}
 
 afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
@@ -106,6 +120,185 @@ describe("dev.openPr", () => {
     );
     const pull = (await svc.pulls.get("me/proj", first.number)) as any;
     expect(pull.head.ref).toBe("loophub/issue-custom");
+  });
+
+  test("reuses an existing PR without revalidating a stale target branch", async () => {
+    const issue = svc.issues.create("me/proj", {
+      title: "reuse stale target",
+      target_branch: "integration/stack",
+    });
+    const first = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number, base: "main" },
+      "sess-1",
+    );
+    git(["branch", "-D", "integration/stack"]);
+
+    const second = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number },
+      "sess-1",
+    );
+
+    expect(second).toEqual({ created: false, number: first.number });
+    const pull = (await svc.pulls.get("me/proj", first.number)) as any;
+    expect(pull.base.ref).toBe("main");
+    git(["branch", "integration/stack"]);
+  });
+
+  test("uses the issue target branch as the draft PR base", async () => {
+    const issueA = svc.issues.create("me/proj", {
+      title: "stacked feature A",
+      target_branch: "integration/stack",
+    });
+    const issueB = svc.issues.create("me/proj", {
+      title: "stacked feature B",
+      target_branch: "integration/stack",
+    });
+
+    const prA = await svc.dev.openPr(
+      "me/proj",
+      { issue: issueA.number },
+      "sess-1",
+    );
+    const prB = await svc.dev.openPr(
+      "me/proj",
+      { issue: issueB.number },
+      "sess-1",
+    );
+
+    const pullA = (await svc.pulls.get("me/proj", prA.number)) as any;
+    const pullB = (await svc.pulls.get("me/proj", prB.number)) as any;
+    expect(pullA.base.ref).toBe("integration/stack");
+    expect(pullB.base.ref).toBe("integration/stack");
+  });
+
+  test("falls back to the repo default branch when the issue has no target branch", async () => {
+    const issue = svc.issues.create("me/proj", { title: "default base" });
+
+    const pr = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number },
+      "sess-1",
+    );
+
+    const pull = (await svc.pulls.get("me/proj", pr.number)) as any;
+    expect(pull.base.ref).toBe("main");
+  });
+
+  test("plain pulls.create defaults linked issue PRs to the issue target branch", async () => {
+    const issue = svc.issues.create("me/proj", {
+      title: "direct pr base",
+      target_branch: "integration/stack",
+    });
+
+    const pr = (await svc.pulls.create(
+      "me/proj",
+      {
+        title: "direct impl",
+        head: "main",
+        issue: issue.number,
+      },
+      "sess-1",
+    )) as any;
+
+    expect(pr.base.ref).toBe("integration/stack");
+  });
+
+  test("dev.openPr rejects poisoned target branches when they are used", async () => {
+    const issue = svc.issues.create("me/proj", { title: "poisoned build" });
+    poisonTargetBranch(issue.number, "main~0");
+
+    await expect(
+      svc.dev.openPr("me/proj", { issue: issue.number }, "sess-1"),
+    ).rejects.toThrow(/target_branch must name an existing local branch/);
+  });
+
+  test("dev.openPr explicit base bypasses a stale target branch", async () => {
+    const issue = svc.issues.create("me/proj", {
+      title: "explicit base",
+      target_branch: "integration/stack",
+    });
+    git(["branch", "-D", "integration/stack"]);
+
+    const pr = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number, base: "main" },
+      "sess-1",
+    );
+
+    const pull = (await svc.pulls.get("me/proj", pr.number)) as any;
+    expect(pull.base.ref).toBe("main");
+    git(["branch", "integration/stack"]);
+  });
+
+  test("dev.openPr rejects invalid explicit base refs", async () => {
+    const issue = svc.issues.create("me/proj", {
+      title: "invalid explicit base",
+    });
+
+    await expect(
+      svc.dev.openPr(
+        "me/proj",
+        { issue: issue.number, base: "main~0" },
+        "sess-1",
+      ),
+    ).rejects.toThrow(/base must name an existing local branch/);
+  });
+
+  test("plain pulls.create rejects poisoned target branches when they are used", async () => {
+    const issue = svc.issues.create("me/proj", { title: "poisoned direct" });
+    poisonTargetBranch(issue.number, "main~0");
+
+    await expect(
+      svc.pulls.create(
+        "me/proj",
+        {
+          title: "direct impl",
+          head: "main",
+          issue: issue.number,
+        },
+        "sess-1",
+      ),
+    ).rejects.toThrow(/target_branch must name an existing local branch/);
+  });
+
+  test("plain pulls.create rejects invalid explicit base refs", async () => {
+    await expect(
+      svc.pulls.create(
+        "me/proj",
+        {
+          title: "bad explicit base",
+          head: "main",
+          base: "--help",
+        },
+        "sess-1",
+      ),
+    ).rejects.toThrow(/base must be a local branch name/);
+
+    await expect(
+      svc.pulls.create(
+        "me/proj",
+        {
+          title: "revision explicit base",
+          head: "main",
+          base: "main~0",
+        },
+        "sess-1",
+      ),
+    ).rejects.toThrow(/base must name an existing local branch/);
+
+    await expect(
+      svc.pulls.create(
+        "me/proj",
+        {
+          title: "control explicit base",
+          head: "main",
+          base: "main\nnext",
+        },
+        "sess-1",
+      ),
+    ).rejects.toThrow(/base must be a local branch name/);
   });
 
   test("attributes the session to the PR row and re-attaches on re-run", async () => {

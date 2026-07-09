@@ -1,6 +1,7 @@
 import type { GithubIssueDeps } from "./shared.ts";
 import {
   actorFor,
+  assertExistingLocalBranch,
   clampPerPage,
   commentJSON,
   DEFAULT_LIST_PER_PAGE,
@@ -91,19 +92,27 @@ export const issues = {
 
   create(
     name: string,
-    input: { title: string; body?: string; labels?: string[] },
+    input: {
+      title: string;
+      body?: string;
+      labels?: string[];
+      target_branch?: string | null;
+    },
     sessionId?: string | null,
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
     if (!input.title) throw new ServiceError(422, "title is required");
     const actor = actorFor(sessionId);
+    const targetBranch = input.target_branch?.trim() || null;
+    if (targetBranch) assertExistingLocalBranch(r.local_path, targetBranch);
     const issue = S.createIssue(
       r.id,
       "issue",
       input.title,
       input.body ?? "",
       actor,
+      targetBranch,
     );
     if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
     const launchId = process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];

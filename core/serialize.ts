@@ -189,6 +189,7 @@ export interface IssueWire {
   state: "open" | "closed";
   title: string;
   body: string;
+  target_branch: string | null;
   user: UserWire;
   labels: LabelWire[];
   comments: number;
@@ -1055,6 +1056,7 @@ export function issueJSON(row: S.IssueRow, repo?: S.Repo): IssueWire {
     state: row.state,
     title: row.title,
     body: row.body,
+    target_branch: row.target_branch ?? null,
     user: { login: row.author },
     labels: S.issueLabels(row.id).map(labelJSON),
     comments: S.countComments(row.id),

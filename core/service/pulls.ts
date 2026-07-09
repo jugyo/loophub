@@ -2,6 +2,7 @@ import type { GithubDeps, GithubPrStatusDeps } from "./shared.ts";
 import {
   actorFor,
   agentSessionJSON,
+  assertExistingLocalBranch,
   clampPerPage,
   commitLog,
   commitsAhead,
@@ -117,7 +118,7 @@ export const pulls = {
       // required.
       head?: string;
       headFromNumber?: (prNumber: number) => string;
-      base: string;
+      base?: string;
       issue?: number;
       draft?: boolean;
     },
@@ -125,8 +126,8 @@ export const pulls = {
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
-    const { title, body = "", base, issue, draft = false } = input;
-    if (!title || (!input.head && !input.headFromNumber) || !base)
+    const { title, body = "", issue, draft = false } = input;
+    if (!title || (!input.head && !input.headFromNumber))
       throw new ServiceError(422, "title, head, base are required");
     const actor = actorFor(sessionId);
     // Soft "one open PR per linked issue" guard: refuse a second open PR for an issue that already
@@ -134,6 +135,17 @@ export const pulls = {
     // can be relaxed later to allow multiple proposal PRs per issue.
     const linkedIssueId = resolveLinkedIssueId(r, body, issue);
     const linkedNumber = issue ?? parseClosingIssueNumber(body);
+    const linkedIssue =
+      linkedIssueId != null ? S.getIssueById(linkedIssueId) : null;
+    const base = input.base ?? linkedIssue?.target_branch ?? r.default_branch;
+    if (!base) throw new ServiceError(422, "title, head, base are required");
+    assertExistingLocalBranch(
+      r.local_path,
+      base,
+      input.base == null && linkedIssue?.target_branch
+        ? "target_branch"
+        : "base",
+    );
     // Create the issue row first so a PR-number-derived head (headFromNumber) can be computed
     // from its assigned number; a plain string head is unaffected by this reordering. The head
     // branch itself need not exist yet in git — revParse resolves a null sha for a missing ref

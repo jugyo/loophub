@@ -94,6 +94,7 @@ beforeAll(() => {
   git(["add", "-A"]);
   git(["commit", "-qm", "feature work"]);
   git(["checkout", "-q", "main"]);
+  git(["branch", "integration/stack"]);
 
   const add = lh(["repo", "add", repoPath, "--name", REPO]);
   if (add.exitCode !== 0) throw new Error(`repo add failed: ${add.stderr}`);
@@ -122,6 +123,39 @@ test("lh pr update edits both title and body", () => {
   const p = viewJSON(n);
   expect(p.title).toBe("new title");
   expect(p.body).toBe("new body");
+});
+
+test("lh pr create defaults linked issue PRs to the issue target branch", () => {
+  const { stdout: issueOut } = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "targeted issue",
+    "--target-branch",
+    "integration/stack",
+  ]);
+  const issueMatch = issueOut.match(/created #(\d+)/);
+  if (!issueMatch) throw new Error(`issue create failed: ${issueOut}`);
+
+  const { stdout, exitCode } = lh([
+    "pr",
+    "create",
+    "--repo",
+    REPO,
+    "--head",
+    "feature",
+    "--title",
+    "targeted pr",
+    "--issue",
+    issueMatch[1],
+  ]);
+
+  expect(exitCode).toBe(0);
+  const prMatch = stdout.match(/created PR #(\d+)/);
+  if (!prMatch) throw new Error(`pr create failed: ${stdout}`);
+  expect(viewJSON(Number(prMatch[1])).base.ref).toBe("integration/stack");
 });
 
 test("lh pr update --title leaves body untouched", () => {

@@ -127,6 +127,7 @@ export interface CreateIssueInput {
   title: string;
   body?: string;
   labels?: string[];
+  target_branch?: string | null;
 }
 
 /** Create an issue, then invalidate the repo's issue lists. */

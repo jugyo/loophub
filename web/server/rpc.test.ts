@@ -36,6 +36,7 @@ beforeAll(async () => {
   writeFileSync(join(repoPath, "a.txt"), "x\n");
   git(["add", "-A"]);
   git(["commit", "-qm", "init"]);
+  git(["branch", "integration/stack"]);
 
   const r: any = await call("repos/create", {
     path: repoPath,
@@ -66,6 +67,33 @@ test("a known method routes to the service and returns a result", async () => {
   expect(created.result.number).toBe(1);
   const got: any = await call("issues/get", { repo: "me/proj", number: 1 });
   expect(got.result.title).toBe("hello");
+});
+
+test("issues/create accepts an explicit null target_branch", async () => {
+  const created: any = await call("issues/create", {
+    repo: "me/proj",
+    title: "null target",
+    target_branch: null,
+  });
+
+  expect(created.result.target_branch).toBeNull();
+});
+
+test("pulls/create can omit base and use a linked issue target branch", async () => {
+  const issue: any = await call("issues/create", {
+    repo: "me/proj",
+    title: "targeted rpc issue",
+    target_branch: "integration/stack",
+  });
+
+  const created: any = await call("pulls/create", {
+    repo: "me/proj",
+    title: "targeted rpc pr",
+    head: "main",
+    issue: issue.result.number,
+  });
+
+  expect(created.result.base.ref).toBe("integration/stack");
 });
 
 test("unknown method -> -32601", async () => {

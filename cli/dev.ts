@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { git } from "../core/git.ts";
 import { isClaudeSessionId } from "../core/resume.ts";
 import { buildCodexSandboxArgs } from "../core/terminal/codex-launch.ts";
 import {
@@ -50,6 +51,25 @@ export function validateDomain(raw: string): string {
 export function validateRepo(repo: string): void {
   if (repo && !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo)) {
     throw new Error(`invalid --repo "${repo}" (expected owner/name)`);
+  }
+}
+
+export async function validateExistingLocalBranch(
+  repoPath: string,
+  branch: string,
+  label = "branch",
+): Promise<void> {
+  if (branch.startsWith("-") || /[\0\r\n]/.test(branch)) {
+    throw new Error(`${label} must be a local branch name`);
+  }
+  const result = await git(repoPath, [
+    "show-ref",
+    "--verify",
+    "--quiet",
+    `refs/heads/${branch}`,
+  ]);
+  if (result.code !== 0) {
+    throw new Error(`${label} must name an existing local branch: ${branch}`);
   }
 }
 

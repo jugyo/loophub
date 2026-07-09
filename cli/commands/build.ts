@@ -13,6 +13,7 @@ import {
   RUNTIME_CODEX,
   resolveWorktreeIdentity,
 } from "../../core/resume.ts";
+import * as Store from "../../core/store.ts";
 import {
   acquireHerdrWorktreeTab,
   buildHerdrLaunchPlan,
@@ -46,6 +47,7 @@ import {
   removeDevLock,
   resolveAllowedDomains,
   resolveDevRuntime,
+  validateExistingLocalBranch,
   validateRepo,
   worktreePath,
 } from "../dev.ts";
@@ -201,20 +203,27 @@ export async function run(): Promise<void> {
     // issue's "Out of scope" section); a second concurrent launch on a brand-new issue can in
     // the worst case create two draft PRs for it.
     try {
-      const res = await s.dev.openPr(
-        repo,
-        { issue: n, base: r.default_branch },
-        sessionId,
-        { attributeSession: false },
-      );
+      const res = await s.dev.openPr(repo, { issue: n }, sessionId, {
+        attributeSession: false,
+      });
       prNumber = res.number;
       prJustOpened = res;
     } catch (e: any) {
       fail(`could not open draft PR: ${e.message}`);
     }
   }
-  const headRef: string = (await runOp(() => s.pulls.get(repo, prNumber))).head
-    .ref;
+  const rawPullIssue = Store.getIssue(r.id, prNumber);
+  const rawPull = rawPullIssue ? Store.getPull(rawPullIssue.id) : null;
+  if (rawPullIssue?.kind !== "pull" || !rawPull) {
+    fail(`pull request #${prNumber} not found`);
+  }
+  const headRef: string = rawPull.head_ref;
+  const baseRef: string = rawPull.base_ref;
+  try {
+    await validateExistingLocalBranch(r.local_path, baseRef, "PR base ref");
+  } catch (e: any) {
+    fail(e.message);
+  }
 
   // The naming scheme for this PR's worktree: the current PR-id convention (#463), or — for a
   // PR whose worktree was already provisioned before this change — the legacy issue-id
@@ -274,7 +283,7 @@ export async function run(): Promise<void> {
     worktree = await provisionWorktree({
       repoPath: r.local_path,
       fullName: r.full_name,
-      defaultBranch: r.default_branch,
+      defaultBranch: baseRef,
       worktreeRoot: worktreeRoot(),
       pr: identity.number,
       scheme: identity.scheme,

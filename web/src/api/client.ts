@@ -507,7 +507,12 @@ export function getIssue(owner: string, repo: string, number: number) {
 export function createIssue(
   owner: string,
   repo: string,
-  input: { title: string; body?: string; labels?: string[] },
+  input: {
+    title: string;
+    body?: string;
+    labels?: string[];
+    target_branch?: string | null;
+  },
   sessionId: string = getSessionId(),
 ) {
   return rpc<Issue>(
