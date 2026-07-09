@@ -6,10 +6,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { listEvents } from "@/api/client";
 import type { LoopEvent } from "@/api/types";
-import {
-  recordInvalidLoopHubDebugEvent,
-  recordLoopHubDebugEvent,
-} from "@/lib/event-debug";
 import { queryKeys, queryKeysForEvent } from "@/lib/event-keys";
 import { getLastEventId, rememberEventId, setLastEventId } from "@/lib/session";
 
@@ -34,25 +30,15 @@ export function applyLoopHubEventData(
     // lh-web wraps each event in a JSON-RPC notification; tolerate a bare event too.
     event = "params" in data ? data.params : (data as LoopEvent);
   } catch {
-    recordInvalidLoopHubDebugEvent(dataText, "invalid JSON");
     return;
   }
-  applyLoopHubEvent(event, queryClient, dataText);
+  applyLoopHubEvent(event, queryClient);
 }
 
-function applyLoopHubEvent(
-  event: LoopEvent,
-  queryClient: QueryClient,
-  rawData?: string,
-): void {
+function applyLoopHubEvent(event: LoopEvent, queryClient: QueryClient): void {
   if (!event || typeof event.id !== "number") {
-    recordInvalidLoopHubDebugEvent(
-      rawData ?? JSON.stringify(event),
-      "missing numeric event id",
-    );
     return;
   }
-  recordLoopHubDebugEvent(event, rawData ?? JSON.stringify(event));
   rememberEventId(event.id);
   for (const queryKey of queryKeysForEvent(event)) {
     void queryClient.invalidateQueries({ queryKey });

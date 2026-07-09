@@ -93,11 +93,6 @@ function renderTopbar(initialPath = "/", onOpenRepoSwitcher = vi.fn()) {
     path: "/archived",
     component: () => null,
   });
-  const eventDebugRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/debug/events",
-    component: () => null,
-  });
   const repoRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/r/$owner/$repo",
@@ -109,7 +104,6 @@ function renderTopbar(initialPath = "/", onOpenRepoSwitcher = vi.fn()) {
       settingsRoute,
       statsRoute,
       archivedRoute,
-      eventDebugRoute,
       repoRoute,
     ]),
     history: createMemoryHistory({ initialEntries: [initialPath] }),
@@ -130,9 +124,7 @@ describe("AppTopbar", () => {
     expect(
       screen.getByRole("link", { name: "Stats" }).getAttribute("href"),
     ).toBe("/stats");
-    expect(
-      screen.getByRole("link", { name: "Events" }).getAttribute("href"),
-    ).toBe("/debug/events");
+    expect(screen.queryByRole("link", { name: "Events" })).toBeNull();
     expect(
       screen.getByRole("link", { name: "Settings" }).getAttribute("href"),
     ).toBe("/settings");

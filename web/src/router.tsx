@@ -1,6 +1,5 @@
 import { createRouter } from "@tanstack/react-router";
 import { archivedRoute } from "./routes/archived";
-import { eventDebugRoute } from "./routes/event-debug";
 import { inboxRoute } from "./routes/inbox";
 import { indexRoute } from "./routes/index";
 import { issueDetailRoute } from "./routes/issues";
@@ -22,7 +21,6 @@ import { uiCatalogRoute } from "./routes/ui-catalog";
 const routeTree = rootRoute.addChildren([
   indexRoute,
   archivedRoute,
-  eventDebugRoute,
   inboxRoute,
   repoRoute,
   repoIssuesRoute,

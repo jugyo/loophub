@@ -1,12 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import {
-  Activity,
-  BarChart3,
-  Command,
-  Inbox,
-  Loader2,
-  Settings,
-} from "lucide-react";
+import { BarChart3, Command, Inbox, Loader2, Settings } from "lucide-react";
 import { useMemo } from "react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -91,9 +84,6 @@ export function AppTopbar({
         </TopbarLink>
         <TopbarLink to="/stats" label="Stats">
           <BarChart3 className="size-4" />
-        </TopbarLink>
-        <TopbarLink to="/debug/events" label="Events">
-          <Activity className="size-4" />
         </TopbarLink>
         <TopbarLink to="/settings" label="Settings">
           <Settings className="size-4" />

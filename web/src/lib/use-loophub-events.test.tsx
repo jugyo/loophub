@@ -3,10 +3,6 @@ import { cleanup, render } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LoopEvent } from "@/api/types";
-import {
-  getEventDebugEntriesForTest,
-  resetEventDebugEntriesForTest,
-} from "@/lib/event-debug";
 import { useLoopHubEvents } from "./use-loophub-events";
 
 function ev(id: number, type = "issue.updated"): LoopEvent {
@@ -53,7 +49,6 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();
-  resetEventDebugEntriesForTest();
 });
 
 describe("useLoopHubEvents", () => {
@@ -89,14 +84,6 @@ describe("useLoopHubEvents", () => {
       }
     });
     expect(localStorage.getItem("lh_last_event_id")).toBe("7");
-    expect(getEventDebugEntriesForTest()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          source: "loophub",
-          event: expect.objectContaining({ id: 7, type: "issue.updated" }),
-        }),
-      ]),
-    );
 
     for (const rendered of renders) rendered.unmount();
   });
