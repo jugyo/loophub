@@ -3,13 +3,21 @@
 // events via the issues query key (event-keys.ts).
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Loader2, X } from "lucide-react";
+import { ChevronDown, Loader2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Issue } from "@/api/types";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
 import { RepoHerdrCommand } from "@/components/repo-herdr-command";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
 import { cn } from "@/lib/utils";
 import {
@@ -203,11 +211,11 @@ export function IssueList({
           })}
         </div>
         {labelFilterMode === "select" ? (
-          <div className="flex min-h-9 min-w-64 flex-1 flex-wrap items-center gap-1 rounded-md border bg-background px-2 py-1">
+          <div className="flex min-h-9 min-w-64 flex-1 flex-wrap items-center gap-1">
             {selectedLabels.length > 0 ? (
               <div
                 aria-label="Selected labels"
-                className="flex min-w-0 flex-wrap items-center gap-1"
+                className="flex min-w-0 flex-wrap items-center gap-1 rounded-md border bg-background px-2 py-1"
               >
                 {selectedLabels.map((label) => (
                   <span
@@ -231,21 +239,56 @@ export function IssueList({
                 ))}
               </div>
             ) : null}
-            <select
-              aria-label="Label filter"
-              value=""
-              onChange={(e) => addSelectedLabel(e.target.value)}
-              className="h-7 min-w-32 flex-1 border-0 bg-transparent px-1 text-sm outline-none"
-            >
-              <option value="">
-                {selectedLabels.length > 0 ? "Add label" : "All labels"}
-              </option>
-              {availableLabelOptions.map((label) => (
-                <option key={label.name} value={label.name}>
-                  {label.name}
-                </option>
-              ))}
-            </select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  aria-label="Label filter"
+                  className="min-w-36 justify-between border bg-background px-3 font-normal shadow-sm"
+                  disabled={labelsQuery.isLoading}
+                >
+                  <span className="truncate">
+                    {selectedLabels.length > 0 ? "Add label" : "All labels"}
+                  </span>
+                  <ChevronDown
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="max-h-[min(20rem,calc(100vh-5rem))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 overflow-y-auto"
+              >
+                <DropdownMenuLabel>Filter by label</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {availableLabelOptions.length > 0 ? (
+                  availableLabelOptions.map((label) => (
+                    <DropdownMenuItem
+                      key={label.name}
+                      onSelect={() => addSelectedLabel(label.name)}
+                    >
+                      <span
+                        className={cn(
+                          LABEL_CHIP_BASE_CLASS,
+                          labelColorClass(label.name),
+                          "max-w-48",
+                        )}
+                      >
+                        <span className="truncate">{label.name}</span>
+                      </span>
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <DropdownMenuItem disabled>
+                    {selectedLabels.length > 0
+                      ? "All labels selected"
+                      : "No labels available"}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             {selectedLabels.length > 0 ? (
               <button
                 type="button"

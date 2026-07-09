@@ -213,7 +213,7 @@ describe("IssueList", () => {
     );
   });
 
-  it("renders a dropdown label filter and adds selected labels immediately in select mode", async () => {
+  it("renders a shadcn label picker and adds selected labels immediately in select mode", async () => {
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
@@ -236,14 +236,15 @@ describe("IssueList", () => {
     );
 
     await screen.findByText("No issues.");
-    const select = await screen.findByRole("combobox", {
+    const picker = await screen.findByRole("button", {
       name: "Label filter",
     });
 
     expect(screen.queryByLabelText("Labels filter")).toBeNull();
     expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
 
-    fireEvent.change(select, { target: { value: "bug" } });
+    fireEvent.pointerDown(picker);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "bug" }));
 
     await waitFor(() =>
       expect(
@@ -275,14 +276,15 @@ describe("IssueList", () => {
       "/r/me/proj?labels=bug&state=all",
     );
 
-    const select = await screen.findByRole("combobox", {
+    const picker = await screen.findByRole("button", {
       name: "Label filter",
     });
     expect(screen.getByLabelText("Selected labels").textContent).toContain(
       "bug",
     );
 
-    fireEvent.change(select, { target: { value: "ui" } });
+    fireEvent.pointerDown(picker);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "ui" }));
 
     await waitFor(() =>
       expect(
