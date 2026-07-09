@@ -8,17 +8,13 @@ import {
   Settings,
 } from "lucide-react";
 import { useMemo } from "react";
-import type { AgentCostSummary } from "@/api/types";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import { compareSidebarRepos } from "@/lib/repo-sort";
-import { formatCost } from "@/lib/session-usage";
 import { useCurrentRepo } from "@/lib/use-current-repo";
 import { cn } from "@/lib/utils";
 import { useRepos } from "@/queries/repos";
-import { useAgentCostSummary } from "@/queries/sessions";
 
 export function AppTopbar({
   onOpenRepoSwitcher,
@@ -39,7 +35,7 @@ export function AppTopbar({
     : "Repository";
 
   return (
-    <header className="flex shrink-0 flex-col gap-2 border-b bg-card px-2 py-2 sm:px-4">
+    <header className="flex h-14 shrink-0 items-center border-b bg-card px-2 py-2 sm:px-4">
       <div
         className="flex h-9 w-full items-center gap-2 sm:gap-3"
         role="group"
@@ -104,62 +100,7 @@ export function AppTopbar({
         </TopbarLink>
         <ThemeToggle />
       </div>
-      <div
-        className="hidden min-h-7 w-full items-center justify-end md:flex"
-        role="group"
-        aria-label="Secondary topbar"
-      >
-        <TopbarAgentCosts />
-      </div>
     </header>
-  );
-}
-
-type PeriodKey = "month" | "week" | "day";
-
-const PERIOD_LABELS: Record<PeriodKey, string> = {
-  month: "Month",
-  week: "Week",
-  day: "Today",
-};
-
-function TopbarAgentCosts() {
-  const { data: summaries = [], isLoading, isError } = useAgentCostSummary();
-
-  return (
-    <div
-      className="flex max-w-[34rem] shrink min-w-0 items-center gap-2 rounded-md border bg-background/70 px-2 py-1 text-[11px] leading-tight text-muted-foreground"
-      aria-label="Agent cost summary"
-    >
-      <span className="shrink-0 font-medium text-foreground">Cost</span>
-      {isLoading ? (
-        <span className="tabular-nums">Loading...</span>
-      ) : isError ? (
-        <span className="tabular-nums">n/a</span>
-      ) : (
-        <div className="flex min-w-0 items-center gap-2 overflow-hidden">
-          {summaries.map((summary) => (
-            <AgentCostRow key={summary.agent} summary={summary} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AgentCostRow({ summary }: { summary: AgentCostSummary }) {
-  return (
-    <div className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
-      <span className="font-medium text-foreground">
-        {CODING_AGENT_LABELS[summary.agent]}
-      </span>
-      {(["month", "week", "day"] as const).map((period) => (
-        <span key={period} title={PERIOD_LABELS[period]}>
-          {PERIOD_LABELS[period][0]}{" "}
-          <span className="tabular-nums">{formatCost(summary[period])}</span>
-        </span>
-      ))}
-    </div>
   );
 }
 
