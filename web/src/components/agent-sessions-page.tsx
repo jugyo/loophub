@@ -94,6 +94,11 @@ function updatedTime(session: AgentSession): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+function createdTime(session: AgentSession): number {
+  const ms = Date.parse(session.created_at);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 function zeroCost(): CostTotal {
   return { cost: 0, hasUnknownCost: false };
 }
@@ -207,30 +212,10 @@ function filterSessions(
 ): AgentSession[] {
   const startMs = start.getTime();
   const endMs = end.getTime();
-  return sessions
-    .map((session) => {
-      const usage = (session.usage ?? []).filter((row) => {
-        const updated = Date.parse(row.updated_at);
-        return (
-          Number.isFinite(updated) && updated >= startMs && updated < endMs
-        );
-      });
-      if (usage.length === 0) return null;
-      const subagentUsage = (session.subagent_usage ?? []).filter((row) => {
-        const updated = Date.parse(row.updated_at);
-        return (
-          Number.isFinite(updated) && updated >= startMs && updated < endMs
-        );
-      });
-      return {
-        ...session,
-        usage,
-        ...(subagentUsage.length > 0
-          ? { subagent_usage: subagentUsage }
-          : { subagent_usage: undefined }),
-      };
-    })
-    .filter((session): session is AgentSession => session !== null);
+  return sessions.filter((session) => {
+    const created = createdTime(session);
+    return created >= startMs && created < endMs;
+  });
 }
 
 function groupAgentCosts(sessions: AgentSession[]): AgentCost[] {

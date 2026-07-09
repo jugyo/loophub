@@ -213,11 +213,15 @@ describe("AgentSessionsPage", () => {
     expect(within(rows[1]).getByText("4,660")).toBeTruthy();
     expect(within(rows[1]).getByText("$0.01")).toBeTruthy();
     expect(within(rows[1]).getByText("Security reviewer")).toBeTruthy();
-    expect(within(rows[1]).queryByText("Old reviewer")).toBeNull();
+    expect(within(rows[1]).getByText("Old reviewer")).toBeTruthy();
     expect(
       within(rows[1]).getByText("in 100 · cw 0 · cr 200 · out 50"),
     ).toBeTruthy();
     expect(within(rows[1]).getByText("350 · $0.0020")).toBeTruthy();
+    expect(
+      within(rows[1]).getByText("in 999 · cw 0 · cr 999 · out 999"),
+    ).toBeTruthy();
+    expect(within(rows[1]).getByText("2,997 · $9.00")).toBeTruthy();
     expect(within(rows[1]).getByTitle("2026-07-04T12:00:00Z").textContent).toBe(
       "1h ago",
     );
@@ -356,26 +360,27 @@ describe("AgentSessionsPage", () => {
             output_tokens: 10,
             cost_usd: 0.04,
             context_usage_percent: null,
-            updated_at: "2026-06-20T09:00:00Z",
+            updated_at: "2026-07-06T09:00:00Z",
           },
         ],
       },
     ]);
 
     expect(await screen.findByText("last 1 month cost")).toBeTruthy();
-    expect(screen.getByText("$0.15")).toBeTruthy();
+    expect(screen.getByText("$0.10")).toBeTruthy();
+    expect(screen.getByLabelText("Jun 20: $0.04")).toBeTruthy();
     expect(screen.getByText("Top agent")).toBeTruthy();
     expect(screen.getAllByText("Claude Code").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Codex").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("last-month-claude")).toBeTruthy();
-    expect(screen.getByText("stale-session-fresh-usage")).toBeTruthy();
+    expect(screen.queryByText("stale-session-fresh-usage")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "last 1 week" }));
     expect(screen.getByText("last 1 week cost")).toBeTruthy();
     expect(screen.queryByText("last-month-claude")).toBeNull();
     expect(screen.queryByText("last-week-codex")).toBeNull();
     expect(screen.getByText("week-claude")).toBeTruthy();
-    expect(screen.getByText("stale-session-fresh-usage")).toBeTruthy();
+    expect(screen.queryByText("stale-session-fresh-usage")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Weekly" }));
     fireEvent.click(screen.getByRole("button", { name: "By agent" }));
@@ -399,9 +404,11 @@ describe("AgentSessionsPage", () => {
 
     expect(await screen.findByText("last 1 month cost")).toBeTruthy();
     expect(screen.getAllByText("$0.00").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("no-usage")).toBeTruthy();
+    expect(screen.getByText("1 sessions")).toBeTruthy();
     expect(
-      screen.getAllByText("No sessions in the selected period."),
-    ).toHaveLength(2);
+      screen.queryByText("No sessions in the selected period."),
+    ).toBeNull();
   });
 
   it("shows n/a summaries when usage cost is unknown", async () => {
