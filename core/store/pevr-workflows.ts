@@ -120,17 +120,28 @@ export interface PevrRunInput {
   parentSessionId?: string | null;
 }
 
-export function createPevrRun(input: PevrRunInput): {
+export interface PevrRunRow {
   id: number;
   workflow_id: number | null;
+  repo_id: number;
+  issue_number: number;
+  pr_number: number;
   status: string;
-} {
+  current_step: string;
+  rework_count: number;
+  parent_session_id: string | null;
+  step_sessions_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function createPevrRun(input: PevrRunInput): PevrRunRow {
   const t = now();
   return db
     .query(
       `INSERT INTO pevr_runs
         (workflow_id, repo_id, issue_number, pr_number, status, current_step, parent_session_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, workflow_id, status`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       input.workflowId,
@@ -142,5 +153,11 @@ export function createPevrRun(input: PevrRunInput): {
       input.parentSessionId ?? null,
       t,
       t,
-    ) as { id: number; workflow_id: number | null; status: string };
+    ) as PevrRunRow;
+}
+
+export function getPevrRun(id: number): PevrRunRow | null {
+  return db
+    .query(`SELECT * FROM pevr_runs WHERE id = ?`)
+    .get(id) as PevrRunRow | null;
 }

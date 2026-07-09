@@ -74,6 +74,9 @@ export type Flags = {
   "verify-prompt"?: string;
   "reflect-prompt"?: string;
   step?: string;
+  workflow?: string;
+  "workflow-id"?: string;
+  "no-launch"?: boolean;
 };
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
@@ -147,6 +150,9 @@ const { values, positionals } = parseArgs({
     "verify-prompt": { type: "string" },
     "reflect-prompt": { type: "string" },
     step: { type: "string" },
+    workflow: { type: "string" },
+    "workflow-id": { type: "string" },
+    "no-launch": { type: "boolean" },
   },
 });
 export const flags = values as Flags;
