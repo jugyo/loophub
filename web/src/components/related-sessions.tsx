@@ -13,8 +13,8 @@
 // "no-session" / "unknown-runtime" mean there is no claude session id; every other state has a valid
 // id in `RelatedSession.session`).
 
-import { ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { useId, useState } from "react";
 import type { RelatedSession, RelatedSessionsUsage } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
 import { Badge } from "@/components/ui/badge";
@@ -206,6 +206,9 @@ export function RelatedSessions({
 // computed for pulls (core/serialize.ts pullJSON).
 export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
   const hasUsage = usage.sessions_with_usage > 0;
+  const [showDetails, setShowDetails] = useState(false);
+  const detailsId = useId();
+  const hasCategories = usage.by_kind.length > 0;
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold">Token usage</h2>
@@ -230,69 +233,99 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
             </dd>
           </div>
         </dl>
-        {usage.by_kind.length > 0 ? (
+        {hasCategories ? (
           <div className="border-t pt-3">
-            <h3 className="text-xs font-medium">By category</h3>
-            <ul className="flex flex-col gap-2">
-              {usage.by_kind.map((k) => (
-                <li
-                  key={k.kind}
-                  className="border-t first:border-t-0 pt-2 first:pt-0"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Badge tone={KIND_TONE[k.kind] ?? "unknown"}>
-                      {KIND_LABEL[k.kind] ?? k.kind}
-                    </Badge>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {k.sessions_with_usage} session
-                      {k.sessions_with_usage === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                  <dl className="mt-1 flex flex-col gap-1">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <dt className="text-xs text-muted-foreground">Tokens</dt>
-                      <dd className="shrink-0 font-medium tabular-nums">
-                        {formatTokenCount(k.total_tokens)}
-                      </dd>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-3">
-                      <dt className="text-xs text-muted-foreground">Cost</dt>
-                      <dd className="shrink-0 font-medium tabular-nums">
-                        {formatCost(k.cost_usd)}
-                      </dd>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-3">
-                      <dt className="text-xs text-muted-foreground">Context</dt>
-                      <dd className="shrink-0 font-medium tabular-nums">
-                        {formatContextPercent(k.context_usage_percent)}
-                      </dd>
-                    </div>
-                  </dl>
-                  {k.subagents?.length ? (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      <div>Subagents included in total</div>
-                      <ul className="mt-1 flex flex-col gap-1">
-                        {k.subagents.map((subagent) => (
-                          <li
-                            key={`${subagent.session_id}:${subagent.source_id}`}
-                            className="flex min-w-0 items-baseline gap-1"
-                            title={subagent.source_id}
-                          >
-                            <span className="truncate">
-                              {subagent.label ?? subagent.source_id}:{" "}
-                            </span>
-                            <span className="shrink-0 tabular-nums">
-                              {formatCost(subagent.cost_usd)},{" "}
-                              {formatTokenCount(subagent.total_tokens)} tokens
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              aria-expanded={showDetails}
+              aria-controls={detailsId}
+              onClick={() => setShowDetails((open) => !open)}
+            >
+              <ChevronDown
+                className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+                  showDetails ? "rotate-180" : ""
+                }`}
+                aria-hidden="true"
+              />
+              <span>
+                {showDetails
+                  ? "Hide category details"
+                  : "Show category details"}
+              </span>
+            </button>
+            {showDetails ? (
+              <div id={detailsId} className="mt-3">
+                <h3 className="text-xs font-medium">By category</h3>
+                <ul className="flex flex-col gap-2">
+                  {usage.by_kind.map((k) => (
+                    <li
+                      key={k.kind}
+                      className="border-t first:border-t-0 pt-2 first:pt-0"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Badge tone={KIND_TONE[k.kind] ?? "unknown"}>
+                          {KIND_LABEL[k.kind] ?? k.kind}
+                        </Badge>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {k.sessions_with_usage} session
+                          {k.sessions_with_usage === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <dl className="mt-1 flex flex-col gap-1">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <dt className="text-xs text-muted-foreground">
+                            Tokens
+                          </dt>
+                          <dd className="shrink-0 font-medium tabular-nums">
+                            {formatTokenCount(k.total_tokens)}
+                          </dd>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <dt className="text-xs text-muted-foreground">
+                            Cost
+                          </dt>
+                          <dd className="shrink-0 font-medium tabular-nums">
+                            {formatCost(k.cost_usd)}
+                          </dd>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <dt className="text-xs text-muted-foreground">
+                            Context
+                          </dt>
+                          <dd className="shrink-0 font-medium tabular-nums">
+                            {formatContextPercent(k.context_usage_percent)}
+                          </dd>
+                        </div>
+                      </dl>
+                      {k.subagents?.length ? (
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          <div>Subagents included in total</div>
+                          <ul className="mt-1 flex flex-col gap-1">
+                            {k.subagents.map((subagent) => (
+                              <li
+                                key={`${subagent.session_id}:${subagent.source_id}`}
+                                className="flex min-w-0 items-baseline gap-1"
+                                title={subagent.source_id}
+                              >
+                                <span className="truncate">
+                                  {subagent.label ?? subagent.source_id}:{" "}
+                                </span>
+                                <span className="shrink-0 tabular-nums">
+                                  {formatCost(subagent.cost_usd)},{" "}
+                                  {formatTokenCount(subagent.total_tokens)}{" "}
+                                  tokens
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">

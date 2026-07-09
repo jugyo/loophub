@@ -308,8 +308,8 @@ describe("RelatedSessions", () => {
     expect(li.textContent).not.toContain("Not resumable: not resumable");
   });
 
-  it("shows PR total usage and per-kind cost with unknown costs as n/a", () => {
-    const { container } = render(
+  it("keeps PR category usage collapsed until details are opened", () => {
+    const { container, getByRole } = render(
       <TokenUsageSummary
         usage={{
           sessions_with_usage: 2,
@@ -374,6 +374,20 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain(
       "Some session costs are unavailable and counted as n/a.",
     );
+    const detailsButton = getByRole("button", {
+      name: "Show category details",
+    });
+    expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).not.toContain("By category");
+    expect(container.textContent).not.toContain(
+      "Implementation1 sessionTokens160Cost$0.0006Context72%",
+    );
+    expect(container.textContent).not.toContain("Subagents included in total");
+
+    fireEvent.click(detailsButton);
+
+    expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(detailsButton.textContent).toContain("Hide category details");
     expect(container.textContent).toContain("By category");
     expect(container.textContent).toContain(
       "Implementation1 sessionTokens160Cost$0.0006Context72%",
@@ -385,10 +399,19 @@ describe("RelatedSessions", () => {
       "Review1 sessionTokens10Costn/aContextn/a",
     );
     expect(container.textContent).toContain("$0.0006");
+
+    fireEvent.click(detailsButton);
+
+    expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(detailsButton.textContent).toContain("Show category details");
+    expect(container.textContent).not.toContain("By category");
+    expect(container.textContent).not.toContain(
+      "Implementation1 sessionTokens160Cost$0.0006Context72%",
+    );
   });
 
   it("shows an empty token usage state without noisy categories", () => {
-    const { container } = render(
+    const { container, queryByRole } = render(
       <TokenUsageSummary
         usage={{
           sessions_with_usage: 0,
@@ -409,12 +432,13 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain("Total costn/a");
     expect(container.textContent).toContain("No token usage recorded yet.");
     expect(container.textContent).not.toContain("By category");
+    expect(queryByRole("button", { name: "Show category details" })).toBeNull();
     expect(container.textContent).not.toContain("Subagents included in total");
     expect(container.textContent).not.toContain("Context usage is unavailable");
   });
 
   it("shows n/a when context usage is unavailable for recorded usage", () => {
-    const { container } = render(
+    const { container, getByRole } = render(
       <TokenUsageSummary
         usage={{
           sessions_with_usage: 1,
@@ -445,6 +469,8 @@ describe("RelatedSessions", () => {
     );
 
     expect(container.textContent).toContain("Max contextn/a");
+    expect(container.textContent).not.toContain("Contextn/a");
+    fireEvent.click(getByRole("button", { name: "Show category details" }));
     expect(container.textContent).toContain("Contextn/a");
     expect(container.textContent).toContain(
       "Context usage is unavailable for these sessions.",
