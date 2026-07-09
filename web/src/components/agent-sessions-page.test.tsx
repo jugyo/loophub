@@ -7,7 +7,13 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch } from "@/api/rpc-mock";
 import type { AgentSession } from "@/api/types";
@@ -79,6 +85,21 @@ const SESSIONS: AgentSession[] = [
         cost_usd: 0.002,
         context_usage_percent: null,
         updated_at: "2026-07-04T12:00:00Z",
+      },
+      {
+        session_id: "s-new",
+        source_id: "old-subagent-thread",
+        parent_source_id: "root-thread",
+        label: "Old reviewer",
+        kind: "codex-child-rollout",
+        model: "gpt-5.5",
+        input_tokens: 999,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 999,
+        output_tokens: 999,
+        cost_usd: 9,
+        context_usage_percent: null,
+        updated_at: "2026-05-04T12:00:00Z",
       },
     ],
     linked_targets: [
@@ -160,13 +181,13 @@ describe("AgentSessionsPage", () => {
 
     const root = (
       await screen.findByRole("heading", { name: "Agent sessions" })
-    ).closest("div");
+    ).closest("[class*='w-full']");
     expect(root?.className).toContain("w-full");
     expect(root?.className).not.toContain("max-w-content");
     expect(root?.className).not.toContain("mx-auto");
   });
 
-  it("shows sessions by updated time with usage totals, cost, and linked work", async () => {
+  it("shows sessions in the selected period by cost with usage totals and linked work", async () => {
     vi.spyOn(Date, "now").mockReturnValue(
       new Date("2026-07-04T13:00:00Z").getTime(),
     );
@@ -175,6 +196,9 @@ describe("AgentSessionsPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Agent sessions" }),
     ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "last 1 month" })).toBeTruthy();
+    expect(screen.getByLabelText("Total cost trend")).toBeTruthy();
+    expect(screen.getByText("Sorted by cost desc")).toBeTruthy();
     expect(
       screen.getByRole("columnheader", { name: "Session id" }),
     ).toBeTruthy();
@@ -189,6 +213,7 @@ describe("AgentSessionsPage", () => {
     expect(within(rows[1]).getByText("4,660")).toBeTruthy();
     expect(within(rows[1]).getByText("$0.01")).toBeTruthy();
     expect(within(rows[1]).getByText("Security reviewer")).toBeTruthy();
+    expect(within(rows[1]).queryByText("Old reviewer")).toBeNull();
     expect(
       within(rows[1]).getByText("in 100 · cw 0 · cr 200 · out 50"),
     ).toBeTruthy();
@@ -202,18 +227,10 @@ describe("AgentSessionsPage", () => {
     const pull = within(rows[1]).getByRole("link", { name: "PR #735" });
     expect(pull.getAttribute("href")).toBe("/r/ju%20gyo/loop%23hub/pulls/735");
 
-    expect(within(rows[2]).getAllByText("reviewer")).toHaveLength(2);
-    expect(within(rows[2]).getAllByRole("cell")[1].textContent).toBe("");
-    expect(within(rows[2]).getAllByText("n/a").length).toBeGreaterThanOrEqual(
-      3,
-    );
-    expect(within(rows[2]).getByTitle("2026-07-03T12:00:00Z").textContent).toBe(
-      "1d ago",
-    );
-    expect(within(rows[2]).queryByText("0")).toBeNull();
+    expect(screen.queryByText("s-old")).toBeNull();
   });
 
-  it("shows all-time and period cost summaries with runtime breakdowns", async () => {
+  it("filters by preset range and switches granularity and chart mode", async () => {
     vi.spyOn(Date, "now").mockReturnValue(
       new Date("2026-07-09T13:00:00Z").getTime(),
     );
@@ -281,6 +298,27 @@ describe("AgentSessionsPage", () => {
         ],
       },
       {
+        id: "stale-session-fresh-usage",
+        agent: "lh-build",
+        session: "stale-session-fresh-usage",
+        runtime: "codex",
+        created_at: "2026-06-01T08:00:00Z",
+        updated_at: "2026-06-01T09:00:00Z",
+        usage: [
+          {
+            session_id: "stale-session-fresh-usage",
+            model: "gpt-5.5",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.05,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T10:00:00Z",
+          },
+        ],
+      },
+      {
         id: "last-week-codex",
         agent: "reviewer",
         session: "last-week-codex",
@@ -324,28 +362,24 @@ describe("AgentSessionsPage", () => {
       },
     ]);
 
-    expect(await screen.findByText("All-time cost")).toBeTruthy();
-    const allTime = screen.getByLabelText("All-time cost");
-    expect(within(allTime!).getByText("$0.10")).toBeTruthy();
-    expect(within(allTime!).getByText("Claude Code")).toBeTruthy();
-    expect(within(allTime!).getByText("$0.07")).toBeTruthy();
-    expect(within(allTime!).getByText("Codex")).toBeTruthy();
-    expect(within(allTime!).getByText("$0.03")).toBeTruthy();
+    expect(await screen.findByText("last 1 month cost")).toBeTruthy();
+    expect(screen.getByText("$0.15")).toBeTruthy();
+    expect(screen.getByText("Top agent")).toBeTruthy();
+    expect(screen.getAllByText("Claude Code").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Codex").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("last-month-claude")).toBeTruthy();
+    expect(screen.getByText("stale-session-fresh-usage")).toBeTruthy();
 
-    const month = screen.getByLabelText("This month");
-    expect(within(month!).getByText("$0.06")).toBeTruthy();
-    expect(within(month!).getByText("$0.04")).toBeTruthy();
-    expect(within(month!).getByText("+$0.02 (+61%)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "last 1 week" }));
+    expect(screen.getByText("last 1 week cost")).toBeTruthy();
+    expect(screen.queryByText("last-month-claude")).toBeNull();
+    expect(screen.queryByText("last-week-codex")).toBeNull();
+    expect(screen.getByText("week-claude")).toBeTruthy();
+    expect(screen.getByText("stale-session-fresh-usage")).toBeTruthy();
 
-    const week = screen.getByLabelText("This week");
-    expect(within(week!).getByText("$0.05")).toBeTruthy();
-    expect(within(week!).getByText("$0.01")).toBeTruthy();
-    expect(within(week!).getByText("+$0.04 (+442%)")).toBeTruthy();
-
-    const today = screen.getByLabelText("Today");
-    expect(within(today!).getByText("$0.02")).toBeTruthy();
-    expect(within(today!).getByText("$0.03")).toBeTruthy();
-    expect(within(today!).getByText("-$0.0058 (-19%)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Weekly" }));
+    fireEvent.click(screen.getByRole("button", { name: "By agent" }));
+    expect(screen.getByLabelText("Agent cost comparison trend")).toBeTruthy();
   });
 
   it("shows zero-cost summaries when usage data is absent", async () => {
@@ -363,8 +397,11 @@ describe("AgentSessionsPage", () => {
       },
     ]);
 
-    expect(await screen.findByText("All-time cost")).toBeTruthy();
-    expect(screen.getAllByText("$0.00").length).toBeGreaterThanOrEqual(8);
+    expect(await screen.findByText("last 1 month cost")).toBeTruthy();
+    expect(screen.getAllByText("$0.00").length).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getAllByText("No sessions in the selected period."),
+    ).toHaveLength(2);
   });
 
   it("shows n/a summaries when usage cost is unknown", async () => {
@@ -395,16 +432,11 @@ describe("AgentSessionsPage", () => {
       },
     ]);
 
-    expect(await screen.findByText("All-time cost")).toBeTruthy();
-    const allTime = screen.getByLabelText("All-time cost");
-    expect(within(allTime).getAllByText("n/a").length).toBeGreaterThanOrEqual(
-      2,
+    expect(await screen.findByText("last 1 month cost")).toBeTruthy();
+    expect(screen.getAllByText("n/a").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByLabelText(/Jul 9: n\/a/).getAttribute("style")).toBe(
+      "height: 2px;",
     );
-    expect(within(allTime).getByText("$0.00")).toBeTruthy();
-
-    const today = screen.getByLabelText("Today");
-    expect(within(today).getAllByText("n/a").length).toBeGreaterThanOrEqual(2);
-    expect(within(today).getByText("$0.00")).toBeTruthy();
   });
 
   it("shows an empty state", async () => {
