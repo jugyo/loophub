@@ -409,6 +409,13 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: () => svc.sessions.list(),
   },
+  "sessions/costSummary": {
+    description:
+      "Small per-coding-agent cost totals for topbar display, grouped by month/week/today.",
+    params: EMPTY_PARAMS,
+    result: anyArray,
+    handler: () => svc.sessions.costSummary(),
+  },
   "sessions/get": {
     description: "Get one agent session by id.",
     params: params({ id: sid }, ["id"]),

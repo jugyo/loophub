@@ -8,11 +8,16 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Repo } from "@/api/types";
+import type { AgentCostSummary, Repo } from "@/api/types";
 import { AppTopbar } from "./app-topbar";
 
 const reposData = vi.hoisted(() => ({
   value: [] as Repo[],
+  isLoading: false,
+  isError: false,
+}));
+const costSummaryData = vi.hoisted(() => ({
+  value: [] as AgentCostSummary[],
   isLoading: false,
   isError: false,
 }));
@@ -22,6 +27,14 @@ vi.mock("@/queries/repos", () => ({
     data: reposData.value,
     isLoading: reposData.isLoading,
     isError: reposData.isError,
+  }),
+}));
+
+vi.mock("@/queries/sessions", () => ({
+  useAgentCostSummary: () => ({
+    data: costSummaryData.value,
+    isLoading: costSummaryData.isLoading,
+    isError: costSummaryData.isError,
   }),
 }));
 
@@ -39,6 +52,9 @@ afterEach(() => {
   reposData.value = [];
   reposData.isLoading = false;
   reposData.isError = false;
+  costSummaryData.value = [];
+  costSummaryData.isLoading = false;
+  costSummaryData.isError = false;
 });
 
 function makeRepo(
@@ -209,5 +225,35 @@ describe("AppTopbar", () => {
     expect(screen.queryByText("Repositories")).toBeNull();
     expect(screen.queryByText("Agents")).toBeNull();
     expect(screen.queryByRole("complementary")).toBeNull();
+  });
+
+  it("shows a compact per-agent month, week, and day cost summary", async () => {
+    costSummaryData.value = [
+      { agent: "claude-code", month: 0.5, week: 0.5, day: 0.5 },
+      { agent: "codex", month: 6.25, week: 3.25, day: 1.25 },
+    ];
+    renderTopbar();
+
+    const summary = await screen.findByLabelText("Agent cost summary");
+    expect(summary.textContent).toContain("Codex");
+    expect(summary.textContent).toContain("M $6.25");
+    expect(summary.textContent).toContain("W $3.25");
+    expect(summary.textContent).toContain("T $1.25");
+    expect(summary.textContent).toContain("Claude Code");
+    expect(summary.textContent).toContain("M $0.50");
+    expect(summary.textContent).toContain("W $0.50");
+    expect(summary.textContent).toContain("T $0.50");
+  });
+
+  it("keeps the topbar stable while agent costs load or fail", async () => {
+    costSummaryData.isLoading = true;
+    renderTopbar();
+    expect(await screen.findByText("Loading...")).toBeTruthy();
+
+    cleanup();
+    costSummaryData.isLoading = false;
+    costSummaryData.isError = true;
+    renderTopbar();
+    expect(await screen.findByText("n/a")).toBeTruthy();
   });
 });

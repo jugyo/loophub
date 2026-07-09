@@ -114,6 +114,13 @@ export interface AgentSessionWire {
   linked_targets?: SessionLinkedTargetWire[];
 }
 
+export interface AgentCostSummaryWire {
+  agent: CodingAgent;
+  month: number | null;
+  week: number | null;
+  day: number | null;
+}
+
 export interface RelatedSessionWire extends AgentSessionWire {
   linked_at: string | null;
   resume: { resumable: boolean; reason?: string };

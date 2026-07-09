@@ -1,3 +1,5 @@
+import { CODING_AGENTS, type CodingAgent } from "../config.ts";
+import type { AgentCostSummaryWire } from "../serialize.ts";
 import type {
   ClaudeSubagentTranscript,
   ClaudeSubagentTranscriptCandidate,
@@ -91,6 +93,48 @@ function transcriptSetStats(
     size: files.reduce((sum, x) => sum + x.size, 0),
     mtimeMs: Math.max(...files.map((x) => x.mtimeMs)),
   };
+}
+
+type PeriodKey = "month" | "week" | "day";
+
+function periodStarts(now: Date): Record<PeriodKey, number> {
+  const month = new Date(now.getFullYear(), now.getMonth(), 1);
+  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const week = new Date(day);
+  const dayOfWeek = week.getDay();
+  const daysSinceMonday = (dayOfWeek + 6) % 7;
+  week.setDate(day.getDate() - daysSinceMonday);
+  return {
+    month: month.getTime(),
+    week: week.getTime(),
+    day: day.getTime(),
+  };
+}
+
+function isCodingAgent(value: string | null | undefined): value is CodingAgent {
+  return value === "claude-code" || value === "codex";
+}
+
+function sessionPeriodCosts(
+  sessionId: string,
+  starts: Record<PeriodKey, number>,
+): Record<PeriodKey, number | null> {
+  const out: Record<PeriodKey, number | null> = { month: 0, week: 0, day: 0 };
+  const usage = S.listSessionUsage(sessionId);
+  for (const row of usage) {
+    const updatedAt = Date.parse(row.updated_at);
+    if (!Number.isFinite(updatedAt)) continue;
+    for (const period of ["month", "week", "day"] as const) {
+      if (updatedAt < starts[period]) continue;
+      out[period] = addCost(out[period], row.cost_usd);
+    }
+  }
+  return out;
+}
+
+function addCost(current: number | null, next: number | null): number | null {
+  if (current === null || next === null) return null;
+  return current + next;
 }
 
 function saveClaudeSubagentUsage(
@@ -296,6 +340,27 @@ export const sessions = {
     return S.listAgentSessions()
       .map((row) => agentSessionJSON(row, { withLinkedTargets: true }))
       .filter((session) => (session.usage?.length ?? 0) > 0);
+  },
+
+  costSummary(now = new Date()): AgentCostSummaryWire[] {
+    const starts = periodStarts(now);
+    const byAgent = new Map<CodingAgent, AgentCostSummaryWire>();
+    for (const agent of CODING_AGENTS) {
+      byAgent.set(agent, { agent, month: 0, week: 0, day: 0 });
+    }
+
+    for (const session of S.listAgentSessions()) {
+      const runtime = sessionRuntime(session);
+      const agent = isCodingAgent(runtime) ? runtime : null;
+      if (!agent) continue;
+      const costs = sessionPeriodCosts(session.id, starts);
+      const summary = byAgent.get(agent)!;
+      for (const period of ["month", "week", "day"] as const) {
+        summary[period] = addCost(summary[period], costs[period]);
+      }
+    }
+
+    return CODING_AGENTS.map((agent) => byAgent.get(agent)!);
   },
 
   get(id: string) {

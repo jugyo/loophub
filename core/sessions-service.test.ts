@@ -249,6 +249,107 @@ test("sessions.list excludes sessions without usage", () => {
   expect(list.some((s) => s.id === withUsageSession)).toBe(true);
 });
 
+test("sessions.costSummary returns minimal per-agent period costs", () => {
+  const rows = [
+    {
+      id: "11111111-1017-0000-0000-000000000001",
+      runtime: "codex",
+      createdAt: "2030-07-09T01:00:00.000Z",
+      cost: 1,
+    },
+    {
+      id: "11111111-1017-0000-0000-000000000002",
+      runtime: "codex",
+      createdAt: "2030-07-08T01:00:00.000Z",
+      cost: 2,
+    },
+    {
+      id: "11111111-1017-0000-0000-000000000003",
+      runtime: "codex",
+      createdAt: "2030-07-01T01:00:00.000Z",
+      cost: 3,
+    },
+    {
+      id: "11111111-1017-0000-0000-000000000004",
+      runtime: "codex",
+      createdAt: "2030-06-28T01:00:00.000Z",
+      cost: 4,
+    },
+    {
+      id: "11111111-1017-0000-0000-000000000007",
+      runtime: "codex",
+      createdAt: "2030-06-01T01:00:00.000Z",
+      usageUpdatedAt: "2030-07-09T03:00:00.000Z",
+      cost: 5,
+    },
+    {
+      id: "11111111-1017-0000-0000-000000000005",
+      runtime: "claude-code",
+      createdAt: "2030-07-09T01:00:00.000Z",
+      cost: null,
+    },
+  ] as const;
+
+  for (const row of rows) {
+    svc.sessions.register({
+      id: row.id,
+      agent: "lh-build",
+      session: row.id,
+      runtime: row.runtime,
+      kind: "dev",
+    });
+    D.db.run(`UPDATE agent_sessions SET created_at = ? WHERE id = ?`, [
+      row.createdAt,
+      row.id,
+    ]);
+    D.db.run(
+      `INSERT INTO session_usage
+       (session_id, model, input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, cost_usd, updated_at)
+       VALUES (?, ?, 0, 0, 0, 0, ?, ?)`,
+      [
+        row.id,
+        "test-model",
+        row.cost,
+        "usageUpdatedAt" in row ? row.usageUpdatedAt : row.createdAt,
+      ],
+    );
+  }
+
+  expect(
+    svc.sessions.costSummary(new Date("2030-07-09T12:00:00.000Z")),
+  ).toEqual([
+    { agent: "claude-code", month: null, week: null, day: null },
+    { agent: "codex", month: 11, week: 8, day: 6 },
+  ]);
+});
+
+test("sessions.costSummary counts legacy build sessions as Claude Code", () => {
+  const sessionId = "11111111-1017-0000-0000-000000000006";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    kind: "dev",
+  });
+  D.db.run(`UPDATE agent_sessions SET created_at = ? WHERE id = ?`, [
+    "2031-07-09T01:00:00.000Z",
+    sessionId,
+  ]);
+  D.db.run(
+    `INSERT INTO session_usage
+     (session_id, model, input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, cost_usd, updated_at)
+     VALUES (?, ?, 0, 0, 0, 0, ?, ?)`,
+    [sessionId, "test-model", 2, "2031-07-09T01:00:00.000Z"],
+  );
+
+  expect(
+    svc.sessions.costSummary(new Date("2031-07-09T12:00:00.000Z")),
+  ).toEqual([
+    { agent: "claude-code", month: 2, week: 2, day: 2 },
+    { agent: "codex", month: 0, week: 0, day: 0 },
+  ]);
+});
+
 test("a session linked to a PR with no primary dev session is NOT resumable (not-anchor)", async () => {
   // Reachable via sessions.link({pr}): a PR opened without a dev session (no kind='dev' link), then a
   // non-dev session attached (sessions.link is documented as the attach point for kinds beyond dev).
