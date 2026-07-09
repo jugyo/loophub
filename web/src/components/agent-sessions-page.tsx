@@ -4,6 +4,7 @@ import type {
   AgentSession,
   SessionLinkedTarget,
   SessionSubagentUsage,
+  SessionUsage,
 } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -33,6 +34,151 @@ function updatedTime(session: AgentSession): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+type CostBreakdown = {
+  total: CostTotal;
+  claudeCode: CostTotal;
+  codex: CostTotal;
+};
+
+type PeriodCost = {
+  label: string;
+  current: CostTotal;
+  previous: CostTotal;
+};
+
+type CostTotal = {
+  cost: number;
+  hasUnknownCost: boolean;
+};
+
+const RUNTIME_CLAUDE_CODE = "claude-code";
+const RUNTIME_CODEX = "codex";
+
+function zeroCost(): CostTotal {
+  return { cost: 0, hasUnknownCost: false };
+}
+
+function addCost(total: CostTotal, next: CostTotal): CostTotal {
+  return {
+    cost: total.cost + next.cost,
+    hasUnknownCost: total.hasUnknownCost || next.hasUnknownCost,
+  };
+}
+
+function formatCostTotal(total: CostTotal): string {
+  return total.hasUnknownCost ? "n/a" : formatCost(total.cost);
+}
+
+function usageCostTotal(usage: SessionUsage[] | undefined): CostTotal {
+  return (usage ?? []).reduce<CostTotal>((total, row) => {
+    if (row.cost_usd === null || !Number.isFinite(row.cost_usd)) {
+      total.hasUnknownCost = true;
+      return total;
+    }
+    total.cost += row.cost_usd;
+    return total;
+  }, zeroCost());
+}
+
+function sessionCost(session: AgentSession): CostTotal {
+  return usageCostTotal(session.usage);
+}
+
+function effectiveRuntime(session: AgentSession): string | null {
+  if (session.runtime) return session.runtime;
+  if (session.agent === "lh-build" || session.agent === "lh-dev")
+    return RUNTIME_CLAUDE_CODE;
+  return null;
+}
+
+function costBreakdown(sessions: AgentSession[]): CostBreakdown {
+  return sessions.reduce<CostBreakdown>(
+    (totals, session) => {
+      const cost = sessionCost(session);
+      const runtime = effectiveRuntime(session);
+      totals.total = addCost(totals.total, cost);
+      if (runtime === RUNTIME_CLAUDE_CODE)
+        totals.claudeCode = addCost(totals.claudeCode, cost);
+      if (runtime === RUNTIME_CODEX) totals.codex = addCost(totals.codex, cost);
+      return totals;
+    },
+    { total: zeroCost(), claudeCode: zeroCost(), codex: zeroCost() },
+  );
+}
+
+function startOfToday(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function startOfWeek(now: Date): Date {
+  const day = now.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const d = startOfToday(now);
+  d.setDate(d.getDate() + mondayOffset);
+  return d;
+}
+
+function startOfMonth(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+function addDays(date: Date, days: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function addMonths(date: Date, months: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
+function costBetween(
+  sessions: AgentSession[],
+  start: Date,
+  end: Date,
+): CostTotal {
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+  return sessions.reduce((sum, session) => {
+    const updated = updatedTime(session);
+    if (updated < startMs || updated >= endMs) return sum;
+    return addCost(sum, sessionCost(session));
+  }, zeroCost());
+}
+
+function periodCosts(
+  sessions: AgentSession[],
+  now = new Date(Date.now()),
+): PeriodCost[] {
+  const today = startOfToday(now);
+  const tomorrow = addDays(today, 1);
+  const yesterday = addDays(today, -1);
+  const thisWeek = startOfWeek(now);
+  const nextWeek = addDays(thisWeek, 7);
+  const lastWeek = addDays(thisWeek, -7);
+  const thisMonth = startOfMonth(now);
+  const nextMonth = addMonths(thisMonth, 1);
+  const lastMonth = addMonths(thisMonth, -1);
+
+  return [
+    {
+      label: "This month",
+      current: costBetween(sessions, thisMonth, nextMonth),
+      previous: costBetween(sessions, lastMonth, thisMonth),
+    },
+    {
+      label: "This week",
+      current: costBetween(sessions, thisWeek, nextWeek),
+      previous: costBetween(sessions, lastWeek, thisWeek),
+    },
+    {
+      label: "Today",
+      current: costBetween(sessions, today, tomorrow),
+      previous: costBetween(sessions, yesterday, today),
+    },
+  ];
+}
+
 export function AgentSessionsPage() {
   const { data, isLoading, isError } = useAgentSessions();
 
@@ -56,7 +202,82 @@ export function AgentSessionsPage() {
       {data && data.length === 0 && (
         <p className="mt-6 text-sm text-muted-foreground">No agent sessions.</p>
       )}
-      {data && data.length > 0 && <SessionsTable sessions={data} />}
+      {data && data.length > 0 && (
+        <>
+          <CostSummary sessions={data} />
+          <SessionsTable sessions={data} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function CostSummary({ sessions }: { sessions: AgentSession[] }) {
+  const allTime = costBreakdown(sessions);
+  const periods = periodCosts(sessions);
+
+  return (
+    <div className="mt-6 grid grid-cols-4 gap-3">
+      <div aria-label="All-time cost" className="rounded-md border bg-card p-4">
+        <div className="text-xs font-medium uppercase text-muted-foreground">
+          All-time cost
+        </div>
+        <div className="mt-2 text-2xl font-semibold tabular-nums">
+          {formatCostTotal(allTime.total)}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+          <RuntimeCost label="Claude Code" cost={allTime.claudeCode} />
+          <RuntimeCost label="Codex" cost={allTime.codex} />
+        </div>
+      </div>
+      {periods.map((period) => (
+        <PeriodCostCard key={period.label} period={period} />
+      ))}
+    </div>
+  );
+}
+
+function RuntimeCost({ label, cost }: { label: string; cost: CostTotal }) {
+  return (
+    <div>
+      <div className="text-muted-foreground">{label}</div>
+      <div className="font-medium tabular-nums">{formatCostTotal(cost)}</div>
+    </div>
+  );
+}
+
+function PeriodCostCard({ period }: { period: PeriodCost }) {
+  const canCompare =
+    !period.current.hasUnknownCost && !period.previous.hasUnknownCost;
+  const delta = canCompare ? period.current.cost - period.previous.cost : null;
+  const percent =
+    delta === null || period.previous.cost === 0
+      ? null
+      : (delta / period.previous.cost) * 100;
+  const sign = delta === null ? "" : delta > 0 ? "+" : delta < 0 ? "-" : "";
+  const deltaCost =
+    delta === null ? "n/a" : `${sign}${formatCost(Math.abs(delta))}`;
+  const percentLabel =
+    percent === null ? "" : ` (${sign}${Math.abs(percent).toFixed(0)}%)`;
+
+  return (
+    <div aria-label={period.label} className="rounded-md border bg-card p-4">
+      <div className="text-xs font-medium uppercase text-muted-foreground">
+        {period.label}
+      </div>
+      <div className="mt-2 text-2xl font-semibold tabular-nums">
+        {formatCostTotal(period.current)}
+      </div>
+      <div className="mt-3 text-xs text-muted-foreground">
+        Previous period:{" "}
+        <span className="font-medium tabular-nums text-foreground">
+          {formatCostTotal(period.previous)}
+        </span>
+      </div>
+      <div className="mt-1 text-xs tabular-nums text-muted-foreground">
+        {deltaCost}
+        {percentLabel}
+      </div>
     </div>
   );
 }

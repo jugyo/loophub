@@ -213,6 +213,200 @@ describe("AgentSessionsPage", () => {
     expect(within(rows[2]).queryByText("0")).toBeNull();
   });
 
+  it("shows all-time and period cost summaries with runtime breakdowns", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-07-09T13:00:00Z").getTime(),
+    );
+    renderPage([
+      {
+        id: "today-codex",
+        agent: "lh-build",
+        session: "today-codex",
+        runtime: "codex",
+        created_at: "2026-07-09T08:00:00Z",
+        updated_at: "2026-07-09T09:00:00Z",
+        usage: [
+          {
+            session_id: "today-codex",
+            model: "gpt-5.5",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.02,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T09:00:00Z",
+          },
+        ],
+      },
+      {
+        id: "week-claude",
+        agent: "lh-build",
+        session: "week-claude",
+        runtime: "claude-code",
+        created_at: "2026-07-08T08:00:00Z",
+        updated_at: "2026-07-08T09:00:00Z",
+        usage: [
+          {
+            session_id: "week-claude",
+            model: "claude-sonnet",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.03,
+            context_usage_percent: null,
+            updated_at: "2026-07-08T09:00:00Z",
+          },
+        ],
+      },
+      {
+        id: "legacy-claude",
+        agent: "lh-build",
+        session: "legacy-claude",
+        created_at: "2026-07-09T06:00:00Z",
+        updated_at: "2026-07-09T07:00:00Z",
+        usage: [
+          {
+            session_id: "legacy-claude",
+            model: "claude-sonnet",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.0042,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T07:00:00Z",
+          },
+        ],
+      },
+      {
+        id: "last-week-codex",
+        agent: "reviewer",
+        session: "last-week-codex",
+        runtime: "codex",
+        created_at: "2026-07-02T08:00:00Z",
+        updated_at: "2026-07-02T09:00:00Z",
+        usage: [
+          {
+            session_id: "last-week-codex",
+            model: "gpt-5-mini",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.01,
+            context_usage_percent: null,
+            updated_at: "2026-07-02T09:00:00Z",
+          },
+        ],
+      },
+      {
+        id: "last-month-claude",
+        agent: "reviewer",
+        session: "last-month-claude",
+        runtime: "claude-code",
+        created_at: "2026-06-20T08:00:00Z",
+        updated_at: "2026-06-20T09:00:00Z",
+        usage: [
+          {
+            session_id: "last-month-claude",
+            model: "claude-sonnet",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.04,
+            context_usage_percent: null,
+            updated_at: "2026-06-20T09:00:00Z",
+          },
+        ],
+      },
+    ]);
+
+    expect(await screen.findByText("All-time cost")).toBeTruthy();
+    const allTime = screen.getByLabelText("All-time cost");
+    expect(within(allTime!).getByText("$0.10")).toBeTruthy();
+    expect(within(allTime!).getByText("Claude Code")).toBeTruthy();
+    expect(within(allTime!).getByText("$0.07")).toBeTruthy();
+    expect(within(allTime!).getByText("Codex")).toBeTruthy();
+    expect(within(allTime!).getByText("$0.03")).toBeTruthy();
+
+    const month = screen.getByLabelText("This month");
+    expect(within(month!).getByText("$0.06")).toBeTruthy();
+    expect(within(month!).getByText("$0.04")).toBeTruthy();
+    expect(within(month!).getByText("+$0.02 (+61%)")).toBeTruthy();
+
+    const week = screen.getByLabelText("This week");
+    expect(within(week!).getByText("$0.05")).toBeTruthy();
+    expect(within(week!).getByText("$0.01")).toBeTruthy();
+    expect(within(week!).getByText("+$0.04 (+442%)")).toBeTruthy();
+
+    const today = screen.getByLabelText("Today");
+    expect(within(today!).getByText("$0.02")).toBeTruthy();
+    expect(within(today!).getByText("$0.03")).toBeTruthy();
+    expect(within(today!).getByText("-$0.0058 (-19%)")).toBeTruthy();
+  });
+
+  it("shows zero-cost summaries when usage data is absent", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-07-09T13:00:00Z").getTime(),
+    );
+    renderPage([
+      {
+        id: "no-usage",
+        agent: "lh-build",
+        session: "no-usage",
+        runtime: "codex",
+        created_at: "2026-07-09T08:00:00Z",
+        updated_at: "2026-07-09T09:00:00Z",
+      },
+    ]);
+
+    expect(await screen.findByText("All-time cost")).toBeTruthy();
+    expect(screen.getAllByText("$0.00").length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("shows n/a summaries when usage cost is unknown", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-07-09T13:00:00Z").getTime(),
+    );
+    renderPage([
+      {
+        id: "unknown-cost",
+        agent: "reviewer",
+        session: "unknown-cost",
+        runtime: "claude-code",
+        created_at: "2026-07-09T10:00:00Z",
+        updated_at: "2026-07-09T11:00:00Z",
+        usage: [
+          {
+            session_id: "unknown-cost",
+            model: "claude-sonnet",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: null,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T11:00:00Z",
+          },
+        ],
+      },
+    ]);
+
+    expect(await screen.findByText("All-time cost")).toBeTruthy();
+    const allTime = screen.getByLabelText("All-time cost");
+    expect(within(allTime).getAllByText("n/a").length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(within(allTime).getByText("$0.00")).toBeTruthy();
+
+    const today = screen.getByLabelText("Today");
+    expect(within(today).getAllByText("n/a").length).toBeGreaterThanOrEqual(2);
+    expect(within(today).getByText("$0.00")).toBeTruthy();
+  });
+
   it("shows an empty state", async () => {
     renderPage([]);
     expect(await screen.findByText("No agent sessions.")).toBeTruthy();
