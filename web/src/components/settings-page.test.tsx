@@ -77,6 +77,20 @@ function renderSettings(
   );
 }
 
+async function modelDropdown(label: string): Promise<HTMLButtonElement> {
+  return (await screen.findByLabelText(
+    `Default model and effort (${label})`,
+  )) as HTMLButtonElement;
+}
+
+async function openModelDropdown(label: string): Promise<HTMLElement> {
+  fireEvent.pointerDown(await modelDropdown(label), {
+    button: 0,
+    ctrlKey: false,
+  });
+  return screen.findByRole("menu");
+}
+
 describe("SettingsPage", () => {
   it("shows the current auto-mode-on-Build setting per agent", async () => {
     renderSettings({
@@ -166,70 +180,73 @@ describe("SettingsPage", () => {
     );
   });
 
-  it("shows the current default model+effort per agent as a select (#594, #682)", async () => {
+  it("shows the current default model+effort per agent in the dropdown trigger (#594, #682)", async () => {
     renderSettings({
       "claude-code": { autoModeOnBuild: false, model: "opus", effort: "high" },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "low" },
     });
-    const claudeSelect = (await screen.findByLabelText(
-      "Default model and effort (Claude Code)",
-    )) as HTMLSelectElement;
-    await waitFor(() => expect(claudeSelect.value).toBe("opus::high"));
-
-    const codexSelect = (await screen.findByLabelText(
-      "Default model and effort (Codex)",
-    )) as HTMLSelectElement;
-    expect(codexSelect.value).toBe("gpt-5.5::low");
-  });
-
-  it("offers every model x effort combination as select options, per agent (#610, #682)", async () => {
-    renderSettings();
-    const claudeSelect = (await screen.findByLabelText(
-      "Default model and effort (Claude Code)",
-    )) as HTMLSelectElement;
-    await waitFor(() => expect(claudeSelect.value).toBe("opus::medium"));
-    const claudeOptions = Array.from(claudeSelect.options).map((o) => o.value);
-    expect(claudeOptions).toEqual(
-      expect.arrayContaining([
-        "opus::low",
-        "opus::medium",
-        "opus::high",
-        "opus::xhigh",
-        "opus::max",
-        "sonnet::high",
-        "haiku::max",
-      ]),
+    const claudeDropdown = await modelDropdown("Claude Code");
+    await waitFor(() =>
+      expect(claudeDropdown.textContent).toContain("opus — high"),
     );
 
-    const codexSelect = (await screen.findByLabelText(
-      "Default model and effort (Codex)",
-    )) as HTMLSelectElement;
-    const codexOptions = Array.from(codexSelect.options).map((o) => o.value);
+    const codexDropdown = await modelDropdown("Codex");
+    expect(codexDropdown.textContent).toContain("gpt-5.5 — low");
+  });
+
+  it("offers every model x effort combination as shadcn dropdown items, per agent (#610, #682)", async () => {
+    renderSettings();
+    const claudeDropdown = await modelDropdown("Claude Code");
+    await waitFor(() =>
+      expect(claudeDropdown.textContent).toContain("opus — medium"),
+    );
+    let menu = await openModelDropdown("Claude Code");
+    const claudeOptions = within(menu)
+      .getAllByRole("menuitem")
+      .map((o) => o.textContent);
+    expect(claudeOptions).toEqual(
+      expect.arrayContaining([
+        "opus — low",
+        "opus — medium",
+        "opus — high",
+        "opus — xhigh",
+        "opus — max",
+        "sonnet — high",
+        "haiku — max",
+      ]),
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    menu = await openModelDropdown("Codex");
+    const codexOptions = within(menu)
+      .getAllByRole("menuitem")
+      .map((o) => o.textContent);
     expect(codexOptions).toEqual(
       expect.arrayContaining([
-        "gpt-5.5::minimal",
-        "gpt-5.5::low",
-        "gpt-5.5::medium",
-        "gpt-5.5::high",
+        "gpt-5.5 — minimal",
+        "gpt-5.5 — low",
+        "gpt-5.5 — medium",
+        "gpt-5.5 — high",
       ]),
     );
     // codex has no effort concept beyond these four static levels — no claude-code-only level
     // ("xhigh"/"max") should leak into its options.
     expect(codexOptions).not.toEqual(
-      expect.arrayContaining(["gpt-5.5::xhigh"]),
+      expect.arrayContaining(["gpt-5.5 — xhigh"]),
     );
   });
 
   it("selecting a combination saves model and effort together via settings/update, leaving the other agent untouched (#682)", async () => {
     renderSettings();
-    const claudeSelect = (await screen.findByLabelText(
-      "Default model and effort (Claude Code)",
-    )) as HTMLSelectElement;
-    await waitFor(() => expect(claudeSelect.value).toBe("opus::medium"));
+    const claudeDropdown = await modelDropdown("Claude Code");
+    await waitFor(() =>
+      expect(claudeDropdown.textContent).toContain("opus — medium"),
+    );
 
-    fireEvent.change(claudeSelect, {
-      target: { value: "claude-opus-4-8::xhigh" },
-    });
+    const menu = await openModelDropdown("Claude Code");
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "claude-opus-4-8 — xhigh" }),
+    );
 
     await waitFor(() => {
       const call = rpcCall("settings/update");
@@ -241,13 +258,11 @@ describe("SettingsPage", () => {
       });
     });
     await waitFor(() =>
-      expect(claudeSelect.value).toBe("claude-opus-4-8::xhigh"),
+      expect(claudeDropdown.textContent).toContain("claude-opus-4-8 — xhigh"),
     );
 
-    const codexSelect = (await screen.findByLabelText(
-      "Default model and effort (Codex)",
-    )) as HTMLSelectElement;
-    expect(codexSelect.value).toBe("gpt-5.5::medium");
+    const codexDropdown = await modelDropdown("Codex");
+    expect(codexDropdown.textContent).toContain("gpt-5.5 — medium");
   });
 
   it("shows a saved model+effort pair outside the suggestion list as its own selected option, instead of silently jumping to a different combination (#682)", async () => {
@@ -259,18 +274,19 @@ describe("SettingsPage", () => {
       },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
     });
-    const claudeSelect = (await screen.findByLabelText(
-      "Default model and effort (Claude Code)",
-    )) as HTMLSelectElement;
+    const claudeDropdown = await modelDropdown("Claude Code");
     await waitFor(() =>
-      expect(claudeSelect.value).toBe("claude-fable-5::medium"),
+      expect(claudeDropdown.textContent).toContain("claude-fable-5 — medium"),
     );
-    expect(Array.from(claudeSelect.options).map((o) => o.value)).toContain(
-      "claude-fable-5::medium",
-    );
+    const menu = await openModelDropdown("Claude Code");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((o) => o.textContent),
+    ).toContain("claude-fable-5 — medium");
   });
 
-  it("preserves saved model names containing the select value separator when saving from the dropdown", async () => {
+  it("preserves saved model names containing the value separator without re-saving the selected item", async () => {
     renderSettings({
       "claude-code": {
         autoModeOnBuild: false,
@@ -279,25 +295,20 @@ describe("SettingsPage", () => {
       },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
     });
-    const claudeSelect = (await screen.findByLabelText(
-      "Default model and effort (Claude Code)",
-    )) as HTMLSelectElement;
+    const claudeDropdown = await modelDropdown("Claude Code");
     await waitFor(() =>
-      expect(claudeSelect.value).toBe("vendor::claude-fable-5::medium"),
+      expect(claudeDropdown.textContent).toContain(
+        "vendor::claude-fable-5 — medium",
+      ),
     );
 
-    fireEvent.change(claudeSelect, {
-      target: { value: "vendor::claude-fable-5::medium" },
-    });
+    const menu = await openModelDropdown("Claude Code");
+    fireEvent.click(
+      within(menu).getByRole("menuitem", {
+        name: "vendor::claude-fable-5 — medium",
+      }),
+    );
 
-    await waitFor(() => {
-      const call = rpcCall("settings/update");
-      expect(call).toBeTruthy();
-      expect(call!.params).toMatchObject({
-        agent: "claude-code",
-        model: "vendor::claude-fable-5",
-        effort: "medium",
-      });
-    });
+    expect(rpcCall("settings/update")).toBeUndefined();
   });
 });

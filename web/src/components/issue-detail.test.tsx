@@ -83,8 +83,12 @@ function mockFetch(
     }),
     "settings/get": () => ({
       agents: {
-        "claude-code": { autoModeOnBuild },
-        codex: { autoModeOnBuild: false },
+        "claude-code": { autoModeOnBuild, model: "opus", effort: "medium" },
+        codex: {
+          autoModeOnBuild: false,
+          model: "gpt-5.5",
+          effort: "medium",
+        },
       },
       codingAgent: "claude-code",
     }),
@@ -537,6 +541,77 @@ describe("IssueDetail", () => {
     expect(button.title).toBe(
       "Start `lh build 12 --herdr --auto` in a terminal",
     );
+  });
+
+  it("launches Build with the model selected from the shadcn dropdown", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr);
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: "Choose agent and model" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "sonnet" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Build with Claude Code" }),
+    );
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: "Issue #12 - ui2: issue detail",
+      workflow: "issue-dev",
+      issueNumber: 12,
+      agent: "claude-code",
+      model: "sonnet",
+    });
+    expect(
+      screen.queryByRole("button", { name: "Build with Claude Code" }),
+    ).toBeNull();
+  });
+
+  it("launches Build with a custom one-shot model typed in the dropdown", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr);
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: "Choose agent and model" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.change(screen.getByLabelText("Custom model"), {
+      target: { value: "vendor/custom-preview" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Build with Claude Code" }),
+    );
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: "Issue #12 - ui2: issue detail",
+      workflow: "issue-dev",
+      issueNumber: 12,
+      agent: "claude-code",
+      model: "vendor/custom-preview",
+    });
+  });
+
+  it("closes the Build model menu with Escape from the custom model input", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr);
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: "Choose agent and model" }),
+      { button: 0, ctrlKey: false },
+    );
+    const customModel = screen.getByLabelText("Custom model");
+    customModel.focus();
+    fireEvent.keyDown(customModel, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Build with Claude Code" }),
+      ).toBeNull();
+    });
   });
 
   it("shows a fixed-duration loading state on the Build button and re-enables it after", async () => {

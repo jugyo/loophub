@@ -1,9 +1,18 @@
 // Instance-level settings (#474) — the first entry point for global config.json settings, as
 // opposed to the per-repo settings screen (see repo-settings-page.tsx's MergeModeSection).
 
-import { Check } from "lucide-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import type { CodingAgent } from "@/api/types";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuItemIndicator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EFFORT_SUGGESTIONS, MODEL_SUGGESTIONS } from "@/lib/agent-models";
+import { cn } from "@/lib/utils";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
 
 function autoModeOptions(): { value: boolean; label: string }[] {
@@ -48,15 +57,20 @@ function parseComboValue(value: string): { model: string; effort: string } {
   };
 }
 
-// A single agent's "Default model & effort" picker (#594, #610, #682). Was previously a free-text
-// <input list>+<datalist> combobox for model alone; replaced with a plain <select> (no dedicated
-// combobox component exists in this project's UI kit — see web/src/components/ui/) whose options
-// are the full model x effort combination, so a selection always saves a valid pair and an invalid
-// combination can never be chosen. If the currently persisted pair isn't one of the combinations
-// (e.g. a model saved before effort existed, or a value typed via the old free-text field), it's
-// injected as an extra leading option so the picker still reflects the real saved state instead of
-// silently jumping to something else (#682 AC: "existing settings select the right combination").
-function AgentModelEffortSelect({
+// A single agent's "Default model & effort" picker (#594, #610, #682). Options are the full
+// model x effort combination, so a selection always saves a valid pair and an invalid combination
+// can never be chosen. If the currently persisted pair isn't one of the combinations (e.g. a model
+// saved before effort existed, or a value typed via the old free-text field), it's injected as an
+// extra leading option so the picker still reflects the real saved state instead of silently jumping
+// to something else (#682 AC: "existing settings select the right combination").
+function modelEffortLabel(model: string, effort: string): string {
+  if (!model && !effort) return "Select model & effort";
+  if (!model) return `Default — ${effort}`;
+  if (!effort) return `${model} — default`;
+  return `${model} — ${effort}`;
+}
+
+function AgentModelEffortDropdown({
   label,
   model,
   effort,
@@ -85,25 +99,55 @@ function AgentModelEffortSelect({
   const options = hasCurrent ? combos : [{ model, effort }, ...combos];
 
   return (
-    <select
-      aria-label={`Default model and effort (${label})`}
-      className="w-full max-w-md rounded-md border bg-background px-3 py-1.5 text-sm"
-      value={currentValue}
-      disabled={disabled || saving}
-      onChange={(e) => {
-        const { model: m, effort: ef } = parseComboValue(e.target.value);
-        onSave(m, ef);
-      }}
-    >
-      {options.map((o) => (
-        <option
-          key={comboValue(o.model, o.effort)}
-          value={comboValue(o.model, o.effort)}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          aria-label={`Default model and effort (${label})`}
+          title={modelEffortLabel(model, effort)}
+          disabled={disabled || saving}
+          className="w-full max-w-md justify-between border bg-background px-3 text-left font-normal shadow-sm"
         >
-          {o.model} — {o.effort}
-        </option>
-      ))}
-    </select>
+          <span className="min-w-0 truncate">
+            {modelEffortLabel(model, effort)}
+          </span>
+          <ChevronsUpDown
+            className="size-4 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="max-h-[min(24rem,calc(100vh-5rem))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-72 overflow-y-auto"
+      >
+        {options.map((o) => {
+          const value = comboValue(o.model, o.effort);
+          const selected = value === currentValue;
+          return (
+            <DropdownMenuItem
+              key={value}
+              onSelect={() => {
+                if (selected) return;
+                const { model: m, effort: ef } = parseComboValue(value);
+                onSave(m, ef);
+              }}
+              aria-current={selected ? "true" : undefined}
+              className={cn(
+                "justify-between",
+                selected && "bg-accent text-accent-foreground",
+              )}
+            >
+              <span className="min-w-0 truncate">
+                {modelEffortLabel(o.model, o.effort)}
+              </span>
+              {selected ? <DropdownMenuItemIndicator /> : null}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -208,7 +252,7 @@ export function SettingsPage() {
                   {agentOption.label} — Default model & effort
                 </h3>
                 <div className="mt-1 max-w-sm">
-                  <AgentModelEffortSelect
+                  <AgentModelEffortDropdown
                     label={agentOption.label}
                     model={model}
                     effort={effort}

@@ -11,9 +11,9 @@ export const CODING_AGENT_LABELS: Record<CodingAgent, string> = {
 };
 
 // Suggested models per agent (#610), shown as a picklist for people who care about exact model
-// versions. Static — no dynamic fetch of available models (out of scope, #594). Any value not in
-// this list can still be typed directly (see the <datalist> combobox in settings-page.tsx /
-// issue-detail.tsx, which augments free text rather than constraining it).
+// versions. Static — no dynamic fetch of available models (out of scope, #594). Saved values outside
+// this list are injected into the dropdowns so existing config stays visible instead of jumping to a
+// suggested value.
 export const MODEL_SUGGESTIONS: Record<CodingAgent, string[]> = {
   "claude-code": [
     "opus",

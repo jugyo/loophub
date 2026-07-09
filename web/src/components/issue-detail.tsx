@@ -24,6 +24,16 @@ import { Markdown } from "@/components/markdown";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuItemIndicator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { CODING_AGENT_LABELS, MODEL_SUGGESTIONS } from "@/lib/agent-models";
 import {
   costStoppedBadge,
@@ -215,7 +225,6 @@ function BuildControls({
   const { data: settings } = useSettings();
   const [isBuildLoading, startBuildLoading] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const defaultAgent: CodingAgent = settings?.codingAgent ?? "claude-code";
   const autoModeOnBuild = settings
@@ -226,23 +235,6 @@ function BuildControls({
   const buildCommand = autoModeOnBuild
     ? `lh build ${issue.number} --herdr --auto`
     : `lh build ${issue.number} --herdr`;
-
-  // Close the dropdown on outside click / Escape (mirrors PullDebugMenu's native dismissal).
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onClick(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
 
   // `override` set => the dropdown launch (one-shot agent/model); undefined => the plain button
   // (default resolution). A blank model is omitted so `lh build` falls back to the per-agent default.
@@ -261,7 +253,7 @@ function BuildControls({
   }
 
   return (
-    <div ref={containerRef} className="relative inline-flex">
+    <div className="inline-flex">
       <Button
         className="rounded-r-none"
         title={`Start \`${buildCommand}\` in a terminal`}
@@ -275,31 +267,33 @@ function BuildControls({
         )}
         Build
       </Button>
-      <Button
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        aria-label="Choose agent and model"
-        title="Choose agent and model for this launch"
-        disabled={isBuildLoading}
-        className="rounded-l-none border-l border-primary-foreground/25 px-2"
-        onClick={() => setMenuOpen((v) => !v)}
-      >
-        <ChevronDown className="size-4" />
-      </Button>
-      {menuOpen && settings ? (
-        <BuildDropdown
-          settings={settings}
-          disabled={isBuildLoading}
-          onBuild={(agent, model) => build({ agent, model })}
-        />
-      ) : null}
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            aria-label="Choose agent and model"
+            title="Choose agent and model for this launch"
+            disabled={isBuildLoading || !settings}
+            className="rounded-l-none border-l border-primary-foreground/25 px-2"
+          >
+            <ChevronDown className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        {settings ? (
+          <DropdownMenuContent align="end" className="w-72 p-3">
+            <BuildDropdown
+              settings={settings}
+              disabled={isBuildLoading}
+              onBuild={(agent, model) => build({ agent, model })}
+            />
+          </DropdownMenuContent>
+        ) : null}
+      </DropdownMenu>
     </div>
   );
 }
 
 // Dropdown panel for a one-shot Build (#637): pick a coding agent (segmented control) and a model
-// (a native <input list> + <datalist> combobox — same picklist-plus-free-text pattern as the
-// Settings AgentModelInput, sharing MODEL_SUGGESTIONS). Both default to the current Settings values;
+// with the same shadcn dropdown style used by Settings. Both default to the current Settings values;
 // changing the agent resets the model draft to that agent's default so the picklist stays coherent.
 // Nothing here writes settings — the choice only feeds this launch.
 function BuildDropdown({
@@ -315,7 +309,7 @@ function BuildDropdown({
   const [model, setModel] = useState(
     settings.agents[settings.codingAgent]?.model ?? "",
   );
-  const listId = useId();
+  const customModelId = useId();
 
   function selectAgent(next: CodingAgent) {
     setAgent(next);
@@ -323,10 +317,7 @@ function BuildDropdown({
   }
 
   return (
-    <div
-      role="menu"
-      className="absolute right-0 top-full z-50 mt-1 w-72 rounded-md border bg-background p-3 text-left shadow-md"
-    >
+    <>
       <p className="mb-1 text-xs font-medium text-muted-foreground">Agent</p>
       <div className="mb-3 flex gap-1">
         {(Object.keys(CODING_AGENT_LABELS) as CodingAgent[]).map((a) => {
@@ -350,36 +341,96 @@ function BuildDropdown({
         })}
       </div>
 
-      <label
-        htmlFor={`${listId}-model`}
-        className="mb-1 block text-xs font-medium text-muted-foreground"
-      >
+      <p className="mb-1 block text-xs font-medium text-muted-foreground">
         Model
+      </p>
+      <BuildModelDropdown
+        agent={agent}
+        model={model}
+        disabled={disabled}
+        onChange={setModel}
+      />
+      <label
+        htmlFor={`${customModelId}-custom-model`}
+        className="mt-3 mb-1 block text-xs font-medium text-muted-foreground"
+      >
+        Custom model
       </label>
       <input
-        id={`${listId}-model`}
+        id={`${customModelId}-custom-model`}
         type="text"
-        list={listId}
         placeholder="Default"
-        className="mb-3 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+        className="w-full rounded-md border bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         value={model}
+        disabled={disabled}
         onChange={(e) => setModel(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" || e.key === "Tab") return;
+          e.stopPropagation();
+        }}
       />
-      <datalist id={listId}>
-        {MODEL_SUGGESTIONS[agent].map((m) => (
-          <option key={m} value={m} />
-        ))}
-      </datalist>
 
       <Button
-        className="w-full"
+        className="mt-3 w-full"
         disabled={disabled}
         onClick={() => onBuild(agent, model)}
       >
         <Play className="size-4" />
         Build with {CODING_AGENT_LABELS[agent]}
       </Button>
-    </div>
+    </>
+  );
+}
+
+function BuildModelDropdown({
+  agent,
+  model,
+  disabled,
+  onChange,
+}: {
+  agent: CodingAgent;
+  model: string;
+  disabled: boolean;
+  onChange: (model: string) => void;
+}) {
+  const suggestions = MODEL_SUGGESTIONS[agent];
+  const options = suggestions.includes(model)
+    ? suggestions
+    : [model, ...suggestions];
+
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger
+        aria-label="Model"
+        title={model || "Default"}
+        disabled={disabled}
+        className="w-full justify-between border bg-background px-3 font-normal shadow-sm"
+      >
+        <span className="min-w-0 truncate">{model || "Default"}</span>
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="max-h-[min(20rem,calc(100vh-5rem))] min-w-56 overflow-y-auto">
+        {options.map((candidate) => {
+          const selected = candidate === model;
+          return (
+            <DropdownMenuItem
+              key={candidate || "__default__"}
+              onSelect={(event) => {
+                event.preventDefault();
+                onChange(candidate);
+              }}
+              aria-current={selected ? "true" : undefined}
+              className={cn(
+                "justify-between",
+                selected && "bg-accent text-accent-foreground",
+              )}
+            >
+              <span className="min-w-0 truncate">{candidate || "Default"}</span>
+              {selected ? <DropdownMenuItemIndicator /> : null}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }
 
