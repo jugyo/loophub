@@ -18,6 +18,7 @@ import {
   HerdrBadge,
   isPullHerdrWorking,
 } from "@/components/herdr-badge";
+import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useTerminalLauncher } from "@/components/terminal-controller";
@@ -196,6 +197,10 @@ export function IssueRow({
             owner={owner}
             repo={repo}
             state={labelState}
+          />
+          <IssueBranchChip
+            branch={issue.target_branch}
+            className="max-w-56 shrink-0 truncate"
           />
         </div>
         {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}

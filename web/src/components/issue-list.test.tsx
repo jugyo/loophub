@@ -59,6 +59,7 @@ function issue(overrides: Partial<Issue> = {}): Issue {
     state: "open",
     title: "Fix the thing",
     body: "",
+    target_branch: null,
     user: { login: "me" },
     labels: [],
     comments: 0,
@@ -378,6 +379,29 @@ describe("IssueList", () => {
 
     const chip = await screen.findByRole("link", { name: "bug" });
     expect(chip.getAttribute("href")).toBe("/r/me/proj?labels=bug&state=all");
+  });
+
+  it("shows the target branch chip on issue rows only when set", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [
+          issue({
+            number: 1,
+            title: "Branch issue",
+            target_branch: "feature/foo-bar",
+          }),
+          issue({ number: 2, title: "Default branch issue" }),
+        ],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("branch:feature/foo-bar")).toBeTruthy();
+    expect(screen.getByText("Branch issue")).toBeTruthy();
+    expect(screen.getByText("Default branch issue")).toBeTruthy();
+    expect(screen.queryByText("branch:null")).toBeNull();
   });
 
   it("shows at most 100 issues initially and offers load more when more exist", async () => {

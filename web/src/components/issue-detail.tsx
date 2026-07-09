@@ -17,6 +17,7 @@ import { BuildStatusLabel } from "@/components/build-status-label";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
 import { HerdrBadge, isPullHerdrWorking } from "@/components/herdr-badge";
+import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { IssueHerdrSection } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
@@ -165,11 +166,12 @@ function IssueHeader({
         </span>
       </div>
 
-      {issue.labels.length > 0 ? (
+      {issue.labels.length > 0 || issue.target_branch ? (
         <div className="flex flex-wrap gap-1">
           {issue.labels.map((l) => (
             <LabelChip key={l.name} name={l.name} owner={owner} repo={repo} />
           ))}
+          <IssueBranchChip branch={issue.target_branch} />
         </div>
       ) : null}
 

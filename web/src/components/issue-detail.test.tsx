@@ -41,6 +41,7 @@ const issue: Issue = {
   state: "open",
   title: "ui2: issue detail",
   body: "Render title, body, labels.",
+  target_branch: null,
   user: { login: "me" },
   labels: [{ name: "ready-to-build", color: null }],
   comments: 1,
@@ -150,6 +151,7 @@ describe("IssueDetail", () => {
     expect(await screen.findByText("ui2: issue detail")).toBeTruthy();
     expect(screen.getByText("Render title, body, labels.")).toBeTruthy();
     expect(screen.getByText("ready-to-build")).toBeTruthy();
+    expect(screen.queryByText(/^branch:/)).toBeNull();
     expect(screen.getByText("Looks good.")).toBeTruthy();
 
     // The linked-PR summary card: a `PR #n` pill, the state word, and the title,
@@ -160,6 +162,18 @@ describe("IssueDetail", () => {
     expect(titleLink?.getAttribute("href")).toBe("/r/me/proj/pulls/30");
     // The state word ("open") shows inside the same summary card.
     expect(pill?.closest("div")?.textContent).toContain("open");
+  });
+
+  it("renders the target branch chip when the issue has a target branch", async () => {
+    renderDetail(() => ({
+      ...issue,
+      target_branch: "feature/foo-bar",
+    }));
+
+    const chip = await screen.findByText("branch:feature/foo-bar");
+
+    expect(chip).toBeTruthy();
+    expect(chip.getAttribute("title")).toBe("Target branch: feature/foo-bar");
   });
 
   it("keeps bottom spacing after the comments section", async () => {
