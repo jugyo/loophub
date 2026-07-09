@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import type { Repo } from "@/api/types";
+import { disabledIconButtonStateClasses } from "@/components/ui/button";
 import {
   isEditableShortcutTarget,
   isShortcutOverlayActive,
@@ -282,10 +283,18 @@ function RepoSwitcherOption({
             setFavorite.mutate(!repo.favorite);
           }}
           className={cn(
-            "inline-flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+            "inline-flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            disabledIconButtonStateClasses,
             repo.favorite
-              ? "text-yellow-600 hover:text-yellow-700 dark:text-yellow-300 dark:hover:text-yellow-200"
-              : "opacity-0 hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100",
+              ? cn(
+                  "text-yellow-600 dark:text-yellow-300",
+                  setFavorite.isPending
+                    ? "disabled:hover:text-yellow-600 dark:disabled:hover:text-yellow-300"
+                    : "hover:text-yellow-700 dark:hover:text-yellow-200",
+                )
+              : setFavorite.isPending
+                ? "opacity-60"
+                : "opacity-0 hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100",
           )}
         >
           <Star

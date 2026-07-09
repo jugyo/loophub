@@ -40,13 +40,14 @@ import {
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { WorkDuration } from "@/components/work-duration";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
 import { type DiffLineKind, parsePatch } from "@/lib/diff";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
+import { cn } from "@/lib/utils";
 import { useIssueComments } from "@/queries/issues";
 import {
   useGithubPrStatus,
@@ -1109,11 +1110,13 @@ function ModeButton({
       type="button"
       aria-pressed={active ?? undefined}
       disabled={disabled}
-      className={`flex items-center gap-1 px-2.5 py-1 transition-colors ${
+      className={cn(
+        "flex items-center gap-1 px-2.5 py-1 transition-colors",
         active
           ? "bg-accent text-accent-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-      }`}
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+        disabled && disabledButtonStateClasses,
+      )}
       onClick={onClick}
     >
       {children}

@@ -22,6 +22,7 @@ import { LabelChip } from "@/components/label-chip";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge, badgeVariants } from "@/components/ui/badge";
+import { disabledIconButtonStateClasses } from "@/components/ui/button";
 import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import {
   type Badge as BadgeData,
@@ -271,7 +272,10 @@ function RowBuildButton({
           issueNumber: issue.number,
         });
       }}
-      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
+      className={cn(
+        "flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        disabledIconButtonStateClasses,
+      )}
     >
       {isLoading ? (
         <Loader2 className="size-4 animate-spin" />
@@ -345,7 +349,10 @@ function IssueRowMenu({
               setMenuOpen(false);
               setState.mutate(issue.state === "open" ? "closed" : "open");
             }}
-            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-60"
+            className={cn(
+              "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground",
+              disabledIconButtonStateClasses,
+            )}
           >
             {label}
           </button>

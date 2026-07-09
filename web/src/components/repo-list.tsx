@@ -84,7 +84,7 @@ function RepoListRow({ repo }: { repo: Repo }) {
         aria-pressed={repo.favorite}
         disabled={setFavorite.isPending}
         onClick={() => setFavorite.mutate(!repo.favorite)}
-        className="rounded-sm p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
+        className="rounded-sm p-1.5 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-muted-foreground"
       >
         <Star
           className={`size-4 ${repo.favorite ? "fill-current text-yellow-600/70 dark:text-yellow-300/70" : ""}`}

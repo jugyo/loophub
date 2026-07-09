@@ -3,7 +3,7 @@
 
 import { Check, ChevronsUpDown } from "lucide-react";
 import type { CodingAgent } from "@/api/types";
-import { Button } from "@/components/ui/button";
+import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -183,7 +183,10 @@ export function SettingsPage() {
                 role="radio"
                 aria-checked={active}
                 disabled={isLoading || update.isPending}
-                className="flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+                className={cn(
+                  "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
+                  disabledButtonStateClasses,
+                )}
                 onClick={() => {
                   if (active) return;
                   update.mutate({ codingAgent: o.value });
@@ -229,7 +232,10 @@ export function SettingsPage() {
                         role="radio"
                         aria-checked={active}
                         disabled={isLoading || update.isPending}
-                        className="flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+                        className={cn(
+                          "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
+                          disabledButtonStateClasses,
+                        )}
                         onClick={() => {
                           if (active) return;
                           update.mutate({

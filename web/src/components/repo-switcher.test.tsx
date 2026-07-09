@@ -23,6 +23,7 @@ const reposData = vi.hoisted(() => ({
 }));
 const favoriteMutations = vi.hoisted(() => ({
   calls: [] as Array<{ owner: string; repo: string; favorite: boolean }>,
+  pending: new Set<string>(),
 }));
 
 vi.mock("@/queries/repos", () => ({
@@ -31,10 +32,10 @@ vi.mock("@/queries/repos", () => ({
     isLoading: false,
     isError: reposData.isError,
   }),
-  useSetRepoFavorite: (owner: string, repo: string) => ({
-    isPending: false,
+  useSetRepoFavorite: (owner: string, repoName: string) => ({
+    isPending: favoriteMutations.pending.has(`${owner}/${repoName}`),
     mutate: (favorite: boolean) => {
-      favoriteMutations.calls.push({ owner, repo, favorite });
+      favoriteMutations.calls.push({ owner, repo: repoName, favorite });
     },
   }),
 }));
@@ -45,6 +46,7 @@ afterEach(() => {
   reposData.value = [];
   reposData.isError = false;
   favoriteMutations.calls = [];
+  favoriteMutations.pending.clear();
 });
 
 function makeRepo(overrides: Partial<Repo>): Repo {
@@ -320,6 +322,50 @@ describe("RepoSwitcher", () => {
     expect(favoriteMutations.calls).toEqual([
       { owner: "me", repo: "alpha", favorite: true },
     ]);
+  });
+
+  it("does not expose enabled hover visibility on pending favorite buttons", async () => {
+    reposData.value = [
+      makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
+      makeRepo({
+        id: 2,
+        name: "beta",
+        full_name: "me/beta",
+        favorite: true,
+      }),
+    ];
+    favoriteMutations.pending.add("me/alpha");
+    favoriteMutations.pending.add("me/beta");
+    renderInRouter();
+    await screen.findByText("ready");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+
+    const addFavoriteButton = await screen.findByRole("button", {
+      name: "Add to favorites: me/alpha",
+    });
+    expect((addFavoriteButton as HTMLButtonElement).disabled).toBe(true);
+    expect(addFavoriteButton.className).toContain("opacity-60");
+    expect(addFavoriteButton.className).not.toContain(
+      "group-hover:opacity-100",
+    );
+    expect(addFavoriteButton.className).not.toContain(
+      "group-focus-within:opacity-100",
+    );
+
+    const removeFavoriteButton = screen.getByRole("button", {
+      name: "Remove from favorites: me/beta",
+    });
+    expect((removeFavoriteButton as HTMLButtonElement).disabled).toBe(true);
+    expect(removeFavoriteButton.className).toContain(
+      "disabled:hover:text-yellow-600",
+    );
+    expect(removeFavoriteButton.className).not.toContain(
+      "hover:text-yellow-700",
+    );
+    expect(removeFavoriteButton.className).not.toContain(
+      "dark:hover:text-yellow-200",
+    );
   });
 
   it("does not navigate when the favorite star is activated from the keyboard", async () => {

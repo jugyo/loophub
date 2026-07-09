@@ -8,7 +8,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { MergeMode } from "@/api/types";
-import { Button } from "@/components/ui/button";
+import { Button, disabledButtonStateClasses } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   useRenameRepo,
   useRepo,
@@ -158,7 +159,10 @@ function MergeModeSection({ owner, repo }: { owner: string; repo: string }) {
               role="radio"
               aria-checked={active}
               disabled={isLoading || setMode.isPending}
-              className="flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+              className={cn(
+                "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
+                disabledButtonStateClasses,
+              )}
               onClick={() => {
                 if (active) return;
                 setMode.mutate(o.value);
