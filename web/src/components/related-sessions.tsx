@@ -13,7 +13,7 @@
 // "no-session" / "unknown-runtime" mean there is no claude session id; every other state has a valid
 // id in `RelatedSession.session`).
 
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useId, useState } from "react";
 import type { RelatedSession, RelatedSessionsUsage } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
@@ -242,9 +242,9 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
               aria-controls={detailsId}
               onClick={() => setShowDetails((open) => !open)}
             >
-              <ChevronDown
+              <ChevronRight
                 className={`h-3.5 w-3.5 shrink-0 transition-transform ${
-                  showDetails ? "rotate-180" : ""
+                  showDetails ? "rotate-90" : ""
                 }`}
                 aria-hidden="true"
               />

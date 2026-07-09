@@ -377,7 +377,10 @@ describe("RelatedSessions", () => {
     const detailsButton = getByRole("button", {
       name: "Show category details",
     });
+    const detailsIcon = detailsButton.querySelector("svg");
+    expect(detailsIcon).not.toBeNull();
     expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(detailsIcon?.classList.contains("rotate-90")).toBe(false);
     expect(container.textContent).not.toContain("By category");
     expect(container.textContent).not.toContain(
       "Implementation1 sessionTokens160Cost$0.0006Context72%",
@@ -387,6 +390,7 @@ describe("RelatedSessions", () => {
     fireEvent.click(detailsButton);
 
     expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(detailsIcon?.classList.contains("rotate-90")).toBe(true);
     expect(detailsButton.textContent).toContain("Hide category details");
     expect(container.textContent).toContain("By category");
     expect(container.textContent).toContain(
@@ -403,6 +407,7 @@ describe("RelatedSessions", () => {
     fireEvent.click(detailsButton);
 
     expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(detailsIcon?.classList.contains("rotate-90")).toBe(false);
     expect(detailsButton.textContent).toContain("Show category details");
     expect(container.textContent).not.toContain("By category");
     expect(container.textContent).not.toContain(
