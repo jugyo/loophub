@@ -235,8 +235,8 @@ export function upsertSessionSubagentUsage(
     `INSERT INTO session_usage_subagents
        (session_id, source_id, parent_source_id, label, kind, model,
         input_tokens, cache_creation_input_tokens, cache_read_input_tokens,
-        output_tokens, cost_usd, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        output_tokens, cost_usd, context_usage_percent, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(session_id, source_id, model) DO UPDATE SET
        parent_source_id = excluded.parent_source_id,
        label = excluded.label,
@@ -246,6 +246,7 @@ export function upsertSessionSubagentUsage(
        cache_read_input_tokens = excluded.cache_read_input_tokens,
        output_tokens = excluded.output_tokens,
        cost_usd = excluded.cost_usd,
+       context_usage_percent = excluded.context_usage_percent,
        updated_at = excluded.updated_at`,
     [
       sessionId,
@@ -259,6 +260,7 @@ export function upsertSessionSubagentUsage(
       usage.cache_read_input_tokens,
       usage.output_tokens,
       usage.cost_usd,
+      usage.context_usage_percent ?? null,
       now(),
     ],
   );

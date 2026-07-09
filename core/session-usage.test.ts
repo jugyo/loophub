@@ -48,6 +48,173 @@ test("parseClaudeUsageJsonl extracts assistant usage and dedupes message ids", (
   });
 });
 
+test("parseClaudeUsageJsonl derives context usage from message usage buckets", () => {
+  const text = [
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_1",
+        model: "claude-sonnet-4-6-20260601",
+        usage: {
+          input_tokens: 100,
+          cache_creation_input_tokens: 20,
+          cache_read_input_tokens: 300,
+          output_tokens: 10,
+        },
+      },
+    }),
+  ].join("\n");
+
+  expect(parseClaudeUsageJsonl(text)[0]).toMatchObject({
+    context_usage_percent: 0.042,
+  });
+});
+
+test("parseClaudeUsageJsonl derives context usage for older Claude 4 windows", () => {
+  const text = [
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_1",
+        model: "claude-sonnet-4-20250514",
+        usage: {
+          input_tokens: 100,
+          cache_creation_input_tokens: 20,
+          cache_read_input_tokens: 300,
+          output_tokens: 10,
+        },
+      },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_2",
+        model: "claude-opus-4-1-20250805",
+        usage: {
+          input_tokens: 200,
+          cache_creation_input_tokens: 40,
+          cache_read_input_tokens: 600,
+          output_tokens: 20,
+        },
+      },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_3",
+        model: "claude-opus-4-20250514",
+        usage: {
+          input_tokens: 200,
+          cache_creation_input_tokens: 40,
+          cache_read_input_tokens: 600,
+          output_tokens: 20,
+        },
+      },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_4",
+        model: "claude-opus-4-10-20261201",
+        usage: {
+          input_tokens: 200,
+          cache_creation_input_tokens: 40,
+          cache_read_input_tokens: 600,
+          output_tokens: 20,
+        },
+      },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_5",
+        model: "claude-3-7-sonnet-20250219",
+        usage: {
+          input_tokens: 200,
+          cache_creation_input_tokens: 40,
+          cache_read_input_tokens: 600,
+          output_tokens: 20,
+        },
+      },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_6",
+        model: "claude-haiku-3-5-20241022",
+        usage: {
+          input_tokens: 200,
+          cache_creation_input_tokens: 40,
+          cache_read_input_tokens: 600,
+          output_tokens: 20,
+        },
+      },
+    }),
+  ].join("\n");
+
+  const entries = parseClaudeUsageJsonl(text);
+  expect(entries[0]).toMatchObject({
+    context_usage_percent: 0.21,
+  });
+  expect(entries[1]).toMatchObject({
+    context_usage_percent: 0.42,
+  });
+  expect(entries[2]).toMatchObject({
+    context_usage_percent: 0.42,
+  });
+  expect(entries[3]).toMatchObject({
+    context_usage_percent: 0.084,
+  });
+  expect(entries[4]).toMatchObject({
+    context_usage_percent: 0.42,
+  });
+  expect(entries[5]).toMatchObject({
+    context_usage_percent: 0.42,
+  });
+});
+
+test("parseClaudeUsageJsonl leaves context usage unavailable for unknown model windows", () => {
+  const text = [
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_1",
+        model: "unknown-model",
+        context_management: { applied_edits: [] },
+        usage: {
+          input_tokens: 100,
+          cache_creation_input_tokens: 20,
+          cache_read_input_tokens: 300,
+          output_tokens: 10,
+        },
+      },
+    }),
+  ].join("\n");
+
+  expect(parseClaudeUsageJsonl(text)[0]).toMatchObject({
+    context_usage_percent: null,
+  });
+});
+
+test("parseClaudeUsageJsonl leaves context usage unavailable without input buckets", () => {
+  const text = [
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg_1",
+        model: "claude-sonnet-4-6-20260601",
+        usage: {
+          output_tokens: 10,
+        },
+      },
+    }),
+  ].join("\n");
+
+  expect(parseClaudeUsageJsonl(text)[0]).toMatchObject({
+    context_usage_percent: null,
+  });
+});
+
 test("parseClaudeSubagentJsonl extracts sidechain metadata and usage", () => {
   const text = [
     JSON.stringify({

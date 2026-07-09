@@ -273,6 +273,7 @@ CREATE TABLE IF NOT EXISTS session_usage_subagents (
   cache_read_input_tokens     INTEGER NOT NULL DEFAULT 0,
   output_tokens               INTEGER NOT NULL DEFAULT 0,
   cost_usd                    REAL,
+  context_usage_percent       REAL,
   updated_at                  TEXT NOT NULL,
   PRIMARY KEY (session_id, source_id, model)
 );
@@ -605,6 +606,9 @@ tryExec("ALTER TABLE agent_sessions ADD COLUMN kind TEXT");
 // session_usage.context_usage_percent (#980): max observed current-context usage for a session/model,
 // nullable when the transcript lacks either the context window or current-turn token count.
 tryExec("ALTER TABLE session_usage ADD COLUMN context_usage_percent REAL");
+tryExec(
+  "ALTER TABLE session_usage_subagents ADD COLUMN context_usage_percent REAL",
+);
 
 // ---- #316: retire pulls.session_id (and the older issue assignee it migrated from) ----
 //

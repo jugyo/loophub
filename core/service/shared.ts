@@ -111,6 +111,7 @@ import type {
 import {
   aggregateUsage,
   calculateCostUsd,
+  claudeContextWindowForModel,
   createClaudeTranscriptIndex,
   createCodexRolloutScan,
   findClaudeSubagentTranscriptCandidates,
@@ -212,6 +213,7 @@ export {
   buildScheduledTaskCommand,
   calculateCostUsd,
   classifyWorktree,
+  claudeContextWindowForModel,
   codingAgent,
   commandForHerdrLaunch,
   commentJSON,

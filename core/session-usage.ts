@@ -214,6 +214,52 @@ function nonNegativeNumber(value: unknown): number | null {
     : null;
 }
 
+export function claudeContextWindowForModel(model: string): number | null {
+  const m = model.toLowerCase();
+  // Claude Code model configuration docs: Fable 5, Sonnet 5, Opus 4.6+,
+  // and Sonnet 4.6 support 1M-token long sessions; Claude 3.x and older
+  // Claude 4 releases use 200k. Unknown/future model names stay null.
+  if (m.includes("fable-5")) return 1_000_000;
+  if (m.includes("sonnet-5")) return 1_000_000;
+  if (m.includes("sonnet-4-6")) return 1_000_000;
+  const opus4 = /opus-4-(\d{1,2})(?:\D|$)/.exec(m);
+  if (opus4 && Number(opus4[1]) >= 6) return 1_000_000;
+  if (m.includes("haiku-4-5")) return 200_000;
+  if (m.includes("sonnet-4")) return 200_000;
+  if (m.includes("opus-4")) return 200_000;
+  if (/\bclaude-3(?:-\d+)?-(?:haiku|sonnet|opus)\b/.test(m)) return 200_000;
+  if (/\b(?:haiku|sonnet|opus)-3(?:-\d+)?\b/.test(m)) return 200_000;
+  return null;
+}
+
+function claudeContextUsagePercent(
+  model: string,
+  usage: unknown,
+): number | null {
+  const window = claudeContextWindowForModel(model);
+  if (window == null) return null;
+  const u = objectValue(usage);
+  if (!u) return null;
+  if (
+    ![
+      u.input_tokens,
+      u.cache_creation_input_tokens,
+      u.cache_read_input_tokens,
+    ].some((value) => typeof value === "number" && Number.isFinite(value))
+  ) {
+    return null;
+  }
+  // Claude transcript message.usage is the stable per-request token source.
+  // Current input context is represented by the non-cached input tokens plus
+  // prompt-cache creation/read buckets; statusline context_window shapes are
+  // not transcript fields and are intentionally ignored.
+  const current =
+    tokenCount(u.input_tokens) +
+    tokenCount(u.cache_creation_input_tokens) +
+    tokenCount(u.cache_read_input_tokens);
+  return (current / window) * 100;
+}
+
 export function parseClaudeUsageJsonl(text: string): UsageEntry[] {
   const entries: UsageEntry[] = [];
   const seen = new Set<string>();
@@ -248,6 +294,7 @@ export function parseClaudeUsageJsonl(text: string): UsageEntry[] {
       ),
       cache_read_input_tokens: tokenCount(usage.cache_read_input_tokens),
       output_tokens: tokenCount(usage.output_tokens),
+      context_usage_percent: claudeContextUsagePercent(model, usage),
     });
   }
   return entries;

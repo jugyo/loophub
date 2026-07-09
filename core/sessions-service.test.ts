@@ -366,8 +366,32 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
     model: "claude-sonnet-4-6-20260601",
     input_tokens: 100,
     output_tokens: 10,
+    context_usage_percent: 0.042,
   });
   expect(svc.sessions.get(sessionId).usage![0].cost_usd).toBeCloseTo(0.000615);
+
+  D.db.run(
+    `UPDATE session_usage SET context_usage_percent = NULL WHERE session_id = ?`,
+    [sessionId],
+  );
+  chmodSync(transcript, 0);
+  try {
+    expect(() => svc.sessions.usageSync({ sessionId, projectsDir })).toThrow();
+  } finally {
+    chmodSync(transcript, 0o600);
+  }
+  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+    input_tokens: 100,
+    output_tokens: 10,
+    context_usage_percent: null,
+  });
+
+  const backfilled = svc.sessions.usageSync({ sessionId, projectsDir });
+  expect(backfilled).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
+  expect(backfilled.sessions[0].messages).toBe(1);
+  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+    context_usage_percent: 0.042,
+  });
 
   chmodSync(transcript, 0);
   try {
@@ -416,6 +440,48 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
     output_tokens: 5,
     cost_usd: null,
   });
+
+  rmSync(projectsDir, { recursive: true, force: true });
+});
+
+test("sessions.usageSync does not repeatedly backfill unavailable Claude context", () => {
+  const sessionId = "99999999-0000-0000-0000-0000000000bf";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  const projectsDir = mkdtempSync(join(tmpdir(), "lh-claude-null-context-"));
+  const projectDir = join(projectsDir, "repo-worktree");
+  mkdirSync(projectDir);
+  const transcript = join(projectDir, `${sessionId}.jsonl`);
+  writeFileSync(
+    transcript,
+    assistantLine("msg_1", "claude-sonnet-4-6-20260601", {
+      output_tokens: 10,
+    }),
+  );
+
+  const first = svc.sessions.usageSync({ sessionId, projectsDir });
+  expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
+  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+    model: "claude-sonnet-4-6-20260601",
+    input_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 10,
+    context_usage_percent: null,
+  });
+
+  chmodSync(transcript, 0);
+  try {
+    const unchanged = svc.sessions.usageSync({ sessionId, projectsDir });
+    expect(unchanged).toMatchObject({ synced: 0, skipped: 1, missing: 0 });
+  } finally {
+    chmodSync(transcript, 0o600);
+  }
 
   rmSync(projectsDir, { recursive: true, force: true });
 });
@@ -496,6 +562,17 @@ test("sessions.usageSync imports Claude sidechain usage as subagent detail", () 
     model: "claude-haiku-3-5-20241022",
     input_tokens: 20,
     output_tokens: 4,
+    context_usage_percent: 0.0125,
+  });
+
+  D.db.run(
+    `UPDATE session_usage_subagents SET context_usage_percent = NULL WHERE session_id = ?`,
+    [sessionId],
+  );
+  const backfilled = svc.sessions.usageSync({ sessionId, projectsDir });
+  expect(backfilled).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
+  expect((svc.sessions.get(sessionId) as any).subagent_usage[0]).toMatchObject({
+    context_usage_percent: 0.0125,
   });
 
   chmodSync(subagentPath, 0);
@@ -1235,24 +1312,24 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
   );
   writeFileSync(
     join(projectDir, `${reviewSessionId}.jsonl`),
-    assistantLine("unknown_msg", "unknown-model", {
-      input_tokens: 5,
-      cache_creation_input_tokens: 0,
-      cache_read_input_tokens: 0,
-      output_tokens: 5,
-    }),
+    [
+      assistantLine("unknown_msg", "claude-sonnet-4-6-20260601", {
+        input_tokens: 870_000,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        output_tokens: 5,
+      }),
+      assistantLine("unknown_msg_2", "unknown-model", {
+        input_tokens: 2,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        output_tokens: 2,
+      }),
+    ].join(""),
   );
 
   svc.sessions.usageSync({ sessionId: devSessionId, projectsDir });
   svc.sessions.usageSync({ sessionId: reviewSessionId, projectsDir });
-  D.db.run(
-    `UPDATE session_usage SET context_usage_percent = ? WHERE session_id = ?`,
-    [42, devSessionId],
-  );
-  D.db.run(
-    `UPDATE session_usage SET context_usage_percent = ? WHERE session_id = ?`,
-    [87, reviewSessionId],
-  );
 
   const pull = (await svc.pulls.get("me/proj", opened.number)) as any;
   const dev = pull.related_sessions.find((s: any) => s.id === devSessionId);
@@ -1268,19 +1345,30 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
       }),
     ]),
   );
-  expect(review.usage[0]).toMatchObject({
-    model: "unknown-model",
-    input_tokens: 5,
-    output_tokens: 5,
-    cost_usd: null,
-  });
+  expect(review.usage).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        model: "claude-sonnet-4-6-20260601",
+        input_tokens: 870_000,
+        output_tokens: 5,
+        context_usage_percent: 87,
+      }),
+      expect.objectContaining({
+        model: "unknown-model",
+        input_tokens: 2,
+        output_tokens: 2,
+        cost_usd: null,
+        context_usage_percent: null,
+      }),
+    ]),
+  );
   expect(pull.related_sessions_usage).toMatchObject({
     sessions_with_usage: 2,
-    input_tokens: 112,
+    input_tokens: 870_109,
     cache_creation_input_tokens: 21,
     cache_read_input_tokens: 32,
-    output_tokens: 18,
-    total_tokens: 183,
+    output_tokens: 20,
+    total_tokens: 870_182,
     cost_usd: null,
     has_unknown_cost: true,
     context_usage_percent: 87,
@@ -1291,7 +1379,7 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
       sessions_with_usage: 1,
       total_tokens: 173,
       has_unknown_cost: false,
-      context_usage_percent: 42,
+      context_usage_percent: 0.015,
       subagents: [
         {
           session_id: devSessionId,
@@ -1305,14 +1393,14 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
           output_tokens: 3,
           total_tokens: 13,
           has_unknown_cost: false,
-          context_usage_percent: null,
+          context_usage_percent: 0.005,
         },
       ],
     },
     {
       kind: "review",
       sessions_with_usage: 1,
-      total_tokens: 10,
+      total_tokens: 870_009,
       cost_usd: null,
       has_unknown_cost: true,
       context_usage_percent: 87,

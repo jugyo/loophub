@@ -9,6 +9,7 @@ import {
   agentSessionJSON,
   aggregateUsage,
   calculateCostUsd,
+  claudeContextWindowForModel,
   createClaudeTranscriptIndex,
   createCodexRolloutScan,
   ensureWritable,
@@ -167,6 +168,26 @@ function modelUsageEqualsStored(
       row.context_usage_percent === (usage.context_usage_percent ?? null)
     );
   });
+}
+
+function needsClaudeContextBackfill(sessionId: string): boolean {
+  const needsBackfill = (usage: {
+    model: string;
+    input_tokens: number;
+    cache_creation_input_tokens: number;
+    cache_read_input_tokens: number;
+    context_usage_percent?: number | null;
+  }) =>
+    usage.context_usage_percent == null &&
+    claudeContextWindowForModel(usage.model) != null &&
+    usage.input_tokens +
+      usage.cache_creation_input_tokens +
+      usage.cache_read_input_tokens >
+      0;
+  return (
+    S.listSessionUsage(sessionId).some(needsBackfill) ||
+    S.listSessionSubagentUsage(sessionId).some(needsBackfill)
+  );
 }
 
 function clearOtherCodexUsageForPull(
@@ -443,8 +464,10 @@ export const sessions = {
       const cursor = S.getSessionUsageCursor(row.id);
       const sameFile =
         cursor?.transcript_path === transcriptStats.transcriptPath;
+      const needsContextBackfill = needsClaudeContextBackfill(row.id);
       const unchanged =
         !input.full &&
+        !needsContextBackfill &&
         sameFile &&
         cursor.cursor_offset === transcriptStats.size &&
         cursor.mtime_ms === transcriptStats.mtimeMs;
@@ -461,12 +484,12 @@ export const sessions = {
       const subagents = parseClaudeSubagentTranscripts(subagentCandidates);
       const canContinue =
         !input.full &&
+        !needsContextBackfill &&
         subagentCandidates.length === 0 &&
         sameFile &&
         cursor &&
         cursor.cursor_offset < transcript.size;
       const offset = canContinue ? cursor.cursor_offset : 0;
-      if (!canContinue) S.resetSessionUsage(row.id);
 
       const parsed = canContinue
         ? parseClaudeUsageJsonl(readTranscriptSlice(transcript.path, offset))
@@ -474,6 +497,7 @@ export const sessions = {
             ...parseClaudeUsageJsonl(readTranscriptSlice(transcript.path, 0)),
             ...subagents.flatMap((subagent) => subagent.entries),
           ];
+      if (!canContinue) S.resetSessionUsage(row.id);
       const fresh: UsageEntry[] = [];
       for (const entry of parsed) {
         if (S.insertSessionUsageMessage(row.id, entry.message_id))
