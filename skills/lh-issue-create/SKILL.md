@@ -2,9 +2,9 @@
 name: lh-issue-create
 description: >-
   Create an AFK-ready LoopHub issue from conversation or a bug report, then STOP. Never
-  implements, branches, edits code, or opens PRs unless the user explicitly asks in a separate
-  message. Use when the user runs /lh-issue-create, asks to create/file/open an issue only,
-  起票, issue作成, or turn chat into an issue — NOT when they ask to implement or fix.
+  implements, creates implementation branches, edits code, or opens PRs for issue-only requests.
+  Use when the user runs /lh-issue-create, asks to create/file/open an issue only, 起票, issue作成,
+  or turn chat into an issue — NOT when they ask to implement or fix.
 ---
 
 # LoopHub issue create
@@ -19,11 +19,16 @@ ticket", that does **not** include an implementation request.
 
 | Do | Do not |
 |----|--------|
-| Gather context, check duplicates, `lh issue create`, report creation | **Carry out the requested change itself — whatever kind** (source, skill, config, doc, policy, …); create branches; add tests; open PRs; merge |
+| Gather context, check duplicates, `lh issue create`, report creation | **Carry out the requested change itself — whatever kind** (source, skill, config, doc, policy, …); create implementation branches; add tests; open PRs; merge |
 | Read-only code exploration (to refine AC) | Start implementation |
 | **Suggest** the next skill in text | **Continue** to the next skill yourself |
 
 The `ready-to-build` label means "another agent can pick this up later" — not "implement now".
+
+**Target-branch exception.** If the user explicitly names the branch the future implementation should
+target, `lh issue create --target-branch <branch> --create-target-branch` may create that local target
+branch as issue metadata preparation. That is not permission to create an implementation branch, edit
+files, commit, open a PR, push, or start work.
 
 **Exception — herdr mode only (see § 5).** In herdr mode this skill asks once, after reporting
 creation, whether to start now. Only an explicit "yes" launches anything, and even then this
@@ -63,7 +68,7 @@ Stop **immediately** when all of the following are true (do not start extra work
 ### Common mistakes
 
 ```text
-❌ After creating an issue, "while I'm here" cut a branch and start coding
+❌ After creating an issue, "while I'm here" cut an implementation branch and start coding
 ❌ Read code to write AC, then fix problems found on the spot
 ❌ Auto-start grab / lh-build because you see the skill chain
 ❌ "Let's stop using labels" / "fix this skill so it…" → edit the policy or skill file directly
@@ -72,6 +77,8 @@ Stop **immediately** when all of the following are true (do not start extra work
 ❌ In herdr mode, skip asking and launch `lh build` anyway, or implement inside this session instead
    of a new herdr tab/agent
 ✅ Create issue → report number → stop (implementation needs explicit user or separate skill)
+✅ User explicitly names a target branch → let `lh issue create --create-target-branch` prepare only
+   that local target branch, then stop
 ✅ herdr mode: ask once whether to start now → only on "yes", launch a new herdr tab/agent
 ✅ Any change request (code, policy, skill, config, doc, …) → file an issue describing it → stop
 ```
@@ -242,6 +249,30 @@ other than <element>" easily reads as ruling out sites you intended to cover (th
 in-scope sites explicitly in Goal/AC so an exclusion line can't swallow them.
 
 ### 4. Create
+
+#### Target branch (only when the user explicitly mentions one)
+
+Do **not** infer or invent a target branch for normal issue creation. If the user does not explicitly
+mention a work target branch, omit `--target-branch` entirely; the created issue should keep
+`target_branch: null`.
+
+When the user explicitly names the branch this issue should target, pass both `--target-branch` and
+`--create-target-branch`. Treat the branch name as untrusted command data: do not paste raw branch text
+into a shell command. Use an argv-native tool call when available; in a shell, quote/escape the value
+so shell metacharacters cannot run before `lh` validates it. Example with a literal safe branch name:
+
+```sh
+lh issue create --repo <repo> --title "<title>" --target-branch 'feature/topic' --create-target-branch \
+  --body "$(cat <<'EOF'
+<filled template>
+EOF
+)"
+```
+
+This makes issue creation verify the local branch before filing the issue and, when the branch does
+not exist yet, create it from the repository's configured default branch. If the branch name is unsafe,
+the default branch cannot be resolved, or branch creation fails, the command fails before creating the
+issue. Do not create or push any GitHub remote branch.
 
 **Do not attach labels by default.** Mechanical per-issue labels — category (`enhancement` /
 `bug`) and `ready-to-build` — have little practical value, so this skill no longer adds them

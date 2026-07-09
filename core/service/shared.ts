@@ -373,20 +373,89 @@ export function assertExistingLocalBranch(
   branch: string,
   label = "target_branch",
 ): void {
-  if (branch.startsWith("-") || /[\0\r\n]/.test(branch)) {
-    throw new ServiceError(422, `${label} must be a local branch name`);
-  }
-  const result = spawnSync(
-    "git",
-    ["-C", repoPath, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-    { encoding: "utf8" },
-  );
-  if (result.status !== 0) {
+  assertOptionSafeLocalBranchName(branch, label);
+  if (!localBranchExists(repoPath, branch)) {
     throw new ServiceError(
       422,
       `${label} must name an existing local branch: ${branch}`,
     );
   }
+}
+
+export function ensureLocalBranchFromDefault(
+  repoPath: string,
+  branch: string,
+  defaultBranch: string,
+  label = "target_branch",
+): void {
+  assertCreatableLocalBranchName(branch, label);
+  if (localBranchExists(repoPath, branch)) return;
+  assertOptionSafeLocalBranchName(defaultBranch, "default_branch");
+  if (!localBranchExists(repoPath, defaultBranch)) {
+    throw new ServiceError(
+      422,
+      `cannot resolve default branch "${defaultBranch}"`,
+    );
+  }
+  const result = spawnSync(
+    "git",
+    [
+      "-C",
+      repoPath,
+      "branch",
+      "--no-track",
+      "--",
+      branch,
+      `refs/heads/${defaultBranch}`,
+    ],
+    { encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    throw new ServiceError(
+      422,
+      `failed to create ${label} "${branch}" from default branch "${defaultBranch}": ${result.stderr.trim() || result.stdout.trim() || "git branch failed"}`,
+    );
+  }
+}
+
+function assertOptionSafeLocalBranchName(branch: string, label: string): void {
+  if (
+    branch.startsWith("-") ||
+    /[\0\r\n]/.test(branch) ||
+    isRevisionSpecialBranchName(branch)
+  ) {
+    throw new ServiceError(422, `${label} must be a local branch name`);
+  }
+}
+
+function isRevisionSpecialBranchName(branch: string): boolean {
+  return (
+    branch === "@" ||
+    branch === "HEAD" ||
+    branch.endsWith("/HEAD") ||
+    /^[A-Z_]+_HEAD$/.test(branch)
+  );
+}
+
+function assertCreatableLocalBranchName(branch: string, label: string): void {
+  assertOptionSafeLocalBranchName(branch, label);
+  const result = spawnSync(
+    "git",
+    ["check-ref-format", `refs/heads/${branch}`],
+    { encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    throw new ServiceError(422, `${label} must be a local branch name`);
+  }
+}
+
+function localBranchExists(repoPath: string, branch: string): boolean {
+  const result = spawnSync(
+    "git",
+    ["-C", repoPath, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+    { encoding: "utf8" },
+  );
+  return result.status === 0;
 }
 
 export function actorFor(sessionId: string | null | undefined): string {

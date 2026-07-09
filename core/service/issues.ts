@@ -6,6 +6,7 @@ import {
   commentJSON,
   DEFAULT_LIST_PER_PAGE,
   ENV_ISSUE_CREATE_HERDR_LAUNCH,
+  ensureLocalBranchFromDefault,
   ensureWritable,
   githubIssueJSON,
   herdrPaneJSON,
@@ -97,6 +98,7 @@ export const issues = {
       body?: string;
       labels?: string[];
       target_branch?: string | null;
+      create_target_branch?: boolean;
     },
     sessionId?: string | null,
   ) {
@@ -105,7 +107,18 @@ export const issues = {
     if (!input.title) throw new ServiceError(422, "title is required");
     const actor = actorFor(sessionId);
     const targetBranch = input.target_branch?.trim() || null;
-    if (targetBranch) assertExistingLocalBranch(r.local_path, targetBranch);
+    if (targetBranch) {
+      if (input.create_target_branch) {
+        ensureLocalBranchFromDefault(
+          r.local_path,
+          targetBranch,
+          r.default_branch,
+          "target_branch",
+        );
+      } else {
+        assertExistingLocalBranch(r.local_path, targetBranch);
+      }
+    }
     const issue = S.createIssue(
       r.id,
       "issue",

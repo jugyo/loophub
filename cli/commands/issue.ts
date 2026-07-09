@@ -127,6 +127,7 @@ export async function run(): Promise<void> {
           body: flags.body || "",
           labels,
           target_branch: flags["target-branch"],
+          create_target_branch: flags["create-target-branch"] === true,
         },
         await writeSession(),
       ),

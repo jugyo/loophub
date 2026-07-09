@@ -117,6 +117,118 @@ test("lh issue create accepts a target branch", () => {
   expect(issue.target_branch).toBe("integration/stack");
 });
 
+test("lh issue create can create a missing target branch from default", () => {
+  const { stdout, exitCode, stderr } = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "new branch target",
+    "--target-branch",
+    "feature/issue-target",
+    "--create-target-branch",
+  ]);
+  expect(exitCode).toBe(0);
+  const m = stdout.match(/created #(\d+)/);
+  if (!m) throw new Error(`create failed: ${stdout}\n${stderr}`);
+
+  const issue = viewJSON(Number(m[1]));
+  expect(issue.target_branch).toBe("feature/issue-target");
+  const branch = spawnSync(
+    "git",
+    [
+      "-C",
+      repoPath,
+      "show-ref",
+      "--verify",
+      "--quiet",
+      "refs/heads/feature/issue-target",
+    ],
+    { encoding: "utf8" },
+  );
+  expect(branch.status).toBe(0);
+});
+
+test("lh issue create without target branch does not create a branch", () => {
+  const { stdout, exitCode } = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "plain issue",
+  ]);
+  expect(exitCode).toBe(0);
+  const m = stdout.match(/created #(\d+)/);
+  if (!m) throw new Error(`create failed: ${stdout}`);
+  expect(viewJSON(Number(m[1])).target_branch).toBeNull();
+
+  const branch = spawnSync(
+    "git",
+    [
+      "-C",
+      repoPath,
+      "show-ref",
+      "--verify",
+      "--quiet",
+      "refs/heads/plain-issue",
+    ],
+    { encoding: "utf8" },
+  );
+  expect(branch.status).not.toBe(0);
+});
+
+test("lh issue create rejects invalid create-if-missing target branches", () => {
+  const { stderr, exitCode } = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "bad branch target",
+    "--target-branch=--output=/tmp/lh-target-branch",
+    "--create-target-branch",
+  ]);
+
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("target_branch must be a local branch name");
+});
+
+test("lh issue create rejects revision-expression target branches", () => {
+  const { stderr, exitCode } = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "revision branch target",
+    "--target-branch",
+    "main~1",
+    "--create-target-branch",
+  ]);
+
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("target_branch must be a local branch name");
+});
+
+test("lh issue create rejects revision-special target branches", () => {
+  git(["branch", "@"]);
+  const { stderr, exitCode } = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "special branch target",
+    "--target-branch",
+    "@",
+  ]);
+
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("target_branch must be a local branch name");
+});
+
 test("lh issue update --title leaves body untouched", () => {
   const n = createIssue("title only", "keep this body");
   expect(

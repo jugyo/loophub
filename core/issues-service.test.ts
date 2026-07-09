@@ -88,6 +88,64 @@ test("issues.create normalizes a blank target branch to null", () => {
   expect(issue.target_branch).toBeNull();
 });
 
+test("issues.create without a target branch does not create a branch", () => {
+  const before = git([
+    "show-ref",
+    "--verify",
+    "--quiet",
+    "refs/heads/new/topic",
+  ]);
+  expect(before.status).not.toBe(0);
+
+  const issue = svc.issues.create("me/proj", {
+    title: "untargeted",
+  }) as any;
+
+  expect(issue.target_branch).toBeNull();
+  const after = git([
+    "show-ref",
+    "--verify",
+    "--quiet",
+    "refs/heads/new/topic",
+  ]);
+  expect(after.status).not.toBe(0);
+});
+
+test("issues.create can create a missing target branch from default", () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "new target",
+    target_branch: "feature/new-target",
+    create_target_branch: true,
+  }) as any;
+
+  expect(issue.target_branch).toBe("feature/new-target");
+  expect(
+    git(["show-ref", "--verify", "--quiet", "refs/heads/feature/new-target"])
+      .status,
+  ).toBe(0);
+});
+
+test("issues.create creates missing target branch from the exact default branch ref", () => {
+  writeFileSync(join(repoPath, "default-only.txt"), "default\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "default-only"]);
+  const defaultHead = git(["rev-parse", "refs/heads/main"]).stdout.trim();
+  const previousCommit = git(["rev-parse", "main~1"]).stdout.trim();
+  git(["tag", "main", previousCommit]);
+
+  const issue = svc.issues.create("me/proj", {
+    title: "ambiguous default target",
+    target_branch: "feature/ambiguous-default",
+    create_target_branch: true,
+  }) as any;
+
+  expect(issue.target_branch).toBe("feature/ambiguous-default");
+  expect(git(["rev-parse", "feature/ambiguous-default"]).stdout.trim()).toBe(
+    defaultHead,
+  );
+  git(["tag", "-d", "main"]);
+});
+
 test("issues.create rejects a missing target branch", () => {
   expect(() =>
     svc.issues.create("me/proj", {
@@ -104,6 +162,70 @@ test("issues.create rejects option-like target branches", () => {
       target_branch: "--output=/tmp/lh-target-branch",
     }),
   ).toThrow(/target_branch must be a local branch name/);
+});
+
+test("issues.create rejects revision-special target branch names", () => {
+  git(["branch", "@"]);
+
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "special target",
+      target_branch: "@",
+    }),
+  ).toThrow(/target_branch must be a local branch name/);
+
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "special new target",
+      target_branch: "HEAD",
+      create_target_branch: true,
+    }),
+  ).toThrow(/target_branch must be a local branch name/);
+});
+
+test("issues.create rejects invalid target branches before create-if-missing", () => {
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "invalid target",
+      target_branch: "--output=/tmp/lh-target-branch",
+      create_target_branch: true,
+    }),
+  ).toThrow(/target_branch must be a local branch name/);
+});
+
+test("issues.create rejects revision expressions before create-if-missing", () => {
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "revision target",
+      target_branch: "main~1",
+      create_target_branch: true,
+    }),
+  ).toThrow(/target_branch must be a local branch name/);
+});
+
+test("issues.create fails before creating the issue when default branch is missing", () => {
+  const repo = S.createRepo("me/missing-default", repoPath, "missing-default");
+  const before = S.listIssues(repo.id, "issue", "open", "created").length;
+
+  expect(() =>
+    svc.issues.create("me/missing-default", {
+      title: "cannot create branch",
+      target_branch: "feature/from-missing-default",
+      create_target_branch: true,
+    }),
+  ).toThrow(/cannot resolve default branch "missing-default"/);
+
+  expect(S.listIssues(repo.id, "issue", "open", "created")).toHaveLength(
+    before,
+  );
+  expect(
+    git([
+      "show-ref",
+      "--verify",
+      "--quiet",
+      "refs/heads/feature/from-missing-default",
+    ]).status,
+  ).not.toBe(0);
 });
 
 test("issues.list defaults to newest-created order and keeps label filters (#751)", async () => {
