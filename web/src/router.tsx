@@ -15,6 +15,7 @@ import { rootRoute } from "./routes/root";
 import { sessionsRoute } from "./routes/sessions";
 import { settingsRoute } from "./routes/settings";
 import { statsDbRoute, statsRoute, statsSessionsRoute } from "./routes/stats";
+import { uiCatalogRoute } from "./routes/ui-catalog";
 
 // App-shell route tree. Leaf components are placeholders; later UI issues
 // replace each screen in place without changing this tree.
@@ -36,6 +37,7 @@ const routeTree = rootRoute.addChildren([
   statsRoute,
   statsDbRoute,
   statsSessionsRoute,
+  uiCatalogRoute,
 ]);
 
 export const router = createRouter({ routeTree });
