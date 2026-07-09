@@ -257,22 +257,27 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
             {showDetails ? (
               <div id={detailsId} className="mt-3">
                 <h3 className="text-xs font-medium">By category</h3>
-                <ul className="flex flex-col gap-2">
+                <ul className="mt-2 flex flex-col gap-2">
                   {usage.by_kind.map((k) => (
                     <li
                       key={k.kind}
-                      className="border-t first:border-t-0 pt-2 first:pt-0"
+                      className="border-t first:border-t-0 pt-2.5 first:pt-0"
                     >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <Badge tone={KIND_TONE[k.kind] ?? "unknown"}>
-                          {KIND_LABEL[k.kind] ?? k.kind}
-                        </Badge>
-                        <span className="truncate text-xs text-muted-foreground">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+                        <span className="min-w-0">
+                          <Badge
+                            className="max-w-full overflow-hidden text-ellipsis"
+                            tone={KIND_TONE[k.kind] ?? "unknown"}
+                          >
+                            {KIND_LABEL[k.kind] ?? k.kind}
+                          </Badge>
+                        </span>
+                        <span className="text-xs text-muted-foreground">
                           {k.sessions_with_usage} session
                           {k.sessions_with_usage === 1 ? "" : "s"}
                         </span>
                       </div>
-                      <dl className="mt-1 flex flex-col gap-1">
+                      <dl className="mt-1.5 flex flex-col gap-1">
                         <div className="flex items-baseline justify-between gap-3">
                           <dt className="text-xs text-muted-foreground">
                             Tokens
