@@ -38,6 +38,10 @@
           "name": {
             "type": "string",
             "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -120,6 +124,34 @@
       }
     },
     {
+      "name": "repos/setFavorite",
+      "description": "Favorite or unfavorite a repository.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "favorite": {
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "favorite"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "repos/update",
       "description": "Update a repository's default branch and/or local path.",
       "params": {
@@ -152,6 +184,35 @@
       }
     },
     {
+      "name": "repos/rename",
+      "description": "Rename a repository's owner/name (full_name) (#485).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "new_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "new_name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "repos/remove",
       "description": "Remove a repository and its issues/PRs.",
       "params": {
@@ -169,6 +230,411 @@
       },
       "result": {
         "type": "null"
+      }
+    },
+    {
+      "name": "repos/setMergeMode",
+      "description": "Pin the repo's PR-detail write action ('merge' | 'github_pr'), or 'auto' to clear it (#406).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mode": {
+            "enum": [
+              "merge",
+              "github_pr",
+              "auto"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "mode"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "repos/mergeMode",
+      "description": "Resolved merge-mode view: raw setting, GitHub-remote presence, and the effective mode (#406).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "settings/get",
+      "description": "Instance-level config.json settings (per-agent autoModeOnBuild/model/effort, codingAgent) (#474, #499, #516, #593, #594, #682).",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "settings/update",
+      "description": "Update instance-level config.json settings, preserving unrelated fields. autoModeOnBuild/model/effort require agent (#474, #593, #594, #682).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "enum": [
+              "claude-code",
+              "codex"
+            ]
+          },
+          "autoModeOnBuild": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effort": {
+            "type": "string",
+            "minLength": 1
+          },
+          "codingAgent": {
+            "enum": [
+              "claude-code",
+              "codex"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pevrWorkflows/list",
+      "description": "List global PEVR workflow definitions (Plan/Execute/Verify/Reflect prompt bundles).",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "pevrWorkflows/get",
+      "description": "Get one PEVR workflow definition by name.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pevrWorkflows/create",
+      "description": "Create a global PEVR workflow definition.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "plan_prompt": {
+            "type": "string"
+          },
+          "execute_prompt": {
+            "type": "string"
+          },
+          "verify_prompt": {
+            "type": "string"
+          },
+          "reflect_prompt": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pevrWorkflows/update",
+      "description": "Update a global PEVR workflow definition.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "new_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "plan_prompt": {
+            "type": "string"
+          },
+          "execute_prompt": {
+            "type": "string"
+          },
+          "verify_prompt": {
+            "type": "string"
+          },
+          "reflect_prompt": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pevrWorkflows/delete",
+      "description": "Delete a global PEVR workflow definition unless a running run references it.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "terminal/config",
+      "description": "Terminal launch backend, always herdr — terminal workflows launch as external Herdr sessions (#562).",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "terminal/launch",
+      "description": "Launch a terminal workflow as a named Herdr session. issue-dev (Build) spawns `lh build --herdr` and lets it provision the worktree/PR and the herdr pane itself (#584); the other workflows are orchestrated by this RPC directly.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string"
+          },
+          "workflow": {
+            "enum": [
+              "issue-dev",
+              "issue-create",
+              "scheduled-task-create",
+              "resume",
+              "github-pr-export"
+            ]
+          },
+          "issueNumber": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "prNumber": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "agent": {
+            "enum": [
+              "claude-code",
+              "codex"
+            ]
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "terminal/sessions",
+      "description": "Running herdr sessions grouped by repository, with each agent's name and status (#495), plus which running agents are pinned to a PR's worktree (pull_workspaces, #579 — drives the issue-list Herdr badge). Empty when herdr is not installed or nothing is running.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "terminal/agentRead",
+      "description": "Recent terminal output for one herdr agent, for the sidebar hover preview (#500). target is a herdr `agent read` target — a pane_id, or an agent display name (e.g. \"dev #486\") only when it's unique within the session (herdr will not resolve an ambiguous name). output is null when herdr isn't running, the session is gone, or the agent is no longer present.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lines": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "terminal/killAgent",
+      "description": "Close the pane a herdr agent is running in, identified by its pane id (#521). Fails visibly (herdr not installed, session/pane already gone) rather than silently.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "paneId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "paneId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "terminal/focusAgent",
+      "description": "Switch herdr's focus to a running agent's pane, identified by its pane id (#578's herdr agent focus, reused by the issue-list Herdr badge's click action, #579). Fails visibly (herdr not installed, pane already gone) rather than silently.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "paneId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "paneId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
       }
     },
     {
@@ -191,6 +657,12 @@
           },
           "name": {
             "type": "string"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
           }
         },
         "required": [
@@ -202,6 +674,67 @@
       },
       "result": {
         "type": "object"
+      }
+    },
+    {
+      "name": "sessions/link",
+      "description": "Link a registered session to an issue or a PR (exactly one of issue/pr). Generalized attach point for session kinds beyond dev; idempotent.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "issue": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pr": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "sessionId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "sessions/listFor",
+      "description": "Related sessions for an issue or a PR (exactly one of issue/pr), newest first, with per-row resume verdicts.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "issue": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pr": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
       }
     },
     {
@@ -224,6 +757,173 @@
         "type": "object",
         "properties": {
           "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "inbox/list",
+      "description": "List Inbox messages across repositories, unread first by default.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "unread",
+              "read",
+              "archived",
+              "deleted"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "inbox/get",
+      "description": "Get one Inbox message by id.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "inbox/read",
+      "description": "Mark one Inbox message as read.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "inbox/unread",
+      "description": "Mark one Inbox message as unread.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "inbox/archive",
+      "description": "Archive one Inbox message.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "inbox/unarchive",
+      "description": "Move one archived Inbox message back to the active Inbox as read.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "inbox/delete",
+      "description": "Soft-delete one Inbox message by moving it to the deleted state.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
             "type": "string",
             "minLength": 1
           }
@@ -270,6 +970,12 @@
           "perPage": {
             "type": "integer",
             "minimum": 1
+          },
+          "sort": {
+            "enum": [
+              "updated",
+              "created"
+            ]
           }
         },
         "required": [
@@ -521,6 +1227,106 @@
       }
     },
     {
+      "name": "handoffs/list",
+      "description": "List orchestrator<->subagent handoffs for a ref, chronological (seq asc). Filters optional: pr narrows to one PR, issue to a generic issue, session to a session.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pr": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "issue": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "handoffs/record",
+      "description": "Record a handoff: a parent's instruction (dir=down) or a child's return (dir=up). Binds to a PR and/or issue (one required) plus the recording session. Pass body for inline content (instruction/Verify report), or src+hash to reference a canonical copy (plan=PR, diff=commit) without duplicating it.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "phase": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dir": {
+            "enum": [
+              "down",
+              "up"
+            ]
+          },
+          "pr": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "issue": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "src": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "cost": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "phase",
+          "dir"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "labels/list",
       "description": "List a repository's labels.",
       "params": {
@@ -538,6 +1344,232 @@
       },
       "result": {
         "type": "array"
+      }
+    },
+    {
+      "name": "scheduledTasks/list",
+      "description": "List a repository's scheduled tasks.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "scheduledTasks/get",
+      "description": "Get one scheduled task by id, with its recent run log.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "scheduledTasks/create",
+      "description": "Create a scheduled task (title, prompt, agent, times, optional model/effort).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "codex"
+            ]
+          },
+          "times": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "title",
+          "prompt",
+          "agent",
+          "times"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "scheduledTasks/update",
+      "description": "Update a scheduled task's fields (only provided fields change).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "codex"
+            ]
+          },
+          "times": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "scheduledTasks/delete",
+      "description": "Delete a scheduled task and its run log.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "scheduledTasks/run",
+      "description": "Run a scheduled task immediately (Run now), without waiting for a registered time.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
       }
     },
     {
@@ -637,6 +1669,9 @@
             "type": "integer",
             "minimum": 1
           },
+          "draft": {
+            "type": "boolean"
+          },
           "session_id": {
             "type": "string",
             "minLength": 1
@@ -721,6 +1756,43 @@
       }
     },
     {
+      "name": "pulls/fileAtRef",
+      "description": "Whole-file content of a changed file at the PR's base or head commit (#435), for the Markdown preview modal. `status` is 'ok' (with `content`), 'missing' (the file does not exist at that side — an added or deleted file), or 'binary'.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "side": {
+            "enum": [
+              "base",
+              "head"
+            ]
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "path",
+          "side"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "pulls/merge",
       "description": "Merge a pull request.",
       "params": {
@@ -757,6 +1829,175 @@
       }
     },
     {
+      "name": "pulls/recordGithubPull",
+      "description": "Record the GitHub PR a loophub PR was exported to (#406). Idempotent on the PR.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "github_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "branch": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "github_number",
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/createGithubPull",
+      "description": "Submit a loophub PR to GitHub as a Draft PR (#411): push the head branch under `branch`, open (or recover) a Draft PR, and record it. Atomic — a retry recovers a created-but-unrecorded PR instead of duplicating.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number",
+          "branch",
+          "title",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/pushGithubPull",
+      "description": "Push the loophub PR's current head to the branch of its already-recorded GitHub PR (#848), so commits added locally after the export reach GitHub without re-creating the PR. Records the pushed head SHA.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/markGithubMerged",
+      "description": "Close a GitHub-linked PR (and its linked issue) as merged, without a local git merge, once lh-worker's polling has detected the GitHub PR as merged.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/githubStatus",
+      "description": "GitHub-side status (draft / review / checks / comment counts / merged) of a PR's linked GitHub PR (#850). Fetched on demand via `gh` and cached; 404 when the PR has no linked GitHub PR.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "pulls/readyForReview",
       "description": "Mark a pull request ready for re-review after addressing changes.",
       "params": {
@@ -776,6 +2017,31 @@
           "session_id": {
             "type": "string",
             "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/debug",
+      "description": "Read-only debug dump for a PR: raw DB rows (issue/pull/linked issue/labels), git facts (refs, SHAs, diffstat, commits, files), reviews, comments, related events, and the dev session.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [
@@ -953,7 +2219,20 @@
     },
     {
       "name": "dashboard/overview",
-      "description": "Cross-repo top-page overview: recently created open issues and open unmerged pull requests, each tagged with its repo.",
+      "description": "Cross-repo top-page overview: recently created open issues, each tagged with its repo.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "stats/get",
+      "description": "Database statistics: per-table row counts, DB file size (WAL included), and per-repo issue/PR tallies.",
       "params": {
         "type": "object",
         "properties": {},

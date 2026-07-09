@@ -22,6 +22,13 @@ const scheduledAgent = {
   type: "string",
   enum: ["claude-code", "codex"],
 } as const;
+const pevrWorkflowFields = {
+  description: str,
+  plan_prompt: str,
+  execute_prompt: str,
+  verify_prompt: str,
+  reflect_prompt: str,
+} as const;
 const inboxMessageState = {
   type: "string",
   enum: ["unread", "read", "archived", "deleted"],
@@ -191,6 +198,74 @@ export const methods: Record<string, MethodDef> = {
         },
         p.session_id,
       ),
+  },
+
+  // ---- PEVR workflows ----
+  "pevrWorkflows/list": {
+    description:
+      "List global PEVR workflow definitions (Plan/Execute/Verify/Reflect prompt bundles).",
+    params: EMPTY_PARAMS,
+    result: anyArray,
+    handler: () => svc.pevrWorkflows.list(),
+  },
+  "pevrWorkflows/get": {
+    description: "Get one PEVR workflow definition by name.",
+    params: params({ name: strNonEmpty }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.pevrWorkflows.get(p.name),
+  },
+  "pevrWorkflows/create": {
+    description: "Create a global PEVR workflow definition.",
+    params: params(
+      { name: strNonEmpty, ...pevrWorkflowFields, session_id: sid },
+      ["name"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.pevrWorkflows.create(
+        {
+          name: p.name,
+          description: p.description,
+          plan_prompt: p.plan_prompt,
+          execute_prompt: p.execute_prompt,
+          verify_prompt: p.verify_prompt,
+          reflect_prompt: p.reflect_prompt,
+        },
+        p.session_id,
+      ),
+  },
+  "pevrWorkflows/update": {
+    description: "Update a global PEVR workflow definition.",
+    params: params(
+      {
+        name: strNonEmpty,
+        new_name: strNonEmpty,
+        ...pevrWorkflowFields,
+        session_id: sid,
+      },
+      ["name"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.pevrWorkflows.update(
+        p.name,
+        {
+          name: p.new_name,
+          description: p.description,
+          plan_prompt: p.plan_prompt,
+          execute_prompt: p.execute_prompt,
+          verify_prompt: p.verify_prompt,
+          reflect_prompt: p.reflect_prompt,
+        },
+        p.session_id,
+      ),
+  },
+  "pevrWorkflows/delete": {
+    description:
+      "Delete a global PEVR workflow definition unless a running run references it.",
+    params: params({ name: strNonEmpty, session_id: sid }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.pevrWorkflows.delete(p.name, p.session_id),
   },
 
   // ---- terminal launch ----

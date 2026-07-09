@@ -66,6 +66,12 @@ export type Flags = {
   number?: string;
   url?: string;
   branch?: string;
+  description?: string;
+  "plan-prompt"?: string;
+  "execute-prompt"?: string;
+  "verify-prompt"?: string;
+  "reflect-prompt"?: string;
+  step?: string;
 };
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
@@ -131,6 +137,12 @@ const { values, positionals } = parseArgs({
     number: { type: "string" },
     url: { type: "string" },
     branch: { type: "string" },
+    description: { type: "string" },
+    "plan-prompt": { type: "string" },
+    "execute-prompt": { type: "string" },
+    "verify-prompt": { type: "string" },
+    "reflect-prompt": { type: "string" },
+    step: { type: "string" },
   },
 });
 export const flags = values as Flags;

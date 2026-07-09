@@ -31,6 +31,29 @@ test("createRepo normalizes slashless names to me/<name> (RETURNING row)", () =>
   expect(S.getRepo("me", "proj")?.id).toBe(repo.id);
 });
 
+test("deleteRepo removes PEVR runs before deleting the repo", () => {
+  const repo = S.createRepo("me/pevr-remove", "/tmp/pevr-remove");
+  const workflow = S.createPevrWorkflow({
+    name: "repo-remove-workflow",
+    description: "",
+    planPrompt: "",
+    executePrompt: "",
+    verifyPrompt: "",
+    reflectPrompt: "",
+  });
+  S.createPevrRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 1,
+    prNumber: 2,
+    status: "completed",
+    currentStep: "reflect",
+  });
+
+  expect(S.deleteRepo("me", "pevr-remove")).toBe(true);
+  expect(S.getRepo("me", "pevr-remove")).toBeNull();
+});
+
 test("updateRepo renames full_name and keeps name/owner in sync (#485)", () => {
   const repo = S.createRepo("me/rn-store", "/tmp/rn-store");
 

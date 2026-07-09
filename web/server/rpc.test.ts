@@ -248,6 +248,42 @@ test("inbox/list, inbox/get, and state mutations expose Inbox messages through J
   expect(unarchived.result.state).toBe("read");
 });
 
+test("PEVR workflow CRUD is exposed through JSON-RPC", async () => {
+  const created: any = await call("pevrWorkflows/create", {
+    name: " standard ",
+    description: "Reusable PEVR prompts",
+    plan_prompt: "",
+    execute_prompt: "Implement",
+    verify_prompt: "",
+    reflect_prompt: "",
+  });
+  expect(created.result).toMatchObject({
+    name: "standard",
+    description: "Reusable PEVR prompts",
+    execute_prompt: "Implement",
+  });
+
+  const listed: any = await call("pevrWorkflows/list", {});
+  expect(listed.result.map((w: any) => w.name)).toContain("standard");
+
+  const updated: any = await call("pevrWorkflows/update", {
+    name: "standard",
+    new_name: "standard-v2",
+    plan_prompt: "Plan first",
+  });
+  expect(updated.result.name).toBe("standard-v2");
+  expect(updated.result.plan_prompt).toBe("Plan first");
+  expect(updated.result.execute_prompt).toBe("Implement");
+
+  const got: any = await call("pevrWorkflows/get", { name: "standard-v2" });
+  expect(got.result.id).toBe(created.result.id);
+
+  const deleted: any = await call("pevrWorkflows/delete", {
+    name: "standard-v2",
+  });
+  expect(deleted.result).toEqual({ ok: true });
+});
+
 test("dispatchRaw turns invalid JSON into -32700", async () => {
   const r: any = await dispatchRaw("{not json");
   expect(r.error.code).toBe(ERROR_CODES.PARSE_ERROR);

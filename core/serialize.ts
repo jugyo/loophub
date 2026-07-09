@@ -1161,6 +1161,34 @@ export function scheduledTaskRunJSON(
   };
 }
 
+// A PEVR workflow definition (#997): a global prompt bundle for the fixed
+// Plan/Execute/Verify/Reflect workflow. Prompt strings are plain markdown and may be empty.
+export interface PevrWorkflowWire {
+  id: number;
+  name: string;
+  description: string;
+  plan_prompt: string;
+  execute_prompt: string;
+  verify_prompt: string;
+  reflect_prompt: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function pevrWorkflowJSON(row: S.PevrWorkflowRow): PevrWorkflowWire {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    plan_prompt: row.plan_prompt,
+    execute_prompt: row.execute_prompt,
+    verify_prompt: row.verify_prompt,
+    reflect_prompt: row.reflect_prompt,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 // Work-duration basis values (#456): tells the frontend which signal grounded the `total` figure,
 // so it can render an appropriate label rather than a bare number. Unlike the implementation/review
 // phase split below, `total` always reflects the PR's *current* state — it keeps growing through

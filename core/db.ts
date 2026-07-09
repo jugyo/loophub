@@ -523,6 +523,42 @@ CREATE TABLE IF NOT EXISTS inbox_messages (
 
 CREATE INDEX IF NOT EXISTS idx_inbox_messages_repo_state
   ON inbox_messages(repo_id, state, id);
+
+-- PEVR workflow definitions (#997). Global, user-editable prompt bundles for the fixed
+-- Plan/Execute/Verify/Reflect workflow. Step prompts are plain markdown text; empty strings are
+-- valid and mean "use only the built-in step contract".
+CREATE TABLE IF NOT EXISTS pevr_workflows (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  name            TEXT NOT NULL UNIQUE,
+  description     TEXT NOT NULL DEFAULT '',
+  plan_prompt     TEXT NOT NULL DEFAULT '',
+  execute_prompt  TEXT NOT NULL DEFAULT '',
+  verify_prompt   TEXT NOT NULL DEFAULT '',
+  reflect_prompt  TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+
+-- Minimal run tracking for the PEVR workflow delete guard (#997). Full run start/step/artifact
+-- behavior is implemented in later PEVR issues; this table is present now so a workflow referenced
+-- by an active run cannot be deleted.
+CREATE TABLE IF NOT EXISTS pevr_runs (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_id        INTEGER REFERENCES pevr_workflows(id) ON DELETE SET NULL,
+  repo_id            INTEGER NOT NULL REFERENCES repos(id),
+  issue_number       INTEGER NOT NULL,
+  pr_number          INTEGER NOT NULL,
+  status             TEXT NOT NULL,
+  current_step       TEXT NOT NULL,
+  rework_count       INTEGER NOT NULL DEFAULT 0,
+  parent_session_id  TEXT,
+  step_sessions_json TEXT NOT NULL DEFAULT '{}',
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pevr_runs_workflow_status
+  ON pevr_runs(workflow_id, status);
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）

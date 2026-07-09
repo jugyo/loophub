@@ -22,6 +22,7 @@ import type {
   IssueComment,
   Label,
   LoopEvent,
+  PevrWorkflow,
   PullFile,
   PullLineComment,
   PullRequest,
@@ -288,6 +289,61 @@ export function runScheduledTask(
   return rpc<ScheduledTaskRun | null>("scheduledTasks/run", {
     repo: full(owner, repo),
     id,
+    session_id: sessionId,
+  });
+}
+
+export interface PevrWorkflowInput {
+  name: string;
+  description?: string;
+  plan_prompt?: string;
+  execute_prompt?: string;
+  verify_prompt?: string;
+  reflect_prompt?: string;
+}
+
+type PevrWorkflowUpdatePatch = Omit<Partial<PevrWorkflowInput>, "name"> & {
+  new_name?: string;
+};
+
+export function listPevrWorkflows() {
+  return rpc<PevrWorkflow[]>("pevrWorkflows/list", {});
+}
+
+export function getPevrWorkflow(name: string) {
+  return rpc<PevrWorkflow>("pevrWorkflows/get", { name });
+}
+
+export function createPevrWorkflow(
+  input: PevrWorkflowInput,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<PevrWorkflow>("pevrWorkflows/create", {
+    ...clean({ ...input }),
+    session_id: sessionId,
+  });
+}
+
+export function updatePevrWorkflow(
+  name: string,
+  patch: PevrWorkflowUpdatePatch,
+  sessionId: string = getSessionId(),
+) {
+  const { name: _ignoredName, ...wirePatch } =
+    patch as Partial<PevrWorkflowInput> & PevrWorkflowUpdatePatch;
+  return rpc<PevrWorkflow>("pevrWorkflows/update", {
+    name,
+    ...clean({ ...wirePatch }),
+    session_id: sessionId,
+  });
+}
+
+export function deletePevrWorkflow(
+  name: string,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ ok: true }>("pevrWorkflows/delete", {
+    name,
     session_id: sessionId,
   });
 }

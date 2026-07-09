@@ -18,6 +18,7 @@ export { herdr } from "./service/herdr.ts";
 export { inbox } from "./service/inbox.ts";
 export { issues } from "./service/issues.ts";
 export { labels } from "./service/labels.ts";
+export { pevrWorkflows } from "./service/pevr-workflows.ts";
 export { pulls } from "./service/pulls.ts";
 export type { Repo } from "./service/repos.ts";
 export { repos } from "./service/repos.ts";

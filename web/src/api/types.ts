@@ -16,6 +16,7 @@ import type {
   IssueWire,
   LabelWire,
   LinkedIssueWire,
+  PevrWorkflowWire,
   PullSummaryWire,
   PullWire,
   RelatedSessionsUsageByKindWire,
@@ -267,6 +268,9 @@ export type Issue = IssueWire;
 
 /** A scheduled task (#880): a saved prompt an agent runs at one or more times of day. */
 export type ScheduledTask = ScheduledTaskWire;
+
+/** A global PEVR workflow definition (#997): Plan/Execute/Verify/Reflect prompt bundle. */
+export type PevrWorkflow = PevrWorkflowWire;
 
 /** One fire of a scheduled task (#880) — meta only; the output stays on the herdr side. */
 export type ScheduledTaskRun = ScheduledTaskRunWire;

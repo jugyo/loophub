@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  createPevrWorkflow,
   createRepo,
+  deletePevrWorkflow,
   eventsUrl,
   listIssues,
   listLabels,
+  listPevrWorkflows,
   listRepos,
   rpc,
+  updatePevrWorkflow,
 } from "./client";
 
 afterEach(() => {
@@ -131,6 +135,53 @@ describe("typed methods translate to contract params", () => {
         name: "me/app",
         session_id: "session-1",
       },
+    });
+  });
+
+  it("PEVR workflow helpers call the pevrWorkflows RPC methods", async () => {
+    let fetchMock = mockRpc([]);
+    await listPevrWorkflows();
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "pevrWorkflows/list",
+      params: {},
+    });
+
+    fetchMock = mockRpc({ id: 1 });
+    await createPevrWorkflow(
+      { name: "standard", plan_prompt: "", execute_prompt: "go" },
+      "session-1",
+    );
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "pevrWorkflows/create",
+      params: {
+        name: "standard",
+        plan_prompt: "",
+        execute_prompt: "go",
+        session_id: "session-1",
+      },
+    });
+
+    fetchMock = mockRpc({ ok: true });
+    await updatePevrWorkflow(
+      "standard",
+      { new_name: "standard-v2", plan_prompt: "plan" },
+      "session-1",
+    );
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "pevrWorkflows/update",
+      params: {
+        name: "standard",
+        new_name: "standard-v2",
+        plan_prompt: "plan",
+        session_id: "session-1",
+      },
+    });
+
+    fetchMock = mockRpc({ ok: true });
+    await deletePevrWorkflow("standard", "session-1");
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "pevrWorkflows/delete",
+      params: { name: "standard", session_id: "session-1" },
     });
   });
 

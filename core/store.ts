@@ -5,6 +5,7 @@ export * from "./store/handoffs.ts";
 export * from "./store/inbox.ts";
 export * from "./store/issues.ts";
 export * from "./store/labels.ts";
+export * from "./store/pevr-workflows.ts";
 export * from "./store/pulls.ts";
 export * from "./store/repos.ts";
 export * from "./store/retros.ts";
