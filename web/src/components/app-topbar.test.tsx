@@ -6,13 +6,7 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Repo } from "@/api/types";
 import { AppTopbar } from "./app-topbar";
@@ -22,21 +16,12 @@ const reposData = vi.hoisted(() => ({
   isLoading: false,
   isError: false,
 }));
-const favoriteMutations = vi.hoisted(() => ({
-  calls: [] as Array<{ owner: string; repo: string; favorite: boolean }>,
-}));
 
 vi.mock("@/queries/repos", () => ({
   useRepos: () => ({
     data: reposData.value,
     isLoading: reposData.isLoading,
     isError: reposData.isError,
-  }),
-  useSetRepoFavorite: (owner: string, repo: string) => ({
-    isPending: false,
-    mutate: (favorite: boolean) => {
-      favoriteMutations.calls.push({ owner, repo, favorite });
-    },
   }),
 }));
 
@@ -54,10 +39,9 @@ afterEach(() => {
   reposData.value = [];
   reposData.isLoading = false;
   reposData.isError = false;
-  favoriteMutations.calls = [];
 });
 
-function repo(
+function makeRepo(
   fullName: string,
   id: number,
   overrides: Partial<Repo> = {},
@@ -80,11 +64,11 @@ function repo(
   };
 }
 
-function renderTopbar(initialPath = "/") {
+function renderTopbar(initialPath = "/", onOpenRepoSwitcher = vi.fn()) {
   const rootRoute = createRootRoute({
     component: () => (
       <>
-        <AppTopbar />
+        <AppTopbar onOpenRepoSwitcher={onOpenRepoSwitcher} />
         <Outlet />
       </>
     ),
@@ -133,6 +117,7 @@ function renderTopbar(initialPath = "/") {
 
   return {
     router,
+    onOpenRepoSwitcher,
     ...render(<RouterProvider router={router} />),
   };
 }
@@ -168,98 +153,53 @@ describe("AppTopbar", () => {
     expect(themeIndex).toBe(headerItems.length - 1);
   });
 
-  it("shows repository items without section headers and switches repositories", async () => {
+  it("opens the Cmd+K repository picker from the repository control", async () => {
     reposData.value = [
-      repo("me/zulu", 1),
-      repo("me/alpha", 2, { favorite: true }),
+      makeRepo("me/zulu", 1),
+      makeRepo("me/alpha", 2, { favorite: true }),
     ];
-    const { router } = renderTopbar("/r/me/zulu");
+    const { onOpenRepoSwitcher } = renderTopbar("/r/me/zulu");
 
     const trigger = await screen.findByRole("button", {
       name: "Repository: me/zulu",
     });
     expect(trigger.textContent).toContain("me/zulu");
+    expect(trigger.textContent).toContain("K");
+    expect(trigger.textContent).not.toContain("Cmd");
     expect(trigger.getAttribute("aria-label")).toBe("Repository: me/zulu");
+    expect(trigger.getAttribute("title")).toBe("Switch repository");
 
-    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(trigger);
 
-    expect(
-      await screen.findByRole("menuitem", { name: /me\/alpha/ }),
-    ).toBeTruthy();
-    expect(screen.queryByText("Favorites")).toBeNull();
-    expect(screen.queryByText("Repositories")).toBeNull();
-    expect(screen.queryByText("Other repositories")).toBeNull();
-    expect(screen.queryByRole("separator")).toBeNull();
-    const currentItem = screen.getByRole("menuitem", { name: /me\/zulu/ });
-    const favoriteItem = screen.getByRole("menuitem", { name: /me\/alpha/ });
-    expect(currentItem.className).toContain("bg-accent");
-    expect(currentItem.getAttribute("aria-current")).toBe("page");
-    expect(screen.queryByText("Current")).toBeNull();
-    expect(screen.queryByText("Favorite")).toBeNull();
-    expect(
-      screen
-        .getByRole("button", {
-          name: "Remove from favorites: me/alpha",
-        })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
-    const addFavoriteButton = screen.getByRole("button", {
-      name: "Add to favorites: me/zulu",
-    });
-    expect(addFavoriteButton.className).toContain("opacity-0");
-    expect(addFavoriteButton.className).toContain("group-hover:opacity-100");
-
-    fireEvent.click(favoriteItem);
-
-    await waitFor(() =>
-      expect(router.state.location.pathname).toBe("/r/me/alpha"),
-    );
+    expect(onOpenRepoSwitcher).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("menuitem")).toBeNull();
   });
 
-  it("toggles a repository favorite from the right-side star without navigating", async () => {
-    reposData.value = [repo("me/zulu", 1), repo("me/alpha", 2)];
-    const { router } = renderTopbar("/r/me/zulu");
-
-    const trigger = await screen.findByRole("button", {
-      name: "Repository: me/zulu",
-    });
-    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
-
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Add to favorites: me/alpha",
-      }),
-    );
-
-    expect(favoriteMutations.calls).toEqual([
-      { owner: "me", repo: "alpha", favorite: true },
-    ]);
-    expect(router.state.location.pathname).toBe("/r/me/zulu");
-  });
-
-  it("keeps cached repository navigation enabled after a background refresh error", async () => {
-    reposData.value = [repo("me/zulu", 1), repo("me/alpha", 2)];
+  it("keeps the repository picker available after a background refresh error", async () => {
+    reposData.value = [makeRepo("me/zulu", 1), makeRepo("me/alpha", 2)];
     reposData.isError = true;
-    const { router } = renderTopbar("/r/me/zulu");
+    const { onOpenRepoSwitcher } = renderTopbar("/r/me/zulu");
 
     const trigger = await screen.findByRole("button", {
       name: "Repository: me/zulu",
     });
     expect((trigger as HTMLButtonElement).disabled).toBe(false);
 
-    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
-    fireEvent.click(await screen.findByRole("menuitem", { name: /me\/alpha/ }));
+    fireEvent.click(trigger);
 
-    await waitFor(() =>
-      expect(router.state.location.pathname).toBe("/r/me/alpha"),
-    );
+    expect(onOpenRepoSwitcher).toHaveBeenCalledTimes(1);
   });
 
-  it("disables the repository picker when no repositories are available", async () => {
-    renderTopbar();
+  it("keeps the repository picker available when no repositories are available", async () => {
+    const { onOpenRepoSwitcher } = renderTopbar();
 
     const trigger = await screen.findByRole("button", { name: "Repository" });
-    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+    expect((trigger as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(trigger);
+
+    expect(onOpenRepoSwitcher).toHaveBeenCalledTimes(1);
   });
 
   it("does not render the old sidebar Agents list as top-level navigation", async () => {

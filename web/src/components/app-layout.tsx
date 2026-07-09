@@ -2,7 +2,7 @@
 // Routes render into <Outlet/>. Screen content lands in later UI issues.
 
 import { Outlet } from "@tanstack/react-router";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { AppBreadcrumb } from "@/components/app-breadcrumb";
 import { AppTopbar } from "@/components/app-topbar";
 import { DetailTitleProvider } from "@/components/detail-title";
@@ -19,6 +19,7 @@ import { useScrollToTop } from "@/lib/use-scroll-to-top";
 export function AppLayout() {
   // Reset the content scroll position to the top on every route change (#277).
   const mainRef = useRef<HTMLElement>(null);
+  const [repoSwitcherRequest, setRepoSwitcherRequest] = useState(0);
   useScrollToTop(mainRef);
   useIssueKeyboardNavigation(mainRef);
   return (
@@ -28,7 +29,11 @@ export function AppLayout() {
     <TerminalControllerProvider>
       <ToastProvider>
         <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
-          <AppTopbar />
+          <AppTopbar
+            onOpenRepoSwitcher={() =>
+              setRepoSwitcherRequest((request) => request + 1)
+            }
+          />
           <DetailTitleProvider>
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <header className="flex h-11 shrink-0 items-center gap-4 border-b px-4 sm:px-6">
@@ -42,7 +47,7 @@ export function AppLayout() {
               </main>
             </div>
           </DetailTitleProvider>
-          <RepoSwitcher />
+          <RepoSwitcher openRequest={repoSwitcherRequest} />
           <TerminalLaunchErrorDialog />
           {/* Operation feedback (#574): a floating toast above the content, with an explicit
               lifetime independent of any one screen's components (mirrors the old ErrorBanner). */}

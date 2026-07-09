@@ -19,13 +19,23 @@ import { RepoSwitcher } from "./repo-switcher";
 
 const reposData = vi.hoisted(() => ({
   value: [] as Repo[],
+  isError: false,
+}));
+const favoriteMutations = vi.hoisted(() => ({
+  calls: [] as Array<{ owner: string; repo: string; favorite: boolean }>,
 }));
 
 vi.mock("@/queries/repos", () => ({
   useRepos: () => ({
     data: reposData.value,
     isLoading: false,
-    isError: false,
+    isError: reposData.isError,
+  }),
+  useSetRepoFavorite: (owner: string, repo: string) => ({
+    isPending: false,
+    mutate: (favorite: boolean) => {
+      favoriteMutations.calls.push({ owner, repo, favorite });
+    },
   }),
 }));
 
@@ -33,6 +43,8 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   reposData.value = [];
+  reposData.isError = false;
+  favoriteMutations.calls = [];
 });
 
 function makeRepo(overrides: Partial<Repo>): Repo {
@@ -83,7 +95,7 @@ function renderInRouter() {
 }
 
 describe("RepoSwitcher", () => {
-  it("opens with Cmd+K and navigates to the selected repo with vim keys", async () => {
+  it("opens with Cmd+K and ignores vim keys for selection movement", async () => {
     reposData.value = [
       makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
       makeRepo({ id: 2, name: "beta", full_name: "me/beta" }),
@@ -100,8 +112,54 @@ describe("RepoSwitcher", () => {
     fireEvent.keyDown(dialog, { key: "Enter" });
 
     await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/r/me/alpha"),
+    );
+  });
+
+  it("moves selection with arrow keys and navigates to the selected repo", async () => {
+    reposData.value = [
+      makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
+      makeRepo({ id: 2, name: "beta", full_name: "me/beta" }),
+    ];
+    const router = renderInRouter();
+    await screen.findByText("ready");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const dialog = await screen.findByRole("dialog", {
+      name: "Switch repository",
+    });
+    const filter = screen.getByRole("searchbox", {
+      name: "Filter repositories",
+    });
+    expect(filter.getAttribute("aria-describedby")).toBe(
+      "repo-switcher-active",
+    );
+    expect(screen.getByText("Selected repository: me/alpha")).toBeTruthy();
+
+    fireEvent.keyDown(dialog, { key: "ArrowDown" });
+    expect(screen.getByText("Selected repository: me/beta")).toBeTruthy();
+    fireEvent.keyDown(dialog, { key: "Enter" });
+
+    await waitFor(() =>
       expect(router.state.location.pathname).toBe("/r/me/beta"),
     );
+  });
+
+  it("does not navigate when Enter confirms IME composition in the filter", async () => {
+    reposData.value = [
+      makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
+    ];
+    const router = renderInRouter();
+    await screen.findByText("ready");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const filter = await screen.findByRole("searchbox", {
+      name: "Filter repositories",
+    });
+
+    fireEvent.keyDown(filter, { key: "Enter", isComposing: true });
+
+    expect(router.state.location.pathname).toBe("/");
   });
 
   it("does not open from Cmd+K inside a text input", () => {
@@ -113,6 +171,46 @@ describe("RepoSwitcher", () => {
     fireEvent.keyDown(input, { key: "k", metaKey: true });
 
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("filters repository candidates by keyword", async () => {
+    reposData.value = [
+      makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
+      makeRepo({ id: 2, name: "beta", full_name: "team/beta" }),
+      makeRepo({ id: 3, name: "gamma", full_name: "org/gamma" }),
+    ];
+    renderInRouter();
+    await screen.findByText("ready");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const filter = await screen.findByRole("searchbox", {
+      name: "Filter repositories",
+    });
+
+    fireEvent.change(filter, { target: { value: "team" } });
+
+    expect(screen.queryByText("me/alpha")).toBeNull();
+    expect(screen.getByText("team/beta")).toBeTruthy();
+    expect(screen.queryByText("org/gamma")).toBeNull();
+  });
+
+  it("does not expose an ARIA listbox around rows with multiple buttons", async () => {
+    reposData.value = [
+      makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
+    ];
+    renderInRouter();
+    await screen.findByText("ready");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+
+    expect(
+      await screen.findByRole("button", { name: "me/alpha" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "me/alpha" }).className,
+    ).toContain("focus-visible:ring-1");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.queryByRole("option")).toBeNull();
   });
 
   it("does not open over an existing modal dialog", () => {
@@ -144,13 +242,24 @@ describe("RepoSwitcher", () => {
       name: "Switch repository",
     });
 
-    fireEvent.keyDown(dialog, { key: "j" });
     fireEvent.keyDown(dialog, { key: "ArrowDown" });
     fireEvent.keyDown(dialog, { key: "Enter" });
 
     expect(screen.getByText("No repositories.")).toBeTruthy();
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(router.state.location.pathname).toBe("/");
+  });
+
+  it("keeps cached repository choices available after a background refresh error", async () => {
+    reposData.value = [makeRepo({ id: 1, full_name: "me/alpha" })];
+    reposData.isError = true;
+    renderInRouter();
+    await screen.findByText("ready");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+
+    expect(await screen.findByText("me/alpha")).toBeTruthy();
+    expect(screen.queryByText("Failed to load repositories.")).toBeNull();
   });
 
   it("keeps the active keyboard option scrolled into view", async () => {
@@ -173,10 +282,80 @@ describe("RepoSwitcher", () => {
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
     scrollIntoView.mockClear();
 
-    fireEvent.keyDown(dialog, { key: "j" });
+    fireEvent.keyDown(dialog, { key: "ArrowDown" });
 
     await waitFor(() =>
       expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }),
     );
+  });
+
+  it("uses the same favorite star affordance as the topbar menu", async () => {
+    reposData.value = [
+      makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
+      makeRepo({
+        id: 2,
+        name: "beta",
+        full_name: "me/beta",
+        favorite: true,
+      }),
+    ];
+    renderInRouter();
+    await screen.findByText("ready");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+
+    const addFavoriteButton = await screen.findByRole("button", {
+      name: "Add to favorites: me/alpha",
+    });
+    expect(addFavoriteButton.className).toContain("opacity-0");
+    expect(addFavoriteButton.className).toContain("group-hover:opacity-100");
+    expect(
+      screen
+        .getByRole("button", { name: "Remove from favorites: me/beta" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    fireEvent.click(addFavoriteButton);
+
+    expect(favoriteMutations.calls).toEqual([
+      { owner: "me", repo: "alpha", favorite: true },
+    ]);
+  });
+
+  it("does not navigate when the favorite star is activated from the keyboard", async () => {
+    reposData.value = [
+      makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
+      makeRepo({ id: 2, name: "beta", full_name: "me/beta" }),
+    ];
+    const router = renderInRouter();
+    await screen.findByText("ready");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const favoriteButton = await screen.findByRole("button", {
+      name: "Add to favorites: me/alpha",
+    });
+
+    fireEvent.keyDown(favoriteButton, { key: "Enter" });
+    fireEvent.click(favoriteButton);
+
+    expect(favoriteMutations.calls).toEqual([
+      { owner: "me", repo: "alpha", favorite: true },
+    ]);
+    expect(router.state.location.pathname).toBe("/");
+  });
+
+  it("does not run repository selection when Enter is pressed on the close button", async () => {
+    reposData.value = [makeRepo({ id: 1, full_name: "me/alpha" })];
+    const router = renderInRouter();
+    await screen.findByText("ready");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const closeButton = await screen.findByRole("button", {
+      name: "Close repository switcher",
+    });
+
+    fireEvent.keyDown(closeButton, { key: "Enter" });
+
+    expect(router.state.location.pathname).toBe("/");
   });
 });
