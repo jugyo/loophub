@@ -46,6 +46,16 @@ export async function revParse(
   return sha || null;
 }
 
+export async function mergeBase(
+  repoPath: string,
+  base: string,
+  head: string,
+): Promise<string | null> {
+  const r = await git(repoPath, ["merge-base", base, head]);
+  if (r.code !== 0) return null;
+  return r.stdout.trim() || null;
+}
+
 export async function defaultBranch(repoPath: string): Promise<string> {
   // Prefer remote default (origin/HEAD) so feature-branch checkouts do not win at registration.
   const origin = await git(repoPath, [

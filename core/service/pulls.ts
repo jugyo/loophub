@@ -28,6 +28,7 @@ import {
   remoteUrl,
   repoJSON,
   repoOr404,
+  resolvePullBaseSha,
   revParse,
   S,
   ServiceError,
@@ -65,6 +66,12 @@ export const pulls = {
     const issue = S.getIssue(repoId, number);
     if (!issue) return null;
     return S.getPull(issue.id)?.head_ref ?? null;
+  },
+
+  async baseShaForNumber(name: string, number: number): Promise<string | null> {
+    const r = repoOr404(name);
+    const issue = issueOr404(r, number, "pull");
+    return resolvePullBaseSha(r.local_path, S.getPull(issue.id)!);
   },
 
   async list(
@@ -153,7 +160,10 @@ export const pulls = {
     // exist (#463).
     const row = S.createIssue(r.id, "pull", title, body, actor);
     const head = input.head ?? input.headFromNumber!(row.number);
-    const headSha = await revParse(r.local_path, head);
+    const [headSha, baseSha] = await Promise.all([
+      revParse(r.local_path, head),
+      revParse(r.local_path, base),
+    ]);
     S.createPull(
       row.id,
       head,
@@ -162,6 +172,7 @@ export const pulls = {
       linkedIssueId,
       sessionId ?? null,
       draft,
+      baseSha,
     );
     // Carry the draft flag (#413) on the payload so event-driven consumers can tell a WIP PR
     // (`lh build` opens drafts) from a reviewable one without a follow-up read.

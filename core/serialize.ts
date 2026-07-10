@@ -18,6 +18,7 @@ import type { MergeMode } from "./merge-mode.ts";
 import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
+import { resolvePullBaseSha } from "./pull-base.ts";
 import { pullWorktreeDirty } from "./pull-worktree.ts";
 import {
   resolveRuntimeResume,
@@ -906,6 +907,7 @@ interface PullStatusFields {
   pull: S.PullRow;
   headSha: string | null;
   baseSha: string | null;
+  forkBaseSha: string | null;
   mergeable: boolean | null;
   mergeable_state: MergeableState;
   additions: number;
@@ -922,8 +924,11 @@ async function pullStatusFields(
   row: S.IssueRow,
 ): Promise<PullStatusFields> {
   const p = S.getPull(row.id)!;
-  const headSha = await revParse(repo.local_path, p.head_ref);
-  const baseSha = await revParse(repo.local_path, p.base_ref);
+  const [headSha, baseSha, forkBaseSha] = await Promise.all([
+    revParse(repo.local_path, p.head_ref),
+    revParse(repo.local_path, p.base_ref),
+    resolvePullBaseSha(repo.local_path, p),
+  ]);
   const review_state = S.computeReviewState(row.id);
   // Merge gate aggregates reviews per topic (#427): clean requires every review
   // topic to pass, not a single PASS — review_state above stays the display
@@ -991,6 +996,7 @@ async function pullStatusFields(
     pull: p,
     headSha,
     baseSha,
+    forkBaseSha,
     mergeable,
     mergeable_state,
     additions,
@@ -1459,6 +1465,8 @@ export interface PullWire {
   user: UserWire;
   head: { ref: string; sha: string | null };
   base: { ref: string; sha: string | null };
+  // Exact fork point captured at PR creation; legacy rows infer it from git merge-base.
+  base_sha: string | null;
   merged: boolean;
   // draft (#413): true while the PR is WIP (opened by `lh build` at the start of work);
   // cleared by `lh pr ready-for-review`. Lets list/view and consumers tell WIP from reviewable.
@@ -1510,6 +1518,7 @@ export async function pullJSON(
     user: { login: row.author },
     head: { ref: p.head_ref, sha: status.headSha },
     base: { ref: p.base_ref, sha: status.baseSha },
+    base_sha: status.forkBaseSha,
     merged: !!p.merged,
     // draft (#413): true while the PR is WIP (opened by `lh build` at the start of work);
     // cleared by `lh pr ready-for-review`. Lets list/view and consumers tell WIP from reviewable.

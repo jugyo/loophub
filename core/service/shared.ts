@@ -67,6 +67,7 @@ import {
   normalizeMergeMode,
   parseGithubPullNumber,
 } from "../merge-mode.ts";
+import { resolvePullBaseSha } from "../pull-base.ts";
 import {
   decideResume,
   ENV_ISSUE_CREATE_HERDR_LAUNCH,
@@ -326,6 +327,7 @@ export {
   repoJSON,
   reposWithRunningSession,
   resolve,
+  resolvePullBaseSha,
   resolveRuntimeResume,
   resolveWorktreeIdentity,
   retroJSON,

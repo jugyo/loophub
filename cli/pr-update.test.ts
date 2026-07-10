@@ -38,6 +38,12 @@ function git(args: string[]) {
   spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
 }
 
+function gitOutput(args: string[]): string {
+  return spawnSync("git", ["-C", repoPath, ...args], {
+    encoding: "utf8",
+  }).stdout.trim();
+}
+
 function createPull(title: string, body: string): number {
   const { stdout } = lh([
     "pr",
@@ -156,6 +162,13 @@ test("lh pr create defaults linked issue PRs to the issue target branch", () => 
   const prMatch = stdout.match(/created PR #(\d+)/);
   if (!prMatch) throw new Error(`pr create failed: ${stdout}`);
   expect(viewJSON(Number(prMatch[1])).base.ref).toBe("integration/stack");
+});
+
+test("lh pr view --json exposes the recorded base_sha", () => {
+  const expected = gitOutput(["rev-parse", "main"]);
+  const n = createPull("base sha", "body");
+
+  expect(viewJSON(n).base_sha).toBe(expected);
 });
 
 test("lh pr update --title leaves body untouched", () => {

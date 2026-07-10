@@ -43,6 +43,7 @@ function pull(partial: Partial<PullRequest> = {}): PullRequest {
     user: { login: "me" },
     head: { ref: "feat", sha: "a" },
     base: { ref: "main", sha: "b" },
+    base_sha: "b",
     merged: false,
     draft: false,
     mergeable: true,

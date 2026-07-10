@@ -75,6 +75,8 @@ test("pulls.session_id is dropped after migration", () => {
     D.db.query("PRAGMA table_info(pulls)").all() as { name: string }[]
   ).map((c) => c.name);
   expect(cols).not.toContain("session_id");
+  expect(cols).toContain("base_sha");
+  expect(S.getPull(10)?.base_sha).toBeNull();
 });
 
 test("the legacy dev-session pointer survives in session_links (resume anchor preserved)", () => {

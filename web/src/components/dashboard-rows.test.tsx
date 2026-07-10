@@ -152,6 +152,7 @@ function makePullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
     user: { login: "me" },
     head: { ref: "feature", sha: "head" },
     base: { ref: "main", sha: "base" },
+    base_sha: "base",
     merged: false,
     draft: false,
     mergeable: null,

@@ -53,6 +53,7 @@ const pull: PullRequest = {
   user: { login: "impl-bot" },
   head: { ref: "issue-153", sha: "aaa" },
   base: { ref: "main", sha: "bbb" },
+  base_sha: "bbb",
   merged: false,
   draft: false,
   mergeable: true,

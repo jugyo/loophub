@@ -7,6 +7,7 @@ export interface PullRow {
   issue_id: number;
   head_ref: string;
   base_ref: string;
+  base_sha: string | null;
   head_sha: string | null;
   draft: number;
   merged: number;
@@ -80,11 +81,13 @@ export function createPull(
   linkedIssueId: number | null = null,
   sessionId: string | null = null,
   draft = false,
+  baseSha: string | null = null,
 ) {
   db.run(
-    `INSERT INTO pulls (issue_id, head_ref, base_ref, head_sha, linked_issue_id, draft)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [issueId, head, base, headSha, linkedIssueId, draft ? 1 : 0],
+    `INSERT INTO pulls
+       (issue_id, head_ref, base_ref, base_sha, head_sha, linked_issue_id, draft)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [issueId, head, base, baseSha, headSha, linkedIssueId, draft ? 1 : 0],
   );
   // The PR's dev session is recorded only in the generalized session_links bridge (kind='dev'); the
   // PR's resume/retro anchor is derived from there (primaryDevSessionForPull). #316 dropped the

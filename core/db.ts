@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS pulls (
   issue_id        INTEGER PRIMARY KEY REFERENCES issues(id),
   head_ref        TEXT NOT NULL,
   base_ref        TEXT NOT NULL,
+  base_sha        TEXT,
   head_sha        TEXT,
   draft           INTEGER NOT NULL DEFAULT 0,
   merged          INTEGER NOT NULL DEFAULT 0,
@@ -709,6 +710,7 @@ function columnExists(table: string, column: string): boolean {
 }
 
 tryExec("ALTER TABLE pulls ADD COLUMN head_sha TEXT");
+tryExec("ALTER TABLE pulls ADD COLUMN base_sha TEXT");
 tryExec("ALTER TABLE workflow_artifacts ADD COLUMN dedupe_key TEXT");
 tryExec("ALTER TABLE workflow_placement_claims ADD COLUMN owner_token TEXT");
 tryExec("DROP INDEX IF EXISTS idx_workflow_artifacts_submission");
