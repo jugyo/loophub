@@ -8,7 +8,7 @@ import {
   CircleDollarSign,
   Loader2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Notification } from "@/api/types";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
@@ -27,8 +27,6 @@ import {
   useUnreadNotificationCount,
 } from "@/queries/notifications";
 import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
-
-const READ_GRACE_MS = 10_000;
 
 function kindIcon(kind: Notification["kind"]) {
   if (kind === "merge_ready") return CheckCircle2;
@@ -58,41 +56,46 @@ export function NotificationCenter() {
   const focus = useFocusHerdrAgent();
   const herdrSessions = useHerdrSessions({ enabled: open });
   const { showError } = useToast();
-  const [graceIds, setGraceIds] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    if (graceIds.size === 0) return;
-    const timer = window.setTimeout(() => {
-      setGraceIds(new Set());
-    }, READ_GRACE_MS);
-    return () => window.clearTimeout(timer);
-  }, [graceIds]);
+  const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
 
   const visible = useMemo(
     () =>
       (data ?? []).filter(
         (notification) =>
-          notification.read_at == null || graceIds.has(notification.id),
+          notification.read_at == null && !dismissedIds.has(notification.id),
       ),
-    [data, graceIds],
+    [data, dismissedIds],
   );
   const unread = count.data?.count ?? 0;
   const badge = unread > 99 ? "99+" : String(unread);
 
   function markRead(notification: Notification) {
     if (notification.read_at != null) return;
-    setGraceIds((ids) => new Set(ids).add(notification.id));
+    setDismissedIds((ids) => new Set(ids).add(notification.id));
     readNotification.mutate(notification.id, {
-      onError: (e) =>
+      onSuccess: () => {
+        setDismissedIds((ids) => {
+          const next = new Set(ids);
+          next.delete(notification.id);
+          return next;
+        });
+      },
+      onError: (e) => {
+        setDismissedIds((ids) => {
+          const next = new Set(ids);
+          next.delete(notification.id);
+          return next;
+        });
         showError(
           e instanceof Error ? e.message : "Failed to mark notification read.",
-        ),
+        );
+      },
     });
   }
 
   function clearAll() {
     if (visible.length === 0 || readAllNotifications.isPending) return;
-    setGraceIds(new Set());
+    setDismissedIds(new Set());
     readAllNotifications.mutate(undefined, {
       onError: (e) =>
         showError(

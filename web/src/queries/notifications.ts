@@ -5,7 +5,13 @@ import {
   readNotification,
   unreadNotificationCount,
 } from "@/api/client";
+import type { Notification } from "@/api/types";
 import { queryKeys } from "./keys";
+
+function compareNotifications(a: Notification, b: Notification): number {
+  const readOrder = Number(a.read_at != null) - Number(b.read_at != null);
+  return readOrder || b.created_at.localeCompare(a.created_at) || b.id - a.id;
+}
 
 export function useNotifications(input: { limit?: number } = {}) {
   return useQuery({
@@ -25,7 +31,55 @@ export function useReadNotification() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => readNotification(id),
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: queryKeys.notifications() });
+      const listKey = [...queryKeys.notifications(), "list"];
+      const countKey = [...queryKeys.notifications(), "unread-count"];
+      const removed = qc
+        .getQueriesData<Notification[]>({ queryKey: listKey })
+        .flatMap(([key, current]) => {
+          const notification = current?.find(
+            ({ id: currentId }) => currentId === id,
+          );
+          return notification ? [{ key, notification }] : [];
+        });
+      const decrementedCount =
+        removed.length > 0 && qc.getQueryData(countKey) != null;
+
+      qc.setQueriesData<Notification[]>({ queryKey: listKey }, (current) =>
+        current?.filter((notification) => notification.id !== id),
+      );
+      qc.setQueryData<{ count: number }>(countKey, (current) =>
+        current && decrementedCount
+          ? { count: Math.max(0, current.count - 1) }
+          : current,
+      );
+
+      return { removed, decrementedCount, countKey };
+    },
+    onError: (_error, _id, context) => {
+      const alreadyRestored = context?.removed.some(({ key, notification }) =>
+        qc
+          .getQueryData<Notification[]>(key)
+          ?.some(({ id }) => id === notification.id),
+      );
+      let restored = false;
+      for (const { key, notification } of context?.removed ?? []) {
+        qc.setQueryData<Notification[]>(key, (current) => {
+          if (!current || current.some(({ id }) => id === notification.id)) {
+            return current;
+          }
+          restored = true;
+          return [...current, notification].sort(compareNotifications);
+        });
+      }
+      if (!alreadyRestored && restored && context?.decrementedCount) {
+        qc.setQueryData<{ count: number }>(context.countKey, (current) =>
+          current ? { count: current.count + 1 } : current,
+        );
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: queryKeys.notifications() });
     },
   });

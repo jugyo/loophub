@@ -124,15 +124,42 @@ describe("NotificationCenter", () => {
   });
 
   it("marks one notification read without navigating", async () => {
+    notifications.value = [
+      makeNotification(),
+      makeNotification({
+        id: 2,
+        title: "Another notification",
+        resource: { kind: "issue", number: 13, href: "/r/me/proj/issues/13" },
+      }),
+    ];
+    notifications.unread = 2;
+    const { router } = renderCenter();
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: /2 unread/ }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Mark PR #12 as read" }),
+    );
+
+    expect(actions.read).toHaveBeenCalledWith(1, expect.any(Object));
+    expect(router.state.location.pathname).toBe("/");
+    expect(screen.queryByText("Ready to merge")).toBeNull();
+    expect(screen.getByText("Another notification")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Mark Issue #13 as read" }),
+    ).toBeTruthy();
+  });
+
+  it("restores a notification when marking it read fails", async () => {
     notifications.value = [makeNotification()];
     notifications.unread = 1;
-    actions.read.mockImplementationOnce(() => {
-      notifications.value = [
-        makeNotification({ read_at: "2026-01-01T00:00:10Z" }),
-      ];
-      notifications.unread = 0;
-    });
-    const { router } = renderCenter();
+    actions.read.mockImplementationOnce(
+      (_id: number, options: { onError: (error: Error) => void }) =>
+        options.onError(new Error("Read failed")),
+    );
+    renderCenter();
 
     fireEvent.pointerDown(
       await screen.findByRole("button", { name: /1 unread/ }),
@@ -142,17 +169,11 @@ describe("NotificationCenter", () => {
       await screen.findByRole("button", { name: "Mark PR #12 as read" }),
     );
 
-    expect(actions.read).toHaveBeenCalledWith(1, expect.any(Object));
-    expect(router.state.location.pathname).toBe("/");
-
-    expect(screen.queryByLabelText("Unread")).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: /Mark .* as read/ }),
-    ).toBeNull();
-    expect(
-      document.querySelector('button[aria-label="Notifications"]'),
-    ).toBeTruthy();
+    expect(actions.showError).toHaveBeenCalledWith("Read failed");
     expect(screen.getByText("Ready to merge")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Mark PR #12 as read" }),
+    ).toBeTruthy();
   });
 
   it("focuses Herdr without triggering notification navigation or read", async () => {
@@ -250,7 +271,7 @@ describe("NotificationCenter", () => {
     expect(screen.queryByRole("button", { name: /Open PR #12/ })).toBeNull();
   });
 
-  it("hides read notifications unless they are in the local grace window", async () => {
+  it("hides already-read notifications", async () => {
     notifications.value = [
       makeNotification({ id: 2, read_at: "2026-01-01T00:00:10Z" }),
     ];
