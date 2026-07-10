@@ -24,6 +24,7 @@ export function usage(): void {
   lh inbox read|unread|archive|unarchive|delete <message-id> [--json]   # update an Inbox message state (delete is a soft state)
   lh notification send --kind implementation_done|over_budget|human_attention --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
   lh workflow list|view|create|update|delete <name> [--description <text>] [--plan-prompt <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--reflect-prompt <text>] [--step plan|execute|verify|reflect --file <path|->]   # manage global PEVR workflow prompt bundles
+  lh workflow step output [--repo owner/name] [--run <id>] [--step plan|execute|verify|reflect] [--file <path|->]
   lh handoff record --phase <p> --dir <down|up> (--pr <m> | --issue <n>) (--body <text|-> | --src <ref> [--hash <sha>]) [--from <r>] [--to <r>] [--summary <text>] [--model <m>] [--cost <json>]   # record an orchestrator<->subagent handoff (PR + session)
   lh handoff list [--pr <m>] [--issue <n>] [--session <id>] [--json]   # list handoffs for a ref, chronological
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR

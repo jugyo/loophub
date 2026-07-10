@@ -9,7 +9,7 @@ const HOME = mkdtempSync(join(tmpdir(), "lh-workflow-start-home-"));
 const REPO_PATH = mkdtempSync(join(tmpdir(), "lh-workflow-start-repo-"));
 const REPO = "me/workflow-start";
 
-function run(args: string[]) {
+function run(args: string[], env: Record<string, string> = {}) {
   const result = spawnSync(
     process.execPath,
     [
@@ -26,6 +26,7 @@ function run(args: string[]) {
         ...process.env,
         LOOPHUB_HOME: HOME,
         LOOPHUB_DB: join(HOME, "loophub.db"),
+        ...env,
       },
     },
   );
@@ -52,6 +53,82 @@ beforeAll(() => {
   git(["commit", "-qm", "init"]);
   const added = run(["repo", "add", REPO_PATH, "--name", REPO]);
   if (added.exitCode !== 0) throw new Error(added.stderr);
+  const workflow = run([
+    "workflow",
+    "create",
+    "standard",
+    "--description",
+    "test",
+  ]);
+  if (workflow.exitCode !== 0) throw new Error(workflow.stderr);
+});
+
+test("workflow step output uses flags before ambient context and supports ambient-only submission", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "PEVR output task",
+    "--body",
+    "Place a plan",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const started = run([
+    "workflow",
+    "start",
+    issue,
+    "--repo",
+    REPO,
+    "--workflow",
+    "standard",
+    "--no-launch",
+    "--json",
+  ]);
+  expect(started.exitCode, started.stderr).toBe(0);
+  const runResult = JSON.parse(started.stdout);
+  const artifactPath = join(HOME, "plan.json");
+  writeFileSync(
+    artifactPath,
+    JSON.stringify({
+      type: "plan",
+      summary: "Place the plan.",
+      changes: [{ area: "core", description: "Use the service." }],
+      reuse: [],
+      out_of_scope: [],
+      verification: "Inspect the PR body.",
+    }),
+  );
+
+  const explicit = run(
+    [
+      "workflow",
+      "step",
+      "output",
+      "--repo",
+      REPO,
+      "--run",
+      String(runResult.run.id),
+      "--step",
+      "plan",
+      "--file",
+      artifactPath,
+    ],
+    { LOOPHUB_PEVR_RUN: "999999", LOOPHUB_PEVR_STEP: "verify" },
+  );
+  expect(explicit.exitCode).toBe(0);
+  expect(explicit.stdout).toContain("placed pr-body-plan at pr-body");
+
+  const ambient = run(
+    ["workflow", "step", "output", "--repo", REPO, "--file", artifactPath],
+    {
+      LOOPHUB_PEVR_RUN: String(runResult.run.id),
+      LOOPHUB_PEVR_STEP: "plan",
+    },
+  );
+  expect(ambient.exitCode).toBe(0);
 });
 
 afterAll(() => {
@@ -60,9 +137,6 @@ afterAll(() => {
 });
 
 test("workflow start --no-launch creates a run and skips herdr launch", () => {
-  expect(
-    run(["workflow", "create", "standard", "--description", "test"]).exitCode,
-  ).toBe(0);
   const issueOut = run([
     "issue",
     "create",
@@ -89,7 +163,7 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
     "--json",
   ]);
 
-  expect(started.exitCode).toBe(0);
+  expect(started.exitCode, started.stderr).toBe(0);
   const body = JSON.parse(started.stdout);
   expect(body.run).toMatchObject({
     status: "running",

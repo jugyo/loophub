@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { db, now } from "../db.ts";
 
 export interface PevrWorkflowInput {
@@ -133,6 +134,203 @@ export interface PevrRunRow {
   step_sessions_json: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface PevrArtifactRow {
+  id: number;
+  run_id: number;
+  step: string;
+  type: string;
+  content_json: string;
+  head_sha: string;
+  dedupe_key: string | null;
+  created_at: string;
+}
+
+export interface PevrPlacementRow {
+  id: number;
+  artifact_id: number;
+  target_kind: string;
+  target_ref: string;
+  placed_at: string;
+}
+
+export function createPevrArtifact(input: {
+  runId: number;
+  step: string;
+  type: string;
+  contentJson: string;
+  headSha: string;
+  submittedBy: string;
+  dedupeKey: string;
+}): PevrArtifactRow {
+  const created = db
+    .query(
+      `INSERT INTO pevr_artifacts
+        (run_id, step, type, content_json, head_sha, dedupe_key, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING *`,
+    )
+    .get(
+      input.runId,
+      input.step,
+      input.type,
+      input.contentJson,
+      input.headSha,
+      input.dedupeKey,
+      now(),
+    ) as PevrArtifactRow | null;
+  const artifact =
+    created ??
+    (db
+      .query(`SELECT * FROM pevr_artifacts WHERE dedupe_key = ?`)
+      .get(input.dedupeKey) as PevrArtifactRow);
+  db.run(
+    `INSERT INTO pevr_artifact_submitters (artifact_id, session_id)
+     VALUES (?, ?) ON CONFLICT DO NOTHING`,
+    [artifact.id, input.submittedBy],
+  );
+  return artifact;
+}
+
+export function getPevrArtifactSubmitter(artifactId: number): string | null {
+  const row = db
+    .query(
+      `SELECT session_id FROM pevr_artifact_submitters WHERE artifact_id = ?`,
+    )
+    .get(artifactId) as { session_id: string } | null;
+  return row?.session_id ?? null;
+}
+
+export function latestPevrArtifact(
+  runId: number,
+  step: string,
+): PevrArtifactRow | null {
+  return db
+    .query(
+      `SELECT * FROM pevr_artifacts WHERE run_id = ? AND step = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(runId, step) as PevrArtifactRow | null;
+}
+
+export function latestPevrArtifactByType(
+  runId: number,
+  type: string,
+): PevrArtifactRow | null {
+  return db
+    .query(
+      `SELECT * FROM pevr_artifacts
+       WHERE run_id = ? AND type = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(runId, type) as PevrArtifactRow | null;
+}
+
+export function clearPevrArtifactDedupe(artifactId: number): void {
+  db.run(`UPDATE pevr_artifacts SET dedupe_key = NULL WHERE id = ?`, [
+    artifactId,
+  ]);
+}
+
+export function claimPevrPlacement(artifactId: number): string | null {
+  const ownerToken = randomUUID();
+  const claimedAt = now();
+  const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString();
+  db.run(
+    `INSERT INTO pevr_placement_claims (artifact_id, owner_token, claimed_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(artifact_id) DO UPDATE SET
+       owner_token = excluded.owner_token,
+       claimed_at = excluded.claimed_at
+     WHERE pevr_placement_claims.claimed_at < ?`,
+    [artifactId, ownerToken, claimedAt, staleBefore],
+  );
+  const row = db
+    .query(
+      `SELECT owner_token FROM pevr_placement_claims WHERE artifact_id = ?`,
+    )
+    .get(artifactId) as { owner_token: string } | null;
+  return row?.owner_token === ownerToken ? ownerToken : null;
+}
+
+export function releasePevrPlacementClaim(
+  artifactId: number,
+  ownerToken: string,
+): void {
+  db.run(
+    `DELETE FROM pevr_placement_claims
+     WHERE artifact_id = ? AND owner_token = ?`,
+    [artifactId, ownerToken],
+  );
+}
+
+export function renewPevrPlacementClaim(
+  artifactId: number,
+  ownerToken: string,
+): boolean {
+  db.run(
+    `UPDATE pevr_placement_claims SET claimed_at = ?
+     WHERE artifact_id = ? AND owner_token = ?`,
+    [now(), artifactId, ownerToken],
+  );
+  return ownsPevrPlacementClaim(artifactId, ownerToken);
+}
+
+export function ownsPevrPlacementClaim(
+  artifactId: number,
+  ownerToken: string,
+): boolean {
+  const row = db
+    .query(
+      `SELECT owner_token FROM pevr_placement_claims WHERE artifact_id = ?`,
+    )
+    .get(artifactId) as { owner_token: string } | null;
+  return row?.owner_token === ownerToken;
+}
+
+export function getPevrPlacement(artifactId: number): PevrPlacementRow | null {
+  return db
+    .query(`SELECT * FROM pevr_placements WHERE artifact_id = ?`)
+    .get(artifactId) as PevrPlacementRow | null;
+}
+
+export function createPevrPlacement(
+  artifactId: number,
+  targetKind: string,
+  targetRef: string,
+): PevrPlacementRow {
+  return db
+    .query(
+      `INSERT INTO pevr_placements (artifact_id, target_kind, target_ref, placed_at)
+       VALUES (?, ?, ?, ?) RETURNING *`,
+    )
+    .get(artifactId, targetKind, targetRef, now()) as PevrPlacementRow;
+}
+
+export function setPevrStepPin(
+  runId: number,
+  step: string,
+  sessionId: string,
+  headSha: string,
+): void {
+  db.run(
+    `INSERT INTO pevr_step_pins (run_id, step, session_id, head_sha, created_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(session_id) DO NOTHING`,
+    [runId, step, sessionId, headSha, now()],
+  );
+}
+
+export function getPevrStepPin(
+  runId: number,
+  step: string,
+  sessionId: string,
+): string | null {
+  const row = db
+    .query(
+      `SELECT head_sha FROM pevr_step_pins
+       WHERE run_id = ? AND step = ? AND session_id = ?`,
+    )
+    .get(runId, step, sessionId) as { head_sha: string } | null;
+  return row?.head_sha ?? null;
 }
 
 export function createPevrRun(input: PevrRunInput): PevrRunRow {

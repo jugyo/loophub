@@ -601,6 +601,51 @@ CREATE TABLE IF NOT EXISTS pevr_runs (
 
 CREATE INDEX IF NOT EXISTS idx_pevr_runs_workflow_status
   ON pevr_runs(workflow_id, status);
+
+CREATE TABLE IF NOT EXISTS pevr_artifacts (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id       INTEGER NOT NULL REFERENCES pevr_runs(id),
+  step         TEXT NOT NULL,
+  type         TEXT NOT NULL,
+  content_json TEXT NOT NULL,
+  head_sha     TEXT NOT NULL,
+  dedupe_key   TEXT,
+  created_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pevr_artifacts_run_step
+  ON pevr_artifacts(run_id, step, id);
+
+CREATE TABLE IF NOT EXISTS pevr_placements (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  artifact_id INTEGER NOT NULL REFERENCES pevr_artifacts(id),
+  target_kind TEXT NOT NULL,
+  target_ref  TEXT NOT NULL,
+  placed_at   TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pevr_placements_artifact
+  ON pevr_placements(artifact_id);
+
+CREATE TABLE IF NOT EXISTS pevr_step_pins (
+  run_id     INTEGER NOT NULL REFERENCES pevr_runs(id),
+  step       TEXT NOT NULL,
+  session_id TEXT NOT NULL UNIQUE,
+  head_sha   TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (run_id, step, session_id)
+);
+
+CREATE TABLE IF NOT EXISTS pevr_placement_claims (
+  artifact_id INTEGER PRIMARY KEY REFERENCES pevr_artifacts(id),
+  owner_token TEXT NOT NULL,
+  claimed_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pevr_artifact_submitters (
+  artifact_id INTEGER PRIMARY KEY REFERENCES pevr_artifacts(id),
+  session_id  TEXT NOT NULL
+);
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）
@@ -623,6 +668,12 @@ function columnExists(table: string, column: string): boolean {
 }
 
 tryExec("ALTER TABLE pulls ADD COLUMN head_sha TEXT");
+tryExec("ALTER TABLE pevr_artifacts ADD COLUMN dedupe_key TEXT");
+tryExec("ALTER TABLE pevr_placement_claims ADD COLUMN owner_token TEXT");
+tryExec("DROP INDEX IF EXISTS idx_pevr_artifacts_submission");
+tryExec(
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_pevr_artifacts_inflight_dedupe ON pevr_artifacts(dedupe_key) WHERE dedupe_key IS NOT NULL",
+);
 tryExec("ALTER TABLE issues ADD COLUMN target_branch TEXT");
 tryExec("ALTER TABLE review_comments ADD COLUMN review_id INTEGER");
 tryExec(

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { agentModel } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
@@ -42,6 +42,18 @@ function nameArg(): string {
 async function fileText(path: string): Promise<string> {
   if (path === "-") return readStdin();
   return readFileSync(path, "utf8");
+}
+
+async function submittedArtifactText(path: string): Promise<string> {
+  if (path === "-") return readStdin();
+  if (lstatSync(path).isSymbolicLink()) {
+    fail(`artifact file must not be a symlink: ${path}`);
+  }
+  const resolved = realpathSync(path);
+  if (!lstatSync(resolved).isFile()) {
+    fail(`artifact file must be a regular file: ${path}`);
+  }
+  return readFileSync(resolved, "utf8");
 }
 
 async function promptPatchFromFlags(): Promise<
@@ -376,6 +388,7 @@ async function launchStep(): Promise<void> {
           step: result.step,
           sessionId: result.session_id,
           inputFiles: result.input_files,
+          headSha: result.head_sha,
           note,
         },
         actorSessionId,
@@ -418,6 +431,30 @@ async function runUpdate(): Promise<void> {
     console.log(`step\t${display(result.run.current_step)}`);
     console.log(`rework_count\t${result.run.rework_count}`);
   }
+}
+
+async function stepOutput(): Promise<void> {
+  if (rest[0] !== "output") usage();
+  const runId = positiveInt(
+    flags.run ?? process.env.LOOPHUB_PEVR_RUN,
+    "--run or LOOPHUB_PEVR_RUN",
+  );
+  const step = flags.step ?? process.env.LOOPHUB_PEVR_STEP;
+  if (!step) fail("--step or LOOPHUB_PEVR_STEP is required");
+  const file = flags.file?.[0] ?? "-";
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).pevrRuns.stepOutput(
+      repo,
+      { run: runId, step, content: await submittedArtifactText(file) },
+      await writeSession(),
+    ),
+  );
+  if (flags.json) out(result);
+  else
+    console.log(
+      `placed ${result.placement.kind} at ${result.placement.ref} (artifact #${result.artifact_id}, ${result.head_sha})`,
+    );
 }
 
 export async function run(): Promise<void> {
@@ -481,5 +518,7 @@ export async function run(): Promise<void> {
     await launchStep();
   } else if (sub === "run") {
     await runUpdate();
+  } else if (sub === "step") {
+    await stepOutput();
   } else usage();
 }

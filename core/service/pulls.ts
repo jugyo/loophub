@@ -619,6 +619,7 @@ export const pulls = {
     number: number,
     body: string | undefined,
     sessionId?: string | null,
+    assertMutationAllowed?: () => void,
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
@@ -636,8 +637,9 @@ export const pulls = {
     // Draft takes precedence: a draft PR has no meaningful review history to re-request, so the
     // REQUEST_CHANGES guard below must not block clearing the draft flag.
     if (p.draft) {
-      S.setPullDraft(row.id, false);
       const headSha = await revParse(r.local_path, p.head_ref);
+      assertMutationAllowed?.();
+      S.setPullDraft(row.id, false);
       if (headSha) S.setHeadSha(row.id, headSha);
       if (body) S.createComment(row.id, actor, body);
       S.emitEvent(r.id, "pull_request.ready_for_review", actor, {
@@ -652,8 +654,9 @@ export const pulls = {
     }
     if (p.changes_addressed_at)
       throw new ServiceError(422, "Already marked ready for re-review");
-    S.markChangesAddressed(row.id, actor);
     const headSha = await revParse(r.local_path, p.head_ref);
+    assertMutationAllowed?.();
+    S.markChangesAddressed(row.id, actor);
     if (headSha) S.setHeadSha(row.id, headSha);
     if (body) S.createComment(row.id, actor, body);
     S.emitEvent(r.id, "pull_request.ready_for_review", actor, {

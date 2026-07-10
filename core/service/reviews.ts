@@ -30,6 +30,7 @@ export const reviews = {
       event?: string;
       body?: string;
       topic?: string;
+      headSha?: string;
       comments?: { path: string; line?: number; side?: string; body: string }[];
     },
     sessionId?: string | null,
@@ -52,7 +53,7 @@ export const reviews = {
     const actor = actorFor(sessionId);
     // Bind the review to the head it was made against so a PASS can be
     // marked stale once the branch advances past this commit.
-    const headSha = S.getPull(row.id)?.head_sha ?? null;
+    const headSha = input.headSha ?? S.getPull(row.id)?.head_sha ?? null;
     const v = S.createReview(
       row.id,
       actor,

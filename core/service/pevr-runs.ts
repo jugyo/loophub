@@ -2,15 +2,17 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   constants,
-  existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   realpathSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
+import { saveAttachment } from "../attachments.ts";
 import { configDir, worktreeRoot } from "../config.ts";
 import {
   acquireDevLock,
@@ -43,6 +45,7 @@ import {
   type PevrTimelineEntryInput,
   writePevrStepInputArtifacts,
 } from "../pevr/inputs.ts";
+import { placePevrArtifact } from "../pevr/placement.ts";
 import { RUNTIME_CLAUDE_CODE, resolveWorktreeIdentity } from "../resume.ts";
 import { buildPevrStepHerdrLaunchPlan } from "../terminal/terminal-launch.ts";
 import {
@@ -50,7 +53,10 @@ import {
   worktreePath as prWorktreePath,
 } from "../worktree-path.ts";
 import { provisionWorktree } from "../worktree-provision.ts";
+import { comments } from "./comments.ts";
 import { dev } from "./dev.ts";
+import { pulls } from "./pulls.ts";
+import { reviews } from "./reviews.ts";
 import {
   actorFor,
   assertExistingLocalBranch,
@@ -104,6 +110,7 @@ export type PevrLaunchStepResult = {
   system_prompt_path: string;
   user_prompt: string;
   input_files: Array<{ path: string; description: string }>;
+  head_sha?: string;
   herdr: {
     sessionName: string;
     command: string;
@@ -115,6 +122,20 @@ export type PevrLaunchStepResult = {
 export type PevrConfirmStepLaunchResult = {
   run: PevrRunUpdateResult["run"];
   session_id: string;
+};
+
+export type PevrStepOutputResult = {
+  artifact_id: number;
+  head_sha: string;
+  placement: { kind: string; ref: string };
+  retried: boolean;
+};
+
+const STEP_ARTIFACT_TYPE: Record<PevrStep, PevrArtifactType> = {
+  plan: "plan",
+  execute: "execution-report",
+  verify: "verdict",
+  reflect: "reflection",
 };
 
 function workflowByInput(input: { workflow?: string; workflowId?: number }) {
@@ -349,35 +370,11 @@ async function composeLaunchInputs(input: {
   }
 }
 
-function artifactPath(run: S.PevrRunRow, type: PevrArtifactType): string {
-  return join(runDir(run.id), "artifacts", "latest", `${type}.json`);
-}
-
-function assertArtifactPathInsideRun(run: S.PevrRunRow, path: string): void {
-  const realRunDir = realpathSync(runDir(run.id));
-  const realPath = realpathSync(path);
-  const rel = relative(realRunDir, realPath);
-  if (rel === "" || (!rel.startsWith("..") && !rel.startsWith(sep))) return;
-  throw new ServiceError(
-    422,
-    `PEVR artifact path escapes run directory: ${path}`,
-  );
-}
-
 function latestArtifactHead(
   run: S.PevrRunRow,
   type: PevrArtifactType,
 ): string | undefined {
-  const path = join(runDir(run.id), "artifacts", "latest", `${type}.head`);
-  if (!existsSync(path)) return undefined;
-  if (lstatSync(path).isSymbolicLink()) {
-    throw new ServiceError(
-      422,
-      `PEVR artifact metadata path must not be a symlink: ${path}`,
-    );
-  }
-  assertArtifactPathInsideRun(run, path);
-  return readFileSync(path, "utf8").trim() || undefined;
+  return S.latestPevrArtifactByType(run.id, type)?.head_sha;
 }
 
 function readLatestArtifact(run: S.PevrRunRow, type: "plan"): PevrPlanArtifact;
@@ -393,21 +390,11 @@ function readLatestArtifact(
   run: S.PevrRunRow,
   type: PevrArtifactType,
 ): PevrArtifact {
-  const path = artifactPath(run, type);
-  if (!existsSync(path)) {
-    throw new ServiceError(
-      409,
-      `launch-step requires latest ${type} artifact at ${path}`,
-    );
+  const row = S.latestPevrArtifactByType(run.id, type);
+  if (!row) {
+    throw new ServiceError(409, `launch-step requires latest ${type} artifact`);
   }
-  if (lstatSync(path).isSymbolicLink()) {
-    throw new ServiceError(
-      422,
-      `PEVR artifact path must not be a symlink: ${path}`,
-    );
-  }
-  assertArtifactPathInsideRun(run, path);
-  const parsed = parsePevrArtifactJson(readFileSync(path, "utf8"));
+  const parsed = parsePevrArtifactJson(row.content_json);
   if (!parsed.ok) {
     throw new ServiceError(
       422,
@@ -427,13 +414,175 @@ function readLatestArtifactOptional(
   run: S.PevrRunRow,
   type: "verdict",
 ): PevrVerdictArtifact | undefined {
-  return existsSync(artifactPath(run, type))
+  return S.latestPevrArtifactByType(run.id, type)
     ? readLatestArtifact(run, type)
     : undefined;
 }
 
 function compact<T>(values: Array<T | undefined>): T[] {
   return values.filter((value): value is T => value !== undefined);
+}
+
+function stepActorAllowed(
+  run: S.PevrRunRow,
+  step: PevrStep,
+  sessionId: string | null | undefined,
+): boolean {
+  if (!sessionId) return false;
+  if (sessionId === run.parent_session_id) return true;
+  if (S.getAgentSession(sessionId)?.agent === "me") return true;
+  try {
+    const sessions = JSON.parse(run.step_sessions_json) as Record<
+      string,
+      unknown
+    >;
+    return Array.isArray(sessions[step]) && sessions[step].includes(sessionId);
+  } catch {
+    return false;
+  }
+}
+
+async function worktreeHead(worktree: string): Promise<string> {
+  const result = await git(worktree, ["rev-parse", "HEAD"]);
+  const sha = result.stdout.trim();
+  if (result.code !== 0 || !sha) {
+    throw new ServiceError(422, "could not resolve PEVR worktree HEAD");
+  }
+  return sha;
+}
+
+function safeEvidenceAttachment(
+  worktree: string,
+  path: string,
+  author: string,
+): string {
+  const candidate = join(worktree, path);
+  if (lstatSync(candidate).isSymbolicLink()) {
+    throw new ServiceError(
+      422,
+      `PEVR evidence path must not be a symlink: ${path}`,
+    );
+  }
+  const fd = openSync(candidate, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const opened = fstatSync(fd);
+    if (!opened.isFile()) {
+      throw new ServiceError(
+        422,
+        `PEVR evidence path must be a regular file: ${path}`,
+      );
+    }
+    const resolved = realpathSync(candidate);
+    const checked = statSync(resolved);
+    if (checked.dev !== opened.dev || checked.ino !== opened.ino) {
+      throw new ServiceError(
+        422,
+        `PEVR evidence path changed while opening: ${path}`,
+      );
+    }
+    const rel = relative(realpathSync(worktree), resolved);
+    if (rel.startsWith("..") || rel.startsWith(sep)) {
+      throw new ServiceError(
+        422,
+        `PEVR evidence path escapes worktree: ${path}`,
+      );
+    }
+    return saveAttachment({
+      data: readFileSync(fd),
+      filename: basename(resolved),
+      author,
+    }).markdown;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+async function placeAcceptedArtifact(input: {
+  repoName: string;
+  run: S.PevrRunRow;
+  artifactId: number;
+  ownerToken: string;
+  ownershipLost: () => boolean;
+  artifact: PevrArtifact;
+  headSha: string;
+  worktree: string;
+  sessionId?: string | null;
+}): Promise<{ kind: string; ref: string }> {
+  const current = await pulls.get(input.repoName, input.run.pr_number);
+  return placePevrArtifact({
+    artifact: input.artifact,
+    headSha: input.headSha,
+    issueNumber: input.run.issue_number,
+    dependencies: {
+      currentBody: current.body,
+      currentDraft: current.draft,
+      assertOwnership() {
+        if (
+          input.ownershipLost() ||
+          !S.ownsPevrPlacementClaim(input.artifactId, input.ownerToken)
+        ) {
+          throw new ServiceError(409, "PEVR artifact placement claim was lost");
+        }
+      },
+      async updateBody(body) {
+        await pulls.update(
+          input.repoName,
+          input.run.pr_number,
+          { body },
+          input.sessionId,
+        );
+      },
+      async readyForReview() {
+        await pulls.readyForReview(
+          input.repoName,
+          input.run.pr_number,
+          undefined,
+          input.sessionId,
+          () => {
+            if (
+              input.ownershipLost() ||
+              !S.ownsPevrPlacementClaim(input.artifactId, input.ownerToken)
+            ) {
+              throw new ServiceError(
+                409,
+                "PEVR artifact placement claim was lost",
+              );
+            }
+          },
+        );
+      },
+      async createReview(review) {
+        return String(
+          reviews.create(
+            input.repoName,
+            input.run.pr_number,
+            { ...review, topic: "pevr" },
+            input.sessionId,
+          ).id,
+        );
+      },
+      async createComment(body) {
+        return String(
+          comments.createForPull(
+            input.repoName,
+            input.run.pr_number,
+            body,
+            input.sessionId,
+          ).id,
+        );
+      },
+      attach(path) {
+        return safeEvidenceAttachment(
+          input.worktree,
+          path,
+          actorFor(input.sessionId),
+        );
+      },
+      record(kind, ref) {
+        S.createPevrPlacement(input.artifactId, kind, ref);
+      },
+    },
+  });
 }
 
 async function pinnedDiff(
@@ -745,6 +894,8 @@ export const pevrRuns = {
         worktree,
       }),
     );
+    const headSha =
+      step === "verify" ? await worktreeHead(worktree) : undefined;
     const composed = composePevrLaunchPrompt(
       {
         template: stepContractForLaunch(step, input.contract),
@@ -787,6 +938,7 @@ export const pevrRuns = {
       system_prompt_path: systemPromptPath,
       user_prompt: composed.userPrompt,
       input_files: inputFiles,
+      head_sha: headSha,
       herdr,
     };
   },
@@ -798,6 +950,7 @@ export const pevrRuns = {
       step: string;
       sessionId: string;
       inputFiles: Array<{ path: string; description: string }>;
+      headSha?: string;
       note?: string;
     },
     actorSessionId?: string | null,
@@ -824,6 +977,18 @@ export const pevrRuns = {
     S.linkSession(sessionId, prIssue.id);
     const withSession = S.appendPevrRunStepSession(run.id, step, sessionId);
     if (!withSession) throw new ServiceError(404, "PEVR run not found");
+    if (step === "verify") {
+      if (!input.headSha || !/^[0-9a-f]{40,64}$/u.test(input.headSha)) {
+        throw new ServiceError(
+          422,
+          "confirmed Verify launch requires a commit SHA",
+        );
+      }
+      S.setPevrStepPin(run.id, step, sessionId, input.headSha);
+      if (S.getPevrStepPin(run.id, step, sessionId) !== input.headSha) {
+        throw new ServiceError(422, "Verify session pin cannot be changed");
+      }
+    }
     const handoffBody = [
       `Launch PEVR ${step} step for run #${run.id}.`,
       "",
@@ -862,5 +1027,193 @@ export const pevrRuns = {
       pr_number: run.pr_number,
     });
     return { run: runJSON(withSession), session_id: sessionId };
+  },
+
+  async stepOutput(
+    name: string,
+    input: { run: number; step: string; content: string },
+    sessionId?: string | null,
+  ): Promise<PevrStepOutputResult> {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const run = pevrRunOr404(input.run);
+    if (run.repo_id !== r.id)
+      throw new ServiceError(404, "PEVR run not found for repo");
+    if (run.status !== "running")
+      throw new ServiceError(422, `PEVR run is ${run.status}`);
+    const step = pevrStep(input.step);
+    if (!stepActorAllowed(run, step, sessionId)) {
+      throw new ServiceError(
+        403,
+        "PEVR step output must be submitted by the parent or launched step session",
+      );
+    }
+    const parsed = parsePevrArtifactJson(input.content);
+    if (!parsed.ok) {
+      throw new ServiceError(
+        422,
+        `invalid artifact: ${parsed.violations.map((v) => `${v.path} ${v.message}`).join("; ")}`,
+      );
+    }
+    const expected = STEP_ARTIFACT_TYPE[step];
+    if (parsed.artifact.type !== expected) {
+      throw new ServiceError(
+        422,
+        `expected ${expected} artifact for ${step}, got ${parsed.artifact.type}`,
+      );
+    }
+    const prIssue = issueOr404(r, run.pr_number, "pull");
+    const pull = S.getPull(prIssue.id);
+    if (!pull)
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    const worktree = pevrRunWorktree({
+      repo: r,
+      prNumber: run.pr_number,
+      headRef: pull.head_ref,
+    });
+    const currentHead = await worktreeHead(worktree);
+    let headSha = currentHead;
+    if (
+      parsed.artifact.type === "verdict" &&
+      sessionId !== run.parent_session_id
+    ) {
+      const actor = sessionId ? S.getAgentSession(sessionId) : null;
+      if (actor?.agent !== "me") {
+        const pin = sessionId
+          ? S.getPevrStepPin(run.id, step, sessionId)
+          : null;
+        if (!pin || !/^[0-9a-f]{40,64}$/u.test(pin)) {
+          throw new ServiceError(
+            422,
+            "Verify session has no confirmed launch pin",
+          );
+        }
+        const resolved = await git(worktree, [
+          "cat-file",
+          "-e",
+          `${pin}^{commit}`,
+        ]);
+        if (resolved.code !== 0) {
+          throw new ServiceError(
+            422,
+            "Verify launch pin is not a worktree commit",
+          );
+        }
+        headSha = pin;
+      }
+    }
+    const contentJson = JSON.stringify(parsed.artifact);
+    const latest = S.latestPevrArtifact(run.id, step);
+    const latestPlacement = latest ? S.getPevrPlacement(latest.id) : null;
+    const retryUnplaced =
+      latest &&
+      !latestPlacement &&
+      latest.content_json === contentJson &&
+      S.getPevrArtifactSubmitter(latest.id) === sessionId;
+    const artifact = retryUnplaced
+      ? latest
+      : S.createPevrArtifact({
+          runId: run.id,
+          step,
+          type: parsed.artifact.type,
+          contentJson,
+          headSha,
+          submittedBy: sessionId!,
+          dedupeKey: createHash("sha256")
+            .update(
+              `${run.id}\0${step}\0${sessionId}\0${contentJson}\0${headSha}`,
+            )
+            .digest("hex"),
+        });
+    headSha = artifact.head_sha;
+    const existing = S.getPevrPlacement(artifact.id);
+    if (existing) {
+      return {
+        artifact_id: artifact.id,
+        head_sha: headSha,
+        placement: { kind: existing.target_kind, ref: existing.target_ref },
+        retried: true,
+      };
+    }
+    let claimToken = S.claimPevrPlacement(artifact.id);
+    for (let attempt = 0; !claimToken && attempt < 50; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const completed = S.getPevrPlacement(artifact.id);
+      if (completed) {
+        return {
+          artifact_id: artifact.id,
+          head_sha: headSha,
+          placement: {
+            kind: completed.target_kind,
+            ref: completed.target_ref,
+          },
+          retried: true,
+        };
+      }
+      claimToken = S.claimPevrPlacement(artifact.id);
+    }
+    if (!claimToken) {
+      throw new ServiceError(
+        409,
+        "PEVR artifact placement is already in progress",
+      );
+    }
+    const completedAfterClaim = S.getPevrPlacement(artifact.id);
+    if (completedAfterClaim) {
+      S.releasePevrPlacementClaim(artifact.id, claimToken);
+      return {
+        artifact_id: artifact.id,
+        head_sha: headSha,
+        placement: {
+          kind: completedAfterClaim.target_kind,
+          ref: completedAfterClaim.target_ref,
+        },
+        retried: true,
+      };
+    }
+    let placed: { kind: string; ref: string };
+    let claimLost = false;
+    const heartbeat = setInterval(() => {
+      try {
+        if (!S.renewPevrPlacementClaim(artifact.id, claimToken)) {
+          claimLost = true;
+        }
+      } catch {
+        claimLost = true;
+      }
+    }, 30_000);
+    heartbeat.unref();
+    try {
+      placed = await placeAcceptedArtifact({
+        repoName: r.full_name,
+        run,
+        artifactId: artifact.id,
+        ownerToken: claimToken,
+        ownershipLost: () => claimLost,
+        artifact: parsed.artifact,
+        headSha,
+        worktree,
+        sessionId,
+      });
+      S.clearPevrArtifactDedupe(artifact.id);
+    } finally {
+      clearInterval(heartbeat);
+      S.releasePevrPlacementClaim(artifact.id, claimToken);
+    }
+    S.emitEvent(r.id, "pevr_artifact.placed", actorFor(sessionId), {
+      id: run.id,
+      artifact_id: artifact.id,
+      step,
+      type: parsed.artifact.type,
+      head_sha: headSha,
+      target_kind: placed.kind,
+      target_ref: placed.ref,
+    });
+    return {
+      artifact_id: artifact.id,
+      head_sha: headSha,
+      placement: placed,
+      retried: Boolean(retryUnplaced),
+    };
   },
 };
