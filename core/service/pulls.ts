@@ -43,6 +43,7 @@ function resolveLinkedIssueId(
   r: S.Repo,
   body: string,
   explicit?: number,
+  parallel = false,
 ): number | null {
   const linkedNumber = explicit ?? parseClosingIssueNumber(body);
   if (linkedNumber == null) return null;
@@ -50,7 +51,7 @@ function resolveLinkedIssueId(
   if (!row) throw new ServiceError(422, `issue #${linkedNumber} not found`);
   if (row.kind !== "issue")
     throw new ServiceError(422, `#${linkedNumber} is not an issue`);
-  if (S.openPullLinkedToIssue(row.id)) {
+  if (!parallel && S.openPullLinkedToIssue(row.id)) {
     throw new ServiceError(
       422,
       `issue #${linkedNumber} already has an open pull request`,
@@ -128,6 +129,12 @@ export const pulls = {
       base?: string;
       issue?: number;
       draft?: boolean;
+      // Explicit opt-in for proposal/attempt flows that intentionally link another open PR to
+      // the same issue. Ordinary PR creation keeps the one-open-PR soft guard above.
+      parallel?: boolean;
+      // Preserve a previously resolved fork point (parallel attempts inherit their first
+      // sibling's recorded or merge-base-inferred SHA instead of resolving the live base ref).
+      baseSha?: string | null;
     },
     sessionId?: string | null,
   ) {
@@ -140,7 +147,12 @@ export const pulls = {
     // Soft "one open PR per linked issue" guard: refuse a second open PR for an issue that already
     // has one. This is the double-`lh build` guard (not a DB constraint — see #186), so it
     // can be relaxed later to allow multiple proposal PRs per issue.
-    const linkedIssueId = resolveLinkedIssueId(r, body, issue);
+    const linkedIssueId = resolveLinkedIssueId(
+      r,
+      body,
+      issue,
+      input.parallel === true,
+    );
     const linkedNumber = issue ?? parseClosingIssueNumber(body);
     const linkedIssue =
       linkedIssueId != null ? S.getIssueById(linkedIssueId) : null;
@@ -160,9 +172,11 @@ export const pulls = {
     // exist (#463).
     const row = S.createIssue(r.id, "pull", title, body, actor);
     const head = input.head ?? input.headFromNumber!(row.number);
-    const [headSha, baseSha] = await Promise.all([
+    const [headSha, resolvedBaseSha] = await Promise.all([
       revParse(r.local_path, head),
-      revParse(r.local_path, base),
+      input.baseSha == null
+        ? revParse(r.local_path, base)
+        : Promise.resolve(input.baseSha),
     ]);
     S.createPull(
       row.id,
@@ -172,7 +186,7 @@ export const pulls = {
       linkedIssueId,
       sessionId ?? null,
       draft,
-      baseSha,
+      resolvedBaseSha,
     );
     // Carry the draft flag (#413) on the payload so event-driven consumers can tell a WIP PR
     // (`lh build` opens drafts) from a reviewable one without a follow-up read.

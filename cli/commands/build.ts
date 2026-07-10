@@ -55,7 +55,7 @@ import {
 export async function run(): Promise<void> {
   const target = sub;
   const usageLine =
-    "usage: lh build <owner>/<repo>/<id> | <id> [--repo owner/name] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]";
+    "usage: lh build <owner>/<repo>/<id> | <id> [--repo owner/name] [--new-attempt] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]";
   if (!target) {
     fail(usageLine);
   }
@@ -83,6 +83,7 @@ export async function run(): Promise<void> {
   }
   const n = parsed.id;
   const issue = String(n);
+  const newAttempt = flags["new-attempt"] === true;
   const sessionId = randomUUID();
   const slashCommand = `/lh-build ${issue}`;
 
@@ -155,6 +156,9 @@ export async function run(): Promise<void> {
   const s = await svc();
   const r = await runOp(() => s.repos.get(repo));
   const item = await runOp(() => s.issues.get(repo, n));
+  if (item.pull_request && newAttempt) {
+    fail("--new-attempt requires an issue, not a pull request");
+  }
 
   // Make the work visible: register this session before anything that links to it (session_links
   // has a FK on agent_sessions, so dev.openPr below — which links the session to the PR it opens
@@ -205,6 +209,7 @@ export async function run(): Promise<void> {
     try {
       const res = await s.dev.openPr(repo, { issue: n }, sessionId, {
         attributeSession: false,
+        parallel: newAttempt,
       });
       prNumber = res.number;
       prJustOpened = res;
@@ -297,6 +302,7 @@ export async function run(): Promise<void> {
       // PR target. `created` is only true for a brand-new PR, so this correctly refuses in both
       // the direct-PR-target and reused-PR cases.
       allowCreatingConventionBranch: prJustOpened?.created === true,
+      baseSha: rawPull.base_sha ?? undefined,
     });
   } catch (e: any) {
     fail(e.message);

@@ -104,12 +104,15 @@ export function createPull(
 export function openPullLinkedToIssue(
   linkedIssueId: number,
 ): (IssueRow & { merged: number }) | null {
+  // The oldest open PR is the canonical first attempt. Parallel builds inherit its fork point,
+  // so make the selection stable even after an issue has multiple open proposal PRs.
   return db
     .query(
       `SELECT i.*, p.merged
          FROM pulls p
          JOIN issues i ON i.id = p.issue_id
          WHERE p.linked_issue_id = ? AND i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
+         ORDER BY i.created_at ASC, i.number ASC
          LIMIT 1`,
     )
     .get(linkedIssueId) as (IssueRow & { merged: number }) | null;

@@ -1,6 +1,6 @@
 import { cpSync, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { branchExists, worktreeAdd, worktreeList } from "./git.ts";
+import { branchExists, revParse, worktreeAdd, worktreeList } from "./git.ts";
 import type { WorktreeScheme } from "./resume.ts";
 import {
   legacyWorktreeBranch,
@@ -39,6 +39,9 @@ export interface ProvisionInput {
   // without warning. Ignored when headRef is null — that path (a brand-new self-managed branch)
   // has always been safe to create.
   allowCreatingConventionBranch?: boolean;
+  // Optional immutable fork point for a newly created convention branch. Parallel attempts use
+  // the first attempt's recorded base SHA so an advanced default branch cannot skew comparison.
+  baseSha?: string;
 }
 
 // `.claude/` (settings.json / settings.local.json) is usually untracked / gitignored, so a
@@ -108,13 +111,21 @@ export async function provisionWorktree(
       );
     } else {
       // Our own convention branch, not created yet (e.g. `lh build` just opened this PR, #463) —
-      // create it fresh off the local default branch's current commit (no fetch).
-      if (!(await branchExists(repoPath, defaultBranch))) {
+      // create it from the recorded fork point when supplied, otherwise the local default branch's
+      // current commit (no fetch).
+      const startPoint = input.baseSha ?? defaultBranch;
+      if (
+        input.baseSha
+          ? !(await revParse(repoPath, input.baseSha))
+          : !(await branchExists(repoPath, defaultBranch))
+      ) {
         throw new Error(
-          `cannot resolve default branch "${defaultBranch}" (no commits?)`,
+          input.baseSha
+            ? `cannot resolve base commit "${input.baseSha}"`
+            : `cannot resolve default branch "${defaultBranch}" (no commits?)`,
         );
       }
-      await worktreeAdd(repoPath, path, branch, defaultBranch);
+      await worktreeAdd(repoPath, path, branch, startPoint);
     }
   }
 

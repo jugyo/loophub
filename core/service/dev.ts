@@ -6,6 +6,7 @@ import {
   issueOr404,
   repoOr404,
   S,
+  ServiceError,
   worktreeBranch,
 } from "./shared.ts";
 
@@ -47,18 +48,23 @@ export const dev = {
   // same already-open PR can never overwrite the winner's session pointer. A brand-new PR
   // (created below) is unaffected by this flag: two racing creates for the same issue make two
   // distinct PR rows, each correctly attributed to its own creating session.
+  //
+  // `opts.parallel` is the explicit new-attempt path. It skips reuse, inherits the existing
+  // attempt's recorded fork point (or its merge-base fallback), and asks pulls.create to bypass
+  // only the linked-issue soft guard. Without it this method remains idempotent.
   async openPr(
     name: string,
     input: { issue: number; head?: string; base?: string; body?: string },
     sessionId?: string | null,
-    opts: { attributeSession?: boolean } = {},
+    opts: { attributeSession?: boolean; parallel?: boolean } = {},
   ): Promise<{ created: boolean; number: number }> {
     const attributeSession = opts.attributeSession ?? true;
+    const parallel = opts.parallel === true;
     const r = repoOr404(name);
     ensureWritable(r);
     const issueRow = issueOr404(r, input.issue, "issue");
     const existing = S.openPullLinkedToIssue(issueRow.id);
-    if (existing) {
+    if (existing && !parallel) {
       // Re-running `lh build <issue>` reuses the open PR but must re-point it at the session it is
       // about to spawn (latest-writer-wins), so `lh resume`/retro resolve the current session rather
       // than a stale one. (The old model re-assigned the issue on every run.)
@@ -73,10 +79,24 @@ export const dev = {
       }
       return { created: false, number: existing.number };
     }
-    if (input.base == null && issueRow.target_branch) {
+    const existingPull = existing ? S.getPull(existing.id) : null;
+    const inheritedBaseSha = existing
+      ? await pulls.baseShaForNumber(name, existing.number)
+      : null;
+    if (existing && !inheritedBaseSha) {
+      throw new ServiceError(
+        422,
+        `could not resolve fork base for existing pull request #${existing.number}`,
+      );
+    }
+    if (!existingPull && input.base == null && issueRow.target_branch) {
       assertExistingLocalBranch(r.local_path, issueRow.target_branch);
     }
-    const base = input.base ?? issueRow.target_branch ?? r.default_branch;
+    const base =
+      existingPull?.base_ref ??
+      input.base ??
+      issueRow.target_branch ??
+      r.default_branch;
     const body = input.body ?? defaultDraftPrBody(input.issue);
     // `lh build` opens the PR at the *start* of work, so it begins as a draft (#413); the agent
     // flips it to ready via `lh pr ready-for-review` once the implementation is done.
@@ -90,6 +110,8 @@ export const dev = {
         base,
         issue: input.issue,
         draft: true,
+        parallel,
+        baseSha: inheritedBaseSha,
       },
       sessionId,
     );

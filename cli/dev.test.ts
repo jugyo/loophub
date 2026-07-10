@@ -772,6 +772,7 @@ function provision(
   scheme?: "pr" | "legacy-issue",
   allowCreatingConventionBranch?: boolean,
   defaultBranch = "main",
+  baseSha?: string,
 ) {
   return provisionWorktree({
     repoPath: repo,
@@ -782,6 +783,7 @@ function provision(
     scheme,
     headRef,
     allowCreatingConventionBranch,
+    baseSha,
   });
 }
 
@@ -878,6 +880,31 @@ test("creates a fresh convention branch from the supplied PR base branch", async
   );
 
   expect(readFileSync(join(path, "f.txt"), "utf8")).toBe("integration\n");
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("creates a fresh convention branch from a recorded base SHA after the base branch advances", async () => {
+  const repo = await makeRepo();
+  const baseSha = (await git(repo, ["rev-parse", "main"])).stdout.trim();
+  writeFileSync(join(repo, "later.txt"), "later\n");
+  await git(repo, ["add", "-A"]);
+  await git(repo, ["commit", "-qm", "advance main"]);
+  const root = tmpRoot();
+
+  const path = await provision(
+    repo,
+    root,
+    13,
+    "loophub/pr-13",
+    undefined,
+    true,
+    "main",
+    baseSha,
+  );
+
+  expect((await git(path, ["rev-parse", "HEAD"])).stdout.trim()).toBe(baseSha);
+  expect(existsSync(join(path, "later.txt"))).toBe(false);
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
@@ -1093,6 +1120,17 @@ test("missing issue number prints usage and exits non-zero", () => {
 
 test("non-numeric issue number is rejected", () => {
   const { stderr, exitCode } = build(["foo", "--repo", "me/proj"]);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("invalid issue id");
+});
+
+test("--new-attempt is a boolean flag and does not swallow the issue positional", () => {
+  const { stderr, exitCode } = build([
+    "--new-attempt",
+    "not-a-number",
+    "--repo",
+    "me/proj",
+  ]);
   expect(exitCode).not.toBe(0);
   expect(stderr).toContain("invalid issue id");
 });

@@ -122,6 +122,113 @@ describe("dev.openPr", () => {
     expect(pull.head.ref).toBe("loophub/issue-custom");
   });
 
+  test("parallel attempts inherit the first PR's recorded base SHA", async () => {
+    const issue = svc.issues.create("me/proj", {
+      title: "parallel feature",
+    });
+    const first = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number, base: "main" },
+      "sess-1",
+    );
+    const firstPull = (await svc.pulls.get("me/proj", first.number)) as any;
+
+    writeFileSync(join(repoPath, "parallel-later.txt"), "later\n");
+    git(["add", "-A"]);
+    git(["commit", "-qm", "advance after first attempt"]);
+
+    const second = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number },
+      "sess-1",
+      { parallel: true },
+    );
+    // Even if another opt-in caller creates a sibling with inconsistent metadata, later builds
+    // inherit from the deterministic first attempt rather than an arbitrary open PR.
+    const divergent = await svc.pulls.create(
+      "me/proj",
+      {
+        title: "divergent proposal",
+        head: "main",
+        base: "main",
+        issue: issue.number,
+        parallel: true,
+      },
+      "sess-1",
+    );
+    const third = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number },
+      "sess-1",
+      { parallel: true },
+    );
+    const secondPull = (await svc.pulls.get("me/proj", second.number)) as any;
+    const divergentPull = (await svc.pulls.get(
+      "me/proj",
+      divergent.number,
+    )) as any;
+    const thirdPull = (await svc.pulls.get("me/proj", third.number)) as any;
+
+    expect(second.created).toBe(true);
+    expect(third.created).toBe(true);
+    expect(
+      new Set([first.number, second.number, divergent.number, third.number])
+        .size,
+    ).toBe(4);
+    expect(secondPull.base.ref).toBe(firstPull.base.ref);
+    expect(secondPull.base_sha).toBe(firstPull.base_sha);
+    expect(divergentPull.base_sha).not.toBe(firstPull.base_sha);
+    expect(thirdPull.base_sha).toBe(firstPull.base_sha);
+
+    // The default path remains idempotent even after several explicit attempts exist.
+    const reuse = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number },
+      "sess-1",
+    );
+    expect(reuse.created).toBe(false);
+    expect([
+      first.number,
+      second.number,
+      divergent.number,
+      third.number,
+    ]).toContain(reuse.number);
+  });
+
+  test("parallel attempts persist a merge-base fallback for a legacy PR", async () => {
+    const issue = svc.issues.create("me/proj", {
+      title: "legacy parallel feature",
+    });
+    const legacyHead = `legacy-attempt-${issue.number}`;
+    git(["branch", legacyHead]);
+    const first = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number, head: legacyHead, base: "main" },
+      "sess-1",
+    );
+    const repo = S.getRepo("me", "proj")!;
+    const firstRow = S.getIssue(repo.id, first.number)!;
+    const fallbackSha = ((await svc.pulls.get("me/proj", first.number)) as any)
+      .base_sha;
+    D.db.run("UPDATE pulls SET base_sha = NULL WHERE issue_id = ?", [
+      firstRow.id,
+    ]);
+
+    writeFileSync(join(repoPath, "legacy-later.txt"), "later\n");
+    git(["add", "-A"]);
+    git(["commit", "-qm", "advance after legacy attempt"]);
+
+    const second = await svc.dev.openPr(
+      "me/proj",
+      { issue: issue.number },
+      "sess-1",
+      { parallel: true },
+    );
+    const secondPull = (await svc.pulls.get("me/proj", second.number)) as any;
+    expect(secondPull.base_sha).toBe(fallbackSha);
+    expect(S.getPull(firstRow.id)?.base_sha).toBeNull();
+  });
+
   test("reuses an existing PR without revalidating a stale target branch", async () => {
     const issue = svc.issues.create("me/proj", {
       title: "reuse stale target",
@@ -412,8 +519,22 @@ describe("dev.openPr", () => {
         "sess-1",
       ),
     ).rejects.toThrow(/already has an open pull request/);
-    // Closing the open PR frees the slot so a fresh PR can be opened for the issue.
+    // The lower-level guard can only be bypassed by an explicit parallel proposal/attempt.
+    const parallel = await svc.pulls.create(
+      "me/proj",
+      {
+        title: "opt-in rival",
+        head: "main",
+        base: "main",
+        issue: issue.number,
+        parallel: true,
+      },
+      "sess-1",
+    );
+    expect(parallel.linked_issue?.number).toBe(issue.number);
+    // Closing every open PR frees the slot so a fresh PR can be opened for the issue.
     svc.pulls.update("me/proj", reuse.number, { state: "closed" }, "sess-1");
+    svc.pulls.update("me/proj", parallel.number, { state: "closed" }, "sess-1");
     const pr2 = await svc.dev.openPr(
       "me/proj",
       {
