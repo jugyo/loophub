@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Bell,
   Bot,
+  Check,
   CheckCircle2,
   CircleDollarSign,
   Loader2,
@@ -244,7 +245,7 @@ function NotificationItem({
         }}
         className={cn(
           "flex min-h-20 gap-3 px-3 py-2.5 text-sm outline-none",
-          herdrPaneId && "pr-12",
+          (!read || herdrPaneId) && "pr-12",
         )}
       >
         <Icon
@@ -273,6 +274,20 @@ function NotificationItem({
           </span>
         </span>
       </Link>
+      {!read ? (
+        <button
+          type="button"
+          title="Mark as read"
+          aria-label={`Mark ${resourceLabel(notification)} as read`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRead();
+          }}
+          className="absolute right-3 top-2 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-background/80 hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <Check className="size-3.5" aria-hidden="true" />
+        </button>
+      ) : null}
       {herdrPaneId ? (
         <button
           type="button"

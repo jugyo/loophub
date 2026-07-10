@@ -51,6 +51,7 @@ vi.mock("@/components/toast", () => ({
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.clearAllMocks();
   notifications.value = [];
   notifications.isLoading = false;
   notifications.isError = false;
@@ -120,6 +121,38 @@ describe("NotificationCenter", () => {
     expect(actions.read).toHaveBeenCalledWith(1, expect.any(Object));
     expect(router.state.location.pathname).toBe("/r/me/proj/pulls/12");
     expect(screen.queryByText("Implementation complete")).toBeNull();
+  });
+
+  it("marks one notification read without navigating", async () => {
+    notifications.value = [makeNotification()];
+    notifications.unread = 1;
+    actions.read.mockImplementationOnce(() => {
+      notifications.value = [
+        makeNotification({ read_at: "2026-01-01T00:00:10Z" }),
+      ];
+      notifications.unread = 0;
+    });
+    const { router } = renderCenter();
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: /1 unread/ }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Mark PR #12 as read" }),
+    );
+
+    expect(actions.read).toHaveBeenCalledWith(1, expect.any(Object));
+    expect(router.state.location.pathname).toBe("/");
+
+    expect(screen.queryByLabelText("Unread")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Mark .* as read/ }),
+    ).toBeNull();
+    expect(
+      document.querySelector('button[aria-label="Notifications"]'),
+    ).toBeTruthy();
+    expect(screen.getByText("Implementation complete")).toBeTruthy();
   });
 
   it("focuses Herdr without triggering notification navigation or read", async () => {
@@ -232,6 +265,9 @@ describe("NotificationCenter", () => {
     );
 
     expect(await screen.findByText("No notifications.")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Mark .* as read/ }),
+    ).toBeNull();
   });
 
   it("clears all visible notifications via the Clear all button", async () => {
