@@ -220,6 +220,32 @@ CREATE INDEX IF NOT EXISTS idx_comments_issue   ON comments(issue_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_issue    ON reviews(issue_id);
 CREATE INDEX IF NOT EXISTS idx_events_id        ON events(id);
 CREATE INDEX IF NOT EXISTS idx_events_repo      ON events(repo_id, id);
+-- notificationSourceCursors sweep (listNotificationSignalRows in store/notifications.ts) scans
+-- a bounded id range for one event type at a time with no repo_id filter, so a plain
+-- (repo_id, id) index can't help it; (type, id) lets it seek straight to the range.
+CREATE INDEX IF NOT EXISTS idx_events_type_id ON events(type, id);
+-- Per-PR lookups (firstReadyForReviewAt, hasCostStopEvent, hasAnyCostStopEvent in
+-- store/events.ts, and the "already ready" NOT EXISTS check in store/session-usage.ts) all
+-- filter on repo_id + a single literal type + the PR number embedded in payload, sometimes
+-- narrowed further by session_id. events is written on essentially every git/PR/session/issue
+-- action across ~30 event types, but only these two types (pull_request.ready_for_review,
+-- dev.cost_stopped) are ever looked up this way, so each index below is a partial index scoped
+-- to its one type with a WHERE type = '<literal>' clause -- this keeps the json_extract
+-- evaluation and btree upkeep off every insert for the other ~28 event types. SQLite's partial
+-- index matching is purely syntactic (it does not prove that type = 'x' implies
+-- type IN ('x', 'y')), so this must stay two single-type indexes rather than one indexed on
+-- type IN (...) -- and the query text must keep using a literal type (not a bound ? parameter)
+-- for SQLite to recognize the partial condition is satisfied. SQLite also matches expression
+-- indexes by their parsed form, not raw text, so both indexes are interchangeable with the bare
+-- payload column and the aliased e.payload call sites (verified via EXPLAIN QUERY PLAN). The
+-- match set per repo_id+number is always tiny in practice (a PR flips to ready, or gets
+-- cost-stopped, at most a handful of times).
+CREATE INDEX IF NOT EXISTS idx_events_repo_ready_number_id
+  ON events(repo_id, json_extract(payload, '$.number'), id)
+  WHERE type = 'pull_request.ready_for_review';
+CREATE INDEX IF NOT EXISTS idx_events_repo_cost_stopped_number_session_id
+  ON events(repo_id, json_extract(payload, '$.number'), json_extract(payload, '$.session_id'), id)
+  WHERE type = 'dev.cost_stopped';
 
 CREATE TABLE IF NOT EXISTS agent_sessions (
   id                TEXT PRIMARY KEY,

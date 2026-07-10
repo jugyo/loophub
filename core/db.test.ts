@@ -31,3 +31,76 @@ test("WAL journal mode is preserved alongside busy_timeout", () => {
   };
   expect(row.journal_mode.toLowerCase()).toBe("wal");
 });
+
+function explain(sql: string, params: unknown[]): string {
+  const rows = D.db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as {
+    detail: string;
+  }[];
+  return rows.map((r) => r.detail).join(" | ");
+}
+
+test("events query-optimization indexes exist", () => {
+  const names = (
+    D.db
+      .query(
+        `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'events'`,
+      )
+      .all() as { name: string }[]
+  ).map((r) => r.name);
+  expect(names).toContain("idx_events_type_id");
+  expect(names).toContain("idx_events_repo_ready_number_id");
+  expect(names).toContain("idx_events_repo_cost_stopped_number_session_id");
+});
+
+test("notification signal sweep (type + id range, no repo_id) uses idx_events_type_id", () => {
+  // Mirrors store/notifications.ts listNotificationSignalRows, which scans a bounded id
+  // range for one event type (inlined as a literal, not a bound param) at a time across all
+  // repos.
+  const plan = explain(
+    `SELECT e.id FROM events e WHERE e.type = 'pull_request.ready_for_review' AND e.id > ? AND e.id <= ?`,
+    [0, 1000],
+  );
+  expect(plan).toContain("idx_events_type_id");
+});
+
+// The real store/events.ts and store/session-usage.ts queries below all inline the event type
+// as a SQL literal (e.g. `type = 'dev.cost_stopped'`), never as a bound `?` parameter — SQLite's
+// partial-index matching only recognizes the index's WHERE condition when the query's own type
+// filter is a literal, so these tests mirror that exact shape rather than parameterizing type.
+
+test("firstReadyForReviewAt's repo_id+number+ORDER BY id lookup uses the ready_for_review partial index, incl. through the e.payload alias", () => {
+  // Mirrors store/events.ts firstReadyForReviewAt (bare `payload`).
+  expect(
+    explain(
+      `SELECT created_at FROM events WHERE repo_id = ? AND type = 'pull_request.ready_for_review' AND json_extract(payload, '$.number') = ? ORDER BY id ASC LIMIT 1`,
+      [1, 5],
+    ),
+  ).toContain("idx_events_repo_ready_number_id");
+
+  // Mirrors store/session-usage.ts listRecentInProgressSessionUsageSamples's NOT EXISTS
+  // subquery, which aliases the table as `e` — SQLite must still match the expression index.
+  expect(
+    explain(
+      `SELECT 1 FROM events e WHERE e.repo_id = ? AND e.type = 'pull_request.ready_for_review' AND json_extract(e.payload, '$.number') = ?`,
+      [1, 5],
+    ),
+  ).toContain("idx_events_repo_ready_number_id");
+});
+
+test("hasCostStopEvent / hasAnyCostStopEvent use the cost_stopped partial index", () => {
+  // Mirrors store/events.ts hasCostStopEvent (bare `payload`, + session_id).
+  expect(
+    explain(
+      `SELECT 1 FROM events WHERE repo_id = ? AND type = 'dev.cost_stopped' AND json_extract(payload, '$.number') = ? AND json_extract(payload, '$.session_id') = ? LIMIT 1`,
+      [1, 5, "sess-1"],
+    ),
+  ).toContain("idx_events_repo_cost_stopped_number_session_id");
+
+  // Mirrors store/events.ts hasAnyCostStopEvent (bare `payload`, no session_id).
+  expect(
+    explain(
+      `SELECT 1 FROM events WHERE repo_id = ? AND type = 'dev.cost_stopped' AND json_extract(payload, '$.number') = ? LIMIT 1`,
+      [1, 5],
+    ),
+  ).toContain("idx_events_repo_cost_stopped_number_session_id");
+});
