@@ -584,11 +584,7 @@ function CostChart({
                     label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
                     title={`${bucket.label}: ${costTitle(bucket.total)}`}
                     height={barHeight(barCostValue(bucket.total), maxCost)}
-                    color={
-                      bucket.total.hasUnknownCost
-                        ? "hsl(var(--muted-foreground))"
-                        : "hsl(var(--primary))"
-                    }
+                    color="hsl(var(--primary))"
                   />
                 ) : (
                   <StackedChartBar
