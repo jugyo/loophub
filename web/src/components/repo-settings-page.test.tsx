@@ -105,7 +105,7 @@ function renderSettings(initialArchived = false, patchFails = false) {
 }
 
 describe("RepoSettingsPage", () => {
-  it("does not render a duplicate content heading or repo back link when the shell breadcrumb is present", async () => {
+  it("does not render a duplicate content heading or repo back link", async () => {
     renderSettings(false);
 
     expect(await screen.findByRole("heading", { name: "Rename" })).toBeTruthy();

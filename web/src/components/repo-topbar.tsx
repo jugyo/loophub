@@ -40,49 +40,51 @@ const tabs: Array<{
   },
 ];
 
-export function RepoTopbar({ fallback }: { fallback: ReactNode }) {
+export function RepoTopbar() {
   const repoState = useRouterState({ select: selectRepoRouteState });
 
-  if (repoState == null) return fallback;
+  if (repoState == null) return null;
 
   const { owner, repo, section } = repoState;
 
   return (
-    <nav
-      aria-label="Repository navigation"
-      className="flex min-w-0 flex-1 items-stretch self-stretch"
-    >
-      <div
-        aria-label="Repository sections"
-        className="flex min-w-0 flex-1 items-end gap-1 overflow-hidden border-b border-transparent"
+    <header className="flex h-11 shrink-0 items-center gap-4 border-b px-4 sm:px-6">
+      <nav
+        aria-label="Repository navigation"
+        className="flex min-w-0 flex-1 items-stretch self-stretch"
       >
-        {tabs.map((tab) => {
-          const active = section === tab.section;
-          return (
-            <Link
-              key={tab.section}
-              to={tab.to}
-              params={{ owner, repo }}
-              search={{}}
-              activeOptions={{ exact: true }}
-              aria-label={tab.label}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "-mb-px inline-flex h-11 min-w-0 flex-1 basis-0 items-center justify-center gap-1.5 border-b-2 px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:flex-none sm:basis-auto sm:px-3",
-                active
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-              )}
-            >
-              {tab.icon}
-              <span className="hidden whitespace-nowrap sm:inline">
-                {tab.label}
-              </span>
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
+        <div
+          aria-label="Repository sections"
+          className="flex min-w-0 flex-1 items-end gap-1 overflow-hidden border-b border-transparent"
+        >
+          {tabs.map((tab) => {
+            const active = section === tab.section;
+            return (
+              <Link
+                key={tab.section}
+                to={tab.to}
+                params={{ owner, repo }}
+                search={{}}
+                activeOptions={{ exact: true }}
+                aria-label={tab.label}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "-mb-px inline-flex h-11 min-w-0 flex-1 basis-0 items-center justify-center gap-1.5 border-b-2 px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:flex-none sm:basis-auto sm:px-3",
+                  active
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+                )}
+              >
+                {tab.icon}
+                <span className="hidden whitespace-nowrap sm:inline">
+                  {tab.label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+    </header>
   );
 }
 

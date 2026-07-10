@@ -15,7 +15,7 @@ afterEach(() => {
 
 function renderRepoTopbar(initialPath: string) {
   const rootRoute = createRootRoute({
-    component: () => <RepoTopbar fallback={<div>Breadcrumb fallback</div>} />,
+    component: RepoTopbar,
   });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -75,13 +75,13 @@ function renderRepoTopbar(initialPath: string) {
 }
 
 describe("RepoTopbar", () => {
-  it("falls back to breadcrumbs outside repository routes", async () => {
+  it("renders no header outside repository routes", async () => {
     renderRepoTopbar("/");
 
-    expect(await screen.findByText("Breadcrumb fallback")).toBeTruthy();
     expect(
       screen.queryByRole("navigation", { name: "Repository navigation" }),
     ).toBeNull();
+    expect(document.querySelector("header")).toBeNull();
   });
 
   it("does not show the repo name in the repository topbar", async () => {

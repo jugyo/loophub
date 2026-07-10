@@ -3,9 +3,7 @@
 
 import { Outlet } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { AppBreadcrumb } from "@/components/app-breadcrumb";
 import { AppTopbar } from "@/components/app-topbar";
-import { DetailTitleProvider } from "@/components/detail-title";
 import { RepoSwitcher } from "@/components/repo-switcher";
 import { RepoTopbar } from "@/components/repo-topbar";
 import {
@@ -34,19 +32,15 @@ export function AppLayout() {
               setRepoSwitcherRequest((request) => request + 1)
             }
           />
-          <DetailTitleProvider>
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <header className="flex h-11 shrink-0 items-center gap-4 border-b px-4 sm:px-6">
-                <RepoTopbar fallback={<AppBreadcrumb />} />
-              </header>
-              <main
-                ref={mainRef}
-                className="min-h-0 flex-1 overflow-y-auto px-4 pt-6 sm:px-6"
-              >
-                <Outlet />
-              </main>
-            </div>
-          </DetailTitleProvider>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <RepoTopbar />
+            <main
+              ref={mainRef}
+              className="min-h-0 flex-1 overflow-y-auto px-4 pt-6 sm:px-6"
+            >
+              <Outlet />
+            </main>
+          </div>
           <RepoSwitcher openRequest={repoSwitcherRequest} />
           <TerminalLaunchErrorDialog />
           {/* Operation feedback (#574): a floating toast above the content, with an explicit

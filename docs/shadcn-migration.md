@@ -23,7 +23,7 @@ Only the `web/` SPA is in scope. Do not touch the data layer (JSON-RPC) or the l
 flowchart TB
   subgraph web["web/ — SPA (the work area)"]
     feat["src/components/<br/>repo-menu / create-issue-button<br/>pull-list / issue-list / pull-detail"]
-    ui["src/components/ui/<br/>button, badge, breadcrumb (existing shadcn)<br/>+ dialog, dropdown-menu, select (added)"]
+    ui["src/components/ui/<br/>button, badge (existing shadcn)<br/>+ dialog, dropdown-menu, select (added)"]
     data["src/api · src/queries<br/>JSON-RPC client / query hooks"]
     feat -->|renders with| ui
     feat -.->|fetches via| data
@@ -52,7 +52,7 @@ visual theme**.
 
 | | Detail |
 |---|---|
-| ✅ In scope | add `web/components.json` + the needed `@radix-ui/*` deps; replace the hand-rolled Dialog/DropdownMenu/Select; bring `button`/`badge`/`breadcrumb` under shadcn management |
+| ✅ In scope | add `web/components.json` + the needed `@radix-ui/*` deps; replace the hand-rolled Dialog/DropdownMenu/Select; bring `button`/`badge` under shadcn management |
 | 🚫 Out of scope | the data layer (`web/src/api/**`, `web/src/queries/**`: JSON-RPC client + query hooks; leave it), the lh-web server (`web/server/**`), the theme/tokens, any behavior/copy change |
 
 ## Current state (facts you can rely on)
@@ -61,7 +61,7 @@ Stack: React 18 + Vite + TypeScript + Tailwind 3 + TanStack Query + TanStack Rou
 
 Already shadcn-compatible:
 - `web/src/lib/utils.ts` exports `cn()` (clsx + tailwind-merge).
-- `web/src/components/ui/{button,badge,breadcrumb}.tsx` are real shadcn source (cva-based).
+- `web/src/components/ui/{button,badge}.tsx` are real shadcn source (cva-based).
 - Deps present: `class-variance-authority`, `clsx`, `tailwind-merge`, `tailwindcss-animate`,
   `lucide-react`.
 

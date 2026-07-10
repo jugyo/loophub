@@ -16,7 +16,7 @@
 flowchart TB
   subgraph web["web/ — SPA（作業対象）"]
     feat["src/components/<br/>repo-menu / create-issue-button<br/>pull-list / issue-list / pull-detail"]
-    ui["src/components/ui/<br/>button・badge・breadcrumb（既存shadcn）<br/>＋ dialog・dropdown-menu・select（今回追加）"]
+    ui["src/components/ui/<br/>button・badge（既存shadcn）<br/>＋ dialog・dropdown-menu・select（今回追加）"]
     data["src/api ・ src/queries<br/>JSON-RPC クライアント／クエリ"]
     feat -->|描画に使用| ui
     feat -.->|データ取得| data
@@ -46,7 +46,7 @@ web UI は「**shadcn 風だが本物の shadcn ではない**」状態。Tailwi
 
 | | 内容 |
 |---|---|
-| ✅ 対象 | `web/components.json` 追加、必要な `@radix-ui/*` 導入、Dialog/DropdownMenu/Select の置換、既存の `button`/`badge`/`breadcrumb` を shadcn 管理下に整える |
+| ✅ 対象 | `web/components.json` 追加、必要な `@radix-ui/*` 導入、Dialog/DropdownMenu/Select の置換、既存の `button`/`badge` を shadcn 管理下に整える |
 | 🚫 対象外 | データ層（`web/src/api/**`・`web/src/queries/**`：JSON-RPC、触らない）、lh-web サーバ（`web/server/**`）、テーマ／トークン、挙動・文言の変更 |
 
 ---
@@ -57,7 +57,7 @@ web UI は「**shadcn 風だが本物の shadcn ではない**」状態。Tailwi
 
 既に shadcn 互換:
 - `web/src/lib/utils.ts` が `cn()`（clsx + tailwind-merge）を export。
-- `web/src/components/ui/{button,badge,breadcrumb}.tsx` は本物の shadcn ソース（cva ベース）。
+- `web/src/components/ui/{button,badge}.tsx` は本物の shadcn ソース（cva ベース）。
 - 依存: `class-variance-authority`・`clsx`・`tailwind-merge`・`tailwindcss-animate`・`lucide-react`。
 
 テーマ（**そのまま維持** — `shadcn init` に上書きさせない）:

@@ -92,23 +92,24 @@ dashboard is the reference usage.
 
 ### App shell
 
-The shell is a fixed topbar plus a scrolling main column with a breadcrumb
-header ([`src/components/app-layout.tsx`](./src/components/app-layout.tsx),
-[`src/components/app-topbar.tsx`](./src/components/app-topbar.tsx)).
+The shell is a fixed topbar plus a scrolling main column. Repository routes
+also show a section-navigation header ([`src/components/app-layout.tsx`](./src/components/app-layout.tsx),
+[`src/components/repo-topbar.tsx`](./src/components/repo-topbar.tsx)).
 
 | Dimension | Value | Where |
 |-----------|-------|-------|
 | Topbar height | `h-14` | `app-topbar.tsx` |
-| Breadcrumb header height | `h-11` | `app-layout.tsx` |
+| Repository navigation height | `h-11` | `repo-topbar.tsx` |
 | Shell | `h-screen w-full overflow-hidden` | `app-layout.tsx` |
 | Main content padding | `px-4 pt-6 sm:px-6` | `app-layout.tsx` `<main>` |
 
-The topbar and breadcrumb header are `shrink-0`; the main column is
-`min-w-0 flex-1`, and only `<main>` scrolls (`overflow-y-auto`).
+The topbar and repository navigation are `shrink-0`; the main column is
+`min-w-0 flex-1`, and only `<main>` scrolls (`overflow-y-auto`). Routes outside
+a repository omit the navigation header entirely.
 
 #### Shell dividers
 
-The topbar and breadcrumb header are separated by a single-pixel `border`
+The topbar and repository navigation are separated by a single-pixel `border`
 token (`border-b`). This is the same token `divide-y` uses for in-list row
 separators, so section boundaries and row boundaries read as one consistent
 line weight/color across light and dark themes.
@@ -143,8 +144,6 @@ Only the primitives actually used by the shell are vendored, each kept minimal
   button.
 - **Badge** ([`ui/badge.tsx`](./src/components/ui/badge.tsx)) — status pill;
   tones below.
-- **Breadcrumb** ([`ui/breadcrumb.tsx`](./src/components/ui/breadcrumb.tsx)) —
-  segment display only; see [Breadcrumbs](#breadcrumbs).
 
 Add a new primitive only when the shell needs it, and keep it trimmed to the
 variants in use.
@@ -196,26 +195,11 @@ Prefer a static spinner + text over animated skeletons for now (see
 
 ---
 
-## Breadcrumbs
-
-The app-shell breadcrumb renders **plain path segments only**: a label and an
-optional link per segment, derived from the pathname by the pure
-[`crumbsForPath`](./src/lib/breadcrumb.ts) helper and displayed with the
-[breadcrumb primitives](./src/components/ui/breadcrumb.tsx) in
-[`app-breadcrumb.tsx`](./src/components/app-breadcrumb.tsx). The last segment is
-the current page (no link, `aria-current="page"`), separated by a chevron.
-
-The **rich dropdown breadcrumb** (switch repo/section from the crumb itself) is
-intentionally **out of scope** for the shell and tracked as **issue #149**. The
-breadcrumb primitives deliberately omit dropdown affordances for now.
-
----
-
 ## Known gaps
 
 Deliberately not addressed yet; listed so the gap is explicit, not forgotten.
 
-- **Accessibility** — beyond breadcrumb `aria-current` and the focus ring, no
-  systematic a11y pass (focus traps, keyboard nav, contrast audit).
+- **Accessibility** — beyond the existing navigation semantics and focus rings,
+  no systematic a11y pass (focus traps, keyboard nav, contrast audit).
 - **Skeletons** — loading uses a spinner + text rather than content-shaped
   skeleton placeholders.
