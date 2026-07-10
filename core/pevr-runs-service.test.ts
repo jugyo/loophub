@@ -597,3 +597,182 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   ).rejects.toMatchObject({ status: 422 });
   expect(S.latestPevrArtifact(started.run.id, "reflect")).toBeNull();
 }, 15_000);
+
+test("agentless e2e: step output drives all four steps to complete, then head advance makes them stale", async () => {
+  const repo = S.getRepo("me", "pevr-run")!;
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Agentless run",
+    "## Acceptance criteria\n- [ ] It completes\n",
+    "me",
+  );
+  const workflow = S.createPevrWorkflow({
+    name: "agentless",
+    description: "",
+    planPrompt: "",
+    executePrompt: "",
+    verifyPrompt: "",
+    reflectPrompt: "",
+  });
+  const session = "33333333-3333-4333-8333-333333333333";
+  const started = await svc.pevrRuns.start(
+    repo.full_name,
+    {
+      issue: issue.number,
+      workflowId: workflow.id,
+      parentContract: "# Parent",
+    },
+    session,
+  );
+
+  // Nothing placed yet: every step incomplete.
+  const initial = await svc.pevrRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(initial.steps.plan.complete).toBe(false);
+  expect(initial.steps.execute.missing).toEqual([
+    "no validated execution-report for current head",
+    "head equals base",
+  ]);
+  expect(initial.steps.verify.latest_verdict).toBeNull();
+
+  // step input is a dry-run window: same composition, no session/handoff created.
+  const handoffsBefore = S.listHandoffs(repo.id, {
+    prId: S.getIssue(repo.id, started.pr.number)!.id,
+  }).length;
+  const dryRun = await svc.pevrRuns.stepInput(repo.full_name, {
+    run: started.run.id,
+    step: "plan",
+    contract: "# Plan contract\n{{step}} {{worktreePath}} {{baseBranch}}",
+  });
+  expect(dryRun.system_prompt).toContain("# Plan contract");
+  expect(dryRun.user_prompt).toContain("## Inputs");
+  expect(dryRun.input_files.map((f) => f.path)).toEqual([
+    expect.stringContaining("/plan/input/task.md"),
+  ]);
+  expect(JSON.parse(S.getPevrRun(started.run.id)!.step_sessions_json)).toEqual(
+    {},
+  );
+  expect(
+    S.listHandoffs(repo.id, {
+      prId: S.getIssue(repo.id, started.pr.number)!.id,
+    }).length,
+  ).toBe(handoffsBefore);
+
+  // Plan.
+  await svc.pevrRuns.stepOutput(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "plan",
+      content: JSON.stringify({
+        type: "plan",
+        summary: "Plan it.",
+        changes: [{ area: "core", description: "Do it." }],
+        reuse: [],
+        out_of_scope: [],
+        verification: "Tests.",
+      }),
+    },
+    session,
+  );
+  expect(
+    (await svc.pevrRuns.status(repo.full_name, { run: started.run.id })).steps
+      .plan.complete,
+  ).toBe(true);
+
+  // Execute needs a commit so the head is ahead of base.
+  writeFileSync(join(started.worktree, "impl.txt"), "work\n");
+  gitAt(started.worktree, ["add", "impl.txt"]);
+  gitAt(started.worktree, ["commit", "-m", "Implement"]);
+  const executeHead = gitAt(started.worktree, ["rev-parse", "HEAD"]);
+  await svc.pevrRuns.stepOutput(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      content: JSON.stringify({
+        type: "execution-report",
+        summary: "Implemented.",
+        acceptance: [{ criterion: "It completes", met: true, note: "Done." }],
+        tests: [{ command: "npm test", passed: true, excerpt: "1 passed" }],
+        evidence: [{ kind: "test", description: "focused tests" }],
+      }),
+    },
+    session,
+  );
+  const afterExecute = await svc.pevrRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(afterExecute.steps.execute).toEqual({ complete: true, missing: [] });
+
+  // Verify (submitted by the parent session, stamped at current head).
+  await svc.pevrRuns.stepOutput(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      content: JSON.stringify({
+        type: "verdict",
+        event: "pass",
+        summary: "AC satisfied.",
+        findings: [],
+      }),
+    },
+    session,
+  );
+  const afterVerify = await svc.pevrRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(afterVerify.steps.verify.complete).toBe(true);
+  expect(afterVerify.steps.verify.latest_verdict).toEqual({
+    event: "pass",
+    summary: "AC satisfied.",
+    findings: [],
+  });
+
+  // Reflect.
+  await svc.pevrRuns.stepOutput(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "reflect",
+      content: JSON.stringify({
+        type: "reflection",
+        went_well: ["Composition works"],
+        friction: [],
+        suggestions: [],
+        followups: [],
+      }),
+    },
+    session,
+  );
+  const allComplete = await svc.pevrRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(Object.values(allComplete.steps).every((s) => s.complete)).toBe(true);
+
+  // Advancing the head makes execution-report and verdict stale (both were
+  // stamped at executeHead, not the new head).
+  writeFileSync(join(started.worktree, "impl.txt"), "more work\n");
+  gitAt(started.worktree, ["add", "impl.txt"]);
+  gitAt(started.worktree, ["commit", "-m", "Advance head"]);
+  expect(gitAt(started.worktree, ["rev-parse", "HEAD"])).not.toBe(executeHead);
+  const stale = await svc.pevrRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(stale.steps.execute.complete).toBe(false);
+  expect(stale.steps.execute.missing).toContain(
+    "no validated execution-report for current head",
+  );
+  expect(stale.steps.verify.complete).toBe(false);
+  expect(stale.steps.verify.missing).toEqual([
+    "no validated verdict for current head",
+  ]);
+  // Plan and reflect are head-independent, so they stay complete.
+  expect(stale.steps.plan.complete).toBe(true);
+  expect(stale.steps.reflect.complete).toBe(true);
+  // The latest verdict summary survives staleness for the parent's rework read.
+  expect(stale.steps.verify.latest_verdict?.event).toBe("pass");
+}, 20_000);

@@ -433,6 +433,68 @@ async function runUpdate(): Promise<void> {
   }
 }
 
+const STEP_STATUS_ORDER = ["plan", "execute", "verify", "reflect"] as const;
+
+async function stepInput(): Promise<void> {
+  const runId = positiveInt(rest[1], "<run>");
+  const step = rest[2];
+  if (!step) {
+    fail("usage: lh workflow step input <run> <step> [--note <text|->]");
+  }
+  const note =
+    flags.note === "-"
+      ? await readStdin()
+      : typeof flags.note === "string"
+        ? flags.note
+        : undefined;
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).pevrRuns.stepInput(repo, {
+      run: runId,
+      step,
+      note,
+      contract: contractText(step),
+    }),
+  );
+  if (flags.json) {
+    out(result);
+    return;
+  }
+  console.log(`--- system prompt (contract: ${result.step}) ---`);
+  console.log(result.system_prompt);
+  console.log("--- input files ---");
+  for (const file of result.input_files) {
+    console.log(`${display(file.path)}\t${file.description}`);
+  }
+  console.log("--- user prompt ---");
+  console.log(result.user_prompt);
+}
+
+async function stepStatus(): Promise<void> {
+  const runId = positiveInt(rest[1], "<run>");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).pevrRuns.status(repo, { run: runId }),
+  );
+  if (flags.json) {
+    out(result);
+    return;
+  }
+  for (const step of STEP_STATUS_ORDER) {
+    const s = result.steps[step];
+    const label = s.complete
+      ? "complete"
+      : `incomplete — ${s.missing.join("; ")}`;
+    console.log(`${step}\t${label}`);
+    if (step === "verify" && result.steps.verify.latest_verdict) {
+      const v = result.steps.verify.latest_verdict;
+      console.log(
+        `\tlatest verdict: ${v.event} (${v.findings.length} findings)`,
+      );
+    }
+  }
+}
+
 async function stepOutput(): Promise<void> {
   if (rest[0] !== "output") usage();
   const runId = positiveInt(
@@ -519,6 +581,8 @@ export async function run(): Promise<void> {
   } else if (sub === "run") {
     await runUpdate();
   } else if (sub === "step") {
-    await stepOutput();
+    if (rest[0] === "input") await stepInput();
+    else if (rest[0] === "status") await stepStatus();
+    else await stepOutput();
   } else usage();
 }

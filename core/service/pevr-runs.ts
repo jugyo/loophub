@@ -46,6 +46,11 @@ import {
   writePevrStepInputArtifacts,
 } from "../pevr/inputs.ts";
 import { placePevrArtifact } from "../pevr/placement.ts";
+import {
+  evaluatePevrSteps,
+  type PevrLatestArtifactState,
+  type PevrStepStatuses,
+} from "../pevr/steps.ts";
 import { RUNTIME_CLAUDE_CODE, resolveWorktreeIdentity } from "../resume.ts";
 import { buildPevrStepHerdrLaunchPlan } from "../terminal/terminal-launch.ts";
 import {
@@ -129,6 +134,23 @@ export type PevrStepOutputResult = {
   head_sha: string;
   placement: { kind: string; ref: string };
   retried: boolean;
+};
+
+export type PevrStepInputResult = {
+  run: PevrRunUpdateResult["run"];
+  step: PevrStep;
+  system_prompt: string;
+  system_prompt_path: string;
+  user_prompt: string;
+  input_files: Array<{ path: string; description: string }>;
+};
+
+export type PevrStepStatusResult = {
+  run: number;
+  current_step: string;
+  status: string;
+  head_sha: string | null;
+  steps: PevrStepStatuses;
 };
 
 const STEP_ARTIFACT_TYPE: Record<PevrStep, PevrArtifactType> = {
@@ -449,6 +471,51 @@ async function worktreeHead(worktree: string): Promise<string> {
     throw new ServiceError(422, "could not resolve PEVR worktree HEAD");
   }
   return sha;
+}
+
+async function worktreeHeadOptional(worktree: string): Promise<string | null> {
+  try {
+    const result = await git(worktree, ["rev-parse", "HEAD"]);
+    const sha = result.stdout.trim();
+    return result.code === 0 && sha ? sha : null;
+  } catch {
+    return null;
+  }
+}
+
+async function isHeadAheadOfBase(
+  worktree: string,
+  baseBranch: string,
+  head: string | null,
+): Promise<boolean> {
+  if (!head) return false;
+  try {
+    const result = await git(worktree, [
+      "rev-list",
+      "--count",
+      `${baseBranch}..${head}`,
+    ]);
+    return result.code === 0 && Number(result.stdout.trim()) > 0;
+  } catch {
+    return false;
+  }
+}
+
+function latestArtifactState(
+  run: S.PevrRunRow,
+  type: PevrArtifactType,
+): PevrLatestArtifactState | null {
+  const row = S.latestPevrArtifactByType(run.id, type);
+  if (!row) return null;
+  return { headSha: row.head_sha, placed: Boolean(S.getPevrPlacement(row.id)) };
+}
+
+function latestVerdictContent(run: S.PevrRunRow): PevrVerdictArtifact | null {
+  const row = S.latestPevrArtifactByType(run.id, "verdict");
+  if (!row) return null;
+  const parsed = parsePevrArtifactJson(row.content_json);
+  if (!parsed.ok || parsed.artifact.type !== "verdict") return null;
+  return parsed.artifact;
 }
 
 function safeEvidenceAttachment(
@@ -1214,6 +1281,116 @@ export const pevrRuns = {
       head_sha: headSha,
       placement: placed,
       retried: Boolean(retryUnplaced),
+    };
+  },
+
+  async stepInput(
+    name: string,
+    input: { run: number; step: string; note?: string; contract: string },
+    _sessionId?: string | null,
+  ): Promise<PevrStepInputResult> {
+    const r = repoOr404(name);
+    const run = pevrRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "PEVR run not found for repo");
+    }
+    const step = pevrStep(input.step);
+    const workflow = run.workflow_id
+      ? S.getPevrWorkflowById(run.workflow_id)
+      : null;
+    if (!workflow) throw new ServiceError(404, "Workflow not found");
+    const issue = issueOr404(r, run.issue_number, "issue");
+    const prIssue = issueOr404(r, run.pr_number, "pull");
+    const pull = S.getPull(prIssue.id);
+    if (!pull)
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    const worktree = pevrRunWorktree({
+      repo: r,
+      prNumber: run.pr_number,
+      headRef: pull.head_ref,
+    });
+    const inputFiles = writePevrStepInputArtifacts(
+      ensurePevrRunDir(run.id),
+      await composeLaunchInputs({
+        repo: r,
+        issue,
+        pullIssue: prIssue,
+        pull,
+        run,
+        step,
+        worktree,
+      }),
+    );
+    const composed = composePevrLaunchPrompt(
+      {
+        template: stepContractForLaunch(step, input.contract),
+        step,
+        worktreePath: worktree,
+        baseBranch: pull.base_ref,
+      },
+      {
+        inputFiles,
+        worktreePath: ".",
+        baseBranch: pull.base_ref,
+        stepPrompt: workflowStepPrompt(workflow, step),
+        note: input.note,
+      },
+    );
+    const systemPromptPath = writeStepContract(
+      run.id,
+      step,
+      composed.systemPrompt,
+    );
+    return {
+      run: runJSON(run),
+      step,
+      system_prompt: composed.systemPrompt,
+      system_prompt_path: systemPromptPath,
+      user_prompt: composed.userPrompt,
+      input_files: inputFiles,
+    };
+  },
+
+  async status(
+    name: string,
+    input: { run: number },
+    _sessionId?: string | null,
+  ): Promise<PevrStepStatusResult> {
+    const r = repoOr404(name);
+    const run = pevrRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "PEVR run not found for repo");
+    }
+    const prIssue = issueOr404(r, run.pr_number, "pull");
+    const pull = S.getPull(prIssue.id);
+    if (!pull)
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    const worktree = pevrRunWorktree({
+      repo: r,
+      prNumber: run.pr_number,
+      headRef: pull.head_ref,
+    });
+    const currentHead = await worktreeHeadOptional(worktree);
+    const headAheadOfBase = await isHeadAheadOfBase(
+      worktree,
+      pull.base_ref,
+      currentHead,
+    );
+    const steps = evaluatePevrSteps({
+      currentHead,
+      headAheadOfBase,
+      plan: latestArtifactState(run, "plan"),
+      execute: latestArtifactState(run, "execution-report"),
+      verify: latestArtifactState(run, "verdict"),
+      reflect: latestArtifactState(run, "reflection"),
+      latestVerdict: latestVerdictContent(run),
+    });
+    return {
+      run: run.id,
+      current_step: run.current_step,
+      status: run.status,
+      head_sha: currentHead,
+      steps,
     };
   },
 };
