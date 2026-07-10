@@ -1,3 +1,4 @@
+import { closeOpenAttemptsForIssue } from "./attempts.ts";
 import type { GithubDeps, GithubPrStatusDeps } from "./shared.ts";
 import {
   actorFor,
@@ -559,6 +560,14 @@ export const pulls = {
         closed_by_pull: row.number,
       });
     }
+    if (p.linked_issue_id != null) {
+      closeOpenAttemptsForIssue({
+        repoId: r.id,
+        linkedIssueId: p.linked_issue_id,
+        actor,
+        supersededByPull: row.number,
+      });
+    }
     return { merged: true, sha: res.sha };
   },
 
@@ -594,6 +603,14 @@ export const pulls = {
       S.emitEvent(r.id, "issue.closed", actor, {
         number: closedIssue,
         closed_by_pull: row.number,
+      });
+    }
+    if (p.linked_issue_id != null) {
+      closeOpenAttemptsForIssue({
+        repoId: r.id,
+        linkedIssueId: p.linked_issue_id,
+        actor,
+        supersededByPull: row.number,
       });
     }
     return { merged: true };

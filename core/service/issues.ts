@@ -1,3 +1,4 @@
+import { closeOpenAttemptsForIssue } from "./attempts.ts";
 import type { GithubIssueDeps } from "./shared.ts";
 import {
   actorFor,
@@ -236,6 +237,13 @@ export const issues = {
           number: row.number,
         },
       );
+      if (row.kind === "issue") {
+        closeOpenAttemptsForIssue({
+          repoId: r.id,
+          linkedIssueId: row.id,
+          actor,
+        });
+      }
     } else if (patch.state === "open" && !wasOpen) {
       S.emitEvent(
         r.id,

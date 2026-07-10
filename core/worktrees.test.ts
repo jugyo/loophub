@@ -118,6 +118,58 @@ test("plan marks a worktree as remove when its linked PR is merged", async () =>
   await git(repo.path, ["worktree", "remove", "--force", wtPath]);
 });
 
+test("plan removes clean superseded attempt worktrees but keeps dirty and cwd safety guards", async () => {
+  const repo = await makeRepo("me/superseded");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "parallel work",
+    "",
+    "me",
+  ) as any;
+  const attempts = [];
+  for (const suffix of ["clean", "dirty", "cwd"]) {
+    const pr = S.createIssue(repo.id, "pull", suffix, "", "me") as any;
+    const head = `loophub/pr-${pr.number}`;
+    S.createPull(pr.id, head, "main", null, issue.id);
+    const path = join(repo.path, "..", `wt-superseded-${repo.id}-${suffix}`);
+    await worktreeAdd(repo.path, path, head, "main");
+    attempts.push({ pr, path, suffix });
+  }
+  writeFileSync(
+    `${attempts.find((attempt) => attempt.suffix === "dirty")!.path}/wip.txt`,
+    "unfinished\n",
+  );
+
+  svc.issues.update("me/superseded", issue.number, { state: "closed" });
+
+  const cwdPath = attempts.find((attempt) => attempt.suffix === "cwd")!.path;
+  const entries = await svc.worktrees.plan({
+    repo: "me/superseded",
+    cwd: cwdPath,
+  });
+  const byNumber = new Map(entries.map((entry) => [entry.issue, entry]));
+  const clean = attempts.find((attempt) => attempt.suffix === "clean")!;
+  const dirty = attempts.find((attempt) => attempt.suffix === "dirty")!;
+  const cwd = attempts.find((attempt) => attempt.suffix === "cwd")!;
+  expect(byNumber.get(clean.pr.number)).toMatchObject({
+    action: "remove",
+    reason: "issue closed",
+  });
+  expect(byNumber.get(dirty.pr.number)).toMatchObject({
+    action: "skip",
+    reason: "uncommitted or untracked changes",
+  });
+  expect(byNumber.get(cwd.pr.number)).toMatchObject({
+    action: "skip",
+    reason: "current working directory",
+  });
+
+  for (const attempt of attempts) {
+    await git(repo.path, ["worktree", "remove", "--force", attempt.path]);
+  }
+});
+
 // remove() deletes a clean done worktree; tidy() prunes stale admin entries.
 test("remove deletes a clean worktree; tidy prunes admin entries", async () => {
   const repo = await makeRepo("me/remove");
