@@ -212,16 +212,6 @@ describe("AgentSessionsPage", () => {
     expect(within(rows[1]).getByText("430")).toBeTruthy();
     expect(within(rows[1]).getByText("4,660")).toBeTruthy();
     expect(within(rows[1]).getByText("$0.01")).toBeTruthy();
-    expect(within(rows[1]).getByText("Security reviewer")).toBeTruthy();
-    expect(within(rows[1]).getByText("Old reviewer")).toBeTruthy();
-    expect(
-      within(rows[1]).getByText("in 100 · cw 0 · cr 200 · out 50"),
-    ).toBeTruthy();
-    expect(within(rows[1]).getByText("350 · $0.0020")).toBeTruthy();
-    expect(
-      within(rows[1]).getByText("in 999 · cw 0 · cr 999 · out 999"),
-    ).toBeTruthy();
-    expect(within(rows[1]).getByText("2,997 · $9.00")).toBeTruthy();
     expect(within(rows[1]).getByTitle("2026-07-04T12:00:00Z").textContent).toBe(
       "1h ago",
     );

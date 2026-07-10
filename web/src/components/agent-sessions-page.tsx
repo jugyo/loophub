@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import type {
   AgentSession,
   SessionLinkedTarget,
-  SessionSubagentUsage,
   SessionUsage,
 } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
@@ -890,7 +889,6 @@ function SessionsTable({ sessions }: { sessions: AgentSession[] }) {
                 <th className="px-3 py-2 text-right font-medium">Output</th>
                 <th className="px-3 py-2 text-right font-medium">Total</th>
                 <th className="px-3 py-2 text-right font-medium">Cost</th>
-                <th className="px-3 py-2 font-medium">Subagents</th>
                 <th className="px-3 py-2 font-medium">Linked work</th>
                 <th className="px-3 py-2 text-right font-medium">Updated</th>
               </tr>
@@ -946,9 +944,6 @@ function SessionsTable({ sessions }: { sessions: AgentSession[] }) {
                     <td className="px-3 py-2 text-right tabular-nums">
                       {formatCost(usageCost(session.usage))}
                     </td>
-                    <td className="max-w-[180px] px-3 py-2 text-xs">
-                      <SubagentUsage usage={session.subagent_usage} />
-                    </td>
                     <td className="max-w-[240px] px-3 py-2">
                       <LinkedTargets targets={session.linked_targets} />
                     </td>
@@ -974,46 +969,6 @@ function UsageCell({ value }: { value: number | null }) {
     <td className="px-3 py-2 text-right tabular-nums">
       {value === null ? "n/a" : formatTokenCount(value)}
     </td>
-  );
-}
-
-function SubagentUsage({
-  usage,
-}: {
-  usage: SessionSubagentUsage[] | undefined;
-}) {
-  if (!usage || usage.length === 0)
-    return <span className="text-muted-foreground">n/a</span>;
-
-  const bySource = new Map<string, SessionSubagentUsage[]>();
-  for (const row of usage) {
-    const rows = bySource.get(row.source_id) ?? [];
-    rows.push(row);
-    bySource.set(row.source_id, rows);
-  }
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      {[...bySource.entries()].map(([sourceId, rows]) => {
-        const total = usageTotal(rows);
-        const label = rows.find((row) => row.label)?.label ?? sourceId;
-        return (
-          <div key={sourceId} className="min-w-0" title={sourceId}>
-            <div className="truncate font-medium">{label}</div>
-            <div className="text-muted-foreground">
-              in {formatTokenCount(total.input_tokens)} · cw{" "}
-              {formatTokenCount(total.cache_creation_input_tokens)} · cr{" "}
-              {formatTokenCount(total.cache_read_input_tokens)} · out{" "}
-              {formatTokenCount(total.output_tokens)}
-            </div>
-            <div className="text-muted-foreground">
-              {formatTokenCount(totalTokens(total))} ·{" "}
-              {formatCost(usageCost(rows))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
