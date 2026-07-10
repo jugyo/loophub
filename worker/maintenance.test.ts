@@ -35,6 +35,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
       usageSweepMs: Number.NaN,
       githubMergeSweepMs: 0,
       costStopSweepMs: Number.NaN,
+      closedPullCleanupSweepMs: Number.NaN,
       scheduledTaskSweepMs: Number.NaN,
     }),
   ).toEqual({
@@ -42,6 +43,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     usageSweepMs: M.DEFAULT_USAGE_SWEEP_MS,
     githubMergeSweepMs: 0,
     costStopSweepMs: M.DEFAULT_COST_STOP_SWEEP_MS,
+    closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
   });
 
@@ -50,8 +52,14 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     usageSweepMs: M.DEFAULT_USAGE_SWEEP_MS,
     githubMergeSweepMs: M.DEFAULT_GITHUB_MERGE_SWEEP_MS,
     costStopSweepMs: M.DEFAULT_COST_STOP_SWEEP_MS,
+    closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
   });
+});
+
+test("closed PR cleanup defaults to a coarser interval than cost stop", () => {
+  expect(M.DEFAULT_COST_STOP_SWEEP_MS).toBe(30000);
+  expect(M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS).toBe(600000);
 });
 
 test("maintenance summary reports disabled loops as off", () => {
@@ -61,6 +69,7 @@ test("maintenance summary reports disabled loops as off", () => {
       usageSweepMs: 25,
       githubMergeSweepMs: 0,
       costStopSweepMs: 0,
+      closedPullCleanupSweepMs: 600000,
       scheduledTaskSweepMs: 0,
     }),
   ).toEqual({
@@ -68,6 +77,7 @@ test("maintenance summary reports disabled loops as off", () => {
     usageSweep: "25ms",
     githubMergeSweep: "off",
     costStopSweep: "off",
+    closedPullCleanupSweep: "600000ms",
     scheduledTaskSweep: "off",
   });
 });
@@ -99,7 +109,7 @@ test("pull sweep logs start and completion to stdout", async () => {
   }
 });
 
-test("cost stop sweep also runs closed PR agent cleanup", async () => {
+test("cost stop sweep enforces cost limits without touching closed PR cleanup", async () => {
   vi.useFakeTimers();
   const costSpy = vi
     .spyOn(svc.terminal, "enforceDevCostLimits")
@@ -111,7 +121,28 @@ test("cost stop sweep also runs closed PR agent cleanup", async () => {
   try {
     await vi.advanceTimersByTimeAsync(10);
     expect(costSpy).toHaveBeenCalledTimes(1);
+    expect(cleanupSpy).not.toHaveBeenCalled();
+  } finally {
+    stop();
+    costSpy.mockRestore();
+    cleanupSpy.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+test("closed pull cleanup sweep kills closed-PR agents without enforcing cost limits", async () => {
+  vi.useFakeTimers();
+  const costSpy = vi
+    .spyOn(svc.terminal, "enforceDevCostLimits")
+    .mockResolvedValue({ stopped: 0, skipped: 0, failed: 0 });
+  const cleanupSpy = vi
+    .spyOn(svc.terminal, "cleanupClosedPullDevAgents")
+    .mockResolvedValue({ killed: 1, skipped: 0, failed: 0 });
+  const stop = M.startClosedPullCleanupSweep(10);
+  try {
+    await vi.advanceTimersByTimeAsync(10);
     expect(cleanupSpy).toHaveBeenCalledTimes(1);
+    expect(costSpy).not.toHaveBeenCalled();
   } finally {
     stop();
     costSpy.mockRestore();

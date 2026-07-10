@@ -12,8 +12,15 @@ export const DEFAULT_GITHUB_MERGE_SWEEP_MS = 60000;
 // #832: cost changes slowly (usage is itself refreshed only every DEFAULT_USAGE_SWEEP_MS), and the
 // action — sending Esc once a dev agent passes the limit — is idempotent per PR via the
 // dev.cost_stopped event, so a coarse interval is plenty and keeps the herdr `agent list` calls
-// infrequent.
+// infrequent. #1121 split closed-PR agent cleanup out of this loop into
+// startClosedPullCleanupSweep; this default now governs cost-limit enforcement only, keeping the
+// 30s freshness that cost stopping relies on.
 export const DEFAULT_COST_STOP_SWEEP_MS = 30000;
+// #1121: killing dev agents whose PR has been closed (#926) is not time-sensitive the way cost
+// stopping is — the agent has already lost its purpose, and the grace window before a kill is
+// measured in hours — so this cleanup runs on its own, much coarser interval than the cost-stop
+// sweep instead of piggybacking on the 30s tick.
+export const DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS = 600000;
 // #880: scheduled tasks fire at minute-precision times of day, so a coarse tick is enough to catch a
 // due minute promptly. Each tick is only a cheap DB scan unless a task is actually due (then it
 // launches a herdr tab), so this stays infrequent.
@@ -24,6 +31,7 @@ export interface MaintenanceLoopOptions {
   usageSweepMs?: number;
   githubMergeSweepMs?: number;
   costStopSweepMs?: number;
+  closedPullCleanupSweepMs?: number;
   scheduledTaskSweepMs?: number;
 }
 
@@ -32,6 +40,7 @@ export interface NormalizedMaintenanceLoopOptions {
   usageSweepMs: number;
   githubMergeSweepMs: number;
   costStopSweepMs: number;
+  closedPullCleanupSweepMs: number;
   scheduledTaskSweepMs: number;
 }
 
@@ -52,6 +61,10 @@ export function normalizeMaintenanceLoopOptions(
     costStopSweepMs: finiteOrDefault(
       opts.costStopSweepMs,
       DEFAULT_COST_STOP_SWEEP_MS,
+    ),
+    closedPullCleanupSweepMs: finiteOrDefault(
+      opts.closedPullCleanupSweepMs,
+      DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     ),
     scheduledTaskSweepMs: finiteOrDefault(
       opts.scheduledTaskSweepMs,
@@ -102,6 +115,10 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
       opts.githubMergeSweepMs > 0 ? `${opts.githubMergeSweepMs}ms` : "off",
     costStopSweep:
       opts.costStopSweepMs > 0 ? `${opts.costStopSweepMs}ms` : "off",
+    closedPullCleanupSweep:
+      opts.closedPullCleanupSweepMs > 0
+        ? `${opts.closedPullCleanupSweepMs}ms`
+        : "off",
     scheduledTaskSweep:
       opts.scheduledTaskSweepMs > 0 ? `${opts.scheduledTaskSweepMs}ms` : "off",
   };
@@ -121,6 +138,9 @@ export function startMaintenanceLoops(
       : () => {},
     normalized.costStopSweepMs > 0
       ? startCostStopSweep(normalized.costStopSweepMs)
+      : () => {},
+    normalized.closedPullCleanupSweepMs > 0
+      ? startClosedPullCleanupSweep(normalized.closedPullCleanupSweepMs)
       : () => {},
     normalized.scheduledTaskSweepMs > 0
       ? startScheduledTaskSweep(normalized.scheduledTaskSweepMs)
@@ -289,10 +309,11 @@ export function startScheduledTaskSweep(
   };
 }
 
-// Maintain running build/dev agents from one worker-owned Herdr tick. Cost overages are stopped with
-// Esc (#832), and agents left running more than an hour after their PR closes are killed (#926). The
-// enumeration, decisions, keystroke/kill, and event bookkeeping live in core terminal services; this
-// loop only schedules them and logs outcomes.
+// Stop build/dev agents that have run past their cost limit, from one worker-owned Herdr tick (#832).
+// The stop is idempotent per PR via the dev.cost_stopped event, so this stays on the coarse
+// DEFAULT_COST_STOP_SWEEP_MS interval; the enumeration, decision, keystroke, and event bookkeeping
+// live in core terminal services and this loop only schedules them and logs outcomes. #1121 split
+// closed-PR agent cleanup into startClosedPullCleanupSweep so cost freshness is not coupled to it.
 export function startCostStopSweep(
   intervalMs = DEFAULT_COST_STOP_SWEEP_MS,
 ): () => void {
@@ -304,19 +325,52 @@ export function startCostStopSweep(
     running = true;
     const startedAt = logLoopStarted("cost stop sweep");
     try {
-      const [costResult, closedPullResult] = await Promise.all([
-        terminal.enforceDevCostLimits(),
-        terminal.cleanupClosedPullDevAgents(),
-      ]);
+      const costResult = await terminal.enforceDevCostLimits();
       logLoopCompleted("cost stop sweep", startedAt, {
         stopped: costResult.stopped,
         skipped: costResult.skipped,
-        closed_pr_killed: closedPullResult.killed,
-        closed_pr_skipped: closedPullResult.skipped,
-        failed: costResult.failed + closedPullResult.failed,
+        failed: costResult.failed,
       });
     } catch (err) {
       logLoopFailed("cost stop sweep", startedAt, err);
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// Kill dev agents left running more than an hour after their PR closes (#926), from one worker-owned
+// Herdr tick. #1121 split this off startCostStopSweep: the closed PR has already lost its purpose and
+// the grace window before a kill is measured in hours, so this cleanup is not time-sensitive and runs
+// on its own coarse DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS interval instead of the 30s cost tick. The
+// enumeration, kill, and event bookkeeping live in core terminal services; this loop only schedules
+// them and logs outcomes.
+export function startClosedPullCleanupSweep(
+  intervalMs = DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    const startedAt = logLoopStarted("closed pull cleanup sweep");
+    try {
+      const closedPullResult = await terminal.cleanupClosedPullDevAgents();
+      logLoopCompleted("closed pull cleanup sweep", startedAt, {
+        killed: closedPullResult.killed,
+        skipped: closedPullResult.skipped,
+        failed: closedPullResult.failed,
+      });
+    } catch (err) {
+      logLoopFailed("closed pull cleanup sweep", startedAt, err);
     } finally {
       running = false;
     }
