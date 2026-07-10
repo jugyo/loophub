@@ -412,6 +412,31 @@ describe("IssueDetail", () => {
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
   });
 
+  it("keeps inactive and active linked PRs at normal opacity", async () => {
+    renderDetail(() => ({
+      ...issue,
+      linked_pull_requests: [
+        issue.linked_pull_request!,
+        {
+          ...issue.linked_pull_request!,
+          number: 29,
+          title: "merged attempt",
+          state: "closed",
+          merged: true,
+        },
+      ],
+    }));
+
+    const activeContent = (
+      await screen.findByLabelText("Linked PR #30: ui2: issue detail PR")
+    ).querySelector("[data-linked-pull-content]");
+    const inactiveContent = screen
+      .getByLabelText("Linked PR #29: merged attempt")
+      .querySelector("[data-linked-pull-content]");
+    expect(activeContent?.className).not.toContain("opacity-45");
+    expect(inactiveContent?.className).not.toContain("opacity-45");
+  });
+
   it("focuses the linked-PR Herdr pane from the hover popover", async () => {
     renderDetail(undefined, false, {
       "terminal/sessions": () => ({

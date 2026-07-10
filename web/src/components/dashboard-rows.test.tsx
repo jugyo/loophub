@@ -262,6 +262,30 @@ describe("IssueRow", () => {
     expect(screen.getByText("merged")).toBeTruthy();
   });
 
+  it("dims inactive linked PRs but keeps active linked PRs opaque", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ number: 10 }),
+            makePull({ number: 9, merged: true, state: "closed" }),
+          ],
+        })}
+      />,
+    );
+
+    const activeContent = (
+      await screen.findByLabelText("Linked PR #10: A PR")
+    ).querySelector("[data-linked-pull-content]");
+    const inactiveContent = screen
+      .getByLabelText("Linked PR #9: A PR")
+      .querySelector("[data-linked-pull-content]");
+    expect(activeContent?.className).not.toContain("opacity-45");
+    expect(inactiveContent?.className).toContain("opacity-45");
+  });
+
   it("shows a check icon on a passed linked PR", async () => {
     renderInRouter(
       <IssueRow

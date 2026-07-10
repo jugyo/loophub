@@ -193,12 +193,15 @@ export function LinkedPullSummaryRow({
   pull,
   className,
   showTitle = false,
+  dimInactive = false,
 }: {
   owner: string;
   repo: string;
   pull: LinkedPull;
   className?: string;
   showTitle?: boolean;
+  /** Dim merged and closed PRs when this row is rendered in an issue list. */
+  dimInactive?: boolean;
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const { data: herdrSessions } = useHerdrSessions();
@@ -260,9 +263,10 @@ export function LinkedPullSummaryRow({
       {/* opacity lives on the content wrapper, not the row container, so the
           PullPopover (rendered as a sibling below) never inherits opacity-45. */}
       <div
+        data-linked-pull-content
         className={cn(
           "flex min-w-0 items-center gap-2",
-          isDone && "opacity-45",
+          dimInactive && isDone && "opacity-45",
         )}
       >
         <span

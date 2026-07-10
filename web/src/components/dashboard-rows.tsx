@@ -201,6 +201,7 @@ export function IssueRow({
               repo={repo}
               pull={pull}
               className="pl-7 pr-0"
+              dimInactive
             />
           ))}
         </div>
