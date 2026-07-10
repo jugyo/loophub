@@ -1,5 +1,6 @@
 import { CODING_AGENTS, type CodingAgent } from "../config.ts";
 import type { AgentCostSummaryWire } from "../serialize.ts";
+import { calculateTokensPerSecond } from "../session-usage-rate.ts";
 import type {
   ClaudeSubagentTranscript,
   ClaudeSubagentTranscriptCandidate,
@@ -135,6 +136,17 @@ function sessionPeriodCosts(
 function addCost(current: number | null, next: number | null): number | null {
   if (current === null || next === null) return null;
   return current + next;
+}
+
+function secondsAgo(now: Date, seconds: number): string {
+  return new Date(now.getTime() - seconds * 1000).toISOString();
+}
+
+function recordUsageSample(sessionId: string): void {
+  const totalTokens = S.totalTokensForSession(sessionId);
+  if (totalTokens == null) return;
+  S.recordSessionUsageSample({ sessionId, totalTokens });
+  S.pruneSessionUsageSamples(secondsAgo(new Date(), 600));
 }
 
 function saveClaudeSubagentUsage(
@@ -344,6 +356,10 @@ export const sessions = {
 
   costSummary(now = new Date()): AgentCostSummaryWire[] {
     const starts = periodStarts(now);
+    const rate = calculateTokensPerSecond(
+      S.listRecentInProgressSessionUsageSamples(secondsAgo(now, 60)),
+      { now },
+    );
     const byAgent = new Map<CodingAgent, AgentCostSummaryWire>();
     for (const agent of CODING_AGENTS) {
       byAgent.set(agent, { agent, month: 0, week: 0, day: 0 });
@@ -360,7 +376,9 @@ export const sessions = {
       }
     }
 
-    return CODING_AGENTS.map((agent) => byAgent.get(agent)!);
+    const out = CODING_AGENTS.map((agent) => byAgent.get(agent)!);
+    if (rate != null) out[0].tokens_per_second = rate;
+    return out;
   },
 
   get(id: string) {
@@ -474,6 +492,7 @@ export const sessions = {
             target.pullIssueId,
             target.ownerSessionId,
           );
+          recordUsageSample(row.id);
           return {
             session_id: row.id,
             status: "skipped",
@@ -496,6 +515,7 @@ export const sessions = {
             calculateCostUsd(usage.model, usage),
           );
         }
+        recordUsageSample(row.id);
 
         return {
           session_id: row.id,
@@ -537,6 +557,7 @@ export const sessions = {
         cursor.cursor_offset === transcriptStats.size &&
         cursor.mtime_ms === transcriptStats.mtimeMs;
       if (unchanged) {
+        recordUsageSample(row.id);
         return {
           session_id: row.id,
           status: "skipped",
@@ -580,6 +601,7 @@ export const sessions = {
           calculateCostUsd(usage.model, usage),
         );
       }
+      recordUsageSample(row.id);
 
       S.upsertSessionUsageCursor({
         sessionId: row.id,

@@ -1,5 +1,6 @@
 import { db, now } from "../db.ts";
 import type { ModelUsage, SubagentUsage } from "../session-usage.ts";
+import { type SessionUsageSample, totalTokens } from "../session-usage-rate.ts";
 
 export interface SessionUsageRow {
   session_id: string;
@@ -83,6 +84,109 @@ export function listAllSessionUsage(): SessionUsageRow[] {
        ORDER BY session_id, model`,
     )
     .all() as SessionUsageRow[];
+}
+
+export function totalTokensForSession(sessionId: string): number | null {
+  const row = db
+    .query(
+      `SELECT
+         SUM(input_tokens) AS input_tokens,
+         SUM(cache_creation_input_tokens) AS cache_creation_input_tokens,
+         SUM(cache_read_input_tokens) AS cache_read_input_tokens,
+         SUM(output_tokens) AS output_tokens,
+         COUNT(*) AS row_count
+       FROM session_usage
+       WHERE session_id = ?`,
+    )
+    .get(sessionId) as {
+    input_tokens: number | null;
+    cache_creation_input_tokens: number | null;
+    cache_read_input_tokens: number | null;
+    output_tokens: number | null;
+    row_count: number;
+  };
+  if (row.row_count === 0) return null;
+  return totalTokens({
+    input_tokens: row.input_tokens ?? 0,
+    cache_creation_input_tokens: row.cache_creation_input_tokens ?? 0,
+    cache_read_input_tokens: row.cache_read_input_tokens ?? 0,
+    output_tokens: row.output_tokens ?? 0,
+  });
+}
+
+export function recordSessionUsageSample(input: {
+  sessionId: string;
+  totalTokens: number;
+  observedAt?: string;
+}): void {
+  const observedAt = input.observedAt ?? now();
+  const previous = db
+    .query(
+      `SELECT total_tokens
+       FROM session_usage_samples
+       WHERE session_id = ?
+       ORDER BY observed_at DESC, id DESC
+       LIMIT 1`,
+    )
+    .get(input.sessionId) as { total_tokens: number } | null;
+  const rawDelta =
+    previous == null ? 0 : input.totalTokens - previous.total_tokens;
+  const tokenDelta = rawDelta > 0 ? rawDelta : 0;
+  db.run(
+    `INSERT INTO session_usage_samples
+       (session_id, total_tokens, token_delta, observed_at)
+     VALUES (?, ?, ?, ?)`,
+    [input.sessionId, input.totalTokens, tokenDelta, observedAt],
+  );
+}
+
+export function pruneSessionUsageSamples(before: string): void {
+  db.run(`DELETE FROM session_usage_samples WHERE observed_at < ?`, [before]);
+}
+
+export function listRecentSessionUsageSamples(
+  since: string,
+): SessionUsageSample[] {
+  return db
+    .query(
+      `SELECT session_id, total_tokens, token_delta, observed_at
+       FROM session_usage_samples
+       WHERE observed_at >= ?
+       ORDER BY observed_at, id`,
+    )
+    .all(since) as SessionUsageSample[];
+}
+
+export function listRecentInProgressSessionUsageSamples(
+  since: string,
+): SessionUsageSample[] {
+  return db
+    .query(
+      `SELECT sus.session_id, sus.total_tokens, sus.token_delta, sus.observed_at
+       FROM session_usage_samples sus
+       WHERE sus.observed_at >= ?
+         AND EXISTS (
+           SELECT 1
+           FROM session_links l
+           JOIN agent_sessions s ON s.id = l.session_id
+           JOIN issues i ON i.id = l.issue_id
+           JOIN pulls p ON p.issue_id = i.id
+           WHERE l.session_id = sus.session_id
+             AND s.kind = 'dev'
+             AND i.kind = 'pull'
+             AND i.state = 'open'
+             AND p.merged = 0
+             AND NOT EXISTS (
+               SELECT 1
+               FROM events e
+               WHERE e.repo_id = i.repo_id
+                 AND e.type = 'pull_request.ready_for_review'
+                 AND json_extract(e.payload, '$.number') = i.number
+             )
+         )
+       ORDER BY sus.observed_at, sus.id`,
+    )
+    .all(since) as SessionUsageSample[];
 }
 
 export interface SessionUsageTotals {

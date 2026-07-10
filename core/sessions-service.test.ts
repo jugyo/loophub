@@ -470,6 +470,21 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
     context_usage_percent: 0.042,
   });
   expect(svc.sessions.get(sessionId).usage![0].cost_usd).toBeCloseTo(0.000615);
+  expect(
+    D.db
+      .query(
+        `SELECT session_id, total_tokens, token_delta
+         FROM session_usage_samples
+         WHERE session_id = ?`,
+      )
+      .all(sessionId),
+  ).toMatchObject([
+    {
+      session_id: sessionId,
+      total_tokens: 430,
+      token_delta: 0,
+    },
+  ]);
 
   D.db.run(
     `UPDATE session_usage SET context_usage_percent = NULL WHERE session_id = ?`,
@@ -524,6 +539,21 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
     input_tokens: 107,
     output_tokens: 13,
   });
+  expect(
+    D.db
+      .query(
+        `SELECT total_tokens, token_delta
+         FROM session_usage_samples
+         WHERE session_id = ?
+         ORDER BY id`,
+      )
+      .all(sessionId),
+  ).toMatchObject([
+    { total_tokens: 430, token_delta: 0 },
+    { total_tokens: 430, token_delta: 0 },
+    { total_tokens: 430, token_delta: 0 },
+    { total_tokens: 440, token_delta: 10 },
+  ]);
 
   writeFileSync(
     transcript,
@@ -543,6 +573,59 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   });
 
   rmSync(projectsDir, { recursive: true, force: true });
+});
+
+test("sessions.costSummary limits token rate to in-progress dev sessions", async () => {
+  const sessionId = "99999999-0000-0000-0000-0000000000ac";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  const issue = svc.issues.create("me/proj", { title: "rate active pr" });
+  const opened = await svc.dev.openPr(
+    "me/proj",
+    {
+      issue: issue.number,
+      head: `loophub/issue-${issue.number}`,
+      base: "main",
+    },
+    sessionId,
+  );
+  D.db.run(
+    `INSERT INTO session_usage_samples
+       (session_id, total_tokens, token_delta, observed_at)
+     VALUES (?, ?, ?, ?), (?, ?, ?, ?)`,
+    [
+      sessionId,
+      100,
+      0,
+      "2026-07-10T00:00:30Z",
+      sessionId,
+      250,
+      150,
+      "2026-07-10T00:01:00Z",
+    ],
+  );
+
+  expect(
+    svc.sessions.costSummary(new Date("2026-07-10T00:01:00Z"))[0]
+      .tokens_per_second,
+  ).toBe(5);
+
+  await svc.pulls.readyForReview(
+    "me/proj",
+    opened.number,
+    undefined,
+    sessionId,
+  );
+
+  expect(
+    svc.sessions.costSummary(new Date("2026-07-10T00:01:00Z"))[0]
+      .tokens_per_second,
+  ).toBeUndefined();
 });
 
 test("sessions.usageSync does not repeatedly backfill unavailable Claude context", () => {

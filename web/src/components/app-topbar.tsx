@@ -1,5 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { BarChart3, Command, Inbox, Loader2, Settings } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  Command,
+  Inbox,
+  Loader2,
+  Settings,
+} from "lucide-react";
 import { useMemo } from "react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -8,6 +15,7 @@ import { compareSidebarRepos } from "@/lib/repo-sort";
 import { useCurrentRepo } from "@/lib/use-current-repo";
 import { cn } from "@/lib/utils";
 import { useRepos } from "@/queries/repos";
+import { useAgentCostSummary } from "@/queries/sessions";
 
 export function AppTopbar({
   onOpenRepoSwitcher,
@@ -16,6 +24,7 @@ export function AppTopbar({
 }) {
   const currentRepo = useCurrentRepo();
   const { data, isLoading, isError } = useRepos();
+  const { data: costSummary } = useAgentCostSummary();
   const repos = useMemo(
     () => [...(data ?? [])].sort(compareSidebarRepos),
     [data],
@@ -79,6 +88,7 @@ export function AppTopbar({
 
         <div className="hidden min-w-4 flex-1 md:block" aria-hidden="true" />
 
+        <TokenRateBadge tokensPerSecond={topbarTokensPerSecond(costSummary)} />
         <TopbarLink to="/inbox" label="Inbox">
           <Inbox className="size-4" />
         </TopbarLink>
@@ -91,6 +101,45 @@ export function AppTopbar({
         <ThemeToggle />
       </div>
     </header>
+  );
+}
+
+function topbarTokensPerSecond(
+  summary: Array<{ tokens_per_second?: number | null }> | undefined,
+): number | null {
+  if (!summary) return null;
+  const value = summary.find(
+    (row) => row.tokens_per_second != null,
+  )?.tokens_per_second;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatTokensPerSecond(value: number | null): string {
+  if (value == null) return "n/a";
+  if (value < 10) return value.toFixed(1);
+  return Math.round(value).toLocaleString();
+}
+
+function TokenRateBadge({
+  tokensPerSecond,
+}: {
+  tokensPerSecond: number | null;
+}) {
+  const value = formatTokensPerSecond(tokensPerSecond);
+  return (
+    <div
+      className="hidden h-9 shrink-0 items-center gap-1.5 rounded-md border bg-background px-2 text-xs text-muted-foreground shadow-sm md:inline-flex"
+      title={
+        tokensPerSecond == null
+          ? "Token rate unavailable"
+          : "Recent aggregate token rate"
+      }
+      aria-label={`Token rate: ${value} tokens per second`}
+    >
+      <Activity className="size-3.5" aria-hidden="true" />
+      <span className="font-mono text-foreground">{value}</span>
+      <span>tok/s</span>
+    </div>
   );
 }
 

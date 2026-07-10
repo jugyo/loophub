@@ -262,6 +262,20 @@ CREATE TABLE IF NOT EXISTS session_usage (
   PRIMARY KEY (session_id, model)
 );
 
+-- Short-lived observation samples for token-rate display. session_usage stores only cumulative
+-- per-session/model totals, so it cannot reconstruct historical tokens/sec after the fact; rates
+-- are estimated from samples recorded at usage-sync time.
+CREATE TABLE IF NOT EXISTS session_usage_samples (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id   TEXT NOT NULL REFERENCES agent_sessions(id),
+  total_tokens INTEGER NOT NULL,
+  token_delta  INTEGER NOT NULL,
+  observed_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_usage_samples_session_time
+  ON session_usage_samples(session_id, observed_at);
+
 CREATE TABLE IF NOT EXISTS session_usage_subagents (
   session_id                  TEXT NOT NULL REFERENCES agent_sessions(id),
   source_id                   TEXT NOT NULL,

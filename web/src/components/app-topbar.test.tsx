@@ -17,12 +17,28 @@ const reposData = vi.hoisted(() => ({
   isError: false,
 }));
 
+const costSummaryData = vi.hoisted(() => ({
+  value: undefined as
+    | Array<{
+        agent: "claude-code" | "codex";
+        month: number | null;
+        week: number | null;
+        day: number | null;
+        tokens_per_second?: number | null;
+      }>
+    | undefined,
+}));
+
 vi.mock("@/queries/repos", () => ({
   useRepos: () => ({
     data: reposData.value,
     isLoading: reposData.isLoading,
     isError: reposData.isError,
   }),
+}));
+
+vi.mock("@/queries/sessions", () => ({
+  useAgentCostSummary: () => ({ data: costSummaryData.value }),
 }));
 
 vi.mock("@/lib/use-theme", () => ({
@@ -39,6 +55,7 @@ afterEach(() => {
   reposData.value = [];
   reposData.isLoading = false;
   reposData.isError = false;
+  costSummaryData.value = undefined;
 });
 
 function makeRepo(
@@ -209,13 +226,34 @@ describe("AppTopbar", () => {
     expect(screen.queryByRole("complementary")).toBeNull();
   });
 
-  it("does not render the topbar cost summary", async () => {
+  it("renders token rate as unavailable when there are not enough recent samples", async () => {
     renderTopbar();
     await screen.findByRole("link", { name: /LoopHub/ });
 
     expect(screen.queryByLabelText("Agent cost summary")).toBeNull();
     expect(screen.queryByText("Cost")).toBeNull();
     expect(screen.queryByText("Loading...")).toBeNull();
-    expect(screen.queryByText("n/a")).toBeNull();
+    expect(
+      screen.getByLabelText("Token rate: n/a tokens per second"),
+    ).toBeTruthy();
+  });
+
+  it("renders the recent aggregate token rate in the topbar", async () => {
+    costSummaryData.value = [
+      {
+        agent: "claude-code",
+        month: 1,
+        week: 1,
+        day: 1,
+        tokens_per_second: 12.4,
+      },
+      { agent: "codex", month: 1, week: 1, day: 1 },
+    ];
+    renderTopbar();
+    await screen.findByRole("link", { name: /LoopHub/ });
+
+    const badge = screen.getByLabelText("Token rate: 12 tokens per second");
+    expect(badge.textContent).toContain("12");
+    expect(badge.textContent).toContain("tok/s");
   });
 });

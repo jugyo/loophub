@@ -119,6 +119,9 @@ export interface AgentCostSummaryWire {
   month: number | null;
   week: number | null;
   day: number | null;
+  // Aggregate recent token rate for active sessions, surfaced on the first row of the compact
+  // topbar cost-summary payload to avoid a separate polling endpoint.
+  tokens_per_second?: number | null;
 }
 
 export interface RelatedSessionWire extends AgentSessionWire {

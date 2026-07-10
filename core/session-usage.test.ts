@@ -7,6 +7,7 @@ import {
   parseCodexRolloutJsonl,
   priceForModel,
 } from "./session-usage.ts";
+import { calculateTokensPerSecond } from "./session-usage-rate.ts";
 
 test("parseClaudeUsageJsonl extracts assistant usage and dedupes message ids", () => {
   const text = [
@@ -46,6 +47,133 @@ test("parseClaudeUsageJsonl extracts assistant usage and dedupes message ids", (
     model: "claude-sonnet-4-6-20260601",
     input_tokens: 100,
   });
+});
+
+test("calculateTokensPerSecond uses recent token deltas over elapsed seconds", () => {
+  const now = new Date("2026-07-10T00:01:00Z");
+  expect(
+    calculateTokensPerSecond(
+      [
+        {
+          session_id: "s1",
+          total_tokens: 100,
+          token_delta: 0,
+          observed_at: "2026-07-10T00:00:30Z",
+        },
+        {
+          session_id: "s1",
+          total_tokens: 250,
+          token_delta: 150,
+          observed_at: "2026-07-10T00:01:00Z",
+        },
+      ],
+      { now },
+    ),
+  ).toBe(5);
+});
+
+test("calculateTokensPerSecond returns null with insufficient samples", () => {
+  expect(
+    calculateTokensPerSecond(
+      [
+        {
+          session_id: "s1",
+          total_tokens: 100,
+          token_delta: 0,
+          observed_at: "2026-07-10T00:01:00Z",
+        },
+      ],
+      { now: new Date("2026-07-10T00:01:00Z") },
+    ),
+  ).toBeNull();
+});
+
+test("calculateTokensPerSecond ignores resets and decreasing cumulative totals", () => {
+  expect(
+    calculateTokensPerSecond(
+      [
+        {
+          session_id: "s1",
+          total_tokens: 500,
+          token_delta: 0,
+          observed_at: "2026-07-10T00:00:30Z",
+        },
+        {
+          session_id: "s1",
+          total_tokens: 10,
+          token_delta: 0,
+          observed_at: "2026-07-10T00:01:00Z",
+        },
+        {
+          session_id: "s1",
+          total_tokens: 70,
+          token_delta: 60,
+          observed_at: "2026-07-10T00:01:30Z",
+        },
+      ],
+      { now: new Date("2026-07-10T00:01:30Z"), windowSeconds: 90 },
+    ),
+  ).toBe(1);
+});
+
+test("calculateTokensPerSecond ignores stale samples", () => {
+  expect(
+    calculateTokensPerSecond(
+      [
+        {
+          session_id: "s1",
+          total_tokens: 100,
+          token_delta: 0,
+          observed_at: "2026-07-10T00:00:00Z",
+        },
+        {
+          session_id: "s1",
+          total_tokens: 200,
+          token_delta: 100,
+          observed_at: "2026-07-10T00:00:30Z",
+        },
+      ],
+      {
+        now: new Date("2026-07-10T00:02:30Z"),
+        maxSampleAgeSeconds: 60,
+      },
+    ),
+  ).toBeNull();
+});
+
+test("calculateTokensPerSecond combines multiple sessions", () => {
+  const now = new Date("2026-07-10T00:01:00Z");
+  expect(
+    calculateTokensPerSecond(
+      [
+        {
+          session_id: "s1",
+          total_tokens: 100,
+          token_delta: 0,
+          observed_at: "2026-07-10T00:00:30Z",
+        },
+        {
+          session_id: "s1",
+          total_tokens: 250,
+          token_delta: 150,
+          observed_at: "2026-07-10T00:01:00Z",
+        },
+        {
+          session_id: "s2",
+          total_tokens: 10,
+          token_delta: 0,
+          observed_at: "2026-07-10T00:00:30Z",
+        },
+        {
+          session_id: "s2",
+          total_tokens: 100,
+          token_delta: 90,
+          observed_at: "2026-07-10T00:01:00Z",
+        },
+      ],
+      { now },
+    ),
+  ).toBe(8);
 });
 
 test("parseClaudeUsageJsonl derives context usage from message usage buckets", () => {
