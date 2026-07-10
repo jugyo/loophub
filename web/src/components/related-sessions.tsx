@@ -232,6 +232,18 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
               {formatContextPercent(usage.context_usage_percent)}
             </dd>
           </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-xs text-muted-foreground">Cache hit rate</dt>
+            <dd className="shrink-0 font-medium tabular-nums">
+              {hasUsage
+                ? formatCacheHitRate(
+                    usage.input_tokens,
+                    usage.cache_creation_input_tokens,
+                    usage.cache_read_input_tokens,
+                  )
+                : "n/a"}
+            </dd>
+          </div>
         </dl>
         {hasCategories ? (
           <div className="border-t pt-3">
@@ -354,6 +366,23 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
 
 function formatContextPercent(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
+  if (value <= 0) return "0%";
+  if (value < 1) return "<1%";
+  return `${Math.round(value)}%`;
+}
+
+// Share of cache-eligible input tokens that were read from cache. Output tokens are excluded from
+// the denominator; when no cache-eligible input tokens were seen the rate is undefined, so show n/a
+// rather than dividing by zero.
+function formatCacheHitRate(
+  inputTokens: number,
+  cacheCreationInputTokens: number,
+  cacheReadInputTokens: number,
+): string {
+  const denominator =
+    inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
+  if (denominator <= 0) return "n/a";
+  const value = (cacheReadInputTokens / denominator) * 100;
   if (value <= 0) return "0%";
   if (value < 1) return "<1%";
   return `${Math.round(value)}%`;

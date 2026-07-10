@@ -371,6 +371,8 @@ describe("RelatedSessions", () => {
     expect(container.textContent).toContain("Total tokens170");
     expect(container.textContent).toContain("Total costn/a");
     expect(container.textContent).toContain("Max context72%");
+    // 30 read / (105 input + 20 creation + 30 read) = 19.35% -> 19%
+    expect(container.textContent).toContain("Cache hit rate19%");
     expect(container.textContent).toContain(
       "Some session costs are unavailable and counted as n/a.",
     );
@@ -435,6 +437,7 @@ describe("RelatedSessions", () => {
 
     expect(container.textContent).toContain("Total tokensn/a");
     expect(container.textContent).toContain("Total costn/a");
+    expect(container.textContent).toContain("Cache hit raten/a");
     expect(container.textContent).toContain("No token usage recorded yet.");
     expect(container.textContent).not.toContain("By category");
     expect(queryByRole("button", { name: "Show category details" })).toBeNull();
@@ -474,6 +477,8 @@ describe("RelatedSessions", () => {
     );
 
     expect(container.textContent).toContain("Max contextn/a");
+    // 0 read / 10 input -> 0%, distinct from n/a (there are cache-eligible input tokens)
+    expect(container.textContent).toContain("Cache hit rate0%");
     expect(container.textContent).not.toContain("Contextn/a");
     fireEvent.click(getByRole("button", { name: "Show category details" }));
     expect(container.textContent).toContain("Contextn/a");
