@@ -67,6 +67,10 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
       if (patchFails) throw new RpcFault(500, "boom");
       return { ...repo(initialArchived), merge_mode: p.mode };
     },
+    "repos/update": (p) => {
+      if (patchFails) throw new RpcFault(422, "branch not found: nope");
+      return { ...repo(initialArchived), default_branch: p.default_branch };
+    },
   });
 }
 
@@ -193,6 +197,64 @@ describe("RepoSettingsPage", () => {
 
     expect(await screen.findByText(/boom/)).toBeTruthy();
     expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("shows the current base branch and saves via repos/update (#1115)", async () => {
+    renderSettings(false);
+    const input = (await screen.findByRole("textbox", {
+      name: /base branch/i,
+    })) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe("main"));
+
+    const submit = screen.getByRole("button", {
+      name: "Save",
+    }) as HTMLButtonElement;
+    // Unchanged value: save is disabled.
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(input, { target: { value: "develop" } });
+    await waitFor(() => expect(submit.disabled).toBe(false));
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      const call = rpcCall("repos/update");
+      expect(call).toBeTruthy();
+      expect(call!.params).toMatchObject({
+        name: "me/proj",
+        default_branch: "develop",
+      });
+    });
+  });
+
+  it("disables save for a blank base branch (#1115)", async () => {
+    renderSettings(false);
+    const input = (await screen.findByRole("textbox", {
+      name: /base branch/i,
+    })) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe("main"));
+
+    fireEvent.change(input, { target: { value: "   " } });
+    const submit = screen.getByRole("button", {
+      name: "Save",
+    }) as HTMLButtonElement;
+    await waitFor(() => expect(submit.disabled).toBe(true));
+  });
+
+  it("surfaces the 422 branch-not-found error (#1115)", async () => {
+    renderSettings(false, true);
+    const input = (await screen.findByRole("textbox", {
+      name: /base branch/i,
+    })) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe("main"));
+
+    fireEvent.change(input, { target: { value: "nope" } });
+    const submit = (await screen.findByRole("button", {
+      name: "Save",
+    })) as HTMLButtonElement;
+    await waitFor(() => expect(submit.disabled).toBe(false));
+    fireEvent.click(submit);
+
+    expect(await screen.findByText(/branch not found/)).toBeTruthy();
   });
 
   it("switches the PR action and persists via repos/setMergeMode", async () => {

@@ -6,7 +6,7 @@
 
 import { useNavigate } from "@tanstack/react-router";
 import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MergeMode } from "@/api/types";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ import {
   useRepo,
   useRepoMergeMode,
   useSetRepoArchived,
+  useSetRepoDefaultBranch,
   useSetRepoMergeMode,
 } from "@/queries/repos";
 
@@ -37,6 +38,12 @@ export function RepoSettingsPage({
   return (
     <div className="mx-auto max-w-content">
       <RenameSection owner={owner} repo={repo} loaded={loaded} />
+      <BaseBranchSection
+        owner={owner}
+        repo={repo}
+        loaded={loaded}
+        current={data?.default_branch ?? ""}
+      />
       <MergeModeSection owner={owner} repo={repo} />
       <ArchiveSection
         owner={owner}
@@ -114,6 +121,84 @@ function RenameSection({
       </form>
       {rename.error ? (
         <p className="mt-2 text-sm text-destructive">{String(rename.error)}</p>
+      ) : null}
+    </section>
+  );
+}
+
+// #1115: change the repo's base branch (default_branch). `default_branch` is auto-detected at
+// `lh repo add` time and can end up wrong when the repo has no remote / origin/HEAD (it sticks to
+// whatever branch was checked out at add time); this lets a human fix it afterwards. The backend
+// (repos/update) verifies the branch exists and returns 422 "branch not found" otherwise — surfaced
+// here. Save is gated on `loaded` plus a non-empty, changed value (mirrors the backend's own guards).
+function BaseBranchSection({
+  owner,
+  repo,
+  loaded,
+  current,
+}: {
+  owner: string;
+  repo: string;
+  loaded: boolean;
+  current: string;
+}) {
+  const setDefaultBranch = useSetRepoDefaultBranch(owner, repo);
+  const [value, setValue] = useState(current);
+  // The `current` we last seeded into the input, so the effect can tell a pristine input (still
+  // equal to what we seeded) from one the user has edited.
+  const seeded = useRef(current);
+
+  // `current` is only known after the repo query resolves, and it changes when default_branch is
+  // updated — here, or out-of-band (another session / the `lh` CLI) which also invalidates the repo
+  // query. Reseed from it only while the input is still pristine, so an out-of-band change can't
+  // overwrite an edit the user is in the middle of.
+  useEffect(() => {
+    const prevSeeded = seeded.current;
+    seeded.current = current;
+    setValue((prev) => (prev === prevSeeded ? current : prev));
+  }, [current]);
+
+  const trimmed = value.trim();
+  const unchanged = trimmed === current;
+  const canSubmit =
+    loaded && !setDefaultBranch.isPending && trimmed !== "" && !unchanged;
+
+  function onSubmit() {
+    setDefaultBranch.mutate(trimmed, {
+      // Failure is surfaced via setDefaultBranch.error below; swallow the rejection.
+      onError: () => {},
+    });
+  }
+
+  return (
+    <section className="mt-6">
+      <h2 className="text-sm font-medium">Base branch</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        The default branch new PRs target and the issue list groups by. Must be
+        an existing branch in the local repository.
+      </p>
+      <form
+        className="mt-3 flex max-w-md gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSubmit) onSubmit();
+        }}
+      >
+        <input
+          type="text"
+          aria-label="Base branch"
+          className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <Button type="submit" disabled={!canSubmit}>
+          {setDefaultBranch.isPending ? "Working…" : "Save"}
+        </Button>
+      </form>
+      {setDefaultBranch.error ? (
+        <p className="mt-2 text-sm text-destructive">
+          {String(setDefaultBranch.error)}
+        </p>
       ) : null}
     </section>
   );

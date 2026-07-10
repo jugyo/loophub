@@ -199,6 +199,20 @@ export function renameRepo(
   });
 }
 
+// #1115: change the repo's base branch (default_branch) via the existing repos/update RPC.
+export function setRepoDefaultBranch(
+  owner: string,
+  repo: string,
+  defaultBranch: string,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Repo>("repos/update", {
+    name: full(owner, repo),
+    default_branch: defaultBranch,
+    session_id: sessionId,
+  });
+}
+
 // #406: resolved merge-mode view (setting + effective + GitHub-remote presence) for the settings UI.
 export function getRepoMergeMode(owner: string, repo: string) {
   return rpc<RepoMergeMode>("repos/mergeMode", { name: full(owner, repo) });
