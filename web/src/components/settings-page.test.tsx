@@ -1,5 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
+import {
   cleanup,
   fireEvent,
   render,
@@ -80,9 +88,25 @@ function renderSettings(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  // SettingsPage renders a <Link> to /settings/workflows (#1006), which needs a router context.
+  const rootRoute = createRootRoute({ component: Outlet });
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/",
+    component: () => <SettingsPage />,
+  });
+  const workflowsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings/workflows",
+    component: () => <div data-testid="workflows-page" />,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([indexRoute, workflowsRoute]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
   return render(
     <QueryClientProvider client={queryClient}>
-      <SettingsPage />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
 }

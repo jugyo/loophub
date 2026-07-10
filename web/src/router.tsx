@@ -13,6 +13,7 @@ import { repoSettingsRoute } from "./routes/repo-settings";
 import { rootRoute } from "./routes/root";
 import { sessionsRoute } from "./routes/sessions";
 import { settingsRoute } from "./routes/settings";
+import { settingsWorkflowsRoute } from "./routes/settings-workflows";
 import { statsDbRoute, statsRoute, statsSessionsRoute } from "./routes/stats";
 import { uiCatalogRoute } from "./routes/ui-catalog";
 
@@ -31,6 +32,7 @@ const routeTree = rootRoute.addChildren([
   refRoute,
   mergedRoute,
   settingsRoute,
+  settingsWorkflowsRoute,
   sessionsRoute,
   statsRoute,
   statsDbRoute,

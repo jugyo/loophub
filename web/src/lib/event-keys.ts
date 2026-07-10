@@ -28,6 +28,7 @@ export const queryKeys = {
   scheduledTasks: (full: string) => ["scheduled-tasks", full] as const,
   scheduledTask: (full: string, id: number) =>
     ["scheduled-task", full, id] as const,
+  pevrWorkflows: () => ["pevr-workflows"] as const,
 };
 
 /**
@@ -116,6 +117,11 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["scheduled-tasks"]);
       keys.push(["scheduled-task"]);
     }
+  } else if (type.startsWith("pevr_workflow.")) {
+    // PEVR workflow CRUD (#1006) is global (not repo-scoped) and alters the workflow list for every
+    // connected client, not just the tab that made the change (whose mutation hook already
+    // invalidates onSuccess). Create/update/delete all change the list, so invalidate it by prefix.
+    keys.push([...queryKeys.pevrWorkflows()]);
   } else if (type.startsWith("inbox.message.")) {
     keys.push([...queryKeys.inbox()]);
     const id = payload?.id;

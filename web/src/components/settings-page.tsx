@@ -1,6 +1,7 @@
 // Instance-level settings (#474) — the first entry point for global config.json settings, as
 // opposed to the per-repo settings screen (see repo-settings-page.tsx's MergeModeSection).
 
+import { Link } from "@tanstack/react-router";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CodingAgent } from "@/api/types";
@@ -365,6 +366,20 @@ export function SettingsPage() {
             {devCostLimitError}
           </p>
         ) : null}
+      </section>
+
+      <section className="mt-8 max-w-md">
+        <h2 className="text-sm font-medium">Workflows</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Create and edit PEVR workflows — the Plan/Execute/Verify/Reflect
+          prompt bundles used by the development loop.
+        </p>
+        <Link
+          to="/settings/workflows"
+          className="mt-3 inline-flex items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+        >
+          Manage workflows
+        </Link>
       </section>
     </div>
   );
