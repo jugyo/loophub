@@ -3,6 +3,7 @@
 
 import { Outlet } from "@tanstack/react-router";
 import { useRef, useState } from "react";
+import { AppStatusbar } from "@/components/app-statusbar";
 import { AppTopbar } from "@/components/app-topbar";
 import { RepoSwitcher } from "@/components/repo-switcher";
 import { RepoTopbar } from "@/components/repo-topbar";
@@ -41,6 +42,7 @@ export function AppLayout() {
               <Outlet />
             </main>
           </div>
+          <AppStatusbar />
           <RepoSwitcher openRequest={repoSwitcherRequest} />
           <TerminalLaunchErrorDialog />
           {/* Operation feedback (#574): a floating toast above the content, with an explicit
