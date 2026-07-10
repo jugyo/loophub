@@ -681,6 +681,13 @@ describe("linked PR Herdr popover action (#1061)", () => {
       />,
     );
     expect(await screen.findByText("working")).toBeTruthy();
+    const bot = screen
+      .getByLabelText("Linked PR #10: A PR")
+      .querySelector("svg");
+    expect(bot?.parentElement?.className).toContain("dark:bg-sky-950");
+    expect(bot?.parentElement?.className).toContain(
+      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
+    );
   });
 
   it("does not show the badge for an agent running a different PR", async () => {

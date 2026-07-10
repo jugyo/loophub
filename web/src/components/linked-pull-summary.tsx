@@ -253,7 +253,7 @@ export function LinkedPullSummaryRow({
         className={cn(
           "relative flex size-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground",
           isWorking &&
-            "animate-[linked-pull-pulse_2.4s_ease-out_infinite] text-indigo-600",
+            "animate-[linked-pull-pulse_2.4s_ease-out_infinite] bg-indigo-100 text-indigo-700 ring-1 ring-indigo-500/70 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-300/80",
         )}
       >
         <Bot className="size-3" aria-hidden="true" />

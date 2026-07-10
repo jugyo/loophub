@@ -31,6 +31,7 @@
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: var(--primary);
+    --linked-pull-pulse: 244 57% 50%;
     --radius: 0.5rem;
   }
 
@@ -57,6 +58,7 @@
     --border: 217 28% 25%;
     --input: 217 28% 25%;
     --ring: var(--primary);
+    --linked-pull-pulse: 199 89% 67%;
   }
 }
 
@@ -371,10 +373,14 @@
 
 @keyframes linked-pull-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.45);
+    box-shadow:
+      0 0 0 1px hsl(var(--linked-pull-pulse) / 0.85),
+      0 0 0 0 hsl(var(--linked-pull-pulse) / 0.7);
   }
   100% {
-    box-shadow: 0 0 0 6px rgba(79, 70, 229, 0);
+    box-shadow:
+      0 0 0 1px hsl(var(--linked-pull-pulse) / 0),
+      0 0 0 7px hsl(var(--linked-pull-pulse) / 0);
   }
 }
 

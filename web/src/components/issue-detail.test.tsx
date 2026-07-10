@@ -237,6 +237,9 @@ describe("IssueDetail", () => {
     const workingBadge = ctx.getByTitle("Working in the PR worktree");
     expect(workingBadge.textContent).toBe("working");
     expect(ctx.queryByText("changes")).toBeNull();
+    const bot = statusCell?.querySelector("svg");
+    expect(bot?.parentElement?.className).toContain("dark:bg-sky-950");
+    expect(bot?.parentElement?.className).toContain("dark:text-sky-300");
   });
 
   // #863: a cost-stopped PR shows an "over budget" badge on the issue-detail linked-PR row.
