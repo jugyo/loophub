@@ -387,6 +387,56 @@ describe("AgentSessionsPage", () => {
     expect(screen.getByLabelText("Agent cost comparison trend")).toBeTruthy();
   });
 
+  it("keeps long daily charts inside the chart frame with value guides", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-07-09T13:00:00Z").getTime(),
+    );
+    const { container } = renderPage(
+      Array.from({ length: 90 }, (_, index) => {
+        const date = new Date(Date.UTC(2026, 3, 11 + index, 8));
+        const updated = new Date(Date.UTC(2026, 3, 11 + index, 9));
+        const createdAt = date.toISOString();
+        const updatedAt = updated.toISOString();
+        return {
+          id: `quarter-${index}`,
+          agent: "lh-build",
+          session: `quarter-${index}`,
+          runtime: "codex",
+          created_at: createdAt,
+          updated_at: updatedAt,
+          usage: [
+            {
+              session_id: `quarter-${index}`,
+              model: "gpt-5.5",
+              input_tokens: 100,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+              output_tokens: 10,
+              cost_usd: 0.01,
+              context_usage_percent: null,
+              updated_at: updatedAt,
+            },
+          ],
+        };
+      }),
+    );
+
+    expect(await screen.findByText("last 1 month cost")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "last 3 months" }));
+
+    const chart = screen.getByLabelText("Total cost trend");
+    expect(chart.className).not.toContain("overflow-x-auto");
+    expect(chart.className).toContain("grid");
+    expect(chart.textContent).toContain("$0.01");
+    expect(screen.getByLabelText("Apr 11: $0.01")).toBeTruthy();
+    expect(container.querySelector('[title="Apr 11"]')?.className).toContain(
+      "text-left",
+    );
+    expect(container.querySelector('[title="Jul 9"]')?.className).toContain(
+      "text-right",
+    );
+  });
+
   it("shows zero-cost summaries when usage data is absent", async () => {
     vi.spyOn(Date, "now").mockReturnValue(
       new Date("2026-07-09T13:00:00Z").getTime(),
@@ -400,15 +450,44 @@ describe("AgentSessionsPage", () => {
         created_at: "2026-07-09T08:00:00Z",
         updated_at: "2026-07-09T09:00:00Z",
       },
+      {
+        id: "zero-reviewer",
+        agent: "reviewer",
+        session: "zero-reviewer",
+        runtime: "reviewer",
+        created_at: "2026-07-09T10:00:00Z",
+        updated_at: "2026-07-09T11:00:00Z",
+        usage: [
+          {
+            session_id: "zero-reviewer",
+            model: "gpt-5.5",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T11:00:00Z",
+          },
+        ],
+      },
     ]);
 
     expect(await screen.findByText("last 1 month cost")).toBeTruthy();
     expect(screen.getAllByText("$0.00").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("no-usage")).toBeTruthy();
-    expect(screen.getByText("1 sessions")).toBeTruthy();
+    expect(screen.getByText("zero-reviewer")).toBeTruthy();
     expect(
       screen.queryByText("No sessions in the selected period."),
     ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "By agent" }));
+    const zeroAgent = screen.getByLabelText("Jul 9 Codex: $0.00");
+    expect(zeroAgent.getAttribute("style")).not.toContain("NaN");
+    expect(zeroAgent.getAttribute("style")).toContain("bottom: 0px;");
+    expect(
+      screen.getByLabelText("Jul 9 reviewer: $0.00").getAttribute("style"),
+    ).toContain("bottom: 3px;");
   });
 
   it("shows known cost with an unknown marker when usage cost is partially unknown", async () => {
@@ -448,14 +527,153 @@ describe("AgentSessionsPage", () => {
           },
         ],
       },
+      {
+        id: "zero-known",
+        agent: "reviewer",
+        session: "zero-known",
+        runtime: "codex",
+        created_at: "2026-07-09T09:00:00Z",
+        updated_at: "2026-07-09T09:30:00Z",
+        usage: [
+          {
+            session_id: "zero-known",
+            model: "gpt-5.5",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T09:30:00Z",
+          },
+        ],
+      },
     ]);
 
     expect(await screen.findByText("last 1 month cost")).toBeTruthy();
     expect(screen.getAllByText("$0.02+").length).toBeGreaterThanOrEqual(2);
-    const bar = screen.getByLabelText(
-      /Jul 9: \$0\.02\+ \(includes additional usage with unknown cost\)/,
+    expect(
+      screen.getByLabelText(
+        /Jul 9: \$0\.02\+ \(includes additional usage with unknown cost\)/,
+      ).getAttribute("style"),
+    ).toContain("top: 0px;");
+    const rows = screen.getAllByRole("row");
+    expect(within(rows[1]).getByText("zero-known")).toBeTruthy();
+    expect(within(rows[2]).getByText("unknown-cost")).toBeTruthy();
+  });
+
+  it("keeps known agent costs visible when another agent has unknown cost", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-07-09T13:00:00Z").getTime(),
     );
-    expect(bar.getAttribute("style")).toBe("height: 100%;");
+    renderPage([
+      {
+        id: "known-codex",
+        agent: "lh-build",
+        session: "known-codex",
+        runtime: "codex",
+        created_at: "2026-07-09T08:00:00Z",
+        updated_at: "2026-07-09T09:00:00Z",
+        usage: [
+          {
+            session_id: "known-codex",
+            model: "gpt-5.5",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.05,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T09:00:00Z",
+          },
+        ],
+      },
+      {
+        id: "unknown-claude",
+        agent: "lh-build",
+        session: "unknown-claude",
+        runtime: "claude-code",
+        created_at: "2026-07-09T10:00:00Z",
+        updated_at: "2026-07-09T11:00:00Z",
+        usage: [
+          {
+            session_id: "unknown-claude",
+            model: "claude-sonnet",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: null,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T11:00:00Z",
+          },
+        ],
+      },
+      {
+        id: "mixed-codex",
+        agent: "lh-build",
+        session: "mixed-codex",
+        runtime: "codex",
+        created_at: "2026-07-09T12:00:00Z",
+        updated_at: "2026-07-09T12:30:00Z",
+        usage: [
+          {
+            session_id: "mixed-codex",
+            model: "gpt-5.5",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: null,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T12:30:00Z",
+          },
+        ],
+      },
+      {
+        id: "zero-reviewer",
+        agent: "reviewer",
+        session: "zero-reviewer",
+        runtime: "reviewer",
+        created_at: "2026-07-09T13:00:00Z",
+        updated_at: "2026-07-09T13:30:00Z",
+        usage: [
+          {
+            session_id: "zero-reviewer",
+            model: "gpt-5.5",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T13:30:00Z",
+          },
+        ],
+      },
+    ]);
+
+    expect(await screen.findByText("last 1 month cost")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "By agent" }));
+
+    const bucket = screen.getByLabelText("Jul 9: $0.05+");
+    expect(bucket.getAttribute("style")).toContain("height: 100%");
+    expect(screen.getByLabelText("Jul 9 Codex: $0.05")).toBeTruthy();
+    const unknownCodex = screen.getByLabelText(/Jul 9 Codex: \$0\.05\+/);
+    expect(unknownCodex.className).toContain("h-0");
+    expect(unknownCodex.getAttribute("style")).toContain("top: 0px;");
+    expect(
+      screen.getByLabelText(/Jul 9 Claude Code: n\/a/).className,
+    ).toContain("h-0");
+    expect(
+      screen.getByLabelText(/Jul 9 Claude Code: n\/a/).getAttribute("style"),
+    ).toContain("top: 3px;");
+    const zeroReviewer = screen.getByLabelText("Jul 9 reviewer: $0.00");
+    expect(zeroReviewer.className).toContain("h-0");
+    expect(zeroReviewer.getAttribute("style")).toContain("bottom: 0px;");
+    expect(screen.getByLabelText("Jun 10: $0.00").getAttribute("style")).toBe(
+      "height: 2px;",
+    );
   });
 
   it("shows an empty state", async () => {

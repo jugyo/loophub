@@ -18,6 +18,7 @@ import {
   usageTotal,
 } from "@/lib/session-usage";
 import { relativeTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import { useAgentSessions } from "@/queries/sessions";
 
 export { formatCost, formatTokenCount } from "@/lib/session-usage";
@@ -72,12 +73,12 @@ const CHART_MODES: Array<{ id: ChartMode; label: string }> = [
 const RUNTIME_CLAUDE_CODE = "claude-code";
 const RUNTIME_CODEX = "codex";
 const AGENT_COLORS = [
-  "bg-emerald-500",
-  "bg-sky-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-violet-500",
-  "bg-slate-500",
+  "hsl(160 84% 39%)",
+  "hsl(199 89% 48%)",
+  "hsl(38 92% 50%)",
+  "hsl(350 89% 60%)",
+  "hsl(258 90% 66%)",
+  "hsl(215 20% 47%)",
 ];
 
 function targetHref(target: SessionLinkedTarget): string {
@@ -111,6 +112,7 @@ function addCost(total: CostTotal, next: CostTotal): CostTotal {
 }
 
 function formatCostTotal(total: CostTotal): string {
+  if (total.hasUnknownCost && total.cost <= 0) return "n/a";
   const formatted = formatCost(total.cost);
   return total.hasUnknownCost ? `${formatted}+` : formatted;
 }
@@ -271,7 +273,7 @@ function buildBuckets(
 
 function costSortValue(session: AgentSession): number {
   const cost = sessionCost(session);
-  return cost.cost;
+  return cost.hasUnknownCost && cost.cost <= 0 ? -1 : cost.cost;
 }
 
 function sortedByCost(sessions: AgentSession[]): AgentSession[] {
@@ -512,14 +514,10 @@ function CostChart({
   const maxCost = Math.max(
     0,
     ...buckets.map((bucket) =>
-      mode === "total"
-        ? barCostValue(bucket.total)
-        : Math.max(
-            0,
-            ...bucket.agents.map((agent) => barCostValue(agent.cost)),
-          ),
+      mode === "total" ? barCostValue(bucket.total) : knownAgentCost(bucket),
     ),
   );
+  const ticks = chartTicks(maxCost);
   const colorByAgent = new Map(
     agentCosts.map((agent, index) => [
       agent.key,
@@ -536,7 +534,8 @@ function CostChart({
             {agentCosts.map((agent) => (
               <span key={agent.key} className="flex items-center gap-1.5">
                 <span
-                  className={`size-2 rounded-sm ${colorByAgent.get(agent.key)}`}
+                  className="size-2 rounded-sm"
+                  style={{ backgroundColor: colorByAgent.get(agent.key) }}
                 />
                 {agent.label}
               </span>
@@ -548,46 +547,100 @@ function CostChart({
         aria-label={
           mode === "total" ? "Total cost trend" : "Agent cost comparison trend"
         }
-        className="mt-3 flex h-[260px] items-end gap-2 overflow-x-auto rounded-md border bg-card p-4"
+        className="mt-3 grid h-[300px] grid-cols-[4.5rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_1.75rem] rounded-md border bg-card p-4"
       >
-        {buckets.map((bucket) => (
+        <div
+          aria-hidden="true"
+          className="relative row-start-1 flex h-full flex-col justify-between pr-3 text-right text-xs tabular-nums text-muted-foreground"
+        >
+          {ticks.map((tick, index) => (
+            <div
+              key={`${tick}-${index}`}
+              className="-translate-y-1/2 first:translate-y-0"
+            >
+              {formatCost(tick)}
+            </div>
+          ))}
+        </div>
+        <div className="relative row-start-1 min-w-0">
           <div
-            key={bucket.key}
-            className="flex h-full min-w-12 flex-1 flex-col justify-end gap-2"
+            aria-hidden="true"
+            className="absolute inset-0 flex flex-col justify-between"
           >
-            <div className="flex min-h-0 flex-1 items-end justify-center gap-1">
-              {mode === "total" ? (
-                <ChartBar
-                  label={`${bucket.label}: ${costTitle(bucket.total)}`}
-                  height={barHeight(barCostValue(bucket.total), maxCost)}
-                  className={
-                    bucket.total.hasUnknownCost
-                      ? "bg-muted-foreground"
-                      : "bg-primary"
-                  }
-                />
-              ) : (
-                bucket.agents.map((agent) => (
+            {ticks.map((tick, index) => (
+              <div
+                key={`${tick}-${index}`}
+                className="border-t border-border/70"
+              />
+            ))}
+          </div>
+          <div className="relative z-10 grid h-full min-w-0 grid-flow-col auto-cols-fr items-end gap-1">
+            {buckets.map((bucket) => (
+              <div
+                key={bucket.key}
+                className="flex h-full min-w-0 items-end justify-center"
+              >
+                {mode === "total" ? (
                   <ChartBar
-                    key={agent.key}
-                    label={`${bucket.label} ${agent.label}: ${costTitle(agent.cost)}`}
-                    height={barHeight(barCostValue(agent.cost), maxCost)}
-                    className={
-                      agent.cost.hasUnknownCost
-                        ? "bg-muted-foreground"
-                        : (colorByAgent.get(agent.key) ?? "bg-slate-500")
+                    label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
+                    title={`${bucket.label}: ${costTitle(bucket.total)}`}
+                    height={barHeight(barCostValue(bucket.total), maxCost)}
+                    color={
+                      bucket.total.hasUnknownCost
+                        ? "hsl(var(--muted-foreground))"
+                        : "hsl(var(--primary))"
                     }
                   />
-                ))
-              )}
-            </div>
-            <div className="truncate text-center text-xs text-muted-foreground">
-              {bucket.label}
-            </div>
+                ) : (
+                  <StackedChartBar
+                    bucket={bucket}
+                    maxCost={maxCost}
+                    colorByAgent={colorByAgent}
+                  />
+                )}
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
+        <div aria-hidden="true" className="col-start-2 row-start-2 min-w-0">
+          <div className="grid h-full min-w-0 grid-flow-col auto-cols-fr gap-1 pt-2">
+            {buckets.map((bucket, index) => (
+              <div
+                key={bucket.key}
+                className={bucketLabelClass(index, buckets.length)}
+                title={bucket.label}
+              >
+                {shouldShowBucketLabel(index, buckets.length)
+                  ? bucket.label
+                  : ""}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
+  );
+}
+
+function chartTicks(maxCost: number): number[] {
+  if (maxCost <= 0) return [0, 0];
+  return [maxCost, maxCost * 0.75, maxCost * 0.5, maxCost * 0.25, 0];
+}
+
+function shouldShowBucketLabel(index: number, count: number): boolean {
+  if (count <= 14) return true;
+  if (index === 0 || index === count - 1) return true;
+  return index % Math.ceil(count / 5) === 0;
+}
+
+function bucketLabelClass(index: number, count: number): string {
+  return cn(
+    "min-w-0 overflow-visible whitespace-nowrap text-[10px] text-muted-foreground",
+    index === 0
+      ? "text-left"
+      : index === count - 1
+        ? "text-right"
+        : "text-center",
   );
 }
 
@@ -600,21 +653,168 @@ function barCostValue(cost: CostTotal): number {
   return cost.cost;
 }
 
-function ChartBar({
+function knownAgentCost(bucket: CostBucket): number {
+  return bucket.agents.reduce(
+    (sum, agent) => (agent.cost.cost <= 0 ? sum : sum + agent.cost.cost),
+    0,
+  );
+}
+
+function StackedChartBar({
+  bucket,
+  maxCost,
+  colorByAgent,
+}: {
+  bucket: CostBucket;
+  maxCost: number;
+  colorByAgent: Map<string, string>;
+}) {
+  const knownAgents = bucket.agents.filter(
+    (agent) => !agent.cost.hasUnknownCost || agent.cost.cost > 0,
+  );
+  const positiveKnownAgents = knownAgents.filter(
+    (agent) => agent.cost.cost > 0,
+  );
+  const zeroKnownAgents = knownAgents.filter((agent) => agent.cost.cost <= 0);
+  const unknownAgents = bucket.agents.filter(
+    (agent) => agent.cost.hasUnknownCost,
+  );
+  const knownTotal = positiveKnownAgents.reduce(
+    (sum, agent) => sum + agent.cost.cost,
+    0,
+  );
+  const height = barHeight(knownTotal, maxCost);
+
+  if (knownAgents.length === 0) {
+    if (unknownAgents.length > 0) {
+      return (
+        <div
+          aria-label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
+          title={`${bucket.label}: ${costTitle(bucket.total)}`}
+          className="relative w-full max-w-10 min-w-[3px] rounded-t"
+          style={{
+            height,
+            backgroundColor: "hsl(var(--muted-foreground))",
+          }}
+        >
+          {unknownAgents.map((agent, index) => (
+            <ChartLineMarker
+              key={`unknown-${agent.key}`}
+              label={`${bucket.label} ${agent.label}: ${costTitle(agent.cost)}`}
+              offset={index}
+              color={
+                colorByAgent.get(agent.key) ?? "hsl(var(--muted-foreground))"
+              }
+            />
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        aria-label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
+        title={`${bucket.label}: ${costTitle(bucket.total)}`}
+        className="w-full max-w-10 min-w-[3px]"
+        style={{ height }}
+      />
+    );
+  }
+
+  return (
+    <div
+      aria-label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
+      title={`${bucket.label}: ${costTitle(bucket.total)}`}
+      className="relative w-full max-w-10 min-w-[3px] rounded-t"
+      style={{
+        height,
+        boxShadow:
+          unknownAgents.length > 0
+            ? "inset 0 2px 0 hsl(var(--muted-foreground))"
+            : undefined,
+      }}
+    >
+      {zeroKnownAgents.map((agent, index) => (
+        <ChartLineMarker
+          key={`zero-${agent.key}`}
+          label={`${bucket.label} ${agent.label}: ${formatCost(agent.cost.cost)}`}
+          offset={index}
+          anchor="bottom"
+          color={colorByAgent.get(agent.key) ?? AGENT_COLORS[0]}
+        />
+      ))}
+      {unknownAgents.map((agent, index) => (
+        <ChartLineMarker
+          key={`unknown-${agent.key}`}
+          label={`${bucket.label} ${agent.label}: ${costTitle(agent.cost)}`}
+          offset={index}
+          color={colorByAgent.get(agent.key) ?? "hsl(var(--muted-foreground))"}
+        />
+      ))}
+      {knownTotal > 0 ? (
+        <div className="flex h-full w-full flex-col-reverse overflow-hidden rounded-t">
+          {positiveKnownAgents.map((agent) => (
+            <div
+              key={`known-${agent.key}`}
+              aria-label={`${bucket.label} ${agent.label}: ${formatCost(agent.cost.cost)}`}
+              title={`${bucket.label} ${agent.label}: ${formatCost(agent.cost.cost)}`}
+              className="min-h-[2px] w-full"
+              style={{
+                height: `${(agent.cost.cost / knownTotal) * 100}%`,
+                backgroundColor: colorByAgent.get(agent.key) ?? AGENT_COLORS[0],
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ChartLineMarker({
   label,
-  height,
-  className,
+  offset,
+  anchor = "top",
+  color,
 }: {
   label: string;
-  height: string;
-  className: string;
+  offset: number;
+  anchor?: "top" | "bottom";
+  color: string;
 }) {
   return (
     <div
       aria-label={label}
       title={label}
-      className={`w-full min-w-2 rounded-t ${className}`}
-      style={{ height }}
+      className={cn(
+        "absolute inset-x-0 h-0",
+        anchor === "bottom" ? "bottom-0" : "top-0",
+      )}
+      style={{
+        [anchor]: `${offset * 3}px`,
+        borderTop: `2px solid ${color}`,
+      }}
+    />
+  );
+}
+
+function ChartBar({
+  label,
+  title = label,
+  height,
+  color,
+}: {
+  label: string;
+  title?: string;
+  height: string;
+  color: string;
+}) {
+  return (
+    <div
+      aria-label={label}
+      title={title}
+      className="w-full max-w-10 min-w-[3px] rounded-t"
+      style={{ height, backgroundColor: color }}
     />
   );
 }
