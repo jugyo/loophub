@@ -157,6 +157,19 @@ const GPT_53_CODEX_SPARK_PRICE: UsagePrice = {
   cacheRead: 0.175,
   output: 14,
 };
+// Confirmed OpenAI rate for gpt-5.6-sol (codex) from the OpenAI API pricing
+// page (https://developers.openai.com/api/docs/models/gpt-5.6-sol, checked
+// 2026-07-10): input $5.00 / output $30.00 per 1M tokens, cache reads at the
+// 90% cached-input discount ($0.50), and — new for gpt-5.6+ — cache writes
+// billed at 1.25x the uncached input rate ($6.25). Matched narrowly to the
+// -sol tier: the sibling gpt-5.6-terra ($2.50) and gpt-5.6-luna ($1.00) tiers
+// carry different rates and are out of scope here.
+const GPT_56_SOL_PRICE: UsagePrice = {
+  input: 5,
+  cacheCreation: 6.25,
+  cacheRead: 0.5,
+  output: 30,
+};
 
 const IGNORED_CODEX_ROLLOUT_MODELS = new Set(["codex-auto-review"]);
 
@@ -180,6 +193,7 @@ export function priceForModel(model: string): UsagePrice | null {
   if (m.includes("opus")) return PRICES.opus;
   if (m.includes("sonnet")) return PRICES.sonnet;
   if (m.includes("haiku")) return PRICES.haiku;
+  if (m.includes("gpt-5.6-sol")) return GPT_56_SOL_PRICE;
   if (m.includes("gpt-5.5")) return GPT_55_PRICE;
   if (m.includes("gpt-5.4-mini")) return GPT_54_MINI_PRICE;
   if (m.includes("gpt-5.4")) return GPT_54_PRICE;
