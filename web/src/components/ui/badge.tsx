@@ -24,11 +24,11 @@ const badgeVariants = cva(
         mergeable: "border-primary-border bg-primary-subtle text-link",
         conflict: "border-destructive/50 text-destructive",
         working: "border-primary-border bg-primary-subtle text-link",
-        // #863: a PR whose dev agent was force-stopped for exceeding its cost limit. A filled
-        // destructive tone — the escalation of AgentCostBadge's amber/red cost highlight — so a
-        // stalled PR stands out from the other status badges.
+        // #863: a PR whose dev agent was force-stopped for exceeding its cost limit. Amber tone
+        // (#1113) matching the canonical "over budget" cue in linked-pull-summary.tsx and the
+        // notification center, so the stalled state reads consistently wherever the PR appears.
         "cost-stopped":
-          "border-destructive/50 bg-destructive/10 text-destructive",
+          "border-amber-500/60 text-amber-700 dark:text-amber-300",
         unknown: "border-border text-muted-foreground",
         agent: "border-primary-border bg-primary-subtle text-link",
       },
