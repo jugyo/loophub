@@ -23,7 +23,13 @@ export const MODEL_SUGGESTIONS: Record<CodingAgent, string[]> = {
     "claude-sonnet-5",
     "claude-haiku-4-5-20251001",
   ],
-  codex: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"],
+  codex: [
+    "gpt-5.6-sol",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex-spark",
+  ],
 };
 
 // Reasoning-effort levels offered per agent for the Settings screen's model+effort picker

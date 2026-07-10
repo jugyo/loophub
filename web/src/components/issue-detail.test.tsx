@@ -584,6 +584,31 @@ describe("IssueDetail", () => {
     ).toBeNull();
   });
 
+  it("launches Build with gpt-5.6-sol selected from the Codex model dropdown", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr);
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: "Choose agent and model" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "gpt-5.6-sol" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Build with Codex" }));
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: "Issue #12 - ui2: issue detail",
+      workflow: "issue-dev",
+      issueNumber: 12,
+      agent: "codex",
+      model: "gpt-5.6-sol",
+    });
+  });
+
   it("launches Build with a custom one-shot model typed in the dropdown", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr);

@@ -233,6 +233,10 @@ describe("SettingsPage", () => {
       .map((o) => o.textContent);
     expect(codexOptions).toEqual(
       expect.arrayContaining([
+        "gpt-5.6-sol — minimal",
+        "gpt-5.6-sol — low",
+        "gpt-5.6-sol — medium",
+        "gpt-5.6-sol — high",
         "gpt-5.5 — minimal",
         "gpt-5.5 — low",
         "gpt-5.5 — medium",
