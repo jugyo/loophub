@@ -99,6 +99,7 @@ const reviews: PullReview[] = [
     body: "LGTM",
     topic: "design",
     head_sha: "aaa",
+    model: "claude-opus-4-8",
     submitted_at: "2026-06-18T11:30:00Z",
   },
 ];
@@ -186,6 +187,8 @@ describe("PullDetail", () => {
     expect(screen.getByText("LGTM")).toBeTruthy();
     // Review topic tag (#209).
     expect(screen.getByText("design")).toBeTruthy();
+    // Review model tag (#1107).
+    expect(screen.getByText("claude-opus-4-8")).toBeTruthy();
     // Line comment — shown both inline in the diff and within its review group.
     expect(screen.getAllByText("nice constant").length).toBeGreaterThan(0);
     // Issue comment.

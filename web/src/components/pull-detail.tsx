@@ -733,6 +733,11 @@ function ReviewItem({
           </span>
         ) : null}
         <span className="font-medium">@{review.user.login}</span>{" "}
+        {review.model ? (
+          <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+            {review.model}
+          </span>
+        ) : null}
         <span className="text-xs text-muted-foreground">
           {relativeTime(review.submitted_at)}
         </span>

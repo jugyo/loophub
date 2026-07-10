@@ -660,6 +660,8 @@ export interface ReviewWire {
   // commit, e.g. #208) and its aspect/topic (#209). Both may be null.
   head_sha: string | null;
   topic: string | null;
+  // The agent/model that produced the review (#1107); null when unattributed.
+  model: string | null;
   submitted_at: string;
 }
 
@@ -671,6 +673,7 @@ export function reviewJSON(v: S.ReviewRow): ReviewWire {
     body: v.body,
     head_sha: v.head_sha ?? null,
     topic: v.topic ?? null,
+    model: v.model ?? null,
     submitted_at: v.created_at,
   };
 }

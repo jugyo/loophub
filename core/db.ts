@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   body        TEXT NOT NULL DEFAULT '',
   head_sha    TEXT,
   topic       TEXT,
+  model       TEXT,
   created_at  TEXT NOT NULL
 );
 
@@ -745,6 +746,10 @@ tryExec("ALTER TABLE reviews ADD COLUMN head_sha TEXT");
 // single commit can carry several reviews distinguished by topic (#209). NULL =
 // untagged (all pre-existing rows, and reviews submitted without a topic).
 tryExec("ALTER TABLE reviews ADD COLUMN topic TEXT");
+// reviews.model records the agent/model that produced the review (#1107), so a
+// stored review can be attributed to its author's model. NULL for reviews
+// submitted without a model (all pre-existing rows, and human/untagged reviews).
+tryExec("ALTER TABLE reviews ADD COLUMN model TEXT");
 // #428: unify the review-verdict vocabulary from "approve" to "pass" (AI
 // reviewers pass/fail a topic rather than "approve" it). One-time rewrite of
 // historical rows; new rows are written as PASS directly (core/service.ts still

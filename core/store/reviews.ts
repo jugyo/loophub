@@ -10,6 +10,7 @@ export interface ReviewRow {
   body: string;
   head_sha: string | null;
   topic: string | null;
+  model: string | null;
   created_at: string;
 }
 
@@ -46,13 +47,23 @@ export function createReview(
   body: string,
   headSha: string | null = null,
   topic: string | null = null,
+  model: string | null = null,
 ): ReviewRow {
   return db
     .query(
-      `INSERT INTO reviews (issue_id, author, event, body, head_sha, topic, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+      `INSERT INTO reviews (issue_id, author, event, body, head_sha, topic, model, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(issueId, author, event, body, headSha, topic, now()) as ReviewRow;
+    .get(
+      issueId,
+      author,
+      event,
+      body,
+      headSha,
+      topic,
+      model,
+      now(),
+    ) as ReviewRow;
 }
 
 export type ReviewState =

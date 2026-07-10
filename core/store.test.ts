@@ -262,6 +262,28 @@ test("one commit can carry several reviews distinguished by topic (#209)", () =>
   expect(reviews.every((r: any) => r.head_sha === "sha-1")).toBe(true);
 });
 
+test("a review records the model that produced it (#1107)", () => {
+  const repo = S.createRepo("me/model", "/tmp/model");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
+  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
+
+  // One review with a model, one without (the model arg defaults to null).
+  S.createReview(
+    pr.id,
+    "rev",
+    "PASS",
+    "lgtm",
+    "sha-1",
+    "bug",
+    "claude-opus-4-8",
+  );
+  S.createReview(pr.id, "rev", "COMMENT", "nit", "sha-1");
+
+  const reviews = S.listReviews(pr.id);
+  expect(reviews.map((r: any) => r.model)).toEqual(["claude-opus-4-8", null]);
+});
+
 test("computeReviewGate: no reviews yet is not gathered and never clean (#427)", () => {
   const repo = S.createRepo("me/gate-none", "/tmp/gate-none");
   const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;

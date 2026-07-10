@@ -169,6 +169,7 @@ export async function run(): Promise<void> {
           event: (flags.event || "comment").toUpperCase(),
           body: flags.body || "",
           ...(flags.topic ? { topic: flags.topic } : {}),
+          ...(flags.model ? { model: flags.model } : {}),
           comments,
         },
         await writeSession(),

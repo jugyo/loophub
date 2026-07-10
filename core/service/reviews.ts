@@ -30,6 +30,7 @@ export const reviews = {
       event?: string;
       body?: string;
       topic?: string;
+      model?: string;
       headSha?: string;
       comments?: { path: string; line?: number; side?: string; body: string }[];
     },
@@ -45,6 +46,9 @@ export const reviews = {
     // commit can carry several reviews distinguished by topic (#209). Free-form;
     // a blank topic is stored as NULL (untagged).
     const topic = input.topic?.trim() || null;
+    // The agent/model that produced the review (#1107). Free-form; a blank model
+    // is stored as NULL (unattributed), preserving pre-#1107 behavior.
+    const model = input.model?.trim() || null;
     const lineComments = Array.isArray(input.comments) ? input.comments : [];
     for (const cm of lineComments) {
       if (!cm?.path || !cm?.body)
@@ -61,6 +65,7 @@ export const reviews = {
       input.body ?? "",
       headSha,
       topic,
+      model,
     );
     for (const cm of lineComments) {
       S.createReviewComment(row.id, v.id, actor, {
