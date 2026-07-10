@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   listNotifications,
+  readAllNotifications,
   readNotification,
   unreadNotificationCount,
 } from "@/api/client";
@@ -24,6 +25,16 @@ export function useReadNotification() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => readNotification(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.notifications() });
+    },
+  });
+}
+
+export function useReadAllNotifications() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => readAllNotifications(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.notifications() });
     },

@@ -45,6 +45,7 @@ vi.mock("@/queries/notifications", () => ({
   useNotifications: () => ({ data: [], isLoading: false, isError: false }),
   useUnreadNotificationCount: () => ({ data: { count: 0 } }),
   useReadNotification: () => ({ mutate: vi.fn(), isPending: false }),
+  useReadAllNotifications: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/queries/terminal", () => ({

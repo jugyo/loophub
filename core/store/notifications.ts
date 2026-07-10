@@ -71,6 +71,30 @@ export function markNotificationRead(id: number): NotificationRow | null {
     .get(now(), id) as NotificationRow | null;
 }
 
+export function markAllNotificationsRead(): NotificationRow[] {
+  return db
+    .query(
+      `UPDATE notifications SET read_at = ?
+       WHERE id IN (
+         SELECT n.id FROM notifications n
+         JOIN repos r ON r.id = n.repo_id
+         LEFT JOIN issues i ON i.repo_id = n.repo_id
+          AND i.number = n.resource_number
+          AND i.kind = n.resource_kind
+          AND n.resource_kind IN ('issue', 'pull')
+         WHERE n.read_at IS NULL
+           AND r.archived = 0
+           AND (
+             n.resource_kind = 'repo'
+             OR i.id IS NULL
+             OR i.state = 'open'
+           )
+       )
+       RETURNING *`,
+    )
+    .all(now()) as NotificationRow[];
+}
+
 export function listNotifications(opts: { limit?: number } = {}) {
   const limit = opts.limit ?? 50;
   return db

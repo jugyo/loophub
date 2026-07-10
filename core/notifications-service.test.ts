@@ -331,6 +331,29 @@ test("read marks notifications for archived repos", () => {
   expect(read.read_at).toEqual(expect.any(String));
 });
 
+test("readAll marks every visible notification read and returns the count", async () => {
+  const repoPath = initGitRepo("lh-notifications-readall-repo-");
+  await svc.repos.create({ path: repoPath, name: "me/notify-readall" });
+  for (let i = 0; i < 3; i++) {
+    svc.notifications.send("me/notify-readall", {
+      kind: "human_attention",
+      title: `Alert ${i}`,
+      body: `Body ${i}.`,
+      resourceKind: "repo",
+      sourceKey: `cli-test:readall-${i}`,
+    });
+  }
+  const before = svc.notifications.unreadCount().count;
+  expect(before).toBeGreaterThanOrEqual(3);
+
+  const result = svc.notifications.readAll("web-session");
+
+  expect(result.count).toBe(before);
+  expect(svc.notifications.unreadCount().count).toBe(0);
+  // Already-read notifications are a no-op on a second call.
+  expect(svc.notifications.readAll("web-session").count).toBe(0);
+});
+
 test("repo removal deletes persisted notifications before deleting the repo", async () => {
   const repoPath = initGitRepo("lh-notifications-remove-repo-");
   await svc.repos.create({ path: repoPath, name: "me/notify-remove" });

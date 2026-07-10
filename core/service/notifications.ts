@@ -199,4 +199,15 @@ export const notifications = {
     }
     return notificationJSON(row);
   },
+
+  readAll(sessionId?: string | null): { count: number } {
+    backfillFromSignals();
+    const rows = S.markAllNotificationsRead();
+    const repoIds = new Set(rows.map((row) => row.repo_id));
+    const actor = actorFor(sessionId);
+    for (const repoId of repoIds) {
+      S.emitEvent(repoId, "notification.updated", actor, { read_all: true });
+    }
+    return { count: rows.length };
+  },
 };

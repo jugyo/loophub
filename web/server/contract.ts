@@ -230,6 +230,12 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.notifications.read(p.id, p.session_id),
   },
+  "notifications/readAll": {
+    description: "Mark all visible notification-center alerts as read.",
+    params: params({ session_id: sid }),
+    result: anyObject,
+    handler: (p) => svc.notifications.readAll(p.session_id),
+  },
 
   // ---- PEVR workflows ----
   "pevrWorkflows/list": {

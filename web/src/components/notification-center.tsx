@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   useNotifications,
+  useReadAllNotifications,
   useReadNotification,
   useUnreadNotificationCount,
 } from "@/queries/notifications";
@@ -53,6 +54,7 @@ export function NotificationCenter() {
   const { data, isLoading, isError } = useNotifications({ limit: 30 });
   const count = useUnreadNotificationCount();
   const readNotification = useReadNotification();
+  const readAllNotifications = useReadAllNotifications();
   const focus = useFocusHerdrAgent();
   const herdrSessions = useHerdrSessions({ enabled: open });
   const { showError } = useToast();
@@ -84,6 +86,17 @@ export function NotificationCenter() {
       onError: (e) =>
         showError(
           e instanceof Error ? e.message : "Failed to mark notification read.",
+        ),
+    });
+  }
+
+  function clearAll() {
+    if (visible.length === 0 || readAllNotifications.isPending) return;
+    setGraceIds(new Set());
+    readAllNotifications.mutate(undefined, {
+      onError: (e) =>
+        showError(
+          e instanceof Error ? e.message : "Failed to clear notifications.",
         ),
     });
   }
@@ -152,11 +165,21 @@ export function NotificationCenter() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[360px] p-0">
-        <DropdownMenuLabel className="flex h-9 items-center justify-between px-3">
+        <DropdownMenuLabel className="flex h-9 items-center justify-between gap-2 px-3">
           <span>Notifications</span>
-          {isLoading ? (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : null}
+          <span className="flex items-center gap-2">
+            {isLoading ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : null}
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={visible.length === 0 || readAllNotifications.isPending}
+              className="text-xs font-normal text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground"
+            >
+              Clear all
+            </button>
+          </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="m-0" />
         <div className="max-h-[420px] overflow-y-auto p-1">

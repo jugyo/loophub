@@ -20,6 +20,7 @@ const notifications = vi.hoisted(() => ({
 }));
 const actions = vi.hoisted(() => ({
   read: vi.fn(),
+  readAll: vi.fn(),
   focus: vi.fn(),
   showError: vi.fn(),
 }));
@@ -32,6 +33,10 @@ vi.mock("@/queries/notifications", () => ({
   }),
   useUnreadNotificationCount: () => ({ data: { count: notifications.unread } }),
   useReadNotification: () => ({ mutate: actions.read, isPending: false }),
+  useReadAllNotifications: () => ({
+    mutate: actions.readAll,
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/queries/terminal", () => ({
@@ -227,5 +232,42 @@ describe("NotificationCenter", () => {
     );
 
     expect(await screen.findByText("No notifications.")).toBeTruthy();
+  });
+
+  it("clears all visible notifications via the Clear all button", async () => {
+    actions.readAll.mockReset();
+    notifications.value = [
+      makeNotification({ id: 1 }),
+      makeNotification({
+        id: 2,
+        resource: { kind: "repo", number: null, href: "/r/me/proj" },
+      }),
+    ];
+    notifications.unread = 2;
+    renderCenter();
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: /2 unread/ }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Clear all" }));
+
+    expect(actions.readAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Clear all when there are no visible notifications", async () => {
+    actions.readAll.mockReset();
+    notifications.value = [];
+    renderCenter();
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: "Notifications" }),
+      { button: 0, ctrlKey: false },
+    );
+    const clearAll = await screen.findByRole("button", { name: "Clear all" });
+    expect((clearAll as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(clearAll);
+    expect(actions.readAll).not.toHaveBeenCalled();
   });
 });

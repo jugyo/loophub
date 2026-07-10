@@ -451,6 +451,12 @@ export function readNotification(
   return rpc<Notification>("notifications/read", { id, session_id: sessionId });
 }
 
+export function readAllNotifications(sessionId: string = getSessionId()) {
+  return rpc<{ count: number }>("notifications/readAll", {
+    session_id: sessionId,
+  });
+}
+
 // --- terminal launch ---
 export function launchTerminalWorkflow(input: {
   repo: string;
