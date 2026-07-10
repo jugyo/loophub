@@ -119,9 +119,10 @@ export interface AgentCostSummaryWire {
   month: number | null;
   week: number | null;
   day: number | null;
-  // Aggregate recent token rate for active sessions, surfaced on the first row of the compact
-  // topbar cost-summary payload to avoid a separate polling endpoint.
-  tokens_per_second?: number | null;
+  // Three hours of aggregate token rates as 36 oldest-to-newest five-minute buckets. Surfaced on
+  // the first row of the compact topbar cost-summary payload to avoid a separate polling endpoint.
+  // Missing buckets are zero, and the final bucket includes the current live rate.
+  tokens_per_5m_history?: number[];
 }
 
 export interface RelatedSessionWire extends AgentSessionWire {

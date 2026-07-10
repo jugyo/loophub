@@ -1,5 +1,6 @@
 import { CODING_AGENTS, type CodingAgent } from "../config.ts";
 import type { AgentCostSummaryWire } from "../serialize.ts";
+import { tokensPerFiveMinuteHistory } from "../session-rate-history.ts";
 import { calculateTokensPerSecond } from "../session-usage-rate.ts";
 import type {
   ClaudeSubagentTranscript,
@@ -153,8 +154,8 @@ function recordUsageSample(sessionId: string): void {
 // series survives, bounded so the table cannot grow without limit.
 const RATE_HISTORY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
 
-// The live aggregate tokens/sec the topbar shows: same input as costSummary (in-progress dev sessions
-// over the trailing 60s). Returned so both costSummary and the persisted history use one definition.
+// The live aggregate tokens/sec used by the topbar's current five-minute bucket: in-progress dev
+// sessions over the trailing 60s. The persisted history and current bucket share this definition.
 function liveTokensPerSecond(now: Date): number | null {
   return calculateTokensPerSecond(
     S.listRecentInProgressSessionUsageSamples(secondsAgo(now, 60)),
@@ -387,14 +388,18 @@ export const sessions = {
     }
 
     const out = CODING_AGENTS.map((agent) => byAgent.get(agent)!);
-    if (rate != null) out[0].tokens_per_second = rate;
+    out[0].tokens_per_5m_history = tokensPerFiveMinuteHistory(
+      S.listSessionRateHistory(secondsAgo(now, 3 * 60 * 60)),
+      { now, liveTokensPerSecond: rate },
+    );
     return out;
   },
 
-  // Persist the current live aggregate tokens/sec (the same value the topbar shows) into the
-  // prune-resistant session_rate_history table (#1123), then trim rows past the retention window. Called
-  // periodically by the worker's usage sweep. Skips writing when there is no active rate so the table
-  // isn't padded with placeholder rows. Returns the recorded rate, or null when nothing was written.
+  // Persist the current live aggregate tokens/sec (the source value the topbar converts to tokens/5m)
+  // into the prune-resistant session_rate_history table (#1123), then trim rows past the retention
+  // window. Called periodically by the worker's usage sweep. Skips writing when there is no active
+  // rate so the table isn't padded with placeholder rows. Returns the recorded rate, or null when
+  // nothing was written.
   recordLiveRateSample(now = new Date()): number | null {
     const rate = liveTokensPerSecond(now);
     if (rate == null) return null;

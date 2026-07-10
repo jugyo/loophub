@@ -24,7 +24,7 @@ const costSummaryData = vi.hoisted(() => ({
         month: number | null;
         week: number | null;
         day: number | null;
-        tokens_per_second?: number | null;
+        tokens_per_5m_history?: number[];
       }>
     | undefined,
 }));
@@ -247,7 +247,7 @@ describe("AppTopbar", () => {
     expect(screen.queryByRole("complementary")).toBeNull();
   });
 
-  it("renders token rate as unavailable when there are not enough recent samples", async () => {
+  it("renders token rate as unavailable before the summary loads", async () => {
     renderTopbar();
     await screen.findByRole("link", { name: /LoopHub/ });
 
@@ -255,26 +255,40 @@ describe("AppTopbar", () => {
     expect(screen.queryByText("Cost")).toBeNull();
     expect(screen.queryByText("Loading...")).toBeNull();
     expect(
-      screen.getByLabelText("Token rate: n/a tokens per second"),
+      screen.getByLabelText("Average token rate: n/a tokens per 5 minutes"),
     ).toBeTruthy();
   });
 
-  it("renders the recent aggregate token rate in the topbar", async () => {
+  it("renders the current five-minute average and three-hour history in order", async () => {
+    const history = Array(36).fill(0);
+    history[34] = 600;
+    history[35] = 3720;
     costSummaryData.value = [
       {
         agent: "claude-code",
         month: 1,
         week: 1,
         day: 1,
-        tokens_per_second: 12.4,
+        tokens_per_5m_history: history,
       },
       { agent: "codex", month: 1, week: 1, day: 1 },
     ];
     renderTopbar();
     await screen.findByRole("link", { name: /LoopHub/ });
 
-    const badge = screen.getByLabelText("Token rate: 12 tokens per second");
-    expect(badge.textContent).toContain("12");
-    expect(badge.textContent).toContain("tok/s");
+    const badge = screen.getByLabelText(
+      "Average token rate: 3,720 tokens per 5 minutes",
+    );
+    expect(badge.textContent).toContain("3,720");
+    expect(badge.textContent).toContain("avg tokens / 5m");
+
+    const chart = screen.getByRole("img", {
+      name: "36 five-minute token buckets, oldest to newest",
+    });
+    const bars = chart.querySelectorAll("[data-token-count]");
+    expect(bars).toHaveLength(36);
+    expect(bars[0].getAttribute("data-token-count")).toBe("0");
+    expect(bars[34].getAttribute("data-token-count")).toBe("600");
+    expect(bars[35].getAttribute("data-token-count")).toBe("3720");
   });
 });
