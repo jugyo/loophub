@@ -127,20 +127,26 @@ describe("mergeableBadge", () => {
 });
 
 describe("workingBadge", () => {
-  it("shows a working badge on an open PR with a dirty worktree", () => {
-    const badge = workingBadge(pull({ working: true }));
+  it("shows a working badge on an open PR with a live agent", () => {
+    const badge = workingBadge(pull({}), { agentWorking: true });
     expect(badge?.tone).toBe("working");
     expect(badge?.label).toBe("working");
   });
 
-  it("does not show on a clean or worktree-less PR", () => {
+  it("does not show for a dirty worktree alone — signal B only (#1125)", () => {
+    // A dirty worktree no longer reads "working"; only a live agent does.
+    expect(workingBadge(pull({ working: true }))).toBeNull();
     expect(workingBadge(pull({ working: false }))).toBeNull();
     expect(workingBadge(pull({}))).toBeNull();
   });
 
-  it("does not show on merged or non-open PRs even if flagged", () => {
-    expect(workingBadge(pull({ working: true, merged: true }))).toBeNull();
-    expect(workingBadge(pull({ working: true, state: "closed" }))).toBeNull();
+  it("does not show on merged or non-open PRs even with a live agent", () => {
+    expect(
+      workingBadge(pull({ merged: true }), { agentWorking: true }),
+    ).toBeNull();
+    expect(
+      workingBadge(pull({ state: "closed" }), { agentWorking: true }),
+    ).toBeNull();
   });
 });
 
@@ -222,24 +228,32 @@ describe("linkedPullStatus", () => {
     };
   }
 
-  it("returns null only when status fields are absent (issue-detail summary path)", () => {
-    // mergeable_state undefined = the summary path that does not compute status.
+  it("returns null for an idle open PR with no decided status", () => {
+    // No live agent and nothing decided (summary path with no fields, or a
+    // computed-but-undecided fresh PR): idle, so the row falls back to its
+    // lifecycle pill rather than reading "working" (#1125).
     expect(linkedPullStatus(linked())).toBeNull();
-  });
-
-  it("treats an open PR with computed-but-undecided status as working", () => {
-    // Status was computed (issue-list path) but nothing decided: a fresh PR
-    // (blocked / unknown / no_commits) reads as working, not a bare pill.
     for (const mergeable_state of [
       "blocked",
       "unknown",
       "no_commits",
     ] as const) {
-      expect(linkedPullStatus(linked({ mergeable_state }))).toMatchObject({
-        tone: "working",
-        label: "working",
-      });
+      expect(linkedPullStatus(linked({ mergeable_state }))).toBeNull();
     }
+  });
+
+  it("does not read a dirty worktree alone as working (#1125)", () => {
+    // Signal A (pull.working) no longer produces "working" — only a live agent
+    // does. An idle PR whose session left uncommitted changes is idle, matching
+    // the PR detail page (pullDetailBadges).
+    expect(linkedPullStatus(linked({ working: true }))).toBeNull();
+    expect(
+      linkedPullStatus(linked({ working: true, mergeable_state: "blocked" })),
+    ).toBeNull();
+    // A live agent still reads "working".
+    expect(
+      linkedPullStatus(linked({ working: true }), { agentWorking: true })?.tone,
+    ).toBe("working");
   });
 
   it("reports merged and closed states", () => {
@@ -553,7 +567,9 @@ describe("issueBadges / pullBadges", () => {
     expect(badges.map((b) => b.tone)).toEqual(["mergeable"]);
   });
 
-  it("hides passed and mergeable while working", () => {
+  it("does not emit a working badge for a dirty worktree alone (#1125)", () => {
+    // Signal A no longer reads "working" on the list either — it matches the PR
+    // detail page (pullDetailBadges), so review/mergeable are shown normally.
     const badges = pullBadges(
       pull({
         working: true,
@@ -561,10 +577,10 @@ describe("issueBadges / pullBadges", () => {
         mergeable_state: "clean",
       }),
     );
-    expect(badges.map((b) => b.tone)).toEqual(["working"]);
+    expect(badges.map((b) => b.tone)).toEqual(["review-passed", "mergeable"]);
   });
 
-  it("keeps non-passed review and conflict badges while worktree-dirty working", () => {
+  it("keeps review and conflict badges for a dirty worktree (#1125)", () => {
     const badges = pullBadges(
       pull({
         working: true,
@@ -572,22 +588,19 @@ describe("issueBadges / pullBadges", () => {
         mergeable_state: "conflict",
       }),
     );
-    expect(badges.map((b) => b.tone)).toEqual([
-      "working",
-      "review-changes",
-      "conflict",
-    ]);
+    expect(badges.map((b) => b.tone)).toEqual(["review-changes", "conflict"]);
   });
 
-  it("keeps the stale review badge while worktree-dirty working", () => {
+  it("suppresses review-result and mergeable badges only while a herdr agent is working", () => {
     const badges = pullBadges(
       pull({
         working: true,
-        review_state: "STALE",
-        mergeable_state: "unknown",
+        review_state: "PASSED",
+        mergeable_state: "clean",
       }),
+      { agentWorking: true },
     );
-    expect(badges.map((b) => b.tone)).toEqual(["working", "review-rereview"]);
+    expect(badges.map((b) => b.tone)).toEqual(["working"]);
   });
 
   it("suppresses review-result badges while a herdr agent is working", () => {

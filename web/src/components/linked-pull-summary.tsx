@@ -222,10 +222,16 @@ export function LinkedPullSummaryRow({
     status.tone === "review-changes" ||
     workspace?.status === "blocked";
   const isDone = pull.merged || pull.state === "closed";
-  // Keep the live-agent effect independent from the displayed status: an
-  // actionable conflict still owns the status word while its resolver is working.
-  const showWorkingEffect =
-    status.tone === "working" || (!isDone && agentWorking);
+  // The indigo pulse/ring means a live herdr agent is actively working (signal
+  // B). A dirty worktree alone no longer triggers it (#1125), so a session that
+  // ended with uncommitted changes stops reading "working" forever.
+  const showWorkingEffect = !isDone && agentWorking;
+  // Idle: an open PR with no live agent and nothing needing attention. Its bot
+  // icon dims to the same inactive tone as done rows (isDone opacity-45 below),
+  // rather than looking active. conflict/changes keep a bright icon + red dot,
+  // and a cost-stopped PR stays bright — it is stalled and needs a human, not idle.
+  const isIdle =
+    !isDone && !showWorkingEffect && !needsAttention && !costStopped;
   const runtimeMetadata = agentRuntimeMetadataLabel(
     pull.agent_runtime,
     pull.agent_model,
@@ -264,6 +270,7 @@ export function LinkedPullSummaryRow({
             "relative flex size-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground",
             showWorkingEffect &&
               "animate-[linked-pull-pulse_2.4s_ease-out_infinite] bg-indigo-100 text-indigo-700 ring-1 ring-indigo-500/70 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-300/80",
+            isIdle && "opacity-45",
           )}
         >
           <Bot className="size-3" aria-hidden="true" />

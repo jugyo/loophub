@@ -56,8 +56,6 @@ interface PullStatusDecision {
   terminal: Badge | null;
   review: Badge | null;
   mergeable: Badge | null;
-  isWorktreeWorking: boolean;
-  hasMergeableState: boolean;
   isAgentWorking: boolean;
 }
 
@@ -103,29 +101,20 @@ function resolvePullStatus(
       pull.state,
       pull.mergeable_state,
     ),
-    isWorktreeWorking: pull.working === true,
-    hasMergeableState: pull.mergeable_state !== undefined,
     isAgentWorking: options.agentWorking === true,
   };
 }
 
-function linkedPullWorkingBadge(
-  isAgentWorking: boolean,
-  isWorktreeWorking: boolean,
-): Badge {
-  if (isAgentWorking) {
-    return {
-      tone: "working",
-      label: "working",
-      title: "Working in the PR worktree",
-    };
-  }
+/**
+ * The "working" word for a linked-PR sub-row. Only a live herdr agent (signal B)
+ * produces it now — a dirty worktree alone (signal A) no longer reads "working"
+ * (#1125), matching the PR detail page.
+ */
+function linkedPullWorkingBadge(): Badge {
   return {
     tone: "working",
     label: "working",
-    title: isWorktreeWorking
-      ? "Uncommitted changes in the PR worktree"
-      : "No review or conflict status yet",
+    title: "Working in the PR worktree",
   };
 }
 
@@ -196,22 +185,20 @@ export function draftBadge(pr: PullRequest): Badge | null {
 }
 
 /**
- * "working" badge for an open PR whose lh-build worktree has uncommitted changes — a quick
- * "actively being worked on" cue. Null for merged/closed PRs or when the flag is absent/false
- * (no worktree, clean tree, or an older server that doesn't send it).
+ * "working" badge for an open PR with a live herdr agent (signal B). Since #1125 a dirty worktree
+ * alone (`pr.working`, signal A) never reads "working" — neither the list nor the detail page — so
+ * this helper keys solely off `options.agentWorking`. Null for merged/closed PRs (a stale agent
+ * signal on a done PR does not resurrect "working") or when no agent is working.
  */
 export function workingBadge(
   pr: PullRequest,
   options: PullStatusOptions = {},
 ): Badge | null {
-  if (pr.merged || pr.state !== "open" || !(pr.working || options.agentWorking))
-    return null;
+  if (pr.merged || pr.state !== "open" || !options.agentWorking) return null;
   return {
     tone: "working",
     label: "working",
-    title: options.agentWorking
-      ? "Working in the PR worktree"
-      : "Uncommitted changes in the PR worktree",
+    title: "Working in the PR worktree",
   };
 }
 
@@ -253,7 +240,11 @@ export function pullBadges(
 ): Badge[] {
   const badges: Badge[] = [];
   const status = resolvePullStatus(pr, options);
-  const isWorking = status.isWorktreeWorking || status.isAgentWorking;
+  // "working" is driven solely by a live herdr agent (signal B), matching the PR
+  // detail page (pullDetailBadges). A dirty worktree alone (pr.working, signal A)
+  // no longer reads "working" on the list: an idle PR with stale uncommitted
+  // changes was showing "working" forever, out of step with the detail page (#1125).
+  const isWorking = status.isAgentWorking;
   // #863: a stopped-for-cost PR is stalled and needs a human — flag it first, ahead of the
   // routine draft/working/review badges. Suppressed on merged/closed PRs (costStoppedBadge).
   const costStopped = costStoppedBadge(pr);
@@ -266,12 +257,8 @@ export function pullBadges(
   if (state) return [state];
   const review = status.review;
   // While a live herdr agent is working in the PR worktree, hold review-result
-  // statuses behind the working badge. A dirty worktree without a live working
-  // agent keeps the older, narrower suppression of only "passed".
-  if (
-    review &&
-    !(status.isAgentWorking || (isWorking && review.tone === "review-passed"))
-  ) {
+  // statuses behind the working badge.
+  if (review && !isWorking) {
     badges.push(review);
   }
   const mergeable = status.mergeable;
@@ -288,8 +275,8 @@ export function pullBadges(
  * unconditionally for ordinary PR data. A live herdr working agent is the one
  * exception: it adds a "working" badge and suppresses review-result / mergeable
  * badges while the PR is actively changing. Dirty-worktree `pr.working` alone
- * stays list-only so the detail header does not change for stale uncommitted
- * state.
+ * never reads "working" — neither here nor on the list (pullBadges) since #1125,
+ * so an idle PR with stale uncommitted state looks the same in both places.
  */
 export function pullDetailBadges(
   pr: PullRequest,
@@ -321,20 +308,19 @@ export function pullDetailBadges(
  * sub-row). Collapses the PR's review / conflict / working signals into one
  * toned, labelled word, by priority. A *decided* review state (passed /
  * changes / re-review / commented) or an actionable conflict reflects the PR's
- * real state and so outranks the transient "working" cue — otherwise a
- * passed PR whose dev worktree still has uncommitted changes would read
- * "working" on the issue list while the PR detail page reads "passed" (the
- * #419 inconsistency). "working" is only the *fallback* word for an open PR
- * with no decided status (fresh, blocked, unknown), shown instead of a bare
- * `PR #n` pill. Matches the PR detail page ({@link pullDetailBadges}), so the
- * same PR reads the same word everywhere issue status is rendered.
+ * real state. "working" is produced only by a live herdr agent (signal B),
+ * matching the PR detail page ({@link pullDetailBadges}); a dirty worktree
+ * alone (signal A) no longer reads "working" (#1125), so an idle PR with stale
+ * uncommitted changes is not masked as "working" on the list while the detail
+ * page reads otherwise.
  * Priority (most actionable first):
- *   merged → closed → conflict → changes/re-review/commented/passed →
- *   working (open, status computed but undecided).
+ *   merged → closed → conflict → live-agent working →
+ *   changes/re-review/commented/passed.
  *
- * Returns null only when the status fields are absent (`mergeable_state ===
- * undefined`, the issue-detail summary path that does not compute them), so the
- * row is not wrongly labelled "working".
+ * Returns null when nothing above applies — an idle open PR, or the issue-detail
+ * summary path that lacks status fields — so {@link LinkedPullSummaryRow} falls
+ * back to the plain lifecycle pill ("open") and dims the idle bot icon instead
+ * of labelling the row "working".
  */
 export function linkedPullStatus(
   pull: LinkedPull,
@@ -342,20 +328,20 @@ export function linkedPullStatus(
 ): Badge | null {
   const status = resolvePullStatus(pull, options);
   if (status.terminal) return status.terminal;
-  // A decided, actionable conflict wins even while the worktree is being edited.
+  // A decided, actionable conflict wins even while a live agent is editing.
   if (status.mergeable?.tone === "conflict") return status.mergeable;
+  // Only a live herdr agent reads "working" (see the doc comment).
   if (options.agentWorking) {
-    return linkedPullWorkingBadge(true, status.isWorktreeWorking);
+    return linkedPullWorkingBadge();
   }
-  // Decided review states reflect the PR's real state and win over the transient
-  // "working" cue (#419): a passed PR with a dirty worktree reads "passed",
-  // matching the PR detail page rather than masking it behind "working".
+  // Decided review states reflect the PR's real state (#419): a passed PR with a
+  // dirty worktree reads "passed", matching the PR detail page.
   if (status.review) {
     return status.review;
   }
-  // No decided review state. Worktree dirty: actively being edited.
-  if (!status.isWorktreeWorking && !status.hasMergeableState) return null;
-  return linkedPullWorkingBadge(false, status.isWorktreeWorking);
+  // No live agent, no decided review/conflict: the PR is idle. Return null so
+  // the row shows its plain lifecycle state and the dimmed idle styling.
+  return null;
 }
 
 /**

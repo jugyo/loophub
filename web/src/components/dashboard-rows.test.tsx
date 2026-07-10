@@ -238,7 +238,8 @@ describe("IssueRow", () => {
     expect(title.getAttribute("href")).toBe("/r/me/proj/issues/1");
     const pill = screen.getByRole("link", { name: "PR #10" });
     expect(pill.getAttribute("href")).toBe("/r/me/proj/pulls/10");
-    expect(screen.getByText("working")).toBeTruthy();
+    // A dirty worktree with no live agent is idle → plain "open" word (#1125).
+    expect(screen.getByText("open")).toBeTruthy();
   });
 
   it("stacks one sub-row per linked PR when there are several", async () => {
@@ -256,7 +257,8 @@ describe("IssueRow", () => {
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "PR #9" })).toBeTruthy();
-    expect(screen.getByText("working")).toBeTruthy();
+    // #10 is idle (dirty, no live agent) → "open"; #9 is merged.
+    expect(screen.getByText("open")).toBeTruthy();
     expect(screen.getByText("merged")).toBeTruthy();
   });
 
@@ -479,11 +481,20 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
     return await screen.findByRole("link", { name: "PR #10" });
   }
 
-  it("labels a fresh open PR (no review/conflict, status computed) as working", async () => {
-    // Previously fell to null → bare pill. Now reads working (muted word).
-    await renderPull({ mergeable_state: "blocked" });
-    const word = screen.getByText("working");
-    expect(word.className).toContain("text-indigo-600");
+  it("labels an idle open PR (no live agent) with its lifecycle state, dimmed (#1125)", async () => {
+    // A dirty/undecided PR with no live agent is idle: it reads its plain "open"
+    // lifecycle word (muted, not indigo) and dims the bot icon to the inactive
+    // tone instead of pulsing "working".
+    await renderPull({ mergeable_state: "blocked", working: true });
+    const word = screen.getByText("open");
+    expect(word.className).not.toContain("text-indigo-600");
+    const bot = screen
+      .getByLabelText("Linked PR #10: A PR")
+      .querySelector("svg");
+    expect(bot?.parentElement?.className).toContain("opacity-45");
+    expect(bot?.parentElement?.className).not.toContain(
+      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
+    );
   });
 
   it("paints a conflict word red", async () => {
@@ -949,6 +960,23 @@ describe("cost-stopped badge on the linked-PR sub-row (#863)", () => {
     );
     const badge = await screen.findByText(/over budget/);
     expect(badge.className).toContain("text-amber-700");
+  });
+
+  it("keeps the bot icon bright on a stopped PR — it needs a human, not idle (#1125)", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ cost_stopped: true })],
+        })}
+      />,
+    );
+    await screen.findByText(/over budget/);
+    const bot = screen
+      .getByLabelText("Linked PR #10: A PR")
+      .querySelector("svg");
+    expect(bot?.parentElement?.className).not.toContain("opacity-45");
   });
 
   it("does not show the badge on a PR that was never stopped", async () => {
