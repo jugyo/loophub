@@ -236,8 +236,7 @@ export function LinkedPullSummaryRow({
       data-linked-pull-row
       aria-label={`Linked PR #${pull.number}: ${pull.title}`}
       className={cn(
-        "group/linked-pull relative flex min-w-0 items-center gap-2 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60",
-        isDone && "opacity-45",
+        "group/linked-pull relative min-w-0 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60",
         className,
       )}
       onMouseEnter={() => setPopoverOpen(true)}
@@ -252,70 +251,79 @@ export function LinkedPullSummaryRow({
         if (event.key === "Escape") setPopoverOpen(false);
       }}
     >
-      <span
+      {/* opacity lives on the content wrapper, not the row container, so the
+          PullPopover (rendered as a sibling below) never inherits opacity-45. */}
+      <div
         className={cn(
-          "relative flex size-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground",
-          showWorkingEffect &&
-            "animate-[linked-pull-pulse_2.4s_ease-out_infinite] bg-indigo-100 text-indigo-700 ring-1 ring-indigo-500/70 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-300/80",
+          "flex min-w-0 items-center gap-2",
+          isDone && "opacity-45",
         )}
       >
-        <Bot className="size-3" aria-hidden="true" />
-        {needsAttention ? (
-          <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full border-[1.5px] border-background bg-destructive" />
-        ) : null}
-      </span>
-      <span className="min-w-0 shrink truncate" title={runtimeMetadata}>
-        {runtimeMetadata}
-      </span>
-      <span aria-hidden="true" className="shrink-0 text-muted-foreground/70">
-        ·
-      </span>
-      <Link
-        to="/r/$owner/$repo/pulls/$number"
-        params={{ owner, repo, number: String(pull.number) }}
-        className="flex shrink-0 items-center font-medium text-primary hover:underline"
-      >
-        PR #{pull.number}
-      </Link>
-      <LinkedGithubPrBadge github_pull={pull.github_pull} />
-      {showTitle ? (
+        <span
+          className={cn(
+            "relative flex size-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground",
+            showWorkingEffect &&
+              "animate-[linked-pull-pulse_2.4s_ease-out_infinite] bg-indigo-100 text-indigo-700 ring-1 ring-indigo-500/70 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-300/80",
+          )}
+        >
+          <Bot className="size-3" aria-hidden="true" />
+          {needsAttention ? (
+            <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full border-[1.5px] border-background bg-destructive" />
+          ) : null}
+        </span>
+        <span className="min-w-0 shrink truncate" title={runtimeMetadata}>
+          {runtimeMetadata}
+        </span>
+        <span aria-hidden="true" className="shrink-0 text-muted-foreground/70">
+          ·
+        </span>
         <Link
           to="/r/$owner/$repo/pulls/$number"
           params={{ owner, repo, number: String(pull.number) }}
-          className="min-w-0 flex-1 truncate text-foreground hover:underline"
-          title={pull.title}
+          className="flex shrink-0 items-center font-medium text-primary hover:underline"
         >
-          {pull.title}
+          PR #{pull.number}
         </Link>
-      ) : null}
-      <span
-        className={cn(
-          "flex shrink-0 items-center gap-1 font-semibold",
-          STATUS_TEXT[linkedPullWordTone(status.tone)],
-          status.tone === "working" && "text-indigo-600 dark:text-indigo-400",
-        )}
-        title={status.title}
-      >
-        {passed ? (
-          <span
-            className="flex size-3.5 items-center justify-center rounded-full bg-green-600 text-[9px] leading-none text-white"
-            aria-label="passed"
+        <LinkedGithubPrBadge github_pull={pull.github_pull} />
+        {showTitle ? (
+          <Link
+            to="/r/$owner/$repo/pulls/$number"
+            params={{ owner, repo, number: String(pull.number) }}
+            className="min-w-0 flex-1 truncate text-foreground hover:underline"
+            title={pull.title}
           >
-            <Check className="size-2.5" aria-hidden="true" />
+            {pull.title}
+          </Link>
+        ) : null}
+        <span
+          className={cn(
+            "flex shrink-0 items-center gap-1 font-semibold",
+            STATUS_TEXT[linkedPullWordTone(status.tone)],
+            status.tone === "working" && "text-indigo-600 dark:text-indigo-400",
+          )}
+          title={status.title}
+        >
+          {passed ? (
+            <span
+              className="flex size-3.5 items-center justify-center rounded-full bg-green-600 text-[9px] leading-none text-white"
+              aria-label="passed"
+            >
+              <Check className="size-2.5" aria-hidden="true" />
+            </span>
+          ) : null}
+          {status.label}
+        </span>
+        {costStopped ? (
+          <span
+            className="flex shrink-0 items-center gap-1 font-medium text-amber-700 dark:text-amber-300"
+            title={costStopped.title}
+          >
+            <TriangleAlert className="size-3" aria-hidden="true" />
+            over budget
           </span>
         ) : null}
-        {status.label}
-      </span>
-      {costStopped ? (
-        <span
-          className="flex shrink-0 items-center gap-1 font-medium text-amber-700 dark:text-amber-300"
-          title={costStopped.title}
-        >
-          <TriangleAlert className="size-3" aria-hidden="true" />
-          over budget
-        </span>
-      ) : null}
-      <Metrics pull={pull} />
+        <Metrics pull={pull} />
+      </div>
       {popoverOpen ? (
         <PullPopover
           owner={owner}
