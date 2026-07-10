@@ -583,17 +583,60 @@ test("sessionUsageTotalsForIssue aggregates tokens/cost across every linked sess
   // Any linked session with an unknown (null) cost makes the combined cost unknown too, even
   // though its tokens still count toward the total.
   S.upsertSessionUsage(s2, {
-    model: "claude-opus-4-8",
-    input_tokens: 0,
+    model: "unknown-model",
+    input_tokens: 1,
     cache_creation_input_tokens: 0,
     cache_read_input_tokens: 0,
     output_tokens: 0,
     cost_usd: null,
   });
   expect(S.sessionUsageTotalsForIssue(pr.id)).toEqual({
-    total_tokens: 51,
+    total_tokens: 52,
     cost_usd: null,
   });
+});
+
+test("zero-token session usage rows are not stored", () => {
+  const s = "66666666-0000-0000-0000-000000000003";
+  S.registerAgentSession(s, "lh-build", "ext-zero-usage");
+
+  S.upsertSessionUsage(s, {
+    model: "codex",
+    input_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: null,
+    context_usage_percent: 2.1,
+  });
+
+  expect(S.listSessionUsage(s)).toEqual([]);
+});
+
+test("deleteZeroTokenSessionUsageRows removes stale top-level and subagent rows", () => {
+  const s = "66666666-0000-0000-0000-000000000004";
+  S.registerAgentSession(s, "lh-build", "ext-stale-zero-usage");
+
+  D.db.run(
+    `INSERT INTO session_usage
+      (session_id, model, input_tokens, cache_creation_input_tokens,
+       cache_read_input_tokens, output_tokens, cost_usd, context_usage_percent, updated_at)
+     VALUES (?, ?, 0, 0, 0, 0, NULL, 2.1, ?)`,
+    [s, "codex", "2026-07-09T08:55:11Z"],
+  );
+  D.db.run(
+    `INSERT INTO session_usage_subagents
+      (session_id, source_id, parent_source_id, label, kind, model,
+       input_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+       output_tokens, cost_usd, context_usage_percent, updated_at)
+     VALUES (?, ?, NULL, NULL, ?, ?, 0, 0, 0, 0, NULL, 2.1, ?)`,
+    [s, "child", "codex-child-rollout", "codex", "2026-07-09T08:55:11Z"],
+  );
+
+  S.deleteZeroTokenSessionUsageRows(s);
+
+  expect(S.listSessionUsage(s)).toEqual([]);
+  expect(S.listSessionSubagentUsage(s)).toEqual([]);
 });
 
 test("pullAgentSummary returns the primary dev session runtime and usage models (#842)", () => {

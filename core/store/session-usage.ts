@@ -277,6 +277,26 @@ export function resetSessionUsage(sessionId: string) {
   ]);
 }
 
+export function deleteZeroTokenSessionUsageRows(sessionId?: string): void {
+  const zeroTokenWhere = `input_tokens = 0
+    AND cache_creation_input_tokens = 0
+    AND cache_read_input_tokens = 0
+    AND output_tokens = 0`;
+  if (sessionId) {
+    db.run(
+      `DELETE FROM session_usage WHERE session_id = ? AND ${zeroTokenWhere}`,
+      [sessionId],
+    );
+    db.run(
+      `DELETE FROM session_usage_subagents WHERE session_id = ? AND ${zeroTokenWhere}`,
+      [sessionId],
+    );
+    return;
+  }
+  db.run(`DELETE FROM session_usage WHERE ${zeroTokenWhere}`);
+  db.run(`DELETE FROM session_usage_subagents WHERE ${zeroTokenWhere}`);
+}
+
 export function insertSessionUsageMessage(
   sessionId: string,
   messageId: string,
@@ -296,7 +316,22 @@ export function insertSessionUsageMessage(
   return true;
 }
 
+function hasTokenUsage(usage: {
+  input_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  output_tokens: number;
+}): boolean {
+  return (
+    usage.input_tokens > 0 ||
+    usage.cache_creation_input_tokens > 0 ||
+    usage.cache_read_input_tokens > 0 ||
+    usage.output_tokens > 0
+  );
+}
+
 export function upsertSessionUsage(sessionId: string, usage: ModelUsage) {
+  if (!hasTokenUsage(usage)) return;
   const t = now();
   db.run(
     `INSERT INTO session_usage
@@ -335,6 +370,7 @@ export function upsertSessionSubagentUsage(
   sessionId: string,
   usage: SubagentUsage,
 ) {
+  if (!hasTokenUsage(usage)) return;
   db.run(
     `INSERT INTO session_usage_subagents
        (session_id, source_id, parent_source_id, label, kind, model,

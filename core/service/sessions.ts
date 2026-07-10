@@ -410,6 +410,7 @@ export const sessions = {
       : S.listAgentSessions();
     if (input.sessionId && rows.length === 0)
       throw new ServiceError(404, "Not Found");
+    S.deleteZeroTokenSessionUsageRows(input.sessionId);
 
     const codexTargets = new Map<
       string,

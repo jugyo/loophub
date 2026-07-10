@@ -452,6 +452,43 @@ test("aggregateUsage computes known model cost and leaves unknown models null", 
   expect(calculateCostUsd("future-model", sonnet)).toBeNull();
 });
 
+test("aggregateUsage drops all-zero model totals", () => {
+  const usage = aggregateUsage([
+    {
+      message_id: "synthetic",
+      model: "<synthetic>",
+      input_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 0,
+    },
+    {
+      message_id: "codex",
+      model: "codex",
+      input_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 0,
+    },
+    {
+      message_id: "real",
+      model: "gpt-5.5",
+      input_tokens: 10,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 5,
+      output_tokens: 2,
+    },
+  ]);
+
+  expect(usage).toHaveLength(1);
+  expect(usage[0]).toMatchObject({
+    model: "gpt-5.5",
+    input_tokens: 10,
+    cache_read_input_tokens: 5,
+    output_tokens: 2,
+  });
+});
+
 test("parseCodexRolloutJsonl extracts final cumulative token count", () => {
   const text = [
     JSON.stringify({

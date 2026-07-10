@@ -111,7 +111,14 @@ function addCost(total: CostTotal, next: CostTotal): CostTotal {
 }
 
 function formatCostTotal(total: CostTotal): string {
-  return total.hasUnknownCost ? "n/a" : formatCost(total.cost);
+  const formatted = formatCost(total.cost);
+  return total.hasUnknownCost ? `${formatted}+` : formatted;
+}
+
+function costTitle(total: CostTotal): string {
+  return total.hasUnknownCost
+    ? `${formatCostTotal(total)} (includes additional usage with unknown cost)`
+    : formatCostTotal(total);
 }
 
 function usageCostTotal(usage: SessionUsage[] | undefined): CostTotal {
@@ -264,7 +271,7 @@ function buildBuckets(
 
 function costSortValue(session: AgentSession): number {
   const cost = sessionCost(session);
-  return cost.hasUnknownCost ? -1 : cost.cost;
+  return cost.cost;
 }
 
 function sortedByCost(sessions: AgentSession[]): AgentSession[] {
@@ -551,7 +558,7 @@ function CostChart({
             <div className="flex min-h-0 flex-1 items-end justify-center gap-1">
               {mode === "total" ? (
                 <ChartBar
-                  label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
+                  label={`${bucket.label}: ${costTitle(bucket.total)}`}
                   height={barHeight(barCostValue(bucket.total), maxCost)}
                   className={
                     bucket.total.hasUnknownCost
@@ -563,7 +570,7 @@ function CostChart({
                 bucket.agents.map((agent) => (
                   <ChartBar
                     key={agent.key}
-                    label={`${bucket.label} ${agent.label}: ${formatCostTotal(agent.cost)}`}
+                    label={`${bucket.label} ${agent.label}: ${costTitle(agent.cost)}`}
                     height={barHeight(barCostValue(agent.cost), maxCost)}
                     className={
                       agent.cost.hasUnknownCost
@@ -590,7 +597,7 @@ function barHeight(cost: number, maxCost: number): string {
 }
 
 function barCostValue(cost: CostTotal): number {
-  return cost.hasUnknownCost ? 0 : cost.cost;
+  return cost.cost;
 }
 
 function ChartBar({

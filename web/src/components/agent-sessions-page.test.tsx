@@ -411,7 +411,7 @@ describe("AgentSessionsPage", () => {
     ).toBeNull();
   });
 
-  it("shows n/a summaries when usage cost is unknown", async () => {
+  it("shows known cost with an unknown marker when usage cost is partially unknown", async () => {
     vi.spyOn(Date, "now").mockReturnValue(
       new Date("2026-07-09T13:00:00Z").getTime(),
     );
@@ -435,15 +435,27 @@ describe("AgentSessionsPage", () => {
             context_usage_percent: null,
             updated_at: "2026-07-09T11:00:00Z",
           },
+          {
+            session_id: "unknown-cost",
+            model: "gpt-5.5",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.02,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T11:00:00Z",
+          },
         ],
       },
     ]);
 
     expect(await screen.findByText("last 1 month cost")).toBeTruthy();
-    expect(screen.getAllByText("n/a").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByLabelText(/Jul 9: n\/a/).getAttribute("style")).toBe(
-      "height: 2px;",
+    expect(screen.getAllByText("$0.02+").length).toBeGreaterThanOrEqual(2);
+    const bar = screen.getByLabelText(
+      /Jul 9: \$0\.02\+ \(includes additional usage with unknown cost\)/,
     );
+    expect(bar.getAttribute("style")).toBe("height: 100%;");
   });
 
   it("shows an empty state", async () => {

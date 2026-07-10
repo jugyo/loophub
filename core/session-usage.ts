@@ -530,6 +530,15 @@ export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   };
 }
 
+function hasTokenUsage(usage: TokenUsage): boolean {
+  return (
+    usage.input_tokens > 0 ||
+    usage.cache_creation_input_tokens > 0 ||
+    usage.cache_read_input_tokens > 0 ||
+    usage.output_tokens > 0
+  );
+}
+
 export function aggregateUsage(entries: UsageEntry[]): ModelUsage[] {
   const byModel = new Map<string, TokenUsage>();
   const contextByModel = new Map<string, number>();
@@ -551,12 +560,14 @@ export function aggregateUsage(entries: UsageEntry[]): ModelUsage[] {
       );
     }
   }
-  return [...byModel.entries()].map(([model, usage]) => ({
-    model,
-    ...usage,
-    cost_usd: calculateCostUsd(model, usage),
-    context_usage_percent: contextByModel.get(model) ?? null,
-  }));
+  return [...byModel.entries()]
+    .filter(([, usage]) => hasTokenUsage(usage))
+    .map(([model, usage]) => ({
+      model,
+      ...usage,
+      cost_usd: calculateCostUsd(model, usage),
+      context_usage_percent: contextByModel.get(model) ?? null,
+    }));
 }
 
 export function defaultClaudeProjectsDir(): string {
