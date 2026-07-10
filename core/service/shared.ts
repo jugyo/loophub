@@ -96,6 +96,7 @@ import {
   issueListItemJSON,
   labelJSON,
   notificationJSON,
+  pevrRunStateJSON,
   pevrWorkflowJSON,
   pullJSON,
   relatedSessionsJSON,
@@ -181,7 +182,7 @@ import {
   worktreePath,
 } from "../worktree-path.ts";
 
-export { pevrWorkflowJSON };
+export { pevrRunStateJSON, pevrWorkflowJSON };
 
 import {
   classifyWorktree,

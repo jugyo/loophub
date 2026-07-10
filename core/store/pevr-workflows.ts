@@ -360,6 +360,31 @@ export function getPevrRun(id: number): PevrRunRow | null {
     .get(id) as PevrRunRow | null;
 }
 
+// Latest run linked to an issue / PR, used by issue / PR detail to display run state (#1008).
+// A run row is the display-state source (§5.2); ordering by id DESC returns the most recent run
+// when an issue was re-run (e.g. after a `blocked` escalation was resolved and restarted).
+export function latestPevrRunForIssue(
+  repoId: number,
+  issueNumber: number,
+): PevrRunRow | null {
+  return db
+    .query(
+      `SELECT * FROM pevr_runs WHERE repo_id = ? AND issue_number = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(repoId, issueNumber) as PevrRunRow | null;
+}
+
+export function latestPevrRunForPull(
+  repoId: number,
+  prNumber: number,
+): PevrRunRow | null {
+  return db
+    .query(
+      `SELECT * FROM pevr_runs WHERE repo_id = ? AND pr_number = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(repoId, prNumber) as PevrRunRow | null;
+}
+
 export function updatePevrRun(
   id: number,
   patch: {

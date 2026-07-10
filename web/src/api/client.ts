@@ -24,6 +24,7 @@ import type {
   Label,
   LoopEvent,
   Notification,
+  PevrRunState,
   PevrWorkflow,
   PullFile,
   PullLineComment,
@@ -362,6 +363,15 @@ export function deletePevrWorkflow(
     name,
     session_id: sessionId,
   });
+}
+
+// PEVR run display state for issue / PR detail (#1008). Returns null when the issue / PR has no run.
+export function getPevrRunStateForIssue(repo: string, number: number) {
+  return rpc<PevrRunState | null>("pevrRuns/stateForIssue", { repo, number });
+}
+
+export function getPevrRunStateForPull(repo: string, number: number) {
+  return rpc<PevrRunState | null>("pevrRuns/stateForPull", { repo, number });
 }
 
 // --- global settings ---

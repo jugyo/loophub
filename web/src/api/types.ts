@@ -18,6 +18,8 @@ import type {
   LabelWire,
   LinkedIssueWire,
   NotificationWire,
+  PevrRunStateWire,
+  PevrRunVerdictSummaryWire,
   PevrWorkflowWire,
   PullSummaryWire,
   PullWire,
@@ -279,6 +281,10 @@ export type ScheduledTask = ScheduledTaskWire;
 
 /** A global PEVR workflow definition (#997): Plan/Execute/Verify/Reflect prompt bundle. */
 export type PevrWorkflow = PevrWorkflowWire;
+
+/** Display state of a PEVR run linked to an issue / PR (#1008). */
+export type PevrRunState = PevrRunStateWire;
+export type PevrRunVerdictSummary = PevrRunVerdictSummaryWire;
 
 /** One fire of a scheduled task (#880) — meta only; the output stays on the herdr side. */
 export type ScheduledTaskRun = ScheduledTaskRunWire;

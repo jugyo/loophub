@@ -31,6 +31,7 @@ import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { HandoffTimeline } from "@/components/handoff-timeline";
 import { isPullHerdrWorking } from "@/components/herdr-badge";
 import { Markdown } from "@/components/markdown";
+import { PevrRunStatusSection } from "@/components/pevr-run-status";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { PullHerdrSection } from "@/components/pull-herdr-section";
 import {
@@ -49,6 +50,7 @@ import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
 import { useIssueComments } from "@/queries/issues";
+import { usePevrRunForPull } from "@/queries/pevr-runs";
 import {
   useGithubPrStatus,
   useMarkGithubMerged,
@@ -130,6 +132,8 @@ export function PullDetail({
             longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
         <PullHeader owner={owner} repo={repo} pull={pull} />
 
+        <PevrRunSection owner={owner} repo={repo} number={number} />
+
         <FilesChanged
           owner={owner}
           repo={repo}
@@ -196,6 +200,21 @@ export function PullDetail({
       </aside>
     </div>
   );
+}
+
+// PEVR run state for this PR (#1008): renders the linked run's status / step / rework via the
+// shared section, or nothing when the PR has no run.
+function PevrRunSection({
+  owner,
+  repo,
+  number,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+}) {
+  const { data } = usePevrRunForPull(owner, repo, number);
+  return <PevrRunStatusSection owner={owner} repo={repo} state={data} />;
 }
 
 function PullHeader({

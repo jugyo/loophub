@@ -1271,6 +1271,52 @@ export function pevrWorkflowJSON(row: S.PevrWorkflowRow): PevrWorkflowWire {
   };
 }
 
+// PEVR run display state (#1008): the current step / status / rework count of the run linked to an
+// issue or PR, for issue / PR detail. The run row is the display-state source (docs §5.2) — the
+// *truth* of step completion stays with `workflow step status` (artifact placement + head), which
+// this wire deliberately does not re-derive. `latest_verdict` surfaces the human-readable reason
+// behind a rework / block; the web derives the issue-comment / inbox links from `issue_number`.
+export interface PevrRunVerdictSummaryWire {
+  event: "pass" | "request_changes";
+  summary: string;
+  findings_count: number;
+}
+
+export interface PevrRunStateWire {
+  id: number;
+  workflow_id: number | null;
+  workflow_name: string | null;
+  status: string; // running | blocked | completed | stopped
+  current_step: string; // plan | execute | verify | reflect
+  rework_count: number;
+  issue_number: number;
+  pr_number: number;
+  created_at: string;
+  updated_at: string;
+  latest_verdict: PevrRunVerdictSummaryWire | null;
+}
+
+export function pevrRunStateJSON(input: {
+  run: S.PevrRunRow;
+  workflowName: string | null;
+  latestVerdict: PevrRunVerdictSummaryWire | null;
+}): PevrRunStateWire {
+  const { run } = input;
+  return {
+    id: run.id,
+    workflow_id: run.workflow_id,
+    workflow_name: input.workflowName,
+    status: run.status,
+    current_step: run.current_step,
+    rework_count: run.rework_count,
+    issue_number: run.issue_number,
+    pr_number: run.pr_number,
+    created_at: run.created_at,
+    updated_at: run.updated_at,
+    latest_verdict: input.latestVerdict,
+  };
+}
+
 // Work-duration basis values (#456): tells the frontend which signal grounded the `total` figure,
 // so it can render an appropriate label rather than a bare number. Unlike the implementation/review
 // phase split below, `total` always reflects the PR's *current* state — it keeps growing through

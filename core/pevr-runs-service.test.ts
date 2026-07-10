@@ -820,3 +820,80 @@ test("parent contract template specifies transitions, rework, and escalation", (
   // AC: skill independence — the contract forbids slash commands.
   expect(contract).toContain("Do not call slash commands");
 });
+
+test("stateForIssue / stateForPull expose run display state, or null when absent (#1008)", async () => {
+  const repo = S.createRepo("me/pevr-state", REPO_PATH);
+  const issue = S.createIssue(repo.id, "issue", "Show run state", "body", "me");
+  const workflow = S.createPevrWorkflow({
+    name: "state-wf",
+    description: "",
+    planPrompt: "",
+    executePrompt: "",
+    verifyPrompt: "",
+    reflectPrompt: "",
+  });
+
+  // No run yet -> both lookups return null.
+  expect(
+    await svc.pevrRuns.stateForIssue(repo.full_name, { issue: issue.number }),
+  ).toBeNull();
+  expect(
+    await svc.pevrRuns.stateForPull(repo.full_name, { pull: 4242 }),
+  ).toBeNull();
+
+  const run = S.createPevrRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: 4242,
+    status: "running",
+    currentStep: "verify",
+    parentSessionId: "22222222-2222-4222-8222-222222222222",
+  });
+  S.updatePevrRun(run.id, { reworkCount: 2 });
+
+  // A request_changes verdict artifact is surfaced as the display reason.
+  const verdict = {
+    type: "verdict" as const,
+    event: "request_changes" as const,
+    summary: "Two acceptance criteria are unmet.",
+    findings: [
+      { file: "a.ts", problem: "missing guard", expected: "guard added" },
+      { file: "b.ts", problem: "no test", expected: "test added" },
+    ],
+  };
+  S.createPevrArtifact({
+    runId: run.id,
+    step: "verify",
+    type: "verdict",
+    contentJson: JSON.stringify(verdict),
+    headSha: "0".repeat(40),
+    submittedBy: "22222222-2222-4222-8222-222222222222",
+    dedupeKey: "state-wf-verdict-1",
+  });
+
+  const byIssue = await svc.pevrRuns.stateForIssue(repo.full_name, {
+    issue: issue.number,
+  });
+  expect(byIssue).toMatchObject({
+    id: run.id,
+    workflow_id: workflow.id,
+    workflow_name: "state-wf",
+    status: "running",
+    current_step: "verify",
+    rework_count: 2,
+    issue_number: issue.number,
+    pr_number: 4242,
+  });
+  expect(byIssue?.latest_verdict).toEqual({
+    event: "request_changes",
+    summary: "Two acceptance criteria are unmet.",
+    findings_count: 2,
+  });
+
+  const byPull = await svc.pevrRuns.stateForPull(repo.full_name, {
+    pull: 4242,
+  });
+  expect(byPull?.id).toBe(run.id);
+  expect(byPull?.workflow_name).toBe("state-wf");
+});

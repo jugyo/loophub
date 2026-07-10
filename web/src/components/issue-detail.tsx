@@ -20,6 +20,7 @@ import { IssueHerdrSection } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
 import { Markdown } from "@/components/markdown";
+import { PevrRunStatusSection } from "@/components/pevr-run-status";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ import {
   usePostComment,
   useSetIssueState,
 } from "@/queries/issues";
+import { usePevrRunForIssue } from "@/queries/pevr-runs";
 import { usePevrWorkflows } from "@/queries/pevr-workflows";
 import { useSettings } from "@/queries/settings";
 
@@ -111,6 +113,8 @@ export function IssueDetail({
       <IssueHeader owner={owner} repo={repo} issue={issue} />
 
       <LinkedPullSummary owner={owner} repo={repo} issue={issue} />
+
+      <PevrRunSection owner={owner} repo={repo} number={number} />
 
       <IssueHerdrSection owner={owner} repo={repo} issue={issue} />
 
@@ -544,6 +548,21 @@ function LinkedPullSummary({
       ))}
     </section>
   );
+}
+
+// PEVR run state for this issue (#1008): renders the linked run's status / step / rework via the
+// shared section, or nothing when the issue has no run.
+function PevrRunSection({
+  owner,
+  repo,
+  number,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+}) {
+  const { data } = usePevrRunForIssue(owner, repo, number);
+  return <PevrRunStatusSection owner={owner} repo={repo} state={data} />;
 }
 
 function CommentList({

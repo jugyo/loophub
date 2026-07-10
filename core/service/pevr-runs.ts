@@ -52,6 +52,10 @@ import {
   type PevrStepStatuses,
 } from "../pevr/steps.ts";
 import { RUNTIME_CLAUDE_CODE, resolveWorktreeIdentity } from "../resume.ts";
+import type {
+  PevrRunStateWire,
+  PevrRunVerdictSummaryWire,
+} from "../serialize.ts";
 import { buildPevrStepHerdrLaunchPlan } from "../terminal/terminal-launch.ts";
 import {
   legacyWorktreePath,
@@ -67,6 +71,7 @@ import {
   assertExistingLocalBranch,
   ensureWritable,
   issueOr404,
+  pevrRunStateJSON,
   repoOr404,
   S,
   ServiceError,
@@ -525,6 +530,24 @@ function latestVerdictContent(run: S.PevrRunRow): PevrVerdictArtifact | null {
   return parsed.artifact;
 }
 
+// Build the issue / PR detail display state (#1008) from a run row. The row is the display-state
+// source (§5.2); this does not re-derive step-completion truth (that is `workflow step status`).
+// `latest_verdict` gives the human-readable reason behind a rework / block.
+function pevrRunState(run: S.PevrRunRow): PevrRunStateWire {
+  const workflowName = run.workflow_id
+    ? (S.getPevrWorkflowById(run.workflow_id)?.name ?? null)
+    : null;
+  const verdict = latestVerdictContent(run);
+  const latestVerdict: PevrRunVerdictSummaryWire | null = verdict
+    ? {
+        event: verdict.event,
+        summary: verdict.summary,
+        findings_count: verdict.findings.length,
+      }
+    : null;
+  return pevrRunStateJSON({ run, workflowName, latestVerdict });
+}
+
 function safeEvidenceAttachment(
   worktree: string,
   path: string,
@@ -915,6 +938,9 @@ export const pevrRuns = {
       status: updated.status,
       current_step: updated.current_step,
       rework_count: updated.rework_count,
+      // issue / PR numbers let issue & PR detail refresh their run-state query precisely (#1008).
+      issue_number: updated.issue_number,
+      pr_number: updated.pr_number,
     });
     return { run: runJSON(updated) };
   },
@@ -1100,6 +1126,8 @@ export const pevrRuns = {
       id: run.id,
       step,
       session_id: sessionId,
+      // Both issue / PR numbers so issue & PR detail refresh their run-state query precisely (#1008).
+      issue_number: run.issue_number,
       pr_number: run.pr_number,
     });
     return { run: runJSON(withSession), session_id: sessionId };
@@ -1284,6 +1312,9 @@ export const pevrRuns = {
       head_sha: headSha,
       target_kind: placed.kind,
       target_ref: placed.ref,
+      // Both issue / PR numbers so issue & PR detail refresh their run-state query precisely (#1008).
+      issue_number: run.issue_number,
+      pr_number: run.pr_number,
     });
     return {
       artifact_id: artifact.id,
@@ -1401,5 +1432,28 @@ export const pevrRuns = {
       head_sha: currentHead,
       steps,
     };
+  },
+
+  // Display state for issue / PR detail (#1008): the latest run linked to the issue / PR, or null
+  // when none. Reads only the run row (+ workflow name + latest verdict) — no git — so it stays a
+  // cheap display query and does not recompute completion truth.
+  stateForIssue(
+    name: string,
+    input: { issue: number },
+    _sessionId?: string | null,
+  ): PevrRunStateWire | null {
+    const r = repoOr404(name);
+    const run = S.latestPevrRunForIssue(r.id, input.issue);
+    return run ? pevrRunState(run) : null;
+  },
+
+  stateForPull(
+    name: string,
+    input: { pull: number },
+    _sessionId?: string | null,
+  ): PevrRunStateWire | null {
+    const r = repoOr404(name);
+    const run = S.latestPevrRunForPull(r.id, input.pull);
+    return run ? pevrRunState(run) : null;
   },
 };

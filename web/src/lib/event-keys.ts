@@ -29,6 +29,10 @@ export const queryKeys = {
   scheduledTask: (full: string, id: number) =>
     ["scheduled-task", full, id] as const,
   pevrWorkflows: () => ["pevr-workflows"] as const,
+  pevrRunForIssue: (full: string, number: number) =>
+    ["pevr-run", "issue", full, number] as const,
+  pevrRunForPull: (full: string, number: number) =>
+    ["pevr-run", "pull", full, number] as const,
 };
 
 /**
@@ -122,6 +126,30 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // connected client, not just the tab that made the change (whose mutation hook already
     // invalidates onSuccess). Create/update/delete all change the list, so invalidate it by prefix.
     keys.push([...queryKeys.pevrWorkflows()]);
+  } else if (
+    type.startsWith("pevr_run.") ||
+    type.startsWith("pevr_step.") ||
+    type.startsWith("pevr_artifact.")
+  ) {
+    // A PEVR run's step / status / rework count is shown on issue and PR detail (#1008). These
+    // lifecycle events (pevr_run.started/updated, pevr_step.launched, pevr_artifact.placed) all carry
+    // both issue_number and pr_number in the payload, so refresh both detail views' run-state query.
+    // Fall back to the whole prefix defensively when the repo or numbers are somehow absent.
+    const issueNumber = payload?.issue_number;
+    const prNumber = payload?.pr_number ?? payload?.number;
+    if (repo) {
+      if (typeof issueNumber === "number") {
+        keys.push([...queryKeys.pevrRunForIssue(repo, issueNumber)]);
+      }
+      if (typeof prNumber === "number") {
+        keys.push([...queryKeys.pevrRunForPull(repo, prNumber)]);
+      }
+      if (typeof issueNumber !== "number" && typeof prNumber !== "number") {
+        keys.push(["pevr-run"]);
+      }
+    } else {
+      keys.push(["pevr-run"]);
+    }
   } else if (type.startsWith("inbox.message.")) {
     keys.push([...queryKeys.inbox()]);
     const id = payload?.id;

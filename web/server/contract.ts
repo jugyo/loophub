@@ -304,6 +304,20 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.pevrWorkflows.delete(p.name, p.session_id),
   },
+  "pevrRuns/stateForIssue": {
+    description:
+      "Display state of the latest PEVR run linked to an issue (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pevrRuns.stateForIssue(p.repo, { issue: p.number }),
+  },
+  "pevrRuns/stateForPull": {
+    description:
+      "Display state of the latest PEVR run linked to a PR (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pevrRuns.stateForPull(p.repo, { pull: p.number }),
+  },
 
   // ---- terminal launch ----
   "terminal/config": {
