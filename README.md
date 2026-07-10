@@ -38,6 +38,14 @@ capability negotiation、events は `events/notify` notification（SSE 相当）
 
 言語中立な契約ドキュメント: [`docs/rpc-contract.json`](./docs/rpc-contract.json)（`npm run contract` で再生成）。
 
+### JSON-RPC transport limits
+
+`POST /rpc` は request body を 1 MiB、batch を 100 要素、serialized response を 10 MiB に制限する。
+request body 超過は HTTP 413 / JSON-RPC `-32002`、batch 超過は HTTP 200 / `-32600 Invalid Request`、
+response 超過は HTTP 200 / `-32001 Response too large` を返す。通常の SPA request は上限内であり、
+`lh` CLI は JSON-RPC を経由せず `core/service` を直接呼ぶため対象外である。詳細は
+[Web server documentation](./web/README.md#json-rpc-transport-limits) を参照。
+
 ## lh-web（Web サーバ）
 
 `lh-web` は web 自身の Node プロセス。常駐 daemon（旧 `lh serve` / `Bun.serve`）はなく、見ている間だけ動く。

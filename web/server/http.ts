@@ -22,15 +22,23 @@ import {
   saveAttachment,
 } from "../../core/attachments.ts";
 import { isServiceError } from "../../core/errors.ts";
+import { stringifyJsonWithinLimit } from "./bounded-json.ts";
 import { subscribeEvents } from "./events.ts";
 import { isAllowedOrigin, isLoopbackHost } from "./net.ts";
-import { dispatchRaw } from "./rpc.ts";
+import {
+  dispatchRaw,
+  type RpcResponse,
+  requestTooLarge,
+  responseTooLarge,
+} from "./rpc.ts";
 
 // Built SPA assets. Defaults to web/dist; override with LOOPHUB_WEB_DIST.
 const DIST_DIR =
   process.env.LOOPHUB_WEB_DIST ??
   join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const SSE_HEARTBEAT_MS = 15_000;
+export const MAX_RPC_REQUEST_BYTES = 1024 * 1024;
+export const MAX_RPC_RESPONSE_BYTES = 10 * 1024 * 1024;
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -51,15 +59,6 @@ function contentType(path: string): string {
   return (
     (dot >= 0 && CONTENT_TYPES[path.slice(dot)]) || "application/octet-stream"
   );
-}
-
-function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c) => chunks.push(c as Buffer));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
 }
 
 // Read a request body as binary. Once it exceeds `limit` we stop buffering (so
@@ -203,14 +202,23 @@ async function handleRpc(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  const body = await readBody(req);
-  const response = await dispatchRaw(body);
+  const body = await readBinaryBody(req, MAX_RPC_REQUEST_BYTES);
+  if (body.tooLarge) {
+    sendJson(res, 413, requestTooLarge(MAX_RPC_REQUEST_BYTES));
+    return;
+  }
+  const response = await dispatchRaw(body.data.toString("utf8"));
   if (response === null) {
     res.writeHead(204).end(); // all notifications -> no content
     return;
   }
+  let serialized = stringifyJsonWithinLimit(response, MAX_RPC_RESPONSE_BYTES);
+  if (serialized === null) {
+    const id = Array.isArray(response) ? null : (response as RpcResponse).id;
+    serialized = JSON.stringify(responseTooLarge(id));
+  }
   res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify(response));
+  res.end(serialized);
 }
 
 function handleEvents(

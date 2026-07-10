@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import type { Server } from "node:http";
+import { request as httpRequest, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +19,9 @@ let server: Server;
 let base: string;
 let repoPath: string;
 let S: typeof import("../../core/store.ts");
+let MAX_RPC_REQUEST_BYTES: number;
+let MAX_RPC_RESPONSE_BYTES: number;
+let ERROR_CODES: typeof import("./rpc.ts").ERROR_CODES;
 
 function git(args: string[]) {
   spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
@@ -36,8 +39,54 @@ async function rpc(method: string, params?: any, id: any = 1) {
   };
 }
 
+function rpcBodyOfSize(bytes: number): string {
+  const prefix = '{"jsonrpc":"2.0","id":"';
+  const suffix = '","method":"initialize","params":{}}';
+  return `${prefix}${"x".repeat(bytes - prefix.length - suffix.length)}${suffix}`;
+}
+
+async function postChunkedRpc(
+  body: string,
+  chunkSize: number,
+): Promise<{ status: number; body: any }> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      `${base}/rpc`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(chunk as Buffer));
+        res.on("end", () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            body: JSON.parse(Buffer.concat(chunks).toString("utf8")),
+          }),
+        );
+      },
+    );
+    req.on("error", reject);
+    let offset = 0;
+    const writeNext = () => {
+      if (offset >= body.length) {
+        req.end();
+        return;
+      }
+      req.write(body.slice(offset, offset + chunkSize));
+      offset += chunkSize;
+      setTimeout(writeNext, 1);
+    };
+    writeNext();
+  });
+}
+
 beforeAll(async () => {
-  const { createLhWebServer } = await import("./http.ts");
+  const http = await import("./http.ts");
+  MAX_RPC_REQUEST_BYTES = http.MAX_RPC_REQUEST_BYTES;
+  MAX_RPC_RESPONSE_BYTES = http.MAX_RPC_RESPONSE_BYTES;
+  ({ ERROR_CODES } = await import("./rpc.ts"));
   S = await import("../../core/store.ts");
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-http-repo-"));
@@ -48,7 +97,7 @@ beforeAll(async () => {
   git(["add", "-A"]);
   git(["commit", "-qm", "init"]);
 
-  server = createLhWebServer();
+  server = http.createLhWebServer();
   await new Promise<void>((resolve) => server.listen(0, resolve));
   base = `http://localhost:${(server.address() as AddressInfo).port}`;
 
@@ -79,6 +128,69 @@ test("POST /rpc with invalid JSON returns a -32700 error", async () => {
   });
   expect(res.status).toBe(200);
   expect(((await res.json()) as any).error.code).toBe(-32700);
+});
+
+test("POST /rpc accepts a request exactly at the byte limit", async () => {
+  const res = await fetch(`${base}/rpc`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: rpcBodyOfSize(MAX_RPC_REQUEST_BYTES),
+  });
+
+  expect(res.status).toBe(200);
+  expect(((await res.json()) as any).result.serverInfo.name).toBe("loophub");
+});
+
+test("POST /rpc rejects a request over the byte limit", async () => {
+  const res = await fetch(`${base}/rpc`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: rpcBodyOfSize(MAX_RPC_REQUEST_BYTES + 1),
+  });
+  const body = (await res.json()) as any;
+
+  expect(res.status).toBe(413);
+  expect(body.error.code).toBe(ERROR_CODES.REQUEST_TOO_LARGE);
+  expect(body.error.data).toEqual({
+    status: 413,
+    maxBytes: MAX_RPC_REQUEST_BYTES,
+  });
+});
+
+test("POST /rpc drains slow chunked input after it exceeds the byte limit", async () => {
+  const oversized = rpcBodyOfSize(MAX_RPC_REQUEST_BYTES + 1);
+  const res = await postChunkedRpc(oversized, 64 * 1024);
+
+  expect(res.status).toBe(413);
+  expect(res.body.error.code).toBe(ERROR_CODES.REQUEST_TOO_LARGE);
+  expect(res.body.error.data.maxBytes).toBe(MAX_RPC_REQUEST_BYTES);
+  expect((await rpc("initialize", {})).status).toBe(200);
+});
+
+test("POST /rpc replaces an oversized serialized response with an error", async () => {
+  const repo = S.getRepo("me", "proj")!;
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "large response",
+    "x".repeat(MAX_RPC_RESPONSE_BYTES),
+    "me",
+  );
+  const res = await rpc(
+    "issues/get",
+    { repo: "me/proj", number: issue.number },
+    77,
+  );
+
+  expect(res.status).toBe(200);
+  expect(res.body).toEqual({
+    jsonrpc: "2.0",
+    id: 77,
+    error: {
+      code: ERROR_CODES.RESPONSE_TOO_LARGE,
+      message: "Response too large",
+    },
+  });
 });
 
 test("POST /rpc rejects non-JSON content types", async () => {

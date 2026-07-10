@@ -20,6 +20,10 @@ const INVALID_PARAMS = -32602;
 const INTERNAL_ERROR = -32603;
 // Application errors (ServiceError) — server-defined range. The HTTP-style status is in data.
 const APP_ERROR = -32000;
+const RESPONSE_TOO_LARGE = -32001;
+const REQUEST_TOO_LARGE = -32002;
+
+export const MAX_RPC_BATCH_SIZE = 100;
 
 type Id = string | number | null;
 
@@ -49,6 +53,17 @@ function fail(
     id,
     error: { code, message, ...(data !== undefined ? { data } : {}) },
   };
+}
+
+export function responseTooLarge(id: Id): RpcFailure {
+  return fail(id, RESPONSE_TOO_LARGE, "Response too large");
+}
+
+export function requestTooLarge(maxBytes: number): RpcFailure {
+  return fail(null, REQUEST_TOO_LARGE, "Request body too large", {
+    status: 413,
+    maxBytes,
+  });
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -110,6 +125,12 @@ export async function dispatch(
   if (Array.isArray(payload)) {
     if (payload.length === 0)
       return fail(null, INVALID_REQUEST, "Invalid Request");
+    if (payload.length > MAX_RPC_BATCH_SIZE)
+      return fail(
+        null,
+        INVALID_REQUEST,
+        `Batch too large (max ${MAX_RPC_BATCH_SIZE} requests)`,
+      );
     const responses = await Promise.all(payload.map(dispatchOne));
     return responses.filter((r): r is RpcResponse => r !== null);
   }
@@ -137,4 +158,6 @@ export const ERROR_CODES = {
   INVALID_PARAMS,
   INTERNAL_ERROR,
   APP_ERROR,
+  RESPONSE_TOO_LARGE,
+  REQUEST_TOO_LARGE,
 } as const;

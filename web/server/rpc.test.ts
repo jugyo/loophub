@@ -12,6 +12,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 let dispatch: typeof import("./rpc.ts").dispatch;
 let dispatchRaw: typeof import("./rpc.ts").dispatchRaw;
 let ERROR_CODES: typeof import("./rpc.ts").ERROR_CODES;
+let MAX_RPC_BATCH_SIZE: typeof import("./rpc.ts").MAX_RPC_BATCH_SIZE;
 let db: typeof import("../../core/db.ts").db;
 let svc: typeof import("../../core/service.ts");
 let repoPath: string;
@@ -25,7 +26,9 @@ async function call(method: string, params?: any, id: any = 1) {
 }
 
 beforeAll(async () => {
-  ({ dispatch, dispatchRaw, ERROR_CODES } = await import("./rpc.ts"));
+  ({ dispatch, dispatchRaw, ERROR_CODES, MAX_RPC_BATCH_SIZE } = await import(
+    "./rpc.ts"
+  ));
   ({ db } = await import("../../core/db.ts"));
   svc = await import("../../core/service.ts");
 
@@ -160,6 +163,41 @@ test("batch returns an array; empty batch -> -32600", async () => {
 
   const empty: any = await dispatch([]);
   expect(empty.error.code).toBe(ERROR_CODES.INVALID_REQUEST);
+});
+
+test("batch dispatches at the element limit", async () => {
+  const batch: any = await dispatch(
+    Array.from({ length: MAX_RPC_BATCH_SIZE }, (_, index) => ({
+      jsonrpc: "2.0",
+      id: index + 1,
+      method: "initialize",
+    })),
+  );
+
+  expect(batch).toHaveLength(MAX_RPC_BATCH_SIZE);
+  expect(batch[0].id).toBe(1);
+  expect(batch.at(-1).id).toBe(MAX_RPC_BATCH_SIZE);
+});
+
+test("batch over the element limit is rejected before dispatch", async () => {
+  const before = await svc.issues.list("me/proj");
+  const batch: any = await dispatch([
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "issues/create",
+      params: { repo: "me/proj", title: "must not be created" },
+    },
+    ...Array.from({ length: MAX_RPC_BATCH_SIZE }, (_, index) => ({
+      jsonrpc: "2.0",
+      id: index + 2,
+      method: "initialize",
+    })),
+  ]);
+
+  expect(batch.error.code).toBe(ERROR_CODES.INVALID_REQUEST);
+  expect(batch.error.message).toContain(`max ${MAX_RPC_BATCH_SIZE}`);
+  expect(await svc.issues.list("me/proj")).toHaveLength(before.length);
 });
 
 test("dashboard/overview lists recent open issues newest-created first, tagged with their repo", async () => {

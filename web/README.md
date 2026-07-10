@@ -55,6 +55,24 @@ the embedded Vite path is the primary dev flow.
   language-neutral contract (`docs/rpc-contract.json`); never imports core types.
 - `src/api/types.ts` — hand-written wire types matching the contract result shapes.
 
+## JSON-RPC transport limits
+
+`POST /rpc` enforces three explicit transport limits:
+
+- Request bodies are limited to 1 MiB. After a request crosses the limit, the server stops retaining
+  chunks, drains the rest of the stream, and returns HTTP 413 with JSON-RPC code `-32002`.
+- Batches are limited to 100 elements and are rejected before any element is dispatched with HTTP 200
+  and `-32600 Invalid Request`.
+- Serialized responses are limited to 10 MiB. The bounded serializer retains at most the limit and
+  replaces an oversized result with HTTP 200 and a small `-32001 Response too large` JSON-RPC error.
+
+These limits leave headroom above existing SPA defaults. An issue-list page requests 101 records (100
+visible rows plus one lookahead record), and each event poll requests at most 100 events. The `lh` CLI
+does not use this transport; it calls `core/service` directly.
+
+See the [transport limit design note](../docs/json-rpc-transport-limits.md) for the bounded response
+serializer, remaining allocation boundary, and streaming decision.
+
 ## Live updates (SSE)
 
 `src/lib/use-loophub-events.ts` (`useLoopHubEvents`) subscribes to `/events` with
