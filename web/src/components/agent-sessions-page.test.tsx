@@ -670,6 +670,117 @@ describe("AgentSessionsPage", () => {
     expect(screen.getByLabelText("Jun 10: $0.00")).toBeTruthy();
   });
 
+  it("stacks agents in a consistent order across buckets in By agent mode", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-07-09T13:00:00Z").getTime(),
+    );
+    // Cost dominance flips per day: Codex leads on Jul 8, Claude Code leads on
+    // Jul 9. Globally Codex is the top agent (0.07 vs 0.06), so it must sit at
+    // the bottom of the stack in both buckets.
+    renderPage([
+      {
+        id: "jul8-codex",
+        agent: "lh-build",
+        session: "jul8-codex",
+        runtime: "codex",
+        created_at: "2026-07-08T08:00:00Z",
+        updated_at: "2026-07-08T09:00:00Z",
+        usage: [
+          {
+            session_id: "jul8-codex",
+            model: "gpt-5.5",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.05,
+            context_usage_percent: null,
+            updated_at: "2026-07-08T09:00:00Z",
+          },
+        ],
+      },
+      {
+        id: "jul8-claude",
+        agent: "lh-build",
+        session: "jul8-claude",
+        runtime: "claude-code",
+        created_at: "2026-07-08T08:00:00Z",
+        updated_at: "2026-07-08T09:00:00Z",
+        usage: [
+          {
+            session_id: "jul8-claude",
+            model: "claude-sonnet",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.01,
+            context_usage_percent: null,
+            updated_at: "2026-07-08T09:00:00Z",
+          },
+        ],
+      },
+      {
+        id: "jul9-codex",
+        agent: "lh-build",
+        session: "jul9-codex",
+        runtime: "codex",
+        created_at: "2026-07-09T08:00:00Z",
+        updated_at: "2026-07-09T09:00:00Z",
+        usage: [
+          {
+            session_id: "jul9-codex",
+            model: "gpt-5.5",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.02,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T09:00:00Z",
+          },
+        ],
+      },
+      {
+        id: "jul9-claude",
+        agent: "lh-build",
+        session: "jul9-claude",
+        runtime: "claude-code",
+        created_at: "2026-07-09T08:00:00Z",
+        updated_at: "2026-07-09T09:00:00Z",
+        usage: [
+          {
+            session_id: "jul9-claude",
+            model: "claude-sonnet",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.05,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T09:00:00Z",
+          },
+        ],
+      },
+    ]);
+
+    expect(await screen.findByText("last 1 month cost")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "By agent" }));
+
+    // A larger y is closer to the baseline (bottom of the stack). Codex is the
+    // global top agent, so it stacks at the bottom (largest y) in every bucket,
+    // even on Jul 9 where Claude Code has the higher per-bucket cost.
+    const yOf = (label: string) =>
+      Number(screen.getByLabelText(label).getAttribute("y"));
+
+    expect(yOf("Jul 8 Codex: $0.05")).toBeGreaterThan(
+      yOf("Jul 8 Claude Code: $0.01"),
+    );
+    expect(yOf("Jul 9 Codex: $0.02")).toBeGreaterThan(
+      yOf("Jul 9 Claude Code: $0.05"),
+    );
+  });
+
   it("shows an empty state", async () => {
     renderPage([]);
     expect(await screen.findByText("No agent sessions.")).toBeTruthy();

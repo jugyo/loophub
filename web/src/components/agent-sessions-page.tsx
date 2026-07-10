@@ -557,6 +557,11 @@ function CostChart({
       AGENT_COLORS[index % AGENT_COLORS.length],
     ]),
   );
+  // Global stack order shared with the legend/colors, so every bucket stacks the
+  // same agent in the same position instead of by per-bucket cost.
+  const agentOrder = new Map(
+    agentCosts.map((agent, index) => [agent.key, index]),
+  );
 
   const innerWidth = Math.max(
     0,
@@ -656,6 +661,7 @@ function CostChart({
                   yScale={yScale}
                   innerHeight={innerHeight}
                   colorByAgent={colorByAgent}
+                  agentOrder={agentOrder}
                 />
               );
             })}
@@ -746,6 +752,7 @@ function StackedBar({
   yScale,
   innerHeight,
   colorByAgent,
+  agentOrder,
 }: {
   bucket: CostBucket;
   x: number;
@@ -753,12 +760,21 @@ function StackedBar({
   yScale: CostYScale;
   innerHeight: number;
   colorByAgent: Map<string, string>;
+  agentOrder: Map<string, number>;
 }) {
-  const positiveAgents = bucket.agents.filter((agent) => agent.cost.cost > 0);
-  const zeroAgents = bucket.agents.filter(
+  // Order agents by the shared global order (legend/colors) rather than this
+  // bucket's cost-desc order, so the same agent stacks in the same position
+  // across every bucket.
+  const orderedAgents = [...bucket.agents].sort(
+    (a, b) =>
+      (agentOrder.get(a.key) ?? Number.POSITIVE_INFINITY) -
+      (agentOrder.get(b.key) ?? Number.POSITIVE_INFINITY),
+  );
+  const positiveAgents = orderedAgents.filter((agent) => agent.cost.cost > 0);
+  const zeroAgents = orderedAgents.filter(
     (agent) => !agent.cost.hasUnknownCost && agent.cost.cost <= 0,
   );
-  const unknownAgents = bucket.agents.filter(
+  const unknownAgents = orderedAgents.filter(
     (agent) => agent.cost.hasUnknownCost,
   );
   const knownTotal = positiveAgents.reduce(
