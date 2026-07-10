@@ -662,6 +662,24 @@ describe("linked PR Herdr popover action (#1061)", () => {
     ).toBe(false);
   });
 
+  it("renders the popover with an opaque theme background", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+      />,
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    openPopover();
+
+    const popover = screen
+      .getByRole("button", { name: "Open in Herdr" })
+      .closest(".pt-1")?.firstElementChild;
+    expect(popover?.className).toContain("bg-background");
+    expect(popover?.className).toContain("text-foreground");
+  });
+
   it("uses the herdr working signal for the status word", async () => {
     herdrSessionsData.value = {
       repos: [
