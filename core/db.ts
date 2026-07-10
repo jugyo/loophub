@@ -539,6 +539,33 @@ CREATE TABLE IF NOT EXISTS inbox_messages (
 CREATE INDEX IF NOT EXISTS idx_inbox_messages_repo_state
   ON inbox_messages(repo_id, state, id);
 
+-- Notification center (#1062). Separate from inbox_messages: notifications are topbar alerts
+-- about LoopHub state transitions, with a typed resource target and optional Herdr pane action.
+CREATE TABLE IF NOT EXISTS notifications (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id        INTEGER NOT NULL REFERENCES repos(id),
+  kind           TEXT NOT NULL
+                   CHECK (kind IN ('implementation_done', 'over_budget', 'human_attention')),
+  title          TEXT NOT NULL,
+  body           TEXT NOT NULL,
+  resource_kind  TEXT NOT NULL CHECK (resource_kind IN ('issue', 'pull', 'repo')),
+  resource_number INTEGER,
+  source_key     TEXT NOT NULL UNIQUE,
+  herdr_pane_id  TEXT,
+  read_at        TEXT,
+  created_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_read_created
+  ON notifications(read_at, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_notifications_repo
+  ON notifications(repo_id, id);
+
+CREATE TABLE IF NOT EXISTS notification_cursors (
+  scope     TEXT PRIMARY KEY,
+  last_id   INTEGER NOT NULL
+);
+
 -- PEVR workflow definitions (#997). Global, user-editable prompt bundles for the fixed
 -- Plan/Execute/Verify/Reflect workflow. Step prompts are plain markdown text; empty strings are
 -- valid and mean "use only the built-in step contract".
@@ -757,6 +784,18 @@ tryExec("ALTER TABLE github_pulls ADD COLUMN github_merged_at TEXT");
 // added after the export have not yet reached GitHub (and so whether to offer the push button). Null
 // for links recorded without a push (record-github-pr) or created before this column existed.
 tryExec("ALTER TABLE github_pulls ADD COLUMN pushed_sha TEXT");
+
+// Notification source cursors (#1062 review): when this version first sees an existing DB, seed the
+// cursors to the current history tail so the topbar does not materialize years of old events/reviews
+// as fresh unread notifications. Fresh DBs seed to 0 and then process subsequently-created signals.
+tryExec(
+  `INSERT OR IGNORE INTO notification_cursors (scope, last_id)
+   SELECT 'events', COALESCE(MAX(id), 0) FROM events`,
+);
+tryExec(
+  `INSERT OR IGNORE INTO notification_cursors (scope, last_id)
+   SELECT 'reviews', COALESCE(MAX(id), 0) FROM reviews`,
+);
 
 export function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "Z");

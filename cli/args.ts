@@ -68,6 +68,9 @@ export type Flags = {
   number?: string;
   url?: string;
   branch?: string;
+  resource?: string;
+  "source-key"?: string;
+  "herdr-pane-id"?: string;
   description?: string;
   "plan-prompt"?: string;
   "execute-prompt"?: string;
@@ -148,6 +151,9 @@ const { values, positionals } = parseArgs({
     number: { type: "string" },
     url: { type: "string" },
     branch: { type: "string" },
+    resource: { type: "string" },
+    "source-key": { type: "string" },
+    "herdr-pane-id": { type: "string" },
     description: { type: "string" },
     "plan-prompt": { type: "string" },
     "execute-prompt": { type: "string" },

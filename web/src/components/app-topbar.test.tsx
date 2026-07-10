@@ -41,6 +41,21 @@ vi.mock("@/queries/sessions", () => ({
   useAgentCostSummary: () => ({ data: costSummaryData.value }),
 }));
 
+vi.mock("@/queries/notifications", () => ({
+  useNotifications: () => ({ data: [], isLoading: false, isError: false }),
+  useUnreadNotificationCount: () => ({ data: { count: 0 } }),
+  useReadNotification: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+vi.mock("@/queries/terminal", () => ({
+  useFocusHerdrAgent: () => ({ mutate: vi.fn(), isPending: false }),
+  useHerdrSessions: () => ({ data: { repos: [] } }),
+}));
+
+vi.mock("@/components/toast", () => ({
+  useToast: () => ({ showError: vi.fn() }),
+}));
+
 vi.mock("@/lib/use-theme", () => ({
   useTheme: () => ({
     theme: "light",
@@ -162,9 +177,14 @@ describe("AppTopbar", () => {
     const themeIndex = primaryItems.findIndex(
       (node) => node.getAttribute("aria-label") === "Theme",
     );
+    const notificationIndex = primaryItems.findIndex(
+      (node) => node.getAttribute("aria-label") === "Notifications",
+    );
     expect(repoPickerIndex).toBeGreaterThan(-1);
+    expect(notificationIndex).toBeGreaterThan(-1);
     expect(themeIndex).toBeGreaterThan(-1);
     expect(themeIndex).toBeGreaterThan(repoPickerIndex);
+    expect(notificationIndex).toBe(themeIndex - 1);
     expect(themeIndex).toBe(primaryItems.length - 1);
   });
 

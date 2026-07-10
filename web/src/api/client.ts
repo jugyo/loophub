@@ -23,6 +23,7 @@ import type {
   IssueComment,
   Label,
   LoopEvent,
+  Notification,
   PevrWorkflow,
   PullFile,
   PullLineComment,
@@ -432,6 +433,22 @@ export function deleteInboxMessage(
   sessionId: string = getSessionId(),
 ) {
   return rpc<InboxMessage>("inbox/delete", { id, session_id: sessionId });
+}
+
+// --- notifications ---
+export function listNotifications(input: { limit?: number } = {}) {
+  return rpc<Notification[]>("notifications/list", clean(input));
+}
+
+export function unreadNotificationCount() {
+  return rpc<{ count: number }>("notifications/unreadCount");
+}
+
+export function readNotification(
+  id: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Notification>("notifications/read", { id, session_id: sessionId });
 }
 
 // --- terminal launch ---

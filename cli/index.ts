@@ -7,6 +7,7 @@ import * as herdrCmd from "./commands/herdr.ts";
 import * as inboxCmd from "./commands/inbox.ts";
 import * as infoCmd from "./commands/info.ts";
 import * as issueCmd from "./commands/issue.ts";
+import * as notificationCmd from "./commands/notification.ts";
 import * as prCmd from "./commands/pr.ts";
 import * as repoCmd from "./commands/repo.ts";
 import * as resumeCmd from "./commands/resume.ts";
@@ -29,6 +30,7 @@ async function main() {
   if (group === "pr") return prCmd.run();
   if (group === "handoff") return handoffCmd.run();
   if (group === "inbox") return inboxCmd.run();
+  if (group === "notification") return notificationCmd.run();
   if (group === "worktree") return worktreeCmd.run();
   if (group === "herdr") return herdrCmd.run();
   if (group === "retro") return retroCmd.run();

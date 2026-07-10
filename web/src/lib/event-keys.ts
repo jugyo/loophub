@@ -3,6 +3,7 @@
 //   issue.*          -> issue / issues lists
 //   pull_request.*   -> pull / pulls lists
 //   inbox.message.*  -> inbox message list / detail
+//   notification.*   -> notification center list/count
 //   repo.*           -> repos list (+ old-name keys on repo.renamed)
 //   agent_session.*  -> agent-sessions
 // See ../../../API.md for the full event type list.
@@ -20,6 +21,7 @@ export const queryKeys = {
   pull: (full: string, number: number) => ["pull", full, number] as const,
   inbox: () => ["inbox"] as const,
   inboxMessage: (id: number) => ["inbox-message", id] as const,
+  notifications: () => ["notifications"] as const,
   agentSessions: () => ["agent-sessions"] as const,
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
@@ -36,6 +38,9 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   const keys: unknown[][] = [];
   const { type, repo, payload } = event;
   const number = payload?.number;
+  if (isNotificationSourceEvent(event)) {
+    keys.push([...queryKeys.notifications()]);
+  }
 
   if (type.startsWith("issue.")) {
     if (repo) {
@@ -115,6 +120,8 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     keys.push([...queryKeys.inbox()]);
     const id = payload?.id;
     if (typeof id === "number") keys.push([...queryKeys.inboxMessage(id)]);
+  } else if (type.startsWith("notification.")) {
+    keys.push([...queryKeys.notifications()]);
   } else if (type === "settings.updated") {
     // Instance-level settings (#474) are global, not repo-scoped — refetch the settings view and
     // anything derived from it (e.g. the terminal launch backend) regardless of which repo/tab the
@@ -163,4 +170,17 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
   }
 
   return keys;
+}
+
+function isNotificationSourceEvent(event: LoopEvent): boolean {
+  if (
+    event.type === "pull_request.ready_for_review" ||
+    event.type === "dev.cost_stopped"
+  ) {
+    return true;
+  }
+  return (
+    event.type === "pull_request.review_submitted" &&
+    event.payload?.state === "REQUEST_CHANGES"
+  );
 }

@@ -178,4 +178,34 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["inbox-message", 42]);
     expect(keys).toContainEqual(["repo", "me/proj"]);
   });
+
+  it("refreshes notifications for source events that materialize topbar alerts", () => {
+    expect(
+      queryKeysForEvent(
+        ev({
+          type: "pull_request.ready_for_review",
+          repo: "me/proj",
+          payload: { number: 12 },
+        }),
+      ),
+    ).toContainEqual(["notifications"]);
+    expect(
+      queryKeysForEvent(
+        ev({
+          type: "dev.cost_stopped",
+          repo: "me/proj",
+          payload: { number: 12 },
+        }),
+      ),
+    ).toContainEqual(["notifications"]);
+    expect(
+      queryKeysForEvent(
+        ev({
+          type: "pull_request.review_submitted",
+          repo: "me/proj",
+          payload: { number: 12, state: "REQUEST_CHANGES" },
+        }),
+      ),
+    ).toContainEqual(["notifications"]);
+  });
 });

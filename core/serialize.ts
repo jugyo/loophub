@@ -797,6 +797,52 @@ export function inboxMessageJSON(m: S.InboxMessageRow): InboxMessageWire {
   };
 }
 
+export interface NotificationWire {
+  id: number;
+  kind: S.NotificationKind;
+  repo: { name: string };
+  title: string;
+  body: string;
+  resource: {
+    kind: S.NotificationResourceKind;
+    number: number | null;
+    href: string;
+  };
+  herdr_pane_id: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export function notificationJSON(n: S.NotificationRow): NotificationWire {
+  const repo = S.getRepoById(n.repo_id);
+  const repoName = repo?.full_name ?? "";
+  let href = repo ? `/r/${repo.full_name}` : "";
+  if (repo) {
+    if (n.resource_kind === "pull" && n.resource_number != null) {
+      href = `/r/${repo.full_name}/pulls/${n.resource_number}`;
+    } else if (n.resource_kind === "issue" && n.resource_number != null) {
+      href = `/r/${repo.full_name}/issues/${n.resource_number}`;
+    } else {
+      href = `/r/${repo.full_name}`;
+    }
+  }
+  return {
+    id: n.id,
+    kind: n.kind,
+    repo: { name: repoName },
+    title: n.title,
+    body: n.body,
+    resource: {
+      kind: n.resource_kind,
+      number: n.resource_number,
+      href,
+    },
+    herdr_pane_id: n.herdr_pane_id,
+    read_at: n.read_at,
+    created_at: n.created_at,
+  };
+}
+
 export function labelJSON(l: S.LabelRow): LabelWire {
   return { name: l.name, color: l.color };
 }

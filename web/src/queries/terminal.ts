@@ -27,10 +27,11 @@ export function useLaunchTerminalWorkflow() {
  * refetch, so the component checks `isError` to hide the section rather than relying on `data`
  * becoming undefined.
  */
-export function useHerdrSessions() {
+export function useHerdrSessions(opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: terminalKeys.sessions,
     queryFn: getHerdrSessions,
+    enabled: opts.enabled ?? true,
     refetchInterval: 3000,
     retry: false,
   });

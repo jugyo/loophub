@@ -17,6 +17,7 @@ import type {
   IssueWire,
   LabelWire,
   LinkedIssueWire,
+  NotificationWire,
   PevrWorkflowWire,
   PullSummaryWire,
   PullWire,
@@ -100,6 +101,8 @@ export type Handoff = HandoffWire;
 export type InboxMessage = InboxMessageWire;
 
 export type { InboxJsonObject };
+
+export type Notification = NotificationWire;
 
 export type Repo = RepoWire;
 

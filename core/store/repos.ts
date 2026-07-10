@@ -213,6 +213,7 @@ export function deleteRepo(owner: string, name: string): boolean {
   deleteLegacyGroupingRows(repo.id);
   db.run(`DELETE FROM pevr_runs WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM inbox_messages WHERE repo_id = ?`, [repo.id]);
+  db.run(`DELETE FROM notifications WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM issues WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM labels WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM events WHERE repo_id = ?`, [repo.id]);

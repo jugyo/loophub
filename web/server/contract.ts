@@ -210,6 +210,27 @@ export const methods: Record<string, MethodDef> = {
       ),
   },
 
+  // ---- notifications ----
+  "notifications/list": {
+    description:
+      "List topbar notification-center alerts, independent from lh inbox.",
+    params: params({ limit: positiveInt }),
+    result: anyArray,
+    handler: (p) => svc.notifications.list({ limit: p.limit }),
+  },
+  "notifications/unreadCount": {
+    description: "Count unread notification-center alerts.",
+    params: EMPTY_PARAMS,
+    result: anyObject,
+    handler: () => svc.notifications.unreadCount(),
+  },
+  "notifications/read": {
+    description: "Mark one notification-center alert as read.",
+    params: params({ id: positiveInt, session_id: sid }, ["id"]),
+    result: anyObject,
+    handler: (p) => svc.notifications.read(p.id, p.session_id),
+  },
+
   // ---- PEVR workflows ----
   "pevrWorkflows/list": {
     description:
