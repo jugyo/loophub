@@ -158,6 +158,12 @@ const GPT_53_CODEX_SPARK_PRICE: UsagePrice = {
   output: 14,
 };
 
+const IGNORED_CODEX_ROLLOUT_MODELS = new Set(["codex-auto-review"]);
+
+function isIgnoredCodexRolloutModel(model: string | null): boolean {
+  return model != null && IGNORED_CODEX_ROLLOUT_MODELS.has(model.toLowerCase());
+}
+
 export function priceForModel(model: string): UsagePrice | null {
   const m = model.toLowerCase();
   if (m.includes("sonnet-5")) return SONNET_5_INTRO_PRICE;
@@ -407,6 +413,23 @@ function rolloutTimestampFromPath(path: string): number | null {
   ).getTime();
 }
 
+function usageDelta(
+  current: TokenUsage,
+  previous: TokenUsage | null,
+): TokenUsage {
+  if (!previous) return current;
+  const delta = {
+    input_tokens: current.input_tokens - previous.input_tokens,
+    cache_creation_input_tokens:
+      current.cache_creation_input_tokens -
+      previous.cache_creation_input_tokens,
+    cache_read_input_tokens:
+      current.cache_read_input_tokens - previous.cache_read_input_tokens,
+    output_tokens: current.output_tokens - previous.output_tokens,
+  };
+  return Object.values(delta).some((value) => value < 0) ? current : delta;
+}
+
 export function parseCodexRolloutJsonl(
   text: string,
   messageId = "codex-rollout",
@@ -419,8 +442,9 @@ export function parseCodexRolloutJsonl(
 } {
   let cwd: string | null = null;
   let model: string | null = null;
-  let usage: TokenUsage | null = null;
-  let contextUsagePercent: number | null = null;
+  let previousUsage: TokenUsage | null = null;
+  const usageByModel = new Map<string, TokenUsage>();
+  const contextByModel = new Map<string, number>();
   let modelContextWindow: number | null = null;
   let startedAtMs: number | null = null;
   let threadId: string | null = null;
@@ -471,12 +495,6 @@ export function parseCodexRolloutJsonl(
       objectValue(payload.last_token_usage) ??
       objectValue(row.last_token_usage);
     const lastTotalTokens = nonNegativeNumber(lastUsage?.total_tokens);
-    if (modelContextWindow != null && lastTotalTokens != null) {
-      contextUsagePercent = Math.max(
-        contextUsagePercent ?? 0,
-        (lastTotalTokens / modelContextWindow) * 100,
-      );
-    }
     const total =
       objectValue(info?.total_token_usage) ??
       objectValue(payload.total_token_usage) ??
@@ -490,7 +508,7 @@ export function parseCodexRolloutJsonl(
       typeof total.output_tokens === "number"
         ? tokenCount(total.output_tokens)
         : tokenCount(total.reasoning_output_tokens);
-    usage = {
+    const currentUsage = {
       input_tokens: Math.max(
         0,
         tokenCount(total.input_tokens) - cacheCreation - cacheRead,
@@ -499,23 +517,38 @@ export function parseCodexRolloutJsonl(
       cache_read_input_tokens: cacheRead,
       output_tokens: outputTokens,
     };
+    const delta = usageDelta(currentUsage, previousUsage);
+    previousUsage = currentUsage;
+    if (isIgnoredCodexRolloutModel(model)) continue;
+    const usageModel = model ?? "codex";
+    usageByModel.set(
+      usageModel,
+      addUsage(usageByModel.get(usageModel) ?? ZERO_USAGE, delta),
+    );
+    if (modelContextWindow != null && lastTotalTokens != null) {
+      contextByModel.set(
+        usageModel,
+        Math.max(
+          contextByModel.get(usageModel) ?? 0,
+          (lastTotalTokens / modelContextWindow) * 100,
+        ),
+      );
+    }
   }
 
-  if (!usage)
+  if (usageByModel.size === 0)
     return { cwd, startedAtMs, threadId, parentThreadId, entries: [] };
   return {
     cwd,
     startedAtMs,
     threadId,
     parentThreadId,
-    entries: [
-      {
-        message_id: messageId,
-        model: model ?? "codex",
-        context_usage_percent: contextUsagePercent,
-        ...usage,
-      },
-    ],
+    entries: [...usageByModel.entries()].map(([model, usage]) => ({
+      message_id: messageId,
+      model,
+      context_usage_percent: contextByModel.get(model) ?? null,
+      ...usage,
+    })),
   };
 }
 

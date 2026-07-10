@@ -583,6 +583,189 @@ test("parseCodexRolloutJsonl preserves zero context usage as 0%", () => {
   });
 });
 
+test("parseCodexRolloutJsonl ignores codex-auto-review usage", () => {
+  const text = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        cwd: "/tmp/worktree",
+        model: "gpt-5.5",
+        timestamp: "2026-07-05T00:00:00.000Z",
+        id: "auto-review-thread",
+      },
+    }),
+    JSON.stringify({
+      type: "turn_context",
+      payload: {
+        model: "codex-auto-review",
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          model_context_window: 200,
+          total_token_usage: {
+            input_tokens: 177000,
+            cache_read_input_tokens: 493000,
+            output_tokens: 4000,
+          },
+          last_token_usage: {
+            total_tokens: 674000,
+          },
+        },
+      },
+    }),
+  ].join("\n");
+
+  const parsed = parseCodexRolloutJsonl(text, "rollout-auto-review");
+  expect(parsed.cwd).toBe("/tmp/worktree");
+  expect(parsed.threadId).toBe("auto-review-thread");
+  expect(parsed.entries).toEqual([]);
+  expect(aggregateUsage(parsed.entries)).toEqual([]);
+  expect(priceForModel("codex-auto-review")).toBeNull();
+});
+
+test("parseCodexRolloutJsonl keeps normal usage before codex-auto-review turns", () => {
+  const text = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        cwd: "/tmp/worktree",
+        model: "gpt-5.5",
+        timestamp: "2026-07-05T00:00:00.000Z",
+        id: "mixed-thread",
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          model_context_window: 1_000,
+          total_token_usage: {
+            input_tokens: 200,
+            cache_read_input_tokens: 50,
+            output_tokens: 20,
+          },
+          last_token_usage: {
+            total_tokens: 270,
+          },
+        },
+      },
+    }),
+    JSON.stringify({
+      type: "turn_context",
+      payload: {
+        model: "codex-auto-review",
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          model_context_window: 1_000,
+          total_token_usage: {
+            input_tokens: 500,
+            cache_read_input_tokens: 200,
+            output_tokens: 40,
+          },
+          last_token_usage: {
+            total_tokens: 740,
+          },
+        },
+      },
+    }),
+  ].join("\n");
+
+  const parsed = parseCodexRolloutJsonl(text, "rollout-mixed");
+  expect(parsed.entries).toHaveLength(1);
+  expect(parsed.entries[0]).toMatchObject({
+    message_id: "rollout-mixed",
+    model: "gpt-5.5",
+    input_tokens: 150,
+    cache_read_input_tokens: 50,
+    output_tokens: 20,
+    context_usage_percent: 27,
+  });
+});
+
+test("parseCodexRolloutJsonl subtracts ignored cumulative usage before later normal turns", () => {
+  const text = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        cwd: "/tmp/worktree",
+        model: "gpt-5.5",
+        timestamp: "2026-07-05T00:00:00.000Z",
+        id: "mixed-thread",
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 200,
+            cache_read_input_tokens: 50,
+            output_tokens: 20,
+          },
+        },
+      },
+    }),
+    JSON.stringify({
+      type: "turn_context",
+      payload: {
+        model: "codex-auto-review",
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 500,
+            cache_read_input_tokens: 200,
+            output_tokens: 40,
+          },
+        },
+      },
+    }),
+    JSON.stringify({
+      type: "turn_context",
+      payload: {
+        model: "gpt-5.5",
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 550,
+            cache_read_input_tokens: 210,
+            output_tokens: 45,
+          },
+        },
+      },
+    }),
+  ].join("\n");
+
+  const parsed = parseCodexRolloutJsonl(text, "rollout-mixed");
+  expect(parsed.entries).toHaveLength(1);
+  expect(parsed.entries[0]).toMatchObject({
+    model: "gpt-5.5",
+    input_tokens: 190,
+    cache_read_input_tokens: 60,
+    output_tokens: 25,
+  });
+});
+
 test("priceForModel prices gpt-5.3-codex-spark without breaking the gpt-5.4-mini/gpt-5.4 order", () => {
   expect(priceForModel("gpt-5.3-codex-spark")).toMatchObject({
     input: 1.75,
