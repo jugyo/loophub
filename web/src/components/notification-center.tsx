@@ -31,14 +31,13 @@ import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
 const READ_GRACE_MS = 10_000;
 
 function kindIcon(kind: Notification["kind"]) {
-  if (kind === "implementation_done") return CheckCircle2;
+  if (kind === "merge_ready") return CheckCircle2;
   if (kind === "over_budget") return CircleDollarSign;
   return AlertTriangle;
 }
 
 function kindTone(kind: Notification["kind"]): string {
-  if (kind === "implementation_done")
-    return "text-emerald-700 dark:text-emerald-300";
+  if (kind === "merge_ready") return "text-emerald-700 dark:text-emerald-300";
   if (kind === "over_budget") return "text-amber-700 dark:text-amber-300";
   return "text-rose-700 dark:text-rose-300";
 }

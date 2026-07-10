@@ -35,9 +35,11 @@ export interface OpenPullSummaryRow {
 export interface OpenPullSweepRow {
   issue_id: number;
   repo_id: number;
+  repo_full_name: string;
   number: number;
   author: string;
   head_ref: string;
+  base_ref: string;
   head_sha: string | null;
   local_path: string;
 }
@@ -209,8 +211,9 @@ export function listOpenPullsForRepo(repoId: number): OpenPullSummaryRow[] {
 export function openPulls(): OpenPullSweepRow[] {
   return db
     .query(
-      `SELECT i.id AS issue_id, i.repo_id, i.number, i.author,
-              p.head_ref, p.head_sha, r.local_path
+      `SELECT i.id AS issue_id, i.repo_id, r.full_name AS repo_full_name,
+              i.number, i.author,
+              p.head_ref, p.base_ref, p.head_sha, r.local_path
        FROM issues i
        JOIN pulls p ON p.issue_id = i.id
        JOIN repos r ON r.id = i.repo_id

@@ -120,8 +120,10 @@ export interface ReviewGate {
   allTopicsPassed: boolean;
 }
 
-export function computeReviewGate(issueId: number): ReviewGate {
-  const p = getPull(issueId)!;
+export function computeReviewGate(
+  issueId: number,
+  currentHeadSha: string | null = getPull(issueId)!.head_sha,
+): ReviewGate {
   // ASC order (listReviews) → the last write per topic wins = latest substantive
   // review for that topic.
   const latestByTopic = new Map<string | null, ReviewRow>();
@@ -138,7 +140,7 @@ export function computeReviewGate(issueId: number): ReviewGate {
     // PASS that went stale (head moved past the reviewed commit) needs a
     // re-review; passes with no recorded head_sha (pre-tracking) can't be
     // determined stale, so they count as passing.
-    if (r.head_sha && p.head_sha && r.head_sha !== p.head_sha)
+    if (r.head_sha && currentHeadSha && r.head_sha !== currentHeadSha)
       return { reviewed: true, allTopicsPassed: false };
   }
   return { reviewed: true, allTopicsPassed: true };

@@ -587,7 +587,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id        INTEGER NOT NULL REFERENCES repos(id),
   kind           TEXT NOT NULL
-                   CHECK (kind IN ('implementation_done', 'over_budget', 'human_attention')),
+                   CHECK (kind IN ('merge_ready', 'over_budget', 'human_attention')),
   title          TEXT NOT NULL,
   body           TEXT NOT NULL,
   resource_kind  TEXT NOT NULL CHECK (resource_kind IN ('issue', 'pull', 'repo')),
@@ -602,6 +602,19 @@ CREATE INDEX IF NOT EXISTS idx_notifications_read_created
   ON notifications(read_at, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_notifications_repo
   ON notifications(repo_id, id);
+
+-- Last observed mergeable state per open PR. transition_count advances only when a PR enters
+-- clean; it becomes the durable notification source key, so repeated sweeps are idempotent while
+-- a later non-clean -> clean transition can notify again.
+CREATE TABLE IF NOT EXISTS notification_merge_ready_states (
+  repo_id           INTEGER NOT NULL REFERENCES repos(id),
+  pull_number       INTEGER NOT NULL,
+  state             TEXT NOT NULL
+                      CHECK (state IN ('clean', 'conflict', 'no_commits', 'blocked', 'unknown')),
+  transition_count  INTEGER NOT NULL DEFAULT 0,
+  updated_at        TEXT NOT NULL,
+  PRIMARY KEY (repo_id, pull_number)
+);
 
 CREATE TABLE IF NOT EXISTS notification_cursors (
   scope     TEXT PRIMARY KEY,
@@ -707,6 +720,48 @@ function columnExists(table: string, column: string): boolean {
   } catch {
     return false;
   }
+}
+
+// #1142 replaces the ready-for-review `implementation_done` alert with a true merge-ready
+// transition. SQLite cannot alter a CHECK constraint in place, so rebuild this small derived table
+// once and discard legacy implementation alerts: those rows were produced by the retired signal
+// and do not prove that their PRs were actually merge-ready.
+const notificationsTable = db
+  .query(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'notifications'`,
+  )
+  .get() as { sql: string } | null;
+if (notificationsTable && !notificationsTable.sql.includes("'merge_ready'")) {
+  db.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE notifications RENAME TO notifications_legacy;
+    CREATE TABLE notifications (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_id         INTEGER NOT NULL REFERENCES repos(id),
+      kind            TEXT NOT NULL
+                        CHECK (kind IN ('merge_ready', 'over_budget', 'human_attention')),
+      title           TEXT NOT NULL,
+      body            TEXT NOT NULL,
+      resource_kind   TEXT NOT NULL CHECK (resource_kind IN ('issue', 'pull', 'repo')),
+      resource_number INTEGER,
+      source_key      TEXT NOT NULL UNIQUE,
+      herdr_pane_id   TEXT,
+      read_at         TEXT,
+      created_at      TEXT NOT NULL
+    );
+    INSERT INTO notifications
+      (id, repo_id, kind, title, body, resource_kind, resource_number, source_key,
+       herdr_pane_id, read_at, created_at)
+    SELECT id, repo_id, kind, title, body, resource_kind, resource_number, source_key,
+           herdr_pane_id, read_at, created_at
+    FROM notifications_legacy
+    WHERE kind IN ('over_budget', 'human_attention');
+    DROP TABLE notifications_legacy;
+    CREATE INDEX idx_notifications_read_created
+      ON notifications(read_at, created_at, id);
+    CREATE INDEX idx_notifications_repo ON notifications(repo_id, id);
+    COMMIT;
+  `);
 }
 
 tryExec("ALTER TABLE pulls ADD COLUMN head_sha TEXT");

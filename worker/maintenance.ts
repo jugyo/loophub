@@ -1,5 +1,11 @@
 import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
-import { events, scheduledTasks, sessions, terminal } from "../core/service.ts";
+import {
+  events,
+  notifications,
+  scheduledTasks,
+  sessions,
+  terminal,
+} from "../core/service.ts";
 import { sweepPullUpdates } from "../core/watcher.ts";
 import { workerLog } from "./logger.ts";
 
@@ -168,8 +174,10 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
     const startedAt = logLoopStarted("pull sweep");
     try {
       const emitted = await sweepPullUpdates();
+      const mergeReady = await notifications.sweepMergeReady();
       logLoopCompleted("pull sweep", startedAt, {
         emitted_events: emitted.length,
+        created_notifications: mergeReady.created.length,
       });
     } catch (err) {
       logLoopFailed("pull sweep", startedAt, err);

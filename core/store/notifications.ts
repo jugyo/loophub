@@ -1,7 +1,8 @@
 import { db, now } from "../db.ts";
+import type { MergeableState } from "../mergeable.ts";
 
 export type NotificationKind =
-  | "implementation_done"
+  | "merge_ready"
   | "over_budget"
   | "human_attention";
 export type NotificationResourceKind = "issue" | "pull" | "repo";
@@ -154,6 +155,41 @@ export interface NotificationSourceCursors {
   reviews: number;
 }
 
+export interface MergeReadyStateRow {
+  state: MergeableState;
+  transition_count: number;
+}
+
+export function recordMergeReadyState(
+  repoId: number,
+  pullNumber: number,
+  state: MergeableState,
+): MergeReadyStateRow {
+  const updatedAt = now();
+  db.query(
+    `INSERT INTO notification_merge_ready_states
+       (repo_id, pull_number, state, transition_count, updated_at)
+     VALUES (?, ?, ?, CASE WHEN ? = 'clean' THEN 1 ELSE 0 END, ?)
+     ON CONFLICT(repo_id, pull_number) DO UPDATE SET
+       state = excluded.state,
+       transition_count = notification_merge_ready_states.transition_count +
+         CASE
+           WHEN notification_merge_ready_states.state <> 'clean' AND excluded.state = 'clean'
+             THEN 1
+           ELSE 0
+         END,
+       updated_at = excluded.updated_at
+     WHERE notification_merge_ready_states.state <> excluded.state`,
+  ).run(repoId, pullNumber, state, state, updatedAt);
+  return db
+    .query(
+      `SELECT state, transition_count
+       FROM notification_merge_ready_states
+       WHERE repo_id = ? AND pull_number = ?`,
+    )
+    .get(repoId, pullNumber) as MergeReadyStateRow;
+}
+
 export function notificationSourceHighWatermarks(): NotificationSourceCursors {
   const events = db
     .query(`SELECT COALESCE(MAX(id), 0) AS id FROM events`)
@@ -193,21 +229,6 @@ export function listNotificationSignalRows(
     .query(
       `SELECT * FROM (
          SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
-                'implementation_done' AS kind,
-                'ready:' || r.id || ':' || i.number || ':' || e.id AS source_key,
-                e.created_at AS created_at
-         FROM events e
-         JOIN repos r ON r.id = e.repo_id
-         JOIN issues i ON i.repo_id = r.id
-          AND i.kind = 'pull'
-          AND i.number = json_extract(e.payload, '$.number')
-         JOIN pulls p ON p.issue_id = i.id
-         WHERE e.type = 'pull_request.ready_for_review'
-           AND e.id > ?
-           AND e.id <= ?
-           AND p.merged = 0
-         UNION ALL
-         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
                 'over_budget' AS kind,
                 'cost:' || r.id || ':' || i.number || ':' || e.id AS source_key,
                 e.created_at AS created_at
@@ -245,8 +266,6 @@ export function listNotificationSignalRows(
        ORDER BY signals.created_at ASC`,
     )
     .all(
-      cursors.events,
-      highWatermarks.events,
       cursors.events,
       highWatermarks.events,
       cursors.reviews,

@@ -57,7 +57,7 @@ test("notification signal sweep (type + id range, no repo_id) uses idx_events_ty
   // range for one event type (inlined as a literal, not a bound param) at a time across all
   // repos.
   const plan = explain(
-    `SELECT e.id FROM events e WHERE e.type = 'pull_request.ready_for_review' AND e.id > ? AND e.id <= ?`,
+    `SELECT e.id FROM events e WHERE e.type = 'dev.cost_stopped' AND e.id > ? AND e.id <= ?`,
     [0, 1000],
   );
   expect(plan).toContain("idx_events_type_id");

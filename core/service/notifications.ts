@@ -1,3 +1,4 @@
+import { sweepMergeReadyNotifications } from "../merge-ready-notifications.ts";
 import {
   actorFor,
   clampPerPage,
@@ -25,9 +26,6 @@ function repoOr404(repoName: string): S.Repo {
 }
 
 function bodyForSignal(signal: S.NotificationSignalRow): string {
-  if (signal.kind === "implementation_done") {
-    return `PR #${signal.number} is ready for review.`;
-  }
   if (signal.kind === "over_budget") {
     return `PR #${signal.number} was stopped after exceeding the configured budget.`;
   }
@@ -35,14 +33,13 @@ function bodyForSignal(signal: S.NotificationSignalRow): string {
 }
 
 function titleForSignal(signal: S.NotificationSignalRow): string {
-  if (signal.kind === "implementation_done") return "Implementation complete";
   if (signal.kind === "over_budget") return "Over budget";
   return "Human attention needed";
 }
 
 function assertKind(kind: unknown): S.NotificationKind {
   if (
-    kind === "implementation_done" ||
+    kind === "merge_ready" ||
     kind === "over_budget" ||
     kind === "human_attention"
   ) {
@@ -50,7 +47,7 @@ function assertKind(kind: unknown): S.NotificationKind {
   }
   throw new ServiceError(
     422,
-    "kind must be implementation_done, over_budget, or human_attention",
+    "kind must be merge_ready, over_budget, or human_attention",
   );
 }
 
@@ -123,6 +120,11 @@ function backfillFromSignals(): void {
   S.advanceNotificationSourceCursors(highWatermarks);
 }
 
+async function refreshGeneratedNotifications(): Promise<void> {
+  await sweepMergeReadyNotifications();
+  backfillFromSignals();
+}
+
 export const notifications = {
   send(
     repoName: string,
@@ -174,14 +176,14 @@ export const notifications = {
     return notificationJSON(row);
   },
 
-  list(opts: { limit?: number } = {}): any[] {
-    backfillFromSignals();
+  async list(opts: { limit?: number } = {}): Promise<any[]> {
+    await refreshGeneratedNotifications();
     const limit = clampPerPage(opts.limit, 50, MAX_LIST_PER_PAGE);
     return S.listNotifications({ limit }).map(notificationJSON);
   },
 
-  unreadCount(): { count: number } {
-    backfillFromSignals();
+  async unreadCount(): Promise<{ count: number }> {
+    await refreshGeneratedNotifications();
     return { count: S.unreadNotificationCount() };
   },
 
@@ -200,8 +202,8 @@ export const notifications = {
     return notificationJSON(row);
   },
 
-  readAll(sessionId?: string | null): { count: number } {
-    backfillFromSignals();
+  async readAll(sessionId?: string | null): Promise<{ count: number }> {
+    await refreshGeneratedNotifications();
     const rows = S.markAllNotificationsRead();
     const repoIds = new Set(rows.map((row) => row.repo_id));
     const actor = actorFor(sessionId);
@@ -210,4 +212,6 @@ export const notifications = {
     }
     return { count: rows.length };
   },
+
+  sweepMergeReady: sweepMergeReadyNotifications,
 };

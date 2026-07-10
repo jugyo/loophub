@@ -62,10 +62,10 @@ afterEach(() => {
 function makeNotification(overrides: Partial<Notification> = {}): Notification {
   return {
     id: 1,
-    kind: "implementation_done",
+    kind: "merge_ready",
     repo: { name: "me/proj" },
-    title: "Implementation complete",
-    body: "PR #12 is ready for review.",
+    title: "Ready to merge",
+    body: "PR #12 in me/proj is ready to merge.",
     resource: { kind: "pull", number: 12, href: "/r/me/proj/pulls/12" },
     herdr_pane_id: null,
     read_at: null,
@@ -114,13 +114,13 @@ describe("NotificationCenter", () => {
       },
     );
     const link = await screen.findByRole("link", {
-      name: /Implementation complete/,
+      name: /Ready to merge/,
     });
     fireEvent.click(link);
 
     expect(actions.read).toHaveBeenCalledWith(1, expect.any(Object));
     expect(router.state.location.pathname).toBe("/r/me/proj/pulls/12");
-    expect(screen.queryByText("Implementation complete")).toBeNull();
+    expect(screen.queryByText("Ready to merge")).toBeNull();
   });
 
   it("marks one notification read without navigating", async () => {
@@ -152,7 +152,7 @@ describe("NotificationCenter", () => {
     expect(
       document.querySelector('button[aria-label="Notifications"]'),
     ).toBeTruthy();
-    expect(screen.getByText("Implementation complete")).toBeTruthy();
+    expect(screen.getByText("Ready to merge")).toBeTruthy();
   });
 
   it("focuses Herdr without triggering notification navigation or read", async () => {

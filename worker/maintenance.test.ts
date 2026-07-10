@@ -99,7 +99,9 @@ test("pull sweep logs start and completion to stdout", async () => {
           ([message]) =>
             String(message).includes(
               "lh-worker: pull sweep completed duration_ms=",
-            ) && String(message).includes("emitted_events=0"),
+            ) &&
+            String(message).includes("emitted_events=0") &&
+            String(message).includes("created_notifications=0"),
         ),
       "pull sweep completion log",
     );
