@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
+import { scaleBand, scaleLinear } from "d3-scale";
 import { BarChart3, CalendarRange, Loader2, Rows3 } from "lucide-react";
-import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import type { ReactNode, RefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentSession,
   SessionLinkedTarget,
@@ -501,6 +502,39 @@ function Metric({
   );
 }
 
+// Fixed inner coordinate system for the chart SVG. The plot area (bars +
+// y-axis) is drawn in an SVG whose pixel width is measured from its container
+// so it stays responsive without horizontal scroll (#1077); the fallback width
+// keeps rendering deterministic where the container reports 0 (tests / SSR).
+const CHART_PLOT_HEIGHT = 260;
+const CHART_MARGIN = { top: 8, right: 8, bottom: 4, left: 56 };
+const CHART_FALLBACK_WIDTH = 720;
+const CHART_MIN_BAR_HEIGHT = 2;
+const CHART_MARKER_HEIGHT = 2;
+const COLOR_PRIMARY = "hsl(var(--primary))";
+const COLOR_UNKNOWN = "hsl(var(--muted-foreground))";
+const COLOR_GRID = "hsl(var(--border))";
+
+function useContainerWidth(
+  fallback: number,
+): [RefObject<HTMLDivElement>, number] {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(fallback);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const next = el.clientWidth;
+      if (next > 0) setWidth(next);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, width];
+}
+
 function CostChart({
   buckets,
   agentCosts,
@@ -510,19 +544,37 @@ function CostChart({
   agentCosts: AgentCost[];
   mode: ChartMode;
 }) {
+  const [containerRef, width] = useContainerWidth(CHART_FALLBACK_WIDTH);
   const maxCost = Math.max(
     0,
     ...buckets.map((bucket) =>
       mode === "total" ? barCostValue(bucket.total) : knownAgentCost(bucket),
     ),
   );
-  const ticks = chartTicks(maxCost);
   const colorByAgent = new Map(
     agentCosts.map((agent, index) => [
       agent.key,
       AGENT_COLORS[index % AGENT_COLORS.length],
     ]),
   );
+
+  const innerWidth = Math.max(
+    0,
+    width - CHART_MARGIN.left - CHART_MARGIN.right,
+  );
+  const innerHeight =
+    CHART_PLOT_HEIGHT - CHART_MARGIN.top - CHART_MARGIN.bottom;
+  const xScale = scaleBand<string>()
+    .domain(buckets.map((bucket) => bucket.key))
+    .range([0, innerWidth])
+    .paddingInner(0.3)
+    .paddingOuter(0.15);
+  const yScale = scaleLinear()
+    .domain([0, maxCost > 0 ? maxCost : 1])
+    .range([innerHeight, 0])
+    .clamp(true);
+  const bandWidth = xScale.bandwidth();
+  const yTicks = maxCost > 0 ? yScale.ticks(4) : [0];
 
   return (
     <section className="mt-6">
@@ -546,59 +598,77 @@ function CostChart({
         aria-label={
           mode === "total" ? "Total cost trend" : "Agent cost comparison trend"
         }
-        className="mt-3 grid h-[300px] grid-cols-[4.5rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_1.75rem] rounded-md border bg-card p-4"
+        className="mt-3 rounded-md border bg-card p-4"
       >
+        <div ref={containerRef} className="w-full">
+          <svg
+            width={width}
+            height={CHART_PLOT_HEIGHT}
+            role="img"
+            className="block text-muted-foreground"
+          >
+            <g aria-hidden="true">
+              {yTicks.map((tick) => {
+                const y = CHART_MARGIN.top + yScale(tick);
+                return (
+                  <g key={tick}>
+                    <line
+                      x1={CHART_MARGIN.left}
+                      x2={CHART_MARGIN.left + innerWidth}
+                      y1={y}
+                      y2={y}
+                      stroke={COLOR_GRID}
+                      strokeOpacity={0.7}
+                    />
+                    <text
+                      x={CHART_MARGIN.left - 8}
+                      y={y}
+                      textAnchor="end"
+                      dominantBaseline="central"
+                      fontSize={11}
+                      fill="currentColor"
+                    >
+                      {formatCost(tick)}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+            {buckets.map((bucket) => {
+              const bandStart = xScale(bucket.key);
+              if (bandStart === undefined) return null;
+              const x = CHART_MARGIN.left + bandStart;
+              return mode === "total" ? (
+                <TotalBar
+                  key={bucket.key}
+                  bucket={bucket}
+                  x={x}
+                  width={bandWidth}
+                  yScale={yScale}
+                  innerHeight={innerHeight}
+                />
+              ) : (
+                <StackedBar
+                  key={bucket.key}
+                  bucket={bucket}
+                  x={x}
+                  width={bandWidth}
+                  yScale={yScale}
+                  innerHeight={innerHeight}
+                  colorByAgent={colorByAgent}
+                />
+              );
+            })}
+          </svg>
+        </div>
         <div
           aria-hidden="true"
-          className="relative row-start-1 flex h-full flex-col justify-between pr-3 text-right text-xs tabular-nums text-muted-foreground"
+          style={{
+            paddingLeft: CHART_MARGIN.left,
+            paddingRight: CHART_MARGIN.right,
+          }}
         >
-          {ticks.map((tick, index) => (
-            <div
-              key={`${tick}-${index}`}
-              className="-translate-y-1/2 first:translate-y-0"
-            >
-              {formatCost(tick)}
-            </div>
-          ))}
-        </div>
-        <div className="relative row-start-1 min-w-0">
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 flex flex-col justify-between"
-          >
-            {ticks.map((tick, index) => (
-              <div
-                key={`${tick}-${index}`}
-                className="border-t border-border/70"
-              />
-            ))}
-          </div>
-          <div className="relative z-10 grid h-full min-w-0 grid-flow-col auto-cols-fr items-end gap-1">
-            {buckets.map((bucket) => (
-              <div
-                key={bucket.key}
-                className="flex h-full min-w-0 items-end justify-center"
-              >
-                {mode === "total" ? (
-                  <ChartBar
-                    label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
-                    title={`${bucket.label}: ${costTitle(bucket.total)}`}
-                    height={barHeight(barCostValue(bucket.total), maxCost)}
-                    color="hsl(var(--primary))"
-                  />
-                ) : (
-                  <StackedChartBar
-                    bucket={bucket}
-                    maxCost={maxCost}
-                    colorByAgent={colorByAgent}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div aria-hidden="true" className="col-start-2 row-start-2 min-w-0">
-          <div className="grid h-full min-w-0 grid-flow-col auto-cols-fr gap-1 pt-2">
+          <div className="grid min-w-0 grid-flow-col auto-cols-fr gap-1 pt-2">
             {buckets.map((bucket, index) => (
               <div
                 key={bucket.key}
@@ -617,9 +687,182 @@ function CostChart({
   );
 }
 
-function chartTicks(maxCost: number): number[] {
-  if (maxCost <= 0) return [0, 0];
-  return [maxCost, maxCost * 0.75, maxCost * 0.5, maxCost * 0.25, 0];
+type CostYScale = (value: number) => number;
+
+// Height of a bar rising from the baseline to `value` on the y scale, floored so
+// non-zero (and unknown) costs stay visible even when tiny.
+function barPixelHeight(
+  value: number,
+  yScale: CostYScale,
+  innerHeight: number,
+  visible: boolean,
+): number {
+  const raw = innerHeight - yScale(value);
+  if (!visible) return 0;
+  return Math.max(CHART_MIN_BAR_HEIGHT, raw);
+}
+
+function TotalBar({
+  bucket,
+  x,
+  width,
+  yScale,
+  innerHeight,
+}: {
+  bucket: CostBucket;
+  x: number;
+  width: number;
+  yScale: CostYScale;
+  innerHeight: number;
+}) {
+  const value = barCostValue(bucket.total);
+  const visible = value > 0 || bucket.total.hasUnknownCost;
+  const height = barPixelHeight(value, yScale, innerHeight, visible);
+  const y = CHART_MARGIN.top + innerHeight - height;
+  return (
+    <g
+      role="img"
+      aria-label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
+    >
+      <title>{`${bucket.label}: ${costTitle(bucket.total)}`}</title>
+      {height > 0 ? (
+        <rect
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          rx={2}
+          fill={COLOR_PRIMARY}
+        />
+      ) : null}
+    </g>
+  );
+}
+
+function StackedBar({
+  bucket,
+  x,
+  width,
+  yScale,
+  innerHeight,
+  colorByAgent,
+}: {
+  bucket: CostBucket;
+  x: number;
+  width: number;
+  yScale: CostYScale;
+  innerHeight: number;
+  colorByAgent: Map<string, string>;
+}) {
+  const positiveAgents = bucket.agents.filter((agent) => agent.cost.cost > 0);
+  const zeroAgents = bucket.agents.filter(
+    (agent) => !agent.cost.hasUnknownCost && agent.cost.cost <= 0,
+  );
+  const unknownAgents = bucket.agents.filter(
+    (agent) => agent.cost.hasUnknownCost,
+  );
+  const knownTotal = positiveAgents.reduce(
+    (sum, agent) => sum + agent.cost.cost,
+    0,
+  );
+  const baseline = CHART_MARGIN.top + innerHeight;
+
+  // Stack positive known-cost agents from the baseline up using the shared y
+  // scale, so segment heights match the y-axis ticks.
+  let cursor = 0;
+  const segments = positiveAgents.map((agent) => {
+    const y0 = CHART_MARGIN.top + yScale(cursor);
+    cursor += agent.cost.cost;
+    const y1 = CHART_MARGIN.top + yScale(cursor);
+    return { agent, y: y1, height: Math.max(CHART_MIN_BAR_HEIGHT, y0 - y1) };
+  });
+  const stackTopY =
+    knownTotal > 0 ? CHART_MARGIN.top + yScale(knownTotal) : baseline;
+
+  return (
+    <g
+      role="img"
+      aria-label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
+    >
+      <title>{`${bucket.label}: ${costTitle(bucket.total)}`}</title>
+      {segments.map(({ agent, y, height }) => (
+        <rect
+          key={`known-${agent.key}`}
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill={colorByAgent.get(agent.key) ?? AGENT_COLORS[0]}
+          aria-label={`${bucket.label} ${agent.label}: ${formatCost(agent.cost.cost)}`}
+        >
+          <title>{`${bucket.label} ${agent.label}: ${formatCost(agent.cost.cost)}`}</title>
+        </rect>
+      ))}
+      {bucket.total.hasUnknownCost && knownTotal > 0 ? (
+        <rect
+          aria-hidden="true"
+          x={x}
+          y={stackTopY - CHART_MARKER_HEIGHT}
+          width={width}
+          height={CHART_MARKER_HEIGHT}
+          fill={COLOR_UNKNOWN}
+        />
+      ) : null}
+      {unknownAgents.map((agent, index) => {
+        const y = Math.max(
+          CHART_MARGIN.top,
+          stackTopY - CHART_MARKER_HEIGHT - index * (CHART_MARKER_HEIGHT + 1),
+        );
+        return (
+          <ChartMarker
+            key={`unknown-${agent.key}`}
+            x={x}
+            y={y}
+            width={width}
+            color={colorByAgent.get(agent.key) ?? COLOR_UNKNOWN}
+            label={`${bucket.label} ${agent.label}: ${costTitle(agent.cost)}`}
+          />
+        );
+      })}
+      {zeroAgents.map((agent, index) => (
+        <ChartMarker
+          key={`zero-${agent.key}`}
+          x={x}
+          y={baseline - CHART_MARKER_HEIGHT - index * (CHART_MARKER_HEIGHT + 1)}
+          width={width}
+          color={colorByAgent.get(agent.key) ?? AGENT_COLORS[0]}
+          label={`${bucket.label} ${agent.label}: ${formatCost(agent.cost.cost)}`}
+        />
+      ))}
+    </g>
+  );
+}
+
+function ChartMarker({
+  x,
+  y,
+  width,
+  color,
+  label,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  color: string;
+  label: string;
+}) {
+  return (
+    <rect
+      x={x}
+      y={y}
+      width={width}
+      height={CHART_MARKER_HEIGHT}
+      fill={color}
+      aria-label={label}
+    >
+      <title>{label}</title>
+    </rect>
+  );
 }
 
 function shouldShowBucketLabel(index: number, count: number): boolean {
@@ -652,165 +895,6 @@ function knownAgentCost(bucket: CostBucket): number {
   return bucket.agents.reduce(
     (sum, agent) => (agent.cost.cost <= 0 ? sum : sum + agent.cost.cost),
     0,
-  );
-}
-
-function StackedChartBar({
-  bucket,
-  maxCost,
-  colorByAgent,
-}: {
-  bucket: CostBucket;
-  maxCost: number;
-  colorByAgent: Map<string, string>;
-}) {
-  const knownAgents = bucket.agents.filter(
-    (agent) => !agent.cost.hasUnknownCost || agent.cost.cost > 0,
-  );
-  const positiveKnownAgents = knownAgents.filter(
-    (agent) => agent.cost.cost > 0,
-  );
-  const zeroKnownAgents = knownAgents.filter((agent) => agent.cost.cost <= 0);
-  const unknownAgents = bucket.agents.filter(
-    (agent) => agent.cost.hasUnknownCost,
-  );
-  const knownTotal = positiveKnownAgents.reduce(
-    (sum, agent) => sum + agent.cost.cost,
-    0,
-  );
-  const height = barHeight(knownTotal, maxCost);
-
-  if (knownAgents.length === 0) {
-    if (unknownAgents.length > 0) {
-      return (
-        <div
-          aria-label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
-          title={`${bucket.label}: ${costTitle(bucket.total)}`}
-          className="relative w-full max-w-10 min-w-[3px] rounded-t"
-          style={{
-            height,
-            backgroundColor: "hsl(var(--muted-foreground))",
-          }}
-        >
-          {unknownAgents.map((agent, index) => (
-            <ChartLineMarker
-              key={`unknown-${agent.key}`}
-              label={`${bucket.label} ${agent.label}: ${costTitle(agent.cost)}`}
-              offset={index}
-              color={
-                colorByAgent.get(agent.key) ?? "hsl(var(--muted-foreground))"
-              }
-            />
-          ))}
-        </div>
-      );
-    }
-
-    return (
-      <div
-        aria-label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
-        title={`${bucket.label}: ${costTitle(bucket.total)}`}
-        className="w-full max-w-10 min-w-[3px]"
-        style={{ height }}
-      />
-    );
-  }
-
-  return (
-    <div
-      aria-label={`${bucket.label}: ${formatCostTotal(bucket.total)}`}
-      title={`${bucket.label}: ${costTitle(bucket.total)}`}
-      className="relative w-full max-w-10 min-w-[3px] rounded-t"
-      style={{
-        height,
-        boxShadow:
-          unknownAgents.length > 0
-            ? "inset 0 2px 0 hsl(var(--muted-foreground))"
-            : undefined,
-      }}
-    >
-      {zeroKnownAgents.map((agent, index) => (
-        <ChartLineMarker
-          key={`zero-${agent.key}`}
-          label={`${bucket.label} ${agent.label}: ${formatCost(agent.cost.cost)}`}
-          offset={index}
-          anchor="bottom"
-          color={colorByAgent.get(agent.key) ?? AGENT_COLORS[0]}
-        />
-      ))}
-      {unknownAgents.map((agent, index) => (
-        <ChartLineMarker
-          key={`unknown-${agent.key}`}
-          label={`${bucket.label} ${agent.label}: ${costTitle(agent.cost)}`}
-          offset={index}
-          color={colorByAgent.get(agent.key) ?? "hsl(var(--muted-foreground))"}
-        />
-      ))}
-      {knownTotal > 0 ? (
-        <div className="flex h-full w-full flex-col-reverse overflow-hidden rounded-t">
-          {positiveKnownAgents.map((agent) => (
-            <div
-              key={`known-${agent.key}`}
-              aria-label={`${bucket.label} ${agent.label}: ${formatCost(agent.cost.cost)}`}
-              title={`${bucket.label} ${agent.label}: ${formatCost(agent.cost.cost)}`}
-              className="min-h-[2px] w-full"
-              style={{
-                height: `${(agent.cost.cost / knownTotal) * 100}%`,
-                backgroundColor: colorByAgent.get(agent.key) ?? AGENT_COLORS[0],
-              }}
-            />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ChartLineMarker({
-  label,
-  offset,
-  anchor = "top",
-  color,
-}: {
-  label: string;
-  offset: number;
-  anchor?: "top" | "bottom";
-  color: string;
-}) {
-  return (
-    <div
-      aria-label={label}
-      title={label}
-      className={cn(
-        "absolute inset-x-0 h-0",
-        anchor === "bottom" ? "bottom-0" : "top-0",
-      )}
-      style={{
-        [anchor]: `${offset * 3}px`,
-        borderTop: `2px solid ${color}`,
-      }}
-    />
-  );
-}
-
-function ChartBar({
-  label,
-  title = label,
-  height,
-  color,
-}: {
-  label: string;
-  title?: string;
-  height: string;
-  color: string;
-}) {
-  return (
-    <div
-      aria-label={label}
-      title={title}
-      className="w-full max-w-10 min-w-[3px] rounded-t"
-      style={{ height, backgroundColor: color }}
-    />
   );
 }
 
