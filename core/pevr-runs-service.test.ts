@@ -93,21 +93,31 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   expect(result.pr.number).toBeGreaterThan(issue.number);
   expect(existsSync(result.worktree)).toBe(true);
   expect(existsSync(result.lock_path)).toBe(true);
-  expect(readFileSync(result.parent.system_prompt_path, "utf8")).toContain(
-    "step: parent",
+  const parentSystemPrompt = readFileSync(
+    result.parent.system_prompt_path,
+    "utf8",
   );
+  expect(parentSystemPrompt).toContain("step: parent");
+  // The parent contract is the caller-provided template rendered verbatim — no
+  // milestone boundary is appended anymore.
+  expect(parentSystemPrompt).toContain("# Parent");
+  expect(parentSystemPrompt).not.toContain("V1 launch-step boundary");
   expect(result.parent.user_prompt).toContain(`run: ${result.run.id}`);
+  // The parent knows the domain identifiers (used for escalation); the child never does.
+  expect(result.parent.user_prompt).toContain(`issue: #${result.issue.number}`);
+  expect(result.parent.user_prompt).toContain(`pr: #${result.pr.number}`);
   expect(result.parent.user_prompt).toContain(
     `lh workflow run update --repo '${repo.full_name}' --run ${result.run.id} --step plan --status running`,
   );
   expect(result.parent.user_prompt).toContain(
     `lh workflow launch-step --repo '${repo.full_name}' --run ${result.run.id} --step plan`,
   );
+  // Transitions are driven only by step status — the run context must say so.
+  expect(result.parent.user_prompt).toContain(
+    `lh workflow step status ${result.run.id} --repo '${repo.full_name}' --json`,
+  );
   expect(result.parent.user_prompt).not.toContain(
     "11111111-1111-4111-8111-111111111111",
-  );
-  expect(readFileSync(result.parent.system_prompt_path, "utf8")).toContain(
-    "V1 launch-step boundary",
   );
   expect(result.parent.user_prompt).not.toMatch(/^\/lh-/m);
 
@@ -776,3 +786,37 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   // The latest verdict summary survives staleness for the parent's rework read.
   expect(stale.steps.verify.latest_verdict?.event).toBe("pass");
 }, 20_000);
+
+test("parent contract template specifies transitions, rework, and escalation", () => {
+  const contract = readFileSync(
+    join(import.meta.dirname, "pevr", "contracts", "parent.md"),
+    "utf8",
+  );
+  // AC: allowed LoopHub / herdr commands are listed.
+  expect(contract).toContain("lh workflow run update");
+  expect(contract).toContain("lh workflow launch-step");
+  expect(contract).toContain("lh workflow step status");
+  expect(contract).toContain("herdr pane run");
+  // AC: transitions are driven only by step status, not pane output / PR markers.
+  expect(contract).toContain(
+    "Transitions are driven only by `lh workflow step status`",
+  );
+  expect(contract).toMatch(/never use pane output|PR body marker/i);
+  // AC: the full step transition table.
+  expect(contract).toContain("plan complete");
+  expect(contract).toContain("execute complete");
+  expect(contract).toContain("verdict `pass`");
+  expect(contract).toContain("verdict `request_changes`");
+  expect(contract).toContain("--status completed");
+  // AC: rework increments the count, caps at 3, and restarts Execute; Verify is always fresh.
+  expect(contract).toContain("--rework-count");
+  expect(contract).toContain("would exceed 3");
+  expect(contract).toContain("--step execute");
+  expect(contract).toContain("Verify as a fresh child");
+  // AC: escalation via issue comment + inbox + run blocked.
+  expect(contract).toContain("lh issue comment");
+  expect(contract).toContain("lh inbox send");
+  expect(contract).toContain("--status blocked");
+  // AC: skill independence — the contract forbids slash commands.
+  expect(contract).toContain("Do not call slash commands");
+});

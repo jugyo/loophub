@@ -243,17 +243,35 @@ function shellArg(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+// Strip control characters (incl. newlines) and Unicode bidi-override/isolate chars, then collapse
+// whitespace, so a value shown as prose in an agent prompt cannot inject fake prompt structure or
+// spoof the displayed text. Used for the human/agent-readable copies of the repo/workflow names; the
+// shell-quoted forms passed to commands keep the real value. The unsafe-char class mirrors
+// normalizeAgentName in core/terminal/terminal-launch.ts (C0/C1 controls + DEL + bidi controls).
+function inlineText(value: string): string {
+  return value
+    .replace(/[\x00-\x1F\x7F-\x9F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parentUserPrompt(input: {
   runId: number;
   repoName: string;
   workflowName: string;
+  issueNumber: number;
+  prNumber: number;
   inputFiles: Array<{ path: string; description: string }>;
   baseRef: string;
 }): string {
+  const repo = shellArg(input.repoName);
   return [
     "## Run context",
     `run: ${input.runId}`,
-    `workflow: ${input.workflowName}`,
+    `workflow: ${inlineText(input.workflowName)}`,
+    `repo: ${inlineText(input.repoName)} (pass --repo ${repo} on every lh command)`,
+    `issue: #${input.issueNumber}`,
+    `pr: #${input.prNumber}`,
     "current step: plan",
     "",
     "## Inputs",
@@ -261,24 +279,13 @@ function parentUserPrompt(input: {
     `worktree: . (cwd. base branch: ${input.baseRef})`,
     "",
     "## Instruction",
-    "This v1 flow supports run display updates and Plan step launch, but step output, step status, and placement are out of scope for this milestone.",
-    `Mark the Plan step running with \`lh workflow run update --repo ${shellArg(input.repoName)} --run ${input.runId} --step plan --status running\`.`,
-    `Then launch the Plan child with \`lh workflow launch-step --repo ${shellArg(input.repoName)} --run ${input.runId} --step plan\`.`,
-    "After the Plan child is launched, report the launch and stop. Do not invoke slash-style commands.",
+    "Orchestrate this run through Plan -> Execute -> Verify -> Reflect as described in your contract.",
+    `Drive every transition from \`lh workflow step status ${input.runId} --repo ${repo} --json\`; never use pane output or PR body markers to decide a step is complete.`,
+    "Start now:",
+    `1. Mark Plan running: \`lh workflow run update --repo ${repo} --run ${input.runId} --step plan --status running\``,
+    `2. Launch the Plan child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step plan\``,
+    "Then follow your contract's transition table, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
     "",
-  ].join("\n");
-}
-
-function parentContractForStart(template: string): string {
-  return [
-    template,
-    "",
-    "## V1 launch-step boundary",
-    "",
-    "This LoopHub build implements run start, run update, and child launch only.",
-    "Do not call `lh workflow step status` or `lh workflow step output` in this milestone.",
-    "Use the `--repo` arguments shown in the user prompt when calling `lh workflow run update` or `lh workflow launch-step`.",
-    "Launch the Plan child, report the launch, and stop.",
   ].join("\n");
 }
 
@@ -807,7 +814,7 @@ export const pevrRuns = {
       const systemPromptPath = writeParentContract(
         run.id,
         renderPevrContract({
-          template: parentContractForStart(input.parentContract),
+          template: input.parentContract,
           step: "parent",
           worktreePath: wtPath,
           baseBranch: pull.base_ref,
@@ -845,6 +852,8 @@ export const pevrRuns = {
             runId: run.id,
             repoName: r.full_name,
             workflowName: workflow.name,
+            issueNumber: issue.number,
+            prNumber: opened.number,
             inputFiles,
             baseRef: pull.base_ref,
           }),
