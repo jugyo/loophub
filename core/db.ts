@@ -303,6 +303,20 @@ CREATE TABLE IF NOT EXISTS session_usage_samples (
 CREATE INDEX IF NOT EXISTS idx_session_usage_samples_session_time
   ON session_usage_samples(session_id, observed_at);
 
+-- Persisted history of the live aggregate tokens/sec shown in the topbar (#1123). Unlike
+-- session_usage_samples (pruned at ~600s), these rows survive so the historical rate time series can be
+-- reconstructed after the source samples are gone. One row per sweep holds the same aggregate rate the
+-- topbar displays (calculateTokensPerSecond over in-progress dev sessions); retention is bounded by a
+-- longer prune window instead of the sample TTL.
+CREATE TABLE IF NOT EXISTS session_rate_history (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  tokens_per_second REAL NOT NULL,
+  observed_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_rate_history_time
+  ON session_rate_history(observed_at);
+
 CREATE TABLE IF NOT EXISTS session_usage_subagents (
   session_id                  TEXT NOT NULL REFERENCES agent_sessions(id),
   source_id                   TEXT NOT NULL,

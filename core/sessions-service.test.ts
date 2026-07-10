@@ -645,6 +645,88 @@ test("sessions.costSummary limits token rate to in-progress dev sessions", async
   ).toBeUndefined();
 });
 
+test("sessions.recordLiveRateSample persists rate that survives the 600s sample prune", async () => {
+  const sessionId = "99999999-0000-0000-0000-0000000000ad";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    runtime: "claude-code",
+    kind: "dev",
+  });
+  const issue = svc.issues.create("me/proj", { title: "rate history pr" });
+  await svc.dev.openPr(
+    "me/proj",
+    {
+      issue: issue.number,
+      head: `loophub/issue-${issue.number}`,
+      base: "main",
+    },
+    sessionId,
+  );
+  D.db.run(
+    `INSERT INTO session_usage_samples
+       (session_id, total_tokens, token_delta, observed_at)
+     VALUES (?, ?, ?, ?), (?, ?, ?, ?)`,
+    [
+      sessionId,
+      100,
+      0,
+      "2026-07-11T00:00:30Z",
+      sessionId,
+      250,
+      150,
+      "2026-07-11T00:01:00Z",
+    ],
+  );
+
+  const now = new Date("2026-07-11T00:01:00Z");
+  expect(svc.sessions.recordLiveRateSample(now)).toBe(5);
+
+  const history = D.db
+    .query(
+      `SELECT tokens_per_second, observed_at FROM session_rate_history ORDER BY observed_at`,
+    )
+    .all() as { tokens_per_second: number; observed_at: string }[];
+  expect(history).toHaveLength(1);
+  expect(history[0].tokens_per_second).toBe(5);
+
+  // Simulate the 600s sample prune running ~10 min later, once both source samples have aged out: it
+  // must actually delete them (proving the source rate data is gone) while the persisted rate history
+  // survives in its separate, prune-resistant table.
+  const laterPrune = new Date("2026-07-11T00:11:30Z");
+  D.db.run(`DELETE FROM session_usage_samples WHERE observed_at < ?`, [
+    new Date(laterPrune.getTime() - 600 * 1000).toISOString(),
+  ]);
+  const samplesLeft = D.db
+    .query(
+      `SELECT COUNT(*) AS n FROM session_usage_samples WHERE session_id = ?`,
+    )
+    .get(sessionId) as { n: number };
+  expect(samplesLeft.n).toBe(0);
+  const remaining = D.db
+    .query(`SELECT COUNT(*) AS n FROM session_rate_history`)
+    .get() as { n: number };
+  expect(remaining.n).toBe(1);
+});
+
+test("sessions.recordLiveRateSample writes nothing when there is no active rate", () => {
+  const before = (
+    D.db.query(`SELECT COUNT(*) AS n FROM session_rate_history`).get() as {
+      n: number;
+    }
+  ).n;
+  expect(
+    svc.sessions.recordLiveRateSample(new Date("2027-01-01T00:00:00Z")),
+  ).toBeNull();
+  const after = (
+    D.db.query(`SELECT COUNT(*) AS n FROM session_rate_history`).get() as {
+      n: number;
+    }
+  ).n;
+  expect(after).toBe(before);
+});
+
 test("sessions.usageSync does not repeatedly backfill unavailable Claude context", () => {
   const sessionId = "99999999-0000-0000-0000-0000000000bf";
   svc.sessions.register({

@@ -149,6 +149,19 @@ function recordUsageSample(sessionId: string): void {
   S.pruneSessionUsageSamples(secondsAgo(new Date(), 600));
 }
 
+// Retention for the persisted live-rate history (#1123). Longer than the 600s sample TTL so a rate time
+// series survives, bounded so the table cannot grow without limit.
+const RATE_HISTORY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+
+// The live aggregate tokens/sec the topbar shows: same input as costSummary (in-progress dev sessions
+// over the trailing 60s). Returned so both costSummary and the persisted history use one definition.
+function liveTokensPerSecond(now: Date): number | null {
+  return calculateTokensPerSecond(
+    S.listRecentInProgressSessionUsageSamples(secondsAgo(now, 60)),
+    { now },
+  );
+}
+
 function saveClaudeSubagentUsage(
   sessionId: string,
   subagents: ClaudeSubagentTranscript[],
@@ -356,10 +369,7 @@ export const sessions = {
 
   costSummary(now = new Date()): AgentCostSummaryWire[] {
     const starts = periodStarts(now);
-    const rate = calculateTokensPerSecond(
-      S.listRecentInProgressSessionUsageSamples(secondsAgo(now, 60)),
-      { now },
-    );
+    const rate = liveTokensPerSecond(now);
     const byAgent = new Map<CodingAgent, AgentCostSummaryWire>();
     for (const agent of CODING_AGENTS) {
       byAgent.set(agent, { agent, month: 0, week: 0, day: 0 });
@@ -379,6 +389,21 @@ export const sessions = {
     const out = CODING_AGENTS.map((agent) => byAgent.get(agent)!);
     if (rate != null) out[0].tokens_per_second = rate;
     return out;
+  },
+
+  // Persist the current live aggregate tokens/sec (the same value the topbar shows) into the
+  // prune-resistant session_rate_history table (#1123), then trim rows past the retention window. Called
+  // periodically by the worker's usage sweep. Skips writing when there is no active rate so the table
+  // isn't padded with placeholder rows. Returns the recorded rate, or null when nothing was written.
+  recordLiveRateSample(now = new Date()): number | null {
+    const rate = liveTokensPerSecond(now);
+    if (rate == null) return null;
+    S.recordSessionRateHistory({
+      tokensPerSecond: rate,
+      observedAt: now.toISOString(),
+    });
+    S.pruneSessionRateHistory(secondsAgo(now, RATE_HISTORY_RETENTION_SECONDS));
+    return rate;
   },
 
   get(id: string) {

@@ -144,6 +144,40 @@ export function pruneSessionUsageSamples(before: string): void {
   db.run(`DELETE FROM session_usage_samples WHERE observed_at < ?`, [before]);
 }
 
+export interface SessionRateHistoryRow {
+  id: number;
+  tokens_per_second: number;
+  observed_at: string;
+}
+
+// Persist one live aggregate tokens/sec value (#1123). Unlike session_usage_samples this is not pruned
+// at the 600s sample TTL, so callers can reconstruct the historical rate time series later.
+export function recordSessionRateHistory(input: {
+  tokensPerSecond: number;
+  observedAt?: string;
+}): void {
+  db.run(
+    `INSERT INTO session_rate_history (tokens_per_second, observed_at)
+     VALUES (?, ?)`,
+    [input.tokensPerSecond, input.observedAt ?? now()],
+  );
+}
+
+export function pruneSessionRateHistory(before: string): void {
+  db.run(`DELETE FROM session_rate_history WHERE observed_at < ?`, [before]);
+}
+
+export function listSessionRateHistory(since: string): SessionRateHistoryRow[] {
+  return db
+    .query(
+      `SELECT id, tokens_per_second, observed_at
+       FROM session_rate_history
+       WHERE observed_at >= ?
+       ORDER BY observed_at, id`,
+    )
+    .all(since) as SessionRateHistoryRow[];
+}
+
 export function listRecentSessionUsageSamples(
   since: string,
 ): SessionUsageSample[] {
