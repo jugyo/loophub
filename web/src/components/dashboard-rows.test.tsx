@@ -890,7 +890,7 @@ describe("agent cost display (#783)", () => {
         })}
       />,
     );
-    expect(await screen.findByText("12.3k · $5")).toBeTruthy();
+    expect(await screen.findByTitle("12.3k · $5")).toBeTruthy();
   });
 
   it("omits cost when the PR's usage has an unknown cost", async () => {
@@ -933,40 +933,54 @@ describe("agent cost display (#783)", () => {
         })}
       />,
     );
-    expect(await screen.findByText("1k · $10")).toBeTruthy();
+    expect(await screen.findByTitle("1k · $10")).toBeTruthy();
   });
 
-  it("keeps warning and critical cost totals as muted metadata", async () => {
+  it("uses the existing over-budget state to highlight only the cost", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
         repo="proj"
         issue={makeIssue({
           linked_pull_requests: [
-            makePull({ total_tokens: 1000, cost_usd: 10.01 }),
+            makePull({
+              total_tokens: 1000,
+              cost_usd: 10.01,
+              cost_stopped: true,
+            }),
           ],
         })}
       />,
     );
-    const warning = await screen.findByText("1k · $10");
-    expect(warning.className).toContain("text-muted-foreground/70");
-    expect(warning.className).not.toContain("text-amber-600");
+    const row = await screen.findByLabelText("Linked PR #10: A PR");
+    const cost = row.querySelector<HTMLElement>("[data-linked-pull-cost]");
+    expect(cost?.textContent).toBe("$10");
+    expect(cost?.className).toContain("text-amber-700");
+    expect(cost?.className).toContain("dark:text-amber-300");
+    expect(screen.getByText("1k").className).not.toContain("text-amber");
+  });
 
-    cleanup();
+  it("keeps a non-over-budget cost muted regardless of its amount", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
         repo="proj"
         issue={makeIssue({
           linked_pull_requests: [
-            makePull({ total_tokens: 1000, cost_usd: 30.01 }),
+            makePull({
+              total_tokens: 1000,
+              cost_usd: 30.01,
+              cost_stopped: false,
+            }),
           ],
         })}
       />,
     );
-    const critical = await screen.findByText("1k · $30");
-    expect(critical.className).toContain("text-muted-foreground/70");
-    expect(critical.className).not.toContain("text-destructive");
+    const row = await screen.findByLabelText("Linked PR #10: A PR");
+    const cost = row.querySelector<HTMLElement>("[data-linked-pull-cost]");
+    expect(cost?.textContent).toBe("$30");
+    expect(cost?.className).toContain("text-muted-foreground/70");
+    expect(cost?.className).not.toContain("text-amber");
   });
 });
 

@@ -33,6 +33,8 @@ const STATUS_TEXT: Record<StatusWordTone, string> = {
   muted: "text-muted-foreground",
 };
 
+const COST_STOPPED_TEXT = "text-amber-700 dark:text-amber-300";
+
 const WORK_BASIS_LABEL: Record<
   NonNullable<LinkedPull["work_duration_total"]>["basis"],
   string
@@ -80,19 +82,42 @@ function formatDurationLargest(seconds?: number): string | null {
   return `${Math.floor(total / unit)}${suffix}`;
 }
 
-function Metrics({ pull }: { pull: LinkedPull }) {
+function Metrics({
+  pull,
+  overBudget,
+}: {
+  pull: LinkedPull;
+  overBudget: boolean;
+}) {
+  const cost = formatCostRounded(pull.cost_usd);
+  const duration = formatDurationLargest(pull.work_duration_total?.seconds);
   const parts = [
-    pull.total_tokens != null ? formatTokenCountShort(pull.total_tokens) : null,
-    formatCostRounded(pull.cost_usd),
-    formatDurationLargest(pull.work_duration_total?.seconds),
-  ].filter((part): part is string => !!part);
+    pull.total_tokens != null
+      ? { kind: "tokens", label: formatTokenCountShort(pull.total_tokens) }
+      : null,
+    cost ? { kind: "cost", label: cost } : null,
+    duration ? { kind: "duration", label: duration } : null,
+  ].filter((part): part is { kind: string; label: string } => part !== null);
   if (parts.length === 0) return null;
   return (
     <span
       className="ml-auto shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground/70 tabular-nums"
-      title={parts.join(" · ")}
+      title={parts.map(({ label }) => label).join(" · ")}
     >
-      {parts.join(" · ")}
+      {parts.map(({ kind, label }, index) => (
+        <span key={kind}>
+          {index > 0 ? " · " : null}
+          <span
+            data-linked-pull-cost={kind === "cost" ? "" : undefined}
+            className={cn(
+              kind === "cost" &&
+                (overBudget ? COST_STOPPED_TEXT : "text-muted-foreground/70"),
+            )}
+          >
+            {label}
+          </span>
+        </span>
+      ))}
     </span>
   );
 }
@@ -326,14 +351,17 @@ export function LinkedPullSummaryRow({
         </span>
         {costStopped ? (
           <span
-            className="flex shrink-0 items-center gap-1 font-medium text-amber-700 dark:text-amber-300"
+            className={cn(
+              "flex shrink-0 items-center gap-1 font-medium",
+              COST_STOPPED_TEXT,
+            )}
             title={costStopped.title}
           >
             <TriangleAlert className="size-3" aria-hidden="true" />
             over budget
           </span>
         ) : null}
-        <Metrics pull={pull} />
+        <Metrics pull={pull} overBudget={costStopped !== null} />
       </div>
       {popoverOpen ? (
         <PullPopover

@@ -249,6 +249,8 @@ describe("IssueDetail", () => {
       linked_pull_request: {
         ...issue.linked_pull_request!,
         cost_stopped: true,
+        total_tokens: 1000,
+        cost_usd: 10.01,
       },
     }));
 
@@ -256,12 +258,31 @@ describe("IssueDetail", () => {
       "Stopped — agent cost limit exceeded",
     );
     expect(badge.textContent).toContain("over budget");
+    const row = screen.getByLabelText("Linked PR #30: ui2: issue detail PR");
+    const cost = row.querySelector<HTMLElement>("[data-linked-pull-cost]");
+    expect(cost?.textContent).toBe("$10");
+    expect(cost?.className).toContain("text-amber-700");
+    expect(cost?.className).toContain("dark:text-amber-300");
   });
 
-  it("shows no cost-stopped badge on a linked PR that was never stopped", async () => {
-    renderDetail();
-    await screen.findByText("PR #30");
+  it("keeps the linked-PR cost muted when it was never stopped", async () => {
+    renderDetail(() => ({
+      ...issue,
+      linked_pull_request: {
+        ...issue.linked_pull_request!,
+        cost_stopped: false,
+        total_tokens: 1000,
+        cost_usd: 30.01,
+      },
+    }));
+    const row = await screen.findByLabelText(
+      "Linked PR #30: ui2: issue detail PR",
+    );
     expect(screen.queryByText("over budget")).toBeNull();
+    const cost = row.querySelector<HTMLElement>("[data-linked-pull-cost]");
+    expect(cost?.textContent).toBe("$30");
+    expect(cost?.className).toContain("text-muted-foreground/70");
+    expect(cost?.className).not.toContain("text-amber");
   });
 
   it("hides the linked-PR summary when no PR is linked", async () => {
