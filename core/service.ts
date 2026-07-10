@@ -19,8 +19,6 @@ export { inbox } from "./service/inbox.ts";
 export { issues } from "./service/issues.ts";
 export { labels } from "./service/labels.ts";
 export { notifications } from "./service/notifications.ts";
-export { pevrRuns } from "./service/pevr-runs.ts";
-export { pevrWorkflows } from "./service/pevr-workflows.ts";
 export { pulls } from "./service/pulls.ts";
 export type { Repo } from "./service/repos.ts";
 export { repos } from "./service/repos.ts";
@@ -53,5 +51,7 @@ export type {
   TerminalLaunchInput,
 } from "./service/terminal.ts";
 export { terminal } from "./service/terminal.ts";
+export { workflowRuns } from "./service/workflow-runs.ts";
+export { workflows } from "./service/workflows.ts";
 export type { WorktreePlanEntry } from "./service/worktrees.ts";
 export { worktrees } from "./service/worktrees.ts";

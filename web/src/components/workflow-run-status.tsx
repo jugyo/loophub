@@ -1,6 +1,6 @@
-// PEVR run state section for issue / PR detail (#1008). Shows the display state of the run linked
+// Workflow run state section for issue / PR detail (#1008). Shows the display state of the run linked
 // to an issue / PR: workflow name, status, current step (as a Plan → Execute → Verify → Reflect
-// tracker), and rework count. The run row is the display-state source (docs/pevr-workflow.ja.md
+// tracker), and rework count. The run row is the display-state source (docs/workflow.ja.md
 // §5.2) — this deliberately does not re-derive step-completion truth (that stays with
 // `workflow step status` / artifact placement).
 //
@@ -11,14 +11,14 @@
 // Renders nothing when the issue / PR has no run.
 
 import { Link } from "@tanstack/react-router";
-import type { PevrRunState } from "@/api/types";
+import type { WorkflowRunState } from "@/api/types";
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 
 const STEP_ORDER = ["plan", "execute", "verify", "reflect"] as const;
-type PevrStep = (typeof STEP_ORDER)[number];
+type WorkflowStep = (typeof STEP_ORDER)[number];
 
-const STEP_LABELS: Record<PevrStep, string> = {
+const STEP_LABELS: Record<WorkflowStep, string> = {
   plan: "Plan",
   execute: "Execute",
   verify: "Verify",
@@ -35,18 +35,18 @@ const STATUS_META: Record<
   stopped: { label: "Stopped", tone: "closed" },
 };
 
-function isStep(value: string): value is PevrStep {
+function isStep(value: string): value is WorkflowStep {
   return (STEP_ORDER as readonly string[]).includes(value);
 }
 
-export function PevrRunStatusSection({
+export function WorkflowRunStatusSection({
   owner,
   repo,
   state,
 }: {
   owner: string;
   repo: string;
-  state: PevrRunState | null | undefined;
+  state: WorkflowRunState | null | undefined;
 }) {
   if (!state) return null;
 
@@ -61,7 +61,9 @@ export function PevrRunStatusSection({
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-medium text-muted-foreground">PEVR run</h2>
+      <h2 className="text-sm font-medium text-muted-foreground">
+        Workflow run
+      </h2>
       <div className="flex flex-col gap-3 rounded-md border bg-muted/30 p-4">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Badge tone={status.tone}>{status.label}</Badge>
@@ -85,8 +87,8 @@ export function PevrRunStatusSection({
         {completed ? (
           <p className="text-sm text-muted-foreground">
             {state.current_step === "reflect"
-              ? "Reflect complete — the PEVR run finished all steps."
-              : "The PEVR run is completed."}
+              ? "Reflect complete — the Workflow run finished all steps."
+              : "The Workflow run is completed."}
           </p>
         ) : null}
 
@@ -98,7 +100,7 @@ export function PevrRunStatusSection({
   );
 }
 
-// The four fixed PEVR steps in order, highlighting the run's current step. This reflects the run
+// The four fixed Workflow steps in order, highlighting the run's current step. This reflects the run
 // row's current_step only — it is not a claim that earlier steps are "complete" (that truth lives
 // in `workflow step status`), so steps before the current one are shown as passed-through, not
 // verified-done. A completed run marks steps up to and including current_step as past (normally
@@ -156,7 +158,7 @@ function BlockedNotice({
 }: {
   owner: string;
   repo: string;
-  state: PevrRunState;
+  state: WorkflowRunState;
 }) {
   const verdict = state.latest_verdict;
   return (

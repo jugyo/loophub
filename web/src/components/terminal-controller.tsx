@@ -36,12 +36,12 @@ export interface OpenTerminalOptions {
     | "scheduled-task-create"
     | "resume"
     | "github-pr-export"
-    | "pevr-run";
+    | "workflow-run";
   issueNumber?: number;
   prNumber?: number;
-  // Saved PEVR workflow id for a "pevr-run" launch (#1007) — the issue-detail Start workflow
+  // Saved workflow id for a "workflow-run" launch (#1007) — the issue-detail Start workflow
   // dropdown sets it; maps to `lh workflow start ... --workflow-id <id>`.
-  pevrWorkflowId?: number;
+  workflowId?: number;
   session?: string;
   cwd?: string;
   // One-shot agent/model override for an issue-dev (Build) launch (#637) — the issue-detail Build
@@ -115,7 +115,7 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
           workflow: opts.workflow,
           issueNumber: opts.issueNumber,
           prNumber: opts.prNumber,
-          pevrWorkflowId: opts.pevrWorkflowId,
+          workflowId: opts.workflowId,
           session: opts.session,
           cwd: opts.cwd,
           agent: opts.agent,

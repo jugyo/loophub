@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
-  createPevrWorkflow,
   createRepo,
-  deletePevrWorkflow,
+  createWorkflow,
+  deleteWorkflow,
   eventsUrl,
   listIssues,
   listLabels,
-  listPevrWorkflows,
   listRepos,
+  listWorkflows,
   rpc,
-  updatePevrWorkflow,
+  updateWorkflow,
 } from "./client";
 
 afterEach(() => {
@@ -138,21 +138,21 @@ describe("typed methods translate to contract params", () => {
     });
   });
 
-  it("PEVR workflow helpers call the pevrWorkflows RPC methods", async () => {
+  it("workflow helpers call the workflows RPC methods", async () => {
     let fetchMock = mockRpc([]);
-    await listPevrWorkflows();
+    await listWorkflows();
     expect(lastRequest(fetchMock).body).toMatchObject({
-      method: "pevrWorkflows/list",
+      method: "workflows/list",
       params: {},
     });
 
     fetchMock = mockRpc({ id: 1 });
-    await createPevrWorkflow(
+    await createWorkflow(
       { name: "standard", plan_prompt: "", execute_prompt: "go" },
       "session-1",
     );
     expect(lastRequest(fetchMock).body).toMatchObject({
-      method: "pevrWorkflows/create",
+      method: "workflows/create",
       params: {
         name: "standard",
         plan_prompt: "",
@@ -162,13 +162,13 @@ describe("typed methods translate to contract params", () => {
     });
 
     fetchMock = mockRpc({ ok: true });
-    await updatePevrWorkflow(
+    await updateWorkflow(
       "standard",
       { new_name: "standard-v2", plan_prompt: "plan" },
       "session-1",
     );
     expect(lastRequest(fetchMock).body).toMatchObject({
-      method: "pevrWorkflows/update",
+      method: "workflows/update",
       params: {
         name: "standard",
         new_name: "standard-v2",
@@ -178,9 +178,9 @@ describe("typed methods translate to contract params", () => {
     });
 
     fetchMock = mockRpc({ ok: true });
-    await deletePevrWorkflow("standard", "session-1");
+    await deleteWorkflow("standard", "session-1");
     expect(lastRequest(fetchMock).body).toMatchObject({
-      method: "pevrWorkflows/delete",
+      method: "workflows/delete",
       params: { name: "standard", session_id: "session-1" },
     });
   });

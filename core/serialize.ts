@@ -1244,9 +1244,9 @@ export function scheduledTaskRunJSON(
   };
 }
 
-// A PEVR workflow definition (#997): a global prompt bundle for the fixed
+// A workflow definition (#997): a global prompt bundle for the fixed
 // Plan/Execute/Verify/Reflect workflow. Prompt strings are plain markdown and may be empty.
-export interface PevrWorkflowWire {
+export interface WorkflowWire {
   id: number;
   name: string;
   description: string;
@@ -1258,7 +1258,7 @@ export interface PevrWorkflowWire {
   updated_at: string;
 }
 
-export function pevrWorkflowJSON(row: S.PevrWorkflowRow): PevrWorkflowWire {
+export function workflowJSON(row: S.WorkflowRow): WorkflowWire {
   return {
     id: row.id,
     name: row.name,
@@ -1272,18 +1272,18 @@ export function pevrWorkflowJSON(row: S.PevrWorkflowRow): PevrWorkflowWire {
   };
 }
 
-// PEVR run display state (#1008): the current step / status / rework count of the run linked to an
+// Workflow run display state (#1008): the current step / status / rework count of the run linked to an
 // issue or PR, for issue / PR detail. The run row is the display-state source (docs §5.2) — the
 // *truth* of step completion stays with `workflow step status` (artifact placement + head), which
 // this wire deliberately does not re-derive. `latest_verdict` surfaces the human-readable reason
 // behind a rework / block; the web derives the issue-comment / inbox links from `issue_number`.
-export interface PevrRunVerdictSummaryWire {
+export interface WorkflowRunVerdictSummaryWire {
   event: "pass" | "request_changes";
   summary: string;
   findings_count: number;
 }
 
-export interface PevrRunStateWire {
+export interface WorkflowRunStateWire {
   id: number;
   workflow_id: number | null;
   workflow_name: string | null;
@@ -1294,14 +1294,14 @@ export interface PevrRunStateWire {
   pr_number: number;
   created_at: string;
   updated_at: string;
-  latest_verdict: PevrRunVerdictSummaryWire | null;
+  latest_verdict: WorkflowRunVerdictSummaryWire | null;
 }
 
-export function pevrRunStateJSON(input: {
-  run: S.PevrRunRow;
+export function workflowRunStateJSON(input: {
+  run: S.WorkflowRunRow;
   workflowName: string | null;
-  latestVerdict: PevrRunVerdictSummaryWire | null;
-}): PevrRunStateWire {
+  latestVerdict: WorkflowRunVerdictSummaryWire | null;
+}): WorkflowRunStateWire {
   const { run } = input;
   return {
     id: run.id,

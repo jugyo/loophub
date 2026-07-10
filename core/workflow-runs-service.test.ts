@@ -13,8 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-const HOME = mkdtempSync(join(tmpdir(), "lh-pevr-runs-"));
-const REPO_PATH = mkdtempSync(join(tmpdir(), "lh-pevr-runs-repo-"));
+const HOME = mkdtempSync(join(tmpdir(), "lh-workflow-runs-"));
+const REPO_PATH = mkdtempSync(join(tmpdir(), "lh-workflow-runs-repo-"));
 process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
@@ -56,7 +56,7 @@ afterAll(() => {
 });
 
 test("start prepares a run, launch-step writes Plan inputs, and run update mirrors state", async () => {
-  const repo = S.createRepo("me/pevr-run", REPO_PATH);
+  const repo = S.createRepo("me/workflow-run", REPO_PATH);
   const issue = S.createIssue(
     repo.id,
     "issue",
@@ -64,7 +64,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     "## Acceptance criteria\n- [ ] It works\n",
     "me",
   );
-  const workflow = S.createPevrWorkflow({
+  const workflow = S.createWorkflow({
     name: "standard",
     description: "",
     planPrompt: "Prefer a small plan.",
@@ -73,7 +73,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     reflectPrompt: "",
   });
 
-  const result = await svc.pevrRuns.start(
+  const result = await svc.workflowRuns.start(
     repo.full_name,
     {
       issue: issue.number,
@@ -121,7 +121,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   );
   expect(result.parent.user_prompt).not.toMatch(/^\/lh-/m);
 
-  const row = S.getPevrRun(result.run.id);
+  const row = S.getWorkflowRun(result.run.id);
   expect(row).toMatchObject({
     status: "running",
     current_step: "plan",
@@ -131,7 +131,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     S.primaryDevSessionForPull(S.getIssue(repo.id, result.pr.number)!.id),
   ).toBe("11111111-1111-4111-8111-111111111111");
 
-  const updated = svc.pevrRuns.update(
+  const updated = svc.workflowRuns.update(
     repo.full_name,
     {
       run: result.run.id,
@@ -149,7 +149,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   });
   S.createComment(issue.id, "reviewer", "Use the latest design note.");
 
-  const launched = await svc.pevrRuns.launchStep(
+  const launched = await svc.workflowRuns.launchStep(
     repo.full_name,
     {
       run: result.run.id,
@@ -176,7 +176,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
       path: join(
         realpathSync(HOME),
         "runs",
-        "pevr",
+        "workflow",
         String(result.run.id),
         "plan",
         "input",
@@ -192,13 +192,13 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     "Use the latest design note.",
   );
   expect(launched.herdr.argv).toContain("--split");
-  expect(launched.herdr.command).toContain("LOOPHUB_PEVR_RUN=");
-  expect(launched.herdr.command).toContain("LOOPHUB_PEVR_STEP='plan'");
+  expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_RUN=");
+  expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_STEP='plan'");
 
-  expect(JSON.parse(S.getPevrRun(result.run.id)!.step_sessions_json)).toEqual(
-    {},
-  );
-  svc.pevrRuns.confirmStepLaunch(
+  expect(
+    JSON.parse(S.getWorkflowRun(result.run.id)!.step_sessions_json),
+  ).toEqual({});
+  svc.workflowRuns.confirmStepLaunch(
     repo.full_name,
     {
       run: result.run.id,
@@ -208,7 +208,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     },
     result.session_id,
   );
-  const runAfterLaunch = S.getPevrRun(result.run.id)!;
+  const runAfterLaunch = S.getWorkflowRun(result.run.id)!;
   expect(JSON.parse(runAfterLaunch.step_sessions_json)).toEqual({
     plan: [launched.session_id],
   });
@@ -225,7 +225,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     expect.objectContaining({
       phase: "plan",
       direction: "down",
-      body: expect.stringContaining("Launch PEVR plan step"),
+      body: expect.stringContaining("Launch Workflow plan step"),
     }),
   ]);
   const headSha = gitAt(result.worktree, ["rev-parse", "HEAD"]);
@@ -236,7 +236,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
         type: "plan",
         summary: "Use the existing service layer.",
         changes: [{ area: "core/service", description: "Add launch-step" }],
-        reuse: ["pevr inputs"],
+        reuse: ["workflow inputs"],
         out_of_scope: ["step output"],
         verification: "Run focused tests",
       },
@@ -262,7 +262,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     ],
   ] as const) {
     const contentJson = JSON.stringify(artifact);
-    S.createPevrArtifact({
+    S.createWorkflowArtifact({
       runId: result.run.id,
       step,
       type: artifact.type,
@@ -273,7 +273,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     });
   }
 
-  const executeLaunch = await svc.pevrRuns.launchStep(
+  const executeLaunch = await svc.workflowRuns.launchStep(
     repo.full_name,
     {
       run: result.run.id,
@@ -292,7 +292,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     "# Execute",
   );
 
-  const verifyLaunch = await svc.pevrRuns.launchStep(
+  const verifyLaunch = await svc.workflowRuns.launchStep(
     repo.full_name,
     {
       run: result.run.id,
@@ -308,7 +308,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     ]),
   );
 
-  const reflectLaunch = await svc.pevrRuns.launchStep(
+  const reflectLaunch = await svc.workflowRuns.launchStep(
     repo.full_name,
     {
       run: result.run.id,
@@ -323,15 +323,15 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
 });
 
 test("step output validates, stamps, places, readies, and retries an accepted artifact", async () => {
-  const repo = S.getRepo("me", "pevr-run")!;
+  const repo = S.getRepo("me", "workflow-run")!;
   const issue = S.createIssue(
     repo.id,
     "issue",
-    "Place PEVR output",
+    "Place Workflow output",
     "## Acceptance criteria\n- [ ] It is placed\n",
     "me",
   );
-  const workflow = S.createPevrWorkflow({
+  const workflow = S.createWorkflow({
     name: "output-test",
     description: "",
     planPrompt: "",
@@ -339,7 +339,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
     verifyPrompt: "",
     reflectPrompt: "",
   });
-  const started = await svc.pevrRuns.start(
+  const started = await svc.workflowRuns.start(
     repo.full_name,
     {
       issue: issue.number,
@@ -350,15 +350,15 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   );
 
   await expect(
-    svc.pevrRuns.stepOutput(
+    svc.workflowRuns.stepOutput(
       repo.full_name,
       { run: started.run.id, step: "plan", content: "{" },
       started.session_id,
     ),
   ).rejects.toMatchObject({ status: 422 });
-  expect(S.latestPevrArtifact(started.run.id, "plan")).toBeNull();
+  expect(S.latestWorkflowArtifact(started.run.id, "plan")).toBeNull();
   await expect(
-    svc.pevrRuns.stepOutput(
+    svc.workflowRuns.stepOutput(
       repo.full_name,
       {
         run: started.run.id,
@@ -375,7 +375,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
       started.session_id,
     ),
   ).rejects.toMatchObject({ status: 422 });
-  expect(S.latestPevrArtifact(started.run.id, "execute")).toBeNull();
+  expect(S.latestWorkflowArtifact(started.run.id, "execute")).toBeNull();
 
   const plan = JSON.stringify({
     type: "plan",
@@ -390,12 +390,12 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   const artifactDirectory = join(
     HOME,
     "runs",
-    "pevr",
+    "workflow",
     String(started.run.id),
     "artifacts",
   );
   symlinkSync(outsideArtifacts, artifactDirectory);
-  const placedPlan = await svc.pevrRuns.stepOutput(
+  const placedPlan = await svc.workflowRuns.stepOutput(
     repo.full_name,
     { run: started.run.id, step: "plan", content: plan },
     started.session_id,
@@ -429,27 +429,29 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
     ],
   });
   await expect(
-    svc.pevrRuns.stepOutput(
+    svc.workflowRuns.stepOutput(
       repo.full_name,
       { run: started.run.id, step: "execute", content: report },
       started.session_id,
     ),
   ).rejects.toThrow();
-  const accepted = S.latestPevrArtifact(started.run.id, "execute")!;
-  expect(S.getPevrPlacement(accepted.id)).toBeNull();
-  const firstClaim = S.claimPevrPlacement(accepted.id);
+  const accepted = S.latestWorkflowArtifact(started.run.id, "execute")!;
+  expect(S.getWorkflowPlacement(accepted.id)).toBeNull();
+  const firstClaim = S.claimWorkflowPlacement(accepted.id);
   expect(firstClaim).toEqual(expect.any(String));
-  expect(S.claimPevrPlacement(accepted.id)).toBeNull();
+  expect(S.claimWorkflowPlacement(accepted.id)).toBeNull();
   D.db.run(
-    `UPDATE pevr_placement_claims SET claimed_at = ? WHERE artifact_id = ?`,
+    `UPDATE workflow_placement_claims SET claimed_at = ? WHERE artifact_id = ?`,
     ["2000-01-01T00:00:00.000Z", accepted.id],
   );
-  const replacementClaim = S.claimPevrPlacement(accepted.id);
+  const replacementClaim = S.claimWorkflowPlacement(accepted.id);
   expect(replacementClaim).toEqual(expect.any(String));
-  expect(S.renewPevrPlacementClaim(accepted.id, replacementClaim!)).toBe(true);
-  S.releasePevrPlacementClaim(accepted.id, firstClaim!);
-  expect(S.claimPevrPlacement(accepted.id)).toBeNull();
-  S.releasePevrPlacementClaim(accepted.id, replacementClaim!);
+  expect(S.renewWorkflowPlacementClaim(accepted.id, replacementClaim!)).toBe(
+    true,
+  );
+  S.releaseWorkflowPlacementClaim(accepted.id, firstClaim!);
+  expect(S.claimWorkflowPlacement(accepted.id)).toBeNull();
+  S.releaseWorkflowPlacementClaim(accepted.id, replacementClaim!);
 
   writeFileSync(join(started.worktree, missingScreenshot), "png bytes");
   writeFileSync(
@@ -458,7 +460,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   );
   gitAt(started.worktree, ["add", "README.md"]);
   gitAt(started.worktree, ["commit", "-m", "Advance before retry"]);
-  const retried = await svc.pevrRuns.stepOutput(
+  const retried = await svc.workflowRuns.stepOutput(
     repo.full_name,
     { run: started.run.id, step: "execute", content: report },
     started.session_id,
@@ -468,8 +470,10 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   const pull = await svc.pulls.get(repo.full_name, started.pr.number);
   expect(pull.draft).toBe(false);
   expect(pull.body).toContain("![later.png](/attachments/");
-  expect(S.getPevrPlacement(accepted.id)?.target_kind).toBe("pr-body-report");
-  const duplicate = await svc.pevrRuns.stepOutput(
+  expect(S.getWorkflowPlacement(accepted.id)?.target_kind).toBe(
+    "pr-body-report",
+  );
+  const duplicate = await svc.workflowRuns.stepOutput(
     repo.full_name,
     { run: started.run.id, step: "execute", content: report },
     started.session_id,
@@ -477,7 +481,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   expect(duplicate.artifact_id).not.toBe(accepted.id);
   expect(duplicate.retried).toBe(false);
 
-  const verifyLaunch = await svc.pevrRuns.launchStep(
+  const verifyLaunch = await svc.workflowRuns.launchStep(
     repo.full_name,
     {
       run: started.run.id,
@@ -493,7 +497,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   gitAt(started.worktree, ["add", "README.md"]);
   gitAt(started.worktree, ["commit", "-m", "Advance head"]);
   expect(gitAt(started.worktree, ["rev-parse", "HEAD"])).not.toBe(pinnedHead);
-  const secondVerifyLaunch = await svc.pevrRuns.launchStep(
+  const secondVerifyLaunch = await svc.workflowRuns.launchStep(
     repo.full_name,
     {
       run: started.run.id,
@@ -503,7 +507,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
     },
     started.session_id,
   );
-  const confirmed = svc.pevrRuns.confirmStepLaunch(
+  const confirmed = svc.workflowRuns.confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -514,7 +518,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
     },
     started.session_id,
   );
-  svc.pevrRuns.confirmStepLaunch(
+  svc.workflowRuns.confirmStepLaunch(
     repo.full_name,
     {
       run: started.run.id,
@@ -525,7 +529,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
     },
     started.session_id,
   );
-  const verdict = await svc.pevrRuns.stepOutput(
+  const verdict = await svc.workflowRuns.stepOutput(
     repo.full_name,
     {
       run: started.run.id,
@@ -541,12 +545,12 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   );
   expect(verdict.head_sha).toBe(pinnedHead);
   expect(verdict.placement.kind).toBe("review");
-  D.db.run(`UPDATE pevr_step_pins SET head_sha = ? WHERE session_id = ?`, [
+  D.db.run(`UPDATE workflow_step_pins SET head_sha = ? WHERE session_id = ?`, [
     "not-a-sha",
     secondVerifyLaunch.session_id,
   ]);
   await expect(
-    svc.pevrRuns.stepOutput(
+    svc.workflowRuns.stepOutput(
       repo.full_name,
       {
         run: started.run.id,
@@ -562,7 +566,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
     ),
   ).rejects.toMatchObject({ status: 422 });
 
-  D.db.run(`UPDATE pevr_step_pins SET head_sha = ? WHERE session_id = ?`, [
+  D.db.run(`UPDATE workflow_step_pins SET head_sha = ? WHERE session_id = ?`, [
     secondVerifyLaunch.head_sha,
     secondVerifyLaunch.session_id,
   ]);
@@ -572,7 +576,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
     summary: "Same JSON from another session.",
     findings: [],
   });
-  const firstSessionArtifact = S.createPevrArtifact({
+  const firstSessionArtifact = S.createWorkflowArtifact({
     runId: started.run.id,
     step: "verify",
     type: "verdict",
@@ -581,7 +585,7 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
     submittedBy: confirmed.session_id,
     dedupeKey: "cross-session-a",
   });
-  const secondSessionVerdict = await svc.pevrRuns.stepOutput(
+  const secondSessionVerdict = await svc.workflowRuns.stepOutput(
     repo.full_name,
     {
       run: started.run.id,
@@ -593,23 +597,23 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   expect(secondSessionVerdict.artifact_id).not.toBe(firstSessionArtifact.id);
   expect(secondSessionVerdict.head_sha).toBe(secondVerifyLaunch.head_sha);
 
-  svc.pevrRuns.update(
+  svc.workflowRuns.update(
     repo.full_name,
     { run: started.run.id, status: "stopped" },
     started.session_id,
   );
   await expect(
-    svc.pevrRuns.stepOutput(
+    svc.workflowRuns.stepOutput(
       repo.full_name,
       { run: started.run.id, step: "reflect", content: "{}" },
       started.session_id,
     ),
   ).rejects.toMatchObject({ status: 422 });
-  expect(S.latestPevrArtifact(started.run.id, "reflect")).toBeNull();
+  expect(S.latestWorkflowArtifact(started.run.id, "reflect")).toBeNull();
 }, 15_000);
 
 test("agentless e2e: step output drives all four steps to complete, then head advance makes them stale", async () => {
-  const repo = S.getRepo("me", "pevr-run")!;
+  const repo = S.getRepo("me", "workflow-run")!;
   const issue = S.createIssue(
     repo.id,
     "issue",
@@ -617,7 +621,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
     "## Acceptance criteria\n- [ ] It completes\n",
     "me",
   );
-  const workflow = S.createPevrWorkflow({
+  const workflow = S.createWorkflow({
     name: "agentless",
     description: "",
     planPrompt: "",
@@ -626,7 +630,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
     reflectPrompt: "",
   });
   const session = "33333333-3333-4333-8333-333333333333";
-  const started = await svc.pevrRuns.start(
+  const started = await svc.workflowRuns.start(
     repo.full_name,
     {
       issue: issue.number,
@@ -637,7 +641,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   );
 
   // Nothing placed yet: every step incomplete.
-  const initial = await svc.pevrRuns.status(repo.full_name, {
+  const initial = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
   });
   expect(initial.steps.plan.complete).toBe(false);
@@ -651,7 +655,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   const handoffsBefore = S.listHandoffs(repo.id, {
     prId: S.getIssue(repo.id, started.pr.number)!.id,
   }).length;
-  const dryRun = await svc.pevrRuns.stepInput(repo.full_name, {
+  const dryRun = await svc.workflowRuns.stepInput(repo.full_name, {
     run: started.run.id,
     step: "plan",
     contract: "# Plan contract\n{{step}} {{worktreePath}} {{baseBranch}}",
@@ -661,9 +665,9 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   expect(dryRun.input_files.map((f) => f.path)).toEqual([
     expect.stringContaining("/plan/input/task.md"),
   ]);
-  expect(JSON.parse(S.getPevrRun(started.run.id)!.step_sessions_json)).toEqual(
-    {},
-  );
+  expect(
+    JSON.parse(S.getWorkflowRun(started.run.id)!.step_sessions_json),
+  ).toEqual({});
   expect(
     S.listHandoffs(repo.id, {
       prId: S.getIssue(repo.id, started.pr.number)!.id,
@@ -671,7 +675,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   ).toBe(handoffsBefore);
 
   // Plan.
-  await svc.pevrRuns.stepOutput(
+  await svc.workflowRuns.stepOutput(
     repo.full_name,
     {
       run: started.run.id,
@@ -688,8 +692,8 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
     session,
   );
   expect(
-    (await svc.pevrRuns.status(repo.full_name, { run: started.run.id })).steps
-      .plan.complete,
+    (await svc.workflowRuns.status(repo.full_name, { run: started.run.id }))
+      .steps.plan.complete,
   ).toBe(true);
 
   // Execute needs a commit so the head is ahead of base.
@@ -697,7 +701,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   gitAt(started.worktree, ["add", "impl.txt"]);
   gitAt(started.worktree, ["commit", "-m", "Implement"]);
   const executeHead = gitAt(started.worktree, ["rev-parse", "HEAD"]);
-  await svc.pevrRuns.stepOutput(
+  await svc.workflowRuns.stepOutput(
     repo.full_name,
     {
       run: started.run.id,
@@ -712,13 +716,13 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
     },
     session,
   );
-  const afterExecute = await svc.pevrRuns.status(repo.full_name, {
+  const afterExecute = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
   });
   expect(afterExecute.steps.execute).toEqual({ complete: true, missing: [] });
 
   // Verify (submitted by the parent session, stamped at current head).
-  await svc.pevrRuns.stepOutput(
+  await svc.workflowRuns.stepOutput(
     repo.full_name,
     {
       run: started.run.id,
@@ -732,7 +736,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
     },
     session,
   );
-  const afterVerify = await svc.pevrRuns.status(repo.full_name, {
+  const afterVerify = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
   });
   expect(afterVerify.steps.verify.complete).toBe(true);
@@ -743,7 +747,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   });
 
   // Reflect.
-  await svc.pevrRuns.stepOutput(
+  await svc.workflowRuns.stepOutput(
     repo.full_name,
     {
       run: started.run.id,
@@ -758,7 +762,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
     },
     session,
   );
-  const allComplete = await svc.pevrRuns.status(repo.full_name, {
+  const allComplete = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
   });
   expect(Object.values(allComplete.steps).every((s) => s.complete)).toBe(true);
@@ -769,7 +773,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   gitAt(started.worktree, ["add", "impl.txt"]);
   gitAt(started.worktree, ["commit", "-m", "Advance head"]);
   expect(gitAt(started.worktree, ["rev-parse", "HEAD"])).not.toBe(executeHead);
-  const stale = await svc.pevrRuns.status(repo.full_name, {
+  const stale = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
   });
   expect(stale.steps.execute.complete).toBe(false);
@@ -789,7 +793,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
 
 test("parent contract template specifies transitions, rework, and escalation", () => {
   const contract = readFileSync(
-    join(import.meta.dirname, "pevr", "contracts", "parent.md"),
+    join(import.meta.dirname, "workflow", "contracts", "parent.md"),
     "utf8",
   );
   // AC: allowed LoopHub / herdr commands are listed.
@@ -822,9 +826,9 @@ test("parent contract template specifies transitions, rework, and escalation", (
 });
 
 test("stateForIssue / stateForPull expose run display state, or null when absent (#1008)", async () => {
-  const repo = S.createRepo("me/pevr-state", REPO_PATH);
+  const repo = S.createRepo("me/workflow-state", REPO_PATH);
   const issue = S.createIssue(repo.id, "issue", "Show run state", "body", "me");
-  const workflow = S.createPevrWorkflow({
+  const workflow = S.createWorkflow({
     name: "state-wf",
     description: "",
     planPrompt: "",
@@ -835,13 +839,15 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
 
   // No run yet -> both lookups return null.
   expect(
-    await svc.pevrRuns.stateForIssue(repo.full_name, { issue: issue.number }),
+    await svc.workflowRuns.stateForIssue(repo.full_name, {
+      issue: issue.number,
+    }),
   ).toBeNull();
   expect(
-    await svc.pevrRuns.stateForPull(repo.full_name, { pull: 4242 }),
+    await svc.workflowRuns.stateForPull(repo.full_name, { pull: 4242 }),
   ).toBeNull();
 
-  const run = S.createPevrRun({
+  const run = S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
     issueNumber: issue.number,
@@ -850,7 +856,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     currentStep: "verify",
     parentSessionId: "22222222-2222-4222-8222-222222222222",
   });
-  S.updatePevrRun(run.id, { reworkCount: 2 });
+  S.updateWorkflowRun(run.id, { reworkCount: 2 });
 
   // A request_changes verdict artifact is surfaced as the display reason.
   const verdict = {
@@ -862,7 +868,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
       { file: "b.ts", problem: "no test", expected: "test added" },
     ],
   };
-  S.createPevrArtifact({
+  S.createWorkflowArtifact({
     runId: run.id,
     step: "verify",
     type: "verdict",
@@ -872,7 +878,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     dedupeKey: "state-wf-verdict-1",
   });
 
-  const byIssue = await svc.pevrRuns.stateForIssue(repo.full_name, {
+  const byIssue = await svc.workflowRuns.stateForIssue(repo.full_name, {
     issue: issue.number,
   });
   expect(byIssue).toMatchObject({
@@ -891,7 +897,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     findings_count: 2,
   });
 
-  const byPull = await svc.pevrRuns.stateForPull(repo.full_name, {
+  const byPull = await svc.workflowRuns.stateForPull(repo.full_name, {
     pull: 4242,
   });
   expect(byPull?.id).toBe(run.id);

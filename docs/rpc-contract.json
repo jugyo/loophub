@@ -346,8 +346,81 @@
       }
     },
     {
-      "name": "pevrWorkflows/list",
-      "description": "List global PEVR workflow definitions (Plan/Execute/Verify/Reflect prompt bundles).",
+      "name": "notifications/list",
+      "description": "List topbar notification-center alerts, independent from lh inbox.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "notifications/unreadCount",
+      "description": "Count unread notification-center alerts.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "notifications/read",
+      "description": "Mark one notification-center alert as read.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "notifications/readAll",
+      "description": "Mark all visible notification-center alerts as read.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "workflows/list",
+      "description": "List global workflow definitions (Plan/Execute/Verify/Reflect prompt bundles).",
       "params": {
         "type": "object",
         "properties": {},
@@ -359,8 +432,8 @@
       }
     },
     {
-      "name": "pevrWorkflows/get",
-      "description": "Get one PEVR workflow definition by name.",
+      "name": "workflows/get",
+      "description": "Get one workflow definition by name.",
       "params": {
         "type": "object",
         "properties": {
@@ -379,8 +452,8 @@
       }
     },
     {
-      "name": "pevrWorkflows/create",
-      "description": "Create a global PEVR workflow definition.",
+      "name": "workflows/create",
+      "description": "Create a global workflow definition.",
       "params": {
         "type": "object",
         "properties": {
@@ -418,8 +491,8 @@
       }
     },
     {
-      "name": "pevrWorkflows/update",
-      "description": "Update a global PEVR workflow definition.",
+      "name": "workflows/update",
+      "description": "Update a global workflow definition.",
       "params": {
         "type": "object",
         "properties": {
@@ -461,8 +534,8 @@
       }
     },
     {
-      "name": "pevrWorkflows/delete",
-      "description": "Delete a global PEVR workflow definition unless a running run references it.",
+      "name": "workflows/delete",
+      "description": "Delete a global workflow definition unless a running run references it.",
       "params": {
         "type": "object",
         "properties": {
@@ -477,6 +550,56 @@
         },
         "required": [
           "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "workflowRuns/stateForIssue",
+      "description": "Display state of the latest Workflow run linked to an issue (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "workflowRuns/stateForPull",
+      "description": "Display state of the latest Workflow run linked to a PR (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
         ],
         "additionalProperties": false
       },
@@ -516,7 +639,8 @@
               "issue-create",
               "scheduled-task-create",
               "resume",
-              "github-pr-export"
+              "github-pr-export",
+              "workflow-run"
             ]
           },
           "issueNumber": {
@@ -524,6 +648,10 @@
             "minimum": 1
           },
           "prNumber": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "workflowId": {
             "type": "integer",
             "minimum": 1
           },
@@ -747,6 +875,19 @@
     {
       "name": "sessions/list",
       "description": "List agent sessions.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
+      "name": "sessions/costSummary",
+      "description": "Small per-coding-agent cost totals for topbar display, grouped by month/week/today.",
       "params": {
         "type": "object",
         "properties": {},
@@ -1041,6 +1182,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "target_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "session_id": {
             "type": "string",
@@ -1687,8 +1834,7 @@
         "required": [
           "repo",
           "title",
-          "head",
-          "base"
+          "head"
         ],
         "additionalProperties": false
       },
@@ -2141,6 +2287,9 @@
             "type": "string"
           },
           "topic": {
+            "type": "string"
+          },
+          "model": {
             "type": "string"
           },
           "comments": {

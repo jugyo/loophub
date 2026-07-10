@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-const HOME = mkdtempSync(join(tmpdir(), "lh-pevr-workflows-"));
+const HOME = mkdtempSync(join(tmpdir(), "lh-workflows-"));
 process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
@@ -30,9 +30,9 @@ afterAll(() => {
 });
 
 test("create trims name and preserves empty markdown prompts", () => {
-  const workflow = svc.pevrWorkflows.create({
+  const workflow = svc.workflows.create({
     name: "  standard  ",
-    description: "Default PEVR workflow",
+    description: "Default workflow",
     plan_prompt: "",
     execute_prompt: "Execute carefully",
     verify_prompt: "",
@@ -41,31 +41,28 @@ test("create trims name and preserves empty markdown prompts", () => {
 
   expect(workflow).toMatchObject({
     name: "standard",
-    description: "Default PEVR workflow",
+    description: "Default workflow",
     plan_prompt: "",
     execute_prompt: "Execute carefully",
     verify_prompt: "",
     reflect_prompt: "",
   });
-  expect(svc.pevrWorkflows.get("standard").id).toBe(workflow.id);
-  expect(svc.pevrWorkflows.list().map((w) => w.name)).toContain("standard");
+  expect(svc.workflows.get("standard").id).toBe(workflow.id);
+  expect(svc.workflows.list().map((w) => w.name)).toContain("standard");
 });
 
 test("name validation rejects blank, long, and duplicate names with 422", () => {
-  expectServiceStatus(() => svc.pevrWorkflows.create({ name: " " }), 422);
+  expectServiceStatus(() => svc.workflows.create({ name: " " }), 422);
   expectServiceStatus(
-    () => svc.pevrWorkflows.create({ name: "x".repeat(65) }),
+    () => svc.workflows.create({ name: "x".repeat(65) }),
     422,
   );
-  expectServiceStatus(
-    () => svc.pevrWorkflows.create({ name: "standard" }),
-    422,
-  );
+  expectServiceStatus(() => svc.workflows.create({ name: "standard" }), 422);
 });
 
 test("update patches fields and can rename uniquely", () => {
-  svc.pevrWorkflows.create({ name: "other" });
-  const updated = svc.pevrWorkflows.update("standard", {
+  svc.workflows.create({ name: "other" });
+  const updated = svc.workflows.update("standard", {
     name: "renamed",
     description: "",
     plan_prompt: "Plan with tests",
@@ -76,15 +73,15 @@ test("update patches fields and can rename uniquely", () => {
   expect(updated.plan_prompt).toBe("Plan with tests");
   expect(updated.execute_prompt).toBe("Execute carefully");
   expectServiceStatus(
-    () => svc.pevrWorkflows.update("renamed", { name: "other" }),
+    () => svc.workflows.update("renamed", { name: "other" }),
     422,
   );
 });
 
-test("delete is rejected while a running PEVR run references the workflow", () => {
-  const workflow = svc.pevrWorkflows.create({ name: "in-use" });
-  const repo = S.createRepo("me/pevr", HOME);
-  S.createPevrRun({
+test("delete is rejected while a running Workflow run references the workflow", () => {
+  const workflow = svc.workflows.create({ name: "in-use" });
+  const repo = S.createRepo("me/workflow", HOME);
+  S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
     issueNumber: 1,
@@ -93,14 +90,14 @@ test("delete is rejected while a running PEVR run references the workflow", () =
     currentStep: "plan",
   });
 
-  expectServiceStatus(() => svc.pevrWorkflows.delete("in-use"), 409);
-  expect(svc.pevrWorkflows.get("in-use").id).toBe(workflow.id);
+  expectServiceStatus(() => svc.workflows.delete("in-use"), 409);
+  expect(svc.workflows.get("in-use").id).toBe(workflow.id);
 });
 
-test("delete is rejected while a blocked PEVR run references the workflow", () => {
-  const workflow = svc.pevrWorkflows.create({ name: "blocked-run" });
-  const repo = S.createRepo("me/pevr-blocked", HOME);
-  S.createPevrRun({
+test("delete is rejected while a blocked Workflow run references the workflow", () => {
+  const workflow = svc.workflows.create({ name: "blocked-run" });
+  const repo = S.createRepo("me/workflow-blocked", HOME);
+  S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
     issueNumber: 1,
@@ -109,21 +106,21 @@ test("delete is rejected while a blocked PEVR run references the workflow", () =
     currentStep: "verify",
   });
 
-  expectServiceStatus(() => svc.pevrWorkflows.delete("blocked-run"), 409);
-  expect(svc.pevrWorkflows.get("blocked-run").id).toBe(workflow.id);
+  expectServiceStatus(() => svc.workflows.delete("blocked-run"), 409);
+  expect(svc.workflows.get("blocked-run").id).toBe(workflow.id);
 });
 
 test("delete succeeds when no runs reference the workflow", () => {
-  svc.pevrWorkflows.create({ name: "unused" });
+  svc.workflows.create({ name: "unused" });
 
-  expect(svc.pevrWorkflows.delete("unused")).toEqual({ ok: true });
-  expectServiceStatus(() => svc.pevrWorkflows.get("unused"), 404);
+  expect(svc.workflows.delete("unused")).toEqual({ ok: true });
+  expectServiceStatus(() => svc.workflows.get("unused"), 404);
 });
 
 test("delete succeeds when only non-running runs reference the workflow", () => {
-  const workflow = svc.pevrWorkflows.create({ name: "done-run" });
-  const repo = S.createRepo("me/pevr-done", HOME);
-  S.createPevrRun({
+  const workflow = svc.workflows.create({ name: "done-run" });
+  const repo = S.createRepo("me/workflow-done", HOME);
+  S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
     issueNumber: 1,
@@ -132,6 +129,6 @@ test("delete succeeds when only non-running runs reference the workflow", () => 
     currentStep: "reflect",
   });
 
-  expect(svc.pevrWorkflows.delete("done-run")).toEqual({ ok: true });
-  expectServiceStatus(() => svc.pevrWorkflows.get("done-run"), 404);
+  expect(svc.workflows.delete("done-run")).toEqual({ ok: true });
+  expectServiceStatus(() => svc.workflows.get("done-run"), 404);
 });

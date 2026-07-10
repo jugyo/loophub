@@ -276,10 +276,10 @@ test("inbox/list, inbox/get, and state mutations expose Inbox messages through J
   expect(unarchived.result.state).toBe("read");
 });
 
-test("PEVR workflow CRUD is exposed through JSON-RPC", async () => {
-  const created: any = await call("pevrWorkflows/create", {
+test("workflow CRUD is exposed through JSON-RPC", async () => {
+  const created: any = await call("workflows/create", {
     name: " standard ",
-    description: "Reusable PEVR prompts",
+    description: "Reusable Workflow prompts",
     plan_prompt: "",
     execute_prompt: "Implement",
     verify_prompt: "",
@@ -287,14 +287,14 @@ test("PEVR workflow CRUD is exposed through JSON-RPC", async () => {
   });
   expect(created.result).toMatchObject({
     name: "standard",
-    description: "Reusable PEVR prompts",
+    description: "Reusable Workflow prompts",
     execute_prompt: "Implement",
   });
 
-  const listed: any = await call("pevrWorkflows/list", {});
+  const listed: any = await call("workflows/list", {});
   expect(listed.result.map((w: any) => w.name)).toContain("standard");
 
-  const updated: any = await call("pevrWorkflows/update", {
+  const updated: any = await call("workflows/update", {
     name: "standard",
     new_name: "standard-v2",
     plan_prompt: "Plan first",
@@ -303,10 +303,10 @@ test("PEVR workflow CRUD is exposed through JSON-RPC", async () => {
   expect(updated.result.plan_prompt).toBe("Plan first");
   expect(updated.result.execute_prompt).toBe("Implement");
 
-  const got: any = await call("pevrWorkflows/get", { name: "standard-v2" });
+  const got: any = await call("workflows/get", { name: "standard-v2" });
   expect(got.result.id).toBe(created.result.id);
 
-  const deleted: any = await call("pevrWorkflows/delete", {
+  const deleted: any = await call("workflows/delete", {
     name: "standard-v2",
   });
   expect(deleted.result).toEqual({ ok: true });

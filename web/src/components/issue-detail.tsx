@@ -20,7 +20,6 @@ import { IssueHerdrSection } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
 import { Markdown } from "@/components/markdown";
-import { PevrRunStatusSection } from "@/components/pevr-run-status";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +33,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
 import { CODING_AGENT_LABELS, MODEL_SUGGESTIONS } from "@/lib/agent-models";
 import { issueBuildButtonState, stateBadge } from "@/lib/badges";
 import {
@@ -52,9 +52,9 @@ import {
   usePostComment,
   useSetIssueState,
 } from "@/queries/issues";
-import { usePevrRunForIssue } from "@/queries/pevr-runs";
-import { usePevrWorkflows } from "@/queries/pevr-workflows";
 import { useSettings } from "@/queries/settings";
+import { useWorkflowRunForIssue } from "@/queries/workflow-runs";
+import { useWorkflows } from "@/queries/workflows";
 
 export function IssueDetail({
   owner,
@@ -114,7 +114,7 @@ export function IssueDetail({
 
       <LinkedPullSummary owner={owner} repo={repo} issue={issue} />
 
-      <PevrRunSection owner={owner} repo={repo} number={number} />
+      <WorkflowRunSection owner={owner} repo={repo} number={number} />
 
       <IssueHerdrSection owner={owner} repo={repo} issue={issue} />
 
@@ -293,11 +293,11 @@ function BuildControls({
   );
 }
 
-// Start workflow dropdown next to Build (#1007): pick a saved PEVR workflow by name and launch it
-// via `terminal/launch` with workflow "pevr-run", which spawns `lh workflow start
+// Start workflow dropdown next to Build (#1007): pick a saved workflow by name and launch it
+// via `terminal/launch` with workflow "workflow-run", which spawns `lh workflow start
 // <owner>/<repo>/<n> --workflow-id <id> --herdr`. It shares Build's linked-open-PR guard (rendered
 // only when buildState === "build"), keeping one launch system per issue at a time
-// (docs/pevr-workflow.ja.md §9.1). With no saved workflows, the menu links to Settings > Workflows.
+// (docs/workflow.ja.md §9.1). With no saved workflows, the menu links to Settings > Workflows.
 function StartWorkflowControls({
   owner,
   repo,
@@ -309,19 +309,19 @@ function StartWorkflowControls({
 }) {
   const { launchTerminal } = useTerminalLauncher();
   const navigate = useNavigate();
-  const { data: workflows, isLoading } = usePevrWorkflows();
+  const { data: workflows, isLoading } = useWorkflows();
   const [isLaunching, startLaunching] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  function start(pevrWorkflowId: number) {
+  function start(workflowId: number) {
     startLaunching();
     setMenuOpen(false);
     launchTerminal({
       repo: `${owner}/${repo}`,
       label: `Issue #${issue.number} - ${issue.title}`,
-      workflow: "pevr-run",
+      workflow: "workflow-run",
       issueNumber: issue.number,
-      pevrWorkflowId,
+      workflowId,
     });
   }
 
@@ -330,7 +330,7 @@ function StartWorkflowControls({
       <DropdownMenuTrigger asChild>
         <Button
           variant="secondary"
-          title="Start a saved PEVR workflow for this issue"
+          title="Start a saved workflow for this issue"
           disabled={isLaunching || isLoading}
         >
           {isLaunching ? (
@@ -550,9 +550,9 @@ function LinkedPullSummary({
   );
 }
 
-// PEVR run state for this issue (#1008): renders the linked run's status / step / rework via the
+// Workflow run state for this issue (#1008): renders the linked run's status / step / rework via the
 // shared section, or nothing when the issue has no run.
-function PevrRunSection({
+function WorkflowRunSection({
   owner,
   repo,
   number,
@@ -561,8 +561,8 @@ function PevrRunSection({
   repo: string;
   number: number;
 }) {
-  const { data } = usePevrRunForIssue(owner, repo, number);
-  return <PevrRunStatusSection owner={owner} repo={repo} state={data} />;
+  const { data } = useWorkflowRunForIssue(owner, repo, number);
+  return <WorkflowRunStatusSection owner={owner} repo={repo} state={data} />;
 }
 
 function CommentList({

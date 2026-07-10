@@ -18,9 +18,6 @@ import type {
   LabelWire,
   LinkedIssueWire,
   NotificationWire,
-  PevrRunStateWire,
-  PevrRunVerdictSummaryWire,
-  PevrWorkflowWire,
   PullSummaryWire,
   PullWire,
   RelatedSessionsUsageByKindWire,
@@ -35,6 +32,9 @@ import type {
   SessionSubagentUsageWire,
   SessionUsageWire,
   UserWire,
+  WorkflowRunStateWire,
+  WorkflowRunVerdictSummaryWire,
+  WorkflowWire,
 } from "../../../core/serialize.ts";
 
 export type Label = LabelWire;
@@ -279,12 +279,12 @@ export type Issue = IssueWire;
 /** A scheduled task (#880): a saved prompt an agent runs at one or more times of day. */
 export type ScheduledTask = ScheduledTaskWire;
 
-/** A global PEVR workflow definition (#997): Plan/Execute/Verify/Reflect prompt bundle. */
-export type PevrWorkflow = PevrWorkflowWire;
+/** A global workflow definition (#997): Plan/Execute/Verify/Reflect prompt bundle. */
+export type Workflow = WorkflowWire;
 
-/** Display state of a PEVR run linked to an issue / PR (#1008). */
-export type PevrRunState = PevrRunStateWire;
-export type PevrRunVerdictSummary = PevrRunVerdictSummaryWire;
+/** Display state of a Workflow run linked to an issue / PR (#1008). */
+export type WorkflowRunState = WorkflowRunStateWire;
+export type WorkflowRunVerdictSummary = WorkflowRunVerdictSummaryWire;
 
 /** One fire of a scheduled task (#880) — meta only; the output stays on the herdr side. */
 export type ScheduledTaskRun = ScheduledTaskRunWire;

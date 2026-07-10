@@ -70,7 +70,7 @@ test("workflow step output uses flags before ambient context and supports ambien
     "--repo",
     REPO,
     "--title",
-    "PEVR output task",
+    "Workflow output task",
     "--body",
     "Place a plan",
   ]);
@@ -116,7 +116,7 @@ test("workflow step output uses flags before ambient context and supports ambien
       "--file",
       artifactPath,
     ],
-    { LOOPHUB_PEVR_RUN: "999999", LOOPHUB_PEVR_STEP: "verify" },
+    { LOOPHUB_WORKFLOW_RUN: "999999", LOOPHUB_WORKFLOW_STEP: "verify" },
   );
   expect(explicit.exitCode).toBe(0);
   expect(explicit.stdout).toContain("placed pr-body-plan at pr-body");
@@ -124,8 +124,8 @@ test("workflow step output uses flags before ambient context and supports ambien
   const ambient = run(
     ["workflow", "step", "output", "--repo", REPO, "--file", artifactPath],
     {
-      LOOPHUB_PEVR_RUN: String(runResult.run.id),
-      LOOPHUB_PEVR_STEP: "plan",
+      LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
+      LOOPHUB_WORKFLOW_STEP: "plan",
     },
   );
   expect(ambient.exitCode).toBe(0);
@@ -143,7 +143,7 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
     "--repo",
     REPO,
     "--title",
-    "PEVR task",
+    "Workflow task",
     "--body",
     "Do it",
   ]);

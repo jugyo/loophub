@@ -1,18 +1,21 @@
 import type {
-  PevrArtifact,
-  PevrExecutionReportArtifact,
-  PevrVerdictArtifact,
+  WorkflowArtifact,
+  WorkflowExecutionReportArtifact,
+  WorkflowVerdictArtifact,
 } from "./artifacts.ts";
 
-export type PevrPlacementTarget =
+export type WorkflowPlacementTarget =
   | "pr-body-plan"
   | "pr-body-report"
   | "review"
   | "comment";
 
-export type PevrPlacementResult = { kind: PevrPlacementTarget; ref: string };
+export type WorkflowPlacementResult = {
+  kind: WorkflowPlacementTarget;
+  ref: string;
+};
 
-export type PevrPlacementDependencies = {
+export type WorkflowPlacementDependencies = {
   currentBody: string;
   currentDraft: boolean;
   assertOwnership(): void;
@@ -23,12 +26,12 @@ export type PevrPlacementDependencies = {
   ): Promise<string>;
   createComment(body: string): Promise<string>;
   attach(path: string): string;
-  record(kind: PevrPlacementTarget, ref: string): void;
+  record(kind: WorkflowPlacementTarget, ref: string): void;
 };
 
 export function placementTarget(
-  type: PevrArtifact["type"],
-): PevrPlacementTarget {
+  type: WorkflowArtifact["type"],
+): WorkflowPlacementTarget {
   switch (type) {
     case "plan":
       return "pr-body-plan";
@@ -43,7 +46,7 @@ export function placementTarget(
 
 export function renderPlanBody(
   current: string,
-  artifact: Extract<PevrArtifact, { type: "plan" }>,
+  artifact: Extract<WorkflowArtifact, { type: "plan" }>,
 ): string {
   const plan = [
     "## Implementation plan",
@@ -75,7 +78,7 @@ export function renderPlanBody(
 }
 
 export function renderExecutionReport(
-  artifact: PevrExecutionReportArtifact,
+  artifact: WorkflowExecutionReportArtifact,
   evidence: string[],
   closes: number,
 ): string {
@@ -106,7 +109,7 @@ export function renderExecutionReport(
   ].join("\n");
 }
 
-export function renderVerdict(artifact: PevrVerdictArtifact): {
+export function renderVerdict(artifact: WorkflowVerdictArtifact): {
   event: "PASS" | "REQUEST_CHANGES";
   body: string;
   comments: Array<{ path: string; line?: number; body: string }>;
@@ -123,10 +126,10 @@ export function renderVerdict(artifact: PevrVerdictArtifact): {
 }
 
 export function renderReflection(
-  artifact: Extract<PevrArtifact, { type: "reflection" }>,
+  artifact: Extract<WorkflowArtifact, { type: "reflection" }>,
 ): string {
   return [
-    "## PEVR reflection",
+    "## Workflow reflection",
     "",
     "### Went well",
     ...artifact.went_well.map((item) => `- ${item}`),
@@ -158,12 +161,12 @@ export function renderReflection(
   ].join("\n");
 }
 
-export async function placePevrArtifact(input: {
-  artifact: PevrArtifact;
+export async function placeWorkflowArtifact(input: {
+  artifact: WorkflowArtifact;
   headSha: string;
   issueNumber: number;
-  dependencies: PevrPlacementDependencies;
-}): Promise<PevrPlacementResult> {
+  dependencies: WorkflowPlacementDependencies;
+}): Promise<WorkflowPlacementResult> {
   const { artifact, dependencies: deps } = input;
   const kind = placementTarget(artifact.type);
   let ref: string;

@@ -518,7 +518,7 @@ export function buildHerdrLaunchPlan(input: {
   // for it — worktree-pinned or not — lands in the same herdr session.
   cwd?: string;
   // Split an existing pane in the selected tab/workspace. Omitted for the tab-oriented launch
-  // flows that create a fresh tab first; PEVR child steps deliberately split the parent run tab.
+  // flows that create a fresh tab first; Workflow child steps deliberately split the parent run tab.
   split?: "right" | "down";
 }): HerdrLaunchPlan {
   const sessionName = herdrSessionName(input.repo);
@@ -553,7 +553,7 @@ export function buildHerdrLaunchPlan(input: {
   };
 }
 
-export function buildPevrStepHerdrLaunchPlan(input: {
+export function buildWorkflowStepHerdrLaunchPlan(input: {
   repo: TerminalLaunchRepo;
   runId: number;
   step: string;
@@ -567,8 +567,8 @@ export function buildPevrStepHerdrLaunchPlan(input: {
 }): HerdrLaunchPlan {
   const env = [
     `LOOPHUB_SESSION_ID=${shellArg(input.sessionId)}`,
-    `LOOPHUB_PEVR_RUN=${shellArg(String(input.runId))}`,
-    `LOOPHUB_PEVR_STEP=${shellArg(input.step)}`,
+    `LOOPHUB_WORKFLOW_RUN=${shellArg(String(input.runId))}`,
+    `LOOPHUB_WORKFLOW_STEP=${shellArg(input.step)}`,
   ].join(" ");
   const parts = [
     "claude",
@@ -585,7 +585,7 @@ export function buildPevrStepHerdrLaunchPlan(input: {
   return buildHerdrLaunchPlan({
     repo: input.repo,
     command: `${env} ${parts.join(" ")}`,
-    label: `pevr ${input.step} #${input.runId}`,
+    label: `workflow ${input.step} #${input.runId}`,
     tabId: input.tabId,
     cwd: input.worktree,
     split: "down",

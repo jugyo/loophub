@@ -24,8 +24,6 @@ import type {
   Label,
   LoopEvent,
   Notification,
-  PevrRunState,
-  PevrWorkflow,
   PullFile,
   PullLineComment,
   PullRequest,
@@ -37,6 +35,8 @@ import type {
   ScheduledTaskWithRuns,
   Stats,
   TerminalLaunchResult,
+  Workflow,
+  WorkflowRunState,
 } from "./types";
 
 /** Resolved server base. "" => same-origin (proxy). No trailing slash. */
@@ -310,7 +310,7 @@ export function runScheduledTask(
   });
 }
 
-export interface PevrWorkflowInput {
+export interface WorkflowInput {
   name: string;
   description?: string;
   plan_prompt?: string;
@@ -319,59 +319,65 @@ export interface PevrWorkflowInput {
   reflect_prompt?: string;
 }
 
-type PevrWorkflowUpdatePatch = Omit<Partial<PevrWorkflowInput>, "name"> & {
+type WorkflowUpdatePatch = Omit<Partial<WorkflowInput>, "name"> & {
   new_name?: string;
 };
 
-export function listPevrWorkflows() {
-  return rpc<PevrWorkflow[]>("pevrWorkflows/list", {});
+export function listWorkflows() {
+  return rpc<Workflow[]>("workflows/list", {});
 }
 
-export function getPevrWorkflow(name: string) {
-  return rpc<PevrWorkflow>("pevrWorkflows/get", { name });
+export function getWorkflow(name: string) {
+  return rpc<Workflow>("workflows/get", { name });
 }
 
-export function createPevrWorkflow(
-  input: PevrWorkflowInput,
+export function createWorkflow(
+  input: WorkflowInput,
   sessionId: string = getSessionId(),
 ) {
-  return rpc<PevrWorkflow>("pevrWorkflows/create", {
+  return rpc<Workflow>("workflows/create", {
     ...clean({ ...input }),
     session_id: sessionId,
   });
 }
 
-export function updatePevrWorkflow(
+export function updateWorkflow(
   name: string,
-  patch: PevrWorkflowUpdatePatch,
+  patch: WorkflowUpdatePatch,
   sessionId: string = getSessionId(),
 ) {
-  const { name: _ignoredName, ...wirePatch } =
-    patch as Partial<PevrWorkflowInput> & PevrWorkflowUpdatePatch;
-  return rpc<PevrWorkflow>("pevrWorkflows/update", {
+  const { name: _ignoredName, ...wirePatch } = patch as Partial<WorkflowInput> &
+    WorkflowUpdatePatch;
+  return rpc<Workflow>("workflows/update", {
     name,
     ...clean({ ...wirePatch }),
     session_id: sessionId,
   });
 }
 
-export function deletePevrWorkflow(
+export function deleteWorkflow(
   name: string,
   sessionId: string = getSessionId(),
 ) {
-  return rpc<{ ok: true }>("pevrWorkflows/delete", {
+  return rpc<{ ok: true }>("workflows/delete", {
     name,
     session_id: sessionId,
   });
 }
 
-// PEVR run display state for issue / PR detail (#1008). Returns null when the issue / PR has no run.
-export function getPevrRunStateForIssue(repo: string, number: number) {
-  return rpc<PevrRunState | null>("pevrRuns/stateForIssue", { repo, number });
+// Workflow run display state for issue / PR detail (#1008). Returns null when the issue / PR has no run.
+export function getWorkflowRunStateForIssue(repo: string, number: number) {
+  return rpc<WorkflowRunState | null>("workflowRuns/stateForIssue", {
+    repo,
+    number,
+  });
 }
 
-export function getPevrRunStateForPull(repo: string, number: number) {
-  return rpc<PevrRunState | null>("pevrRuns/stateForPull", { repo, number });
+export function getWorkflowRunStateForPull(repo: string, number: number) {
+  return rpc<WorkflowRunState | null>("workflowRuns/stateForPull", {
+    repo,
+    number,
+  });
 }
 
 // --- global settings ---
@@ -491,11 +497,11 @@ export function launchTerminalWorkflow(input: {
     | "scheduled-task-create"
     | "resume"
     | "github-pr-export"
-    | "pevr-run";
+    | "workflow-run";
   issueNumber?: number;
   prNumber?: number;
-  // Saved PEVR workflow id for the "pevr-run" launch (#1007).
-  pevrWorkflowId?: number;
+  // Saved workflow id for the "workflow-run" launch (#1007).
+  workflowId?: number;
   session?: string;
   cwd?: string;
   // One-shot issue-dev (Build) overrides from the issue-detail dropdown (#637).

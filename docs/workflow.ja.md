@@ -4,7 +4,7 @@
 > 本書は、skill（`SKILL.md` / slash command）を一切使わずに開発 workflow を実行するモデルを
 > 定義する。step は **Plan / Execute / Verify / Reflect の 4 つに固定**し、ユーザーが設定できる
 > のは各 step で agent に与える prompt だけである。この 4 step 構成の workflow に名前をつけて
-> 複数作成できる。以下この仕組みを **PEVR workflow** と呼ぶ。
+> 複数作成できる。以下この仕組みを **workflow** と呼ぶ。
 > 関連: #964 の workflow instruction 管理モデル（`docs/workflow-instruction-model.ja.md`、
 > PR #966。本書執筆時点で未マージ）。本書はその skill 非依存版の実験であり、関係は §11 で
 > 明文化する。実装（親 agent、UI、RPC、DB migration）はすべて本書のスコープ外。
@@ -54,7 +54,7 @@ step = f(入力 artifact, worktree) → (出力 artifact, commits)
 
 - 実装（親 agent、UI、RPC、DB migration のいずれも）。
 - 既存 skill chain（`lh build` → lh-build → lh-pr-review → lh-merge-ready）の廃止・変更。
-  PEVR workflow は **並ぶもう 1 つの入口**であり、置換ではない。
+  workflow は **並ぶもう 1 つの入口**であり、置換ではない。
 - workflow のバージョニング（初期バージョンでは不要）。
 - Plan / Execute / Verify / Reflect 以外の step 構成のカスタマイズ（汎用 workflow 定義機構は
   作らない）。
@@ -65,18 +65,18 @@ step = f(入力 artifact, worktree) → (出力 artifact, commits)
 
 | 用語 | 意味 |
 |---|---|
-| PEVR workflow | Plan / Execute / Verify / Reflect の 4 step 固定の開発 workflow。名前を持ち、複数作成できる。ユーザーが設定するのは各 step の prompt だけ。 |
+| workflow | Plan / Execute / Verify / Reflect の 4 step 固定の開発 workflow。名前を持ち、複数作成できる。ユーザーが設定するのは各 step の prompt だけ。 |
 | step | Plan / Execute / Verify / Reflect のいずれか。順序・構成は固定で変更できない。 |
 | エンジン | 入力合成・schema 検証・placement・完了判定 query を担う LoopHub 本体のコード（`lh workflow` コマンド群と core、§6.1）。agent ではない。親・子と並ぶ第 3 のアクター。 |
 | artifact | step の入出力データの総称。**出力 artifact** は 4 型（plan / execution-report / verdict / reflection）に固定され、提出時に schema 検証される JSON（§6.2）。**入力 artifact** は launch 時にドメイン状態から合成される自由形式のファイル（`task.md` 等。型・schema を持たない、§7.3）。子は入力 artifact を受け取り、出力 artifact を提出する — ドメイン（issue / PR / review）には触れない。データモデルとしても artifact はドメインと結びつかない（配置先もドメイン識別子も持たない正本、§5.2）— PR への紐づけは run の責務（§6.4）。 |
 | placement policy | 検証済みの出力 artifact を LoopHub がドメインへ配置する対応（artifact 型 → PR body section / review / comment）。core の単一箇所に集約する（§6.4）。 |
-| run directory | `$LOOPHUB_HOME/runs/pevr/<run-id>/` 配下。契約ファイルと入力 artifact のファイル受け渡しに使う。 |
-| ambient run context | launcher が子プロセスに環境変数（`LOOPHUB_PEVR_RUN` / `LOOPHUB_PEVR_STEP`）で注入する run / step の識別子。`lh workflow step output` が引数なしで動く根拠（§6.3）。 |
+| run directory | `$LOOPHUB_HOME/runs/workflow/<run-id>/` 配下。契約ファイルと入力 artifact のファイル受け渡しに使う。 |
+| ambient run context | launcher が子プロセスに環境変数（`LOOPHUB_WORKFLOW_RUN` / `LOOPHUB_WORKFLOW_STEP`）で注入する run / step の識別子。`lh workflow step output` が引数なしで動く根拠（§6.3）。 |
 | step contract（契約） | step ごとに LoopHub が定義する入出力の取り決め — その step が入力として何を受け取り、どの型の出力 artifact を提出すれば完了か、何をしてはならないか。LoopHub 同梱（git 管理）で、ユーザーは変更できない。repo / issue 非依存の汎用文書（§6.6）。 |
 | step prompt | ユーザーが workflow ごと・step ごとに設定する自由記述 prompt。「契約の中でどう働くか」を指定する。空でもよい（契約だけで step は成立する）。 |
 | workflow agent（親） | run ごとに 1 つ起動される orchestrator agent。子を起動し、LoopHub の状態を見て step を遷移させる。コードは書かない。 |
 | step agent（子） | 各 step を実行する agent。親が herdr の split pane で起動する。 |
-| run | ある issue に対する PEVR workflow の 1 回の実行。issue・PR・worktree・親 session に紐づく。 |
+| run | ある issue に対する workflow の 1 回の実行。issue・PR・worktree・親 session に紐づく。 |
 | herdr | LoopHub 外部の端末 workspace マネージャ（AI coding agent 向け）。workspace / tab / split pane で agent プロセスを起動・監視でき、pane への入力注入もできる。LoopHub は既に build 等の agent 起動で利用している（§3.1）。 |
 | 契約 channel | 契約が agent に届く経路（claude CLI の `--append-system-prompt-file`）。step prompt が届く経路（positional の user prompt）と分離されている。 |
 
@@ -106,7 +106,7 @@ step = f(入力 artifact, worktree) → (出力 artifact, commits)
 - **claude CLI** は `--system-prompt` / `--append-system-prompt` / `--append-system-prompt-file`
   を持つ。契約を system prompt として挿入する channel はここを使う。
 - **codex CLI**（`codex exec`）には system prompt を追加する公式 flag がない（instructions は
-  positional / stdin のみ）。→ v1 の PEVR workflow は **claude runtime のみ**対応（§14）。
+  positional / stdin のみ）。→ v1 の workflow は **claude runtime のみ**対応（§14）。
 - **herdr** は次を提供する:
   - `herdr agent start <name> --cwd PATH [--tab ID] [--split right|down] -- <argv...>` —
     既存 tab 内への **split pane での agent 起動**。
@@ -168,10 +168,10 @@ launch-step` / `lh workflow step output`）が行う。この分担が「契約�
 
 ### 5.1 保存場所と形式
 
-PEVR workflow は **LoopHub DB に保存する**。git にも skill にも置かない。
+workflow は **LoopHub DB に保存する**。git にも skill にも置かない。
 
 ```sql
-CREATE TABLE pevr_workflows (
+CREATE TABLE workflows (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   name            TEXT NOT NULL UNIQUE,   -- trim 済み・非空・64 文字以内
   description     TEXT NOT NULL DEFAULT '',
@@ -190,7 +190,7 @@ CREATE TABLE pevr_workflows (
   レイヤーを踏まない。(2) UI から即座に編集でき、diff を汚さない。(3) scheduled task の
   inline prompt（`scheduled_tasks.prompt`）という同型の前例が既にある。#964 は「instruction
   本文は git、DB は binding だけ」を原則にしたが、その例外として inline prompt（`@task-prompt`）
-  を既に認めており、PEVR の step prompt は**この inline 例外の第 2 のケース**である（§11）。
+  を既に認めており、Workflow の step prompt は**この inline 例外の第 2 のケース**である（§11）。
 - スコープは v1 では **global**（repo をまたいで共有）。repo ごとの既定 workflow の指定などは
   必要になってから後続 issue で設計する。
 - バージョニングはしない。update は上書き。run 実行中に workflow を編集した場合、合成は
@@ -199,9 +199,9 @@ CREATE TABLE pevr_workflows (
 ### 5.2 run の追跡
 
 ```sql
-CREATE TABLE pevr_runs (
+CREATE TABLE workflow_runs (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-  workflow_id        INTEGER NOT NULL REFERENCES pevr_workflows(id),
+  workflow_id        INTEGER NOT NULL REFERENCES workflows(id),
   repo_id            INTEGER NOT NULL,
   issue_number       INTEGER NOT NULL,
   pr_number          INTEGER NOT NULL,
@@ -219,9 +219,9 @@ CREATE TABLE pevr_runs (
 SHA だけを参照する、ドメイン（issue / PR）非依存の正本**であり、配置先の情報を持たない:
 
 ```sql
-CREATE TABLE pevr_artifacts (
+CREATE TABLE workflow_artifacts (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id        INTEGER NOT NULL REFERENCES pevr_runs(id),
+  run_id        INTEGER NOT NULL REFERENCES workflow_runs(id),
   step          TEXT NOT NULL,      -- plan | execute | verify | reflect
   type          TEXT NOT NULL,      -- plan | execution-report | verdict | reflection
   content_json  TEXT NOT NULL,      -- 検証済み artifact 本体
@@ -234,9 +234,9 @@ artifact を PR へ**紐づけて管理する責務は run 側**にある。配�
 ではなく、run のドメイン紐づけ管理の台帳として別テーブルに持つ:
 
 ```sql
-CREATE TABLE pevr_placements (
+CREATE TABLE workflow_placements (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  artifact_id  INTEGER NOT NULL REFERENCES pevr_artifacts(id),
+  artifact_id  INTEGER NOT NULL REFERENCES workflow_artifacts(id),
   target_kind  TEXT NOT NULL,      -- pr-body-plan | pr-body-report | review | comment
   target_ref   TEXT NOT NULL,      -- 配置先の参照（review id / comment id / "pr-body"）
   placed_at    TEXT NOT NULL
@@ -244,7 +244,7 @@ CREATE TABLE pevr_placements (
 ```
 
 run row は UI 表示（この issue はいまどの step か）と、親の状態報告（`lh workflow run update`）
-の置き場である。**遷移の真実は配置済み artifact（`pevr_artifacts` × `pevr_placements`）と
+の置き場である。**遷移の真実は配置済み artifact（`workflow_artifacts` × `workflow_placements`）と
 現 head の対応**（§6.5）であり、run row はその写しにすぎない — 親が死んで run row が古くなって
 も、配置記録と PR の状態から人間が判断できる。
 
@@ -253,7 +253,7 @@ run row は UI 表示（この issue はいまどの step か）と、親の状�
 | 経路 | 内容 |
 |---|---|
 | Web UI | Settings に「Workflows」ページを追加。一覧 + 編集フォーム（name / description / 4 step の textarea）。保存時 validation（name 非空・unique）は `422` + form error。 |
-| JSON-RPC | `pevrWorkflows/list` / `get` / `create` / `update` / `delete`。wire shape は `core/serialize.ts` に置き、`web/src/api/types.ts` は型を再宣言しない（既存規約どおり）。 |
+| JSON-RPC | `workflows/list` / `get` / `create` / `update` / `delete`。wire shape は `core/serialize.ts` に置き、`web/src/api/types.ts` は型を再宣言しない（既存規約どおり）。 |
 | CLI | `lh workflow list` / `view <name>` / `create <name>` / `update <name> [--step plan --file <path|->]` / `delete <name>`。 |
 
 新規作成フォームは、core 定数として持つ**例文 prompt** を prefill する（DB に seed row は
@@ -282,14 +282,14 @@ step = f(入力 artifact, worktree) → (出力 artifact, commits)
    記録する（不正は 422、§6.3）。
 3. **配置** — 検証済み artifact を、run が紐づくドメイン（v1 では常に PR）へ placement policy に
    従って投影する（§6.4）。artifact 自体は配置先を知らない — **ドメインへの紐づけの管理は run の
-   責務**である（§5.2 の `pevr_placements`）。
+   責務**である（§5.2 の `workflow_placements`）。
 4. **完了判定** — 「現 head に対して配置済みの artifact がある」を query として評価する（§6.5）。
 
 worktree は artifact 語彙に次のように統合する: **コンテンツは worktree、参照は SHA**。
 
 - commits は Execute の第 2 の出力であり、artifact には含めない。artifact が worktree の内容に
   言及するときは path（と必要なら行）で指し、版の特定は SHA で行う。
-- 提出された artifact には、エンジンが SHA を刻印する（`pevr_artifacts.head_sha`、§6.3）。
+- 提出された artifact には、エンジンが SHA を刻印する（`workflow_artifacts.head_sha`、§6.3）。
   刻印する SHA は artifact 型で決まる: 通常は**提出時の worktree head**、**verdict は例外で
   launch 時に pin した検証対象の SHA**（§7.3 — verdict が語れるのは検証した版だけであり、
   提出時 head を刻印すると「検証中に head が動いたのに現 head と一致する」誤判定が生じる）。
@@ -302,7 +302,7 @@ worktree は artifact 語彙に次のように統合する: **コンテンツは
 ### 6.2 artifact 型と schema
 
 出力 artifact の型は **4 つの列挙で固定**する。ユーザー定義の artifact 型・step 追加・DAG は
-作らない（§14）。schema は `core/pevr/artifacts.ts`（pure、後続実装）に置き、提出時に検証する。
+作らない（§14）。schema は `core/workflow/artifacts.ts`（pure、後続実装）に置き、提出時に検証する。
 以下は wire shape（JSON）。文字列 field は特記なければ非空必須。
 
 **plan**（Plan の出力）
@@ -368,7 +368,7 @@ placement policy の仕事である。
 
 - 子は**引数なし**で呼べる: `lh workflow step output --file report.json`（または stdin）。
   run / step の識別は launcher が環境変数で注入する ambient run context
-  （`LOOPHUB_PEVR_RUN` / `LOOPHUB_PEVR_STEP`）から取る。子が run id を知る必要はない
+  （`LOOPHUB_WORKFLOW_RUN` / `LOOPHUB_WORKFLOW_STEP`）から取る。子が run id を知る必要はない
   （env の値は提出先を特定する opaque な識別子であり、契約も prompt もその利用を求めない）。
 - **検証は配置の前**: (1) run が `running` である、(2) 本文が JSON として parse できる、
   (3) `type` が提出先 step（ambient context または明示指定、§9.4）の期待型と一致、(4) §6.2 の
@@ -377,13 +377,13 @@ placement policy の仕事である。
   **しない** — `current_step` は表示用の写しであり検証の根拠にしない（§5.2 の単一真実の原則。
   これにより親が `run update` を呼ばないエージェントなし運用（§9.4）でも提出できる）。順序の
   整合は完了判定 query（§6.5）が担う。
-- **追記 + 最新有効**: 同じ step への再提出は前の提出を置き換える（`pevr_artifacts` に追記し、
+- **追記 + 最新有効**: 同じ step への再提出は前の提出を置き換える（`workflow_artifacts` に追記し、
   query は最新の検証済み提出を見る）。刻印する SHA はエンジンが決める — 通常は提出時の
   worktree head、verdict は launch 時に pin した検証対象の SHA（§6.1）。verdict の pin は
   `launch-step` の入力合成で確立されるので、pin の無い提出（`launch-step` を経ない
   エージェントなし運用、§9.4）では**提出時の現 head を検証対象とみなして刻印する** — 提出者
   自身が検証対象の版を選んでいるため、launch pin と同じ「検証した版」の意味を保つ。
-- **受理（記録）と配置は別の関心事**: 検証が通るとまず `pevr_artifacts` に正本として記録し
+- **受理（記録）と配置は別の関心事**: 検証が通るとまず `workflow_artifacts` に正本として記録し
   （= 受理）、続けて run の責務として配置（§6.4）まで同期的に行ってから成功を返す。配置に
   失敗した場合（PR 更新エラー等）は非ゼロで返すが、**記録は取り消さない** — 再実行時は記録済み
   artifact の配置だけをやり直す（冪等）。「受理済みだが未配置」は step status から観測できる
@@ -392,7 +392,7 @@ placement policy の仕事である。
 
 ### 6.4 placement policy
 
-検証済み artifact をドメインへ配置する対応は **core の単一箇所**（`core/pevr/placement.ts`、
+検証済み artifact をドメインへ配置する対応は **core の単一箇所**（`core/workflow/placement.ts`、
 後続実装）に集約する。契約・子・親のいずれにも現れない:
 
 | artifact | 配置先 | 付随処理 |
@@ -400,11 +400,11 @@ placement policy の仕事である。
 | plan | linked PR body の実装計画 section（placeholder を rendered markdown で置換） | — |
 | execution-report | PR body の Summary / Acceptance criteria / Test plan / Evidence section（rendered） | **draft → ready を LoopHub が行う**（従来子が実行していた `lh pr ready-for-review` は子の仕事でなくなる）。`evidence[].path` のファイルは attachment として upload し、embed markdown に変換して Evidence に載せる |
 | verdict | 刻印 SHA に対する PR review（`event` を pass / request_changes として提出） | — |
-| reflection | PR への構造化 comment（rendered） | marker（`<!-- pevr:reflect -->`）は付けない — 完了判定は配置記録で行う（§6.5） |
+| reflection | PR への構造化 comment（rendered） | marker（`<!-- workflow:reflect -->`）は付けない — 完了判定は配置記録で行う（§6.5） |
 
-配置の位置づけを明確にする: **artifact の正本は `pevr_artifacts`（PR 非依存、§5.2）であり、
+配置の位置づけを明確にする: **artifact の正本は `workflow_artifacts`（PR 非依存、§5.2）であり、
 配置はその正本を run が紐づくドメインへ投影する行為**である。run（v1 では常に PR に紐づく）が
-この投影と台帳（`pevr_placements`）の管理責務を負い、artifact 本体は配置先を知らない。
+この投影と台帳（`workflow_placements`）の管理責務を負い、artifact 本体は配置先を知らない。
 placement policy はその投影規則であって、artifact のデータモデルの一部ではない — したがって
 **workflow のコア（schema・契約・合成・完了評価）は PR に依存せずに設計されている**。PR を
 持たない run というユースケースは v1 には無いが、その拡張はこの境界（§14）を保てば placement
@@ -427,13 +427,13 @@ step の完了は「**検証済み artifact が配置されているか**」の 
 | Verify | 検証済み verdict artifact が配置されていて **刻印 SHA == 現 head**。 |
 | Reflect | 検証済み reflection artifact が配置されている。 |
 
-- PR body の placeholder 置換検知・`<!-- pevr:reflect -->` marker 検索のような**ドメイン表現への
+- PR body の placeholder 置換検知・`<!-- workflow:reflect -->` marker 検索のような**ドメイン表現への
   marker ヒューリスティックは全廃**する。ドメイン上の表現（PR body の section、review、comment）
   は placement の**出力**であって、判定の**入力**ではない。
 - head 依存 step（Execute / Verify）は SHA 比較だけで stale を検知できる: 差し戻しで head が
   進めば execution-report も verdict も自動的に incomplete へ戻る。
-- query の実装は `core/pevr/steps.ts`（pure — `pevr_artifacts` の最新検証済み提出 + その配置
-  記録（`pevr_placements`）+ 現 head を入力に評価）で、`lh workflow step status` として公開する
+- query の実装は `core/workflow/steps.ts`（pure — `workflow_artifacts` の最新検証済み提出 + その配置
+  記録（`workflow_placements`）+ 現 head を入力に評価）で、`lh workflow step status` として公開する
   （§9.4）。「受理済みだが未配置」（§6.3 の配置失敗）は incomplete として現れる。子の自己申告
   （pane 出力の「done」等)を完了の根拠にしない点は従来どおり — 親の遷移判断は herdr 非依存の
   まま（§8）。
@@ -441,7 +441,7 @@ step の完了は「**検証済み artifact が配置されているか**」の 
 ### 6.6 契約の構成 — repo / issue 非依存の汎用文書
 
 契約は step ごとに固定の markdown template として **LoopHub repo（git）の
-`core/pevr/contracts/<step>.md`** に置く。ユーザーは編集できない（変更は LoopHub 本体への PR）。
+`core/workflow/contracts/<step>.md`** に置く。ユーザーは編集できない（変更は LoopHub 本体への PR）。
 各契約は次の 4 部で構成する: **入力（どのファイルが渡されるか）・成果物（提出する artifact の
 型と内容）・完了条件（提出が成功すること）・禁止事項**。
 
@@ -513,19 +513,19 @@ step の完了は「**検証済み artifact が配置されているか**」の 
 ユーザー prompt は別 channel で渡す:
 
 ```sh
-LOOPHUB_PEVR_RUN=<run-id> LOOPHUB_PEVR_STEP=<step> \
+LOOPHUB_WORKFLOW_RUN=<run-id> LOOPHUB_WORKFLOW_STEP=<step> \
 claude \
   --session-id <uuid> \
-  --append-system-prompt-file "$LOOPHUB_HOME/runs/pevr/<run-id>/<step>-contract.md" \
+  --append-system-prompt-file "$LOOPHUB_HOME/runs/workflow/<run-id>/<step>-contract.md" \
   [--permission-mode auto] \
   "<composed user prompt>"
 ```
 
-- **契約** = `core/pevr/contracts/<step>.md`（固定 template）に worktree path・base branch・
+- **契約** = `core/workflow/contracts/<step>.md`（固定 template）に worktree path・base branch・
   step 名を埋めたもの（repo 名や issue / PR 番号は埋めない — 契約は repo / issue 非依存、
   §6.6）。launch 時に run ディレクトリへ書き出し、`--append-system-prompt-file` で
   **system prompt に追加**する。
-- **環境変数** = ambient run context（`LOOPHUB_PEVR_RUN` / `LOOPHUB_PEVR_STEP`）。
+- **環境変数** = ambient run context（`LOOPHUB_WORKFLOW_RUN` / `LOOPHUB_WORKFLOW_STEP`）。
   `lh workflow step output` の提出先を特定するためだけの opaque な識別子（§6.3）。
 - **user prompt**（positional）は LoopHub が次の形に合成する。ドメイン識別子
   （repo / issue / PR 番号）は載せない:
@@ -533,8 +533,8 @@ claude \
   ```text
   ## Inputs
   <入力 artifact ファイルの一覧 + 1 行説明（§7.3）。パスは run directory の絶対パス。例:>
-  - $LOOPHUB_HOME/runs/pevr/<run-id>/<step>/input/task.md — 実現したい要求と受け入れ基準
-  - $LOOPHUB_HOME/runs/pevr/<run-id>/<step>/input/plan.md — 承認済みの実装計画
+  - $LOOPHUB_HOME/runs/workflow/<run-id>/<step>/input/task.md — 実現したい要求と受け入れ基準
+  - $LOOPHUB_HOME/runs/workflow/<run-id>/<step>/input/plan.md — 承認済みの実装計画
   worktree: .（cwd。base branch: <name>）
 
   ## Step prompt (user-configured)
@@ -569,14 +569,14 @@ claude \
 （issue / PR / review）を知らずに、launch 時に合成された入力を受け取る。**
 
 - `lh workflow launch-step` が、ドメイン状態から step ごとの入力 artifact を**ファイルとして**
-  run ディレクトリ（`$LOOPHUB_HOME/runs/pevr/<run-id>/<step>/input/`）へ書き出し、user prompt
+  run ディレクトリ（`$LOOPHUB_HOME/runs/workflow/<run-id>/<step>/input/`）へ書き出し、user prompt
   にはファイル一覧と 1 行説明だけを載せる（§7.1）。**user prompt に載せるパスは run directory
   の絶対パス** — worktree へは copy しない（git tree を汚さず、入力ファイルの commit への混入を
   防ぐ）。
 - **大きい入力（長い issue、巨大 diff）を prompt に直接埋め込まない。** ファイル参照なら子は
   必要な部分だけを読める（context を溢れさせない）。
 - 合成の対応（どのドメイン状態からどの入力ファイルを作るか）は placement policy と対になる
-  core の単一箇所（`core/pevr/inputs.ts`、後続実装）に置く。
+  core の単一箇所（`core/workflow/inputs.ts`、後続実装）に置く。
 
 | step | 入力ファイル | 合成元（エンジンだけが知る） |
 |---|---|---|
@@ -593,7 +593,7 @@ claude \
 
 ### 7.4 親への挿入
 
-親も同じ機構で起動する: 親契約 `core/pevr/contracts/parent.md`（責務・遷移表・使ってよい
+親も同じ機構で起動する: 親契約 `core/workflow/contracts/parent.md`（責務・遷移表・使ってよい
 コマンド）を `--append-system-prompt-file` で挿入し、positional prompt には run context だけを
 渡す。**親にはユーザー設定 prompt がない**（v1）。orchestration の挙動をユーザーが変えたく
 なった場合は、それが本当に必要かを含めて後続 issue で扱う。
@@ -637,8 +637,8 @@ claude \
 （§7.3）— 親の監視対象ではなく、遷移判断にも使わない。
 
 完了条件の評価は、親が生の JSON を解釈するのではなく、core の pure な評価関数（§12）に実装して
-`lh workflow step status` として公開する（§9.4）。真実は配置済み artifact（`pevr_artifacts` ×
-`pevr_placements`）と現 head の対応であり、status は呼ばれるたびにそこから計算される **query**
+`lh workflow step status` として公開する（§9.4）。真実は配置済み artifact（`workflow_artifacts` ×
+`workflow_placements`）と現 head の対応であり、status は呼ばれるたびにそこから計算される **query**
 である。これにより
 親の遷移判断は「status を取得し、表に従って行動する」に縮み、判定ロジック自体はエージェント
 なしで unit test できる。親はドメイン識別子（issue / PR 番号）を run context として知っている
@@ -675,17 +675,17 @@ claude \
 
 - 置き場所: issue detail のアクション行（`web/src/components/issue-detail.tsx` の
   `BuildControls` の隣）。**[Build] [Start workflow ▾]** と並ぶ。
-- Start workflow はドロップダウンで **保存済み PEVR workflow を名前で選んで起動**する
-  （`pevrWorkflows/list` を表示。0 件なら Settings の Workflows ページへの導線を出す）。
+- Start workflow はドロップダウンで **保存済み workflow を名前で選んで起動**する
+  （`workflows/list` を表示。0 件なら Settings の Workflows ページへの導線を出す）。
 - 表示条件は Build と同じ判定を使う: linked open PR が既にある issue では Build 同様に起動系
-  ボタンを出さない（1 issue につき同時 1 系統。Build と PEVR run は同じ soft guard —
+  ボタンを出さない（1 issue につき同時 1 系統。Build と Workflow run は同じ soft guard —
   「open PR は同時に 1 つ」— を共有する）。
 
 ### 9.2 RPC
 
-`terminal/launch` の `workflow` enum に `"pevr-run"` を追加し、params に `pevrWorkflowId` を
+`terminal/launch` の `workflow` enum に `"workflow-run"` を追加し、params に `workflowId` を
 足す。server 側（`core/service/terminal.ts`）は `launchIssueDevHerdr` と同型の
-`launchPevrRunHerdr` で `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr` を
+`launchWorkflowRunHerdr` で `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr` を
 spawn する。既存の Build 経路（RPC → CLI spawn → herdr）と同じ形にすることで、worktree /
 PR / lock の準備ロジックを CLI 側に一本化したままにする。
 
@@ -726,10 +726,10 @@ lh workflow step status <run> [--json]                    # 各 step の完了�
 
 - `step input` は `launch-step` と同一の合成を行い、契約（system prompt 側）・入力 artifact
   ファイル・user prompt を表示だけする。channel 分離の unit test（ユーザー入力が契約 channel に
-  混入しない、§13）は合成の実体である `core/pevr/compose.ts` を直接 assert する。`step input`
+  混入しない、§13）は合成の実体である `core/workflow/compose.ts` を直接 assert する。`step input`
   は同じ合成結果を人間の確認とエージェントなし e2e（§13）に使うための窓である。
 - `step output` は提出の唯一の入口（§6.3）。子は**引数なし**で呼ぶ — run / step は ambient run
-  context（launcher が注入する `LOOPHUB_PEVR_RUN` / `LOOPHUB_PEVR_STEP`）から解決する。
+  context（launcher が注入する `LOOPHUB_WORKFLOW_RUN` / `LOOPHUB_WORKFLOW_STEP`）から解決する。
   `--run` / `--step` は人間・テストが ambient context なしで提出するための明示指定
   （flag が env に優先する）。artifact JSON は `--file <path>` または stdin（`-`、既定）。
   検証（§6.3）を通れば配置（§6.4）まで同期的に行い、配置先を 1 行で表示する。検証エラーは
@@ -763,12 +763,12 @@ run #7: issue #42 -> PR #43 (draft) / worktree ~/.loophub/worktrees/jugyo/loophu
 # 2) Plan に渡る入力を確認（dry-run）
 $ lh workflow step input 7 plan
 --- system prompt (contract: plan) ---
-（core/pevr/contracts/plan.md に worktree path / base branch / step 名を埋めたもの）
+（core/workflow/contracts/plan.md に worktree path / base branch / step 名を埋めたもの）
 --- input files ---
-~/.loophub/runs/pevr/7/plan/input/task.md — 実現したい要求と受け入れ基準（エンジンが issue #42 から合成）
+~/.loophub/runs/workflow/7/plan/input/task.md — 実現したい要求と受け入れ基準（エンジンが issue #42 から合成）
 --- user prompt ---
 ## Inputs
-- ~/.loophub/runs/pevr/7/plan/input/task.md — 実現したい要求と受け入れ基準
+- ~/.loophub/runs/workflow/7/plan/input/task.md — 実現したい要求と受け入れ基準
 worktree: .（base branch: main）
 ## Step prompt (user-configured)
 (none — follow the contract)
@@ -842,14 +842,14 @@ reflect  incomplete — no validated reflection artifact placed
 |---|---|---|
 | Start workflow ボタン → `terminal/launch` | 構造化パラメータのみ（prompt なし） | なし |
 | RPC handler → `lh workflow start` spawn | argv のみ | なし |
-| `lh workflow start` → 親起動 | 親契約 = `core/pevr/contracts/parent.md`（git 同梱）+ run context | なし |
-| 親 → `lh workflow launch-step` → 子起動 | step 契約 = `core/pevr/contracts/<step>.md`（git 同梱）、入力 artifact = エンジンがドメイン状態から合成（§7.3）、step prompt = DB（`pevr_workflows`）、note = 親の自由記述 | なし |
+| `lh workflow start` → 親起動 | 親契約 = `core/workflow/contracts/parent.md`（git 同梱）+ run context | なし |
+| 親 → `lh workflow launch-step` → 子起動 | step 契約 = `core/workflow/contracts/<step>.md`（git 同梱）、入力 artifact = エンジンがドメイン状態から合成（§7.3）、step prompt = DB（`workflows`）、note = 親の自由記述 | なし |
 | 子 → LoopHub | `lh workflow step output` のみ（artifact の提出、ambient run context） | なし |
 
 - 合成されるどの prompt にも slash command 呼び出しを含めない。契約 template に「slash
   command を呼ばない」を明記する（§6.11）。
 - `SKILL.md` を読む箇所、`~/.claude/skills` / `npx skills add` の配布状態に依存する箇所が
-  経路上に存在しない。skill が 1 つもインストールされていない host でも PEVR workflow は
+  経路上に存在しない。skill が 1 つもインストールされていない host でも workflow は
   動作する。
 - 実装時の検証: 合成 prompt（契約 + user prompt）に `/lh-` パターンが含まれないことの unit
   test、および skill を配布していない環境での end-to-end 手動確認をチェックリストに含める
@@ -867,7 +867,7 @@ reflect  incomplete — no validated reflection artifact placed
 | user prompt | 入力ファイル一覧 + step prompt + note。ドメイン識別子は載せない（§7.1） | なし |
 | 入力ファイル | task / plan / findings / diff / report / prior-verdicts / run-digest（§7.3）。本文中に issue 番号等が現れうるが、ただのテキスト | なし |
 | worktree | cwd。branch 名（`loophub/pr-<m>`）に PR 番号が含まれるが、契約は branch 名の解釈を要求しない | なし |
-| 環境変数 | `LOOPHUB_PEVR_RUN` / `LOOPHUB_PEVR_STEP` — 提出先を特定する opaque な値。子は読まない（`step output` が読む） | なし |
+| 環境変数 | `LOOPHUB_WORKFLOW_RUN` / `LOOPHUB_WORKFLOW_STEP` — 提出先を特定する opaque な値。子は読まない（`step output` が読む） | なし |
 | 出力 | `lh workflow step output` — 引数なし。artifact schema にドメイン識別子の field はない（§6.2） | なし |
 
 全 step（Plan / Execute / Verify / Reflect）の成果物提出に issue id / PR id / 出力先の知識が
@@ -881,7 +881,7 @@ reflect  incomplete — no validated reflection artifact placed
 workflow / step / instruction binding として宣言化し、binding の差し替えを 4 層設定で管理する
 モデルを定義した。本書との関係は **置換でも統合でもなく、併存する実験**である。
 
-| 観点 | #964 モデル | 本書（PEVR） |
+| 観点 | #964 モデル | 本書（Workflow） |
 |---|---|---|
 | instruction の実体 | skill（`SKILL.md`、git + `npx skills add` 配布） | LoopHub 同梱契約（git）+ inline step prompt（DB） |
 | step の実行形態 | entry step の launch + 本文内 chain（`execution: "chained"`） | すべて親が起動を仲介する launch |
@@ -890,23 +890,23 @@ workflow / step / instruction binding として宣言化し、binding の差し�
 
 明文化する取り決め:
 
-- **併存（実験扱い）。** 既存 skill chain は変更せず、Build ボタンの隣に PEVR の入口が増える
-  だけである。#964 の catalog（`loophub@1`）にも PEVR workflow は **v1 では登録しない** —
-  catalog は immutable versioned であり、実験段階の PEVR を載せると変更のたびに catalog
+- **併存（実験扱い）。** 既存 skill chain は変更せず、Build ボタンの隣に Workflow の入口が増える
+  だけである。#964 の catalog（`loophub@1`）にも workflow は **v1 では登録しない** —
+  catalog は immutable versioned であり、実験段階の Workflow を載せると変更のたびに catalog
   version が要る。同様に #964 の `WorkflowConfig`（binding override）の対象にもならない。
-- **#964 の語彙との整合。** #964 の用語で言えば、PEVR run は「すべての step が
+- **#964 の語彙との整合。** #964 の用語で言えば、Workflow run は「すべての step が
   `execution: "launch"` で、instruction の delivery が skill ではなく inline な entrypoint
   workflow」である。#966 §8 は将来の delivery 拡張（`kind: "prompt"` 等の tagged union）を
-  予約しており、PEVR の step prompt はその具体例になる。また #966 §4.3 は「将来 LoopHub が
-  step 起動を仲介するモデル」への移行を展望しており、**PEVR の親仲介 launch はその実証実験を
+  予約しており、Workflow の step prompt はその具体例になる。また #966 §4.3 は「将来 LoopHub が
+  step 起動を仲介するモデル」への移行を展望しており、**Workflow の親仲介 launch はその実証実験を
   兼ねる**。
-- **昇格の条件。** 実験が定着したら、後続 issue で (1) catalog の新 version に PEVR 系
+- **昇格の条件。** 実験が定着したら、後続 issue で (1) catalog の新 version に Workflow 系
   workflow を登録し、(2) instruction delivery に inline 種別を追加し、(3) 4 step 固定の緩和や
   binding との統合を必要に応じて設計する。定着しなければ、DB テーブルと UI・CLI を落とすだけで
   skill / catalog 世界には何も影響しない — これが「実験扱い」の設計上の意味である。
 - **用語の衝突回避。** 「workflow」という語は 3 つある: #964 の workflow（宣言化された作業
-  単位）、repo automation（`.loophub/workflow.yml`）、本書の PEVR workflow。ドキュメント・UI
-  では PEVR workflow を単に「Workflow」と表示してよいが、設計文書では PEVR workflow と
+  単位）、repo automation（`.loophub/workflow.yml`）、本書の workflow。ドキュメント・UI
+  では workflow を単に「Workflow」と表示してよいが、設計文書では workflow と
   呼び分ける。
 
 ---
@@ -917,17 +917,17 @@ workflow / step / instruction binding として宣言化し、binding の差し�
 
 | 層 | 責務 |
 |---|---|
-| `core/pevr/contracts/*.md`（新規） | 親・4 step の契約 template（git 管理）。repo / issue 非依存の汎用文書（§6.6）。 |
-| `core/pevr/artifacts.ts`（新規） | 4 つの artifact 型の schema と pure な検証（JSON → ok / 違反リスト）。DB / fs を読まない。 |
-| `core/pevr/placement.ts`（新規） | placement policy の単一箇所 — 検証済み artifact 型 → ドメイン書き込み（PR body section / review / comment、draft→ready、attachment 化）の対応と、配置台帳（`pevr_placements`）の管理（§6.4）。ドメインに触れるのはここ・`inputs.ts`・run 開始だけ（§14）。 |
-| `core/pevr/inputs.ts`（新規） | 入力 artifact の合成の単一箇所 — step ごとの「どのドメイン状態からどの入力ファイルを作るか」（§7.3）。pure な合成と fs 書き出しを分離する。 |
-| `core/pevr/compose.ts`（新規） | 契約 + 入力ファイル一覧 + step prompt + note の pure な合成（§7.1）。DB / fs を読まない。 |
-| `core/pevr/steps.ts`（新規） | step 完了条件の pure な評価（`pevr_artifacts` の最新検証済み提出 + `pevr_placements` の配置記録 + 現 head → complete / missing + 最新 verdict の要約、§6.5・§8.2）。DB / fs を読まない。 |
-| `core/db.ts` / `core/store/pevr.ts`（新規） | `pevr_workflows` / `pevr_runs` / `pevr_artifacts` / `pevr_placements` の schema・migration・CRUD。 |
-| `core/service/pevr.ts`（新規） | workflow CRUD（validation、`422`）、run 開始（`dev.openPr` / worktree provision / dev lock の再利用）、launch-step の入力合成と herdr 起動、step output の検証・刻印・配置（artifacts / placement の合成）、run update。 |
+| `core/workflow/contracts/*.md`（新規） | 親・4 step の契約 template（git 管理）。repo / issue 非依存の汎用文書（§6.6）。 |
+| `core/workflow/artifacts.ts`（新規） | 4 つの artifact 型の schema と pure な検証（JSON → ok / 違反リスト）。DB / fs を読まない。 |
+| `core/workflow/placement.ts`（新規） | placement policy の単一箇所 — 検証済み artifact 型 → ドメイン書き込み（PR body section / review / comment、draft→ready、attachment 化）の対応と、配置台帳（`workflow_placements`）の管理（§6.4）。ドメインに触れるのはここ・`inputs.ts`・run 開始だけ（§14）。 |
+| `core/workflow/inputs.ts`（新規） | 入力 artifact の合成の単一箇所 — step ごとの「どのドメイン状態からどの入力ファイルを作るか」（§7.3）。pure な合成と fs 書き出しを分離する。 |
+| `core/workflow/compose.ts`（新規） | 契約 + 入力ファイル一覧 + step prompt + note の pure な合成（§7.1）。DB / fs を読まない。 |
+| `core/workflow/steps.ts`（新規） | step 完了条件の pure な評価（`workflow_artifacts` の最新検証済み提出 + `workflow_placements` の配置記録 + 現 head → complete / missing + 最新 verdict の要約、§6.5・§8.2）。DB / fs を読まない。 |
+| `core/db.ts` / `core/store/workflows.ts`（新規） | `workflows` / `workflow_runs` / `workflow_artifacts` / `workflow_placements` の schema・migration・CRUD。 |
+| `core/service/workflows.ts` / `core/service/workflow-runs.ts`（新規） | workflow CRUD（validation、`422`）、run 開始（`dev.openPr` / worktree provision / dev lock の再利用）、launch-step の入力合成と herdr 起動、step output の検証・刻印・配置（artifacts / placement の合成）、run update。 |
 | `core/terminal/terminal-launch.ts` | split pane 起動 argv（`--split` 対応の builder 追加）。既存 builder の流儀に従う。 |
 | `cli/commands/workflow.ts`（新規） | `lh workflow start / launch-step / step input / step output / step status / run update / list / view / create / update / delete`。thin に保ち、判断は service へ。 |
-| `web/server/contract.ts` / `core/service/terminal.ts` | `terminal/launch` の `"pevr-run"` 拡張、`pevrWorkflows/*` RPC。 |
+| `web/server/contract.ts` / `core/service/terminal.ts` | `terminal/launch` の `"workflow-run"` 拡張、`workflows/*` RPC。 |
 | `core/serialize.ts` | workflow / run の wire shape（`web/src/api/types.ts` は型再宣言しない）。 |
 | `web/src/components/issue-detail.tsx` ほか | Start workflow ボタン（dropdown）、run 状態表示。 |
 | `web/src/routes/settings` 配下 | Workflows 編集ページ。 |
@@ -938,29 +938,29 @@ workflow / step / instruction binding として宣言化し、binding の差し�
 
 上から順に依存が薄い:
 
-- [ ] `pevr_workflows` の schema / store / service CRUD + `lh workflow list/view/create/update/delete`
-      + `pevrWorkflows/*` RPC（UI なしで CRUD が成立する縦切り）。
-- [ ] `core/pevr/artifacts.ts` — 4 つの artifact 型の schema と検証。unit test: 型ごとの正常系 /
+- [ ] `workflows` の schema / store / service CRUD + `lh workflow list/view/create/update/delete`
+      + `workflows/*` RPC（UI なしで CRUD が成立する縦切り）。
+- [ ] `core/workflow/artifacts.ts` — 4 つの artifact 型の schema と検証。unit test: 型ごとの正常系 /
       違反系（欠落 field・空文字・不正 enum・request_changes で findings 0 件、等）。
-- [ ] `core/pevr/contracts/*.md`（親 + 4 step）と `core/pevr/compose.ts` / `core/pevr/inputs.ts`。
+- [ ] `core/workflow/contracts/*.md`（親 + 4 step）と `core/workflow/compose.ts` / `core/workflow/inputs.ts`。
       合成の unit test: 契約が必ず system prompt 側 channel に載る / ユーザー入力が契約 channel に
       混入しない / 合成 prompt に slash command を含まない / 契約・user prompt にドメイン識別子
       （issue / PR 番号）を差し込まない（§6.6、§7.1）。
-- [ ] `pevr_runs` + `lh workflow start`（openPr・worktree・lock 再利用、親の herdr 起動）。
+- [ ] `workflow_runs` + `lh workflow start`（openPr・worktree・lock 再利用、親の herdr 起動）。
 - [ ] `lh workflow launch-step`（入力 artifact の合成・書き出し、split pane 起動、ambient run
       context の環境変数注入、handoff 記録、session 登録）+ `lh workflow run update`。
-- [ ] `lh workflow step output` + `pevr_artifacts` / `pevr_placements` + `core/pevr/placement.ts`
+- [ ] `lh workflow step output` + `workflow_artifacts` / `workflow_placements` + `core/workflow/placement.ts`
       （検証 → 記録 → 配置、draft→ready、検証エラー 422、配置失敗時の記録保持と再試行、
       §6.3–6.4）。unit test は placement の対応表と刻印を、e2e は「提出 → PR 上の表現」を
       assert する。
-- [ ] `lh workflow step input` / `step status`（`core/pevr/steps.ts` の完了条件評価 + 合成 dry-run、
+- [ ] `lh workflow step input` / `step status`（`core/workflow/steps.ts` の完了条件評価 + 合成 dry-run、
       §9.4）と、エージェントなしで 4 step を通す e2e テスト（artifact を `step output` で人工的に
       提出し、status の complete / missing と配置結果を assert する。head を進めて execution-report /
       verdict が stale になることも assert する）。
 - [ ] 親契約 template の遷移表・差し戻し・エスカレーションの実装と、skill 未配布 host での
       end-to-end 手動検証（§10）。
 - [ ] Web: Settings の Workflows 編集ページ。
-- [ ] Web: Start workflow ボタン + `terminal/launch` の `"pevr-run"` 拡張。
+- [ ] Web: Start workflow ボタン + `terminal/launch` の `"workflow-run"` 拡張。
 - [ ] Web: issue / PR detail への run 状態表示（current_step、rework_count、blocked 理由）。
 - [ ] エスカレーションの Inbox 連携と run の stop 操作。
 - 将来（v1 外）: codex runtime 対応（system prompt channel の調査から）、repo ごとの既定
@@ -974,7 +974,7 @@ workflow / step / instruction binding として宣言化し、binding の差し�
   positional prompt への契約連結は「ユーザー prompt と同じ channel に混ざる」ので採らない
   （§7.2 の境界が成立しない）。
 - **herdr 前提。** 子の split pane 起動・停滞検知・つつきが herdr の機能に立脚する。herdr の
-  無い環境での PEVR run は v1 ではエラー。
+  無い環境での Workflow run は v1 ではエラー。
 - **契約の保証は構造的（channel レベル）。** 意味論レベルの逸脱は、LoopHub 観測可能な完了条件と
   Verify step、親の停滞検知で受け止める（§7.2）。
 - **同一 Verify エージェントの継続利用は不採用。** 差し戻し後の再検証も毎回新しい子で行う
@@ -987,8 +987,8 @@ workflow / step / instruction binding として宣言化し、binding の差し�
   配置記録と現 head から毎回計算する query である（§6.5、§9.4）。次へ進める判断は親の責務の
   まま残す。
 - **完了判定に marker ヒューリスティックを使わない。** PR body の placeholder 置換検知・
-  `<!-- pevr:reflect -->` marker 検索は全廃する。判定の入力は正本（`pevr_artifacts`）・配置台帳
-  （`pevr_placements`）・現 head だけであり、ドメイン上の表現は placement の出力にすぎない
+  `<!-- workflow:reflect -->` marker 検索は全廃する。判定の入力は正本（`workflow_artifacts`）・配置台帳
+  （`workflow_placements`）・現 head だけであり、ドメイン上の表現は placement の出力にすぎない
   （§6.5）。
 - **step 構成と artifact 型は列挙で固定。** Plan / Execute / Verify / Reflect の 4 step と
   plan / execution-report / verdict / reflection の 4 型以外を作らない。ユーザー定義 step /
@@ -998,9 +998,9 @@ workflow / step / instruction binding として宣言化し、binding の差し�
   output`」に固定する（§6.1）。issue id / PR id / 配置先・取得手段は契約にも入力にも現れず
   （§6.6、§10.1）、ドメインとの境界はエンジン（入力合成と placement policy）が一手に持つ。
   親は例外的にドメイン識別子を知る（エスカレーション等で使う、§8.2）。
-- **artifact はドメイン非依存の正本、ドメインへの紐づけは run が所有する。** `pevr_artifacts`
+- **artifact はドメイン非依存の正本、ドメインへの紐づけは run が所有する。** `workflow_artifacts`
   は run / step / SHA / 内容だけを持ち、issue / PR への参照も配置情報も持たない（§5.2）。
-  run（v1 では常に PR に紐づく）が artifact をドメインへ投影し、その台帳（`pevr_placements`）を
+  run（v1 では常に PR に紐づく）が artifact をドメインへ投影し、その台帳（`workflow_placements`）を
   管理する責務を負う（§6.4）。ドメインに触れる箇所は run 開始・入力合成（`inputs.ts`）・配置
   （`placement.ts`）の 3 つに限定し、schema・契約・prompt 合成・完了評価は PR 非依存を保つ。
   これにより、PR を持たない run（配置を伴わない binding）への将来拡張が placement の差し替え
@@ -1010,4 +1010,4 @@ workflow / step / instruction binding として宣言化し、binding の差し�
 - **run 中の workflow 編集は次の launch-step から反映**（§5.1）。step 単位のスナップショットは
   持たない。
 - **バージョニングなし・global スコープ・4 step 固定**は issue の指定どおり v1 の前提。
-- **既存 skill chain は無変更。** PEVR はあくまで並行する実験入口である（§11）。
+- **既存 skill chain は無変更。** Workflow はあくまで並行する実験入口である（§11）。

@@ -6,7 +6,7 @@ import { updateAgentAutoModeOnBuild, updateConfig } from "../config.ts";
 import {
   acquireHerdrWorktreeTab,
   buildHerdrLaunchPlan,
-  buildPevrStepHerdrLaunchPlan,
+  buildWorkflowStepHerdrLaunchPlan,
   commandForHerdrLaunch,
   type HerdrCmdRunner,
   herdrAgentFocusArgv,
@@ -318,8 +318,8 @@ describe("herdr terminal launch", () => {
     expect(plan.argv).not.toContain("--workspace");
   });
 
-  test("builds PEVR step Herdr split launch argv and ambient env", () => {
-    const plan = buildPevrStepHerdrLaunchPlan({
+  test("builds Workflow step Herdr split launch argv and ambient env", () => {
+    const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 12,
       step: "plan",
@@ -339,8 +339,8 @@ describe("herdr terminal launch", () => {
     expect(plan.command).toContain(
       "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
     );
-    expect(plan.command).toContain("LOOPHUB_PEVR_RUN='12'");
-    expect(plan.command).toContain("LOOPHUB_PEVR_STEP='plan'");
+    expect(plan.command).toContain("LOOPHUB_WORKFLOW_RUN='12'");
+    expect(plan.command).toContain("LOOPHUB_WORKFLOW_STEP='plan'");
     expect(plan.command).toContain(
       "claude --session-id '11111111-1111-4111-8111-111111111111'",
     );

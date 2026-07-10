@@ -1,12 +1,12 @@
-// Example step prompts for the PEVR workflow create form (#1006). These are illustrative
+// Example step prompts for the workflow create form (#1006). These are illustrative
 // user-configured prompts — the additive per-step guidance a user writes on top of the fixed
-// step contract (core/pevr/contracts/*.md), NOT the contract itself. The Settings "Workflows"
+// step contract (core/workflow/contracts/*.md), NOT the contract itself. The Settings "Workflows"
 // create form prefills its fields with these so a new workflow starts from a sensible template
 // instead of blank textareas. They are a pure constant on purpose: the design (§5.3) requires
 // prefilling from a constant rather than seeding a DB row, so an empty install has no workflows
 // until the user creates one. Kept free of node/db imports so the web bundle can import it directly.
 
-export interface PevrExamplePrompts {
+export interface WorkflowExamplePrompts {
   description: string;
   plan_prompt: string;
   execute_prompt: string;
@@ -14,7 +14,7 @@ export interface PevrExamplePrompts {
   reflect_prompt: string;
 }
 
-export const PEVR_EXAMPLE_PROMPTS: PevrExamplePrompts = {
+export const WORKFLOW_EXAMPLE_PROMPTS: WorkflowExamplePrompts = {
   description: "Fixed Plan/Execute/Verify/Reflect development workflow.",
   plan_prompt:
     "Read the task and the code paths it touches before planning. Choose the smallest change " +

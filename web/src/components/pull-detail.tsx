@@ -31,7 +31,6 @@ import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { HandoffTimeline } from "@/components/handoff-timeline";
 import { isPullHerdrWorking } from "@/components/herdr-badge";
 import { Markdown } from "@/components/markdown";
-import { PevrRunStatusSection } from "@/components/pevr-run-status";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { PullHerdrSection } from "@/components/pull-herdr-section";
 import {
@@ -43,6 +42,7 @@ import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { WorkDuration } from "@/components/work-duration";
+import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
 import { type DiffLineKind, parsePatch } from "@/lib/diff";
 import { usePageTitle } from "@/lib/page-title";
@@ -50,7 +50,6 @@ import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
 import { useIssueComments } from "@/queries/issues";
-import { usePevrRunForPull } from "@/queries/pevr-runs";
 import {
   useGithubPrStatus,
   useMarkGithubMerged,
@@ -66,6 +65,7 @@ import {
   useSetPullState,
 } from "@/queries/pulls";
 import { useHerdrSessions } from "@/queries/terminal";
+import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 
 const MERGE_METHODS = ["squash", "merge", "rebase"] as const;
 type MergeMethod = (typeof MERGE_METHODS)[number];
@@ -132,7 +132,7 @@ export function PullDetail({
             longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
         <PullHeader owner={owner} repo={repo} pull={pull} />
 
-        <PevrRunSection owner={owner} repo={repo} number={number} />
+        <WorkflowRunSection owner={owner} repo={repo} number={number} />
 
         <FilesChanged
           owner={owner}
@@ -202,9 +202,9 @@ export function PullDetail({
   );
 }
 
-// PEVR run state for this PR (#1008): renders the linked run's status / step / rework via the
+// Workflow run state for this PR (#1008): renders the linked run's status / step / rework via the
 // shared section, or nothing when the PR has no run.
-function PevrRunSection({
+function WorkflowRunSection({
   owner,
   repo,
   number,
@@ -213,8 +213,8 @@ function PevrRunSection({
   repo: string;
   number: number;
 }) {
-  const { data } = usePevrRunForPull(owner, repo, number);
-  return <PevrRunStatusSection owner={owner} repo={repo} state={data} />;
+  const { data } = useWorkflowRunForPull(owner, repo, number);
+  return <WorkflowRunStatusSection owner={owner} repo={repo} state={data} />;
 }
 
 function PullHeader({

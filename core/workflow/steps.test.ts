@@ -1,12 +1,12 @@
 import { expect, test } from "vitest";
-import type { PevrVerdictArtifact } from "./artifacts.ts";
-import { evaluatePevrSteps } from "./steps.ts";
+import type { WorkflowVerdictArtifact } from "./artifacts.ts";
+import { evaluateWorkflowSteps } from "./steps.ts";
 
 const HEAD = "a".repeat(40);
 const OLD = "b".repeat(40);
 
 test("nothing placed: every step incomplete with its missing reason", () => {
-  const status = evaluatePevrSteps({
+  const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: false,
     plan: null,
@@ -38,7 +38,7 @@ test("nothing placed: every step incomplete with its missing reason", () => {
 });
 
 test("plan/reflect complete once placed regardless of head", () => {
-  const status = evaluatePevrSteps({
+  const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
     plan: { headSha: OLD, placed: true },
@@ -52,7 +52,7 @@ test("plan/reflect complete once placed regardless of head", () => {
 });
 
 test("accepted-but-unplaced artifact stays incomplete", () => {
-  const status = evaluatePevrSteps({
+  const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
     plan: { headSha: HEAD, placed: false },
@@ -68,7 +68,7 @@ test("accepted-but-unplaced artifact stays incomplete", () => {
 });
 
 test("execute complete only when placed at current head and ahead of base", () => {
-  const atHead = evaluatePevrSteps({
+  const atHead = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
     plan: { headSha: HEAD, placed: true },
@@ -81,7 +81,7 @@ test("execute complete only when placed at current head and ahead of base", () =
 });
 
 test("execute goes stale when head advances past the stamped SHA", () => {
-  const status = evaluatePevrSteps({
+  const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
     plan: { headSha: OLD, placed: true },
@@ -97,13 +97,13 @@ test("execute goes stale when head advances past the stamped SHA", () => {
 });
 
 test("verify goes stale when head advances, but latest_verdict still reported", () => {
-  const verdict: PevrVerdictArtifact = {
+  const verdict: WorkflowVerdictArtifact = {
     type: "verdict",
     event: "request_changes",
     summary: "Needs work",
     findings: [{ file: "a.ts", problem: "bug", expected: "no bug" }],
   };
-  const status = evaluatePevrSteps({
+  const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
     plan: { headSha: HEAD, placed: true },
@@ -124,7 +124,7 @@ test("verify goes stale when head advances, but latest_verdict still reported", 
 });
 
 test("null current head keeps head-dependent steps incomplete", () => {
-  const status = evaluatePevrSteps({
+  const status = evaluateWorkflowSteps({
     currentHead: null,
     headAheadOfBase: false,
     plan: { headSha: HEAD, placed: true },

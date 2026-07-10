@@ -76,12 +76,12 @@ export interface TerminalLaunchInput {
     | "scheduled-task-create"
     | "resume"
     | "github-pr-export"
-    | "pevr-run";
+    | "workflow-run";
   issueNumber?: number;
   prNumber?: number;
-  // Saved PEVR workflow id for the "pevr-run" launch (#1007). Set by the issue-detail Start
+  // Saved workflow id for the "workflow-run" launch (#1007). Set by the issue-detail Start
   // workflow dropdown; maps to `lh workflow start ... --workflow-id <id>`.
-  pevrWorkflowId?: number;
+  workflowId?: number;
   session?: string;
   cwd?: string;
   // One-shot agent/model overrides for the issue-dev (Build) launch (#637). Set only by the
@@ -115,8 +115,8 @@ const CLOSED_PULL_AGENT_GRACE_MS = 60 * 60 * 1000;
 const CLOSED_PULL_AGENT_KILLED_EVENT = "agent_session.killed";
 const CLOSED_PULL_AGENT_KILL_REASON = "pr_closed_grace_elapsed";
 // `label` names the spawned command in the thrown/logged failure messages. Defaults to the Build
-// command since that was the original caller; launchPevrRunHerdr passes "lh workflow start" so a
-// pevr-run failure is not misreported as an `lh build` failure (#1007).
+// command since that was the original caller; launchWorkflowRunHerdr passes "lh workflow start" so a
+// workflow-run failure is not misreported as an `lh build` failure (#1007).
 function runLhDevLaunch(
   args: string[],
   cwd: string,
@@ -257,13 +257,13 @@ async function launchIssueDevHerdr(
 // Spawns `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr` for the issue-detail
 // Start workflow dropdown (#1007). Same shape as launchIssueDevHerdr: this RPC only spawns the CLI
 // and lets `lh workflow start` own worktree/PR provisioning, the dev lock, run creation, and the
-// parent herdr launch (docs/pevr-workflow.ja.md §9.1–§9.2). Args are passed as an array (no shell),
+// parent herdr launch (docs/workflow.ja.md §9.1–§9.2). Args are passed as an array (no shell),
 // so repo and id need no shell quoting; parent session id is never surfaced here — the CLI sets
 // LOOPHUB_SESSION_ID for attribution.
-async function launchPevrRunHerdr(
+async function launchWorkflowRunHerdr(
   r: S.Repo,
   issueNumber: number,
-  pevrWorkflowId: number,
+  workflowId: number,
 ) {
   const repo = { full_name: r.full_name, local_path: r.local_path };
   const args = [
@@ -271,7 +271,7 @@ async function launchPevrRunHerdr(
     "start",
     `${r.full_name}/${issueNumber}`,
     "--workflow-id",
-    String(pevrWorkflowId),
+    String(workflowId),
     "--herdr",
   ];
   try {
@@ -286,8 +286,8 @@ async function launchPevrRunHerdr(
   const sessionName = herdrSessionName(repo);
   // Same shape/convention as launchIssueDevHerdr: `herdr session attach <repoSession>` is the repo's
   // canonical herdr entry point for launched agents. The web client discards these fields today (only
-  // the error-path `command` is read); a follow-up could pin the PEVR parent to this session in
-  // `lh workflow start` for exact grouping (docs/pevr-workflow.ja.md §9.2).
+  // the error-path `command` is read); a follow-up could pin the Workflow parent to this session in
+  // `lh workflow start` for exact grouping (docs/workflow.ja.md §9.2).
   return {
     backend: "herdr" as const,
     session_name: sessionName,
@@ -439,14 +439,14 @@ export const terminal = {
       });
     }
 
-    // pevr-run (Start workflow): like issue-dev, worktree/PR/lock/run provisioning and the parent
+    // workflow-run (Start workflow): like issue-dev, worktree/PR/lock/run provisioning and the parent
     // herdr launch are entirely `lh workflow start`'s job (#1007) — this RPC only spawns it.
-    if (input.workflow === "pevr-run") {
+    if (input.workflow === "workflow-run") {
       if (!input.issueNumber)
         throw new ServiceError(422, "issueNumber is required");
-      if (!input.pevrWorkflowId)
-        throw new ServiceError(422, "pevrWorkflowId is required");
-      return launchPevrRunHerdr(r, input.issueNumber, input.pevrWorkflowId);
+      if (!input.workflowId)
+        throw new ServiceError(422, "workflowId is required");
+      return launchWorkflowRunHerdr(r, input.issueNumber, input.workflowId);
     }
 
     const issueCreateLaunchId =

@@ -8,8 +8,8 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { PevrRunState } from "@/api/types";
-import { PevrRunStatusSection } from "./pevr-run-status";
+import type { WorkflowRunState } from "@/api/types";
+import { WorkflowRunStatusSection } from "./workflow-run-status";
 
 afterEach(cleanup);
 
@@ -38,7 +38,7 @@ function renderInRouter(ui: React.ReactNode) {
   return render(<RouterProvider router={router} />);
 }
 
-function state(partial: Partial<PevrRunState>): PevrRunState {
+function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
   return {
     id: 7,
     workflow_id: 3,
@@ -55,17 +55,17 @@ function state(partial: Partial<PevrRunState>): PevrRunState {
   };
 }
 
-describe("PevrRunStatusSection", () => {
+describe("WorkflowRunStatusSection", () => {
   it("renders nothing when there is no run", () => {
     const { container } = renderInRouter(
-      <PevrRunStatusSection owner="me" repo="loophub" state={null} />,
+      <WorkflowRunStatusSection owner="me" repo="loophub" state={null} />,
     );
     expect(container.textContent).toBe("");
   });
 
   it("shows workflow name, status, current step, and rework count for a running run", async () => {
     renderInRouter(
-      <PevrRunStatusSection
+      <WorkflowRunStatusSection
         owner="me"
         repo="loophub"
         state={state({
@@ -75,7 +75,7 @@ describe("PevrRunStatusSection", () => {
         })}
       />,
     );
-    expect(await screen.findByText("PEVR run")).toBeTruthy();
+    expect(await screen.findByText("Workflow run")).toBeTruthy();
     expect(screen.getByText("Running")).toBeTruthy();
     expect(screen.getByText("standard")).toBeTruthy();
     expect(screen.getByText("· rework ×2")).toBeTruthy();
@@ -86,7 +86,7 @@ describe("PevrRunStatusSection", () => {
 
   it("shows the completed message when the run finished Reflect", async () => {
     renderInRouter(
-      <PevrRunStatusSection
+      <WorkflowRunStatusSection
         owner="me"
         repo="loophub"
         state={state({ status: "completed", current_step: "reflect" })}
@@ -98,20 +98,20 @@ describe("PevrRunStatusSection", () => {
 
   it("does not claim Reflect complete when a completed run's step is not reflect", async () => {
     renderInRouter(
-      <PevrRunStatusSection
+      <WorkflowRunStatusSection
         owner="me"
         repo="loophub"
         state={state({ status: "completed", current_step: "verify" })}
       />,
     );
     expect(await screen.findByText("Completed")).toBeTruthy();
-    expect(screen.getByText("The PEVR run is completed.")).toBeTruthy();
+    expect(screen.getByText("The Workflow run is completed.")).toBeTruthy();
     expect(screen.queryByText(/Reflect complete/)).toBeNull();
   });
 
   it("surfaces the block reason, verdict summary, and issue / inbox links when blocked", async () => {
     renderInRouter(
-      <PevrRunStatusSection
+      <WorkflowRunStatusSection
         owner="me"
         repo="loophub"
         state={state({

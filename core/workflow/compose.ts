@@ -1,49 +1,51 @@
-export type PevrStep = "plan" | "execute" | "verify" | "reflect";
+export type WorkflowStep = "plan" | "execute" | "verify" | "reflect";
 
-export const PEVR_STEPS: readonly PevrStep[] = [
+export const WORKFLOW_STEPS: readonly WorkflowStep[] = [
   "plan",
   "execute",
   "verify",
   "reflect",
 ] as const;
 
-export type PevrContractRenderInput = {
+export type WorkflowContractRenderInput = {
   template: string;
-  step: PevrStep | "parent";
+  step: WorkflowStep | "parent";
   worktreePath: string;
   baseBranch: string;
 };
 
-export type PevrInputFileRef = {
+export type WorkflowInputFileRef = {
   path: string;
   description: string;
 };
 
-export type PevrStepPromptInput = {
-  inputFiles: PevrInputFileRef[];
+export type WorkflowStepPromptInput = {
+  inputFiles: WorkflowInputFileRef[];
   worktreePath?: string;
   baseBranch: string;
   stepPrompt?: string;
   note?: string;
 };
 
-export type PevrComposedPrompt = {
+export type WorkflowComposedPrompt = {
   systemPrompt: string;
   userPrompt: string;
-  inputFiles: PevrInputFileRef[];
+  inputFiles: WorkflowInputFileRef[];
   stepPrompt: string;
   note?: string;
 };
 
 const NONE_STEP_PROMPT = "(none - follow the contract)";
 
-export function renderPevrContract(input: PevrContractRenderInput): string {
+export function renderWorkflowContract(
+  input: WorkflowContractRenderInput,
+): string {
   const rendered = input.template
     .replaceAll("{{step}}", input.step)
     .replaceAll("{{worktreePath}}", input.worktreePath)
     .replaceAll("{{baseBranch}}", input.baseBranch);
   return [
-    "## PEVR contract context",
+    "## Workflow contract context",
     `step: ${input.step}`,
     `worktree: ${input.worktreePath}`,
     `base branch: ${input.baseBranch}`,
@@ -52,9 +54,9 @@ export function renderPevrContract(input: PevrContractRenderInput): string {
   ].join("\n");
 }
 
-export function composePevrStepPrompt(
-  input: PevrStepPromptInput,
-): PevrComposedPrompt {
+export function composeWorkflowStepPrompt(
+  input: WorkflowStepPromptInput,
+): WorkflowComposedPrompt {
   const stepPrompt =
     normalizeOptionalText(input.stepPrompt) ?? NONE_STEP_PROMPT;
   const note = normalizeOptionalText(input.note);
@@ -83,13 +85,13 @@ export function composePevrStepPrompt(
   };
 }
 
-export function composePevrLaunchPrompt(
-  contract: PevrContractRenderInput,
-  prompt: PevrStepPromptInput,
-): PevrComposedPrompt {
+export function composeWorkflowLaunchPrompt(
+  contract: WorkflowContractRenderInput,
+  prompt: WorkflowStepPromptInput,
+): WorkflowComposedPrompt {
   return {
-    ...composePevrStepPrompt(prompt),
-    systemPrompt: renderPevrContract(contract),
+    ...composeWorkflowStepPrompt(prompt),
+    systemPrompt: renderWorkflowContract(contract),
   };
 }
 

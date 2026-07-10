@@ -607,10 +607,10 @@ CREATE TABLE IF NOT EXISTS notification_cursors (
   last_id   INTEGER NOT NULL
 );
 
--- PEVR workflow definitions (#997). Global, user-editable prompt bundles for the fixed
+-- workflow definitions (#997). Global, user-editable prompt bundles for the fixed
 -- Plan/Execute/Verify/Reflect workflow. Step prompts are plain markdown text; empty strings are
 -- valid and mean "use only the built-in step contract".
-CREATE TABLE IF NOT EXISTS pevr_workflows (
+CREATE TABLE IF NOT EXISTS workflows (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   name            TEXT NOT NULL UNIQUE,
   description     TEXT NOT NULL DEFAULT '',
@@ -622,12 +622,12 @@ CREATE TABLE IF NOT EXISTS pevr_workflows (
   updated_at      TEXT NOT NULL
 );
 
--- Minimal run tracking for the PEVR workflow delete guard (#997). Full run start/step/artifact
--- behavior is implemented in later PEVR issues; this table is present now so a workflow referenced
+-- Minimal run tracking for the workflow delete guard (#997). Full run start/step/artifact
+-- behavior is implemented in later Workflow issues; this table is present now so a workflow referenced
 -- by an active run cannot be deleted.
-CREATE TABLE IF NOT EXISTS pevr_runs (
+CREATE TABLE IF NOT EXISTS workflow_runs (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-  workflow_id        INTEGER REFERENCES pevr_workflows(id) ON DELETE SET NULL,
+  workflow_id        INTEGER REFERENCES workflows(id) ON DELETE SET NULL,
   repo_id            INTEGER NOT NULL REFERENCES repos(id),
   issue_number       INTEGER NOT NULL,
   pr_number          INTEGER NOT NULL,
@@ -640,12 +640,12 @@ CREATE TABLE IF NOT EXISTS pevr_runs (
   updated_at         TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_pevr_runs_workflow_status
-  ON pevr_runs(workflow_id, status);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_status
+  ON workflow_runs(workflow_id, status);
 
-CREATE TABLE IF NOT EXISTS pevr_artifacts (
+CREATE TABLE IF NOT EXISTS workflow_artifacts (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id       INTEGER NOT NULL REFERENCES pevr_runs(id),
+  run_id       INTEGER NOT NULL REFERENCES workflow_runs(id),
   step         TEXT NOT NULL,
   type         TEXT NOT NULL,
   content_json TEXT NOT NULL,
@@ -654,22 +654,22 @@ CREATE TABLE IF NOT EXISTS pevr_artifacts (
   created_at   TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_pevr_artifacts_run_step
-  ON pevr_artifacts(run_id, step, id);
+CREATE INDEX IF NOT EXISTS idx_workflow_artifacts_run_step
+  ON workflow_artifacts(run_id, step, id);
 
-CREATE TABLE IF NOT EXISTS pevr_placements (
+CREATE TABLE IF NOT EXISTS workflow_placements (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  artifact_id INTEGER NOT NULL REFERENCES pevr_artifacts(id),
+  artifact_id INTEGER NOT NULL REFERENCES workflow_artifacts(id),
   target_kind TEXT NOT NULL,
   target_ref  TEXT NOT NULL,
   placed_at   TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_pevr_placements_artifact
-  ON pevr_placements(artifact_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_placements_artifact
+  ON workflow_placements(artifact_id);
 
-CREATE TABLE IF NOT EXISTS pevr_step_pins (
-  run_id     INTEGER NOT NULL REFERENCES pevr_runs(id),
+CREATE TABLE IF NOT EXISTS workflow_step_pins (
+  run_id     INTEGER NOT NULL REFERENCES workflow_runs(id),
   step       TEXT NOT NULL,
   session_id TEXT NOT NULL UNIQUE,
   head_sha   TEXT NOT NULL,
@@ -677,14 +677,14 @@ CREATE TABLE IF NOT EXISTS pevr_step_pins (
   PRIMARY KEY (run_id, step, session_id)
 );
 
-CREATE TABLE IF NOT EXISTS pevr_placement_claims (
-  artifact_id INTEGER PRIMARY KEY REFERENCES pevr_artifacts(id),
+CREATE TABLE IF NOT EXISTS workflow_placement_claims (
+  artifact_id INTEGER PRIMARY KEY REFERENCES workflow_artifacts(id),
   owner_token TEXT NOT NULL,
   claimed_at  TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS pevr_artifact_submitters (
-  artifact_id INTEGER PRIMARY KEY REFERENCES pevr_artifacts(id),
+CREATE TABLE IF NOT EXISTS workflow_artifact_submitters (
+  artifact_id INTEGER PRIMARY KEY REFERENCES workflow_artifacts(id),
   session_id  TEXT NOT NULL
 );
 `);
@@ -709,11 +709,11 @@ function columnExists(table: string, column: string): boolean {
 }
 
 tryExec("ALTER TABLE pulls ADD COLUMN head_sha TEXT");
-tryExec("ALTER TABLE pevr_artifacts ADD COLUMN dedupe_key TEXT");
-tryExec("ALTER TABLE pevr_placement_claims ADD COLUMN owner_token TEXT");
-tryExec("DROP INDEX IF EXISTS idx_pevr_artifacts_submission");
+tryExec("ALTER TABLE workflow_artifacts ADD COLUMN dedupe_key TEXT");
+tryExec("ALTER TABLE workflow_placement_claims ADD COLUMN owner_token TEXT");
+tryExec("DROP INDEX IF EXISTS idx_workflow_artifacts_submission");
 tryExec(
-  "CREATE UNIQUE INDEX IF NOT EXISTS idx_pevr_artifacts_inflight_dedupe ON pevr_artifacts(dedupe_key) WHERE dedupe_key IS NOT NULL",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_artifacts_inflight_dedupe ON workflow_artifacts(dedupe_key) WHERE dedupe_key IS NOT NULL",
 );
 tryExec("ALTER TABLE issues ADD COLUMN target_branch TEXT");
 tryExec("ALTER TABLE review_comments ADD COLUMN review_id INTEGER");

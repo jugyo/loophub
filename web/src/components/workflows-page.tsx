@@ -1,23 +1,23 @@
-// Settings > Workflows screen (/settings/workflows, #1006). Lists the instance's PEVR workflows and
-// lets you create, edit, and delete them. A PEVR workflow is a global prompt bundle for the fixed
-// Plan/Execute/Verify/Reflect development loop (docs/pevr-workflow.ja.md §5); the four step prompts
-// are the only user-configurable part. Same pevrWorkflows/* RPCs the CLI uses; this is the
+// Settings > Workflows screen (/settings/workflows, #1006). Lists the instance's workflows and
+// lets you create, edit, and delete them. A workflow is a global prompt bundle for the fixed
+// Plan/Execute/Verify/Reflect development loop (docs/workflow.ja.md §5); the four step prompts
+// are the only user-configurable part. Same workflows/* RPCs the CLI uses; this is the
 // management UI. Start-workflow and run status are intentionally out of scope here.
 
 import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { PevrWorkflowInput } from "@/api/client";
-import type { PevrWorkflow } from "@/api/types";
+import type { WorkflowInput } from "@/api/client";
+import type { Workflow } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import {
-  useCreatePevrWorkflow,
-  useDeletePevrWorkflow,
-  usePevrWorkflows,
-  useUpdatePevrWorkflow,
-} from "@/queries/pevr-workflows";
-// core/pevr/example-prompts.ts is a pure, node-free constant (single source of truth for the
+  useCreateWorkflow,
+  useDeleteWorkflow,
+  useUpdateWorkflow,
+  useWorkflows,
+} from "@/queries/workflows";
+// core/workflow/example-prompts.ts is a pure, node-free constant (single source of truth for the
 // create-form prefill, per §5.3 — prefill from a constant, do not seed a DB row).
-import { PEVR_EXAMPLE_PROMPTS } from "../../../core/pevr/example-prompts.ts";
+import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts.ts";
 
 // ApiError extends Error, so String(err) prefixes the class name ("ApiError: <message>"). Render the
 // bare server message (e.g. the 422 validation text, the 409 delete-refusal text) instead — matching
@@ -26,7 +26,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// The four fixed PEVR steps, in order, with the wire field each maps to. Rendered as one textarea
+// The four fixed Workflow steps, in order, with the wire field each maps to. Rendered as one textarea
 // per step in the form.
 const STEP_FIELDS: {
   key: "plan_prompt" | "execute_prompt" | "verify_prompt" | "reflect_prompt";
@@ -39,14 +39,14 @@ const STEP_FIELDS: {
 ];
 
 export function WorkflowsPage() {
-  const { data: workflows, isLoading, isError } = usePevrWorkflows();
+  const { data: workflows, isLoading, isError } = useWorkflows();
   const [creating, setCreating] = useState(false);
 
   return (
     <div className="mx-auto max-w-content">
       <h1 className="text-2xl font-semibold">Workflows</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        PEVR workflows are global prompt bundles for the fixed
+        Workflows are global prompt bundles for the fixed
         Plan/Execute/Verify/Reflect development loop. Each step's prompt is the
         only configurable part; the step contracts are fixed.
       </p>
@@ -92,10 +92,10 @@ export function WorkflowsPage() {
   );
 }
 
-function WorkflowCard({ workflow }: { workflow: PevrWorkflow }) {
+function WorkflowCard({ workflow }: { workflow: Workflow }) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const del = useDeletePevrWorkflow();
+  const del = useDeleteWorkflow();
 
   if (editing) {
     return (
@@ -145,8 +145,8 @@ function WorkflowCard({ workflow }: { workflow: PevrWorkflow }) {
           body="This removes the workflow. This cannot be undone."
           confirmLabel="Delete"
           pending={del.isPending}
-          // A delete refused because an active PEVR run still references the workflow comes back as
-          // a 409; its message ("workflow is referenced by an active PEVR run") is surfaced here so
+          // A delete refused because an active workflow run still references the workflow comes back as
+          // a 409; its message ("workflow is referenced by an active workflow run") is surfaced here so
           // the refusal is visible instead of a silent no-op.
           error={del.error ? errorMessage(del.error) : null}
           onConfirm={async () => {
@@ -176,12 +176,12 @@ function WorkflowForm({
   onCancel,
 }: {
   mode: "create" | "edit";
-  workflow?: PevrWorkflow;
+  workflow?: Workflow;
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const create = useCreatePevrWorkflow();
-  const update = useUpdatePevrWorkflow();
+  const create = useCreateWorkflow();
+  const update = useUpdateWorkflow();
   const mutation = mode === "create" ? create : update;
 
   const [name, setName] = useState(
@@ -190,7 +190,7 @@ function WorkflowForm({
   const [description, setDescription] = useState(
     mode === "edit"
       ? (workflow?.description ?? "")
-      : PEVR_EXAMPLE_PROMPTS.description,
+      : WORKFLOW_EXAMPLE_PROMPTS.description,
   );
   const [prompts, setPrompts] = useState<
     Record<(typeof STEP_FIELDS)[number]["key"], string>
@@ -204,15 +204,15 @@ function WorkflowForm({
       };
     }
     return {
-      plan_prompt: PEVR_EXAMPLE_PROMPTS.plan_prompt,
-      execute_prompt: PEVR_EXAMPLE_PROMPTS.execute_prompt,
-      verify_prompt: PEVR_EXAMPLE_PROMPTS.verify_prompt,
-      reflect_prompt: PEVR_EXAMPLE_PROMPTS.reflect_prompt,
+      plan_prompt: WORKFLOW_EXAMPLE_PROMPTS.plan_prompt,
+      execute_prompt: WORKFLOW_EXAMPLE_PROMPTS.execute_prompt,
+      verify_prompt: WORKFLOW_EXAMPLE_PROMPTS.verify_prompt,
+      reflect_prompt: WORKFLOW_EXAMPLE_PROMPTS.reflect_prompt,
     };
   });
 
   async function onSubmit() {
-    const fields: PevrWorkflowInput = {
+    const fields: WorkflowInput = {
       name: name.trim(),
       description,
       plan_prompt: prompts.plan_prompt,

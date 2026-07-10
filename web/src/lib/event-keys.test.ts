@@ -102,15 +102,26 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["terminal", "config"]);
   });
 
-  it("maps pevr_workflow events to the global workflows list, with no repo key (#1006)", () => {
+  it("maps workflow events to the global workflows list, with no repo key (#1006)", () => {
     const keys = queryKeysForEvent(
       ev({
-        type: "pevr_workflow.created",
+        type: "workflow.created",
         repo: undefined,
         payload: { id: 3, name: "standard" },
       }),
     );
-    expect(keys).toContainEqual(["pevr-workflows"]);
+    expect(keys).toContainEqual(["workflows"]);
+  });
+
+  it("does not treat repo workflow execution events as workflow definition changes", () => {
+    const keys = queryKeysForEvent(
+      ev({
+        type: "workflow.run_started",
+        repo: "me/proj",
+        payload: { event_id: 1 },
+      }),
+    );
+    expect(keys).not.toContainEqual(["workflows"]);
   });
 
   it("routes agent_session.linked to the target PR/issue detail (#298)", () => {

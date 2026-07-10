@@ -1,21 +1,21 @@
 import { expect, test } from "vitest";
 import {
-  type PevrArtifactViolation,
-  parsePevrArtifactJson,
-  validatePevrArtifact,
+  parseWorkflowArtifactJson,
+  validateWorkflowArtifact,
+  type WorkflowArtifactViolation,
 } from "./artifacts.ts";
 
-function violationPaths(violations: PevrArtifactViolation[]): string[] {
+function violationPaths(violations: WorkflowArtifactViolation[]): string[] {
   return violations.map((v) => v.path);
 }
 
 test("validates a plan artifact", () => {
-  const result = validatePevrArtifact({
+  const result = validateWorkflowArtifact({
     type: "plan",
     summary: "Add the artifact validator.",
     changes: [
       {
-        area: "core/pevr/artifacts.ts",
+        area: "core/workflow/artifacts.ts",
         description: "Define types and validation.",
       },
     ],
@@ -31,19 +31,19 @@ test("validates a plan artifact", () => {
 });
 
 test("validates an execution-report artifact", () => {
-  const result = validatePevrArtifact({
+  const result = validateWorkflowArtifact({
     type: "execution-report",
     summary: "- Added pure validation",
     acceptance: [
       {
         criterion: "Types and validator exist",
         met: true,
-        note: "Implemented in core/pevr/artifacts.ts",
+        note: "Implemented in core/workflow/artifacts.ts",
       },
     ],
     tests: [
       {
-        command: "npm test -- core/pevr/artifacts.test.ts",
+        command: "npm test -- core/workflow/artifacts.test.ts",
         passed: true,
         excerpt: "10 passed",
       },
@@ -68,19 +68,19 @@ test("validates an execution-report artifact", () => {
 });
 
 test("validates verdict artifacts including pass with no findings", () => {
-  const pass = validatePevrArtifact({
+  const pass = validateWorkflowArtifact({
     type: "verdict",
     event: "pass",
     summary: "Looks good.",
     findings: [],
   });
-  const requestChanges = validatePevrArtifact({
+  const requestChanges = validateWorkflowArtifact({
     type: "verdict",
     event: "request_changes",
     summary: "Needs one fix.",
     findings: [
       {
-        file: "core/pevr/artifacts.ts",
+        file: "core/workflow/artifacts.ts",
         line: 12,
         problem: "Problem statement",
         expected: "Expected state",
@@ -99,7 +99,7 @@ test("validates verdict artifacts including pass with no findings", () => {
 });
 
 test("validates a reflection artifact", () => {
-  const result = validatePevrArtifact({
+  const result = validateWorkflowArtifact({
     type: "reflection",
     went_well: ["The pure validator stayed isolated."],
     friction: [
@@ -130,7 +130,7 @@ test("validates a reflection artifact", () => {
 
 test("parses JSON before validating the artifact", () => {
   expect(
-    parsePevrArtifactJson(
+    parseWorkflowArtifactJson(
       JSON.stringify({
         type: "verdict",
         event: "pass",
@@ -140,14 +140,14 @@ test("parses JSON before validating the artifact", () => {
     ),
   ).toMatchObject({ ok: true });
 
-  expect(parsePevrArtifactJson("{")).toEqual({
+  expect(parseWorkflowArtifactJson("{")).toEqual({
     ok: false,
     violations: [expect.objectContaining({ path: "$" })],
   });
 });
 
 test("enumerates missing fields, empty strings, invalid enums, and invalid array length", () => {
-  const result = validatePevrArtifact({
+  const result = validateWorkflowArtifact({
     type: "execution-report",
     summary: "",
     acceptance: [],
@@ -180,7 +180,7 @@ test("enumerates missing fields, empty strings, invalid enums, and invalid array
 });
 
 test("rejects unknown fields so domain identifiers cannot be embedded", () => {
-  const result = validatePevrArtifact({
+  const result = validateWorkflowArtifact({
     type: "plan",
     issue_number: 999,
     placement: "pr-body",
@@ -200,7 +200,7 @@ test("rejects unknown fields so domain identifiers cannot be embedded", () => {
 });
 
 test("requires findings when verdict requests changes", () => {
-  const result = validatePevrArtifact({
+  const result = validateWorkflowArtifact({
     type: "verdict",
     event: "request_changes",
     summary: "Changes needed.",
@@ -217,7 +217,7 @@ test("requires findings when verdict requests changes", () => {
 });
 
 test("requires screenshot evidence paths and rejects unsafe path forms", () => {
-  const result = validatePevrArtifact({
+  const result = validateWorkflowArtifact({
     type: "execution-report",
     summary: "Summary",
     acceptance: [{ criterion: "Criterion", met: true, note: "Met" }],
@@ -256,7 +256,7 @@ test("requires screenshot evidence paths and rejects unsafe path forms", () => {
 });
 
 test("requires reflection went_well to include at least one item", () => {
-  const result = validatePevrArtifact({
+  const result = validateWorkflowArtifact({
     type: "reflection",
     went_well: [],
     friction: [],

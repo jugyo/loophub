@@ -1,100 +1,100 @@
-export type PevrArtifactType =
+export type WorkflowArtifactType =
   | "plan"
   | "execution-report"
   | "verdict"
   | "reflection";
 
-export type PevrArtifact =
-  | PevrPlanArtifact
-  | PevrExecutionReportArtifact
-  | PevrVerdictArtifact
-  | PevrReflectionArtifact;
+export type WorkflowArtifact =
+  | WorkflowPlanArtifact
+  | WorkflowExecutionReportArtifact
+  | WorkflowVerdictArtifact
+  | WorkflowReflectionArtifact;
 
-export type PevrPlanArtifact = {
+export type WorkflowPlanArtifact = {
   type: "plan";
   summary: string;
-  changes: PevrPlanChange[];
+  changes: WorkflowPlanChange[];
   reuse: string[];
   out_of_scope: string[];
   verification: string;
 };
 
-export type PevrPlanChange = {
+export type WorkflowPlanChange = {
   area: string;
   description: string;
 };
 
-export type PevrExecutionReportArtifact = {
+export type WorkflowExecutionReportArtifact = {
   type: "execution-report";
   summary: string;
-  acceptance: PevrAcceptanceResult[];
-  tests: PevrTestResult[];
-  evidence: PevrEvidence[];
+  acceptance: WorkflowAcceptanceResult[];
+  tests: WorkflowTestResult[];
+  evidence: WorkflowEvidence[];
 };
 
-export type PevrAcceptanceResult = {
+export type WorkflowAcceptanceResult = {
   criterion: string;
   met: boolean;
   note: string;
 };
 
-export type PevrTestResult = {
+export type WorkflowTestResult = {
   command: string;
   passed: boolean;
   excerpt: string;
 };
 
-export type PevrEvidence = {
+export type WorkflowEvidence = {
   kind: "test" | "cli" | "screenshot" | "na";
   description: string;
   path?: string;
 };
 
-export type PevrVerdictArtifact = {
+export type WorkflowVerdictArtifact = {
   type: "verdict";
   event: "pass" | "request_changes";
   summary: string;
-  findings: PevrFinding[];
+  findings: WorkflowFinding[];
 };
 
-export type PevrFinding = {
+export type WorkflowFinding = {
   file: string;
   line?: number;
   problem: string;
   expected: string;
 };
 
-export type PevrReflectionArtifact = {
+export type WorkflowReflectionArtifact = {
   type: "reflection";
   went_well: string[];
-  friction: PevrFriction[];
-  suggestions: PevrSuggestion[];
-  followups: PevrFollowup[];
+  friction: WorkflowFriction[];
+  suggestions: WorkflowSuggestion[];
+  followups: WorkflowFollowup[];
 };
 
-export type PevrFriction = {
+export type WorkflowFriction = {
   what: string;
   cause: string;
 };
 
-export type PevrSuggestion = {
+export type WorkflowSuggestion = {
   target: "step-prompt" | "contract" | "engine";
   text: string;
 };
 
-export type PevrFollowup = {
+export type WorkflowFollowup = {
   title: string;
   rationale: string;
 };
 
-export type PevrArtifactViolation = {
+export type WorkflowArtifactViolation = {
   path: string;
   message: string;
 };
 
-export type PevrArtifactValidationResult =
-  | { ok: true; artifact: PevrArtifact }
-  | { ok: false; violations: PevrArtifactViolation[] };
+export type WorkflowArtifactValidationResult =
+  | { ok: true; artifact: WorkflowArtifact }
+  | { ok: false; violations: WorkflowArtifactViolation[] };
 
 const ARTIFACT_TYPES = [
   "plan",
@@ -103,9 +103,9 @@ const ARTIFACT_TYPES = [
   "reflection",
 ] as const;
 
-export function parsePevrArtifactJson(
+export function parseWorkflowArtifactJson(
   json: string,
-): PevrArtifactValidationResult {
+): WorkflowArtifactValidationResult {
   let value: unknown;
   try {
     value = JSON.parse(json);
@@ -116,13 +116,13 @@ export function parsePevrArtifactJson(
       violations: [{ path: "$", message: `Invalid JSON: ${message}` }],
     };
   }
-  return validatePevrArtifact(value);
+  return validateWorkflowArtifact(value);
 }
 
-export function validatePevrArtifact(
+export function validateWorkflowArtifact(
   value: unknown,
-): PevrArtifactValidationResult {
-  const violations: PevrArtifactViolation[] = [];
+): WorkflowArtifactValidationResult {
+  const violations: WorkflowArtifactViolation[] = [];
   if (!isRecord(value)) {
     violations.push({ path: "$", message: "Expected object" });
     return { ok: false, violations };
@@ -151,12 +151,12 @@ export function validatePevrArtifact(
   if (violations.length > 0) {
     return { ok: false, violations };
   }
-  return { ok: true, artifact: value as PevrArtifact };
+  return { ok: true, artifact: value as WorkflowArtifact };
 }
 
 function validatePlan(
   value: Record<string, unknown>,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   rejectUnknownKeys(
     value,
@@ -188,7 +188,7 @@ function validatePlan(
 
 function validateExecutionReport(
   value: Record<string, unknown>,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   rejectUnknownKeys(
     value,
@@ -267,7 +267,7 @@ function validateExecutionReport(
 
 function validateVerdict(
   value: Record<string, unknown>,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   rejectUnknownKeys(
     value,
@@ -319,7 +319,7 @@ function validateVerdict(
 
 function validateReflection(
   value: Record<string, unknown>,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   rejectUnknownKeys(
     value,
@@ -373,7 +373,7 @@ function requireNonEmptyString(
   obj: Record<string, unknown>,
   path: string,
   key: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   if (!Object.hasOwn(obj, key)) {
     violations.push({ path, message: "Required field is missing" });
@@ -392,7 +392,7 @@ function requireBoolean(
   obj: Record<string, unknown>,
   path: string,
   key: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   if (!Object.hasOwn(obj, key)) {
     violations.push({ path, message: "Required field is missing" });
@@ -407,7 +407,7 @@ function requirePositiveInteger(
   obj: Record<string, unknown>,
   path: string,
   key: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   if (
     typeof obj[key] !== "number" ||
@@ -422,7 +422,7 @@ function requireEvidencePath(
   obj: Record<string, unknown>,
   path: string,
   key: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   requireNonEmptyString(obj, path, key, violations);
   if (typeof obj[key] !== "string" || obj[key].trim() === "") {
@@ -456,7 +456,7 @@ function requireEnum<T extends string>(
   path: string,
   key: string,
   allowed: readonly T[],
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   if (!Object.hasOwn(obj, key)) {
     violations.push({ path, message: "Required field is missing" });
@@ -474,7 +474,7 @@ function requireStringArray(
   obj: Record<string, unknown>,
   path: string,
   key: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   const array = requireArray(obj, path, key, violations);
   if (!array) {
@@ -487,7 +487,7 @@ function requireNonEmptyStringArray(
   obj: Record<string, unknown>,
   path: string,
   key: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   const array = requireArray(obj, path, key, violations);
   if (!array) {
@@ -503,7 +503,7 @@ function requireObjectArray(
   obj: Record<string, unknown>,
   path: string,
   key: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
   validateItem: (item: Record<string, unknown>, path: string) => void,
 ): void {
   const array = requireArray(obj, path, key, violations);
@@ -517,7 +517,7 @@ function requireNonEmptyObjectArray(
   obj: Record<string, unknown>,
   path: string,
   key: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
   validateItem: (item: Record<string, unknown>, path: string) => void,
 ): void {
   const array = requireArray(obj, path, key, violations);
@@ -534,7 +534,7 @@ function requireArray(
   obj: Record<string, unknown>,
   path: string,
   key: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): unknown[] | null {
   if (!Object.hasOwn(obj, key)) {
     violations.push({ path, message: "Required field is missing" });
@@ -550,7 +550,7 @@ function requireArray(
 function validateStringArrayItems(
   array: unknown[],
   path: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   array.forEach((item, index) => {
     const itemPath = `${path}[${index}]`;
@@ -567,7 +567,7 @@ function validateStringArrayItems(
 function validateObjectArrayItems(
   array: unknown[],
   path: string,
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
   validateItem: (item: Record<string, unknown>, path: string) => void,
 ): void {
   array.forEach((item, index) => {
@@ -584,7 +584,7 @@ function rejectUnknownKeys(
   obj: Record<string, unknown>,
   path: string,
   knownKeys: readonly string[],
-  violations: PevrArtifactViolation[],
+  violations: WorkflowArtifactViolation[],
 ): void {
   const known = new Set(knownKeys);
   for (const key of Object.keys(obj)) {

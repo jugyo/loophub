@@ -9,11 +9,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault } from "@/api/rpc-mock";
-import type { PevrWorkflow } from "@/api/types";
-import { PEVR_EXAMPLE_PROMPTS } from "../../../core/pevr/example-prompts.ts";
+import type { Workflow } from "@/api/types";
+import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts.ts";
 import { WorkflowsPage } from "./workflows-page";
 
-function workflow(overrides: Partial<PevrWorkflow> = {}): PevrWorkflow {
+function workflow(overrides: Partial<Workflow> = {}): Workflow {
   return {
     id: 1,
     name: "standard",
@@ -30,11 +30,11 @@ function workflow(overrides: Partial<PevrWorkflow> = {}): PevrWorkflow {
 
 function renderPage(
   handlers: Parameters<typeof mockRpcFetch>[0],
-  workflows: PevrWorkflow[] = [],
+  workflows: Workflow[] = [],
 ) {
   vi.stubGlobal(
     "fetch",
-    mockRpcFetch({ "pevrWorkflows/list": () => workflows, ...handlers }),
+    mockRpcFetch({ "workflows/list": () => workflows, ...handlers }),
   );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -71,12 +71,12 @@ describe("WorkflowsPage", () => {
     const planField = (await screen.findByRole("textbox", {
       name: "Plan prompt",
     })) as HTMLTextAreaElement;
-    expect(planField.value).toBe(PEVR_EXAMPLE_PROMPTS.plan_prompt);
+    expect(planField.value).toBe(WORKFLOW_EXAMPLE_PROMPTS.plan_prompt);
   });
 
   it("surfaces a 422 validation error as a form error on create", async () => {
     renderPage({
-      "pevrWorkflows/create": () => {
+      "workflows/create": () => {
         throw new RpcFault(422, "workflow name must be unique");
       },
     });
@@ -95,10 +95,10 @@ describe("WorkflowsPage", () => {
   it("surfaces the 409 refusal when deleting a workflow used by an active run", async () => {
     renderPage(
       {
-        "pevrWorkflows/delete": () => {
+        "workflows/delete": () => {
           throw new RpcFault(
             409,
-            "workflow is referenced by an active PEVR run",
+            "workflow is referenced by an active workflow run",
           );
         },
       },
@@ -111,7 +111,7 @@ describe("WorkflowsPage", () => {
     await waitFor(() =>
       expect(
         within(dialog).getByText(
-          /workflow is referenced by an active PEVR run/,
+          /workflow is referenced by an active workflow run/,
         ),
       ).toBeTruthy(),
     );

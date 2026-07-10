@@ -30,7 +30,7 @@ const scheduledAgent = {
   type: "string",
   enum: ["claude-code", "codex"],
 } as const;
-const pevrWorkflowFields = {
+const workflowFields = {
   description: str,
   plan_prompt: str,
   execute_prompt: str,
@@ -237,29 +237,28 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) => svc.notifications.readAll(p.session_id),
   },
 
-  // ---- PEVR workflows ----
-  "pevrWorkflows/list": {
+  // ---- workflows ----
+  "workflows/list": {
     description:
-      "List global PEVR workflow definitions (Plan/Execute/Verify/Reflect prompt bundles).",
+      "List global workflow definitions (Plan/Execute/Verify/Reflect prompt bundles).",
     params: EMPTY_PARAMS,
     result: anyArray,
-    handler: () => svc.pevrWorkflows.list(),
+    handler: () => svc.workflows.list(),
   },
-  "pevrWorkflows/get": {
-    description: "Get one PEVR workflow definition by name.",
+  "workflows/get": {
+    description: "Get one workflow definition by name.",
     params: params({ name: strNonEmpty }, ["name"]),
     result: anyObject,
-    handler: (p) => svc.pevrWorkflows.get(p.name),
+    handler: (p) => svc.workflows.get(p.name),
   },
-  "pevrWorkflows/create": {
-    description: "Create a global PEVR workflow definition.",
-    params: params(
-      { name: strNonEmpty, ...pevrWorkflowFields, session_id: sid },
-      ["name"],
-    ),
+  "workflows/create": {
+    description: "Create a global workflow definition.",
+    params: params({ name: strNonEmpty, ...workflowFields, session_id: sid }, [
+      "name",
+    ]),
     result: anyObject,
     handler: (p) =>
-      svc.pevrWorkflows.create(
+      svc.workflows.create(
         {
           name: p.name,
           description: p.description,
@@ -271,20 +270,20 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
-  "pevrWorkflows/update": {
-    description: "Update a global PEVR workflow definition.",
+  "workflows/update": {
+    description: "Update a global workflow definition.",
     params: params(
       {
         name: strNonEmpty,
         new_name: strNonEmpty,
-        ...pevrWorkflowFields,
+        ...workflowFields,
         session_id: sid,
       },
       ["name"],
     ),
     result: anyObject,
     handler: (p) =>
-      svc.pevrWorkflows.update(
+      svc.workflows.update(
         p.name,
         {
           name: p.new_name,
@@ -297,26 +296,26 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
-  "pevrWorkflows/delete": {
+  "workflows/delete": {
     description:
-      "Delete a global PEVR workflow definition unless a running run references it.",
+      "Delete a global workflow definition unless a running run references it.",
     params: params({ name: strNonEmpty, session_id: sid }, ["name"]),
     result: anyObject,
-    handler: (p) => svc.pevrWorkflows.delete(p.name, p.session_id),
+    handler: (p) => svc.workflows.delete(p.name, p.session_id),
   },
-  "pevrRuns/stateForIssue": {
+  "workflowRuns/stateForIssue": {
     description:
-      "Display state of the latest PEVR run linked to an issue (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
+      "Display state of the latest Workflow run linked to an issue (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
-    handler: (p) => svc.pevrRuns.stateForIssue(p.repo, { issue: p.number }),
+    handler: (p) => svc.workflowRuns.stateForIssue(p.repo, { issue: p.number }),
   },
-  "pevrRuns/stateForPull": {
+  "workflowRuns/stateForPull": {
     description:
-      "Display state of the latest PEVR run linked to a PR (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
+      "Display state of the latest Workflow run linked to a PR (status / current_step / rework_count / workflow), or null when none. Reads the run row only (#1008).",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
     result: anyObject,
-    handler: (p) => svc.pevrRuns.stateForPull(p.repo, { pull: p.number }),
+    handler: (p) => svc.workflowRuns.stateForPull(p.repo, { pull: p.number }),
   },
 
   // ---- terminal launch ----
@@ -341,14 +340,14 @@ export const methods: Record<string, MethodDef> = {
             "scheduled-task-create",
             "resume",
             "github-pr-export",
-            "pevr-run",
+            "workflow-run",
           ],
         },
         issueNumber: positiveInt,
         prNumber: positiveInt,
-        // Saved PEVR workflow id for the "pevr-run" launch (#1007) — passed to
+        // Saved workflow id for the "workflow-run" launch (#1007) — passed to
         // `lh workflow start ... --workflow-id <id>`. Required only for that workflow.
-        pevrWorkflowId: positiveInt,
+        workflowId: positiveInt,
         session: str,
         cwd: str,
         // One-shot issue-dev (Build) overrides from the issue-detail dropdown (#637): force the
@@ -366,7 +365,7 @@ export const methods: Record<string, MethodDef> = {
         workflow: p.workflow,
         issueNumber: p.issueNumber,
         prNumber: p.prNumber,
-        pevrWorkflowId: p.pevrWorkflowId,
+        workflowId: p.workflowId,
         session: p.session,
         cwd: p.cwd,
         agent: p.agent,

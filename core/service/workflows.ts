@@ -1,4 +1,4 @@
-import { actorFor, pevrWorkflowJSON, S, ServiceError } from "./shared.ts";
+import { actorFor, S, ServiceError, workflowJSON } from "./shared.ts";
 
 const MAX_NAME_LENGTH = 64;
 
@@ -20,24 +20,24 @@ function normalizeText(value: unknown, field: string): string {
 }
 
 function ensureUniqueName(name: string, exceptId?: number): void {
-  const existing = S.getPevrWorkflowByName(name);
+  const existing = S.getWorkflowByName(name);
   if (existing && existing.id !== exceptId)
     throw new ServiceError(422, "workflow name must be unique");
 }
 
 function workflowOr404(name: string) {
-  const workflow = S.getPevrWorkflowByName(normalizeName(name));
+  const workflow = S.getWorkflowByName(normalizeName(name));
   if (!workflow) throw new ServiceError(404, "Not Found");
   return workflow;
 }
 
-export const pevrWorkflows = {
+export const workflows = {
   list() {
-    return S.listPevrWorkflows().map(pevrWorkflowJSON);
+    return S.listWorkflows().map(workflowJSON);
   },
 
   get(name: string) {
-    return pevrWorkflowJSON(workflowOr404(name));
+    return workflowJSON(workflowOr404(name));
   },
 
   create(
@@ -53,7 +53,7 @@ export const pevrWorkflows = {
   ) {
     const name = normalizeName(input.name);
     ensureUniqueName(name);
-    const row = S.createPevrWorkflow({
+    const row = S.createWorkflow({
       name,
       description: normalizeText(input.description, "description"),
       planPrompt: normalizeText(input.plan_prompt, "plan_prompt"),
@@ -61,11 +61,11 @@ export const pevrWorkflows = {
       verifyPrompt: normalizeText(input.verify_prompt, "verify_prompt"),
       reflectPrompt: normalizeText(input.reflect_prompt, "reflect_prompt"),
     });
-    S.emitEvent(null, "pevr_workflow.created", actorFor(sessionId), {
+    S.emitEvent(null, "workflow.created", actorFor(sessionId), {
       id: row.id,
       name: row.name,
     });
-    return pevrWorkflowJSON(row);
+    return workflowJSON(row);
   },
 
   update(
@@ -84,7 +84,7 @@ export const pevrWorkflows = {
     const nextName =
       patch.name !== undefined ? normalizeName(patch.name) : undefined;
     if (nextName !== undefined) ensureUniqueName(nextName, existing.id);
-    const updated = S.updatePevrWorkflow(existing.id, {
+    const updated = S.updateWorkflow(existing.id, {
       name: nextName,
       description:
         patch.description !== undefined
@@ -107,22 +107,22 @@ export const pevrWorkflows = {
           ? normalizeText(patch.reflect_prompt, "reflect_prompt")
           : undefined,
     });
-    S.emitEvent(null, "pevr_workflow.updated", actorFor(sessionId), {
+    S.emitEvent(null, "workflow.updated", actorFor(sessionId), {
       id: existing.id,
       name: updated!.name,
     });
-    return pevrWorkflowJSON(updated!);
+    return workflowJSON(updated!);
   },
 
   delete(name: string, sessionId?: string | null) {
     const existing = workflowOr404(name);
-    if (S.countActivePevrRunsForWorkflow(existing.id) > 0)
+    if (S.countActiveWorkflowRunsForWorkflow(existing.id) > 0)
       throw new ServiceError(
         409,
-        "workflow is referenced by an active PEVR run",
+        "workflow is referenced by an active workflow run",
       );
-    S.deletePevrWorkflow(existing.id);
-    S.emitEvent(null, "pevr_workflow.deleted", actorFor(sessionId), {
+    S.deleteWorkflow(existing.id);
+    S.emitEvent(null, "workflow.deleted", actorFor(sessionId), {
       id: existing.id,
       name: existing.name,
     });

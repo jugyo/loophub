@@ -17,7 +17,7 @@ import {
   composePlanInputArtifacts,
   composeReflectInputArtifacts,
   composeVerifyInputArtifacts,
-  writePevrStepInputArtifacts,
+  writeWorkflowStepInputArtifacts,
 } from "./inputs.ts";
 
 const tmpRoots: string[] = [];
@@ -31,7 +31,7 @@ afterEach(() => {
 test("composes Plan input from task text and comments without filesystem writes", () => {
   const result = composePlanInputArtifacts({
     issue: {
-      title: "Add PEVR composition",
+      title: "Add Workflow composition",
       body: "Acceptance criteria\n- prompts stay separated",
       comments: [
         {
@@ -52,7 +52,7 @@ test("composes Plan input from task text and comments without filesystem writes"
       }),
     ],
   });
-  expect(result.files[0]?.content).toContain("Add PEVR composition");
+  expect(result.files[0]?.content).toContain("Add Workflow composition");
   expect(result.files[0]?.content).toContain("Later design note");
 });
 
@@ -62,7 +62,7 @@ test("composes Execute inputs with plan and optional findings", () => {
     plan: {
       type: "plan",
       summary: "Plan summary",
-      changes: [{ area: "core/pevr", description: "Add composition" }],
+      changes: [{ area: "core/workflow", description: "Add composition" }],
       reuse: ["artifacts.ts types"],
       out_of_scope: ["CLI launch"],
       verification: "Run vitest",
@@ -73,7 +73,7 @@ test("composes Execute inputs with plan and optional findings", () => {
       summary: "Fix one issue",
       findings: [
         {
-          file: "core/pevr/compose.ts",
+          file: "core/workflow/compose.ts",
           line: 12,
           problem: "Prompt channels are mixed",
           expected: "Keep channels separate",
@@ -160,9 +160,9 @@ test("composes Reflect digest from artifacts and timeline", () => {
 });
 
 test("writes input artifacts under the run directory and returns path references", () => {
-  const root = mkdtempSync(join(tmpdir(), "pevr-inputs-"));
+  const root = mkdtempSync(join(tmpdir(), "workflow-inputs-"));
   tmpRoots.push(root);
-  const refs = writePevrStepInputArtifacts(root, {
+  const refs = writeWorkflowStepInputArtifacts(root, {
     step: "plan",
     files: [
       {
@@ -184,7 +184,7 @@ test("writes input artifacts under the run directory and returns path references
 });
 
 test("rejects input artifact names that can escape the input directory", () => {
-  const root = mkdtempSync(join(tmpdir(), "pevr-inputs-"));
+  const root = mkdtempSync(join(tmpdir(), "workflow-inputs-"));
   tmpRoots.push(root);
 
   for (const name of [
@@ -195,7 +195,7 @@ test("rejects input artifact names that can escape the input directory", () => {
     "",
   ]) {
     expect(() =>
-      writePevrStepInputArtifacts(root, {
+      writeWorkflowStepInputArtifacts(root, {
         step: "plan",
         files: [
           {
@@ -205,16 +205,16 @@ test("rejects input artifact names that can escape the input directory", () => {
           },
         ],
       }),
-    ).toThrow(/PEVR input artifact name/u);
+    ).toThrow(/Workflow input artifact name/u);
   }
 });
 
 test("rejects step names that can escape the run directory at runtime", () => {
-  const root = mkdtempSync(join(tmpdir(), "pevr-inputs-"));
+  const root = mkdtempSync(join(tmpdir(), "workflow-inputs-"));
   tmpRoots.push(root);
 
   expect(() =>
-    writePevrStepInputArtifacts(root, {
+    writeWorkflowStepInputArtifacts(root, {
       step: "../../outside" as "plan",
       files: [
         {
@@ -224,18 +224,18 @@ test("rejects step names that can escape the run directory at runtime", () => {
         },
       ],
     }),
-  ).toThrow(/Invalid PEVR step/u);
+  ).toThrow(/Invalid Workflow step/u);
 });
 
 test("rejects symlinked input directories before writing artifacts", () => {
-  const root = mkdtempSync(join(tmpdir(), "pevr-inputs-"));
-  const outside = mkdtempSync(join(tmpdir(), "pevr-outside-"));
+  const root = mkdtempSync(join(tmpdir(), "workflow-inputs-"));
+  const outside = mkdtempSync(join(tmpdir(), "workflow-outside-"));
   tmpRoots.push(root, outside);
   mkdirSync(join(root, "plan"), { recursive: true });
   symlinkSync(outside, join(root, "plan", "input"), "dir");
 
   expect(() =>
-    writePevrStepInputArtifacts(root, {
+    writeWorkflowStepInputArtifacts(root, {
       step: "plan",
       files: [
         {
@@ -250,15 +250,15 @@ test("rejects symlinked input directories before writing artifacts", () => {
 });
 
 test("rejects symlinked artifact files before overwriting outside targets", () => {
-  const root = mkdtempSync(join(tmpdir(), "pevr-inputs-"));
-  const outside = mkdtempSync(join(tmpdir(), "pevr-outside-"));
+  const root = mkdtempSync(join(tmpdir(), "workflow-inputs-"));
+  const outside = mkdtempSync(join(tmpdir(), "workflow-outside-"));
   tmpRoots.push(root, outside);
   mkdirSync(join(root, "plan", "input"), { recursive: true });
   const outsideFile = join(outside, "task.md");
   symlinkSync(outsideFile, join(root, "plan", "input", "task.md"));
 
   expect(() =>
-    writePevrStepInputArtifacts(root, {
+    writeWorkflowStepInputArtifacts(root, {
       step: "plan",
       files: [
         {
@@ -273,8 +273,8 @@ test("rejects symlinked artifact files before overwriting outside targets", () =
 });
 
 test("replaces hard-linked artifact files without truncating outside targets", () => {
-  const root = mkdtempSync(join(tmpdir(), "pevr-inputs-"));
-  const outside = mkdtempSync(join(tmpdir(), "pevr-outside-"));
+  const root = mkdtempSync(join(tmpdir(), "workflow-inputs-"));
+  const outside = mkdtempSync(join(tmpdir(), "workflow-outside-"));
   tmpRoots.push(root, outside);
   mkdirSync(join(root, "plan", "input"), { recursive: true });
   const outsideFile = join(outside, "task.md");
@@ -282,7 +282,7 @@ test("replaces hard-linked artifact files without truncating outside targets", (
   writeFileSync(outsideFile, "outside\n");
   linkSync(outsideFile, artifactPath);
 
-  const refs = writePevrStepInputArtifacts(root, {
+  const refs = writeWorkflowStepInputArtifacts(root, {
     step: "plan",
     files: [
       {

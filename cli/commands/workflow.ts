@@ -122,7 +122,7 @@ function contractText(step: string): string {
       "..",
       "..",
       "core",
-      "pevr",
+      "workflow",
       "contracts",
       `${step}.md`,
     ),
@@ -140,32 +140,32 @@ function commandAvailable(command: string): boolean {
 
 function assertWorkflowStartRuntime(): void {
   if (flags.codex === true || flags.runtime === "codex") {
-    fail("PEVR workflow start v1 supports only the claude runtime");
+    fail("workflow start v1 supports only the claude runtime");
   }
   if (
     flags.runtime &&
     flags.runtime !== RUNTIME_CLAUDE_CODE &&
     flags.runtime !== "claude-code"
   ) {
-    fail("PEVR workflow start v1 supports only the claude runtime");
+    fail("workflow start v1 supports only the claude runtime");
   }
 }
 
 function preflightParentLaunch(): void {
   if (!commandAvailable("herdr")) {
-    fail("PEVR workflow start v1 requires herdr on PATH");
+    fail("workflow start v1 requires herdr on PATH");
   }
   if (!commandAvailable("claude")) {
-    fail("PEVR workflow start v1 requires claude on PATH");
+    fail("workflow start v1 requires claude on PATH");
   }
 }
 
 function preflightStepLaunch(): void {
   if (!commandAvailable("herdr")) {
-    fail("PEVR workflow launch-step requires herdr on PATH");
+    fail("workflow launch-step requires herdr on PATH");
   }
   if (!commandAvailable("claude")) {
-    fail("PEVR workflow launch-step requires claude on PATH");
+    fail("workflow launch-step requires claude on PATH");
   }
 }
 
@@ -251,7 +251,7 @@ function launchParentHerdr(input: {
   const claudeArgs = parentClaudeArgs(input);
   const command = formatSpawnCommand(claudeArgs, { bin: "claude" });
   const commandWithEnv = `LOOPHUB_SESSION_ID=${shQuote(input.sessionId)} ${command}`;
-  const agentName = `pevr-${input.sessionId.slice(0, 8)}`;
+  const agentName = `workflow-${input.sessionId.slice(0, 8)}`;
   const launched = spawnSync(
     "herdr",
     [
@@ -277,7 +277,7 @@ function launchParentHerdr(input: {
     // The agent now runs in its herdr pane; exit without attaching. process.exit(0) fires the
     // dev-lock release handler registered in startWorkflow, same as `lh build --herdr`.
     console.error(
-      `Launched PEVR parent in herdr agent ${agentName}. Attach with: herdr agent attach ${agentName}`,
+      `Launched Workflow parent in herdr agent ${agentName}. Attach with: herdr agent attach ${agentName}`,
     );
     process.exit(0);
   }
@@ -311,7 +311,7 @@ async function startWorkflow(): Promise<void> {
   if (flags["no-launch"] !== true) preflightParentLaunch();
   const s = await svc();
   const result = await runOp(() =>
-    s.pevrRuns.start(
+    s.workflowRuns.start(
       repo,
       {
         issue: parsed.id,
@@ -327,7 +327,7 @@ async function startWorkflow(): Promise<void> {
   if (flags.json) {
     out(result);
   } else {
-    console.log(`started PEVR run #${result.run.id}`);
+    console.log(`started Workflow run #${result.run.id}`);
     console.log(`workflow\t${display(result.workflow.name)}`);
     console.log(`issue\t#${result.issue.number}`);
     console.log(`pr\t#${result.pr.number}`);
@@ -369,12 +369,12 @@ async function launchStep(): Promise<void> {
     fail("--json is not supported for workflow launch-step");
   }
   if (step === "plan" && flags.auto === true) {
-    fail("PEVR plan launch does not support --auto");
+    fail("Workflow plan launch does not support --auto");
   }
   preflightStepLaunch();
   const actorSessionId = await writeSession();
   const result = await runOp(() =>
-    s.pevrRuns.launchStep(
+    s.workflowRuns.launchStep(
       repo,
       {
         run: runId,
@@ -388,7 +388,9 @@ async function launchStep(): Promise<void> {
       actorSessionId,
     ),
   );
-  console.log(`launched PEVR ${result.step} step for run #${result.run.id}`);
+  console.log(
+    `launched Workflow ${result.step} step for run #${result.run.id}`,
+  );
   console.log(`session\t${display(result.session_id)}`);
   console.log(`worktree\t${display(result.worktree)}`);
   console.log(`contract\t${display(result.system_prompt_path)}`);
@@ -397,7 +399,7 @@ async function launchStep(): Promise<void> {
   }
   const confirm = () =>
     runOp(() =>
-      s.pevrRuns.confirmStepLaunch(
+      s.workflowRuns.confirmStepLaunch(
         repo,
         {
           run: result.run.id,
@@ -429,7 +431,7 @@ async function runUpdate(): Promise<void> {
   const runId = positiveInt(flags.run, "--run");
   const repo = await resolveRepo();
   const result = await runOp(async () =>
-    (await svc()).pevrRuns.update(
+    (await svc()).workflowRuns.update(
       repo,
       {
         run: runId,
@@ -442,7 +444,7 @@ async function runUpdate(): Promise<void> {
   );
   if (flags.json) out(result);
   else {
-    console.log(`updated PEVR run #${result.run.id}`);
+    console.log(`updated Workflow run #${result.run.id}`);
     console.log(`status\t${display(result.run.status)}`);
     console.log(`step\t${display(result.run.current_step)}`);
     console.log(`rework_count\t${result.run.rework_count}`);
@@ -465,7 +467,7 @@ async function stepInput(): Promise<void> {
         : undefined;
   const repo = await resolveRepo();
   const result = await runOp(async () =>
-    (await svc()).pevrRuns.stepInput(repo, {
+    (await svc()).workflowRuns.stepInput(repo, {
       run: runId,
       step,
       note,
@@ -490,7 +492,7 @@ async function stepStatus(): Promise<void> {
   const runId = positiveInt(rest[1], "<run>");
   const repo = await resolveRepo();
   const result = await runOp(async () =>
-    (await svc()).pevrRuns.status(repo, { run: runId }),
+    (await svc()).workflowRuns.status(repo, { run: runId }),
   );
   if (flags.json) {
     out(result);
@@ -514,15 +516,15 @@ async function stepStatus(): Promise<void> {
 async function stepOutput(): Promise<void> {
   if (rest[0] !== "output") usage();
   const runId = positiveInt(
-    flags.run ?? process.env.LOOPHUB_PEVR_RUN,
-    "--run or LOOPHUB_PEVR_RUN",
+    flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
+    "--run or LOOPHUB_WORKFLOW_RUN",
   );
-  const step = flags.step ?? process.env.LOOPHUB_PEVR_STEP;
-  if (!step) fail("--step or LOOPHUB_PEVR_STEP is required");
+  const step = flags.step ?? process.env.LOOPHUB_WORKFLOW_STEP;
+  if (!step) fail("--step or LOOPHUB_WORKFLOW_STEP is required");
   const file = flags.file?.[0] ?? "-";
   const repo = await resolveRepo();
   const result = await runOp(async () =>
-    (await svc()).pevrRuns.stepOutput(
+    (await svc()).workflowRuns.stepOutput(
       repo,
       { run: runId, step, content: await submittedArtifactText(file) },
       await writeSession(),
@@ -538,20 +540,20 @@ async function stepOutput(): Promise<void> {
 export async function run(): Promise<void> {
   const s = await svc();
   if (sub === "list") {
-    const workflows = await runOp(() => s.pevrWorkflows.list());
+    const workflows = await runOp(() => s.workflows.list());
     out(workflows);
     if (!flags.json) {
       for (const w of workflows)
         console.log(`#${w.id}\t${w.name}\t${w.description}`);
     }
   } else if (sub === "view") {
-    const workflow = await runOp(() => s.pevrWorkflows.get(nameArg()));
+    const workflow = await runOp(() => s.workflows.get(nameArg()));
     out(workflow);
     if (!flags.json) printWorkflow(workflow);
   } else if (sub === "create") {
     const promptPatch = await promptPatchFromFlags();
     const workflow = await runOp(async () =>
-      s.pevrWorkflows.create(
+      s.workflows.create(
         {
           name: nameArg(),
           description: flags.description,
@@ -579,14 +581,14 @@ export async function run(): Promise<void> {
     )
       fail("at least one workflow field must be provided");
     const workflow = await runOp(async () =>
-      s.pevrWorkflows.update(nameArg(), patch, await writeSession()),
+      s.workflows.update(nameArg(), patch, await writeSession()),
     );
     if (flags.json) out(workflow);
     else console.log(`updated workflow "${workflow.name}"`);
   } else if (sub === "delete") {
     const name = nameArg();
     const result = await runOp(async () =>
-      s.pevrWorkflows.delete(name, await writeSession()),
+      s.workflows.delete(name, await writeSession()),
     );
     if (flags.json) out(result);
     else console.log(`deleted workflow "${name}"`);

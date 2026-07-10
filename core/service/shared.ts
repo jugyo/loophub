@@ -96,8 +96,6 @@ import {
   issueListItemJSON,
   labelJSON,
   notificationJSON,
-  pevrRunStateJSON,
-  pevrWorkflowJSON,
   pullJSON,
   relatedSessionsJSON,
   repoJSON,
@@ -107,6 +105,8 @@ import {
   scheduledTaskJSON,
   scheduledTaskRunJSON,
   sessionUsageJSON,
+  workflowJSON,
+  workflowRunStateJSON,
 } from "../serialize.ts";
 import type {
   ClaudeSubagentTranscript,
@@ -182,7 +182,7 @@ import {
   worktreePath,
 } from "../worktree-path.ts";
 
-export { pevrRunStateJSON, pevrWorkflowJSON };
+export { workflowJSON, workflowRunStateJSON };
 
 import {
   classifyWorktree,

@@ -1,60 +1,62 @@
-import type { PevrFinding, PevrVerdictArtifact } from "./artifacts.ts";
-import type { PevrStep } from "./compose.ts";
+import type { WorkflowFinding, WorkflowVerdictArtifact } from "./artifacts.ts";
+import type { WorkflowStep } from "./compose.ts";
 
 /**
  * State of the latest validated artifact of one type, as seen by the completion
  * query. `headSha` is the SHA the engine stamped at submission (§6.1); `placed`
- * is whether that latest artifact has a placement record (`pevr_placements`).
+ * is whether that latest artifact has a placement record (`workflow_placements`).
  * An accepted-but-unplaced artifact (§6.3) is `placed: false` and therefore
  * never completes its step.
  */
-export type PevrLatestArtifactState = {
+export type WorkflowLatestArtifactState = {
   headSha: string;
   placed: boolean;
 };
 
 /**
- * Pure inputs for {@link evaluatePevrSteps}. Everything is resolved by the
- * caller from `pevr_artifacts` × `pevr_placements` × the worktree head — this
+ * Pure inputs for {@link evaluateWorkflowSteps}. Everything is resolved by the
+ * caller from `workflow_artifacts` × `workflow_placements` × the worktree head — this
  * function reads no DB / fs and knows nothing about PR body / comment markers.
  */
-export type PevrStepEvalInput = {
+export type WorkflowStepEvalInput = {
   /** Current worktree HEAD, or null when it could not be resolved. */
   currentHead: string | null;
   /** Whether HEAD is ahead of the run's base branch. */
   headAheadOfBase: boolean;
   /** Latest validated `plan` artifact state, or null when none submitted. */
-  plan: PevrLatestArtifactState | null;
+  plan: WorkflowLatestArtifactState | null;
   /** Latest validated `execution-report` artifact state. */
-  execute: PevrLatestArtifactState | null;
+  execute: WorkflowLatestArtifactState | null;
   /** Latest validated `verdict` artifact state. */
-  verify: PevrLatestArtifactState | null;
+  verify: WorkflowLatestArtifactState | null;
   /** Latest validated `reflection` artifact state. */
-  reflect: PevrLatestArtifactState | null;
+  reflect: WorkflowLatestArtifactState | null;
   /** Parsed content of the latest verdict artifact (for the rework summary). */
-  latestVerdict: PevrVerdictArtifact | null;
+  latestVerdict: WorkflowVerdictArtifact | null;
 };
 
-export type PevrStepStatus = {
+export type WorkflowStepStatus = {
   complete: boolean;
   missing: string[];
 };
 
-export type PevrLatestVerdictSummary = {
+export type WorkflowLatestVerdictSummary = {
   event: "pass" | "request_changes";
   summary: string;
-  findings: PevrFinding[];
+  findings: WorkflowFinding[];
 };
 
-export type PevrStepStatuses = {
-  plan: PevrStepStatus;
-  execute: PevrStepStatus;
-  verify: PevrStepStatus & { latest_verdict: PevrLatestVerdictSummary | null };
-  reflect: PevrStepStatus;
+export type WorkflowStepStatuses = {
+  plan: WorkflowStepStatus;
+  execute: WorkflowStepStatus;
+  verify: WorkflowStepStatus & {
+    latest_verdict: WorkflowLatestVerdictSummary | null;
+  };
+  reflect: WorkflowStepStatus;
 };
 
 function placedAtHead(
-  state: PevrLatestArtifactState | null,
+  state: WorkflowLatestArtifactState | null,
   currentHead: string | null,
 ): boolean {
   return Boolean(
@@ -63,7 +65,7 @@ function placedAtHead(
 }
 
 /**
- * Evaluate the completion condition of each PEVR step (§6.5) as a pure query.
+ * Evaluate the completion condition of each Workflow step (§6.5) as a pure query.
  *
  * - Plan / Reflect complete once a validated artifact of their type is placed.
  * - Execute completes when a validated execution-report is placed, its stamped
@@ -74,9 +76,11 @@ function placedAtHead(
  * Because Execute / Verify compare the stamped SHA to the current head, moving
  * the head forward turns a previously complete step back to incomplete (stale).
  */
-export function evaluatePevrSteps(input: PevrStepEvalInput): PevrStepStatuses {
+export function evaluateWorkflowSteps(
+  input: WorkflowStepEvalInput,
+): WorkflowStepStatuses {
   const planComplete = Boolean(input.plan?.placed);
-  const plan: PevrStepStatus = {
+  const plan: WorkflowStepStatus = {
     complete: planComplete,
     missing: planComplete ? [] : ["no validated plan artifact placed"],
   };
@@ -88,14 +92,14 @@ export function evaluatePevrSteps(input: PevrStepEvalInput): PevrStepStatuses {
   if (!input.headAheadOfBase) {
     executeMissing.push("head equals base");
   }
-  const execute: PevrStepStatus = {
+  const execute: WorkflowStepStatus = {
     complete: executeMissing.length === 0,
     missing: executeMissing,
   };
 
   const verifyComplete = placedAtHead(input.verify, input.currentHead);
-  const verify: PevrStepStatus & {
-    latest_verdict: PevrLatestVerdictSummary | null;
+  const verify: WorkflowStepStatus & {
+    latest_verdict: WorkflowLatestVerdictSummary | null;
   } = {
     complete: verifyComplete,
     missing: verifyComplete ? [] : ["no validated verdict for current head"],
@@ -109,7 +113,7 @@ export function evaluatePevrSteps(input: PevrStepEvalInput): PevrStepStatuses {
   };
 
   const reflectComplete = Boolean(input.reflect?.placed);
-  const reflect: PevrStepStatus = {
+  const reflect: WorkflowStepStatus = {
     complete: reflectComplete,
     missing: reflectComplete ? [] : ["no validated reflection artifact placed"],
   };
@@ -117,7 +121,7 @@ export function evaluatePevrSteps(input: PevrStepEvalInput): PevrStepStatuses {
   return { plan, execute, verify, reflect };
 }
 
-export const PEVR_STEP_ORDER: readonly PevrStep[] = [
+export const WORKFLOW_STEP_ORDER: readonly WorkflowStep[] = [
   "plan",
   "execute",
   "verify",

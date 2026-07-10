@@ -2,15 +2,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
-  composePevrLaunchPrompt,
-  composePevrStepPrompt,
-  renderPevrContract,
+  composeWorkflowLaunchPrompt,
+  composeWorkflowStepPrompt,
+  renderWorkflowContract,
 } from "./compose.ts";
 
 const CONTRACT_DIR = join(import.meta.dirname, "contracts");
 
 test("keeps contract and user prompt in separate channels", () => {
-  const composed = composePevrLaunchPrompt(
+  const composed = composeWorkflowLaunchPrompt(
     {
       template: readFileSync(join(CONTRACT_DIR, "plan.md"), "utf8"),
       step: "plan",
@@ -20,7 +20,7 @@ test("keeps contract and user prompt in separate channels", () => {
     {
       inputFiles: [
         {
-          path: "/tmp/runs/pevr/run-1/plan/input/task.md",
+          path: "/tmp/runs/workflow/run-1/plan/input/task.md",
           description: "Requested outcome and acceptance criteria",
         },
       ],
@@ -38,14 +38,14 @@ test("keeps contract and user prompt in separate channels", () => {
 });
 
 test("renders contract context into the system prompt", () => {
-  const contract = renderPevrContract({
+  const contract = renderWorkflowContract({
     template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
     step: "verify",
     worktreePath: "/tmp/worktree",
     baseBranch: "main",
   });
 
-  expect(contract).toContain("## PEVR contract context");
+  expect(contract).toContain("## Workflow contract context");
   expect(contract).toContain("step: verify");
   expect(contract).toContain("worktree: /tmp/worktree");
   expect(contract).toContain("base branch: main");
@@ -54,10 +54,10 @@ test("renders contract context into the system prompt", () => {
 
 test("user prompt lists large inputs by absolute path instead of embedding content", () => {
   const largeDiff = "diff --git a/a.ts b/a.ts\n".repeat(200);
-  const composed = composePevrStepPrompt({
+  const composed = composeWorkflowStepPrompt({
     inputFiles: [
       {
-        path: "/tmp/runs/pevr/run-1/verify/input/changes.diff",
+        path: "/tmp/runs/workflow/run-1/verify/input/changes.diff",
         description: "Change diff pinned to abc123",
       },
     ],
@@ -66,14 +66,14 @@ test("user prompt lists large inputs by absolute path instead of embedding conte
   });
 
   expect(composed.userPrompt).toContain(
-    "/tmp/runs/pevr/run-1/verify/input/changes.diff",
+    "/tmp/runs/workflow/run-1/verify/input/changes.diff",
   );
   expect(composed.userPrompt).not.toContain(largeDiff);
   expect(composed.userPrompt).not.toContain("diff --git");
 });
 
 test("composed prompts do not introduce slash commands or domain identifiers", () => {
-  const composed = composePevrLaunchPrompt(
+  const composed = composeWorkflowLaunchPrompt(
     {
       template: readFileSync(join(CONTRACT_DIR, "execute.md"), "utf8"),
       step: "execute",
@@ -83,11 +83,11 @@ test("composed prompts do not introduce slash commands or domain identifiers", (
     {
       inputFiles: [
         {
-          path: "/tmp/runs/pevr/run-1/execute/input/task.md",
+          path: "/tmp/runs/workflow/run-1/execute/input/task.md",
           description: "Requested outcome and acceptance criteria",
         },
         {
-          path: "/tmp/runs/pevr/run-1/execute/input/plan.md",
+          path: "/tmp/runs/workflow/run-1/execute/input/plan.md",
           description: "Accepted implementation plan",
         },
       ],

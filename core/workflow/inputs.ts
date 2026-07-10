@@ -10,80 +10,84 @@ import {
 } from "node:fs";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import type {
-  PevrExecutionReportArtifact,
-  PevrPlanArtifact,
-  PevrReflectionArtifact,
-  PevrVerdictArtifact,
+  WorkflowExecutionReportArtifact,
+  WorkflowPlanArtifact,
+  WorkflowReflectionArtifact,
+  WorkflowVerdictArtifact,
 } from "./artifacts.ts";
-import { PEVR_STEPS, type PevrInputFileRef, type PevrStep } from "./compose.ts";
+import {
+  WORKFLOW_STEPS,
+  type WorkflowInputFileRef,
+  type WorkflowStep,
+} from "./compose.ts";
 
-export type PevrInputArtifactFile = {
+export type WorkflowInputArtifactFile = {
   name: string;
   description: string;
   content: string;
 };
 
-export type PevrStepInputSet = {
-  step: PevrStep;
-  files: PevrInputArtifactFile[];
+export type WorkflowStepInputSet = {
+  step: WorkflowStep;
+  files: WorkflowInputArtifactFile[];
 };
 
-export type PevrIssueInput = {
+export type WorkflowIssueInput = {
   title: string;
   body: string;
-  comments?: PevrIssueCommentInput[];
+  comments?: WorkflowIssueCommentInput[];
 };
 
-export type PevrIssueCommentInput = {
+export type WorkflowIssueCommentInput = {
   author: string;
   createdAt: string;
   body: string;
 };
 
-export type PevrPlanInput = {
-  issue: PevrIssueInput;
+export type WorkflowPlanInput = {
+  issue: WorkflowIssueInput;
 };
 
-export type PevrExecuteInput = {
-  issue: PevrIssueInput;
-  plan: PevrPlanArtifact;
-  latestVerdict?: PevrVerdictArtifact;
+export type WorkflowExecuteInput = {
+  issue: WorkflowIssueInput;
+  plan: WorkflowPlanArtifact;
+  latestVerdict?: WorkflowVerdictArtifact;
   verdictHeadSha?: string;
   note?: string;
 };
 
-export type PevrVerifyInput = {
-  issue: PevrIssueInput;
+export type WorkflowVerifyInput = {
+  issue: WorkflowIssueInput;
   headSha: string;
   baseBranch: string;
   diff: string;
-  report: PevrExecutionReportArtifact;
-  priorVerdicts?: PevrVerdictArtifact[];
+  report: WorkflowExecutionReportArtifact;
+  priorVerdicts?: WorkflowVerdictArtifact[];
 };
 
-export type PevrReflectInput = {
-  issue: PevrIssueInput;
-  artifacts: PevrRunArtifactInput[];
+export type WorkflowReflectInput = {
+  issue: WorkflowIssueInput;
+  artifacts: WorkflowRunArtifactInput[];
   reworkCount: number;
-  timeline: PevrTimelineEntryInput[];
+  timeline: WorkflowTimelineEntryInput[];
   handoffs?: string[];
 };
 
-export type PevrRunArtifactInput =
-  | PevrPlanArtifact
-  | PevrExecutionReportArtifact
-  | PevrVerdictArtifact
-  | PevrReflectionArtifact;
+export type WorkflowRunArtifactInput =
+  | WorkflowPlanArtifact
+  | WorkflowExecutionReportArtifact
+  | WorkflowVerdictArtifact
+  | WorkflowReflectionArtifact;
 
-export type PevrTimelineEntryInput = {
+export type WorkflowTimelineEntryInput = {
   at: string;
-  step: PevrStep | "parent";
+  step: WorkflowStep | "parent";
   text: string;
 };
 
 export function composePlanInputArtifacts(
-  input: PevrPlanInput,
-): PevrStepInputSet {
+  input: WorkflowPlanInput,
+): WorkflowStepInputSet {
   return {
     step: "plan",
     files: [
@@ -97,9 +101,9 @@ export function composePlanInputArtifacts(
 }
 
 export function composeExecuteInputArtifacts(
-  input: PevrExecuteInput,
-): PevrStepInputSet {
-  const files: PevrInputArtifactFile[] = [
+  input: WorkflowExecuteInput,
+): WorkflowStepInputSet {
+  const files: WorkflowInputArtifactFile[] = [
     {
       name: "task.md",
       description: "Requested outcome and acceptance criteria",
@@ -124,9 +128,9 @@ export function composeExecuteInputArtifacts(
 }
 
 export function composeVerifyInputArtifacts(
-  input: PevrVerifyInput,
-): PevrStepInputSet {
-  const files: PevrInputArtifactFile[] = [
+  input: WorkflowVerifyInput,
+): WorkflowStepInputSet {
+  const files: WorkflowInputArtifactFile[] = [
     {
       name: "task.md",
       description: "Requested outcome and acceptance criteria",
@@ -161,8 +165,8 @@ export function composeVerifyInputArtifacts(
 }
 
 export function composeReflectInputArtifacts(
-  input: PevrReflectInput,
-): PevrStepInputSet {
+  input: WorkflowReflectInput,
+): WorkflowStepInputSet {
   return {
     step: "reflect",
     files: [
@@ -175,16 +179,16 @@ export function composeReflectInputArtifacts(
   };
 }
 
-export function writePevrStepInputArtifacts(
+export function writeWorkflowStepInputArtifacts(
   rootDir: string,
-  inputSet: PevrStepInputSet,
-): PevrInputFileRef[] {
+  inputSet: WorkflowStepInputSet,
+): WorkflowInputFileRef[] {
   const root = resolve(rootDir);
   assertNotSymlink(root);
   mkdirSync(root, { recursive: true });
   const realRoot = realpathSync(root);
 
-  const stepDir = resolve(root, safePevrStep(inputSet.step));
+  const stepDir = resolve(root, safeWorkflowStep(inputSet.step));
   assertNotSymlink(stepDir);
   mkdirSync(stepDir, { recursive: true });
 
@@ -194,7 +198,7 @@ export function writePevrStepInputArtifacts(
   const realInputDir = realpathSync(inputDir);
   if (!isPathInsideOrEqual(realRoot, realInputDir)) {
     throw new Error(
-      `PEVR input directory escapes run directory: ${inputSet.step}`,
+      `Workflow input directory escapes run directory: ${inputSet.step}`,
     );
   }
 
@@ -202,7 +206,7 @@ export function writePevrStepInputArtifacts(
     const path = resolve(realInputDir, safeInputArtifactName(file.name));
     if (!isPathInside(realInputDir, path)) {
       throw new Error(
-        `PEVR input artifact path escapes input directory: ${file.name}`,
+        `Workflow input artifact path escapes input directory: ${file.name}`,
       );
     }
     writeFileNoFollow(path, file.content);
@@ -210,9 +214,9 @@ export function writePevrStepInputArtifacts(
   });
 }
 
-function safePevrStep(step: PevrStep): PevrStep {
-  if (!PEVR_STEPS.includes(step)) {
-    throw new Error(`Invalid PEVR step: ${String(step)}`);
+function safeWorkflowStep(step: WorkflowStep): WorkflowStep {
+  if (!WORKFLOW_STEPS.includes(step)) {
+    throw new Error(`Invalid Workflow step: ${String(step)}`);
   }
   return step;
 }
@@ -226,7 +230,7 @@ function safeInputArtifactName(name: string): string {
     name === "." ||
     name === ".."
   ) {
-    throw new Error(`Invalid PEVR input artifact name: ${name}`);
+    throw new Error(`Invalid Workflow input artifact name: ${name}`);
   }
   return name;
 }
@@ -234,7 +238,7 @@ function safeInputArtifactName(name: string): string {
 function assertNotSymlink(path: string): void {
   try {
     if (lstatSync(path).isSymbolicLink()) {
-      throw new Error(`PEVR input path must not be a symlink: ${path}`);
+      throw new Error(`Workflow input path must not be a symlink: ${path}`);
     }
   } catch (e) {
     if (isNodeError(e) && e.code === "ENOENT") {
@@ -263,7 +267,7 @@ function writeFileNoFollow(path: string, content: string): void {
 function unlinkExistingNonSymlink(path: string): void {
   try {
     if (lstatSync(path).isSymbolicLink()) {
-      throw new Error(`PEVR input artifact must not be a symlink: ${path}`);
+      throw new Error(`Workflow input artifact must not be a symlink: ${path}`);
     }
     unlinkSync(path);
   } catch (e) {
@@ -287,7 +291,7 @@ function isNodeError(e: unknown): e is NodeJS.ErrnoException {
   return e instanceof Error && "code" in e;
 }
 
-function renderIssueTask(issue: PevrIssueInput): string {
+function renderIssueTask(issue: WorkflowIssueInput): string {
   const comments = issue.comments ?? [];
   const sections = [
     `# ${issue.title}`,
@@ -311,7 +315,7 @@ function renderIssueTask(issue: PevrIssueInput): string {
   return `${sections.join("\n")}\n`;
 }
 
-function renderPlanArtifact(plan: PevrPlanArtifact): string {
+function renderPlanArtifact(plan: WorkflowPlanArtifact): string {
   return [
     "# Plan",
     "",
@@ -332,7 +336,9 @@ function renderPlanArtifact(plan: PevrPlanArtifact): string {
   ].join("\n");
 }
 
-function renderExecutionReport(report: PevrExecutionReportArtifact): string {
+function renderExecutionReport(
+  report: WorkflowExecutionReportArtifact,
+): string {
   return [
     "# Execution report",
     "",
@@ -360,7 +366,7 @@ function renderExecutionReport(report: PevrExecutionReportArtifact): string {
 }
 
 function renderFindings(
-  verdict: PevrVerdictArtifact,
+  verdict: WorkflowVerdictArtifact,
   headSha: string | undefined,
 ): string {
   return [
@@ -386,7 +392,7 @@ function renderFindings(
   ].join("\n");
 }
 
-function renderVerdict(verdict: PevrVerdictArtifact): string {
+function renderVerdict(verdict: WorkflowVerdictArtifact): string {
   return [
     `# Verdict: ${verdict.event}`,
     "",
@@ -404,7 +410,7 @@ function renderVerdict(verdict: PevrVerdictArtifact): string {
   ].join("\n");
 }
 
-function renderRunDigest(input: PevrReflectInput): string {
+function renderRunDigest(input: WorkflowReflectInput): string {
   return [
     "# Run digest",
     "",

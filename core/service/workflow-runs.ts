@@ -21,42 +21,42 @@ import {
   removeDevLock,
 } from "../dev-lock.ts";
 import { git } from "../git.ts";
+import { RUNTIME_CLAUDE_CODE, resolveWorktreeIdentity } from "../resume.ts";
+import type {
+  WorkflowRunStateWire,
+  WorkflowRunVerdictSummaryWire,
+} from "../serialize.ts";
+import { buildWorkflowStepHerdrLaunchPlan } from "../terminal/terminal-launch.ts";
 import {
-  type PevrArtifact,
-  type PevrArtifactType,
-  type PevrExecutionReportArtifact,
-  type PevrPlanArtifact,
-  type PevrVerdictArtifact,
-  parsePevrArtifactJson,
-} from "../pevr/artifacts.ts";
+  parseWorkflowArtifactJson,
+  type WorkflowArtifact,
+  type WorkflowArtifactType,
+  type WorkflowExecutionReportArtifact,
+  type WorkflowPlanArtifact,
+  type WorkflowVerdictArtifact,
+} from "../workflow/artifacts.ts";
 import {
-  composePevrLaunchPrompt,
-  PEVR_STEPS,
-  type PevrStep,
-  renderPevrContract,
-} from "../pevr/compose.ts";
+  composeWorkflowLaunchPrompt,
+  renderWorkflowContract,
+  WORKFLOW_STEPS,
+  type WorkflowStep,
+} from "../workflow/compose.ts";
 import {
   composeExecuteInputArtifacts,
   composePlanInputArtifacts,
   composeReflectInputArtifacts,
   composeVerifyInputArtifacts,
-  type PevrIssueInput,
-  type PevrStepInputSet,
-  type PevrTimelineEntryInput,
-  writePevrStepInputArtifacts,
-} from "../pevr/inputs.ts";
-import { placePevrArtifact } from "../pevr/placement.ts";
+  type WorkflowIssueInput,
+  type WorkflowStepInputSet,
+  type WorkflowTimelineEntryInput,
+  writeWorkflowStepInputArtifacts,
+} from "../workflow/inputs.ts";
+import { placeWorkflowArtifact } from "../workflow/placement.ts";
 import {
-  evaluatePevrSteps,
-  type PevrLatestArtifactState,
-  type PevrStepStatuses,
-} from "../pevr/steps.ts";
-import { RUNTIME_CLAUDE_CODE, resolveWorktreeIdentity } from "../resume.ts";
-import type {
-  PevrRunStateWire,
-  PevrRunVerdictSummaryWire,
-} from "../serialize.ts";
-import { buildPevrStepHerdrLaunchPlan } from "../terminal/terminal-launch.ts";
+  evaluateWorkflowSteps,
+  type WorkflowLatestArtifactState,
+  type WorkflowStepStatuses,
+} from "../workflow/steps.ts";
 import {
   legacyWorktreePath,
   worktreePath as prWorktreePath,
@@ -71,13 +71,13 @@ import {
   assertExistingLocalBranch,
   ensureWritable,
   issueOr404,
-  pevrRunStateJSON,
   repoOr404,
   S,
   ServiceError,
+  workflowRunStateJSON,
 } from "./shared.ts";
 
-export type PevrRunStartResult = {
+export type WorkflowRunStartResult = {
   run: {
     id: number;
     workflow_id: number | null;
@@ -100,7 +100,7 @@ export type PevrRunStartResult = {
   };
 };
 
-export type PevrRunUpdateResult = {
+export type WorkflowRunUpdateResult = {
   run: {
     id: number;
     workflow_id: number | null;
@@ -112,9 +112,9 @@ export type PevrRunUpdateResult = {
   };
 };
 
-export type PevrLaunchStepResult = {
-  run: PevrRunUpdateResult["run"];
-  step: PevrStep;
+export type WorkflowLaunchStepResult = {
+  run: WorkflowRunUpdateResult["run"];
+  step: WorkflowStep;
   session_id: string;
   worktree: string;
   system_prompt_path: string;
@@ -129,36 +129,36 @@ export type PevrLaunchStepResult = {
   };
 };
 
-export type PevrConfirmStepLaunchResult = {
-  run: PevrRunUpdateResult["run"];
+export type WorkflowConfirmStepLaunchResult = {
+  run: WorkflowRunUpdateResult["run"];
   session_id: string;
 };
 
-export type PevrStepOutputResult = {
+export type WorkflowStepOutputResult = {
   artifact_id: number;
   head_sha: string;
   placement: { kind: string; ref: string };
   retried: boolean;
 };
 
-export type PevrStepInputResult = {
-  run: PevrRunUpdateResult["run"];
-  step: PevrStep;
+export type WorkflowStepInputResult = {
+  run: WorkflowRunUpdateResult["run"];
+  step: WorkflowStep;
   system_prompt: string;
   system_prompt_path: string;
   user_prompt: string;
   input_files: Array<{ path: string; description: string }>;
 };
 
-export type PevrStepStatusResult = {
+export type WorkflowStepStatusResult = {
   run: number;
   current_step: string;
   status: string;
   head_sha: string | null;
-  steps: PevrStepStatuses;
+  steps: WorkflowStepStatuses;
 };
 
-const STEP_ARTIFACT_TYPE: Record<PevrStep, PevrArtifactType> = {
+const STEP_ARTIFACT_TYPE: Record<WorkflowStep, WorkflowArtifactType> = {
   plan: "plan",
   execute: "execution-report",
   verify: "verdict",
@@ -173,12 +173,12 @@ function workflowByInput(input: { workflow?: string; workflowId?: number }) {
     );
   }
   if (input.workflowId !== undefined) {
-    const workflow = S.getPevrWorkflowById(input.workflowId);
+    const workflow = S.getWorkflowById(input.workflowId);
     if (!workflow) throw new ServiceError(404, "Workflow not found");
     return workflow;
   }
   if (input.workflow) {
-    const workflow = S.getPevrWorkflowByName(input.workflow.trim());
+    const workflow = S.getWorkflowByName(input.workflow.trim());
     if (!workflow) throw new ServiceError(404, "Workflow not found");
     return workflow;
   }
@@ -186,11 +186,11 @@ function workflowByInput(input: { workflow?: string; workflowId?: number }) {
 }
 
 function runDir(runId: number): string {
-  return join(configDir(), "runs", "pevr", String(runId));
+  return join(configDir(), "runs", "workflow", String(runId));
 }
 
 function writeRunFile(runId: number, name: string, text: string): string {
-  const dir = ensurePevrRunDir(runId);
+  const dir = ensureWorkflowRunDir(runId);
   const path = join(dir, name);
   const fd = openSync(
     path,
@@ -214,17 +214,17 @@ function writeParentContract(runId: number, text: string): string {
 
 function writeStepContract(
   runId: number,
-  step: PevrStep,
+  step: WorkflowStep,
   text: string,
 ): string {
   return writeRunFile(runId, `${step}-contract.md`, text);
 }
 
-function ensurePevrRunDir(runId: number): string {
+function ensureWorkflowRunDir(runId: number): string {
   const dir = runDir(runId);
   for (const path of [
     join(configDir(), "runs"),
-    join(configDir(), "runs", "pevr"),
+    join(configDir(), "runs", "workflow"),
     dir,
   ]) {
     try {
@@ -240,7 +240,10 @@ function ensurePevrRunDir(runId: number): string {
 
 function assertNotSymlink(path: string): void {
   if (lstatSync(path).isSymbolicLink()) {
-    throw new ServiceError(422, `PEVR run path must not be a symlink: ${path}`);
+    throw new ServiceError(
+      422,
+      `Workflow run path must not be a symlink: ${path}`,
+    );
   }
 }
 
@@ -294,11 +297,11 @@ function parentUserPrompt(input: {
   ].join("\n");
 }
 
-function stepContractForLaunch(_step: PevrStep, template: string): string {
+function stepContractForLaunch(_step: WorkflowStep, template: string): string {
   return template;
 }
 
-function runJSON(run: S.PevrRunRow): PevrRunUpdateResult["run"] {
+function runJSON(run: S.WorkflowRunRow): WorkflowRunUpdateResult["run"] {
   return {
     id: run.id,
     workflow_id: run.workflow_id,
@@ -310,30 +313,30 @@ function runJSON(run: S.PevrRunRow): PevrRunUpdateResult["run"] {
   };
 }
 
-function pevrStep(value: string): PevrStep {
-  if (!PEVR_STEPS.includes(value as PevrStep)) {
+function workflowStep(value: string): WorkflowStep {
+  if (!WORKFLOW_STEPS.includes(value as WorkflowStep)) {
     throw new ServiceError(
       422,
-      `invalid step "${value}" (expected one of: ${PEVR_STEPS.join(", ")})`,
+      `invalid step "${value}" (expected one of: ${WORKFLOW_STEPS.join(", ")})`,
     );
   }
-  return value as PevrStep;
+  return value as WorkflowStep;
 }
 
-function pevrRunOr404(id: number): S.PevrRunRow {
-  const run = S.getPevrRun(id);
-  if (!run) throw new ServiceError(404, "PEVR run not found");
+function workflowRunOr404(id: number): S.WorkflowRunRow {
+  const run = S.getWorkflowRun(id);
+  if (!run) throw new ServiceError(404, "Workflow run not found");
   return run;
 }
 
 function workflowStepPrompt(
-  workflow: S.PevrWorkflowRow,
-  step: PevrStep,
+  workflow: S.WorkflowRow,
+  step: WorkflowStep,
 ): string {
   return workflow[`${step}_prompt` as const];
 }
 
-function pevrRunWorktree(input: {
+function workflowRunWorktree(input: {
   repo: S.Repo;
   prNumber: number;
   headRef: string;
@@ -344,7 +347,7 @@ function pevrRunWorktree(input: {
     : prWorktreePath(worktreeRoot(), input.repo.full_name, identity.number);
 }
 
-function issueInput(issue: S.IssueRow): PevrIssueInput {
+function issueInput(issue: S.IssueRow): WorkflowIssueInput {
   return {
     title: issue.title,
     body: issue.body,
@@ -361,10 +364,10 @@ async function composeLaunchInputs(input: {
   issue: S.IssueRow;
   pullIssue: S.IssueRow;
   pull: S.PullRow;
-  run: S.PevrRunRow;
-  step: PevrStep;
+  run: S.WorkflowRunRow;
+  step: WorkflowStep;
   worktree: string;
-}): Promise<PevrStepInputSet> {
+}): Promise<WorkflowStepInputSet> {
   const task = issueInput(input.issue);
   switch (input.step) {
     case "plan":
@@ -405,30 +408,33 @@ async function composeLaunchInputs(input: {
 }
 
 function latestArtifactHead(
-  run: S.PevrRunRow,
-  type: PevrArtifactType,
+  run: S.WorkflowRunRow,
+  type: WorkflowArtifactType,
 ): string | undefined {
-  return S.latestPevrArtifactByType(run.id, type)?.head_sha;
+  return S.latestWorkflowArtifactByType(run.id, type)?.head_sha;
 }
 
-function readLatestArtifact(run: S.PevrRunRow, type: "plan"): PevrPlanArtifact;
 function readLatestArtifact(
-  run: S.PevrRunRow,
+  run: S.WorkflowRunRow,
+  type: "plan",
+): WorkflowPlanArtifact;
+function readLatestArtifact(
+  run: S.WorkflowRunRow,
   type: "execution-report",
-): PevrExecutionReportArtifact;
+): WorkflowExecutionReportArtifact;
 function readLatestArtifact(
-  run: S.PevrRunRow,
+  run: S.WorkflowRunRow,
   type: "verdict",
-): PevrVerdictArtifact;
+): WorkflowVerdictArtifact;
 function readLatestArtifact(
-  run: S.PevrRunRow,
-  type: PevrArtifactType,
-): PevrArtifact {
-  const row = S.latestPevrArtifactByType(run.id, type);
+  run: S.WorkflowRunRow,
+  type: WorkflowArtifactType,
+): WorkflowArtifact {
+  const row = S.latestWorkflowArtifactByType(run.id, type);
   if (!row) {
     throw new ServiceError(409, `launch-step requires latest ${type} artifact`);
   }
-  const parsed = parsePevrArtifactJson(row.content_json);
+  const parsed = parseWorkflowArtifactJson(row.content_json);
   if (!parsed.ok) {
     throw new ServiceError(
       422,
@@ -445,10 +451,10 @@ function readLatestArtifact(
 }
 
 function readLatestArtifactOptional(
-  run: S.PevrRunRow,
+  run: S.WorkflowRunRow,
   type: "verdict",
-): PevrVerdictArtifact | undefined {
-  return S.latestPevrArtifactByType(run.id, type)
+): WorkflowVerdictArtifact | undefined {
+  return S.latestWorkflowArtifactByType(run.id, type)
     ? readLatestArtifact(run, type)
     : undefined;
 }
@@ -458,8 +464,8 @@ function compact<T>(values: Array<T | undefined>): T[] {
 }
 
 function stepActorAllowed(
-  run: S.PevrRunRow,
-  step: PevrStep,
+  run: S.WorkflowRunRow,
+  step: WorkflowStep,
   sessionId: string | null | undefined,
 ): boolean {
   if (!sessionId) return false;
@@ -480,7 +486,7 @@ async function worktreeHead(worktree: string): Promise<string> {
   const result = await git(worktree, ["rev-parse", "HEAD"]);
   const sha = result.stdout.trim();
   if (result.code !== 0 || !sha) {
-    throw new ServiceError(422, "could not resolve PEVR worktree HEAD");
+    throw new ServiceError(422, "could not resolve Workflow worktree HEAD");
   }
   return sha;
 }
@@ -514,18 +520,23 @@ async function isHeadAheadOfBase(
 }
 
 function latestArtifactState(
-  run: S.PevrRunRow,
-  type: PevrArtifactType,
-): PevrLatestArtifactState | null {
-  const row = S.latestPevrArtifactByType(run.id, type);
+  run: S.WorkflowRunRow,
+  type: WorkflowArtifactType,
+): WorkflowLatestArtifactState | null {
+  const row = S.latestWorkflowArtifactByType(run.id, type);
   if (!row) return null;
-  return { headSha: row.head_sha, placed: Boolean(S.getPevrPlacement(row.id)) };
+  return {
+    headSha: row.head_sha,
+    placed: Boolean(S.getWorkflowPlacement(row.id)),
+  };
 }
 
-function latestVerdictContent(run: S.PevrRunRow): PevrVerdictArtifact | null {
-  const row = S.latestPevrArtifactByType(run.id, "verdict");
+function latestVerdictContent(
+  run: S.WorkflowRunRow,
+): WorkflowVerdictArtifact | null {
+  const row = S.latestWorkflowArtifactByType(run.id, "verdict");
   if (!row) return null;
-  const parsed = parsePevrArtifactJson(row.content_json);
+  const parsed = parseWorkflowArtifactJson(row.content_json);
   if (!parsed.ok || parsed.artifact.type !== "verdict") return null;
   return parsed.artifact;
 }
@@ -533,19 +544,19 @@ function latestVerdictContent(run: S.PevrRunRow): PevrVerdictArtifact | null {
 // Build the issue / PR detail display state (#1008) from a run row. The row is the display-state
 // source (§5.2); this does not re-derive step-completion truth (that is `workflow step status`).
 // `latest_verdict` gives the human-readable reason behind a rework / block.
-function pevrRunState(run: S.PevrRunRow): PevrRunStateWire {
+function workflowRunState(run: S.WorkflowRunRow): WorkflowRunStateWire {
   const workflowName = run.workflow_id
-    ? (S.getPevrWorkflowById(run.workflow_id)?.name ?? null)
+    ? (S.getWorkflowById(run.workflow_id)?.name ?? null)
     : null;
   const verdict = latestVerdictContent(run);
-  const latestVerdict: PevrRunVerdictSummaryWire | null = verdict
+  const latestVerdict: WorkflowRunVerdictSummaryWire | null = verdict
     ? {
         event: verdict.event,
         summary: verdict.summary,
         findings_count: verdict.findings.length,
       }
     : null;
-  return pevrRunStateJSON({ run, workflowName, latestVerdict });
+  return workflowRunStateJSON({ run, workflowName, latestVerdict });
 }
 
 function safeEvidenceAttachment(
@@ -557,7 +568,7 @@ function safeEvidenceAttachment(
   if (lstatSync(candidate).isSymbolicLink()) {
     throw new ServiceError(
       422,
-      `PEVR evidence path must not be a symlink: ${path}`,
+      `Workflow evidence path must not be a symlink: ${path}`,
     );
   }
   const fd = openSync(candidate, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -566,7 +577,7 @@ function safeEvidenceAttachment(
     if (!opened.isFile()) {
       throw new ServiceError(
         422,
-        `PEVR evidence path must be a regular file: ${path}`,
+        `Workflow evidence path must be a regular file: ${path}`,
       );
     }
     const resolved = realpathSync(candidate);
@@ -574,14 +585,14 @@ function safeEvidenceAttachment(
     if (checked.dev !== opened.dev || checked.ino !== opened.ino) {
       throw new ServiceError(
         422,
-        `PEVR evidence path changed while opening: ${path}`,
+        `Workflow evidence path changed while opening: ${path}`,
       );
     }
     const rel = relative(realpathSync(worktree), resolved);
     if (rel.startsWith("..") || rel.startsWith(sep)) {
       throw new ServiceError(
         422,
-        `PEVR evidence path escapes worktree: ${path}`,
+        `Workflow evidence path escapes worktree: ${path}`,
       );
     }
     return saveAttachment({
@@ -596,17 +607,17 @@ function safeEvidenceAttachment(
 
 async function placeAcceptedArtifact(input: {
   repoName: string;
-  run: S.PevrRunRow;
+  run: S.WorkflowRunRow;
   artifactId: number;
   ownerToken: string;
   ownershipLost: () => boolean;
-  artifact: PevrArtifact;
+  artifact: WorkflowArtifact;
   headSha: string;
   worktree: string;
   sessionId?: string | null;
 }): Promise<{ kind: string; ref: string }> {
   const current = await pulls.get(input.repoName, input.run.pr_number);
-  return placePevrArtifact({
+  return placeWorkflowArtifact({
     artifact: input.artifact,
     headSha: input.headSha,
     issueNumber: input.run.issue_number,
@@ -616,9 +627,12 @@ async function placeAcceptedArtifact(input: {
       assertOwnership() {
         if (
           input.ownershipLost() ||
-          !S.ownsPevrPlacementClaim(input.artifactId, input.ownerToken)
+          !S.ownsWorkflowPlacementClaim(input.artifactId, input.ownerToken)
         ) {
-          throw new ServiceError(409, "PEVR artifact placement claim was lost");
+          throw new ServiceError(
+            409,
+            "Workflow artifact placement claim was lost",
+          );
         }
       },
       async updateBody(body) {
@@ -638,11 +652,11 @@ async function placeAcceptedArtifact(input: {
           () => {
             if (
               input.ownershipLost() ||
-              !S.ownsPevrPlacementClaim(input.artifactId, input.ownerToken)
+              !S.ownsWorkflowPlacementClaim(input.artifactId, input.ownerToken)
             ) {
               throw new ServiceError(
                 409,
-                "PEVR artifact placement claim was lost",
+                "Workflow artifact placement claim was lost",
               );
             }
           },
@@ -653,7 +667,7 @@ async function placeAcceptedArtifact(input: {
           reviews.create(
             input.repoName,
             input.run.pr_number,
-            { ...review, topic: "pevr" },
+            { ...review, topic: "workflow" },
             input.sessionId,
           ).id,
         );
@@ -676,7 +690,7 @@ async function placeAcceptedArtifact(input: {
         );
       },
       record(kind, ref) {
-        S.createPevrPlacement(input.artifactId, kind, ref);
+        S.createWorkflowPlacement(input.artifactId, kind, ref);
       },
     },
   });
@@ -689,7 +703,7 @@ async function pinnedDiff(
   const head = await git(worktree, ["rev-parse", "HEAD"]);
   const headSha = head.stdout.trim();
   if (head.code !== 0 || !headSha) {
-    throw new ServiceError(409, "could not resolve PEVR worktree HEAD");
+    throw new ServiceError(409, "could not resolve Workflow worktree HEAD");
   }
   const diff = await git(worktree, ["diff", `${baseBranch}...${headSha}`]);
   if (diff.code !== 0) {
@@ -703,8 +717,8 @@ async function pinnedDiff(
 
 function runTimeline(
   repoId: number,
-  run: S.PevrRunRow,
-): PevrTimelineEntryInput[] {
+  run: S.WorkflowRunRow,
+): WorkflowTimelineEntryInput[] {
   return S.listEvents(0, repoId, 1000, undefined, "asc")
     .map((event) => {
       try {
@@ -715,8 +729,8 @@ function runTimeline(
         const rawStep = payload.step ?? payload.current_step;
         return {
           at: event.created_at,
-          step: PEVR_STEPS.includes(rawStep as PevrStep)
-            ? (rawStep as PevrStep)
+          step: WORKFLOW_STEPS.includes(rawStep as WorkflowStep)
+            ? (rawStep as WorkflowStep)
             : "parent",
           text: `${event.type} by ${event.actor}`,
         };
@@ -724,22 +738,22 @@ function runTimeline(
         return null;
       }
     })
-    .filter((entry): entry is PevrTimelineEntryInput => entry !== null);
+    .filter((entry): entry is WorkflowTimelineEntryInput => entry !== null);
 }
 
 function assertParentActor(
-  run: S.PevrRunRow,
+  run: S.WorkflowRunRow,
   sessionId: string | null | undefined,
 ) {
   if (!run.parent_session_id || sessionId !== run.parent_session_id) {
     throw new ServiceError(
       403,
-      "PEVR run updates must be issued by the parent session",
+      "Workflow run updates must be issued by the parent session",
     );
   }
 }
 
-export const pevrRuns = {
+export const workflowRuns = {
   async start(
     name: string,
     input: {
@@ -750,7 +764,7 @@ export const pevrRuns = {
       lockPid?: number;
     },
     sessionId: string = randomUUID(),
-  ): Promise<PevrRunStartResult> {
+  ): Promise<WorkflowRunStartResult> {
     const r = repoOr404(name);
     ensureWritable(r);
     const workflow = workflowByInput(input);
@@ -760,7 +774,7 @@ export const pevrRuns = {
       sessionId,
       "lh-workflow",
       sessionId,
-      `PEVR #${issue.number} ${issue.title}`,
+      `Workflow #${issue.number} ${issue.title}`,
       RUNTIME_CLAUDE_CODE,
       "dev",
     );
@@ -818,7 +832,7 @@ export const pevrRuns = {
 
       dev.attachSession(r.full_name, opened.number, sessionId);
 
-      const run = S.createPevrRun({
+      const run = S.createWorkflowRun({
         workflowId: workflow.id,
         repoId: r.id,
         issueNumber: issue.number,
@@ -828,15 +842,15 @@ export const pevrRuns = {
         parentSessionId: sessionId,
       });
 
-      const inputFiles = writePevrStepInputArtifacts(
-        ensurePevrRunDir(run.id),
+      const inputFiles = writeWorkflowStepInputArtifacts(
+        ensureWorkflowRunDir(run.id),
         composePlanInputArtifacts({
           issue: { title: issue.title, body: issue.body },
         }),
       );
       const systemPromptPath = writeParentContract(
         run.id,
-        renderPevrContract({
+        renderWorkflowContract({
           template: input.parentContract,
           step: "parent",
           worktreePath: wtPath,
@@ -844,7 +858,7 @@ export const pevrRuns = {
         }),
       );
 
-      S.emitEvent(r.id, "pevr_run.started", actorFor(sessionId), {
+      S.emitEvent(r.id, "workflow_run.started", actorFor(sessionId), {
         id: run.id,
         workflow_id: workflow.id,
         issue_number: issue.number,
@@ -897,12 +911,12 @@ export const pevrRuns = {
       reworkCount?: number;
     },
     sessionId?: string | null,
-  ): PevrRunUpdateResult {
+  ): WorkflowRunUpdateResult {
     const r = repoOr404(name);
     ensureWritable(r);
-    const current = pevrRunOr404(input.run);
+    const current = workflowRunOr404(input.run);
     if (current.repo_id !== r.id) {
-      throw new ServiceError(404, "PEVR run not found for repo");
+      throw new ServiceError(404, "Workflow run not found for repo");
     }
     assertParentActor(current, sessionId);
     const patch: {
@@ -910,7 +924,7 @@ export const pevrRuns = {
       currentStep?: string;
       reworkCount?: number;
     } = {};
-    if (input.step !== undefined) patch.currentStep = pevrStep(input.step);
+    if (input.step !== undefined) patch.currentStep = workflowStep(input.step);
     if (input.status !== undefined) {
       if (
         !["running", "blocked", "completed", "stopped"].includes(input.status)
@@ -931,9 +945,9 @@ export const pevrRuns = {
       }
       patch.reworkCount = input.reworkCount;
     }
-    const updated = S.updatePevrRun(current.id, patch);
-    if (!updated) throw new ServiceError(404, "PEVR run not found");
-    S.emitEvent(updated.repo_id, "pevr_run.updated", actorFor(sessionId), {
+    const updated = S.updateWorkflowRun(current.id, patch);
+    if (!updated) throw new ServiceError(404, "Workflow run not found");
+    S.emitEvent(updated.repo_id, "workflow_run.updated", actorFor(sessionId), {
       id: updated.id,
       status: updated.status,
       current_step: updated.current_step,
@@ -957,21 +971,21 @@ export const pevrRuns = {
       tabId?: string | null;
     },
     sessionId: string | null | undefined,
-  ): Promise<PevrLaunchStepResult> {
+  ): Promise<WorkflowLaunchStepResult> {
     const r = repoOr404(name);
     ensureWritable(r);
-    const run = pevrRunOr404(input.run);
+    const run = workflowRunOr404(input.run);
     if (run.repo_id !== r.id) {
-      throw new ServiceError(404, "PEVR run not found for repo");
+      throw new ServiceError(404, "Workflow run not found for repo");
     }
     if (run.status !== "running") {
-      throw new ServiceError(409, `PEVR run is ${run.status}`);
+      throw new ServiceError(409, `Workflow run is ${run.status}`);
     }
     assertParentActor(run, sessionId);
-    const step = pevrStep(input.step);
+    const step = workflowStep(input.step);
     const childSessionId = randomUUID();
     const workflow = run.workflow_id
-      ? S.getPevrWorkflowById(run.workflow_id)
+      ? S.getWorkflowById(run.workflow_id)
       : null;
     if (!workflow) throw new ServiceError(404, "Workflow not found");
     const issue = issueOr404(r, run.issue_number, "issue");
@@ -979,13 +993,13 @@ export const pevrRuns = {
     const pull = S.getPull(prIssue.id);
     if (!pull)
       throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-    const worktree = pevrRunWorktree({
+    const worktree = workflowRunWorktree({
       repo: r,
       prNumber: run.pr_number,
       headRef: pull.head_ref,
     });
-    const inputFiles = writePevrStepInputArtifacts(
-      ensurePevrRunDir(run.id),
+    const inputFiles = writeWorkflowStepInputArtifacts(
+      ensureWorkflowRunDir(run.id),
       await composeLaunchInputs({
         repo: r,
         issue,
@@ -998,7 +1012,7 @@ export const pevrRuns = {
     );
     const headSha =
       step === "verify" ? await worktreeHead(worktree) : undefined;
-    const composed = composePevrLaunchPrompt(
+    const composed = composeWorkflowLaunchPrompt(
       {
         template: stepContractForLaunch(step, input.contract),
         step,
@@ -1019,7 +1033,7 @@ export const pevrRuns = {
       composed.systemPrompt,
     );
 
-    const herdr = buildPevrStepHerdrLaunchPlan({
+    const herdr = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: r.full_name, local_path: r.local_path },
       runId: run.id,
       step,
@@ -1056,29 +1070,29 @@ export const pevrRuns = {
       note?: string;
     },
     actorSessionId?: string | null,
-  ): PevrConfirmStepLaunchResult {
+  ): WorkflowConfirmStepLaunchResult {
     const r = repoOr404(name);
     ensureWritable(r);
-    const run = pevrRunOr404(input.run);
+    const run = workflowRunOr404(input.run);
     if (run.repo_id !== r.id) {
-      throw new ServiceError(404, "PEVR run not found for repo");
+      throw new ServiceError(404, "Workflow run not found for repo");
     }
     assertParentActor(run, actorSessionId);
-    const step = pevrStep(input.step);
+    const step = workflowStep(input.step);
     const issue = issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const sessionId = input.sessionId;
     S.registerAgentSession(
       sessionId,
-      "pevr-step",
+      "workflow-step",
       sessionId,
-      `PEVR ${step} run #${run.id}`,
+      `Workflow ${step} run #${run.id}`,
       RUNTIME_CLAUDE_CODE,
-      "pevr-step",
+      "workflow-step",
     );
     S.linkSession(sessionId, prIssue.id);
-    const withSession = S.appendPevrRunStepSession(run.id, step, sessionId);
-    if (!withSession) throw new ServiceError(404, "PEVR run not found");
+    const withSession = S.appendWorkflowRunStepSession(run.id, step, sessionId);
+    if (!withSession) throw new ServiceError(404, "Workflow run not found");
     if (step === "verify") {
       if (!input.headSha || !/^[0-9a-f]{40,64}$/u.test(input.headSha)) {
         throw new ServiceError(
@@ -1086,13 +1100,13 @@ export const pevrRuns = {
           "confirmed Verify launch requires a commit SHA",
         );
       }
-      S.setPevrStepPin(run.id, step, sessionId, input.headSha);
-      if (S.getPevrStepPin(run.id, step, sessionId) !== input.headSha) {
+      S.setWorkflowStepPin(run.id, step, sessionId, input.headSha);
+      if (S.getWorkflowStepPin(run.id, step, sessionId) !== input.headSha) {
         throw new ServiceError(422, "Verify session pin cannot be changed");
       }
     }
     const handoffBody = [
-      `Launch PEVR ${step} step for run #${run.id}.`,
+      `Launch Workflow ${step} step for run #${run.id}.`,
       "",
       "## Inputs",
       ...input.inputFiles.map((file) => `- ${file.path} - ${file.description}`),
@@ -1122,14 +1136,19 @@ export const pevrRuns = {
       phase: step,
       direction: "down",
     });
-    S.emitEvent(r.id, "pevr_step.launched", actorFor(run.parent_session_id), {
-      id: run.id,
-      step,
-      session_id: sessionId,
-      // Both issue / PR numbers so issue & PR detail refresh their run-state query precisely (#1008).
-      issue_number: run.issue_number,
-      pr_number: run.pr_number,
-    });
+    S.emitEvent(
+      r.id,
+      "workflow_step.launched",
+      actorFor(run.parent_session_id),
+      {
+        id: run.id,
+        step,
+        session_id: sessionId,
+        // Both issue / PR numbers so issue & PR detail refresh their run-state query precisely (#1008).
+        issue_number: run.issue_number,
+        pr_number: run.pr_number,
+      },
+    );
     return { run: runJSON(withSession), session_id: sessionId };
   },
 
@@ -1137,22 +1156,22 @@ export const pevrRuns = {
     name: string,
     input: { run: number; step: string; content: string },
     sessionId?: string | null,
-  ): Promise<PevrStepOutputResult> {
+  ): Promise<WorkflowStepOutputResult> {
     const r = repoOr404(name);
     ensureWritable(r);
-    const run = pevrRunOr404(input.run);
+    const run = workflowRunOr404(input.run);
     if (run.repo_id !== r.id)
-      throw new ServiceError(404, "PEVR run not found for repo");
+      throw new ServiceError(404, "Workflow run not found for repo");
     if (run.status !== "running")
-      throw new ServiceError(422, `PEVR run is ${run.status}`);
-    const step = pevrStep(input.step);
+      throw new ServiceError(422, `Workflow run is ${run.status}`);
+    const step = workflowStep(input.step);
     if (!stepActorAllowed(run, step, sessionId)) {
       throw new ServiceError(
         403,
-        "PEVR step output must be submitted by the parent or launched step session",
+        "Workflow step output must be submitted by the parent or launched step session",
       );
     }
-    const parsed = parsePevrArtifactJson(input.content);
+    const parsed = parseWorkflowArtifactJson(input.content);
     if (!parsed.ok) {
       throw new ServiceError(
         422,
@@ -1170,7 +1189,7 @@ export const pevrRuns = {
     const pull = S.getPull(prIssue.id);
     if (!pull)
       throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-    const worktree = pevrRunWorktree({
+    const worktree = workflowRunWorktree({
       repo: r,
       prNumber: run.pr_number,
       headRef: pull.head_ref,
@@ -1184,7 +1203,7 @@ export const pevrRuns = {
       const actor = sessionId ? S.getAgentSession(sessionId) : null;
       if (actor?.agent !== "me") {
         const pin = sessionId
-          ? S.getPevrStepPin(run.id, step, sessionId)
+          ? S.getWorkflowStepPin(run.id, step, sessionId)
           : null;
         if (!pin || !/^[0-9a-f]{40,64}$/u.test(pin)) {
           throw new ServiceError(
@@ -1207,16 +1226,16 @@ export const pevrRuns = {
       }
     }
     const contentJson = JSON.stringify(parsed.artifact);
-    const latest = S.latestPevrArtifact(run.id, step);
-    const latestPlacement = latest ? S.getPevrPlacement(latest.id) : null;
+    const latest = S.latestWorkflowArtifact(run.id, step);
+    const latestPlacement = latest ? S.getWorkflowPlacement(latest.id) : null;
     const retryUnplaced =
       latest &&
       !latestPlacement &&
       latest.content_json === contentJson &&
-      S.getPevrArtifactSubmitter(latest.id) === sessionId;
+      S.getWorkflowArtifactSubmitter(latest.id) === sessionId;
     const artifact = retryUnplaced
       ? latest
-      : S.createPevrArtifact({
+      : S.createWorkflowArtifact({
           runId: run.id,
           step,
           type: parsed.artifact.type,
@@ -1230,7 +1249,7 @@ export const pevrRuns = {
             .digest("hex"),
         });
     headSha = artifact.head_sha;
-    const existing = S.getPevrPlacement(artifact.id);
+    const existing = S.getWorkflowPlacement(artifact.id);
     if (existing) {
       return {
         artifact_id: artifact.id,
@@ -1239,10 +1258,10 @@ export const pevrRuns = {
         retried: true,
       };
     }
-    let claimToken = S.claimPevrPlacement(artifact.id);
+    let claimToken = S.claimWorkflowPlacement(artifact.id);
     for (let attempt = 0; !claimToken && attempt < 50; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 50));
-      const completed = S.getPevrPlacement(artifact.id);
+      const completed = S.getWorkflowPlacement(artifact.id);
       if (completed) {
         return {
           artifact_id: artifact.id,
@@ -1254,17 +1273,17 @@ export const pevrRuns = {
           retried: true,
         };
       }
-      claimToken = S.claimPevrPlacement(artifact.id);
+      claimToken = S.claimWorkflowPlacement(artifact.id);
     }
     if (!claimToken) {
       throw new ServiceError(
         409,
-        "PEVR artifact placement is already in progress",
+        "Workflow artifact placement is already in progress",
       );
     }
-    const completedAfterClaim = S.getPevrPlacement(artifact.id);
+    const completedAfterClaim = S.getWorkflowPlacement(artifact.id);
     if (completedAfterClaim) {
-      S.releasePevrPlacementClaim(artifact.id, claimToken);
+      S.releaseWorkflowPlacementClaim(artifact.id, claimToken);
       return {
         artifact_id: artifact.id,
         head_sha: headSha,
@@ -1279,7 +1298,7 @@ export const pevrRuns = {
     let claimLost = false;
     const heartbeat = setInterval(() => {
       try {
-        if (!S.renewPevrPlacementClaim(artifact.id, claimToken)) {
+        if (!S.renewWorkflowPlacementClaim(artifact.id, claimToken)) {
           claimLost = true;
         }
       } catch {
@@ -1299,12 +1318,12 @@ export const pevrRuns = {
         worktree,
         sessionId,
       });
-      S.clearPevrArtifactDedupe(artifact.id);
+      S.clearWorkflowArtifactDedupe(artifact.id);
     } finally {
       clearInterval(heartbeat);
-      S.releasePevrPlacementClaim(artifact.id, claimToken);
+      S.releaseWorkflowPlacementClaim(artifact.id, claimToken);
     }
-    S.emitEvent(r.id, "pevr_artifact.placed", actorFor(sessionId), {
+    S.emitEvent(r.id, "workflow_artifact.placed", actorFor(sessionId), {
       id: run.id,
       artifact_id: artifact.id,
       step,
@@ -1328,15 +1347,15 @@ export const pevrRuns = {
     name: string,
     input: { run: number; step: string; note?: string; contract: string },
     _sessionId?: string | null,
-  ): Promise<PevrStepInputResult> {
+  ): Promise<WorkflowStepInputResult> {
     const r = repoOr404(name);
-    const run = pevrRunOr404(input.run);
+    const run = workflowRunOr404(input.run);
     if (run.repo_id !== r.id) {
-      throw new ServiceError(404, "PEVR run not found for repo");
+      throw new ServiceError(404, "Workflow run not found for repo");
     }
-    const step = pevrStep(input.step);
+    const step = workflowStep(input.step);
     const workflow = run.workflow_id
-      ? S.getPevrWorkflowById(run.workflow_id)
+      ? S.getWorkflowById(run.workflow_id)
       : null;
     if (!workflow) throw new ServiceError(404, "Workflow not found");
     const issue = issueOr404(r, run.issue_number, "issue");
@@ -1344,13 +1363,13 @@ export const pevrRuns = {
     const pull = S.getPull(prIssue.id);
     if (!pull)
       throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-    const worktree = pevrRunWorktree({
+    const worktree = workflowRunWorktree({
       repo: r,
       prNumber: run.pr_number,
       headRef: pull.head_ref,
     });
-    const inputFiles = writePevrStepInputArtifacts(
-      ensurePevrRunDir(run.id),
+    const inputFiles = writeWorkflowStepInputArtifacts(
+      ensureWorkflowRunDir(run.id),
       await composeLaunchInputs({
         repo: r,
         issue,
@@ -1361,7 +1380,7 @@ export const pevrRuns = {
         worktree,
       }),
     );
-    const composed = composePevrLaunchPrompt(
+    const composed = composeWorkflowLaunchPrompt(
       {
         template: stepContractForLaunch(step, input.contract),
         step,
@@ -1395,17 +1414,17 @@ export const pevrRuns = {
     name: string,
     input: { run: number },
     _sessionId?: string | null,
-  ): Promise<PevrStepStatusResult> {
+  ): Promise<WorkflowStepStatusResult> {
     const r = repoOr404(name);
-    const run = pevrRunOr404(input.run);
+    const run = workflowRunOr404(input.run);
     if (run.repo_id !== r.id) {
-      throw new ServiceError(404, "PEVR run not found for repo");
+      throw new ServiceError(404, "Workflow run not found for repo");
     }
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const pull = S.getPull(prIssue.id);
     if (!pull)
       throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-    const worktree = pevrRunWorktree({
+    const worktree = workflowRunWorktree({
       repo: r,
       prNumber: run.pr_number,
       headRef: pull.head_ref,
@@ -1416,7 +1435,7 @@ export const pevrRuns = {
       pull.base_ref,
       currentHead,
     );
-    const steps = evaluatePevrSteps({
+    const steps = evaluateWorkflowSteps({
       currentHead,
       headAheadOfBase,
       plan: latestArtifactState(run, "plan"),
@@ -1441,19 +1460,19 @@ export const pevrRuns = {
     name: string,
     input: { issue: number },
     _sessionId?: string | null,
-  ): PevrRunStateWire | null {
+  ): WorkflowRunStateWire | null {
     const r = repoOr404(name);
-    const run = S.latestPevrRunForIssue(r.id, input.issue);
-    return run ? pevrRunState(run) : null;
+    const run = S.latestWorkflowRunForIssue(r.id, input.issue);
+    return run ? workflowRunState(run) : null;
   },
 
   stateForPull(
     name: string,
     input: { pull: number },
     _sessionId?: string | null,
-  ): PevrRunStateWire | null {
+  ): WorkflowRunStateWire | null {
     const r = repoOr404(name);
-    const run = S.latestPevrRunForPull(r.id, input.pull);
-    return run ? pevrRunState(run) : null;
+    const run = S.latestWorkflowRunForPull(r.id, input.pull);
+    return run ? workflowRunState(run) : null;
   },
 };

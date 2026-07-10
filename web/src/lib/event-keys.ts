@@ -28,11 +28,11 @@ export const queryKeys = {
   scheduledTasks: (full: string) => ["scheduled-tasks", full] as const,
   scheduledTask: (full: string, id: number) =>
     ["scheduled-task", full, id] as const,
-  pevrWorkflows: () => ["pevr-workflows"] as const,
-  pevrRunForIssue: (full: string, number: number) =>
-    ["pevr-run", "issue", full, number] as const,
-  pevrRunForPull: (full: string, number: number) =>
-    ["pevr-run", "pull", full, number] as const,
+  workflows: () => ["workflows"] as const,
+  workflowRunForIssue: (full: string, number: number) =>
+    ["workflow-run", "issue", full, number] as const,
+  workflowRunForPull: (full: string, number: number) =>
+    ["workflow-run", "pull", full, number] as const,
 };
 
 /**
@@ -121,34 +121,39 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["scheduled-tasks"]);
       keys.push(["scheduled-task"]);
     }
-  } else if (type.startsWith("pevr_workflow.")) {
-    // PEVR workflow CRUD (#1006) is global (not repo-scoped) and alters the workflow list for every
-    // connected client, not just the tab that made the change (whose mutation hook already
-    // invalidates onSuccess). Create/update/delete all change the list, so invalidate it by prefix.
-    keys.push([...queryKeys.pevrWorkflows()]);
   } else if (
-    type.startsWith("pevr_run.") ||
-    type.startsWith("pevr_step.") ||
-    type.startsWith("pevr_artifact.")
+    type === "workflow.created" ||
+    type === "workflow.updated" ||
+    type === "workflow.deleted"
   ) {
-    // A PEVR run's step / status / rework count is shown on issue and PR detail (#1008). These
-    // lifecycle events (pevr_run.started/updated, pevr_step.launched, pevr_artifact.placed) all carry
+    // workflow CRUD (#1006) is global (not repo-scoped) and alters the workflow list for every
+    // connected client, not just the tab that made the change (whose mutation hook already
+    // invalidates onSuccess). Match only definition CRUD events: repo workflow execution events use
+    // the existing workflow.run_* namespace and must not invalidate this unrelated global list.
+    keys.push([...queryKeys.workflows()]);
+  } else if (
+    type.startsWith("workflow_run.") ||
+    type.startsWith("workflow_step.") ||
+    type.startsWith("workflow_artifact.")
+  ) {
+    // A Workflow run's step / status / rework count is shown on issue and PR detail (#1008). These
+    // lifecycle events (workflow_run.started/updated, workflow_step.launched, workflow_artifact.placed) all carry
     // both issue_number and pr_number in the payload, so refresh both detail views' run-state query.
     // Fall back to the whole prefix defensively when the repo or numbers are somehow absent.
     const issueNumber = payload?.issue_number;
     const prNumber = payload?.pr_number ?? payload?.number;
     if (repo) {
       if (typeof issueNumber === "number") {
-        keys.push([...queryKeys.pevrRunForIssue(repo, issueNumber)]);
+        keys.push([...queryKeys.workflowRunForIssue(repo, issueNumber)]);
       }
       if (typeof prNumber === "number") {
-        keys.push([...queryKeys.pevrRunForPull(repo, prNumber)]);
+        keys.push([...queryKeys.workflowRunForPull(repo, prNumber)]);
       }
       if (typeof issueNumber !== "number" && typeof prNumber !== "number") {
-        keys.push(["pevr-run"]);
+        keys.push(["workflow-run"]);
       }
     } else {
-      keys.push(["pevr-run"]);
+      keys.push(["workflow-run"]);
     }
   } else if (type.startsWith("inbox.message.")) {
     keys.push([...queryKeys.inbox()]);

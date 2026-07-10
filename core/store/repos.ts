@@ -211,7 +211,7 @@ export function deleteRepo(owner: string, name: string): boolean {
   // Older databases may still carry retired grouping tables with foreign keys into repos/issues.
   // Sweep their rows when present so deleting a repo remains backward-compatible.
   deleteLegacyGroupingRows(repo.id);
-  db.run(`DELETE FROM pevr_runs WHERE repo_id = ?`, [repo.id]);
+  db.run(`DELETE FROM workflow_runs WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM inbox_messages WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM notifications WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM issues WHERE repo_id = ?`, [repo.id]);

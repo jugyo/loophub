@@ -37,5 +37,5 @@ test("renders verdict reviews and structured reflection comments", () => {
       suggestions: [],
       followups: [],
     }),
-  ).toContain("## PEVR reflection\n\n### Went well\n- Small seam");
+  ).toContain("## Workflow reflection\n\n### Went well\n- Small seam");
 });
