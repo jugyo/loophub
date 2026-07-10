@@ -403,11 +403,14 @@ export const sessions = {
       codexSessionsDir?: string;
     } = {},
   ) {
+    // Default sweep (#1119): scan only sessions linked to an open PR, so closed/merged PRs and
+    // unlinked sessions no longer trigger transcript walks. `--session <id>` still targets any
+    // single session for a forced recompute.
     const rows: S.AgentSessionRow[] = input.sessionId
       ? [S.getAgentSession(input.sessionId)].filter(
           (row): row is S.AgentSessionRow => row !== null,
         )
-      : S.listAgentSessions();
+      : S.listSessionsLinkedToOpenPull();
     if (input.sessionId && rows.length === 0)
       throw new ServiceError(404, "Not Found");
     S.deleteZeroTokenSessionUsageRows(input.sessionId);

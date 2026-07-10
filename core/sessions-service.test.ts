@@ -10,7 +10,22 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
+
+// Count readdirSync calls (pass-through) so the createClaudeTranscriptIndex test can assert the
+// wanted-set path stats requested filenames directly instead of enumerating each project dir
+// (#1119). node:fs is spread through unchanged; only readdirSync is wrapped.
+const fsSpy = vi.hoisted(() => ({ readdirDirs: [] as unknown[] }));
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    readdirSync: (...args: Parameters<typeof actual.readdirSync>) => {
+      fsSpy.readdirDirs.push(args[0]);
+      return (actual.readdirSync as (...a: unknown[]) => unknown)(...args);
+    },
+  };
+});
 
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md). #298:
 // generalized session links (kind + N:M) surfaced as related_sessions on PR/issue detail.
@@ -20,6 +35,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let D: typeof import("./db.ts");
+let SU: typeof import("./session-usage.ts");
 let repoPath: string;
 
 function git(args: string[]) {
@@ -81,6 +97,7 @@ function codexRollout(
 beforeAll(async () => {
   svc = await import("./service.ts");
   D = await import("./db.ts");
+  SU = await import("./session-usage.ts");
   repoPath = mkdtempSync(join(tmpdir(), "lh-sess-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -1590,6 +1607,126 @@ test("pull detail includes related session usage and an n/a aggregate for unknow
       context_usage_percent: 87,
     },
   ]);
+
+  rmSync(projectsDir, { recursive: true, force: true });
+});
+
+test("default usageSync sweeps only open-PR-linked sessions; --session recomputes any", async () => {
+  // #1119: the default sweep (no sessionId) should scan sessions linked to an *open* PR only —
+  // closed/merged PRs, issue-only links, and unlinked sessions are skipped so their transcripts are
+  // never walked. `--session <id>` still force-recomputes any session regardless.
+  // Empty transcript dirs -> every scanned session resolves "missing"; also keeps the sweep off the
+  // real ~/.claude and ~/.codex.
+  const projectsDir = mkdtempSync(join(tmpdir(), "lh-sweep-scope-"));
+  const codexSessionsDir = mkdtempSync(join(tmpdir(), "lh-sweep-codex-"));
+  const mk = (id: string) =>
+    svc.sessions.register({
+      id,
+      agent: "lh-build",
+      session: id,
+      runtime: "claude-code",
+      kind: "dev",
+    });
+
+  const openId = "f0f0f0f0-0000-0000-0000-000000000001";
+  const closedId = "f0f0f0f0-0000-0000-0000-000000000002";
+  const mergedId = "f0f0f0f0-0000-0000-0000-000000000003";
+  const issueOnlyId = "f0f0f0f0-0000-0000-0000-000000000004";
+  const unlinkedId = "f0f0f0f0-0000-0000-0000-000000000005";
+  for (const id of [openId, closedId, mergedId, issueOnlyId, unlinkedId])
+    mk(id);
+
+  const openIssue = svc.issues.create("me/proj", { title: "sweep open" });
+  await svc.dev.openPr(
+    "me/proj",
+    {
+      issue: openIssue.number,
+      head: `loophub/issue-${openIssue.number}`,
+      base: "main",
+    },
+    openId,
+  );
+
+  const closedIssue = svc.issues.create("me/proj", { title: "sweep closed" });
+  const closedPr = await svc.dev.openPr(
+    "me/proj",
+    {
+      issue: closedIssue.number,
+      head: `loophub/issue-${closedIssue.number}`,
+      base: "main",
+    },
+    closedId,
+  );
+  D.db.run(
+    `UPDATE issues SET state = 'closed' WHERE repo_id = 1 AND number = ?`,
+    [closedPr.number],
+  );
+
+  const mergedIssue = svc.issues.create("me/proj", { title: "sweep merged" });
+  const mergedPr = await svc.dev.openPr(
+    "me/proj",
+    {
+      issue: mergedIssue.number,
+      head: `loophub/issue-${mergedIssue.number}`,
+      base: "main",
+    },
+    mergedId,
+  );
+  D.db.run(
+    `UPDATE pulls SET merged = 1 WHERE issue_id = (SELECT id FROM issues WHERE repo_id = 1 AND number = ?)`,
+    [mergedPr.number],
+  );
+
+  svc.sessions.link("me/proj", {
+    sessionId: issueOnlyId,
+    issue: openIssue.number,
+  });
+
+  const swept = svc.sessions.usageSync({ projectsDir, codexSessionsDir });
+  const sweptIds = new Set(swept.sessions.map((s) => s.session_id));
+  expect(sweptIds.has(openId)).toBe(true);
+  expect(sweptIds.has(closedId)).toBe(false);
+  expect(sweptIds.has(mergedId)).toBe(false);
+  expect(sweptIds.has(issueOnlyId)).toBe(false);
+  expect(sweptIds.has(unlinkedId)).toBe(false);
+
+  // Manual --session bypasses the open-PR filter for an out-of-sweep session.
+  const manual = svc.sessions.usageSync({
+    sessionId: unlinkedId,
+    projectsDir,
+    codexSessionsDir,
+  });
+  expect(manual.sessions.map((s) => s.session_id)).toEqual([unlinkedId]);
+
+  rmSync(projectsDir, { recursive: true, force: true });
+  rmSync(codexSessionsDir, { recursive: true, force: true });
+});
+
+test("createClaudeTranscriptIndex direct-stats wanted transcripts without enumerating the project dir", () => {
+  // #1119: with externalSessions provided, the index must not readdir the project subdirectory
+  // (which can hold thousands of transcripts) — it stats only the requested filenames directly.
+  const projectsDir = mkdtempSync(join(tmpdir(), "lh-idx-scope-"));
+  const projectDir = join(projectsDir, "proj");
+  mkdirSync(projectDir);
+  const wantedId = "f0f0f0f0-1111-0000-0000-000000000001";
+  writeFileSync(join(projectDir, `${wantedId}.jsonl`), "");
+  for (let i = 0; i < 25; i++) {
+    writeFileSync(join(projectDir, `decoy-${i}.jsonl`), "");
+  }
+
+  fsSpy.readdirDirs.length = 0;
+  const index = SU.createClaudeTranscriptIndex(projectsDir, [wantedId]);
+  // Only the wanted transcript is indexed, and the decoys were never enumerated.
+  expect([...index.byFilename.keys()]).toEqual([`${wantedId}.jsonl`]);
+  // With a wanted set, readdir touches only the top-level projects dir — never the project subdir.
+  expect(fsSpy.readdirDirs).toContain(projectsDir);
+  expect(fsSpy.readdirDirs).not.toContain(projectDir);
+
+  // Without externalSessions the full enumeration lists the project subdir and indexes every file.
+  fsSpy.readdirDirs.length = 0;
+  const full = SU.createClaudeTranscriptIndex(projectsDir);
+  expect(full.byFilename.size).toBe(26);
+  expect(fsSpy.readdirDirs).toContain(projectDir);
 
   rmSync(projectsDir, { recursive: true, force: true });
 });

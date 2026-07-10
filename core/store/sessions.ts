@@ -46,6 +46,24 @@ export function listAgentSessions(): AgentSessionRow[] {
     .all() as AgentSessionRow[];
 }
 
+// The default usage sweep's candidate set (#1119): sessions linked (session_links) to an *open* PR
+// only — kind='pull', state='open', and pulls.merged = 0. Sessions with no link, links only to
+// issues, or links to closed/merged PRs are excluded, so the sweep stops walking their transcripts.
+// `--session <id>` bypasses this (see service usageSync) to force-recompute any session.
+export function listSessionsLinkedToOpenPull(): AgentSessionRow[] {
+  return db
+    .query(
+      `SELECT DISTINCT s.*
+       FROM agent_sessions s
+       JOIN session_links l ON l.session_id = s.id
+       JOIN issues i ON i.id = l.issue_id
+       JOIN pulls p ON p.issue_id = i.id
+       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0
+       ORDER BY s.updated_at DESC`,
+    )
+    .all() as AgentSessionRow[];
+}
+
 export type RegisterConflict = "CONFLICT_ID" | "CONFLICT_PAIR";
 
 export function registerAgentSession(

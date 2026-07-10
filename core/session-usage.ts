@@ -632,25 +632,40 @@ export function createClaudeTranscriptIndex(
   const byFilename = new Map<string, TranscriptCandidate[]>();
   if (!existsSync(projectsDir)) return { projectsDir, byFilename };
   const wanted = externalSessions
-    ? new Set(
-        externalSessions
-          .filter((session) => session)
-          .map((session) => `${basename(session)}.jsonl`),
-      )
+    ? [
+        ...new Set(
+          externalSessions
+            .filter((session) => session)
+            .map((session) => `${basename(session)}.jsonl`),
+        ),
+      ]
     : null;
+
+  const addCandidate = (projectPath: string, filename: string) => {
+    const path = join(projectPath, filename);
+    const st = statSync(path);
+    if (!st.isFile()) return;
+    const candidates = byFilename.get(filename) ?? [];
+    candidates.push({ path, size: st.size, mtimeMs: st.mtimeMs });
+    byFilename.set(filename, candidates);
+  };
 
   for (const project of readdirSync(projectsDir, { withFileTypes: true })) {
     if (!project.isDirectory()) continue;
     const projectPath = join(projectsDir, project.name);
+    if (wanted) {
+      // Direct-stat only the requested transcript filenames instead of enumerating every .jsonl in
+      // the project dir — the sweep asks for a handful of sessions but a project can accumulate
+      // thousands of transcripts (#1119).
+      for (const filename of wanted) {
+        if (!existsSync(join(projectPath, filename))) continue;
+        addCandidate(projectPath, filename);
+      }
+      continue;
+    }
     for (const file of readdirSync(projectPath, { withFileTypes: true })) {
       if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
-      if (wanted && !wanted.has(file.name)) continue;
-      const path = join(projectPath, file.name);
-      const st = statSync(path);
-      if (!st.isFile()) continue;
-      const candidates = byFilename.get(file.name) ?? [];
-      candidates.push({ path, size: st.size, mtimeMs: st.mtimeMs });
-      byFilename.set(file.name, candidates);
+      addCandidate(projectPath, file.name);
     }
   }
 
