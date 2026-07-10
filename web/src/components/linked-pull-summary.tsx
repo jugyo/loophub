@@ -221,8 +221,11 @@ export function LinkedPullSummaryRow({
     status.tone === "conflict" ||
     status.tone === "review-changes" ||
     workspace?.status === "blocked";
-  const isWorking = status.tone === "working";
   const isDone = pull.merged || pull.state === "closed";
+  // Keep the live-agent effect independent from the displayed status: an
+  // actionable conflict still owns the status word while its resolver is working.
+  const showWorkingEffect =
+    status.tone === "working" || (!isDone && agentWorking);
   const runtimeMetadata = agentRuntimeMetadataLabel(
     pull.agent_runtime,
     pull.agent_model,
@@ -252,7 +255,7 @@ export function LinkedPullSummaryRow({
       <span
         className={cn(
           "relative flex size-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground",
-          isWorking &&
+          showWorkingEffect &&
             "animate-[linked-pull-pulse_2.4s_ease-out_infinite] bg-indigo-100 text-indigo-700 ring-1 ring-indigo-500/70 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-300/80",
         )}
       >

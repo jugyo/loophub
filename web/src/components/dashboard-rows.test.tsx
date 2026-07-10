@@ -493,6 +493,50 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
     );
   });
 
+  it("keeps the bot working effect while an agent resolves a conflict", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
+        },
+      ],
+    };
+    await renderPull({ mergeable_state: "conflict" });
+
+    expect(screen.getByText("conflict")).toBeTruthy();
+    const bot = screen
+      .getByLabelText("Linked PR #10: A PR")
+      .querySelector("svg");
+    expect(bot?.parentElement?.className).toContain(
+      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
+    );
+  });
+
+  it("does not show the working effect on a merged PR with a stale agent signal", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
+        },
+      ],
+    };
+    await renderPull({ state: "closed", merged: true });
+
+    expect(screen.getByText("merged")).toBeTruthy();
+    const bot = screen
+      .getByLabelText("Linked PR #10: A PR")
+      .querySelector("svg");
+    expect(bot?.parentElement?.className).not.toContain(
+      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
+    );
+  });
+
   it("paints a changes word red", async () => {
     await renderPull({ review_state: "CHANGES_REQUESTED" });
     expect(screen.getByText("changes").className).toContain("text-destructive");
