@@ -327,10 +327,14 @@ export const methods: Record<string, MethodDef> = {
             "scheduled-task-create",
             "resume",
             "github-pr-export",
+            "pevr-run",
           ],
         },
         issueNumber: positiveInt,
         prNumber: positiveInt,
+        // Saved PEVR workflow id for the "pevr-run" launch (#1007) — passed to
+        // `lh workflow start ... --workflow-id <id>`. Required only for that workflow.
+        pevrWorkflowId: positiveInt,
         session: str,
         cwd: str,
         // One-shot issue-dev (Build) overrides from the issue-detail dropdown (#637): force the
@@ -348,6 +352,7 @@ export const methods: Record<string, MethodDef> = {
         workflow: p.workflow,
         issueNumber: p.issueNumber,
         prNumber: p.prNumber,
+        pevrWorkflowId: p.pevrWorkflowId,
         session: p.session,
         cwd: p.cwd,
         agent: p.agent,

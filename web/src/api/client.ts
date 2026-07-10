@@ -480,9 +480,12 @@ export function launchTerminalWorkflow(input: {
     | "issue-create"
     | "scheduled-task-create"
     | "resume"
-    | "github-pr-export";
+    | "github-pr-export"
+    | "pevr-run";
   issueNumber?: number;
   prNumber?: number;
+  // Saved PEVR workflow id for the "pevr-run" launch (#1007).
+  pevrWorkflowId?: number;
   session?: string;
   cwd?: string;
   // One-shot issue-dev (Build) overrides from the issue-detail dropdown (#637).

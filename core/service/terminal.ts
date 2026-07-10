@@ -75,9 +75,13 @@ export interface TerminalLaunchInput {
     | "issue-create"
     | "scheduled-task-create"
     | "resume"
-    | "github-pr-export";
+    | "github-pr-export"
+    | "pevr-run";
   issueNumber?: number;
   prNumber?: number;
+  // Saved PEVR workflow id for the "pevr-run" launch (#1007). Set by the issue-detail Start
+  // workflow dropdown; maps to `lh workflow start ... --workflow-id <id>`.
+  pevrWorkflowId?: number;
   session?: string;
   cwd?: string;
   // One-shot agent/model overrides for the issue-dev (Build) launch (#637). Set only by the
@@ -110,7 +114,14 @@ const LH_DEV_STDERR_TAIL_BYTES = 4 * 1024;
 const CLOSED_PULL_AGENT_GRACE_MS = 60 * 60 * 1000;
 const CLOSED_PULL_AGENT_KILLED_EVENT = "agent_session.killed";
 const CLOSED_PULL_AGENT_KILL_REASON = "pr_closed_grace_elapsed";
-function runLhDevLaunch(args: string[], cwd: string): Promise<void> {
+// `label` names the spawned command in the thrown/logged failure messages. Defaults to the Build
+// command since that was the original caller; launchPevrRunHerdr passes "lh workflow start" so a
+// pevr-run failure is not misreported as an `lh build` failure (#1007).
+function runLhDevLaunch(
+  args: string[],
+  cwd: string,
+  label = "lh build",
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn("lh", args, {
       cwd,
@@ -142,7 +153,7 @@ function runLhDevLaunch(args: string[], cwd: string): Promise<void> {
     // Server-side only — never interpolated into a thrown ServiceError (see the const's comment).
     const logStderrTail = () => {
       const tail = Buffer.concat(chunks).toString("utf8").trim();
-      if (tail) console.error(`lh build --herdr failed:\n${tail}`);
+      if (tail) console.error(`${label} --herdr failed:\n${tail}`);
     };
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
@@ -151,7 +162,7 @@ function runLhDevLaunch(args: string[], cwd: string): Promise<void> {
         reject(
           new ServiceError(
             500,
-            `lh build timed out after ${LH_DEV_HERDR_TIMEOUT_MS}ms`,
+            `${label} timed out after ${LH_DEV_HERDR_TIMEOUT_MS}ms`,
           ),
         );
       });
@@ -164,7 +175,7 @@ function runLhDevLaunch(args: string[], cwd: string): Promise<void> {
             ? new ServiceError(422, "lh command not found on PATH")
             : new ServiceError(
                 500,
-                `failed to launch lh build (${code ?? "spawn error"})`,
+                `failed to launch ${label} (${code ?? "spawn error"})`,
               ),
         ),
       );
@@ -177,12 +188,12 @@ function runLhDevLaunch(args: string[], cwd: string): Promise<void> {
           reject(
             new ServiceError(
               500,
-              `lh build was terminated by signal ${signal}`,
+              `${label} was terminated by signal ${signal}`,
             ),
           );
         else
           reject(
-            new ServiceError(500, `lh build exited with status ${status}`),
+            new ServiceError(500, `${label} exited with status ${status}`),
           );
       });
     });
@@ -236,6 +247,47 @@ async function launchIssueDevHerdr(
     throw e;
   }
   const sessionName = herdrSessionName(repo);
+  return {
+    backend: "herdr" as const,
+    session_name: sessionName,
+    attach: `herdr session attach ${sessionName}`,
+  };
+}
+
+// Spawns `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr` for the issue-detail
+// Start workflow dropdown (#1007). Same shape as launchIssueDevHerdr: this RPC only spawns the CLI
+// and lets `lh workflow start` own worktree/PR provisioning, the dev lock, run creation, and the
+// parent herdr launch (docs/pevr-workflow.ja.md §9.1–§9.2). Args are passed as an array (no shell),
+// so repo and id need no shell quoting; parent session id is never surfaced here — the CLI sets
+// LOOPHUB_SESSION_ID for attribution.
+async function launchPevrRunHerdr(
+  r: S.Repo,
+  issueNumber: number,
+  pevrWorkflowId: number,
+) {
+  const repo = { full_name: r.full_name, local_path: r.local_path };
+  const args = [
+    "workflow",
+    "start",
+    `${r.full_name}/${issueNumber}`,
+    "--workflow-id",
+    String(pevrWorkflowId),
+    "--herdr",
+  ];
+  try {
+    await runLhDevLaunch(args, r.local_path, "lh workflow start");
+  } catch (e) {
+    if (isServiceError(e))
+      throw new ServiceError(e.status, e.message, {
+        command: `lh ${args.map(displayArg).join(" ")}`,
+      });
+    throw e;
+  }
+  const sessionName = herdrSessionName(repo);
+  // Same shape/convention as launchIssueDevHerdr: `herdr session attach <repoSession>` is the repo's
+  // canonical herdr entry point for launched agents. The web client discards these fields today (only
+  // the error-path `command` is read); a follow-up could pin the PEVR parent to this session in
+  // `lh workflow start` for exact grouping (docs/pevr-workflow.ja.md §9.2).
   return {
     backend: "herdr" as const,
     session_name: sessionName,
@@ -385,6 +437,16 @@ export const terminal = {
         agent: input.agent,
         model: input.model,
       });
+    }
+
+    // pevr-run (Start workflow): like issue-dev, worktree/PR/lock/run provisioning and the parent
+    // herdr launch are entirely `lh workflow start`'s job (#1007) — this RPC only spawns it.
+    if (input.workflow === "pevr-run") {
+      if (!input.issueNumber)
+        throw new ServiceError(422, "issueNumber is required");
+      if (!input.pevrWorkflowId)
+        throw new ServiceError(422, "pevrWorkflowId is required");
+      return launchPevrRunHerdr(r, input.issueNumber, input.pevrWorkflowId);
     }
 
     const issueCreateLaunchId =

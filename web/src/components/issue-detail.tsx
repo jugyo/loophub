@@ -4,7 +4,7 @@
 // Markdown and rendered as GFM via <Markdown>.
 
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Loader2, Play } from "lucide-react";
+import { ChevronDown, Loader2, Play, Workflow } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
   CodingAgent,
@@ -51,6 +51,7 @@ import {
   usePostComment,
   useSetIssueState,
 } from "@/queries/issues";
+import { usePevrWorkflows } from "@/queries/pevr-workflows";
 import { useSettings } from "@/queries/settings";
 
 export function IssueDetail({
@@ -191,7 +192,10 @@ function IssueHeader({
           {issue.state === "open" ? "Close" : "Reopen"}
         </Button>
         {buildState === "build" ? (
-          <BuildControls owner={owner} repo={repo} issue={issue} />
+          <>
+            <BuildControls owner={owner} repo={repo} issue={issue} />
+            <StartWorkflowControls owner={owner} repo={repo} issue={issue} />
+          </>
         ) : (
           <BuildStatusLabel state={buildState} />
         )}
@@ -282,6 +286,84 @@ function BuildControls({
         ) : null}
       </DropdownMenu>
     </div>
+  );
+}
+
+// Start workflow dropdown next to Build (#1007): pick a saved PEVR workflow by name and launch it
+// via `terminal/launch` with workflow "pevr-run", which spawns `lh workflow start
+// <owner>/<repo>/<n> --workflow-id <id> --herdr`. It shares Build's linked-open-PR guard (rendered
+// only when buildState === "build"), keeping one launch system per issue at a time
+// (docs/pevr-workflow.ja.md §9.1). With no saved workflows, the menu links to Settings > Workflows.
+function StartWorkflowControls({
+  owner,
+  repo,
+  issue,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+}) {
+  const { launchTerminal } = useTerminalLauncher();
+  const navigate = useNavigate();
+  const { data: workflows, isLoading } = usePevrWorkflows();
+  const [isLaunching, startLaunching] = useFixedLoading();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  function start(pevrWorkflowId: number) {
+    startLaunching();
+    setMenuOpen(false);
+    launchTerminal({
+      repo: `${owner}/${repo}`,
+      label: `Issue #${issue.number} - ${issue.title}`,
+      workflow: "pevr-run",
+      issueNumber: issue.number,
+      pevrWorkflowId,
+    });
+  }
+
+  return (
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="secondary"
+          title="Start a saved PEVR workflow for this issue"
+          disabled={isLaunching || isLoading}
+        >
+          {isLaunching ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Workflow className="size-4" />
+          )}
+          Start workflow
+          <ChevronDown className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        {workflows && workflows.length > 0 ? (
+          workflows.map((wf) => (
+            <DropdownMenuItem
+              key={wf.id}
+              onSelect={(event) => {
+                event.preventDefault();
+                start(wf.id);
+              }}
+            >
+              <span className="min-w-0 truncate">{wf.name}</span>
+            </DropdownMenuItem>
+          ))
+        ) : (
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault();
+              setMenuOpen(false);
+              navigate({ to: "/settings/workflows" });
+            }}
+          >
+            No saved workflows — set one up in Settings
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

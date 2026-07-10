@@ -242,6 +242,11 @@ function launchParentHerdr(input: {
   systemPromptPath: string;
   userPrompt: string;
   model: string;
+  // Fire-and-forget (`--herdr`): start the parent agent in its herdr pane and return without the
+  // interactive attach, so a non-interactive caller — lh-web's terminal.launch spawns
+  // `lh workflow start ... --herdr` headless (#1007) — gets a prompt exit instead of blocking on an
+  // attach it has no TTY for. Mirrors `lh build --herdr` (cli/commands/build.ts).
+  detach?: boolean;
 }): void {
   const claudeArgs = parentClaudeArgs(input);
   const command = formatSpawnCommand(claudeArgs, { bin: "claude" });
@@ -268,6 +273,14 @@ function launchParentHerdr(input: {
       `herdr exited with status ${launched.status}\n  reproduce: cd ${shQuote(input.worktree)} && ${commandWithEnv}`,
     );
   }
+  if (input.detach) {
+    // The agent now runs in its herdr pane; exit without attaching. process.exit(0) fires the
+    // dev-lock release handler registered in startWorkflow, same as `lh build --herdr`.
+    console.error(
+      `Launched PEVR parent in herdr agent ${agentName}. Attach with: herdr agent attach ${agentName}`,
+    );
+    process.exit(0);
+  }
   const attached = spawnSync("herdr", ["agent", "attach", agentName], {
     stdio: "inherit",
   });
@@ -278,7 +291,7 @@ function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--herdr] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -330,6 +343,9 @@ async function startWorkflow(): Promise<void> {
     systemPromptPath: result.parent.system_prompt_path,
     userPrompt: result.parent.user_prompt,
     model,
+    // `--herdr` starts the parent fire-and-forget (no interactive attach) so lh-web can spawn this
+    // headless (#1007); without it the CLI attaches for a human at a terminal.
+    detach: flags.herdr === true,
   };
   launchParentHerdr(launchInput);
 }
