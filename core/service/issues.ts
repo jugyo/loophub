@@ -10,6 +10,7 @@ import {
   ensureWritable,
   githubIssueJSON,
   herdrPaneJSON,
+  issueDetailJSON,
   issueJSON,
   issueListItemJSON,
   issueOr404,
@@ -76,10 +77,10 @@ export const issues = {
   // an implementation agent reading an issue via `lh issue view --json` gets the design context
   // people leave in comments, not only the body (#231). The summary path stays a count to keep
   // the issue list cheap.
-  get(name: string, number: number) {
+  async get(name: string, number: number) {
     const r = repoOr404(name);
     const row = issueOr404(r, number);
-    const out = issueJSON(row, r);
+    const out = await issueDetailJSON(row, r);
     out.comment_list = S.listComments(row.id).map(commentJSON);
     // Detail-only (#298): the issue's related sessions, newest first. Resume is offered via the
     // linked PR (relatedSessionJSON marks issue-container rows "resume-via-pull"), not the issue.

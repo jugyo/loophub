@@ -93,7 +93,7 @@ test("import copies title/body verbatim and records the GitHub source link (#614
   expect(store.getGithubIssue(created.id)).toMatchObject({ number: 42 });
 
   // Issue detail surfaces the link too (parity with PR detail's github_pull), off the cheap list path.
-  const detail = svc.issues.get("me/proj", i.number) as any;
+  const detail = (await svc.issues.get("me/proj", i.number)) as any;
   expect(detail.github_issue).toMatchObject({
     owner: "acme",
     repo: "widget",

@@ -149,7 +149,7 @@ test("a second dev session is added (1:N) and the older one is marked superseded
   expect(byId[DEV_UUID].resume.reason).toBe("superseded");
 });
 
-test("sessions.link attaches a session to an issue; issue detail lists it, resume-via-pull", () => {
+test("sessions.link attaches a session to an issue; issue detail lists it, resume-via-pull", async () => {
   svc.sessions.register({
     id: REVIEW_UUID,
     agent: "reviewer",
@@ -163,7 +163,7 @@ test("sessions.link attaches a session to an issue; issue detail lists it, resum
   });
   expect(linked.issue_number).toBe(1);
 
-  const issue = svc.issues.get("me/proj", 1) as any;
+  const issue = (await svc.issues.get("me/proj", 1)) as any;
   expect(Array.isArray(issue.related_sessions)).toBe(true);
   const s = issue.related_sessions.find((x: any) => x.id === REVIEW_UUID);
   expect(s.kind).toBe("review");
@@ -376,7 +376,7 @@ test("a session linked to a PR with no primary dev session is NOT resumable (not
   expect(s.resume.reason).toBe("not-anchor");
 });
 
-test("an issue-create session linked to an issue is listed and resumable from the issue (#299)", () => {
+test("an issue-create session linked to an issue is listed and resumable from the issue (#299)", async () => {
   // `lh issue new` records the filing session as kind=issue-create, then `lh issue create` links it
   // to the issue it files. It has no PR/dev worktree, so it resumes directly off the issue
   // (`lh resume --session <id>`), unlike dev/review sessions which resume via their PR.
@@ -393,7 +393,7 @@ test("an issue-create session linked to an issue is listed and resumable from th
   });
   svc.sessions.link("me/proj", { sessionId: createUuid, issue: issue.number });
 
-  const detail = svc.issues.get("me/proj", issue.number) as any;
+  const detail = (await svc.issues.get("me/proj", issue.number)) as any;
   const s = detail.related_sessions.find((x: any) => x.id === createUuid);
   expect(s).toBeTruthy();
   expect(s.kind).toBe("issue-create");

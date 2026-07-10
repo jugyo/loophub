@@ -3,47 +3,25 @@
 // (../lib/badges.ts).
 
 import { Link } from "@tanstack/react-router";
-import { Check, Loader2, MoreHorizontal, Play, Timer } from "lucide-react";
-import {
-  Fragment,
-  type ReactElement,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import type { Issue, Label, LinkedPull, PullRequest } from "@/api/types";
+import { Loader2, Play } from "lucide-react";
+import type { Issue, Label, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
-import {
-  findPullHerdrWorkspace,
-  HerdrBadge,
-  isPullHerdrWorking,
-} from "@/components/herdr-badge";
+import { isPullHerdrWorking } from "@/components/herdr-badge";
 import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { LabelChip } from "@/components/label-chip";
-import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
+import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
 import { useTerminalLauncher } from "@/components/terminal-controller";
-import { Badge, badgeVariants } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { disabledIconButtonStateClasses } from "@/components/ui/button";
-import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import {
   type Badge as BadgeData,
-  costStoppedBadge,
   issueBuildButtonState,
-  linkedPullPillTone,
-  linkedPullStatus,
-  linkedPullWordTone,
   pullBadges,
-  type StatusWordTone,
 } from "@/lib/badges";
-import {
-  formatCost,
-  formatTokenCount,
-  formatTokenCountShort,
-} from "@/lib/session-usage";
-import { formatDuration, relativeTime } from "@/lib/time";
+import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
-import { type IssueListFilters, useSetIssueState } from "@/queries/issues";
+import type { IssueListFilters } from "@/queries/issues";
 import { useSettings } from "@/queries/settings";
 import { useHerdrSessions } from "@/queries/terminal";
 
@@ -211,18 +189,18 @@ export function IssueRow({
         <span className="w-16 shrink-0 truncate text-right text-xs text-muted-foreground">
           {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
         </span>
-        <IssueRowMenu owner={owner} repo={repo} issue={issue} />
       </div>
       {pulls.length > 0 ? (
         // Own column so the gap between stacked PRs is a touch wider than the
         // title↔first-PR gap above.
         <div className="flex flex-col gap-1.5">
           {pulls.map((pull) => (
-            <LinkedPullSubRow
+            <LinkedPullSummaryRow
               key={pull.number}
               owner={owner}
               repo={repo}
               pull={pull}
+              className="pl-7 pr-0"
             />
           ))}
         </div>
@@ -288,305 +266,6 @@ function RowBuildButton({
         <Play className="size-4" />
       )}
     </button>
-  );
-}
-
-// Overflow (⋮) menu for an issue row: currently a single Close/Reopen action,
-// reusing the same toggle mutation as the issue-detail Close/Reopen button
-// (issue-detail.tsx). Hand-rolled dropdown (no Radix dependency in this
-// project) matching the PullDebugMenu pattern (pull-debug-menu.tsx): outside
-// click / Escape closes the menu. Always visible, like RowBuildButton, so the
-// row layout doesn't shift on hover.
-function IssueRowMenu({
-  owner,
-  repo,
-  issue,
-}: {
-  owner: string;
-  repo: string;
-  issue: Issue;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const setState = useSetIssueState(owner, repo, issue.number);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onClick(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
-
-  const label = issue.state === "open" ? "Close" : "Reopen";
-
-  return (
-    <div ref={containerRef} className="relative shrink-0">
-      <button
-        type="button"
-        aria-label={`Issue #${issue.number} actions`}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={() => setMenuOpen((v) => !v)}
-        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      >
-        <MoreHorizontal className="size-4" />
-      </button>
-
-      {menuOpen ? (
-        <div
-          role="menu"
-          className="absolute right-0 z-10 mt-1 min-w-28 rounded-md border bg-background p-1 shadow-md"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            disabled={setState.isPending}
-            onClick={() => {
-              setMenuOpen(false);
-              setState.mutate(issue.state === "open" ? "closed" : "open");
-            }}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground",
-              disabledIconButtonStateClasses,
-            )}
-          >
-            {label}
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// Tailwind text colour per status-word tone (linkedPullWordTone) — the
-// state-specific axis of the linked-PR sub-row, independent of the pill's
-// lifecycle colour. Only danger / ready / done carry a signal colour; muted is
-// the default so the few coloured words stand out.
-const STATUS_TEXT: Record<StatusWordTone, string> = {
-  danger: "text-destructive",
-  ready: "text-green-600 dark:text-green-400",
-  done: "text-purple-500 dark:text-purple-400",
-  muted: "text-muted-foreground",
-};
-
-// Muted sub-row under an issue title carrying its linked PR: a toned `PR #n`
-// link pill and the single status word. Its own PR link (not the issue title
-// link), so the row exposes two distinct destinations.
-function LinkedPullSubRow({
-  owner,
-  repo,
-  pull,
-}: {
-  owner: string;
-  repo: string;
-  pull: LinkedPull;
-}) {
-  const { data: herdrSessions } = useHerdrSessions();
-  const repoFullName = `${owner}/${repo}`;
-  const agentWorking = isPullHerdrWorking(
-    herdrSessions,
-    repoFullName,
-    pull.number,
-  );
-  const hasHerdrWorkspace = !!findPullHerdrWorkspace(
-    herdrSessions,
-    repoFullName,
-    pull.number,
-  );
-  const status = linkedPullStatus(pull, { agentWorking });
-  // Two independent colour axes: the pill carries the PR lifecycle (open=primary /
-  // merged=purple / closed=grey), the status word its state-specific signal
-  // (STATUS_TEXT). A muted pill when status is null (issue-detail summary path).
-  const pillTone = status ? linkedPullPillTone(pull) : "unknown";
-  // A passed review gets a check icon next to its green status word so it remains
-  // distinguishable from other unmerged PR states.
-  const passed = status?.tone === "review-passed";
-  // #863: force-stopped-for-cost flag, shown as a badge so a stalled PR stands out in the issue list.
-  const costStopped = costStoppedBadge(pull);
-  const runtimeMetadata = agentRuntimeMetadataLabel(
-    pull.agent_runtime,
-    pull.agent_model,
-  );
-  const items = [
-    <Link
-      key="pr"
-      to="/r/$owner/$repo/pulls/$number"
-      params={{ owner, repo, number: String(pull.number) }}
-      className={cn(
-        badgeVariants({ tone: pillTone }),
-        "shrink-0 hover:opacity-80",
-      )}
-    >
-      PR #{pull.number}
-    </Link>,
-    pull.github_pull ? (
-      <LinkedGithubPrBadge key="github" github_pull={pull.github_pull} />
-    ) : null,
-    status ? (
-      <span
-        key="status"
-        className={cn(
-          "flex shrink-0 items-center gap-0.5 font-medium",
-          STATUS_TEXT[linkedPullWordTone(status.tone)],
-        )}
-        title={status.title}
-      >
-        {passed ? (
-          <Check
-            className="size-3.5 text-green-600 dark:text-green-400"
-            aria-label="passed"
-          />
-        ) : null}
-        {status.label}
-      </span>
-    ) : null,
-    costStopped ? (
-      <Badge
-        key="cost-stopped"
-        tone={costStopped.tone}
-        title={costStopped.title}
-      >
-        {costStopped.label}
-      </Badge>
-    ) : null,
-    runtimeMetadata ? (
-      <AgentRuntimeMetadata key="agent" label={runtimeMetadata} />
-    ) : null,
-    pull.total_tokens != null ? (
-      <AgentCostBadge
-        key="cost"
-        totalTokens={pull.total_tokens}
-        costUsd={pull.cost_usd}
-      />
-    ) : null,
-    pull.work_duration_total ? (
-      <WorkDurationBadge key="work-duration" total={pull.work_duration_total} />
-    ) : null,
-    hasHerdrWorkspace ? (
-      <HerdrBadge key="herdr" owner={owner} repo={repo} pull={pull.number} />
-    ) : null,
-  ].filter((item): item is ReactElement => item !== null);
-  return (
-    <div className="flex items-center gap-1.5 pl-7 text-xs text-muted-foreground">
-      {items.map((item, index) => (
-        <Fragment key={index}>
-          {index > 0 ? (
-            <span aria-hidden="true" className="shrink-0 text-muted-foreground">
-              ·
-            </span>
-          ) : null}
-          {item}
-        </Fragment>
-      ))}
-    </div>
-  );
-}
-
-function agentRuntimeLabel(runtime: string): string {
-  if (runtime === "claude-code" || runtime === "codex") {
-    return CODING_AGENT_LABELS[runtime];
-  }
-  return runtime;
-}
-
-function agentRuntimeMetadataLabel(
-  runtime?: string,
-  model?: string,
-): string | null {
-  const parts = [
-    runtime ? agentRuntimeLabel(runtime) : null,
-    model?.trim() || null,
-  ].filter((part): part is string => !!part);
-  return parts.length > 0 ? parts.join(" · ") : null;
-}
-
-function AgentRuntimeMetadata({ label }: { label: string }) {
-  return (
-    <span
-      className="min-w-0 max-w-52 shrink truncate text-muted-foreground"
-      title={label}
-    >
-      {label}
-    </span>
-  );
-}
-
-// Cost thresholds for AgentCostBadge's warning/critical highlight (#796), tuned from the observed
-// past-PR cost distribution (p75 ≈ $10, p95 ≈ $27): above the p75-ish mark is "warning", above the
-// p95-ish mark is "critical".
-const AGENT_COST_WARNING_THRESHOLD_USD = 10;
-const AGENT_COST_CRITICAL_THRESHOLD_USD = 30;
-
-// Agent cost for the PR's linked sessions (#783): compact token count + cost, shown only once the
-// PR has usage to report. Hidden (not "n/a") otherwise, so PRs with no agent session don't add noise
-// to every row. Colour escalates past the cost thresholds above (#796) so unusually expensive PRs
-// stand out at a glance; a null costUsd never triggers the highlight.
-function AgentCostBadge({
-  totalTokens,
-  costUsd,
-}: {
-  totalTokens?: number;
-  costUsd?: number | null;
-}) {
-  if (totalTokens == null) return null;
-  const cost = formatCost(costUsd ?? null);
-  const isCritical =
-    costUsd != null && costUsd > AGENT_COST_CRITICAL_THRESHOLD_USD;
-  const isWarning =
-    !isCritical &&
-    costUsd != null &&
-    costUsd > AGENT_COST_WARNING_THRESHOLD_USD;
-  return (
-    <span
-      className={cn(
-        "shrink-0 font-mono tabular-nums",
-        isCritical && "text-destructive",
-        isWarning && "text-amber-600 dark:text-amber-400",
-      )}
-      title={`${formatTokenCount(totalTokens)} tokens · ${cost}`}
-    >
-      {formatTokenCountShort(totalTokens)} tok · {cost}
-    </span>
-  );
-}
-
-// #882: total work duration for the issue-list PR sub-row — the same `pullWorkDuration().total` as
-// the PR-detail sidebar (#456), shown muted/compact next to the cost badge so a reader can tell a
-// quick fix from a long-running loop without opening the PR. The basis (in progress / merged / …)
-// only shows in the tooltip; the row itself stays to a single "2h 15m" so it never crowds.
-const WORK_BASIS_LABEL: Record<
-  NonNullable<LinkedPull["work_duration_total"]>["basis"],
-  string
-> = {
-  merged: "merged",
-  closed: "closed",
-  in_review: "in review",
-  in_progress: "in progress",
-};
-
-function WorkDurationBadge({
-  total,
-}: {
-  total: NonNullable<LinkedPull["work_duration_total"]>;
-}) {
-  const text = formatDuration(total.seconds);
-  return (
-    <span
-      className="flex shrink-0 items-center gap-0.5 tabular-nums"
-      title={`Total work time: ${text} (${WORK_BASIS_LABEL[total.basis]})`}
-    >
-      <Timer className="size-3" aria-hidden="true" />
-      {text}
-    </span>
   );
 }
 

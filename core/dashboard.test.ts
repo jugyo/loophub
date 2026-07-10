@@ -97,7 +97,7 @@ describe("dashboard.overview", () => {
     expect(before).toHaveProperty("github_pull", null);
     // issues.get (pullSummary path) mirrors the list.
     expect(
-      svc.issues.get("me/proj", issue.number).linked_pull_requests![0]
+      (await svc.issues.get("me/proj", issue.number)).linked_pull_requests![0]
         .github_pull,
     ).toBeNull();
 
@@ -113,9 +113,36 @@ describe("dashboard.overview", () => {
       url: "https://github.com/me/proj/pull/99",
     });
     expect(
-      svc.issues.get("me/proj", issue.number).linked_pull_requests![0]
+      (await svc.issues.get("me/proj", issue.number)).linked_pull_requests![0]
         .github_pull,
     ).toMatchObject({ number: 99 });
+  });
+
+  test("issue detail keeps every linked PR while capping status enrichment", async () => {
+    const issue = svc.issues.create("me/proj", { title: "many linked PRs" });
+    const repo = S.getRepo("me", "proj")!;
+    const issueRow = S.getIssue(repo.id, issue.number)!;
+    for (let i = 0; i < S.MAX_LINKED_PULLS + 2; i++) {
+      const pr = S.createIssue(
+        repo.id,
+        "pull",
+        `attempt ${i}`,
+        `Closes #${issue.number}`,
+        "bot",
+      );
+      S.createPull(pr.id, `attempt-${i}`, "main", `sha-${i}`, issueRow.id);
+    }
+
+    const detail = await svc.issues.get("me/proj", issue.number);
+
+    expect(detail.linked_pull_requests).toHaveLength(S.MAX_LINKED_PULLS + 2);
+    expect(detail.linked_pull_request?.number).toBe(
+      detail.linked_pull_requests![0].number,
+    );
+    expect(detail.linked_pull_requests![0]).toHaveProperty("mergeable_state");
+    expect(detail.linked_pull_requests![S.MAX_LINKED_PULLS]).not.toHaveProperty(
+      "mergeable_state",
+    );
   });
 
   test("linked PR carries agent runtime/model and cost once its session has usage (#783, #842)", async () => {

@@ -14,7 +14,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
@@ -23,6 +22,7 @@ import type {
   HerdrSessions,
   Issue,
   LinkedPull,
+  PullRequest,
 } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 
@@ -56,7 +56,7 @@ vi.mock("@/queries/terminal", () => ({
   }),
 }));
 
-import { IssueRow } from "./dashboard-rows";
+import { IssueRow, PullRow } from "./dashboard-rows";
 
 afterEach(() => {
   cleanup();
@@ -81,6 +81,7 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     state: "open",
     title: "Example issue",
     body: "",
+    target_branch: null,
     user: { login: "me" },
     labels: [],
     comments: 0,
@@ -141,6 +142,61 @@ function makePull(overrides: Partial<LinkedPull> = {}): LinkedPull {
     ...overrides,
   };
 }
+
+function makePullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
+  return {
+    number: 20,
+    state: "open",
+    title: "Example PR",
+    body: "",
+    user: { login: "me" },
+    head: { ref: "feature", sha: "head" },
+    base: { ref: "main", sha: "base" },
+    merged: false,
+    draft: false,
+    mergeable: null,
+    mergeable_state: "blocked",
+    merge_commit_sha: null,
+    additions: 0,
+    deletions: 0,
+    changed_files: 0,
+    working: false,
+    review_state: null,
+    changes_addressed_at: null,
+    changes_addressed_by: null,
+    labels: [],
+    comments: 0,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    linked_issue: null,
+    worktree_path: null,
+    cost_stopped: false,
+    merge_mode: "merge",
+    github_pull: null,
+    ...overrides,
+  };
+}
+
+describe("PullRow", () => {
+  it("renders herdr working status without crashing", async () => {
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [],
+          pull_workspaces: [{ pull: 20, pane_id: "w1:p2", status: "working" }],
+        },
+      ],
+    };
+    renderInRouter(<PullRow owner="me" repo="proj" pull={makePullRequest()} />);
+
+    expect(
+      await screen.findByRole("link", { name: /Example PR/ }),
+    ).toBeTruthy();
+    expect(screen.getByText("working")).toBeTruthy();
+  });
+});
 
 describe("IssueRow", () => {
   it("shows the issue labels", async () => {
@@ -391,57 +447,18 @@ describe("IssueRow", () => {
   });
 });
 
-// #582: an overflow (⋮) menu at the row's right end offers Close/Reopen,
-// reusing the same toggle mutation as the issue-detail button.
-describe("IssueRow overflow menu (#582)", () => {
-  it("shows a Close action for an open issue and closes it", async () => {
-    renderInRouter(
-      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
-      { "issues/update": (p) => ({ ...makeIssue({ number: 7 }), ...p }) },
-    );
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Issue #7 actions" }),
-    );
-    fireEvent.click(screen.getByRole("menuitem", { name: "Close" }));
-
-    await waitFor(() => expect(rpcCall("issues/update")).toBeTruthy());
-    expect(rpcCall("issues/update")!.params.state).toBe("closed");
-  });
-
-  it("shows a Reopen action for a closed issue", async () => {
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ number: 7, state: "closed" })}
-      />,
-      { "issues/update": (p) => ({ ...makeIssue({ number: 7 }), ...p }) },
-    );
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Issue #7 actions" }),
-    );
-    fireEvent.click(screen.getByRole("menuitem", { name: "Reopen" }));
-
-    await waitFor(() => expect(rpcCall("issues/update")).toBeTruthy());
-    expect(rpcCall("issues/update")!.params.state).toBe("open");
-  });
-
-  it("closes the menu on outside click without triggering the action", async () => {
+// #1061: the issue-list overflow menu is removed; issue state actions live on
+// the detail page, while the Build button remains for issues without PRs.
+describe("IssueRow action menu removal (#1061)", () => {
+  it("does not render the row actions menu", async () => {
     renderInRouter(
       <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Issue #7 actions" }),
-    );
-    expect(screen.getByRole("menuitem", { name: "Close" })).toBeTruthy();
-
-    fireEvent.mouseDown(document.body);
-    await waitFor(() =>
-      expect(screen.queryByRole("menuitem", { name: "Close" })).toBeNull(),
-    );
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Issue #7 actions" }),
+    ).toBeNull();
     expect(rpcCall("issues/update")).toBeFalsy();
   });
 });
@@ -464,15 +481,13 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
 
   it("labels a fresh open PR (no review/conflict, status computed) as working", async () => {
     // Previously fell to null → bare pill. Now reads working (muted word).
-    const pill = await renderPull({ mergeable_state: "blocked" });
-    expect(pill.className).toContain("text-link"); // open pill = primary
+    await renderPull({ mergeable_state: "blocked" });
     const word = screen.getByText("working");
-    expect(word.className).toContain("text-muted-foreground");
+    expect(word.className).toContain("text-indigo-600");
   });
 
-  it("paints a conflict word red while the pill stays primary (open)", async () => {
-    const pill = await renderPull({ mergeable_state: "conflict" });
-    expect(pill.className).toContain("text-link"); // lifecycle: open
+  it("paints a conflict word red", async () => {
+    await renderPull({ mergeable_state: "conflict" });
     expect(screen.getByText("conflict").className).toContain(
       "text-destructive",
     );
@@ -483,12 +498,11 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
     expect(screen.getByText("changes").className).toContain("text-destructive");
   });
 
-  it("paints a passed word green on a primary pill", async () => {
-    const pill = await renderPull({
+  it("paints a passed word green", async () => {
+    await renderPull({
       review_state: "PASSED",
       mergeable_state: "clean",
     });
-    expect(pill.className).toContain("text-link");
     expect(screen.getByText("passed").className).toContain("text-green-600");
   });
 
@@ -559,6 +573,13 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
       mergeable_state: "clean",
     });
     expect(screen.getByText("passed")).toBeTruthy();
+    fireEvent.mouseEnter(screen.getByLabelText("Linked PR #10: A PR"));
+    expect(screen.getByText("Herdr").nextSibling?.textContent).toBe("blocked");
+    expect(
+      screen
+        .getByLabelText("Linked PR #10: A PR")
+        .querySelector(".bg-destructive"),
+    ).toBeTruthy();
   });
 
   it("keeps re-review and working words muted", async () => {
@@ -568,21 +589,20 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
     );
   });
 
-  it("colours a merged pill and word purple", async () => {
-    const pill = await renderPull({ merged: true, state: "closed" });
-    expect(pill.className).toContain("text-purple-500");
-    expect(screen.getByText("merged").className).toContain("text-purple-500");
+  it("colours a merged word violet", async () => {
+    await renderPull({ merged: true, state: "closed" });
+    expect(screen.getByText("merged").className).toContain("text-violet-500");
   });
 });
 
-// #579: a terminal-icon badge on the linked-PR sub-row, shown only while herdr reports an
-// agent running in that PR's worktree, and clicking it switches herdr's focus there.
-describe("Herdr running badge (#579)", () => {
-  function badgeQuery() {
-    return screen.queryByRole("button", { name: /Focus terminal/ });
+// #1061: Herdr focus moved from an always-visible badge into the linked-PR
+// hover popover.
+describe("linked PR Herdr popover action (#1061)", () => {
+  function openPopover() {
+    fireEvent.mouseEnter(screen.getByLabelText("Linked PR #10: A PR"));
   }
 
-  it("shows no badge when no herdr session is running for the PR", async () => {
+  it("does not render Open in Herdr until the linked PR row is hovered", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
@@ -591,7 +611,7 @@ describe("Herdr running badge (#579)", () => {
       />,
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    expect(badgeQuery()).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
   });
 
   it("shows no badge when no PR is linked, even if herdr sessions are running elsewhere", async () => {
@@ -607,10 +627,10 @@ describe("Herdr running badge (#579)", () => {
     };
     renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />);
     expect(await screen.findByText("Example issue")).toBeTruthy();
-    expect(badgeQuery()).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
   });
 
-  it("shows the badge when herdr reports a running agent for the issue's PR", async () => {
+  it("shows an enabled Open in Herdr action when herdr reports the PR workspace", async () => {
     herdrSessionsData.value = {
       repos: [
         {
@@ -628,21 +648,28 @@ describe("Herdr running badge (#579)", () => {
         issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
       />,
     );
-    const badge = await screen.findByRole("button", {
-      name: /Focus terminal/,
-    });
-    expect(badge).toBeTruthy();
-    expect(within(badge).getByText("working")).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    openPopover();
+    expect(
+      screen.getByRole("button", { name: "Open in Herdr" }).closest(".pt-1"),
+    ).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Open in Herdr",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
   });
 
-  it("shows the raw herdr status string alongside the badge, unchanged (#596)", async () => {
+  it("uses the herdr working signal for the status word", async () => {
     herdrSessionsData.value = {
       repos: [
         {
           repo: "me/proj",
           session_name: "me-proj-abc",
           agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "blocked" }],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
         },
       ],
     };
@@ -653,7 +680,7 @@ describe("Herdr running badge (#579)", () => {
         issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
       />,
     );
-    expect(await screen.findByText("blocked")).toBeTruthy();
+    expect(await screen.findByText("working")).toBeTruthy();
   });
 
   it("does not show the badge for an agent running a different PR", async () => {
@@ -675,7 +702,14 @@ describe("Herdr running badge (#579)", () => {
       />,
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    expect(badgeQuery()).toBeNull();
+    openPopover();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Open in Herdr",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 
   it("does not show the badge for an agent running in a different repo", async () => {
@@ -697,10 +731,17 @@ describe("Herdr running badge (#579)", () => {
       />,
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    expect(badgeQuery()).toBeNull();
+    openPopover();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Open in Herdr",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 
-  it("focuses the agent's pane when the badge is clicked", async () => {
+  it("focuses the agent's pane from the popover action", async () => {
     herdrSessionsData.value = {
       repos: [
         {
@@ -718,10 +759,9 @@ describe("Herdr running badge (#579)", () => {
         issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
       />,
     );
-    const badge = await screen.findByRole("button", {
-      name: "Focus terminal for PR #10",
-    });
-    fireEvent.click(badge);
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    openPopover();
+    fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
     expect(focusHerdrAgent).toHaveBeenCalledWith(
       { repo: "me/proj", paneId: "w1:p2" },
       expect.objectContaining({ onError: expect.any(Function) }),
@@ -745,10 +785,10 @@ describe("agent cost display (#783)", () => {
         })}
       />,
     );
-    expect(await screen.findByText("12.3k tok · $4.50")).toBeTruthy();
+    expect(await screen.findByText("12.3k · $5")).toBeTruthy();
   });
 
-  it("shows n/a for cost when the PR's usage has an unknown cost", async () => {
+  it("omits cost when the PR's usage has an unknown cost", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
@@ -760,7 +800,8 @@ describe("agent cost display (#783)", () => {
         })}
       />,
     );
-    expect(await screen.findByText("500 tok · n/a")).toBeTruthy();
+    expect(await screen.findByText("500")).toBeTruthy();
+    expect(screen.queryByText(/n\/a/)).toBeNull();
   });
 
   it("shows nothing when the PR has no linked session usage yet", async () => {
@@ -772,12 +813,10 @@ describe("agent cost display (#783)", () => {
       />,
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    expect(screen.queryByText(/tok ·/)).toBeNull();
+    expect(screen.queryByText(/\d+(?:\.\d+)?[kMB]? · \$/)).toBeNull();
   });
 
-  // #796: two-stage highlight above the cost thresholds ($10 warning, $30 critical), tuned from the
-  // observed past-PR cost distribution (p75 ≈ $10, p95 ≈ $27).
-  it("shows the default (unhighlighted) style at or below the warning threshold", async () => {
+  it("rounds cost to whole dollars", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
@@ -789,58 +828,40 @@ describe("agent cost display (#783)", () => {
         })}
       />,
     );
-    const badge = await screen.findByText("1k tok · $10.00");
-    expect(badge.className).not.toContain("text-amber");
-    expect(badge.className).not.toContain("text-destructive");
+    expect(await screen.findByText("1k · $10")).toBeTruthy();
   });
 
-  it("highlights warning (amber) above $10 up to $30", async () => {
+  it("keeps warning and critical cost totals as muted metadata", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
         repo="proj"
         issue={makeIssue({
           linked_pull_requests: [
-            makePull({ total_tokens: 1000, cost_usd: 15 }),
+            makePull({ total_tokens: 1000, cost_usd: 10.01 }),
           ],
         })}
       />,
     );
-    const badge = await screen.findByText("1k tok · $15.00");
-    expect(badge.className).toContain("text-amber-600");
-  });
+    const warning = await screen.findByText("1k · $10");
+    expect(warning.className).toContain("text-muted-foreground/70");
+    expect(warning.className).not.toContain("text-amber-600");
 
-  it("highlights critical (destructive) above $30", async () => {
+    cleanup();
     renderInRouter(
       <IssueRow
         owner="me"
         repo="proj"
         issue={makeIssue({
           linked_pull_requests: [
-            makePull({ total_tokens: 1000, cost_usd: 35 }),
+            makePull({ total_tokens: 1000, cost_usd: 30.01 }),
           ],
         })}
       />,
     );
-    const badge = await screen.findByText("1k tok · $35.00");
-    expect(badge.className).toContain("text-destructive");
-  });
-
-  it("does not highlight when cost is unknown (null)", async () => {
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({
-          linked_pull_requests: [
-            makePull({ total_tokens: 1000, cost_usd: null }),
-          ],
-        })}
-      />,
-    );
-    const badge = await screen.findByText("1k tok · n/a");
-    expect(badge.className).not.toContain("text-amber");
-    expect(badge.className).not.toContain("text-destructive");
+    const critical = await screen.findByText("1k · $30");
+    expect(critical.className).toContain("text-muted-foreground/70");
+    expect(critical.className).not.toContain("text-destructive");
   });
 });
 
@@ -857,7 +878,8 @@ describe("cost-stopped badge on the linked-PR sub-row (#863)", () => {
         })}
       />,
     );
-    expect(await screen.findByText("over budget")).toBeTruthy();
+    const badge = await screen.findByText(/over budget/);
+    expect(badge.className).toContain("text-amber-700");
   });
 
   it("does not show the badge on a PR that was never stopped", async () => {
@@ -871,7 +893,7 @@ describe("cost-stopped badge on the linked-PR sub-row (#863)", () => {
       />,
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
-    expect(screen.queryByText("over budget")).toBeNull();
+    expect(screen.queryByText(/over budget/)).toBeNull();
   });
 });
 
@@ -918,11 +940,9 @@ describe("linked PR agent metadata (#842)", () => {
     );
 
     const metadata = await screen.findByText("Claude Code · opus");
-    expect(metadata.className).toContain("text-muted-foreground");
+    expect(metadata.className).toContain("truncate");
     const rowText = metadata.closest("div")?.textContent ?? "";
-    expect(rowText).toBe(
-      "PR #10·GH #99·working·Claude Code · opus·12.3k tok · $4.50·working",
-    );
+    expect(rowText).toBe("Claude Code · opus·PR #10GH #99working12.3k · $5");
   });
 
   it("shows only the known half and stays quiet when both are unknown", async () => {

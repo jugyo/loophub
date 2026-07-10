@@ -40,12 +40,12 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("issues.get returns comment bodies in comment_list (#231)", () => {
+test("issues.get returns comment bodies in comment_list (#231)", async () => {
   const issue = svc.issues.create("me/proj", { title: "t", body: "body" });
   svc.comments.create("me/proj", issue.number, "first design note", "sess-a");
   svc.comments.create("me/proj", issue.number, "second design note", "sess-b");
 
-  const detail = svc.issues.get("me/proj", issue.number) as any;
+  const detail = (await svc.issues.get("me/proj", issue.number)) as any;
 
   // Count stays for the cheap summary surface...
   expect(detail.comments).toBe(2);
@@ -61,21 +61,21 @@ test("issues.get returns comment bodies in comment_list (#231)", () => {
   expect(c0.created_at).toBeTruthy();
 });
 
-test("issues.get returns an empty comment_list when there are no comments", () => {
+test("issues.get returns an empty comment_list when there are no comments", async () => {
   const issue = svc.issues.create("me/proj", { title: "no comments" });
-  const detail = svc.issues.get("me/proj", issue.number) as any;
+  const detail = (await svc.issues.get("me/proj", issue.number)) as any;
   expect(detail.comments).toBe(0);
   expect(detail.comment_list).toEqual([]);
 });
 
-test("issues.create stores and exposes a target branch", () => {
+test("issues.create stores and exposes a target branch", async () => {
   const issue = svc.issues.create("me/proj", {
     title: "branch-targeted",
     target_branch: "integration/stack",
   }) as any;
 
   expect(issue.target_branch).toBe("integration/stack");
-  const detail = svc.issues.get("me/proj", issue.number) as any;
+  const detail = (await svc.issues.get("me/proj", issue.number)) as any;
   expect(detail.target_branch).toBe("integration/stack");
 });
 
@@ -325,7 +325,7 @@ test("issues.list advances lookahead pages by the visible issue-list size (#906)
   expect(page3).toHaveLength(1);
 });
 
-test("issues.create links a New Issue Herdr pane through the launch id (#670)", () => {
+test("issues.create links a New Issue Herdr pane through the launch id (#670)", async () => {
   const repo = S.getRepo("me", "proj");
   if (!repo) throw new Error("repo missing");
   const previous = process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
@@ -339,7 +339,7 @@ test("issues.create links a New Issue Herdr pane through the launch id (#670)", 
       sessionName: "me-proj-12345678",
     });
 
-    const detail = svc.issues.get("me/proj", issue.number) as any;
+    const detail = (await svc.issues.get("me/proj", issue.number)) as any;
     expect(detail.herdr_pane).toMatchObject({
       launch_id: "launch-670",
       pane_id: "w4:p2",

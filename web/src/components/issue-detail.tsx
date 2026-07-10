@@ -3,7 +3,7 @@
 // — comment posting and close/reopen. Body and comments are stored as plain
 // Markdown and rendered as GFM via <Markdown>.
 
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Loader2, Play } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
@@ -11,19 +11,17 @@ import type {
   GlobalSettings,
   Issue,
   IssueComment,
-  LinkedPull,
 } from "@/api/types";
 import { BuildStatusLabel } from "@/components/build-status-label";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueDevInfo } from "@/components/dev-info";
-import { HerdrBadge, isPullHerdrWorking } from "@/components/herdr-badge";
 import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { IssueHerdrSection } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
-import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
+import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
 import { Markdown } from "@/components/markdown";
 import { useTerminalLauncher } from "@/components/terminal-controller";
-import { Badge, badgeVariants } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -36,13 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CODING_AGENT_LABELS, MODEL_SUGGESTIONS } from "@/lib/agent-models";
-import {
-  costStoppedBadge,
-  issueBuildButtonState,
-  linkedPullStateBadge,
-  linkedPullStatus,
-  stateBadge,
-} from "@/lib/badges";
+import { issueBuildButtonState, stateBadge } from "@/lib/badges";
 import {
   hasPlainShortcutModifiers,
   isEditableShortcutTarget,
@@ -60,7 +52,6 @@ import {
   useSetIssueState,
 } from "@/queries/issues";
 import { useSettings } from "@/queries/settings";
-import { useHerdrSessions } from "@/queries/terminal";
 
 export function IssueDetail({
   owner,
@@ -441,10 +432,8 @@ function BuildModelDropdown({
 // (not inside it) so it reads as a related entity — not part of the issue body,
 // and not a target of the issue's Close/Build actions. A labelled heading makes
 // that boundary explicit. Each row is a toned `PR #n` link pill + a status word
-// + the PR title (also a link). Renders nothing when no PR is linked. Multiple
-// linked PRs stack vertically — the issue-detail response sends a single
-// `linked_pull_request`, but the plural `linked_pull_requests` is honored when
-// present so the display never breaks.
+// + a visible PR title link. Renders nothing when no PR is linked. Multiple
+// linked PRs stack vertically.
 function LinkedPullSummary({
   owner,
   repo,
@@ -464,7 +453,7 @@ function LinkedPullSummary({
         {pulls.length > 1 ? "Linked pull requests" : "Linked pull request"}
       </h2>
       {pulls.map((pull) => (
-        <LinkedPullRow
+        <LinkedPullSummaryRow
           key={pull.number}
           owner={owner}
           repo={repo}
@@ -472,71 +461,6 @@ function LinkedPullSummary({
         />
       ))}
     </section>
-  );
-}
-
-function LinkedPullRow({
-  owner,
-  repo,
-  pull,
-}: {
-  owner: string;
-  repo: string;
-  pull: LinkedPull;
-}) {
-  const { data: herdrSessions } = useHerdrSessions();
-  const agentWorking = isPullHerdrWorking(
-    herdrSessions,
-    `${owner}/${repo}`,
-    pull.number,
-  );
-  // Prefer the richer git-derived status (working/review/mergeable) when the
-  // response carries those fields; the issue-detail summary lacks them, so fall
-  // back to the always-available state badge (open/merged/closed).
-  const status =
-    linkedPullStatus(pull, { agentWorking }) ?? linkedPullStateBadge(pull);
-  // #863: force-stopped-for-cost flag for the issue-detail linked-PR row.
-  const costStopped = costStoppedBadge(pull);
-  return (
-    <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
-      <Link
-        to="/r/$owner/$repo/pulls/$number"
-        params={{ owner, repo, number: String(pull.number) }}
-        className={cn(
-          badgeVariants({ tone: status.tone }),
-          "shrink-0 hover:opacity-80",
-        )}
-      >
-        PR #{pull.number}
-      </Link>
-      <LinkedGithubPrBadge github_pull={pull.github_pull} />
-      {costStopped ? (
-        <Badge
-          tone={costStopped.tone}
-          title={costStopped.title}
-          className="shrink-0"
-        >
-          {costStopped.label}
-        </Badge>
-      ) : null}
-      <span
-        className="shrink-0 font-medium text-muted-foreground"
-        title={status.title}
-      >
-        {status.label}
-      </span>
-      <Link
-        to="/r/$owner/$repo/pulls/$number"
-        params={{ owner, repo, number: String(pull.number) }}
-        className="min-w-0 flex-1 truncate text-foreground hover:underline"
-        title={pull.title}
-      >
-        {pull.title}
-      </Link>
-      {/* Same badge as the issue-list linked-PR sub-row (#609): shown only while a herdr
-          terminal runs this PR's worktree; clicking focuses its pane. */}
-      <HerdrBadge owner={owner} repo={repo} pull={pull.number} />
-    </div>
   );
 }
 

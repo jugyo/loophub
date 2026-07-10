@@ -24,6 +24,7 @@ function issue(partial: Partial<Issue> = {}): Issue {
     state: "open",
     title: "An issue",
     body: "",
+    target_branch: null,
     user: { login: "me" },
     labels: [],
     comments: 0,

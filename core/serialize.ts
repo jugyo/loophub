@@ -1075,6 +1075,27 @@ export function issueJSON(row: S.IssueRow, repo?: S.Repo): IssueWire {
   return out;
 }
 
+export async function issueDetailJSON(
+  row: S.IssueRow,
+  repo: S.Repo,
+): Promise<IssueWire> {
+  const out = issueJSON(row, row.kind === "pull" ? repo : undefined);
+  if (row.kind !== "pull") {
+    const linked = S.allLinkedPullsForIssue(row.id);
+    const detailed = new Set(S.linkedPullsForIssue(row.id).map((pr) => pr.id));
+    const pulls = await Promise.all(
+      linked.map((pr) =>
+        detailed.has(pr.id)
+          ? linkedPullDetail(repo, pr)
+          : pullSummary(repo, pr),
+      ),
+    );
+    out.linked_pull_requests = pulls;
+    out.linked_pull_request = pulls[0] ?? null;
+  }
+  return out;
+}
+
 function safeParseArray<T>(json: string | null | undefined): T[] {
   if (!json) return [];
   try {

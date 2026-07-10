@@ -154,14 +154,15 @@ describe("IssueDetail", () => {
     expect(screen.queryByText(/^branch:/)).toBeNull();
     expect(screen.getByText("Looks good.")).toBeTruthy();
 
-    // The linked-PR summary card: a `PR #n` pill, the state word, and the title,
-    // all linking to the PR detail route.
-    const pill = screen.getByText("PR #30").closest("a");
-    expect(pill?.getAttribute("href")).toBe("/r/me/proj/pulls/30");
-    const titleLink = screen.getByText("ui2: issue detail PR").closest("a");
-    expect(titleLink?.getAttribute("href")).toBe("/r/me/proj/pulls/30");
-    // The state word ("open") shows inside the same summary card.
-    expect(pill?.closest("div")?.textContent).toContain("open");
+    const prLink = screen.getByRole("link", { name: "PR #30" });
+    expect(prLink.getAttribute("href")).toBe("/r/me/proj/pulls/30");
+    expect(
+      screen.getByLabelText("Linked PR #30: ui2: issue detail PR"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("link", { name: "ui2: issue detail PR" }),
+    ).toBeNull();
+    expect(prLink.closest("div")?.textContent).toContain("open");
   });
 
   it("renders the target branch chip when the issue has a target branch", async () => {
@@ -251,7 +252,7 @@ describe("IssueDetail", () => {
     const badge = await screen.findByTitle(
       "Stopped — agent cost limit exceeded",
     );
-    expect(badge.textContent).toBe("over budget");
+    expect(badge.textContent).toContain("over budget");
   });
 
   it("shows no cost-stopped badge on a linked PR that was never stopped", async () => {
@@ -324,9 +325,10 @@ describe("IssueDetail", () => {
     expect(await screen.findByText("PR #30")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Focus terminal for PR #30" }),
-    ).toBeTruthy();
+    fireEvent.mouseEnter(
+      screen.getByLabelText("Linked PR #30: ui2: issue detail PR"),
+    );
+    expect(screen.getByRole("button", { name: "Open in Herdr" })).toBeTruthy();
   });
 
   it("does not render the issue Sessions section", async () => {
@@ -397,17 +399,17 @@ describe("IssueDetail", () => {
 
     expect(await screen.findByText("Linked pull requests")).toBeTruthy();
     expect(screen.getByText("PR #31")).toBeTruthy();
-    expect(screen.getByText("current attempt")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Linked PR #31: current attempt"),
+    ).toBeTruthy();
     expect(screen.getByText("PR #30")).toBeTruthy();
-    expect(screen.getByText("merged attempt")).toBeTruthy();
+    expect(screen.getByLabelText("Linked PR #30: merged attempt")).toBeTruthy();
     expect(screen.getByText("PR #29")).toBeTruthy();
-    expect(screen.getByText("closed attempt")).toBeTruthy();
+    expect(screen.getByLabelText("Linked PR #29: closed attempt")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
   });
 
-  // #609: the linked-PR row shows the same Herdr badge as the issue list, shown only while
-  // herdr reports an agent running in that PR's worktree; clicking focuses its pane.
-  it("shows the Herdr badge on the linked-PR row and focuses on click", async () => {
+  it("focuses the linked-PR Herdr pane from the hover popover", async () => {
     renderDetail(undefined, false, {
       "terminal/sessions": () => ({
         repos: [
@@ -422,13 +424,11 @@ describe("IssueDetail", () => {
       "terminal/focusAgent": () => ({ ok: true }),
     });
 
-    const badge = await screen.findByRole("button", {
-      name: "Focus terminal for PR #30",
-    });
-    expect(
-      badge.querySelector("svg")?.classList.contains("animate-bot-wobble"),
-    ).toBe(true);
-    fireEvent.click(badge);
+    expect(await screen.findByText("PR #30")).toBeTruthy();
+    fireEvent.mouseEnter(
+      screen.getByLabelText("Linked PR #30: ui2: issue detail PR"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
     await waitFor(() => {
       expect(rpcCall("terminal/focusAgent")?.params).toEqual({
         repo: "me/proj",
@@ -437,7 +437,7 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("adds a bounce animation for blocked Herdr workspace status", async () => {
+  it("does not treat a blocked linked-PR Herdr workspace as working", async () => {
     renderDetail(undefined, false, {
       "terminal/sessions": () => ({
         repos: [
@@ -451,12 +451,12 @@ describe("IssueDetail", () => {
       }),
     });
 
-    const badge = await screen.findByRole("button", {
-      name: "Focus terminal for PR #30",
-    });
-    expect(
-      badge.querySelector("svg")?.classList.contains("animate-bot-bounce"),
-    ).toBe(true);
+    expect(await screen.findByText("PR #30")).toBeTruthy();
+    expect(screen.queryByText("working")).toBeNull();
+    fireEvent.mouseEnter(
+      screen.getByLabelText("Linked PR #30: ui2: issue detail PR"),
+    );
+    expect(screen.getByText("Herdr").nextSibling?.textContent).toBe("blocked");
   });
 
   it("shows no Herdr badge on the linked-PR row when no herdr session runs the PR", async () => {

@@ -369,6 +369,15 @@
   }
 }
 
+@keyframes linked-pull-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 6px rgba(79, 70, 229, 0);
+  }
+}
+
 @layer utilities {
   .animate-bot-wobble {
     animation: bot-wobble 0.8s ease-in-out infinite;
