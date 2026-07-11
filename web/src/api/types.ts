@@ -3,6 +3,10 @@
 // serializer change that alters a shape breaks this build instead of silently drifting.
 // Shapes with no core serializer (Herdr/Terminal/Settings/Stats/dashboard/events) stay
 // hand-written below.
+import type {
+  DiffFile,
+  FileAtRef as FileAtRefWire,
+} from "../../../core/git.ts";
 import type { MergeMode } from "../../../core/merge-mode.ts";
 import type {
   AgentCostSummaryWire,
@@ -79,25 +83,14 @@ export type PullReview = ReviewWire;
 export type PullLineComment = ReviewCommentWire;
 
 /** A changed file with its unified-diff patch (GET .../pulls/{number}/files). */
-export interface PullFile {
-  filename: string;
-  previousFilename?: string;
-  headFilename?: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  patch?: string;
-}
+export type PullFile = DiffFile;
 
 /**
  * Whole-file content of a changed file at one side (base/head) of a PR (#435), for the Markdown
  * preview modal. "missing" covers an added file (absent from base) or a deleted file (absent
  * from head); "binary" flags content that isn't renderable as text.
  */
-export interface FileAtRef {
-  status: "ok" | "missing" | "binary";
-  content?: string;
-}
+export type FileAtRef = FileAtRefWire;
 
 // An orchestrator<->subagent handoff (#352), as shown in the PR detail's Handoffs section. `body`
 // is inline content (instruction / Verify report) when present; otherwise `src` references a
