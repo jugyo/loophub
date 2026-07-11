@@ -15,7 +15,6 @@ import {
   pullDetailBadges,
   reviewBadge,
   stateBadge,
-  workingBadge,
 } from "./badges";
 
 function issue(partial: Partial<Issue> = {}): Issue {
@@ -127,30 +126,6 @@ describe("mergeableBadge", () => {
   });
 });
 
-describe("workingBadge", () => {
-  it("shows a working badge on an open PR with a live agent", () => {
-    const badge = workingBadge(pull({}), { agentWorking: true });
-    expect(badge?.tone).toBe("working");
-    expect(badge?.label).toBe("working");
-  });
-
-  it("does not show for a dirty worktree alone — signal B only (#1125)", () => {
-    // A dirty worktree no longer reads "working"; only a live agent does.
-    expect(workingBadge(pull({ working: true }))).toBeNull();
-    expect(workingBadge(pull({ working: false }))).toBeNull();
-    expect(workingBadge(pull({}))).toBeNull();
-  });
-
-  it("does not show on merged or non-open PRs even with a live agent", () => {
-    expect(
-      workingBadge(pull({ merged: true }), { agentWorking: true }),
-    ).toBeNull();
-    expect(
-      workingBadge(pull({ state: "closed" }), { agentWorking: true }),
-    ).toBeNull();
-  });
-});
-
 describe("draftBadge (#413)", () => {
   it("shows a draft badge on an open, unmerged WIP PR", () => {
     const badge = draftBadge(pull({ draft: true }));
@@ -251,10 +226,6 @@ describe("linkedPullStatus", () => {
     expect(
       linkedPullStatus(linked({ working: true, mergeable_state: "blocked" })),
     ).toBeNull();
-    // A live agent still reads "working".
-    expect(
-      linkedPullStatus(linked({ working: true }), { agentWorking: true })?.tone,
-    ).toBe("working");
   });
 
   it("reports merged and closed states", () => {
@@ -294,45 +265,12 @@ describe("linkedPullStatus", () => {
     ).toBe("review-passed");
   });
 
-  it("reports herdr agent working over review-result statuses", () => {
-    expect(
-      linkedPullStatus(
-        linked({ review_state: "PASSED", mergeable_state: "clean" }),
-        { agentWorking: true },
-      )?.tone,
-    ).toBe("working");
-    expect(
-      linkedPullStatus(
-        linked({ review_state: "CHANGES_REQUESTED", mergeable_state: "clean" }),
-        { agentWorking: true },
-      )?.tone,
-    ).toBe("working");
-    expect(
-      linkedPullStatus(
-        linked({ review_state: "STALE", mergeable_state: "blocked" }),
-        { agentWorking: true },
-      )?.tone,
-    ).toBe("working");
-    expect(
-      linkedPullStatus(
-        linked({ review_state: "COMMENTED", mergeable_state: "clean" }),
-        { agentWorking: true },
-      )?.tone,
-    ).toBe("working");
-  });
-
-  it("keeps merged, closed, and conflict ahead of herdr agent working", () => {
-    expect(
-      linkedPullStatus(linked({ merged: true }), { agentWorking: true })?.tone,
-    ).toBe("merged");
-    expect(
-      linkedPullStatus(linked({ state: "closed" }), { agentWorking: true })
-        ?.tone,
-    ).toBe("closed");
+  it("keeps merged, closed, and conflict states", () => {
+    expect(linkedPullStatus(linked({ merged: true }))?.tone).toBe("merged");
+    expect(linkedPullStatus(linked({ state: "closed" }))?.tone).toBe("closed");
     expect(
       linkedPullStatus(
         linked({ mergeable_state: "conflict", review_state: "PASSED" }),
-        { agentWorking: true },
       )?.tone,
     ).toBe("conflict");
   });
@@ -592,38 +530,15 @@ describe("issueBadges / pullBadges", () => {
     expect(badges.map((b) => b.tone)).toEqual(["review-changes", "conflict"]);
   });
 
-  it("suppresses review-result and mergeable badges only while a herdr agent is working", () => {
+  it("keeps review and mergeable badges independent of agent activity", () => {
     const badges = pullBadges(
       pull({
         working: true,
         review_state: "PASSED",
         mergeable_state: "clean",
       }),
-      { agentWorking: true },
     );
-    expect(badges.map((b) => b.tone)).toEqual(["working"]);
-  });
-
-  it("suppresses review-result badges while a herdr agent is working", () => {
-    const badges = pullBadges(
-      pull({
-        review_state: "CHANGES_REQUESTED",
-        mergeable_state: "clean",
-      }),
-      { agentWorking: true },
-    );
-    expect(badges.map((b) => b.tone)).toEqual(["working"]);
-  });
-
-  it("keeps conflict visible while a herdr agent is working", () => {
-    const badges = pullBadges(
-      pull({
-        review_state: "PASSED",
-        mergeable_state: "conflict",
-      }),
-      { agentWorking: true },
-    );
-    expect(badges.map((b) => b.tone)).toEqual(["working", "conflict"]);
+    expect(badges.map((b) => b.tone)).toEqual(["review-passed", "mergeable"]);
   });
 });
 
@@ -653,22 +568,6 @@ describe("pullDetailBadges", () => {
     expect(badges.map((b) => b.tone)).not.toContain("working");
   });
 
-  it("shows working and suppresses review results while a herdr agent is working", () => {
-    const badges = pullDetailBadges(
-      pull({ review_state: "PASSED", mergeable_state: "clean" }),
-      { agentWorking: true },
-    );
-    expect(badges.map((b) => b.tone)).toEqual(["working"]);
-  });
-
-  it("keeps conflict visible in detail while a herdr agent is working", () => {
-    const badges = pullDetailBadges(
-      pull({ review_state: "PASSED", mergeable_state: "conflict" }),
-      { agentWorking: true },
-    );
-    expect(badges.map((b) => b.tone)).toEqual(["working", "conflict"]);
-  });
-
   it("shows merged state and omits review/mergeable on a merged PR", () => {
     const badges = pullDetailBadges(
       pull({
@@ -680,16 +579,12 @@ describe("pullDetailBadges", () => {
     expect(badges.map((b) => b.tone)).toEqual(["merged"]);
   });
 
-  it("merged and closed states outrank a herdr working agent", () => {
+  it("shows merged and closed terminal states", () => {
+    expect(pullDetailBadges(pull({ merged: true })).map((b) => b.tone)).toEqual(
+      ["merged"],
+    );
     expect(
-      pullDetailBadges(pull({ merged: true }), { agentWorking: true }).map(
-        (b) => b.tone,
-      ),
-    ).toEqual(["merged"]);
-    expect(
-      pullDetailBadges(pull({ state: "closed" }), { agentWorking: true }).map(
-        (b) => b.tone,
-      ),
+      pullDetailBadges(pull({ state: "closed" })).map((b) => b.tone),
     ).toEqual(["closed"]);
   });
 });

@@ -29,7 +29,6 @@ import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { HandoffTimeline } from "@/components/handoff-timeline";
-import { isPullHerdrWorking } from "@/components/herdr-badge";
 import { Markdown } from "@/components/markdown";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { PullHerdrSection } from "@/components/pull-herdr-section";
@@ -64,7 +63,6 @@ import {
   useReadyForReview,
   useSetPullState,
 } from "@/queries/pulls";
-import { useHerdrSessions } from "@/queries/terminal";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 
 const MERGE_METHODS = ["squash", "merge", "rebase"] as const;
@@ -238,13 +236,7 @@ function PullHeader({
   // slow merge can't be double-submitted (#560).
   const isMerging = isMergeLoading || merge.isPending;
 
-  const { data: herdrSessions } = useHerdrSessions();
-  const agentWorking = isPullHerdrWorking(
-    herdrSessions,
-    `${owner}/${repo}`,
-    pull.number,
-  );
-  const badges = pullDetailBadges(pull, { agentWorking });
+  const badges = pullDetailBadges(pull);
   const linked = pull.linked_issue;
 
   const canAct = pull.state === "open" && !pull.merged;

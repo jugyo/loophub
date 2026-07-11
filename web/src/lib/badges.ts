@@ -40,10 +40,6 @@ export interface Badge {
   title?: string;
 }
 
-interface PullStatusOptions {
-  agentWorking?: boolean;
-}
-
 type PullStatusSource = {
   merged: boolean;
   state: "open" | "closed";
@@ -56,7 +52,6 @@ interface PullStatusDecision {
   terminal: Badge | null;
   review: Badge | null;
   mergeable: Badge | null;
-  isAgentWorking: boolean;
 }
 
 function resolveReviewState(
@@ -85,10 +80,7 @@ function resolveMergeableState(
   }
 }
 
-function resolvePullStatus(
-  pull: PullStatusSource,
-  options: PullStatusOptions = {},
-): PullStatusDecision {
+function resolvePullStatus(pull: PullStatusSource): PullStatusDecision {
   return {
     terminal: pull.merged
       ? { tone: "merged", label: "merged" }
@@ -101,20 +93,6 @@ function resolvePullStatus(
       pull.state,
       pull.mergeable_state,
     ),
-    isAgentWorking: options.agentWorking === true,
-  };
-}
-
-/**
- * The "working" word for a linked-PR sub-row. Only a live herdr agent (signal B)
- * produces it now — a dirty worktree alone (signal A) no longer reads "working"
- * (#1125), matching the PR detail page.
- */
-function linkedPullWorkingBadge(): Badge {
-  return {
-    tone: "working",
-    label: "working",
-    title: "Working in the PR worktree",
   };
 }
 
@@ -185,24 +163,6 @@ export function draftBadge(pr: PullRequest): Badge | null {
 }
 
 /**
- * "working" badge for an open PR with a live herdr agent (signal B). Since #1125 a dirty worktree
- * alone (`pr.working`, signal A) never reads "working" — neither the list nor the detail page — so
- * this helper keys solely off `options.agentWorking`. Null for merged/closed PRs (a stale agent
- * signal on a done PR does not resurrect "working") or when no agent is working.
- */
-export function workingBadge(
-  pr: PullRequest,
-  options: PullStatusOptions = {},
-): Badge | null {
-  if (pr.merged || pr.state !== "open" || !options.agentWorking) return null;
-  return {
-    tone: "working",
-    label: "working",
-    title: "Working in the PR worktree",
-  };
-}
-
-/**
  * "over budget" badge for a PR whose dev agent was force-stopped for exceeding its cost limit
  * (#863, driven by the `dev.cost_stopped` event surfaced as `cost_stopped`). The conceptual
  * escalation of the amber/red AgentCostBadge cost highlight: a stopped PR is stalled and needs a
@@ -233,107 +193,65 @@ export function issueBadges(issue: Issue): Badge[] {
   return badges;
 }
 
-/** All badges for a pull-request row (working, state, review, conflict). */
-export function pullBadges(
-  pr: PullRequest,
-  options: PullStatusOptions = {},
-): Badge[] {
+/** All badges for a pull-request row (state, review, conflict). */
+export function pullBadges(pr: PullRequest): Badge[] {
   const badges: Badge[] = [];
-  const status = resolvePullStatus(pr, options);
-  // "working" is driven solely by a live herdr agent (signal B), matching the PR
-  // detail page (pullDetailBadges). A dirty worktree alone (pr.working, signal A)
-  // no longer reads "working" on the list: an idle PR with stale uncommitted
-  // changes was showing "working" forever, out of step with the detail page (#1125).
-  const isWorking = status.isAgentWorking;
+  const status = resolvePullStatus(pr);
   // #863: a stopped-for-cost PR is stalled and needs a human — flag it first, ahead of the
   // routine draft/working/review badges. Suppressed on merged/closed PRs (costStoppedBadge).
   const costStopped = costStoppedBadge(pr);
   if (costStopped) badges.push(costStopped);
   const draft = draftBadge(pr);
   if (draft) badges.push(draft);
-  const working = isWorking ? workingBadge(pr, options) : null;
-  if (working) badges.push(working);
   const state = status.terminal;
   if (state) return [state];
   const review = status.review;
-  // While a live herdr agent is working in the PR worktree, hold review-result
-  // statuses behind the working badge.
-  if (review && !isWorking) {
-    badges.push(review);
-  }
+  if (review) badges.push(review);
   const mergeable = status.mergeable;
-  // Same reasoning: hide "mergeable" while working. "conflict" still shows:
-  // conflict handling is intentionally unchanged.
-  if (mergeable && !(working && mergeable.tone === "mergeable")) {
-    badges.push(mergeable);
-  }
+  if (mergeable) badges.push(mergeable);
   return badges;
 }
 
 /**
  * Badges for the canonical PR status line — state, review, and mergeable shown
- * unconditionally for ordinary PR data. A live herdr working agent is the one
- * exception: it adds a "working" badge and suppresses review-result / mergeable
- * badges while the PR is actively changing. Dirty-worktree `pr.working` alone
- * never reads "working" — neither here nor on the list (pullBadges) since #1125,
- * so an idle PR with stale uncommitted state looks the same in both places.
+ * unconditionally for ordinary PR data. Agent activity is deliberately absent
+ * from this status line; only states that may require attention are shown.
  */
-export function pullDetailBadges(
-  pr: PullRequest,
-  options: PullStatusOptions = {},
-): Badge[] {
+export function pullDetailBadges(pr: PullRequest): Badge[] {
   const badges: Badge[] = [];
-  const status = resolvePullStatus(pr, options);
+  const status = resolvePullStatus(pr);
   // #863: flag a stopped-for-cost PR first, ahead of the routine badges (see pullBadges).
   const costStopped = costStoppedBadge(pr);
   if (costStopped) badges.push(costStopped);
   const draft = draftBadge(pr);
   if (draft) badges.push(draft);
-  const working = options.agentWorking
-    ? workingBadge(pr, { agentWorking: true })
-    : null;
-  if (working) badges.push(working);
   const state = status.terminal;
   if (state) return [state];
   const review = status.review;
-  if (review && !options.agentWorking) badges.push(review);
+  if (review) badges.push(review);
   const mergeable = status.mergeable;
-  if (mergeable && !(options.agentWorking && mergeable.tone === "mergeable"))
-    badges.push(mergeable);
+  if (mergeable) badges.push(mergeable);
   return badges;
 }
 
 /**
  * Single status descriptor for an issue row's linked PR (the issue-list
- * sub-row). Collapses the PR's review / conflict / working signals into one
- * toned, labelled word, by priority. A *decided* review state (passed /
- * changes / re-review / commented) or an actionable conflict reflects the PR's
- * real state. "working" is produced only by a live herdr agent (signal B),
- * matching the PR detail page ({@link pullDetailBadges}); a dirty worktree
- * alone (signal A) no longer reads "working" (#1125), so an idle PR with stale
- * uncommitted changes is not masked as "working" on the list while the detail
- * page reads otherwise.
+ * sub-row). Collapses the PR's review / conflict signals into one toned,
+ * labelled word. Agent activity is deliberately omitted so routine work does
+ * not mask the PR's review state.
  * Priority (most actionable first):
- *   merged → closed → conflict → live-agent working →
- *   changes/re-review/commented/passed.
+ *   merged → closed → conflict → changes/re-review/commented/passed.
  *
  * Returns null when nothing above applies — an idle open PR, or the issue-detail
  * summary path that lacks status fields — so {@link LinkedPullSummaryRow} falls
  * back to the plain lifecycle pill ("open") and dims the idle bot icon instead
  * of labelling the row "working".
  */
-export function linkedPullStatus(
-  pull: LinkedPull,
-  options: PullStatusOptions = {},
-): Badge | null {
-  const status = resolvePullStatus(pull, options);
+export function linkedPullStatus(pull: LinkedPull): Badge | null {
+  const status = resolvePullStatus(pull);
   if (status.terminal) return status.terminal;
   // A decided, actionable conflict wins even while a live agent is editing.
   if (status.mergeable?.tone === "conflict") return status.mergeable;
-  // Only a live herdr agent reads "working" (see the doc comment).
-  if (options.agentWorking) {
-    return linkedPullWorkingBadge();
-  }
   // Decided review states reflect the PR's real state (#419): a passed PR with a
   // dirty worktree reads "passed", matching the PR detail page.
   if (status.review) {

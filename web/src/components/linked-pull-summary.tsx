@@ -152,7 +152,7 @@ function PullPopover({
   const { showError } = useToast();
   const details = [
     ["Status", statusLabel],
-    ["Herdr", herdrStatus || "n/a"],
+    herdrStatus === "working" ? null : ["Herdr", herdrStatus || "n/a"],
     ["Model", agentRuntimeMetadataLabel(pull.agent_runtime, pull.agent_model)],
     [
       "Tokens",
@@ -165,7 +165,7 @@ function PullPopover({
         ? `${formatDuration(pull.work_duration_total.seconds)} (${WORK_BASIS_LABEL[pull.work_duration_total.basis]})`
         : "n/a",
     ],
-  ];
+  ].filter((detail): detail is [string, string] => detail !== null);
   return (
     <div className="absolute left-7 top-full z-20 w-[380px] pt-1">
       <div className="rounded-md border bg-background p-3 text-foreground shadow-lg">
@@ -267,7 +267,7 @@ export function LinkedPullSummaryRow({
     pull.number,
   );
   const operationalStatus =
-    linkedPullStatus(pull, { agentWorking }) ?? linkedPullStateBadge(pull);
+    linkedPullStatus(pull) ?? linkedPullStateBadge(pull);
   const status = attemptComparison
     ? pull.merged
       ? { tone: "merged" as const, label: "merged", title: "Merged" }
@@ -388,14 +388,6 @@ export function LinkedPullSummaryRow({
           ) : null}
           {status.label}
         </span>
-        {attemptComparison && agentWorking ? (
-          <span
-            className="shrink-0 font-semibold text-indigo-600 dark:text-indigo-400"
-            title="Working in the PR worktree"
-          >
-            working
-          </span>
-        ) : null}
         {costStopped ? (
           <span
             className={cn(

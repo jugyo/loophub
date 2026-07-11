@@ -75,10 +75,15 @@ export function PullHerdrSection({
               {group.session_name}
             </div>
             <div className="truncate text-xs text-muted-foreground">
-              {agent ? `${agent.name} · ` : ""}
-              <span className={statusTextClass(workspace.status)}>
-                {workspace.status}
-              </span>
+              {agent?.name}
+              {workspace.status !== "working" ? (
+                <>
+                  {agent ? " · " : ""}
+                  <span className={statusTextClass(workspace.status)}>
+                    {workspace.status}
+                  </span>
+                </>
+              ) : null}
             </div>
           </div>
           <Button

@@ -1451,6 +1451,7 @@ describe("PullDetail", () => {
     expect(await screen.findByRole("heading", { name: "Agents" })).toBeTruthy();
     expect(screen.getByText("lh-me-proj")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open in Herdr" })).toBeTruthy();
+    expect(screen.queryByText("working")).toBeNull();
   });
 
   it("hides the sidebar Agents section when no herdr session runs this PR", async () => {

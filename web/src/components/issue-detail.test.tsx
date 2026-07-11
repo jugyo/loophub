@@ -207,7 +207,7 @@ describe("IssueDetail", () => {
     );
   });
 
-  it("shows linked PR summary as working while a herdr terminal is working", async () => {
+  it("omits working from a linked PR row while Herdr is working", async () => {
     renderDetail(
       () => ({
         ...issue,
@@ -234,9 +234,8 @@ describe("IssueDetail", () => {
     const summary = await screen.findByText("PR #30");
     const statusCell = summary.closest("div");
     const ctx = within(statusCell as HTMLElement);
-    const workingBadge = ctx.getByTitle("Working in the PR worktree");
-    expect(workingBadge.textContent).toBe("working");
-    expect(ctx.queryByText("changes")).toBeNull();
+    expect(ctx.queryByText("working")).toBeNull();
+    expect(ctx.getByText("open")).toBeTruthy();
     const bot = statusCell?.querySelector("svg");
     expect(bot?.parentElement?.className).toContain("dark:bg-sky-950");
     expect(bot?.parentElement?.className).toContain("dark:text-sky-300");

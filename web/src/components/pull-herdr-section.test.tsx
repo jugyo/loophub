@@ -72,7 +72,7 @@ describe("PullHerdrSection (#609)", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("shows the Agents heading, row Bot icon, session name, agent name, and status for the PR's workspace", () => {
+  it("shows the agent without the routine working status", () => {
     herdrSessions.value = running;
     const { container } = render(
       <PullHerdrSection owner="me" repo="proj" pull={42} />,
@@ -81,12 +81,11 @@ describe("PullHerdrSection (#609)", () => {
     expect(container.querySelectorAll("svg")).toHaveLength(3);
     expect(screen.getByText("lh-me-proj")).toBeTruthy();
     expect(screen.getByText(/dev #609/)).toBeTruthy();
-    expect(screen.getByText("working")).toBeTruthy();
+    expect(screen.queryByText("working")).toBeNull();
   });
 
   it.each([
     ["blocked", "text-red-500"],
-    ["working", "text-yellow-500"],
     ["done", "text-blue-500"],
     ["idle", "text-green-500"],
     ["paused", "text-muted-foreground"],
@@ -135,7 +134,7 @@ describe("PullHerdrSection (#609)", () => {
     };
     render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
     expect(screen.getByText("lh-me-proj")).toBeTruthy();
-    expect(screen.getByText("working")).toBeTruthy();
+    expect(screen.queryByText("working")).toBeNull();
     expect(screen.queryByText(/dev #609/)).toBeNull();
   });
 

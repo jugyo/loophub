@@ -6,7 +6,6 @@ import { Link } from "@tanstack/react-router";
 import { Loader2, Play } from "lucide-react";
 import type { Issue, Label, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
-import { isPullHerdrWorking } from "@/components/herdr-badge";
 import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
@@ -23,7 +22,6 @@ import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
 import type { IssueListFilters } from "@/queries/issues";
 import { useSettings } from "@/queries/settings";
-import { useHerdrSessions } from "@/queries/terminal";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
   if (badges.length === 0) return null;
@@ -282,12 +280,6 @@ export function PullRow({
   /** When set (cross-repo views), shows which project the PR belongs to. */
   repoLabel?: string;
 }) {
-  const { data: herdrSessions } = useHerdrSessions();
-  const agentWorking = isPullHerdrWorking(
-    herdrSessions,
-    `${owner}/${repo}`,
-    pull.number,
-  );
   return (
     <Link
       to="/r/$owner/$repo/pulls/$number"
@@ -304,7 +296,7 @@ export function PullRow({
           className="shrink-0 text-xs"
         />
       ) : null}
-      <RowBadges badges={pullBadges(pull, { agentWorking })} />
+      <RowBadges badges={pullBadges(pull)} />
       <span className="shrink-0 text-xs text-muted-foreground">
         {relativeTime(pull.updated_at)}
       </span>

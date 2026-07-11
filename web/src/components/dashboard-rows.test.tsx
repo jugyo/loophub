@@ -185,7 +185,7 @@ function makePullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
 }
 
 describe("PullRow", () => {
-  it("renders herdr working status without crashing", async () => {
+  it("does not render working while a Herdr agent runs the PR", async () => {
     herdrSessionsData.value = {
       repos: [
         {
@@ -196,12 +196,23 @@ describe("PullRow", () => {
         },
       ],
     };
-    renderInRouter(<PullRow owner="me" repo="proj" pull={makePullRequest()} />);
+    renderInRouter(
+      <PullRow
+        owner="me"
+        repo="proj"
+        pull={makePullRequest({
+          review_state: "PASSED",
+          mergeable_state: "clean",
+        })}
+      />,
+    );
 
     expect(
       await screen.findByRole("link", { name: /Example PR/ }),
     ).toBeTruthy();
-    expect(screen.getByText("working")).toBeTruthy();
+    expect(screen.queryByText("working")).toBeNull();
+    expect(screen.getByText("passed")).toBeTruthy();
+    expect(screen.getByText("mergeable")).toBeTruthy();
   });
 });
 
@@ -592,7 +603,7 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
     expect(screen.getByText("passed").className).toContain("text-green-600");
   });
 
-  it("shows working instead of review results while herdr reports the PR working", async () => {
+  it("keeps review results and omits working while Herdr reports the PR working", async () => {
     herdrSessionsData.value = {
       repos: [
         {
@@ -607,8 +618,8 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
       review_state: "CHANGES_REQUESTED",
       mergeable_state: "clean",
     });
-    expect(screen.queryByText("changes")).toBeNull();
-    expect(screen.getAllByText("working").length).toBeGreaterThan(0);
+    expect(screen.getByText("changes")).toBeTruthy();
+    expect(screen.queryByText("working")).toBeNull();
   });
 
   it("uses agent status when multiple agents target the PR", async () => {
@@ -639,8 +650,8 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
       review_state: "CHANGES_REQUESTED",
       mergeable_state: "clean",
     });
-    expect(screen.queryByText("changes")).toBeNull();
-    expect(screen.getByText("working")).toBeTruthy();
+    expect(screen.getByText("changes")).toBeTruthy();
+    expect(screen.queryByText("working")).toBeNull();
   });
 
   it("does not suppress review results for a blocked herdr agent", async () => {
@@ -766,7 +777,7 @@ describe("linked PR Herdr popover action (#1061)", () => {
     expect(popover?.className).toContain("text-foreground");
   });
 
-  it("uses the herdr working signal for the status word", async () => {
+  it("uses the Herdr working signal only for the activity effect", async () => {
     herdrSessionsData.value = {
       repos: [
         {
@@ -784,7 +795,10 @@ describe("linked PR Herdr popover action (#1061)", () => {
         issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
       />,
     );
-    expect(await screen.findByText("working")).toBeTruthy();
+    expect(await screen.findByText("open")).toBeTruthy();
+    expect(screen.queryByText("working")).toBeNull();
+    openPopover();
+    expect(screen.queryByText("working")).toBeNull();
     const bot = screen
       .getByLabelText("Linked PR #10: A PR")
       .querySelector("svg");
@@ -1084,7 +1098,7 @@ describe("linked PR agent metadata (#842)", () => {
     const metadata = await screen.findByText("Claude Code · opus");
     expect(metadata.className).toContain("truncate");
     const rowText = metadata.closest("div")?.textContent ?? "";
-    expect(rowText).toBe("Claude Code · opus·PR #10GH #99working12.3k · $5");
+    expect(rowText).toBe("Claude Code · opus·PR #10GH #99open12.3k · $5");
   });
 
   it("shows only the known half and stays quiet when both are unknown", async () => {
