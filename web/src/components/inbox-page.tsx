@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { useWebConfig } from "@/lib/web-config";
 import { useInboxMessageAction, useInboxMessages } from "@/queries/inbox";
 
 function compactJson(value: InboxJsonObject | null): string {
@@ -81,11 +82,15 @@ function stateTone(state: InboxMessage["state"]): "open" | "closed" {
 
 export function InboxPage() {
   const [view, setView] = useState<"active" | "archived">("active");
+  const { experimental } = useWebConfig();
   const queryInput =
     view === "archived"
       ? ({ state: "archived", limit: 100 } as const)
       : ({ limit: 100 } as const);
   const { data, isLoading, isError } = useInboxMessages(queryInput);
+  const visibleMessages = experimental
+    ? data
+    : data?.filter((message) => scheduledTaskSource(message.from) == null);
 
   return (
     <div className="flex w-full flex-col">
@@ -121,12 +126,14 @@ export function InboxPage() {
           Failed to load Inbox messages.
         </div>
       )}
-      {data && data.length === 0 && (
+      {visibleMessages && visibleMessages.length === 0 && (
         <p className="mt-6 text-sm text-muted-foreground">
           No {view === "archived" ? "archived" : "active"} Inbox messages.
         </p>
       )}
-      {data && data.length > 0 && <InboxTable messages={data} view={view} />}
+      {visibleMessages && visibleMessages.length > 0 && (
+        <InboxTable messages={visibleMessages} view={view} />
+      )}
     </div>
   );
 }

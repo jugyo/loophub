@@ -4,6 +4,7 @@
 // import core types. The dispatcher (rpc.ts) compiles the params schemas with ajv and
 // validates incoming params before calling the handler.
 import * as svc from "../../core/service.ts";
+import { webRuntimeConfig } from "./runtime-config.ts";
 
 export const PROTOCOL_VERSION = "2025-06-18";
 export const SERVER_INFO = { name: "loophub", version: "0.0.0" } as const;
@@ -1165,6 +1166,7 @@ export function capabilities() {
       methods: Object.keys(methods).sort(),
       notifications: ["events/notify"],
     },
+    webConfig: webRuntimeConfig(),
   };
 }
 

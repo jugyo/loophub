@@ -4,6 +4,7 @@
 
 import { Link } from "@tanstack/react-router";
 import { Clock } from "lucide-react";
+import { useWebConfig } from "@/lib/web-config";
 
 export function ScheduledTasksLink({
   owner,
@@ -12,6 +13,8 @@ export function ScheduledTasksLink({
   owner: string;
   repo: string;
 }) {
+  const { experimental } = useWebConfig();
+  if (!experimental) return null;
   return (
     <Link
       to="/r/$owner/$repo/scheduled-tasks"

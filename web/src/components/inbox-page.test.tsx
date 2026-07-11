@@ -9,6 +9,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { InboxMessage } from "@/api/types";
+import { WebConfigProvider } from "@/lib/web-config";
 import { InboxPage } from "./inbox-page";
 
 function message(overrides: Partial<InboxMessage> = {}): InboxMessage {
@@ -26,14 +27,16 @@ function message(overrides: Partial<InboxMessage> = {}): InboxMessage {
   };
 }
 
-function renderPage(messages: InboxMessage[]) {
+function renderPage(messages: InboxMessage[], experimental = true) {
   vi.stubGlobal("fetch", mockRpcFetch({ "inbox/list": () => messages }));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <InboxPage />
+      <WebConfigProvider config={{ experimental }}>
+        <InboxPage />
+      </WebConfigProvider>
     </QueryClientProvider>,
   );
 }
@@ -88,6 +91,28 @@ describe("InboxPage", () => {
     expect(screen.getByText("Nightly report").className).toContain(
       "text-muted-foreground",
     );
+  });
+
+  it("hides scheduled task messages when experimental UI is disabled", async () => {
+    renderPage(
+      [
+        message({
+          from: {
+            kind: "scheduled_task",
+            repo: "team/api",
+            task_id: 4,
+            run_id: 9,
+          },
+        }),
+      ],
+      false,
+    );
+
+    expect(await screen.findByText("No active Inbox messages.")).toBeTruthy();
+    expect(
+      screen.queryByRole("link", { name: "Scheduled task #4" }),
+    ).toBeNull();
+    expect(screen.queryByText(/kind:scheduled_task/)).toBeNull();
   });
 
   it("expands a message row to show the full body", async () => {

@@ -2,6 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { CalendarClock, CircleDot, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { useWebConfig } from "@/lib/web-config";
 
 type RepoSection = "issues" | "scheduled-tasks" | "settings";
 
@@ -42,6 +43,7 @@ const tabs: Array<{
 
 export function RepoTopbar() {
   const repoState = useRouterState({ select: selectRepoRouteState });
+  const { experimental } = useWebConfig();
 
   if (repoState == null) return null;
 
@@ -57,31 +59,33 @@ export function RepoTopbar() {
           aria-label="Repository sections"
           className="flex min-w-0 flex-1 items-end gap-1 overflow-hidden border-b border-transparent"
         >
-          {tabs.map((tab) => {
-            const active = section === tab.section;
-            return (
-              <Link
-                key={tab.section}
-                to={tab.to}
-                params={{ owner, repo }}
-                search={{}}
-                activeOptions={{ exact: true }}
-                aria-label={tab.label}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "-mb-px inline-flex h-11 min-w-0 flex-1 basis-0 items-center justify-center gap-1.5 border-b-2 px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:flex-none sm:basis-auto sm:px-3",
-                  active
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-                )}
-              >
-                {tab.icon}
-                <span className="hidden whitespace-nowrap sm:inline">
-                  {tab.label}
-                </span>
-              </Link>
-            );
-          })}
+          {tabs
+            .filter((tab) => experimental || tab.section !== "scheduled-tasks")
+            .map((tab) => {
+              const active = section === tab.section;
+              return (
+                <Link
+                  key={tab.section}
+                  to={tab.to}
+                  params={{ owner, repo }}
+                  search={{}}
+                  activeOptions={{ exact: true }}
+                  aria-label={tab.label}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "-mb-px inline-flex h-11 min-w-0 flex-1 basis-0 items-center justify-center gap-1.5 border-b-2 px-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:flex-none sm:basis-auto sm:px-3",
+                    active
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+                  )}
+                >
+                  {tab.icon}
+                  <span className="hidden whitespace-nowrap sm:inline">
+                    {tab.label}
+                  </span>
+                </Link>
+              );
+            })}
         </div>
       </nav>
     </header>

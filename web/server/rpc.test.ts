@@ -16,6 +16,7 @@ let MAX_RPC_BATCH_SIZE: typeof import("./rpc.ts").MAX_RPC_BATCH_SIZE;
 let db: typeof import("../../core/db.ts").db;
 let svc: typeof import("../../core/service.ts");
 let ServiceError: typeof import("../../core/errors.ts").ServiceError;
+let setWebRuntimeConfig: typeof import("./runtime-config.ts").setWebRuntimeConfig;
 let repoPath: string;
 
 function git(args: string[]) {
@@ -33,6 +34,7 @@ beforeAll(async () => {
   ({ db } = await import("../../core/db.ts"));
   svc = await import("../../core/service.ts");
   ({ ServiceError } = await import("../../core/errors.ts"));
+  ({ setWebRuntimeConfig } = await import("./runtime-config.ts"));
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-rpc-repo-"));
   git(["init", "-q", "-b", "main"]);
@@ -56,11 +58,20 @@ afterAll(() => {
 });
 
 test("initialize returns capabilities with the method list", async () => {
+  setWebRuntimeConfig({ experimental: false });
   const r: any = await call("initialize", {});
   expect(r.result.protocolVersion).toBeTypeOf("string");
   expect(r.result.serverInfo.name).toBe("loophub");
   expect(r.result.capabilities.methods).toContain("issues/create");
   expect(r.result.capabilities.notifications).toContain("events/notify");
+  expect(r.result.webConfig).toEqual({ experimental: false });
+});
+
+test("initialize exposes enabled experimental Web UI", async () => {
+  setWebRuntimeConfig({ experimental: true });
+  const r: any = await call("initialize", {});
+  expect(r.result.webConfig).toEqual({ experimental: true });
+  setWebRuntimeConfig({ experimental: false });
 });
 
 test("a known method routes to the service and returns a result", async () => {

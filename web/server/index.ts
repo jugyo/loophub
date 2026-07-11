@@ -1,22 +1,32 @@
 // `lh-web` entry point: start the lh-web HTTP process. Runs only while in use (no daemon).
-//   lh-web [--port <n>] [--poll-ms <ms>]
+//   lh-web [--port <n>] [--poll-ms <ms>] [--experimental]
 //   (port: default 8730 or LOOPHUB_PORT)
 // One command, one port: this process serves the JSON-RPC API, the SSE feed, AND the SPA
 // (with HMR) by embedding Vite in middleware mode — no separate dev server. Resident
 // maintenance loops run in lh-worker.
 
+import { LH_WEB_HELP, type LhWebArgs, parseLhWebArgs } from "./args.ts";
 import { createViteDev, type ViteDev } from "./dev.ts";
 import { startEventTail } from "./events.ts";
 import { createLhWebServer } from "./http.ts";
 import { log } from "./logger.ts";
+import { setWebRuntimeConfig } from "./runtime-config.ts";
 
-const argv = process.argv.slice(2);
-let port = Number(process.env.LOOPHUB_PORT ?? 8730);
-let pollMs = Number(process.env.LOOPHUB_POLL_MS ?? 1000);
-for (let i = 0; i < argv.length; i++) {
-  if (argv[i] === "--port") port = Number(argv[++i]);
-  else if (argv[i] === "--poll-ms") pollMs = Number(argv[++i]);
+let args: LhWebArgs;
+try {
+  args = parseLhWebArgs(process.argv.slice(2));
+} catch (error) {
+  process.stderr.write(
+    `${error instanceof Error ? error.message : String(error)}\n\n${LH_WEB_HELP}`,
+  );
+  process.exit(1);
 }
+if (args.help) {
+  process.stdout.write(LH_WEB_HELP);
+  process.exit(0);
+}
+const { port, pollMs } = args;
+setWebRuntimeConfig({ experimental: args.experimental });
 
 // Tail the shared DB so CLI/agent (out-of-process) writes reach SSE subscribers live.
 const stopTail = startEventTail(pollMs);

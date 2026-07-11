@@ -32,10 +32,13 @@ import type {
   SessionSubagentUsageWire,
   SessionUsageWire,
   UserWire,
+  WebConfigWire,
   WorkflowRunStateWire,
   WorkflowRunVerdictSummaryWire,
   WorkflowWire,
 } from "../../../core/serialize.ts";
+
+export type WebConfig = WebConfigWire;
 
 export type Label = LabelWire;
 

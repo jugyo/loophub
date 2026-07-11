@@ -7,13 +7,14 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { WebConfigProvider } from "@/lib/web-config";
 import { RepoTopbar } from "./repo-topbar";
 
 afterEach(() => {
   cleanup();
 });
 
-function renderRepoTopbar(initialPath: string) {
+function renderRepoTopbar(initialPath: string, experimental = true) {
   const rootRoute = createRootRoute({
     component: RepoTopbar,
   });
@@ -71,7 +72,11 @@ function renderRepoTopbar(initialPath: string) {
     history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
 
-  return render(<RouterProvider router={router} />);
+  return render(
+    <WebConfigProvider config={{ experimental }}>
+      <RouterProvider router={router} />
+    </WebConfigProvider>,
+  );
 }
 
 describe("RepoTopbar", () => {
@@ -109,6 +114,15 @@ describe("RepoTopbar", () => {
     expect(
       screen.getByRole("link", { name: /Settings/ }).getAttribute("href"),
     ).toBe("/r/me/proj/settings");
+  });
+
+  it("hides the scheduled task tab unless experimental UI is enabled", async () => {
+    renderRepoTopbar("/r/me/proj", false);
+
+    await screen.findByRole("navigation", { name: "Repository navigation" });
+    expect(screen.queryByRole("link", { name: /Scheduled task/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /Issues/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Settings/ })).toBeTruthy();
   });
 
   it("does not make the repository section tabs a scrolling topbar region", async () => {

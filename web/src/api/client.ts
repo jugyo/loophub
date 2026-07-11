@@ -35,6 +35,7 @@ import type {
   ScheduledTaskWithRuns,
   Stats,
   TerminalLaunchResult,
+  WebConfig,
   Workflow,
   WorkflowRunState,
 } from "./types";
@@ -45,6 +46,10 @@ export const API_BASE: string = (
 ).replace(/\/$/, "");
 
 export const RPC_URL = `${API_BASE}/rpc`;
+
+interface InitializeResult {
+  webConfig: WebConfig;
+}
 
 // Mirrors core/errors.ts's ServiceErrorData — an allowlisted shape, not Record<string, unknown>,
 // so a server-side error can only ever carry known-safe fields across the wire.
@@ -118,6 +123,13 @@ export async function rpc<T>(
 /** Build the /events SSE URL (same-origin via proxy unless an API base is set). */
 export function eventsUrl(query = ""): string {
   return `${API_BASE}/events${query ? `?${query}` : ""}`;
+}
+
+export function getWebConfig() {
+  return rpc<InitializeResult>("initialize", {
+    protocolVersion: "2025-06-18",
+    clientInfo: { name: "loophub-web" },
+  }).then((result) => result.webConfig);
 }
 
 /** Poll persisted LoopHub events by id cursor. */

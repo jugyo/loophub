@@ -1199,6 +1199,16 @@ export function retroJSON(row: S.RetroRow) {
   };
 }
 
+// Runtime UI features exposed by lh-web. Keep this wire shape in core so the server and SPA cannot
+// drift when new experimental surfaces are added.
+export interface WebConfigWire {
+  experimental: boolean;
+}
+
+export function webConfigJSON(experimental: boolean): WebConfigWire {
+  return { experimental };
+}
+
 // A scheduled task (#880): a repo-scoped saved prompt a coding agent runs at one or more times of
 // day. `times` is parsed back from the JSON column. `model`/`effort` are the stored overrides (null
 // when unset); `default_model`/`default_effort` are the per-agent application defaults that apply
