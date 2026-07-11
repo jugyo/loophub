@@ -451,7 +451,10 @@ describe("IssueDetail", () => {
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "New attempt" }));
-    expect(screen.getByText(/PR #31 is already in progress/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Build with Claude Code" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/PR #31 is already in progress/)).toBeNull();
   });
 
   it("confirms before closing a discarded attempt", async () => {
@@ -667,20 +670,21 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("confirms before launching a new attempt for an open linked PR", async () => {
+  it("requires agent/model selection before launching a new attempt without confirmation", async () => {
     renderDetail();
 
     fireEvent.click(await screen.findByRole("button", { name: "New attempt" }));
 
     expect(launchTerminal).not.toHaveBeenCalled();
-    const dialog = screen.getByRole("dialog", {
-      name: "Start a parallel attempt?",
-    });
-    expect(dialog.textContent).toContain("PR #30 is already in progress");
-    expect(dialog.textContent).toContain("same base");
+    expect(
+      screen.getByRole("button", { name: "Build with Claude Code" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("dialog", { name: "Start a parallel attempt?" }),
+    ).toBeNull();
 
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Start new attempt" }),
+      screen.getByRole("button", { name: "Build with Claude Code" }),
     );
 
     expect(launchTerminal).toHaveBeenCalledWith({
@@ -688,11 +692,16 @@ describe("IssueDetail", () => {
       label: "Issue #12 - ui2: issue detail",
       workflow: "issue-dev",
       issueNumber: 12,
+      agent: "claude-code",
+      model: "opus",
       newAttempt: true,
     });
+    expect(
+      screen.queryByRole("dialog", { name: "Start a parallel attempt?" }),
+    ).toBeNull();
   });
 
-  it("uses the shared agent/model dropdown for a confirmed new attempt", async () => {
+  it("uses the selected agent/model for a new attempt", async () => {
     renderDetail();
 
     fireEvent.pointerDown(
@@ -705,7 +714,6 @@ describe("IssueDetail", () => {
       await screen.findByRole("menuitem", { name: "gpt-5.6-sol" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Build with Codex" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start new attempt" }));
 
     expect(launchTerminal).toHaveBeenCalledWith({
       repo: "me/proj",

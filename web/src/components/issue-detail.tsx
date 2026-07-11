@@ -223,11 +223,10 @@ function IssueHeader({
   );
 }
 
-// The Build button plus its agent/model dropdown (#637). The plain button launches with the
-// Settings defaults (unchanged behavior); the chevron opens a panel to pick a coding agent and
-// model for a single launch, which spawns `lh build <n> --herdr [--auto] --claude-code|--codex
-// --model <name>` without touching the persisted `codingAgent` / per-agent `defaultModel`. The
-// autoMode/tooltip still reflect the resolved default agent, since that is what a plain click runs.
+// The Build button plus its agent/model dropdown (#637). The plain Build button launches with the
+// Settings defaults; New attempt always opens the picker first. The selected agent and model apply
+// to a single launch without changing the persisted `codingAgent` / per-agent `defaultModel`. The
+// autoMode/tooltip still reflect the resolved default agent, since that is what a plain Build runs.
 function BuildControls({
   owner,
   repo,
@@ -243,9 +242,6 @@ function BuildControls({
   const { data: settings } = useSettings();
   const [isBuildLoading, startBuildLoading] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [confirmingBuild, setConfirmingBuild] = useState<{
-    override?: { agent: CodingAgent; model: string };
-  } | null>(null);
   const isNewAttempt = newAttemptPullNumber !== undefined;
 
   const defaultAgent: CodingAgent = settings?.codingAgent ?? "claude-code";
@@ -260,7 +256,6 @@ function BuildControls({
   // (default resolution). A blank model is omitted so `lh build` falls back to the per-agent default.
   function launchBuild(override?: { agent: CodingAgent; model: string }) {
     startBuildLoading();
-    setConfirmingBuild(null);
     setMenuOpen(false);
     const model = override?.model.trim();
     launchTerminal({
@@ -274,15 +269,6 @@ function BuildControls({
     });
   }
 
-  function build(override?: { agent: CodingAgent; model: string }) {
-    if (isNewAttempt) {
-      setMenuOpen(false);
-      setConfirmingBuild({ override });
-      return;
-    }
-    launchBuild(override);
-  }
-
   return (
     <div className="inline-flex">
       <Button
@@ -290,7 +276,7 @@ function BuildControls({
         className="rounded-r-none"
         title={`Start \`${buildCommand}\` in a terminal`}
         disabled={isBuildLoading}
-        onClick={() => build()}
+        onClick={() => (isNewAttempt ? setMenuOpen(true) : launchBuild())}
       >
         {isBuildLoading ? (
           <Loader2 className="size-4 animate-spin" />
@@ -316,63 +302,11 @@ function BuildControls({
             <BuildDropdown
               settings={settings}
               disabled={isBuildLoading}
-              onBuild={(agent, model) => build({ agent, model })}
+              onBuild={(agent, model) => launchBuild({ agent, model })}
             />
           </DropdownMenuContent>
         ) : null}
       </DropdownMenu>
-      {confirmingBuild && newAttemptPullNumber ? (
-        <NewAttemptDialog
-          pullNumber={newAttemptPullNumber}
-          onConfirm={() => launchBuild(confirmingBuild.override)}
-          onCancel={() => setConfirmingBuild(null)}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function NewAttemptDialog({
-  pullNumber,
-  onConfirm,
-  onCancel,
-}: {
-  pullNumber: number;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onCancel();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onCancel]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
-      onClick={onCancel}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Start a parallel attempt?"
-        className="flex w-full max-w-md flex-col rounded-lg border bg-background p-5 shadow-lg"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h2 className="text-lg font-semibold">Start a parallel attempt?</h2>
-        <p className="mt-3 text-sm text-muted-foreground">
-          PR #{pullNumber} is already in progress. Start another attempt from
-          the same base? This will run an additional agent.
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm}>Start new attempt</Button>
-        </div>
-      </div>
     </div>
   );
 }
