@@ -1,5 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -42,6 +49,24 @@ function git(args: string[]): void {
     encoding: "utf8",
   });
   if ((result.status ?? 0) !== 0) throw new Error(result.stderr);
+}
+
+function fakeRuntime(herdrExit: number) {
+  const dir = mkdtempSync(join(tmpdir(), "lh-workflow-runtime-"));
+  const log = join(dir, "herdr.log");
+  const herdr = join(dir, "herdr");
+  const claude = join(dir, "claude");
+  writeFileSync(
+    herdr,
+    `#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\nprintf '%s\\n' "$*" >> "$HERDR_LOG"\nexit ${herdrExit}\n`,
+  );
+  writeFileSync(
+    claude,
+    '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
+  );
+  chmodSync(herdr, 0o755);
+  chmodSync(claude, 0o755);
+  return { dir, log };
 }
 
 beforeAll(() => {
@@ -176,4 +201,88 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   expect(existsSync(body.worktree)).toBe(true);
   expect(existsSync(body.lock_path)).toBe(true);
   expect(body.parent.user_prompt).not.toMatch(/^\/lh-/m);
+});
+
+test("workflow start --herdr pins the parent to the canonical repo session", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Canonical parent session",
+    "--body",
+    "Do it",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = fakeRuntime(0);
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode, started.stderr).toBe(0);
+    expect(readFileSync(runtime.log, "utf8")).toMatch(
+      /^--session me-workflow-start-[a-f0-9]{8} agent start /,
+    );
+    expect(started.stderr).toContain("Attach with: herdr --session");
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --herdr surfaces a failed parent launch", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Failed parent session",
+    "--body",
+    "Do it",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = fakeRuntime(7);
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode).toBe(1);
+    expect(started.stderr).toContain("herdr exited with status 7");
+    expect(readFileSync(runtime.log, "utf8")).toMatch(
+      /^--session me-workflow-start-[a-f0-9]{8} agent start /,
+    );
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
 });

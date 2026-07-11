@@ -405,6 +405,65 @@ describe("terminal.launch issue-dev spawns `lh build --herdr` (#584)", () => {
   });
 });
 
+describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () => {
+  test("forwards the saved workflow and reports the canonical herdr session", async () => {
+    lhDev.script.push(exitWith(0));
+
+    const result = await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "workflow-run",
+      issueNumber: 1,
+      workflowId: 9,
+    });
+
+    expect(lhDev.calls).toEqual([
+      ["lh", "workflow", "start", "me/proj/1", "--workflow-id", "9", "--herdr"],
+    ]);
+    expect(herdr.calls).toHaveLength(0);
+    expect(result).toMatchObject({ backend: "herdr" });
+    expect(result.attach).toBe(`herdr session attach ${result.session_name}`);
+  });
+
+  test("surfaces a failed CLI launch with the retry command", async () => {
+    lhDev.script.push(exitWith(7));
+
+    const err = await svc.terminal
+      .launch({
+        repo: "me/proj",
+        workflow: "workflow-run",
+        issueNumber: 1,
+        workflowId: 9,
+      })
+      .then(
+        () => null,
+        (e: unknown) => e as { message: string; data?: { command?: string } },
+      );
+
+    expect(err?.message).toBe("lh workflow start exited with status 7");
+    expect(err?.data?.command).toBe(
+      "lh workflow start me/proj/1 --workflow-id 9 --herdr",
+    );
+  });
+
+  test("requires issueNumber and workflowId", async () => {
+    await expect(
+      svc.terminal.launch({
+        repo: "me/proj",
+        workflow: "workflow-run",
+        issueNumber: 1,
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+    await expect(
+      svc.terminal.launch({
+        repo: "me/proj",
+        workflow: "workflow-run",
+        workflowId: 9,
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(lhDev.calls).toHaveLength(0);
+  });
+});
+
 describe("terminal.launch new-workspace orchestration for New Issue (#544)", () => {
   test("creates a new workspace (not a tab in the existing session) and starts the agent in it", async () => {
     herdr.script.push(exitWith(0, WORKSPACE_JSON), exitWith(0), exitWith(0));
