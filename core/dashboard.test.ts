@@ -118,11 +118,11 @@ describe("dashboard.overview", () => {
     ).toMatchObject({ number: 99 });
   });
 
-  test("issue detail keeps every linked PR while capping status enrichment", async () => {
+  test("issue detail enriches every linked PR for attempt comparison", async () => {
     const issue = svc.issues.create("me/proj", { title: "many linked PRs" });
     const repo = S.getRepo("me", "proj")!;
     const issueRow = S.getIssue(repo.id, issue.number)!;
-    for (let i = 0; i < S.MAX_LINKED_PULLS + 2; i++) {
+    for (let i = 0; i < S.MAX_ISSUE_DETAIL_PULLS + 2; i++) {
       const pr = S.createIssue(
         repo.id,
         "pull",
@@ -135,14 +135,38 @@ describe("dashboard.overview", () => {
 
     const detail = await svc.issues.get("me/proj", issue.number);
 
-    expect(detail.linked_pull_requests).toHaveLength(S.MAX_LINKED_PULLS + 2);
+    expect(detail.linked_pull_requests).toHaveLength(S.MAX_ISSUE_DETAIL_PULLS);
+    expect(detail.linked_pull_requests_truncated).toBe(true);
     expect(detail.linked_pull_request?.number).toBe(
       detail.linked_pull_requests![0].number,
     );
     expect(detail.linked_pull_requests![0]).toHaveProperty("mergeable_state");
-    expect(detail.linked_pull_requests![S.MAX_LINKED_PULLS]).not.toHaveProperty(
+    expect(detail.linked_pull_requests![S.MAX_LINKED_PULLS]).toHaveProperty(
       "mergeable_state",
     );
+    expect(detail.linked_pull_requests![S.MAX_LINKED_PULLS]).toHaveProperty(
+      "base_commits_behind",
+    );
+  });
+
+  test("issue detail reports commits added to the base after an attempt forked", async () => {
+    const issue = svc.issues.create("me/proj", { title: "old attempt base" });
+    await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: issue.number,
+        head: `loophub/issue-${issue.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
+
+    writeFileSync(join(repoPath, "base-advanced.txt"), "advanced\n");
+    git(["add", "-A"]);
+    git(["commit", "-qm", "advance base"]);
+
+    const detail = await svc.issues.get("me/proj", issue.number);
+    expect(detail.linked_pull_requests![0].base_commits_behind).toBe(1);
   });
 
   test("linked PR carries agent runtime/model and cost once its session has usage (#783, #842)", async () => {

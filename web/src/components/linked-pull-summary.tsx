@@ -1,7 +1,16 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Bot, Check, Terminal, TriangleAlert } from "lucide-react";
+import {
+  ArrowRight,
+  Bot,
+  Check,
+  Loader2,
+  Terminal,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import { useState } from "react";
 import type { LinkedPull } from "@/api/types";
+import { DiffStat } from "@/components/diff-stat";
 import { HerdrAgentInput } from "@/components/herdr-agent-input";
 import {
   findPullHerdrWorkspace,
@@ -25,6 +34,7 @@ import {
 } from "@/lib/session-usage";
 import { formatDuration } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { useSetPullState } from "@/queries/pulls";
 import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
 
 const STATUS_TEXT: Record<StatusWordTone, string> = {
@@ -228,6 +238,7 @@ export function LinkedPullSummaryRow({
   className,
   showTitle = false,
   dimInactive = false,
+  attemptComparison = false,
 }: {
   owner: string;
   repo: string;
@@ -236,9 +247,14 @@ export function LinkedPullSummaryRow({
   showTitle?: boolean;
   /** Dim merged and closed PRs when this row is rendered in an issue list. */
   dimInactive?: boolean;
+  /** Show issue-detail comparison metrics and adopt/discard actions. */
+  attemptComparison?: boolean;
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const { showError } = useToast();
   const { data: herdrSessions } = useHerdrSessions();
+  const setState = useSetPullState(owner, repo, pull.number);
   const repoFullName = `${owner}/${repo}`;
   const workspace = findPullHerdrWorkspace(
     herdrSessions,
@@ -250,13 +266,26 @@ export function LinkedPullSummaryRow({
     repoFullName,
     pull.number,
   );
-  const status =
+  const operationalStatus =
     linkedPullStatus(pull, { agentWorking }) ?? linkedPullStateBadge(pull);
+  const status = attemptComparison
+    ? pull.merged
+      ? { tone: "merged" as const, label: "merged", title: "Merged" }
+      : pull.state === "closed"
+        ? { tone: "closed" as const, label: "closed", title: "Closed" }
+        : pull.draft === false
+          ? {
+              tone: "review-passed" as const,
+              label: "ready",
+              title: "Ready for review",
+            }
+          : { tone: "open" as const, label: "open", title: "Open draft" }
+    : operationalStatus;
   const costStopped = costStoppedBadge(pull);
-  const passed = status.tone === "review-passed";
+  const passed = !attemptComparison && status.tone === "review-passed";
   const needsAttention =
-    status.tone === "conflict" ||
-    status.tone === "review-changes" ||
+    operationalStatus.tone === "conflict" ||
+    operationalStatus.tone === "review-changes" ||
     workspace?.status === "blocked";
   const isDone = pull.merged || pull.state === "closed";
   // The indigo pulse/ring means a live herdr agent is actively working (signal
@@ -280,6 +309,7 @@ export function LinkedPullSummaryRow({
       aria-label={`Linked PR #${pull.number}: ${pull.title}`}
       className={cn(
         "group/linked-pull relative min-w-0 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60",
+        attemptComparison && "rounded-md border bg-muted/20 p-3",
         className,
       )}
       onMouseEnter={() => setPopoverOpen(true)}
@@ -358,6 +388,14 @@ export function LinkedPullSummaryRow({
           ) : null}
           {status.label}
         </span>
+        {attemptComparison && agentWorking ? (
+          <span
+            className="shrink-0 font-semibold text-indigo-600 dark:text-indigo-400"
+            title="Working in the PR worktree"
+          >
+            working
+          </span>
+        ) : null}
         {costStopped ? (
           <span
             className={cn(
@@ -372,6 +410,65 @@ export function LinkedPullSummaryRow({
         ) : null}
         <Metrics pull={pull} overBudget={costStopped !== null} />
       </div>
+      {attemptComparison ? (
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 pl-[26px]">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-muted-foreground/70">Diff</span>
+            <DiffStat
+              additions={pull.additions ?? 0}
+              deletions={pull.deletions ?? 0}
+            />
+          </span>
+          <span>
+            <span className="text-muted-foreground/70">Review</span>{" "}
+            <span className="font-medium text-foreground">
+              {pull.review_state === "PASSED"
+                ? "pass"
+                : pull.review_state === "CHANGES_REQUESTED"
+                  ? "request changes"
+                  : pull.review_state === "READY_FOR_RE_REVIEW" ||
+                      pull.review_state === "STALE"
+                    ? "re-review"
+                    : pull.review_state === "COMMENTED"
+                      ? "commented"
+                      : "not reviewed"}
+            </span>
+          </span>
+          {(pull.base_commits_behind ?? 0) > 0 ? (
+            <span className="font-medium text-amber-700 dark:text-amber-300">
+              base is {pull.base_commits_behind} commit
+              {pull.base_commits_behind === 1 ? "" : "s"} behind
+            </span>
+          ) : null}
+          <span className="ml-auto inline-flex items-center gap-2">
+            <Link
+              to="/r/$owner/$repo/pulls/$number"
+              params={{ owner, repo, number: String(pull.number) }}
+              className={cn(
+                buttonVariants({ variant: "secondary", size: "sm" }),
+                "h-7",
+              )}
+            >
+              <ArrowRight className="size-3.5" />
+              {pull.state === "open" && !pull.merged
+                ? "Review & merge"
+                : "View PR"}
+            </Link>
+            {pull.state === "open" && !pull.merged ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-7 text-destructive hover:text-destructive"
+                onClick={() => setConfirmingDiscard(true)}
+              >
+                <Trash2 className="size-3.5" />
+                Discard
+              </Button>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
       {popoverOpen ? (
         <PullPopover
           owner={owner}
@@ -382,6 +479,66 @@ export function LinkedPullSummaryRow({
           workspacePaneId={workspace?.pane_id}
         />
       ) : null}
+      {confirmingDiscard ? (
+        <DiscardAttemptDialog
+          pullNumber={pull.number}
+          pending={setState.isPending}
+          onCancel={() => setConfirmingDiscard(false)}
+          onConfirm={() =>
+            setState.mutate("closed", {
+              onSuccess: () => setConfirmingDiscard(false),
+              onError: (error) =>
+                showError(
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to discard attempt.",
+                ),
+            })
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function DiscardAttemptDialog({
+  pullNumber,
+  pending,
+  onConfirm,
+  onCancel,
+}: {
+  pullNumber: number;
+  pending: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Discard PR #${pullNumber}?`}
+        className="flex w-full max-w-md flex-col rounded-lg border bg-background p-5 text-foreground shadow-lg"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold">Discard PR #{pullNumber}?</h2>
+        <p className="mt-3 text-sm text-muted-foreground">
+          This closes the PR without merging it. The issue and other attempts
+          stay open.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} disabled={pending}>
+            {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+            Discard attempt
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

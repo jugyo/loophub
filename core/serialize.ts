@@ -141,12 +141,15 @@ export interface PullSummaryWire {
   title: string;
   state: "open" | "closed";
   merged: boolean;
+  draft?: boolean;
   html_url: string;
   github_pull: GithubPullWire | null;
   // Agent cost for the issue-list PR sub-row (#783): total tokens across every linked session and
   // the summed cost, or absent/null when no linked session has usage yet / has an unknown cost.
   total_tokens?: number;
   cost_usd?: number | null;
+  // Detail/list enrichment: commits added to the current base since this PR forked.
+  base_commits_behind?: number;
   // #863: the PR has at least one `dev.cost_stopped` event — its dev agent was force-stopped for
   // exceeding the cost limit. Drives the "cost stopped" badge on every surface that shows the PR.
   cost_stopped: boolean;
@@ -162,6 +165,8 @@ export interface IssueListPullSummaryWire extends PullSummaryWire {
   additions: number;
   deletions: number;
   changed_files: number;
+  // Required on enriched rows; zero means the attempt starts from the current base tip.
+  base_commits_behind: number;
   agent_runtime?: string;
   agent_model?: string;
   // #882: the PR's total work duration for the sub-row — the same `pullWorkDuration().total` shown
@@ -210,6 +215,7 @@ export interface IssueWire {
   pull_request?: { url: string };
   linked_pull_requests?: PullSummaryWire[];
   linked_pull_request?: PullSummaryWire | null;
+  linked_pull_requests_truncated?: boolean;
   github_issue?: GithubIssueWire | null;
 }
 
@@ -883,11 +889,13 @@ function linkedPullSummaries(repo: S.Repo, issueRowId: number) {
 }
 
 function pullSummary(repo: S.Repo, pr: S.LinkedPullIssueRow): PullSummaryWire {
+  const pull = S.getPull(pr.id)!;
   return {
     number: pr.number,
     title: pr.title,
     state: pr.state,
     merged: !!pr.merged,
+    draft: !!pull.draft,
     html_url: linkedRef(repo, "pulls", pr.number).html_url,
     // #629: the exported GitHub PR (if any), so the issue-detail linked-PR row can show a GH badge.
     github_pull: githubPullJSON(S.getGithubPull(pr.id)),
@@ -1071,11 +1079,16 @@ async function linkedPullDetail(
     status.pull,
     S.primaryDevSessionForPull(pr.id),
   ).total;
+  const base_commits_behind =
+    status.forkBaseSha && status.baseSha
+      ? await commitsAhead(repo.local_path, status.forkBaseSha, status.baseSha)
+      : 0;
   return {
     number: pr.number,
     title: pr.title,
     state: pr.state,
     merged: !!pr.merged,
+    draft: !!status.pull.draft,
     html_url: linkedRef(repo, "pulls", pr.number).html_url,
     working: status.working,
     review_state: status.review_state,
@@ -1083,6 +1096,7 @@ async function linkedPullDetail(
     additions: status.additions,
     deletions: status.deletions,
     changed_files: status.changed_files,
+    base_commits_behind,
     ...(runtime ? { agent_runtime: runtime } : {}),
     ...(model ? { agent_model: model } : {}),
     // #629: the exported GitHub PR (if any), so the issue-list linked-PR sub-row can show a GH badge.
@@ -1138,16 +1152,17 @@ export async function issueDetailJSON(
   const out = issueJSON(row, row.kind === "pull" ? repo : undefined);
   if (row.kind !== "pull") {
     const linked = S.allLinkedPullsForIssue(row.id);
-    const detailed = new Set(S.linkedPullsForIssue(row.id).map((pr) => pr.id));
+    // Detail is the attempt-comparison surface, so every linked PR needs the
+    // same comparison fields. List/dashboard paths remain capped separately.
     const pulls = await Promise.all(
-      linked.map((pr) =>
-        detailed.has(pr.id)
-          ? linkedPullDetail(repo, pr)
-          : pullSummary(repo, pr),
-      ),
+      linked
+        .slice(0, S.MAX_ISSUE_DETAIL_PULLS)
+        .map((pr) => linkedPullDetail(repo, pr)),
     );
     out.linked_pull_requests = pulls;
     out.linked_pull_request = pulls[0] ?? null;
+    out.linked_pull_requests_truncated =
+      linked.length > S.MAX_ISSUE_DETAIL_PULLS;
   }
   return out;
 }

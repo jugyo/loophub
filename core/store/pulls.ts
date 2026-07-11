@@ -142,6 +142,12 @@ export function linkedPullForIssue(
 // bounded regardless of how many PRs an issue collects over time.
 export const MAX_LINKED_PULLS = 6;
 
+// Issue detail is the full comparison surface, but each enriched attempt runs
+// several git reads. Bound one request so accumulated retry history cannot
+// create an unbounded subprocess fan-out. The wire tells the UI when older
+// attempts were omitted.
+export const MAX_ISSUE_DETAIL_PULLS = 24;
+
 // PRs linked to an issue, most-relevant first (same ordering as
 // linkedPullForIssue): open & unmerged ahead of merged/closed, then by recency.
 // Capped at MAX_LINKED_PULLS so the issue list can stack them without an

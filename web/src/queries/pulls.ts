@@ -160,6 +160,9 @@ function invalidatePull(
 ) {
   qc.invalidateQueries({ queryKey: queryKeys.pull(full(owner, repo), number) });
   qc.invalidateQueries({ queryKey: queryKeys.pulls(full(owner, repo)) });
+  // Issue detail embeds every linked PR's state and comparison metrics.
+  qc.invalidateQueries({ queryKey: queryKeys.issues(full(owner, repo)) });
+  qc.invalidateQueries({ queryKey: ["issue", full(owner, repo)] });
 }
 
 /** Merge a PR, then invalidate the PR + lists. */

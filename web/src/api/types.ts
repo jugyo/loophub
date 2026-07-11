@@ -56,6 +56,7 @@ export type LinkedPull = PullSummaryWire &
       | "additions"
       | "deletions"
       | "changed_files"
+      | "base_commits_behind"
       | "agent_runtime"
       | "agent_model"
       | "work_duration_total"

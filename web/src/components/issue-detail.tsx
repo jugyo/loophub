@@ -628,8 +628,15 @@ function LinkedPullSummary({
           owner={owner}
           repo={repo}
           pull={pull}
+          attemptComparison
         />
       ))}
+      {issue.linked_pull_requests_truncated ? (
+        <p className="px-2 text-xs text-muted-foreground">
+          Showing the {pulls.length} most relevant attempts to keep this page
+          responsive.
+        </p>
+      ) : null}
     </section>
   );
 }

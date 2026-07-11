@@ -398,6 +398,13 @@ describe("IssueDetail", () => {
           html_url: "/pulls/31",
           github_pull: null,
           cost_stopped: false,
+          draft: false,
+          additions: 24,
+          deletions: 7,
+          changed_files: 3,
+          review_state: "PASSED",
+          base_commits_behind: 2,
+          cost_usd: 1.25,
         },
         {
           number: 30,
@@ -430,10 +437,69 @@ describe("IssueDetail", () => {
     expect(screen.getByLabelText("Linked PR #30: merged attempt")).toBeTruthy();
     expect(screen.getByText("PR #29")).toBeTruthy();
     expect(screen.getByLabelText("Linked PR #29: closed attempt")).toBeTruthy();
+    expect(screen.getByText("ready")).toBeTruthy();
+    expect(screen.getByText("+24")).toBeTruthy();
+    expect(screen.getByText("−7")).toBeTruthy();
+    expect(screen.getByText("pass")).toBeTruthy();
+    expect(screen.getByText("base is 2 commits behind")).toBeTruthy();
+    expect(
+      screen.getAllByRole("link", { name: "Review & merge" }),
+    ).not.toHaveLength(0);
+    expect(screen.getAllByRole("button", { name: "Discard" })).not.toHaveLength(
+      0,
+    );
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "New attempt" }));
     expect(screen.getByText(/PR #31 is already in progress/)).toBeTruthy();
+  });
+
+  it("confirms before closing a discarded attempt", async () => {
+    renderDetail(undefined, false, {
+      "pulls/update": (params) => ({
+        ...issue.linked_pull_request!,
+        state: params.state,
+      }),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    const dialog = screen.getByRole("dialog", { name: "Discard PR #30?" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Discard attempt" }),
+    );
+
+    await waitFor(() =>
+      expect(rpcCall("pulls/update")).toMatchObject({
+        params: {
+          repo: "me/proj",
+          number: 30,
+          state: "closed",
+        },
+      }),
+    );
+    await waitFor(() => {
+      const issueGets = (
+        fetch as unknown as ReturnType<typeof vi.fn>
+      ).mock.calls.filter((call) => {
+        const body = JSON.parse(String((call[1] as RequestInit).body));
+        return body.method === "issues/get";
+      });
+      expect(issueGets.length).toBeGreaterThan(1);
+    });
+  });
+
+  it("explains when old attempt rows are omitted by the detail limit", async () => {
+    renderDetail(() => ({
+      ...issue,
+      linked_pull_requests: [issue.linked_pull_request!],
+      linked_pull_requests_truncated: true,
+    }));
+
+    expect(
+      await screen.findByText(
+        "Showing the 1 most relevant attempts to keep this page responsive.",
+      ),
+    ).toBeTruthy();
   });
 
   it("keeps inactive and active linked PRs at normal opacity", async () => {
