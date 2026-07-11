@@ -1,7 +1,7 @@
 # LoopHub Web UI
 
 React SPA (Vite + TypeScript + Tailwind) for LoopHub. `lh-web` embeds Vite in middleware
-mode, so a single process serves the API (`/rpc`, `/events`) and the SPA (with HMR) on one
+mode, so a single process serves the API (`/rpc`) and the SPA (with HMR) on one
 port — no separate dev server.
 
 > Note: the components use a shadcn-style design system (Tailwind + `cn`/`cva` tokens,
@@ -25,11 +25,11 @@ npm run lh-web          # http://localhost:8730 — API + UI + HMR, one process
 ```
 
 Open http://localhost:8730. Editing files under `web/src` hot-reloads the browser.
-`lh-web` mounts Vite (middleware mode) for everything except `/rpc` and `/events`.
+`lh-web` mounts Vite (middleware mode) for everything except `/rpc` and `/attachments` routes.
 
 ### Standalone Vite (optional)
 
-For frontend-only work you can still run Vite on its own; it proxies `/rpc` + `/events`
+For frontend-only work you can still run Vite on its own; it proxies `/rpc` and `/attachments` routes
 to a separately running `lh-web`:
 
 ```sh
@@ -41,7 +41,7 @@ cd web && npm run dev   # :5173 (proxies to :8730)
 
 | Script | Purpose |
 |--------|---------|
-| `npm run dev` | Standalone Vite dev server (:5173) with the `/rpc` + `/events` proxy |
+| `npm run dev` | Standalone Vite dev server (:5173) with API proxies |
 | `npm run build` | Type-check + production build to `dist/` |
 | `npm run preview` | Preview the production build (:4173) |
 | `npm run test` | Vitest |
@@ -73,15 +73,14 @@ does not use this transport; it calls `core/service` directly.
 See the [transport limit design note](../docs/json-rpc-transport-limits.md) for the bounded response
 serializer, remaining allocation boundary, and streaming decision.
 
-## Live updates (SSE)
+## Live updates
 
-`src/lib/use-loophub-events.ts` (`useLoopHubEvents`) subscribes to `/events` with
-`EventSource`. lh-web sends each event as a `loophub` frame whose data is a JSON-RPC
-`events/notify` notification; the hook unwraps it and calls
-`queryClient.invalidateQueries()`. The event-type → query-key mapping lives in
-`src/lib/event-keys.ts`.
+`src/lib/use-loophub-events.ts` (`useLoopHubEvents`) polls `events/list` with an id cursor and
+calls `queryClient.invalidateQueries()` for every returned event. It uses a 1.5-second cadence
+while visible, 5 seconds while hidden, and immediately drains full 100-event pages. The event-type
+→ query-key mapping lives in `src/lib/event-keys.ts`.
 
 ## Sessions
 
 `src/lib/session.ts` manages the agent `session_id` in `sessionStorage`, plus the last
-seen SSE event id used to resume the stream.
+seen persisted event id used to resume polling.

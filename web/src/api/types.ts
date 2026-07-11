@@ -332,7 +332,7 @@ export interface DashboardOverview {
   recentIssuesLimit: number;
 }
 
-/** Wire format for GET /events and the /events/stream SSE feed. */
+/** Wire format returned by events/list. */
 export interface LoopEvent {
   id: number;
   type: string;

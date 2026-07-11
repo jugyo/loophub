@@ -552,7 +552,7 @@ describe("dev.openPr", () => {
 describe("dev.attachSession", () => {
   // #463: `lh build <issue>` defers session attribution for a reused PR from openPr to a later
   // attachSession call (after its dev lock is won). openPr's reuse branch used to emit
-  // pull_request.updated on re-attribution so the PR detail's related-sessions list (SSE-driven)
+  // pull_request.updated on re-attribution so polling refreshes the PR detail's related-sessions list
   // refreshes; attachSession must emit the same event or that live-refresh silently regresses.
   test("re-points the session and emits pull_request.updated", async () => {
     svc.sessions.register({

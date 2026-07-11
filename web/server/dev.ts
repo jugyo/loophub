@@ -1,6 +1,6 @@
 // Vite dev middleware for lh-web. Boots Vite in middleware mode so the single lh-web
-// process serves the SPA (with HMR) alongside /rpc and /events — no separate dev server,
-// no second port. Kept out of http.ts so the RPC/SSE core never imports Vite and its tests
+// process serves the SPA (with HMR) alongside /rpc — no separate dev server,
+// no second port. Kept out of http.ts so the HTTP core never imports Vite and its tests
 // stay Vite-free. `vite` is imported dynamically: it is only needed when actually serving.
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { dirname, join } from "node:path";

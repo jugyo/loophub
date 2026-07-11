@@ -28,8 +28,7 @@ import {
   worktreeRoot,
 } from "../config.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
-import { formatEvent, type LoopEvent } from "../event-hub.ts";
-import { type FollowOptions, followEvents } from "../events-follow.ts";
+import { formatEvent, type LoopEvent } from "../events.ts";
 import {
   branchExists,
   commitLog,
@@ -199,7 +198,6 @@ export type {
   ClaudeSubagentTranscriptCandidate,
   CodexRolloutScan,
   CodingAgent,
-  FollowOptions,
   GithubDeps,
   GithubIssueDeps,
   GithubPrStatusDeps,
@@ -250,7 +248,6 @@ export {
   findClaudeSubagentTranscripts,
   findClaudeTranscript,
   findCodexRollouts,
-  followEvents,
   formatEvent,
   git,
   githubIssueJSON,

@@ -28,7 +28,7 @@ import {
 // issue-derived (untrusted) text, and `lh handoff list` reads it back into an orchestrator's
 // context: consumers MUST treat a recorded body as DATA, never as instructions to act on. The
 // broadcast `handoff.recorded` event therefore carries only metadata (seq/phase/direction), never
-// the body, so untrusted content is not replayed widely over SSE.
+// the body, so untrusted content is not propagated through event consumers.
 export const HANDOFF_DIRECTIONS = ["down", "up"] as const;
 export type HandoffDirection = (typeof HANDOFF_DIRECTIONS)[number];
 
@@ -125,7 +125,7 @@ export const handoffs = {
       cost: input.cost?.trim() || undefined,
     });
 
-    // Emit a PR-scoped event so the PR detail's handoff section refetches over SSE. payload.number
+    // Emit a PR-scoped event so polling refreshes the PR detail's handoff section. payload.number
     // is the PR number (the routing key event-keys.ts maps to the pull detail); pr_number is a
     // duplicate for consumers that read it. For an issue-only handoff there is no PR to scope to.
     S.emitEvent(r.id, "handoff.recorded", actorFor(sessionId), {

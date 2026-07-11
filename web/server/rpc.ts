@@ -1,6 +1,6 @@
 // JSON-RPC 2.0 dispatcher. Transport-neutral: it takes a parsed JSON-RPC payload (a single
 // request or a batch array) and returns the response value(s). The HTTP binding (POST /rpc)
-// and SSE live in the lh-web process (S3). Method routing, params validation (ajv against the
+// lives in the lh-web process (S3). Method routing, params validation (ajv against the
 // contract schemas), and error mapping happen here.
 import Ajv, { type ValidateFunction } from "ajv";
 import { isServiceError } from "../../core/errors.ts";

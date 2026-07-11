@@ -6,7 +6,7 @@
 import * as svc from "../../core/service.ts";
 import { webRuntimeConfig } from "./runtime-config.ts";
 
-export const PROTOCOL_VERSION = "2025-06-18";
+export const PROTOCOL_VERSION = "2026-07-11";
 export const SERVER_INFO = { name: "loophub", version: "0.0.0" } as const;
 
 // ---- reusable schema fragments ----
@@ -1164,7 +1164,7 @@ export function capabilities() {
     serverInfo: SERVER_INFO,
     capabilities: {
       methods: Object.keys(methods).sort(),
-      notifications: ["events/notify"],
+      notifications: [],
     },
     webConfig: webRuntimeConfig(),
   };
@@ -1182,12 +1182,6 @@ export function contractDocument() {
       params: m.params,
       result: m.result,
     })),
-    notifications: [
-      {
-        method: "events/notify",
-        description: "A LoopEvent delivered to a subscriber.",
-        params: anyObject,
-      },
-    ],
+    notifications: [],
   };
 }

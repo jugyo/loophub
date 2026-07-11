@@ -123,8 +123,8 @@ export const dev = {
   // of #463, also by `lh build <issue>` to attribute the session to a *reused* open PR — deferred
   // here until after the caller's PR-keyed dev lock is won (see dev.openPr's `attributeSession`
   // option), so a losing concurrent launch can never overwrite the winner's pointer. Emits the
-  // same `pull_request.updated` event openPr's reuse branch does, so the PR detail's related-
-  // sessions list (SSE-driven) refreshes here too. Latest linked dev session wins.
+  // same `pull_request.updated` event openPr's reuse branch does, so polling refreshes the PR
+  // detail's related-sessions list here too. Latest linked dev session wins.
   attachSession(
     name: string,
     number: number,

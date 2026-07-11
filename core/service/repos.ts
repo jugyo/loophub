@@ -29,16 +29,14 @@ export type { Repo } from "../store.ts";
 
 // ===== repos =====
 export const repos = {
-  // Thin lookups (by id / by "owner/name") for callers outside core/ that only need the raw
-  // row — e.g. web/server's event replay and lh-worker's event dispatch, which must not import
-  // core/store directly.
+  // Thin lookups (by id / by "owner/name") for callers outside core/ that only need the raw row,
+  // such as lh-worker event dispatch, which must not import core/store directly.
   getById(id: number): S.Repo | null {
     return S.getRepoById(id);
   },
 
   // Raw split, not S.splitName: splitName defaults an owner-less name to "me/<name>", which
-  // would silently change repo-filter matching for callers (e.g. SSE replay) that historically
-  // relied on an unslashed name resolving to nothing.
+  // would silently change exact repo-filter matching for callers that pass an unslashed name.
   getByFullName(fullName: string): S.Repo | null {
     const [owner, name] = fullName.split("/");
     return S.getRepo(owner, name);

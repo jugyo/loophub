@@ -232,9 +232,8 @@ export interface WorkerHandle {
   stop: () => void;
 }
 
-// Tail the events table by id cursor and dispatch matched events. Mirrors web/server's
-// startEventTail polling, but instead of republishing it runs workflow commands. The cursor is
-// persisted after every event so a restart resumes exactly where it left off.
+// Poll the events table by id cursor and dispatch matched events. The cursor is persisted after
+// every event so a restart resumes exactly where it left off.
 export function startWorker(
   opts: { pollMs?: number; cursorPath?: string } = {},
 ): WorkerHandle {

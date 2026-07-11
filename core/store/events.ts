@@ -1,6 +1,4 @@
 import { db, now } from "../db.ts";
-import { formatEvent, publishEvent } from "../event-hub.ts";
-import { getRepoById } from "./repos.ts";
 
 export interface EventRow {
   id: number;
@@ -12,27 +10,24 @@ export interface EventRow {
 }
 
 // ---- events ----
-// Persist then publish LoopEvent to in-process hub (order matters for SSE replay consistency).
+// Persist an event for audit history and cursor-based consumers.
 export function emitEvent(
   repoId: number | null,
   type: string,
   actor: string,
   payload: unknown,
 ): EventRow {
-  const row = db
+  return db
     .query(
       `INSERT INTO events (repo_id, type, actor, payload, created_at)
        VALUES (?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(repoId, type, actor, JSON.stringify(payload), now()) as EventRow;
-  const repo = repoId !== null ? getRepoById(repoId) : null;
-  publishEvent(formatEvent(row, repo?.full_name));
-  return row;
 }
 // labels: when set, keep only events whose issue/PR (payload.number, same repo) currently
 // carries one of the given label names (OR match). Events without a payload.number are dropped.
 // order: "asc" (default) returns the oldest matching events after `since` (used for
-// polling/SSE replay forward by id). "desc" returns the newest matching events first
+// cursor polling forward by id). "desc" returns the newest matching events first
 // (the tail), used by dashboard activity feeds that want the most recent N events.
 export function listEvents(
   since: number,

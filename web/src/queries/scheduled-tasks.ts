@@ -1,6 +1,6 @@
 // Scheduled task query hooks (#880): list / detail (with run log) queries and the
 // create / update / delete / run-now mutations. Mutations invalidate the repo's task list
-// (and the specific task's detail) so the UI reflects the change immediately; SSE-driven
+// (and the specific task's detail) so the UI reflects the change immediately; event-polling
 // invalidation (scheduled_task.* in lib/event-keys.ts) keeps other tabs in sync.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

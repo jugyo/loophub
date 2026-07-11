@@ -13,7 +13,7 @@
 
 ## Why this matters to LoopHub
 
-LoopHub exists so AI agents can run development loops while a human supervises with minimal attention. This paper is the clearest external articulation of the same idea from OpenAI's side: giving long-running work *somewhere to live* — durable context, memory, tools, recurrence, and a review surface — so work continues across more than one prompt. The "loop = context + tools + memory + recurrence + review" framing maps directly onto LoopHub's issue/PR + event-hub model.
+LoopHub exists so AI agents can run development loops while a human supervises with minimal attention. This paper is the clearest external articulation of the same idea from OpenAI's side: giving long-running work *somewhere to live* — durable context, memory, tools, recurrence, and a review surface — so work continues across more than one prompt. The "loop = context + tools + memory + recurrence + review" framing maps directly onto LoopHub's issue/PR + persisted-event model.
 
 ## Core thesis
 

@@ -105,7 +105,7 @@ export function useIssueKeyboardNavigation(
   // we restore focus once per row node yet still re-restore when a re-render
   // swaps the remembered row for a fresh node carrying the same key (a whole-list
   // remount / filter change that keeps the selected issue) — which drops focus in
-  // a single mutation batch. Ambient in-place updates (SSE badge refreshes,
+  // a single mutation batch. Ambient in-place updates (polling badge refreshes,
   // relative-time ticks) don't replace the node, so focus is never stolen while
   // the user is on the list. #869
   useEffect(() => {

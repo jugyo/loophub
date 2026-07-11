@@ -1,11 +1,5 @@
-import type { FollowOptions, LoopEvent } from "./shared.ts";
-import {
-  clampPerPage,
-  followEvents,
-  formatEvent,
-  MAX_EVENTS_PER_PAGE,
-  S,
-} from "./shared.ts";
+import type { LoopEvent } from "./shared.ts";
+import { clampPerPage, formatEvent, MAX_EVENTS_PER_PAGE, S } from "./shared.ts";
 
 // ===== events =====
 export const events = {
@@ -44,19 +38,8 @@ export const events = {
     });
   },
 
-  // Live tail: subscribe to the web server's SSE feed (replay-then-subscribe) and invoke
-  // `onEvent` for each matching event until `signal` aborts. Unlike `list`, this needs the
-  // resident lh-web process (HTTP); see core/events-follow.ts.
-  follow(
-    opts: FollowOptions,
-    onEvent: (event: LoopEvent) => void,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    return followEvents(opts, onEvent, signal);
-  },
-
-  // Thin pass-through so callers outside core/ (web/server's SSE hub, lh-worker) don't reach
-  // into core/store directly to write an event.
+  // Thin pass-through so callers outside core/, such as lh-worker, don't reach into core/store
+  // directly to write an event.
   emit(
     repoId: number | null,
     type: string,
@@ -68,8 +51,7 @@ export const events = {
 
   // Single bounded page of raw event rows after `since` (repoId filter, or null = all repos),
   // ascending by id — a direct pass-through with no formatting. Used where a caller manages its
-  // own paging/cursor loop: SSE replay-then-subscribe, web/server's per-tick event tail, and
-  // lh-worker's event dispatch loop each page through this repeatedly.
+  // own paging/cursor loop, including lh-worker's event dispatch loop.
   page(since: number, repoId: number | null, limit: number): S.EventRow[] {
     return S.listEvents(since, repoId, limit);
   },

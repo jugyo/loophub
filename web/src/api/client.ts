@@ -120,14 +120,9 @@ export async function rpc<T>(
   return body.result as T;
 }
 
-/** Build the /events SSE URL (same-origin via proxy unless an API base is set). */
-export function eventsUrl(query = ""): string {
-  return `${API_BASE}/events${query ? `?${query}` : ""}`;
-}
-
 export function getWebConfig() {
   return rpc<InitializeResult>("initialize", {
-    protocolVersion: "2025-06-18",
+    protocolVersion: "2026-07-11",
     clientInfo: { name: "loophub-web" },
   }).then((result) => result.webConfig);
 }

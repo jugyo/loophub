@@ -186,7 +186,7 @@ LOOPHUB_HOME=/tmp/lh-shadcn-home \
   web/server/index.ts --port 8799
 # （先に lh CLI で repo と issue/PR をいくつか登録してデータを用意。lh の使い方は AGENTS.md / repo README 参照）
 
-# ターミナル2 — Vite dev（HMR、/rpc + /events を :8799 へ proxy）
+# ターミナル2 — Vite dev（HMR、API route を :8799 へ proxy）
 cd /Users/jugyo/workspace/jugyo/loophub/web && npm run dev   # http://localhost:5173
 ```
 

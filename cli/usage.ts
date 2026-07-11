@@ -36,7 +36,7 @@ export function usage(): void {
   lh herdr focus <pr> [--repo owner/name]                     # focus the pane of the running agent for that PR's worktree
   lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image(s), print embed markdown
   lh sync                                          # detect open-PR head updates and emit events
-  lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc] [--follow|-f]   # --follow: tail the SSE feed (replay matching, then live; Ctrl-C to stop). --order applies to the snapshot only (a live tail is always chronological)
+  lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc]   # print a bounded event snapshot; use --since with --order asc for cursor polling
 
   common: --session-id <uuid>  --json
   examples:
@@ -62,7 +62,6 @@ export function usage(): void {
     echo '[{"path":"a.txt","line":2,"body":"typo"}]' | lh pr review 3 --comments -
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)
     lh events --since 0
-    lh events --follow                 # tail events live (Ctrl-C to stop)
-    lh events -f --repo me/proj --json # live NDJSON for one repo`);
+    lh events --since 120 --order asc --repo me/proj --json`);
   process.exit(group ? 1 : 0);
 }

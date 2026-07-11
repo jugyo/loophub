@@ -52,6 +52,81 @@ afterEach(() => {
 });
 
 describe("useLoopHubEvents", () => {
+  it("uses the visibility-specific cadence and reschedules on visibility changes", async () => {
+    let visibilityState: DocumentVisibilityState = "visible";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(
+      () => visibilityState,
+    );
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<HookHarness />, { wrapper: wrapper(new QueryClient()) });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    visibilityState = "hidden";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(1499);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  });
+
+  it("continues polling after an RPC error", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new Error("temporary RPC failure"))
+      .mockResolvedValue(jsonResponse([ev(7)]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<HookHarness />, { wrapper: wrapper(new QueryClient()) });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await vi.advanceTimersByTimeAsync(1500);
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(rpcParams(fetchMock.mock.calls[1])).toEqual({
+      since: 0,
+      limit: 100,
+    });
+    await vi.waitFor(() =>
+      expect(localStorage.getItem("lh_last_event_id")).toBe("7"),
+    );
+  });
+
+  it("immediately pages through a backlog that fills the polling limit", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, i) => ev(i + 1));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse([ev(101)]))
+      .mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<HookHarness />, { wrapper: wrapper(new QueryClient()) });
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(rpcParams(fetchMock.mock.calls[0])).toEqual({
+      since: 0,
+      limit: 100,
+    });
+    expect(rpcParams(fetchMock.mock.calls[1])).toEqual({
+      since: 100,
+      limit: 100,
+    });
+    await vi.waitFor(() =>
+      expect(localStorage.getItem("lh_last_event_id")).toBe("101"),
+    );
+  });
+
   it("polls events/list in each mounted tab", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

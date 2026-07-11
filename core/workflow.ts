@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { LoopEvent } from "./event-hub.ts";
+import type { LoopEvent } from "./events.ts";
 import type { Worktree } from "./git.ts";
 
 /** Repo-relative path of the workflow file (VCS-managed, portable). */

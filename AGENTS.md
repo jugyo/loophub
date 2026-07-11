@@ -60,9 +60,9 @@ See [build/worktree lifecycle](docs/lh-build-worktree.ja.md),
 ## Layout
 
 ```
-core/    Pure domain library (Node): db, config, store, git, event-hub, links, watcher, service/
+core/    Pure domain library (Node): db, config, store, git, events, links, watcher, service/
 cli/     `lh` command — commands/ grouped by noun; imports core directly, no HTTP
-web/     `lh-web` process: core + JSON-RPC 2.0 + SSE, plus the SPA
+web/     `lh-web` process: core + JSON-RPC 2.0, plus the SPA
 worker/  `lh-worker` resident process: tails shared events, runs per-repo workflow.yml,
          and owns maintenance sweep loops (PR sweep, usage, GitHub merge sync, cost stop, scheduled tasks)
 ```

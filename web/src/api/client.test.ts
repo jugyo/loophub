@@ -4,7 +4,6 @@ import {
   createRepo,
   createWorkflow,
   deleteWorkflow,
-  eventsUrl,
   listIssues,
   listLabels,
   listRepos,
@@ -208,12 +207,5 @@ describe("typed methods translate to contract params", () => {
       method: "labels/list",
       params: { repo: "me/proj" },
     });
-  });
-});
-
-describe("eventsUrl", () => {
-  it("builds a same-origin /events URL with the query", () => {
-    expect(eventsUrl("since=5")).toBe("/events?since=5");
-    expect(eventsUrl()).toBe("/events");
   });
 });

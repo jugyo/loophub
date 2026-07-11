@@ -32,7 +32,7 @@ The CLI uses production `:8730` by default. **Never stop `:8730`.** If your chan
 itself and you need to exercise the new code, run a second server on a free port and point the CLI at it:
 
 ```sh
-lh-web --port 8731 --poll-ms 0 &
+lh-web --port 8731 &
 LOOPHUB_URL=http://localhost:8731 lh issue view <n> --repo <repo>
 ```
 

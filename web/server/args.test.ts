@@ -5,7 +5,6 @@ describe("parseLhWebArgs", () => {
   it("keeps experimental Web UI disabled by default", () => {
     expect(parseLhWebArgs([], {})).toEqual({
       port: 8730,
-      pollMs: 1000,
       experimental: false,
       help: false,
     });
@@ -13,13 +12,9 @@ describe("parseLhWebArgs", () => {
 
   it("enables experimental Web UI without changing other options", () => {
     expect(
-      parseLhWebArgs(
-        ["--experimental", "--port", "9000", "--poll-ms", "250"],
-        {},
-      ),
+      parseLhWebArgs(["--experimental", "--port", "9000"], {}),
     ).toMatchObject({
       port: 9000,
-      pollMs: 250,
       experimental: true,
     });
   });
@@ -32,6 +27,9 @@ describe("parseLhWebArgs", () => {
 
   it("rejects unknown and invalid options", () => {
     expect(() => parseLhWebArgs(["--unknown"], {})).toThrow("unknown option");
+    expect(() => parseLhWebArgs(["--poll-ms", "250"], {})).toThrow(
+      "unknown option: --poll-ms",
+    );
     expect(() => parseLhWebArgs(["--port"], {})).toThrow("positive number");
   });
 });

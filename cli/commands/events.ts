@@ -2,6 +2,17 @@ import { flags } from "../args.ts";
 import { out, svc } from "../context.ts";
 
 export async function run(): Promise<void> {
+  const removedFlag = process.argv
+    .slice(2)
+    .find((arg) => arg === "--follow" || arg === "-f");
+  if (removedFlag) {
+    console.error(
+      `lh events: ${removedFlag} was removed; use a bounded snapshot such as ` +
+        "lh events --since <id> --order asc",
+    );
+    process.exitCode = 2;
+    return;
+  }
   const s = await svc();
   const labels = (flags.label || "")
     .split(",")
@@ -19,24 +30,6 @@ export async function run(): Promise<void> {
         `${e.id}\t${e.type}\t${e.actor}\t${JSON.stringify(e.payload)}`,
       );
   };
-  if (flags.follow) {
-    // Stream the SSE feed continuously. Order is always chronological (a live tail can't
-    // be reversed); --order applies only to the one-shot snapshot. --json emits one JSON
-    // object per line (NDJSON) rather than the snapshot's single array.
-    const controller = new AbortController();
-    process.on("SIGINT", () => controller.abort()); // Ctrl-C: stop cleanly, exit 0
-    try {
-      await s.events.follow(
-        { since: Number(flags.since || 0), repo: flags.repo || null, labels },
-        printEvent,
-        controller.signal,
-      );
-    } catch (err) {
-      console.error(err instanceof Error ? err.message : String(err));
-      process.exit(1);
-    }
-    return;
-  }
   const evs = s.events.list({
     since: Number(flags.since || 0),
     repo: flags.repo || null,

@@ -28,8 +28,23 @@ sessions.
 
 Command:
 
+Terminal 1 starts the current usage-sweep owner with unrelated maintenance loops disabled:
+
 ```sh
-npm run lh-web -- --port 8732 --poll-ms 0 --usage-sweep-ms 1000
+npm run lh-worker -- --sweep-ms 0 --usage-sweep-ms 1000 \
+  --github-merge-sweep-ms 0 --cost-stop-sweep-ms 0 \
+  --closed-pull-cleanup-sweep-ms 0 --scheduled-task-sweep-ms 0
+```
+
+Terminal 2 keeps lh-web running while the worker sweep is active:
+
+```sh
+npm run lh-web -- --port 8732
+```
+
+Terminal 3 runs the probes after both resident processes have started:
+
+```sh
 sleep 4
 curl -fsS -w 'issue-page HTTP %{http_code} total=%{time_total}s\n' -o /dev/null http://localhost:8732/r/jugyo/loophub/issues/748
 tmp=$(mktemp)

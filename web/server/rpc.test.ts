@@ -63,7 +63,7 @@ test("initialize returns capabilities with the method list", async () => {
   expect(r.result.protocolVersion).toBeTypeOf("string");
   expect(r.result.serverInfo.name).toBe("loophub");
   expect(r.result.capabilities.methods).toContain("issues/create");
-  expect(r.result.capabilities.notifications).toContain("events/notify");
+  expect(r.result.capabilities.notifications).toEqual([]);
   expect(r.result.webConfig).toEqual({ experimental: false });
 });
 
@@ -83,6 +83,36 @@ test("a known method routes to the service and returns a result", async () => {
   expect(created.result.number).toBe(1);
   const got: any = await call("issues/get", { repo: "me/proj", number: 1 });
   expect(got.result.title).toBe("hello");
+});
+
+test("events/list preserves ascending cursor, repo filter, and limit semantics", async () => {
+  const repo = svc.repos.getByFullName("me/proj");
+  expect(repo).not.toBeNull();
+  const since = svc.events.newestId();
+  svc.events.emit(repo!.id, "issue.updated", "tester", { number: 301 });
+  svc.events.emit(null, "system.updated", "tester", { number: 302 });
+  svc.events.emit(repo!.id, "issue.updated", "tester", { number: 303 });
+
+  const first: any = await call("events/list", {
+    since,
+    repo: "me/proj",
+    limit: 1,
+  });
+  expect(first.result).toHaveLength(1);
+  expect(first.result[0]).toMatchObject({
+    repo: "me/proj",
+    payload: { number: 301 },
+  });
+
+  const second: any = await call("events/list", {
+    since: first.result[0].id,
+    repo: "me/proj",
+    limit: 10,
+  });
+  expect(second.result.map((event: any) => event.payload.number)).toEqual([
+    303,
+  ]);
+  expect(second.result[0].id).toBeGreaterThan(first.result[0].id);
 });
 
 test("issues/create accepts an explicit null target_branch", async () => {

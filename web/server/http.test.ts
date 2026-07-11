@@ -264,53 +264,11 @@ test("POST /rpc with only notifications returns 204", async () => {
   expect(res.status).toBe(204);
 });
 
-test("GET /events streams replayed then live events as SSE notifications", async () => {
-  const repo = S.getRepo("me", "proj")!;
-  // Start the cursor after any events left by earlier tests, so replay is deterministic.
-  const all = S.listEvents(0, repo.id, 1000);
-  const since = all.length ? all[all.length - 1].id : 0;
-  S.emitEvent(repo.id, "issue.opened", "me", { number: 100 });
-  S.emitEvent(repo.id, "issue.opened", "me", { number: 101 });
+test("GET /events returns Gone instead of the SPA fallback", async () => {
+  const res = await fetch(`${base}/events`);
 
-  const ctrl = new AbortController();
-  const res = await fetch(`${base}/events?since=${since}&repo=me/proj`, {
-    signal: ctrl.signal,
-  });
-  const reader = res.body!.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-
-  // Collect SSE `loophub` frames until we have `count`, or time out.
-  async function until(count: number): Promise<any[]> {
-    const deadline = Date.now() + 2000;
-    for (;;) {
-      const frames = buf
-        .split("\n\n")
-        .filter((f) => f.startsWith("event: loophub"))
-        .map((f) => JSON.parse(f.split("\ndata: ")[1]));
-      if (frames.length >= count) return frames;
-      if (Date.now() > deadline)
-        throw new Error(`timed out: got ${frames.length}/${count}`);
-      const timer = new Promise<{ value?: Uint8Array; done: boolean }>((r) =>
-        setTimeout(() => r({ done: true }), deadline - Date.now()),
-      );
-      const { value, done } = await Promise.race([reader.read(), timer]);
-      if (done && !value)
-        throw new Error(`timed out: got ${frames.length}/${count}`);
-      if (value) buf += dec.decode(value, { stream: true });
-    }
-  }
-
-  const replayed = await until(2);
-  expect(replayed.map((n) => n.params.payload.number)).toEqual([100, 101]);
-  expect(replayed[0].method).toBe("events/notify");
-
-  // a live event reaches the open stream
-  S.emitEvent(repo.id, "issue.closed", "me", { number: 100 });
-  const withLive = await until(3);
-  expect(withLive[2].params.type).toBe("issue.closed");
-
-  ctrl.abort();
+  expect(res.status).toBe(410);
+  expect(await res.text()).toBe("Gone\n");
 });
 
 // A 1x1 transparent PNG.

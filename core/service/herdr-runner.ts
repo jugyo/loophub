@@ -5,7 +5,7 @@ import { ServiceError, spawn } from "./shared.ts";
 const HERDR_CAPTURE_MAX_BYTES = 64 * 1024;
 
 // Spawns Herdr asynchronously (never spawnSync — this runs inside the lh-web server process,
-// which also serves SSE/RPC for every other client). Errors are deliberately generic: the
+// which also serves RPC for every other client). Errors are deliberately generic: the
 // underlying stderr/stdout (or an OS error message) can embed the repo's absolute local_path,
 // so it is never forwarded to the client. Resolves with the drained stdout when captureStdout
 // is set, "" otherwise.

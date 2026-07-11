@@ -192,7 +192,7 @@ LOOPHUB_HOME=/tmp/lh-shadcn-home \
 # (first register a repo + a couple of issues/PRs with the lh CLI so there's data to see;
 #  see AGENTS.md and the repo README for lh usage)
 
-# terminal 2 — Vite dev server with HMR, proxies /rpc + /events to :8799
+# terminal 2 — Vite dev server with HMR, proxies API routes to :8799
 cd /Users/jugyo/workspace/jugyo/loophub/web && npm run dev   # http://localhost:5173
 ```
 

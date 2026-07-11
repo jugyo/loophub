@@ -117,8 +117,9 @@ step = f(入力 artifact, worktree) → (出力 artifact, commits)
 - **親・エンジンが利用できる LoopHub 側の情報**（#981 改訂後、親の遷移判断そのものは
   `lh workflow step status` の query で行う — §8.2）: `lh pr view --json` は `draft` / `head` /
   `review_state` / `comments` / `mergeable` / `changes_addressed_at` を返す。`lh issue view
-  --json` は body / comments を返す。`lh events -f --repo <r>` で SSE の event feed を tail
-  できる。`lh handoff record / list` で親子間の受け渡しを PR に紐づけて記録できる。
+  --json` は body / comments を返す。`lh events --since <id> --order asc --repo <r> --json` で
+  bounded snapshot を cursor polling できる。`lh handoff record / list` で親子間の受け渡しを
+  PR に紐づけて記録できる。
 
 ---
 
@@ -628,8 +629,16 @@ claude \
 |---|---|---|
 | step の完了 | `lh workflow step status <run> --json`（配置済み artifact + 現 head の query、§6.5） | plan complete → **Execute へ**。execute complete → **Verify へ**。verify complete かつ最新 verdict が pass → **Reflect へ**。reflect complete → **run 完了** |
 | 最新 verdict の内容 | 同上（status は最新 verdict の `event` と findings 要約を含める） | `request_changes` → **差し戻し（§8.3）** |
-| event feed | `lh events -f --repo <r>`（SSE tail） | `pull_request.updated` / review 系 event を polling の代わりの起床トリガーに使う（polling fallback 併用） |
+| event snapshot | `lh events --since <id> --order asc --repo <r> --json` | bounded polling で `pull_request.updated` / review 系 event を起床トリガーに使い、処理後に cursor を進める |
 | issue の状態 | `lh issue view <n> --json` | issue が close された等の外部変化 → run を `stopped` にして終了 |
+
+event snapshot は遷移の真実ではなく、`lh workflow step status` を再評価するための wake-up hint
+として扱う。親の起動時・再起動時は最初に `step status` を評価し、その後
+`lh events --order desc --repo <r> --json` の先頭 id（event がなければ `0`）を cursor にして
+過去の hint を捨てる。この設計では cursor を再起動後まで永続化する必要はない。実行中は 1 秒ごとに
+ascending snapshot を取得し、空なら同じ cursor のまま待つ。event があれば id 順に扱って最大 id へ
+進め、100 件返った場合は backlog を drain するため待たずに再取得する。具体的な consumer loop は
+[`breaking-changes.ja.md`](breaking-changes.ja.md) の migration 例を参照する。
 
 `launch-step` は起動時に `lh handoff record --phase <step> --dir down` で「親→子に何を渡したか」
 を記録する。子の成果物は artifact として記録・配置されるので `--dir up` の明示記録は必須に

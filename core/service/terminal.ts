@@ -612,7 +612,7 @@ export const terminal = {
       label: input.label,
       tabId,
     });
-    // Non-blocking: lh-web is a single process also serving SSE/RPC for every client, so a
+    // Non-blocking: lh-web is a single process serving RPC for every client, so a
     // synchronous spawnSync here would stall the whole server for as long as the Herdr launch
     // takes (or hangs).
     try {

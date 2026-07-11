@@ -161,9 +161,8 @@ export function startMaintenanceLoops(
 }
 
 // Auto-fire pull_request.updated by sweeping open PR head SHAs on the resident worker
-// process. The sweep writes pull_request.updated rows straight to the shared DB; lh-web's
-// event tail forwards them to SSE subscribers. Unchanged PRs are a no-op, and manual
-// `lh sync` / `sync/run` remain available.
+// process. The sweep writes pull_request.updated rows straight to the shared DB for Web UI and
+// worker polling. Unchanged PRs are a no-op, and manual `lh sync` / `sync/run` remain available.
 export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
   let stopped = false;
   let running = false;

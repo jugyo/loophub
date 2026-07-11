@@ -1,7 +1,6 @@
 // Polls persisted LoopHub events over JSON-RPC and invalidates the matching
 // TanStack Query keys (event-keys.ts) so views refetch on change.
 
-import type { QueryClient } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { listEvents } from "@/api/client";
@@ -9,33 +8,15 @@ import type { LoopEvent } from "@/api/types";
 import { queryKeys, queryKeysForEvent } from "@/lib/event-keys";
 import { getLastEventId, rememberEventId, setLastEventId } from "@/lib/session";
 
-interface EventNotification {
-  jsonrpc: "2.0";
-  method: "events/notify";
-  params: LoopEvent;
-}
-
 const VISIBLE_POLL_MS = 1500;
 const HIDDEN_POLL_MS = 5000;
 const POLL_LIMIT = 100;
 const ROLLBACK_PROBE_MS = 30_000;
 
-export function applyLoopHubEventData(
-  dataText: string,
-  queryClient: QueryClient,
+function applyLoopHubEvent(
+  event: LoopEvent,
+  queryClient: ReturnType<typeof useQueryClient>,
 ): void {
-  let event: LoopEvent;
-  try {
-    const data = JSON.parse(dataText) as EventNotification | LoopEvent;
-    // lh-web wraps each event in a JSON-RPC notification; tolerate a bare event too.
-    event = "params" in data ? data.params : (data as LoopEvent);
-  } catch {
-    return;
-  }
-  applyLoopHubEvent(event, queryClient);
-}
-
-function applyLoopHubEvent(event: LoopEvent, queryClient: QueryClient): void {
   if (!event || typeof event.id !== "number") {
     return;
   }
@@ -45,7 +26,9 @@ function applyLoopHubEvent(event: LoopEvent, queryClient: QueryClient): void {
   }
 }
 
-function invalidateReconnectQueries(queryClient: QueryClient): void {
+function invalidateReconnectQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+): void {
   const queryKeyPrefixes: readonly (readonly unknown[])[] = [
     queryKeys.repos(),
     ["repo"],
@@ -69,7 +52,7 @@ function invalidateReconnectQueries(queryClient: QueryClient): void {
 
 async function resetCursorIfServerRolledBack(
   cursor: number,
-  queryClient: QueryClient,
+  queryClient: ReturnType<typeof useQueryClient>,
 ): Promise<number> {
   if (cursor <= 0) return cursor;
   const newest = await listEvents({ since: 0, order: "desc", limit: 1 });
