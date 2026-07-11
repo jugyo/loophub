@@ -340,7 +340,7 @@ test("sessions.costSummary returns minimal per-agent period costs", () => {
       month: null,
       week: null,
       day: null,
-      tokens_per_5m_history: Array(36).fill(0),
+      tokens_per_5m_history: Array(24).fill(0),
     },
     { agent: "codex", month: 11, week: 8, day: 6 },
   ]);
@@ -363,7 +363,7 @@ test("sessions.costSummary aggregates persisted rate history into five-minute bu
       new Date("2040-07-09T11:37:30.000Z"),
     )[0].tokens_per_5m_history;
 
-    expect(history).toHaveLength(36);
+    expect(history).toHaveLength(24);
     expect(history?.slice(-3)).toEqual([0, 900, 2400]);
   } finally {
     D.db.run(
@@ -400,7 +400,7 @@ test("sessions.costSummary counts legacy build sessions as Claude Code", () => {
       month: 2,
       week: 2,
       day: 2,
-      tokens_per_5m_history: Array(36).fill(0),
+      tokens_per_5m_history: Array(24).fill(0),
     },
     { agent: "codex", month: 0, week: 0, day: 0 },
   ]);

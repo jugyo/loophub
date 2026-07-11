@@ -17,28 +17,12 @@ const reposData = vi.hoisted(() => ({
   isError: false,
 }));
 
-const costSummaryData = vi.hoisted(() => ({
-  value: undefined as
-    | Array<{
-        agent: "claude-code" | "codex";
-        month: number | null;
-        week: number | null;
-        day: number | null;
-        tokens_per_5m_history?: number[];
-      }>
-    | undefined,
-}));
-
 vi.mock("@/queries/repos", () => ({
   useRepos: () => ({
     data: reposData.value,
     isLoading: reposData.isLoading,
     isError: reposData.isError,
   }),
-}));
-
-vi.mock("@/queries/sessions", () => ({
-  useAgentCostSummary: () => ({ data: costSummaryData.value }),
 }));
 
 vi.mock("@/queries/notifications", () => ({
@@ -71,7 +55,6 @@ afterEach(() => {
   reposData.value = [];
   reposData.isLoading = false;
   reposData.isError = false;
-  costSummaryData.value = undefined;
 });
 
 function makeRepo(
@@ -247,48 +230,14 @@ describe("AppTopbar", () => {
     expect(screen.queryByRole("complementary")).toBeNull();
   });
 
-  it("renders token rate as unavailable before the summary loads", async () => {
+  it("does not render token rate in the topbar", async () => {
     renderTopbar();
     await screen.findByRole("link", { name: /LoopHub/ });
 
-    expect(screen.queryByLabelText("Agent cost summary")).toBeNull();
-    expect(screen.queryByText("Cost")).toBeNull();
-    expect(screen.queryByText("Loading...")).toBeNull();
+    expect(screen.queryByText("Token rate")).toBeNull();
+    expect(screen.queryByLabelText(/TPS:/)).toBeNull();
     expect(
-      screen.getByLabelText("Average token rate: n/a tokens per 5 minutes"),
-    ).toBeTruthy();
-  });
-
-  it("renders the current five-minute average and three-hour history in order", async () => {
-    const history = Array(36).fill(0);
-    history[34] = 600;
-    history[35] = 3720;
-    costSummaryData.value = [
-      {
-        agent: "claude-code",
-        month: 1,
-        week: 1,
-        day: 1,
-        tokens_per_5m_history: history,
-      },
-      { agent: "codex", month: 1, week: 1, day: 1 },
-    ];
-    renderTopbar();
-    await screen.findByRole("link", { name: /LoopHub/ });
-
-    const badge = screen.getByLabelText(
-      "Average token rate: 3,720 tokens per 5 minutes",
-    );
-    expect(badge.textContent).toContain("3,720");
-    expect(badge.textContent).toContain("avg tokens / 5m");
-
-    const chart = screen.getByRole("img", {
-      name: "36 five-minute token buckets, oldest to newest",
-    });
-    const bars = chart.querySelectorAll("[data-token-count]");
-    expect(bars).toHaveLength(36);
-    expect(bars[0].getAttribute("data-token-count")).toBe("0");
-    expect(bars[34].getAttribute("data-token-count")).toBe("600");
-    expect(bars[35].getAttribute("data-token-count")).toBe("3720");
+      screen.queryByRole("img", { name: /token throughput buckets/ }),
+    ).toBeNull();
   });
 });

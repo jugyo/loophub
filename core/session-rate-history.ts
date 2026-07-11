@@ -1,4 +1,4 @@
-export const TOKEN_RATE_BUCKET_COUNT = 36;
+export const TOKEN_RATE_BUCKET_COUNT = 24;
 export const TOKEN_RATE_BUCKET_MS = 5 * 60 * 1000;
 
 export interface TokenRateHistorySample {
@@ -7,7 +7,7 @@ export interface TokenRateHistorySample {
 }
 
 /**
- * Build the topbar's three-hour history as aligned five-minute buckets.
+ * Build the statusbar's two-hour history as aligned five-minute buckets.
  * Missing buckets are zero; the live rate is included in the current bucket.
  */
 export function tokensPerFiveMinuteHistory(

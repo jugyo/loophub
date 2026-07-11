@@ -26,12 +26,26 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderSettingsShell(initial: GlobalSettings) {
+function renderSettingsShell(
+  initial: GlobalSettings,
+  tokenRateHistory?: number[],
+) {
   let settings = structuredClone(initial);
   vi.stubGlobal(
     "fetch",
     mockRpcFetch({
       "settings/get": () => settings,
+      "sessions/costSummary": () => [
+        {
+          agent: "claude-code",
+          month: 1,
+          week: 1,
+          day: 1,
+          ...(tokenRateHistory
+            ? { tokens_per_5m_history: tokenRateHistory }
+            : {}),
+        },
+      ],
       "settings/update": (params) => {
         const agent = params.agent as CodingAgent | undefined;
         settings = {
@@ -154,6 +168,55 @@ describe("AppStatusbar", () => {
       name: "Application status",
     });
     expect(within(statusbar).getAllByText("Not set")).toHaveLength(2);
+  });
+
+  it("shows unavailable TPS without an Activity icon", async () => {
+    renderSettingsShell(DEFAULT_SETTINGS);
+
+    const statusbar = await screen.findByRole("contentinfo", {
+      name: "Application status",
+    });
+    expect(
+      within(statusbar).getByLabelText("TPS: n/a tokens per second"),
+    ).toBeTruthy();
+    expect(statusbar.querySelector(".lucide-activity")).toBeNull();
+    expect(
+      within(statusbar).queryByRole("img", {
+        name: /token throughput buckets/,
+      }),
+    ).toBeNull();
+  });
+
+  it("shows short TPS without an average qualifier and keeps history buckets in order", async () => {
+    const history = Array(24).fill(0);
+    history[1] = 600_000;
+    history[22] = 300_000;
+    history[23] = 1_200_000;
+    renderSettingsShell(DEFAULT_SETTINGS, history);
+
+    const statusbar = await screen.findByRole("contentinfo", {
+      name: "Application status",
+    });
+    const rate = await within(statusbar).findByLabelText(
+      "TPS: 4k tokens per second",
+    );
+    expect(rate.textContent).toContain("4k");
+    expect(statusbar.textContent).not.toContain("Token rate");
+    expect(statusbar.textContent).not.toContain("avg / 5m");
+
+    const chart = within(statusbar).getByRole("img", {
+      name: "24 token throughput buckets, oldest to newest",
+    });
+    const bars = chart.querySelectorAll<HTMLElement>("[data-token-count]");
+    expect(bars).toHaveLength(24);
+    expect(bars[0].dataset.tokenCount).toBe("0");
+    expect(bars[0].style.height).toBe("0%");
+    expect(bars[1].dataset.tokenCount).toBe("600000");
+    expect(bars[1].style.height).toBe("50%");
+    expect(bars[22].dataset.tokenCount).toBe("300000");
+    expect(bars[22].style.height).toBe("25%");
+    expect(bars[23].dataset.tokenCount).toBe("1200000");
+    expect(bars[23].style.height).toBe("100%");
   });
 
   it("refreshes the selected agent values after they are changed on Settings", async () => {

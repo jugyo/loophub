@@ -5,7 +5,7 @@ import {
 } from "./session-rate-history.ts";
 
 describe("tokensPerFiveMinuteHistory", () => {
-  it("returns 36 aligned buckets in oldest-to-newest order and fills gaps with zero", () => {
+  it("returns 24 aligned buckets for two hours in oldest-to-newest order and fills gaps with zero", () => {
     const history = tokensPerFiveMinuteHistory(
       [
         { tokens_per_second: 2, observed_at: "2026-07-11T09:02:00Z" },
