@@ -773,6 +773,41 @@
       }
     },
     {
+      "name": "terminal/sendAgentInput",
+      "description": "Send one literal text input to the live Herdr agent whose pane is currently mapped to the requested PR worktree, then submit it once. The service revalidates repo, PR, and pane before writing.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pull": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "paneId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "pull",
+          "paneId",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "sessions/register",
       "description": "Register (or update) an agent session.",
       "params": {

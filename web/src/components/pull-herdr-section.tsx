@@ -5,6 +5,7 @@
 // shared terminal/sessions poll (useHerdrSessions, #495) — no extra herdr shellout per page.
 
 import { Bot, Terminal } from "lucide-react";
+import { HerdrAgentInput } from "@/components/herdr-agent-input";
 import {
   findPullHerdrWorkspace,
   herdrWorkspaceBadgeIconClass,
@@ -61,46 +62,56 @@ export function PullHerdrSection({
       <div className="flex items-center gap-2">
         <h2 className="text-lg font-semibold">Agents</h2>
       </div>
-      <div className="flex items-center gap-2 rounded-md border p-3 text-sm">
-        <Bot
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground",
-            herdrWorkspaceBadgeIconClass(workspace.status),
-          )}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="truncate font-medium" title={group.session_name}>
-            {group.session_name}
+      <div className="flex flex-col gap-3 rounded-md border p-3 text-sm">
+        <div className="flex items-center gap-2">
+          <Bot
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground",
+              herdrWorkspaceBadgeIconClass(workspace.status),
+            )}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-medium" title={group.session_name}>
+              {group.session_name}
+            </div>
+            <div className="truncate text-xs text-muted-foreground">
+              {agent ? `${agent.name} · ` : ""}
+              <span className={statusTextClass(workspace.status)}>
+                {workspace.status}
+              </span>
+            </div>
           </div>
-          <div className="truncate text-xs text-muted-foreground">
-            {agent ? `${agent.name} · ` : ""}
-            <span className={statusTextClass(workspace.status)}>
-              {workspace.status}
-            </span>
-          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            title="Open the running agent pane in Herdr"
+            aria-label="Open in Herdr"
+            disabled={focus.isPending}
+            onClick={() =>
+              focus.mutate(
+                { repo: `${owner}/${repo}`, paneId: workspace.pane_id },
+                {
+                  onError: (e) =>
+                    showError(
+                      e instanceof Error
+                        ? e.message
+                        : "Failed to open in Herdr.",
+                    ),
+                },
+              )
+            }
+          >
+            <Terminal className="size-4" />
+            Open in Herdr
+          </Button>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="shrink-0"
-          title="Open the running agent pane in Herdr"
-          aria-label="Open in Herdr"
-          disabled={focus.isPending}
-          onClick={() =>
-            focus.mutate(
-              { repo: `${owner}/${repo}`, paneId: workspace.pane_id },
-              {
-                onError: (e) =>
-                  showError(
-                    e instanceof Error ? e.message : "Failed to open in Herdr.",
-                  ),
-              },
-            )
-          }
-        >
-          <Terminal className="size-4" />
-          Open in Herdr
-        </Button>
+        <HerdrAgentInput
+          repo={`${owner}/${repo}`}
+          pull={pull}
+          paneId={workspace.pane_id}
+          className="border-t pt-3"
+        />
       </div>
     </section>
   );

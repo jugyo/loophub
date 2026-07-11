@@ -535,6 +535,16 @@ export function focusHerdrAgent(input: { repo: string; paneId: string }) {
   return rpc<{ ok: true }>("terminal/focusAgent", input);
 }
 
+/** Send one literal user input to the live Herdr agent mapped to a PR worktree. */
+export function sendHerdrAgentInput(input: {
+  repo: string;
+  pull: number;
+  paneId: string;
+  text: string;
+}) {
+  return rpc<{ ok: true }>("terminal/sendAgentInput", input);
+}
+
 // --- issues ---
 export function listIssues(owner: string, repo: string, query = "") {
   const sp = new URLSearchParams(query);

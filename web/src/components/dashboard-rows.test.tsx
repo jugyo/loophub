@@ -42,8 +42,9 @@ const settingsData = vi.hoisted(() => ({
 vi.mock("@/queries/settings", () => ({
   useSettings: () => ({ data: settingsData.value }),
 }));
-const { focusHerdrAgent } = vi.hoisted(() => ({
+const { focusHerdrAgent, sendHerdrAgentInput } = vi.hoisted(() => ({
   focusHerdrAgent: vi.fn(),
+  sendHerdrAgentInput: vi.fn(),
 }));
 const herdrSessionsData = vi.hoisted(() => ({
   value: undefined as HerdrSessions | undefined,
@@ -52,6 +53,10 @@ vi.mock("@/queries/terminal", () => ({
   useHerdrSessions: () => ({ data: herdrSessionsData.value }),
   useFocusHerdrAgent: () => ({
     mutate: focusHerdrAgent,
+    isPending: false,
+  }),
+  useSendHerdrAgentInput: () => ({
+    mutate: sendHerdrAgentInput,
     isPending: false,
   }),
 }));
@@ -64,6 +69,7 @@ afterEach(() => {
   vi.useRealTimers();
   launchTerminal.mockClear();
   focusHerdrAgent.mockClear();
+  sendHerdrAgentInput.mockClear();
   settingsData.value = {
     agents: {
       "claude-code": { autoModeOnBuild: false, model: "", effort: "" },

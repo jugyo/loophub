@@ -423,6 +423,25 @@ export function herdrPaneSendKeysArgv(
   ];
 }
 
+// Writes literal text to a pane without invoking a shell. The caller submits it separately with
+// herdrPaneSendKeysArgv(..., "Enter") so user input can never be parsed as a command by LoopHub.
+export function herdrPaneSendTextArgv(
+  repo: TerminalLaunchRepo,
+  paneId: string,
+  text: string,
+): string[] {
+  return [
+    "herdr",
+    "--session",
+    herdrSessionName(repo),
+    "pane",
+    "send-text",
+    paneId,
+    "--",
+    text,
+  ];
+}
+
 // Observed shape is `w1:t2` for tabs and `w1:p1Q` for panes. The strict pattern (in particular
 // no leading `-`) keeps a value from child-process stdout from being spliced into an argv as
 // something herdr would parse as a flag, or from echoing arbitrary process output back to

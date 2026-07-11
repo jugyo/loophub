@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 // Isolate the DB before contract.ts -> service.ts -> db.ts runs its import-time setup.
 const HOME = mkdtempSync(join(tmpdir(), "lh-rpc-"));
@@ -15,6 +15,7 @@ let ERROR_CODES: typeof import("./rpc.ts").ERROR_CODES;
 let MAX_RPC_BATCH_SIZE: typeof import("./rpc.ts").MAX_RPC_BATCH_SIZE;
 let db: typeof import("../../core/db.ts").db;
 let svc: typeof import("../../core/service.ts");
+let ServiceError: typeof import("../../core/errors.ts").ServiceError;
 let repoPath: string;
 
 function git(args: string[]) {
@@ -31,6 +32,7 @@ beforeAll(async () => {
   ));
   ({ db } = await import("../../core/db.ts"));
   svc = await import("../../core/service.ts");
+  ({ ServiceError } = await import("../../core/errors.ts"));
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-rpc-repo-"));
   git(["init", "-q", "-b", "main"]);
@@ -132,6 +134,74 @@ test("ServiceError maps to -32000 carrying the HTTP-style status", async () => {
   const r: any = await call("issues/get", { repo: "me/proj", number: 999 });
   expect(r.error.code).toBe(ERROR_CODES.APP_ERROR);
   expect(r.error.data.status).toBe(404);
+});
+
+test("terminal/sendAgentInput validates its RPC payload and blank input", async () => {
+  const missing: any = await call("terminal/sendAgentInput", {
+    repo: "me/proj",
+    paneId: "w1:p2",
+    text: "hello",
+  });
+  expect(missing.error.code).toBe(ERROR_CODES.INVALID_PARAMS);
+
+  const blank: any = await call("terminal/sendAgentInput", {
+    repo: "me/proj",
+    pull: 1,
+    paneId: "w1:p2",
+    text: "   ",
+  });
+  expect(blank.error.code).toBe(ERROR_CODES.APP_ERROR);
+  expect(blank.error.data.status).toBe(422);
+  expect(blank.error.message).toBe("text is required");
+});
+
+test("terminal/sendAgentInput routes its payload and preserves stale pane/session 409 errors", async () => {
+  const send = vi.spyOn(svc.terminal, "sendAgentInput");
+  try {
+    send.mockRejectedValueOnce(
+      new ServiceError(409, "The Herdr agent is no longer running for this PR"),
+    );
+    const mismatch: any = await call("terminal/sendAgentInput", {
+      repo: "me/proj",
+      pull: 12,
+      paneId: "w1:p9",
+      text: "retry",
+    });
+    expect(send).toHaveBeenNthCalledWith(1, {
+      repo: "me/proj",
+      pull: 12,
+      paneId: "w1:p9",
+      text: "retry",
+    });
+    expect(mismatch.error).toMatchObject({
+      code: ERROR_CODES.APP_ERROR,
+      message: "The Herdr agent is no longer running for this PR",
+      data: { status: 409 },
+    });
+
+    send.mockRejectedValueOnce(
+      new ServiceError(409, "The Herdr session is no longer available"),
+    );
+    const disappeared: any = await call("terminal/sendAgentInput", {
+      repo: "me/proj",
+      pull: 12,
+      paneId: "w1:p2",
+      text: "retry",
+    });
+    expect(send).toHaveBeenNthCalledWith(2, {
+      repo: "me/proj",
+      pull: 12,
+      paneId: "w1:p2",
+      text: "retry",
+    });
+    expect(disappeared.error).toMatchObject({
+      code: ERROR_CODES.APP_ERROR,
+      message: "The Herdr session is no longer available",
+      data: { status: 409 },
+    });
+  } finally {
+    send.mockRestore();
+  }
 });
 
 test("a notification (no id) produces no response", async () => {

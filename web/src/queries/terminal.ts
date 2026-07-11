@@ -5,6 +5,7 @@ import {
   getHerdrSessions,
   killHerdrAgent,
   launchTerminalWorkflow,
+  sendHerdrAgentInput,
 } from "@/api/client";
 
 export const terminalKeys = {
@@ -83,4 +84,9 @@ export function useFocusHerdrAgent() {
   return useMutation({
     mutationFn: focusHerdrAgent,
   });
+}
+
+/** Send one message after the server revalidates the agent's PR/worktree pane. */
+export function useSendHerdrAgentInput() {
+  return useMutation({ mutationFn: sendHerdrAgentInput });
 }

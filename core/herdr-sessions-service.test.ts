@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -1025,6 +1027,161 @@ test("terminal.focusAgent surfaces a visible error when herdr is not installed",
     ).rejects.toMatchObject({
       status: 422,
       message: "herdr command not found on PATH",
+    });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.sendAgentInput verifies the PR pane, writes literal text, and submits once", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/send-input",
+  });
+  const prRow = S.createIssue(repo.id, "pull", "open", "input PR", "me");
+  S.createPull(prRow.id, `loophub/pr-${prRow.number}`, "main", null);
+  const paneId = "wS:p2";
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          agent: "codex",
+          agent_status: "idle",
+          name: `dev #${prRow.number}`,
+          pane_id: paneId,
+          foreground_cwd: worktreePath(
+            worktreeRoot(),
+            repo.full_name,
+            prRow.number,
+          ),
+        },
+      ],
+    },
+  });
+  const callsFile = join(HOME, "send-input-calls.bin");
+  const injectedFile = join(HOME, "must-not-exist");
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      `if [ "$4" = "send-text" ]; then printf '%s\\0' "$7" >> ${callsFile}; else printf '%s\\0' "$6" >> ${callsFile}; fi`,
+      "exit 0",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  const text = `--help; please inspect $(touch ${injectedFile}) ; then report`;
+  try {
+    await expect(
+      svc.terminal.sendAgentInput({
+        repo: repo.full_name,
+        pull: prRow.number,
+        paneId,
+        text,
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(readFileSync(callsFile).toString()).toBe(`${text}\0Enter\0`);
+    expect(existsSync(injectedFile)).toBe(false);
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.sendAgentInput rejects a pane that is not mapped to the requested PR", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/send-input-mismatch",
+  });
+  const prRow = S.createIssue(repo.id, "pull", "open", "input PR", "me");
+  S.createPull(prRow.id, `loophub/pr-${prRow.number}`, "main", null);
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          pane_id: "wM:p1",
+          foreground_cwd: worktreePath(
+            worktreeRoot(),
+            repo.full_name,
+            prRow.number,
+          ),
+        },
+      ],
+    },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    ["#!/bin/sh", `printf '%s' '${agents}'`, ""].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    await expect(
+      svc.terminal.sendAgentInput({
+        repo: repo.full_name,
+        pull: prRow.number,
+        paneId: "wM:p9",
+        text: "retry",
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "The Herdr agent is no longer running for this PR",
+    });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.sendAgentInput reports a disappeared session and rejects blank input", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/send-input-gone",
+  });
+  const prRow = S.createIssue(repo.id, "pull", "open", "input PR", "me");
+  S.createPull(prRow.id, `loophub/pr-${prRow.number}`, "main", null);
+
+  await expect(
+    svc.terminal.sendAgentInput({
+      repo: repo.full_name,
+      pull: prRow.number,
+      paneId: "wG:p1",
+      text: "   ",
+    }),
+  ).rejects.toMatchObject({ status: 422, message: "text is required" });
+  await expect(
+    svc.terminal.sendAgentInput({
+      repo: repo.full_name,
+      pull: 1.9,
+      paneId: "wG:p1",
+      text: "retry",
+    }),
+  ).rejects.toMatchObject({ status: 422, message: "pull is required" });
+  await expect(
+    svc.terminal.sendAgentInput({
+      repo: repo.full_name,
+      pull: prRow.number,
+      paneId: "wG:p1",
+      text: "first\nsecond",
+    }),
+  ).rejects.toMatchObject({
+    status: 422,
+    message: "text must be a single line",
+  });
+
+  writeFileSync(join(FAKE_BIN, "herdr"), "#!/bin/sh\nexit 1\n");
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    await expect(
+      svc.terminal.sendAgentInput({
+        repo: repo.full_name,
+        pull: prRow.number,
+        paneId: "wG:p1",
+        text: "retry",
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "The Herdr session is no longer available",
     });
   } finally {
     process.env.PATH = ORIGINAL_PATH;

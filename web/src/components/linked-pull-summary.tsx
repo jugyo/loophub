@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, Bot, Check, Terminal, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import type { LinkedPull } from "@/api/types";
+import { HerdrAgentInput } from "@/components/herdr-agent-input";
 import {
   findPullHerdrWorkspace,
   isPullHerdrWorking,
@@ -156,7 +157,7 @@ function PullPopover({
     ],
   ];
   return (
-    <div className="absolute left-7 top-full z-20 w-[330px] pt-1">
+    <div className="absolute left-7 top-full z-20 w-[380px] pt-1">
       <div className="rounded-md border bg-background p-3 text-foreground shadow-lg">
         <dl className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1 text-xs">
           {details.map(([label, value]) => (
@@ -207,6 +208,14 @@ function PullPopover({
             Open in Herdr
           </Button>
         </div>
+        {workspacePaneId ? (
+          <HerdrAgentInput
+            repo={`${owner}/${repo}`}
+            pull={pull.number}
+            paneId={workspacePaneId}
+            className="mt-3 border-t pt-3"
+          />
+        ) : null}
       </div>
     </div>
   );

@@ -32,6 +32,7 @@ import {
   herdrIssueWorkspacesFromAgentList,
   herdrPaneCloseArgv,
   herdrPaneSendKeysArgv,
+  herdrPaneSendTextArgv,
   herdrPullWorkspacesFromAgentList,
   herdrSessionName,
   herdrTabCloseArgv,
@@ -873,6 +874,81 @@ export const terminal = {
     await runHerdr(argv[0], argv.slice(1), r.local_path, {
       timeoutMs: 10_000,
     });
+    return { ok: true };
+  },
+
+  // Sends one user-authored message to the live agent for a PR. The client supplies the pane id it
+  // learned from terminal.sessions, but that id is only a hint: re-read Herdr and verify the pane's
+  // cwd still maps to this repo and PR immediately before writing. This prevents stale UI state or
+  // a crafted RPC call from targeting another worktree's pane.
+  async sendAgentInput(input: {
+    repo: string;
+    pull: number;
+    paneId: string;
+    text: string;
+  }): Promise<{ ok: true }> {
+    if (!input.repo) throw new ServiceError(422, "repo is required");
+    if (!Number.isInteger(input.pull) || input.pull <= 0)
+      throw new ServiceError(422, "pull is required");
+    if (!input.paneId) throw new ServiceError(422, "paneId is required");
+    if (!HERDR_ID.test(input.paneId))
+      throw new ServiceError(422, "paneId is not a valid herdr pane id");
+    if (typeof input.text !== "string" || input.text.trim() === "")
+      throw new ServiceError(422, "text is required");
+    if (/\r|\n/.test(input.text))
+      throw new ServiceError(422, "text must be a single line");
+
+    const r = repoOr404(input.repo);
+    const pullNumber = input.pull;
+    const pullIssue = S.getIssue(r.id, pullNumber);
+    if (pullIssue?.kind !== "pull")
+      throw new ServiceError(404, `PR #${pullNumber} not found`);
+
+    let agentsOut: string;
+    try {
+      agentsOut = await runHerdrCapture([
+        "--session",
+        herdrSessionName(r),
+        "agent",
+        "list",
+      ]);
+    } catch (e) {
+      if (isServiceError(e) && e.status === 422) throw e;
+      throw new ServiceError(409, "The Herdr session is no longer available");
+    }
+    const workspace = herdrPullWorkspacesFromAgentList(
+      agentsOut,
+      worktreeRoot(),
+      r.full_name,
+    ).find((candidate) => candidate.pull === pullNumber);
+    if (!workspace || workspace.pane_id !== input.paneId)
+      throw new ServiceError(
+        409,
+        "The Herdr agent is no longer running for this PR",
+      );
+
+    const sendText = herdrPaneSendTextArgv(r, input.paneId, input.text);
+    try {
+      await runHerdr(sendText[0], sendText.slice(1), r.local_path, {
+        timeoutMs: 10_000,
+      });
+    } catch {
+      throw new ServiceError(
+        409,
+        "The Herdr agent disappeared before the input could be sent",
+      );
+    }
+    const submit = herdrPaneSendKeysArgv(r, input.paneId, "Enter");
+    try {
+      await runHerdr(submit[0], submit.slice(1), r.local_path, {
+        timeoutMs: 10_000,
+      });
+    } catch {
+      throw new ServiceError(
+        409,
+        "The input was written, but Herdr could not submit it; check the pane before retrying",
+      );
+    }
     return { ok: true };
   },
 };

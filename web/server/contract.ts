@@ -410,6 +410,22 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.terminal.focusAgent({ repo: p.repo, paneId: p.paneId }),
   },
+  "terminal/sendAgentInput": {
+    description:
+      "Send one literal text input to the live Herdr agent whose pane is currently mapped to the requested PR worktree, then submit it once. The service revalidates repo, PR, and pane before writing.",
+    params: params(
+      { repo, pull: positiveInt, paneId: strNonEmpty, text: strNonEmpty },
+      ["repo", "pull", "paneId", "text"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.terminal.sendAgentInput({
+        repo: p.repo,
+        pull: p.pull,
+        paneId: p.paneId,
+        text: p.text,
+      }),
+  },
 
   // ---- agent sessions ----
   "sessions/register": {

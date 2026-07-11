@@ -1,9 +1,16 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HerdrSessions } from "@/api/types";
 
-const { focusHerdrAgent } = vi.hoisted(() => ({
+const { focusHerdrAgent, sendHerdrAgentInput } = vi.hoisted(() => ({
   focusHerdrAgent: vi.fn(),
+  sendHerdrAgentInput: vi.fn(),
 }));
 const herdrSessions = vi.hoisted(() => ({
   value: undefined as HerdrSessions | undefined,
@@ -18,6 +25,10 @@ vi.mock("@/queries/terminal", () => ({
     mutate: focusHerdrAgent,
     isPending: false,
   }),
+  useSendHerdrAgentInput: () => ({
+    mutate: sendHerdrAgentInput,
+    isPending: false,
+  }),
 }));
 
 import { PullHerdrSection } from "./pull-herdr-section";
@@ -26,6 +37,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   focusHerdrAgent.mockClear();
+  sendHerdrAgentInput.mockClear();
   herdrSessions.value = undefined;
   herdrSessions.isError = false;
 });
@@ -35,8 +47,8 @@ const running: HerdrSessions = {
     {
       repo: "me/proj",
       session_name: "lh-me-proj",
-      agents: [{ id: "%12", name: "dev #609", status: "working" }],
-      pull_workspaces: [{ pull: 42, pane_id: "%12", status: "working" }],
+      agents: [{ id: "w1:p2", name: "dev #609", status: "working" }],
+      pull_workspaces: [{ pull: 42, pane_id: "w1:p2", status: "working" }],
     },
   ],
 };
@@ -66,7 +78,7 @@ describe("PullHerdrSection (#609)", () => {
       <PullHerdrSection owner="me" repo="proj" pull={42} />,
     );
     expect(screen.getByRole("heading", { name: "Agents" })).toBeTruthy();
-    expect(container.querySelectorAll("svg")).toHaveLength(2);
+    expect(container.querySelectorAll("svg")).toHaveLength(3);
     expect(screen.getByText("lh-me-proj")).toBeTruthy();
     expect(screen.getByText(/dev #609/)).toBeTruthy();
     expect(screen.getByText("working")).toBeTruthy();
@@ -83,8 +95,8 @@ describe("PullHerdrSection (#609)", () => {
       repos: [
         {
           ...running.repos[0],
-          agents: [{ id: "%12", name: "dev #609", status }],
-          pull_workspaces: [{ pull: 42, pane_id: "%12", status }],
+          agents: [{ id: "w1:p2", name: "dev #609", status }],
+          pull_workspaces: [{ pull: 42, pane_id: "w1:p2", status }],
         },
       ],
     };
@@ -100,8 +112,8 @@ describe("PullHerdrSection (#609)", () => {
       repos: [
         {
           ...running.repos[0],
-          agents: [{ id: "%12", name: "dev #609", status }],
-          pull_workspaces: [{ pull: 42, pane_id: "%12", status }],
+          agents: [{ id: "w1:p2", name: "dev #609", status }],
+          pull_workspaces: [{ pull: 42, pane_id: "w1:p2", status }],
         },
       ],
     };
@@ -132,8 +144,59 @@ describe("PullHerdrSection (#609)", () => {
     render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
     fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
     expect(focusHerdrAgent).toHaveBeenCalledWith(
-      { repo: "me/proj", paneId: "%12" },
+      { repo: "me/proj", paneId: "w1:p2" },
       expect.anything(),
+    );
+  });
+
+  it("sends the input payload and clears the field after success", () => {
+    herdrSessions.value = running;
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+    const input = screen.getByRole("textbox", {
+      name: "Message agent for PR #42",
+    }) as HTMLInputElement;
+    const send = screen.getByRole("button", {
+      name: "Send message to agent for PR #42",
+    });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(input, { target: { value: "Please rerun the test" } });
+    fireEvent.click(send);
+
+    expect(sendHerdrAgentInput).toHaveBeenCalledWith(
+      {
+        repo: "me/proj",
+        pull: 42,
+        paneId: "w1:p2",
+        text: "Please rerun the test",
+      },
+      expect.anything(),
+    );
+    act(() => sendHerdrAgentInput.mock.calls[0][1].onSuccess());
+    expect(input.value).toBe("");
+    expect(screen.getByRole("status").textContent).toContain("Sent");
+  });
+
+  it("keeps the input and shows the reason after a send failure", () => {
+    herdrSessions.value = running;
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+    const input = screen.getByRole("textbox", {
+      name: "Message agent for PR #42",
+    }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Try again" } });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Send message to agent for PR #42",
+      }),
+    );
+    act(() =>
+      sendHerdrAgentInput.mock.calls[0][1].onError(
+        new Error("The Herdr agent is no longer running for this PR"),
+      ),
+    );
+    expect(input.value).toBe("Try again");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "The Herdr agent is no longer running for this PR",
     );
   });
 
