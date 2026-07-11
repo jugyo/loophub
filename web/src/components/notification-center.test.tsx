@@ -101,6 +101,23 @@ function renderCenter() {
 }
 
 describe("NotificationCenter", () => {
+  it("shows relative time based on the notification created_at", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-01-01T00:05:00Z").getTime(),
+    );
+    notifications.value = [makeNotification()];
+    renderCenter();
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: "Notifications" }),
+      { button: 0, ctrlKey: false },
+    );
+
+    const relativeTime = await screen.findByText("5m ago");
+    expect(relativeTime.tagName).toBe("TIME");
+    expect(relativeTime.getAttribute("datetime")).toBe("2026-01-01T00:00:00Z");
+  });
+
   it("opens notifications and marks the main item read when navigating", async () => {
     notifications.value = [makeNotification()];
     notifications.unread = 1;

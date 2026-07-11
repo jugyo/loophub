@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import {
   useNotifications,
@@ -273,6 +274,12 @@ function NotificationItem({
             <span className="truncate">{notification.repo.name}</span>
             <span aria-hidden="true">/</span>
             <span>{resourceLabel(notification)}</span>
+            <time
+              className="ml-auto shrink-0"
+              dateTime={notification.created_at}
+            >
+              {relativeTime(notification.created_at)}
+            </time>
           </span>
         </span>
       </Link>
