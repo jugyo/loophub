@@ -36,12 +36,29 @@ export interface ProvisionInput {
   // itself just opened this run (its branch genuinely never existed yet, #463); false (default)
   // for re-entering an already-established PR, where a missing convention branch means it was
   // deleted out-of-band and silently recreating it under the same name would discard history
-  // without warning. Ignored when headRef is null — that path (a brand-new self-managed branch)
-  // has always been safe to create.
+  // without warning. Callers may also allow a pre-created draft attempt whose branch has never
+  // existed (and therefore has no recorded head SHA). Ignored when headRef is null — that path (a
+  // brand-new self-managed branch) has always been safe to create.
   allowCreatingConventionBranch?: boolean;
   // Optional immutable fork point for a newly created convention branch. Parallel attempts use
   // the first attempt's recorded base SHA so an advanced default branch cannot skew comparison.
   baseSha?: string;
+}
+
+// A conventional PR branch may be absent because `lh build` or another launcher pre-created the
+// attempt before its first worktree. That intent is durable on the pull row and is cleared together
+// with the first provisioned SHA. Legacy/established rows stay strict; nullable watcher metadata is
+// deliberately not used as lifecycle provenance.
+export function shouldCreateMissingConventionBranch(input: {
+  issueAttempt: { created: boolean } | null;
+  headPendingCreation: boolean;
+  baseSha: string | null;
+}): boolean {
+  return (
+    input.issueAttempt !== null &&
+    input.headPendingCreation &&
+    input.baseSha !== null
+  );
 }
 
 // `.claude/` (settings.json / settings.local.json) is usually untracked / gitignored, so a

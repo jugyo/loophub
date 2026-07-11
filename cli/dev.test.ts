@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -10,8 +11,10 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
+import type * as SqliteNS from "node:sqlite";
 import { expect, test } from "vitest";
 import {
   branchExists,
@@ -40,11 +43,16 @@ import {
   readDevLock,
   removeDevLock,
   resolveDevRuntime,
+  shouldCreateMissingConventionBranch,
   validateDomain,
   validateExistingLocalBranch,
   worktreeBranch,
   worktreePath,
 } from "./dev.ts";
+
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof SqliteNS;
 
 // ---- parseDevTarget (pure) ----
 
@@ -861,6 +869,58 @@ test("creates the convention branch fresh when allowCreatingConventionBranch is 
   rmSync(root, { recursive: true, force: true });
 });
 
+test("resumes a pre-created zero-commit draft attempt by creating its missing convention branch (#1187)", async () => {
+  const repo = await makeRepo();
+  const baseSha = (await git(repo, ["rev-parse", "main"])).stdout.trim();
+  const root = tmpRoot();
+  const allowCreatingConventionBranch = shouldCreateMissingConventionBranch({
+    issueAttempt: { created: false },
+    headPendingCreation: true,
+    baseSha,
+  });
+
+  const path = await provision(
+    repo,
+    root,
+    1185,
+    "loophub/pr-1185",
+    undefined,
+    allowCreatingConventionBranch,
+    "main",
+    baseSha,
+  );
+
+  expect(allowCreatingConventionBranch).toBe(true);
+  expect((await git(path, ["rev-parse", "HEAD"])).stdout.trim()).toBe(baseSha);
+  expect(await branchExists(repo, "loophub/pr-1185")).toBe(true);
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("does not recreate missing convention branches without durable pending state and a fork point", () => {
+  expect(
+    shouldCreateMissingConventionBranch({
+      issueAttempt: { created: false },
+      headPendingCreation: false,
+      baseSha: "base-sha",
+    }),
+  ).toBe(false);
+  expect(
+    shouldCreateMissingConventionBranch({
+      issueAttempt: null,
+      headPendingCreation: true,
+      baseSha: "base-sha",
+    }),
+  ).toBe(false);
+  expect(
+    shouldCreateMissingConventionBranch({
+      issueAttempt: { created: false },
+      headPendingCreation: true,
+      baseSha: null,
+    }),
+  ).toBe(false);
+});
+
 test("creates a fresh convention branch from the supplied PR base branch", async () => {
   const repo = await makeRepo();
   await git(repo, ["checkout", "-q", "-b", "integration/stack"]);
@@ -1091,7 +1151,11 @@ test("errors when the default branch cannot be resolved (no commits)", async () 
 
 const CLI = join(import.meta.dirname, "index.ts");
 
-function cli(group: string, args: string[]) {
+function cli(
+  group: string,
+  args: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+) {
   const r = spawnSync(
     process.execPath,
     [
@@ -1103,7 +1167,11 @@ function cli(group: string, args: string[]) {
       group,
       ...args,
     ],
-    { encoding: "utf8" },
+    {
+      encoding: "utf8",
+      cwd: options.cwd,
+      env: options.env,
+    },
   );
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status ?? 0 };
 }
@@ -1164,6 +1232,137 @@ test("removed lh dev command no longer reaches the build flow", () => {
   expect(exitCode).not.toBe(0);
   expect(`${stdout}\n${stderr}`).toContain("lh build");
   expect(stderr).not.toContain("#42");
+});
+
+test("lh build resumes a pre-created zero-commit attempt through Herdr and consumes its branch-creation permission (#1187)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lh-build-e2e-"));
+  const home = join(root, "home");
+  const repo = join(root, "repo");
+  const bin = join(root, "bin");
+  const herdrLog = join(root, "herdr.log");
+  mkdirSync(home, { recursive: true });
+  mkdirSync(repo, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "herdr"),
+    `#!/bin/sh
+printf '%s\\n' "$*" >> "$HERDR_LOG"
+case " $* " in
+  *" agent start "*) exit 0 ;;
+  *) exit 1 ;;
+esac
+`,
+  );
+  chmodSync(join(bin, "herdr"), 0o755);
+
+  await git(repo, ["init", "-q", "-b", "main"]);
+  await git(repo, ["config", "user.email", "test@example.com"]);
+  await git(repo, ["config", "user.name", "tester"]);
+  writeFileSync(join(repo, "base.txt"), "base\n");
+  await git(repo, ["add", "base.txt"]);
+  await git(repo, ["commit", "-qm", "base"]);
+  const baseSha = (await git(repo, ["rev-parse", "main"])).stdout.trim();
+  const env = {
+    ...process.env,
+    LOOPHUB_HOME: home,
+    LOOPHUB_DB: join(home, "loophub.db"),
+    HERDR_LOG: herdrLog,
+    PATH: `${bin}:${process.env.PATH ?? ""}`,
+  };
+
+  expect(
+    cli("repo", ["add", repo, "--name", "test/build-e2e"], { env }).exitCode,
+  ).toBe(0);
+  expect(
+    cli(
+      "issue",
+      ["create", "--repo", "test/build-e2e", "--title", "zero commit attempt"],
+      { env },
+    ).exitCode,
+  ).toBe(0);
+  expect(
+    cli(
+      "pr",
+      [
+        "create",
+        "--repo",
+        "test/build-e2e",
+        "--head",
+        "loophub/pr-2",
+        "--base",
+        "main",
+        "--title",
+        "zero commit attempt",
+        "--issue",
+        "1",
+        "--draft",
+      ],
+      { env },
+    ).exitCode,
+  ).toBe(0);
+  // Model the workflow/attempt preparer, which creates the PR-number-derived head through
+  // dev.openPr and persists this marker before any `lh build` process provisions the branch.
+  const db = new DatabaseSync(join(home, "loophub.db"));
+  db.prepare(
+    `UPDATE pulls SET head_pending_creation = 1
+       WHERE issue_id = (SELECT id FROM issues WHERE number = 2)`,
+  ).run();
+  db.close();
+
+  const first = cli(
+    "build",
+    [
+      "test/build-e2e/1",
+      "--herdr",
+      "--codex",
+      "--model",
+      "gpt-5.6-sol",
+      "--auto",
+    ],
+    { env },
+  );
+  expect(first.exitCode, first.stderr).toBe(0);
+  const worktree = join(home, "worktrees", "test", "build-e2e", "pr-2");
+  expect((await git(repo, ["rev-parse", "loophub/pr-2"])).stdout.trim()).toBe(
+    baseSha,
+  );
+  expect(readFileSync(herdrLog, "utf8")).toMatch(
+    /agent start .*codex .*--model.*gpt-5\.6-sol.*\/lh-build 1/,
+  );
+  const verifiedDb = new DatabaseSync(join(home, "loophub.db"));
+  const persisted = verifiedDb
+    .prepare(
+      `SELECT head_sha, head_pending_creation
+         FROM pulls
+        WHERE issue_id = (SELECT id FROM issues WHERE number = 2)`,
+    )
+    .get() as { head_sha: string; head_pending_creation: number };
+  verifiedDb.close();
+  expect(persisted).toEqual({
+    head_sha: baseSha,
+    head_pending_creation: 0,
+  });
+
+  await git(repo, ["worktree", "remove", "--force", worktree]);
+  await git(repo, ["branch", "-D", "loophub/pr-2"]);
+  const second = cli(
+    "build",
+    [
+      "test/build-e2e/1",
+      "--herdr",
+      "--codex",
+      "--model",
+      "gpt-5.6-sol",
+      "--auto",
+    ],
+    { env },
+  );
+  expect(second.exitCode).not.toBe(0);
+  expect(second.stderr).toContain(
+    'branch "loophub/pr-2" does not exist (it should already exist for this PR)',
+  );
+
+  rmSync(root, { recursive: true, force: true });
 });
 
 // ---- dev lock (pure / fs) ----

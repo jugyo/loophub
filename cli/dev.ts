@@ -13,12 +13,17 @@ import {
 import {
   type ProvisionInput,
   provisionWorktree,
+  shouldCreateMissingConventionBranch,
 } from "../core/worktree-provision.ts";
 
 // `provisionWorktree` (git-worktree-add orchestration) moved to core/worktree-provision.ts so
 // `core/service.ts` can call it too (terminal.launch's herdr worktree-open flow); re-exported here
 // so existing cli/dev.ts callers and tests keep importing it from this module.
-export { type ProvisionInput, provisionWorktree };
+export {
+  type ProvisionInput,
+  provisionWorktree,
+  shouldCreateMissingConventionBranch,
+};
 
 // `lh build` provisions an isolated git worktree (outside the sandbox) and launches an
 // interactive Claude session in it. Everything here is pure CLI-side policy — it imports

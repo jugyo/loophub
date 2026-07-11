@@ -188,6 +188,10 @@ export const pulls = {
       sessionId ?? null,
       draft,
       resolvedBaseSha,
+      // A PR-number-derived branch is deliberately recorded before it exists so `lh build` can
+      // provision it. Persist that fact explicitly; nullable head_sha is only watcher data and is
+      // not reliable lifecycle provenance.
+      draft && input.headFromNumber != null && headSha == null,
     );
     // Carry the draft flag (#413) on the payload so event-driven consumers can tell a WIP PR
     // (`lh build` opens drafts) from a reviewable one without a follow-up read.

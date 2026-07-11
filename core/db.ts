@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS pulls (
   base_ref        TEXT NOT NULL,
   base_sha        TEXT,
   head_sha        TEXT,
+  head_pending_creation INTEGER NOT NULL DEFAULT 0,
   draft           INTEGER NOT NULL DEFAULT 0,
   merged          INTEGER NOT NULL DEFAULT 0,
   merged_at       TEXT,
@@ -766,6 +767,11 @@ if (notificationsTable && !notificationsTable.sql.includes("'merge_ready'")) {
 
 tryExec("ALTER TABLE pulls ADD COLUMN head_sha TEXT");
 tryExec("ALTER TABLE pulls ADD COLUMN base_sha TEXT");
+// Durable provenance for a conventional branch recorded before its first worktree exists. Legacy
+// rows default to initialized/strict; only new `lh build`-managed PRs opt into pending creation.
+tryExec(
+  "ALTER TABLE pulls ADD COLUMN head_pending_creation INTEGER NOT NULL DEFAULT 0",
+);
 tryExec("ALTER TABLE workflow_artifacts ADD COLUMN dedupe_key TEXT");
 tryExec("ALTER TABLE workflow_placement_claims ADD COLUMN owner_token TEXT");
 tryExec("DROP INDEX IF EXISTS idx_workflow_artifacts_submission");

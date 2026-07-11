@@ -76,7 +76,9 @@ test("pulls.session_id is dropped after migration", () => {
   ).map((c) => c.name);
   expect(cols).not.toContain("session_id");
   expect(cols).toContain("base_sha");
+  expect(cols).toContain("head_pending_creation");
   expect(S.getPull(10)?.base_sha).toBeNull();
+  expect(S.getPull(10)?.head_pending_creation).toBe(0);
 });
 
 test("the legacy dev-session pointer survives in session_links (resume anchor preserved)", () => {

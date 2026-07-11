@@ -61,7 +61,10 @@ import {
   legacyWorktreePath,
   worktreePath as prWorktreePath,
 } from "../worktree-path.ts";
-import { provisionWorktree } from "../worktree-provision.ts";
+import {
+  provisionWorktree,
+  shouldCreateMissingConventionBranch,
+} from "../worktree-provision.ts";
 import { comments } from "./comments.ts";
 import { dev } from "./dev.ts";
 import { pulls } from "./pulls.ts";
@@ -827,8 +830,16 @@ export const workflowRuns = {
         pr: identity.number,
         scheme: identity.scheme,
         headRef: pull.head_ref,
-        allowCreatingConventionBranch: opened.created,
+        allowCreatingConventionBranch: shouldCreateMissingConventionBranch({
+          issueAttempt: opened,
+          headPendingCreation: pull.head_pending_creation === 1,
+          baseSha: pull.base_sha,
+        }),
+        baseSha: pull.base_sha ?? undefined,
       });
+      if (pull.head_pending_creation === 1) {
+        S.setHeadSha(prIssue.id, await worktreeHead(wtPath));
+      }
 
       dev.attachSession(r.full_name, opened.number, sessionId);
 

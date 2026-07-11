@@ -9,6 +9,7 @@ export interface PullRow {
   base_ref: string;
   base_sha: string | null;
   head_sha: string | null;
+  head_pending_creation: number;
   draft: number;
   merged: number;
   merged_at: string | null;
@@ -84,12 +85,23 @@ export function createPull(
   sessionId: string | null = null,
   draft = false,
   baseSha: string | null = null,
+  headPendingCreation = false,
 ) {
   db.run(
     `INSERT INTO pulls
-       (issue_id, head_ref, base_ref, base_sha, head_sha, linked_issue_id, draft)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [issueId, head, base, baseSha, headSha, linkedIssueId, draft ? 1 : 0],
+       (issue_id, head_ref, base_ref, base_sha, head_sha, head_pending_creation,
+        linked_issue_id, draft)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      issueId,
+      head,
+      base,
+      baseSha,
+      headSha,
+      headPendingCreation ? 1 : 0,
+      linkedIssueId,
+      draft ? 1 : 0,
+    ],
   );
   // The PR's dev session is recorded only in the generalized session_links bridge (kind='dev'); the
   // PR's resume/retro anchor is derived from there (primaryDevSessionForPull). #316 dropped the
@@ -193,7 +205,16 @@ export function getPull(issueId: number): PullRow | null {
 }
 
 export function setHeadSha(issueId: number, sha: string | null) {
-  db.run(`UPDATE pulls SET head_sha = ? WHERE issue_id = ?`, [sha, issueId]);
+  db.run(
+    `UPDATE pulls
+       SET head_sha = ?,
+           head_pending_creation = CASE
+             WHEN ? IS NOT NULL THEN 0
+             ELSE head_pending_creation
+           END
+       WHERE issue_id = ?`,
+    [sha, sha, issueId],
+  );
 }
 
 // Flip a PR's draft (#413) WIP flag. `lh pr ready-for-review` clears it (draft→ready).

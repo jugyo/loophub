@@ -121,6 +121,30 @@ test("issues, labels, comments, and review state round-trip through the adapter"
   expect(S.getIssueById(issue.id)!.state).toBe("closed");
 });
 
+test("recording the first non-null head SHA consumes pending branch creation", () => {
+  const repo = S.createRepo("me/head-pending", "/tmp/head-pending");
+  const pr = S.createIssue(repo.id, "pull", "pending", "", "bot");
+  S.createPull(
+    pr.id,
+    `loophub/pr-${pr.number}`,
+    "main",
+    null,
+    null,
+    null,
+    true,
+    "base-sha",
+    true,
+  );
+
+  S.setHeadSha(pr.id, null);
+  expect(S.getPull(pr.id)?.head_pending_creation).toBe(1);
+  S.setHeadSha(pr.id, "head-sha");
+  expect(S.getPull(pr.id)).toMatchObject({
+    head_sha: "head-sha",
+    head_pending_creation: 0,
+  });
+});
+
 test("listIssues sorts by created_at by default and by updated_at when asked (#418, #751)", () => {
   const repo = S.createRepo("me/sort", "/tmp/sort");
   // Three open issues. Control created_at/updated_at directly so order is

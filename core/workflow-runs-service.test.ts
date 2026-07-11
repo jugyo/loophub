@@ -93,6 +93,10 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   expect(result.pr.number).toBeGreaterThan(issue.number);
   expect(existsSync(result.worktree)).toBe(true);
   expect(existsSync(result.lock_path)).toBe(true);
+  expect(S.getPull(S.getIssue(repo.id, result.pr.number)!.id)).toMatchObject({
+    head_sha: gitAt(result.worktree, ["rev-parse", "HEAD"]),
+    head_pending_creation: 0,
+  });
   const parentSystemPrompt = readFileSync(
     result.parent.system_prompt_path,
     "utf8",

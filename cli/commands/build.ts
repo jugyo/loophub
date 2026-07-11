@@ -6,7 +6,7 @@ import {
   configDir,
   worktreeRoot,
 } from "../../core/config.ts";
-import { gitCommonDir, gitDirOf } from "../../core/git.ts";
+import { gitCommonDir, gitDirOf, revParse } from "../../core/git.ts";
 import {
   LH_BUILD_SESSION_AGENT,
   RUNTIME_CLAUDE_CODE,
@@ -47,6 +47,7 @@ import {
   removeDevLock,
   resolveAllowedDomains,
   resolveDevRuntime,
+  shouldCreateMissingConventionBranch,
   validateExistingLocalBranch,
   validateRepo,
   worktreePath,
@@ -293,17 +294,26 @@ export async function run(): Promise<void> {
       pr: identity.number,
       scheme: identity.scheme,
       headRef,
-      // Only a PR `dev.openPr` genuinely just created THIS run may have its convention branch
-      // fabricated fresh if missing — that branch is guaranteed to have never existed in git
-      // yet. Gating on "issue target" alone is not enough: re-running `lh build <issue>` against
-      // an already-existing (reused, not just-created) PR reaches this same code path, and its
-      // convention branch missing there would mean it was deleted out-of-band — silently
-      // fabricating a fresh one would discard whatever history it held, same risk as a direct
-      // PR target. `created` is only true for a brand-new PR, so this correctly refuses in both
-      // the direct-PR-target and reused-PR cases.
-      allowCreatingConventionBranch: prJustOpened?.created === true,
+      // A PR opened in this run has no branch yet. A pre-created draft attempt can be in the same
+      // zero-commit state: its missing convention branch is represented by a null stored head SHA.
+      // Both are safe to initialize from the recorded fork point. Established PRs and direct PR
+      // targets remain strict so a deleted branch is never silently replaced.
+      allowCreatingConventionBranch: shouldCreateMissingConventionBranch({
+        issueAttempt: prJustOpened,
+        headPendingCreation: rawPull.head_pending_creation === 1,
+        baseSha: rawPull.base_sha,
+      }),
       baseSha: rawPull.base_sha ?? undefined,
     });
+    if (rawPull.head_pending_creation === 1) {
+      const provisionedHeadSha = await revParse(r.local_path, headRef);
+      if (!provisionedHeadSha) {
+        throw new Error(`could not resolve provisioned branch "${headRef}"`);
+      }
+      // Clear the durable creation permission together with the first real branch SHA. Established
+      // heads remain the watcher's responsibility, preserving its update events and review resets.
+      Store.setHeadSha(rawPullIssue.id, provisionedHeadSha);
+    }
   } catch (e: any) {
     fail(e.message);
   }
