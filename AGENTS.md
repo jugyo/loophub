@@ -14,6 +14,18 @@ convention changes.
   unrelated change; treat mobile support as separate, intentional scope.
 - No build step during development — TypeScript runs directly via `tsx`.
 
+## Design principles
+
+- Choose the simplest correct solution. Do not add cleanup, retries, polling, or state
+  machines for non-fatal failures that a human can recover from.
+- Prefer visible errors to automatic recovery. Preserve the existing non-zero exit → RPC
+  error → UI path so operators can notice failures and decide how to respond.
+- Keep Web-to-CLI RPC calls fire-and-forget. A handler must not wait for long-running
+  subprocess work such as agent boot; expose progress asynchronously through the database
+  and events instead.
+- Before answering review feedback with another defensive mechanism, apply these principles.
+  For plausible but human-recoverable failures, explicitly accepting the risk can be correct.
+
 ## What this project is
 
 LoopHub is a GitHub-style issue/PR hub over local git repositories, built for AI agents to
