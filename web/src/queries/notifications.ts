@@ -89,6 +89,29 @@ export function useReadAllNotifications() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => readAllNotifications(),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: queryKeys.notifications() });
+      const listKey = [...queryKeys.notifications(), "list"];
+      const countKey = [...queryKeys.notifications(), "unread-count"];
+      const lists = qc.getQueriesData<Notification[]>({ queryKey: listKey });
+      const count = qc.getQueryData<{ count: number }>(countKey);
+
+      qc.setQueriesData<Notification[]>({ queryKey: listKey }, (current) =>
+        current ? [] : current,
+      );
+      qc.setQueryData<{ count: number }>(countKey, (current) =>
+        current ? { count: 0 } : current,
+      );
+
+      return { lists, count, countKey };
+    },
+    onError: (_error, _input, context) => {
+      if (!context) return;
+      for (const [key, notifications] of context.lists) {
+        qc.setQueryData(key, notifications);
+      }
+      qc.setQueryData(context.countKey, context.count);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.notifications() });
     },

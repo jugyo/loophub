@@ -96,7 +96,6 @@ export function NotificationCenter() {
 
   function clearAll() {
     if (visible.length === 0 || readAllNotifications.isPending) return;
-    setDismissedIds(new Set());
     readAllNotifications.mutate(undefined, {
       onError: (e) =>
         showError(

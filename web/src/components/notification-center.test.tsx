@@ -329,6 +329,44 @@ describe("NotificationCenter", () => {
     expect(actions.readAll).toHaveBeenCalledTimes(1);
   });
 
+  it("shows the API error when clearing all notifications fails", async () => {
+    notifications.value = [makeNotification()];
+    notifications.unread = 1;
+    actions.readAll.mockImplementationOnce(
+      (_input: undefined, options: { onError: (error: Error) => void }) =>
+        options.onError(new Error("Clear failed")),
+    );
+    renderCenter();
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: /1 unread/ }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Clear all" }));
+
+    expect(actions.showError).toHaveBeenCalledWith("Clear failed");
+  });
+
+  it("shows the fallback error when clearing all notifications fails", async () => {
+    notifications.value = [makeNotification()];
+    notifications.unread = 1;
+    actions.readAll.mockImplementationOnce(
+      (_input: undefined, options: { onError: (error: unknown) => void }) =>
+        options.onError(null),
+    );
+    renderCenter();
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: /1 unread/ }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Clear all" }));
+
+    expect(actions.showError).toHaveBeenCalledWith(
+      "Failed to clear notifications.",
+    );
+  });
+
   it("disables Clear all when there are no visible notifications", async () => {
     actions.readAll.mockReset();
     notifications.value = [];

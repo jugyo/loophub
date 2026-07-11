@@ -4,13 +4,15 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Notification } from "@/api/types";
 import { queryKeys } from "./keys";
-import { useReadNotification } from "./notifications";
+import { useReadAllNotifications, useReadNotification } from "./notifications";
 
 const api = vi.hoisted(() => ({
+  readAllNotifications: vi.fn(),
   readNotification: vi.fn(),
 }));
 
 vi.mock("@/api/client", () => ({
+  readAllNotifications: api.readAllNotifications,
   readNotification: api.readNotification,
 }));
 
@@ -119,5 +121,55 @@ describe("useReadNotification", () => {
       expect(qc.getQueryData(countKey)).toEqual({ count: 1 });
     });
     act(() => resolveSecond?.(makeNotification(2)));
+  });
+});
+
+describe("useReadAllNotifications", () => {
+  it("clears the list and unread count before the request completes", async () => {
+    const { qc, listKey, countKey, wrapper } = setup();
+    let resolveReadAll: ((result: { count: number }) => void) | undefined;
+    api.readAllNotifications.mockReturnValueOnce(
+      new Promise<{ count: number }>((resolve) => {
+        resolveReadAll = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useReadAllNotifications(), { wrapper });
+
+    act(() => result.current.mutate());
+
+    await waitFor(() => {
+      expect(qc.getQueryData<Notification[]>(listKey)).toEqual([]);
+      expect(qc.getQueryData(countKey)).toEqual({ count: 0 });
+    });
+    expect(result.current.isPending).toBe(true);
+
+    act(() => resolveReadAll?.({ count: 2 }));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it("invalidates notification queries after the request succeeds", async () => {
+    const { qc, wrapper } = setup();
+    const invalidateQueries = vi.spyOn(qc, "invalidateQueries");
+    api.readAllNotifications.mockResolvedValueOnce({ count: 2 });
+    const { result } = renderHook(() => useReadAllNotifications(), { wrapper });
+
+    act(() => result.current.mutate());
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: queryKeys.notifications(),
+    });
+  });
+
+  it("restores the list and unread count when the request fails", async () => {
+    const { qc, listKey, countKey, initial, wrapper } = setup();
+    api.readAllNotifications.mockRejectedValueOnce(new Error("Clear failed"));
+    const { result } = renderHook(() => useReadAllNotifications(), { wrapper });
+
+    act(() => result.current.mutate());
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(qc.getQueryData(listKey)).toEqual(initial);
+    expect(qc.getQueryData(countKey)).toEqual({ count: 2 });
   });
 });
