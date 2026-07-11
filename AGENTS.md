@@ -19,6 +19,32 @@ convention changes.
 LoopHub is a GitHub-style issue/PR hub over local git repositories, built for AI agents to
 run development loops while a human supervises with minimal attention.
 
+## Glossary
+
+- **Issue**: the problem or desired outcome, including its acceptance criteria. An issue can
+  have multiple linked PRs when parallel or successive attempts are made.
+- **Pull request (PR)**: a reviewable implementation proposal linked to an issue. It owns the
+  head/base refs, draft and review state, and merge outcome; it is the unit that is delivered.
+- **Attempt**: one proposed solution to an issue, represented by a linked PR plus that PR's
+  branch and dedicated worktree. It is not a separate stored entity, and it is not a session.
+- **Build**: the `lh build` operation that creates or reuses an attempt, provisions its
+  worktree, and launches a development session. It is an agent-work launcher, not a TypeScript
+  compilation step and not a workflow.
+- **Session**: one recorded agent-runtime invocation. Sessions can be linked to issues or PRs;
+  multiple sessions may contribute to one PR, while its primary development session is the
+  resume and retrospective anchor.
+- **Workflow / workflow run**: a workflow is a reusable Plan/Execute/Verify/Reflect definition;
+  a workflow run is one persisted execution for a specific issue and PR, tracking step state,
+  sessions, and artifacts. A run may prepare or reuse an attempt, but is not itself a build,
+  attempt, or session. The event-triggered `.loophub/workflow.yml` worker configuration is
+  separate repository automation.
+- **Worktree**: a Git linked checkout dedicated to a PR/attempt. `lh build` normally uses branch
+  `loophub/pr-<m>` at `$LOOPHUB_HOME/worktrees/<owner>/<repo>/pr-<m>`, keyed by PR number.
+
+See [build/worktree lifecycle](docs/lh-build-worktree.ja.md),
+[parallel attempts](docs/parallel-issue-attempts-design.ja.md), and
+[workflow design](docs/workflow.ja.md) for details.
+
 ## Layout
 
 ```
