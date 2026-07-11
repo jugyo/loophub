@@ -40,13 +40,13 @@ export function AppStatusbar() {
       className="flex h-7 shrink-0 items-center border-t bg-card px-3"
     >
       <dl className="ml-auto flex items-center justify-end gap-3 text-right text-[11px] leading-none">
+        <TokenRateStatus values={tokensPer5Minutes} />
         {items.map((item) => (
           <div key={item.label} className="flex items-baseline gap-1">
             <dt className="text-muted-foreground">{item.label}</dt>
             <dd className="font-medium text-foreground">{item.value}</dd>
           </div>
         ))}
-        <TokenRateStatus values={tokensPer5Minutes} />
       </dl>
     </footer>
   );

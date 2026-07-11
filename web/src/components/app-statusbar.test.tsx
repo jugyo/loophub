@@ -127,7 +127,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 };
 
 describe("AppStatusbar", () => {
-  it("shows the selected agent settings with distinct labels in a right-aligned group", async () => {
+  it("shows TPS first and keeps the selected agent settings in order in a right-aligned group", async () => {
     renderSettingsShell(DEFAULT_SETTINGS);
 
     const statusbar = await screen.findByRole("contentinfo", {
@@ -137,6 +137,12 @@ describe("AppStatusbar", () => {
     expect(group?.className).toContain("ml-auto");
     expect(group?.className).toContain("justify-end");
     expect(group?.className).toContain("text-right");
+    expect(
+      Array.from(
+        group?.children ?? [],
+        (item) => item.querySelector("dt")?.textContent,
+      ),
+    ).toEqual(["TPS", "Agent", "Model", "Effort", "Cost limit / session"]);
 
     for (const [label, value] of [
       ["Agent", "Claude Code"],
