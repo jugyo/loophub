@@ -91,6 +91,9 @@ export interface TerminalLaunchInput {
   // `codingAgent` / per-agent `defaultModel` settings.
   agent?: CodingAgent;
   model?: string;
+  // Opt-in parallel attempt from issue detail (#1140). The ordinary Build paths leave this unset,
+  // preserving the existing open-PR reuse behavior in `lh build`.
+  newAttempt?: boolean;
 }
 
 // Spawns `lh build ... --herdr` for the Build button (#584). This is not routed through runHerdr:
@@ -214,23 +217,28 @@ function runLhDevLaunch(
 async function launchIssueDevHerdr(
   r: S.Repo,
   issueNumber: number,
-  override?: { agent?: CodingAgent; model?: string },
+  options?: {
+    agent?: CodingAgent;
+    model?: string;
+    newAttempt?: boolean;
+  },
 ) {
   const repo = { full_name: r.full_name, local_path: r.local_path };
   // The agent that actually runs: the dropdown override when present, else whichever agent `lh build`
   // would resolve to (the `codingAgent` setting). Auto-mode is read from *this* agent so a codex
   // override reads codex's auto setting, not claude-code's (#593).
-  const agent = override?.agent ?? codingAgent();
-  const model = override?.model?.trim();
+  const agent = options?.agent ?? codingAgent();
+  const model = options?.model?.trim();
   const args = [
     "build",
     `${r.full_name}/${issueNumber}`,
+    ...(options?.newAttempt ? ["--new-attempt"] : []),
     "--herdr",
     // Force the runtime only when the dropdown overrode it; without an override we pass no runtime
     // flag so `lh build` resolves the default itself (unchanged plain-Build behavior).
-    ...(override?.agent === "codex"
+    ...(options?.agent === "codex"
       ? ["--codex"]
-      : override?.agent === "claude-code"
+      : options?.agent === "claude-code"
         ? ["--claude-code"]
         : []),
     // One-shot session model (#637); omitted when the dropdown left it blank, so `lh build` falls
@@ -437,6 +445,7 @@ export const terminal = {
       return launchIssueDevHerdr(r, input.issueNumber, {
         agent: input.agent,
         model: input.model,
+        newAttempt: input.newAttempt,
       });
     }
 

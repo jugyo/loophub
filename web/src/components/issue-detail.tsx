@@ -35,7 +35,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
 import { CODING_AGENT_LABELS, MODEL_SUGGESTIONS } from "@/lib/agent-models";
-import { issueBuildButtonState, stateBadge } from "@/lib/badges";
+import {
+  issueBuildButtonState,
+  primaryLinkedPull,
+  stateBadge,
+} from "@/lib/badges";
 import {
   hasPlainShortcutModifiers,
   isEditableShortcutTarget,
@@ -145,6 +149,7 @@ function IssueHeader({
   const setState = useSetIssueState(owner, repo, issue.number);
   const state = stateBadge(issue, "issues");
   const buildState = issueBuildButtonState(issue);
+  const linkedPull = primaryLinkedPull(issue);
   usePageTitle([`${owner}/${repo}`, `Issue #${issue.number}`, issue.title]);
 
   return (
@@ -201,7 +206,17 @@ function IssueHeader({
             <StartWorkflowControls owner={owner} repo={repo} issue={issue} />
           </>
         ) : (
-          <BuildStatusLabel state={buildState} />
+          <>
+            <BuildStatusLabel state={buildState} />
+            {buildState === "building" && linkedPull ? (
+              <BuildControls
+                owner={owner}
+                repo={repo}
+                issue={issue}
+                newAttemptPullNumber={linkedPull.number}
+              />
+            ) : null}
+          </>
         )}
       </div>
     </div>
@@ -217,15 +232,21 @@ function BuildControls({
   owner,
   repo,
   issue,
+  newAttemptPullNumber,
 }: {
   owner: string;
   repo: string;
   issue: Issue;
+  newAttemptPullNumber?: number;
 }) {
   const { launchTerminal } = useTerminalLauncher();
   const { data: settings } = useSettings();
   const [isBuildLoading, startBuildLoading] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmingBuild, setConfirmingBuild] = useState<{
+    override?: { agent: CodingAgent; model: string };
+  } | null>(null);
+  const isNewAttempt = newAttemptPullNumber !== undefined;
 
   const defaultAgent: CodingAgent = settings?.codingAgent ?? "claude-code";
   const autoModeOnBuild = settings
@@ -233,14 +254,13 @@ function BuildControls({
     : false;
   // Display-only tooltip for the plain button: it never reaches the wire, it only shows what a
   // default (no-override) click runs (#584, #593).
-  const buildCommand = autoModeOnBuild
-    ? `lh build ${issue.number} --herdr --auto`
-    : `lh build ${issue.number} --herdr`;
+  const buildCommand = `lh build ${issue.number}${isNewAttempt ? " --new-attempt" : ""} --herdr${autoModeOnBuild ? " --auto" : ""}`;
 
   // `override` set => the dropdown launch (one-shot agent/model); undefined => the plain button
   // (default resolution). A blank model is omitted so `lh build` falls back to the per-agent default.
-  function build(override?: { agent: CodingAgent; model: string }) {
+  function launchBuild(override?: { agent: CodingAgent; model: string }) {
     startBuildLoading();
+    setConfirmingBuild(null);
     setMenuOpen(false);
     const model = override?.model.trim();
     launchTerminal({
@@ -250,12 +270,23 @@ function BuildControls({
       issueNumber: issue.number,
       agent: override?.agent,
       model: model ? model : undefined,
+      ...(isNewAttempt ? { newAttempt: true } : {}),
     });
+  }
+
+  function build(override?: { agent: CodingAgent; model: string }) {
+    if (isNewAttempt) {
+      setMenuOpen(false);
+      setConfirmingBuild({ override });
+      return;
+    }
+    launchBuild(override);
   }
 
   return (
     <div className="inline-flex">
       <Button
+        variant={isNewAttempt ? "secondary" : "default"}
         className="rounded-r-none"
         title={`Start \`${buildCommand}\` in a terminal`}
         disabled={isBuildLoading}
@@ -266,11 +297,12 @@ function BuildControls({
         ) : (
           <Play className="size-4" />
         )}
-        Build
+        {isNewAttempt ? "New attempt" : "Build"}
       </Button>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
+            variant={isNewAttempt ? "secondary" : "default"}
             aria-label="Choose agent and model"
             title="Choose agent and model for this launch"
             disabled={isBuildLoading || !settings}
@@ -289,6 +321,58 @@ function BuildControls({
           </DropdownMenuContent>
         ) : null}
       </DropdownMenu>
+      {confirmingBuild && newAttemptPullNumber ? (
+        <NewAttemptDialog
+          pullNumber={newAttemptPullNumber}
+          onConfirm={() => launchBuild(confirmingBuild.override)}
+          onCancel={() => setConfirmingBuild(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function NewAttemptDialog({
+  pullNumber,
+  onConfirm,
+  onCancel,
+}: {
+  pullNumber: number;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onCancel();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Start a parallel attempt?"
+        className="flex w-full max-w-md flex-col rounded-lg border bg-background p-5 shadow-lg"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold">Start a parallel attempt?</h2>
+        <p className="mt-3 text-sm text-muted-foreground">
+          PR #{pullNumber} is already in progress. Start another attempt from
+          the same base? This will run an additional agent.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm}>Start new attempt</Button>
+        </div>
+      </div>
     </div>
   );
 }

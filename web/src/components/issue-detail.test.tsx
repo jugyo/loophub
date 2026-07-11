@@ -431,6 +431,9 @@ describe("IssueDetail", () => {
     expect(screen.getByText("PR #29")).toBeTruthy();
     expect(screen.getByLabelText("Linked PR #29: closed attempt")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "New attempt" }));
+    expect(screen.getByText(/PR #31 is already in progress/)).toBeTruthy();
   });
 
   it("keeps inactive and active linked PRs at normal opacity", async () => {
@@ -545,6 +548,7 @@ describe("IssueDetail", () => {
     await screen.findByRole("button", { name: /close/i });
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
     expect(screen.getByText("Building")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New attempt" })).toBeTruthy();
   });
 
   it("replaces the Build button with a disabled Merged label when the linked PR is merged", async () => {
@@ -557,6 +561,7 @@ describe("IssueDetail", () => {
     await screen.findByRole("button", { name: /close/i });
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
     expect(screen.getByText("Merged")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
   });
 
   it("shows the Build button when no PR is linked", async () => {
@@ -564,6 +569,7 @@ describe("IssueDetail", () => {
     renderDetail(() => noPr);
 
     expect(await screen.findByRole("button", { name: /^Build$/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
   });
 
   it("shows the Build button when the only linked PR is closed-unmerged", async () => {
@@ -592,6 +598,57 @@ describe("IssueDetail", () => {
       label: "Issue #12 - ui2: issue detail",
       workflow: "issue-dev",
       issueNumber: 12,
+    });
+  });
+
+  it("confirms before launching a new attempt for an open linked PR", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "New attempt" }));
+
+    expect(launchTerminal).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", {
+      name: "Start a parallel attempt?",
+    });
+    expect(dialog.textContent).toContain("PR #30 is already in progress");
+    expect(dialog.textContent).toContain("same base");
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Start new attempt" }),
+    );
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: "Issue #12 - ui2: issue detail",
+      workflow: "issue-dev",
+      issueNumber: 12,
+      newAttempt: true,
+    });
+  });
+
+  it("uses the shared agent/model dropdown for a confirmed new attempt", async () => {
+    renderDetail();
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: "Choose agent and model" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "gpt-5.6-sol" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Build with Codex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start new attempt" }));
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: "Issue #12 - ui2: issue detail",
+      workflow: "issue-dev",
+      issueNumber: 12,
+      agent: "codex",
+      model: "gpt-5.6-sol",
+      newAttempt: true,
     });
   });
 

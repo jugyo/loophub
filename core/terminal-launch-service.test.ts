@@ -234,6 +234,21 @@ describe("terminal.launch issue-dev spawns `lh build --herdr` (#584)", () => {
     ]);
   });
 
+  test("appends --new-attempt for an explicitly confirmed parallel launch (#1140)", async () => {
+    lhDev.script.push(exitWith(0));
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+      newAttempt: true,
+    });
+
+    expect(lhDev.calls).toEqual([
+      ["lh", "build", "me/proj/1", "--new-attempt", "--herdr"],
+    ]);
+  });
+
   test("forces --claude-code when the override picks it over a codex default (#637)", async () => {
     lhDev.script.push(exitWith(0));
     svc.settings.update({ codingAgent: "codex" });

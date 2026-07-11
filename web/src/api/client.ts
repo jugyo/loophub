@@ -507,6 +507,8 @@ export function launchTerminalWorkflow(input: {
   // One-shot issue-dev (Build) overrides from the issue-detail dropdown (#637).
   agent?: CodingAgent;
   model?: string;
+  // Opt-in parallel attempt after the issue-detail confirmation (#1140).
+  newAttempt?: boolean;
 }) {
   return rpc<TerminalLaunchResult>("terminal/launch", clean(input));
 }

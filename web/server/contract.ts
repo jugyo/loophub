@@ -354,6 +354,8 @@ export const methods: Record<string, MethodDef> = {
         // runtime / session model for this launch only, without changing the persisted settings.
         agent: { enum: ["claude-code", "codex"] },
         model: str,
+        // Explicit confirmation from issue detail to start a parallel PR/worktree attempt (#1140).
+        newAttempt: { type: "boolean" },
       },
       ["repo"],
     ),
@@ -370,6 +372,7 @@ export const methods: Record<string, MethodDef> = {
         cwd: p.cwd,
         agent: p.agent,
         model: p.model,
+        newAttempt: p.newAttempt,
       }),
   },
 
