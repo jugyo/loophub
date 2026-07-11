@@ -37,7 +37,7 @@ adjusting dark color tokens.
 | Token | Tailwind name | Role |
 |-------|---------------|------|
 | `--background` / `--foreground` | `background` / `foreground` | Page base + body text |
-| `--card` / `--card-foreground` | `card` / `card-foreground` | Raised surfaces (topbar and cards) |
+| `--card` / `--card-foreground` | `card` / `card-foreground` | Raised surfaces (application header and cards) |
 | `--primary` / `--primary-foreground` | `primary` / `primary-foreground` | Primary action color and readable foreground |
 | `--primary-hover` / `--primary-active` | `primary-hover` / `primary-active` | Primary action interaction states |
 | `--primary-subtle` / `--primary-border` | `primary-subtle` / `primary-border` | Selected-state fills, themed badges, and primary borders |
@@ -90,29 +90,57 @@ dashboard is the reference usage.
 
 ## Layout
 
+### UI vocabulary
+
+Use the terms below when discussing, designing, or reviewing the major UI
+regions and page types. They name the current structure; detailed layout and
+component conventions remain in the sections that follow.
+
+| Term | Role and scope / representative route | Primary implementation |
+|------|-----------------------------------------|------------------------|
+| **Application header** | Application-wide header shown above every route. It contains global navigation and controls that are not owned by one repository. Use this semantic term instead of the position-based “top bar.” | `AppTopbar` in [`src/components/app-topbar.tsx`](./src/components/app-topbar.tsx), composed by `AppLayout` |
+| **Repository navigation bar** | Repository-scoped section navigation shown below the application header on routes with `:owner` and `:repo`, such as `/r/:owner/:repo`. It is not an application-wide header. | `RepoTopbar` in [`src/components/repo-topbar.tsx`](./src/components/repo-topbar.tsx), composed by `AppLayout` |
+| **Application status bar** | Application-wide status region fixed below the main content on every route. It reports shared runtime and environment information. | `AppStatusbar` in [`src/components/app-statusbar.tsx`](./src/components/app-statusbar.tsx), composed by `AppLayout` |
+| **Issue list** | Repository-scoped list and filtering page for issues. The canonical repository entry is `/r/:owner/:repo`; `/r/:owner/:repo/issues` is also supported. | `IssueList` in [`src/components/issue-list.tsx`](./src/components/issue-list.tsx), mounted by `routes/repo.tsx` and `routes/repo-issues.tsx` |
+| **Issue detail page** | Repository-scoped page for one issue at `/r/:owner/:repo/issues/:number`. | `IssueDetail` in [`src/components/issue-detail.tsx`](./src/components/issue-detail.tsx), mounted by `routes/issues.tsx` |
+| **Pull request detail page** | Repository-scoped page for one pull request at `/r/:owner/:repo/pulls/:number`. | `PullDetail` in [`src/components/pull-detail.tsx`](./src/components/pull-detail.tsx), mounted by `routes/pulls.tsx` |
+| **Application settings** | Application-wide configuration page at `/settings`; its settings are not limited to the repository currently selected in the shell. | `SettingsPage` in [`src/components/settings-page.tsx`](./src/components/settings-page.tsx), mounted by `routes/settings.tsx` |
+| **Repository settings** | Configuration page for one repository at `/r/:owner/:repo/settings`. | `RepoSettingsPage` in [`src/components/repo-settings-page.tsx`](./src/components/repo-settings-page.tsx), mounted by `routes/repo-settings.tsx` |
+
+`AppLayout` in [`src/components/app-layout.tsx`](./src/components/app-layout.tsx)
+defines how the application header and status bar surround route content and
+adds repository navigation on repository routes; see [App shell](#app-shell)
+for dimensions and scrolling behavior. The complete route tree is assembled in
+[`src/router.tsx`](./src/router.tsx). When a named region or page changes
+responsibility, route, or structure, update its code and this glossary
+together, following this document's Source of Truth policy.
+
 ### App shell
 
-The shell is a fixed topbar plus a scrolling main column. Repository routes
-also show a section-navigation header ([`src/components/app-layout.tsx`](./src/components/app-layout.tsx),
+The shell places a scrolling main column between a fixed application header and
+application status bar. Repository routes also show a repository navigation
+bar ([`src/components/app-layout.tsx`](./src/components/app-layout.tsx),
 [`src/components/repo-topbar.tsx`](./src/components/repo-topbar.tsx)).
 
 | Dimension | Value | Where |
 |-----------|-------|-------|
-| Topbar height | `h-14` | `app-topbar.tsx` |
+| Application header height | `h-14` | `app-topbar.tsx` |
 | Repository navigation height | `h-11` | `repo-topbar.tsx` |
+| Status bar height | `h-8` | `app-statusbar.tsx` |
 | Shell | `h-screen w-full overflow-hidden` | `app-layout.tsx` |
 | Main content padding | `px-4 pt-6 sm:px-6` | `app-layout.tsx` `<main>` |
 
-The topbar and repository navigation are `shrink-0`; the main column is
-`min-w-0 flex-1`, and only `<main>` scrolls (`overflow-y-auto`). Routes outside
-a repository omit the navigation header entirely.
+The application header, repository navigation, and application status bar are
+`shrink-0`; the main column is `min-w-0 flex-1`, and only `<main>` scrolls
+(`overflow-y-auto`). Routes outside a repository omit the repository
+navigation bar entirely.
 
 #### Shell dividers
 
-The topbar and repository navigation are separated by a single-pixel `border`
-token (`border-b`). This is the same token `divide-y` uses for in-list row
-separators, so section boundaries and row boundaries read as one consistent
-line weight/color across light and dark themes.
+The application header and repository navigation are separated by a
+single-pixel `border` token (`border-b`). This is the same token `divide-y` uses
+for in-list row separators, so section boundaries and row boundaries read as
+one consistent line weight/color across light and dark themes.
 
 ### Dashboard sections
 
