@@ -444,9 +444,10 @@ describe("IssueDetail", () => {
     expect(
       screen.getAllByRole("link", { name: "Review & merge" }),
     ).not.toHaveLength(0);
-    expect(screen.getAllByRole("button", { name: "Discard" })).not.toHaveLength(
+    expect(screen.getAllByRole("button", { name: "Close" })).not.toHaveLength(
       0,
     );
+    expect(screen.queryByText(/Discard/)).toBeNull();
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "New attempt" }));
@@ -456,7 +457,7 @@ describe("IssueDetail", () => {
     expect(screen.queryByText(/PR #31 is already in progress/)).toBeNull();
   });
 
-  it("confirms before closing a discarded attempt", async () => {
+  it("closes a linked PR immediately without confirmation", async () => {
     renderDetail(undefined, false, {
       "pulls/update": (params) => ({
         ...issue.linked_pull_request!,
@@ -464,11 +465,13 @@ describe("IssueDetail", () => {
       }),
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
-    const dialog = screen.getByRole("dialog", { name: "Discard PR #30?" });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Discard attempt" }),
+    const linkedPullRow = await screen.findByLabelText(
+      "Linked PR #30: ui2: issue detail PR",
     );
+    fireEvent.click(
+      within(linkedPullRow).getByRole("button", { name: "Close" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
 
     await waitFor(() =>
       expect(rpcCall("pulls/update")).toMatchObject({
@@ -612,8 +615,8 @@ describe("IssueDetail", () => {
     // The default issue has an open linked PR (#30).
     renderDetail();
 
-    // Close renders, so the header is mounted — Build must be absent.
-    await screen.findByRole("button", { name: /close/i });
+    // Building renders, so the header is mounted — Build must be absent.
+    await screen.findByText("Building");
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
     expect(screen.getByText("Building")).toBeTruthy();
     expect(screen.getByRole("button", { name: "New attempt" })).toBeTruthy();

@@ -1,13 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import {
-  ArrowRight,
-  Bot,
-  Check,
-  Loader2,
-  Terminal,
-  Trash2,
-  TriangleAlert,
-} from "lucide-react";
+import { ArrowRight, Bot, Check, Terminal, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import type { LinkedPull } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
@@ -247,11 +239,10 @@ export function LinkedPullSummaryRow({
   showTitle?: boolean;
   /** Dim merged and closed PRs when this row is rendered in an issue list. */
   dimInactive?: boolean;
-  /** Show issue-detail comparison metrics and adopt/discard actions. */
+  /** Show issue-detail comparison metrics and review/close actions. */
   attemptComparison?: boolean;
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const { showError } = useToast();
   const { data: herdrSessions } = useHerdrSessions();
   const setState = useSetPullState(owner, repo, pull.number);
@@ -452,10 +443,19 @@ export function LinkedPullSummaryRow({
                 variant="secondary"
                 size="sm"
                 className="h-7 text-destructive hover:text-destructive"
-                onClick={() => setConfirmingDiscard(true)}
+                disabled={setState.isPending}
+                onClick={() =>
+                  setState.mutate("closed", {
+                    onError: (error) =>
+                      showError(
+                        error instanceof Error
+                          ? error.message
+                          : "Failed to close PR.",
+                      ),
+                  })
+                }
               >
-                <Trash2 className="size-3.5" />
-                Discard
+                Close
               </Button>
             ) : null}
           </span>
@@ -471,66 +471,6 @@ export function LinkedPullSummaryRow({
           workspacePaneId={workspace?.pane_id}
         />
       ) : null}
-      {confirmingDiscard ? (
-        <DiscardAttemptDialog
-          pullNumber={pull.number}
-          pending={setState.isPending}
-          onCancel={() => setConfirmingDiscard(false)}
-          onConfirm={() =>
-            setState.mutate("closed", {
-              onSuccess: () => setConfirmingDiscard(false),
-              onError: (error) =>
-                showError(
-                  error instanceof Error
-                    ? error.message
-                    : "Failed to discard attempt.",
-                ),
-            })
-          }
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function DiscardAttemptDialog({
-  pullNumber,
-  pending,
-  onConfirm,
-  onCancel,
-}: {
-  pullNumber: number;
-  pending: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
-      onClick={onCancel}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Discard PR #${pullNumber}?`}
-        className="flex w-full max-w-md flex-col rounded-lg border bg-background p-5 text-foreground shadow-lg"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h2 className="text-lg font-semibold">Discard PR #{pullNumber}?</h2>
-        <p className="mt-3 text-sm text-muted-foreground">
-          This closes the PR without merging it. The issue and other attempts
-          stay open.
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={pending}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm} disabled={pending}>
-            {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-            Discard attempt
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
