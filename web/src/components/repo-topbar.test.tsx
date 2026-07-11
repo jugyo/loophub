@@ -48,11 +48,6 @@ function renderRepoTopbar(initialPath: string, experimental = true) {
     path: "/r/$owner/$repo/settings",
     component: () => null,
   });
-  const mergedRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/r/$owner/$repo/merged",
-    component: () => null,
-  });
   const pullDetailRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/r/$owner/$repo/pulls/$number",
@@ -66,7 +61,6 @@ function renderRepoTopbar(initialPath: string, experimental = true) {
       issueDetailRoute,
       repoScheduledTasksRoute,
       repoSettingsRoute,
-      mergedRoute,
       pullDetailRoute,
     ]),
     history: createMemoryHistory({ initialEntries: [initialPath] }),
@@ -162,17 +156,6 @@ describe("RepoTopbar", () => {
 
   it("treats other repository subsections as the Issues section", async () => {
     renderRepoTopbar("/r/me/proj/pulls/7");
-
-    const active = await screen.findByRole("link", {
-      name: /Issues/,
-      current: "page",
-    });
-
-    expect(active.getAttribute("href")).toBe("/r/me/proj");
-  });
-
-  it("treats merged pull requests as the Issues section", async () => {
-    renderRepoTopbar("/r/me/proj/merged");
 
     const active = await screen.findByRole("link", {
       name: /Issues/,

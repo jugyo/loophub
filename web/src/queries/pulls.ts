@@ -1,4 +1,4 @@
-// Query + mutation hooks for the PR list, merged list, and detail screens.
+// Query + mutation hooks for PR list and detail screens.
 // Query keys come from the shared factory (./keys), so the event invalidation map
 // (../lib/event-keys.ts) refetches these on pull_request.* events.
 
@@ -23,7 +23,7 @@ import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
 
-/** State filter for the PR list view (merged list pins its own query). */
+/** State filter for the PR list view. */
 export type PullListState = "open" | "closed" | "all";
 
 export const DEFAULT_PULL_STATE: PullListState = "open";
@@ -37,14 +37,6 @@ export function usePullsList(
   return useQuery({
     queryKey: [...queryKeys.pulls(full(owner, repo)), "list", state],
     queryFn: () => listPulls(owner, repo, `state=${state}`),
-  });
-}
-
-/** Merged PRs (state=closed&merged=only), mirroring the dashboard query. */
-export function useMergedPullsList(owner: string, repo: string) {
-  return useQuery({
-    queryKey: [...queryKeys.pulls(full(owner, repo)), "merged", "list"],
-    queryFn: () => listPulls(owner, repo, "state=closed&merged=only"),
   });
 }
 

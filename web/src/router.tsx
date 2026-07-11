@@ -3,7 +3,6 @@ import { archivedRoute } from "./routes/archived";
 import { inboxRoute } from "./routes/inbox";
 import { indexRoute } from "./routes/index";
 import { issueDetailRoute } from "./routes/issues";
-import { mergedRoute } from "./routes/merged";
 import { pullDetailRoute } from "./routes/pulls";
 import { refRoute } from "./routes/ref";
 import { repoRoute } from "./routes/repo";
@@ -30,7 +29,6 @@ const routeTree = rootRoute.addChildren([
   issueDetailRoute,
   pullDetailRoute,
   refRoute,
-  mergedRoute,
   settingsRoute,
   settingsWorkflowsRoute,
   sessionsRoute,
