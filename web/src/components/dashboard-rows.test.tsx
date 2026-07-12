@@ -480,6 +480,18 @@ describe("IssueRow", () => {
     expect(await screen.findByText("Example issue")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
   });
+
+  // The whole-row hover background is removed; keyboard focus keeps its row
+  // highlight and focus ring so the row stays reachable and visible.
+  it("carries no whole-row hover background but keeps the focus highlight and ring", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
+    );
+    const row = await screen.findByLabelText("Issue #7: Example issue");
+    expect(row.className).not.toContain("hover:bg-");
+    expect(row.className).toContain("focus:bg-accent");
+    expect(row.className).toContain("focus:ring-ring");
+  });
 });
 
 // #1061: the issue-list overflow menu is removed; issue state actions live on

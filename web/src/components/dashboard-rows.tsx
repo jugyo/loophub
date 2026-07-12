@@ -143,7 +143,7 @@ export function IssueRow({
       data-issue-key={`${owner}/${repo}#${issue.number}`}
       tabIndex={-1}
       aria-label={`Issue #${issue.number}: ${issue.title}`}
-      className="group flex flex-col gap-1 px-3 py-2 text-sm hover:bg-accent focus:bg-accent focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring"
+      className="group flex flex-col gap-1 px-3 py-2 text-sm focus:bg-accent focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring"
     >
       <div className="flex items-center gap-2">
         <RepoChip label={repoLabel} owner={owner} repo={repo} />
