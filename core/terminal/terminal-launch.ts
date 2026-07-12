@@ -51,7 +51,7 @@ const MAX_AGENT_NAME_LENGTH = 80;
 const UNSAFE_CHARS =
   /[\x00-\x1F\x7F-\x9F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
-function normalizeAgentName(
+export function normalizeAgentName(
   label: string,
   max = MAX_AGENT_NAME_LENGTH,
 ): string {

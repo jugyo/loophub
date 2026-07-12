@@ -3,10 +3,7 @@ import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { agentModel } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { isClaudeSessionId, RUNTIME_CLAUDE_CODE } from "../../core/resume.ts";
-import {
-  buildHerdrLaunchPlan,
-  HERDR_ID,
-} from "../../core/terminal/terminal-launch.ts";
+import { HERDR_ID } from "../../core/terminal/terminal-launch.ts";
 import {
   type WorkflowContract,
   workflowContractText,
@@ -23,6 +20,11 @@ import {
   writeSession,
 } from "../context.ts";
 import { formatSpawnCommand, parseDevTarget, shQuote } from "../dev.ts";
+import {
+  HerdrLaunchError,
+  type HerdrLaunchResult,
+  launchAgentInWorktreeHerdr,
+} from "../herdr-launch.ts";
 import { usage } from "../usage.ts";
 
 type PromptField =
@@ -231,7 +233,7 @@ function nonNegativeInt(
   return Number(value);
 }
 
-function launchParentHerdr(input: {
+async function launchParentHerdr(input: {
   repo: { full_name: string; local_path: string };
   worktree: string;
   sessionId: string;
@@ -243,41 +245,37 @@ function launchParentHerdr(input: {
   // `lh workflow start ... --herdr` headless (#1007) — gets a prompt exit instead of blocking on an
   // attach it has no TTY for. Mirrors `lh build --herdr` (cli/commands/build.ts).
   detach?: boolean;
-}): void {
+}): Promise<void> {
   const claudeArgs = parentClaudeArgs(input);
   const command = formatSpawnCommand(claudeArgs, { bin: "claude" });
   const commandWithEnv = `LOOPHUB_SESSION_ID=${shQuote(input.sessionId)} ${command}`;
   const agentName = `workflow-${input.sessionId.slice(0, 8)}`;
-  const plan = buildHerdrLaunchPlan({
-    repo: input.repo,
-    command: commandWithEnv,
-    label: agentName,
-    cwd: input.worktree,
-  });
-  const launched = spawnSync(plan.argv[0], plan.argv.slice(1), {
-    encoding: "utf8",
-    stdio: "inherit",
-    timeout: 15_000,
-    killSignal: "SIGKILL",
-  });
-  if (launched.error) fail(`failed to launch herdr: ${launched.error.message}`);
-  if (launched.signal) fail(`herdr terminated by signal ${launched.signal}`);
-  if ((launched.status ?? 0) !== 0) {
-    fail(
-      `herdr exited with status ${launched.status}\n  reproduce: cd ${shQuote(input.worktree)} && ${commandWithEnv}`,
-    );
+  // Open (or reuse) the target PR worktree's own herdr workspace and start the parent there, the
+  // same orchestration `lh build --herdr` uses (#873) — without it herdr split whichever pane was
+  // focused, so the Workflow parent could land in an unrelated PR's workspace.
+  let launched: HerdrLaunchResult;
+  try {
+    launched = await launchAgentInWorktreeHerdr({
+      repo: input.repo,
+      worktree: input.worktree,
+      command: commandWithEnv,
+      label: agentName,
+    });
+  } catch (e) {
+    if (e instanceof HerdrLaunchError) fail(e.message);
+    throw e;
   }
   if (input.detach) {
     // The agent now runs in its herdr pane; exit without attaching. process.exit(0) fires the
     // dev-lock release handler registered in startWorkflow, same as `lh build --herdr`.
     console.error(
-      `Launched Workflow parent in herdr agent ${agentName}. Attach with: herdr --session ${plan.sessionName} agent attach ${agentName}`,
+      `Launched Workflow parent in herdr agent ${launched.agentName}. Attach with: herdr --session ${launched.sessionName} agent attach ${launched.agentName}`,
     );
     process.exit(0);
   }
   const attached = spawnSync(
     "herdr",
-    ["--session", plan.sessionName, "agent", "attach", agentName],
+    ["--session", launched.sessionName, "agent", "attach", launched.agentName],
     { stdio: "inherit" },
   );
   if (attached.error) fail(`failed to attach herdr: ${attached.error.message}`);
@@ -349,7 +347,7 @@ async function startWorkflow(): Promise<void> {
     // headless (#1007); without it the CLI attaches for a human at a terminal.
     detach: flags.herdr === true,
   };
-  launchParentHerdr(launchInput);
+  await launchParentHerdr(launchInput);
 }
 
 async function launchStep(): Promise<void> {

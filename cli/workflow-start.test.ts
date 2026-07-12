@@ -51,14 +51,39 @@ function git(args: string[]): void {
   if ((result.status ?? 0) !== 0) throw new Error(result.stderr);
 }
 
-function fakeRuntime(herdrExit: number) {
+// A fake `herdr` that logs every invocation and emits configurable JSON on stdout for the
+// worktree-open / tab-create calls the launch orchestration makes, so a test can drive the
+// worktree open→reuse dance (`agent start --tab <id>`) the same way `lh build --herdr` does.
+// `agentStartExit` fails only the `agent start` call, leaving the earlier open/create succeeding —
+// the shape a real failed parent launch takes after its workspace was already created.
+function fakeRuntime(
+  opts: {
+    agentStartExit?: number;
+    worktreeOpenJson?: string;
+    tabCreateJson?: string;
+  } = {},
+) {
+  const {
+    agentStartExit = 0,
+    worktreeOpenJson = "",
+    tabCreateJson = "",
+  } = opts;
   const dir = mkdtempSync(join(tmpdir(), "lh-workflow-runtime-"));
   const log = join(dir, "herdr.log");
   const herdr = join(dir, "herdr");
   const claude = join(dir, "claude");
   writeFileSync(
     herdr,
-    `#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\nprintf '%s\\n' "$*" >> "$HERDR_LOG"\nexit ${herdrExit}\n`,
+    `#!/bin/sh
+if [ "$1" = "--version" ]; then exit 0; fi
+printf '%s\\n' "$*" >> "$HERDR_LOG"
+case " $* " in
+  *" worktree open "*) printf '%s' '${worktreeOpenJson}'; exit 0 ;;
+  *" tab create "*) printf '%s' '${tabCreateJson}'; exit 0 ;;
+  *" agent start "*) exit ${agentStartExit} ;;
+esac
+exit 0
+`,
   );
   writeFileSync(
     claude,
@@ -68,6 +93,25 @@ function fakeRuntime(herdrExit: number) {
   chmodSync(claude, 0o755);
   return { dir, log };
 }
+
+// A first-time `herdr worktree open` response: a brand-new single-tab workspace whose tab/root-pane
+// come straight from the open, so the launch starts the agent with `--tab` in that workspace.
+const FRESH_OPEN_JSON = JSON.stringify({
+  result: {
+    already_open: false,
+    workspace: { workspace_id: "w1" },
+    tab: { tab_id: "w1:t1" },
+    root_pane: { pane_id: "w1:p1" },
+  },
+});
+// An `already_open` open response — the launch then creates a genuinely new tab inside the reused
+// workspace (herdrTabCreateInWorkspaceArgv) rather than splitting its existing pane.
+const REUSE_OPEN_JSON = JSON.stringify({
+  result: { already_open: true, workspace: { workspace_id: "w1" } },
+});
+const REUSE_TAB_JSON = JSON.stringify({
+  result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } },
+});
 
 beforeAll(() => {
   git(["init", "-q", "-b", "main"]);
@@ -203,7 +247,7 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   expect(body.parent.user_prompt).not.toMatch(/^\/lh-/m);
 });
 
-test("workflow start --herdr pins the parent to the canonical repo session", () => {
+test("workflow start --herdr opens the PR worktree workspace and starts the parent in its tab", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -216,7 +260,7 @@ test("workflow start --herdr pins the parent to the canonical repo session", () 
   ]);
   const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
   if (!issue) throw new Error(issueOut.stdout);
-  const runtime = fakeRuntime(0);
+  const runtime = fakeRuntime({ worktreeOpenJson: FRESH_OPEN_JSON });
   try {
     const started = run(
       [
@@ -236,8 +280,15 @@ test("workflow start --herdr pins the parent to the canonical repo session", () 
     );
 
     expect(started.exitCode, started.stderr).toBe(0);
-    expect(readFileSync(runtime.log, "utf8")).toMatch(
-      /^--session me-workflow-start-[a-f0-9]{8} agent start /,
+    const log = readFileSync(runtime.log, "utf8");
+    // Same worktree open→agent-start placement a normal `lh build --herdr` performs: the worktree's
+    // own workspace is opened first, then the parent starts in that workspace's fresh tab (#873).
+    expect(log).toMatch(
+      /--session me-workflow-start-[a-f0-9]{8} worktree open --cwd .+ --path .+/,
+    );
+    expect(log).toMatch(/agent start .+ --tab w1:t1 /);
+    expect(log.indexOf("worktree open")).toBeLessThan(
+      log.indexOf("agent start"),
     );
     expect(readFileSync(runtime.log, "utf8")).not.toContain(
       "'--permission-mode' 'auto'",
@@ -261,7 +312,7 @@ test("workflow start --auto launches the parent in auto mode", () => {
   ]);
   const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
   if (!issue) throw new Error(issueOut.stdout);
-  const runtime = fakeRuntime(0);
+  const runtime = fakeRuntime();
   try {
     const started = run(
       [
@@ -296,7 +347,54 @@ test("CLI usage documents workflow start --auto", () => {
   expect(result.stdout).toContain("[--herdr] [--auto]");
 });
 
-test("workflow start --herdr surfaces a failed parent launch", () => {
+test("workflow start --herdr reuses an already-open PR worktree workspace", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Reused parent session",
+    "--body",
+    "Do it",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = fakeRuntime({
+    worktreeOpenJson: REUSE_OPEN_JSON,
+    tabCreateJson: REUSE_TAB_JSON,
+  });
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode, started.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    // A reused workspace gets a genuinely new tab inside it (not the repo-root fallback tab), then
+    // the parent starts in that tab — no new conflicting workspace is created.
+    expect(log).toMatch(/tab create --workspace w1 /);
+    expect(log).toMatch(/agent start .+ --tab w1:t2 /);
+    expect(log.indexOf("tab create")).toBeLessThan(log.indexOf("agent start"));
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --herdr surfaces a failed parent launch and cleans up its workspace", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -309,7 +407,10 @@ test("workflow start --herdr surfaces a failed parent launch", () => {
   ]);
   const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
   if (!issue) throw new Error(issueOut.stdout);
-  const runtime = fakeRuntime(7);
+  const runtime = fakeRuntime({
+    agentStartExit: 7,
+    worktreeOpenJson: FRESH_OPEN_JSON,
+  });
   try {
     const started = run(
       [
@@ -330,9 +431,12 @@ test("workflow start --herdr surfaces a failed parent launch", () => {
 
     expect(started.exitCode).toBe(1);
     expect(started.stderr).toContain("herdr exited with status 7");
-    expect(readFileSync(runtime.log, "utf8")).toMatch(
-      /^--session me-workflow-start-[a-f0-9]{8} agent start /,
-    );
+    const log = readFileSync(runtime.log, "utf8");
+    expect(log).toMatch(/agent start /);
+    // The fresh workspace this launch created must be torn down when the agent fails to start,
+    // rather than left as an empty orphan (herdr refuses to close its last tab, so the whole
+    // workspace is closed).
+    expect(log).toMatch(/workspace close w1/);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
