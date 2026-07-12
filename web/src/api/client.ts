@@ -38,6 +38,7 @@ import type {
   WebConfig,
   Workflow,
   WorkflowRunState,
+  WorkflowStepContracts,
 } from "./types";
 
 /** Resolved server base. "" => same-origin (proxy). No trailing slash. */
@@ -332,6 +333,10 @@ type WorkflowUpdatePatch = Omit<Partial<WorkflowInput>, "name"> & {
 
 export function listWorkflows() {
   return rpc<Workflow[]>("workflows/list", {});
+}
+
+export function getWorkflowContracts() {
+  return rpc<WorkflowStepContracts>("workflows/contracts", {});
 }
 
 export function getWorkflow(name: string) {

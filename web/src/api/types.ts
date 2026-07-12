@@ -39,6 +39,7 @@ import type {
   WebConfigWire,
   WorkflowRunStateWire,
   WorkflowRunVerdictSummaryWire,
+  WorkflowStepContractsWire,
   WorkflowWire,
 } from "../../../core/serialize.ts";
 
@@ -278,6 +279,7 @@ export type ScheduledTask = ScheduledTaskWire;
 
 /** A global workflow definition (#997): Plan/Execute/Verify/Reflect prompt bundle. */
 export type Workflow = WorkflowWire;
+export type WorkflowStepContracts = WorkflowStepContractsWire;
 
 /** Display state of a Workflow run linked to an issue / PR (#1008). */
 export type WorkflowRunState = WorkflowRunStateWire;

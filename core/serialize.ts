@@ -1303,6 +1303,14 @@ export function workflowJSON(row: S.WorkflowRow): WorkflowWire {
   };
 }
 
+/** Fixed system prompts for the four workflow steps, sourced from their launch-time contracts. */
+export interface WorkflowStepContractsWire {
+  plan: string;
+  execute: string;
+  verify: string;
+  reflect: string;
+}
+
 // Workflow run display state (#1008): the current step / status / rework count of the run linked to an
 // issue or PR, for issue / PR detail. The run row is the display-state source (docs §5.2) — the
 // *truth* of step completion stays with `workflow step status` (artifact placement + head), which

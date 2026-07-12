@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createWorkflow,
   deleteWorkflow,
+  getWorkflowContracts,
   listWorkflows,
   updateWorkflow,
   type WorkflowInput,
@@ -18,6 +19,14 @@ export function useWorkflows() {
   return useQuery({
     queryKey: queryKeys.workflows(),
     queryFn: listWorkflows,
+  });
+}
+
+export function useWorkflowContracts() {
+  return useQuery({
+    queryKey: ["workflows", "contracts"],
+    queryFn: getWorkflowContracts,
+    staleTime: Infinity,
   });
 }
 

@@ -4,15 +4,16 @@
 // are the only user-configurable part. Same workflows/* RPCs the CLI uses; this is the
 // management UI. Start-workflow and run status are intentionally out of scope here.
 
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
-import type { Workflow } from "@/api/types";
+import type { Workflow, WorkflowStepContracts } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import {
   useCreateWorkflow,
   useDeleteWorkflow,
   useUpdateWorkflow,
+  useWorkflowContracts,
   useWorkflows,
 } from "@/queries/workflows";
 // core/workflow/example-prompts.ts is a pure, node-free constant (single source of truth for the
@@ -30,12 +31,13 @@ function errorMessage(error: unknown): string {
 // per step in the form.
 const STEP_FIELDS: {
   key: "plan_prompt" | "execute_prompt" | "verify_prompt" | "reflect_prompt";
+  contractKey: keyof WorkflowStepContracts;
   label: string;
 }[] = [
-  { key: "plan_prompt", label: "Plan prompt" },
-  { key: "execute_prompt", label: "Execute prompt" },
-  { key: "verify_prompt", label: "Verify prompt" },
-  { key: "reflect_prompt", label: "Reflect prompt" },
+  { key: "plan_prompt", contractKey: "plan", label: "Plan prompt" },
+  { key: "execute_prompt", contractKey: "execute", label: "Execute prompt" },
+  { key: "verify_prompt", contractKey: "verify", label: "Verify prompt" },
+  { key: "reflect_prompt", contractKey: "reflect", label: "Reflect prompt" },
 ];
 
 export function WorkflowsPage() {
@@ -182,7 +184,11 @@ function WorkflowForm({
 }) {
   const create = useCreateWorkflow();
   const update = useUpdateWorkflow();
+  const contracts = useWorkflowContracts();
   const mutation = mode === "create" ? create : update;
+  const [openContract, setOpenContract] = useState<
+    (typeof STEP_FIELDS)[number] | null
+  >(null);
 
   const [name, setName] = useState(
     mode === "edit" ? (workflow?.name ?? "") : "",
@@ -267,17 +273,42 @@ function WorkflowForm({
       </label>
 
       {STEP_FIELDS.map((step) => (
-        <label key={step.key} className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">{step.label}</span>
+        <div key={step.key} className="flex flex-col gap-1 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <label
+              className="font-medium"
+              htmlFor={`workflow-${mode}-${step.key}`}
+            >
+              {step.label}
+            </label>
+            <button
+              type="button"
+              className="text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              onClick={() => setOpenContract(step)}
+            >
+              System prompt
+            </button>
+          </div>
           <textarea
+            id={`workflow-${mode}-${step.key}`}
             className="min-h-24 rounded-md border bg-background px-3 py-1.5 text-sm"
             value={prompts[step.key]}
             onChange={(e) =>
               setPrompts((prev) => ({ ...prev, [step.key]: e.target.value }))
             }
           />
-        </label>
+        </div>
       ))}
+
+      {openContract ? (
+        <SystemPromptDialog
+          stepLabel={openContract.label.replace(" prompt", "")}
+          content={contracts.data?.[openContract.contractKey]}
+          loading={contracts.isLoading}
+          error={contracts.isError}
+          onClose={() => setOpenContract(null)}
+        />
+      ) : null}
 
       {mutation.error ? (
         <p className="text-sm text-destructive">
@@ -298,6 +329,76 @@ function WorkflowForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+function SystemPromptDialog({
+  stepLabel,
+  content,
+  loading,
+  error,
+  onClose,
+}: {
+  stepLabel: string;
+  content?: string;
+  loading: boolean;
+  error: boolean;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const title = `${stepLabel} system prompt`;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="flex w-full max-w-4xl flex-col rounded-lg border bg-background shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold">{title}</h2>
+            <p className="text-xs text-muted-foreground">
+              Fixed by LoopHub and shown here for reference.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Close system prompt"
+            autoFocus
+            onClick={onClose}
+          >
+            <X className="size-4" />
+          </Button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : error ? (
+            <p className="text-sm text-destructive">
+              Failed to load the system prompt.
+            </p>
+          ) : (
+            <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/40 p-4 font-mono text-xs leading-relaxed">
+              {content ?? ""}
+            </pre>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

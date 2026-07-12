@@ -13,6 +13,13 @@ import type { Workflow } from "@/api/types";
 import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts.ts";
 import { WorkflowsPage } from "./workflows-page";
 
+const STEP_CONTRACTS = {
+  plan: "# Plan step contract\nPlan contract body",
+  execute: "# Execute step contract\nExecute contract body",
+  verify: "# Verify step contract\nVerify contract body",
+  reflect: "# Reflect step contract\nReflect contract body",
+};
+
 function workflow(overrides: Partial<Workflow> = {}): Workflow {
   return {
     id: 1,
@@ -34,7 +41,11 @@ function renderPage(
 ) {
   vi.stubGlobal(
     "fetch",
-    mockRpcFetch({ "workflows/list": () => workflows, ...handlers }),
+    mockRpcFetch({
+      "workflows/list": () => workflows,
+      "workflows/contracts": () => STEP_CONTRACTS,
+      ...handlers,
+    }),
   );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -72,6 +83,48 @@ describe("WorkflowsPage", () => {
       name: "Plan prompt",
     })) as HTMLTextAreaElement;
     expect(planField.value).toBe(WORKFLOW_EXAMPLE_PROMPTS.plan_prompt);
+  });
+
+  it("shows every system prompt in a read-only dialog on the create form", async () => {
+    renderPage({});
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New workflow" }),
+    );
+
+    const links = screen.getAllByRole("button", { name: "System prompt" });
+    expect(links).toHaveLength(4);
+    fireEvent.click(links[0]);
+
+    const dialog = screen.getByRole("dialog", {
+      name: "Plan system prompt",
+    });
+    expect(await within(dialog).findByText(/Plan contract body/)).toBeTruthy();
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows system prompt links on the edit form and closes the dialog with its button", async () => {
+    renderPage({}, [workflow()]);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+
+    expect(
+      screen.getAllByRole("button", { name: "System prompt" }),
+    ).toHaveLength(4);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "System prompt" })[3],
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: "Reflect system prompt",
+    });
+    expect(
+      await within(dialog).findByText(/Reflect contract body/),
+    ).toBeTruthy();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Close system prompt" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("surfaces a 422 validation error as a form error on create", async () => {

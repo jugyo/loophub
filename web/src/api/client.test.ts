@@ -4,6 +4,7 @@ import {
   createRepo,
   createWorkflow,
   deleteWorkflow,
+  getWorkflowContracts,
   listIssues,
   listLabels,
   listRepos,
@@ -142,6 +143,13 @@ describe("typed methods translate to contract params", () => {
     await listWorkflows();
     expect(lastRequest(fetchMock).body).toMatchObject({
       method: "workflows/list",
+      params: {},
+    });
+
+    fetchMock = mockRpc({ plan: "Plan contract" });
+    await getWorkflowContracts();
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "workflows/contracts",
       params: {},
     });
 

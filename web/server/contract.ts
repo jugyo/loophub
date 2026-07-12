@@ -239,6 +239,13 @@ export const methods: Record<string, MethodDef> = {
   },
 
   // ---- workflows ----
+  "workflows/contracts": {
+    description:
+      "Get the fixed system prompts used to launch the Plan/Execute/Verify/Reflect steps.",
+    params: EMPTY_PARAMS,
+    result: anyObject,
+    handler: () => svc.workflows.contracts(),
+  },
   "workflows/list": {
     description:
       "List global workflow definitions (Plan/Execute/Verify/Reflect prompt bundles).",

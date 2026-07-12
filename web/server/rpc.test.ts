@@ -443,6 +443,10 @@ test("workflow CRUD is exposed through JSON-RPC", async () => {
   const listed: any = await call("workflows/list", {});
   expect(listed.result.map((w: any) => w.name)).toContain("standard");
 
+  const contracts: any = await call("workflows/contracts", {});
+  expect(contracts.result.plan).toContain("# Plan step contract");
+  expect(contracts.result.reflect).toContain("# Reflect step contract");
+
   const updated: any = await call("workflows/update", {
     name: "standard",
     new_name: "standard-v2",

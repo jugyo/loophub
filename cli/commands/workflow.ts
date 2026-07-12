@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { join } from "node:path";
 import { agentModel } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { isClaudeSessionId, RUNTIME_CLAUDE_CODE } from "../../core/resume.ts";
@@ -8,6 +7,10 @@ import {
   buildHerdrLaunchPlan,
   HERDR_ID,
 } from "../../core/terminal/terminal-launch.ts";
+import {
+  type WorkflowContract,
+  workflowContractText,
+} from "../../core/workflow/contracts.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   display,
@@ -119,18 +122,7 @@ function contractText(step: string): string {
   if (!["parent", "plan", "execute", "verify", "reflect"].includes(step)) {
     fail("step must be one of: plan, execute, verify, reflect");
   }
-  return readFileSync(
-    join(
-      import.meta.dirname,
-      "..",
-      "..",
-      "core",
-      "workflow",
-      "contracts",
-      `${step}.md`,
-    ),
-    "utf8",
-  );
+  return workflowContractText(step as WorkflowContract);
 }
 
 function commandAvailable(command: string): boolean {
