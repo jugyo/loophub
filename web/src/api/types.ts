@@ -1,8 +1,9 @@
 // Types mirroring the LoopHub REST API (see ../../../API.md). Wire shapes produced by
 // core/serialize.ts are type-only imports from core (single source of truth, #746) — a
 // serializer change that alters a shape breaks this build instead of silently drifting.
-// Shapes with no core serializer (Herdr/Terminal/Settings/Stats/dashboard/events) stay
-// hand-written below.
+// HerdrPullWorkspace/HerdrIssueWorkspace likewise derive from core/terminal/herdr-status.ts,
+// whose interfaces the terminal/sessions RPC returns as-is. The remaining shapes with no core
+// counterpart (other Herdr/Terminal/Settings/Stats/dashboard/events) stay hand-written below.
 import type {
   DiffFile,
   FileAtRef as FileAtRefWire,
@@ -42,6 +43,10 @@ import type {
   WorkflowStepContractsWire,
   WorkflowWire,
 } from "../../../core/serialize.ts";
+import type {
+  HerdrIssueWorkspace as HerdrIssueWorkspaceWire,
+  HerdrPullWorkspace as HerdrPullWorkspaceWire,
+} from "../../../core/terminal/herdr-status.ts";
 
 export type WebConfig = WebConfigWire;
 
@@ -158,24 +163,14 @@ export interface HerdrAgent {
  * (`terminal/sessions`, #579 — the issue-list Herdr badge). `pane_id` is a valid
  * `terminal/focusAgent` target.
  */
-export interface HerdrPullWorkspace {
-  pull: number;
-  pane_id: string;
-  /** Raw herdr agent_status (known values: working | blocked | done | idle), same as HerdrAgent.status. */
-  status: string;
-}
+export type HerdrPullWorkspace = HerdrPullWorkspaceWire;
 
 /**
  * A running herdr agent's pane resolved to the *issue* its PR closes (`terminal/sessions`, #821 —
  * the issue-detail Agents section). Issue-keyed counterpart of HerdrPullWorkspace; `pane_id` is a
  * valid `terminal/focusAgent` target.
  */
-export interface HerdrIssueWorkspace {
-  issue: number;
-  pane_id: string;
-  /** Raw herdr agent_status (known values: working | blocked | done | idle), same as HerdrAgent.status. */
-  status: string;
-}
+export type HerdrIssueWorkspace = HerdrIssueWorkspaceWire;
 
 /** A repo's running herdr session and its agents (`terminal/sessions`, #495). */
 export interface HerdrRepoSessions {
