@@ -423,7 +423,9 @@ export function herdrPaneSendKeysArgv(
   ];
 }
 
-// Writes literal text to a pane without invoking a shell. The caller submits it separately with
+// Writes literal text to a pane without invoking a shell. Herdr's send-text contract treats the
+// argument after paneId as the text positional, including when it starts with `-`; inserting `--`
+// would instead send that marker as the text. The caller submits separately with
 // herdrPaneSendKeysArgv(..., "Enter") so user input can never be parsed as a command by LoopHub.
 export function herdrPaneSendTextArgv(
   repo: TerminalLaunchRepo,
@@ -437,7 +439,6 @@ export function herdrPaneSendTextArgv(
     "pane",
     "send-text",
     paneId,
-    "--",
     text,
   ];
 }

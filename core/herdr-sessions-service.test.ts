@@ -1033,7 +1033,7 @@ test("terminal.focusAgent surfaces a visible error when herdr is not installed",
   }
 });
 
-test("terminal.sendAgentInput verifies the PR pane, writes literal text, and submits once", async () => {
+test("terminal.sendAgentInput follows Herdr's positional text contract and submits each message", async () => {
   const repo = await svc.repos.create({
     path: initGitRepo(),
     name: "me/send-input",
@@ -1065,7 +1065,10 @@ test("terminal.sendAgentInput verifies the PR pane, writes literal text, and sub
     [
       "#!/bin/sh",
       `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
-      `if [ "$4" = "send-text" ]; then printf '%s\\0' "$7" >> ${callsFile}; else printf '%s\\0' "$6" >> ${callsFile}; fi`,
+      // Herdr 0.7.1's contract is `send-text <pane_id> <text>`: it consumes $6 as
+      // the text positional and ignores later arguments. Model that behavior so an
+      // option terminator accidentally inserted before the text is observable.
+      `printf '%s:%s\\0' "$4" "$6" >> ${callsFile}`,
       "exit 0",
     ].join("\n"),
   );
@@ -1078,10 +1081,28 @@ test("terminal.sendAgentInput verifies the PR pane, writes literal text, and sub
         repo: repo.full_name,
         pull: prRow.number,
         paneId,
+        text: "続けて",
+      }),
+    ).resolves.toEqual({ ok: true });
+    await expect(
+      svc.terminal.sendAgentInput({
+        repo: repo.full_name,
+        pull: prRow.number,
+        paneId,
+        text: "-continue",
+      }),
+    ).resolves.toEqual({ ok: true });
+    await expect(
+      svc.terminal.sendAgentInput({
+        repo: repo.full_name,
+        pull: prRow.number,
+        paneId,
         text,
       }),
     ).resolves.toEqual({ ok: true });
-    expect(readFileSync(callsFile).toString()).toBe(`${text}\0Enter\0`);
+    expect(readFileSync(callsFile).toString()).toBe(
+      `send-text:続けて\0send-keys:Enter\0send-text:-continue\0send-keys:Enter\0send-text:${text}\0send-keys:Enter\0`,
+    );
     expect(existsSync(injectedFile)).toBe(false);
   } finally {
     process.env.PATH = ORIGINAL_PATH;
