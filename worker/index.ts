@@ -4,6 +4,7 @@
 //   lh-worker [--poll-ms <ms>] [--sweep-ms <ms>] [--usage-sweep-ms <ms>]
 //             [--github-merge-sweep-ms <ms>] [--cost-stop-sweep-ms <ms>]
 //             [--closed-pull-cleanup-sweep-ms <ms>] [--scheduled-task-sweep-ms <ms>]
+//             [--conflict-sweep-ms <ms>]
 // Like lh-web, it touches the DB through core, so it must carry the --experimental-sqlite flag
 // (the `lh-worker` npm script does). v1 is started via `npm run lh-worker`; an `lh worker`
 // subcommand is intentionally out of scope.
@@ -11,6 +12,7 @@
 import { workerLog } from "./logger.ts";
 import {
   DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
+  DEFAULT_CONFLICT_SWEEP_MS,
   DEFAULT_COST_STOP_SWEEP_MS,
   DEFAULT_GITHUB_MERGE_SWEEP_MS,
   DEFAULT_SCHEDULED_TASK_SWEEP_MS,
@@ -42,6 +44,9 @@ let scheduledTaskSweepMs = Number(
   process.env.LOOPHUB_SCHEDULED_TASK_SWEEP_MS ??
     DEFAULT_SCHEDULED_TASK_SWEEP_MS,
 );
+let conflictSweepMs = Number(
+  process.env.LOOPHUB_CONFLICT_SWEEP_MS ?? DEFAULT_CONFLICT_SWEEP_MS,
+);
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--poll-ms") pollMs = Number(argv[++i]);
   else if (argv[i] === "--sweep-ms") sweepMs = Number(argv[++i]);
@@ -54,6 +59,8 @@ for (let i = 0; i < argv.length; i++) {
     closedPullCleanupSweepMs = Number(argv[++i]);
   else if (argv[i] === "--scheduled-task-sweep-ms")
     scheduledTaskSweepMs = Number(argv[++i]);
+  else if (argv[i] === "--conflict-sweep-ms")
+    conflictSweepMs = Number(argv[++i]);
 }
 // Guard against a missing/non-numeric value (NaN), which setInterval treats as 0ms — a busy loop.
 if (!Number.isFinite(pollMs) || pollMs <= 0) pollMs = 1000;
@@ -65,12 +72,13 @@ const maintenanceOptions = normalizeMaintenanceLoopOptions({
   costStopSweepMs,
   closedPullCleanupSweepMs,
   scheduledTaskSweepMs,
+  conflictSweepMs,
 });
 const worker = startWorker({ pollMs });
 const maintenance = startMaintenanceLoops(maintenanceOptions);
 const summary = maintenanceSummary(maintenanceOptions);
 workerLog.info(
-  `lh-worker started (events poll ${pollMs}ms; PR sweep ${summary.pullSweep}; usage sweep ${summary.usageSweep}; github merge sweep ${summary.githubMergeSweep}; cost stop sweep ${summary.costStopSweep}; closed pull cleanup sweep ${summary.closedPullCleanupSweep}; scheduled task sweep ${summary.scheduledTaskSweep})`,
+  `lh-worker started (events poll ${pollMs}ms; PR sweep ${summary.pullSweep}; usage sweep ${summary.usageSweep}; github merge sweep ${summary.githubMergeSweep}; cost stop sweep ${summary.costStopSweep}; closed pull cleanup sweep ${summary.closedPullCleanupSweep}; scheduled task sweep ${summary.scheduledTaskSweep}; conflict sweep ${summary.conflictSweep})`,
 );
 
 let isShuttingDown = false;

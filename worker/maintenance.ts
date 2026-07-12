@@ -1,4 +1,5 @@
 import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
+import { sweepPullConflicts } from "../core/pull-conflict-events.ts";
 import {
   events,
   notifications,
@@ -31,6 +32,11 @@ export const DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS = 600000;
 // due minute promptly. Each tick is only a cheap DB scan unless a task is actually due (then it
 // launches a herdr tab), so this stays infrequent.
 export const DEFAULT_SCHEDULED_TASK_SWEEP_MS = 30000;
+// #1232: detecting an open PR's clean -> conflict transition recomputes merge-tree over every open
+// PR, the same local git cost the merge-ready check in the pull sweep already pays. A base advances
+// only when a sibling merges — infrequent, and a human merge is never seconds away — so this runs on
+// its own coarser interval than the 5s pull sweep rather than piggybacking on it.
+export const DEFAULT_CONFLICT_SWEEP_MS = 15000;
 
 export interface MaintenanceLoopOptions {
   sweepMs?: number;
@@ -39,6 +45,7 @@ export interface MaintenanceLoopOptions {
   costStopSweepMs?: number;
   closedPullCleanupSweepMs?: number;
   scheduledTaskSweepMs?: number;
+  conflictSweepMs?: number;
 }
 
 export interface NormalizedMaintenanceLoopOptions {
@@ -48,6 +55,7 @@ export interface NormalizedMaintenanceLoopOptions {
   costStopSweepMs: number;
   closedPullCleanupSweepMs: number;
   scheduledTaskSweepMs: number;
+  conflictSweepMs: number;
 }
 
 export interface MaintenanceHandle {
@@ -75,6 +83,10 @@ export function normalizeMaintenanceLoopOptions(
     scheduledTaskSweepMs: finiteOrDefault(
       opts.scheduledTaskSweepMs,
       DEFAULT_SCHEDULED_TASK_SWEEP_MS,
+    ),
+    conflictSweepMs: finiteOrDefault(
+      opts.conflictSweepMs,
+      DEFAULT_CONFLICT_SWEEP_MS,
     ),
   };
 }
@@ -127,6 +139,8 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
         : "off",
     scheduledTaskSweep:
       opts.scheduledTaskSweepMs > 0 ? `${opts.scheduledTaskSweepMs}ms` : "off",
+    conflictSweep:
+      opts.conflictSweepMs > 0 ? `${opts.conflictSweepMs}ms` : "off",
   };
 }
 
@@ -150,6 +164,9 @@ export function startMaintenanceLoops(
       : () => {},
     normalized.scheduledTaskSweepMs > 0
       ? startScheduledTaskSweep(normalized.scheduledTaskSweepMs)
+      : () => {},
+    normalized.conflictSweepMs > 0
+      ? startConflictSweep(normalized.conflictSweepMs)
       : () => {},
   ];
 
@@ -180,6 +197,41 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
       });
     } catch (err) {
       logLoopFailed("pull sweep", startedAt, err);
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// Fire pull_request.merge_conflict for open PRs whose base advanced into a conflict while they
+// waited for a human merge (#1232). This loop is an event source only — delivery to whatever
+// subscribed (via `lh subscribe`) happens in the worker's event tail, and what the subscriber does
+// with it is its own wiring; no session is launched here.
+export function startConflictSweep(
+  intervalMs = DEFAULT_CONFLICT_SWEEP_MS,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    const startedAt = logLoopStarted("conflict sweep");
+    try {
+      const result = await sweepPullConflicts();
+      logLoopCompleted("conflict sweep", startedAt, {
+        checked: result.checked,
+        emitted_events: result.emitted,
+      });
+    } catch (err) {
+      logLoopFailed("conflict sweep", startedAt, err);
     } finally {
       running = false;
     }

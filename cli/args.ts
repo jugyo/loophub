@@ -72,6 +72,8 @@ export type Flags = {
   resource?: string;
   "source-key"?: string;
   "herdr-pane-id"?: string;
+  "herdr-session"?: string;
+  all?: boolean;
   description?: string;
   "plan-prompt"?: string;
   "execute-prompt"?: string;
@@ -156,6 +158,8 @@ const { values, positionals } = parseArgs({
     resource: { type: "string" },
     "source-key": { type: "string" },
     "herdr-pane-id": { type: "string" },
+    "herdr-session": { type: "string" },
+    all: { type: "boolean" },
     description: { type: "string" },
     "plan-prompt": { type: "string" },
     "execute-prompt": { type: "string" },

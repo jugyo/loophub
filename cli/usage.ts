@@ -38,6 +38,9 @@ export function usage(): void {
   lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image(s), print embed markdown
   lh sync                                          # detect open-PR head updates and emit events
   lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc]   # print a bounded event snapshot; use --since with --order asc for cursor polling
+  lh subscribe --event <type>[,<type>...] [--repo owner/repo]   # subscribe this herdr pane to repo events (worker injects a notify line per event)
+  lh subscribe list [--repo owner/repo] [--json]
+  lh unsubscribe --event <type>[,<type>...] | --all  [--repo owner/repo]   # remove this pane's subscriptions (all repos unless --repo)
 
   common: --session-id <uuid>  --json
   examples:

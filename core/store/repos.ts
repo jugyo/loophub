@@ -216,6 +216,8 @@ export function deleteRepo(owner: string, name: string): boolean {
   db.run(`DELETE FROM notification_merge_ready_states WHERE repo_id = ?`, [
     repo.id,
   ]);
+  db.run(`DELETE FROM pull_conflict_states WHERE repo_id = ?`, [repo.id]);
+  db.run(`DELETE FROM event_subscriptions WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM notifications WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM issues WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM labels WHERE repo_id = ?`, [repo.id]);

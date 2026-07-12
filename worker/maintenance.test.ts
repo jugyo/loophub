@@ -65,6 +65,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
       costStopSweepMs: Number.NaN,
       closedPullCleanupSweepMs: Number.NaN,
       scheduledTaskSweepMs: Number.NaN,
+      conflictSweepMs: Number.NaN,
     }),
   ).toEqual({
     sweepMs: 0,
@@ -73,6 +74,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     costStopSweepMs: M.DEFAULT_COST_STOP_SWEEP_MS,
     closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
+    conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
   });
 
   expect(M.normalizeMaintenanceLoopOptions()).toEqual({
@@ -82,6 +84,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     costStopSweepMs: M.DEFAULT_COST_STOP_SWEEP_MS,
     closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
+    conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
   });
 });
 
@@ -99,6 +102,7 @@ test("maintenance summary reports disabled loops as off", () => {
       costStopSweepMs: 0,
       closedPullCleanupSweepMs: 600000,
       scheduledTaskSweepMs: 0,
+      conflictSweepMs: 0,
     }),
   ).toEqual({
     pullSweep: "off",
@@ -107,6 +111,7 @@ test("maintenance summary reports disabled loops as off", () => {
     costStopSweep: "off",
     closedPullCleanupSweep: "600000ms",
     scheduledTaskSweep: "off",
+    conflictSweep: "off",
   });
 });
 

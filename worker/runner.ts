@@ -6,7 +6,14 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { logsDir, workerCursorPath } from "../core/config.ts";
 import { worktreeList } from "../core/git.ts";
-import { events, pulls, type Repo, repos, terminal } from "../core/service.ts";
+import {
+  events,
+  pulls,
+  type Repo,
+  repos,
+  subscriptions,
+  terminal,
+} from "../core/service.ts";
 import { resolveStartCursor, writeCursor } from "../core/worker-cursor.ts";
 import {
   buildRunEnv,
@@ -161,6 +168,25 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
         e,
       );
     }
+  }
+
+  // Generic pub/sub delivery (#1232): every event goes to its `lh subscribe` subscribers,
+  // independent of the workflow.yml wiring below. Failures are logged, never retried — a
+  // subscription whose pane is gone is removed on this first failed notify (lazy cleanup).
+  try {
+    const notify = await subscriptions.notifyForEvent(row);
+    if (notify.notified > 0 || notify.removed > 0) {
+      workerLog.info(
+        `lh-worker: event subscriptions notified event_id=${row.id} type=${row.type} notified=${notify.notified} removed=${notify.removed}`,
+      );
+    }
+    for (const failure of notify.failures) {
+      workerLog.error(
+        `lh-worker: event subscription notify failed (subscription removed) subscription_id=${failure.subscription_id} pane=${failure.herdr_session}/${failure.herdr_pane_id} error=${failure.error}`,
+      );
+    }
+  } catch (e) {
+    console.error(`lh-worker: subscription notify error (event ${row.id}):`, e);
   }
 
   if (!isSupported(row.type)) return;

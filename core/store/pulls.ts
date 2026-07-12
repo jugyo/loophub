@@ -1,4 +1,5 @@
 import { db, now } from "../db.ts";
+import type { MergeableState } from "../mergeable.ts";
 import type { IssueRow } from "./issues.ts";
 import { getIssueById, touchIssue } from "./issues.ts";
 import { linkSession, setSessionKind } from "./sessions.ts";
@@ -250,6 +251,39 @@ export function openPulls(): OpenPullSweepRow[] {
        WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0 AND r.archived = 0`,
     )
     .all() as OpenPullSweepRow[];
+}
+
+export interface PullConflictTransition {
+  // The state recorded on the previous sweep tick, or null the first time this PR is seen.
+  previous: MergeableState | null;
+  // The state just recorded for this tick.
+  current: MergeableState;
+}
+
+// Record an open PR's current mergeable state for the conflict sweep (#1232) and return the
+// previous vs current pair the sweep needs to detect a clean -> conflict transition. Recording
+// every tick makes the sweep idempotent: once `conflict` is stored the previous state stops being
+// `clean`, so the transition — and its single event — is not repeated while the PR stays
+// conflicted.
+export function recordPullConflictState(
+  repoId: number,
+  pullNumber: number,
+  state: MergeableState,
+): PullConflictTransition {
+  const prev = db
+    .query(
+      `SELECT state FROM pull_conflict_states
+       WHERE repo_id = ? AND pull_number = ?`,
+    )
+    .get(repoId, pullNumber) as { state: MergeableState } | undefined;
+  db.query(
+    `INSERT INTO pull_conflict_states (repo_id, pull_number, state, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(repo_id, pull_number) DO UPDATE SET
+       state = excluded.state,
+       updated_at = excluded.updated_at`,
+  ).run(repoId, pullNumber, state, now());
+  return { previous: prev?.state ?? null, current: state };
 }
 
 export function setMerged(
