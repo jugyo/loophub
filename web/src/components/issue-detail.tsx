@@ -313,7 +313,7 @@ function BuildControls({
 
 // Start workflow dropdown next to Build (#1007): pick a saved workflow by name and launch it
 // via `terminal/launch` with workflow "workflow-run", which spawns `lh workflow start
-// <owner>/<repo>/<n> --workflow-id <id> --herdr`. It shares Build's linked-open-PR guard (rendered
+// <owner>/<repo>/<n> --workflow-id <id> --herdr --auto`. It shares Build's linked-open-PR guard (rendered
 // only when buildState === "build"), keeping one launch system per issue at a time
 // (docs/workflow.ja.md §9.1). With no saved workflows, the menu links to Settings > Workflows.
 function StartWorkflowControls({
@@ -348,7 +348,7 @@ function StartWorkflowControls({
       <DropdownMenuTrigger asChild>
         <Button
           variant="secondary"
-          title="Start a saved workflow for this issue"
+          title="Start a saved workflow in auto mode (no approval prompts, no sandbox)"
           disabled={isLaunching || isLoading}
         >
           {isLaunching ? (

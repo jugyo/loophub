@@ -239,10 +239,61 @@ test("workflow start --herdr pins the parent to the canonical repo session", () 
     expect(readFileSync(runtime.log, "utf8")).toMatch(
       /^--session me-workflow-start-[a-f0-9]{8} agent start /,
     );
+    expect(readFileSync(runtime.log, "utf8")).not.toContain(
+      "'--permission-mode' 'auto'",
+    );
     expect(started.stderr).toContain("Attach with: herdr --session");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
+});
+
+test("workflow start --auto launches the parent in auto mode", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Auto parent session",
+    "--body",
+    "Do it unattended",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = fakeRuntime(0);
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--herdr",
+        "--auto",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode, started.stderr).toBe(0);
+    expect(readFileSync(runtime.log, "utf8")).toContain(
+      "'--permission-mode' 'auto'",
+    );
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI usage documents workflow start --auto", () => {
+  const result = run([]);
+  expect(result.stdout).toContain("lh workflow start");
+  expect(result.stdout).toContain("[--herdr] [--auto]");
 });
 
 test("workflow start --herdr surfaces a failed parent launch", () => {

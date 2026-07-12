@@ -287,7 +287,7 @@ function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--herdr] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--herdr] [--auto] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -314,6 +314,7 @@ async function startWorkflow(): Promise<void> {
         workflow: flags.workflow,
         workflowId,
         parentContract: parentContract(),
+        auto: flags.auto === true,
         lockPid: process.pid,
       },
       sessionId,
@@ -368,9 +369,6 @@ async function launchStep(): Promise<void> {
   }
   if (flags.json === true) {
     fail("--json is not supported for workflow launch-step");
-  }
-  if (step === "plan" && flags.auto === true) {
-    fail("Workflow plan launch does not support --auto");
   }
   preflightStepLaunch();
   const actorSessionId = await writeSession();

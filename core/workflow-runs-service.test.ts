@@ -80,6 +80,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
       issue: issue.number,
       workflowId: workflow.id,
       parentContract: "# Parent\nDo the run.",
+      auto: true,
     },
     "11111111-1111-4111-8111-111111111111",
   );
@@ -131,6 +132,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     status: "running",
     current_step: "plan",
     rework_count: 0,
+    auto_mode: 1,
   });
   // The run-start Plan input carries issue comments too, matching the language
   // instruction's claim that title, body, and comments are in the inputs (#1205).
@@ -177,7 +179,6 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
       step: "plan",
       contract: "# Plan contract\n{{step}} {{worktreePath}} {{baseBranch}}",
       model: "sonnet",
-      auto: true,
     },
     result.session_id,
   );
@@ -215,6 +216,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   expect(launched.herdr.argv).toContain("--split");
   expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_RUN=");
   expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_STEP='plan'");
+  expect(launched.herdr.command).toContain("--permission-mode 'auto'");
 
   expect(
     JSON.parse(S.getWorkflowRun(result.run.id)!.step_sessions_json),
@@ -312,6 +314,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   expect(readFileSync(executeLaunch.system_prompt_path, "utf8")).toContain(
     "# Execute",
   );
+  expect(executeLaunch.herdr.command).toContain("--permission-mode 'auto'");
 
   const verifyLaunch = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -328,6 +331,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
       expect.stringContaining("/verify/input/report.md"),
     ]),
   );
+  expect(verifyLaunch.herdr.command).toContain("--permission-mode 'auto'");
 
   const reflectLaunch = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -341,6 +345,20 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   expect(reflectLaunch.input_files.map((file) => file.path)).toEqual([
     expect.stringContaining("/reflect/input/run-digest.md"),
   ]);
+  expect(reflectLaunch.herdr.command).toContain("--permission-mode 'auto'");
+
+  const reworkExecuteLaunch = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    {
+      run: result.run.id,
+      step: "execute",
+      contract: "# Execute rework",
+    },
+    result.session_id,
+  );
+  expect(reworkExecuteLaunch.herdr.command).toContain(
+    "--permission-mode 'auto'",
+  );
 });
 
 test("step output validates, stamps, places, readies, and retries an accepted artifact", async () => {
@@ -660,6 +678,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
     },
     session,
   );
+  expect(S.getWorkflowRun(started.run.id)?.auto_mode).toBe(0);
 
   // Nothing placed yet: every step incomplete.
   const initial = await svc.workflowRuns.status(repo.full_name, {

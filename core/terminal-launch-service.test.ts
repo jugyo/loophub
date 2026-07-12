@@ -417,7 +417,16 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
     });
 
     expect(lhDev.calls).toEqual([
-      ["lh", "workflow", "start", "me/proj/1", "--workflow-id", "9", "--herdr"],
+      [
+        "lh",
+        "workflow",
+        "start",
+        "me/proj/1",
+        "--workflow-id",
+        "9",
+        "--herdr",
+        "--auto",
+      ],
     ]);
     expect(herdr.calls).toHaveLength(0);
     expect(result).toMatchObject({ backend: "herdr" });
@@ -441,7 +450,7 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
 
     expect(err?.message).toBe("lh workflow start exited with status 7");
     expect(err?.data?.command).toBe(
-      "lh workflow start me/proj/1 --workflow-id 9 --herdr",
+      "lh workflow start me/proj/1 --workflow-id 9 --herdr --auto",
     );
   });
 

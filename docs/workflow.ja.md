@@ -77,6 +77,7 @@ step = f(入力 artifact, worktree) → (出力 artifact, commits)
 | workflow agent（親） | run ごとに 1 つ起動される orchestrator agent。子を起動し、LoopHub の状態を見て step を遷移させる。コードは書かない。 |
 | step agent（子） | 各 step を実行する agent。親が herdr の split pane で起動する。 |
 | run | ある issue に対する workflow の 1 回の実行。issue・PR・worktree・親 session に紐づく。 |
+| auto mode | agent を approval prompt・sandbox なしで起動する permission mode。Workflow では Claude runtime の `--permission-mode auto` に対応する。対話モードは通常の approval prompt を表示する起動を指す。 |
 | herdr | LoopHub 外部の端末 workspace マネージャ（AI coding agent 向け）。workspace / tab / split pane で agent プロセスを起動・監視でき、pane への入力注入もできる。LoopHub は既に build 等の agent 起動で利用している（§3.1）。 |
 | 契約 channel | 契約が agent に届く経路（claude CLI の `--append-system-prompt-file`）。step prompt が届く経路（positional の user prompt）と分離されている。 |
 
@@ -209,6 +210,7 @@ CREATE TABLE workflow_runs (
   status             TEXT NOT NULL,   -- running | blocked | completed | stopped
   current_step       TEXT NOT NULL,   -- plan | execute | verify | reflect
   rework_count       INTEGER NOT NULL DEFAULT 0,
+  auto_mode          INTEGER NOT NULL DEFAULT 0,
   parent_session_id  TEXT,
   step_sessions_json TEXT NOT NULL DEFAULT '{}',  -- step -> [session id]
   created_at         TEXT NOT NULL,
@@ -686,6 +688,10 @@ ascending snapshot を取得し、空なら同じ cursor のまま待つ。event
   `BuildControls` の隣）。**[Build] [Start workflow ▾]** と並ぶ。
 - Start workflow はドロップダウンで **保存済み workflow を名前で選んで起動**する
   （`workflows/list` を表示。0 件なら Settings の Workflows ページへの導線を出す）。
+- Web UI からの起動は常に auto mode で、親と全 step agent を approval prompt・sandbox なしで
+  起動する。この permission posture は button の tooltip に表示する。
+  v1 の UI に非 auto の選択肢や切り替え設定はなく、対話モードが必要な場合は CLI から
+  `--auto` を付けずに起動する。
 - 表示条件は Build と同じ判定を使う: linked open PR が既にある issue では Build 同様に起動系
   ボタンを出さない（1 issue につき同時 1 系統。Build と Workflow run は同じ soft guard —
   「open PR は同時に 1 つ」— を共有する）。
@@ -694,7 +700,7 @@ ascending snapshot を取得し、空なら同じ cursor のまま待つ。event
 
 `terminal/launch` の `workflow` enum に `"workflow-run"` を追加し、params に `workflowId` を
 足す。server 側（`core/service/terminal.ts`）は `launchIssueDevHerdr` と同型の
-`launchWorkflowRunHerdr` で `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr` を
+`launchWorkflowRunHerdr` で `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr --auto` を
 spawn する。既存の Build 経路（RPC → CLI spawn → herdr）と同じ形にすることで、worktree /
 PR / lock の準備ロジックを CLI 側に一本化したままにする。
 
@@ -716,6 +722,8 @@ command の代わりに §7 の合成で親を起動する。`--herdr` なしの
 
 runtime / model / permission は既存の `agents` / `codingAgent` 設定と flag をそのまま使う
 （#964 §4.2 と同じ整理: step は runtime を持たない）。v1 は claude runtime のみ（§14）。
+`--auto` は run の `auto_mode` に保存し、親と、その後に起動・再起動する全 step agent へ
+`--permission-mode auto` として継承する。未指定時は従来どおり auto mode を強制しない。
 `--no-launch` は run と draft PR / worktree の準備だけ行い、親を起動しない — §9.4 の
 エージェントなし運用・テスト用。
 

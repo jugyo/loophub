@@ -643,6 +643,31 @@ describe("IssueDetail", () => {
     expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
   });
 
+  it("makes Workflow auto mode explicit before launching", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr, false, {
+      "workflows/list": () => [{ id: 9, name: "Standard" }],
+    });
+
+    const button = await screen.findByRole("button", {
+      name: "Start workflow",
+    });
+    expect(button.title).toBe(
+      "Start a saved workflow in auto mode (no approval prompts, no sandbox)",
+    );
+
+    fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Standard" }));
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: "Issue #12 - ui2: issue detail",
+      workflow: "workflow-run",
+      issueNumber: 12,
+      workflowId: 9,
+    });
+  });
+
   it("shows the Build button when the only linked PR is closed-unmerged", async () => {
     const rejected: Issue = {
       ...issue,

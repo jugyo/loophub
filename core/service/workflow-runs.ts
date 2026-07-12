@@ -764,6 +764,7 @@ export const workflowRuns = {
       workflow?: string;
       workflowId?: number;
       parentContract: string;
+      auto?: boolean;
       lockPid?: number;
     },
     sessionId: string = randomUUID(),
@@ -850,6 +851,7 @@ export const workflowRuns = {
         prNumber: opened.number,
         status: "running",
         currentStep: "plan",
+        autoMode: input.auto,
         parentSessionId: sessionId,
       });
 
@@ -1052,7 +1054,7 @@ export const workflowRuns = {
       userPrompt: composed.userPrompt,
       tabId: input.tabId,
       model: input.model,
-      permissionMode: input.auto ? "auto" : undefined,
+      permissionMode: run.auto_mode === 1 || input.auto ? "auto" : undefined,
     });
 
     return {
