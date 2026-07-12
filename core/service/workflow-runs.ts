@@ -855,9 +855,7 @@ export const workflowRuns = {
 
       const inputFiles = writeWorkflowStepInputArtifacts(
         ensureWorkflowRunDir(run.id),
-        composePlanInputArtifacts({
-          issue: { title: issue.title, body: issue.body },
-        }),
+        composePlanInputArtifacts({ issue: issueInput(issue) }),
       );
       const systemPromptPath = writeParentContract(
         run.id,

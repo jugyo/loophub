@@ -72,6 +72,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     verifyPrompt: "",
     reflectPrompt: "",
   });
+  S.createComment(issue.id, "me", "Design note recorded before start.");
 
   const result = await svc.workflowRuns.start(
     repo.full_name,
@@ -131,6 +132,22 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     current_step: "plan",
     rework_count: 0,
   });
+  // The run-start Plan input carries issue comments too, matching the language
+  // instruction's claim that title, body, and comments are in the inputs (#1205).
+  expect(
+    readFileSync(
+      join(
+        realpathSync(HOME),
+        "runs",
+        "workflow",
+        String(result.run.id),
+        "plan",
+        "input",
+        "task.md",
+      ),
+      "utf8",
+    ),
+  ).toContain("Design note recorded before start.");
   expect(
     S.primaryDevSessionForPull(S.getIssue(repo.id, result.pr.number)!.id),
   ).toBe("11111111-1111-4111-8111-111111111111");

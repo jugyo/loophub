@@ -5,6 +5,8 @@ import {
   composeWorkflowLaunchPrompt,
   composeWorkflowStepPrompt,
   renderWorkflowContract,
+  WORKFLOW_LANGUAGE_INSTRUCTION,
+  WORKFLOW_STEPS,
 } from "./compose.ts";
 
 const CONTRACT_DIR = join(import.meta.dirname, "contracts");
@@ -50,6 +52,41 @@ test("renders contract context into the system prompt", () => {
   expect(contract).toContain("worktree: /tmp/worktree");
   expect(contract).toContain("base branch: main");
   expect(contract).toContain("Verify step contract");
+});
+
+test("every rendered contract carries the issue-language instruction", () => {
+  for (const step of ["parent", ...WORKFLOW_STEPS] as const) {
+    const contract = renderWorkflowContract({
+      template: readFileSync(join(CONTRACT_DIR, `${step}.md`), "utf8"),
+      step,
+      worktreePath: "/tmp/worktree",
+      baseBranch: "main",
+    });
+    expect(contract).toContain(WORKFLOW_LANGUAGE_INSTRUCTION);
+  }
+});
+
+test("launch prompt system channel carries the issue-language instruction", () => {
+  const composed = composeWorkflowLaunchPrompt(
+    {
+      template: readFileSync(join(CONTRACT_DIR, "execute.md"), "utf8"),
+      step: "execute",
+      worktreePath: "/tmp/worktree",
+      baseBranch: "main",
+    },
+    {
+      inputFiles: [
+        {
+          path: "/tmp/runs/workflow/run-1/execute/input/task.md",
+          description: "Requested outcome and acceptance criteria",
+        },
+      ],
+      baseBranch: "main",
+      stepPrompt: "Keep the change small.",
+    },
+  );
+
+  expect(composed.systemPrompt).toContain(WORKFLOW_LANGUAGE_INSTRUCTION);
 });
 
 test("user prompt lists large inputs by absolute path instead of embedding content", () => {
