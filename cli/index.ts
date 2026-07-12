@@ -1,4 +1,4 @@
-import { group } from "./args.ts";
+import { flags, group, pos } from "./args.ts";
 import * as attachmentCmd from "./commands/attachment.ts";
 import * as buildCmd from "./commands/build.ts";
 import * as eventsCmd from "./commands/events.ts";
@@ -16,10 +16,15 @@ import * as sessionCmd from "./commands/session.ts";
 import * as syncCmd from "./commands/sync.ts";
 import * as workflowCmd from "./commands/workflow.ts";
 import * as worktreeCmd from "./commands/worktree.ts";
+import { printCommandHelp } from "./help.ts";
 import { usage } from "./usage.ts";
 
 // ---- dispatch ----
 async function main() {
+  if (flags.help) {
+    if (!printCommandHelp(pos)) usage();
+    return;
+  }
   if (group === "info") return infoCmd.run();
   if (group === "build") return buildCmd.run();
   if (group === "resume") return resumeCmd.run();

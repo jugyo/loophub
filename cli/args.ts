@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 // next token: `lh build --sandbox 123` and `lh build 123 --sandbox` parse identically, and
 // `--repo=me/x` works. strict:false keeps the old lenient behavior for any undeclared flag.
 export type Flags = {
+  help?: boolean;
   repo?: string;
   "session-id"?: string;
   sessionId?: string;
@@ -90,6 +91,7 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   strict: false,
   options: {
+    help: { type: "boolean" },
     repo: { type: "string" },
     "session-id": { type: "string" },
     sessionId: { type: "string" },
