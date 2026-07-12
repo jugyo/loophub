@@ -21,7 +21,6 @@ import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { cn } from "@/lib/utils";
 import type { IssueListFilters } from "@/queries/issues";
-import { useSettings } from "@/queries/settings";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
   if (badges.length === 0) return null;
@@ -208,8 +207,8 @@ export function IssueRow({
   );
 }
 
-// Build button for an issue row: starts `lh build <n>` in a terminal, the same
-// action as the issue-detail Build button (issue-detail.tsx). Always visible
+// Build button for an issue row: starts a build for the issue in a terminal, the
+// same action as the issue-detail Build button (issue-detail.tsx). Always visible
 // (not hover-revealed) so the row layout is stable regardless of label presence.
 // Hidden (not replaced by a label — that's issue-detail.tsx only, by request)
 // whenever the issue's primary linked PR is open or merged (issueBuildButtonState,
@@ -225,24 +224,13 @@ function RowBuildButton({
   issue: Issue;
 }) {
   const { launchTerminal } = useTerminalLauncher();
-  const { data: settings } = useSettings();
   const [isLoading, startLoading] = useFixedLoading();
   const state = issueBuildButtonState(issue);
   if (state !== "build") return null;
-  // Display-only: the herdr backend builds and spawns `lh build <n> --herdr [--auto]` itself
-  // (core/service.ts's launchIssueDevHerdr, #584) — this string is never sent over the wire, it
-  // only drives the button's tooltip so it reflects what actually runs. The Build button doesn't
-  // pick a runtime itself, so it inherits whichever agent `lh build` resolves to (#593).
-  const autoModeOnBuild = settings
-    ? settings.agents[settings.codingAgent]?.autoModeOnBuild
-    : false;
-  const command = autoModeOnBuild
-    ? `lh build ${issue.number} --herdr --auto`
-    : `lh build ${issue.number} --herdr`;
   return (
     <button
       type="button"
-      title={`Start \`${command}\` in a terminal`}
+      title={`Build issue #${issue.number} in a terminal`}
       aria-label={`Build issue #${issue.number}`}
       disabled={isLoading}
       onClick={() => {

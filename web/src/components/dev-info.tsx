@@ -1,13 +1,13 @@
-// "Develop" footer for the issue/PR description card. It surfaces the commands to
-// start (issue) or resume (PR) an agent dev session. This is incidental info, so it
-// renders as a footer of the description card — divided by a border-t and set on a
-// slightly stronger muted background — per web/DESIGN.md. It must read as part of
-// the description block, not compete with it, and must not push the action buttons
-// away from the card. The parent owns the card border/radius (overflow-hidden); this
-// section is intentionally square-cornered.
+// "Develop" footer for the PR description card. It surfaces the command to resume an
+// agent dev session. This is incidental info, so it renders as a footer of the
+// description card — divided by a border-t and set on a slightly stronger muted
+// background — per web/DESIGN.md. It must read as part of the description block, not
+// compete with it, and must not push the action buttons away from the card. The
+// parent owns the card border/radius (overflow-hidden); this section is intentionally
+// square-cornered.
 //
-// Commands use the fully-qualified `owner/repo/<id>` form so they are copy-pasteable
-// from anywhere (both `lh build` and `lh resume` accept it — see cli/index.ts usage).
+// The command uses the fully-qualified `owner/repo/<id>` form so it is copy-pasteable
+// from anywhere (`lh resume` accepts it — see cli/index.ts usage).
 
 import { Terminal } from "lucide-react";
 import { CopyButton } from "@/components/copy-button";
@@ -45,40 +45,9 @@ function DevInfo({ commands }: { commands: DevInfoCommand[] }) {
   );
 }
 
-// Issue: how to begin (or resume) work on this issue.
-export function IssueDevInfo({
-  owner,
-  repo,
-  number,
-}: {
-  owner: string;
-  repo: string;
-  number: number;
-}) {
-  const id = `${owner}/${repo}/${number}`;
-  // `lh build --sandbox` is intentionally NOT surfaced here: the sandboxed variant is a hidden flag for
-  // now because Claude Code's macOS sandbox is broken on this platform (every Bash command fails with
-  // `E2BIG: argument list too long, posix_spawn '/bin/zsh'` — an upstream bug, see #343/#342).
-  // `lh build --auto` (#366) is the working AFK path: it skips the sandbox and runs in auto mode
-  // (`acceptEdits`), so it is safe to advertise here alongside the normal launch.
-  return (
-    <DevInfo
-      commands={[
-        { label: "Start or resume a dev session", command: `lh build ${id}` },
-        {
-          label: "Start in auto mode (unattended)",
-          command: `lh build --auto ${id}`,
-          note: "Runs without the sandbox in auto mode (acceptEdits) for unattended/AFK runs.",
-        },
-      ]}
-    />
-  );
-}
-
 // PR: how to pick the dev session back up where it left off. The header's Resume button (#276) is
 // the one-click path (it launches this same command as a Herdr session, shown only when resume is
-// actually possible); this copy command stays as the always-present, copy-paste-anywhere reference —
-// mirroring how the issue keeps its `lh build` copy command alongside the Build button.
+// actually possible); this copy command stays as the always-present, copy-paste-anywhere reference.
 export function PullDevInfo({
   owner,
   repo,

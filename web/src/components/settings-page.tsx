@@ -200,7 +200,7 @@ export function SettingsPage() {
       <section className="mt-6">
         <h2 className="text-sm font-medium">Coding agent</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Default for <code>lh build</code>.
+          Default coding agent for builds.
         </p>
         <div
           role="radiogroup"

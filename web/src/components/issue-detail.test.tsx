@@ -753,15 +753,14 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("shows the --auto command in the title when auto-mode-on-Build is enabled", async () => {
+  it("shows a neutral tooltip that does not expose the lh build command", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr, true);
 
     const button = await screen.findByRole("button", { name: /^Build$/ });
 
-    expect(button.title).toBe(
-      "Start `lh build 12 --herdr --auto` in a terminal",
-    );
+    expect(button.title).toBe("Build this issue in a terminal");
+    expect(button.title).not.toContain("lh build");
   });
 
   it("launches Build with the model selected from the shadcn dropdown", async () => {

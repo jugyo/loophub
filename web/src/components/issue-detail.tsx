@@ -14,7 +14,6 @@ import type {
 } from "@/api/types";
 import { BuildStatusLabel } from "@/components/build-status-label";
 import { DetailHeaderTitle } from "@/components/detail-title";
-import { IssueDevInfo } from "@/components/dev-info";
 import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { IssueHerdrSection } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
@@ -184,7 +183,6 @@ function IssueHeader({
         ) : (
           <p className="p-4 text-sm text-muted-foreground">No description.</p>
         )}
-        <IssueDevInfo owner={owner} repo={repo} number={issue.number} />
       </div>
 
       <div className="flex flex-wrap justify-end gap-2">
@@ -225,8 +223,7 @@ function IssueHeader({
 
 // The Build button plus its agent/model dropdown (#637). The plain Build button launches with the
 // Settings defaults; New attempt always opens the picker first. The selected agent and model apply
-// to a single launch without changing the persisted `codingAgent` / per-agent `defaultModel`. The
-// autoMode/tooltip still reflect the resolved default agent, since that is what a plain Build runs.
+// to a single launch without changing the persisted `codingAgent` / per-agent `defaultModel`.
 function BuildControls({
   owner,
   repo,
@@ -243,14 +240,6 @@ function BuildControls({
   const [isBuildLoading, startBuildLoading] = useFixedLoading();
   const [menuOpen, setMenuOpen] = useState(false);
   const isNewAttempt = newAttemptPullNumber !== undefined;
-
-  const defaultAgent: CodingAgent = settings?.codingAgent ?? "claude-code";
-  const autoModeOnBuild = settings
-    ? settings.agents[defaultAgent]?.autoModeOnBuild
-    : false;
-  // Display-only tooltip for the plain button: it never reaches the wire, it only shows what a
-  // default (no-override) click runs (#584, #593).
-  const buildCommand = `lh build ${issue.number}${isNewAttempt ? " --new-attempt" : ""} --herdr${autoModeOnBuild ? " --auto" : ""}`;
 
   // `override` set => the dropdown launch (one-shot agent/model); undefined => the plain button
   // (default resolution). A blank model is omitted so `lh build` falls back to the per-agent default.
@@ -274,7 +263,11 @@ function BuildControls({
       <Button
         variant={isNewAttempt ? "secondary" : "default"}
         className="rounded-r-none"
-        title={`Start \`${buildCommand}\` in a terminal`}
+        title={
+          isNewAttempt
+            ? "Start a new attempt in a terminal"
+            : "Build this issue in a terminal"
+        }
         disabled={isBuildLoading}
         onClick={() => (isNewAttempt ? setMenuOpen(true) : launchBuild())}
       >

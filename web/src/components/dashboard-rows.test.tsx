@@ -403,15 +403,7 @@ describe("IssueRow", () => {
     });
   });
 
-  it("shows the --auto command in the title when auto-mode-on-Build is enabled", async () => {
-    settingsData.value = {
-      agents: {
-        "claude-code": { autoModeOnBuild: true, model: "", effort: "" },
-        codex: { autoModeOnBuild: false, model: "", effort: "" },
-      },
-      codingAgent: "claude-code",
-      devCostLimitUsd: 10,
-    };
+  it("shows a neutral tooltip that does not expose the lh build command", async () => {
     renderInRouter(
       <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
     );
@@ -419,9 +411,8 @@ describe("IssueRow", () => {
       name: "Build issue #7",
     });
 
-    expect(button.title).toBe(
-      "Start `lh build 7 --herdr --auto` in a terminal",
-    );
+    expect(button.title).toBe("Build issue #7 in a terminal");
+    expect(button.title).not.toContain("lh build");
   });
 
   it("shows a fixed-duration loading state on the Build button and re-enables it after", async () => {
