@@ -29,6 +29,7 @@ import {
   parseDevTarget,
   pidAlive,
   provisionWorktree,
+  reconcileTargetRepo,
   removeDevLock,
   resolveAllowedDomains,
   resolveDevRuntime,
@@ -58,20 +59,13 @@ export async function run(): Promise<void> {
   } catch (e: any) {
     fail(`${e.message}\n${usageLine}`);
   }
-  // Resolve the repo: a repo from the positional takes precedence but must not contradict an
-  // explicit --repo (a conflict is a hard error rather than a silent pick). Without a positional
-  // repo, fall back to the existing resolution (--repo, else cwd match).
-  let repo: string;
-  if (parsed.repo) {
-    if (flags.repo && flags.repo !== parsed.repo) {
-      fail(
-        `conflicting repo: positional '${parsed.repo}' vs --repo '${flags.repo}'`,
-      );
-    }
-    repo = parsed.repo;
-  } else {
-    repo = await resolveRepo();
+  let targetRepo: string | undefined;
+  try {
+    targetRepo = reconcileTargetRepo(parsed.repo, flags.repo);
+  } catch (e: any) {
+    fail(e.message);
   }
+  const repo = targetRepo ?? (await resolveRepo());
   const n = parsed.id;
   const issue = String(n);
   const newAttempt = flags["new-attempt"] === true;

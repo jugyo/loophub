@@ -8,6 +8,7 @@ import {
   formatSpawnCommand,
   parseDevTarget,
   provisionWorktree,
+  reconcileTargetRepo,
   validateRepo,
 } from "../dev.ts";
 
@@ -67,17 +68,13 @@ export async function run(): Promise<void> {
   } catch (e: any) {
     fail(`${e.message}\n${usageLine}`);
   }
-  let repo: string;
-  if (parsed.repo) {
-    if (flags.repo && flags.repo !== parsed.repo) {
-      fail(
-        `conflicting repo: positional '${parsed.repo}' vs --repo '${flags.repo}'`,
-      );
-    }
-    repo = parsed.repo;
-  } else {
-    repo = await resolveRepo();
+  let targetRepo: string | undefined;
+  try {
+    targetRepo = reconcileTargetRepo(parsed.repo, flags.repo);
+  } catch (e: any) {
+    fail(e.message);
   }
+  const repo = targetRepo ?? (await resolveRepo());
   const prNumber = parsed.id;
   try {
     validateRepo(repo);

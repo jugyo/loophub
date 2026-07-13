@@ -35,6 +35,7 @@ import {
 import {
   formatSpawnCommand,
   parseDevTarget,
+  reconcileTargetRepo,
   resolveDevRuntime,
   shQuote,
 } from "../dev.ts";
@@ -436,7 +437,13 @@ async function startWorkflow(): Promise<void> {
   } catch (e: any) {
     fail(`${e.message}\n${usageLine}`);
   }
-  const repo = parsed.repo ?? (await resolveRepo());
+  let targetRepo: string | undefined;
+  try {
+    targetRepo = reconcileTargetRepo(parsed.repo, flags.repo);
+  } catch (e: any) {
+    fail(e.message);
+  }
+  const repo = targetRepo ?? (await resolveRepo());
   const workflowId = workflowIdFlag();
   const runtime = resolveDevRuntime({
     claudeCode: flags["claude-code"] === true,

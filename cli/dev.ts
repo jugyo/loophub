@@ -225,6 +225,19 @@ export function parseDevTarget(target: string): { repo?: string; id: number } {
   );
 }
 
+export function reconcileTargetRepo(
+  parsedRepo: string | undefined,
+  flagRepo: string | undefined,
+): string | undefined {
+  if (parsedRepo === flagRepo) return parsedRepo;
+  if (parsedRepo && flagRepo) {
+    throw new Error(
+      `conflicting repo: positional '${parsedRepo}' vs --repo '${flagRepo}'`,
+    );
+  }
+  return parsedRepo ?? flagRepo;
+}
+
 // ---- runtime selection ----
 //
 // `lh build` can launch the interactive dev session in Claude Code (default), Codex (#458), or

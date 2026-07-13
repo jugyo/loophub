@@ -42,6 +42,7 @@ import {
   pidAlive,
   provisionWorktree,
   readDevLock,
+  reconcileTargetRepo,
   removeDevLock,
   resolveDevRuntime,
   shouldCreateMissingConventionBranch,
@@ -87,6 +88,32 @@ test("parseDevTarget rejects owner/repo/id with a non-numeric id", () => {
 test("parseDevTarget rejects an empty owner or repo segment", () => {
   expect(() => parseDevTarget("/loophub/116")).toThrow(/invalid target/);
   expect(() => parseDevTarget("jugyo//116")).toThrow(/invalid target/);
+});
+
+// ---- reconcileTargetRepo (pure) ----
+
+test("reconcileTargetRepo returns the repo when positional and --repo match", () => {
+  expect(reconcileTargetRepo("jugyo/loophub", "jugyo/loophub")).toBe(
+    "jugyo/loophub",
+  );
+});
+
+test("reconcileTargetRepo rejects conflicting positional and --repo values", () => {
+  expect(() => reconcileTargetRepo("jugyo/loophub", "other/repo")).toThrow(
+    "conflicting repo: positional 'jugyo/loophub' vs --repo 'other/repo'",
+  );
+});
+
+test("reconcileTargetRepo returns the positional repo when --repo is absent", () => {
+  expect(reconcileTargetRepo("jugyo/loophub", undefined)).toBe("jugyo/loophub");
+});
+
+test("reconcileTargetRepo returns --repo when the positional repo is absent", () => {
+  expect(reconcileTargetRepo(undefined, "jugyo/loophub")).toBe("jugyo/loophub");
+});
+
+test("reconcileTargetRepo returns undefined when neither repo is provided", () => {
+  expect(reconcileTargetRepo(undefined, undefined)).toBeUndefined();
 });
 
 // ---- displayMultiline (pure) ----

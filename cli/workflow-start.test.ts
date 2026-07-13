@@ -226,6 +226,24 @@ afterAll(() => {
   rmSync(REPO_PATH, { recursive: true, force: true });
 });
 
+test("workflow start rejects conflicting positional and --repo values before DB access", () => {
+  const result = run([
+    "workflow",
+    "start",
+    `${REPO}/999999`,
+    "--repo",
+    "other/repo",
+    "--workflow",
+    "standard",
+    "--no-launch",
+  ]);
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain(
+    `conflicting repo: positional '${REPO}' vs --repo 'other/repo'`,
+  );
+});
+
 test("workflow start --no-launch creates a run and skips herdr launch", () => {
   const issueOut = run([
     "issue",
