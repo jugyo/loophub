@@ -58,6 +58,12 @@ export interface RepoWire {
   herdr_session_name: string;
 }
 
+export interface RepoMergeModeWire {
+  setting: MergeMode | null;
+  has_github_remote: boolean;
+  effective: MergeMode;
+}
+
 export function repoJSON(r: S.Repo): RepoWire {
   return {
     id: r.id,

@@ -1,3 +1,4 @@
+import type { RepoMergeModeWire } from "../serialize.ts";
 import type { MergeMode } from "./shared.ts";
 import {
   actorFor,
@@ -230,7 +231,7 @@ export const repos = {
   // #406: resolved merge-mode view for the repo settings UI — the raw stored setting, whether the
   // repo has a GitHub remote, and the effective mode the null default resolves to. Async because the
   // GitHub-remote check shells out to git.
-  async mergeMode(name: string) {
+  async mergeMode(name: string): Promise<RepoMergeModeWire> {
     const r = repoOr404(name);
     const has_github_remote = isGithubRemoteUrl(await remoteUrl(r.local_path));
     return {

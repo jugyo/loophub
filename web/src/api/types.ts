@@ -29,6 +29,7 @@ import type {
   RelatedSessionsUsageByKindWire,
   RelatedSessionsUsageWire,
   RelatedSessionWire,
+  RepoMergeModeWire,
   RepoWire,
   ReviewCommentWire,
   ReviewWire,
@@ -117,11 +118,7 @@ export type Repo = RepoWire;
 export type { MergeMode };
 
 /** Resolved merge-mode view for the repo settings UI (`repos/mergeMode`, #406). */
-export interface RepoMergeMode {
-  setting: MergeMode | null;
-  has_github_remote: boolean;
-  effective: MergeMode;
-}
+export type RepoMergeMode = RepoMergeModeWire;
 
 export type TerminalLaunchBackend = "builtin" | "herdr";
 
