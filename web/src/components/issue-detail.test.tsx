@@ -401,6 +401,7 @@ describe("IssueDetail", () => {
           additions: 24,
           deletions: 7,
           changed_files: 3,
+          commits_ahead: 4,
           review_state: "PASSED",
           base_commits_behind: 2,
           cost_usd: 1.25,
@@ -437,8 +438,10 @@ describe("IssueDetail", () => {
     expect(screen.getByText("PR #29")).toBeTruthy();
     expect(screen.getByLabelText("Linked PR #29: closed attempt")).toBeTruthy();
     expect(screen.getByText("ready")).toBeTruthy();
+    expect(screen.getByText("Diff")).toBeTruthy();
     expect(screen.getByText("+24")).toBeTruthy();
     expect(screen.getByText("−7")).toBeTruthy();
+    expect(screen.getByText("Review")).toBeTruthy();
     expect(screen.getByText("pass")).toBeTruthy();
     expect(screen.getByText("base is 2 commits behind")).toBeTruthy();
     expect(
@@ -455,6 +458,59 @@ describe("IssueDetail", () => {
       screen.getByRole("button", { name: "Build with Claude Code" }),
     ).toBeTruthy();
     expect(screen.queryByText(/PR #31 is already in progress/)).toBeNull();
+  });
+
+  it("hides Diff and Review on linked PRs with no commits yet", async () => {
+    const noCommits: Issue = {
+      ...issue,
+      linked_pull_requests: [
+        {
+          number: 31,
+          title: "empty open attempt",
+          state: "open",
+          merged: false,
+          html_url: "/pulls/31",
+          github_pull: null,
+          cost_stopped: false,
+          draft: false,
+          additions: 0,
+          deletions: 0,
+          changed_files: 0,
+          commits_ahead: 0,
+          review_state: "NONE",
+          base_commits_behind: 0,
+        },
+        {
+          number: 30,
+          title: "empty closed attempt",
+          state: "closed",
+          merged: false,
+          html_url: "/pulls/30",
+          github_pull: null,
+          cost_stopped: false,
+          draft: false,
+          additions: 0,
+          deletions: 0,
+          changed_files: 0,
+          commits_ahead: 0,
+          review_state: "NONE",
+          base_commits_behind: 0,
+        },
+      ],
+    };
+    renderDetail(() => noCommits);
+
+    // Both rows render, but the same rule applies to open and closed: no Diff,
+    // no Review while the attempt has no commits.
+    expect(
+      await screen.findByLabelText("Linked PR #31: empty open attempt"),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText("Linked PR #30: empty closed attempt"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Diff")).toBeNull();
+    expect(screen.queryByText("Review")).toBeNull();
+    expect(screen.queryByText("not reviewed")).toBeNull();
   });
 
   it("closes a linked PR immediately without confirmation", async () => {

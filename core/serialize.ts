@@ -165,6 +165,9 @@ export interface IssueListPullSummaryWire extends PullSummaryWire {
   additions: number;
   deletions: number;
   changed_files: number;
+  // Commits the head is ahead of the base by; zero means the attempt has no commits yet, so the
+  // issue-detail card hides the (meaningless) Diff and Review fields until work lands.
+  commits_ahead: number;
   // Required on enriched rows; zero means the attempt starts from the current base tip.
   base_commits_behind: number;
   agent_runtime?: string;
@@ -921,6 +924,9 @@ interface PullStatusFields {
   additions: number;
   deletions: number;
   changed_files: number;
+  // Commits head is ahead of base by (0 when merged / refs unresolvable). Already computed for the
+  // mergeable gate below; surfaced here so linkedPullDetail can hide Diff/Review on empty attempts.
+  commits_ahead: number;
   working: boolean;
   review_state: S.ReviewState;
   linked: LinkedIssueWire | null;
@@ -944,11 +950,13 @@ async function pullStatusFields(
   const reviewGate = S.computeReviewGate(row.id);
   let mergeable: boolean | null = null;
   let mergeable_state: MergeableState = "unknown";
+  let commits_ahead = 0;
   if (!p.merged && headSha && baseSha) {
     const [prev, ahead] = await Promise.all([
       mergePreview(repo.local_path, p.base_ref, p.head_ref),
       commitsAhead(repo.local_path, p.base_ref, p.head_ref),
     ]);
+    commits_ahead = ahead;
     ({ mergeable, mergeable_state } = resolveMergeable({
       hasCommits: ahead > 0,
       conflict: prev.conflict,
@@ -1010,6 +1018,7 @@ async function pullStatusFields(
     additions,
     deletions,
     changed_files,
+    commits_ahead,
     working,
     review_state,
     linked,
@@ -1096,6 +1105,7 @@ async function linkedPullDetail(
     additions: status.additions,
     deletions: status.deletions,
     changed_files: status.changed_files,
+    commits_ahead: status.commits_ahead,
     base_commits_behind,
     ...(runtime ? { agent_runtime: runtime } : {}),
     ...(model ? { agent_model: model } : {}),

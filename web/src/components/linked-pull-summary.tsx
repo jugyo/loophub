@@ -395,28 +395,34 @@ export function LinkedPullSummaryRow({
       </div>
       {attemptComparison ? (
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 pl-[26px]">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="text-muted-foreground/70">Diff</span>
-            <DiffStat
-              additions={pull.additions ?? 0}
-              deletions={pull.deletions ?? 0}
-            />
-          </span>
-          <span>
-            <span className="text-muted-foreground/70">Review</span>{" "}
-            <span className="font-medium text-foreground">
-              {pull.review_state === "PASSED"
-                ? "pass"
-                : pull.review_state === "CHANGES_REQUESTED"
-                  ? "request changes"
-                  : pull.review_state === "READY_FOR_RE_REVIEW" ||
-                      pull.review_state === "STALE"
-                    ? "re-review"
-                    : pull.review_state === "COMMENTED"
-                      ? "commented"
-                      : "not reviewed"}
-            </span>
-          </span>
+          {/* A PR with no commits yet has a meaningless `+0 −0` diff and "not
+              reviewed" state (#1240) — hide both until work lands. */}
+          {(pull.commits_ahead ?? 0) > 0 ? (
+            <>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-muted-foreground/70">Diff</span>
+                <DiffStat
+                  additions={pull.additions ?? 0}
+                  deletions={pull.deletions ?? 0}
+                />
+              </span>
+              <span>
+                <span className="text-muted-foreground/70">Review</span>{" "}
+                <span className="font-medium text-foreground">
+                  {pull.review_state === "PASSED"
+                    ? "pass"
+                    : pull.review_state === "CHANGES_REQUESTED"
+                      ? "request changes"
+                      : pull.review_state === "READY_FOR_RE_REVIEW" ||
+                          pull.review_state === "STALE"
+                        ? "re-review"
+                        : pull.review_state === "COMMENTED"
+                          ? "commented"
+                          : "not reviewed"}
+                </span>
+              </span>
+            </>
+          ) : null}
           {(pull.base_commits_behind ?? 0) > 0 ? (
             <span className="font-medium text-amber-700 dark:text-amber-300">
               base is {pull.base_commits_behind} commit
