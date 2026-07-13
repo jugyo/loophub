@@ -9,6 +9,23 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppLayout } from "./app-layout";
 
+vi.mock("@/queries/repos", () => ({
+  useRepos: () => ({
+    data: [
+      {
+        full_name: "me/proj",
+        herdr_session_name: "me-proj-abcd1234",
+      },
+    ],
+  }),
+}));
+vi.mock("@/queries/terminal", () => ({
+  useHerdrSessions: () => ({
+    data: { repos: [], running_repos: [] },
+    isError: false,
+  }),
+}));
+
 vi.mock("@/components/app-statusbar", () => ({
   AppStatusbar: () => <footer data-testid="app-statusbar">Status</footer>,
 }));
@@ -37,7 +54,7 @@ vi.mock("@/lib/use-issue-keyboard-navigation", () => ({
 
 afterEach(cleanup);
 
-function renderLayout() {
+function renderLayout(initialPath = "/") {
   const rootRoute = createRootRoute({ component: AppLayout });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -49,9 +66,24 @@ function renderLayout() {
     path: "/settings",
     component: () => <div>Settings route</div>,
   });
+  const repoRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo",
+    component: () => <div>Repo route</div>,
+  });
+  const issueRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/issues/$number",
+    component: () => <div>Issue route</div>,
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, settingsRoute]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    routeTree: rootRoute.addChildren([
+      indexRoute,
+      settingsRoute,
+      repoRoute,
+      issueRoute,
+    ]),
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
   return { router, ...render(<RouterProvider router={router} />) };
 }
@@ -82,5 +114,21 @@ describe("AppLayout", () => {
     await screen.findByText("Settings route");
 
     expect(screen.getByTestId("app-statusbar")).toBe(statusbar);
+  });
+
+  it("shows the shared repo warning on repo top and issue detail routes", async () => {
+    const { router } = renderLayout("/r/me/proj");
+    await screen.findByText("Repo route");
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByText("herdr --session me-proj-abcd1234")).toBeTruthy();
+
+    await act(() =>
+      router.navigate({
+        to: "/r/$owner/$repo/issues/$number",
+        params: { owner: "me", repo: "proj", number: "12" },
+      }),
+    );
+    await screen.findByText("Issue route");
+    expect(screen.getByRole("alert")).toBeTruthy();
   });
 });

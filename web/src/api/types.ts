@@ -44,6 +44,7 @@ import type {
   WorkflowStepContractsWire,
   WorkflowWire,
 } from "../../../core/serialize.ts";
+import type { HerdrSessionsResult as HerdrSessionsWire } from "../../../core/service/terminal.ts";
 import type {
   HerdrIssueWorkspace as HerdrIssueWorkspaceWire,
   HerdrPullWorkspace as HerdrPullWorkspaceWire,
@@ -188,9 +189,10 @@ export interface HerdrRepoSessions {
   issue_workspaces?: HerdrIssueWorkspace[];
 }
 
-export interface HerdrSessions {
+export type HerdrSessions = Omit<HerdrSessionsWire, "repos"> & {
+  // Override the server's current repo-group type with the backward-compatible Web view above.
   repos: HerdrRepoSessions[];
-}
+};
 
 /**
  * Recent terminal output for one herdr agent (`terminal/agentRead`, #500), for the

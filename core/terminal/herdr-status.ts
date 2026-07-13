@@ -33,19 +33,39 @@ export const NO_PANE_ID_PREFIX = `${String.fromCharCode(0)}idx:`;
 
 /** Running session names from `herdr session list --json` output. */
 export function parseHerdrSessionList(stdout: string): string[] {
+  const sessions = herdrSessionListItems(stdout);
+  return sessions === null ? [] : runningSessionNames(sessions);
+}
+
+/** Running session names, or null when the output is not a valid session-list response. */
+export function parseHerdrSessionListIfValid(stdout: string): string[] | null {
+  const sessions = herdrSessionListItems(stdout);
+  if (sessions === null) return null;
+  if (!sessions.every(isHerdrSessionListItem)) return null;
+  return runningSessionNames(sessions);
+}
+
+function herdrSessionListItems(stdout: string): unknown[] | null {
   const parsed = tryParse(stdout);
   const sessions = (parsed as { sessions?: unknown })?.sessions;
-  if (!Array.isArray(sessions)) return [];
+  return Array.isArray(sessions) ? sessions : null;
+}
+
+function isHerdrSessionListItem(
+  value: unknown,
+): value is { name: string; running: boolean } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { name?: unknown }).name === "string" &&
+    typeof (value as { running?: unknown }).running === "boolean"
+  );
+}
+
+function runningSessionNames(sessions: unknown[]): string[] {
   const names: string[] = [];
   for (const s of sessions) {
-    if (
-      typeof s === "object" &&
-      s !== null &&
-      typeof (s as { name?: unknown }).name === "string" &&
-      (s as { running?: unknown }).running === true
-    ) {
-      names.push((s as { name: string }).name);
-    }
+    if (isHerdrSessionListItem(s) && s.running) names.push(s.name);
   }
   return names;
 }

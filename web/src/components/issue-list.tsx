@@ -8,7 +8,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { Issue } from "@/api/types";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
-import { RepoHerdrCommand } from "@/components/repo-herdr-command";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -183,8 +182,6 @@ export function IssueList({
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-4">
-      <RepoHerdrCommand owner={owner} repo={repo} />
-
       <div className="flex flex-wrap items-center gap-2">
         <div
           role="tablist"

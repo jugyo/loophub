@@ -55,7 +55,7 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-test("terminal.sessions groups running herdr agents by repo and drops agentless sessions", async () => {
+test("terminal.sessions reports running repos independently from visible agent groups", async () => {
   const withAgents = await svc.repos.create({
     path: initGitRepo(),
     name: "me/with-agents",
@@ -64,10 +64,15 @@ test("terminal.sessions groups running herdr agents by repo and drops agentless 
     path: initGitRepo(),
     name: "me/agentless",
   });
+  const agentListFailure = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/agent-list-failure",
+  });
   await svc.repos.create({ path: initGitRepo(), name: "me/not-running" });
 
   const sessionA = herdrSessionName(withAgents);
   const sessionB = herdrSessionName(agentless);
+  const sessionC = herdrSessionName(agentListFailure);
 
   // Fake herdr replaying real CLI shapes: `herdr session list --json` prints the session
   // list; `herdr --session <name> agent list` ($2 = name) prints that session's agents.
@@ -76,6 +81,7 @@ test("terminal.sessions groups running herdr agents by repo and drops agentless 
       { default: true, name: "default", running: true },
       { default: false, name: sessionA, running: true },
       { default: false, name: sessionB, running: true },
+      { default: false, name: sessionC, running: true },
     ],
   });
   const agents = JSON.stringify({
@@ -108,6 +114,7 @@ test("terminal.sessions groups running herdr agents by repo and drops agentless 
       "#!/bin/sh",
       `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
       `if [ "$2" = "${sessionA}" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      `if [ "$2" = "${sessionC}" ]; then exit 1; fi`,
       `printf '%s' '${empty}'`,
       "",
     ].join("\n"),
@@ -116,8 +123,14 @@ test("terminal.sessions groups running herdr agents by repo and drops agentless 
   process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
   try {
     const result = await svc.terminal.sessions();
+    expect(result.running_repos).toEqual([
+      "me/with-agents",
+      "me/agentless",
+      "me/agent-list-failure",
+    ]);
     // me/agentless runs a session with zero agents and me/not-running has no session —
-    // neither produces a group.
+    // neither produces a group. A failed agent list is likewise absent from repos without
+    // hiding the independently confirmed running session.
     expect(result.repos).toEqual([
       {
         repo: "me/with-agents",
@@ -519,6 +532,35 @@ test("terminal.sessions is empty when herdr exits non-zero", async () => {
   chmodSync(join(FAKE_BIN, "herdr"), 0o755);
   process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
   try {
+    expect(await svc.terminal.sessions()).toEqual({ repos: [] });
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.sessions distinguishes a confirmed empty list from malformed output", async () => {
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    "#!/bin/sh\nprintf '%s' '{\"sessions\":[]}'\n",
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    expect(await svc.terminal.sessions()).toEqual({
+      repos: [],
+      running_repos: [],
+    });
+
+    writeFileSync(
+      join(FAKE_BIN, "herdr"),
+      "#!/bin/sh\nprintf '%s' 'not-json'\n",
+    );
+    expect(await svc.terminal.sessions()).toEqual({ repos: [] });
+
+    writeFileSync(
+      join(FAKE_BIN, "herdr"),
+      `#!/bin/sh\nprintf '%s' '${JSON.stringify({ sessions: [{ running: true }, 42] })}'\n`,
+    );
     expect(await svc.terminal.sessions()).toEqual({ repos: [] });
   } finally {
     process.env.PATH = ORIGINAL_PATH;

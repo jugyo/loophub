@@ -55,6 +55,7 @@ import {
   parseHerdrPaneProcessInfo,
   parseHerdrRootPaneId,
   parseHerdrSessionList,
+  parseHerdrSessionListIfValid,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
   RUNTIMES,
@@ -329,6 +330,13 @@ export interface HerdrRepoSessions {
   issue_workspaces: HerdrIssueWorkspace[];
 }
 
+export interface HerdrSessionsResult {
+  repos: HerdrRepoSessions[];
+  // Active repos whose deterministic herdr session was present in a successful session-list
+  // read. Optional so a failed read remains distinguishable from a confirmed empty list.
+  running_repos?: string[];
+}
+
 function isIssueCreateAgentName(name: string): boolean {
   return (
     name === "New issue" ||
@@ -350,8 +358,7 @@ function isIssueCreateAgent(
 // Coalesces concurrent terminal.sessions calls onto one herdr sweep. Every client polls this
 // RPC (15s interval per tab), so without sharing, N tabs would each spawn their own
 // `herdr session list` + per-repo `agent list` process trees against the same state.
-let herdrSessionsInflight: Promise<{ repos: HerdrRepoSessions[] }> | null =
-  null;
+let herdrSessionsInflight: Promise<HerdrSessionsResult> | null = null;
 
 // Resolves the on-disk worktree path herdr's `worktree open` should target for a launch (#551),
 // so herdr's own workspace/worktree metadata is pinned to the PR's real worktree instead of a
@@ -723,7 +730,7 @@ export const terminal = {
   // sessions, or unparseable output all degrade to an empty list — clients hide
   // the section instead of surfacing an error. Not gated on the configured launch
   // backend: sessions started outside LoopHub are just as real to a supervisor.
-  sessions(): Promise<{ repos: HerdrRepoSessions[] }> {
+  sessions(): Promise<HerdrSessionsResult> {
     if (herdrSessionsInflight) return herdrSessionsInflight;
     herdrSessionsInflight = sweepHerdrSessions().finally(() => {
       herdrSessionsInflight = null;
@@ -1024,17 +1031,19 @@ async function findResumePaneId(
   return hits.find((id): id is string => id !== null) ?? null;
 }
 
-async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
+async function sweepHerdrSessions(): Promise<HerdrSessionsResult> {
   let listOut: string;
   try {
     listOut = await runHerdrCapture(["session", "list", "--json"]);
   } catch {
     return { repos: [] };
   }
-  const running = parseHerdrSessionList(listOut);
-  if (running.length === 0) return { repos: [] };
+  const running = parseHerdrSessionListIfValid(listOut);
+  if (running === null) return { repos: [] };
+  if (running.length === 0) return { repos: [], running_repos: [] };
 
   const matched = reposWithRunningSession(S.listRepos("active"), running);
+  const runningRepos = matched.map(({ repo }) => repo.full_name);
   const groups = await Promise.all(
     matched.map(async ({ repo, sessionName }) => {
       let agentsOut: string;
@@ -1118,7 +1127,10 @@ async function sweepHerdrSessions(): Promise<{ repos: HerdrRepoSessions[] }> {
       };
     }),
   );
-  return { repos: groups.filter((g) => g !== null) };
+  return {
+    repos: groups.filter((g) => g !== null),
+    running_repos: runningRepos,
+  };
 }
 
 // Terminates whatever a pane's foreground job is running by signaling it directly, instead of

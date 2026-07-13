@@ -386,7 +386,7 @@ export const methods: Record<string, MethodDef> = {
 
   "terminal/sessions": {
     description:
-      "Running herdr sessions grouped by repository, with each agent's name and status (#495), plus which running agents are pinned to a PR's worktree (pull_workspaces, #579 — drives the issue-list Herdr badge). Empty when herdr is not installed or nothing is running.",
+      "Running herdr sessions grouped by repository, with each agent's name and status (#495), plus which running agents are pinned to a PR's worktree (pull_workspaces, #579 — drives the issue-list Herdr badge). running_repos independently lists repos whose session was confirmed running, including sessions with no visible agents; it is absent when session state could not be read.",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.terminal.sessions(),

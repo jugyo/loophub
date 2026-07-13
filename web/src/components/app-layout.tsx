@@ -5,6 +5,7 @@ import { Outlet } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { AppStatusbar } from "@/components/app-statusbar";
 import { AppTopbar } from "@/components/app-topbar";
+import { RepoHerdrWarning } from "@/components/repo-herdr-warning";
 import { RepoSwitcher } from "@/components/repo-switcher";
 import { RepoTopbar } from "@/components/repo-topbar";
 import {
@@ -35,6 +36,7 @@ export function AppLayout() {
           />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <RepoTopbar />
+            <RepoHerdrWarning />
             <main
               ref={mainRef}
               className="min-h-0 flex-1 overflow-y-auto px-4 pt-6 sm:px-6"
