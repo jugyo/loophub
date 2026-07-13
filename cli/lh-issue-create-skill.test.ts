@@ -26,3 +26,30 @@ test("lh-issue-create target branch shell guidance treats branch names as untrus
     '--target-branch "<branch>" --create-target-branch',
   );
 });
+
+test("lh-issue-create records user-mentioned related resources", () => {
+  expect(skill).toContain(
+    "**Related resources explicitly mentioned by the user**",
+  );
+  expect(skill).toContain("resource type, reference, and known relationship");
+  expect(skill).toMatch(/GitHub,\s+Notion, or Slack/);
+  expect(skill).toContain("other services and local materials");
+  expect(skill).toContain("## Related resources");
+});
+
+test("lh-issue-create does not invent missing related resources", () => {
+  expect(skill).toContain(
+    "Do not search for, infer, or fabricate related resources",
+  );
+  expect(skill).toContain("None mentioned");
+  expect(skill).toMatch(
+    /A resource name,\s+channel, page, issue or PR number, URL, or local path is itself a valid reference/,
+  );
+});
+
+test("lh-issue-create includes a concrete related-resources example", () => {
+  expect(skill).toContain("### Example with related resources");
+  expect(skill).toContain("GitHub issue — `acme/widget#42`");
+  expect(skill).toContain("Slack channel — `#release-ops`");
+  expect(skill).toContain("Local document — `docs/release-plan.md`");
+});

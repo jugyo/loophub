@@ -114,11 +114,14 @@ missing, and only as needed:
 - **Category** (`bug` / `enhancement`) — infer from the reply; ask only if genuinely ambiguous
 - **Goal** (what "done" looks like)
 - **Acceptance criteria** (verifiable bullets)
+- **Related resources explicitly mentioned by the user** (if any)
 - **Target repository** — `--repo owner/name` (only when cwd doesn't already resolve it; see § LoopHub)
 
 The user's first reply often already supplies several of these (or lets you infer them) — derive what
 you can and ask only for the genuinely missing pieces, one small follow-up at a time rather than a
-single bulk interrogation. Once you have enough to file, proceed with the normal flow (§ Procedure).
+single bulk interrogation. Preserve any related resources already mentioned; ask about a resource
+only when its reference or relationship is needed to make the issue understandable. Once you have
+enough to file, proceed with the normal flow (§ Procedure).
 
 When the recent conversation **does** contain material to file from (a bug report, a request, notes),
 this is the normal case — proceed straight from that context (§ Procedure step 1) and do **not** enter
@@ -175,8 +178,31 @@ Extract from the conversation:
 - **Acceptance criteria** (verifiable bullets)
 - **Out of scope** (what not to do)
 - **Blocked by** (dependent issues, if any)
+- **Related resources explicitly mentioned by the user** (if any): for each one, capture its
+  resource type, reference, and known relationship to the issue
 
 Ask the user briefly if anything is missing.
+
+#### Related resources
+
+Scan the full relevant conversation for resources the user connected to the request. Handle GitHub,
+Notion, or Slack references and other services and local materials the same way. A resource name,
+channel, page, issue or PR number, URL, or local path is itself a valid reference; do not require a
+URL when the user supplied another usable identifier.
+
+For every mentioned resource, record:
+
+- **Type** — service or material kind, such as GitHub issue, Notion page, Slack channel, design file,
+  or local document
+- **Reference** — exactly the useful identifier the user supplied, including a URL when present
+- **Relationship** — why it matters, but only to the extent established by the conversation
+
+Do not search for, infer, or fabricate related resources, identifiers, URLs, titles, or relationships.
+Do not fetch, copy, or summarize external content unless the user separately requested that work and
+the result is already part of the conversation. If the user mentioned no related resource, keep the
+section and write `None mentioned` (translated to the issue language). If a mentioned resource's
+relationship is unclear but the reference is still useful, record the reference and say that the
+relationship was not specified instead of blocking issue creation.
 
 #### Coverage check (only when the target may appear in multiple places)
 
@@ -235,12 +261,30 @@ existing / abort.
 
 - <what not to do; or "None">
 
+## Related resources
+
+- <type> — <reference> — <known relationship to this issue>
+<!-- or: None mentioned -->
+
 ## Blocked by
 
 None — can start immediately
 
 <!-- or: #12, #34 -->
 ```
+
+### Example with related resources
+
+```markdown
+## Related resources
+
+- GitHub issue — `acme/widget#42` — Original bug report
+- Slack channel — `#release-ops` — Rollout discussion referenced by the requester
+- Local document — `docs/release-plan.md` — Implementation constraints for this change
+```
+
+Use only entries grounded in the conversation; these example references are illustrative and must
+never be copied into a real issue unless the user actually supplied them.
 
 **Out of scope — re-read for over-exclusion.** Before finalizing, check each exclusion line once:
 could it be read to **also exclude a place you actually want in scope**? An exclusion like "screens
