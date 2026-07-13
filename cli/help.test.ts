@@ -1,16 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type * as SqliteNS from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { commandHelp } from "./help.ts";
 
 const CLI = join(import.meta.dirname, "index.ts");
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
-) as typeof SqliteNS;
 let home: string;
 
 function lh(args: string[]) {
@@ -71,15 +66,7 @@ describe("--help", () => {
 
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stdout).toContain("lh issue create — Create an issue.");
-    const db = new DatabaseSync(join(home, "loophub.db"), { readOnly: true });
-    try {
-      const row = db.prepare("SELECT count(*) AS count FROM issues").get() as {
-        count: number;
-      };
-      expect(row.count).toBe(0);
-    } finally {
-      db.close();
-    }
+    expect(existsSync(join(home, "loophub.db"))).toBe(false);
   });
 
   test("shows general usage at the root", () => {

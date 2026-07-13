@@ -4,8 +4,6 @@ import { agentModel, codingAgent } from "../../core/config.ts";
 import {
   ENV_ISSUE_CREATE_SESSION,
   LH_ISSUE_CREATE_SESSION_AGENT,
-  RUNTIME_CLAUDE_CODE,
-  RUNTIME_CODEX,
   SESSION_KIND_ISSUE_CREATE,
 } from "../../core/resume.ts";
 import { flags, rest, sub } from "../args.ts";
@@ -20,12 +18,32 @@ import {
 } from "../context.ts";
 import {
   buildRuntimeLaunch,
+  type DevRuntime,
   formatSpawnCommand,
   resolveDevRuntime,
 } from "../dev.ts";
 import { usage } from "../usage.ts";
 
 export async function run(): Promise<void> {
+  // Match `lh build`'s fail-fast runtime validation: conflicting runtime flags and a value-less
+  // --model must fail before svc() opens/migrates the DB or any session/spawn side effect occurs.
+  let issueNewRuntime: DevRuntime | undefined;
+  if (sub === "new") {
+    try {
+      issueNewRuntime = resolveDevRuntime({
+        claudeCode: flags["claude-code"] === true,
+        codex: flags.codex === true,
+        grok: flags.grok === true,
+        defaultRuntime: codingAgent(),
+      });
+    } catch (e: any) {
+      fail(e.message);
+    }
+    if (flags.model !== undefined && typeof flags.model !== "string") {
+      fail(`--model requires a value`);
+    }
+  }
+
   const s = await svc();
   const repo = await resolveRepo();
   if (sub === "list") {
@@ -60,10 +78,7 @@ export async function run(): Promise<void> {
     const r = await runOp(() => s.repos.get(repo));
     const sessionId = randomUUID();
     const slashCommand = "/lh-issue-create";
-    const runtime = resolveDevRuntime({ defaultRuntime: codingAgent() });
-    if (flags.model !== undefined && typeof flags.model !== "string") {
-      fail(`--model requires a value`);
-    }
+    const runtime = issueNewRuntime!;
     const model =
       typeof flags.model === "string" && flags.model.trim()
         ? flags.model
@@ -80,7 +95,7 @@ export async function run(): Promise<void> {
         id: sessionId,
         agent: LH_ISSUE_CREATE_SESSION_AGENT,
         session: sessionId,
-        runtime: runtime === "codex" ? RUNTIME_CODEX : RUNTIME_CLAUDE_CODE,
+        runtime,
         kind: SESSION_KIND_ISSUE_CREATE,
         name: `New issue (${r.full_name})`,
       }),
