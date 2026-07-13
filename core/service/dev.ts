@@ -5,10 +5,21 @@ import {
   ensureWritable,
   issueOr404,
   repoOr404,
+  revParse,
   S,
   ServiceError,
   worktreeBranch,
 } from "./shared.ts";
+
+function buildPullOr404(name: string, number: number) {
+  const repo = repoOr404(name);
+  const issue = S.getIssue(repo.id, number);
+  const pull = issue?.kind === "pull" ? S.getPull(issue.id) : null;
+  if (issue?.kind !== "pull" || !pull) {
+    throw new ServiceError(404, `pull request #${number} not found`);
+  }
+  return { repo, issue, pull };
+}
 
 function defaultDraftPrBody(issue: number): string {
   return [
@@ -32,6 +43,43 @@ function defaultDraftPrBody(issue: number): string {
 // agent has a place to write its plan, and attribute the dev session to the PR.
 
 export const dev = {
+  // Resolve the persisted PR metadata `lh build` needs before worktree provisioning. Keeping the
+  // issue-kind and pull-row checks here prevents the CLI from orchestrating directly over Store.
+  resolveBuildPull(
+    name: string,
+    number: number,
+  ): {
+    headRef: string;
+    baseRef: string;
+    headPendingCreation: boolean;
+    baseSha: string | null;
+  } {
+    const { pull } = buildPullOr404(name, number);
+    return {
+      headRef: pull.head_ref,
+      baseRef: pull.base_ref,
+      headPendingCreation: pull.head_pending_creation === 1,
+      baseSha: pull.base_sha,
+    };
+  },
+
+  // After worktree provisioning succeeds, turn a pending head into a durable branch SHA. This is
+  // deliberately separate from resolveBuildPull so a failed provision never clears the marker.
+  async confirmProvisionedHead(name: string, number: number): Promise<void> {
+    const { repo, issue, pull } = buildPullOr404(name, number);
+    if (pull.head_pending_creation !== 1) return;
+    const provisionedHeadSha = await revParse(repo.local_path, pull.head_ref);
+    if (!provisionedHeadSha) {
+      throw new ServiceError(
+        422,
+        `could not resolve provisioned branch "${pull.head_ref}"`,
+      );
+    }
+    // Clear the durable creation permission together with the first real branch SHA. Established
+    // heads remain the watcher's responsibility, preserving its update events and review resets.
+    S.setHeadSha(issue.id, provisionedHeadSha);
+  },
+
   // Open the draft PR for an issue's worktree branch at the start of `lh build`. Idempotent:
   // if the issue already has an open (unmerged) linked PR, return it untouched. The PR can
   // be opened with 0 commits — LoopHub does not require head to be ahead of base (the diff

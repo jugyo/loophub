@@ -6,13 +6,12 @@ import {
   configDir,
   worktreeRoot,
 } from "../../core/config.ts";
-import { gitCommonDir, gitDirOf, revParse } from "../../core/git.ts";
+import { gitCommonDir, gitDirOf } from "../../core/git.ts";
 import {
   LH_BUILD_SESSION_AGENT,
   resolveWorktreeIdentity,
 } from "../../core/resume.ts";
 import { RUNTIMES } from "../../core/runtimes.ts";
-import * as Store from "../../core/store.ts";
 import { flags, sub } from "../args.ts";
 import { display, fail, resolveRepo, run as runOp, svc } from "../context.ts";
 import {
@@ -205,13 +204,8 @@ export async function run(): Promise<void> {
       fail(`could not open draft PR: ${e.message}`);
     }
   }
-  const rawPullIssue = Store.getIssue(r.id, prNumber);
-  const rawPull = rawPullIssue ? Store.getPull(rawPullIssue.id) : null;
-  if (rawPullIssue?.kind !== "pull" || !rawPull) {
-    fail(`pull request #${prNumber} not found`);
-  }
-  const headRef: string = rawPull.head_ref;
-  const baseRef: string = rawPull.base_ref;
+  const buildPull = await runOp(() => s.dev.resolveBuildPull(repo, prNumber));
+  const { headRef, baseRef } = buildPull;
   try {
     await validateExistingLocalBranch(r.local_path, baseRef, "PR base ref");
   } catch (e: any) {
@@ -287,20 +281,12 @@ export async function run(): Promise<void> {
       // targets remain strict so a deleted branch is never silently replaced.
       allowCreatingConventionBranch: shouldCreateMissingConventionBranch({
         issueAttempt: prJustOpened,
-        headPendingCreation: rawPull.head_pending_creation === 1,
-        baseSha: rawPull.base_sha,
+        headPendingCreation: buildPull.headPendingCreation,
+        baseSha: buildPull.baseSha,
       }),
-      baseSha: rawPull.base_sha ?? undefined,
+      baseSha: buildPull.baseSha ?? undefined,
     });
-    if (rawPull.head_pending_creation === 1) {
-      const provisionedHeadSha = await revParse(r.local_path, headRef);
-      if (!provisionedHeadSha) {
-        throw new Error(`could not resolve provisioned branch "${headRef}"`);
-      }
-      // Clear the durable creation permission together with the first real branch SHA. Established
-      // heads remain the watcher's responsibility, preserving its update events and review resets.
-      Store.setHeadSha(rawPullIssue.id, provisionedHeadSha);
-    }
+    await s.dev.confirmProvisionedHead(repo, prNumber);
   } catch (e: any) {
     fail(e.message);
   }
