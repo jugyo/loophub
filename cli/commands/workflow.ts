@@ -1,8 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { agentModel } from "../../core/config.ts";
+import {
+  agentModel,
+  type CodingAgent,
+  codingAgent,
+} from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
-import { isClaudeSessionId, RUNTIME_CLAUDE_CODE } from "../../core/resume.ts";
+import { isClaudeSessionId } from "../../core/resume.ts";
+import { buildCodexSandboxArgs } from "../../core/terminal/codex-launch.ts";
 import {
   HERDR_ID,
   parseHerdrRootPaneId,
@@ -27,7 +32,12 @@ import {
   svc,
   writeSession,
 } from "../context.ts";
-import { formatSpawnCommand, parseDevTarget, shQuote } from "../dev.ts";
+import {
+  formatSpawnCommand,
+  parseDevTarget,
+  resolveDevRuntime,
+  shQuote,
+} from "../dev.ts";
 import {
   HerdrLaunchError,
   type HerdrLaunchResult,
@@ -143,34 +153,28 @@ function commandAvailable(command: string): boolean {
   return !result.error && (result.status ?? 0) === 0;
 }
 
-function assertWorkflowStartRuntime(): void {
-  if (flags.codex === true || flags.runtime === "codex") {
-    fail("workflow start v1 supports only the claude runtime");
-  }
-  if (
-    flags.runtime &&
-    flags.runtime !== RUNTIME_CLAUDE_CODE &&
-    flags.runtime !== "claude-code"
-  ) {
-    fail("workflow start v1 supports only the claude runtime");
-  }
+// The binary a runtime launches: Claude Code spawns `claude`, Codex spawns `codex` (#516).
+function runtimeBin(runtime: CodingAgent): "claude" | "codex" {
+  return runtime === "codex" ? "codex" : "claude";
 }
 
-function preflightParentLaunch(): void {
+function preflightParentLaunch(runtime: CodingAgent): void {
   if (!commandAvailable("herdr")) {
-    fail("workflow start v1 requires herdr on PATH");
+    fail("workflow start requires herdr on PATH");
   }
-  if (!commandAvailable("claude")) {
-    fail("workflow start v1 requires claude on PATH");
+  const bin = runtimeBin(runtime);
+  if (!commandAvailable(bin)) {
+    fail(`workflow start requires ${bin} on PATH`);
   }
 }
 
-function preflightStepLaunch(): void {
+function preflightStepLaunch(runtime: CodingAgent): void {
   if (!commandAvailable("herdr")) {
     fail("workflow launch-step requires herdr on PATH");
   }
-  if (!commandAvailable("claude")) {
-    fail("workflow launch-step requires claude on PATH");
+  const bin = runtimeBin(runtime);
+  if (!commandAvailable(bin)) {
+    fail(`workflow launch-step requires ${bin} on PATH`);
   }
 }
 
@@ -285,18 +289,34 @@ function requestedSessionId(): string | undefined {
   return sessionId;
 }
 
-function parentClaudeArgs(input: {
+// Build the parent agent argv for the resolved runtime (#516). Claude Code takes --session-id and
+// --append-system-prompt-file; Codex has neither, so the rendered contract is folded into its
+// positional prompt and correlation happens only through the LOOPHUB_SESSION_ID env prefix.
+function parentAgentArgs(input: {
+  runtime: CodingAgent;
   sessionId: string;
   systemPromptPath: string;
   userPrompt: string;
   model: string;
 }): string[] {
+  const auto = flags.auto === true;
+  if (input.runtime === "codex") {
+    const systemPrompt = readFileSync(input.systemPromptPath, "utf8");
+    return [
+      ...(auto
+        ? ["--dangerously-bypass-approvals-and-sandbox"]
+        : buildCodexSandboxArgs()),
+      "--model",
+      input.model,
+      `${systemPrompt}\n\n${input.userPrompt}`,
+    ];
+  }
   return [
     "--session-id",
     input.sessionId,
     "--model",
     input.model,
-    ...(flags.auto === true ? ["--permission-mode", "auto"] : []),
+    ...(auto ? ["--permission-mode", "auto"] : []),
     "--append-system-prompt-file",
     input.systemPromptPath,
     input.userPrompt,
@@ -318,12 +338,18 @@ function inheritedHerdrTabId(): string | null {
   return null;
 }
 
-function modelFlag(): string {
+// The explicit `--model <name>` a caller passed, or undefined when none was given.
+function explicitModelFlag(): string | undefined {
   if (flags.model !== undefined && typeof flags.model !== "string") {
     fail("--model requires a value");
   }
   const model = typeof flags.model === "string" ? flags.model.trim() : "";
-  return model || agentModel("claude-code");
+  return model || undefined;
+}
+
+// The parent's launch model: an explicit --model override, else the runtime's config default (#594).
+function modelFlag(runtime: CodingAgent): string {
+  return explicitModelFlag() ?? agentModel(runtime);
 }
 
 function positiveInt(value: string | undefined, name: string): number {
@@ -344,6 +370,7 @@ function nonNegativeInt(
 
 async function launchParentHerdr(input: {
   repo: { full_name: string; local_path: string };
+  runtime: CodingAgent;
   worktree: string;
   sessionId: string;
   systemPromptPath: string;
@@ -355,8 +382,9 @@ async function launchParentHerdr(input: {
   // attach it has no TTY for. Mirrors `lh build --herdr` (cli/commands/build.ts).
   detach?: boolean;
 }): Promise<void> {
-  const claudeArgs = parentClaudeArgs(input);
-  const command = formatSpawnCommand(claudeArgs, { bin: "claude" });
+  const bin = runtimeBin(input.runtime);
+  const agentArgs = parentAgentArgs(input);
+  const command = formatSpawnCommand(agentArgs, { bin });
   const commandWithEnv = `LOOPHUB_SESSION_ID=${shQuote(input.sessionId)} ${command}`;
   const agentName = `workflow-${input.sessionId.slice(0, 8)}`;
   // Open (or reuse) the target PR worktree's own herdr workspace and start the parent there, the
@@ -399,7 +427,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--herdr] [--auto] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex] [--model <name>] [--herdr] [--auto] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -410,13 +438,17 @@ async function startWorkflow(): Promise<void> {
   }
   const repo = parsed.repo ?? (await resolveRepo());
   const workflowId = workflowIdFlag();
-  assertWorkflowStartRuntime();
+  const runtime = resolveDevRuntime({
+    claudeCode: flags["claude-code"] === true,
+    codex: flags.codex === true,
+    defaultRuntime: codingAgent(),
+  });
   const sessionId = requestedSessionId();
-  const model = modelFlag();
+  const model = modelFlag(runtime);
   if (flags.json === true && flags["no-launch"] !== true) {
     fail("--json can only be used with --no-launch for workflow start");
   }
-  if (flags["no-launch"] !== true) preflightParentLaunch();
+  if (flags["no-launch"] !== true) preflightParentLaunch(runtime);
   const s = await svc();
   const result = await runOp(() =>
     s.workflowRuns.start(
@@ -427,6 +459,10 @@ async function startWorkflow(): Promise<void> {
         workflowId,
         parentContract: parentContract(),
         auto: flags.auto === true,
+        runtime,
+        // Persist the resolved model (explicit override or config default) so steps inherit it
+        // without re-reading config (#516/#594).
+        model,
         lockPid: process.pid,
       },
       sessionId,
@@ -452,6 +488,7 @@ async function startWorkflow(): Promise<void> {
       full_name: repoRecord.full_name,
       local_path: repoRecord.local_path,
     },
+    runtime,
     worktree: result.worktree,
     sessionId: result.session_id,
     systemPromptPath: result.parent.system_prompt_path,
@@ -482,7 +519,6 @@ async function launchStep(): Promise<void> {
   if (flags.json === true) {
     fail("--json is not supported for workflow launch-step");
   }
-  preflightStepLaunch();
   const tabId = inheritedHerdrTabId();
   const actorSessionId = await writeSession();
   const result = await runOp(() =>
@@ -493,13 +529,16 @@ async function launchStep(): Promise<void> {
         step,
         note,
         contract: contractText(step),
-        model: modelFlag(),
+        // The step inherits the parent run's model; only forward an explicit --model override.
+        model: explicitModelFlag(),
         auto: flags.auto === true,
         tabId,
       },
       actorSessionId,
     ),
   );
+  // Preflight the runtime the run resolved (#516) — claude-code needs `claude`, codex needs `codex`.
+  preflightStepLaunch(result.runtime);
   console.log(
     `launched Workflow ${result.step} step for run #${result.run.id}`,
   );

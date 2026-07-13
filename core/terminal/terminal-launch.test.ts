@@ -323,9 +323,11 @@ describe("herdr terminal launch", () => {
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 12,
       step: "plan",
+      runtime: "claude-code",
       sessionId: "11111111-1111-4111-8111-111111111111",
       worktree: "/repo/worktrees/pr-7",
       systemPromptPath: "/tmp/run/plan-contract.md",
+      systemPrompt: "# Plan contract\nstep: plan\n",
       userPrompt: "## Inputs\n- /tmp/run/plan/input/task.md - Task\n",
       tabId: "w1:t2",
       model: "sonnet",
@@ -344,8 +346,66 @@ describe("herdr terminal launch", () => {
     expect(plan.command).toContain(
       "claude --session-id '11111111-1111-4111-8111-111111111111'",
     );
+    expect(plan.command).toContain("--model 'sonnet'");
+    expect(plan.command).toContain("--permission-mode 'auto'");
     expect(plan.command).toContain(
       "--append-system-prompt-file '/tmp/run/plan-contract.md'",
+    );
+    // The claude branch does not carry a codex sandbox flag.
+    expect(plan.command).not.toContain("--sandbox");
+  });
+
+  test("builds a Codex Workflow step launch that folds the contract into the prompt (#516)", () => {
+    const plan = buildWorkflowStepHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      runId: 12,
+      step: "plan",
+      runtime: "codex",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      worktree: "/repo/worktrees/pr-7",
+      systemPromptPath: "/tmp/run/plan-contract.md",
+      systemPrompt: "# Plan contract\nstep: plan\n",
+      userPrompt: "## Inputs\n- task.md\n",
+      tabId: "w1:t2",
+      model: "gpt-5.5",
+      permissionMode: "auto",
+    });
+
+    // Codex still correlates through the ambient session env, but never gets a --session-id flag.
+    expect(plan.command).toContain(
+      "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
+    );
+    expect(plan.command).toContain("codex ");
+    expect(plan.command).not.toContain("claude");
+    expect(plan.command).not.toContain("--session-id");
+    expect(plan.command).not.toContain("--append-system-prompt-file");
+    // auto mode bypasses approvals/sandbox, matching the interactive Build button's Codex posture.
+    expect(plan.command).toContain(
+      "--dangerously-bypass-approvals-and-sandbox",
+    );
+    expect(plan.command).toContain("--model 'gpt-5.5'");
+    // The rendered contract is prepended to the positional prompt (single quoted as one arg).
+    expect(plan.command).toContain("# Plan contract");
+    expect(plan.command).toContain("## Inputs");
+  });
+
+  test("a non-auto Codex Workflow step runs inside the workspace-write sandbox (#516)", () => {
+    const plan = buildWorkflowStepHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      runId: 3,
+      step: "execute",
+      runtime: "codex",
+      sessionId: "22222222-2222-4222-8222-222222222222",
+      worktree: "/repo/worktrees/pr-7",
+      systemPromptPath: "/tmp/run/execute-contract.md",
+      systemPrompt: "contract",
+      userPrompt: "do it",
+      model: "gpt-5.5",
+    });
+
+    expect(plan.command).toContain("'--sandbox' 'workspace-write'");
+    expect(plan.command).not.toContain(
+      "--dangerously-bypass-approvals-and-sandbox",
     );
   });
 

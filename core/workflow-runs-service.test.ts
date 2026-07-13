@@ -361,6 +361,112 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   );
 });
 
+test("start persists the resolved runtime/model and every step inherits them (#516)", async () => {
+  const repo = S.getRepo("me", "workflow-run")!;
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Codex run",
+    "## Acceptance criteria\n- [ ] It works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "codex-standard",
+    description: "",
+    planPrompt: "Plan it.",
+    executePrompt: "",
+    verifyPrompt: "",
+    reflectPrompt: "",
+  });
+
+  const result = await svc.workflowRuns.start(
+    repo.full_name,
+    {
+      issue: issue.number,
+      workflowId: workflow.id,
+      parentContract: "# Parent\nDo the run.",
+      runtime: "codex",
+      model: "gpt-5.5",
+    },
+    "33333333-3333-4333-8333-333333333333",
+  );
+
+  // The resolved runtime + model are persisted on the run row so steps read them back.
+  const row = S.getWorkflowRun(result.run.id)!;
+  expect(row.runtime).toBe("codex");
+  expect(row.model).toBe("gpt-5.5");
+  // The parent session records the runtime it actually launched in (#516).
+  expect(S.getAgentSession(result.session_id)?.runtime).toBe("codex");
+
+  const launched = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    {
+      run: result.run.id,
+      step: "plan",
+      contract: "# Plan\n{{step}}",
+    },
+    result.session_id,
+  );
+  // The step inherits the parent runtime/model: it launches codex (no claude, no --session-id) with
+  // the saved model, without the caller re-specifying anything.
+  expect(launched.runtime).toBe("codex");
+  expect(launched.herdr.command).toContain("codex ");
+  expect(launched.herdr.command).not.toContain("claude");
+  expect(launched.herdr.command).not.toContain("--session-id");
+  expect(launched.herdr.command).toContain("--model 'gpt-5.5'");
+
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: result.run.id,
+      step: launched.step,
+      sessionId: launched.session_id,
+      inputFiles: launched.input_files,
+    },
+    result.session_id,
+  );
+  // The launched step session is recorded with the inherited runtime, not a hardcoded claude-code.
+  expect(S.getAgentSession(launched.session_id)?.runtime).toBe("codex");
+});
+
+test("start defaults to claude-code and the config default model when unspecified (#516)", async () => {
+  const repo = S.getRepo("me", "workflow-run")!;
+  const issue = S.createIssue(repo.id, "issue", "Default run", "Body", "me");
+  const workflow = S.createWorkflow({
+    name: "default-standard",
+    description: "",
+    planPrompt: "Plan it.",
+    executePrompt: "",
+    verifyPrompt: "",
+    reflectPrompt: "",
+  });
+
+  const result = await svc.workflowRuns.start(
+    repo.full_name,
+    {
+      issue: issue.number,
+      workflowId: workflow.id,
+      parentContract: "# Parent",
+    },
+    "44444444-4444-4444-8444-444444444444",
+  );
+
+  const row = S.getWorkflowRun(result.run.id)!;
+  expect(row.runtime).toBe("claude-code");
+  expect(row.model).toBeNull();
+  expect(S.getAgentSession(result.session_id)?.runtime).toBe("claude-code");
+
+  // A step launched from this run falls back to claude-code + the agent's config default model.
+  const launched = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: result.run.id, step: "plan", contract: "# Plan" },
+    result.session_id,
+  );
+  expect(launched.runtime).toBe("claude-code");
+  expect(launched.herdr.command).toContain("claude --session-id");
+  expect(launched.herdr.command).toContain("--model 'opus'");
+});
+
 test("step output validates, stamps, places, readies, and retries an accepted artifact", async () => {
   const repo = S.getRepo("me", "workflow-run")!;
   const issue = S.createIssue(

@@ -119,6 +119,8 @@ export interface WorkflowRunInput {
   status: string;
   currentStep: string;
   autoMode?: boolean;
+  runtime?: string | null;
+  model?: string | null;
   parentSessionId?: string | null;
 }
 
@@ -132,6 +134,8 @@ export interface WorkflowRunRow {
   current_step: string;
   rework_count: number;
   auto_mode: number;
+  runtime: string | null;
+  model: string | null;
   parent_session_id: string | null;
   step_sessions_json: string;
   created_at: string;
@@ -344,8 +348,8 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
   return db
     .query(
       `INSERT INTO workflow_runs
-        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, parent_session_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, parent_session_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       input.workflowId,
@@ -355,6 +359,8 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
       input.status,
       input.currentStep,
       input.autoMode === true ? 1 : 0,
+      input.runtime ?? null,
+      input.model ?? null,
       input.parentSessionId ?? null,
       t,
       t,

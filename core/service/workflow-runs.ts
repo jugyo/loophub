@@ -13,7 +13,12 @@ import {
 } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 import { saveAttachment } from "../attachments.ts";
-import { configDir, worktreeRoot } from "../config.ts";
+import {
+  agentModel,
+  type CodingAgent,
+  configDir,
+  worktreeRoot,
+} from "../config.ts";
 import {
   acquireDevLock,
   devLockPath,
@@ -21,7 +26,7 @@ import {
   removeDevLock,
 } from "../dev-lock.ts";
 import { git } from "../git.ts";
-import { RUNTIME_CLAUDE_CODE, resolveWorktreeIdentity } from "../resume.ts";
+import { resolveWorktreeIdentity } from "../resume.ts";
 import type {
   WorkflowRunStateWire,
   WorkflowRunVerdictSummaryWire,
@@ -118,6 +123,9 @@ export type WorkflowRunUpdateResult = {
 export type WorkflowLaunchStepResult = {
   run: WorkflowRunUpdateResult["run"];
   step: WorkflowStep;
+  // Runtime the step inherited from the parent run (#516). The CLI preflights this binary before
+  // spawning the herdr launch it returns.
+  runtime: CodingAgent;
   session_id: string;
   worktree: string;
   system_prompt_path: string;
@@ -302,6 +310,18 @@ function parentUserPrompt(input: {
 
 function stepContractForLaunch(_step: WorkflowStep, template: string): string {
   return template;
+}
+
+// The runtime the parent run resolved at start (#516). A null-runtime row predates the column and
+// — by that era's invariant (Workflow always launched Claude Code) — was a claude-code run.
+function runRuntime(run: S.WorkflowRunRow): CodingAgent {
+  return run.runtime === "codex" ? "codex" : "claude-code";
+}
+
+// The model the parent run resolved at start. A null-runtime/model row falls back to the agent's
+// config default, so a step launched from an old run still gets a concrete model.
+function runModel(run: S.WorkflowRunRow): string {
+  return run.model?.trim() || agentModel(runRuntime(run));
 }
 
 function runJSON(run: S.WorkflowRunRow): WorkflowRunUpdateResult["run"] {
@@ -765,6 +785,10 @@ export const workflowRuns = {
       workflowId?: number;
       parentContract: string;
       auto?: boolean;
+      // Runtime + model the CLI resolved for the parent (#516). Persisted on the run row so every
+      // step inherits the same values. Omitted => claude-code + the agent's config default model.
+      runtime?: CodingAgent;
+      model?: string | null;
       lockPid?: number;
     },
     sessionId: string = randomUUID(),
@@ -773,13 +797,14 @@ export const workflowRuns = {
     ensureWritable(r);
     const workflow = workflowByInput(input);
     const issue = issueOr404(r, input.issue, "issue");
+    const runtime: CodingAgent = input.runtime ?? "claude-code";
 
     S.registerAgentSession(
       sessionId,
       "lh-workflow",
       sessionId,
       `Workflow #${issue.number} ${issue.title}`,
-      RUNTIME_CLAUDE_CODE,
+      runtime,
       "dev",
     );
 
@@ -852,6 +877,8 @@ export const workflowRuns = {
         status: "running",
         currentStep: "plan",
         autoMode: input.auto,
+        runtime,
+        model: input.model?.trim() || null,
         parentSessionId: sessionId,
       });
 
@@ -1044,22 +1071,29 @@ export const workflowRuns = {
       composed.systemPrompt,
     );
 
+    // The step inherits the parent run's runtime and model (#516) so the whole run stays on one
+    // agent; an explicit launch-step --model override still wins when passed.
+    const runtime = runRuntime(run);
+    const model = input.model?.trim() || runModel(run);
     const herdr = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: r.full_name, local_path: r.local_path },
       runId: run.id,
       step,
+      runtime,
       sessionId: childSessionId,
       worktree,
       systemPromptPath,
+      systemPrompt: composed.systemPrompt,
       userPrompt: composed.userPrompt,
       tabId: input.tabId,
-      model: input.model,
+      model,
       permissionMode: run.auto_mode === 1 || input.auto ? "auto" : undefined,
     });
 
     return {
       run: runJSON(run),
       step,
+      runtime,
       session_id: childSessionId,
       worktree,
       system_prompt_path: systemPromptPath,
@@ -1098,7 +1132,7 @@ export const workflowRuns = {
       "workflow-step",
       sessionId,
       `Workflow ${step} run #${run.id}`,
-      RUNTIME_CLAUDE_CODE,
+      runRuntime(run),
       "workflow-step",
     );
     S.linkSession(sessionId, prIssue.id);

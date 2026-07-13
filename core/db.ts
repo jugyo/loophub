@@ -682,6 +682,11 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   current_step       TEXT NOT NULL,
   rework_count       INTEGER NOT NULL DEFAULT 0,
   auto_mode          INTEGER NOT NULL DEFAULT 0,
+  -- Runtime + model resolved for the parent at start, so every step inherits the same values a
+  -- human/config selected (#516/#594). Nullable: rows written before these columns fall back to
+  -- claude-code + the config default model when read.
+  runtime            TEXT,
+  model              TEXT,
   parent_session_id  TEXT,
   step_sessions_json TEXT NOT NULL DEFAULT '{}',
   created_at         TEXT NOT NULL,
@@ -809,6 +814,8 @@ tryExec("ALTER TABLE workflow_artifacts ADD COLUMN dedupe_key TEXT");
 tryExec(
   "ALTER TABLE workflow_runs ADD COLUMN auto_mode INTEGER NOT NULL DEFAULT 0",
 );
+tryExec("ALTER TABLE workflow_runs ADD COLUMN runtime TEXT");
+tryExec("ALTER TABLE workflow_runs ADD COLUMN model TEXT");
 tryExec("ALTER TABLE workflow_placement_claims ADD COLUMN owner_token TEXT");
 tryExec("DROP INDEX IF EXISTS idx_workflow_artifacts_submission");
 tryExec(

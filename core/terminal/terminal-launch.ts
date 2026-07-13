@@ -577,9 +577,16 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
   repo: TerminalLaunchRepo;
   runId: number;
   step: string;
+  // Runtime the parent run resolved (#516). Claude Code launches `claude` with --session-id and
+  // --append-system-prompt-file; Codex has neither, so it launches `codex` with the rendered
+  // contract folded into its positional prompt and correlates only via the LOOPHUB_SESSION_ID env.
+  runtime: CodingAgent;
   sessionId: string;
   worktree: string;
   systemPromptPath: string;
+  // The rendered contract text (same content written to systemPromptPath). Codex has no
+  // --append-system-prompt-file equivalent, so the text is prepended to the positional prompt.
+  systemPrompt: string;
   userPrompt: string;
   tabId?: string | null;
   model?: string | null;
@@ -590,18 +597,33 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
     `LOOPHUB_WORKFLOW_RUN=${shellArg(String(input.runId))}`,
     `LOOPHUB_WORKFLOW_STEP=${shellArg(input.step)}`,
   ].join(" ");
-  const parts = [
-    "claude",
-    "--session-id",
-    shellArg(input.sessionId),
-    ...(input.model?.trim() ? ["--model", shellArg(input.model.trim())] : []),
-    ...(input.permissionMode
-      ? ["--permission-mode", shellArg(input.permissionMode)]
-      : []),
-    "--append-system-prompt-file",
-    shellArg(input.systemPromptPath),
-    shellArg(input.userPrompt),
-  ];
+  const model = input.model?.trim();
+  const parts =
+    input.runtime === "codex"
+      ? [
+          "codex",
+          // Match the interactive Build button's Codex posture (cli/dev.ts buildCodexArgs): auto mode
+          // bypasses approvals/sandbox, otherwise run inside the workspace-write sandbox.
+          ...(input.permissionMode === "auto"
+            ? ["--dangerously-bypass-approvals-and-sandbox"]
+            : buildCodexSandboxArgs()
+          ).map(shellArg),
+          ...(model ? ["--model", shellArg(model)] : []),
+          // Codex takes no system-prompt flag, so fold the rendered contract into the prompt.
+          shellArg(`${input.systemPrompt}\n\n${input.userPrompt}`),
+        ]
+      : [
+          "claude",
+          "--session-id",
+          shellArg(input.sessionId),
+          ...(model ? ["--model", shellArg(model)] : []),
+          ...(input.permissionMode
+            ? ["--permission-mode", shellArg(input.permissionMode)]
+            : []),
+          "--append-system-prompt-file",
+          shellArg(input.systemPromptPath),
+          shellArg(input.userPrompt),
+        ];
   return buildHerdrLaunchPlan({
     repo: input.repo,
     command: `${env} ${parts.join(" ")}`,
