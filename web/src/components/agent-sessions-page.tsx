@@ -20,6 +20,7 @@ import {
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { useAgentSessions } from "@/queries/sessions";
+import { codingAgentLabel } from "../../../core/runtimes.ts";
 
 export { formatCost, formatTokenCount } from "@/lib/session-usage";
 
@@ -71,8 +72,6 @@ const CHART_MODES: Array<{ id: ChartMode; label: string }> = [
 ];
 
 const RUNTIME_CLAUDE_CODE = "claude-code";
-const RUNTIME_CODEX = "codex";
-const RUNTIME_GROK = "grok";
 const AGENT_COLORS = [
   "hsl(160 84% 39%)",
   "hsl(199 89% 48%)",
@@ -151,10 +150,10 @@ function agentKey(session: AgentSession): string {
 }
 
 function agentLabel(key: string): string {
-  if (key === RUNTIME_CLAUDE_CODE) return "Claude Code";
-  if (key === RUNTIME_CODEX) return "Codex";
-  if (key === RUNTIME_GROK) return "Grok Build";
-  return key;
+  // codingAgentLabel maps a known runtime id to its display label (core/runtimes.ts) and returns the
+  // raw key for anything else — a non-runtime agentKey fallback (session.agent / "unknown") is shown
+  // as-is, same as the previous local if/else.
+  return codingAgentLabel(key);
 }
 
 function startOfUtcDay(date: Date): Date {

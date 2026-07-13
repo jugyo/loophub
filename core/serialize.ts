@@ -3,7 +3,6 @@
 // shaping is reusable and side-effect free.
 
 import { statSync } from "node:fs";
-import type { CodingAgent } from "./config.ts";
 import { agentEffort, agentModel, worktreeRoot } from "./config.ts";
 import {
   commitsAhead,
@@ -27,9 +26,15 @@ import {
   SESSION_KIND_ISSUE_CREATE,
   sessionRuntime,
 } from "./resume.ts";
+import type { CodingAgent } from "./runtimes.ts";
 import * as S from "./store.ts";
 import { herdrSessionName } from "./terminal/terminal-launch.ts";
 import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
+
+// Wire-type SSOT (AGENTS.md): the coding-runtime id is part of several wire shapes below (agent cost
+// summary, scheduled tasks, per-agent settings). Re-export it from the registry so web/src/api/types.ts
+// derives `CodingAgent` from core via a type-only import instead of re-declaring the union.
+export type { CodingAgent } from "./runtimes.ts";
 
 export interface RepoWire {
   id: number;

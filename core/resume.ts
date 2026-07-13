@@ -2,6 +2,7 @@
 // Kept free of git/DB side effects so the "can this PR's session be resumed, and does its
 // worktree need restoring?" judgment is unit-testable in isolation; the service layer feeds it
 // the resolved session id and the on-disk worktree/branch facts.
+import { isCodingAgent, RUNTIMES } from "./runtimes.ts";
 import { issueNumberFromBranch } from "./worktree-prune.ts";
 
 // The naming scheme that identifies where a PR's `lh build` worktree lives on disk. "pr" is the
@@ -84,16 +85,18 @@ export function isClaudeSessionId(id: string | null | undefined): id is string {
 // A session's runtime decides how `lh resume` re-enters it. Before #164 the runtime was *inferred*
 // from the agent label (LH_BUILD_SESSION_AGENT == Claude Code); sessions now carry an explicit
 // runtime so resume stays correct once `lh build` can launch other runtimes (codex, ...). Only
-// claude-code is actually resumable today — real multi-runtime support is out of scope for #164.
-export const RUNTIME_CLAUDE_CODE = "claude-code";
+// claude-code is actually resumable today (the registry's `resumable` flag) — real multi-runtime
+// support is out of scope for #164. These aliases keep the runtime-id string constants importers
+// already use; the runtime *definitions* live in core/runtimes.ts (RUNTIMES).
+export const RUNTIME_CLAUDE_CODE = RUNTIMES["claude-code"].id;
 // `lh build --codex` launches the dev session in Codex instead (#458). Codex sessions are recorded
 // with this runtime but are not resumable by `lh resume` (resolveRuntimeResume reports
 // unknown-runtime) — Codex resume support is a separate step.
-export const RUNTIME_CODEX = "codex";
+export const RUNTIME_CODEX = RUNTIMES.codex.id;
 // `lh build --grok` launches the dev session in Grok Build instead. Like Codex, Grok sessions are
 // recorded with this runtime but are not resumable by `lh resume` (resolveRuntimeResume reports
 // unknown-runtime) — Grok resume support is out of scope.
-export const RUNTIME_GROK = "grok";
+export const RUNTIME_GROK = RUNTIMES.grok.id;
 
 // The effective runtime of a session row, with backward-compat for sessions registered before the
 // runtime column existed. A null-runtime row registered under the build/dev session agent predates
@@ -128,7 +131,10 @@ export function resolveRuntimeResume(
   runtime: string | null,
   externalSession: string | null | undefined,
 ): RuntimeResume {
-  if (runtime === RUNTIME_CLAUDE_CODE) {
+  // A resumable runtime (registry `resumable` flag — only claude-code today) re-enters iff the stored
+  // id is UUID-shaped; a null runtime has unknown provenance; any other runtime is one this build
+  // cannot resume.
+  if (isCodingAgent(runtime) && RUNTIMES[runtime].resumable) {
     return isClaudeSessionId(externalSession)
       ? { ok: true, runtime, sessionId: externalSession }
       : { ok: false, reason: "no-session" };

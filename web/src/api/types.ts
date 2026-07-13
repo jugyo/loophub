@@ -12,6 +12,7 @@ import type { MergeMode } from "../../../core/merge-mode.ts";
 import type {
   AgentCostSummaryWire,
   AgentSessionWire,
+  CodingAgent as CodingAgentWire,
   CommentWire,
   GithubPrStatusWire,
   GithubPullWire,
@@ -208,8 +209,12 @@ export interface HerdrAgentRead {
   rows: number | null;
 }
 
-/** Coding agent `lh build` launches by default when no --claude-code / --codex / --grok flag is passed (#516). */
-export type CodingAgent = "claude-code" | "codex" | "grok";
+/**
+ * Coding agent `lh build` launches by default when no --claude-code / --codex / --grok flag is passed
+ * (#516). Derived from core (core/runtimes.ts via core/serialize.ts) so the runtime set is defined
+ * once — the wire-types SSOT rule (AGENTS.md), same as every other core-derived type here.
+ */
+export type CodingAgent = CodingAgentWire;
 
 /** Per-agent settings (#593, #594, #682). */
 export interface AgentSettings {

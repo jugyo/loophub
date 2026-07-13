@@ -10,7 +10,6 @@ import {
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useToast } from "@/components/toast";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import {
   costStoppedBadge,
   linkedPullStateBadge,
@@ -28,6 +27,7 @@ import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
 import { useSetPullState } from "@/queries/pulls";
 import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
+import { codingAgentLabel } from "../../../core/runtimes.ts";
 
 const STATUS_TEXT: Record<StatusWordTone, string> = {
   danger: "text-destructive",
@@ -48,16 +48,11 @@ const WORK_BASIS_LABEL: Record<
   in_progress: "in progress",
 };
 
-function agentRuntimeLabel(runtime: string): string {
-  if (runtime === "claude-code" || runtime === "codex" || runtime === "grok") {
-    return CODING_AGENT_LABELS[runtime];
-  }
-  return runtime;
-}
-
 function agentRuntimeMetadataLabel(runtime?: string, model?: string): string {
   const parts = [
-    runtime ? agentRuntimeLabel(runtime) : null,
+    // codingAgentLabel maps a known runtime id to its display label and falls back to the raw
+    // string for an unknown runtime (core/runtimes.ts) — the same behavior the local if/else had.
+    runtime ? codingAgentLabel(runtime) : null,
     model?.trim() || null,
   ].filter((part): part is string => !!part);
   return parts.length > 0 ? parts.join(" · ") : "Agent";

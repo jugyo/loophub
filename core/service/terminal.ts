@@ -57,6 +57,7 @@ import {
   parseHerdrSessionList,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
+  RUNTIMES,
   randomUUID,
   repoOr404,
   reposWithRunningSession,
@@ -235,14 +236,9 @@ async function launchIssueDevHerdr(
     ...(options?.newAttempt ? ["--new-attempt"] : []),
     "--herdr",
     // Force the runtime only when the dropdown overrode it; without an override we pass no runtime
-    // flag so `lh build` resolves the default itself (unchanged plain-Build behavior).
-    ...(options?.agent === "codex"
-      ? ["--codex"]
-      : options?.agent === "grok"
-        ? ["--grok"]
-        : options?.agent === "claude-code"
-          ? ["--claude-code"]
-          : []),
+    // flag so `lh build` resolves the default itself (unchanged plain-Build behavior). The per-runtime
+    // flag comes from the registry (core/runtimes.ts buildFlag).
+    ...(options?.agent ? [RUNTIMES[options.agent].buildFlag] : []),
     // One-shot session model (#637); omitted when the dropdown left it blank, so `lh build` falls
     // back to the configured per-agent default.
     ...(model ? ["--model", model] : []),

@@ -83,6 +83,7 @@ import {
   validateFindings,
   validateRubric,
 } from "../retro.ts";
+import { CODING_AGENTS, isCodingAgent, RUNTIMES } from "../runtimes.ts";
 import {
   agentSessionJSON,
   commentJSON,
@@ -222,6 +223,7 @@ export {
   branchExists,
   buildHerdrLaunchPlan,
   buildScheduledTaskCommand,
+  CODING_AGENTS,
   calculateCostUsd,
   classifyWorktree,
   claudeContextWindowForModel,
@@ -274,6 +276,7 @@ export {
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
   inboxMessageJSON,
+  isCodingAgent,
   isGithubRemoteUrl,
   isGitRepo,
   isRetroStatus,
@@ -315,6 +318,7 @@ export {
   RetroValidationError,
   RUNTIME_CLAUDE_CODE,
   RUNTIME_CODEX,
+  RUNTIMES,
   randomUUID,
   readdirSync,
   readTranscriptSlice,

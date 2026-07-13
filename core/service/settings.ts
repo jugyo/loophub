@@ -4,8 +4,10 @@ import {
   agentEffort,
   agentModel,
   autoModeOnBuild,
+  CODING_AGENTS,
   codingAgent,
   devCostLimitUsd,
+  isCodingAgent,
   S,
   ServiceError,
   updateAgentAutoModeOnBuild,
@@ -15,6 +17,30 @@ import {
   updateDevCostLimitUsd,
 } from "./shared.ts";
 
+// The accepted coding-agent ids, for validation error messages ("claude-code, codex, grok").
+const CODING_AGENTS_SENTENCE = CODING_AGENTS.join(", ");
+
+interface AgentSettingsShape {
+  autoModeOnBuild: boolean;
+  model: string;
+  effort: string;
+}
+
+// The per-agent settings block for every runtime, derived from the registry order so a new runtime
+// surfaces here without another hand-written entry.
+function agentSettings(): Record<CodingAgent, AgentSettingsShape> {
+  return Object.fromEntries(
+    CODING_AGENTS.map((agent) => [
+      agent,
+      {
+        autoModeOnBuild: autoModeOnBuild(agent),
+        model: agentModel(agent),
+        effort: agentEffort(agent),
+      },
+    ]),
+  ) as Record<CodingAgent, AgentSettingsShape>;
+}
+
 function hasAtMostTwoDecimalPlaces(value: number): boolean {
   return Math.abs(value * 100 - Math.round(value * 100)) < 1e-9;
 }
@@ -22,10 +48,10 @@ function hasAtMostTwoDecimalPlaces(value: number): boolean {
 function validateAgentScopedSetting(
   agent: CodingAgent | undefined,
 ): asserts agent is CodingAgent {
-  if (agent !== "claude-code" && agent !== "codex" && agent !== "grok") {
+  if (!isCodingAgent(agent)) {
     throw new ServiceError(
       422,
-      "agent must be one of: claude-code, codex, grok",
+      `agent must be one of: ${CODING_AGENTS_SENTENCE}`,
     );
   }
 }
@@ -49,31 +75,12 @@ function validateDevCostLimitUsd(value: unknown): asserts value is number {
 // Instance-level config.json settings, as opposed to the repo-scoped settings above (#474).
 export const settings = {
   get(): {
-    agents: Record<
-      CodingAgent,
-      { autoModeOnBuild: boolean; model: string; effort: string }
-    >;
+    agents: Record<CodingAgent, AgentSettingsShape>;
     codingAgent: CodingAgent;
     devCostLimitUsd: number;
   } {
     return {
-      agents: {
-        "claude-code": {
-          autoModeOnBuild: autoModeOnBuild("claude-code"),
-          model: agentModel("claude-code"),
-          effort: agentEffort("claude-code"),
-        },
-        codex: {
-          autoModeOnBuild: autoModeOnBuild("codex"),
-          model: agentModel("codex"),
-          effort: agentEffort("codex"),
-        },
-        grok: {
-          autoModeOnBuild: autoModeOnBuild("grok"),
-          model: agentModel("grok"),
-          effort: agentEffort("grok"),
-        },
-      },
+      agents: agentSettings(),
       codingAgent: codingAgent(),
       devCostLimitUsd: devCostLimitUsd(),
     };
@@ -94,10 +101,7 @@ export const settings = {
     },
     sessionId?: string | null,
   ): {
-    agents: Record<
-      CodingAgent,
-      { autoModeOnBuild: boolean; model: string; effort: string }
-    >;
+    agents: Record<CodingAgent, AgentSettingsShape>;
     codingAgent: CodingAgent;
     devCostLimitUsd: number;
   } {
@@ -119,15 +123,10 @@ export const settings = {
       }
       validateAgentScopedSetting(input.agent);
     }
-    if (
-      input.codingAgent !== undefined &&
-      input.codingAgent !== "claude-code" &&
-      input.codingAgent !== "codex" &&
-      input.codingAgent !== "grok"
-    ) {
+    if (input.codingAgent !== undefined && !isCodingAgent(input.codingAgent)) {
       throw new ServiceError(
         422,
-        "codingAgent must be one of: claude-code, codex, grok",
+        `codingAgent must be one of: ${CODING_AGENTS_SENTENCE}`,
       );
     }
     if (input.devCostLimitUsd !== undefined) {

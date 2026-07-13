@@ -9,11 +9,9 @@ import {
 import { gitCommonDir, gitDirOf, revParse } from "../../core/git.ts";
 import {
   LH_BUILD_SESSION_AGENT,
-  RUNTIME_CLAUDE_CODE,
-  RUNTIME_CODEX,
-  RUNTIME_GROK,
   resolveWorktreeIdentity,
 } from "../../core/resume.ts";
+import { RUNTIMES } from "../../core/runtimes.ts";
 import * as Store from "../../core/store.ts";
 import { flags, sub } from "../args.ts";
 import { display, fail, resolveRepo, run as runOp, svc } from "../context.ts";
@@ -111,8 +109,9 @@ export async function run(): Promise<void> {
   // The sandbox managed-settings are a `claude` launch option with no Codex or Grok equivalent —
   // reject the combination up front rather than silently dropping the flags. --auto and --model
   // both have Codex/Grok equivalents (#499, #594; see buildCodexArgs/buildGrokArgs) so they're
-  // allowed with --codex/--grok.
-  if ((runtime === "codex" || runtime === "grok") && useSandbox) {
+  // allowed with --codex/--grok. Whether a runtime supports the sandbox is the registry's
+  // `sandboxCapable` flag (core/runtimes.ts).
+  if (!RUNTIMES[runtime].sandboxCapable && useSandbox) {
     fail(
       "--sandbox/--allow are only supported with the claude-code runtime (remove them or drop --codex/--grok)",
     );
@@ -164,15 +163,10 @@ export async function run(): Promise<void> {
       agent: LH_BUILD_SESSION_AGENT,
       session: sessionId,
       // Record which runtime the session we are about to spawn runs in, so `lh resume` picks
-      // the resume command by runtime rather than inferring it from the agent. Codex and Grok
-      // sessions are recorded too, but `lh resume` cannot re-enter them yet (see RUNTIME_CODEX /
-      // RUNTIME_GROK).
-      runtime:
-        runtime === "codex"
-          ? RUNTIME_CODEX
-          : runtime === "grok"
-            ? RUNTIME_GROK
-            : RUNTIME_CLAUDE_CODE,
+      // the resume command by runtime rather than inferring it from the agent. The runtime id is
+      // already the stored runtime value (core/runtimes.ts). Codex and Grok sessions are recorded
+      // too, but `lh resume` cannot re-enter them yet (resolveRuntimeResume reports unknown-runtime).
+      runtime,
       // This is an implementation (dev) session; record its kind (#298) so it surfaces in the
       // PR's related-sessions list as a dev session. (setPullSession also stamps 'dev' when it
       // attributes the session to the PR — this just sets it at the registration point too.)

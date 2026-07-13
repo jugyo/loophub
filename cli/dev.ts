@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { git } from "../core/git.ts";
 import { isClaudeSessionId } from "../core/resume.ts";
+import { CODING_AGENTS, type CodingAgent, RUNTIMES } from "../core/runtimes.ts";
 import { buildCodexSandboxArgs } from "../core/terminal/codex-launch.ts";
 import {
   legacyWorktreeBranch,
@@ -228,34 +229,34 @@ export function parseDevTarget(target: string): { repo?: string; id: number } {
 //
 // `lh build` can launch the interactive dev session in Claude Code (default), Codex (#458), or
 // Grok Build. The worktree/PR/session preparation is runtime-independent; only the final spawn
-// differs.
-export type DevRuntime = "claude-code" | "codex" | "grok";
+// differs. DevRuntime is the CLI-side alias of the core runtime id (core/runtimes.ts CodingAgent) —
+// the two are the same set of values, kept as one type here so the union isn't declared twice.
+export type DevRuntime = CodingAgent;
 
 // Resolve the runtime from the mutually-exclusive `--claude-code` / `--codex` / `--grok` flags.
 // Passing more than one is ambiguous — fail loudly rather than pick one. When no flag is passed,
 // `defaultRuntime` (the `codingAgent` app setting, #516) decides; omitting it too falls back to the
 // historical default (Claude Code), so plain `lh build <id>` behavior is unchanged for callers that
-// don't pass it (e.g. existing tests).
+// don't pass it (e.g. existing tests). The flag names are read from the registry so a new runtime
+// only needs its entry, not another branch here.
 export function resolveDevRuntime(flags: {
   claudeCode?: boolean;
   codex?: boolean;
   grok?: boolean;
   defaultRuntime?: DevRuntime;
 }): DevRuntime {
-  const selected = [
-    flags.claudeCode ? "--claude-code" : null,
-    flags.codex ? "--codex" : null,
-    flags.grok ? "--grok" : null,
-  ].filter((f): f is string => f !== null);
+  const passed: Record<CodingAgent, boolean | undefined> = {
+    "claude-code": flags.claudeCode,
+    codex: flags.codex,
+    grok: flags.grok,
+  };
+  const selected = CODING_AGENTS.filter((id) => passed[id]);
   if (selected.length > 1) {
     throw new Error(
-      `${selected.join(", ")} are mutually exclusive (pass at most one)`,
+      `${selected.map((id) => RUNTIMES[id].buildFlag).join(", ")} are mutually exclusive (pass at most one)`,
     );
   }
-  if (flags.claudeCode) return "claude-code";
-  if (flags.codex) return "codex";
-  if (flags.grok) return "grok";
-  return flags.defaultRuntime ?? "claude-code";
+  return selected[0] ?? flags.defaultRuntime ?? "claude-code";
 }
 
 // Build the `codex` argv for the interactive dev session. Codex takes the initial prompt as a
@@ -377,6 +378,45 @@ export function buildClaudeArgs({
   return args;
 }
 
+// Per-runtime argv builders, keyed by runtime id. The builders themselves stay in this (node-dependent)
+// module — core/runtimes.ts is node-free — so the registry drives the dispatch by id and supplies the
+// `bin`, while the functions live here. Adding a runtime means adding one entry here plus its registry
+// definition, not another branch in buildRuntimeLaunch.
+type RuntimeArgvInput = {
+  sessionId: string;
+  managedSettings?: string;
+  auto?: boolean;
+  slashCommand: string;
+  sessionName?: string;
+  model?: string;
+};
+
+const RUNTIME_ARGV_BUILDERS: Record<
+  DevRuntime,
+  (input: RuntimeArgvInput) => string[]
+> = {
+  "claude-code": ({
+    sessionId,
+    managedSettings,
+    auto,
+    slashCommand,
+    sessionName,
+    model,
+  }) =>
+    buildClaudeArgs({
+      sessionId,
+      managedSettings,
+      auto,
+      slashCommand,
+      sessionName,
+      model,
+    }),
+  codex: ({ slashCommand, auto, model }) =>
+    buildCodexArgs({ slashCommand, auto, model }),
+  grok: ({ slashCommand, auto, model }) =>
+    buildGrokArgs({ slashCommand, auto, model }),
+};
+
 export function buildRuntimeLaunch({
   runtime,
   sessionId,
@@ -385,30 +425,12 @@ export function buildRuntimeLaunch({
   slashCommand,
   sessionName,
   model,
-}: {
+}: RuntimeArgvInput & {
   runtime: DevRuntime;
-  sessionId: string;
-  managedSettings?: string;
-  auto?: boolean;
-  slashCommand: string;
-  sessionName?: string;
-  model?: string;
 }): { bin: "claude" | "codex" | "grok"; args: string[] } {
-  if (runtime === "codex") {
-    return {
-      bin: "codex",
-      args: buildCodexArgs({ slashCommand, auto, model }),
-    };
-  }
-  if (runtime === "grok") {
-    return {
-      bin: "grok",
-      args: buildGrokArgs({ slashCommand, auto, model }),
-    };
-  }
   return {
-    bin: "claude",
-    args: buildClaudeArgs({
+    bin: RUNTIMES[runtime].bin,
+    args: RUNTIME_ARGV_BUILDERS[runtime]({
       sessionId,
       managedSettings,
       auto,

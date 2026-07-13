@@ -13,9 +13,14 @@ import {
   DropdownMenuItemIndicator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { EFFORT_SUGGESTIONS, MODEL_SUGGESTIONS } from "@/lib/agent-models";
+import {
+  CODING_AGENT_LABELS,
+  EFFORT_SUGGESTIONS,
+  MODEL_SUGGESTIONS,
+} from "@/lib/agent-models";
 import { cn } from "@/lib/utils";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
+import { CODING_AGENTS } from "../../../core/runtimes.ts";
 
 function autoModeOptions(): { value: boolean; label: string }[] {
   return [
@@ -30,23 +35,15 @@ function autoModeOptions(): { value: boolean; label: string }[] {
   ];
 }
 
+// Built from the runtime registry order (core/runtimes.ts, via CODING_AGENTS) + its labels, so the
+// picker lists every runtime without a hand-maintained copy here.
 const CODING_AGENT_OPTIONS: {
   value: CodingAgent;
   label: string;
-}[] = [
-  {
-    value: "claude-code",
-    label: "Claude Code",
-  },
-  {
-    value: "codex",
-    label: "Codex",
-  },
-  {
-    value: "grok",
-    label: "Grok Build",
-  },
-];
+}[] = CODING_AGENTS.map((value) => ({
+  value,
+  label: CODING_AGENT_LABELS[value],
+}));
 
 // Serializes a model+effort pair into one <select> option value. "::" is safe as a separator:
 // no entry in MODEL_SUGGESTIONS/EFFORT_SUGGESTIONS contains it.

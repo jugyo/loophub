@@ -1,16 +1,17 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+  CODING_AGENTS,
+  type CodingAgent,
+  normalizeCodingAgent,
+  RUNTIMES,
+} from "./runtimes.ts";
 
-// Which coding agent `lh build` launches by default (#516). Mirrors the `DevRuntime` values
-// cli/dev.ts's --claude-code / --codex / --grok flags select between.
-export type CodingAgent = "claude-code" | "codex" | "grok";
-
-export const CODING_AGENTS: readonly CodingAgent[] = [
-  "claude-code",
-  "codex",
-  "grok",
-];
+// Which coding agent `lh build` launches by default (#516). The type + ordered list + normalizer are
+// defined in the single runtime registry (core/runtimes.ts); re-exported here so existing importers
+// of `CodingAgent` / `CODING_AGENTS` / `normalizeCodingAgent` from core/config.ts are unchanged.
+export { CODING_AGENTS, type CodingAgent, normalizeCodingAgent };
 
 // Per-agent settings (#593). Kept as its own shape (rather than flattening fields onto
 // GlobalConfig) so a future setting can be added per-agent without another top-level field.
@@ -27,22 +28,18 @@ export interface AgentConfig {
   defaultEffort?: string;
 }
 
-// Default per-agent model (#594) used by agentModel() when config.json has no override.
-// claude-code accepts the bare "opus" alias (resolved by the claude CLI itself); codex has no
-// alias support so its default is the full model name. grok's default is xAI's coding model
-// (TENTATIVE — the exact grok model identifier is not verified against a running `grok` CLI here).
-export const DEFAULT_AGENT_MODEL: Record<CodingAgent, string> = {
-  "claude-code": "opus",
-  codex: "gpt-5.5",
-  grok: "grok-code-fast-1",
-};
+// Default per-agent model (#594) used by agentModel() when config.json has no override, and default
+// per-agent effort (#682) used by agentEffort(). Derived from the runtime registry (core/runtimes.ts)
+// so the values live in one place; the `Record<CodingAgent, string>` shape is preserved for callers.
+export const DEFAULT_AGENT_MODEL: Record<CodingAgent, string> =
+  Object.fromEntries(
+    CODING_AGENTS.map((a) => [a, RUNTIMES[a].defaultModel]),
+  ) as Record<CodingAgent, string>;
 
-// Default per-agent effort (#682) used by agentEffort() when config.json has no override.
-export const DEFAULT_AGENT_EFFORT: Record<CodingAgent, string> = {
-  "claude-code": "medium",
-  codex: "medium",
-  grok: "medium",
-};
+export const DEFAULT_AGENT_EFFORT: Record<CodingAgent, string> =
+  Object.fromEntries(
+    CODING_AGENTS.map((a) => [a, RUNTIMES[a].defaultEffort]),
+  ) as Record<CodingAgent, string>;
 
 // Default top-level cumulative cost (USD) at which a `lh build` implementation agent is stopped.
 export const DEFAULT_DEV_COST_LIMIT_USD = 10;
@@ -174,12 +171,6 @@ export function devCostLimitUsd(): number {
     }
   } catch {}
   return DEFAULT_DEV_COST_LIMIT_USD;
-}
-
-export function normalizeCodingAgent(value: unknown): CodingAgent {
-  if (value === "codex") return "codex";
-  if (value === "grok") return "grok";
-  return "claude-code";
 }
 
 // The coding agent `lh build` launches when neither --claude-code nor --codex is passed (#516).
