@@ -1260,12 +1260,31 @@ async function cleanupClosedPullDevAgentsImpl(): Promise<{
     } catch {
       continue;
     }
-    for (const pane of herdrPullWorkspacesFromAgentList(
+    const placements = parseHerdrAgentPlacements(
       agentsOut,
       worktreeRoot(),
       repo.full_name,
-    )) {
-      const prRow = S.getIssue(repo.id, pane.pull);
+    );
+    type Placement = (typeof placements)[number];
+    const hasClosableWorkspace = (
+      placement: Placement,
+    ): placement is Placement & { workspaceId: string } =>
+      HERDR_ID.test(placement.id) &&
+      placement.workspaceId !== null &&
+      HERDR_ID.test(placement.workspaceId);
+    const byPull = new Map<number, (typeof placements)[number]>();
+    for (const placement of placements) {
+      if (placement.pull === null) continue;
+      const current = byPull.get(placement.pull);
+      if (
+        current === undefined ||
+        (!hasClosableWorkspace(current) && hasClosableWorkspace(placement))
+      ) {
+        byPull.set(placement.pull, placement);
+      }
+    }
+    for (const [pullNumber, pane] of byPull) {
+      const prRow = S.getIssue(repo.id, pullNumber);
       if (prRow?.kind !== "pull") {
         skipped++;
         continue;
@@ -1288,27 +1307,24 @@ async function cleanupClosedPullDevAgentsImpl(): Promise<{
         skipped++;
         continue;
       }
-      if (!HERDR_ID.test(pane.pane_id)) {
+      if (!hasClosableWorkspace(pane)) {
         failed++;
         continue;
       }
+      const close = herdrWorkspaceCloseArgv(repo, pane.workspaceId);
       try {
-        await killPaneForegroundProcess(repo, pane.pane_id, sessionName);
+        await runHerdr(close[0], close.slice(1), repo.local_path, {
+          timeoutMs: 10_000,
+        });
       } catch {
         failed++;
         continue;
       }
-      runHerdr(
-        "herdr",
-        ["--session", sessionName, "pane", "close", pane.pane_id],
-        repo.local_path,
-        { timeoutMs: 10_000 },
-      ).catch(() => {});
       S.emitEvent(repo.id, CLOSED_PULL_AGENT_KILLED_EVENT, "lh-worker", {
-        number: pane.pull,
-        pr: pane.pull,
+        number: pullNumber,
+        pr: pullNumber,
         session_id: sessionId,
-        pane_id: pane.pane_id,
+        pane_id: pane.id,
         reason: CLOSED_PULL_AGENT_KILL_REASON,
       });
       killed++;

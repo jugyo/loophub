@@ -828,7 +828,7 @@ test("terminal.killAgent surfaces a visible error when herdr is not installed", 
   }
 });
 
-test("terminal.cleanupClosedPullDevAgents kills expired closed and merged PR agents only", async () => {
+test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed and merged PR agents only", async () => {
   const repo = await svc.repos.create({
     path: initGitRepo(),
     name: "me/closed-pr-cleanup",
@@ -912,6 +912,7 @@ test("terminal.cleanupClosedPullDevAgents kills expired closed and merged PR age
           agent_status: "working",
           name: "dev #1",
           pane_id: "wC:p1",
+          workspace_id: "wC1",
           foreground_cwd: worktreePath(root, repo.full_name, 1),
         },
         {
@@ -919,6 +920,7 @@ test("terminal.cleanupClosedPullDevAgents kills expired closed and merged PR age
           agent_status: "working",
           name: "dev #2",
           pane_id: "wC:p2",
+          workspace_id: "wC2",
           foreground_cwd: worktreePath(root, repo.full_name, 2),
         },
         {
@@ -926,6 +928,7 @@ test("terminal.cleanupClosedPullDevAgents kills expired closed and merged PR age
           agent_status: "working",
           name: "dev #3",
           pane_id: "wC:p3",
+          workspace_id: "wC3",
           foreground_cwd: worktreePath(root, repo.full_name, 3),
         },
         {
@@ -933,6 +936,7 @@ test("terminal.cleanupClosedPullDevAgents kills expired closed and merged PR age
           agent_status: "working",
           name: "dev #4",
           pane_id: "wC:p4",
+          workspace_id: "wC4",
           foreground_cwd: worktreePath(root, repo.full_name, 4),
         },
         {
@@ -940,7 +944,16 @@ test("terminal.cleanupClosedPullDevAgents kills expired closed and merged PR age
           agent_status: "working",
           name: "dev #5",
           pane_id: "wC:p5",
+          workspace_id: "wC5",
           foreground_cwd: worktreePath(root, repo.full_name, 5),
+        },
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: "repo root",
+          pane_id: "wR:p1",
+          workspace_id: "wR",
+          foreground_cwd: repo.local_path,
         },
       ],
     },
@@ -952,7 +965,6 @@ test("terminal.cleanupClosedPullDevAgents kills expired closed and merged PR age
       "#!/bin/sh",
       `echo "$@" >> ${CALLS_FILE}`,
       `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
-      `if [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":999999}}}'; exit 0; fi`,
       `printf '%s' '${agents}'`,
       "",
     ].join("\n"),
@@ -966,20 +978,17 @@ test("terminal.cleanupClosedPullDevAgents kills expired closed and merged PR age
       skipped: 3,
       failed: 0,
     });
-    expect(killSpy).toHaveBeenCalledTimes(2);
-    expect(killSpy).toHaveBeenNthCalledWith(1, -999999, "SIGKILL");
-    expect(killSpy).toHaveBeenNthCalledWith(2, -999999, "SIGKILL");
+    expect(killSpy).not.toHaveBeenCalled();
     const { readFileSync } = await import("node:fs");
     const calls = readFileSync(CALLS_FILE, "utf8");
-    expect(calls).toContain(
-      `--session ${sessionName} pane process-info --pane wC:p1`,
-    );
-    expect(calls).toContain(
-      `--session ${sessionName} pane process-info --pane wC:p4`,
-    );
-    expect(calls).not.toContain("process-info --pane wC:p2");
-    expect(calls).not.toContain("process-info --pane wC:p3");
-    expect(calls).not.toContain("process-info --pane wC:p5");
+    expect(calls).toContain(`--session ${sessionName} workspace close wC1`);
+    expect(calls).toContain(`--session ${sessionName} workspace close wC4`);
+    expect(calls).not.toContain("workspace close wC2");
+    expect(calls).not.toContain("workspace close wC3");
+    expect(calls).not.toContain("workspace close wC5");
+    expect(calls).not.toContain("workspace close wR");
+    expect(calls).not.toContain("pane process-info");
+    expect(calls).not.toContain("pane close");
 
     const events = S.listEvents(0, repo.id, 10);
     const killed = events.filter((e) => e.type === "agent_session.killed");
@@ -987,6 +996,111 @@ test("terminal.cleanupClosedPullDevAgents kills expired closed and merged PR age
     expect(killed.map((e) => JSON.parse(e.payload).session_id).sort()).toEqual([
       "session-expired-closed",
       "session-expired-merged",
+    ]);
+  } finally {
+    killSpy.mockRestore();
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.cleanupClosedPullDevAgents continues after invalid workspace ids and close failures", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/closed-pr-cleanup-failures",
+  });
+  const sessionName = herdrSessionName(repo);
+  const old = new Date(Date.now() - 61 * 60 * 1000)
+    .toISOString()
+    .replace(/\.\d+Z$/, "Z");
+  const pulls = [
+    "missing workspace",
+    "invalid workspace",
+    "failed close",
+    "successful close",
+    "valid duplicate after missing workspace",
+  ].map((title, index) => {
+    const prRow = S.createIssue(repo.id, "pull", title, "", "me");
+    S.createPull(prRow.id, `loophub/pr-${prRow.number}`, "main", null);
+    const sessionId = `session-cleanup-${index + 1}`;
+    S.registerAgentSession(
+      sessionId,
+      "lh-dev",
+      `failure-external-${index + 1}`,
+    );
+    S.setPullSession(prRow.id, sessionId);
+    S.updateIssue(prRow.id, { state: "closed" });
+    db.run(`UPDATE issues SET closed_at = ?, updated_at = ? WHERE id = ?`, [
+      old,
+      old,
+      prRow.id,
+    ]);
+    return prRow;
+  });
+  const root = worktreeRoot();
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        ...pulls.map((prRow, index) => ({
+          agent: "claude",
+          agent_status: "working",
+          name: `dev #${prRow.number}`,
+          pane_id: `wF:p${index + 1}`,
+          workspace_id: [undefined, "--bad", "wFail", "wNext"][index],
+          foreground_cwd: worktreePath(root, repo.full_name, prRow.number),
+        })),
+        {
+          agent: "claude",
+          agent_status: "working",
+          name: `second dev #${pulls[4].number}`,
+          pane_id: "wF:p6",
+          workspace_id: "wRecovered",
+          foreground_cwd: worktreePath(root, repo.full_name, pulls[4].number),
+        },
+      ],
+    },
+  });
+  const CALLS_FILE = join(HOME, "closed-pr-cleanup-failure-calls.txt");
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `echo "$@" >> ${CALLS_FILE}`,
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `if [ "$3" = "agent" ]; then printf '%s' '${agents}'; exit 0; fi`,
+      `if [ "$5" = "wFail" ]; then exit 1; fi`,
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+  try {
+    await expect(svc.terminal.cleanupClosedPullDevAgents()).resolves.toEqual({
+      killed: 2,
+      skipped: 0,
+      failed: 3,
+    });
+    expect(killSpy).not.toHaveBeenCalled();
+    const calls = readFileSync(CALLS_FILE, "utf8");
+    expect(calls).not.toContain("workspace close --bad");
+    expect(calls).toContain(`--session ${sessionName} workspace close wFail`);
+    expect(calls).toContain(`--session ${sessionName} workspace close wNext`);
+    expect(calls).toContain(
+      `--session ${sessionName} workspace close wRecovered`,
+    );
+    expect(calls).not.toContain("pane process-info");
+    expect(calls).not.toContain("pane close");
+
+    const events = S.listEvents(0, repo.id, 10);
+    const killed = events.filter((e) => e.type === "agent_session.killed");
+    expect(killed).toHaveLength(2);
+    expect(killed.map((e) => JSON.parse(e.payload).session_id).sort()).toEqual([
+      "session-cleanup-4",
+      "session-cleanup-5",
     ]);
   } finally {
     killSpy.mockRestore();
