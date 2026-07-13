@@ -372,7 +372,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
 
     expect(launched.exitCode, launched.stderr).toBe(0);
     const log = readFileSync(runtime.log, "utf8");
-    expect(log).toMatch(/agent start .+ --tab w1:t1 /);
+    expect(log).toMatch(/agent start .+ --tab w1:t1 --split down --no-focus /);
     expect(log).toContain("pane list");
     expect(log).toContain("tab create --workspace w1 --no-focus");
     expect(log).toContain(
@@ -383,6 +383,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     );
     expect(log).toContain("tab close w1:t3");
     expect(log).not.toContain("pane move w1:p4");
+    expect(log).not.toMatch(/(?:workspace|tab|agent) focus/);
 
     const legacyLaunch = run(
       [
@@ -456,10 +457,13 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     expect(log.indexOf("worktree open")).toBeLessThan(
       log.indexOf("agent start"),
     );
-    // Detached (`--herdr`) must not steal the user's current herdr selection: even on a successful
-    // launch it never focuses the fresh workspace/tab it created (#1250). Placement stays guaranteed
-    // by `--tab`/`--workspace`, which is what the `agent start --tab` assertion above verifies.
-    expect(log).not.toContain("workspace focus");
+    // The parent is the user-facing Workflow entry point, so a successful fresh-workspace launch
+    // reveals that workspace only after the agent is live. The preceding creation remains
+    // `--no-focus`, avoiding a half-launched workspace becoming visible.
+    expect(log).toContain("workspace focus w1");
+    expect(log.indexOf("agent start")).toBeLessThan(
+      log.indexOf("workspace focus w1"),
+    );
     expect(log).not.toContain("tab focus");
     expect(readFileSync(runtime.log, "utf8")).not.toContain(
       "'--permission-mode' 'auto'",
@@ -560,12 +564,63 @@ test("workflow start --herdr reuses an already-open PR worktree workspace", () =
     expect(log).toMatch(/tab create --workspace w1 /);
     expect(log).toMatch(/agent start .+ --tab w1:t2 /);
     expect(log.indexOf("tab create")).toBeLessThan(log.indexOf("agent start"));
-    // As with the fresh-workspace path, the detached reused-workspace launch must not focus the new
-    // tab (#1250). This exercises the `tabId` focus branch; together with the fresh test's
-    // `createdWorkspace` branch, both post-launch focus paths are covered — and the tab-id-less
-    // `--workspace` fallback shares the same `focusOnSuccess` guard.
+    // A reused workspace already exists, so reveal the newly created parent tab after agent start.
     expect(log).not.toContain("workspace focus");
+    expect(log).toContain("tab focus w1:t2");
+    expect(log.indexOf("agent start")).toBeLessThan(
+      log.indexOf("tab focus w1:t2"),
+    );
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --herdr focuses the reused workspace when its new tab id is unavailable", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Fallback parent session",
+    "--body",
+    "Do it",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = fakeRuntime({
+    worktreeOpenJson: REUSE_OPEN_JSON,
+    tabCreateJson: JSON.stringify({
+      result: { root_pane: { pane_id: "w1:p2" } },
+    }),
+  });
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode, started.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    expect(log).toMatch(/tab create --workspace w1 /);
+    expect(log).toMatch(/agent start .+ --workspace w1 /);
     expect(log).not.toContain("tab focus");
+    expect(log).toContain("workspace focus w1");
+    expect(log.indexOf("agent start")).toBeLessThan(
+      log.indexOf("workspace focus w1"),
+    );
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }

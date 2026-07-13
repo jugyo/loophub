@@ -379,11 +379,6 @@ async function launchParentHerdr(input: {
       worktree: input.worktree,
       command: commandWithEnv,
       label: agentName,
-      // A Workflow parent launch never focuses: the detached start (`--herdr`, lh-web's headless
-      // start) must not yank the user's current herdr selection (#1250), and the interactive attach
-      // path brings the pane forward itself, so pre-focusing adds nothing. Placement is guaranteed
-      // by `--tab`/`--workspace`, not focus, so the parent still lands in the right workspace.
-      focusOnSuccess: false,
     });
   } catch (e) {
     if (e instanceof HerdrLaunchError) fail(e.message);
