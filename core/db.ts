@@ -655,16 +655,14 @@ CREATE TABLE IF NOT EXISTS event_subscriptions (
 );
 
 -- workflow definitions (#997). Global, user-editable prompt bundles for the fixed
--- Plan/Execute/Verify/Reflect workflow. Step prompts are plain markdown text; empty strings are
+-- Execute/Verify workflow. Step prompts are plain markdown text; empty strings are
 -- valid and mean "use only the built-in step contract".
 CREATE TABLE IF NOT EXISTS workflows (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   name            TEXT NOT NULL UNIQUE,
   description     TEXT NOT NULL DEFAULT '',
-  plan_prompt     TEXT NOT NULL DEFAULT '',
   execute_prompt  TEXT NOT NULL DEFAULT '',
   verify_prompt   TEXT NOT NULL DEFAULT '',
-  reflect_prompt  TEXT NOT NULL DEFAULT '',
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );

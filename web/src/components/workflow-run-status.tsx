@@ -1,12 +1,13 @@
 // Workflow run state section for issue / PR detail (#1008). Shows the display state of the run linked
-// to an issue / PR: workflow name, status, current step (as a Plan → Execute → Verify → Reflect
-// tracker), and rework count. The run row is the display-state source (docs/workflow.ja.md
-// §5.2) — this deliberately does not re-derive step-completion truth (that stays with
+// to an issue / PR: workflow name, status, current step (as an Execute → Verify
+// tracker), and rework count. The run row is the display-state source (workflow design: CLI / UI) —
+// this deliberately does not re-derive step-completion truth (that stays with
 // `workflow step status` / artifact placement).
 //
 // - blocked: surfaces the human-readable reason (latest verdict summary when present) plus links to
-//   the issue (where the parent files its escalation comment, §8.4) and the Inbox.
-// - completed: states that the run reached Reflect and finished.
+//   the issue (where the parent files its escalation comment; workflow design: parent transitions)
+//   and the Inbox.
+// - completed: states that the run reached a passing Verify verdict and finished.
 //
 // Renders nothing when the issue / PR has no run.
 
@@ -15,14 +16,12 @@ import type { WorkflowRunState } from "@/api/types";
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 
-const STEP_ORDER = ["plan", "execute", "verify", "reflect"] as const;
+const STEP_ORDER = ["execute", "verify"] as const;
 type WorkflowStep = (typeof STEP_ORDER)[number];
 
 const STEP_LABELS: Record<WorkflowStep, string> = {
-  plan: "Plan",
   execute: "Execute",
   verify: "Verify",
-  reflect: "Reflect",
 };
 
 const STATUS_META: Record<
@@ -86,8 +85,8 @@ export function WorkflowRunStatusSection({
 
         {completed ? (
           <p className="text-sm text-muted-foreground">
-            {state.current_step === "reflect"
-              ? "Reflect complete — the Workflow run finished all steps."
+            {state.current_step === "verify"
+              ? "Verify passed — the Workflow run finished all steps."
               : "The Workflow run is completed."}
           </p>
         ) : null}
@@ -100,11 +99,11 @@ export function WorkflowRunStatusSection({
   );
 }
 
-// The four fixed Workflow steps in order, highlighting the run's current step. This reflects the run
+// The fixed Workflow steps in order, highlighting the run's current step. This reflects the run
 // row's current_step only — it is not a claim that earlier steps are "complete" (that truth lives
 // in `workflow step status`), so steps before the current one are shown as passed-through, not
 // verified-done. A completed run marks steps up to and including current_step as past (normally
-// Reflect, so all four); it does not force later steps to "done" if the run row completed earlier.
+// Verify, so both); it does not force later steps to "done" if the run row completed earlier.
 function StepTracker({
   currentIndex,
   currentStep,
@@ -148,8 +147,9 @@ function StepTracker({
   );
 }
 
-// Blocked means the parent escalated to a human (§8.4): it filed an issue comment summarizing the
-// situation and sent an Inbox notification, then stopped. Point the human at both, and surface the
+// Blocked means the parent escalated to a human (workflow design: parent transitions): it filed an
+// issue comment summarizing the situation and sent an Inbox notification, then stopped. Point the
+// human at both, and surface the
 // latest verdict summary when one exists as the machine-readable reason behind the stall.
 function BlockedNotice({
   owner,

@@ -33,10 +33,8 @@ const scheduledAgent = {
 } as const;
 const workflowFields = {
   description: str,
-  plan_prompt: str,
   execute_prompt: str,
   verify_prompt: str,
-  reflect_prompt: str,
 } as const;
 const inboxMessageState = {
   type: "string",
@@ -241,14 +239,14 @@ export const methods: Record<string, MethodDef> = {
   // ---- workflows ----
   "workflows/contracts": {
     description:
-      "Get the fixed system prompts used to launch the Plan/Execute/Verify/Reflect steps.",
+      "Get the fixed system prompts used to launch the Execute/Verify steps.",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.workflows.contracts(),
   },
   "workflows/list": {
     description:
-      "List global workflow definitions (Plan/Execute/Verify/Reflect prompt bundles).",
+      "List global workflow definitions (Execute/Verify prompt bundles).",
     params: EMPTY_PARAMS,
     result: anyArray,
     handler: () => svc.workflows.list(),
@@ -270,10 +268,8 @@ export const methods: Record<string, MethodDef> = {
         {
           name: p.name,
           description: p.description,
-          plan_prompt: p.plan_prompt,
           execute_prompt: p.execute_prompt,
           verify_prompt: p.verify_prompt,
-          reflect_prompt: p.reflect_prompt,
         },
         p.session_id,
       ),
@@ -296,10 +292,8 @@ export const methods: Record<string, MethodDef> = {
         {
           name: p.new_name,
           description: p.description,
-          plan_prompt: p.plan_prompt,
           execute_prompt: p.execute_prompt,
           verify_prompt: p.verify_prompt,
-          reflect_prompt: p.reflect_prompt,
         },
         p.session_id,
       ),

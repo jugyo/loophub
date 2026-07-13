@@ -429,10 +429,8 @@ test("workflow CRUD is exposed through JSON-RPC", async () => {
   const created: any = await call("workflows/create", {
     name: " standard ",
     description: "Reusable Workflow prompts",
-    plan_prompt: "",
     execute_prompt: "Implement",
     verify_prompt: "",
-    reflect_prompt: "",
   });
   expect(created.result).toMatchObject({
     name: "standard",
@@ -444,16 +442,16 @@ test("workflow CRUD is exposed through JSON-RPC", async () => {
   expect(listed.result.map((w: any) => w.name)).toContain("standard");
 
   const contracts: any = await call("workflows/contracts", {});
-  expect(contracts.result.plan).toContain("# Plan step contract");
-  expect(contracts.result.reflect).toContain("# Reflect step contract");
+  expect(contracts.result.execute).toContain("# Execute step contract");
+  expect(contracts.result.verify).toContain("# Verify step contract");
 
   const updated: any = await call("workflows/update", {
     name: "standard",
     new_name: "standard-v2",
-    plan_prompt: "Plan first",
+    verify_prompt: "Verify independently",
   });
   expect(updated.result.name).toBe("standard-v2");
-  expect(updated.result.plan_prompt).toBe("Plan first");
+  expect(updated.result.verify_prompt).toBe("Verify independently");
   expect(updated.result.execute_prompt).toBe("Implement");
 
   const got: any = await call("workflows/get", { name: "standard-v2" });

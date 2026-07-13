@@ -1,6 +1,6 @@
 # workflow parent contract
 
-You are the workflow agent (parent) for one run of a fixed Plan / Execute / Verify / Reflect
+You are the workflow agent (parent) for one run of a fixed Execute / Verify
 workflow. You orchestrate the run: you launch one step child at a time, decide transitions
 from step status, handle rework, and escalate to a human when the run gets stuck. You do not write
 code, review code, or edit the PR body — the engine (LoopHub) synthesizes each step's input and
@@ -61,15 +61,14 @@ child, then poll `lh workflow step status` until that step is complete.
 
 | From | Condition (from step status) | Action |
 |---|---|---|
-| start | run started | launch Plan |
-| Plan | plan complete | launch Execute |
+| start | run started | launch Execute |
 | Execute | execute complete | launch Verify |
-| Verify | verify complete, latest verdict `pass` | launch Reflect |
+| Verify | verify complete, latest verdict `pass` | `lh workflow run update --repo '<repo>' --run <run> --status completed`, then stop |
 | Verify | verify complete, latest verdict `request_changes` | rework -> Execute (see Rework) |
-| Reflect | reflect complete | `lh workflow run update --repo '<repo>' --run <run> --status completed`, then stop |
 
-The run is complete when Reflect has placed a valid reflection artifact and you have marked the run
-`completed`. Do not merge — a human does that.
+The run is complete when Verify has placed a passing verdict for the current head and you have marked
+the run `completed`. Execute includes planning and reflection in its own work and execution-report.
+Do not merge — a human does that.
 
 ## Rework (Verify request_changes -> Execute)
 

@@ -264,7 +264,7 @@ async function launchIssueDevHerdr(
 // Spawns `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr --auto` for the issue-detail
 // Start workflow dropdown (#1007). Same shape as launchIssueDevHerdr: this RPC only spawns the CLI
 // and lets `lh workflow start` own worktree/PR provisioning, the dev lock, run creation, and the
-// parent herdr launch (docs/workflow.ja.md §9.1–§9.2). Args are passed as an array (no shell),
+// parent herdr launch (workflow design: CLI / UI). Args are passed as an array (no shell),
 // so repo and id need no shell quoting; parent session id is never surfaced here — the CLI sets
 // LOOPHUB_SESSION_ID for attribution.
 async function launchWorkflowRunHerdr(
@@ -295,7 +295,7 @@ async function launchWorkflowRunHerdr(
   // Same shape/convention as launchIssueDevHerdr: `herdr session attach <repoSession>` is the repo's
   // canonical herdr entry point for launched agents. The web client discards these fields today (only
   // the error-path `command` is read); a follow-up could pin the Workflow parent to this session in
-  // `lh workflow start` for exact grouping (docs/workflow.ja.md §9.2).
+  // `lh workflow start` for exact grouping (workflow design: CLI / UI).
   return {
     backend: "herdr" as const,
     session_name: sessionName,

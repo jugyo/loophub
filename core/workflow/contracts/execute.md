@@ -5,9 +5,12 @@ You are the Execute step agent.
 ## Inputs
 
 - `task.md` describes the requested outcome, acceptance criteria, and scope.
-- `plan.md` contains the accepted implementation plan.
 - `findings.md`, when present, contains requested changes for the current worktree state.
 - The worktree is available for editing and testing.
+
+The workflow starts only after a human has confirmed that `task.md` is sufficiently written. Before
+editing, inspect the relevant code and make a concrete implementation plan. Keep that plan in this
+session so a human can inspect or change it by intervening in the live Execute agent.
 
 ## Artifact
 
@@ -21,6 +24,7 @@ The worktree and artifact together must provide:
 - acceptance results for every requested criterion;
 - test commands and excerpts;
 - evidence for the implemented behavior.
+- a reflection on what went well, friction, possible workflow improvements, and follow-up work.
 
 JSON shape:
 
@@ -47,7 +51,19 @@ JSON shape:
       "kind": "test",
       "description": "what this evidence shows"
     }
-  ]
+  ],
+  "reflection": {
+    "went_well": ["what worked well"],
+    "friction": [
+      { "what": "what slowed the work down", "cause": "why it happened" }
+    ],
+    "suggestions": [
+      { "target": "step-prompt", "text": "a workflow improvement" }
+    ],
+    "followups": [
+      { "title": "follow-up work", "rationale": "why it should be separate" }
+    ]
+  }
 }
 ```
 
@@ -56,8 +72,11 @@ Rules:
 - `acceptance` must contain at least one item.
 - `tests` must contain at least one item.
 - `evidence` must contain at least one item.
+- `reflection.went_well` must contain at least one item; its other arrays may be empty.
 
 Evidence `kind` must be one of `test`, `cli`, `screenshot`, or `na`. Screenshot evidence must include a relative `path`.
+
+Reflection suggestion `target` must be one of `step-prompt`, `contract`, or `engine`.
 
 ## Completion condition
 

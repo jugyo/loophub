@@ -14,10 +14,8 @@ import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts
 import { WorkflowsPage } from "./workflows-page";
 
 const STEP_CONTRACTS = {
-  plan: "# Plan step contract\nPlan contract body",
   execute: "# Execute step contract\nExecute contract body",
   verify: "# Verify step contract\nVerify contract body",
-  reflect: "# Reflect step contract\nReflect contract body",
 };
 
 function workflow(overrides: Partial<Workflow> = {}): Workflow {
@@ -25,10 +23,8 @@ function workflow(overrides: Partial<Workflow> = {}): Workflow {
     id: 1,
     name: "standard",
     description: "The default loop",
-    plan_prompt: "plan here",
     execute_prompt: "execute here",
     verify_prompt: "verify here",
-    reflect_prompt: "reflect here",
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -79,10 +75,10 @@ describe("WorkflowsPage", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "New workflow" }),
     );
-    const planField = (await screen.findByRole("textbox", {
-      name: "Plan prompt",
+    const executeField = (await screen.findByRole("textbox", {
+      name: "Execute prompt",
     })) as HTMLTextAreaElement;
-    expect(planField.value).toBe(WORKFLOW_EXAMPLE_PROMPTS.plan_prompt);
+    expect(executeField.value).toBe(WORKFLOW_EXAMPLE_PROMPTS.execute_prompt);
   });
 
   it("shows every system prompt in a read-only dialog on the create form", async () => {
@@ -92,13 +88,15 @@ describe("WorkflowsPage", () => {
     );
 
     const links = screen.getAllByRole("button", { name: "System prompt" });
-    expect(links).toHaveLength(4);
+    expect(links).toHaveLength(2);
     fireEvent.click(links[0]);
 
     const dialog = screen.getByRole("dialog", {
-      name: "Plan system prompt",
+      name: "Execute system prompt",
     });
-    expect(await within(dialog).findByText(/Plan contract body/)).toBeTruthy();
+    expect(
+      await within(dialog).findByText(/Execute contract body/),
+    ).toBeTruthy();
     expect(within(dialog).queryByRole("textbox")).toBeNull();
 
     fireEvent.keyDown(document, { key: "Escape" });
@@ -111,15 +109,15 @@ describe("WorkflowsPage", () => {
 
     expect(
       screen.getAllByRole("button", { name: "System prompt" }),
-    ).toHaveLength(4);
+    ).toHaveLength(2);
     fireEvent.click(
-      screen.getAllByRole("button", { name: "System prompt" })[3],
+      screen.getAllByRole("button", { name: "System prompt" })[1],
     );
     const dialog = screen.getByRole("dialog", {
-      name: "Reflect system prompt",
+      name: "Verify system prompt",
     });
     expect(
-      await within(dialog).findByText(/Reflect contract body/),
+      await within(dialog).findByText(/Verify contract body/),
     ).toBeTruthy();
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Close system prompt" }),

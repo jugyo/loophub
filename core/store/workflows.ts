@@ -4,20 +4,16 @@ import { db, now } from "../db.ts";
 export interface WorkflowInput {
   name: string;
   description: string;
-  planPrompt: string;
   executePrompt: string;
   verifyPrompt: string;
-  reflectPrompt: string;
 }
 
 export interface WorkflowRow {
   id: number;
   name: string;
   description: string;
-  plan_prompt: string;
   execute_prompt: string;
   verify_prompt: string;
-  reflect_prompt: string;
   created_at: string;
   updated_at: string;
 }
@@ -45,16 +41,14 @@ export function createWorkflow(input: WorkflowInput): WorkflowRow {
   return db
     .query(
       `INSERT INTO workflows
-        (name, description, plan_prompt, execute_prompt, verify_prompt, reflect_prompt, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        (name, description, execute_prompt, verify_prompt, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       input.name,
       input.description,
-      input.planPrompt,
       input.executePrompt,
       input.verifyPrompt,
-      input.reflectPrompt,
       t,
       t,
     ) as WorkflowRow;
@@ -74,10 +68,6 @@ export function updateWorkflow(
     sets.push("description = ?");
     params.push(patch.description);
   }
-  if (patch.planPrompt !== undefined) {
-    sets.push("plan_prompt = ?");
-    params.push(patch.planPrompt);
-  }
   if (patch.executePrompt !== undefined) {
     sets.push("execute_prompt = ?");
     params.push(patch.executePrompt);
@@ -85,10 +75,6 @@ export function updateWorkflow(
   if (patch.verifyPrompt !== undefined) {
     sets.push("verify_prompt = ?");
     params.push(patch.verifyPrompt);
-  }
-  if (patch.reflectPrompt !== undefined) {
-    sets.push("reflect_prompt = ?");
-    params.push(patch.reflectPrompt);
   }
   sets.push("updated_at = ?");
   params.push(now(), id);
@@ -374,7 +360,8 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
 }
 
 // Latest run linked to an issue / PR, used by issue / PR detail to display run state (#1008).
-// A run row is the display-state source (§5.2); ordering by id DESC returns the most recent run
+// A run row is the display-state source (workflow design: CLI / UI); ordering by id DESC returns
+// the most recent run
 // when an issue was re-run (e.g. after a `blocked` escalation was resolved and restarted).
 export function latestWorkflowRunForIssue(
   repoId: number,

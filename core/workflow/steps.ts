@@ -3,9 +3,10 @@ import type { WorkflowStep } from "./compose.ts";
 
 /**
  * State of the latest validated artifact of one type, as seen by the completion
- * query. `headSha` is the SHA the engine stamped at submission (§6.1); `placed`
+ * query. `headSha` is the SHA the engine stamped at submission (workflow design:
+ * artifact model); `placed`
  * is whether that latest artifact has a placement record (`workflow_placements`).
- * An accepted-but-unplaced artifact (§6.3) is `placed: false` and therefore
+ * An accepted-but-unplaced artifact is `placed: false` and therefore
  * never completes its step.
  */
 export type WorkflowLatestArtifactState = {
@@ -23,14 +24,10 @@ export type WorkflowStepEvalInput = {
   currentHead: string | null;
   /** Whether HEAD is ahead of the run's base branch. */
   headAheadOfBase: boolean;
-  /** Latest validated `plan` artifact state, or null when none submitted. */
-  plan: WorkflowLatestArtifactState | null;
   /** Latest validated `execution-report` artifact state. */
   execute: WorkflowLatestArtifactState | null;
   /** Latest validated `verdict` artifact state. */
   verify: WorkflowLatestArtifactState | null;
-  /** Latest validated `reflection` artifact state. */
-  reflect: WorkflowLatestArtifactState | null;
   /** Parsed content of the latest verdict artifact (for the rework summary). */
   latestVerdict: WorkflowVerdictArtifact | null;
 };
@@ -47,12 +44,10 @@ export type WorkflowLatestVerdictSummary = {
 };
 
 export type WorkflowStepStatuses = {
-  plan: WorkflowStepStatus;
   execute: WorkflowStepStatus;
   verify: WorkflowStepStatus & {
     latest_verdict: WorkflowLatestVerdictSummary | null;
   };
-  reflect: WorkflowStepStatus;
 };
 
 function placedAtHead(
@@ -65,9 +60,9 @@ function placedAtHead(
 }
 
 /**
- * Evaluate the completion condition of each Workflow step (§6.5) as a pure query.
+ * Evaluate the completion condition of each Workflow step (workflow design:
+ * completion conditions) as a pure query.
  *
- * - Plan / Reflect complete once a validated artifact of their type is placed.
  * - Execute completes when a validated execution-report is placed, its stamped
  *   SHA equals the current head, and the head is ahead of base.
  * - Verify completes when a validated verdict is placed and its stamped SHA
@@ -79,12 +74,6 @@ function placedAtHead(
 export function evaluateWorkflowSteps(
   input: WorkflowStepEvalInput,
 ): WorkflowStepStatuses {
-  const planComplete = Boolean(input.plan?.placed);
-  const plan: WorkflowStepStatus = {
-    complete: planComplete,
-    missing: planComplete ? [] : ["no validated plan artifact placed"],
-  };
-
   const executeMissing: string[] = [];
   if (!placedAtHead(input.execute, input.currentHead)) {
     executeMissing.push("no validated execution-report for current head");
@@ -112,18 +101,10 @@ export function evaluateWorkflowSteps(
       : null,
   };
 
-  const reflectComplete = Boolean(input.reflect?.placed);
-  const reflect: WorkflowStepStatus = {
-    complete: reflectComplete,
-    missing: reflectComplete ? [] : ["no validated reflection artifact placed"],
-  };
-
-  return { plan, execute, verify, reflect };
+  return { execute, verify };
 }
 
 export const WORKFLOW_STEP_ORDER: readonly WorkflowStep[] = [
-  "plan",
   "execute",
   "verify",
-  "reflect",
 ];

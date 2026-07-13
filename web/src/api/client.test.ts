@@ -146,7 +146,7 @@ describe("typed methods translate to contract params", () => {
       params: {},
     });
 
-    fetchMock = mockRpc({ plan: "Plan contract" });
+    fetchMock = mockRpc({ execute: "Execute contract" });
     await getWorkflowContracts();
     expect(lastRequest(fetchMock).body).toMatchObject({
       method: "workflows/contracts",
@@ -155,14 +155,13 @@ describe("typed methods translate to contract params", () => {
 
     fetchMock = mockRpc({ id: 1 });
     await createWorkflow(
-      { name: "standard", plan_prompt: "", execute_prompt: "go" },
+      { name: "standard", execute_prompt: "go" },
       "session-1",
     );
     expect(lastRequest(fetchMock).body).toMatchObject({
       method: "workflows/create",
       params: {
         name: "standard",
-        plan_prompt: "",
         execute_prompt: "go",
         session_id: "session-1",
       },
@@ -171,7 +170,7 @@ describe("typed methods translate to contract params", () => {
     fetchMock = mockRpc({ ok: true });
     await updateWorkflow(
       "standard",
-      { new_name: "standard-v2", plan_prompt: "plan" },
+      { new_name: "standard-v2", verify_prompt: "verify" },
       "session-1",
     );
     expect(lastRequest(fetchMock).body).toMatchObject({
@@ -179,7 +178,7 @@ describe("typed methods translate to contract params", () => {
       params: {
         name: "standard",
         new_name: "standard-v2",
-        plan_prompt: "plan",
+        verify_prompt: "verify",
         session_id: "session-1",
       },
     });

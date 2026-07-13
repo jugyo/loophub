@@ -44,7 +44,7 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
     workflow_id: 3,
     workflow_name: "standard",
     status: "running",
-    current_step: "plan",
+    current_step: "execute",
     rework_count: 0,
     issue_number: 42,
     pr_number: 99,
@@ -84,19 +84,7 @@ describe("WorkflowRunStatusSection", () => {
     expect(current.getAttribute("aria-current")).toBe("step");
   });
 
-  it("shows the completed message when the run finished Reflect", async () => {
-    renderInRouter(
-      <WorkflowRunStatusSection
-        owner="me"
-        repo="loophub"
-        state={state({ status: "completed", current_step: "reflect" })}
-      />,
-    );
-    expect(await screen.findByText("Completed")).toBeTruthy();
-    expect(screen.getByText(/Reflect complete/)).toBeTruthy();
-  });
-
-  it("does not claim Reflect complete when a completed run's step is not reflect", async () => {
+  it("shows the completed message when the run passed Verify", async () => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
@@ -105,8 +93,20 @@ describe("WorkflowRunStatusSection", () => {
       />,
     );
     expect(await screen.findByText("Completed")).toBeTruthy();
+    expect(screen.getByText(/Verify passed/)).toBeTruthy();
+  });
+
+  it("does not claim Verify passed when a completed run's step is not verify", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({ status: "completed", current_step: "execute" })}
+      />,
+    );
+    expect(await screen.findByText("Completed")).toBeTruthy();
     expect(screen.getByText("The Workflow run is completed.")).toBeTruthy();
-    expect(screen.queryByText(/Reflect complete/)).toBeNull();
+    expect(screen.queryByText(/Verify passed/)).toBeNull();
   });
 
   it("surfaces the block reason, verdict summary, and issue / inbox links when blocked", async () => {

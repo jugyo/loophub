@@ -1,6 +1,6 @@
 // Settings > Workflows screen (/settings/workflows, #1006). Lists the instance's workflows and
 // lets you create, edit, and delete them. A workflow is a global prompt bundle for the fixed
-// Plan/Execute/Verify/Reflect development loop (docs/workflow.ja.md §5); the four step prompts
+// Execute/Verify development loop (workflow design: workflow definitions); the two step prompts
 // are the only user-configurable part. Same workflows/* RPCs the CLI uses; this is the
 // management UI. Start-workflow and run status are intentionally out of scope here.
 
@@ -17,7 +17,8 @@ import {
   useWorkflows,
 } from "@/queries/workflows";
 // core/workflow/example-prompts.ts is a pure, node-free constant (single source of truth for the
-// create-form prefill, per §5.3 — prefill from a constant, do not seed a DB row).
+// create-form prefill (workflow design: workflow definitions — prefill from a constant, do not
+// seed a DB row).
 import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts.ts";
 
 // ApiError extends Error, so String(err) prefixes the class name ("ApiError: <message>"). Render the
@@ -27,17 +28,15 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// The four fixed Workflow steps, in order, with the wire field each maps to. Rendered as one textarea
+// The fixed Workflow steps, in order, with the wire field each maps to. Rendered as one textarea
 // per step in the form.
 const STEP_FIELDS: {
-  key: "plan_prompt" | "execute_prompt" | "verify_prompt" | "reflect_prompt";
+  key: "execute_prompt" | "verify_prompt";
   contractKey: keyof WorkflowStepContracts;
   label: string;
 }[] = [
-  { key: "plan_prompt", contractKey: "plan", label: "Plan prompt" },
   { key: "execute_prompt", contractKey: "execute", label: "Execute prompt" },
   { key: "verify_prompt", contractKey: "verify", label: "Verify prompt" },
-  { key: "reflect_prompt", contractKey: "reflect", label: "Reflect prompt" },
 ];
 
 export function WorkflowsPage() {
@@ -48,9 +47,9 @@ export function WorkflowsPage() {
     <div className="mx-auto max-w-content">
       <h1 className="text-2xl font-semibold">Workflows</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Workflows are global prompt bundles for the fixed
-        Plan/Execute/Verify/Reflect development loop. Each step's prompt is the
-        only configurable part; the step contracts are fixed.
+        Workflows are global prompt bundles for the fixed Execute/Verify
+        development loop. Each step's prompt is the only configurable part; the
+        step contracts are fixed.
       </p>
 
       <div className="mt-4">
@@ -203,17 +202,13 @@ function WorkflowForm({
   >(() => {
     if (mode === "edit" && workflow) {
       return {
-        plan_prompt: workflow.plan_prompt,
         execute_prompt: workflow.execute_prompt,
         verify_prompt: workflow.verify_prompt,
-        reflect_prompt: workflow.reflect_prompt,
       };
     }
     return {
-      plan_prompt: WORKFLOW_EXAMPLE_PROMPTS.plan_prompt,
       execute_prompt: WORKFLOW_EXAMPLE_PROMPTS.execute_prompt,
       verify_prompt: WORKFLOW_EXAMPLE_PROMPTS.verify_prompt,
-      reflect_prompt: WORKFLOW_EXAMPLE_PROMPTS.reflect_prompt,
     };
   });
 
@@ -221,10 +216,8 @@ function WorkflowForm({
     const fields: WorkflowInput = {
       name: name.trim(),
       description,
-      plan_prompt: prompts.plan_prompt,
       execute_prompt: prompts.execute_prompt,
       verify_prompt: prompts.verify_prompt,
-      reflect_prompt: prompts.reflect_prompt,
     };
     try {
       if (mode === "create") {

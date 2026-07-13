@@ -1299,15 +1299,13 @@ export function scheduledTaskRunJSON(
 }
 
 // A workflow definition (#997): a global prompt bundle for the fixed
-// Plan/Execute/Verify/Reflect workflow. Prompt strings are plain markdown and may be empty.
+// Execute/Verify workflow. Prompt strings are plain markdown and may be empty.
 export interface WorkflowWire {
   id: number;
   name: string;
   description: string;
-  plan_prompt: string;
   execute_prompt: string;
   verify_prompt: string;
-  reflect_prompt: string;
   created_at: string;
   updated_at: string;
 }
@@ -1317,25 +1315,22 @@ export function workflowJSON(row: S.WorkflowRow): WorkflowWire {
     id: row.id,
     name: row.name,
     description: row.description,
-    plan_prompt: row.plan_prompt,
     execute_prompt: row.execute_prompt,
     verify_prompt: row.verify_prompt,
-    reflect_prompt: row.reflect_prompt,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
 
-/** Fixed system prompts for the four workflow steps, sourced from their launch-time contracts. */
+/** Fixed system prompts for the workflow steps, sourced from their launch-time contracts. */
 export interface WorkflowStepContractsWire {
-  plan: string;
   execute: string;
   verify: string;
-  reflect: string;
 }
 
 // Workflow run display state (#1008): the current step / status / rework count of the run linked to an
-// issue or PR, for issue / PR detail. The run row is the display-state source (docs §5.2) — the
+// issue or PR, for issue / PR detail. The run row is the display-state source (workflow design:
+// CLI / UI) — the
 // *truth* of step completion stays with `workflow step status` (artifact placement + head), which
 // this wire deliberately does not re-derive. `latest_verdict` surfaces the human-readable reason
 // behind a rework / block; the web derives the issue-comment / inbox links from `issue_number`.
@@ -1350,7 +1345,7 @@ export interface WorkflowRunStateWire {
   workflow_id: number | null;
   workflow_name: string | null;
   status: string; // running | blocked | completed | stopped
-  current_step: string; // plan | execute | verify | reflect
+  current_step: string; // execute | verify
   rework_count: number;
   issue_number: number;
   pr_number: number;

@@ -14,8 +14,6 @@ import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import {
   composeExecuteInputArtifacts,
-  composePlanInputArtifacts,
-  composeReflectInputArtifacts,
   composeVerifyInputArtifacts,
   writeWorkflowStepInputArtifacts,
 } from "./inputs.ts";
@@ -28,8 +26,8 @@ afterEach(() => {
   }
 });
 
-test("composes Plan input from task text and comments without filesystem writes", () => {
-  const result = composePlanInputArtifacts({
+test("composes Execute input from task text and comments without filesystem writes", () => {
+  const result = composeExecuteInputArtifacts({
     issue: {
       title: "Add Workflow composition",
       body: "Acceptance criteria\n- prompts stay separated",
@@ -44,7 +42,7 @@ test("composes Plan input from task text and comments without filesystem writes"
   });
 
   expect(result).toEqual({
-    step: "plan",
+    step: "execute",
     files: [
       expect.objectContaining({
         name: "task.md",
@@ -56,17 +54,9 @@ test("composes Plan input from task text and comments without filesystem writes"
   expect(result.files[0]?.content).toContain("Later design note");
 });
 
-test("composes Execute inputs with plan and optional findings", () => {
+test("composes Execute inputs with optional findings", () => {
   const result = composeExecuteInputArtifacts({
     issue: { title: "Task", body: "Body" },
-    plan: {
-      type: "plan",
-      summary: "Plan summary",
-      changes: [{ area: "core/workflow", description: "Add composition" }],
-      reuse: ["artifacts.ts types"],
-      out_of_scope: ["CLI launch"],
-      verification: "Run vitest",
-    },
     latestVerdict: {
       type: "verdict",
       event: "request_changes",
@@ -86,7 +76,6 @@ test("composes Execute inputs with plan and optional findings", () => {
   expect(result.step).toBe("execute");
   expect(result.files.map((file) => file.name)).toEqual([
     "task.md",
-    "plan.md",
     "findings.md",
   ]);
   expect(
@@ -106,6 +95,12 @@ test("composes Verify inputs with pinned diff and prior verdicts", () => {
       acceptance: [{ criterion: "Works", met: true, note: "Done" }],
       tests: [{ command: "npm test", passed: true, excerpt: "1 passed" }],
       evidence: [{ kind: "test", description: "Focused test passed" }],
+      reflection: {
+        went_well: ["Focused change"],
+        friction: [],
+        suggestions: [],
+        followups: [],
+      },
     },
     priorVerdicts: [
       {
@@ -129,41 +124,11 @@ test("composes Verify inputs with pinned diff and prior verdicts", () => {
   ).toContain("def456");
 });
 
-test("composes Reflect digest from artifacts and timeline", () => {
-  const result = composeReflectInputArtifacts({
-    issue: {
-      title: "Original task",
-      body: "Acceptance criteria\n- include the request",
-    },
-    artifacts: [
-      {
-        type: "reflection",
-        went_well: ["Small modules"],
-        friction: [],
-        suggestions: [],
-        followups: [],
-      },
-    ],
-    reworkCount: 1,
-    timeline: [{ at: "2026-07-09T00:00:00Z", step: "verify", text: "pass" }],
-    handoffs: ["No handoff"],
-  });
-
-  expect(result).toEqual({
-    step: "reflect",
-    files: [expect.objectContaining({ name: "run-digest.md" })],
-  });
-  expect(result.files[0]?.content).toContain("Rework count: 1");
-  expect(result.files[0]?.content).toContain("Original task");
-  expect(result.files[0]?.content).toContain("include the request");
-  expect(result.files[0]?.content).toContain('"type": "reflection"');
-});
-
 test("writes input artifacts under the run directory and returns path references", () => {
   const root = mkdtempSync(join(tmpdir(), "workflow-inputs-"));
   tmpRoots.push(root);
   const refs = writeWorkflowStepInputArtifacts(root, {
-    step: "plan",
+    step: "execute",
     files: [
       {
         name: "task.md",
@@ -175,7 +140,7 @@ test("writes input artifacts under the run directory and returns path references
 
   expect(refs).toEqual([
     {
-      path: join(realpathSync(root), "plan", "input", "task.md"),
+      path: join(realpathSync(root), "execute", "input", "task.md"),
       description: "Requested outcome and acceptance criteria",
     },
   ]);
@@ -196,7 +161,7 @@ test("rejects input artifact names that can escape the input directory", () => {
   ]) {
     expect(() =>
       writeWorkflowStepInputArtifacts(root, {
-        step: "plan",
+        step: "execute",
         files: [
           {
             name,
@@ -215,7 +180,7 @@ test("rejects step names that can escape the run directory at runtime", () => {
 
   expect(() =>
     writeWorkflowStepInputArtifacts(root, {
-      step: "../../outside" as "plan",
+      step: "../../outside" as "execute",
       files: [
         {
           name: "task.md",
@@ -231,12 +196,12 @@ test("rejects symlinked input directories before writing artifacts", () => {
   const root = mkdtempSync(join(tmpdir(), "workflow-inputs-"));
   const outside = mkdtempSync(join(tmpdir(), "workflow-outside-"));
   tmpRoots.push(root, outside);
-  mkdirSync(join(root, "plan"), { recursive: true });
-  symlinkSync(outside, join(root, "plan", "input"), "dir");
+  mkdirSync(join(root, "execute"), { recursive: true });
+  symlinkSync(outside, join(root, "execute", "input"), "dir");
 
   expect(() =>
     writeWorkflowStepInputArtifacts(root, {
-      step: "plan",
+      step: "execute",
       files: [
         {
           name: "task.md",
@@ -253,13 +218,13 @@ test("rejects symlinked artifact files before overwriting outside targets", () =
   const root = mkdtempSync(join(tmpdir(), "workflow-inputs-"));
   const outside = mkdtempSync(join(tmpdir(), "workflow-outside-"));
   tmpRoots.push(root, outside);
-  mkdirSync(join(root, "plan", "input"), { recursive: true });
+  mkdirSync(join(root, "execute", "input"), { recursive: true });
   const outsideFile = join(outside, "task.md");
-  symlinkSync(outsideFile, join(root, "plan", "input", "task.md"));
+  symlinkSync(outsideFile, join(root, "execute", "input", "task.md"));
 
   expect(() =>
     writeWorkflowStepInputArtifacts(root, {
-      step: "plan",
+      step: "execute",
       files: [
         {
           name: "task.md",
@@ -276,14 +241,14 @@ test("replaces hard-linked artifact files without truncating outside targets", (
   const root = mkdtempSync(join(tmpdir(), "workflow-inputs-"));
   const outside = mkdtempSync(join(tmpdir(), "workflow-outside-"));
   tmpRoots.push(root, outside);
-  mkdirSync(join(root, "plan", "input"), { recursive: true });
+  mkdirSync(join(root, "execute", "input"), { recursive: true });
   const outsideFile = join(outside, "task.md");
-  const artifactPath = join(root, "plan", "input", "task.md");
+  const artifactPath = join(root, "execute", "input", "task.md");
   writeFileSync(outsideFile, "outside\n");
   linkSync(outsideFile, artifactPath);
 
   const refs = writeWorkflowStepInputArtifacts(root, {
-    step: "plan",
+    step: "execute",
     files: [
       {
         name: "task.md",
@@ -294,7 +259,7 @@ test("replaces hard-linked artifact files without truncating outside targets", (
   });
 
   expect(refs[0].path).toBe(
-    join(realpathSync(root), "plan", "input", "task.md"),
+    join(realpathSync(root), "execute", "input", "task.md"),
   );
   expect(readFileSync(outsideFile, "utf8")).toBe("outside\n");
   expect(readFileSync(artifactPath, "utf8")).toBe("inside\n");

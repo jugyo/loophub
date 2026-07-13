@@ -37,7 +37,6 @@ import {
   type WorkflowArtifact,
   type WorkflowArtifactType,
   type WorkflowExecutionReportArtifact,
-  type WorkflowPlanArtifact,
   type WorkflowVerdictArtifact,
 } from "../workflow/artifacts.ts";
 import {
@@ -48,12 +47,9 @@ import {
 } from "../workflow/compose.ts";
 import {
   composeExecuteInputArtifacts,
-  composePlanInputArtifacts,
-  composeReflectInputArtifacts,
   composeVerifyInputArtifacts,
   type WorkflowIssueInput,
   type WorkflowStepInputSet,
-  type WorkflowTimelineEntryInput,
   writeWorkflowStepInputArtifacts,
 } from "../workflow/inputs.ts";
 import { placeWorkflowArtifact } from "../workflow/placement.ts";
@@ -70,7 +66,6 @@ import {
   provisionWorktree,
   shouldCreateMissingConventionBranch,
 } from "../worktree-provision.ts";
-import { comments } from "./comments.ts";
 import { dev } from "./dev.ts";
 import { pulls } from "./pulls.ts";
 import { reviews } from "./reviews.ts";
@@ -170,10 +165,8 @@ export type WorkflowStepStatusResult = {
 };
 
 const STEP_ARTIFACT_TYPE: Record<WorkflowStep, WorkflowArtifactType> = {
-  plan: "plan",
   execute: "execution-report",
   verify: "verdict",
-  reflect: "reflection",
 };
 
 function workflowByInput(input: { workflow?: string; workflowId?: number }) {
@@ -291,18 +284,18 @@ function parentUserPrompt(input: {
     `repo: ${inlineText(input.repoName)} (pass --repo ${repo} on every lh command)`,
     `issue: #${input.issueNumber}`,
     `pr: #${input.prNumber}`,
-    "current step: plan",
+    "current step: execute",
     "",
     "## Inputs",
     ...input.inputFiles.map((file) => `- ${file.path} - ${file.description}`),
     `worktree: . (cwd. base branch: ${input.baseRef})`,
     "",
     "## Instruction",
-    "Orchestrate this run through Plan -> Execute -> Verify -> Reflect as described in your contract.",
+    "Orchestrate this run through Execute -> Verify as described in your contract.",
     `Drive every transition from \`lh workflow step status ${input.runId} --repo ${repo} --json\`; never use pane output or PR body markers to decide a step is complete.`,
     "Start now:",
-    `1. Mark Plan running: \`lh workflow run update --repo ${repo} --run ${input.runId} --step plan --status running\``,
-    `2. Launch the Plan child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step plan\``,
+    `1. Mark Execute running: \`lh workflow run update --repo ${repo} --run ${input.runId} --step execute --status running\``,
+    `2. Launch the Execute child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step execute\``,
     "Then follow your contract's transition table, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
     "",
   ].join("\n");
@@ -383,9 +376,7 @@ function issueInput(issue: S.IssueRow): WorkflowIssueInput {
 }
 
 async function composeLaunchInputs(input: {
-  repo: S.Repo;
   issue: S.IssueRow;
-  pullIssue: S.IssueRow;
   pull: S.PullRow;
   run: S.WorkflowRunRow;
   step: WorkflowStep;
@@ -393,12 +384,9 @@ async function composeLaunchInputs(input: {
 }): Promise<WorkflowStepInputSet> {
   const task = issueInput(input.issue);
   switch (input.step) {
-    case "plan":
-      return composePlanInputArtifacts({ issue: task });
     case "execute":
       return composeExecuteInputArtifacts({
         issue: task,
-        plan: readLatestArtifact(input.run, "plan"),
         latestVerdict: readLatestArtifactOptional(input.run, "verdict"),
         verdictHeadSha: latestArtifactHead(input.run, "verdict"),
       });
@@ -411,22 +399,6 @@ async function composeLaunchInputs(input: {
           readLatestArtifactOptional(input.run, "verdict"),
         ]),
       });
-    case "reflect":
-      return composeReflectInputArtifacts({
-        issue: task,
-        artifacts: [
-          readLatestArtifact(input.run, "plan"),
-          readLatestArtifact(input.run, "execution-report"),
-          readLatestArtifact(input.run, "verdict"),
-        ],
-        reworkCount: input.run.rework_count,
-        timeline: runTimeline(input.repo.id, input.run),
-        handoffs: S.listHandoffs(input.repo.id, {
-          prId: input.pullIssue.id,
-        })
-          .map((handoff) => handoff.body)
-          .filter((body): body is string => body !== null),
-      });
   }
 }
 
@@ -437,10 +409,6 @@ function latestArtifactHead(
   return S.latestWorkflowArtifactByType(run.id, type)?.head_sha;
 }
 
-function readLatestArtifact(
-  run: S.WorkflowRunRow,
-  type: "plan",
-): WorkflowPlanArtifact;
 function readLatestArtifact(
   run: S.WorkflowRunRow,
   type: "execution-report",
@@ -565,7 +533,8 @@ function latestVerdictContent(
 }
 
 // Build the issue / PR detail display state (#1008) from a run row. The row is the display-state
-// source (§5.2); this does not re-derive step-completion truth (that is `workflow step status`).
+// source (workflow design: CLI / UI); this does not re-derive step-completion truth (that is
+// `workflow step status`).
 // `latest_verdict` gives the human-readable reason behind a rework / block.
 function workflowRunState(run: S.WorkflowRunRow): WorkflowRunStateWire {
   const workflowName = run.workflow_id
@@ -645,7 +614,6 @@ async function placeAcceptedArtifact(input: {
     headSha: input.headSha,
     issueNumber: input.run.issue_number,
     dependencies: {
-      currentBody: current.body,
       currentDraft: current.draft,
       assertOwnership() {
         if (
@@ -695,16 +663,6 @@ async function placeAcceptedArtifact(input: {
           ).id,
         );
       },
-      async createComment(body) {
-        return String(
-          comments.createForPull(
-            input.repoName,
-            input.run.pr_number,
-            body,
-            input.sessionId,
-          ).id,
-        );
-      },
       attach(path) {
         return safeEvidenceAttachment(
           input.worktree,
@@ -736,32 +694,6 @@ async function pinnedDiff(
     );
   }
   return { headSha, baseBranch, diff: diff.stdout };
-}
-
-function runTimeline(
-  repoId: number,
-  run: S.WorkflowRunRow,
-): WorkflowTimelineEntryInput[] {
-  return S.listEvents(0, repoId, 1000, undefined, "asc")
-    .map((event) => {
-      try {
-        const payload = JSON.parse(event.payload);
-        if (payload?.id !== run.id && payload?.pr_number !== run.pr_number) {
-          return null;
-        }
-        const rawStep = payload.step ?? payload.current_step;
-        return {
-          at: event.created_at,
-          step: WORKFLOW_STEPS.includes(rawStep as WorkflowStep)
-            ? (rawStep as WorkflowStep)
-            : "parent",
-          text: `${event.type} by ${event.actor}`,
-        };
-      } catch {
-        return null;
-      }
-    })
-    .filter((entry): entry is WorkflowTimelineEntryInput => entry !== null);
 }
 
 function assertParentActor(
@@ -875,7 +807,7 @@ export const workflowRuns = {
         issueNumber: issue.number,
         prNumber: opened.number,
         status: "running",
-        currentStep: "plan",
+        currentStep: "execute",
         autoMode: input.auto,
         runtime,
         model: input.model?.trim() || null,
@@ -884,7 +816,7 @@ export const workflowRuns = {
 
       const inputFiles = writeWorkflowStepInputArtifacts(
         ensureWorkflowRunDir(run.id),
-        composePlanInputArtifacts({ issue: issueInput(issue) }),
+        composeExecuteInputArtifacts({ issue: issueInput(issue) }),
       );
       const systemPromptPath = writeParentContract(
         run.id,
@@ -1039,9 +971,7 @@ export const workflowRuns = {
     const inputFiles = writeWorkflowStepInputArtifacts(
       ensureWorkflowRunDir(run.id),
       await composeLaunchInputs({
-        repo: r,
         issue,
-        pullIssue: prIssue,
         pull,
         run,
         step,
@@ -1416,9 +1346,7 @@ export const workflowRuns = {
     const inputFiles = writeWorkflowStepInputArtifacts(
       ensureWorkflowRunDir(run.id),
       await composeLaunchInputs({
-        repo: r,
         issue,
-        pullIssue: prIssue,
         pull,
         run,
         step,
@@ -1483,10 +1411,8 @@ export const workflowRuns = {
     const steps = evaluateWorkflowSteps({
       currentHead,
       headAheadOfBase,
-      plan: latestArtifactState(run, "plan"),
       execute: latestArtifactState(run, "execution-report"),
       verify: latestArtifactState(run, "verdict"),
-      reflect: latestArtifactState(run, "reflection"),
       latestVerdict: latestVerdictContent(run),
     });
     return {

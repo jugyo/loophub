@@ -36,10 +36,8 @@ test("deleteRepo removes Workflow runs before deleting the repo", () => {
   const workflow = S.createWorkflow({
     name: "repo-remove-workflow",
     description: "",
-    planPrompt: "",
     executePrompt: "",
     verifyPrompt: "",
-    reflectPrompt: "",
   });
   S.createWorkflowRun({
     workflowId: workflow.id,
@@ -47,7 +45,7 @@ test("deleteRepo removes Workflow runs before deleting the repo", () => {
     issueNumber: 1,
     prNumber: 2,
     status: "completed",
-    currentStep: "reflect",
+    currentStep: "verify",
   });
 
   expect(S.deleteRepo("me", "workflow-remove")).toBe(true);

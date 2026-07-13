@@ -1,28 +1,8 @@
-export type WorkflowArtifactType =
-  | "plan"
-  | "execution-report"
-  | "verdict"
-  | "reflection";
+export type WorkflowArtifactType = "execution-report" | "verdict";
 
 export type WorkflowArtifact =
-  | WorkflowPlanArtifact
   | WorkflowExecutionReportArtifact
-  | WorkflowVerdictArtifact
-  | WorkflowReflectionArtifact;
-
-export type WorkflowPlanArtifact = {
-  type: "plan";
-  summary: string;
-  changes: WorkflowPlanChange[];
-  reuse: string[];
-  out_of_scope: string[];
-  verification: string;
-};
-
-export type WorkflowPlanChange = {
-  area: string;
-  description: string;
-};
+  | WorkflowVerdictArtifact;
 
 export type WorkflowExecutionReportArtifact = {
   type: "execution-report";
@@ -30,6 +10,7 @@ export type WorkflowExecutionReportArtifact = {
   acceptance: WorkflowAcceptanceResult[];
   tests: WorkflowTestResult[];
   evidence: WorkflowEvidence[];
+  reflection: WorkflowReflection;
 };
 
 export type WorkflowAcceptanceResult = {
@@ -64,8 +45,7 @@ export type WorkflowFinding = {
   expected: string;
 };
 
-export type WorkflowReflectionArtifact = {
-  type: "reflection";
+export type WorkflowReflection = {
   went_well: string[];
   friction: WorkflowFriction[];
   suggestions: WorkflowSuggestion[];
@@ -96,12 +76,7 @@ export type WorkflowArtifactValidationResult =
   | { ok: true; artifact: WorkflowArtifact }
   | { ok: false; violations: WorkflowArtifactViolation[] };
 
-const ARTIFACT_TYPES = [
-  "plan",
-  "execution-report",
-  "verdict",
-  "reflection",
-] as const;
+const ARTIFACT_TYPES = ["execution-report", "verdict"] as const;
 
 export function parseWorkflowArtifactJson(
   json: string,
@@ -134,17 +109,11 @@ export function validateWorkflowArtifact(
   }
 
   switch (value.type) {
-    case "plan":
-      validatePlan(value, violations);
-      break;
     case "execution-report":
       validateExecutionReport(value, violations);
       break;
     case "verdict":
       validateVerdict(value, violations);
-      break;
-    case "reflection":
-      validateReflection(value, violations);
       break;
   }
 
@@ -154,38 +123,6 @@ export function validateWorkflowArtifact(
   return { ok: true, artifact: value as WorkflowArtifact };
 }
 
-function validatePlan(
-  value: Record<string, unknown>,
-  violations: WorkflowArtifactViolation[],
-): void {
-  rejectUnknownKeys(
-    value,
-    "$",
-    ["type", "summary", "changes", "reuse", "out_of_scope", "verification"],
-    violations,
-  );
-  requireNonEmptyString(value, "$.summary", "summary", violations);
-  requireNonEmptyObjectArray(
-    value,
-    "$.changes",
-    "changes",
-    violations,
-    (item, path) => {
-      rejectUnknownKeys(item, path, ["area", "description"], violations);
-      requireNonEmptyString(item, `${path}.area`, "area", violations);
-      requireNonEmptyString(
-        item,
-        `${path}.description`,
-        "description",
-        violations,
-      );
-    },
-  );
-  requireStringArray(value, "$.reuse", "reuse", violations);
-  requireStringArray(value, "$.out_of_scope", "out_of_scope", violations);
-  requireNonEmptyString(value, "$.verification", "verification", violations);
-}
-
 function validateExecutionReport(
   value: Record<string, unknown>,
   violations: WorkflowArtifactViolation[],
@@ -193,7 +130,7 @@ function validateExecutionReport(
   rejectUnknownKeys(
     value,
     "$",
-    ["type", "summary", "acceptance", "tests", "evidence"],
+    ["type", "summary", "acceptance", "tests", "evidence", "reflection"],
     violations,
   );
   requireNonEmptyString(value, "$.summary", "summary", violations);
@@ -263,6 +200,16 @@ function validateExecutionReport(
       }
     },
   );
+  if (!isRecord(value.reflection)) {
+    violations.push({
+      path: "$.reflection",
+      message: Object.hasOwn(value, "reflection")
+        ? "Expected object"
+        : "Required field is missing",
+    });
+  } else {
+    validateReflection(value.reflection, "$.reflection", violations);
+  }
 }
 
 function validateVerdict(
@@ -319,18 +266,24 @@ function validateVerdict(
 
 function validateReflection(
   value: Record<string, unknown>,
+  path: string,
   violations: WorkflowArtifactViolation[],
 ): void {
   rejectUnknownKeys(
     value,
-    "$",
-    ["type", "went_well", "friction", "suggestions", "followups"],
+    path,
+    ["went_well", "friction", "suggestions", "followups"],
     violations,
   );
-  requireNonEmptyStringArray(value, "$.went_well", "went_well", violations);
+  requireNonEmptyStringArray(
+    value,
+    `${path}.went_well`,
+    "went_well",
+    violations,
+  );
   requireObjectArray(
     value,
-    "$.friction",
+    `${path}.friction`,
     "friction",
     violations,
     (item, path) => {
@@ -341,7 +294,7 @@ function validateReflection(
   );
   requireObjectArray(
     value,
-    "$.suggestions",
+    `${path}.suggestions`,
     "suggestions",
     violations,
     (item, path) => {
@@ -358,7 +311,7 @@ function validateReflection(
   );
   requireObjectArray(
     value,
-    "$.followups",
+    `${path}.followups`,
     "followups",
     violations,
     (item, path) => {
@@ -468,19 +421,6 @@ function requireEnum<T extends string>(
       message: `Expected one of: ${allowed.join(", ")}`,
     });
   }
-}
-
-function requireStringArray(
-  obj: Record<string, unknown>,
-  path: string,
-  key: string,
-  violations: WorkflowArtifactViolation[],
-): void {
-  const array = requireArray(obj, path, key, violations);
-  if (!array) {
-    return;
-  }
-  validateStringArrayItems(array, path, violations);
 }
 
 function requireNonEmptyStringArray(

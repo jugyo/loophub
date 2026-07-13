@@ -32,9 +32,7 @@ function workflowPaneKind(
 ): "parent" | "step" | null {
   if (typeof label !== "string") return null;
   if (/^workflow-[0-9a-f]{8}$/iu.test(label)) return "parent";
-  const step = label.match(
-    /^workflow (?:plan|execute|verify|reflect) #(\d+)$/u,
-  );
+  const step = label.match(/^workflow (?:execute|verify) #(\d+)$/u);
   return step && Number(step[1]) === runId ? "step" : null;
 }
 

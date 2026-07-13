@@ -14,15 +14,15 @@ const CONTRACT_DIR = join(import.meta.dirname, "contracts");
 test("keeps contract and user prompt in separate channels", () => {
   const composed = composeWorkflowLaunchPrompt(
     {
-      template: readFileSync(join(CONTRACT_DIR, "plan.md"), "utf8"),
-      step: "plan",
+      template: readFileSync(join(CONTRACT_DIR, "execute.md"), "utf8"),
+      step: "execute",
       worktreePath: "/tmp/worktree",
       baseBranch: "main",
     },
     {
       inputFiles: [
         {
-          path: "/tmp/runs/workflow/run-1/plan/input/task.md",
+          path: "/tmp/runs/workflow/run-1/execute/input/task.md",
           description: "Requested outcome and acceptance criteria",
         },
       ],
@@ -32,7 +32,7 @@ test("keeps contract and user prompt in separate channels", () => {
     },
   );
 
-  expect(composed.systemPrompt).toContain("Plan step contract");
+  expect(composed.systemPrompt).toContain("Execute step contract");
   expect(composed.systemPrompt).not.toContain("USER-SENTINEL");
   expect(composed.systemPrompt).not.toContain("NOTE-SENTINEL");
   expect(composed.userPrompt).toContain("USER-SENTINEL");
@@ -122,10 +122,6 @@ test("composed prompts do not introduce slash commands or domain identifiers", (
         {
           path: "/tmp/runs/workflow/run-1/execute/input/task.md",
           description: "Requested outcome and acceptance criteria",
-        },
-        {
-          path: "/tmp/runs/workflow/run-1/execute/input/plan.md",
-          description: "Accepted implementation plan",
         },
       ],
       baseBranch: "main",

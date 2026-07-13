@@ -1,10 +1,8 @@
-export type WorkflowStep = "plan" | "execute" | "verify" | "reflect";
+export type WorkflowStep = "execute" | "verify";
 
 export const WORKFLOW_STEPS: readonly WorkflowStep[] = [
-  "plan",
   "execute",
   "verify",
-  "reflect",
 ] as const;
 
 export type WorkflowContractRenderInput = {

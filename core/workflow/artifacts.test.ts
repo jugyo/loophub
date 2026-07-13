@@ -9,26 +9,27 @@ function violationPaths(violations: WorkflowArtifactViolation[]): string[] {
   return violations.map((v) => v.path);
 }
 
-test("validates a plan artifact", () => {
-  const result = validateWorkflowArtifact({
-    type: "plan",
-    summary: "Add the artifact validator.",
-    changes: [
-      {
-        area: "core/workflow/artifacts.ts",
-        description: "Define types and validation.",
-      },
-    ],
-    reuse: ["Vitest"],
-    out_of_scope: ["DB placement"],
-    verification: "Run focused unit tests.",
-  });
-
-  expect(result).toEqual({
-    ok: true,
-    artifact: expect.objectContaining({ type: "plan" }),
-  });
-});
+const reflection = {
+  went_well: ["The pure validator stayed isolated."],
+  friction: [
+    {
+      what: "Schema ambiguity",
+      cause: "The design intentionally leaves placement out.",
+    },
+  ],
+  suggestions: [
+    {
+      target: "contract" as const,
+      text: "Keep examples aligned with the validator.",
+    },
+  ],
+  followups: [
+    {
+      title: "Add placement policy",
+      rationale: "Artifacts need domain projection later.",
+    },
+  ],
+};
 
 test("validates an execution-report artifact", () => {
   const result = validateWorkflowArtifact({
@@ -59,6 +60,7 @@ test("validates an execution-report artifact", () => {
         path: "evidence/visual.png",
       },
     ],
+    reflection,
   });
 
   expect(result).toEqual({
@@ -98,36 +100,6 @@ test("validates verdict artifacts including pass with no findings", () => {
   });
 });
 
-test("validates a reflection artifact", () => {
-  const result = validateWorkflowArtifact({
-    type: "reflection",
-    went_well: ["The pure validator stayed isolated."],
-    friction: [
-      {
-        what: "Schema ambiguity",
-        cause: "The design intentionally leaves placement out.",
-      },
-    ],
-    suggestions: [
-      {
-        target: "contract",
-        text: "Keep examples aligned with the validator.",
-      },
-    ],
-    followups: [
-      {
-        title: "Add placement policy",
-        rationale: "Artifacts need domain projection later.",
-      },
-    ],
-  });
-
-  expect(result).toEqual({
-    ok: true,
-    artifact: expect.objectContaining({ type: "reflection" }),
-  });
-});
-
 test("parses JSON before validating the artifact", () => {
   expect(
     parseWorkflowArtifactJson(
@@ -164,6 +136,7 @@ test("enumerates missing fields, empty strings, invalid enums, and invalid array
         description: "Bad evidence kind",
       },
     ],
+    reflection,
   });
 
   expect(result.ok).toBe(false);
@@ -181,14 +154,14 @@ test("enumerates missing fields, empty strings, invalid enums, and invalid array
 
 test("rejects unknown fields so domain identifiers cannot be embedded", () => {
   const result = validateWorkflowArtifact({
-    type: "plan",
+    type: "execution-report",
     issue_number: 999,
     placement: "pr-body",
-    summary: "Plan summary",
-    changes: [{ area: "core", description: "Add validator" }],
-    reuse: [],
-    out_of_scope: [],
-    verification: "Run tests",
+    summary: "Report summary",
+    acceptance: [{ criterion: "Works", met: true, note: "Done" }],
+    tests: [{ command: "npm test", passed: true, excerpt: "passed" }],
+    evidence: [{ kind: "test", description: "Tests passed" }],
+    reflection,
   });
 
   expect(result.ok).toBe(false);
@@ -240,6 +213,7 @@ test("requires screenshot evidence paths and rejects unsafe path forms", () => {
         path: "evidence/\u0000bad.png",
       },
     ],
+    reflection,
   });
 
   expect(result.ok).toBe(false);
@@ -257,17 +231,18 @@ test("requires screenshot evidence paths and rejects unsafe path forms", () => {
 
 test("requires reflection went_well to include at least one item", () => {
   const result = validateWorkflowArtifact({
-    type: "reflection",
-    went_well: [],
-    friction: [],
-    suggestions: [],
-    followups: [],
+    type: "execution-report",
+    summary: "Summary",
+    acceptance: [{ criterion: "Works", met: true, note: "Done" }],
+    tests: [{ command: "npm test", passed: true, excerpt: "passed" }],
+    evidence: [{ kind: "test", description: "Tests passed" }],
+    reflection: { ...reflection, went_well: [] },
   });
 
   expect(result.ok).toBe(false);
   if (!result.ok) {
     expect(result.violations).toContainEqual({
-      path: "$.went_well",
+      path: "$.reflection.went_well",
       message: "Expected at least 1 item",
     });
   }

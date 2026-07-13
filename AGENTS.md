@@ -45,11 +45,12 @@ run development loops while a human supervises with minimal attention.
 - **Session**: one recorded agent-runtime invocation. Sessions can be linked to issues or PRs;
   multiple sessions may contribute to one PR, while its primary development session is the
   resume and retrospective anchor.
-- **Workflow / workflow run**: a workflow is a reusable Plan/Execute/Verify/Reflect definition;
-  a workflow run is one persisted execution for a specific issue and PR, tracking step state,
-  sessions, and artifacts. A run may prepare or reuse an attempt, but is not itself a build,
-  attempt, or session. The event-triggered `.loophub/workflow.yml` worker configuration is
-  separate repository automation.
+- **Workflow / workflow run**: a workflow is a reusable Execute/Verify definition. Execute owns
+  implementation planning and reflection; Verify independently evaluates the result. A workflow
+  run is one persisted execution for a specific issue and PR, tracking step state, sessions, and
+  artifacts. A run may prepare or reuse an attempt, but is not itself a build, attempt, or session.
+  The event-triggered `.loophub/workflow.yml` worker configuration is separate repository
+  automation.
 - **Worktree**: a Git linked checkout dedicated to a PR/attempt. `lh build` normally uses branch
   `loophub/pr-<m>` at `$LOOPHUB_HOME/worktrees/<owner>/<repo>/pr-<m>`, keyed by PR number.
 

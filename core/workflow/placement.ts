@@ -4,11 +4,7 @@ import type {
   WorkflowVerdictArtifact,
 } from "./artifacts.ts";
 
-export type WorkflowPlacementTarget =
-  | "pr-body-plan"
-  | "pr-body-report"
-  | "review"
-  | "comment";
+export type WorkflowPlacementTarget = "pr-body-report" | "review";
 
 export type WorkflowPlacementResult = {
   kind: WorkflowPlacementTarget;
@@ -16,7 +12,6 @@ export type WorkflowPlacementResult = {
 };
 
 export type WorkflowPlacementDependencies = {
-  currentBody: string;
   currentDraft: boolean;
   assertOwnership(): void;
   updateBody(body: string): Promise<void>;
@@ -24,7 +19,6 @@ export type WorkflowPlacementDependencies = {
   createReview(
     input: ReturnType<typeof renderVerdict> & { headSha: string },
   ): Promise<string>;
-  createComment(body: string): Promise<string>;
   attach(path: string): string;
   record(kind: WorkflowPlacementTarget, ref: string): void;
 };
@@ -33,48 +27,11 @@ export function placementTarget(
   type: WorkflowArtifact["type"],
 ): WorkflowPlacementTarget {
   switch (type) {
-    case "plan":
-      return "pr-body-plan";
     case "execution-report":
       return "pr-body-report";
     case "verdict":
       return "review";
-    case "reflection":
-      return "comment";
   }
-}
-
-export function renderPlanBody(
-  current: string,
-  artifact: Extract<WorkflowArtifact, { type: "plan" }>,
-): string {
-  const plan = [
-    "## Implementation plan",
-    "",
-    artifact.summary,
-    "",
-    ...artifact.changes.map(
-      (change) => `- **${change.area}**: ${change.description}`,
-    ),
-    ...(artifact.reuse.length
-      ? ["", "### Reuse", "", ...artifact.reuse.map((item) => `- ${item}`)]
-      : []),
-    ...(artifact.out_of_scope.length
-      ? [
-          "",
-          "### Out of scope",
-          "",
-          ...artifact.out_of_scope.map((item) => `- ${item}`),
-        ]
-      : []),
-    "",
-    `### Verification\n\n${artifact.verification}`,
-  ].join("\n");
-  const marker =
-    /^## (?:Implementation plan|実装計画)[\s\S]*?(?=^## |$(?![\s\S]))/mu;
-  return marker.test(current)
-    ? current.replace(marker, `${plan}\n\n`)
-    : `${plan}\n\n${current}`;
 }
 
 export function renderExecutionReport(
@@ -105,6 +62,38 @@ export function renderExecutionReport(
     "",
     ...evidence,
     "",
+    "## Reflection",
+    "",
+    "### Went well",
+    ...artifact.reflection.went_well.map((item) => `- ${item}`),
+    ...(artifact.reflection.friction.length
+      ? [
+          "",
+          "### Friction",
+          ...artifact.reflection.friction.map(
+            (item) => `- ${item.what} — ${item.cause}`,
+          ),
+        ]
+      : []),
+    ...(artifact.reflection.suggestions.length
+      ? [
+          "",
+          "### Suggestions",
+          ...artifact.reflection.suggestions.map(
+            (item) => `- **${item.target}**: ${item.text}`,
+          ),
+        ]
+      : []),
+    ...(artifact.reflection.followups.length
+      ? [
+          "",
+          "### Follow-ups",
+          ...artifact.reflection.followups.map(
+            (item) => `- **${item.title}**: ${item.rationale}`,
+          ),
+        ]
+      : []),
+    "",
     `Closes #${closes}`,
   ].join("\n");
 }
@@ -125,42 +114,6 @@ export function renderVerdict(artifact: WorkflowVerdictArtifact): {
   };
 }
 
-export function renderReflection(
-  artifact: Extract<WorkflowArtifact, { type: "reflection" }>,
-): string {
-  return [
-    "## Workflow reflection",
-    "",
-    "### Went well",
-    ...artifact.went_well.map((item) => `- ${item}`),
-    ...(artifact.friction.length
-      ? [
-          "",
-          "### Friction",
-          ...artifact.friction.map((item) => `- ${item.what} — ${item.cause}`),
-        ]
-      : []),
-    ...(artifact.suggestions.length
-      ? [
-          "",
-          "### Suggestions",
-          ...artifact.suggestions.map(
-            (item) => `- **${item.target}**: ${item.text}`,
-          ),
-        ]
-      : []),
-    ...(artifact.followups.length
-      ? [
-          "",
-          "### Follow-ups",
-          ...artifact.followups.map(
-            (item) => `- **${item.title}**: ${item.rationale}`,
-          ),
-        ]
-      : []),
-  ].join("\n");
-}
-
 export async function placeWorkflowArtifact(input: {
   artifact: WorkflowArtifact;
   headSha: string;
@@ -171,11 +124,6 @@ export async function placeWorkflowArtifact(input: {
   const kind = placementTarget(artifact.type);
   let ref: string;
   switch (artifact.type) {
-    case "plan":
-      deps.assertOwnership();
-      await deps.updateBody(renderPlanBody(deps.currentBody, artifact));
-      ref = "pr-body";
-      break;
     case "execution-report": {
       const evidence = artifact.evidence.map((item) => {
         deps.assertOwnership();
@@ -199,10 +147,6 @@ export async function placeWorkflowArtifact(input: {
         ...renderVerdict(artifact),
         headSha: input.headSha,
       });
-      break;
-    case "reflection":
-      deps.assertOwnership();
-      ref = await deps.createComment(renderReflection(artifact));
       break;
   }
   deps.assertOwnership();

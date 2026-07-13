@@ -23,9 +23,9 @@ export function usage(): void {
   lh inbox send --from '<json>' --title <text> --body <text|-> [--to '<json>'] [--label <name>] [--repo owner/repo]   # send a human-facing Inbox message
   lh inbox read|unread|archive|unarchive|delete <message-id> [--json]   # update an Inbox message state (delete is a soft state)
   lh notification send --kind merge_ready|over_budget|human_attention --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
-  lh workflow list|view|create|update|delete <name> [--description <text>] [--plan-prompt <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--reflect-prompt <text>] [--step plan|execute|verify|reflect --file <path|->]   # manage global workflow prompt bundles
+  lh workflow list|view|create|update|delete <name> [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage global workflow prompt bundles
   lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex] [--model <name>] [--herdr] [--auto] [--no-launch]   # start a Workflow run (default runtime/model from app settings; --auto launches the parent and all step agents in auto mode)
-  lh workflow step output [--repo owner/name] [--run <id>] [--step plan|execute|verify|reflect] [--file <path|->]
+  lh workflow step output [--repo owner/name] [--run <id>] [--step execute|verify] [--file <path|->]
   lh workflow step input <run> <step> [--repo owner/name] [--note <text|->]   # dry-run the composed contract + inputs + prompt for a step (no launch)
   lh workflow step status <run> [--repo owner/name] [--json]   # evaluate each step's completion (placed artifacts + current head) and latest verdict
   lh handoff record --phase <p> --dir <down|up> (--pr <m> | --issue <n>) (--body <text|-> | --src <ref> [--hash <sha>]) [--from <r>] [--to <r>] [--summary <text>] [--model <m>] [--cost <json>]   # record an orchestrator<->subagent handoff (PR + session)

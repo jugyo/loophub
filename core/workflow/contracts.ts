@@ -11,7 +11,7 @@ export function workflowContractText(contract: WorkflowContract): string {
   return readFileSync(join(CONTRACT_DIR, `${contract}.md`), "utf8");
 }
 
-/** Read the four step contracts exposed by the workflow settings UI. */
+/** Read the fixed step contracts exposed by the workflow settings UI. */
 export function workflowStepContracts(): Record<WorkflowStep, string> {
   return Object.fromEntries(
     WORKFLOW_STEPS.map((step) => [step, workflowContractText(step)]),

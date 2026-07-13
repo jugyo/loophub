@@ -343,13 +343,13 @@ describe("herdr terminal launch", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 12,
-      step: "plan",
+      step: "execute",
       runtime: "claude-code",
       sessionId: "11111111-1111-4111-8111-111111111111",
       worktree: "/repo/worktrees/pr-7",
-      systemPromptPath: "/tmp/run/plan-contract.md",
-      systemPrompt: "# Plan contract\nstep: plan\n",
-      userPrompt: "## Inputs\n- /tmp/run/plan/input/task.md - Task\n",
+      systemPromptPath: "/tmp/run/execute-contract.md",
+      systemPrompt: "# Execute contract\nstep: execute\n",
+      userPrompt: "## Inputs\n- /tmp/run/execute/input/task.md - Task\n",
       tabId: "w1:t2",
       model: "sonnet",
       permissionMode: "auto",
@@ -363,14 +363,14 @@ describe("herdr terminal launch", () => {
       "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
     );
     expect(plan.command).toContain("LOOPHUB_WORKFLOW_RUN='12'");
-    expect(plan.command).toContain("LOOPHUB_WORKFLOW_STEP='plan'");
+    expect(plan.command).toContain("LOOPHUB_WORKFLOW_STEP='execute'");
     expect(plan.command).toContain(
       "claude --session-id '11111111-1111-4111-8111-111111111111'",
     );
     expect(plan.command).toContain("--model 'sonnet'");
     expect(plan.command).toContain("--permission-mode 'auto'");
     expect(plan.command).toContain(
-      "--append-system-prompt-file '/tmp/run/plan-contract.md'",
+      "--append-system-prompt-file '/tmp/run/execute-contract.md'",
     );
     // The claude branch does not carry a codex sandbox flag.
     expect(plan.command).not.toContain("--sandbox");
@@ -380,12 +380,12 @@ describe("herdr terminal launch", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 12,
-      step: "plan",
+      step: "execute",
       runtime: "codex",
       sessionId: "11111111-1111-4111-8111-111111111111",
       worktree: "/repo/worktrees/pr-7",
-      systemPromptPath: "/tmp/run/plan-contract.md",
-      systemPrompt: "# Plan contract\nstep: plan\n",
+      systemPromptPath: "/tmp/run/execute-contract.md",
+      systemPrompt: "# Execute contract\nstep: execute\n",
       userPrompt: "## Inputs\n- task.md\n",
       tabId: "w1:t2",
       model: "gpt-5.5",
@@ -406,7 +406,7 @@ describe("herdr terminal launch", () => {
     );
     expect(plan.command).toContain("--model 'gpt-5.5'");
     // The rendered contract is prepended to the positional prompt (single quoted as one arg).
-    expect(plan.command).toContain("# Plan contract");
+    expect(plan.command).toContain("# Execute contract");
     expect(plan.command).toContain("## Inputs");
   });
 

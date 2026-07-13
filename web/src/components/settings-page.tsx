@@ -372,8 +372,8 @@ export function SettingsPage() {
       <section className="mt-8 max-w-md">
         <h2 className="text-sm font-medium">Workflows</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Create and edit workflows — the Plan/Execute/Verify/Reflect prompt
-          bundles used by the development loop.
+          Create and edit workflows — the Execute/Verify prompt bundles used by
+          the development loop.
         </p>
         <Link
           to="/settings/workflows"

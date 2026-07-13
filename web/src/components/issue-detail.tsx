@@ -304,7 +304,7 @@ function BuildControls({
 // via `terminal/launch` with workflow "workflow-run", which spawns `lh workflow start
 // <owner>/<repo>/<n> --workflow-id <id> --herdr --auto`. It shares Build's linked-open-PR guard (rendered
 // only when buildState === "build"), keeping one launch system per issue at a time
-// (docs/workflow.ja.md §9.1). With no saved workflows, the menu links to Settings > Workflows.
+// (workflow design: CLI / UI). With no saved workflows, the menu links to Settings > Workflows.
 function StartWorkflowControls({
   owner,
   repo,

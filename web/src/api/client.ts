@@ -321,10 +321,8 @@ export function runScheduledTask(
 export interface WorkflowInput {
   name: string;
   description?: string;
-  plan_prompt?: string;
   execute_prompt?: string;
   verify_prompt?: string;
-  reflect_prompt?: string;
 }
 
 type WorkflowUpdatePatch = Omit<Partial<WorkflowInput>, "name"> & {

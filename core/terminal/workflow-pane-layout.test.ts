@@ -73,7 +73,7 @@ describe("Workflow pane grid", () => {
             pane_id: "w1:p11",
             tab_id: "w1:t2",
             workspace_id: "w1",
-            label: "workflow plan #7",
+            label: "workflow execute #7",
           },
           {
             pane_id: "w1:p2",
@@ -132,7 +132,7 @@ describe("Workflow pane grid", () => {
             pane_id: "w1:p2",
             tab_id: "w1:t1",
             workspace_id: "w1",
-            label: "workflow plan #8",
+            label: "workflow execute #8",
           },
         ],
       },

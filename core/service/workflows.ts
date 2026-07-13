@@ -50,10 +50,8 @@ export const workflows = {
     input: {
       name: string;
       description?: string;
-      plan_prompt?: string;
       execute_prompt?: string;
       verify_prompt?: string;
-      reflect_prompt?: string;
     },
     sessionId?: string | null,
   ) {
@@ -62,10 +60,8 @@ export const workflows = {
     const row = S.createWorkflow({
       name,
       description: normalizeText(input.description, "description"),
-      planPrompt: normalizeText(input.plan_prompt, "plan_prompt"),
       executePrompt: normalizeText(input.execute_prompt, "execute_prompt"),
       verifyPrompt: normalizeText(input.verify_prompt, "verify_prompt"),
-      reflectPrompt: normalizeText(input.reflect_prompt, "reflect_prompt"),
     });
     S.emitEvent(null, "workflow.created", actorFor(sessionId), {
       id: row.id,
@@ -79,10 +75,8 @@ export const workflows = {
     patch: {
       name?: string;
       description?: string;
-      plan_prompt?: string;
       execute_prompt?: string;
       verify_prompt?: string;
-      reflect_prompt?: string;
     },
     sessionId?: string | null,
   ) {
@@ -96,10 +90,6 @@ export const workflows = {
         patch.description !== undefined
           ? normalizeText(patch.description, "description")
           : undefined,
-      planPrompt:
-        patch.plan_prompt !== undefined
-          ? normalizeText(patch.plan_prompt, "plan_prompt")
-          : undefined,
       executePrompt:
         patch.execute_prompt !== undefined
           ? normalizeText(patch.execute_prompt, "execute_prompt")
@@ -107,10 +97,6 @@ export const workflows = {
       verifyPrompt:
         patch.verify_prompt !== undefined
           ? normalizeText(patch.verify_prompt, "verify_prompt")
-          : undefined,
-      reflectPrompt:
-        patch.reflect_prompt !== undefined
-          ? normalizeText(patch.reflect_prompt, "reflect_prompt")
           : undefined,
     });
     S.emitEvent(null, "workflow.updated", actorFor(sessionId), {

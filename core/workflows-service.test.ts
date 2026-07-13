@@ -33,19 +33,15 @@ test("create trims name and preserves empty markdown prompts", () => {
   const workflow = svc.workflows.create({
     name: "  standard  ",
     description: "Default workflow",
-    plan_prompt: "",
     execute_prompt: "Execute carefully",
     verify_prompt: "",
-    reflect_prompt: "",
   });
 
   expect(workflow).toMatchObject({
     name: "standard",
     description: "Default workflow",
-    plan_prompt: "",
     execute_prompt: "Execute carefully",
     verify_prompt: "",
-    reflect_prompt: "",
   });
   expect(svc.workflows.get("standard").id).toBe(workflow.id);
   expect(svc.workflows.list().map((w) => w.name)).toContain("standard");
@@ -65,12 +61,12 @@ test("update patches fields and can rename uniquely", () => {
   const updated = svc.workflows.update("standard", {
     name: "renamed",
     description: "",
-    plan_prompt: "Plan with tests",
+    verify_prompt: "Verify with tests",
   });
 
   expect(updated.name).toBe("renamed");
   expect(updated.description).toBe("");
-  expect(updated.plan_prompt).toBe("Plan with tests");
+  expect(updated.verify_prompt).toBe("Verify with tests");
   expect(updated.execute_prompt).toBe("Execute carefully");
   expectServiceStatus(
     () => svc.workflows.update("renamed", { name: "other" }),
@@ -87,7 +83,7 @@ test("delete is rejected while a running Workflow run references the workflow", 
     issueNumber: 1,
     prNumber: 2,
     status: "running",
-    currentStep: "plan",
+    currentStep: "execute",
   });
 
   expectServiceStatus(() => svc.workflows.delete("in-use"), 409);
@@ -126,7 +122,7 @@ test("delete succeeds when only non-running runs reference the workflow", () => 
     issueNumber: 1,
     prNumber: 2,
     status: "completed",
-    currentStep: "reflect",
+    currentStep: "verify",
   });
 
   expect(svc.workflows.delete("done-run")).toEqual({ ok: true });

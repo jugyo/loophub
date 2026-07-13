@@ -162,7 +162,7 @@ test("workflow step output uses flags before ambient context and supports ambien
     "--title",
     "Workflow output task",
     "--body",
-    "Place a plan",
+    "Execute the task",
   ]);
   const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
   if (!issue) throw new Error(issueOut.stdout);
@@ -179,16 +179,21 @@ test("workflow step output uses flags before ambient context and supports ambien
   ]);
   expect(started.exitCode, started.stderr).toBe(0);
   const runResult = JSON.parse(started.stdout);
-  const artifactPath = join(HOME, "plan.json");
+  const artifactPath = join(HOME, "execution-report.json");
   writeFileSync(
     artifactPath,
     JSON.stringify({
-      type: "plan",
-      summary: "Place the plan.",
-      changes: [{ area: "core", description: "Use the service." }],
-      reuse: [],
-      out_of_scope: [],
-      verification: "Inspect the PR body.",
+      type: "execution-report",
+      summary: "Executed the task.",
+      acceptance: [{ criterion: "Execute", met: true, note: "Done" }],
+      tests: [{ command: "true", passed: true, excerpt: "passed" }],
+      evidence: [{ kind: "na", description: "CLI plumbing test" }],
+      reflection: {
+        went_well: ["The CLI accepted the report."],
+        friction: [],
+        suggestions: [],
+        followups: [],
+      },
     }),
   );
 
@@ -202,20 +207,20 @@ test("workflow step output uses flags before ambient context and supports ambien
       "--run",
       String(runResult.run.id),
       "--step",
-      "plan",
+      "execute",
       "--file",
       artifactPath,
     ],
     { LOOPHUB_WORKFLOW_RUN: "999999", LOOPHUB_WORKFLOW_STEP: "verify" },
   );
   expect(explicit.exitCode).toBe(0);
-  expect(explicit.stdout).toContain("placed pr-body-plan at pr-body");
+  expect(explicit.stdout).toContain("placed pr-body-report at pr-body");
 
   const ambient = run(
     ["workflow", "step", "output", "--repo", REPO, "--file", artifactPath],
     {
       LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
-      LOOPHUB_WORKFLOW_STEP: "plan",
+      LOOPHUB_WORKFLOW_STEP: "execute",
     },
   );
   expect(ambient.exitCode).toBe(0);
@@ -275,7 +280,7 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   const body = JSON.parse(started.stdout);
   expect(body.run).toMatchObject({
     status: "running",
-    current_step: "plan",
+    current_step: "execute",
     rework_count: 0,
   });
   expect(body.workflow.name).toBe("standard");
@@ -325,7 +330,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
           pane_id: "w1:p3",
           tab_id: "w1:t1",
           workspace_id: "w1",
-          label: `workflow plan #${body.run.id}`,
+          label: `workflow execute #${body.run.id}`,
         },
         {
           pane_id: "w1:p4",
@@ -355,7 +360,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
         "--run",
         String(body.run.id),
         "--step",
-        "plan",
+        "execute",
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
@@ -388,7 +393,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
         "--run",
         String(body.run.id),
         "--step",
-        "plan",
+        "execute",
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,

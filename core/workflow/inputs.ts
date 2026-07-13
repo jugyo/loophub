@@ -11,8 +11,6 @@ import {
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import type {
   WorkflowExecutionReportArtifact,
-  WorkflowPlanArtifact,
-  WorkflowReflectionArtifact,
   WorkflowVerdictArtifact,
 } from "./artifacts.ts";
 import {
@@ -44,13 +42,8 @@ export type WorkflowIssueCommentInput = {
   body: string;
 };
 
-export type WorkflowPlanInput = {
-  issue: WorkflowIssueInput;
-};
-
 export type WorkflowExecuteInput = {
   issue: WorkflowIssueInput;
-  plan: WorkflowPlanArtifact;
   latestVerdict?: WorkflowVerdictArtifact;
   verdictHeadSha?: string;
   note?: string;
@@ -65,41 +58,6 @@ export type WorkflowVerifyInput = {
   priorVerdicts?: WorkflowVerdictArtifact[];
 };
 
-export type WorkflowReflectInput = {
-  issue: WorkflowIssueInput;
-  artifacts: WorkflowRunArtifactInput[];
-  reworkCount: number;
-  timeline: WorkflowTimelineEntryInput[];
-  handoffs?: string[];
-};
-
-export type WorkflowRunArtifactInput =
-  | WorkflowPlanArtifact
-  | WorkflowExecutionReportArtifact
-  | WorkflowVerdictArtifact
-  | WorkflowReflectionArtifact;
-
-export type WorkflowTimelineEntryInput = {
-  at: string;
-  step: WorkflowStep | "parent";
-  text: string;
-};
-
-export function composePlanInputArtifacts(
-  input: WorkflowPlanInput,
-): WorkflowStepInputSet {
-  return {
-    step: "plan",
-    files: [
-      {
-        name: "task.md",
-        description: "Requested outcome and acceptance criteria",
-        content: renderIssueTask(input.issue),
-      },
-    ],
-  };
-}
-
 export function composeExecuteInputArtifacts(
   input: WorkflowExecuteInput,
 ): WorkflowStepInputSet {
@@ -108,11 +66,6 @@ export function composeExecuteInputArtifacts(
       name: "task.md",
       description: "Requested outcome and acceptance criteria",
       content: renderIssueTask(input.issue),
-    },
-    {
-      name: "plan.md",
-      description: "Accepted implementation plan",
-      content: renderPlanArtifact(input.plan),
     },
   ];
 
@@ -162,21 +115,6 @@ export function composeVerifyInputArtifacts(
   }
 
   return { step: "verify", files };
-}
-
-export function composeReflectInputArtifacts(
-  input: WorkflowReflectInput,
-): WorkflowStepInputSet {
-  return {
-    step: "reflect",
-    files: [
-      {
-        name: "run-digest.md",
-        description: "Run history, artifacts, rework count, and timeline",
-        content: renderRunDigest(input),
-      },
-    ],
-  };
 }
 
 export function writeWorkflowStepInputArtifacts(
@@ -315,27 +253,6 @@ function renderIssueTask(issue: WorkflowIssueInput): string {
   return `${sections.join("\n")}\n`;
 }
 
-function renderPlanArtifact(plan: WorkflowPlanArtifact): string {
-  return [
-    "# Plan",
-    "",
-    plan.summary,
-    "",
-    "## Changes",
-    ...plan.changes.map((change) => `- ${change.area}: ${change.description}`),
-    "",
-    "## Reuse",
-    ...renderListOrNone(plan.reuse),
-    "",
-    "## Out of scope",
-    ...renderListOrNone(plan.out_of_scope),
-    "",
-    "## Verification",
-    plan.verification,
-    "",
-  ].join("\n");
-}
-
 function renderExecutionReport(
   report: WorkflowExecutionReportArtifact,
 ): string {
@@ -360,6 +277,29 @@ function renderExecutionReport(
       item.path
         ? `- ${item.kind}: ${item.description} (${item.path})`
         : `- ${item.kind}: ${item.description}`,
+    ),
+    "",
+    "## Reflection",
+    "### Went well",
+    ...report.reflection.went_well.map((item) => `- ${item}`),
+    "",
+    "### Friction",
+    ...renderListOrNone(
+      report.reflection.friction.map((item) => `${item.what} - ${item.cause}`),
+    ),
+    "",
+    "### Suggestions",
+    ...renderListOrNone(
+      report.reflection.suggestions.map(
+        (item) => `${item.target}: ${item.text}`,
+      ),
+    ),
+    "",
+    "### Follow-ups",
+    ...renderListOrNone(
+      report.reflection.followups.map(
+        (item) => `${item.title} - ${item.rationale}`,
+      ),
     ),
     "",
   ].join("\n");
@@ -407,35 +347,6 @@ function renderVerdict(verdict: WorkflowVerdictArtifact): string {
         return `${location} - ${finding.problem} Expected: ${finding.expected}`;
       }),
     ),
-  ].join("\n");
-}
-
-function renderRunDigest(input: WorkflowReflectInput): string {
-  return [
-    "# Run digest",
-    "",
-    "## Task",
-    renderIssueTask(input.issue).trimEnd(),
-    "",
-    `Rework count: ${input.reworkCount}`,
-    "",
-    "## Timeline",
-    ...input.timeline.map(
-      (entry) => `- ${entry.at} ${entry.step}: ${entry.text}`,
-    ),
-    "",
-    "## Artifacts",
-    ...input.artifacts.map((artifact) => {
-      return [
-        `### ${artifact.type}`,
-        "",
-        JSON.stringify(artifact, null, 2),
-      ].join("\n");
-    }),
-    "",
-    "## Handoffs",
-    ...renderListOrNone(input.handoffs ?? []),
-    "",
   ].join("\n");
 }
 

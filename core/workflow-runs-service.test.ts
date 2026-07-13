@@ -55,7 +55,7 @@ afterAll(() => {
   rmSync(REPO_PATH, { recursive: true, force: true });
 });
 
-test("start prepares a run, launch-step writes Plan inputs, and run update mirrors state", async () => {
+test("start prepares a run, launch-step writes Execute inputs, and run update mirrors state", async () => {
   const repo = S.createRepo("me/workflow-run", REPO_PATH);
   const issue = S.createIssue(
     repo.id,
@@ -67,10 +67,8 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   const workflow = S.createWorkflow({
     name: "standard",
     description: "",
-    planPrompt: "Prefer a small plan.",
-    executePrompt: "",
+    executePrompt: "Plan and implement a small change.",
     verifyPrompt: "",
-    reflectPrompt: "",
   });
   S.createComment(issue.id, "me", "Design note recorded before start.");
 
@@ -88,7 +86,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   expect(result.run).toMatchObject({
     workflow_id: workflow.id,
     status: "running",
-    current_step: "plan",
+    current_step: "execute",
     rework_count: 0,
     parent_session_id: "11111111-1111-4111-8111-111111111111",
   });
@@ -113,10 +111,10 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   expect(result.parent.user_prompt).toContain(`issue: #${result.issue.number}`);
   expect(result.parent.user_prompt).toContain(`pr: #${result.pr.number}`);
   expect(result.parent.user_prompt).toContain(
-    `lh workflow run update --repo '${repo.full_name}' --run ${result.run.id} --step plan --status running`,
+    `lh workflow run update --repo '${repo.full_name}' --run ${result.run.id} --step execute --status running`,
   );
   expect(result.parent.user_prompt).toContain(
-    `lh workflow launch-step --repo '${repo.full_name}' --run ${result.run.id} --step plan`,
+    `lh workflow launch-step --repo '${repo.full_name}' --run ${result.run.id} --step execute`,
   );
   // Transitions are driven only by step status — the run context must say so.
   expect(result.parent.user_prompt).toContain(
@@ -130,11 +128,11 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   const row = S.getWorkflowRun(result.run.id);
   expect(row).toMatchObject({
     status: "running",
-    current_step: "plan",
+    current_step: "execute",
     rework_count: 0,
     auto_mode: 1,
   });
-  // The run-start Plan input carries issue comments too, matching the language
+  // The run-start Execute input carries issue comments too, matching the language
   // instruction's claim that title, body, and comments are in the inputs (#1205).
   expect(
     readFileSync(
@@ -143,7 +141,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
         "runs",
         "workflow",
         String(result.run.id),
-        "plan",
+        "execute",
         "input",
         "task.md",
       ),
@@ -176,23 +174,23 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     repo.full_name,
     {
       run: result.run.id,
-      step: "plan",
-      contract: "# Plan contract\n{{step}} {{worktreePath}} {{baseBranch}}",
+      step: "execute",
+      contract: "# Execute contract\n{{step}} {{worktreePath}} {{baseBranch}}",
       model: "sonnet",
     },
     result.session_id,
   );
 
-  expect(launched.step).toBe("plan");
+  expect(launched.step).toBe("execute");
   expect(launched.worktree).toBe(result.worktree);
   expect(existsSync(launched.system_prompt_path)).toBe(true);
   expect(readFileSync(launched.system_prompt_path, "utf8")).toContain(
-    "step: plan",
+    "step: execute",
   );
   expect(readFileSync(launched.system_prompt_path, "utf8")).toContain(
-    "# Plan contract",
+    "# Execute contract",
   );
-  expect(launched.user_prompt).toContain("Prefer a small plan.");
+  expect(launched.user_prompt).toContain("Plan and implement a small change.");
   expect(launched.input_files).toEqual([
     expect.objectContaining({
       path: join(
@@ -200,7 +198,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
         "runs",
         "workflow",
         String(result.run.id),
-        "plan",
+        "execute",
         "input",
         "task.md",
       ),
@@ -215,7 +213,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   );
   expect(launched.herdr.argv).toContain("--split");
   expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_RUN=");
-  expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_STEP='plan'");
+  expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_STEP='execute'");
   expect(launched.herdr.command).toContain("--permission-mode 'auto'");
 
   expect(
@@ -233,7 +231,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
   );
   const runAfterLaunch = S.getWorkflowRun(result.run.id)!;
   expect(JSON.parse(runAfterLaunch.step_sessions_json)).toEqual({
-    plan: [launched.session_id],
+    execute: [launched.session_id],
   });
   expect(
     S.listSessionsForIssue(S.getIssue(repo.id, result.pr.number)!.id).map(
@@ -246,24 +244,13 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     }),
   ).toEqual([
     expect.objectContaining({
-      phase: "plan",
+      phase: "execute",
       direction: "down",
-      body: expect.stringContaining("Launch Workflow plan step"),
+      body: expect.stringContaining("Launch Workflow execute step"),
     }),
   ]);
   const headSha = gitAt(result.worktree, ["rev-parse", "HEAD"]);
   for (const [step, artifact] of [
-    [
-      "plan",
-      {
-        type: "plan",
-        summary: "Use the existing service layer.",
-        changes: [{ area: "core/service", description: "Add launch-step" }],
-        reuse: ["workflow inputs"],
-        out_of_scope: ["step output"],
-        verification: "Run focused tests",
-      },
-    ],
     [
       "execute",
       {
@@ -272,6 +259,12 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
         acceptance: [{ criterion: "launch-step", met: true, note: "Done" }],
         tests: [{ command: "npm test", passed: true, excerpt: "passed" }],
         evidence: [{ kind: "test", description: "focused tests" }],
+        reflection: {
+          went_well: ["The existing service layer was reusable."],
+          friction: [],
+          suggestions: [],
+          followups: [],
+        },
       },
     ],
     [
@@ -306,10 +299,7 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     result.session_id,
   );
   expect(executeLaunch.input_files.map((file) => file.path)).toEqual(
-    expect.arrayContaining([
-      expect.stringContaining("/execute/input/task.md"),
-      expect.stringContaining("/execute/input/plan.md"),
-    ]),
+    expect.arrayContaining([expect.stringContaining("/execute/input/task.md")]),
   );
   expect(readFileSync(executeLaunch.system_prompt_path, "utf8")).toContain(
     "# Execute",
@@ -332,20 +322,6 @@ test("start prepares a run, launch-step writes Plan inputs, and run update mirro
     ]),
   );
   expect(verifyLaunch.herdr.command).toContain("--permission-mode 'auto'");
-
-  const reflectLaunch = await svc.workflowRuns.launchStep(
-    repo.full_name,
-    {
-      run: result.run.id,
-      step: "reflect",
-      contract: "# Reflect",
-    },
-    result.session_id,
-  );
-  expect(reflectLaunch.input_files.map((file) => file.path)).toEqual([
-    expect.stringContaining("/reflect/input/run-digest.md"),
-  ]);
-  expect(reflectLaunch.herdr.command).toContain("--permission-mode 'auto'");
 
   const reworkExecuteLaunch = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -373,10 +349,8 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   const workflow = S.createWorkflow({
     name: "codex-standard",
     description: "",
-    planPrompt: "Plan it.",
-    executePrompt: "",
+    executePrompt: "Plan and implement it.",
     verifyPrompt: "",
-    reflectPrompt: "",
   });
 
   const result = await svc.workflowRuns.start(
@@ -402,8 +376,8 @@ test("start persists the resolved runtime/model and every step inherits them (#5
     repo.full_name,
     {
       run: result.run.id,
-      step: "plan",
-      contract: "# Plan\n{{step}}",
+      step: "execute",
+      contract: "# Execute\n{{step}}",
     },
     result.session_id,
   );
@@ -435,10 +409,8 @@ test("start defaults to claude-code and the config default model when unspecifie
   const workflow = S.createWorkflow({
     name: "default-standard",
     description: "",
-    planPrompt: "Plan it.",
-    executePrompt: "",
+    executePrompt: "Plan and implement it.",
     verifyPrompt: "",
-    reflectPrompt: "",
   });
 
   const result = await svc.workflowRuns.start(
@@ -459,7 +431,7 @@ test("start defaults to claude-code and the config default model when unspecifie
   // A step launched from this run falls back to claude-code + the agent's config default model.
   const launched = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: result.run.id, step: "plan", contract: "# Plan" },
+    { run: result.run.id, step: "execute", contract: "# Execute" },
     result.session_id,
   );
   expect(launched.runtime).toBe("claude-code");
@@ -479,10 +451,8 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   const workflow = S.createWorkflow({
     name: "output-test",
     description: "",
-    planPrompt: "",
     executePrompt: "",
     verifyPrompt: "",
-    reflectPrompt: "",
   });
   const started = await svc.workflowRuns.start(
     repo.full_name,
@@ -497,11 +467,11 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   await expect(
     svc.workflowRuns.stepOutput(
       repo.full_name,
-      { run: started.run.id, step: "plan", content: "{" },
+      { run: started.run.id, step: "execute", content: "{" },
       started.session_id,
     ),
   ).rejects.toMatchObject({ status: 422 });
-  expect(S.latestWorkflowArtifact(started.run.id, "plan")).toBeNull();
+  expect(S.latestWorkflowArtifact(started.run.id, "execute")).toBeNull();
   await expect(
     svc.workflowRuns.stepOutput(
       repo.full_name,
@@ -509,12 +479,10 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
         run: started.run.id,
         step: "execute",
         content: JSON.stringify({
-          type: "plan",
+          type: "verdict",
+          event: "pass",
           summary: "Wrong step.",
-          changes: [{ area: "core", description: "Noop." }],
-          reuse: [],
-          out_of_scope: [],
-          verification: "None.",
+          findings: [],
         }),
       },
       started.session_id,
@@ -522,14 +490,6 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   ).rejects.toMatchObject({ status: 422 });
   expect(S.latestWorkflowArtifact(started.run.id, "execute")).toBeNull();
 
-  const plan = JSON.stringify({
-    type: "plan",
-    summary: "Implement placement.",
-    changes: [{ area: "core", description: "Add placement." }],
-    reuse: ["pull service"],
-    out_of_scope: [],
-    verification: "Run tests.",
-  });
   const outsideArtifacts = join(HOME, "outside-artifacts");
   mkdirSync(outsideArtifacts);
   const artifactDirectory = join(
@@ -540,25 +500,6 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
     "artifacts",
   );
   symlinkSync(outsideArtifacts, artifactDirectory);
-  const placedPlan = await svc.workflowRuns.stepOutput(
-    repo.full_name,
-    { run: started.run.id, step: "plan", content: plan },
-    started.session_id,
-  );
-  expect(existsSync(join(outsideArtifacts, "latest", "plan.json"))).toBe(false);
-  rmSync(artifactDirectory);
-  expect(placedPlan.placement).toEqual({
-    kind: "pr-body-plan",
-    ref: "pr-body",
-  });
-  expect(placedPlan.retried).toBe(false);
-  expect(placedPlan.head_sha).toBe(
-    gitAt(started.worktree, ["rev-parse", "HEAD"]),
-  );
-  expect(
-    (await svc.pulls.get(repo.full_name, started.pr.number)).body,
-  ).toContain("## Implementation plan");
-
   const missingScreenshot = "later.png";
   const report = JSON.stringify({
     type: "execution-report",
@@ -572,7 +513,17 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
         path: missingScreenshot,
       },
     ],
+    reflection: {
+      went_well: ["Placement remained centralized."],
+      friction: [],
+      suggestions: [],
+      followups: [],
+    },
   });
+  expect(existsSync(join(outsideArtifacts, "latest", "execute.json"))).toBe(
+    false,
+  );
+  rmSync(artifactDirectory);
   await expect(
     svc.workflowRuns.stepOutput(
       repo.full_name,
@@ -750,14 +701,14 @@ test("step output validates, stamps, places, readies, and retries an accepted ar
   await expect(
     svc.workflowRuns.stepOutput(
       repo.full_name,
-      { run: started.run.id, step: "reflect", content: "{}" },
+      { run: started.run.id, step: "execute", content: "{}" },
       started.session_id,
     ),
   ).rejects.toMatchObject({ status: 422 });
-  expect(S.latestWorkflowArtifact(started.run.id, "reflect")).toBeNull();
+  expect(S.latestWorkflowArtifact(started.run.id, "execute")).not.toBeNull();
 }, 15_000);
 
-test("agentless e2e: step output drives all four steps to complete, then head advance makes them stale", async () => {
+test("agentless e2e: step output drives both steps to complete, then head advance makes them stale", async () => {
   const repo = S.getRepo("me", "workflow-run")!;
   const issue = S.createIssue(
     repo.id,
@@ -769,10 +720,8 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   const workflow = S.createWorkflow({
     name: "agentless",
     description: "",
-    planPrompt: "",
     executePrompt: "",
     verifyPrompt: "",
-    reflectPrompt: "",
   });
   const session = "33333333-3333-4333-8333-333333333333";
   const started = await svc.workflowRuns.start(
@@ -786,11 +735,10 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   );
   expect(S.getWorkflowRun(started.run.id)?.auto_mode).toBe(0);
 
-  // Nothing placed yet: every step incomplete.
+  // Nothing placed yet: both steps are incomplete.
   const initial = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
   });
-  expect(initial.steps.plan.complete).toBe(false);
   expect(initial.steps.execute.missing).toEqual([
     "no validated execution-report for current head",
     "head equals base",
@@ -803,13 +751,13 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   }).length;
   const dryRun = await svc.workflowRuns.stepInput(repo.full_name, {
     run: started.run.id,
-    step: "plan",
-    contract: "# Plan contract\n{{step}} {{worktreePath}} {{baseBranch}}",
+    step: "execute",
+    contract: "# Execute contract\n{{step}} {{worktreePath}} {{baseBranch}}",
   });
-  expect(dryRun.system_prompt).toContain("# Plan contract");
+  expect(dryRun.system_prompt).toContain("# Execute contract");
   expect(dryRun.user_prompt).toContain("## Inputs");
   expect(dryRun.input_files.map((f) => f.path)).toEqual([
-    expect.stringContaining("/plan/input/task.md"),
+    expect.stringContaining("/execute/input/task.md"),
   ]);
   expect(
     JSON.parse(S.getWorkflowRun(started.run.id)!.step_sessions_json),
@@ -820,29 +768,7 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
     }).length,
   ).toBe(handoffsBefore);
 
-  // Plan.
-  await svc.workflowRuns.stepOutput(
-    repo.full_name,
-    {
-      run: started.run.id,
-      step: "plan",
-      content: JSON.stringify({
-        type: "plan",
-        summary: "Plan it.",
-        changes: [{ area: "core", description: "Do it." }],
-        reuse: [],
-        out_of_scope: [],
-        verification: "Tests.",
-      }),
-    },
-    session,
-  );
-  expect(
-    (await svc.workflowRuns.status(repo.full_name, { run: started.run.id }))
-      .steps.plan.complete,
-  ).toBe(true);
-
-  // Execute needs a commit so the head is ahead of base.
+  // Execute plans the change itself and needs a commit so the head is ahead of base.
   writeFileSync(join(started.worktree, "impl.txt"), "work\n");
   gitAt(started.worktree, ["add", "impl.txt"]);
   gitAt(started.worktree, ["commit", "-m", "Implement"]);
@@ -858,6 +784,12 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
         acceptance: [{ criterion: "It completes", met: true, note: "Done." }],
         tests: [{ command: "npm test", passed: true, excerpt: "1 passed" }],
         evidence: [{ kind: "test", description: "focused tests" }],
+        reflection: {
+          went_well: ["Composition works"],
+          friction: [],
+          suggestions: [],
+          followups: [],
+        },
       }),
     },
     session,
@@ -892,22 +824,6 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
     findings: [],
   });
 
-  // Reflect.
-  await svc.workflowRuns.stepOutput(
-    repo.full_name,
-    {
-      run: started.run.id,
-      step: "reflect",
-      content: JSON.stringify({
-        type: "reflection",
-        went_well: ["Composition works"],
-        friction: [],
-        suggestions: [],
-        followups: [],
-      }),
-    },
-    session,
-  );
   const allComplete = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
   });
@@ -930,9 +846,6 @@ test("agentless e2e: step output drives all four steps to complete, then head ad
   expect(stale.steps.verify.missing).toEqual([
     "no validated verdict for current head",
   ]);
-  // Plan and reflect are head-independent, so they stay complete.
-  expect(stale.steps.plan.complete).toBe(true);
-  expect(stale.steps.reflect.complete).toBe(true);
   // The latest verdict summary survives staleness for the parent's rework read.
   expect(stale.steps.verify.latest_verdict?.event).toBe("pass");
 }, 20_000);
@@ -952,12 +865,13 @@ test("parent contract template specifies transitions, rework, and escalation", (
     "Transitions are driven only by `lh workflow step status`",
   );
   expect(contract).toMatch(/never use pane output|PR body marker/i);
-  // AC: the full step transition table.
-  expect(contract).toContain("plan complete");
+  // AC: the simplified step transition table.
+  expect(contract).toContain("launch Execute");
   expect(contract).toContain("execute complete");
   expect(contract).toContain("verdict `pass`");
   expect(contract).toContain("verdict `request_changes`");
   expect(contract).toContain("--status completed");
+  expect(contract).toContain("planning and reflection");
   // AC: rework increments the count, caps at 3, and restarts Execute; Verify is always fresh.
   expect(contract).toContain("--rework-count");
   expect(contract).toContain("would exceed 3");
@@ -977,10 +891,8 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   const workflow = S.createWorkflow({
     name: "state-wf",
     description: "",
-    planPrompt: "",
     executePrompt: "",
     verifyPrompt: "",
-    reflectPrompt: "",
   });
 
   // No run yet -> both lookups return null.

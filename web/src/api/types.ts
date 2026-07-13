@@ -277,7 +277,7 @@ export type Issue = IssueWire;
 /** A scheduled task (#880): a saved prompt an agent runs at one or more times of day. */
 export type ScheduledTask = ScheduledTaskWire;
 
-/** A global workflow definition (#997): Plan/Execute/Verify/Reflect prompt bundle. */
+/** A global workflow definition (#997): Execute/Verify prompt bundle. */
 export type Workflow = WorkflowWire;
 export type WorkflowStepContracts = WorkflowStepContractsWire;
 
