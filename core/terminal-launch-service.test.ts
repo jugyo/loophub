@@ -516,6 +516,26 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
     expect(result).toMatchObject({ backend: "herdr" });
   });
 
+  test("forwards the one-shot New Issue runtime and model to the Herdr command", async () => {
+    herdr.script.push(exitWith(0, WORKSPACE_JSON), exitWith(0), exitWith(0));
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-create",
+      label: "New issue",
+      agent: "codex",
+      model: "gpt-5.6-sol",
+    });
+
+    expect(herdr.calls[1]).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "lh issue new --repo 'me/proj' --codex --model 'gpt-5.6-sol'",
+        ),
+      ]),
+    );
+  });
+
   test("scheduled task creation also starts in a new workspace with the creation skill context", async () => {
     herdr.script.push(exitWith(0, WORKSPACE_JSON), exitWith(0), exitWith(0));
 

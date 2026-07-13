@@ -43,6 +43,8 @@ vi.mock("@/queries/terminal", () => ({
 
 function LaunchButton({
   workflow = "issue-dev",
+  agent,
+  model,
 }: {
   workflow?:
     | "issue-dev"
@@ -50,6 +52,8 @@ function LaunchButton({
     | "scheduled-task-create"
     | "resume"
     | "github-pr-export";
+  agent?: "claude-code" | "codex" | "grok";
+  model?: string;
 }) {
   const { launchTerminal } = useTerminalLauncher();
   return (
@@ -61,6 +65,8 @@ function LaunchButton({
           label: "dev #444",
           workflow,
           issueNumber: 444,
+          agent,
+          model,
         })
       }
     >
@@ -141,6 +147,41 @@ describe("TerminalController", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Launch" }));
 
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("forwards one-shot New issue agent and model overrides", async () => {
+    const rootRoute = createRootRoute({ component: Outlet });
+    const indexRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/",
+      component: () => (
+        <TerminalControllerProvider>
+          <ToastProvider>
+            <LaunchButton
+              workflow="issue-create"
+              agent="codex"
+              model="gpt-5.6-sol"
+            />
+          </ToastProvider>
+        </TerminalControllerProvider>
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([indexRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Launch" }));
+
+    expect(launchMutation.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow: "issue-create",
+        agent: "codex",
+        model: "gpt-5.6-sol",
+      }),
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
   });
 
   it("does not show a toast when the backend focused an existing pane (#578)", async () => {

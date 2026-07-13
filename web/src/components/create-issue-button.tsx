@@ -3,9 +3,18 @@
 // whose issue list is in view. The backend create API (useCreateIssue) stays for the skill/CLI
 // to use.
 
-import { Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
+import { useState } from "react";
+import type { CodingAgent } from "@/api/types";
+import { AgentModelPicker } from "@/components/agent-model-picker";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useSettings } from "@/queries/settings";
 
 // Unlike Issue/PR/Resume launches (#497), there is no issue number yet to make the herdr agent
 // name unique — the issue doesn't exist until the launched session files it. A random suffix
@@ -20,21 +29,54 @@ function launchSuffix(): string {
 
 export function CreateIssueButton({ repo }: { repo: string }) {
   const { launchTerminal } = useTerminalLauncher();
+  const { data: settings } = useSettings();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  function launchIssue(override?: { agent: CodingAgent; model: string }) {
+    setMenuOpen(false);
+    const model = override?.model.trim();
+    launchTerminal({
+      repo,
+      label: `New issue - ${launchSuffix()}`,
+      workflow: "issue-create",
+      ...(override ? { agent: override.agent, model: model || undefined } : {}),
+    });
+  }
 
   return (
-    <Button
-      aria-label="New issue"
-      title="New issue"
-      onClick={() =>
-        launchTerminal({
-          repo,
-          label: `New issue - ${launchSuffix()}`,
-          workflow: "issue-create",
-        })
-      }
-    >
-      <Plus className="size-4" />
-      New issue
-    </Button>
+    <div className="inline-flex">
+      <Button
+        aria-label="New issue"
+        title="New issue"
+        className="rounded-r-none"
+        onClick={() => launchIssue()}
+      >
+        <Plus className="size-4" />
+        New issue
+      </Button>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            aria-label="Choose agent and model"
+            title="Choose agent and model for this issue creation"
+            disabled={!settings}
+            className="rounded-l-none border-l border-primary-foreground/25 px-2"
+          >
+            <ChevronDown className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        {settings ? (
+          <DropdownMenuContent align="end" className="w-72 p-3">
+            <AgentModelPicker
+              settings={settings}
+              disabled={false}
+              actionVerb="Create"
+              actionIcon={<Plus className="size-4" />}
+              onSelect={(agent, model) => launchIssue({ agent, model })}
+            />
+          </DropdownMenuContent>
+        ) : null}
+      </DropdownMenu>
+    </div>
   );
 }

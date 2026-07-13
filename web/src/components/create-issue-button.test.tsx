@@ -5,6 +5,18 @@ const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
 vi.mock("@/components/terminal-controller", () => ({
   useTerminalLauncher: () => ({ launchTerminal }),
 }));
+vi.mock("@/queries/settings", () => ({
+  useSettings: () => ({
+    data: {
+      agents: {
+        "claude-code": { model: "opus" },
+        codex: { model: "gpt-5.5" },
+        grok: { model: "grok-code-fast-1" },
+      },
+      codingAgent: "claude-code",
+    },
+  }),
+}));
 
 import { CreateIssueButton } from "./create-issue-button";
 
@@ -29,6 +41,56 @@ describe("CreateIssueButton", () => {
       repo: "me/proj",
       label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
       workflow: "issue-create",
+    });
+  });
+
+  it("launches issue creation with a suggested one-shot agent and model", async () => {
+    render(<CreateIssueButton repo="me/proj" />);
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", {
+        name: "Choose agent and model",
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "gpt-5.6-sol" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create with Codex" }));
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
+      workflow: "issue-create",
+      agent: "codex",
+      model: "gpt-5.6-sol",
+    });
+  });
+
+  it("launches issue creation with a custom one-shot model", () => {
+    render(<CreateIssueButton repo="me/proj" />);
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", {
+        name: "Choose agent and model",
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.change(screen.getByLabelText("Custom model"), {
+      target: { value: "vendor/custom-preview" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create with Claude Code" }),
+    );
+
+    expect(launchTerminal).toHaveBeenCalledWith({
+      repo: "me/proj",
+      label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
+      workflow: "issue-create",
+      agent: "claude-code",
+      model: "vendor/custom-preview",
     });
   });
 

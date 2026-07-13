@@ -516,7 +516,7 @@ export function launchTerminalWorkflow(input: {
   workflowId?: number;
   session?: string;
   cwd?: string;
-  // One-shot issue-dev (Build) overrides from the issue-detail dropdown (#637).
+  // One-shot runtime/model overrides from Build or New issue dropdowns (#637, #1275).
   agent?: CodingAgent;
   model?: string;
   // Opt-in parallel attempt after the issue-detail confirmation (#1140).

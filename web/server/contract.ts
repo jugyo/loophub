@@ -358,8 +358,8 @@ export const methods: Record<string, MethodDef> = {
         workflowId: positiveInt,
         session: str,
         cwd: str,
-        // One-shot issue-dev (Build) overrides from the issue-detail dropdown (#637): force the
-        // runtime / session model for this launch only, without changing the persisted settings.
+        // One-shot Build or New issue overrides (#637, #1275): force the runtime / session model
+        // for this launch only, without changing persisted settings.
         agent: { enum: ["claude-code", "codex", "grok"] },
         model: str,
         // Explicit confirmation from issue detail to start a parallel PR/worktree attempt (#1140).

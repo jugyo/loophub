@@ -44,8 +44,8 @@ export interface OpenTerminalOptions {
   workflowId?: number;
   session?: string;
   cwd?: string;
-  // One-shot agent/model override for an issue-dev (Build) launch (#637) — the issue-detail Build
-  // dropdown sets these; the plain Build button omits them. They apply to this launch only.
+  // One-shot agent/model override for issue-dev (Build) or issue-create (New issue). Plain buttons
+  // omit them, and dropdown selections apply to this launch only.
   agent?: CodingAgent;
   model?: string;
 }

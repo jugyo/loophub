@@ -87,10 +87,9 @@ export interface TerminalLaunchInput {
   workflowId?: number;
   session?: string;
   cwd?: string;
-  // One-shot agent/model overrides for the issue-dev (Build) launch (#637). Set only by the
-  // issue-detail Build dropdown; unset for the plain Build button. They apply to this single
-  // `lh build` launch (mapped to --claude-code|--codex / --model) and never touch the persisted
-  // `codingAgent` / per-agent `defaultModel` settings.
+  // One-shot agent/model overrides from the issue-dev (Build) or issue-create (New issue)
+  // dropdowns (#637, #1275). Plain buttons leave these unset. They map to the corresponding CLI
+  // runtime/model flags and never touch persisted Settings defaults.
   agent?: CodingAgent;
   model?: string;
   // Opt-in parallel attempt from issue detail (#1140). The ordinary Build paths leave this unset,
@@ -473,6 +472,8 @@ export const terminal = {
       prNumber: input.prNumber,
       session: input.session,
       cwd: input.cwd,
+      codingAgent: input.workflow === "issue-create" ? input.agent : undefined,
+      model: input.workflow === "issue-create" ? input.model : undefined,
       env:
         issueCreateLaunchId != null
           ? { [ENV_ISSUE_CREATE_HERDR_LAUNCH]: issueCreateLaunchId }

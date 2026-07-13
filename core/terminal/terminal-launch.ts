@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { autoModeOnBuild, type CodingAgent, codingAgent } from "../config.ts";
+import { RUNTIMES } from "../runtimes.ts";
 import {
   type ScheduledTaskInboxContext,
   scheduledTaskInboxEnv,
@@ -107,6 +108,7 @@ export function commandForHerdrLaunch(input: {
   session?: string;
   cwd?: string;
   codingAgent?: CodingAgent;
+  model?: string;
   env?: Record<string, string>;
 }): string {
   const envPrefix = input.env
@@ -118,7 +120,14 @@ export function commandForHerdrLaunch(input: {
     envPrefix ? `${envPrefix} ${command}` : command;
   if (input.workflow === "issue-create") {
     // `lh issue new` is the recorded LoopHub entrypoint for the /lh-issue-create workflow.
-    return withEnv(`lh issue new --repo ${shellArg(input.repo)}`);
+    const agentFlag = input.codingAgent
+      ? ` ${RUNTIMES[input.codingAgent].buildFlag}`
+      : "";
+    const model = input.model?.trim();
+    const modelFlag = model ? ` --model ${shellArg(model)}` : "";
+    return withEnv(
+      `lh issue new --repo ${shellArg(input.repo)}${agentFlag}${modelFlag}`,
+    );
   }
   if (input.workflow === "scheduled-task-create") {
     const command = shellArg("/lh-scheduled-task-create");
