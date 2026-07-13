@@ -415,6 +415,11 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     expect(log.indexOf("worktree open")).toBeLessThan(
       log.indexOf("agent start"),
     );
+    // Detached (`--herdr`) must not steal the user's current herdr selection: even on a successful
+    // launch it never focuses the fresh workspace/tab it created (#1250). Placement stays guaranteed
+    // by `--tab`/`--workspace`, which is what the `agent start --tab` assertion above verifies.
+    expect(log).not.toContain("workspace focus");
+    expect(log).not.toContain("tab focus");
     expect(readFileSync(runtime.log, "utf8")).not.toContain(
       "'--permission-mode' 'auto'",
     );
@@ -514,6 +519,12 @@ test("workflow start --herdr reuses an already-open PR worktree workspace", () =
     expect(log).toMatch(/tab create --workspace w1 /);
     expect(log).toMatch(/agent start .+ --tab w1:t2 /);
     expect(log.indexOf("tab create")).toBeLessThan(log.indexOf("agent start"));
+    // As with the fresh-workspace path, the detached reused-workspace launch must not focus the new
+    // tab (#1250). This exercises the `tabId` focus branch; together with the fresh test's
+    // `createdWorkspace` branch, both post-launch focus paths are covered — and the tab-id-less
+    // `--workspace` fallback shares the same `focusOnSuccess` guard.
+    expect(log).not.toContain("workspace focus");
+    expect(log).not.toContain("tab focus");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }

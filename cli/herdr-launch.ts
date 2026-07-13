@@ -36,14 +36,19 @@ export interface HerdrLaunchResult {
 // tab; and when the worktree open can't be resolved (herdr not running, worktree_not_found, …) it
 // falls back to a plain repo-root tab (still a new tab, not a split). On any failure to start the
 // agent it cleans up the tab/workspace it created and throws HerdrLaunchError with a reproduce hint;
-// on success it best-effort focuses the new tab/workspace and closes the leftover seed pane.
+// on success it best-effort focuses the new tab/workspace (unless `focusOnSuccess` is false) and
+// closes the leftover seed pane. Focusing is the default (`lh build --herdr`); a launcher that must
+// not disturb the user's current selection (the Workflow parent launch, #1250) opts out with
+// `focusOnSuccess: false` — placement is guaranteed by `--tab`/`--workspace`, not focus, so the
+// agent still lands in the right workspace either way.
 export async function launchAgentInWorktreeHerdr(input: {
   repo: TerminalLaunchRepo;
   worktree: string;
   command: string;
   label: string;
+  focusOnSuccess?: boolean;
 }): Promise<HerdrLaunchResult> {
-  const { repo, worktree, command, label } = input;
+  const { repo, worktree, command, label, focusOnSuccess = true } = input;
   // Best-effort herdr runner for the ancillary tab/workspace calls (open, create, focus, close).
   // spawnSync suits this short-lived CLI process (unlike lh-web, whose single server process spawns
   // herdr async); all-ignore stdio keeps herdr's own JSON/errors out of the launch output, and it
@@ -151,15 +156,19 @@ export async function launchAgentInWorktreeHerdr(input: {
   // Bring the new agent's tab/workspace to the front (every call above used --no-focus so creation
   // wouldn't yank focus mid-launch) and close the tab's leftover empty seed pane — best-effort,
   // since the agent is already running: a focus/close failure must not fail the launch, only leave
-  // one harmless empty pane behind.
-  if (createdWorkspace && workspaceId) {
-    await runHerdrCmd(herdrWorkspaceFocusArgv(repo, workspaceId));
-  } else if (tabId) {
-    await runHerdrCmd(herdrTabFocusArgv(repo, tabId));
-  } else if (placementWorkspaceId) {
-    // Reused workspace whose new tab id failed to parse: the agent launched via
-    // `--workspace placementWorkspaceId`, so bring that workspace forward (#873).
-    await runHerdrCmd(herdrWorkspaceFocusArgv(repo, placementWorkspaceId));
+  // one harmless empty pane behind. A detached launcher opts out of the focus step (focusOnSuccess
+  // false) so it never steals the user's current selection; the seed-pane close below is cleanup,
+  // not focus, and stays unconditional (closing a --no-focus pane doesn't move what's on screen).
+  if (focusOnSuccess) {
+    if (createdWorkspace && workspaceId) {
+      await runHerdrCmd(herdrWorkspaceFocusArgv(repo, workspaceId));
+    } else if (tabId) {
+      await runHerdrCmd(herdrTabFocusArgv(repo, tabId));
+    } else if (placementWorkspaceId) {
+      // Reused workspace whose new tab id failed to parse: the agent launched via
+      // `--workspace placementWorkspaceId`, so bring that workspace forward (#873).
+      await runHerdrCmd(herdrWorkspaceFocusArgv(repo, placementWorkspaceId));
+    }
   }
   if (tabId && rootPaneId) {
     await runHerdrCmd(herdrPaneCloseArgv(repo, rootPaneId));
