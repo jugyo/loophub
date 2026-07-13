@@ -198,24 +198,28 @@ function IssueHeader({
           ) : null}
           {issue.state === "open" ? "Close" : "Reopen"}
         </Button>
-        {buildState === "build" ? (
-          <>
-            <BuildControls owner={owner} repo={repo} issue={issue} />
-            <StartWorkflowControls owner={owner} repo={repo} issue={issue} />
-          </>
-        ) : (
-          <>
-            <BuildStatusLabel state={buildState} />
-            {buildState === "building" && linkedPull ? (
-              <BuildControls
-                owner={owner}
-                repo={repo}
-                issue={issue}
-                newAttemptPullNumber={linkedPull.number}
-              />
-            ) : null}
-          </>
-        )}
+        {/* No implementation-start action or status label on a closed issue —
+            only Reopen (above) remains until the issue is reopened (#1256). */}
+        {issue.state === "open" ? (
+          buildState === "build" ? (
+            <>
+              <BuildControls owner={owner} repo={repo} issue={issue} />
+              <StartWorkflowControls owner={owner} repo={repo} issue={issue} />
+            </>
+          ) : (
+            <>
+              <BuildStatusLabel state={buildState} />
+              {buildState === "building" && linkedPull ? (
+                <BuildControls
+                  owner={owner}
+                  repo={repo}
+                  issue={issue}
+                  newAttemptPullNumber={linkedPull.number}
+                />
+              ) : null}
+            </>
+          )
+        ) : null}
       </div>
     </div>
   );

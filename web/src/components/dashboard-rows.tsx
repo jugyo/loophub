@@ -213,7 +213,8 @@ export function IssueRow({
 // Hidden (not replaced by a label — that's issue-detail.tsx only, by request)
 // whenever the issue's primary linked PR is open or merged (issueBuildButtonState,
 // #598) — a closed-unmerged (rejected) PR does NOT hide it, since the issue still
-// needs a fresh attempt.
+// needs a fresh attempt. Also hidden on a closed issue: no new work is started
+// from a closed issue until it is reopened.
 function RowBuildButton({
   owner,
   repo,
@@ -226,7 +227,7 @@ function RowBuildButton({
   const { launchTerminal } = useTerminalLauncher();
   const [isLoading, startLoading] = useFixedLoading();
   const state = issueBuildButtonState(issue);
-  if (state !== "build") return null;
+  if (issue.state !== "open" || state !== "build") return null;
   return (
     <button
       type="button"

@@ -373,6 +373,20 @@ describe("IssueRow", () => {
     ).toBeTruthy();
   });
 
+  // A closed issue starts no new work: the Build button is hidden until it is
+  // reopened, regardless of linked-PR state (#1256).
+  it("hides the Build button on a closed issue", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ number: 7, state: "closed" })}
+      />,
+    );
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
+  });
+
   it("renders the Build button always visible (not hover-revealed)", async () => {
     renderInRouter(
       <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,

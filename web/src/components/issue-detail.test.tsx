@@ -704,6 +704,36 @@ describe("IssueDetail", () => {
     expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
   });
 
+  // #1256: a closed issue starts no new work. Build / Start workflow / New
+  // attempt and the Building/Merged status label are all hidden; only Reopen
+  // remains until the issue is reopened.
+  it("shows only Reopen on a closed issue, with no implementation-start actions", async () => {
+    const closedNoPr: Issue = {
+      ...issue,
+      state: "closed",
+      linked_pull_request: null,
+    };
+    renderDetail(() => closedNoPr, false, {
+      "workflows/list": () => [{ id: 9, name: "Standard" }],
+    });
+
+    expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start workflow" })).toBeNull();
+  });
+
+  it("hides the Building label and New attempt on a closed issue with an open linked PR", async () => {
+    // The default issue has an open linked PR (#30): open, this shows a Building
+    // label plus New attempt. Closed, neither should appear — only Reopen.
+    const closedWithOpenPr: Issue = { ...issue, state: "closed" };
+    renderDetail(() => closedWithOpenPr);
+
+    expect(await screen.findByRole("button", { name: "Reopen" })).toBeTruthy();
+    expect(screen.queryByText("Building")).toBeNull();
+    expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
+  });
+
   it("makes Workflow auto mode explicit before launching", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr, false, {
