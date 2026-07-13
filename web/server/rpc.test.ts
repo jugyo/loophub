@@ -15,6 +15,7 @@ let ERROR_CODES: typeof import("./rpc.ts").ERROR_CODES;
 let MAX_RPC_BATCH_SIZE: typeof import("./rpc.ts").MAX_RPC_BATCH_SIZE;
 let db: typeof import("../../core/db.ts").db;
 let svc: typeof import("../../core/service.ts");
+let S: typeof import("../../core/store.ts");
 let ServiceError: typeof import("../../core/errors.ts").ServiceError;
 let setWebRuntimeConfig: typeof import("./runtime-config.ts").setWebRuntimeConfig;
 let repoPath: string;
@@ -33,6 +34,7 @@ beforeAll(async () => {
   ));
   ({ db } = await import("../../core/db.ts"));
   svc = await import("../../core/service.ts");
+  S = await import("../../core/store.ts");
   ({ ServiceError } = await import("../../core/errors.ts"));
   ({ setWebRuntimeConfig } = await import("./runtime-config.ts"));
 
@@ -113,6 +115,51 @@ test("events/list preserves ascending cursor, repo filter, and limit semantics",
     303,
   ]);
   expect(second.result[0].id).toBeGreaterThan(first.result[0].id);
+});
+
+test("workflowRuns/history exposes only the requested run's lifecycle events", async () => {
+  const repo = svc.repos.getByFullName("me/proj")!;
+  const workflow = S.createWorkflow({
+    name: "rpc-history",
+    description: "",
+    planPrompt: "",
+    executePrompt: "",
+    verifyPrompt: "",
+    reflectPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 701,
+    prNumber: 702,
+    status: "running",
+    currentStep: "plan",
+    parentSessionId: "55555555-5555-4555-8555-555555555555",
+  });
+  const otherRun = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 701,
+    prNumber: 702,
+    status: "running",
+    currentStep: "plan",
+    parentSessionId: "66666666-6666-4666-8666-666666666666",
+  });
+  S.emitEvent(repo.id, "workflow_run.started", "rpc-parent", { id: run.id });
+  S.emitEvent(repo.id, "workflow_run.started", "other-parent", {
+    id: otherRun.id,
+  });
+
+  const response: any = await call("workflowRuns/history", {
+    repo: repo.full_name,
+    run: run.id,
+  });
+  expect(response.result).toHaveLength(1);
+  expect(response.result[0]).toMatchObject({
+    type: "workflow_run.started",
+    label: "Run started",
+    actor: "rpc-parent",
+  });
 });
 
 test("issues/create accepts an explicit null target_branch", async () => {

@@ -319,6 +319,13 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.workflowRuns.stateForPull(p.repo, { pull: p.number }),
   },
+  "workflowRuns/history": {
+    description:
+      "List persisted lifecycle events for one Workflow run, oldest first and scoped by run id.",
+    params: params({ repo, run: positiveInt }, ["repo", "run"]),
+    result: anyArray,
+    handler: (p) => svc.workflowRuns.history(p.repo, { run: p.run }),
+  },
 
   // ---- terminal launch ----
   "terminal/config": {

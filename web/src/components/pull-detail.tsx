@@ -212,7 +212,14 @@ function WorkflowRunSection({
   number: number;
 }) {
   const { data } = useWorkflowRunForPull(owner, repo, number);
-  return <WorkflowRunStatusSection owner={owner} repo={repo} state={data} />;
+  return (
+    <WorkflowRunStatusSection
+      owner={owner}
+      repo={repo}
+      state={data}
+      showHistory
+    />
+  );
 }
 
 function PullHeader({

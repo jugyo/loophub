@@ -5,6 +5,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  getWorkflowRunHistory,
   getWorkflowRunStateForIssue,
   getWorkflowRunStateForPull,
 } from "@/api/client";
@@ -33,5 +34,20 @@ export function useWorkflowRunForPull(
   return useQuery({
     queryKey: queryKeys.workflowRunForPull(full, number),
     queryFn: () => getWorkflowRunStateForPull(full, number),
+  });
+}
+
+/** Run-scoped lifecycle history. Disabled until the PR detail dialog is opened. */
+export function useWorkflowRunHistory(
+  owner: string,
+  repo: string,
+  run: number,
+  enabled: boolean,
+) {
+  const full = `${owner}/${repo}`;
+  return useQuery({
+    queryKey: queryKeys.workflowRunHistory(full, run),
+    queryFn: () => getWorkflowRunHistory(full, run),
+    enabled,
   });
 }

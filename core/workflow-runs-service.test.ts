@@ -961,3 +961,106 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   expect(byPull?.id).toBe(run.id);
   expect(byPull?.workflow_name).toBe("state-wf");
 });
+
+test("history returns readable lifecycle events scoped to one Workflow run (#1290)", () => {
+  const repo = S.createRepo("me/workflow-history", REPO_PATH);
+  const workflow = S.createWorkflow({
+    name: "history-wf",
+    description: "",
+    planPrompt: "",
+    executePrompt: "",
+    verifyPrompt: "",
+    reflectPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 10,
+    prNumber: 20,
+    status: "running",
+    currentStep: "execute",
+    parentSessionId: "33333333-3333-4333-8333-333333333333",
+  });
+  const otherRun = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 10,
+    prNumber: 20,
+    status: "running",
+    currentStep: "plan",
+    parentSessionId: "44444444-4444-4444-8444-444444444444",
+  });
+
+  S.emitEvent(repo.id, "workflow_run.started", "parent", {
+    id: run.id,
+    issue_number: 10,
+    pr_number: 20,
+  });
+  S.emitEvent(repo.id, "workflow_run.updated", "parent", {
+    id: run.id,
+    status: "running",
+    current_step: "execute",
+    rework_count: 1,
+    issue_number: 10,
+    pr_number: 20,
+  });
+  S.emitEvent(repo.id, "workflow_step.launched", "execute-agent", {
+    id: run.id,
+    step: "execute",
+    issue_number: 10,
+    pr_number: 20,
+  });
+  S.emitEvent(repo.id, "workflow_artifact.placed", "execute-agent", {
+    id: run.id,
+    step: "execute",
+    type: "execution-report",
+    target_kind: "pr-body",
+    target_ref: "Evidence",
+    issue_number: 10,
+    pr_number: 20,
+  });
+  // Same PR and lifecycle namespace, but a different run id: must not leak into the result.
+  S.emitEvent(repo.id, "workflow_step.launched", "other-agent", {
+    id: otherRun.id,
+    step: "plan",
+    issue_number: 10,
+    pr_number: 20,
+  });
+  S.emitEvent(repo.id, "pull_request.updated", "parent", {
+    id: run.id,
+    number: 20,
+  });
+  for (let index = 0; index < 1001; index++) {
+    S.emitEvent(repo.id, "workflow_run.updated", "parent", {
+      id: run.id,
+      status: index === 1000 ? "completed" : "running",
+      current_step: "reflect",
+      rework_count: 1,
+      issue_number: 10,
+      pr_number: 20,
+    });
+  }
+
+  const history = svc.workflowRuns.history(repo.full_name, { run: run.id });
+  expect(history.slice(0, 4).map((event) => event.type)).toEqual([
+    "workflow_run.started",
+    "workflow_run.updated",
+    "workflow_step.launched",
+    "workflow_artifact.placed",
+  ]);
+  expect(history.slice(0, 4).map((event) => event.label)).toEqual([
+    "Run started",
+    "Run state updated",
+    "Execute step started",
+    "Execution report artifact placed",
+  ]);
+  expect(history[1]).toMatchObject({
+    step: "execute",
+    actor: "parent",
+    description: "Status: Running. Current step: Execute. Rework count: 1.",
+  });
+  expect(history[3].description).toContain("Placement: pr-body (Evidence)");
+  // A complete history includes the newest event even after the old 1,000-event boundary.
+  expect(history).toHaveLength(1005);
+  expect(history.at(-1)?.label).toBe("Run completed");
+});

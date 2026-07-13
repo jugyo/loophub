@@ -108,6 +108,7 @@ import {
   scheduledTaskRunJSON,
   sessionUsageJSON,
   workflowJSON,
+  workflowRunHistoryEventJSON,
   workflowRunStateJSON,
 } from "../serialize.ts";
 import type {
@@ -186,7 +187,7 @@ import {
   worktreePath,
 } from "../worktree-path.ts";
 
-export { workflowJSON, workflowRunStateJSON };
+export { workflowJSON, workflowRunHistoryEventJSON, workflowRunStateJSON };
 
 import {
   classifyWorktree,

@@ -40,6 +40,7 @@ import type {
   SessionUsageWire,
   UserWire,
   WebConfigWire,
+  WorkflowRunHistoryEventWire,
   WorkflowRunStateWire,
   WorkflowRunVerdictSummaryWire,
   WorkflowStepContractsWire,
@@ -283,6 +284,7 @@ export type WorkflowStepContracts = WorkflowStepContractsWire;
 
 /** Display state of a Workflow run linked to an issue / PR (#1008). */
 export type WorkflowRunState = WorkflowRunStateWire;
+export type WorkflowRunHistoryEvent = WorkflowRunHistoryEventWire;
 export type WorkflowRunVerdictSummary = WorkflowRunVerdictSummaryWire;
 
 /** One fire of a scheduled task (#880) — meta only; the output stays on the herdr side. */

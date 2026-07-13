@@ -37,6 +37,7 @@ import type {
   TerminalLaunchResult,
   WebConfig,
   Workflow,
+  WorkflowRunHistoryEvent,
   WorkflowRunState,
   WorkflowStepContracts,
 } from "./types";
@@ -388,6 +389,11 @@ export function getWorkflowRunStateForPull(repo: string, number: number) {
     repo,
     number,
   });
+}
+
+/** Persisted lifecycle events for one Workflow run, fetched only when its history dialog opens. */
+export function getWorkflowRunHistory(repo: string, run: number) {
+  return rpc<WorkflowRunHistoryEvent[]>("workflowRuns/history", { repo, run });
 }
 
 // --- global settings ---

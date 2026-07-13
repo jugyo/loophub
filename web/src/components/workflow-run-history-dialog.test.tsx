@@ -1,0 +1,155 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
+import type { WorkflowRunState } from "@/api/types";
+import { WorkflowRunStatusSection } from "./workflow-run-status";
+
+const RUN: WorkflowRunState = {
+  id: 7,
+  workflow_id: 3,
+  workflow_name: "standard",
+  status: "running",
+  current_step: "execute",
+  rework_count: 1,
+  issue_number: 42,
+  pr_number: 99,
+  created_at: "2026-07-10T00:00:00Z",
+  updated_at: "2026-07-10T01:00:00Z",
+  latest_verdict: null,
+};
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+function renderSection(fetchImpl: typeof fetch) {
+  vi.stubGlobal("fetch", fetchImpl);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={RUN}
+        showHistory
+      />
+    </QueryClientProvider>,
+  );
+}
+
+describe("Workflow run history dialog", () => {
+  it("fetches on open and shows metadata and separate rework step events", async () => {
+    const fetchMock = mockRpcFetch({
+      "workflowRuns/history": () => [
+        {
+          id: 1,
+          type: "workflow_run.started",
+          label: "Run started",
+          description: "Workflow run #7 started.",
+          step: null,
+          actor: "parent-agent",
+          created_at: "2026-07-10T00:00:00Z",
+        },
+        {
+          id: 2,
+          type: "workflow_step.launched",
+          label: "Execute step started",
+          description: "Execute step execution started.",
+          step: "execute",
+          actor: "execute-agent-1",
+          created_at: "2026-07-10T00:10:00Z",
+        },
+        {
+          id: 3,
+          type: "workflow_step.launched",
+          label: "Execute step started",
+          description: "Execute step execution started.",
+          step: "execute",
+          actor: "execute-agent-2",
+          created_at: "2026-07-10T00:30:00Z",
+        },
+      ],
+    });
+    renderSection(fetchMock);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "View history" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Workflow run #7 history",
+    });
+    expect(within(dialog).getByText("standard · run #7")).toBeTruthy();
+    expect(within(dialog).getByText("Current step")).toBeTruthy();
+    expect(within(dialog).getByText("Rework count")).toBeTruthy();
+    expect(within(dialog).getByText("Started")).toBeTruthy();
+    expect(within(dialog).getByText("Updated")).toBeTruthy();
+    expect(
+      await within(dialog).findAllByText("Execute step started"),
+    ).toHaveLength(2);
+    expect(within(dialog).getByText("Actor: execute-agent-1")).toBeTruthy();
+    expect(within(dialog).getByText("Actor: execute-agent-2")).toBeTruthy();
+    const runStarted = within(dialog).getByText("Run started").closest("li");
+    expect(runStarted).not.toBeNull();
+    expect(
+      within(runStarted as HTMLElement).getByText("Step: N/A"),
+    ).toBeTruthy();
+    expect(rpcCall("workflowRuns/history")?.params).toMatchObject({
+      repo: "me/loophub",
+      run: 7,
+    });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows loading and failure states and closes with the button", async () => {
+    let reject!: (reason: unknown) => void;
+    const pending = new Promise<never>((_resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    renderSection(
+      mockRpcFetch({
+        "workflowRuns/history": () => pending,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "View history" }));
+    expect(
+      await screen.findByText(/Loading Workflow run history/),
+    ).toBeTruthy();
+
+    reject(new RpcFault(500, "database unavailable"));
+    expect(
+      await screen.findByText(/Failed to load Workflow run history/),
+    ).toBeTruthy();
+    expect(screen.getByText(/database unavailable/)).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close Workflow run history" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows an empty state when the run has no persisted lifecycle events", async () => {
+    renderSection(
+      mockRpcFetch({
+        "workflowRuns/history": () => [],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "View history" }));
+    expect(
+      await screen.findByText(
+        "No lifecycle events have been recorded for this run.",
+      ),
+    ).toBeTruthy();
+  });
+});

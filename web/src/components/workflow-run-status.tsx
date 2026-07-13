@@ -12,9 +12,13 @@
 // Renders nothing when the issue / PR has no run.
 
 import { Link } from "@tanstack/react-router";
+import { History } from "lucide-react";
+import { useState } from "react";
 import type { WorkflowRunState } from "@/api/types";
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { WorkflowRunHistoryDialog } from "@/components/workflow-run-history-dialog";
 
 const STEP_ORDER = ["execute", "verify"] as const;
 type WorkflowStep = (typeof STEP_ORDER)[number];
@@ -42,11 +46,14 @@ export function WorkflowRunStatusSection({
   owner,
   repo,
   state,
+  showHistory = false,
 }: {
   owner: string;
   repo: string;
   state: WorkflowRunState | null | undefined;
+  showHistory?: boolean;
 }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
   if (!state) return null;
 
   const status = STATUS_META[state.status] ?? {
@@ -94,7 +101,28 @@ export function WorkflowRunStatusSection({
         {state.status === "blocked" ? (
           <BlockedNotice owner={owner} repo={repo} state={state} />
         ) : null}
+
+        {showHistory ? (
+          <div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setHistoryOpen(true)}
+            >
+              <History className="size-3.5" /> View history
+            </Button>
+          </div>
+        ) : null}
       </div>
+      {historyOpen ? (
+        <WorkflowRunHistoryDialog
+          owner={owner}
+          repo={repo}
+          state={state}
+          onClose={() => setHistoryOpen(false)}
+        />
+      ) : null}
     </section>
   );
 }

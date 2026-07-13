@@ -1375,6 +1375,103 @@ export function workflowRunStateJSON(input: {
   };
 }
 
+/** One persisted lifecycle event shown in a Workflow run's history dialog. */
+export interface WorkflowRunHistoryEventWire {
+  id: number;
+  type: string;
+  label: string;
+  description: string;
+  step: string | null;
+  actor: string;
+  created_at: string;
+}
+
+function workflowStepLabel(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function workflowEventPayload(row: S.EventRow): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(row.payload);
+    return value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Normalize stored event payloads into stable, reader-facing timeline entries. */
+export function workflowRunHistoryEventJSON(
+  row: S.EventRow,
+): WorkflowRunHistoryEventWire {
+  const payload = workflowEventPayload(row);
+  const step =
+    typeof payload.step === "string"
+      ? payload.step
+      : typeof payload.current_step === "string"
+        ? payload.current_step
+        : null;
+  const stepLabel = workflowStepLabel(step);
+  let label = row.type
+    .replace(/^workflow_/u, "")
+    .replace(/[._-]+/gu, " ")
+    .replace(/^./u, (value) => value.toUpperCase());
+  let description = "Workflow lifecycle event recorded.";
+
+  if (row.type === "workflow_run.started") {
+    label = "Run started";
+    description = `Workflow run #${String(payload.id ?? "")} started.`;
+  } else if (row.type === "workflow_run.updated") {
+    const status =
+      typeof payload.status === "string" ? payload.status : "updated";
+    label =
+      status === "completed"
+        ? "Run completed"
+        : status === "stopped"
+          ? "Run stopped"
+          : status === "blocked"
+            ? "Run blocked"
+            : "Run state updated";
+    const details = [
+      `Status: ${workflowStepLabel(status) ?? status}.`,
+      stepLabel ? `Current step: ${stepLabel}.` : null,
+      typeof payload.rework_count === "number"
+        ? `Rework count: ${payload.rework_count}.`
+        : null,
+    ].filter((value): value is string => value !== null);
+    description = details.join(" ");
+  } else if (row.type === "workflow_step.launched") {
+    label = `${stepLabel ?? "Workflow"} step started`;
+    description = `${stepLabel ?? "Workflow"} step execution started.`;
+  } else if (row.type === "workflow_artifact.placed") {
+    const artifactType =
+      typeof payload.type === "string" ? payload.type : "workflow";
+    const artifactLabel = workflowStepLabel(artifactType.replaceAll("-", " "));
+    label = `${artifactLabel ?? "Workflow"} artifact placed`;
+    const target =
+      typeof payload.target_kind === "string"
+        ? ` Placement: ${payload.target_kind}${
+            typeof payload.target_ref === "string"
+              ? ` (${payload.target_ref})`
+              : ""
+          }.`
+        : "";
+    description = `${artifactLabel ?? "Workflow"} output from the ${stepLabel ?? "workflow"} step was placed.${target}`;
+  }
+
+  return {
+    id: row.id,
+    type: row.type,
+    label,
+    description,
+    step,
+    actor: row.actor,
+    created_at: row.created_at,
+  };
+}
+
 // Work-duration basis values (#456): tells the frontend which signal grounded the `total` figure,
 // so it can render an appropriate label rather than a bare number. Unlike the implementation/review
 // phase split below, `total` always reflects the PR's *current* state — it keeps growing through

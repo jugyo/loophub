@@ -611,6 +611,31 @@
       }
     },
     {
+      "name": "workflowRuns/history",
+      "description": "List persisted lifecycle events for one Workflow run, oldest first and scoped by run id.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "repo",
+          "run"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
       "name": "terminal/config",
       "description": "Terminal launch backend, always herdr — terminal workflows launch as external Herdr sessions (#562).",
       "params": {

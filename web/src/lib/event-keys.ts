@@ -33,6 +33,8 @@ export const queryKeys = {
     ["workflow-run", "issue", full, number] as const,
   workflowRunForPull: (full: string, number: number) =>
     ["workflow-run", "pull", full, number] as const,
+  workflowRunHistory: (full: string, run: number) =>
+    ["workflow-run", "history", full, run] as const,
 };
 
 /**
@@ -142,12 +144,16 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     // Fall back to the whole prefix defensively when the repo or numbers are somehow absent.
     const issueNumber = payload?.issue_number;
     const prNumber = payload?.pr_number ?? payload?.number;
+    const runId = payload?.id;
     if (repo) {
       if (typeof issueNumber === "number") {
         keys.push([...queryKeys.workflowRunForIssue(repo, issueNumber)]);
       }
       if (typeof prNumber === "number") {
         keys.push([...queryKeys.workflowRunForPull(repo, prNumber)]);
+      }
+      if (typeof runId === "number") {
+        keys.push([...queryKeys.workflowRunHistory(repo, runId)]);
       }
       if (typeof issueNumber !== "number" && typeof prNumber !== "number") {
         keys.push(["workflow-run"]);

@@ -63,6 +63,26 @@ export function listEvents(
     .all(...params) as EventRow[];
 }
 
+// Workflow lifecycle events for one run, oldest first. Match the run id directly rather than the
+// issue / PR numbers also carried in these payloads: a PR may have successive runs, and its history
+// dialog must never blend their timelines.
+export function eventsForWorkflowRun(
+  repoId: number,
+  runId: number,
+): EventRow[] {
+  return db
+    .query(
+      `SELECT * FROM events
+       WHERE repo_id = ?
+         AND (type GLOB 'workflow_run.*'
+           OR type GLOB 'workflow_step.*'
+           OR type GLOB 'workflow_artifact.*')
+         AND json_extract(payload, '$.id') = ?
+       ORDER BY id ASC`,
+    )
+    .all(repoId, runId) as EventRow[];
+}
+
 // The timestamp of the PR's earliest `pull_request.ready_for_review` event, or null if it never
 // fired. Both transitions that emit this event type (draft→ready, and re-review after change
 // requests — see service.ts `readyForReview`) carry the same `{ number, draft: false }` payload, so

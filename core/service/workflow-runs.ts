@@ -28,6 +28,7 @@ import {
 import { git } from "../git.ts";
 import { resolveWorktreeIdentity } from "../resume.ts";
 import type {
+  WorkflowRunHistoryEventWire,
   WorkflowRunStateWire,
   WorkflowRunVerdictSummaryWire,
 } from "../serialize.ts";
@@ -77,6 +78,7 @@ import {
   repoOr404,
   S,
   ServiceError,
+  workflowRunHistoryEventJSON,
   workflowRunStateJSON,
 } from "./shared.ts";
 
@@ -1445,5 +1447,22 @@ export const workflowRuns = {
     const r = repoOr404(name);
     const run = S.latestWorkflowRunForPull(r.id, input.pull);
     return run ? workflowRunState(run) : null;
+  },
+
+  // On-demand audit history for the PR detail dialog. The store query matches the persisted run id,
+  // never just the PR number, so successive runs on one PR remain isolated.
+  history(
+    name: string,
+    input: { run: number },
+    _sessionId?: string | null,
+  ): WorkflowRunHistoryEventWire[] {
+    const r = repoOr404(name);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    return S.eventsForWorkflowRun(r.id, run.id).map(
+      workflowRunHistoryEventJSON,
+    );
   },
 };
