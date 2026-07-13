@@ -3,7 +3,15 @@ import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { agentModel } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { isClaudeSessionId, RUNTIME_CLAUDE_CODE } from "../../core/resume.ts";
-import { HERDR_ID } from "../../core/terminal/terminal-launch.ts";
+import {
+  HERDR_ID,
+  parseHerdrRootPaneId,
+  parseHerdrTabId,
+} from "../../core/terminal/terminal-launch.ts";
+import {
+  parseWorkflowTabPanes,
+  workflowPaneGridPlan,
+} from "../../core/terminal/workflow-pane-layout.ts";
 import {
   type WorkflowContract,
   workflowContractText,
@@ -164,6 +172,107 @@ function preflightStepLaunch(): void {
   if (!commandAvailable("claude")) {
     fail("workflow launch-step requires claude on PATH");
   }
+}
+
+function runHerdrPaneLayoutCommand(
+  sessionName: string,
+  args: string[],
+  captureStdout = false,
+): string {
+  const result = spawnSync("herdr", ["--session", sessionName, ...args], {
+    encoding: "utf8",
+    stdio: captureStdout ? ["ignore", "pipe", "inherit"] : "inherit",
+    timeout: 15_000,
+  });
+  if (result.error)
+    fail(`failed to layout Workflow panes: ${result.error.message}`);
+  if (result.signal) {
+    fail(
+      `failed to layout Workflow panes: herdr terminated by signal ${result.signal}`,
+    );
+  }
+  if (result.status == null || result.status !== 0) {
+    fail(
+      `failed to layout Workflow panes: herdr exited with status ${result.status}`,
+    );
+  }
+  return captureStdout ? (result.stdout ?? "") : "";
+}
+
+function layoutWorkflowTabPanes(
+  sessionName: string,
+  tabId: string,
+  runId: number,
+): void {
+  const paneList = runHerdrPaneLayoutCommand(
+    sessionName,
+    ["pane", "list"],
+    true,
+  );
+  const panes = parseWorkflowTabPanes(paneList, tabId, runId);
+  if (!panes) {
+    fail(
+      `failed to layout Workflow panes: tab ${tabId} is missing or contains a non-Workflow pane`,
+    );
+  }
+  const plan = workflowPaneGridPlan(panes.map((pane) => pane.paneId));
+  if (plan.stagingPaneIds.length === 0) return;
+
+  const workspaceId = panes[0].workspaceId;
+  const created = runHerdrPaneLayoutCommand(
+    sessionName,
+    ["tab", "create", "--workspace", workspaceId, "--no-focus"],
+    true,
+  );
+  const stagingTabId = parseHerdrTabId(created);
+  const stagingRootPaneId = parseHerdrRootPaneId(created);
+  if (!stagingTabId || !stagingRootPaneId) {
+    fail(
+      "failed to layout Workflow panes: herdr tab create returned invalid JSON",
+    );
+  }
+
+  // pane.move refuses a zoomed source/target tab. The Workflow tab itself is the intended visual
+  // surface, so reveal its full grid before rebuilding it while leaving every other tab untouched.
+  runHerdrPaneLayoutCommand(sessionName, [
+    "pane",
+    "zoom",
+    plan.anchorPaneId,
+    "--off",
+  ]);
+  for (const paneId of plan.stagingPaneIds) {
+    runHerdrPaneLayoutCommand(sessionName, [
+      "pane",
+      "move",
+      paneId,
+      "--tab",
+      stagingTabId,
+      "--split",
+      "down",
+      "--target-pane",
+      stagingRootPaneId,
+      "--ratio",
+      "0.5",
+      "--no-focus",
+    ]);
+  }
+  for (const placement of plan.placements) {
+    runHerdrPaneLayoutCommand(sessionName, [
+      "pane",
+      "move",
+      placement.paneId,
+      "--tab",
+      tabId,
+      "--split",
+      placement.split,
+      "--target-pane",
+      placement.targetPaneId,
+      "--ratio",
+      String(placement.ratio),
+      "--no-focus",
+    ]);
+  }
+  runHerdrPaneLayoutCommand(sessionName, ["tab", "close", stagingTabId]);
 }
 
 function requestedSessionId(): string | undefined {
@@ -369,6 +478,7 @@ async function launchStep(): Promise<void> {
     fail("--json is not supported for workflow launch-step");
   }
   preflightStepLaunch();
+  const tabId = inheritedHerdrTabId();
   const actorSessionId = await writeSession();
   const result = await runOp(() =>
     s.workflowRuns.launchStep(
@@ -380,7 +490,7 @@ async function launchStep(): Promise<void> {
         contract: contractText(step),
         model: modelFlag(),
         auto: flags.auto === true,
-        tabId: inheritedHerdrTabId(),
+        tabId,
       },
       actorSessionId,
     ),
@@ -420,7 +530,20 @@ async function launchStep(): Promise<void> {
   if (launched.status == null || launched.status !== 0) {
     fail(`herdr exited with status ${launched.status}`);
   }
+  // The child process is live once agent start succeeds, so persist that truth before ancillary
+  // layout work. A layout failure remains a visible non-zero exit; it must not leave a running child
+  // unrecorded, and launch-step never retries automatically (an explicit retry is a new session).
   await confirm();
+  if (tabId) {
+    layoutWorkflowTabPanes(result.herdr.sessionName, tabId, result.run.id);
+  } else {
+    // Preserve the legacy/headless launch path that had no placement selector. There is no safe
+    // target to rebuild in this case, so make the missing visual guarantee explicit without moving
+    // whichever unrelated tab happens to be focused.
+    console.error(
+      "warning: skipped Workflow pane layout because no parent Herdr tab id was available",
+    );
+  }
 }
 
 async function runUpdate(): Promise<void> {

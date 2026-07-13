@@ -59,12 +59,14 @@ function git(args: string[]): void {
 function fakeRuntime(
   opts: {
     agentStartExit?: number;
+    paneListJson?: string;
     worktreeOpenJson?: string;
     tabCreateJson?: string;
   } = {},
 ) {
   const {
     agentStartExit = 0,
+    paneListJson = "",
     worktreeOpenJson = "",
     tabCreateJson = "",
   } = opts;
@@ -79,6 +81,7 @@ if [ "$1" = "--version" ]; then exit 0; fi
 printf '%s\\n' "$*" >> "$HERDR_LOG"
 case " $* " in
   *" worktree open "*) printf '%s' '${worktreeOpenJson}'; exit 0 ;;
+  *" pane list "*) printf '%s' '${paneListJson}'; exit 0 ;;
   *" tab create "*) printf '%s' '${tabCreateJson}'; exit 0 ;;
   *" agent start "*) exit ${agentStartExit} ;;
 esac
@@ -245,6 +248,128 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   expect(existsSync(body.worktree)).toBe(true);
   expect(existsSync(body.lock_path)).toBe(true);
   expect(body.parent.user_prompt).not.toMatch(/^\/lh-/m);
+});
+
+test("workflow launch-step rebuilds only its parent tab as a staged grid", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Grid child panes",
+    "--body",
+    "Keep Workflow panes balanced",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const started = run([
+    "workflow",
+    "start",
+    issue,
+    "--repo",
+    REPO,
+    "--workflow",
+    "standard",
+    "--no-launch",
+    "--json",
+  ]);
+  expect(started.exitCode, started.stderr).toBe(0);
+  const body = JSON.parse(started.stdout);
+  const paneListJson = JSON.stringify({
+    result: {
+      panes: [
+        {
+          pane_id: "w1:p2",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: `workflow-${body.session_id.slice(0, 8)}`,
+        },
+        {
+          pane_id: "w1:p3",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: `workflow plan #${body.run.id}`,
+        },
+        {
+          pane_id: "w1:p4",
+          tab_id: "w1:t2",
+          workspace_id: "w1",
+          label: "unrelated",
+        },
+      ],
+    },
+  });
+  const runtime = fakeRuntime({
+    paneListJson,
+    tabCreateJson: JSON.stringify({
+      result: {
+        tab: { tab_id: "w1:t3" },
+        root_pane: { pane_id: "w1:p10" },
+      },
+    }),
+  });
+  try {
+    const launched = run(
+      [
+        "workflow",
+        "launch-step",
+        "--repo",
+        REPO,
+        "--run",
+        String(body.run.id),
+        "--step",
+        "plan",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+        HERDR_TAB_ID: "w1:t1",
+        LOOPHUB_SESSION_ID: body.session_id,
+      },
+    );
+
+    expect(launched.exitCode, launched.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    expect(log).toMatch(/agent start .+ --tab w1:t1 /);
+    expect(log).toContain("pane list");
+    expect(log).toContain("tab create --workspace w1 --no-focus");
+    expect(log).toContain(
+      "pane move w1:p3 --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
+    );
+    expect(log).toContain(
+      "pane move w1:p3 --tab w1:t1 --split right --target-pane w1:p2 --ratio 0.5 --no-focus",
+    );
+    expect(log).toContain("tab close w1:t3");
+    expect(log).not.toContain("pane move w1:p4");
+
+    const legacyLaunch = run(
+      [
+        "workflow",
+        "launch-step",
+        "--repo",
+        REPO,
+        "--run",
+        String(body.run.id),
+        "--step",
+        "plan",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+        HERDR_PANE_TAB_ID: "",
+        HERDR_TAB: "",
+        HERDR_TAB_ID: "",
+        LOOPHUB_SESSION_ID: body.session_id,
+      },
+    );
+    expect(legacyLaunch.exitCode, legacyLaunch.stderr).toBe(0);
+    expect(legacyLaunch.stderr).toContain(
+      "warning: skipped Workflow pane layout because no parent Herdr tab id was available",
+    );
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
 });
 
 test("workflow start --herdr opens the PR worktree workspace and starts the parent in its tab", () => {
