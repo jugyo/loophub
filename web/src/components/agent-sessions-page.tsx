@@ -72,6 +72,7 @@ const CHART_MODES: Array<{ id: ChartMode; label: string }> = [
 
 const RUNTIME_CLAUDE_CODE = "claude-code";
 const RUNTIME_CODEX = "codex";
+const RUNTIME_GROK = "grok";
 const AGENT_COLORS = [
   "hsl(160 84% 39%)",
   "hsl(199 89% 48%)",
@@ -152,6 +153,7 @@ function agentKey(session: AgentSession): string {
 function agentLabel(key: string): string {
   if (key === RUNTIME_CLAUDE_CODE) return "Claude Code";
   if (key === RUNTIME_CODEX) return "Codex";
+  if (key === RUNTIME_GROK) return "Grok Build";
   return key;
 }
 

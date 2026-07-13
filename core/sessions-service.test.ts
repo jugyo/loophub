@@ -343,6 +343,7 @@ test("sessions.costSummary returns minimal per-agent period costs", () => {
       tokens_per_5m_history: Array(24).fill(0),
     },
     { agent: "codex", month: 11, week: 8, day: 6 },
+    { agent: "grok", month: 0, week: 0, day: 0 },
   ]);
 });
 
@@ -403,6 +404,7 @@ test("sessions.costSummary counts legacy build sessions as Claude Code", () => {
       tokens_per_5m_history: Array(24).fill(0),
     },
     { agent: "codex", month: 0, week: 0, day: 0 },
+    { agent: "grok", month: 0, week: 0, day: 0 },
   ]);
 });
 

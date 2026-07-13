@@ -42,6 +42,10 @@ const CODING_AGENT_OPTIONS: {
     value: "codex",
     label: "Codex",
   },
+  {
+    value: "grok",
+    label: "Grok Build",
+  },
 ];
 
 // Serializes a model+effort pair into one <select> option value. "::" is safe as a separator:

@@ -234,6 +234,30 @@ describe("terminal.launch issue-dev spawns `lh build --herdr` (#584)", () => {
     ]);
   });
 
+  test("forwards the dropdown grok override as --grok --model", async () => {
+    lhDev.script.push(exitWith(0));
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-dev",
+      issueNumber: 1,
+      agent: "grok",
+      model: "grok-code-fast-1",
+    });
+
+    expect(lhDev.calls).toEqual([
+      [
+        "lh",
+        "build",
+        "me/proj/1",
+        "--herdr",
+        "--grok",
+        "--model",
+        "grok-code-fast-1",
+      ],
+    ]);
+  });
+
   test("appends --new-attempt for an explicitly confirmed parallel launch (#1140)", async () => {
     lhDev.script.push(exitWith(0));
 

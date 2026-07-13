@@ -49,7 +49,7 @@ const WORK_BASIS_LABEL: Record<
 };
 
 function agentRuntimeLabel(runtime: string): string {
-  if (runtime === "claude-code" || runtime === "codex") {
+  if (runtime === "claude-code" || runtime === "codex" || runtime === "grok") {
     return CODING_AGENT_LABELS[runtime];
   }
   return runtime;

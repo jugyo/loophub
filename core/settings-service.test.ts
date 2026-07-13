@@ -27,6 +27,11 @@ test("settings.get defaults to auto mode off and the default model/effort for ev
         effort: "medium",
       },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -46,6 +51,11 @@ test("settings.update persists a per-agent autoModeOnBuild and is reflected by s
         effort: "medium",
       },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -65,6 +75,11 @@ test("settings.update sets one agent's autoModeOnBuild without disturbing anothe
     agents: {
       "claude-code": { autoModeOnBuild: true, model: "opus", effort: "medium" },
       codex: { autoModeOnBuild: true, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -79,6 +94,11 @@ test("settings.update sets one agent's autoModeOnBuild without disturbing anothe
         effort: "medium",
       },
       codex: { autoModeOnBuild: true, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -112,6 +132,11 @@ test("settings.update omitting autoModeOnBuild preserves the persisted value (#4
     agents: {
       "claude-code": { autoModeOnBuild: true, model: "opus", effort: "medium" },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -133,6 +158,11 @@ test("settings.update persists a per-agent model and is reflected by settings.ge
         effort: "medium",
       },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -161,6 +191,11 @@ test("settings.update sets one agent's model without disturbing another's (#594)
       codex: {
         autoModeOnBuild: false,
         model: "gpt-5.5-codex",
+        effort: "medium",
+      },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
         effort: "medium",
       },
     },
@@ -201,6 +236,11 @@ test("settings.update omitting model preserves the persisted value (#594)", () =
         effort: "medium",
       },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -218,6 +258,11 @@ test("settings.update persists a per-agent effort and is reflected by settings.g
     agents: {
       "claude-code": { autoModeOnBuild: false, model: "opus", effort: "high" },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -245,6 +290,11 @@ test("settings.update sets one agent's effort without disturbing another's (#682
         effort: "xhigh",
       },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "low" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -283,6 +333,11 @@ test("settings.update omitting effort preserves the persisted value (#682)", () 
         effort: "xhigh",
       },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -301,6 +356,11 @@ test("settings.update persists codingAgent and is reflected by settings.get (#51
         effort: "medium",
       },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "codex",
     devCostLimitUsd: 10,
@@ -319,6 +379,23 @@ test("settings.update rejects an unknown codingAgent (#516)", () => {
   );
 });
 
+test("settings.update accepts grok as an agent-scoped and default coding agent", () => {
+  svc.settings.update({ agent: "grok", model: "grok-4", effort: "high" });
+  svc.settings.update({ codingAgent: "grok" });
+  const got = svc.settings.get();
+  expect(got.codingAgent).toBe("grok");
+  expect(got.agents.grok).toEqual({
+    autoModeOnBuild: false,
+    model: "grok-4",
+    effort: "high",
+  });
+
+  // Restore defaults so later tests see the untouched baseline.
+  svc.settings.update({ agent: "grok", model: "grok-code-fast-1" });
+  svc.settings.update({ agent: "grok", effort: "medium" });
+  svc.settings.update({ codingAgent: "claude-code" });
+});
+
 test("settings.update omitting codingAgent preserves the persisted value (#516)", () => {
   svc.settings.update({ codingAgent: "codex" });
   svc.settings.update({});
@@ -330,6 +407,11 @@ test("settings.update omitting codingAgent preserves the persisted value (#516)"
         effort: "medium",
       },
       codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnBuild: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
     },
     codingAgent: "codex",
     devCostLimitUsd: 10,

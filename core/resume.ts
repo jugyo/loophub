@@ -90,6 +90,10 @@ export const RUNTIME_CLAUDE_CODE = "claude-code";
 // with this runtime but are not resumable by `lh resume` (resolveRuntimeResume reports
 // unknown-runtime) — Codex resume support is a separate step.
 export const RUNTIME_CODEX = "codex";
+// `lh build --grok` launches the dev session in Grok Build instead. Like Codex, Grok sessions are
+// recorded with this runtime but are not resumable by `lh resume` (resolveRuntimeResume reports
+// unknown-runtime) — Grok resume support is out of scope.
+export const RUNTIME_GROK = "grok";
 
 // The effective runtime of a session row, with backward-compat for sessions registered before the
 // runtime column existed. A null-runtime row registered under the build/dev session agent predates

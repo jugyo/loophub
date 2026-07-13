@@ -238,9 +238,11 @@ async function launchIssueDevHerdr(
     // flag so `lh build` resolves the default itself (unchanged plain-Build behavior).
     ...(options?.agent === "codex"
       ? ["--codex"]
-      : options?.agent === "claude-code"
-        ? ["--claude-code"]
-        : []),
+      : options?.agent === "grok"
+        ? ["--grok"]
+        : options?.agent === "claude-code"
+          ? ["--claude-code"]
+          : []),
     // One-shot session model (#637); omitted when the dropdown left it blank, so `lh build` falls
     // back to the configured per-agent default.
     ...(model ? ["--model", model] : []),

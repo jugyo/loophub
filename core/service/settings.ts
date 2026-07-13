@@ -22,8 +22,11 @@ function hasAtMostTwoDecimalPlaces(value: number): boolean {
 function validateAgentScopedSetting(
   agent: CodingAgent | undefined,
 ): asserts agent is CodingAgent {
-  if (agent !== "claude-code" && agent !== "codex") {
-    throw new ServiceError(422, "agent must be one of: claude-code, codex");
+  if (agent !== "claude-code" && agent !== "codex" && agent !== "grok") {
+    throw new ServiceError(
+      422,
+      "agent must be one of: claude-code, codex, grok",
+    );
   }
 }
 
@@ -64,6 +67,11 @@ export const settings = {
           autoModeOnBuild: autoModeOnBuild("codex"),
           model: agentModel("codex"),
           effort: agentEffort("codex"),
+        },
+        grok: {
+          autoModeOnBuild: autoModeOnBuild("grok"),
+          model: agentModel("grok"),
+          effort: agentEffort("grok"),
         },
       },
       codingAgent: codingAgent(),
@@ -114,11 +122,12 @@ export const settings = {
     if (
       input.codingAgent !== undefined &&
       input.codingAgent !== "claude-code" &&
-      input.codingAgent !== "codex"
+      input.codingAgent !== "codex" &&
+      input.codingAgent !== "grok"
     ) {
       throw new ServiceError(
         422,
-        "codingAgent must be one of: claude-code, codex",
+        "codingAgent must be one of: claude-code, codex, grok",
       );
     }
     if (input.devCostLimitUsd !== undefined) {

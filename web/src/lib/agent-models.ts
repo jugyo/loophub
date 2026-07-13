@@ -8,6 +8,7 @@ import type { CodingAgent } from "@/api/types";
 export const CODING_AGENT_LABELS: Record<CodingAgent, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
+  grok: "Grok Build",
 };
 
 // Suggested models per agent (#610), shown as a picklist for people who care about exact model
@@ -30,6 +31,9 @@ export const MODEL_SUGGESTIONS: Record<CodingAgent, string[]> = {
     "gpt-5.4-mini",
     "gpt-5.3-codex-spark",
   ],
+  // TENTATIVE grok model identifiers — not verified against a running `grok` CLI (out of scope,
+  // #594-style static list). Saved values outside this list are still injected into the dropdown.
+  grok: ["grok-code-fast-1", "grok-4", "grok-4-fast", "grok-3"],
 };
 
 // Reasoning-effort levels offered per agent for the Settings screen's model+effort picker
@@ -39,4 +43,6 @@ export const MODEL_SUGGESTIONS: Record<CodingAgent, string[]> = {
 export const EFFORT_SUGGESTIONS: Record<CodingAgent, string[]> = {
   "claude-code": ["low", "medium", "high", "xhigh", "max"],
   codex: ["minimal", "low", "medium", "high"],
+  // TENTATIVE grok effort levels — grok has no verified user-facing reasoning-effort scale here.
+  grok: ["low", "medium", "high"],
 };

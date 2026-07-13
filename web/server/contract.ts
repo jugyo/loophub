@@ -188,11 +188,11 @@ export const methods: Record<string, MethodDef> = {
     description:
       "Update instance-level config.json settings, preserving unrelated fields. autoModeOnBuild/model/effort require agent (#474, #593, #594, #682, #1027).",
     params: params({
-      agent: { enum: ["claude-code", "codex"] },
+      agent: { enum: ["claude-code", "codex", "grok"] },
       autoModeOnBuild: { type: "boolean" },
       model: strNonEmpty,
       effort: strNonEmpty,
-      codingAgent: { enum: ["claude-code", "codex"] },
+      codingAgent: { enum: ["claude-code", "codex", "grok"] },
       devCostLimitUsd,
       session_id: sid,
     }),
@@ -360,7 +360,7 @@ export const methods: Record<string, MethodDef> = {
         cwd: str,
         // One-shot issue-dev (Build) overrides from the issue-detail dropdown (#637): force the
         // runtime / session model for this launch only, without changing the persisted settings.
-        agent: { enum: ["claude-code", "codex"] },
+        agent: { enum: ["claude-code", "codex", "grok"] },
         model: str,
         // Explicit confirmation from issue detail to start a parallel PR/worktree attempt (#1140).
         newAttempt: { type: "boolean" },

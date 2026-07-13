@@ -20,6 +20,9 @@ import {
 const AGENT_LABELS: Record<CodingAgent, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
+  // Scheduled tasks stay claude-code/codex-only (Grok runtime is out of scope for scheduled tasks);
+  // this label only keeps the Record exhaustive over CodingAgent.
+  grok: "Grok Build",
 };
 
 // Parse a free-text times field ("09:00, 18:00" / newline / space separated) into a string array.

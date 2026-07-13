@@ -3,10 +3,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 // Which coding agent `lh build` launches by default (#516). Mirrors the `DevRuntime` values
-// cli/dev.ts's --claude-code / --codex flags select between.
-export type CodingAgent = "claude-code" | "codex";
+// cli/dev.ts's --claude-code / --codex / --grok flags select between.
+export type CodingAgent = "claude-code" | "codex" | "grok";
 
-export const CODING_AGENTS: readonly CodingAgent[] = ["claude-code", "codex"];
+export const CODING_AGENTS: readonly CodingAgent[] = [
+  "claude-code",
+  "codex",
+  "grok",
+];
 
 // Per-agent settings (#593). Kept as its own shape (rather than flattening fields onto
 // GlobalConfig) so a future setting can be added per-agent without another top-level field.
@@ -25,16 +29,19 @@ export interface AgentConfig {
 
 // Default per-agent model (#594) used by agentModel() when config.json has no override.
 // claude-code accepts the bare "opus" alias (resolved by the claude CLI itself); codex has no
-// alias support so its default is the full model name.
+// alias support so its default is the full model name. grok's default is xAI's coding model
+// (TENTATIVE — the exact grok model identifier is not verified against a running `grok` CLI here).
 export const DEFAULT_AGENT_MODEL: Record<CodingAgent, string> = {
   "claude-code": "opus",
   codex: "gpt-5.5",
+  grok: "grok-code-fast-1",
 };
 
 // Default per-agent effort (#682) used by agentEffort() when config.json has no override.
 export const DEFAULT_AGENT_EFFORT: Record<CodingAgent, string> = {
   "claude-code": "medium",
   codex: "medium",
+  grok: "medium",
 };
 
 // Default top-level cumulative cost (USD) at which a `lh build` implementation agent is stopped.
@@ -170,7 +177,9 @@ export function devCostLimitUsd(): number {
 }
 
 export function normalizeCodingAgent(value: unknown): CodingAgent {
-  return value === "codex" ? "codex" : "claude-code";
+  if (value === "codex") return "codex";
+  if (value === "grok") return "grok";
+  return "claude-code";
 }
 
 // The coding agent `lh build` launches when neither --claude-code nor --codex is passed (#516).

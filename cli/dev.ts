@@ -226,27 +226,35 @@ export function parseDevTarget(target: string): { repo?: string; id: number } {
 
 // ---- runtime selection ----
 //
-// `lh build` can launch the interactive dev session in Claude Code (default) or Codex (#458).
-// The worktree/PR/session preparation is runtime-independent; only the final spawn differs.
-export type DevRuntime = "claude-code" | "codex";
+// `lh build` can launch the interactive dev session in Claude Code (default), Codex (#458), or
+// Grok Build. The worktree/PR/session preparation is runtime-independent; only the final spawn
+// differs.
+export type DevRuntime = "claude-code" | "codex" | "grok";
 
-// Resolve the runtime from the mutually-exclusive `--claude-code` / `--codex` flags. Passing
-// both is ambiguous — fail loudly rather than pick one. When neither flag is passed, `defaultRuntime`
-// (the `codingAgent` app setting, #516) decides; omitting it too falls back to the historical
-// default (Claude Code), so plain `lh build <id>` behavior is unchanged for callers that don't pass it
-// (e.g. existing tests).
+// Resolve the runtime from the mutually-exclusive `--claude-code` / `--codex` / `--grok` flags.
+// Passing more than one is ambiguous — fail loudly rather than pick one. When no flag is passed,
+// `defaultRuntime` (the `codingAgent` app setting, #516) decides; omitting it too falls back to the
+// historical default (Claude Code), so plain `lh build <id>` behavior is unchanged for callers that
+// don't pass it (e.g. existing tests).
 export function resolveDevRuntime(flags: {
   claudeCode?: boolean;
   codex?: boolean;
+  grok?: boolean;
   defaultRuntime?: DevRuntime;
 }): DevRuntime {
-  if (flags.claudeCode && flags.codex) {
+  const selected = [
+    flags.claudeCode ? "--claude-code" : null,
+    flags.codex ? "--codex" : null,
+    flags.grok ? "--grok" : null,
+  ].filter((f): f is string => f !== null);
+  if (selected.length > 1) {
     throw new Error(
-      "--claude-code and --codex are mutually exclusive (pass at most one)",
+      `${selected.join(", ")} are mutually exclusive (pass at most one)`,
     );
   }
   if (flags.claudeCode) return "claude-code";
   if (flags.codex) return "codex";
+  if (flags.grok) return "grok";
   return flags.defaultRuntime ?? "claude-code";
 }
 
@@ -280,6 +288,41 @@ export function buildCodexArgs({
   const args: string[] = [];
   if (auto) args.push("--dangerously-bypass-approvals-and-sandbox");
   else args.push(...buildCodexSandboxArgs(loopHubHome));
+  if (model) {
+    const m = display(model).trim();
+    if (m) args.push("--model", m);
+  }
+  args.push(slashCommand);
+  return args;
+}
+
+// Build the `grok` argv for the interactive dev session. Mirrors buildCodexArgs: grok takes the
+// initial prompt as a positional, so the same `/lh-build <id>` slash command the other runtimes
+// receive is handed to grok verbatim — the rest of the context (worktree cwd, registered session,
+// linked PR) is prepared before spawn and is runtime-independent. grok has no sandbox concept
+// (claude-only --sandbox/--allow are rejected up front by the CLI, same as codex) and no
+// --session-id / --name / --settings equivalent.
+//
+// NOTE: the grok headless launch flags are TENTATIVE — no running `grok` CLI was available to verify
+// against at implementation time. The positional prompt + `--model` + auto-bypass shape follows the
+// codex pattern and must be re-verified against the official `grok` CLI before relying on it.
+export function buildGrokArgs({
+  slashCommand,
+  auto,
+  model,
+}: {
+  slashCommand: string;
+  // Opt into grok's auto-mode equivalent: skip approval prompts and auto-run tools, matching Claude
+  // Code's --auto (`--permission-mode auto`) and Codex's --dangerously-bypass-approvals-and-sandbox.
+  // `--force` is grok's closest single flag for that (TENTATIVE — see the NOTE above).
+  auto?: boolean;
+  // Model for the session (`--model <name>`). No name validation — an unknown name is the grok CLI's
+  // error to raise. Omitted => grok's own default. Control characters are stripped (see display()),
+  // same invariant as buildCodexArgs' model.
+  model?: string;
+}): string[] {
+  const args: string[] = [];
+  if (auto) args.push("--force");
   if (model) {
     const m = display(model).trim();
     if (m) args.push("--model", m);
@@ -350,11 +393,17 @@ export function buildRuntimeLaunch({
   slashCommand: string;
   sessionName?: string;
   model?: string;
-}): { bin: "claude" | "codex"; args: string[] } {
+}): { bin: "claude" | "codex" | "grok"; args: string[] } {
   if (runtime === "codex") {
     return {
       bin: "codex",
       args: buildCodexArgs({ slashCommand, auto, model }),
+    };
+  }
+  if (runtime === "grok") {
+    return {
+      bin: "grok",
+      args: buildGrokArgs({ slashCommand, auto, model }),
     };
   }
   return {

@@ -208,8 +208,8 @@ export interface HerdrAgentRead {
   rows: number | null;
 }
 
-/** Coding agent `lh build` launches by default when neither --claude-code nor --codex is passed (#516). */
-export type CodingAgent = "claude-code" | "codex";
+/** Coding agent `lh build` launches by default when no --claude-code / --codex / --grok flag is passed (#516). */
+export type CodingAgent = "claude-code" | "codex" | "grok";
 
 /** Per-agent settings (#593, #594, #682). */
 export interface AgentSettings {

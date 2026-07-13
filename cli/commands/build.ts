@@ -11,6 +11,7 @@ import {
   LH_BUILD_SESSION_AGENT,
   RUNTIME_CLAUDE_CODE,
   RUNTIME_CODEX,
+  RUNTIME_GROK,
   resolveWorktreeIdentity,
 } from "../../core/resume.ts";
 import * as Store from "../../core/store.ts";
@@ -47,7 +48,7 @@ import {
 export async function run(): Promise<void> {
   const target = sub;
   const usageLine =
-    "usage: lh build <owner>/<repo>/<id> | <id> [--repo owner/name] [--new-attempt] [--claude-code | --codex] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]";
+    "usage: lh build <owner>/<repo>/<id> | <id> [--repo owner/name] [--new-attempt] [--claude-code | --codex | --grok] [--model <name>] [--sandbox [--allow d1,d2]] [--auto] [--verbose] [--herdr] [--force]";
   if (!target) {
     fail(usageLine);
   }
@@ -79,14 +80,15 @@ export async function run(): Promise<void> {
   const sessionId = randomUUID();
   const slashCommand = `/lh-build ${issue}`;
 
-  // Resolve the agent runtime (#458): Claude Code by default, Codex with --codex, or the
-  // configured `codingAgent` app setting (#516) when neither flag is passed. Passing both
-  // flags is ambiguous and fails before any side effect.
+  // Resolve the agent runtime (#458): Claude Code by default, Codex with --codex, Grok Build with
+  // --grok, or the configured `codingAgent` app setting (#516) when no flag is passed. Passing more
+  // than one flag is ambiguous and fails before any side effect.
   let runtime: DevRuntime;
   try {
     runtime = resolveDevRuntime({
       claudeCode: flags["claude-code"] === true,
       codex: flags.codex === true,
+      grok: flags.grok === true,
       defaultRuntime: codingAgent(),
     });
   } catch (e: any) {
@@ -106,13 +108,13 @@ export async function run(): Promise<void> {
     fail(`--model requires a value\n${usageLine}`);
   }
 
-  // The sandbox managed-settings are a `claude` launch option with no Codex equivalent —
-  // reject the combination up front rather than silently dropping the flags. --auto and
-  // --model both have Codex equivalents (#499, #594; see buildCodexArgs) so they're allowed
-  // with --codex.
-  if (runtime === "codex" && useSandbox) {
+  // The sandbox managed-settings are a `claude` launch option with no Codex or Grok equivalent —
+  // reject the combination up front rather than silently dropping the flags. --auto and --model
+  // both have Codex/Grok equivalents (#499, #594; see buildCodexArgs/buildGrokArgs) so they're
+  // allowed with --codex/--grok.
+  if ((runtime === "codex" || runtime === "grok") && useSandbox) {
     fail(
-      "--sandbox/--allow are only supported with the claude-code runtime (remove them or drop --codex)",
+      "--sandbox/--allow are only supported with the claude-code runtime (remove them or drop --codex/--grok)",
     );
   }
 
@@ -162,9 +164,15 @@ export async function run(): Promise<void> {
       agent: LH_BUILD_SESSION_AGENT,
       session: sessionId,
       // Record which runtime the session we are about to spawn runs in, so `lh resume` picks
-      // the resume command by runtime rather than inferring it from the agent. Codex sessions
-      // are recorded too, but `lh resume` cannot re-enter them yet (see RUNTIME_CODEX).
-      runtime: runtime === "codex" ? RUNTIME_CODEX : RUNTIME_CLAUDE_CODE,
+      // the resume command by runtime rather than inferring it from the agent. Codex and Grok
+      // sessions are recorded too, but `lh resume` cannot re-enter them yet (see RUNTIME_CODEX /
+      // RUNTIME_GROK).
+      runtime:
+        runtime === "codex"
+          ? RUNTIME_CODEX
+          : runtime === "grok"
+            ? RUNTIME_GROK
+            : RUNTIME_CLAUDE_CODE,
       // This is an implementation (dev) session; record its kind (#298) so it surfaces in the
       // PR's related-sessions list as a dev session. (setPullSession also stamps 'dev' when it
       // attributes the session to the PR — this just sets it at the registration point too.)

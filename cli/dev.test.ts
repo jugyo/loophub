@@ -27,6 +27,7 @@ import {
   acquireDevLock,
   buildClaudeArgs,
   buildCodexArgs,
+  buildGrokArgs,
   buildManagedSettings,
   buildResumeArgs,
   buildRuntimeLaunch,
@@ -498,6 +499,26 @@ test("resolveDevRuntime prefers an explicit flag over defaultRuntime (#516)", ()
   ).toBe("codex");
 });
 
+test("resolveDevRuntime selects grok for --grok", () => {
+  expect(resolveDevRuntime({ grok: true })).toBe("grok");
+  expect(resolveDevRuntime({ defaultRuntime: "grok" })).toBe("grok");
+  expect(resolveDevRuntime({ grok: true, defaultRuntime: "codex" })).toBe(
+    "grok",
+  );
+});
+
+test("resolveDevRuntime rejects grok combined with another runtime flag", () => {
+  expect(() => resolveDevRuntime({ grok: true, codex: true })).toThrow(
+    /mutually exclusive/,
+  );
+  expect(() => resolveDevRuntime({ grok: true, claudeCode: true })).toThrow(
+    /mutually exclusive/,
+  );
+  expect(() =>
+    resolveDevRuntime({ grok: true, codex: true, claudeCode: true }),
+  ).toThrow(/mutually exclusive/);
+});
+
 test("buildCodexArgs grants LOOPHUB_HOME as a sandbox writable root before the prompt", () => {
   expect(
     buildCodexArgs({
@@ -609,6 +630,59 @@ test("buildRuntimeLaunch returns codex and Codex argv for codex", () => {
   );
   expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toContain(
     "'sandbox_workspace_write.writable_roots=",
+  );
+});
+
+test("buildGrokArgs keeps the slash command last and omits --model / auto flags by default", () => {
+  expect(buildGrokArgs({ slashCommand: "/lh-build 42" })).toEqual([
+    "/lh-build 42",
+  ]);
+});
+
+test("buildGrokArgs adds the auto-bypass flag before the prompt when auto is set", () => {
+  expect(buildGrokArgs({ slashCommand: "/lh-build 42", auto: true })).toEqual([
+    "--force",
+    "/lh-build 42",
+  ]);
+});
+
+test("buildGrokArgs passes --model through verbatim and keeps the slash command last", () => {
+  const args = buildGrokArgs({
+    slashCommand: "/lh-build 42",
+    model: "grok-code-fast-1",
+  });
+  expect(args[args.indexOf("--model") + 1]).toBe("grok-code-fast-1");
+  expect(args[args.length - 1]).toBe("/lh-build 42");
+});
+
+test("buildGrokArgs strips control characters from the model before argv", () => {
+  const args = buildGrokArgs({
+    slashCommand: "/lh-build 42",
+    model: "\x1b]0;x\x07grok-4\r",
+  });
+  expect(args[args.indexOf("--model") + 1]).toBe("grok-4");
+});
+
+test("buildRuntimeLaunch returns grok and Grok argv for grok", () => {
+  const launch = buildRuntimeLaunch({
+    runtime: "grok",
+    sessionId: "sid-1",
+    slashCommand: "/lh-build 42",
+    sessionName: "#7 fix it",
+    model: "grok-code-fast-1",
+    auto: true,
+  });
+
+  expect(launch.bin).toBe("grok");
+  expect(launch.args).toEqual(
+    buildGrokArgs({
+      slashCommand: "/lh-build 42",
+      model: "grok-code-fast-1",
+      auto: true,
+    }),
+  );
+  expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toMatch(
+    /^grok /,
   );
 });
 

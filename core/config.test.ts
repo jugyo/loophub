@@ -184,6 +184,34 @@ test("codingAgent defaults to claude-code and reflects updateConfig (#516)", asy
 test("normalizeCodingAgent falls back to claude-code for an unknown value (#516)", async () => {
   const { normalizeCodingAgent } = await import("./config.ts");
   expect(normalizeCodingAgent("codex")).toBe("codex");
+  expect(normalizeCodingAgent("grok")).toBe("grok");
   expect(normalizeCodingAgent("bogus")).toBe("claude-code");
   expect(normalizeCodingAgent(undefined)).toBe("claude-code");
+});
+
+test("grok is a coding agent with its own default model/effort", async () => {
+  const {
+    CODING_AGENTS,
+    DEFAULT_AGENT_MODEL,
+    DEFAULT_AGENT_EFFORT,
+    agentModel,
+    agentEffort,
+    codingAgent,
+    updateConfig,
+    updateAgentDefaultModel,
+  } = await import("./config.ts");
+
+  expect(CODING_AGENTS).toContain("grok");
+  expect(agentModel("grok")).toBe(DEFAULT_AGENT_MODEL.grok);
+  expect(agentEffort("grok")).toBe(DEFAULT_AGENT_EFFORT.grok);
+
+  updateConfig({ codingAgent: "grok" });
+  expect(codingAgent()).toBe("grok");
+
+  // A per-agent override for grok is honored and doesn't disturb the default fallback for others.
+  updateAgentDefaultModel("grok", "grok-4");
+  expect(agentModel("grok")).toBe("grok-4");
+  expect(agentModel("codex")).toBe(DEFAULT_AGENT_MODEL.codex);
+
+  updateConfig({ codingAgent: "claude-code" });
 });
