@@ -199,6 +199,7 @@ export function IssueRow({
               pull={pull}
               className="pl-7 pr-0"
               dimInactive
+              popoverTrigger="pull-link"
             />
           ))}
         </div>

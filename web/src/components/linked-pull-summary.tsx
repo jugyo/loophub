@@ -226,6 +226,7 @@ export function LinkedPullSummaryRow({
   showTitle = false,
   dimInactive = false,
   attemptComparison = false,
+  popoverTrigger = "row",
 }: {
   owner: string;
   repo: string;
@@ -236,6 +237,8 @@ export function LinkedPullSummaryRow({
   dimInactive?: boolean;
   /** Show issue-detail comparison metrics and review/close actions. */
   attemptComparison?: boolean;
+  /** Limit hover activation to the PR link while keeping the row as the popover boundary. */
+  popoverTrigger?: "row" | "pull-link";
 }) {
   const popover = useHoverPopover();
   const { showError } = useToast();
@@ -288,19 +291,21 @@ export function LinkedPullSummaryRow({
     pull.agent_runtime,
     pull.agent_model,
   );
+  const linkTriggersPopover = popoverTrigger === "pull-link";
 
   return (
     <div
       data-linked-pull-row
       aria-label={`Linked PR #${pull.number}: ${pull.title}`}
       className={cn(
-        "group/linked-pull relative min-w-0 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60",
+        "group/linked-pull relative min-w-0 rounded-sm px-2 py-1 text-xs text-muted-foreground",
+        !linkTriggersPopover && "hover:bg-muted/60",
         attemptComparison && "rounded-md border bg-muted/20 p-3",
         className,
       )}
-      onMouseEnter={popover.onMouseEnter}
+      onMouseEnter={linkTriggersPopover ? undefined : popover.onMouseEnter}
       onMouseLeave={popover.onMouseLeave}
-      onFocus={popover.onFocus}
+      onFocus={linkTriggersPopover ? undefined : popover.onFocus}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
           popover.close();
@@ -342,6 +347,9 @@ export function LinkedPullSummaryRow({
           to="/r/$owner/$repo/pulls/$number"
           params={{ owner, repo, number: String(pull.number) }}
           className="flex shrink-0 items-center font-medium text-primary hover:underline"
+          onMouseEnter={linkTriggersPopover ? popover.onMouseEnter : undefined}
+          onMouseLeave={linkTriggersPopover ? popover.cancelPending : undefined}
+          onFocus={linkTriggersPopover ? popover.onFocus : undefined}
         >
           PR #{pull.number}
         </Link>

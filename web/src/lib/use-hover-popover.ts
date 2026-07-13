@@ -8,7 +8,8 @@ export const HOVER_POPUP_DELAY_MS = 300;
 // Drives a hover popover's open state with a standard hover delay: pointer
 // hover opens after HOVER_POPUP_DELAY_MS, leaving during the delay cancels the
 // pending open (never a flash), and keyboard focus opens immediately. The
-// caller keeps ownership of blur containment and Escape handling and closes via
+// caller can cancel a pending open without closing an already-open popover,
+// keeps ownership of blur containment and Escape handling, and closes via
 // `close()`. The pending timer is always cleared on unmount.
 export function useHoverPopover(delayMs: number = HOVER_POPUP_DELAY_MS) {
   const [open, setOpen] = useState(false);
@@ -21,8 +22,12 @@ export function useHoverPopover(delayMs: number = HOVER_POPUP_DELAY_MS) {
     timer.current = setTimeout(() => setOpen(true), delayMs);
   }
 
-  function onMouseLeave() {
+  function cancelPending() {
     clearTimeout(timer.current);
+  }
+
+  function onMouseLeave() {
+    cancelPending();
     setOpen(false);
   }
 
@@ -36,5 +41,12 @@ export function useHoverPopover(delayMs: number = HOVER_POPUP_DELAY_MS) {
     setOpen(false);
   }
 
-  return { open, onMouseEnter, onMouseLeave, onFocus, close } as const;
+  return {
+    open,
+    onMouseEnter,
+    cancelPending,
+    onMouseLeave,
+    onFocus,
+    close,
+  } as const;
 }

@@ -449,7 +449,7 @@ describe("IssueList", () => {
     );
 
     renderIssueList(<IssueList owner="me" repo="proj" />, path);
-    fireEvent.mouseEnter(await screen.findByLabelText("Linked PR #10: PR"));
+    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
     expect(
       await screen.findByRole("textbox", {
         name: "Message agent for PR #10",
@@ -479,7 +479,7 @@ describe("IssueList", () => {
     );
 
     renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByLabelText("Linked PR #10: PR"));
+    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
     const input = (await screen.findByRole("textbox", {
       name: "Message agent for PR #10",
     })) as HTMLInputElement;
@@ -528,7 +528,7 @@ describe("IssueList", () => {
     );
 
     renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByLabelText("Linked PR #10: PR"));
+    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
     const input = (await screen.findByRole("textbox", {
       name: "Message agent for PR #10",
     })) as HTMLInputElement;
@@ -570,7 +570,7 @@ describe("IssueList", () => {
     );
 
     renderIssueList(<IssueList owner="me" repo="proj" />, "/r/me/proj/issues");
-    fireEvent.mouseEnter(await screen.findByLabelText("Linked PR #10: PR"));
+    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
     const input = (await screen.findByRole("textbox", {
       name: "Message agent for PR #10",
     })) as HTMLInputElement;
@@ -597,7 +597,7 @@ describe("IssueList", () => {
     );
 
     renderIssueList(<IssueList owner="me" repo="proj" />);
-    fireEvent.mouseEnter(await screen.findByLabelText("Linked PR #10: PR"));
+    fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
     expect(
       screen.queryByRole("textbox", { name: "Message agent for PR #10" }),
     ).toBeNull();

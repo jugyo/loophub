@@ -525,6 +525,103 @@ describe("IssueRow action menu removal (#1061)", () => {
   });
 });
 
+// IssueRow is shared by home Recent issues, repo Open Issues, and /issues, so
+// these assertions cover the linked-PR interaction on all three list surfaces.
+describe("IssueRow linked PR popover trigger (#1289)", () => {
+  function renderPulls(pulls: LinkedPull[]) {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: pulls })}
+      />,
+    );
+  }
+
+  it("does not highlight or schedule a popover from the linked PR row", async () => {
+    renderPulls([makePull({ number: 10 })]);
+    const row = await screen.findByLabelText("Linked PR #10: A PR");
+    expect(row.className).not.toContain("hover:bg-");
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.mouseEnter(row);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS * 2);
+    });
+    expect(screen.queryByRole("link", { name: "Open PR #10" })).toBeNull();
+  });
+
+  it("opens after the standard delay only while the PR link is hovered", async () => {
+    renderPulls([makePull({ number: 10 })]);
+    const link = await screen.findByRole("link", { name: "PR #10" });
+    const row = screen.getByLabelText("Linked PR #10: A PR");
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.mouseEnter(link);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS - 1);
+    });
+    expect(screen.queryByRole("link", { name: "Open PR #10" })).toBeNull();
+
+    fireEvent.mouseLeave(link, { relatedTarget: row });
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS * 2);
+    });
+    expect(screen.queryByRole("link", { name: "Open PR #10" })).toBeNull();
+
+    fireEvent.mouseEnter(link);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    expect(screen.getByRole("link", { name: "Open PR #10" })).toBeTruthy();
+  });
+
+  it("keeps the opened popover available while the pointer moves into it", async () => {
+    renderPulls([makePull({ number: 10 })]);
+    const link = await screen.findByRole("link", { name: "PR #10" });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.mouseEnter(link);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    const openLink = screen.getByRole("link", { name: "Open PR #10" });
+    const popover = openLink.closest<HTMLElement>(".pt-1");
+    expect(popover).toBeTruthy();
+
+    fireEvent.mouseLeave(link, { relatedTarget: popover });
+    fireEvent.mouseEnter(popover!, { relatedTarget: link });
+    expect(screen.getByRole("link", { name: "Open PR #10" })).toBeTruthy();
+  });
+
+  it("opens only the popover that belongs to the hovered PR link", async () => {
+    renderPulls([
+      makePull({ number: 10, title: "First PR" }),
+      makePull({ number: 9, title: "Second PR" }),
+    ]);
+    const firstLink = await screen.findByRole("link", { name: "PR #10" });
+    const secondLink = screen.getByRole("link", { name: "PR #9" });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.mouseEnter(secondLink);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    expect(screen.getByRole("link", { name: "Open PR #9" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Open PR #10" })).toBeNull();
+
+    fireEvent.mouseLeave(screen.getByLabelText("Linked PR #9: Second PR"), {
+      relatedTarget: document.body,
+    });
+    fireEvent.mouseEnter(firstLink);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    expect(screen.getByRole("link", { name: "Open PR #10" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Open PR #9" })).toBeNull();
+  });
+});
+
 // #265: the linked-PR sub-row paints two independent colour axes — the `PR #n`
 // pill carries the PR lifecycle (open=primary / merged=purple / closed=grey) and
 // the status word its state-specific signal (conflict/changes=red, passed=
@@ -689,7 +786,7 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
     });
     expect(screen.getByText("passed")).toBeTruthy();
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fireEvent.mouseEnter(screen.getByLabelText("Linked PR #10: A PR"));
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "PR #10" }));
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
     });
@@ -721,13 +818,13 @@ describe("linked PR Herdr popover action (#1061)", () => {
   // past it before asserting the popover contents.
   function openPopover() {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fireEvent.mouseEnter(screen.getByLabelText("Linked PR #10: A PR"));
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "PR #10" }));
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
     });
   }
 
-  it("does not render Open in Herdr until the linked PR row is hovered", async () => {
+  it("does not render Open in Herdr until the linked PR link is hovered", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
