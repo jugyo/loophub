@@ -443,7 +443,7 @@ export function LinkedPullSummaryRow({
                 type="button"
                 variant="secondary"
                 size="sm"
-                className="h-7 text-destructive hover:text-destructive"
+                className="h-7"
                 disabled={setState.isPending}
                 onClick={() =>
                   setState.mutate("closed", {

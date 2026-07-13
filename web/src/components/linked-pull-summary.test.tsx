@@ -59,7 +59,7 @@ function makePull(overrides: Partial<LinkedPull> = {}): LinkedPull {
   };
 }
 
-function renderRow() {
+function renderRow(attemptComparison = false) {
   vi.stubGlobal("fetch", mockRpcFetch({}));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -69,7 +69,12 @@ function renderRow() {
     getParentRoute: () => rootRoute,
     path: "/",
     component: () => (
-      <LinkedPullSummaryRow owner="me" repo="proj" pull={makePull()} />
+      <LinkedPullSummaryRow
+        owner="me"
+        repo="proj"
+        pull={makePull()}
+        attemptComparison={attemptComparison}
+      />
     ),
   });
   const pullRoute = createRoute({
@@ -95,6 +100,21 @@ function row() {
 function popoverVisible() {
   return screen.queryByRole("link", { name: /Open PR #10/ }) !== null;
 }
+
+describe("LinkedPullSummaryRow actions", () => {
+  it("uses the standard secondary button colors for Close", async () => {
+    renderRow(true);
+
+    const closeButton = await screen.findByRole("button", { name: "Close" });
+    expect(closeButton.classList.contains("text-secondary-foreground")).toBe(
+      true,
+    );
+    expect(closeButton.classList.contains("text-destructive")).toBe(false);
+    expect(closeButton.classList.contains("hover:text-destructive")).toBe(
+      false,
+    );
+  });
+});
 
 describe("LinkedPullSummaryRow hover popover delay", () => {
   it("does not show the popover immediately on hover", async () => {
