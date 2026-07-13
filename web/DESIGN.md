@@ -203,6 +203,27 @@ Badges are compact pills (`rounded-full border`, `text-[11px]`). Work-state and
 cost-stopped tones add a subtle fill so active states stand out without changing
 layout.
 
+### Hover popovers
+
+Popovers that a row reveals on hover (currently the linked-PR summary popover in
+[`components/linked-pull-summary.tsx`](./src/components/linked-pull-summary.tsx))
+follow one shared timing convention so they never flash open under a moving
+pointer:
+
+- **Hover opens after a delay.** Pointer hover waits `HOVER_POPUP_DELAY_MS =
+  300` ms (the single source of truth in
+  [`src/lib/use-hover-popover.ts`](./src/lib/use-hover-popover.ts)) before the
+  popover appears.
+- **Leaving during the delay cancels the open.** If the pointer leaves before
+  the delay elapses, the pending open is cancelled and the popover never shows —
+  not even for a frame.
+- **Keyboard focus opens immediately.** Focus is intentional, so it opens the
+  popover with no delay; `Escape` and blur (to an element outside the row) close
+  it.
+
+Reuse `useHoverPopover` for new hover popovers rather than re-deriving the delay,
+so the value stays in one place and matches this document.
+
 ---
 
 ## State patterns

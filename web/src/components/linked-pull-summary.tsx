@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Bot, Check, Terminal, TriangleAlert } from "lucide-react";
-import { useState } from "react";
 import type { LinkedPull } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { HerdrAgentInput } from "@/components/herdr-agent-input";
@@ -25,6 +24,7 @@ import {
   formatTokenCountShort,
 } from "@/lib/session-usage";
 import { formatDuration } from "@/lib/time";
+import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
 import { useSetPullState } from "@/queries/pulls";
 import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
@@ -242,7 +242,7 @@ export function LinkedPullSummaryRow({
   /** Show issue-detail comparison metrics and review/close actions. */
   attemptComparison?: boolean;
 }) {
-  const [popoverOpen, setPopoverOpen] = useState(false);
+  const popover = useHoverPopover();
   const { showError } = useToast();
   const { data: herdrSessions } = useHerdrSessions();
   const setState = useSetPullState(owner, repo, pull.number);
@@ -303,16 +303,16 @@ export function LinkedPullSummaryRow({
         attemptComparison && "rounded-md border bg-muted/20 p-3",
         className,
       )}
-      onMouseEnter={() => setPopoverOpen(true)}
-      onMouseLeave={() => setPopoverOpen(false)}
-      onFocus={() => setPopoverOpen(true)}
+      onMouseEnter={popover.onMouseEnter}
+      onMouseLeave={popover.onMouseLeave}
+      onFocus={popover.onFocus}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
-          setPopoverOpen(false);
+          popover.close();
         }
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") setPopoverOpen(false);
+        if (event.key === "Escape") popover.close();
       }}
     >
       {/* opacity lives on the content wrapper, not the row container, so the
@@ -467,7 +467,7 @@ export function LinkedPullSummaryRow({
           </span>
         </div>
       ) : null}
-      {popoverOpen ? (
+      {popover.open ? (
         <PullPopover
           owner={owner}
           repo={repo}

@@ -25,6 +25,7 @@ import type {
   PullRequest,
 } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
+import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
 vi.mock("@/components/terminal-controller", () => ({
@@ -673,7 +674,11 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
       mergeable_state: "clean",
     });
     expect(screen.getByText("passed")).toBeTruthy();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     fireEvent.mouseEnter(screen.getByLabelText("Linked PR #10: A PR"));
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
     expect(screen.getByText("Herdr").nextSibling?.textContent).toBe("blocked");
     expect(
       screen
@@ -698,8 +703,14 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
 // #1061: Herdr focus moved from an always-visible badge into the linked-PR
 // hover popover.
 describe("linked PR Herdr popover action (#1061)", () => {
+  // The popover now opens after a standard hover delay, so advance fake timers
+  // past it before asserting the popover contents.
   function openPopover() {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     fireEvent.mouseEnter(screen.getByLabelText("Linked PR #10: A PR"));
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
   }
 
   it("does not render Open in Herdr until the linked PR row is hovered", async () => {

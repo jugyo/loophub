@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
+import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 
 // The Build button launches through the terminal backend abstraction; capture the call.
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -35,6 +36,16 @@ afterEach(() => {
   vi.useRealTimers();
   launchTerminal.mockClear();
 });
+
+// The linked-PR popover now opens after a standard hover delay, so hover the row
+// and advance fake timers past the delay before asserting the popover contents.
+function openLinkedPullPopover(label: string) {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  fireEvent.mouseEnter(screen.getByLabelText(label));
+  act(() => {
+    vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+  });
+}
 
 const issue: Issue = {
   number: 12,
@@ -348,9 +359,7 @@ describe("IssueDetail", () => {
     expect(await screen.findByText("PR #30")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
-    fireEvent.mouseEnter(
-      screen.getByLabelText("Linked PR #30: ui2: issue detail PR"),
-    );
+    openLinkedPullPopover("Linked PR #30: ui2: issue detail PR");
     expect(screen.getByRole("button", { name: "Open in Herdr" })).toBeTruthy();
   });
 
@@ -604,9 +613,7 @@ describe("IssueDetail", () => {
     });
 
     expect(await screen.findByText("PR #30")).toBeTruthy();
-    fireEvent.mouseEnter(
-      screen.getByLabelText("Linked PR #30: ui2: issue detail PR"),
-    );
+    openLinkedPullPopover("Linked PR #30: ui2: issue detail PR");
     fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
     await waitFor(() => {
       expect(rpcCall("terminal/focusAgent")?.params).toEqual({
@@ -632,9 +639,7 @@ describe("IssueDetail", () => {
 
     expect(await screen.findByText("PR #30")).toBeTruthy();
     expect(screen.queryByText("working")).toBeNull();
-    fireEvent.mouseEnter(
-      screen.getByLabelText("Linked PR #30: ui2: issue detail PR"),
-    );
+    openLinkedPullPopover("Linked PR #30: ui2: issue detail PR");
     expect(screen.getByText("Herdr").nextSibling?.textContent).toBe("blocked");
   });
 
