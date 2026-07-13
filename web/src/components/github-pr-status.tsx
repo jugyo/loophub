@@ -37,7 +37,7 @@ const CHECKS: Record<
   GithubPrStatus["checks"],
   { tone: BadgeTone; label: string } | null
 > = {
-  success: { tone: "mergeable", label: "Passing" },
+  success: { tone: "review-passed", label: "Passed" },
   failure: { tone: "conflict", label: "Failing" },
   pending: { tone: "working", label: "Pending" },
   // No checks configured on the GitHub PR — the row is hidden rather than showing a meaningless badge.

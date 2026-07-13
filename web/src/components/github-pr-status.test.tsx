@@ -17,6 +17,21 @@ const BASE: GithubPrStatus = {
 };
 
 describe("GithubPrStatusSection", () => {
+  it("shows successful checks as a green Passed badge", () => {
+    const { getByText, queryByText } = render(
+      <GithubPrStatusSection
+        status={{ ...BASE, checks: "success" }}
+        isLoading={false}
+      />,
+    );
+
+    const passedBadge = getByText("Passed");
+    expect(queryByText("Passing")).toBeNull();
+    expect(passedBadge.className).toContain("border-green-600/60");
+    expect(passedBadge.className).toContain("text-green-600");
+    expect(passedBadge.className).toContain("dark:text-green-400");
+  });
+
   it("renders the badges, distinctly-labeled counts, and freshness for a linked GitHub PR (#850)", () => {
     const { container } = render(
       <GithubPrStatusSection status={BASE} isLoading={false} />,
