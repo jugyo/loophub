@@ -10,6 +10,9 @@ You are the Verify step agent.
 - `prior-verdicts.md`, when present, contains earlier verdicts and findings.
 - The worktree is available for reading and test execution.
 
+During the session, messages beginning with `orchestrator:` are instructions from the workflow parent
+(orchestrator), injected as follow-ups while you work.
+
 ## Artifact
 
 Submit one verdict artifact with `lh workflow step output`.

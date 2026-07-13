@@ -35,7 +35,9 @@ or reach a child, treat it as closed and relaunch the step with `lh workflow lau
 - `herdr agent get '<child>'` — check whether the child is still alive and read its pane id.
 - `herdr agent wait '<child>' --status idle --timeout <ms>` — wait for the child to stop working
   (stall detection).
-- `herdr pane run <child-pane> "<text>"` — inject a follow-up instruction into the live child's pane.
+- `herdr pane run <child-pane> "orchestrator: <text>"` — inject a follow-up instruction into the live
+  child's pane. Every instruction you inject into a child pane must begin with `orchestrator: ` so
+  the child and a human observing the pane can identify its source.
 - `herdr agent read '<child>'` — read the child's pane output, for stall diagnosis only.
 
 Human handoff (escalation only):
@@ -79,8 +81,8 @@ When step status shows verify complete with the latest verdict `request_changes`
    current value yourself across this session — step status does not report it. If the new count
    would exceed 3, escalate instead (see Escalation) — do not launch another Execute.
 2. If the Execute child is still alive (`herdr agent get '<child>'`), poke its pane with
-   `herdr pane run <child-pane> "<what the findings ask for>"` — reusing the session preserves its
-   context.
+   `herdr pane run <child-pane> "orchestrator: <what the findings ask for>"` — reusing the session
+   preserves its context.
 3. If the Execute pane is closed, restart it with
    `lh workflow launch-step --repo '<repo>' --run <run> --step execute [--note <text>]`. The engine
    synthesizes the latest findings into the step input (`findings.md`); a `--note` is only needed
@@ -94,9 +96,9 @@ When step status shows verify complete with the latest verdict `request_changes`
 
 After launching a child, use `herdr agent wait '<child>' --status idle --timeout <ms>` to detect that
 it stopped working. If step status still shows the step incomplete, poke the live pane with
-`herdr pane run <child-pane> "<the missing part of the completion condition>"`. Use herdr output only to
-detect the stall and phrase the poke — the completion decision stays with step status. If poking the
-same step twice does not reach its completion condition, escalate.
+`herdr pane run <child-pane> "orchestrator: <the missing part of the completion condition>"`. Use
+herdr output only to detect the stall and phrase the poke — the completion decision stays with step
+status. If poking the same step twice does not reach its completion condition, escalate.
 
 ## Escalation (hand off to a human)
 

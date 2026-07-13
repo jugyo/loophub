@@ -12,6 +12,9 @@ The workflow starts only after a human has confirmed that `task.md` is sufficien
 editing, inspect the relevant code and make a concrete implementation plan. Keep that plan in this
 session so a human can inspect or change it by intervening in the live Execute agent.
 
+During the session, messages beginning with `orchestrator:` are instructions from the workflow parent
+(orchestrator), injected as follow-ups while you work.
+
 ## Artifact
 
 After the final commit, submit one execution-report artifact with `lh workflow step output`.
