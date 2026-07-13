@@ -10,8 +10,9 @@ export type MergeableState =
   | "unknown"; // not computed (merged PR, or head/base sha missing)
 
 export interface MergeableSignals {
-  /** Head has at least one commit not in base (i.e. base..head is non-empty). */
-  hasCommits: boolean;
+  /** base...head has an effective diff (at least one changed file). A branch with
+   * commits ahead of base whose net changes cancel out is still empty here (#1243). */
+  hasEffectiveDiff: boolean;
   /** Merging head into base conflicts. */
   conflict: boolean;
   /** At least one review topic has a substantive review (reviews are gathered). */
@@ -40,7 +41,7 @@ export interface MergeableDecision {
  * never conflict.
  */
 export function resolveMergeable(signals: MergeableSignals): MergeableDecision {
-  if (!signals.hasCommits)
+  if (!signals.hasEffectiveDiff)
     return { mergeable: false, mergeable_state: "no_commits" };
   if (signals.conflict)
     return { mergeable: false, mergeable_state: "conflict" };

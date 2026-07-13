@@ -13,6 +13,7 @@ import {
   diffStat,
   fileAtRef,
   git,
+  hasEffectiveDiff,
   isIndexLockError,
   mergePull,
   pathInDiff,
@@ -440,6 +441,39 @@ test("fileAtRef returns content, or 'missing'/'binary' for an absent or binary f
   });
   expect(await fileAtRef(p, "main", "new.md")).toEqual({ status: "missing" });
   expect(await fileAtRef(p, "feat", "img.bin")).toEqual({ status: "binary" });
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+test("hasEffectiveDiff is true for real changes and false when commits net out (#1243)", async () => {
+  const p = mkdtempSync(join(tmpdir(), "lh-haseffdiff-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "f.txt"), "base\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  // A branch with a real change to base...head reports true.
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  writeFileSync(join(p, "f.txt"), "feat\n");
+  await git(p, ["commit", "-qam", "feat"]);
+  expect(await hasEffectiveDiff(p, "main", "feat")).toBe(true);
+
+  // A branch with commits ahead of base whose net changes cancel out (add then
+  // revert) has no effective diff even though base..feat is non-empty.
+  await git(p, ["checkout", "-q", "-b", "netempty", "main"]);
+  writeFileSync(join(p, "g.txt"), "temp\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "add g.txt"]);
+  rmSync(join(p, "g.txt"));
+  await git(p, ["commit", "-qam", "remove g.txt"]);
+  const ahead = await git(p, ["rev-list", "--count", "main..netempty"]);
+  expect(Number(ahead.stdout.trim())).toBeGreaterThanOrEqual(1);
+  expect(await hasEffectiveDiff(p, "main", "netempty")).toBe(false);
+
+  // No diff against itself.
+  expect(await hasEffectiveDiff(p, "main", "main")).toBe(false);
 
   rmSync(p, { recursive: true, force: true });
 });

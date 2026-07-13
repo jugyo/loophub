@@ -8,6 +8,7 @@ import { agentEffort, agentModel, worktreeRoot } from "./config.ts";
 import {
   commitsAhead,
   diffStat,
+  hasEffectiveDiff,
   mergePreview,
   remoteUrl,
   revParse,
@@ -952,13 +953,14 @@ async function pullStatusFields(
   let mergeable_state: MergeableState = "unknown";
   let commits_ahead = 0;
   if (!p.merged && headSha && baseSha) {
-    const [prev, ahead] = await Promise.all([
+    const [prev, ahead, effectiveDiff] = await Promise.all([
       mergePreview(repo.local_path, p.base_ref, p.head_ref),
       commitsAhead(repo.local_path, p.base_ref, p.head_ref),
+      hasEffectiveDiff(repo.local_path, p.base_ref, p.head_ref),
     ]);
     commits_ahead = ahead;
     ({ mergeable, mergeable_state } = resolveMergeable({
-      hasCommits: ahead > 0,
+      hasEffectiveDiff: effectiveDiff,
       conflict: prev.conflict,
       reviewed: reviewGate.reviewed,
       allTopicsPassed: reviewGate.allTopicsPassed,

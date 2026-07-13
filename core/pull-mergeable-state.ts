@@ -1,4 +1,4 @@
-import { commitsAhead, mergePreview, revParse } from "./git.ts";
+import { hasEffectiveDiff, mergePreview, revParse } from "./git.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import * as S from "./store.ts";
@@ -16,13 +16,13 @@ export async function currentMergeableState(
   ]);
   if (!headSha || !baseSha) return "unknown";
 
-  const [preview, ahead] = await Promise.all([
+  const [preview, effectiveDiff] = await Promise.all([
     mergePreview(pull.local_path, pull.base_ref, pull.head_ref),
-    commitsAhead(pull.local_path, pull.base_ref, pull.head_ref),
+    hasEffectiveDiff(pull.local_path, pull.base_ref, pull.head_ref),
   ]);
   const reviewGate = S.computeReviewGate(pull.issue_id, headSha);
   return resolveMergeable({
-    hasCommits: ahead > 0,
+    hasEffectiveDiff: effectiveDiff,
     conflict: preview.conflict,
     reviewed: reviewGate.reviewed,
     allTopicsPassed: reviewGate.allTopicsPassed,

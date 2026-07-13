@@ -318,6 +318,21 @@ export async function pathInDiff(
   return r.stdout.split("\n").some((line) => line === path);
 }
 
+// Whether base...head has an effective diff — at least one changed file in the
+// three-dot range. Unlike commitsAhead (two-dot commit count), a branch with
+// commits ahead of base whose net changes cancel out (add then revert) reports
+// false: there is nothing to merge (#1243). Deliberately mirrors pathInDiff's
+// `diff --name-only base...head`; kept separate from diffStat, which returns 0
+// on error (zero-on-error would misclassify a real diff as empty).
+export async function hasEffectiveDiff(
+  repoPath: string,
+  base: string,
+  head: string,
+): Promise<boolean> {
+  const r = await git(repoPath, ["diff", "--name-only", `${base}...${head}`]);
+  return r.stdout.split("\n").some((line) => line !== "");
+}
+
 // Number of commits on head not reachable from base (base..head). 0 means head
 // adds nothing over base — a diff-free PR with no commits to merge.
 export async function commitsAhead(

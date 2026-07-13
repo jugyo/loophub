@@ -16,6 +16,7 @@ import {
   githubPrStatusJSON,
   githubPullJSON,
   gitMergePull,
+  hasEffectiveDiff,
   isGithubRemoteUrl,
   issueOr404,
   MAX_LIST_PER_PAGE,
@@ -521,19 +522,20 @@ export const pulls = {
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
     if (p.merged) throw new ServiceError(405, "Pull Request is already merged");
-    // A diff-free PR (base..head empty) has nothing to merge — the UI disables the Merge
-    // button for this state (#691), but merge-tree itself does not reject it (a diff-free
-    // tree merges cleanly), so this check must be enforced here too. Only run it when both
-    // refs actually resolve (mirroring serialize.ts's headSha/baseSha guard) — an unresolvable
-    // ref isn't "no commits", it's a broken branch, and should fall through to gitMergePull's
-    // own "Merge failed" below rather than report a misleading reason.
+    // A diff-free PR has nothing to merge — the UI disables the Merge button for this
+    // state (#691), but merge-tree itself does not reject it (a diff-free tree merges
+    // cleanly), so this check must be enforced here too. Use base...head effective diff,
+    // not the two-dot commit count: a PR can have commits ahead of base whose net changes
+    // cancel out and still be empty to merge (#1243). Only run it when both refs actually
+    // resolve (mirroring serialize.ts's headSha/baseSha guard) — an unresolvable ref isn't
+    // "no commits", it's a broken branch, and should fall through to gitMergePull's own
+    // "Merge failed" below rather than report a misleading reason.
     const [headSha, baseSha] = await Promise.all([
       revParse(r.local_path, p.head_ref),
       revParse(r.local_path, p.base_ref),
     ]);
     if (headSha && baseSha) {
-      const ahead = await commitsAhead(r.local_path, p.base_ref, p.head_ref);
-      if (ahead === 0)
+      if (!(await hasEffectiveDiff(r.local_path, p.base_ref, p.head_ref)))
         throw new ServiceError(422, "Pull Request has no commits to merge");
     }
     const actor = actorFor(sessionId);

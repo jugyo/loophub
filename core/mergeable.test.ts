@@ -6,7 +6,7 @@ describe("resolveMergeable", () => {
     // no commits → not mergeable even though an empty tree never conflicts
     expect(
       resolveMergeable({
-        hasCommits: false,
+        hasEffectiveDiff: false,
         conflict: false,
         reviewed: true,
         allTopicsPassed: true,
@@ -17,7 +17,7 @@ describe("resolveMergeable", () => {
   it("ignores review/conflict signals when there are no commits", () => {
     expect(
       resolveMergeable({
-        hasCommits: false,
+        hasEffectiveDiff: false,
         conflict: true,
         reviewed: false,
         allTopicsPassed: false,
@@ -28,7 +28,7 @@ describe("resolveMergeable", () => {
   it("marks a conflicting PR as conflict", () => {
     expect(
       resolveMergeable({
-        hasCommits: true,
+        hasEffectiveDiff: true,
         conflict: true,
         reviewed: true,
         allTopicsPassed: true,
@@ -41,7 +41,7 @@ describe("resolveMergeable", () => {
     // requested changes (#427).
     expect(
       resolveMergeable({
-        hasCommits: true,
+        hasEffectiveDiff: true,
         conflict: false,
         reviewed: false,
         allTopicsPassed: false,
@@ -52,7 +52,7 @@ describe("resolveMergeable", () => {
   it("blocks a PR with an unresolved REQUEST_CHANGES on a topic", () => {
     expect(
       resolveMergeable({
-        hasCommits: true,
+        hasEffectiveDiff: true,
         conflict: false,
         reviewed: true,
         allTopicsPassed: false,
@@ -63,7 +63,7 @@ describe("resolveMergeable", () => {
   it("marks a PR with commits, no conflict, and all topics passed as clean/mergeable", () => {
     expect(
       resolveMergeable({
-        hasCommits: true,
+        hasEffectiveDiff: true,
         conflict: false,
         reviewed: true,
         allTopicsPassed: true,

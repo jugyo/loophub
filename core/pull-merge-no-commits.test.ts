@@ -53,6 +53,41 @@ test("merge() rejects a PR whose head has no commits ahead of base (#691)", asyn
   expect(after.merged).toBe(false);
 });
 
+test("merge() rejects a PR with commits ahead of base but no effective diff (#1243)", async () => {
+  // head branches off main, adds a file, then reverts it: base..head is 2 commits ahead,
+  // but base...head has no effective diff — nothing to merge. The two-dot commit count
+  // alone would wrongly treat this as mergeable, so the guard must use the three-dot diff.
+  git(["branch", "loophub/net-empty", "main"]);
+  git(["checkout", "-q", "loophub/net-empty"]);
+  spawnSync("sh", ["-c", `echo z > ${join(repoPath, "c.txt")}`]);
+  git(["add", "-A"]);
+  git(["commit", "-qm", "add c.txt"]);
+  spawnSync("rm", [join(repoPath, "c.txt")]);
+  git(["add", "-A"]);
+  git(["commit", "-qm", "revert c.txt"]);
+  git(["checkout", "-q", "main"]);
+
+  const ahead = spawnSync(
+    "git",
+    ["-C", repoPath, "rev-list", "--count", "main..loophub/net-empty"],
+    { encoding: "utf8" },
+  ).stdout.trim();
+  expect(Number(ahead)).toBeGreaterThanOrEqual(1);
+
+  const pr = (await svc.pulls.create(
+    "me/proj",
+    { title: "net-empty", head: "loophub/net-empty", base: "main" },
+    undefined,
+  )) as any;
+
+  await expect(
+    svc.pulls.merge("me/proj", pr.number, "merge", undefined),
+  ).rejects.toThrow("Pull Request has no commits to merge");
+
+  const after = (await svc.pulls.get("me/proj", pr.number)) as any;
+  expect(after.merged).toBe(false);
+});
+
 test("merge() succeeds once the head branch has a commit ahead of base", async () => {
   git(["branch", "loophub/one-commit", "main"]);
   git(["checkout", "-q", "loophub/one-commit"]);
