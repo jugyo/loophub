@@ -59,6 +59,7 @@ function git(args: string[]): void {
 function fakeRuntime(
   opts: {
     agentStartExit?: number;
+    paneCloseExit?: number;
     paneListJson?: string;
     worktreeOpenJson?: string;
     tabCreateJson?: string;
@@ -66,6 +67,7 @@ function fakeRuntime(
 ) {
   const {
     agentStartExit = 0,
+    paneCloseExit = 0,
     paneListJson = "",
     worktreeOpenJson = "",
     tabCreateJson = "",
@@ -83,6 +85,7 @@ printf '%s\\n' "$*" >> "$HERDR_LOG"
 case " $* " in
   *" worktree open "*) printf '%s' '${worktreeOpenJson}'; exit 0 ;;
   *" pane list "*) printf '%s' '${paneListJson}'; exit 0 ;;
+  *" pane close "*) exit ${paneCloseExit} ;;
   *" tab create "*) printf '%s' '${tabCreateJson}'; exit 0 ;;
   *" agent start "*) exit ${agentStartExit} ;;
 esac
@@ -416,6 +419,220 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     expect(relaunchedLog).not.toMatch(/(?:workspace|tab|agent) focus/);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("fresh Verify closes the previous Verify pane before launching after rework", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Fresh Verify lifecycle",
+    "--body",
+    "Close the previous Verify pane before re-verification",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const started = run([
+    "workflow",
+    "start",
+    issue,
+    "--repo",
+    REPO,
+    "--workflow",
+    "standard",
+    "--no-launch",
+    "--json",
+  ]);
+  expect(started.exitCode, started.stderr).toBe(0);
+  const body = JSON.parse(started.stdout);
+  const parentEnv = { LOOPHUB_SESSION_ID: body.session_id };
+  const fixturePath = join(body.worktree, "verify-lifecycle.txt");
+  const commitWorktree = (message: string) => {
+    const added = spawnSync("git", ["-C", body.worktree, "add", "."], {
+      encoding: "utf8",
+    });
+    expect(added.status, added.stderr).toBe(0);
+    const committed = spawnSync(
+      "git",
+      ["-C", body.worktree, "commit", "-m", message],
+      { encoding: "utf8" },
+    );
+    expect(committed.status, committed.stderr).toBe(0);
+  };
+  const executionReportPath = join(HOME, `execution-${body.run.id}.json`);
+  const verdictPath = join(HOME, `verdict-${body.run.id}.json`);
+  const writeExecutionReport = (summary: string) =>
+    writeFileSync(
+      executionReportPath,
+      JSON.stringify({
+        type: "execution-report",
+        summary,
+        acceptance: [{ criterion: "Execute", met: true, note: "Done" }],
+        tests: [{ command: "true", passed: true, excerpt: "passed" }],
+        evidence: [{ kind: "test", description: "fixture" }],
+        reflection: {
+          went_well: ["The fixture completed."],
+          friction: [],
+          suggestions: [],
+          followups: [],
+        },
+      }),
+    );
+  const submit = (step: "execute" | "verify", path: string) =>
+    run(
+      [
+        "workflow",
+        "step",
+        "output",
+        "--repo",
+        REPO,
+        "--run",
+        String(body.run.id),
+        "--step",
+        step,
+        "--file",
+        path,
+      ],
+      parentEnv,
+    );
+  const transition = (action: "advance-to-verify" | "request-rework") =>
+    run(
+      ["workflow", "run", action, "--repo", REPO, "--run", String(body.run.id)],
+      parentEnv,
+    );
+  const launch = (
+    step: "execute" | "verify",
+    runtimeDir: string,
+    log: string,
+  ) =>
+    run(
+      [
+        "workflow",
+        "launch-step",
+        "--repo",
+        REPO,
+        "--run",
+        String(body.run.id),
+        "--step",
+        step,
+      ],
+      {
+        ...parentEnv,
+        PATH: `${runtimeDir}:${process.env.PATH}`,
+        HERDR_LOG: log,
+        HERDR_TAB_ID: "",
+        HERDR_TAB: "",
+        HERDR_PANE_TAB_ID: "",
+      },
+    );
+
+  const firstRuntime = fakeRuntime({
+    paneListJson: JSON.stringify({ result: { panes: [] } }),
+  });
+  const freshRuntime = fakeRuntime({
+    paneListJson: JSON.stringify({
+      result: {
+        panes: [
+          { pane_id: "w1:p1", label: `orchestrator #${body.run.id}` },
+          { pane_id: "w1:p2", label: `executor #${body.run.id}-2` },
+          { pane_id: "w1:p3", label: `verifier #${body.run.id}-1` },
+          { pane_id: "w1:p4", label: `verifier #${body.run.id + 1}-9` },
+        ],
+      },
+    }),
+  });
+  const closeFailureRuntime = fakeRuntime({
+    paneCloseExit: 42,
+    paneListJson: JSON.stringify({
+      result: {
+        panes: [
+          { pane_id: "w1:p5", label: `verifier #${body.run.id}-3` },
+          { pane_id: "w1:p6", label: `executor #${body.run.id}-2` },
+        ],
+      },
+    }),
+  });
+  try {
+    writeFileSync(fixturePath, "initial\n");
+    commitWorktree("add Verify lifecycle fixture");
+    writeExecutionReport("Initial Execute completed.");
+    const initialReport = submit("execute", executionReportPath);
+    expect(initialReport.exitCode, initialReport.stderr).toBe(0);
+    const firstAdvance = transition("advance-to-verify");
+    expect(firstAdvance.exitCode, firstAdvance.stderr).toBe(0);
+
+    const firstVerify = launch("verify", firstRuntime.dir, firstRuntime.log);
+    expect(firstVerify.exitCode, firstVerify.stderr).toBe(0);
+    expect(firstVerify.stdout).toContain(`agent\tverifier #${body.run.id}-1`);
+    expect(readFileSync(firstRuntime.log, "utf8")).not.toContain("pane close");
+
+    writeFileSync(
+      verdictPath,
+      JSON.stringify({
+        type: "verdict",
+        event: "request_changes",
+        summary: "Rework is required.",
+        findings: [
+          {
+            file: "README.md",
+            problem: "fixture",
+            expected: "reworked fixture",
+          },
+        ],
+      }),
+    );
+    const verdict = submit("verify", verdictPath);
+    expect(verdict.exitCode, verdict.stderr).toBe(0);
+    const rework = transition("request-rework");
+    expect(rework.exitCode, rework.stderr).toBe(0);
+
+    const reworkExecute = launch("execute", firstRuntime.dir, firstRuntime.log);
+    expect(reworkExecute.exitCode, reworkExecute.stderr).toBe(0);
+    expect(reworkExecute.stdout).toContain(`agent\texecutor #${body.run.id}-2`);
+    writeFileSync(fixturePath, "reworked\n");
+    commitWorktree("rework Verify lifecycle fixture");
+    writeExecutionReport("Rework Execute completed.");
+    const reworkReport = submit("execute", executionReportPath);
+    expect(reworkReport.exitCode, reworkReport.stderr).toBe(0);
+    const secondAdvance = transition("advance-to-verify");
+    expect(secondAdvance.exitCode, secondAdvance.stderr).toBe(0);
+
+    const freshVerify = launch("verify", freshRuntime.dir, firstRuntime.log);
+    expect(freshVerify.exitCode, freshVerify.stderr).toBe(0);
+    expect(freshVerify.stdout).toContain(`agent\tverifier #${body.run.id}-3`);
+    const log = readFileSync(firstRuntime.log, "utf8");
+    const closeIndex = log.indexOf("pane close w1:p3");
+    const freshStartIndex = log.indexOf(
+      `agent start verifier #${body.run.id}-3`,
+    );
+    expect(closeIndex).toBeGreaterThan(-1);
+    expect(freshStartIndex).toBeGreaterThan(closeIndex);
+    expect(log).not.toContain("pane close w1:p1");
+    expect(log).not.toContain("pane close w1:p2");
+    expect(log).not.toContain("pane close w1:p4");
+
+    const beforeFailedClose = log.length;
+    const failedClose = launch(
+      "verify",
+      closeFailureRuntime.dir,
+      firstRuntime.log,
+    );
+    expect(failedClose.exitCode).not.toBe(0);
+    expect(failedClose.stderr).toContain("Herdr exited with status 42");
+    const failedCloseLog = readFileSync(firstRuntime.log, "utf8").slice(
+      beforeFailedClose,
+    );
+    expect(failedCloseLog).toContain("pane close w1:p5");
+    expect(failedCloseLog).not.toContain(
+      `agent start verifier #${body.run.id}-4`,
+    );
+  } finally {
+    rmSync(firstRuntime.dir, { recursive: true, force: true });
+    rmSync(freshRuntime.dir, { recursive: true, force: true });
+    rmSync(closeFailureRuntime.dir, { recursive: true, force: true });
   }
 });
 

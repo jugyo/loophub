@@ -1,4 +1,7 @@
-import { workflowHerdrPaneKind } from "../workflow/herdr-agents.ts";
+import {
+  parseWorkflowHerdrAgentName,
+  workflowHerdrPaneKind,
+} from "../workflow/herdr-agents.ts";
 import { HERDR_ID } from "./terminal-launch.ts";
 
 export interface WorkflowPane {
@@ -32,6 +35,57 @@ function workflowPaneKind(
   runId: number,
 ): "parent" | "step" | null {
   return workflowHerdrPaneKind(label, runId);
+}
+
+/**
+ * Finds the most recently launched Verify pane for one Workflow run. `null` means the Herdr
+ * response is unsafe to act on; `{ paneId: null }` means the response is valid and no prior Verify
+ * pane exists. Legacy Verify labels remain eligible so an in-flight run can clean up after an
+ * upgrade.
+ */
+export function parsePreviousWorkflowVerifyPane(
+  stdout: string,
+  runId: number,
+): { paneId: string | null } | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    const panes = parsed?.result?.panes;
+    if (!Array.isArray(panes)) return null;
+    const candidates: Array<{
+      paneId: unknown;
+      sequence: number;
+      index: number;
+    }> = [];
+
+    for (const [index, pane] of panes.entries()) {
+      const agent = parseWorkflowHerdrAgentName(pane?.label);
+      if (
+        agent?.kind === "step" &&
+        agent.runId === runId &&
+        agent.step === "verify"
+      ) {
+        candidates.push({
+          paneId: pane?.pane_id,
+          sequence: agent.sequence,
+          index,
+        });
+        continue;
+      }
+      if (pane?.label === `workflow verify #${runId}`) {
+        candidates.push({ paneId: pane?.pane_id, sequence: 0, index });
+      }
+    }
+
+    if (candidates.length === 0) return { paneId: null };
+    const latest = candidates.sort(
+      (a, b) => b.sequence - a.sequence || b.index - a.index,
+    )[0];
+    return typeof latest.paneId === "string" && HERDR_ID.test(latest.paneId)
+      ? { paneId: latest.paneId }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

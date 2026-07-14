@@ -32,7 +32,11 @@ import type {
   WorkflowRunStateWire,
   WorkflowRunVerdictSummaryWire,
 } from "../serialize.ts";
-import { buildWorkflowStepHerdrLaunchPlan } from "../terminal/terminal-launch.ts";
+import {
+  buildWorkflowStepHerdrLaunchPlan,
+  herdrSessionName,
+} from "../terminal/terminal-launch.ts";
+import { parsePreviousWorkflowVerifyPane } from "../terminal/workflow-pane-layout.ts";
 import {
   parseWorkflowArtifactJson,
   type WorkflowArtifact,
@@ -69,6 +73,7 @@ import {
   shouldCreateMissingConventionBranch,
 } from "../worktree-provision.ts";
 import { dev } from "./dev.ts";
+import { runHerdr } from "./herdr-runner.ts";
 import { pulls } from "./pulls.ts";
 import { reviews } from "./reviews.ts";
 import {
@@ -1272,6 +1277,40 @@ export const workflowRuns = {
       head_sha: headSha,
       herdr,
     };
+  },
+
+  async closePreviousVerifyPane(
+    name: string,
+    input: { run: number },
+    sessionId: string | null | undefined,
+  ): Promise<void> {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    assertAutomaticProgressAllowed(run);
+    assertParentActor(run, sessionId);
+
+    const sessionName = herdrSessionName(r);
+    const paneList = await runHerdr(
+      "herdr",
+      ["--session", sessionName, "pane", "list"],
+      r.local_path,
+      { captureStdout: true, timeoutMs: 15_000 },
+    );
+    const previous = parsePreviousWorkflowVerifyPane(paneList, run.id);
+    if (!previous) {
+      throw new ServiceError(500, "Herdr pane list returned invalid JSON");
+    }
+    if (!previous.paneId) return;
+    await runHerdr(
+      "herdr",
+      ["--session", sessionName, "pane", "close", previous.paneId],
+      r.local_path,
+      { timeoutMs: 15_000 },
+    );
   },
 
   confirmStepLaunch(

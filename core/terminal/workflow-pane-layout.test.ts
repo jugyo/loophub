@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  parsePreviousWorkflowVerifyPane,
   parseWorkflowTabPanes,
   workflowPaneGridPlan,
 } from "./workflow-pane-layout.ts";
@@ -163,5 +164,60 @@ describe("Workflow pane grid", () => {
       },
     });
     expect(parseWorkflowTabPanes(stdout, "w1:t1", 7)).toBeNull();
+  });
+
+  test("finds only the latest Verify pane for the requested Workflow run", () => {
+    const stdout = JSON.stringify({
+      result: {
+        panes: [
+          { pane_id: "w1:p1", label: "orchestrator #7" },
+          { pane_id: "w1:p2", label: "executor #7-4" },
+          { pane_id: "w1:p3", label: "verifier #7-2" },
+          { pane_id: "w1:p4", label: "verifier #8-9" },
+          { pane_id: "w1:p5", label: "verifier #7-5" },
+        ],
+      },
+    });
+
+    expect(parsePreviousWorkflowVerifyPane(stdout, 7)).toEqual({
+      paneId: "w1:p5",
+    });
+  });
+
+  test("recognizes a legacy Verify pane and distinguishes no match from invalid output", () => {
+    expect(
+      parsePreviousWorkflowVerifyPane(
+        JSON.stringify({
+          result: {
+            panes: [
+              { pane_id: "w1:p1", label: "workflow execute #7" },
+              { pane_id: "w1:p2", label: "workflow verify #7" },
+              { pane_id: "w1:p3", label: "workflow verify #8" },
+            ],
+          },
+        }),
+        7,
+      ),
+    ).toEqual({ paneId: "w1:p2" });
+    expect(
+      parsePreviousWorkflowVerifyPane(
+        JSON.stringify({ result: { panes: [] } }),
+        7,
+      ),
+    ).toEqual({ paneId: null });
+    expect(parsePreviousWorkflowVerifyPane("not json", 7)).toBeNull();
+  });
+
+  test("rejects an invalid pane id on the selected Verify pane", () => {
+    expect(
+      parsePreviousWorkflowVerifyPane(
+        JSON.stringify({
+          result: {
+            panes: [{ pane_id: "not a pane id", label: "verifier #7-2" }],
+          },
+        }),
+        7,
+      ),
+    ).toBeNull();
   });
 });

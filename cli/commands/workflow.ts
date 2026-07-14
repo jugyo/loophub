@@ -516,6 +516,15 @@ async function launchStep(): Promise<void> {
   );
   // Preflight the runtime the run resolved (#516) — claude-code needs `claude`, codex needs `codex`.
   preflightStepLaunch(result.runtime);
+  if (result.step === "verify") {
+    await runOp(() =>
+      s.workflowRuns.closePreviousVerifyPane(
+        repo,
+        { run: result.run.id },
+        actorSessionId,
+      ),
+    );
+  }
   console.log(
     `launched Workflow ${result.step} step for run #${result.run.id}`,
   );
