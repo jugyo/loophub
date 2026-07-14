@@ -8,6 +8,7 @@ const CLI = join(import.meta.dirname, "index.ts");
 
 let home: string;
 let pngPath: string;
+let htmlPath: string;
 
 // A 1x1 transparent PNG.
 const PNG = Buffer.from(
@@ -42,7 +43,9 @@ function lh(args: string[]) {
 beforeAll(() => {
   home = mkdtempSync(join(tmpdir(), "loophub-cliattach-home-"));
   pngPath = join(home, "shot.png");
+  htmlPath = join(home, "report.html");
   writeFileSync(pngPath, PNG);
+  writeFileSync(htmlPath, "<!doctype html><script>alert('no')</script>");
 });
 
 afterAll(() => {
@@ -61,7 +64,20 @@ test("lh attachment add uploads an image and prints embed markdown", () => {
   ).toBe(true);
 });
 
-test("lh attachment add rejects a non-image file", () => {
+test("lh attachment add uploads HTML and prints a file link", () => {
+  const { stdout, exitCode } = lh(["attachment", "add", "--file", htmlPath]);
+  expect(exitCode).toBe(0);
+  const m = stdout.match(
+    /^\[report\.html\]\(\/attachments\/([0-9a-f]{64})\)$/m,
+  );
+  expect(m).not.toBeNull();
+  const sha256 = m![1];
+  expect(
+    existsSync(join(home, "attachments", sha256.slice(0, 2), sha256)),
+  ).toBe(true);
+});
+
+test("lh attachment add rejects an unsupported attachment file", () => {
   const txt = join(home, "note.txt");
   writeFileSync(txt, "hello");
   const { exitCode, stderr } = lh(["attachment", "add", "--file", txt]);

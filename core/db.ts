@@ -353,7 +353,7 @@ CREATE TABLE IF NOT EXISTS session_usage_messages (
   PRIMARY KEY (session_id, message_id)
 );
 
--- Standalone image blobs embedded in markdown bodies. Metadata only; the blob
+-- Standalone attachment blobs referenced from markdown bodies. Metadata only; the blob
 -- itself is content-addressed on disk under $LOOPHUB_HOME/attachments/. The
 -- sha256 is both the primary key and the URL identifier; nothing references a
 -- repo/issue/PR (any body may embed any blob), and blobs are never GC'd.

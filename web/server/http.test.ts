@@ -293,6 +293,7 @@ test("POST /attachments stores a blob and returns url + markdown; GET streams it
   const get = await fetch(`${base}${body.url}`);
   expect(get.status).toBe(200);
   expect(get.headers.get("content-type")).toBe("image/png");
+  expect(get.headers.get("content-disposition")).toBeNull();
   expect(get.headers.get("x-content-type-options")).toBe("nosniff");
   const bytes = Buffer.from(await get.arrayBuffer());
   expect(bytes.equals(PNG)).toBe(true);
@@ -306,6 +307,30 @@ test("POST /attachments stores a blob and returns url + markdown; GET streams it
   expect(((await again.json()) as any).sha256).toBe(body.sha256);
 });
 
+test("POST /attachments stores HTML; GET downloads it with a safe filename", async () => {
+  const html = Buffer.from("<!doctype html><script>alert('no')</script>");
+  const filename = '../../dangerous".html';
+  const params = new URLSearchParams({ filename, actor: "me" });
+  const res = await fetch(`${base}/attachments?${params}`, {
+    method: "POST",
+    headers: { "content-type": "text/html; charset=utf-8" },
+    body: html,
+  });
+  expect(res.status).toBe(201);
+  const body = (await res.json()) as any;
+  expect(body.mime).toBe("text/html");
+  expect(body.markdown).toBe(`[${filename}](/attachments/${body.sha256})`);
+
+  const get = await fetch(`${base}${body.url}`);
+  expect(get.status).toBe(200);
+  expect(get.headers.get("content-type")).toBe("text/html");
+  expect(get.headers.get("content-disposition")).toBe(
+    'attachment; filename="dangerous_.html"',
+  );
+  expect(get.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(Buffer.from(await get.arrayBuffer()).equals(html)).toBe(true);
+});
+
 test("POST /attachments accepts application/octet-stream for a valid extension", async () => {
   // Mirrors a browser drop where File.type is empty -> client sends octet-stream.
   const res = await fetch(`${base}/attachments?filename=drop.png&actor=me`, {
@@ -317,13 +342,27 @@ test("POST /attachments accepts application/octet-stream for a valid extension",
   expect(((await res.json()) as any).mime).toBe("image/png");
 });
 
-test("POST /attachments rejects non-image MIME / extension", async () => {
+test("POST /attachments rejects unsupported MIME / extension", async () => {
   const res = await fetch(`${base}/attachments?filename=note.txt`, {
     method: "POST",
     headers: { "content-type": "text/plain" },
     body: Buffer.from("hello"),
   });
   expect(res.status).toBe(415);
+});
+
+test("POST /attachments rejects HTML with a mismatched MIME type", async () => {
+  const res = await fetch(`${base}/attachments?filename=report.html`, {
+    method: "POST",
+    headers: { "content-type": "image/png" },
+    body: Buffer.from("<!doctype html>"),
+  });
+  expect(res.status).toBe(415);
+});
+
+test("GET /attachments/:sha256 404s for an invalid attachment ID", async () => {
+  const res = await fetch(`${base}/attachments/not-a-sha256`);
+  expect(res.status).toBe(404);
 });
 
 test("GET /attachments/:sha256 404s for an unknown blob", async () => {

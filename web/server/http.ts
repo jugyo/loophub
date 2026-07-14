@@ -121,7 +121,7 @@ function isBoundToLoopback(): boolean {
   return isLoopbackHost(process.env.LOOPHUB_HOST ?? "127.0.0.1");
 }
 
-// POST /attachments — upload a standalone image blob. The binary is the request
+// POST /attachments — upload a standalone attachment blob. The binary is the request
 // body; `filename` and `actor` come from the query string (or x-filename /
 // x-actor headers), MIME from content-type. Returns the stored metadata plus the
 // embed `url` and `markdown`.
@@ -134,7 +134,7 @@ async function handleAttachmentUpload(
   try {
     const body = await readBinaryBody(req, MAX_ATTACHMENT_BYTES);
     if (body.tooLarge) {
-      sendJson(res, 413, { error: "Image too large (max 10MB)" });
+      sendJson(res, 413, { error: "Attachment too large (max 10MB)" });
       return;
     }
     data = body.data;
@@ -164,6 +164,16 @@ async function handleAttachmentUpload(
   }
 }
 
+function safeDownloadFilename(filename: string): string {
+  const leaf = filename.replaceAll("\\", "/").split("/").pop() || "";
+  return (
+    leaf
+      .replace(/[^\x20-\x7e]/g, "_")
+      .replace(/["\\]/g, "_")
+      .trim() || "attachment"
+  );
+}
+
 // GET /attachments/:sha256 — stream a stored blob with its recorded content-type.
 function handleAttachmentGet(res: ServerResponse, url: URL): void {
   const sha256 = url.pathname.slice("/attachments/".length);
@@ -179,13 +189,18 @@ function handleAttachmentGet(res: ServerResponse, url: URL): void {
     res.writeHead(404).end();
     return;
   }
-  res.writeHead(200, {
+  const headers: Record<string, string> = {
     "content-type": att.mime,
     "cache-control": "public, max-age=31536000, immutable",
     // Bytes aren't magic-byte-validated, so stop the browser from sniffing a
-    // served blob into something other than its recorded image content-type.
+    // served blob into something other than its recorded content-type.
     "x-content-type-options": "nosniff",
-  });
+  };
+  if (att.mime === "text/html") {
+    headers["content-disposition"] =
+      `attachment; filename="${safeDownloadFilename(att.filename)}"`;
+  }
+  res.writeHead(200, headers);
   const stream = createReadStream(path);
   // Guard the TOCTOU race (blob removed between existsSync and open): a stream
   // error here would otherwise be unhandled and crash the process.

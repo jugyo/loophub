@@ -1,9 +1,9 @@
-// Standalone image attachments. An attachment is a content-addressed image blob
+// Standalone attachments. An attachment is a content-addressed blob
 // stored under $LOOPHUB_HOME/attachments/<sha256[0:2]>/<sha256> with metadata in
 // the `attachments` table. It is not linked to any repo/issue/PR — the sha256 is
 // the identity and the URL (/attachments/<sha256>), referenced from markdown
-// bodies as `![filename](/attachments/<sha256>)`. Blobs are immutable, dedup by
-// content, and never garbage-collected.
+// bodies as image embeds or file links. Blobs are immutable, dedup by content,
+// and never garbage-collected.
 //
 // Both the HTTP upload route (web/server/http.ts) and the CLI (`lh attachment
 // add`) call saveAttachment directly, so validation lives here, transport-neutral
@@ -19,7 +19,7 @@ import { ServiceError } from "./errors.ts";
 // One blob may not exceed 10MB.
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
-// Allowed image types: extension -> canonical MIME. Both the extension and the
+// Allowed attachment types: extension -> canonical MIME. Both the extension and the
 // declared MIME are validated (and must agree) before a blob is stored.
 const EXT_TO_MIME: Record<string, string> = {
   ".png": "image/png",
@@ -27,6 +27,8 @@ const EXT_TO_MIME: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
+  ".html": "text/html",
+  ".htm": "text/html",
 };
 const ALLOWED_MIME = new Set(Object.values(EXT_TO_MIME));
 
@@ -58,11 +60,16 @@ export function attachmentUrl(sha256: string): string {
   return `/attachments/${sha256}`;
 }
 
-/** Markdown embed for an attachment. Alt text is the filename, sanitized so it
- * cannot break out of the `![...]` syntax. */
-export function attachmentMarkdown(filename: string, sha256: string): string {
-  const alt = filename.replace(/[[\]\r\n]/g, " ").trim() || "image";
-  return `![${alt}](${attachmentUrl(sha256)})`;
+/** Markdown embed or link for an attachment. The label is sanitized so it
+ * cannot break out of the `[...]` syntax. */
+export function attachmentMarkdown(
+  filename: string,
+  sha256: string,
+  mime: string,
+): string {
+  const label = filename.replace(/[[\]\r\n]/g, " ").trim() || "attachment";
+  const prefix = mime.startsWith("image/") ? "!" : "";
+  return `${prefix}[${label}](${attachmentUrl(sha256)})`;
 }
 
 // Validate filename extension + declared MIME, returning the canonical MIME.
@@ -72,7 +79,7 @@ function resolveMime(filename: string, declaredMime: string | null): string {
   if (!extMime) {
     throw new ServiceError(
       415,
-      `Unsupported image extension: ${ext || "(none)"}`,
+      `Unsupported attachment extension: ${ext || "(none)"}`,
     );
   }
   const mime = declaredMime?.toLowerCase().split(";")[0].trim();
@@ -100,7 +107,7 @@ export function getAttachment(sha256: string): Attachment | null {
 }
 
 /**
- * Validate and store an image blob, deduping by content. Re-uploading the same
+ * Validate and store an attachment blob, deduping by content. Re-uploading the same
  * bytes converges on one blob and one row (the original row is kept). Returns the
  * stored metadata plus the embed `url` and `markdown`.
  */
@@ -115,7 +122,7 @@ export function saveAttachment(input: {
   if (size > MAX_ATTACHMENT_BYTES) {
     throw new ServiceError(
       413,
-      `Image too large: ${size} bytes (max ${MAX_ATTACHMENT_BYTES})`,
+      `Attachment too large: ${size} bytes (max ${MAX_ATTACHMENT_BYTES})`,
     );
   }
   const mime = resolveMime(input.filename, input.mime ?? null);
@@ -135,9 +142,15 @@ export function saveAttachment(input: {
   );
 
   const row = getAttachment(sha256) as Attachment;
+  if (row.mime !== mime) {
+    throw new ServiceError(
+      415,
+      `MIME ${mime} does not match stored attachment MIME ${row.mime}`,
+    );
+  }
   return {
     ...row,
     url: attachmentUrl(sha256),
-    markdown: attachmentMarkdown(row.filename, sha256),
+    markdown: attachmentMarkdown(row.filename, sha256, row.mime),
   };
 }

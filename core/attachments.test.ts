@@ -15,6 +15,7 @@ const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
   "base64",
 );
+const HTML = Buffer.from("<!doctype html><script>alert('no')</script>");
 
 beforeAll(async () => {
   A = await import("./attachments.ts");
@@ -38,6 +39,41 @@ test("saveAttachment stores a content-addressed blob and returns url + markdown"
   expect(readFileSync(path).equals(PNG)).toBe(true);
 });
 
+test("saveAttachment stores HTML and returns a download link", () => {
+  const r = A.saveAttachment({
+    data: HTML,
+    filename: "report.html",
+    mime: "text/html",
+    author: "me",
+  });
+  expect(r.sha256).toMatch(/^[0-9a-f]{64}$/);
+  expect(r.mime).toBe("text/html");
+  expect(r.url).toBe(`/attachments/${r.sha256}`);
+  expect(r.markdown).toBe(`[report.html](/attachments/${r.sha256})`);
+  expect(readFileSync(A.blobPath(r.sha256)).equals(HTML)).toBe(true);
+
+  const duplicate = A.saveAttachment({
+    data: HTML,
+    filename: "copy.htm",
+    mime: "text/html",
+    author: "you",
+  });
+  expect(duplicate.sha256).toBe(r.sha256);
+  expect(duplicate.filename).toBe("report.html");
+  expect(duplicate.author).toBe("me");
+});
+
+test("saveAttachment accepts the .htm extension and canonicalizes its MIME", () => {
+  const r = A.saveAttachment({
+    data: Buffer.from("<!doctype html><title>HTM</title>"),
+    filename: "report.htm",
+    mime: "text/html; charset=utf-8",
+    author: "me",
+  });
+  expect(r.mime).toBe("text/html");
+  expect(r.markdown).toBe(`[report.htm](/attachments/${r.sha256})`);
+});
+
 test("re-uploading the same bytes converges on one blob and one row (dedup)", () => {
   const a = A.saveAttachment({ data: PNG, filename: "a.png", author: "me" });
   const b = A.saveAttachment({ data: PNG, filename: "b.png", author: "you" });
@@ -45,6 +81,40 @@ test("re-uploading the same bytes converges on one blob and one row (dedup)", ()
   // First write wins: filename/author from the original row are kept.
   expect(b.filename).toBe(a.filename);
   expect(b.author).toBe(a.author);
+});
+
+test("re-uploading the same bytes with a different MIME type is rejected", () => {
+  const imageFirst = Buffer.from("same bytes, image first");
+  A.saveAttachment({
+    data: imageFirst,
+    filename: "first.png",
+    mime: "image/png",
+    author: "me",
+  });
+  expect(() =>
+    A.saveAttachment({
+      data: imageFirst,
+      filename: "second.html",
+      mime: "text/html",
+      author: "you",
+    }),
+  ).toThrowError(/does not match stored attachment MIME/);
+
+  const htmlFirst = Buffer.from("same bytes, HTML first");
+  A.saveAttachment({
+    data: htmlFirst,
+    filename: "first.html",
+    mime: "text/html",
+    author: "me",
+  });
+  expect(() =>
+    A.saveAttachment({
+      data: htmlFirst,
+      filename: "second.png",
+      mime: "image/png",
+      author: "you",
+    }),
+  ).toThrowError(/does not match stored attachment MIME/);
 });
 
 test("getAttachment returns stored metadata, null when missing", () => {

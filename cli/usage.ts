@@ -35,7 +35,7 @@ export function usage(): void {
   lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-build worktrees (issue closed / PR merged, clean tree)
   lh herdr [--repo owner/name] [--json]                      # show the repo's herdr session as workspace -> tab -> agent(PR)
   lh herdr focus <pr> [--repo owner/name]                     # focus the pane of the running agent for that PR's worktree
-  lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image(s), print embed markdown
+  lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image/HTML attachment(s), print markdown
   lh sync                                          # detect open-PR head updates and emit events
   lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--order asc|desc]   # print a bounded event snapshot; use --since with --order asc for cursor polling
   lh subscribe --event <type>[,<type>...] [--repo owner/repo]   # subscribe this herdr pane to repo events (worker injects a notify line per event)
@@ -65,6 +65,7 @@ export function usage(): void {
     lh pr review 3 --topic security --event pass --body "no issues found"
     echo '[{"path":"a.txt","line":2,"body":"typo"}]' | lh pr review 3 --comments -
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)
+    lh attachment add --file report.html     # prints [report.html](/attachments/<sha256>)
     lh events --since 0
     lh events --since 120 --order asc --repo me/proj --json`);
   process.exit(group ? 1 : 0);
