@@ -39,3 +39,12 @@ test("identifies orchestrator-prefixed messages in every child contract", () => 
     );
   }
 });
+
+test("parent subscribes its own Herdr pane to GitHub feedback events", () => {
+  const contract = workflowContractText("parent");
+
+  expect(contract).toContain(
+    "lh subscribe --repo '<repo>' --event pull_request.github_feedback",
+  );
+  expect(contract).toContain("new or updated GitHub PR feedback");
+});

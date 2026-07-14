@@ -1,3 +1,7 @@
+import {
+  type GithubFeedbackSyncResult,
+  syncGithubFeedback,
+} from "../core/github-feedback-sync.ts";
 import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
 import { sweepPullConflicts } from "../core/pull-conflict-events.ts";
 import {
@@ -16,6 +20,9 @@ export const DEFAULT_USAGE_SWEEP_MS = 10000;
 // rate limits), unlike the other sweeps here which only touch local git/DB — so this defaults to
 // a much coarser interval than DEFAULT_SWEEP_MS.
 export const DEFAULT_GITHUB_MERGE_SWEEP_MS = 60000;
+// Feedback is a network sweep over three paginated GitHub endpoints per active Workflow PR. A
+// minute keeps feedback reasonably fresh without turning the resident worker into a tight API poll.
+export const DEFAULT_GITHUB_FEEDBACK_SWEEP_MS = 60000;
 // #832: cost changes slowly (usage is itself refreshed only every DEFAULT_USAGE_SWEEP_MS), and the
 // action — sending Esc once a dev agent passes the limit — is idempotent per PR via the
 // dev.cost_stopped event, so a coarse interval is plenty and keeps the herdr `agent list` calls
@@ -42,6 +49,7 @@ export interface MaintenanceLoopOptions {
   sweepMs?: number;
   usageSweepMs?: number;
   githubMergeSweepMs?: number;
+  githubFeedbackSweepMs?: number;
   costStopSweepMs?: number;
   closedPullCleanupSweepMs?: number;
   scheduledTaskSweepMs?: number;
@@ -52,6 +60,7 @@ export interface NormalizedMaintenanceLoopOptions {
   sweepMs: number;
   usageSweepMs: number;
   githubMergeSweepMs: number;
+  githubFeedbackSweepMs: number;
   costStopSweepMs: number;
   closedPullCleanupSweepMs: number;
   scheduledTaskSweepMs: number;
@@ -71,6 +80,10 @@ export function normalizeMaintenanceLoopOptions(
     githubMergeSweepMs: finiteOrDefault(
       opts.githubMergeSweepMs,
       DEFAULT_GITHUB_MERGE_SWEEP_MS,
+    ),
+    githubFeedbackSweepMs: finiteOrDefault(
+      opts.githubFeedbackSweepMs,
+      DEFAULT_GITHUB_FEEDBACK_SWEEP_MS,
     ),
     costStopSweepMs: finiteOrDefault(
       opts.costStopSweepMs,
@@ -131,6 +144,10 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
     usageSweep: opts.usageSweepMs > 0 ? `${opts.usageSweepMs}ms` : "off",
     githubMergeSweep:
       opts.githubMergeSweepMs > 0 ? `${opts.githubMergeSweepMs}ms` : "off",
+    githubFeedbackSweep:
+      opts.githubFeedbackSweepMs > 0
+        ? `${opts.githubFeedbackSweepMs}ms`
+        : "off",
     costStopSweep:
       opts.costStopSweepMs > 0 ? `${opts.costStopSweepMs}ms` : "off",
     closedPullCleanupSweep:
@@ -155,6 +172,9 @@ export function startMaintenanceLoops(
       : () => {},
     normalized.githubMergeSweepMs > 0
       ? startGithubMergeSweep(normalized.githubMergeSweepMs)
+      : () => {},
+    normalized.githubFeedbackSweepMs > 0
+      ? startGithubFeedbackSweep(normalized.githubFeedbackSweepMs)
       : () => {},
     normalized.costStopSweepMs > 0
       ? startCostStopSweep(normalized.costStopSweepMs)
@@ -266,6 +286,48 @@ export function startGithubMergeSweep(
       });
     } catch (err) {
       logLoopFailed("github merge sweep", startedAt, err);
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// Poll GitHub feedback for open PRs attached to running Workflow runs. The core sweep persists
+// dedupe state and emits one event per PR; this worker layer owns cadence and visible operational
+// logging only. Failures are already isolated per PR, so log every one and let the next interval be
+// the sole retry mechanism.
+export function startGithubFeedbackSweep(
+  intervalMs = DEFAULT_GITHUB_FEEDBACK_SWEEP_MS,
+  sweep: () => Promise<GithubFeedbackSyncResult> = syncGithubFeedback,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    const startedAt = logLoopStarted("github feedback sweep");
+    try {
+      const result = await sweep();
+      for (const failure of result.failures) {
+        workerLog.error(
+          `lh-worker: github feedback sweep PR failed pr=${failure.number} github_pr=${failure.github_number} error=${failure.error}`,
+        );
+      }
+      logLoopCompleted("github feedback sweep", startedAt, {
+        checked: result.checked,
+        emitted_events: result.emitted.length,
+        failures: result.failures.length,
+      });
+    } catch (err) {
+      logLoopFailed("github feedback sweep", startedAt, err);
     } finally {
       running = false;
     }

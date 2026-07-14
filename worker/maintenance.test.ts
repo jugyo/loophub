@@ -62,6 +62,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
       sweepMs: 0,
       usageSweepMs: Number.NaN,
       githubMergeSweepMs: 0,
+      githubFeedbackSweepMs: 0,
       costStopSweepMs: Number.NaN,
       closedPullCleanupSweepMs: Number.NaN,
       scheduledTaskSweepMs: Number.NaN,
@@ -71,6 +72,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     sweepMs: 0,
     usageSweepMs: M.DEFAULT_USAGE_SWEEP_MS,
     githubMergeSweepMs: 0,
+    githubFeedbackSweepMs: 0,
     costStopSweepMs: M.DEFAULT_COST_STOP_SWEEP_MS,
     closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
@@ -81,6 +83,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     sweepMs: M.DEFAULT_SWEEP_MS,
     usageSweepMs: M.DEFAULT_USAGE_SWEEP_MS,
     githubMergeSweepMs: M.DEFAULT_GITHUB_MERGE_SWEEP_MS,
+    githubFeedbackSweepMs: M.DEFAULT_GITHUB_FEEDBACK_SWEEP_MS,
     costStopSweepMs: M.DEFAULT_COST_STOP_SWEEP_MS,
     closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
@@ -99,6 +102,7 @@ test("maintenance summary reports disabled loops as off", () => {
       sweepMs: 0,
       usageSweepMs: 25,
       githubMergeSweepMs: 0,
+      githubFeedbackSweepMs: 30,
       costStopSweepMs: 0,
       closedPullCleanupSweepMs: 600000,
       scheduledTaskSweepMs: 0,
@@ -108,11 +112,47 @@ test("maintenance summary reports disabled loops as off", () => {
     pullSweep: "off",
     usageSweep: "25ms",
     githubMergeSweep: "off",
+    githubFeedbackSweep: "30ms",
     costStopSweep: "off",
     closedPullCleanupSweep: "600000ms",
     scheduledTaskSweep: "off",
     conflictSweep: "off",
   });
+});
+
+test("GitHub feedback sweep runs at its configured interval and logs per-PR failures", async () => {
+  vi.useFakeTimers();
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
+  const err = vi.spyOn(console, "error").mockImplementation(() => {});
+  const sweep = vi.fn(async () => ({
+    checked: 2,
+    emitted: [],
+    failures: [
+      { number: 7, github_number: 70, error: "auth failed\nnext line" },
+    ],
+  }));
+  const stop = M.startGithubFeedbackSweep(25, sweep);
+  try {
+    await vi.advanceTimersByTimeAsync(24);
+    expect(sweep).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sweep).toHaveBeenCalledTimes(1);
+    expect(err).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "github feedback sweep PR failed pr=7 github_pr=70 error=auth failed next line",
+      ),
+    );
+    expect(out).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "github feedback sweep completed duration_ms=0 checked=2 emitted_events=0 failures=1",
+      ),
+    );
+  } finally {
+    stop();
+    out.mockRestore();
+    err.mockRestore();
+    vi.useRealTimers();
+  }
 });
 
 test("pull sweep logs start and completion to stdout", async () => {

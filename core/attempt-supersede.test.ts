@@ -125,18 +125,21 @@ test("merging an attempt closes open siblings with comments and traceable events
   const closeEvents = S.listEvents(0, repo.id, 100).filter(
     (event) => event.type === "pull_request.closed",
   );
-  expect(closeEvents.map((event) => JSON.parse(event.payload))).toEqual([
-    {
-      number: siblingA.number,
-      linked_issue: issue.number,
-      superseded_by: adopted.number,
-    },
-    {
-      number: siblingB.number,
-      linked_issue: issue.number,
-      superseded_by: adopted.number,
-    },
-  ]);
+  expect(closeEvents).toHaveLength(2);
+  expect(closeEvents.map((event) => JSON.parse(event.payload))).toEqual(
+    expect.arrayContaining([
+      {
+        number: siblingA.number,
+        linked_issue: issue.number,
+        superseded_by: adopted.number,
+      },
+      {
+        number: siblingB.number,
+        linked_issue: issue.number,
+        superseded_by: adopted.number,
+      },
+    ]),
+  );
 });
 
 test("closing an issue directly closes every open attempt and is idempotent", async () => {

@@ -496,6 +496,20 @@ CREATE TABLE IF NOT EXISTS github_pull_status (
   synced_at  TEXT NOT NULL
 );
 
+-- Last content observed for each GitHub PR feedback item. Only the digest is retained: GitHub
+-- bodies are untrusted input and never need to enter LoopHub events or agent notification prompts.
+-- The content digest (rather than updated_at alone) also catches edits when GitHub's timestamp is
+-- absent or unexpectedly unchanged.
+CREATE TABLE IF NOT EXISTS github_pull_feedback (
+  issue_id     INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  kind         TEXT NOT NULL CHECK (kind IN ('issue_comment', 'review', 'review_comment')),
+  github_id    INTEGER NOT NULL,
+  content_hash TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  observed_at  TEXT NOT NULL,
+  PRIMARY KEY (issue_id, kind, github_id)
+);
+
 -- New Issue Herdr pane links (#670). A web New Issue launch creates a Herdr pane before an issue
 -- exists, while lh issue create creates the issue from inside that pane later. launch_id is the
 -- durable correlation key both sides know; issue_id and pane_id can arrive in either order.

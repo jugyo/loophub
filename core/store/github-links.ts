@@ -78,6 +78,95 @@ export interface GithubPullSyncRow {
   local_path: string;
 }
 
+export interface WorkflowGithubPullSyncRow extends GithubPullSyncRow {
+  workflow_run_id: number;
+  parent_session_id: string;
+}
+
+// GitHub feedback is relevant only while an open LoopHub PR's latest running Workflow run has a
+// registered parent subscription. Waiting for that subscription prevents an early sweep from
+// consuming feedback before the parent pane can receive the event.
+export function activeWorkflowGithubPullLinks(): WorkflowGithubPullSyncRow[] {
+  return db
+    .query(
+      `SELECT gp.issue_id AS issue_id, i.repo_id AS repo_id, i.number AS number,
+              gp.number AS github_number, gp.url AS url, r.local_path AS local_path,
+              wr.id AS workflow_run_id, wr.parent_session_id AS parent_session_id
+       FROM github_pulls gp
+       JOIN issues i ON i.id = gp.issue_id
+       JOIN pulls p ON p.issue_id = gp.issue_id
+       JOIN repos r ON r.id = i.repo_id
+       JOIN workflow_runs wr ON wr.id = (
+         SELECT candidate.id FROM workflow_runs candidate
+         WHERE candidate.repo_id = i.repo_id AND candidate.pr_number = i.number
+           AND candidate.status = 'running'
+         ORDER BY candidate.id DESC LIMIT 1
+       )
+       WHERE i.kind = 'pull' AND i.state = 'open' AND p.merged = 0 AND r.archived = 0
+         AND wr.parent_session_id IS NOT NULL
+         AND EXISTS (
+           SELECT 1 FROM event_subscriptions subscription
+           WHERE subscription.repo_id = i.repo_id
+             AND subscription.event_type = 'pull_request.github_feedback'
+             AND subscription.session_id = wr.parent_session_id
+         )
+       ORDER BY i.repo_id, i.number`,
+    )
+    .all() as WorkflowGithubPullSyncRow[];
+}
+
+export interface GithubFeedbackObservation {
+  issue_id: number;
+  kind: "issue_comment" | "review" | "review_comment";
+  github_id: number;
+  content_hash: string;
+  updated_at: string;
+  observed_at: string;
+}
+
+export function getGithubFeedbackObservation(
+  issueId: number,
+  kind: GithubFeedbackObservation["kind"],
+  githubId: number,
+): GithubFeedbackObservation | null {
+  return (
+    (db
+      .query(
+        `SELECT * FROM github_pull_feedback
+         WHERE issue_id = ? AND kind = ? AND github_id = ?`,
+      )
+      .get(issueId, kind, githubId) as GithubFeedbackObservation | null) ?? null
+  );
+}
+
+export function saveGithubFeedbackObservation(input: {
+  issueId: number;
+  kind: GithubFeedbackObservation["kind"];
+  githubId: number;
+  contentHash: string;
+  updatedAt: string;
+}): GithubFeedbackObservation {
+  return db
+    .query(
+      `INSERT INTO github_pull_feedback
+         (issue_id, kind, github_id, content_hash, updated_at, observed_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(issue_id, kind, github_id) DO UPDATE SET
+         content_hash = excluded.content_hash,
+         updated_at = excluded.updated_at,
+         observed_at = excluded.observed_at
+       RETURNING *`,
+    )
+    .get(
+      input.issueId,
+      input.kind,
+      input.githubId,
+      input.contentHash,
+      input.updatedAt,
+      now(),
+    ) as GithubFeedbackObservation;
+}
+
 // #800: github_pulls links still worth polling — has a GitHub link, not yet github_merged, and the
 // loophub side is still open/unmerged (the scenario this issue targets: exported-then-merged-on-
 // GitHub while the loophub PR itself hasn't gone through its own merge flow yet). Once the loophub

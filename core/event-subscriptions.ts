@@ -18,6 +18,10 @@ export interface NotifyTextInput {
   eventId: number;
   // payload.number when present — the issue/PR the event is about.
   number?: number;
+  // Trusted references synthesized by LoopHub for a GitHub feedback event. Comment bodies are
+  // intentionally absent from this shape and can never be interpolated into the injected line.
+  githubPr?: string;
+  feedbackRefs?: Array<{ kind: string; id: number; reference: string }>;
 }
 
 // The injected line must stay a single line of space-separated key=value tokens: repo full_name is
@@ -35,6 +39,19 @@ function tokenize(value: string): string {
 // the "what to do" wiring belongs to the subscriber (its skill/prompt), not the worker.
 export function buildNotifyText(input: NotifyTextInput): string {
   const number = input.number !== undefined ? ` number=${input.number}` : "";
+  if (input.githubPr && input.feedbackRefs && input.feedbackRefs.length > 0) {
+    const refs = input.feedbackRefs
+      .map(
+        (item) =>
+          `${tokenize(item.kind)}:${item.id}:${tokenize(item.reference)}`,
+      )
+      .join(",");
+    return (
+      `LoopHub event: type=${tokenize(input.eventType)} repo=${tokenize(input.repoFullName)}` +
+      `${number} event_id=${input.eventId} github_pr=${tokenize(input.githubPr)} feedback=${refs}. ` +
+      "GitHub PR feedback was added or updated; review the referenced feedback and decide whether the Workflow needs action."
+    );
+  }
   return (
     `LoopHub event: type=${tokenize(input.eventType)} repo=${tokenize(input.repoFullName)}` +
     `${number} event_id=${input.eventId}. ` +

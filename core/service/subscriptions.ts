@@ -120,7 +120,7 @@ export const subscriptions = {
   ): Promise<NotifyResult> {
     const result: NotifyResult = { notified: 0, removed: 0, failures: [] };
     if (row.repo_id == null || !notifiableEventType(row.type)) return result;
-    const subs = S.eventSubscriptionsFor(row.repo_id, row.type);
+    let subs = S.eventSubscriptionsFor(row.repo_id, row.type);
     if (subs.length === 0) return result;
     const repoFullName = S.getRepoById(row.repo_id)?.full_name ?? "";
     let payload: unknown;
@@ -129,12 +129,42 @@ export const subscriptions = {
     } catch {
       payload = {};
     }
+    if (row.type === "pull_request.github_feedback") {
+      const parentSessionId = (payload as { parent_session_id?: unknown })
+        .parent_session_id;
+      if (typeof parentSessionId !== "string") return result;
+      subs = subs.filter((sub) => sub.session_id === parentSessionId);
+      if (subs.length === 0) return result;
+    }
     const number = (payload as { number?: unknown })?.number;
+    const githubUrl = (payload as { github_url?: unknown })?.github_url;
+    const rawFeedback = (payload as { feedback?: unknown })?.feedback;
+    const feedbackRefs = Array.isArray(rawFeedback)
+      ? rawFeedback.flatMap((value) => {
+          if (!value || typeof value !== "object") return [];
+          const item = value as {
+            kind?: unknown;
+            id?: unknown;
+            reference?: unknown;
+          };
+          if (
+            typeof item.kind !== "string" ||
+            typeof item.id !== "number" ||
+            !Number.isSafeInteger(item.id) ||
+            typeof item.reference !== "string"
+          ) {
+            return [];
+          }
+          return [{ kind: item.kind, id: item.id, reference: item.reference }];
+        })
+      : undefined;
     const text = buildNotifyText({
       eventType: row.type,
       repoFullName,
       eventId: row.id,
       number: typeof number === "number" ? number : undefined,
+      githubPr: typeof githubUrl === "string" ? githubUrl : undefined,
+      feedbackRefs,
     });
     const inject =
       deps.inject ??

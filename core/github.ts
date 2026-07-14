@@ -162,6 +162,36 @@ export interface GithubIssueContent {
   url: string;
 }
 
+export interface GithubPullRef {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+// Parse the recorded web URL into coordinates safe to use in `gh api` endpoint argv values. Keep
+// the path exact: extra path components and non-github.com hosts are not a GitHub PR identity.
+export function parseGithubPullUrl(url: string): GithubPullRef | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+  if (
+    !["github.com", "www.github.com"].includes(parsed.hostname.toLowerCase())
+  ) {
+    return null;
+  }
+  const match = parsed.pathname.match(
+    /^\/([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)\/?$/,
+  );
+  if (!match) return null;
+  const number = Number(match[3]);
+  if (!Number.isSafeInteger(number) || number < 1) return null;
+  return { owner: match[1], repo: match[2], number };
+}
+
 // Parse a GitHub issue URL into owner/repo/number, or null when it is not a well-formed github.com
 // issue URL. Pure (no gh/network), so the service layer validates the input before spending a fetch,
 // and it is unit-testable on its own. Host is pinned to github.com (the model is GitHub-only); the
@@ -282,6 +312,127 @@ export interface GithubMergeStatusDeps {
 
 export const realGithubMergeStatusDeps: GithubMergeStatusDeps = {
   fetchMergeStatus: fetchGithubPrMergeStatus,
+};
+
+export type GithubPrFeedbackKind =
+  | "issue_comment"
+  | "review"
+  | "review_comment";
+
+export interface GithubPrFeedback {
+  kind: GithubPrFeedbackKind;
+  id: number;
+  body: string;
+  updatedAt: string;
+}
+
+export type GithubApiRunner = (
+  repoPath: string,
+  endpoint: string,
+) => Promise<string>;
+
+async function runGithubApi(
+  repoPath: string,
+  endpoint: string,
+): Promise<string> {
+  const result = await gh(repoPath, ["api", "--paginate", "--slurp", endpoint]);
+  if (result.code !== 0) {
+    throw new Error(
+      `gh api failed for ${endpoint}: ${result.stderr.trim() || result.stdout.trim()}`,
+    );
+  }
+  return result.stdout;
+}
+
+function paginatedItems(stdout: string, endpoint: string): unknown[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    throw new Error(`gh api returned unparseable JSON for ${endpoint}`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`gh api returned unexpected JSON for ${endpoint}`);
+  }
+  // `gh api --paginate --slurp` wraps every response page in an outer array. Accept a flat array
+  // as well for injected runners and older gh versions that ignore --slurp on a single page.
+  return parsed.every(Array.isArray) ? parsed.flat() : parsed;
+}
+
+function normalizeFeedback(
+  kind: GithubPrFeedbackKind,
+  items: unknown[],
+): GithubPrFeedback[] {
+  const normalized: GithubPrFeedback[] = [];
+  for (const value of items) {
+    if (!value || typeof value !== "object") continue;
+    const item = value as Record<string, unknown>;
+    if (!Number.isSafeInteger(item.id) || (item.id as number) < 1) continue;
+    if (typeof item.body !== "string") continue;
+    // GitHub includes draft reviews in this endpoint with state=PENDING and no submitted_at. Do not
+    // observe their bodies yet: otherwise the later submitted review (same id/body) would already
+    // be deduped. Conversation and inline comments do not have this draft lifecycle.
+    if (
+      kind === "review" &&
+      ((typeof item.state === "string" &&
+        item.state.toUpperCase() === "PENDING") ||
+        typeof item.submitted_at !== "string" ||
+        item.submitted_at.trim() === "")
+    ) {
+      continue;
+    }
+    const timestamp = [
+      item.updated_at,
+      item.submitted_at,
+      item.created_at,
+    ].find((candidate): candidate is string => typeof candidate === "string");
+    normalized.push({
+      kind,
+      id: item.id as number,
+      body: item.body,
+      updatedAt: timestamp ?? "",
+    });
+  }
+  return normalized;
+}
+
+// Fetch the three GitHub feedback surfaces independently, while exposing only normalized feedback
+// to the sync. The body is used solely for hashing and never becomes part of an event payload.
+export async function fetchGithubPrFeedback(
+  repoPath: string,
+  url: string,
+  api: GithubApiRunner = runGithubApi,
+): Promise<GithubPrFeedback[]> {
+  const ref = parseGithubPullUrl(url);
+  if (!ref) throw new Error(`invalid GitHub PR URL: ${url}`);
+  const root = `repos/${ref.owner}/${ref.repo}`;
+  const endpoints = [
+    `${root}/issues/${ref.number}/comments`,
+    `${root}/pulls/${ref.number}/reviews`,
+    `${root}/pulls/${ref.number}/comments`,
+  ] as const;
+  const outputs = await Promise.all(
+    endpoints.map((endpoint) => api(repoPath, endpoint)),
+  );
+  return [
+    ...normalizeFeedback(
+      "issue_comment",
+      paginatedItems(outputs[0], endpoints[0]),
+    ),
+    ...normalizeFeedback("review", paginatedItems(outputs[1], endpoints[1])),
+    ...normalizeFeedback(
+      "review_comment",
+      paginatedItems(outputs[2], endpoints[2]),
+    ),
+  ];
+}
+
+export interface GithubFeedbackDeps {
+  fetchFeedback: typeof fetchGithubPrFeedback;
+}
+
+export const realGithubFeedbackDeps: GithubFeedbackDeps = {
+  fetchFeedback: fetchGithubPrFeedback,
 };
 
 // #850: the GitHub-side status of a PR already exported via github_pulls, for the PR-detail right
