@@ -156,6 +156,15 @@ function PullPopover({
   return (
     <div className="absolute left-7 top-full z-20 w-[380px] pt-1">
       <div className="rounded-md border bg-background p-3 text-foreground shadow-lg">
+        <div className="mb-3 border-b pb-2 text-sm font-semibold">
+          <Link
+            to="/r/$owner/$repo/pulls/$number"
+            params={{ owner, repo, number: String(pull.number) }}
+            className="text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            PR #{pull.number}
+          </Link>
+        </div>
         <dl className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1 text-xs">
           {details.map(([label, value]) => (
             <div key={label} className="contents">
@@ -167,14 +176,6 @@ function PullPopover({
           ))}
         </dl>
         <div className="mt-3 flex gap-2">
-          <Link
-            to="/r/$owner/$repo/pulls/$number"
-            params={{ owner, repo, number: String(pull.number) }}
-            className={cn(buttonVariants({ size: "sm" }), "h-8")}
-          >
-            <ArrowRight className="size-3.5" />
-            Open PR #{pull.number}
-          </Link>
           <Button
             type="button"
             variant="secondary"

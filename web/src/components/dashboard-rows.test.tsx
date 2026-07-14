@@ -725,6 +725,11 @@ describe("IssueRow action menu removal (#1061)", () => {
 // IssueRow is shared by home Recent issues, repo Open Issues, and /issues, so
 // these assertions cover the linked-PR interaction on all three list surfaces.
 describe("IssueRow linked PR popover trigger (#1289)", () => {
+  function popoverHeader(number: number) {
+    const links = screen.queryAllByRole("link", { name: `PR #${number}` });
+    return links.length === 2 ? links[1] : null;
+  }
+
   function renderPulls(pulls: LinkedPull[]) {
     renderInRouter(
       <IssueRow
@@ -745,7 +750,7 @@ describe("IssueRow linked PR popover trigger (#1289)", () => {
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS * 2);
     });
-    expect(screen.queryByRole("link", { name: "Open PR #10" })).toBeNull();
+    expect(popoverHeader(10)).toBeNull();
   });
 
   it("opens after the standard delay only while the PR link is hovered", async () => {
@@ -758,19 +763,19 @@ describe("IssueRow linked PR popover trigger (#1289)", () => {
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS - 1);
     });
-    expect(screen.queryByRole("link", { name: "Open PR #10" })).toBeNull();
+    expect(popoverHeader(10)).toBeNull();
 
     fireEvent.mouseLeave(link, { relatedTarget: row });
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS * 2);
     });
-    expect(screen.queryByRole("link", { name: "Open PR #10" })).toBeNull();
+    expect(popoverHeader(10)).toBeNull();
 
     fireEvent.mouseEnter(link);
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
     });
-    expect(screen.getByRole("link", { name: "Open PR #10" })).toBeTruthy();
+    expect(popoverHeader(10)).toBeTruthy();
   });
 
   it("keeps the opened popover available while the pointer moves into it", async () => {
@@ -782,13 +787,13 @@ describe("IssueRow linked PR popover trigger (#1289)", () => {
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
     });
-    const openLink = screen.getByRole("link", { name: "Open PR #10" });
-    const popover = openLink.closest<HTMLElement>(".pt-1");
+    const headerLink = popoverHeader(10);
+    const popover = headerLink?.closest<HTMLElement>(".pt-1");
     expect(popover).toBeTruthy();
 
     fireEvent.mouseLeave(link, { relatedTarget: popover });
     fireEvent.mouseEnter(popover!, { relatedTarget: link });
-    expect(screen.getByRole("link", { name: "Open PR #10" })).toBeTruthy();
+    expect(popoverHeader(10)).toBeTruthy();
   });
 
   it("opens only the popover that belongs to the hovered PR link", async () => {
@@ -804,8 +809,8 @@ describe("IssueRow linked PR popover trigger (#1289)", () => {
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
     });
-    expect(screen.getByRole("link", { name: "Open PR #9" })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Open PR #10" })).toBeNull();
+    expect(popoverHeader(9)).toBeTruthy();
+    expect(popoverHeader(10)).toBeNull();
 
     fireEvent.mouseLeave(screen.getByLabelText("Linked PR #9: Second PR"), {
       relatedTarget: document.body,
@@ -814,8 +819,8 @@ describe("IssueRow linked PR popover trigger (#1289)", () => {
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
     });
-    expect(screen.getByRole("link", { name: "Open PR #10" })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Open PR #9" })).toBeNull();
+    expect(popoverHeader(10)).toBeTruthy();
+    expect(popoverHeader(9)).toBeNull();
   });
 });
 

@@ -220,6 +220,10 @@ pointer:
 - **Keyboard focus opens immediately.** Focus is intentional, so it opens the
   popover with no delay; `Escape` and blur (to an element outside the row) close
   it.
+- **The header owns entity navigation.** A linked-PR popover shows `PR #<id>` as
+  a standard link in its header. The action area is reserved for contextual
+  actions such as `Open in Herdr`; do not repeat PR navigation as a primary
+  button there.
 
 Reuse `useHoverPopover` for new hover popovers rather than re-deriving the delay,
 so the value stays in one place and matches this document.

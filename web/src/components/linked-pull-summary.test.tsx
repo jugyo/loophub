@@ -98,7 +98,7 @@ function row() {
 }
 
 function popoverVisible() {
-  return screen.queryByRole("link", { name: /Open PR #10/ }) !== null;
+  return screen.queryAllByRole("link", { name: "PR #10" }).length === 2;
 }
 
 describe("LinkedPullSummaryRow actions", () => {
@@ -139,6 +139,10 @@ describe("LinkedPullSummaryRow hover popover delay", () => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
     });
     expect(popoverVisible()).toBe(true);
+    expect(screen.queryByRole("link", { name: "Open PR #10" })).toBeNull();
+
+    const [, headerLink] = screen.getAllByRole("link", { name: "PR #10" });
+    expect(headerLink.getAttribute("href")).toBe("/r/me/proj/pulls/10");
   });
 
   it("cancels the pending popover when the pointer leaves during the delay", async () => {
@@ -165,6 +169,19 @@ describe("LinkedPullSummaryRow hover popover delay", () => {
 
     fireEvent.focus(row());
     expect(popoverVisible()).toBe(true);
+  });
+
+  it("keeps the popover open while keyboard focus moves to its header link", async () => {
+    renderRow();
+    const trigger = await screen.findByRole("link", { name: "PR #10" });
+
+    fireEvent.focus(trigger);
+    const [, headerLink] = screen.getAllByRole("link", { name: "PR #10" });
+    fireEvent.blur(trigger, { relatedTarget: headerLink });
+    act(() => headerLink.focus());
+
+    expect(popoverVisible()).toBe(true);
+    expect(document.activeElement).toBe(headerLink);
   });
 
   it("closes on Escape", async () => {
