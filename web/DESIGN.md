@@ -2,9 +2,11 @@
 
 This document is the **Source of Truth** that the web SPA's code comments point
 to when they say `DESIGN.md`. It records the design tokens and layout/component
-conventions that are *already* in the code — it codifies the current state, it
-does not propose new design. When a convention changes, change the code and this
-document together.
+conventions that are *already* in the code, together with approved guidelines
+for adding or reviewing UI. When this document describes current behavior, keep
+the code and documentation in sync. A guideline may identify a legacy gap; fix
+that gap in a focused implementation change rather than describing it as
+already implemented or expanding an unrelated change.
 
 Scope: the `web/` SPA only. (This is **not** the external "canon" docs of issue
 #74, which are a separate effort.)
@@ -203,12 +205,47 @@ Badges are compact pills (`rounded-full border`, `text-[11px]`). Work-state and
 cost-stopped tones add a subtle fill so active states stand out without changing
 layout.
 
-### Hover popovers
+### Resource popovers
 
-Popovers that a row reveals on hover (currently the linked-PR summary popover in
-[`components/linked-pull-summary.tsx`](./src/components/linked-pull-summary.tsx))
-follow one shared timing convention so they never flash open under a moving
-pointer:
+A **resource popover** is a compact, non-modal panel anchored to a trigger. It
+adds identifying details, supporting metadata, and contextual actions without
+making the user leave the current page. These guidelines apply whether the
+panel opens from pointer hover, keyboard focus, or click.
+
+The current Web UI has two resource-popover patterns:
+
+- [`IssuePopover`](./src/components/dashboard-rows.tsx), used by the shared
+  `IssueRow` on the home page, repository dashboard, and issue list, previews an
+  issue's state, metadata, description, and Herdr context.
+- [`PullPopover`](./src/components/linked-pull-summary.tsx), used by the shared
+  `LinkedPullSummaryRow` on those issue lists and on issue detail pages,
+  previews a linked PR's status, runtime metrics, and contextual actions.
+
+This inventory identifies the existing surfaces; it does not assert that every
+legacy instance already satisfies every guideline below. Apply the checklist to
+new or reviewed popovers, and address legacy gaps through separately scoped UI
+changes rather than a bulk migration.
+
+Both are hover-and-focus popovers driven by `useHoverPopover`. A future
+click-triggered panel is also in scope when it serves the same supplementary
+resource-detail purpose. A control's visual shape or use of absolute
+positioning does not make it a resource popover:
+
+- **Menus are out of scope.** Notification, theme, filter, agent/model, and PR
+  debug menus present choices or commands and follow menu selection and keyboard
+  conventions instead.
+- **Modals are out of scope.** Repository switching, forms, lightboxes, debug
+  data, diff views, and other dialogs interrupt the page, use a backdrop, and
+  own focus until dismissed.
+- **Tooltips are out of scope.** A tooltip supplies a short label or hint and
+  never contains resource structure, navigation, or actions.
+
+#### Activation and dismissal
+
+The content hierarchy does not change with the activation method. Pointer and
+keyboard users must be able to reach the same navigation and actions, and
+opening one panel must not turn its trigger or an entire row into a competing
+navigation target.
 
 - **Hover opens after a delay.** Pointer hover waits `HOVER_POPUP_DELAY_MS =
   300` ms (the single source of truth in
@@ -216,17 +253,88 @@ pointer:
   popover appears.
 - **Leaving during the delay cancels the open.** If the pointer leaves before
   the delay elapses, the pending open is cancelled and the popover never shows —
-  not even for a frame.
+  not even for a frame. Once open, moving from the trigger into the popover must
+  keep it available.
 - **Keyboard focus opens immediately.** Focus is intentional, so it opens the
-  popover with no delay; `Escape` and blur (to an element outside the row) close
-  it.
-- **The header owns entity navigation.** A linked-PR popover shows `PR #<id>` as
-  a standard link in its header. The action area is reserved for contextual
-  actions such as `Open in Herdr`; do not repeat PR navigation as a primary
-  button there.
+  popover with no delay. Focus may move into links and actions within the panel;
+  `Escape` and blur to an element outside the trigger/popover region close it.
+- **Click opens immediately.** For a click-triggered resource popover, the same
+  control toggles the panel. `Escape`, an outside click, or completed navigation
+  dismisses it; it remains non-modal and does not trap focus.
 
-Reuse `useHoverPopover` for new hover popovers rather than re-deriving the delay,
-so the value stays in one place and matches this document.
+Reuse `useHoverPopover` for the hover delay, pending-open cancellation, immediate
+focus open, and shared `close()` operation. The caller still owns blur
+containment and `Escape` handling: detect when focus leaves the combined
+trigger/popover region or when `Escape` is pressed, then call `close()`.
+
+#### Content hierarchy and navigation
+
+Organize a resource popover into three predictable regions:
+
+1. **Header:** identify the subject with its stable ID and/or name, such as
+   `Issue #42` or `PR #17`. When LoopHub has a detail page for the resource, make
+   that identifier the natural, standard-text navigation link in the header.
+   Do not repeat the same destination as a large button in the action region.
+2. **Body:** put status and the most decision-relevant facts first, then
+   secondary metadata and a short description. Use labels, badges, definition
+   lists, truncation, and wrapping consistently so values remain scannable; omit
+   empty sections instead of filling the panel with placeholders unless the
+   absence itself matters.
+3. **Action region:** place contextual operations after the information they
+   depend on and separate the region with spacing or a border. Keep the number
+   of actions small; a popover is not a replacement for the detail page.
+
+The header-link convention generalizes the linked-PR improvement from #1334:
+navigation to the resource is part of identification, while actions are things
+the user does in the resource's current context.
+
+#### Action prominence
+
+Choose emphasis from the action's meaning and importance, not from the desire
+to make every available operation noticeable:
+
+- **Primary** is reserved for the single most important task-advancing operation
+  in the current context. Merely opening the resource's detail page is
+  navigation, so present it as the header link rather than a primary-color
+  button.
+- **Secondary** suits useful contextual operations that do not define the main
+  task, such as `Open in Herdr`.
+- **Ghost or link styling** suits low-emphasis navigation and optional utility
+  actions.
+- **Destructive** is reserved for actions with destructive consequences. Keep
+  it visually distinct, label the consequence plainly, and do not place it
+  where it can be mistaken for routine navigation.
+
+Do not show two actions with equal primary emphasis. Preserve visible disabled,
+pending, and error behavior for operations that may be unavailable or fail.
+
+#### Density and visual style
+
+- Use a compact width appropriate to the content, a clear header/body/action
+  stack, and enough internal padding and section spacing to keep dense metadata
+  readable. Avoid page-scale layouts and large empty areas.
+- Use the theme surface and foreground tokens (`bg-background`,
+  `text-foreground`) for an opaque panel, plus the shared `border`,
+  `rounded-md`, and `shadow-lg` treatment. Use `muted-foreground` for supporting
+  labels and metadata; do not hard-code light- or dark-theme colors.
+- Use dividers selectively to explain hierarchy: typically below the header or
+  above a distinct action/description region. Avoid boxing every field.
+- Keep links and controls keyboard-visible with the shared focus ring. Give the
+  panel an accessible name tied to the resource, and preserve meaningful link,
+  button, and status semantics within it.
+
+#### New/reviewed popover checklist
+
+- Is this supplementary resource context, rather than a menu, modal, or tooltip?
+- Does every activation method expose the same content and dismissal paths?
+- Does hover/focus behavior reuse `useHoverPopover` for its delay, immediate
+  focus open, and `close()`, with caller-owned `Escape` and blur containment?
+- Does the header identify the resource and link its ID/name when a detail page
+  exists, without duplicating that navigation as a primary button?
+- Are body facts ordered by decision value and actions separated and kept few?
+- Do primary, secondary, ghost/link, and destructive styles match action meaning?
+- Does the panel use opaque theme tokens, compact spacing, and visible keyboard
+  focus in both light and dark themes?
 
 ---
 
