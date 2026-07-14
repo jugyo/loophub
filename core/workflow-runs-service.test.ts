@@ -249,6 +249,7 @@ test("start prepares a run and launch-step writes Execute inputs", async () => {
       run: result.run.id,
       step: launched.step,
       sessionId: launched.session_id,
+      agentName: launched.agent_name,
       inputFiles: launched.input_files,
     },
     result.session_id,
@@ -257,6 +258,9 @@ test("start prepares a run and launch-step writes Execute inputs", async () => {
   expect(JSON.parse(runAfterLaunch.step_sessions_json)).toEqual({
     execute: [launched.session_id],
   });
+  expect(S.getAgentSession(launched.session_id)?.name).toBe(
+    launched.agent_name,
+  );
   expect(
     S.listSessionsForIssue(S.getIssue(repo.id, result.pr.number)!.id).map(
       (row) => row.id,

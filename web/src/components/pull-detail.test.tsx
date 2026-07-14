@@ -27,8 +27,8 @@ import type {
 } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 
-// RelatedSessions and GitHub export launch through the terminal backend abstraction; stub it so the
-// component tree renders without a TerminalProvider.
+// GitHub export launches through the terminal backend abstraction; stub it so the component tree
+// renders without a TerminalProvider.
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
 vi.mock("@/components/terminal-controller", () => ({
   useTerminalLauncher: () => ({ launchTerminal }),
@@ -150,6 +150,20 @@ function mockFetch(
     "reviews/list": () => reviews,
     "reviews/listComments": () => lineComments,
     "comments/list": () => comments,
+    "terminal/sessions": () => ({ repos: [] }),
+    "workflowRuns/stateForPull": () => null,
+    "pulls/githubStatus": () => ({
+      state: "open",
+      is_draft: false,
+      merged: false,
+      mergeable: "mergeable",
+      review_decision: null,
+      checks: "none",
+      comments: 0,
+      reviews: 0,
+      updated_at: null,
+      synced_at: "2026-06-18T12:00:00Z",
+    }),
     "pulls/merge": () => ({ merged: true, sha: "c" }),
     "pulls/update": (p) => ({ ...pull, state: p.state }),
     ...extraHandlers,
@@ -1599,8 +1613,7 @@ describe("PullDetail", () => {
     expect(screen.queryByRole("button", { name: /^Resume$/ })).toBeNull();
   });
 
-  // #609: the sidebar shows an Agents section (session name + Open in Herdr) while herdr reports
-  // an agent running this PR's worktree, and hides it entirely otherwise.
+  // The sidebar Agents section lists every Herdr pane whose cwd resolves to this PR.
   it("shows the sidebar Agents section when a herdr session runs this PR", async () => {
     renderDetail({
       "terminal/sessions": () => ({
@@ -1608,17 +1621,24 @@ describe("PullDetail", () => {
           {
             repo: "me/proj",
             session_name: "lh-me-proj",
-            agents: [{ id: "%3", name: "dev #153", status: "working" }],
+            agents: [
+              {
+                id: "%3",
+                name: "dev #30",
+                status: "working",
+                pull: 30,
+                pull_closed: false,
+              },
+            ],
             pull_workspaces: [{ pull: 30, pane_id: "%3", status: "working" }],
+            issue_workspaces: [],
           },
         ],
       }),
     });
 
     expect(await screen.findByRole("heading", { name: "Agents" })).toBeTruthy();
-    expect(screen.getByText("lh-me-proj")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Open in Herdr" })).toBeTruthy();
-    expect(screen.queryByText("working")).toBeNull();
+    expect(screen.getByText("dev #30")).toBeTruthy();
   });
 
   it("hides the sidebar Agents section when no herdr session runs this PR", async () => {
@@ -1628,6 +1648,79 @@ describe("PullDetail", () => {
 
     await screen.findByRole("button", { name: /^Merge$/i });
     expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
+  });
+
+  it("removes Sessions and Handoffs from the sidebar and does not fetch Handoffs", async () => {
+    renderDetail({
+      "pulls/get": () => ({
+        ...pull,
+        related_sessions: [
+          {
+            id: "old-session",
+            agent: "lh-build",
+            session: "external",
+            created_at: "2026-06-18T11:00:00Z",
+            updated_at: "2026-06-18T12:00:00Z",
+            linked_at: "2026-06-18T11:00:00Z",
+            resume: { resumable: false },
+          },
+        ],
+      }),
+    });
+
+    await screen.findByText("ui2: PR detail");
+    expect(screen.queryByRole("heading", { name: "Sessions" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Handoffs" })).toBeNull();
+    expect(rpcCall("handoffs/list")).toBeUndefined();
+  });
+
+  it("shows Workflow run state once in the sidebar with history access", async () => {
+    renderDetail({
+      "workflowRuns/stateForPull": () => ({
+        id: 12,
+        workflow_id: 3,
+        workflow_name: "Implementation loop",
+        status: "running",
+        current_step: "verify",
+        rework_count: 2,
+        needs_human_reason: "Review the unexpected API change",
+        issue_number: 153,
+        pr_number: 30,
+        created_at: "2026-06-18T11:00:00Z",
+        updated_at: "2026-06-18T12:00:00Z",
+        latest_verdict: null,
+      }),
+    });
+
+    await screen.findByText("Implementation loop");
+    const headings = screen.getAllByText("Workflow run");
+    expect(headings).toHaveLength(1);
+    expect(headings[0].closest("aside")).toBeTruthy();
+    expect(screen.getByText("Implementation loop")).toBeTruthy();
+    expect(screen.getByText("run #12")).toBeTruthy();
+    expect(screen.getByText("Verify")).toBeTruthy();
+    expect(screen.getByText("· rework ×2")).toBeTruthy();
+    expect(screen.getByText("Needs human")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View history" })).toBeTruthy();
+  });
+
+  it("hides Workflow run when none is linked", async () => {
+    renderDetail({ "workflowRuns/stateForPull": () => null });
+    await screen.findByText("ui2: PR detail");
+    await waitFor(() => expect(screen.queryByText("Workflow run")).toBeNull());
+  });
+
+  it("keeps PR detail visible and reports a Workflow run fetch failure", async () => {
+    renderDetail({
+      "workflowRuns/stateForPull": () => {
+        throw new RpcFault(500, "workflow state unavailable");
+      },
+    });
+
+    expect(await screen.findByText("ui2: PR detail")).toBeTruthy();
+    expect(
+      await screen.findByText("Failed to load Workflow run."),
+    ).toBeTruthy();
   });
 });
 

@@ -1354,7 +1354,7 @@ test(
       `#!/bin/sh
 printf '%s\\n' "$*" >> "$HERDR_LOG"
 case " $* " in
-  *" agent start "*) exit 0 ;;
+  *" agent start "*) printf '%s\\n' '{"result":{"agent":{"pane_id":"wE:p2"}}}'; exit 0 ;;
   *) exit 1 ;;
 esac
 `,
@@ -1449,11 +1449,41 @@ esac
         WHERE issue_id = (SELECT id FROM issues WHERE number = 2)`,
       )
       .get() as { head_sha: string; head_pending_creation: number };
+    const persistedPane = verifiedDb
+      .prepare(
+        `SELECT p.launch_id, p.pane_id, p.session_name, p.display_name, p.origin,
+                r.resource_kind, r.resource_key
+           FROM herdr_panes p
+           JOIN herdr_pane_resources r ON r.pane_id = p.id
+          WHERE p.repo_id = (SELECT id FROM repos WHERE full_name = 'test/build-e2e')
+            AND r.resource_kind = 'pull'
+            AND r.resource_key = '2'`,
+      )
+      .get() as
+      | {
+          launch_id: string;
+          pane_id: string;
+          session_name: string;
+          display_name: string;
+          origin: string;
+          resource_kind: string;
+          resource_key: string;
+        }
+      | undefined;
     verifiedDb.close();
     expect(persisted).toEqual({
       head_sha: baseSha,
       head_pending_creation: 0,
     });
+    expect(persistedPane).toMatchObject({
+      pane_id: "wE:p2",
+      display_name: "#2 zero commit attempt",
+      origin: "build",
+      resource_kind: "pull",
+      resource_key: "2",
+    });
+    expect(persistedPane?.launch_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(persistedPane?.session_name).toBeTruthy();
 
     await git(repo, ["worktree", "remove", "--force", worktree]);
     await git(repo, ["branch", "-D", "loophub/pr-2"]);

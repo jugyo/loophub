@@ -11,6 +11,12 @@ export type WorkflowHerdrAgent =
 
 export type WorkflowHerdrPaneKind = "parent" | "step";
 
+export type LegacyWorkflowStepHerdrAgent = {
+  kind: "step";
+  runId: number;
+  step: WorkflowStep;
+};
+
 const STEP_ROLE: Record<WorkflowStep, "executor" | "verifier"> = {
   execute: "executor",
   verify: "verifier",
@@ -44,6 +50,28 @@ export function parseWorkflowHerdrAgentName(
   };
 }
 
+export function parseLegacyWorkflowStepHerdrAgentName(
+  name: unknown,
+): LegacyWorkflowStepHerdrAgent | null {
+  if (typeof name !== "string") return null;
+  const child = name.match(
+    /^workflow (execute|verify)(?: run)? #([1-9]\d*)$/iu,
+  );
+  if (!child) return null;
+  return {
+    kind: "step",
+    runId: Number(child[2]),
+    step: child[1] as WorkflowStep,
+  };
+}
+
+export function parseLegacyWorkflowParentHerdrAgentName(
+  name: unknown,
+): string | null {
+  if (typeof name !== "string") return null;
+  return name.match(/^workflow-([0-9a-f]{8})$/iu)?.[1] ?? null;
+}
+
 export function workflowHerdrPaneKind(
   name: unknown,
   runId: number,
@@ -54,12 +82,14 @@ export function workflowHerdrPaneKind(
 
   // Existing runs can outlive a deployment. Keep their legacy panes recognizable so the first
   // restart or rework launch after an upgrade can rebuild the tab using the new child name.
-  if (/^workflow-[0-9a-f]{8}$/iu.test(name)) return "parent";
-  const legacyStep = name.match(/^workflow (?:execute|verify) #(\d+)$/u);
-  return legacyStep && Number(legacyStep[1]) === runId ? "step" : null;
+  if (parseLegacyWorkflowParentHerdrAgentName(name)) return "parent";
+  const legacyStep = parseLegacyWorkflowStepHerdrAgentName(name);
+  return legacyStep?.runId === runId ? "step" : null;
 }
 
-export function nextWorkflowChildSequence(stepSessionsJson: string): number {
+function workflowStepSessionHistory(
+  stepSessionsJson: string,
+): Record<string, string[]> {
   let sessions: unknown;
   try {
     sessions = JSON.parse(stepSessionsJson);
@@ -70,12 +100,46 @@ export function nextWorkflowChildSequence(stepSessionsJson: string): number {
     throw new Error("invalid Workflow step session history");
   }
   const history = sessions as Record<string, unknown>;
-  const count = (["execute", "verify"] as const).reduce((total, step) => {
+  const out: Record<string, string[]> = {};
+  for (const step of ["execute", "verify"] as const) {
     const stepSessions = history[step];
-    if (stepSessions !== undefined && !Array.isArray(stepSessions)) {
+    if (stepSessions === undefined) continue;
+    if (
+      !Array.isArray(stepSessions) ||
+      stepSessions.some((session) => typeof session !== "string")
+    ) {
       throw new Error("invalid Workflow step session history");
     }
-    return total + (stepSessions?.length ?? 0);
-  }, 0);
+    out[step] = stepSessions;
+  }
+  return out;
+}
+
+export function workflowStepSessionIds(
+  stepSessionsJson: string,
+  step: WorkflowStep,
+): string[] {
+  try {
+    const sessions = JSON.parse(stepSessionsJson) as unknown;
+    if (!sessions || typeof sessions !== "object" || Array.isArray(sessions)) {
+      return [];
+    }
+    const stepSessions = (sessions as Record<string, unknown>)[step];
+    return Array.isArray(stepSessions)
+      ? stepSessions.filter(
+          (session): session is string => typeof session === "string",
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function nextWorkflowChildSequence(stepSessionsJson: string): number {
+  const history = workflowStepSessionHistory(stepSessionsJson);
+  const count = (["execute", "verify"] as const).reduce(
+    (total, step) => total + (history[step]?.length ?? 0),
+    0,
+  );
   return count + 1;
 }

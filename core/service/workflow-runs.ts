@@ -50,7 +50,10 @@ import {
   WORKFLOW_STEPS,
   type WorkflowStep,
 } from "../workflow/compose.ts";
-import { nextWorkflowChildSequence } from "../workflow/herdr-agents.ts";
+import {
+  nextWorkflowChildSequence,
+  parseWorkflowHerdrAgentName,
+} from "../workflow/herdr-agents.ts";
 import {
   composeExecuteInputArtifacts,
   composeVerifyInputArtifacts,
@@ -350,6 +353,21 @@ function workflowStep(value: string): WorkflowStep {
     );
   }
   return value as WorkflowStep;
+}
+
+function validateWorkflowStepAgentName(
+  agentName: string,
+  runId: number,
+  step: WorkflowStep,
+): void {
+  const paneAgent = parseWorkflowHerdrAgentName(agentName);
+  if (
+    paneAgent?.kind !== "step" ||
+    paneAgent.runId !== runId ||
+    paneAgent.step !== step
+  ) {
+    throw new ServiceError(422, "invalid Workflow step agent name");
+  }
 }
 
 function workflowRunOr404(id: number): S.WorkflowRunRow {
@@ -1263,6 +1281,10 @@ export const workflowRuns = {
       model,
       permissionMode: run.auto_mode === 1 || input.auto ? "auto" : undefined,
     });
+    // Keep confirmation's validation at the persistence boundary, but also validate the generated
+    // plan before the CLI can spawn it. A future naming/normalization change must fail before it can
+    // leave a live child whose session metadata was never recorded.
+    validateWorkflowStepAgentName(herdr.agentName, run.id, step);
 
     return {
       run: runJSON(run),
@@ -1319,6 +1341,7 @@ export const workflowRuns = {
       run: number;
       step: string;
       sessionId: string;
+      agentName?: string;
       inputFiles: Array<{ path: string; description: string }>;
       headSha?: string;
       note?: string;
@@ -1336,11 +1359,13 @@ export const workflowRuns = {
     const issue = issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const sessionId = input.sessionId;
+    if (input.agentName)
+      validateWorkflowStepAgentName(input.agentName, run.id, step);
     S.registerAgentSession(
       sessionId,
       "workflow-step",
       sessionId,
-      `Workflow ${step} run #${run.id}`,
+      input.agentName ?? `Workflow ${step} run #${run.id}`,
       runRuntime(run),
       "workflow-step",
     );

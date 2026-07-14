@@ -424,6 +424,25 @@ export async function run(): Promise<void> {
       if (e instanceof HerdrLaunchError) fail(e.message);
       throw e;
     }
+    const paneId = launched.paneId;
+    if (paneId) {
+      await runOp(() =>
+        s.herdrPanes.registerForResource({
+          repo,
+          launchId: sessionId,
+          paneId,
+          sessionName: launched.sessionName,
+          displayName: launched.agentName,
+          origin: "build",
+          resourceKind: "pull",
+          resourceKey: String(prNumber),
+        }),
+      );
+    } else {
+      console.error(
+        "warning: herdr agent start returned no usable pane id; session details will be unavailable for this pane",
+      );
+    }
     console.error(
       `Launched in herdr session ${launched.sessionName}. Attach with: herdr session attach ${launched.sessionName}`,
     );

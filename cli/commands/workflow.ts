@@ -543,6 +543,7 @@ async function launchStep(): Promise<void> {
           run: result.run.id,
           step: result.step,
           sessionId: result.session_id,
+          agentName: result.agent_name,
           inputFiles: result.input_files,
           headSha: result.head_sha,
           note,

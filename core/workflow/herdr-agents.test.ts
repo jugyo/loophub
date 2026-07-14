@@ -1,10 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
   nextWorkflowChildSequence,
+  parseLegacyWorkflowParentHerdrAgentName,
+  parseLegacyWorkflowStepHerdrAgentName,
   parseWorkflowHerdrAgentName,
   workflowHerdrPaneKind,
   workflowParentHerdrAgentName,
   workflowStepHerdrAgentName,
+  workflowStepSessionIds,
 } from "./herdr-agents.ts";
 
 describe("Workflow Herdr agent names", () => {
@@ -42,6 +45,40 @@ describe("Workflow Herdr agent names", () => {
     expect(workflowHerdrPaneKind("workflow verify #35", 34)).toBeNull();
   });
 
+  test("recognizes legacy parent names", () => {
+    expect(parseLegacyWorkflowParentHerdrAgentName("workflow-a1b2c3d4")).toBe(
+      "a1b2c3d4",
+    );
+    expect(
+      parseLegacyWorkflowParentHerdrAgentName("orchestrator #34"),
+    ).toBeNull();
+  });
+
+  test("parses legacy step names for session compatibility", () => {
+    expect(
+      parseLegacyWorkflowStepHerdrAgentName("workflow execute #34"),
+    ).toEqual({
+      kind: "step",
+      runId: 34,
+      step: "execute",
+    });
+    expect(
+      parseLegacyWorkflowStepHerdrAgentName("workflow verify #34"),
+    ).toEqual({
+      kind: "step",
+      runId: 34,
+      step: "verify",
+    });
+    expect(
+      parseLegacyWorkflowStepHerdrAgentName("Workflow execute run #34"),
+    ).toEqual({
+      kind: "step",
+      runId: 34,
+      step: "execute",
+    });
+    expect(parseLegacyWorkflowStepHerdrAgentName("verifier #34-2")).toBeNull();
+  });
+
   test("increments one sequence across Execute and Verify launch histories", () => {
     expect(nextWorkflowChildSequence("{}")).toBe(1);
     expect(
@@ -54,10 +91,33 @@ describe("Workflow Herdr agent names", () => {
     ).toBe(4);
   });
 
+  test("returns the persisted session ids for one step", () => {
+    const history = JSON.stringify({
+      execute: ["execute-1", "execute-3"],
+      verify: ["verify-2"],
+    });
+    expect(workflowStepSessionIds(history, "execute")).toEqual([
+      "execute-1",
+      "execute-3",
+    ]);
+    expect(workflowStepSessionIds(history, "verify")).toEqual(["verify-2"]);
+  });
+
+  test("reads step session ids defensively for terminal display", () => {
+    expect(workflowStepSessionIds("not json", "execute")).toEqual([]);
+    expect(
+      workflowStepSessionIds('{"execute":["execute-1",42]}', "execute"),
+    ).toEqual(["execute-1"]);
+    expect(nextWorkflowChildSequence('{"execute":[],"legacy":"ignored"}')).toBe(
+      1,
+    );
+  });
+
   test.each([
     "not json",
     "[]",
     '{"execute":"not an array"}',
+    '{"execute":[42]}',
   ])("rejects invalid launch history: %s", (history) => {
     expect(() => nextWorkflowChildSequence(history)).toThrow(
       "invalid Workflow step session history",

@@ -9,6 +9,7 @@ import {
   herdrTabCreateArgv,
   herdrWorkspaceCloseArgv,
   normalizeAgentName,
+  parseHerdrAgentPaneId,
   parseHerdrRootPaneId,
   parseHerdrTabId,
   type TerminalLaunchRepo,
@@ -24,6 +25,8 @@ export interface HerdrLaunchResult {
   sessionName: string;
   // The normalized agent name the command runs under (the label after normalizeAgentName).
   agentName: string;
+  // The exact pane created by `herdr agent start`, used to persist a durable pane/session link.
+  paneId: string | null;
 }
 
 // Opens (or reuses) the target worktree's own herdr workspace and starts `command` in a fresh tab
@@ -106,9 +109,12 @@ export async function launchAgentInWorktreeHerdr(input: {
     focus: true,
   });
   const herdrProc = spawnSync(plan.argv[0], plan.argv.slice(1), {
-    stdio: "inherit",
+    stdio: ["inherit", "pipe", "inherit"],
     timeout: 15_000,
+    encoding: "utf8",
   });
+  const herdrStdout = herdrProc.stdout ?? "";
+  if (herdrStdout) process.stdout.write(herdrStdout);
   // Any failure to start the agent leaves the just-created tab (or workspace) empty — clean it up
   // before failing. herdr refuses to close a workspace's last tab, so a workspace this launch
   // created is closed wholesale. The reproduce hint is built from a *tab-less* plan: the failed
@@ -163,5 +169,6 @@ export async function launchAgentInWorktreeHerdr(input: {
   return {
     sessionName: plan.sessionName,
     agentName: normalizeAgentName(label),
+    paneId: parseHerdrAgentPaneId(herdrStdout),
   };
 }

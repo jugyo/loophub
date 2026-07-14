@@ -28,14 +28,9 @@ import { DetailHeaderTitle } from "@/components/detail-title";
 import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
-import { HandoffTimeline } from "@/components/handoff-timeline";
 import { Markdown } from "@/components/markdown";
 import { PullDebugMenu } from "@/components/pull-debug-menu";
 import { PullHerdrSection } from "@/components/pull-herdr-section";
-import {
-  RelatedSessions,
-  TokenUsageSummary,
-} from "@/components/related-sessions";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
@@ -58,7 +53,6 @@ import {
   usePullCommitFiles,
   usePullFileAtRef,
   usePullFiles,
-  usePullHandoffs,
   usePullReviews,
   usePushGithubPull,
   useReadyForReview,
@@ -83,7 +77,6 @@ export function PullDetail({
   const reviewsQuery = usePullReviews(owner, repo, number);
   const lineCommentsQuery = usePullComments(owner, repo, number);
   const commentsQuery = useIssueComments(owner, repo, number);
-  const handoffsQuery = usePullHandoffs(owner, repo, number);
   // Only fetch GitHub status once the PR is known to have a linked GitHub PR — the endpoint 404s
   // otherwise, and the sidebar section is hidden anyway when github_pull is absent (#850).
   const githubStatusQuery = useGithubPrStatus(
@@ -131,15 +124,12 @@ export function PullDetail({
             longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
         <PullHeader owner={owner} repo={repo} pull={pull} />
 
-        <WorkflowRunSection owner={owner} repo={repo} number={number} />
-
         <CommitList
           owner={owner}
           repo={repo}
           number={number}
           commits={pull.commits}
         />
-
         <FilesChanged
           owner={owner}
           repo={repo}
@@ -170,38 +160,19 @@ export function PullDetail({
       </div>
 
       <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
-        {/* Above Sessions (#609): the live herdr terminal outranks the historical session
-            list when deciding where to jump. Hides itself when no herdr session runs this PR. */}
         <PullHerdrSection owner={owner} repo={repo} pull={number} />
+        <WorkflowRunSection owner={owner} repo={repo} number={number} />
         <WorktreeSection value={pull.worktree_path} />
-        {/* GitHub PR status (#850): only for a PR with a linked GitHub PR — hidden otherwise, the way
-            Sessions/Handoffs hide themselves. Fetched on demand; loading/error live in the section. */}
+        {/* GitHub PR status (#850): only for a PR with a linked GitHub PR. Fetched on demand;
+            loading/error live in the section. */}
         {pull.github_pull ? (
           <GithubPrStatusSection
             status={githubStatusQuery.data}
             isLoading={githubStatusQuery.isLoading}
           />
         ) : null}
-        {(pull.related_sessions?.length ?? 0) > 0 &&
-        pull.related_sessions_usage ? (
-          <TokenUsageSummary usage={pull.related_sessions_usage} />
-        ) : null}
-        <RelatedSessions
-          owner={owner}
-          repo={repo}
-          pullNumber={number}
-          sessions={pull.related_sessions}
-          cwd={pull.worktree_path ?? undefined}
-        />
-        <HandoffTimeline
-          owner={owner}
-          repo={repo}
-          handoffs={handoffsQuery.data}
-          isLoading={handoffsQuery.isLoading}
-          isError={handoffsQuery.isError}
-        />
         {/* Work duration sits at the bottom of the sidebar (#627): a low-priority historical
-            summary that ranks below the live herdr terminal and the session lists above. */}
+            summary that ranks below the live Agents and Workflow run state above. */}
         <WorkDuration workDuration={pull.work_duration} />
       </aside>
     </div>
@@ -392,12 +363,39 @@ function WorkflowRunSection({
   repo: string;
   number: number;
 }) {
-  const { data } = useWorkflowRunForPull(owner, repo, number);
+  const query = useWorkflowRunForPull(owner, repo, number);
+  if (query.isLoading) {
+    return (
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Workflow run
+        </h2>
+        <div className="flex items-center gap-2 rounded-md border p-3 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading Workflow run…
+        </div>
+      </section>
+    );
+  }
+  if (query.isError) {
+    return (
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Workflow run
+        </h2>
+        <div
+          role="alert"
+          className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
+        >
+          Failed to load Workflow run.
+        </div>
+      </section>
+    );
+  }
   return (
     <WorkflowRunStatusSection
       owner={owner}
       repo={repo}
-      state={data}
+      state={query.data}
       showHistory
     />
   );

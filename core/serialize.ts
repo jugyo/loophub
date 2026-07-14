@@ -29,7 +29,13 @@ import {
 } from "./resume.ts";
 import type { CodingAgent } from "./runtimes.ts";
 import * as S from "./store.ts";
+import type {
+  HerdrAgent,
+  HerdrIssueWorkspace,
+  HerdrPullWorkspace,
+} from "./terminal/herdr-status.ts";
 import { herdrSessionName } from "./terminal/terminal-launch.ts";
+import type { WorkflowHerdrAgent } from "./workflow/herdr-agents.ts";
 import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
 
 // Wire-type SSOT (AGENTS.md): the coding-runtime id is part of several wire shapes below (agent cost
@@ -503,6 +509,56 @@ export interface UsageTotalsWire {
   has_unknown_cost: boolean;
   // Max observed current-context usage across included sessions/models. Null when unavailable.
   context_usage_percent: number | null;
+}
+
+// Session metadata and aggregate usage attached to a live Herdr pane. The pane itself comes from
+// Herdr, while session identity and usage come from LoopHub's persisted session records. Keeping
+// this serializer in core makes terminal/sessions the wire-shape source of truth for Web clients.
+export interface HerdrPaneSessionWire {
+  id: string;
+  agent: string;
+  runtime: string | null;
+  kind: string | null;
+  usage: UsageTotalsWire;
+}
+
+export interface HerdrSessionAgentWire extends HerdrAgent {
+  pull: number | null;
+  pull_closed: boolean;
+  /** Whether id is a real Herdr pane id that focus/close actions can target. */
+  focusable: boolean;
+  workflow?: WorkflowHerdrAgent;
+  session?: HerdrPaneSessionWire;
+}
+
+export interface HerdrRepoSessionsWire {
+  repo: string;
+  session_name: string;
+  agents: HerdrSessionAgentWire[];
+  pull_workspaces: HerdrPullWorkspace[];
+  issue_workspaces: HerdrIssueWorkspace[];
+}
+
+export interface HerdrSessionsWire {
+  repos: HerdrRepoSessionsWire[];
+  running_repos?: string[];
+}
+
+export function herdrPaneSessionJSON(
+  sessionId: string | null,
+): HerdrPaneSessionWire | null {
+  if (!sessionId) return null;
+  const row = S.getAgentSession(sessionId);
+  if (!row) return null;
+  return {
+    id: row.id,
+    agent: row.agent,
+    runtime: row.runtime,
+    kind: row.kind,
+    usage: sumUsageTotals([
+      { usage: S.listSessionUsage(row.id).map(sessionUsageJSON) },
+    ]),
+  };
 }
 
 export interface RelatedSessionsSubagentUsageWire extends UsageTotalsWire {

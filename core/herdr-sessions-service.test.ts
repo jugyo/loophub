@@ -100,6 +100,11 @@ test("terminal.sessions reports running repos independently from visible agent g
           name: "dev #13",
           pane_id: "w1:pC",
         },
+        {
+          agent: "claude",
+          agent_status: "idle",
+          name: "legacy without pane id",
+        },
       ],
       type: "agent_list",
     },
@@ -142,6 +147,7 @@ test("terminal.sessions reports running repos independently from visible agent g
             status: "working",
             pull: null,
             pull_closed: false,
+            focusable: true,
           },
           {
             id: "w1:pC",
@@ -149,6 +155,15 @@ test("terminal.sessions reports running repos independently from visible agent g
             status: "blocked",
             pull: null,
             pull_closed: false,
+            focusable: true,
+          },
+          {
+            id: `${String.fromCharCode(0)}idx:2`,
+            name: "legacy without pane id",
+            status: "idle",
+            pull: null,
+            pull_closed: false,
+            focusable: false,
           },
         ],
         pull_workspaces: [],
@@ -237,6 +252,7 @@ test("terminal.sessions hides New Issue agents but keeps normal repo-root agents
             status: "working",
             pull: 1,
             pull_closed: false,
+            focusable: true,
           },
           {
             id: "wN:p4",
@@ -244,6 +260,7 @@ test("terminal.sessions hides New Issue agents but keeps normal repo-root agents
             status: "idle",
             pull: null,
             pull_closed: false,
+            focusable: true,
           },
         ],
         pull_workspaces: [{ pull: 1, pane_id: "wN:p3", status: "working" }],
@@ -308,6 +325,7 @@ test("terminal.sessions maps a running agent's cwd back to its PR (#579)", async
             status: "working",
             pull: 12,
             pull_closed: false,
+            focusable: true,
           },
         ],
         pull_workspaces: [{ pull: 12, pane_id: "wP:p2", status: "working" }],
@@ -315,6 +333,425 @@ test("terminal.sessions maps a running agent's cwd back to its PR (#579)", async
         issue_workspaces: [],
       },
     ]);
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.sessions maps ordinary panes to their exact persisted sessions", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/ordinary-pane-sessions",
+  });
+  const sessionName = herdrSessionName(repo);
+  const pr = S.createIssue(repo.id, "pull", "the PR", "", "me");
+  S.createPull(pr.id, `loophub/pr-${pr.number}`, "main", null);
+  const oldSession = "ordinary-old-session";
+  const newSession = "ordinary-new-session";
+  for (const sessionId of [oldSession, newSession]) {
+    S.registerAgentSession(
+      sessionId,
+      "lh-build",
+      sessionId,
+      null,
+      "codex",
+      "dev",
+    );
+    S.setPullSession(pr.id, sessionId);
+  }
+  S.upsertSessionUsage(oldSession, {
+    model: "gpt-5-codex",
+    input_tokens: 100,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 20,
+    output_tokens: 30,
+    cost_usd: 1.25,
+  });
+  S.upsertSessionUsage(newSession, {
+    model: "gpt-5-codex",
+    input_tokens: 200,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 40,
+    output_tokens: 60,
+    cost_usd: 2.5,
+  });
+  for (const [sessionId, paneId] of [
+    [oldSession, "wO:p1"],
+    [newSession, "wO:p2"],
+  ] as const) {
+    S.registerHerdrPane({
+      repoId: repo.id,
+      launchId: sessionId,
+      paneId,
+      sessionName,
+      displayName: `dev ${sessionId}`,
+      origin: "build",
+    });
+    S.linkHerdrPaneResource({
+      repoId: repo.id,
+      launchId: sessionId,
+      resourceKind: "pull",
+      resourceKey: String(pr.number),
+    });
+  }
+  const staleSession = "stale-pane-registration";
+  S.registerAgentSession(staleSession, "dev", staleSession, "stale dev pane");
+  const stalePane = S.registerHerdrPane({
+    repoId: repo.id,
+    launchId: staleSession,
+    paneId: "wO:p2",
+    sessionName,
+    displayName: "stale dev pane",
+    origin: "build",
+  });
+  S.linkHerdrPaneResource({
+    repoId: repo.id,
+    launchId: staleSession,
+    resourceKind: "pull",
+    resourceKey: String(pr.number),
+  });
+  S.markHerdrPaneClosed(stalePane.id);
+
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const prWorktree = worktreePath(worktreeRoot(), repo.full_name, pr.number);
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          name: "old dev pane",
+          agent_status: "idle",
+          pane_id: "wO:p1",
+          foreground_cwd: prWorktree,
+        },
+        {
+          name: "new dev pane",
+          agent_status: "working",
+          pane_id: "wO:p2",
+          foreground_cwd: prWorktree,
+        },
+        {
+          name: "unmapped legacy pane",
+          agent_status: "idle",
+          pane_id: "wO:p3",
+          foreground_cwd: prWorktree,
+        },
+      ],
+    },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `printf '%s' '${agents}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    const result = await svc.terminal.sessions();
+    expect(result.repos[0]?.agents).toMatchObject([
+      {
+        id: "wO:p1",
+        session: {
+          id: oldSession,
+          usage: { total_tokens: 150, cost_usd: 1.25 },
+        },
+      },
+      {
+        id: "wO:p2",
+        session: {
+          id: newSession,
+          usage: { total_tokens: 300, cost_usd: 2.5 },
+        },
+      },
+      { id: "wO:p3" },
+    ]);
+    expect(result.repos[0]?.agents[2]).not.toHaveProperty("session");
+  } finally {
+    process.env.PATH = ORIGINAL_PATH;
+  }
+});
+
+test("terminal.sessions enriches Workflow panes with hierarchy and session usage", async () => {
+  const repo = await svc.repos.create({
+    path: initGitRepo(),
+    name: "me/workflow-pane-details",
+  });
+  const sessionName = herdrSessionName(repo);
+  const issue = S.createIssue(repo.id, "issue", "issue", "", "me");
+  const pr = S.createIssue(repo.id, "pull", "pull", "", "me");
+  S.createPull(pr.id, `loophub/pr-${pr.number}`, "main", null, issue.id);
+  const workflow = S.createWorkflow({
+    name: "Pane details workflow",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parentSession = "a1b2c3d4-parent-pane-session";
+  const executeSession = "execute-pane-session";
+  const closedExecuteSession = "closed-execute-pane-session";
+  const latestExecuteSession = "latest-execute-pane-session";
+  const legacyExecuteSession = "legacy-execute-pane-session";
+  const fallbackExecuteSession = "fallback-execute-pane-session";
+  const verifySession = "verify-pane-session";
+  S.registerAgentSession(
+    parentSession,
+    "workflow-parent",
+    parentSession,
+    "Workflow parent",
+    "codex",
+    "workflow-parent",
+  );
+  for (const [sessionId, step] of [
+    [executeSession, "execute"],
+    [verifySession, "verify"],
+  ] as const) {
+    S.registerAgentSession(
+      sessionId,
+      "workflow-step",
+      sessionId,
+      `Workflow ${step}`,
+      "codex",
+      "workflow-step",
+    );
+  }
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: pr.number,
+    status: "running",
+    currentStep: "verify",
+    parentSessionId: parentSession,
+  });
+  S.registerAgentSession(
+    executeSession,
+    "workflow-step",
+    executeSession,
+    `executor #${run.id}-1`,
+  );
+  S.registerAgentSession(
+    verifySession,
+    "workflow-step",
+    verifySession,
+    `Workflow verify run #${run.id}`,
+  );
+  S.registerAgentSession(
+    closedExecuteSession,
+    "workflow-step",
+    closedExecuteSession,
+    `executor #${run.id}-3`,
+  );
+  S.registerAgentSession(
+    latestExecuteSession,
+    "workflow-step",
+    latestExecuteSession,
+    `executor #${run.id}-4`,
+  );
+  S.registerAgentSession(
+    legacyExecuteSession,
+    "workflow-step",
+    legacyExecuteSession,
+    `workflow execute #${run.id}`,
+  );
+  S.registerAgentSession(
+    fallbackExecuteSession,
+    "workflow-step",
+    fallbackExecuteSession,
+    `Workflow execute run #${run.id}`,
+  );
+  S.appendWorkflowRunStepSession(run.id, "execute", executeSession);
+  S.appendWorkflowRunStepSession(run.id, "verify", verifySession);
+  S.appendWorkflowRunStepSession(run.id, "execute", closedExecuteSession);
+  S.appendWorkflowRunStepSession(run.id, "execute", latestExecuteSession);
+  S.appendWorkflowRunStepSession(run.id, "execute", legacyExecuteSession);
+  S.appendWorkflowRunStepSession(run.id, "execute", fallbackExecuteSession);
+  S.upsertSessionUsage(executeSession, {
+    model: "gpt-5-codex",
+    input_tokens: 100,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 20,
+    output_tokens: 30,
+    cost_usd: 1.25,
+  });
+
+  const sessionList = JSON.stringify({
+    sessions: [{ default: false, name: sessionName, running: true }],
+  });
+  const prWorktree = worktreePath(worktreeRoot(), repo.full_name, pr.number);
+  const agents = JSON.stringify({
+    result: {
+      agents: [
+        {
+          name: `orchestrator #${run.id}`,
+          agent_status: "working",
+          pane_id: "wW:p1",
+          foreground_cwd: prWorktree,
+        },
+        {
+          name: `executor #${run.id}-1`,
+          agent_status: "done",
+          pane_id: "wW:p2",
+          foreground_cwd: prWorktree,
+        },
+        {
+          name: `verifier #${run.id}-2`,
+          agent_status: "working",
+          pane_id: "wW:p3",
+          foreground_cwd: prWorktree,
+        },
+        {
+          name: `executor #${run.id}-4`,
+          agent_status: "working",
+          pane_id: "wW:p4",
+          foreground_cwd: prWorktree,
+        },
+        {
+          name: `workflow verify #${run.id}`,
+          agent_status: "working",
+          pane_id: "wW:p5",
+          foreground_cwd: prWorktree,
+        },
+        {
+          name: `Workflow execute run #${run.id}`,
+          agent_status: "working",
+          pane_id: "wW:p9",
+          foreground_cwd: prWorktree,
+        },
+        {
+          name: "workflow-a1b2c3d4",
+          agent_status: "working",
+          pane_id: "wW:p6",
+          foreground_cwd: prWorktree,
+        },
+        {
+          name: `workflow execute #${run.id}`,
+          agent_status: "working",
+          pane_id: "wW:p7",
+          foreground_cwd: prWorktree,
+        },
+        {
+          name: `workflow verify #${run.id}`,
+          agent_status: "working",
+          pane_id: "wW:p8",
+          foreground_cwd: prWorktree,
+        },
+      ],
+    },
+  });
+  writeFileSync(
+    join(FAKE_BIN, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "session" ]; then printf '%s' '${sessionList}'; exit 0; fi`,
+      `printf '%s' '${agents}'`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(FAKE_BIN, "herdr"), 0o755);
+  process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
+  try {
+    const result = await svc.terminal.sessions();
+    expect(result.repos[0]?.agents).toMatchObject([
+      {
+        id: "wW:p1",
+        workflow: { kind: "parent", runId: run.id },
+        session: { id: parentSession, runtime: "codex" },
+      },
+      {
+        id: "wW:p2",
+        workflow: {
+          kind: "step",
+          runId: run.id,
+          step: "execute",
+          sequence: 1,
+        },
+        session: {
+          id: executeSession,
+          usage: { total_tokens: 150, cost_usd: 1.25 },
+        },
+      },
+      {
+        id: "wW:p3",
+        workflow: {
+          kind: "step",
+          runId: run.id,
+          step: "verify",
+          sequence: 2,
+        },
+        session: { id: verifySession },
+      },
+      {
+        id: "wW:p4",
+        workflow: {
+          kind: "step",
+          runId: run.id,
+          step: "execute",
+          sequence: 4,
+        },
+        session: { id: latestExecuteSession },
+      },
+      {
+        id: "wW:p5",
+        workflow: {
+          kind: "step",
+          runId: run.id,
+          step: "verify",
+          sequence: 0,
+        },
+      },
+      {
+        id: "wW:p9",
+        workflow: {
+          kind: "step",
+          runId: run.id,
+          step: "execute",
+          sequence: 0,
+        },
+        session: { id: fallbackExecuteSession },
+      },
+      {
+        id: "wW:p6",
+        workflow: { kind: "parent", runId: run.id },
+        session: { id: parentSession, runtime: "codex" },
+      },
+      {
+        id: "wW:p7",
+        workflow: {
+          kind: "step",
+          runId: run.id,
+          step: "execute",
+          sequence: 0,
+        },
+        session: { id: legacyExecuteSession },
+      },
+      {
+        id: "wW:p8",
+        workflow: {
+          kind: "step",
+          runId: run.id,
+          step: "verify",
+          sequence: 0,
+        },
+      },
+    ]);
+    const collidingRun = S.createWorkflowRun({
+      workflowId: workflow.id,
+      repoId: repo.id,
+      issueNumber: issue.number,
+      prNumber: pr.number,
+      status: "running",
+      currentStep: "execute",
+      parentSessionId: "a1b2c3d4-colliding-parent",
+    });
+    expect(collidingRun.id).not.toBe(run.id);
+    expect(
+      S.workflowRunForLegacyParent(repo.id, pr.number, "a1b2c3d4"),
+    ).toBeNull();
   } finally {
     process.env.PATH = ORIGINAL_PATH;
   }
@@ -378,6 +815,7 @@ test("terminal.sessions maps a running agent's PR back to its linked issue (#821
             status: "working",
             pull: pr.number,
             pull_closed: false,
+            focusable: true,
           },
         ],
         pull_workspaces: [
@@ -482,6 +920,7 @@ test("terminal.sessions flags agents whose worktree PR is merged or closed (#611
         status: "done",
         pull: 1,
         pull_closed: true,
+        focusable: true,
       },
       {
         id: "wS:p2",
@@ -489,6 +928,7 @@ test("terminal.sessions flags agents whose worktree PR is merged or closed (#611
         status: "idle",
         pull: 2,
         pull_closed: true,
+        focusable: true,
       },
       {
         id: "wS:p3",
@@ -496,6 +936,7 @@ test("terminal.sessions flags agents whose worktree PR is merged or closed (#611
         status: "working",
         pull: 3,
         pull_closed: false,
+        focusable: true,
       },
       {
         id: "wS:p4",
@@ -503,6 +944,7 @@ test("terminal.sessions flags agents whose worktree PR is merged or closed (#611
         status: "working",
         pull: 99,
         pull_closed: false,
+        focusable: true,
       },
       // Repo-root cwd resolves to no PR (pull null) — a "New issue" agent shape (#633).
       {
@@ -511,6 +953,7 @@ test("terminal.sessions flags agents whose worktree PR is merged or closed (#611
         status: "idle",
         pull: null,
         pull_closed: false,
+        focusable: true,
       },
     ]);
   } finally {

@@ -391,6 +391,22 @@ export function latestWorkflowRunForPull(
     .get(repoId, prNumber) as WorkflowRunRow | null;
 }
 
+export function workflowRunForLegacyParent(
+  repoId: number,
+  prNumber: number,
+  parentSessionPrefix: string,
+): WorkflowRunRow | null {
+  const matches = db
+    .query(
+      `SELECT * FROM workflow_runs
+       WHERE repo_id = ? AND pr_number = ?
+         AND substr(parent_session_id, 1, 8) = ?
+       ORDER BY id DESC LIMIT 2`,
+    )
+    .all(repoId, prNumber, parentSessionPrefix) as WorkflowRunRow[];
+  return matches.length === 1 ? matches[0] : null;
+}
+
 export function updateWorkflowRun(
   id: number,
   patch: {

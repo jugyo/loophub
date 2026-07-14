@@ -3,7 +3,7 @@
 // serializer change that alters a shape breaks this build instead of silently drifting.
 // HerdrPullWorkspace/HerdrIssueWorkspace likewise derive from core/terminal/herdr-status.ts,
 // whose interfaces the terminal/sessions RPC returns as-is. The remaining shapes with no core
-// counterpart (other Herdr/Terminal/Settings/Stats/dashboard/events) stay hand-written below.
+// counterpart (Terminal/Settings/Stats/dashboard/events) stay hand-written below.
 import type {
   DiffFile,
   FileAtRef as FileAtRefWire,
@@ -17,6 +17,9 @@ import type {
   GithubPrStatusWire,
   GithubPullWire,
   HandoffWire,
+  HerdrRepoSessionsWire,
+  HerdrSessionAgentWire,
+  HerdrSessionsWire,
   InboxJsonObject,
   InboxMessageWire,
   IssueListPullSummaryWire,
@@ -46,7 +49,6 @@ import type {
   WorkflowStepContractsWire,
   WorkflowWire,
 } from "../../../core/serialize.ts";
-import type { HerdrSessionsResult as HerdrSessionsWire } from "../../../core/service/terminal.ts";
 import type {
   HerdrIssueWorkspace as HerdrIssueWorkspaceWire,
   HerdrPullWorkspace as HerdrPullWorkspaceWire,
@@ -136,28 +138,7 @@ export interface TerminalLaunchResult {
 }
 
 /** One agent inside a running herdr session (`terminal/sessions`, #495). */
-export interface HerdrAgent {
-  /** Stable identity within the session (agent names are not guaranteed unique). */
-  id: string;
-  /** Display name, e.g. "dev #486". */
-  name: string;
-  /** Raw herdr agent_status (known values: working | blocked | done | idle). */
-  status: string;
-  /**
-   * True when the PR whose worktree the agent's pane cwd resolves to is merged or
-   * closed (#611) — terminal-aware UI can mute such rows. Absent/false when the PR is open
-   * or no PR could be resolved: both render as a normal row.
-   */
-  pull_closed?: boolean;
-  /**
-   * The PR number whose worktree the agent's pane cwd resolves to, or null when the
-   * agent has no linked PR — a "New issue" agent running at the repo root (#633). Since
-   * pull_closed can never be true for a no-PR agent, so terminal-aware UI can use idle
-   * (and shows the kill button) once it goes idle. Absent in legacy payloads — treat a
-   * missing value the same as null.
-   */
-  pull?: number | null;
-}
+export type HerdrAgent = HerdrSessionAgentWire;
 
 /**
  * A running herdr agent's pane, keyed back to the PR whose worktree it's running in
@@ -174,23 +155,9 @@ export type HerdrPullWorkspace = HerdrPullWorkspaceWire;
 export type HerdrIssueWorkspace = HerdrIssueWorkspaceWire;
 
 /** A repo's running herdr session and its agents (`terminal/sessions`, #495). */
-export interface HerdrRepoSessions {
-  repo: string;
-  session_name: string;
-  agents: HerdrAgent[];
-  pull_workspaces: HerdrPullWorkspace[];
-  /**
-   * Running agents resolved to the issue their PR closes (#821), driving the issue-detail Agents
-   * section. Optional here (required on the server): absent in payloads from a server predating
-   * #821 — findIssueHerdrWorkspace treats a missing value as an empty list.
-   */
-  issue_workspaces?: HerdrIssueWorkspace[];
-}
+export type HerdrRepoSessions = HerdrRepoSessionsWire;
 
-export type HerdrSessions = Omit<HerdrSessionsWire, "repos"> & {
-  // Override the server's current repo-group type with the backward-compatible Web view above.
-  repos: HerdrRepoSessions[];
-};
+export type HerdrSessions = HerdrSessionsWire;
 
 /**
  * Recent terminal output for one herdr agent (`terminal/agentRead`, #500), for the

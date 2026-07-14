@@ -7,6 +7,34 @@ function required(value: string, name: string): string {
 }
 
 export const herdrPanes = {
+  registerForResource(input: {
+    repo: string;
+    launchId: string;
+    paneId: string;
+    sessionName: string;
+    displayName: string;
+    origin: string;
+    resourceKind: string;
+    resourceKey: string;
+  }) {
+    const repo = repoOr404(input.repo);
+    const launchId = required(input.launchId, "launchId");
+    S.registerHerdrPane({
+      repoId: repo.id,
+      launchId,
+      paneId: required(input.paneId, "paneId"),
+      sessionName: required(input.sessionName, "sessionName"),
+      displayName: required(input.displayName, "displayName"),
+      origin: required(input.origin, "origin"),
+    });
+    return S.linkHerdrPaneResource({
+      repoId: repo.id,
+      launchId,
+      resourceKind: required(input.resourceKind, "resourceKind"),
+      resourceKey: required(input.resourceKey, "resourceKey"),
+    });
+  },
+
   register(input: {
     repo: string;
     launchId: string;

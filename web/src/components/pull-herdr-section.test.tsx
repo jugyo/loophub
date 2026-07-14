@@ -8,13 +8,17 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HerdrSessions } from "@/api/types";
 
-const { focusHerdrAgent, sendHerdrAgentInput } = vi.hoisted(() => ({
+const { focusHerdrAgent, showError } = vi.hoisted(() => ({
   focusHerdrAgent: vi.fn(),
-  sendHerdrAgentInput: vi.fn(),
+  showError: vi.fn(),
 }));
 const herdrSessions = vi.hoisted(() => ({
   value: undefined as HerdrSessions | undefined,
   isError: false,
+  focusPending: false,
+}));
+vi.mock("@/components/toast", () => ({
+  useToast: () => ({ showError }),
 }));
 vi.mock("@/queries/terminal", () => ({
   useHerdrSessions: () => ({
@@ -23,11 +27,7 @@ vi.mock("@/queries/terminal", () => ({
   }),
   useFocusHerdrAgent: () => ({
     mutate: focusHerdrAgent,
-    isPending: false,
-  }),
-  useSendHerdrAgentInput: () => ({
-    mutate: sendHerdrAgentInput,
-    isPending: false,
+    isPending: herdrSessions.focusPending,
   }),
 }));
 
@@ -35,11 +35,12 @@ import { PullHerdrSection } from "./pull-herdr-section";
 
 afterEach(() => {
   cleanup();
-  vi.restoreAllMocks();
+  vi.useRealTimers();
   focusHerdrAgent.mockClear();
-  sendHerdrAgentInput.mockClear();
+  showError.mockClear();
   herdrSessions.value = undefined;
   herdrSessions.isError = false;
+  herdrSessions.focusPending = false;
 });
 
 const running: HerdrSessions = {
@@ -47,16 +48,95 @@ const running: HerdrSessions = {
     {
       repo: "me/proj",
       session_name: "lh-me-proj",
-      agents: [{ id: "w1:p2", name: "dev #609", status: "working" }],
-      pull_workspaces: [{ pull: 42, pane_id: "w1:p2", status: "working" }],
+      agents: [
+        {
+          id: "w1:p1",
+          name: "orchestrator #7",
+          status: "working",
+          pull: 42,
+          pull_closed: false,
+          focusable: true,
+          workflow: { kind: "parent", runId: 7 },
+          session: {
+            id: "parent-session",
+            agent: "workflow-parent",
+            runtime: "codex",
+            kind: "workflow-parent",
+            usage: {
+              sessions_with_usage: 1,
+              input_tokens: 100,
+              cache_creation_input_tokens: 20,
+              cache_read_input_tokens: 30,
+              output_tokens: 50,
+              total_tokens: 200,
+              cost_usd: 1.25,
+              has_unknown_cost: false,
+              context_usage_percent: 12,
+            },
+          },
+        },
+        {
+          id: "w1:p2",
+          name: "executor #7-1",
+          status: "done",
+          pull: 42,
+          pull_closed: false,
+          focusable: true,
+          workflow: {
+            kind: "step",
+            runId: 7,
+            step: "execute",
+            sequence: 1,
+          },
+          session: {
+            id: "execute-session",
+            agent: "workflow-step",
+            runtime: "codex",
+            kind: "workflow-step",
+            usage: {
+              sessions_with_usage: 0,
+              input_tokens: 0,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+              output_tokens: 0,
+              total_tokens: 0,
+              cost_usd: null,
+              has_unknown_cost: false,
+              context_usage_percent: null,
+            },
+          },
+        },
+        {
+          id: "w1:p3",
+          name: "verifier #7-2",
+          status: "working",
+          pull: 42,
+          pull_closed: false,
+          focusable: true,
+          workflow: {
+            kind: "step",
+            runId: 7,
+            step: "verify",
+            sequence: 2,
+          },
+        },
+        {
+          id: "w2:p1",
+          name: "dev #99",
+          status: "working",
+          pull: 99,
+          pull_closed: false,
+          focusable: true,
+        },
+      ],
+      pull_workspaces: [{ pull: 42, pane_id: "w1:p1", status: "working" }],
+      issue_workspaces: [],
     },
   ],
 };
 
-// #609: PR-detail sidebar section showing the herdr session running this PR's worktree,
-// with a Focus button that switches herdr's focus to that agent's pane.
-describe("PullHerdrSection (#609)", () => {
-  it("renders nothing when no herdr session is running for the PR", () => {
+describe("PullHerdrSection", () => {
+  it("renders nothing when no agent pane is running for the PR", () => {
     herdrSessions.value = { repos: [] };
     const { container } = render(
       <PullHerdrSection owner="me" repo="proj" pull={42} />,
@@ -64,83 +144,50 @@ describe("PullHerdrSection (#609)", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("renders nothing when herdr runs other PRs but not this one", () => {
+  it("lists every PR pane as a Workflow parent-child tree with title and cost", () => {
     herdrSessions.value = running;
-    const { container } = render(
-      <PullHerdrSection owner="me" repo="proj" pull={99} />,
-    );
-    expect(container.innerHTML).toBe("");
-  });
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
 
-  it("shows the agent without the routine working status", () => {
-    herdrSessions.value = running;
-    const { container } = render(
-      <PullHerdrSection owner="me" repo="proj" pull={42} />,
-    );
     expect(screen.getByRole("heading", { name: "Agents" })).toBeTruthy();
-    expect(container.querySelectorAll("svg")).toHaveLength(3);
-    expect(screen.getByText("lh-me-proj")).toBeTruthy();
-    expect(screen.getByText(/dev #609/)).toBeTruthy();
-    expect(screen.queryByText("working")).toBeNull();
-  });
-
-  it.each([
-    ["blocked", "text-red-500"],
-    ["done", "text-blue-500"],
-    ["idle", "text-green-500"],
-    ["paused", "text-muted-foreground"],
-  ])("colors %s status text", (status, className) => {
-    herdrSessions.value = {
-      repos: [
-        {
-          ...running.repos[0],
-          agents: [{ id: "w1:p2", name: "dev #609", status }],
-          pull_workspaces: [{ pull: 42, pane_id: "w1:p2", status }],
-        },
-      ],
-    };
-    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
-    expect(screen.getByText(status).classList.contains(className)).toBe(true);
-  });
-
-  it.each([
-    ["blocked", "animate-bot-bounce"],
-    ["working", "animate-bot-wobble"],
-  ])("adds %s animation class for Herdr icon", (status, expectedClass) => {
-    herdrSessions.value = {
-      repos: [
-        {
-          ...running.repos[0],
-          agents: [{ id: "w1:p2", name: "dev #609", status }],
-          pull_workspaces: [{ pull: 42, pane_id: "w1:p2", status }],
-        },
-      ],
-    };
-    const { container } = render(
-      <PullHerdrSection owner="me" repo="proj" pull={42} />,
+    expect(screen.getByText("orchestrator #7")).toBeTruthy();
+    expect(screen.getByText("executor #7-1")).toBeTruthy();
+    expect(screen.getByText("verifier #7-2")).toBeTruthy();
+    expect(screen.queryByText("dev #99")).toBeNull();
+    expect(screen.getByText("$1.25")).toBeTruthy();
+    expect(screen.getAllByText("n/a")).toHaveLength(2);
+    expect(screen.getByText("executor #7-1").closest("li")?.dataset.depth).toBe(
+      "1",
     );
-    const icon = container.querySelector("svg");
-    expect(icon?.classList.contains(expectedClass)).toBe(true);
+    expect(screen.getByText("verifier #7-2").closest("li")?.dataset.depth).toBe(
+      "1",
+    );
   });
 
-  it("omits the agent name when no agent matches the workspace's pane id", () => {
-    herdrSessions.value = {
-      repos: [
-        {
-          ...running.repos[0],
-          agents: [],
-        },
-      ],
-    };
-    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
-    expect(screen.getByText("lh-me-proj")).toBeTruthy();
-    expect(screen.queryByText("working")).toBeNull();
-    expect(screen.queryByText(/dev #609/)).toBeNull();
-  });
-
-  it("focuses the agent's pane via terminal/focusAgent when Open in Herdr is clicked", () => {
+  it("opens pane, agent, session, usage, and cost details on hover", () => {
+    vi.useFakeTimers();
     herdrSessions.value = running;
     render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+
+    fireEvent.mouseEnter(screen.getByText("orchestrator #7").closest("li")!);
+    act(() => vi.advanceTimersByTime(300));
+
+    const dialog = screen.getByRole("dialog", {
+      name: "orchestrator #7 agent details",
+    });
+    expect(dialog.textContent).toContain("orchestrator #7");
+    expect(dialog.textContent).toContain("workflow-parent");
+    expect(dialog.textContent).toContain("codex");
+    expect(dialog.textContent).toContain("parent-session");
+    expect(dialog.textContent).toContain("200");
+    expect(dialog.textContent).toContain("$1.25");
+  });
+
+  it("focuses the selected pane through the existing mutation", () => {
+    vi.useFakeTimers();
+    herdrSessions.value = running;
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+    fireEvent.mouseEnter(screen.getByText("executor #7-1").closest("li")!);
+    act(() => vi.advanceTimersByTime(300));
     fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
     expect(focusHerdrAgent).toHaveBeenCalledWith(
       { repo: "me/proj", paneId: "w1:p2" },
@@ -148,63 +195,87 @@ describe("PullHerdrSection (#609)", () => {
     );
   });
 
-  it("sends the input payload and clears the field after success", () => {
+  it("keeps the popover open while the pointer moves to its action", () => {
+    vi.useFakeTimers();
     herdrSessions.value = running;
     render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
-    const input = screen.getByRole("textbox", {
-      name: "Message agent for PR #42",
-    }) as HTMLInputElement;
-    const send = screen.getByRole("button", {
-      name: "Send message to agent for PR #42",
+    const row = screen.getByText("executor #7-1").closest("li")!;
+    fireEvent.mouseEnter(row);
+    act(() => vi.advanceTimersByTime(300));
+    const dialog = screen.getByRole("dialog", {
+      name: "executor #7-1 agent details",
     });
-    expect((send as HTMLButtonElement).disabled).toBe(true);
 
-    fireEvent.change(input, { target: { value: "Please rerun the test" } });
-    fireEvent.click(send);
+    fireEvent.mouseLeave(row, { relatedTarget: dialog });
 
-    expect(sendHerdrAgentInput).toHaveBeenCalledWith(
-      {
-        repo: "me/proj",
-        pull: 42,
-        paneId: "w1:p2",
-        text: "Please rerun the test",
-      },
-      expect.anything(),
-    );
-    act(() => sendHerdrAgentInput.mock.calls[0][1].onSuccess());
-    expect(input.value).toBe("");
-    expect(screen.getByRole("status").textContent).toContain("Sent");
+    expect(
+      screen.getByRole("dialog", { name: "executor #7-1 agent details" }),
+    ).toBeTruthy();
   });
 
-  it("keeps the input and shows the reason after a send failure", () => {
-    herdrSessions.value = running;
+  it("disables focus for an agent without a real pane id", () => {
+    herdrSessions.value = {
+      ...running,
+      repos: [
+        {
+          ...running.repos[0],
+          agents: [
+            {
+              ...running.repos[0].agents[0],
+              id: "synthetic",
+              focusable: false,
+            },
+          ],
+        },
+      ],
+    };
     render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
-    const input = screen.getByRole("textbox", {
-      name: "Message agent for PR #42",
-    }) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Try again" } });
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Send message to agent for PR #42",
-      }),
-    );
-    act(() =>
-      sendHerdrAgentInput.mock.calls[0][1].onError(
-        new Error("The Herdr agent is no longer running for this PR"),
-      ),
-    );
-    expect(input.value).toBe("Try again");
-    expect(screen.getByRole("alert").textContent).toContain(
-      "The Herdr agent is no longer running for this PR",
-    );
+    fireEvent.focus(screen.getByText("orchestrator #7").closest("div")!);
+
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Open in Herdr",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 
-  it("renders nothing when the sessions query errored, even with stale data", () => {
+  it("keeps the focus action pending and reports failure through the existing error path", () => {
+    vi.useFakeTimers();
     herdrSessions.value = running;
-    herdrSessions.isError = true;
-    const { container } = render(
+    herdrSessions.focusPending = true;
+    const { rerender } = render(
       <PullHerdrSection owner="me" repo="proj" pull={42} />,
     );
-    expect(container.innerHTML).toBe("");
+    fireEvent.mouseEnter(screen.getByText("orchestrator #7").closest("li")!);
+    act(() => vi.advanceTimersByTime(300));
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Open in Herdr",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    herdrSessions.focusPending = false;
+    rerender(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
+    act(() =>
+      focusHerdrAgent.mock.calls
+        .at(-1)?.[1]
+        .onError(new Error("Herdr pane no longer exists")),
+    );
+    expect(showError).toHaveBeenCalledWith("Herdr pane no longer exists");
+  });
+
+  it("shows a visible acquisition error instead of stale agent data", () => {
+    herdrSessions.value = running;
+    herdrSessions.isError = true;
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Failed to load Agents",
+    );
+    expect(screen.queryByText("orchestrator #7")).toBeNull();
   });
 });

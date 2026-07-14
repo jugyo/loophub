@@ -20,6 +20,32 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
+test("registerForResource persists a pane and its resource link together", () => {
+  const registered = svc.herdrPanes.registerForResource({
+    repo: "me/panes",
+    launchId: "launch-with-resource",
+    paneId: "w0:p1",
+    sessionName: "me-panes-12345678",
+    displayName: "Build #1",
+    origin: "build",
+    resourceKind: "pull",
+    resourceKey: "1",
+  });
+
+  expect(registered).toMatchObject({
+    launch_id: "launch-with-resource",
+    pane_id: "w0:p1",
+    origin: "build",
+  });
+  expect(
+    svc.herdrPanes.listForResource({
+      repo: "me/panes",
+      resourceKind: "pull",
+      resourceKey: "1",
+    }),
+  ).toEqual([registered]);
+});
+
 test("a resource linked before pane registration resolves to the registered pane", () => {
   svc.herdrPanes.link({
     repo: "me/panes",
