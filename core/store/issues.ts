@@ -10,6 +10,7 @@ import {
 } from "./herdr-panes.ts";
 
 export const ISSUE_CREATE_CLAIM_PURPOSE = "issue-create-lifecycle";
+export const ISSUE_FILED_FROM_RELATIONSHIP = "filed-from";
 
 export interface IssueRow {
   id: number;
@@ -29,6 +30,28 @@ export interface IssueRow {
 // Compatibility shape for the existing New Issue flow. Persistence is owned by the generic
 // Herdr pane registry; callers can migrate to herdrPanes independently in follow-up work.
 export type IssueHerdrPane = HerdrPaneRow;
+
+export function linkIssueFiledFromHerdrPane(input: {
+  repoId: number;
+  launchId: string;
+  issueId: number;
+}): IssueHerdrPane {
+  const pane = linkHerdrPaneResource({
+    repoId: input.repoId,
+    launchId: input.launchId,
+    resourceKind: "issue",
+    resourceKey: String(input.issueId),
+    relationship: ISSUE_FILED_FROM_RELATIONSHIP,
+  });
+  addHerdrPaneClaim({
+    repoId: input.repoId,
+    launchId: input.launchId,
+    resourceKind: "issue",
+    resourceKey: String(input.issueId),
+    purpose: ISSUE_CREATE_CLAIM_PURPOSE,
+  });
+  return pane;
+}
 
 // ---- issues / pulls ----
 export function nextNumber(repoId: number): number {
@@ -85,18 +108,10 @@ export function upsertIssueHerdrPane(input: {
     lifecycleManaged: true,
   });
   if (input.issueId != null) {
-    pane = linkHerdrPaneResource({
+    pane = linkIssueFiledFromHerdrPane({
       repoId: input.repoId,
       launchId: input.launchId,
-      resourceKind: "issue",
-      resourceKey: String(input.issueId),
-    });
-    addHerdrPaneClaim({
-      repoId: input.repoId,
-      launchId: input.launchId,
-      resourceKind: "issue",
-      resourceKey: String(input.issueId),
-      purpose: ISSUE_CREATE_CLAIM_PURPOSE,
+      issueId: input.issueId,
     });
   }
   return pane;
@@ -117,9 +132,8 @@ export function getIssueHerdrPane(issueId: number): IssueHerdrPane | null {
       repoId: issue.repo_id,
       resourceKind: "issue",
       resourceKey: String(issueId),
-    }).find(
-      (pane) => pane.origin === "issue-create" && pane.closed_at == null,
-    ) ?? null
+      relationship: ISSUE_FILED_FROM_RELATIONSHIP,
+    }).find((pane) => pane.closed_at == null) ?? null
   );
 }
 

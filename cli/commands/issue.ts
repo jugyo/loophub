@@ -22,6 +22,7 @@ import {
   formatSpawnCommand,
   resolveDevRuntime,
 } from "../dev.ts";
+import { currentHerdrPaneContext } from "../herdr-context.ts";
 import { usage } from "../usage.ts";
 
 export async function run(): Promise<void> {
@@ -145,6 +146,7 @@ export async function run(): Promise<void> {
           create_target_branch: flags["create-target-branch"] === true,
         },
         await writeSession(),
+        currentHerdrPaneContext(),
       ),
     );
     console.log(`created #${i.number}`);

@@ -70,3 +70,13 @@ test("lh-issue-create includes a concrete related-resources example", () => {
   expect(skill).toContain("Slack channel — `#release-ops`");
   expect(skill).toContain("Local document — `docs/release-plan.md`");
 });
+
+test("lh-issue-create relies on automatic current-pane association", () => {
+  expect(skill).toContain(
+    "`lh issue create` automatically associates the created Issue with the current Herdr pane",
+  );
+  expect(skill).toContain("Do not pass a pane-linking flag");
+  expect(skill).not.toContain("HERDR_ENV");
+  expect(skill).not.toMatch(/\bherdr (?:agent|pane|tab|workspace)\b/);
+  expect(skill).not.toMatch(/--(?:link|pane|herdr-(?:pane|session))/);
+});

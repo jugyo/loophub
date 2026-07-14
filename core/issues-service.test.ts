@@ -2,8 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
-import { ENV_ISSUE_CREATE_HERDR_LAUNCH } from "./resume.ts";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 // Isolate the DB before service.ts -> db.ts runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-issue-svc-"));
@@ -325,31 +324,28 @@ test("issues.list advances lookahead pages by the visible issue-list size (#906)
   expect(page3).toHaveLength(1);
 });
 
-test("issues.create links a New Issue Herdr pane through the launch id (#670)", async () => {
+test("issues.create links and claims the explicit current Herdr pane before emitting issue.opened", async () => {
   const repo = S.getRepo("me", "proj");
   if (!repo) throw new Error("repo missing");
-  const previous = process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
-  process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH] = "launch-670";
-  try {
-    const issue = svc.issues.create("me/proj", { title: "from herdr" });
-    S.upsertIssueHerdrPane({
-      launchId: "launch-670",
-      repoId: repo.id,
-      paneId: "w4:p2",
-      sessionName: "me-proj-12345678",
-    });
-
-    const detail = (await svc.issues.get("me/proj", issue.number)) as any;
-    expect(detail.herdr_pane).toMatchObject({
-      launch_id: "launch-670",
-      pane_id: "w4:p2",
-      session_name: "me-proj-12345678",
-    });
+  S.registerHerdrPane({
+    launchId: "workflow-launch",
+    repoId: repo.id,
+    paneId: "w4:p2",
+    sessionName: "workflow-session",
+    displayName: "Workflow #50",
+    origin: "workflow",
+  });
+  const originalEmitEvent = S.emitEvent;
+  const emitEvent = vi.spyOn(S, "emitEvent").mockImplementation((...args) => {
+    const payload = args[3] as { number: number };
+    const created = S.getIssue(repo.id, payload.number);
+    if (!created) throw new Error("issue missing before event");
+    expect(S.getIssueHerdrPane(created.id)?.launch_id).toBe("workflow-launch");
     expect(
       S.listHerdrPaneClaimsForResource({
         repoId: repo.id,
         resourceKind: "issue",
-        resourceKey: String(S.getIssue(repo.id, issue.number)?.id),
+        resourceKey: String(created.id),
       }),
     ).toEqual([
       expect.objectContaining({
@@ -357,6 +353,25 @@ test("issues.create links a New Issue Herdr pane through the launch id (#670)", 
         released_at: null,
       }),
     ]);
+    return originalEmitEvent(...args);
+  });
+  try {
+    const issue = svc.issues.create(
+      "me/proj",
+      { title: "from workflow" },
+      undefined,
+      { paneId: "w4:p2", sessionName: "workflow-session" },
+    );
+
+    const detail = (await svc.issues.get("me/proj", issue.number)) as any;
+    expect(detail.herdr_pane).toMatchObject({
+      launch_id: "workflow-launch",
+      pane_id: "w4:p2",
+      session_name: "workflow-session",
+    });
+    expect(S.getHerdrPaneByLaunch(repo.id, "workflow-launch")?.origin).toBe(
+      "workflow",
+    );
 
     const list = (await svc.issues.list("me/proj", {
       kind: "issue",
@@ -365,50 +380,39 @@ test("issues.create links a New Issue Herdr pane through the launch id (#670)", 
     expect(
       list.find((item) => item.number === issue.number)?.herdr_pane,
     ).toMatchObject({
-      launch_id: "launch-670",
+      launch_id: "workflow-launch",
       pane_id: "w4:p2",
-      session_name: "me-proj-12345678",
+      session_name: "workflow-session",
     });
   } finally {
-    if (previous === undefined)
-      delete process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
-    else process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH] = previous;
+    emitEvent.mockRestore();
   }
 });
 
-test("issues.create adds the claim when New Issue pane registration arrives first", () => {
+test("issues.create does not read New Issue launch context from process.env", async () => {
   const repo = S.getRepo("me", "proj");
   if (!repo) throw new Error("repo missing");
-  const previous = process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
-  process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH] = "launch-pane-first";
+  const key = "LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH";
+  const previous = process.env[key];
+  process.env[key] = "must-stay-in-cli";
   try {
-    S.upsertIssueHerdrPane({
-      launchId: "launch-pane-first",
-      repoId: repo.id,
-      paneId: "w6:p7",
-      sessionName: "me-proj-12345678",
-    });
-    const issue = svc.issues.create("me/proj", { title: "pane first" });
+    const issue = svc.issues.create("me/proj", { title: "outside Herdr" });
     const row = S.getIssue(repo.id, issue.number);
     if (!row) throw new Error("issue missing");
-
+    expect(S.getIssueHerdrPane(row.id)).toBeNull();
     expect(
       S.listHerdrPaneClaimsForResource({
         repoId: repo.id,
         resourceKind: "issue",
         resourceKey: String(row.id),
       }),
-    ).toEqual([
-      expect.objectContaining({
-        purpose: "issue-create-lifecycle",
-        released_at: null,
-      }),
-    ]);
-    expect(S.getIssueHerdrPane(row.id)?.pane_id).toBe("w6:p7");
+    ).toEqual([]);
+    expect(
+      (await svc.issues.get("me/proj", issue.number)).herdr_pane,
+    ).toBeNull();
   } finally {
-    if (previous === undefined)
-      delete process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
-    else process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH] = previous;
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
   }
 });
 

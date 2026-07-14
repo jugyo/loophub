@@ -94,6 +94,64 @@ test("a registered pane can independently link to multiple resource kinds", () =
   ).toEqual([registered]);
 });
 
+test("an explicit resource relationship survives a later generic relink", () => {
+  const registered = svc.herdrPanes.register({
+    repo: "me/panes",
+    launchId: "launch-relationship-order",
+    paneId: "w2:p4",
+    sessionName: "me-panes-12345678",
+    displayName: "Workflow #43",
+    origin: "workflow",
+  });
+  const repo = S.getRepo("me", "panes");
+  if (!repo) throw new Error("repo missing");
+  S.linkHerdrPaneResource({
+    repoId: repo.id,
+    launchId: registered.launch_id,
+    resourceKind: "issue",
+    resourceKey: "43",
+    relationship: "filed-from",
+  });
+
+  svc.herdrPanes.link({
+    repo: "me/panes",
+    launchId: registered.launch_id,
+    resourceKind: "issue",
+    resourceKey: "43",
+  });
+
+  expect(
+    S.listHerdrPanesForResource({
+      repoId: repo.id,
+      resourceKind: "issue",
+      resourceKey: "43",
+      relationship: "filed-from",
+    }),
+  ).toEqual([registered]);
+
+  svc.herdrPanes.link({
+    repo: "me/panes",
+    launchId: registered.launch_id,
+    resourceKind: "issue",
+    resourceKey: "44",
+  });
+  S.linkHerdrPaneResource({
+    repoId: repo.id,
+    launchId: registered.launch_id,
+    resourceKind: "issue",
+    resourceKey: "44",
+    relationship: "filed-from",
+  });
+  expect(
+    S.listHerdrPanesForResource({
+      repoId: repo.id,
+      resourceKind: "issue",
+      resourceKey: "44",
+      relationship: "filed-from",
+    }),
+  ).toEqual([registered]);
+});
+
 test("claims are idempotent and pane registration may arrive after the claim", () => {
   const first = svc.herdrPanes.claim({
     repo: "me/panes",

@@ -30,12 +30,6 @@ target, `lh issue create --target-branch <branch> --create-target-branch` may cr
 branch as issue metadata preparation. That is not permission to create an implementation branch, edit
 files, commit, open a PR, push, or start work.
 
-**Exception — herdr mode only (see § 5).** In herdr mode this skill asks once, after reporting
-creation, whether to start now. Only an explicit "yes" launches anything, and even then this
-skill session itself still never implements — it starts a **new** herdr tab/agent to run
-`lh build`, the same way the Web UI's Build button does. That is "suggest, then act on consent",
-not "continue to the next skill yourself".
-
 **The output of this skill is always an issue — never the change itself, whatever the request is.**
 "Do not" covers *executing the requested change inside this skill* — not just writing source code.
 This holds **regardless of how the request reads**: the kind of change does not narrow the rule. If a
@@ -62,8 +56,7 @@ Stop **immediately** when all of the following are true (do not start extra work
 
 - [ ] `lh issue create` succeeded
 - [ ] Issue number, title, and labels (if any) reported to the user
-- [ ] The user has **not** separately asked to "implement" or "continue" — in herdr mode, this
-      also covers the case where you asked (§5) and the user declined or didn't answer
+- [ ] The user has **not** separately asked to "implement" or "continue"
 
 ### Common mistakes
 
@@ -73,13 +66,9 @@ Stop **immediately** when all of the following are true (do not start extra work
 ❌ Auto-start grab / lh-build because you see the skill chain
 ❌ "Let's stop using labels" / "fix this skill so it…" → edit the policy or skill file directly
 ❌ Treat any request that "reads like implementation" as a license to apply the change here
-❌ Ask "start now?" in builtin mode (`HERDR_ENV` not `1`) — that question is herdr-only
-❌ In herdr mode, skip asking and launch `lh build` anyway, or implement inside this session instead
-   of a new herdr tab/agent
 ✅ Create issue → report number → stop (implementation needs explicit user or separate skill)
 ✅ User explicitly names a target branch → let `lh issue create --create-target-branch` prepare only
    that local target branch, then stop
-✅ herdr mode: ask once whether to start now → only on "yes", launch a new herdr tab/agent
 ✅ Any change request (code, policy, skill, config, doc, …) → file an issue describing it → stop
 ```
 
@@ -142,6 +131,17 @@ is created, **stop** — do not implement (see § Scope boundary).
 | Duplicate check | `lh issue list` or `lh issue view` |
 | Create issue | `lh issue create` |
 | Verify after create | `lh issue view <n>` |
+
+### Current pane association
+
+`lh issue create` automatically associates the created Issue with the current Herdr pane when the
+CLI receives a trustworthy pane context. Outside Herdr, or when that context is incomplete or
+invalid, it creates the Issue without a pane association.
+
+Use the same plain `lh issue create` command in every environment. Do not pass a pane-linking flag,
+inspect multiplexer environment variables, call the multiplexer CLI, or branch this skill's flow by
+environment. The CLI owns context detection, pane registration/reuse, the `filed-from` relationship,
+and the Issue lifecycle claim.
 
 ### Web URL (for reporting)
 
@@ -360,52 +360,13 @@ Append `--label <name>` for an explicitly requested grouping/theme, for `ready-t
 **related multi-issue creation** — for the required common grouping label applied to every issue in
 the set (above). For a single standalone issue with no explicit request, omit it.
 
-### 5. Report (stop here — except herdr mode, below)
+### 5. Report (stop here)
 
 After creation:
 
 1. Report issue number, title, and labels (usually none — see step 4)
 2. Show the **issue URL** (Web URL format above) as a markdown link
-3. **Stop** — skill work is complete at this point, unless herdr mode applies below
-
-**Builtin mode (default).** When `HERDR_ENV` is unset or not `1`, do **not** start implementation
-on your own and do **not** ask. Implementation is started from the Web UI — the issue's **Build**
-button or **Start workflow** control — not by this skill; no prompting from this skill is needed.
-(Only implement in-skill if the user explicitly asked to both create and implement in the same
-message.)
-
-**herdr mode.** When `HERDR_ENV=1` — the same detection the `herdr` skill uses (`echo $HERDR_ENV`)
-— ask once, right after reporting creation, whether to start now. This is the Build button's
-question, asked proactively instead of waiting for the user to click it:
-
-> Start working on this now? (opens a new herdr tab and starts the build)
-
-- **Declines, or doesn't answer**: stop exactly as in builtin mode above — issue only, no
-  implementation, no further prompting.
-- **Agrees**: launch the same flow the Web UI's **Build** button triggers — a new herdr tab +
-  agent running `lh build '<repo>/<n>'`. There is no CLI/RPC entry point for that reachable from a
-  skill session, so drive the `herdr` CLI directly instead. `herdr agent start` is a documented
-  subcommand of the `herdr` binary itself (`herdr agent --help`), used here the same session-less
-  way as the `herdr tab create` call below — both target the currently running instance from
-  inside a herdr pane, unlike a server-side launcher (outside herdr, so it must name a `--session`
-  explicitly):
-
-  ```sh
-  AUTO=$(jq -r '.autoModeOnBuild // false' "${LOOPHUB_HOME:-$HOME/.loophub}/config.json" 2>/dev/null)
-  TARGET=$(printf '%q' "<repo>/<n>")   # safe against shell metacharacters before the zsh -lc re-parse below
-  CMD="lh build $TARGET"; [ "$AUTO" = "true" ] && CMD="$CMD --auto"
-  CREATE=$(herdr tab create --cwd "$(pwd)" --no-focus)
-  TAB_ID=$(echo "$CREATE" | jq -r '.result.tab.tab_id')
-  ROOT_PANE_ID=$(echo "$CREATE" | jq -r '.result.root_pane.pane_id')
-  herdr agent start "lh build #<n>" --cwd "$(pwd)" --tab "$TAB_ID" --no-focus -- zsh -lc "$CMD" \
-    && herdr pane close "$ROOT_PANE_ID"   # only drop the seeded empty pane once the agent's own pane exists
-  ```
-
-  Assumes this skill is running from the repo's checkout root, not a worktree — true for
-  `lh-issue-create` (worktrees only exist for lh-build sessions). If the `herdr` calls fail
-  (unexpected outside a real herdr pane, or a transient CLI error), report the failure and fall
-  back to the builtin-mode guidance above (start the build from the Web UI) rather than leaving
-  the user stuck.
+3. **Stop** — skill work is complete at this point
 
 ## Follow-on work
 
@@ -413,14 +374,9 @@ question, asked proactively instead of waiting for the user to click it:
 lh-issue-create → [stop] → start the build from the Web UI (Build / Start workflow) → lh-pr-review → ...
 ```
 
-**Builtin mode.** Do **not** auto-chain to implementation. After creating the issue, implementation
-is started from the Web UI — the issue's **Build** button or **Start workflow** control. Only
-implement inside this skill if the user explicitly asked to both create and implement in the same
-message.
-
-**herdr mode.** After creation, ask once (§5); on explicit consent, chain by launching a **new**
-herdr tab/agent running `lh build` — not by implementing inside this session. On decline or silence,
-same as builtin mode.
+Do **not** auto-chain to implementation. After creating the issue, implementation is started from
+the Web UI — the issue's **Build** button or **Start workflow** control. Only implement inside this
+skill if the user explicitly asked to both create and implement in the same message.
 
 ## Prohibited
 
@@ -429,5 +385,4 @@ same as builtin mode.
 - Do not carry out the requested change yourself — whatever kind it is (code, policy, skill, config,
   doc, …) — even when the request reads like implementation; file an issue describing it instead
 - Do not skip duplicate check
-- Do not start implementation without user consent — in herdr mode, ask (§5); never assume "yes"
-- Do not ask "start now?" outside herdr mode (`HERDR_ENV` not `1`)
+- Do not start implementation without a separate explicit request

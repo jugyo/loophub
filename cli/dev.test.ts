@@ -1251,6 +1251,9 @@ test("errors when the default branch cannot be resolved (no commits)", async () 
 // ---- CLI arg guards (no DB access before these fail) ----
 
 const CLI = join(import.meta.dirname, "index.ts");
+// Full CLI E2E tests start several Node/tsx processes and provision git worktrees, so they need a
+// wider budget than Vitest's unit-test-oriented 5s default when the complete suite runs in parallel.
+const BUILD_CLI_E2E_TIMEOUT_MS = 20_000;
 
 function cli(
   group: string,
@@ -1335,136 +1338,146 @@ test("removed lh dev command no longer reaches the build flow", () => {
   expect(stderr).not.toContain("#42");
 });
 
-test("lh build resumes a pre-created zero-commit attempt through Herdr and consumes its branch-creation permission (#1187)", async () => {
-  const root = mkdtempSync(join(tmpdir(), "lh-build-e2e-"));
-  const home = join(root, "home");
-  const repo = join(root, "repo");
-  const bin = join(root, "bin");
-  const herdrLog = join(root, "herdr.log");
-  mkdirSync(home, { recursive: true });
-  mkdirSync(repo, { recursive: true });
-  mkdirSync(bin, { recursive: true });
-  writeFileSync(
-    join(bin, "herdr"),
-    `#!/bin/sh
+test(
+  "lh build resumes a pre-created zero-commit attempt through Herdr and consumes its branch-creation permission (#1187)",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "lh-build-e2e-"));
+    const home = join(root, "home");
+    const repo = join(root, "repo");
+    const bin = join(root, "bin");
+    const herdrLog = join(root, "herdr.log");
+    mkdirSync(home, { recursive: true });
+    mkdirSync(repo, { recursive: true });
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, "herdr"),
+      `#!/bin/sh
 printf '%s\\n' "$*" >> "$HERDR_LOG"
 case " $* " in
   *" agent start "*) exit 0 ;;
   *) exit 1 ;;
 esac
 `,
-  );
-  chmodSync(join(bin, "herdr"), 0o755);
+    );
+    chmodSync(join(bin, "herdr"), 0o755);
 
-  await git(repo, ["init", "-q", "-b", "main"]);
-  await git(repo, ["config", "user.email", "test@example.com"]);
-  await git(repo, ["config", "user.name", "tester"]);
-  writeFileSync(join(repo, "base.txt"), "base\n");
-  await git(repo, ["add", "base.txt"]);
-  await git(repo, ["commit", "-qm", "base"]);
-  const baseSha = (await git(repo, ["rev-parse", "main"])).stdout.trim();
-  const env = {
-    ...process.env,
-    LOOPHUB_HOME: home,
-    LOOPHUB_DB: join(home, "loophub.db"),
-    HERDR_LOG: herdrLog,
-    PATH: `${bin}:${process.env.PATH ?? ""}`,
-  };
+    await git(repo, ["init", "-q", "-b", "main"]);
+    await git(repo, ["config", "user.email", "test@example.com"]);
+    await git(repo, ["config", "user.name", "tester"]);
+    writeFileSync(join(repo, "base.txt"), "base\n");
+    await git(repo, ["add", "base.txt"]);
+    await git(repo, ["commit", "-qm", "base"]);
+    const baseSha = (await git(repo, ["rev-parse", "main"])).stdout.trim();
+    const env = {
+      ...process.env,
+      LOOPHUB_HOME: home,
+      LOOPHUB_DB: join(home, "loophub.db"),
+      HERDR_LOG: herdrLog,
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+    };
 
-  expect(
-    cli("repo", ["add", repo, "--name", "test/build-e2e"], { env }).exitCode,
-  ).toBe(0);
-  expect(
-    cli(
-      "issue",
-      ["create", "--repo", "test/build-e2e", "--title", "zero commit attempt"],
-      { env },
-    ).exitCode,
-  ).toBe(0);
-  expect(
-    cli(
-      "pr",
+    expect(
+      cli("repo", ["add", repo, "--name", "test/build-e2e"], { env }).exitCode,
+    ).toBe(0);
+    expect(
+      cli(
+        "issue",
+        [
+          "create",
+          "--repo",
+          "test/build-e2e",
+          "--title",
+          "zero commit attempt",
+        ],
+        { env },
+      ).exitCode,
+    ).toBe(0);
+    expect(
+      cli(
+        "pr",
+        [
+          "create",
+          "--repo",
+          "test/build-e2e",
+          "--head",
+          "loophub/pr-2",
+          "--base",
+          "main",
+          "--title",
+          "zero commit attempt",
+          "--issue",
+          "1",
+          "--draft",
+        ],
+        { env },
+      ).exitCode,
+    ).toBe(0);
+    // Model the workflow/attempt preparer, which creates the PR-number-derived head through
+    // dev.openPr and persists this marker before any `lh build` process provisions the branch.
+    const db = new DatabaseSync(join(home, "loophub.db"));
+    db.prepare(
+      `UPDATE pulls SET head_pending_creation = 1
+       WHERE issue_id = (SELECT id FROM issues WHERE number = 2)`,
+    ).run();
+    db.close();
+
+    const first = cli(
+      "build",
       [
-        "create",
-        "--repo",
-        "test/build-e2e",
-        "--head",
-        "loophub/pr-2",
-        "--base",
-        "main",
-        "--title",
-        "zero commit attempt",
-        "--issue",
-        "1",
-        "--draft",
+        "test/build-e2e/1",
+        "--herdr",
+        "--codex",
+        "--model",
+        "gpt-5.6-sol",
+        "--auto",
       ],
       { env },
-    ).exitCode,
-  ).toBe(0);
-  // Model the workflow/attempt preparer, which creates the PR-number-derived head through
-  // dev.openPr and persists this marker before any `lh build` process provisions the branch.
-  const db = new DatabaseSync(join(home, "loophub.db"));
-  db.prepare(
-    `UPDATE pulls SET head_pending_creation = 1
-       WHERE issue_id = (SELECT id FROM issues WHERE number = 2)`,
-  ).run();
-  db.close();
-
-  const first = cli(
-    "build",
-    [
-      "test/build-e2e/1",
-      "--herdr",
-      "--codex",
-      "--model",
-      "gpt-5.6-sol",
-      "--auto",
-    ],
-    { env },
-  );
-  expect(first.exitCode, first.stderr).toBe(0);
-  const worktree = join(home, "worktrees", "test", "build-e2e", "pr-2");
-  expect((await git(repo, ["rev-parse", "loophub/pr-2"])).stdout.trim()).toBe(
-    baseSha,
-  );
-  expect(readFileSync(herdrLog, "utf8")).toMatch(
-    /agent start .*codex .*--model.*gpt-5\.6-sol.*\/lh-build 1/,
-  );
-  const verifiedDb = new DatabaseSync(join(home, "loophub.db"));
-  const persisted = verifiedDb
-    .prepare(
-      `SELECT head_sha, head_pending_creation
+    );
+    expect(first.exitCode, first.stderr).toBe(0);
+    const worktree = join(home, "worktrees", "test", "build-e2e", "pr-2");
+    expect((await git(repo, ["rev-parse", "loophub/pr-2"])).stdout.trim()).toBe(
+      baseSha,
+    );
+    expect(readFileSync(herdrLog, "utf8")).toMatch(
+      /agent start .*codex .*--model.*gpt-5\.6-sol.*\/lh-build 1/,
+    );
+    const verifiedDb = new DatabaseSync(join(home, "loophub.db"));
+    const persisted = verifiedDb
+      .prepare(
+        `SELECT head_sha, head_pending_creation
          FROM pulls
         WHERE issue_id = (SELECT id FROM issues WHERE number = 2)`,
-    )
-    .get() as { head_sha: string; head_pending_creation: number };
-  verifiedDb.close();
-  expect(persisted).toEqual({
-    head_sha: baseSha,
-    head_pending_creation: 0,
-  });
+      )
+      .get() as { head_sha: string; head_pending_creation: number };
+    verifiedDb.close();
+    expect(persisted).toEqual({
+      head_sha: baseSha,
+      head_pending_creation: 0,
+    });
 
-  await git(repo, ["worktree", "remove", "--force", worktree]);
-  await git(repo, ["branch", "-D", "loophub/pr-2"]);
-  const second = cli(
-    "build",
-    [
-      "test/build-e2e/1",
-      "--herdr",
-      "--codex",
-      "--model",
-      "gpt-5.6-sol",
-      "--auto",
-    ],
-    { env },
-  );
-  expect(second.exitCode).not.toBe(0);
-  expect(second.stderr).toContain(
-    'branch "loophub/pr-2" does not exist (it should already exist for this PR)',
-  );
+    await git(repo, ["worktree", "remove", "--force", worktree]);
+    await git(repo, ["branch", "-D", "loophub/pr-2"]);
+    const second = cli(
+      "build",
+      [
+        "test/build-e2e/1",
+        "--herdr",
+        "--codex",
+        "--model",
+        "gpt-5.6-sol",
+        "--auto",
+      ],
+      { env },
+    );
+    expect(second.exitCode).not.toBe(0);
+    expect(second.stderr).toContain(
+      'branch "loophub/pr-2" does not exist (it should already exist for this PR)',
+    );
 
-  rmSync(root, { recursive: true, force: true });
-});
+    rmSync(root, { recursive: true, force: true });
+  },
+  BUILD_CLI_E2E_TIMEOUT_MS,
+);
 
 // ---- dev lock (pure / fs) ----
 

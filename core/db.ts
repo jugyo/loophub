@@ -541,6 +541,7 @@ CREATE TABLE IF NOT EXISTS herdr_pane_resources (
   pane_id       INTEGER NOT NULL REFERENCES herdr_panes(id) ON DELETE CASCADE,
   resource_kind TEXT NOT NULL,
   resource_key  TEXT NOT NULL,
+  relationship  TEXT NOT NULL DEFAULT 'related',
   created_at    TEXT NOT NULL,
   PRIMARY KEY (pane_id, resource_kind, resource_key)
 );
@@ -854,6 +855,20 @@ if (tableExists("issue_herdr_panes")) {
     throw error;
   }
 }
+
+// Resource relationships make navigation intent explicit. Existing New Issue links predate the
+// column but have an unambiguous origin, so preserve them as filed-from associations; every other
+// historical link remains the generic related relationship.
+tryExec(
+  "ALTER TABLE herdr_pane_resources ADD COLUMN relationship TEXT NOT NULL DEFAULT 'related'",
+);
+tryExec(
+  `UPDATE herdr_pane_resources
+   SET relationship = 'filed-from'
+   WHERE relationship = 'related'
+     AND resource_kind = 'issue'
+     AND pane_id IN (SELECT id FROM herdr_panes WHERE origin = 'issue-create')`,
+);
 
 // #1142 replaces the ready-for-review `implementation_done` alert with a true merge-ready
 // transition. SQLite cannot alter a CHECK constraint in place, so rebuild this small derived table

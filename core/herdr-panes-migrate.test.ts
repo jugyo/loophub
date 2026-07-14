@@ -94,6 +94,14 @@ test("legacy issue pane data migrates to the generic pane registry", () => {
     }),
   ]);
   expect(
+    S.listHerdrPanesForResource({
+      repoId: 1,
+      resourceKind: "issue",
+      resourceKey: "7",
+      relationship: "filed-from",
+    }),
+  ).toHaveLength(1);
+  expect(
     D.db
       .query(
         `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'issue_herdr_panes'`,

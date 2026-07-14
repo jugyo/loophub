@@ -14,10 +14,13 @@ export interface HerdrPaneRow {
   updated_at: string;
 }
 
+export type HerdrPaneRelationship = "related" | "filed-from";
+
 export interface HerdrPaneResourceRow {
   pane_id: number;
   resource_kind: string;
   resource_key: string;
+  relationship: HerdrPaneRelationship;
   created_at: string;
 }
 
@@ -214,13 +217,23 @@ export function linkHerdrPaneResource(input: {
   launchId: string;
   resourceKind: string;
   resourceKey: string;
+  relationship?: HerdrPaneRelationship;
 }): HerdrPaneRow {
   const pane = ensureHerdrPane(input.repoId, input.launchId);
   db.run(
-    `INSERT OR IGNORE INTO herdr_pane_resources
-       (pane_id, resource_kind, resource_key, created_at)
-     VALUES (?, ?, ?, ?)`,
-    [pane.id, input.resourceKind, input.resourceKey, now()],
+    `INSERT INTO herdr_pane_resources
+       (pane_id, resource_kind, resource_key, relationship, created_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(pane_id, resource_kind, resource_key) DO UPDATE SET
+       relationship = excluded.relationship
+     WHERE excluded.relationship != 'related'`,
+    [
+      pane.id,
+      input.resourceKind,
+      input.resourceKey,
+      input.relationship ?? "related",
+      now(),
+    ],
   );
   return pane;
 }
@@ -234,20 +247,41 @@ export function getHerdrPaneByLaunch(
     .get(repoId, launchId) as HerdrPaneRow | null;
 }
 
+export function getHerdrPaneByCoordinates(
+  repoId: number,
+  sessionName: string,
+  paneId: string,
+): HerdrPaneRow | null {
+  return db
+    .query(
+      `SELECT * FROM herdr_panes
+       WHERE repo_id = ? AND session_name = ? AND pane_id = ?
+       ORDER BY created_at, id
+       LIMIT 1`,
+    )
+    .get(repoId, sessionName, paneId) as HerdrPaneRow | null;
+}
+
 export function listHerdrPanesForResource(input: {
   repoId: number;
   resourceKind: string;
   resourceKey: string;
+  relationship?: HerdrPaneRelationship;
 }): HerdrPaneRow[] {
+  const relationshipClause = input.relationship
+    ? " AND r.relationship = ?"
+    : "";
+  const params = [input.repoId, input.resourceKind, input.resourceKey];
+  if (input.relationship) params.push(input.relationship);
   return db
     .query(
       `SELECT p.*
        FROM herdr_panes p
        JOIN herdr_pane_resources r ON r.pane_id = p.id
-       WHERE p.repo_id = ? AND r.resource_kind = ? AND r.resource_key = ?
+       WHERE p.repo_id = ? AND r.resource_kind = ? AND r.resource_key = ?${relationshipClause}
        ORDER BY p.created_at, p.id`,
     )
-    .all(input.repoId, input.resourceKind, input.resourceKey) as HerdrPaneRow[];
+    .all(...params) as HerdrPaneRow[];
 }
 
 export function listHerdrPanesByOrigin(

@@ -6,7 +6,6 @@ import {
   clampPerPage,
   commentJSON,
   DEFAULT_LIST_PER_PAGE,
-  ENV_ISSUE_CREATE_HERDR_LAUNCH,
   ensureLocalBranchFromDefault,
   ensureWritable,
   githubIssueJSON,
@@ -19,6 +18,7 @@ import {
   MAX_LIST_PER_PAGE,
   paginate,
   parseGithubIssueUrl,
+  randomUUID,
   realGithubIssueDeps,
   relatedSessionsJSON,
   repoOr404,
@@ -27,6 +27,57 @@ import {
 } from "./shared.ts";
 
 const ISSUE_LIST_LOOKAHEAD_MAX = MAX_LIST_PER_PAGE + 1;
+
+export interface CurrentHerdrPaneContext {
+  sessionName: string;
+  paneId: string;
+  launchId?: string | null;
+}
+
+function linkIssueToCurrentPane(
+  repoId: number,
+  issueId: number,
+  currentPane: CurrentHerdrPaneContext,
+): void {
+  let pane = currentPane.launchId
+    ? S.getHerdrPaneByLaunch(repoId, currentPane.launchId)
+    : null;
+  pane ??= S.getHerdrPaneByCoordinates(
+    repoId,
+    currentPane.sessionName,
+    currentPane.paneId,
+  );
+  if (!pane) {
+    pane = S.registerHerdrPane({
+      repoId,
+      launchId: currentPane.launchId ?? randomUUID(),
+      paneId: currentPane.paneId,
+      sessionName: currentPane.sessionName,
+      displayName: currentPane.launchId ? "New issue" : null,
+      origin: currentPane.launchId ? "issue-create" : "external",
+      lifecycleManaged: currentPane.launchId != null,
+    });
+  } else if (
+    currentPane.launchId &&
+    pane.launch_id === currentPane.launchId &&
+    (pane.pane_id == null || pane.session_name == null || pane.origin == null)
+  ) {
+    pane = S.registerHerdrPane({
+      repoId,
+      launchId: pane.launch_id,
+      paneId: currentPane.paneId,
+      sessionName: currentPane.sessionName,
+      displayName: pane.display_name ?? "New issue",
+      origin: pane.origin ?? "issue-create",
+      lifecycleManaged: pane.lifecycle_managed === 1 || pane.origin == null,
+    });
+  }
+  S.linkIssueFiledFromHerdrPane({
+    repoId,
+    launchId: pane.launch_id,
+    issueId,
+  });
+}
 
 // ===== issues =====
 export const issues = {
@@ -103,6 +154,7 @@ export const issues = {
       create_target_branch?: boolean;
     },
     sessionId?: string | null,
+    currentPane?: CurrentHerdrPaneContext | null,
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
@@ -130,14 +182,7 @@ export const issues = {
       targetBranch,
     );
     if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
-    const launchId = process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
-    if (launchId) {
-      S.upsertIssueHerdrPane({
-        launchId,
-        repoId: r.id,
-        issueId: issue.id,
-      });
-    }
+    if (currentPane) linkIssueToCurrentPane(r.id, issue.id, currentPane);
     S.emitEvent(r.id, "issue.opened", actor, { number: issue.number });
     return issueJSON(S.getIssue(r.id, issue.number)!, r);
   },
