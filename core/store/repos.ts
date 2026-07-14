@@ -203,11 +203,9 @@ export function deleteRepo(owner: string, name: string): boolean {
     // #614: same FK-with-no-cascade situation as github_pulls — sweep the import links before the
     // issues delete, or `lh repo remove` fails once any issue in the repo was imported from GitHub.
     db.run(`DELETE FROM github_issues WHERE issue_id IN (${ph})`, issueIds);
-    db.run(`DELETE FROM issue_herdr_panes WHERE issue_id IN (${ph})`, issueIds);
   }
-  // New Issue pane links may be created before issue rows exist (issue_id NULL), so drop by repo_id
-  // before the final repos delete to avoid orphaned rows blocking deletion.
-  db.run(`DELETE FROM issue_herdr_panes WHERE repo_id = ?`, [repo.id]);
+  // Herdr panes are repo-owned; their polymorphic resource links cascade from this delete.
+  db.run(`DELETE FROM herdr_panes WHERE repo_id = ?`, [repo.id]);
   // Older databases may still carry retired grouping tables with foreign keys into repos/issues.
   // Sweep their rows when present so deleting a repo remains backward-compatible.
   deleteLegacyGroupingRows(repo.id);

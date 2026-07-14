@@ -364,6 +364,27 @@ test("issues.create links a New Issue Herdr pane through the launch id (#670)", 
   }
 });
 
+test("New Issue launch lookup is scoped to its repository", () => {
+  const firstRepo = S.getRepo("me", "proj");
+  if (!firstRepo) throw new Error("repo missing");
+  const secondRepo = S.createRepo("me/other-panes", "/tmp/other-panes");
+
+  S.upsertIssueHerdrPane({
+    launchId: "shared-launch",
+    repoId: firstRepo.id,
+    paneId: "w1:p1",
+  });
+  S.upsertIssueHerdrPane({
+    launchId: "shared-launch",
+    repoId: secondRepo.id,
+    paneId: "w2:p2",
+  });
+
+  expect(
+    S.getIssueHerdrPaneByLaunch(secondRepo.id, "shared-launch")?.pane_id,
+  ).toBe("w2:p2");
+});
+
 test("repos.remove removes Herdr pane links even when issue_id is not assigned yet", () => {
   const repo = S.getRepo("me", "proj");
   if (!repo) throw new Error("repo missing");

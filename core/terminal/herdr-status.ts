@@ -192,8 +192,8 @@ export interface HerdrIssueWorkspace {
  * unknown to the caller) is skipped, same degrade-to-empty tolerance as the rest of this file.
  * Several PRs can close one issue (multiple proposal PRs), so several agents can map to the same
  * issue; as with the PR variant only the first agent per issue is kept. Issue-create sessions
- * (repo-root cwd, no PR) never resolve here — their issue link is the post-hoc issue_herdr_panes
- * record (#670), not this cwd→PR→issue path.
+ * (repo-root cwd, no PR) never resolve here — their issue link is the post-hoc compatibility
+ * record backed by the generic Herdr pane registry (#670), not this cwd→PR→issue path.
  */
 export function herdrIssueWorkspacesFromAgentList(
   stdout: string,

@@ -190,8 +190,8 @@ export interface IssueListPullSummaryWire extends PullSummaryWire {
   work_duration_total?: { seconds: number; basis: PullWorkDurationBasis };
 }
 
-// Herdr pane captured from the New Issue flow (#670). Narrowed from the `issue_herdr_panes` row —
-// repo_id/issue_id/created_at/updated_at are internal bookkeeping, not part of the wire contract.
+// Herdr pane captured from the New Issue flow (#670). Narrowed from its compatibility store row —
+// generic ownership, display, origin, and timestamps remain internal to this wire shape.
 export interface HerdrPaneWire {
   launch_id: string;
   pane_id: string | null;

@@ -510,21 +510,41 @@ CREATE TABLE IF NOT EXISTS github_pull_feedback (
   PRIMARY KEY (issue_id, kind, github_id)
 );
 
--- New Issue Herdr pane links (#670). A web New Issue launch creates a Herdr pane before an issue
--- exists, while lh issue create creates the issue from inside that pane later. launch_id is the
--- durable correlation key both sides know; issue_id and pane_id can arrive in either order.
-CREATE TABLE IF NOT EXISTS issue_herdr_panes (
-  launch_id    TEXT PRIMARY KEY,
+-- LoopHub-created Herdr panes are first-class, repo-owned records. launch_id is the durable
+-- correlation key shared by the launcher and the resource-producing flow; pane_id/session_name are
+-- the coordinates Herdr needs for focus, while display_name/origin describe the pane without tying
+-- this table to any one LoopHub resource type. All four descriptive fields are nullable because a
+-- resource link may arrive before the launcher finishes registering the pane.
+CREATE TABLE IF NOT EXISTS herdr_panes (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id      INTEGER NOT NULL REFERENCES repos(id),
-  issue_id     INTEGER REFERENCES issues(id),
+  launch_id    TEXT NOT NULL,
   pane_id      TEXT,
   session_name TEXT,
+  display_name TEXT,
+  origin       TEXT,
   created_at   TEXT NOT NULL,
-  updated_at   TEXT NOT NULL
+  updated_at   TEXT NOT NULL,
+  UNIQUE (repo_id, launch_id)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_herdr_panes_issue
-  ON issue_herdr_panes(issue_id) WHERE issue_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_herdr_panes_coordinates
+  ON herdr_panes(session_name, pane_id)
+  WHERE session_name IS NOT NULL AND pane_id IS NOT NULL;
+
+-- Polymorphic resource links keep resource-specific nullable columns out of herdr_panes.
+-- resource_kind is intentionally open text (for example issue, pull, workflow_run), and
+-- resource_key is text so future resources are not restricted to SQLite integer identifiers.
+CREATE TABLE IF NOT EXISTS herdr_pane_resources (
+  pane_id       INTEGER NOT NULL REFERENCES herdr_panes(id) ON DELETE CASCADE,
+  resource_kind TEXT NOT NULL,
+  resource_key  TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  PRIMARY KEY (pane_id, resource_kind, resource_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_herdr_pane_resources_resource
+  ON herdr_pane_resources(resource_kind, resource_key, pane_id);
 
 -- Scheduled tasks (#880). A repo-scoped, saved prompt that a coding agent (claude-code / codex) runs
 -- automatically at one or more times of day. times_json is an array of "HH:MM" local-time strings —
@@ -771,6 +791,44 @@ function columnExists(table: string, column: string): boolean {
     ).some((c) => c.name === column);
   } catch {
     return false;
+  }
+}
+
+function tableExists(table: string): boolean {
+  return Boolean(
+    db
+      .query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+      .get(table),
+  );
+}
+
+// Migrate the New Issue-specific registry (#670) into the generic pane/resource model. Keep this
+// transaction strict: silently dropping one legacy association would be worse than making an
+// operator address a visible startup error. Fresh databases never create the retired table.
+if (tableExists("issue_herdr_panes")) {
+  try {
+    db.exec(`
+      BEGIN IMMEDIATE;
+      INSERT INTO herdr_panes
+        (repo_id, launch_id, pane_id, session_name, display_name, origin, created_at, updated_at)
+      SELECT repo_id, launch_id, pane_id, session_name, 'New issue', 'issue-create',
+             created_at, updated_at
+      FROM issue_herdr_panes;
+      INSERT INTO herdr_pane_resources
+        (pane_id, resource_kind, resource_key, created_at)
+      SELECT p.id, 'issue', CAST(legacy.issue_id AS TEXT), legacy.created_at
+      FROM issue_herdr_panes legacy
+      JOIN herdr_panes p
+        ON p.repo_id = legacy.repo_id AND p.launch_id = legacy.launch_id
+      WHERE legacy.issue_id IS NOT NULL;
+      DROP TABLE issue_herdr_panes;
+      COMMIT;
+    `);
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {}
+    throw error;
   }
 }
 

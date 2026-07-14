@@ -1,4 +1,12 @@
 import { db, now } from "../db.ts";
+import {
+  getHerdrPaneByLaunch,
+  type HerdrPaneRow,
+  linkHerdrPaneResource,
+  listHerdrPanesByOrigin,
+  listHerdrPanesForResource,
+  registerHerdrPane,
+} from "./herdr-panes.ts";
 
 export interface IssueRow {
   id: number;
@@ -15,15 +23,9 @@ export interface IssueRow {
   closed_at: string | null;
 }
 
-export interface IssueHerdrPane {
-  launch_id: string;
-  repo_id: number;
-  issue_id: number | null;
-  pane_id: string | null;
-  session_name: string | null;
-  created_at: string;
-  updated_at: string;
-}
+// Compatibility shape for the existing New Issue flow. Persistence is owned by the generic
+// Herdr pane registry; callers can migrate to herdrPanes independently in follow-up work.
+export type IssueHerdrPane = HerdrPaneRow;
 
 // ---- issues / pulls ----
 export function nextNumber(repoId: number): number {
@@ -70,52 +72,46 @@ export function upsertIssueHerdrPane(input: {
   paneId?: string | null;
   sessionName?: string | null;
 }): IssueHerdrPane {
-  const t = now();
-  db.query(
-    `INSERT INTO issue_herdr_panes
-       (launch_id, repo_id, issue_id, pane_id, session_name, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(launch_id) DO UPDATE SET
-       repo_id = excluded.repo_id,
-       issue_id = COALESCE(excluded.issue_id, issue_herdr_panes.issue_id),
-       pane_id = COALESCE(excluded.pane_id, issue_herdr_panes.pane_id),
-       session_name = COALESCE(excluded.session_name, issue_herdr_panes.session_name),
-       updated_at = excluded.updated_at
-     RETURNING *`,
-  ).get(
-    input.launchId,
-    input.repoId,
-    input.issueId ?? null,
-    input.paneId ?? null,
-    input.sessionName ?? null,
-    t,
-    t,
-  );
-  return getIssueHerdrPaneByLaunch(input.launchId) as IssueHerdrPane;
+  let pane = registerHerdrPane({
+    repoId: input.repoId,
+    launchId: input.launchId,
+    paneId: input.paneId,
+    sessionName: input.sessionName,
+    displayName: "New issue",
+    origin: "issue-create",
+  });
+  if (input.issueId != null) {
+    pane = linkHerdrPaneResource({
+      repoId: input.repoId,
+      launchId: input.launchId,
+      resourceKind: "issue",
+      resourceKey: String(input.issueId),
+    });
+  }
+  return pane;
 }
 
 export function getIssueHerdrPaneByLaunch(
+  repoId: number,
   launchId: string,
 ): IssueHerdrPane | null {
-  return (
-    (db
-      .query(`SELECT * FROM issue_herdr_panes WHERE launch_id = ?`)
-      .get(launchId) as IssueHerdrPane) ?? null
-  );
+  return getHerdrPaneByLaunch(repoId, launchId);
 }
 
 export function getIssueHerdrPane(issueId: number): IssueHerdrPane | null {
+  const issue = getIssueById(issueId);
+  if (!issue) return null;
   return (
-    (db
-      .query(`SELECT * FROM issue_herdr_panes WHERE issue_id = ?`)
-      .get(issueId) as IssueHerdrPane) ?? null
+    listHerdrPanesForResource({
+      repoId: issue.repo_id,
+      resourceKind: "issue",
+      resourceKey: String(issueId),
+    }).find((pane) => pane.origin === "issue-create") ?? null
   );
 }
 
 export function listIssueHerdrPanes(repoId: number): IssueHerdrPane[] {
-  return db
-    .query(`SELECT * FROM issue_herdr_panes WHERE repo_id = ?`)
-    .all(repoId) as IssueHerdrPane[];
+  return listHerdrPanesByOrigin(repoId, "issue-create");
 }
 
 export function getIssue(repoId: number, number: number): IssueRow | null {

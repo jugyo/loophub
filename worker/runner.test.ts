@@ -181,7 +181,7 @@ test("events without a workflow.yml or unsupported types are no-ops", async () =
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("issue.closed cleans only the linked New Issue Herdr pane, even without workflow.yml", async () => {
+test("issue.closed ignores an earlier linked workflow pane and cleans the New Issue pane", async () => {
   const repoPath = mkdtempSync(join(tmpdir(), "lh-repo-"));
   await git(repoPath, ["init", "-q", "-b", "main"]);
   const repo = S.createRepo("jugyo/new-issue-cleanup", repoPath);
@@ -189,6 +189,20 @@ test("issue.closed cleans only the linked New Issue Herdr pane, even without wor
   const other = S.createIssue(repo.id, "issue", "other", "", "me") as any;
   S.updateIssue(target.id, { state: "closed" });
   S.updateIssue(other.id, { state: "closed" });
+  S.registerHerdrPane({
+    launchId: "workflow-launch",
+    repoId: repo.id,
+    paneId: "wWorkflow:p1",
+    sessionName: "workflow-session",
+    displayName: "Workflow",
+    origin: "workflow",
+  });
+  S.linkHerdrPaneResource({
+    launchId: "workflow-launch",
+    repoId: repo.id,
+    resourceKind: "issue",
+    resourceKey: String(target.id),
+  });
   S.upsertIssueHerdrPane({
     launchId: "target-launch",
     repoId: repo.id,
@@ -226,6 +240,7 @@ test("issue.closed cleans only the linked New Issue Herdr pane, even without wor
       number: target.number,
     });
 
+    expect(S.getIssueHerdrPane(target.id)?.launch_id).toBe("target-launch");
     await R.dispatchEvent(row);
     await waitUntil(
       () =>
@@ -242,6 +257,8 @@ test("issue.closed cleans only the linked New Issue Herdr pane, even without wor
     expect(calls).toContain("--session target-session pane close wTarget:p1");
     expect(calls).not.toContain("wOther:p1");
     expect(calls).not.toContain("other-session");
+    expect(calls).not.toContain("wWorkflow:p1");
+    expect(calls).not.toContain("workflow-session");
   } finally {
     killSpy.mockRestore();
     process.env.PATH = originalPath;
