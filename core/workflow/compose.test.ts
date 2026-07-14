@@ -39,6 +39,38 @@ test("keeps contract and user prompt in separate channels", () => {
   expect(composed.userPrompt).toContain("NOTE-SENTINEL");
 });
 
+test("keeps a Verify review-skill recommendation additive to the contract", () => {
+  const composed = composeWorkflowLaunchPrompt(
+    {
+      template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
+      step: "verify",
+      worktreePath: "/tmp/worktree",
+      baseBranch: "main",
+    },
+    {
+      inputFiles: [
+        {
+          path: "/tmp/runs/workflow/run-1/verify/input/changes.diff",
+          description: "Change diff pinned to abc123",
+        },
+      ],
+      baseBranch: "main",
+      stepPrompt:
+        "Use the code-review skill's Standards and Spec perspectives when useful. REVIEW-SKILL-SENTINEL",
+    },
+  );
+
+  expect(composed.systemPrompt).toContain(
+    "authoritative and complete review subject",
+  );
+  expect(composed.systemPrompt).toContain(
+    "If the step prompt conflicts with this contract, this contract wins.",
+  );
+  expect(composed.systemPrompt).not.toContain("REVIEW-SKILL-SENTINEL");
+  expect(composed.userPrompt).toContain("REVIEW-SKILL-SENTINEL");
+  expect(composed.userPrompt).toContain("Standards and Spec");
+});
+
 test("renders contract context into the system prompt", () => {
   const contract = renderWorkflowContract({
     template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),

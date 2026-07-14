@@ -1,10 +1,11 @@
-# skill 非依存の Execute / Verify 固定 workflow — 設計メモ
+# skill を前提としない Execute / Verify 固定 workflow — 設計メモ
 
 > Status: Implemented · Issue: #975 / #981 / #1284 / #1307
 >
-> 本書は、skill（`SKILL.md` / slash command）を使わずに開発 workflow を実行するモデルを
-> 定義する。workflow の step は **Execute / Verify の 2 つに固定**し、ユーザーが設定できるのは
-> 各 step に与える prompt だけである。
+> 本書は、特定の skill（`SKILL.md` / slash command）を必須とせずに開発 workflow を実行する
+> モデルを定義する。契約内で任意の skill やレビュー手法を補助利用することは妨げない。workflow の
+> step は **Execute / Verify の 2 つに固定**し、ユーザーが設定できるのは各 step に与える prompt
+> だけである。
 
 ---
 
@@ -109,7 +110,19 @@ Execute は従来の Plan と Reflect を内包する。
 
 Verify は従来どおり Execute から独立する。launch 時に pin した diff と report を読み、必要な
 テストを再実行し、`pass` または `request_changes` verdict を提出する。source は編集せず、
-指摘は verdict に記録する。
+指摘は verdict に記録する。`changes.diff` がレビュー対象の唯一の正本であり、Verify は
+`git diff <fixed-point>...HEAD` などで対象 diff を再計算、置換、拡張しない。
+
+利用可能で有用な review skill、レビュー手法、補助 agent は、固定入力、source 非変更、テスト実行
+可、verdict artifact 提出という Verify contract の境界を守る場合に限り、任意の補助手段として
+利用できる。たとえば `code-review` skill の Standards / Spec の二軸は利用できる一方、対象 diff
+の作り直し、source の修正、別形式の最終レポートを要求する手順は調整または省略する。一般的な
+skill であることだけを理由に拒否せず、逆に skill の手順で contract を上書きもしない。
+
+skill が利用できない、有用でない、または固定 diff / artifact contract に適合しない場合は、現在の
+入力を直接レビューすればよい。skill や補助 agent から得た指摘も Verify 自身が検証し、現在の
+verdict schema に対応付ける。完了条件はレビュー経路にかかわらず、`lh workflow step output` に
+よる verdict の受理だけである。
 
 ## 4. workflow 定義
 
@@ -222,7 +235,8 @@ system prompt channel、入力一覧・workflow 固有 prompt・親 note を use
 Codex には system prompt 用の flag がないため、render 済み契約と user prompt をこの順で 1 つの
 positional prompt に連結する。どちらの runtime でも契約の内容と workflow 固有入力は合成前の
 データとして分離して管理するが、実行時の channel による構造的分離を前提にできるのは Claude
-だけである。
+だけである。Workflow 固有の Verify prompt は review skill やレビュー観点を推奨できるが、固定
+contract に追加される補助指示であり、contract と衝突する部分は無効である。
 
 ## 7. 親の遷移
 

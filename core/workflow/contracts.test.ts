@@ -8,6 +8,20 @@ test("loads every step contract from the canonical Markdown sources", () => {
   expect(contracts.verify).toContain("# Verify step contract");
 });
 
+test("keeps optional review aids subordinate to the Verify contract", () => {
+  const verify = workflowContractText("verify");
+
+  expect(verify).toContain("authoritative and complete review subject");
+  expect(verify).toContain("Do not regenerate, replace, or expand it");
+  expect(verify).toContain("optional aid");
+  expect(verify).toContain("Standards and Spec");
+  expect(verify).toContain("adapted or omitted");
+  expect(verify).toContain("review the fixed inputs directly");
+  expect(verify).toMatch(
+    /map every resulting finding to the verdict\s+schema/u,
+  );
+});
+
 test("prefixes every parent-to-child pane injection with orchestrator", () => {
   const parent = workflowContractText("parent");
   const paneRunCommands = parent.match(/`herdr pane run[^`]+`/gu) ?? [];
