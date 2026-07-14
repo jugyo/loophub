@@ -110,7 +110,7 @@ yourself from the reply rather than interrogating up front.
 **Then, after the user replies, fill in the rest progressively** — ask only for the fields still
 missing, and only as needed:
 
-- **Title candidate** (one line, starts with a verb)
+- **Title candidate** (one line)
 - **Category** (`bug` / `enhancement`) — infer from the reply; ask only if genuinely ambiguous
 - **Goal** (what "done" looks like)
 - **Acceptance criteria** (verifiable bullets)
@@ -172,7 +172,7 @@ English.
 
 Extract from the conversation:
 
-- **Title candidate** (one line, start with a verb)
+- **Title candidate** (one line)
 - **Category**: `bug` / `enhancement`
 - **Goal** (what "done" looks like)
 - **Acceptance criteria** (verifiable bullets)

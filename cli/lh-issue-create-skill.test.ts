@@ -7,6 +7,23 @@ const skill = readFileSync(
   "utf8",
 );
 
+test("lh-issue-create allows natural title word order in the conversation language", () => {
+  const questionMode = skill.slice(
+    skill.indexOf("### Question mode"),
+    skill.indexOf("## LoopHub"),
+  );
+  const procedure = skill.slice(
+    skill.indexOf("## Procedure"),
+    skill.indexOf("#### Related resources"),
+  );
+
+  expect(questionMode).toContain("- **Title candidate** (one line)");
+  expect(procedure).toContain("- **Title candidate** (one line)");
+  expect(skill).toContain("must match the\nuser's **conversation language**");
+  expect(skill).not.toMatch(/starts? with (?:a )?verb/i);
+  expect(skill).not.toMatch(/(?:verb|動詞)\s*:\s*(?:body|本文)/i);
+});
+
 test("lh-issue-create target branch guidance is explicit and metadata-only", () => {
   expect(skill).toContain("creates implementation branches");
   expect(skill).toContain("Target-branch exception");
