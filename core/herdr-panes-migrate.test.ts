@@ -87,6 +87,8 @@ test("legacy issue pane data migrates to the generic pane registry", () => {
       session_name: "me-legacy-12345678",
       display_name: "New issue",
       origin: "issue-create",
+      lifecycle_managed: 1,
+      closed_at: null,
       created_at: "2026-01-03T00:00:00Z",
       updated_at: "2026-01-04T00:00:00Z",
     }),
@@ -98,4 +100,17 @@ test("legacy issue pane data migrates to the generic pane registry", () => {
       )
       .get(),
   ).toBeNull();
+  expect(
+    S.listHerdrPaneClaimsForResource({
+      repoId: 1,
+      resourceKind: "issue",
+      resourceKey: "7",
+    }),
+  ).toEqual([
+    expect.objectContaining({
+      purpose: "issue-create-lifecycle",
+      created_at: "2026-01-03T00:00:00Z",
+      released_at: null,
+    }),
+  ]);
 });

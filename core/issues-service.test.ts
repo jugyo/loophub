@@ -345,6 +345,18 @@ test("issues.create links a New Issue Herdr pane through the launch id (#670)", 
       pane_id: "w4:p2",
       session_name: "me-proj-12345678",
     });
+    expect(
+      S.listHerdrPaneClaimsForResource({
+        repoId: repo.id,
+        resourceKind: "issue",
+        resourceKey: String(S.getIssue(repo.id, issue.number)?.id),
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        purpose: "issue-create-lifecycle",
+        released_at: null,
+      }),
+    ]);
 
     const list = (await svc.issues.list("me/proj", {
       kind: "issue",
@@ -357,6 +369,42 @@ test("issues.create links a New Issue Herdr pane through the launch id (#670)", 
       pane_id: "w4:p2",
       session_name: "me-proj-12345678",
     });
+  } finally {
+    if (previous === undefined)
+      delete process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
+    else process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH] = previous;
+  }
+});
+
+test("issues.create adds the claim when New Issue pane registration arrives first", () => {
+  const repo = S.getRepo("me", "proj");
+  if (!repo) throw new Error("repo missing");
+  const previous = process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
+  process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH] = "launch-pane-first";
+  try {
+    S.upsertIssueHerdrPane({
+      launchId: "launch-pane-first",
+      repoId: repo.id,
+      paneId: "w6:p7",
+      sessionName: "me-proj-12345678",
+    });
+    const issue = svc.issues.create("me/proj", { title: "pane first" });
+    const row = S.getIssue(repo.id, issue.number);
+    if (!row) throw new Error("issue missing");
+
+    expect(
+      S.listHerdrPaneClaimsForResource({
+        repoId: repo.id,
+        resourceKind: "issue",
+        resourceKey: String(row.id),
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        purpose: "issue-create-lifecycle",
+        released_at: null,
+      }),
+    ]);
+    expect(S.getIssueHerdrPane(row.id)?.pane_id).toBe("w6:p7");
   } finally {
     if (previous === undefined)
       delete process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];

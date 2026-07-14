@@ -637,12 +637,30 @@ export const terminal = {
             ).then(() => "");
       const agentPaneId = parseHerdrAgentPaneId(agentOut);
       if (issueCreateLaunchId != null && agentPaneId) {
-        S.upsertIssueHerdrPane({
+        const registeredPane = S.upsertIssueHerdrPane({
           launchId: issueCreateLaunchId,
           repoId: r.id,
           paneId: agentPaneId,
           sessionName: plan.sessionName,
         });
+        // The launch RPC must not wait for cleanup subprocesses. This only handles the rare
+        // issue-created-and-closed-before-registration ordering; failures stay visible in the
+        // server log and are not retried.
+        closeManagedHerdrPaneIfUnclaimed(r, registeredPane.id).then(
+          (cleanup) => {
+            if (cleanup === "failed") {
+              console.error(
+                `New Issue pane cleanup failed after late registration for ${r.full_name}`,
+              );
+            }
+          },
+          (error) => {
+            console.error(
+              `New Issue pane cleanup error after late registration for ${r.full_name}:`,
+              error,
+            );
+          },
+        );
       }
     } catch (e) {
       // Don't leave the just-created empty tab (or workspace) behind; fire-and-forget cleanup.
@@ -739,7 +757,7 @@ export const terminal = {
     return herdrSessionsInflight;
   },
 
-  async cleanupClosedIssueNewIssueAgent(input: {
+  async cleanupClosedIssuePanes(input: {
     repo: string;
     issueNumber: number;
   }): Promise<{
@@ -750,7 +768,7 @@ export const terminal = {
     if (!input.repo) throw new ServiceError(422, "repo is required");
     if (!Number.isFinite(input.issueNumber) || input.issueNumber <= 0)
       throw new ServiceError(422, "issueNumber is required");
-    return cleanupClosedIssueNewIssueAgentImpl(
+    return cleanupClosedIssuePanesImpl(
       input.repo,
       Math.trunc(input.issueNumber),
     );
@@ -1149,7 +1167,8 @@ async function killPaneForegroundProcess(
   repo: TerminalLaunchRepo,
   paneId: string,
   sessionName = herdrSessionName(repo),
-): Promise<void> {
+  stillEligible?: () => boolean,
+): Promise<boolean> {
   let infoOut: string;
   try {
     infoOut = await runHerdr(
@@ -1173,6 +1192,7 @@ async function killPaneForegroundProcess(
       500,
       "could not determine the process to kill for this pane",
     );
+  if (stillEligible && !stillEligible()) return false;
   try {
     process.kill(-pid, "SIGKILL");
   } catch (e) {
@@ -1184,9 +1204,42 @@ async function killPaneForegroundProcess(
     if ((e as NodeJS.ErrnoException).code !== "ESRCH")
       throw new ServiceError(500, "failed to signal pane process");
   }
+  return true;
 }
 
-async function cleanupClosedIssueNewIssueAgentImpl(
+async function closeManagedHerdrPaneIfUnclaimed(
+  repo: S.Repo,
+  paneId: number,
+): Promise<"closed" | "skipped" | "failed"> {
+  let pane = S.getHerdrPaneCloseCandidate(paneId);
+  if (!pane) return "skipped";
+  if (!pane.pane_id || !HERDR_ID.test(pane.pane_id)) return "failed";
+
+  const sessionName = pane.session_name ?? herdrSessionName(repo);
+  try {
+    const killed = await killPaneForegroundProcess(
+      repo,
+      pane.pane_id,
+      sessionName,
+      () => S.getHerdrPaneCloseCandidate(paneId) != null,
+    );
+    if (!killed) return "skipped";
+    pane = S.getHerdrPaneCloseCandidate(paneId);
+    if (!pane?.pane_id) return "skipped";
+    await runHerdr(
+      "herdr",
+      ["--session", sessionName, "pane", "close", pane.pane_id],
+      repo.local_path,
+      { timeoutMs: 10_000 },
+    );
+    S.markHerdrPaneClosed(pane.id);
+    return "closed";
+  } catch {
+    return "failed";
+  }
+}
+
+async function cleanupClosedIssuePanesImpl(
   repoName: string,
   issueNumber: number,
 ): Promise<{ closed: number; skipped: number; failed: number }> {
@@ -1195,23 +1248,27 @@ async function cleanupClosedIssueNewIssueAgentImpl(
   if (issue?.kind !== "issue" || issue.state !== "closed") {
     return { closed: 0, skipped: 1, failed: 0 };
   }
-  const pane = S.getIssueHerdrPane(issue.id);
-  if (!pane?.pane_id) return { closed: 0, skipped: 1, failed: 0 };
-  if (!HERDR_ID.test(pane.pane_id)) return { closed: 0, skipped: 0, failed: 1 };
-
-  const sessionName = pane.session_name ?? herdrSessionName(repo);
-  try {
-    await killPaneForegroundProcess(repo, pane.pane_id, sessionName);
-  } catch {
-    return { closed: 0, skipped: 0, failed: 1 };
+  const release = S.releaseHerdrPaneClaimsForResource({
+    repoId: repo.id,
+    resourceKind: "issue",
+    resourceKey: String(issue.id),
+  });
+  if (release.closeCandidates.length === 0) {
+    return { closed: 0, skipped: 1, failed: 0 };
   }
-  runHerdr(
-    "herdr",
-    ["--session", sessionName, "pane", "close", pane.pane_id],
-    repo.local_path,
-    { timeoutMs: 10_000 },
-  ).catch(() => {});
-  return { closed: 1, skipped: 0, failed: 0 };
+
+  let closed = 0;
+  let failed = 0;
+  for (const pane of release.closeCandidates) {
+    const cleanup = await closeManagedHerdrPaneIfUnclaimed(repo, pane.id);
+    if (cleanup === "closed") closed += 1;
+    else if (cleanup === "failed") failed += 1;
+  }
+  return {
+    closed,
+    skipped: release.closeCandidates.length - closed - failed,
+    failed,
+  };
 }
 
 function closedPullAgentEligibleAt(

@@ -1,5 +1,6 @@
 import { db, now } from "../db.ts";
 import {
+  addHerdrPaneClaim,
   getHerdrPaneByLaunch,
   type HerdrPaneRow,
   linkHerdrPaneResource,
@@ -7,6 +8,8 @@ import {
   listHerdrPanesForResource,
   registerHerdrPane,
 } from "./herdr-panes.ts";
+
+export const ISSUE_CREATE_CLAIM_PURPOSE = "issue-create-lifecycle";
 
 export interface IssueRow {
   id: number;
@@ -79,6 +82,7 @@ export function upsertIssueHerdrPane(input: {
     sessionName: input.sessionName,
     displayName: "New issue",
     origin: "issue-create",
+    lifecycleManaged: true,
   });
   if (input.issueId != null) {
     pane = linkHerdrPaneResource({
@@ -86,6 +90,13 @@ export function upsertIssueHerdrPane(input: {
       launchId: input.launchId,
       resourceKind: "issue",
       resourceKey: String(input.issueId),
+    });
+    addHerdrPaneClaim({
+      repoId: input.repoId,
+      launchId: input.launchId,
+      resourceKind: "issue",
+      resourceKey: String(input.issueId),
+      purpose: ISSUE_CREATE_CLAIM_PURPOSE,
     });
   }
   return pane;
@@ -106,7 +117,9 @@ export function getIssueHerdrPane(issueId: number): IssueHerdrPane | null {
       repoId: issue.repo_id,
       resourceKind: "issue",
       resourceKey: String(issueId),
-    }).find((pane) => pane.origin === "issue-create") ?? null
+    }).find(
+      (pane) => pane.origin === "issue-create" && pane.closed_at == null,
+    ) ?? null
   );
 }
 

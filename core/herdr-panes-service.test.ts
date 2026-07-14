@@ -94,6 +94,127 @@ test("a registered pane can independently link to multiple resource kinds", () =
   ).toEqual([registered]);
 });
 
+test("claims are idempotent and pane registration may arrive after the claim", () => {
+  const first = svc.herdrPanes.claim({
+    repo: "me/panes",
+    launchId: "launch-claim-first",
+    resourceKind: "issue",
+    resourceKey: "21",
+    purpose: "issue-create-lifecycle",
+  });
+  const second = svc.herdrPanes.claim({
+    repo: "me/panes",
+    launchId: "launch-claim-first",
+    resourceKind: "issue",
+    resourceKey: "21",
+    purpose: "issue-create-lifecycle",
+  });
+
+  svc.herdrPanes.register({
+    repo: "me/panes",
+    launchId: "launch-claim-first",
+    paneId: "w3:p4",
+    sessionName: "me-panes-12345678",
+    displayName: "New issue",
+    origin: "issue-create",
+    lifecycleManaged: true,
+  });
+
+  expect(second).toEqual(first);
+  expect(
+    svc.herdrPanes.claimsForResource({
+      repo: "me/panes",
+      resourceKind: "issue",
+      resourceKey: "21",
+    }),
+  ).toEqual([
+    expect.objectContaining({
+      resource_kind: "issue",
+      resource_key: "21",
+      purpose: "issue-create-lifecycle",
+      released_at: null,
+    }),
+  ]);
+});
+
+test("releasing the final active claim selects only lifecycle-managed panes", () => {
+  for (const [launchId, issue] of [
+    ["launch-shared", "31"],
+    ["launch-shared", "32"],
+  ] as const) {
+    svc.herdrPanes.claim({
+      repo: "me/panes",
+      launchId,
+      resourceKind: "issue",
+      resourceKey: issue,
+      purpose: "issue-create-lifecycle",
+    });
+  }
+  svc.herdrPanes.register({
+    repo: "me/panes",
+    launchId: "launch-shared",
+    paneId: "w4:p5",
+    sessionName: "me-panes-12345678",
+    displayName: "New issue",
+    origin: "issue-create",
+    lifecycleManaged: true,
+  });
+
+  expect(
+    svc.herdrPanes.releaseClaimsForResource({
+      repo: "me/panes",
+      resourceKind: "issue",
+      resourceKey: "31",
+    }).closeCandidates,
+  ).toEqual([]);
+  expect(
+    svc.herdrPanes.releaseClaimsForResource({
+      repo: "me/panes",
+      resourceKind: "issue",
+      resourceKey: "32",
+    }).closeCandidates,
+  ).toEqual([
+    expect.objectContaining({ launch_id: "launch-shared", pane_id: "w4:p5" }),
+  ]);
+  const repo = S.getRepo("me", "panes");
+  const sharedPane = repo
+    ? S.getHerdrPaneByLaunch(repo.id, "launch-shared")
+    : null;
+  if (!repo || !sharedPane) throw new Error("shared pane missing");
+  S.addHerdrPaneClaim({
+    repoId: repo.id,
+    launchId: "launch-shared",
+    resourceKind: "workflow_run",
+    resourceKey: "41",
+    purpose: "workflow-lifecycle",
+  });
+  expect(S.getHerdrPaneCloseCandidate(sharedPane.id)).toBeNull();
+
+  svc.herdrPanes.register({
+    repo: "me/panes",
+    launchId: "launch-external",
+    paneId: "w5:p6",
+    sessionName: "external-session",
+    displayName: "External",
+    origin: "external",
+    lifecycleManaged: false,
+  });
+  svc.herdrPanes.claim({
+    repo: "me/panes",
+    launchId: "launch-external",
+    resourceKind: "issue",
+    resourceKey: "33",
+    purpose: "manual",
+  });
+  expect(
+    svc.herdrPanes.releaseClaimsForResource({
+      repo: "me/panes",
+      resourceKind: "issue",
+      resourceKey: "33",
+    }).closeCandidates,
+  ).toEqual([]);
+});
+
 test("repo deletion removes owned panes and their resource links", () => {
   const repo = S.createRepo("me/removable-panes", "/tmp/removable-panes");
   svc.herdrPanes.register({

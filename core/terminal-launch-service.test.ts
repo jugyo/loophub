@@ -73,6 +73,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 let svc: typeof import("./service.ts");
+let S: typeof import("./store.ts");
 let repoPath: string;
 
 const TAB_JSON =
@@ -133,6 +134,7 @@ function killedBySignal(signal: string) {
 
 beforeAll(async () => {
   svc = await import("./service.ts");
+  S = await import("./store.ts");
 
   repoPath = mkdtempSync(join(tmpdir(), "lh-tl-repo-"));
   const git = (args: string[]) =>
@@ -514,6 +516,146 @@ describe("terminal.launch new-workspace orchestration for New Issue (#544)", () 
     expect(agentStart).toContain("start");
     expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w4:t1");
     expect(result).toMatchObject({ backend: "herdr" });
+  });
+
+  test("closes a claimless pane when registration arrives after its Issue closed", async () => {
+    const repo = S.getRepo("me", "proj");
+    if (!repo) throw new Error("repo missing");
+    let launchId = "";
+    const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+    herdr.script.push(
+      exitWith(0, WORKSPACE_JSON),
+      async (child) => {
+        const command = herdr.calls[1].join(" ");
+        launchId = command.match(
+          /LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH='([^']+)'/u,
+        )?.[1] as string;
+        const issue = S.createIssue(
+          repo.id,
+          "issue",
+          "closed before registration",
+          "",
+          "me",
+        );
+        S.upsertIssueHerdrPane({
+          launchId,
+          repoId: repo.id,
+          issueId: issue.id,
+        });
+        S.updateIssue(issue.id, { state: "closed" });
+        await svc.terminal.cleanupClosedIssuePanes({
+          repo: repo.full_name,
+          issueNumber: issue.number,
+        });
+        child.stdout.emit(
+          "data",
+          Buffer.from('{"result":{"agent":{"pane_id":"w4:p9"}}}'),
+        );
+        child.emit("close", 0, null);
+      },
+      exitWith(
+        0,
+        '{"result":{"process_info":{"foreground_process_group_id":999997}}}',
+      ),
+      exitWith(0),
+      exitWith(0),
+    );
+
+    try {
+      await svc.terminal.launch({
+        repo: repo.full_name,
+        workflow: "issue-create",
+        label: "New issue",
+      });
+
+      expect(launchId).not.toBe("");
+      await vi.waitFor(() =>
+        expect(
+          S.getHerdrPaneByLaunch(repo.id, launchId)?.closed_at,
+        ).not.toBeNull(),
+      );
+      expect(
+        herdr.calls.some(
+          (call) => call.includes("close") && call.includes("w4:p9"),
+        ),
+      ).toBe(true);
+    } finally {
+      killSpy.mockRestore();
+    }
+  });
+
+  test("does not kill or close a pane that gains a claim during the close check", async () => {
+    const repo = S.getRepo("me", "proj");
+    if (!repo) throw new Error("repo missing");
+    let launchId = "";
+    const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+    herdr.script.push(
+      exitWith(0, WORKSPACE_JSON),
+      async (child) => {
+        const command = herdr.calls[1].join(" ");
+        launchId = command.match(
+          /LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH='([^']+)'/u,
+        )?.[1] as string;
+        const issue = S.createIssue(
+          repo.id,
+          "issue",
+          "claim races close",
+          "",
+          "me",
+        );
+        S.upsertIssueHerdrPane({
+          launchId,
+          repoId: repo.id,
+          issueId: issue.id,
+        });
+        S.updateIssue(issue.id, { state: "closed" });
+        await svc.terminal.cleanupClosedIssuePanes({
+          repo: repo.full_name,
+          issueNumber: issue.number,
+        });
+        child.stdout.emit(
+          "data",
+          Buffer.from('{"result":{"agent":{"pane_id":"w4:p10"}}}'),
+        );
+        child.emit("close", 0, null);
+      },
+      (child) => {
+        S.addHerdrPaneClaim({
+          repoId: repo.id,
+          launchId,
+          resourceKind: "workflow_run",
+          resourceKey: "race-claim",
+          purpose: "workflow-lifecycle",
+        });
+        child.stdout.emit(
+          "data",
+          Buffer.from(
+            '{"result":{"process_info":{"foreground_process_group_id":999996}}}',
+          ),
+        );
+        child.emit("close", 0, null);
+      },
+      exitWith(0),
+    );
+
+    try {
+      await svc.terminal.launch({
+        repo: repo.full_name,
+        workflow: "issue-create",
+        label: "New issue",
+      });
+
+      await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
+      expect(killSpy).not.toHaveBeenCalled();
+      expect(S.getHerdrPaneByLaunch(repo.id, launchId)?.closed_at).toBeNull();
+      expect(
+        herdr.calls.some(
+          (call) => call.includes("close") && call.includes("w4:p10"),
+        ),
+      ).toBe(false);
+    } finally {
+      killSpy.mockRestore();
+    }
   });
 
   test("forwards the one-shot New Issue runtime and model to the Herdr command", async () => {

@@ -523,6 +523,8 @@ CREATE TABLE IF NOT EXISTS herdr_panes (
   session_name TEXT,
   display_name TEXT,
   origin       TEXT,
+  lifecycle_managed INTEGER NOT NULL DEFAULT 0 CHECK (lifecycle_managed IN (0, 1)),
+  closed_at    TEXT,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   UNIQUE (repo_id, launch_id)
@@ -545,6 +547,27 @@ CREATE TABLE IF NOT EXISTS herdr_pane_resources (
 
 CREATE INDEX IF NOT EXISTS idx_herdr_pane_resources_resource
   ON herdr_pane_resources(resource_kind, resource_key, pane_id);
+
+-- Resource links describe navigation and history. Claims separately describe why a pane must stay
+-- alive. Releasing a claim never deletes either row, so lifecycle decisions retain their audit
+-- trail and resource links remain available after the managed pane closes.
+CREATE TABLE IF NOT EXISTS herdr_pane_claims (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  pane_id       INTEGER NOT NULL REFERENCES herdr_panes(id) ON DELETE CASCADE,
+  resource_kind TEXT NOT NULL,
+  resource_key  TEXT NOT NULL,
+  purpose       TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  released_at   TEXT,
+  UNIQUE (pane_id, resource_kind, resource_key, purpose)
+);
+
+CREATE INDEX IF NOT EXISTS idx_herdr_pane_claims_resource
+  ON herdr_pane_claims(resource_kind, resource_key, pane_id);
+
+CREATE INDEX IF NOT EXISTS idx_herdr_pane_claims_active
+  ON herdr_pane_claims(pane_id)
+  WHERE released_at IS NULL;
 
 -- Scheduled tasks (#880). A repo-scoped, saved prompt that a coding agent (claude-code / codex) runs
 -- automatically at one or more times of day. times_json is an array of "HH:MM" local-time strings —
@@ -1046,6 +1069,29 @@ tryExec("ALTER TABLE repos ADD COLUMN favorited_at TEXT");
 tryExec("ALTER TABLE issues ADD COLUMN closed_at TEXT");
 tryExec(
   "UPDATE issues SET closed_at = updated_at WHERE state = 'closed' AND closed_at IS NULL",
+);
+
+// Herdr pane lifecycle claims (#1330). Existing generic registry rows default to externally
+// managed. New Issue panes are the first managed vertical slice. Backfill one active claim for
+// every still-open Issue association so deploying this schema cannot orphan a live creation pane.
+tryExec(
+  "ALTER TABLE herdr_panes ADD COLUMN lifecycle_managed INTEGER NOT NULL DEFAULT 0 CHECK (lifecycle_managed IN (0, 1))",
+);
+tryExec("ALTER TABLE herdr_panes ADD COLUMN closed_at TEXT");
+tryExec(
+  "UPDATE herdr_panes SET lifecycle_managed = 1 WHERE origin = 'issue-create'",
+);
+tryExec(
+  `INSERT OR IGNORE INTO herdr_pane_claims
+     (pane_id, resource_kind, resource_key, purpose, created_at)
+   SELECT p.id, 'issue', r.resource_key, 'issue-create-lifecycle', r.created_at
+   FROM herdr_panes p
+   JOIN herdr_pane_resources r
+     ON r.pane_id = p.id AND r.resource_kind = 'issue'
+   JOIN issues i
+     ON i.id = CAST(r.resource_key AS INTEGER)
+    AND CAST(i.id AS TEXT) = r.resource_key
+   WHERE p.origin = 'issue-create' AND i.state = 'open'`,
 );
 
 // github_pulls.github_merged / github_merged_at (#800): whether the GitHub PR a loophub PR was

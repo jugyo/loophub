@@ -153,7 +153,7 @@ export async function dispatchEvent(row: EventRow): Promise<void> {
 
   if (row.type === "issue.closed" && number !== undefined) {
     try {
-      const result = await terminal.cleanupClosedIssueNewIssueAgent({
+      const result = await terminal.cleanupClosedIssuePanes({
         repo: repo.full_name,
         issueNumber: number,
       });

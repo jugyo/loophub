@@ -14,6 +14,7 @@ export const herdrPanes = {
     sessionName: string;
     displayName: string;
     origin: string;
+    lifecycleManaged?: boolean;
   }) {
     const repo = repoOr404(input.repo);
     return S.registerHerdrPane({
@@ -23,6 +24,7 @@ export const herdrPanes = {
       sessionName: required(input.sessionName, "sessionName"),
       displayName: required(input.displayName, "displayName"),
       origin: required(input.origin, "origin"),
+      lifecycleManaged: input.lifecycleManaged,
     });
   },
 
@@ -48,6 +50,49 @@ export const herdrPanes = {
   }) {
     const repo = repoOr404(input.repo);
     return S.listHerdrPanesForResource({
+      repoId: repo.id,
+      resourceKind: required(input.resourceKind, "resourceKind"),
+      resourceKey: required(input.resourceKey, "resourceKey"),
+    });
+  },
+
+  claim(input: {
+    repo: string;
+    launchId: string;
+    resourceKind: string;
+    resourceKey: string;
+    purpose: string;
+  }) {
+    const repo = repoOr404(input.repo);
+    return S.addHerdrPaneClaim({
+      repoId: repo.id,
+      launchId: required(input.launchId, "launchId"),
+      resourceKind: required(input.resourceKind, "resourceKind"),
+      resourceKey: required(input.resourceKey, "resourceKey"),
+      purpose: required(input.purpose, "purpose"),
+    });
+  },
+
+  claimsForResource(input: {
+    repo: string;
+    resourceKind: string;
+    resourceKey: string;
+  }) {
+    const repo = repoOr404(input.repo);
+    return S.listHerdrPaneClaimsForResource({
+      repoId: repo.id,
+      resourceKind: required(input.resourceKind, "resourceKind"),
+      resourceKey: required(input.resourceKey, "resourceKey"),
+    });
+  },
+
+  releaseClaimsForResource(input: {
+    repo: string;
+    resourceKind: string;
+    resourceKey: string;
+  }) {
+    const repo = repoOr404(input.repo);
+    return S.releaseHerdrPaneClaimsForResource({
       repoId: repo.id,
       resourceKind: required(input.resourceKind, "resourceKind"),
       resourceKey: required(input.resourceKey, "resourceKey"),

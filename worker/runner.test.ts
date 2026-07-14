@@ -259,7 +259,113 @@ test("issue.closed ignores an earlier linked workflow pane and cleans the New Is
     expect(calls).not.toContain("other-session");
     expect(calls).not.toContain("wWorkflow:p1");
     expect(calls).not.toContain("workflow-session");
+    expect(
+      S.getHerdrPaneByLaunch(repo.id, "target-launch")?.closed_at,
+    ).not.toBeNull();
+    expect(
+      S.listHerdrPanesForResource({
+        repoId: repo.id,
+        resourceKind: "issue",
+        resourceKey: String(target.id),
+      }),
+    ).toHaveLength(2);
+    expect(
+      S.listHerdrPaneClaimsForResource({
+        repoId: repo.id,
+        resourceKind: "issue",
+        resourceKey: String(target.id),
+      })[0]?.released_at,
+    ).not.toBeNull();
   } finally {
+    killSpy.mockRestore();
+    process.env.PATH = originalPath;
+    rmSync(fakeBin, { recursive: true, force: true });
+    rmSync(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("issue.closed keeps a pane open while another resource has an active claim", async () => {
+  const repoPath = mkdtempSync(join(tmpdir(), "lh-repo-"));
+  await git(repoPath, ["init", "-q", "-b", "main"]);
+  const repo = S.createRepo("jugyo/shared-claim-cleanup", repoPath);
+  const first = S.createIssue(repo.id, "issue", "first", "", "me") as any;
+  const second = S.createIssue(repo.id, "issue", "second", "", "me") as any;
+  S.updateIssue(first.id, { state: "closed" });
+  for (const issue of [first, second]) {
+    S.upsertIssueHerdrPane({
+      launchId: "shared-new-issue-launch",
+      repoId: repo.id,
+      issueId: issue.id,
+      paneId: "wShared:p1",
+      sessionName: "shared-session",
+    });
+  }
+  try {
+    const row = S.emitEvent(repo.id, "issue.closed", "me", {
+      number: first.number,
+    });
+    await R.dispatchEvent(row);
+
+    expect(
+      S.getHerdrPaneByLaunch(repo.id, "shared-new-issue-launch")?.closed_at,
+    ).toBeNull();
+    expect(
+      S.listHerdrPaneClaimsForResource({
+        repoId: repo.id,
+        resourceKind: "issue",
+        resourceKey: String(second.id),
+      })[0]?.released_at,
+    ).toBeNull();
+  } finally {
+    rmSync(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("issue.closed reports pane close failure and does not mark the pane closed", async () => {
+  const repoPath = mkdtempSync(join(tmpdir(), "lh-repo-"));
+  await git(repoPath, ["init", "-q", "-b", "main"]);
+  const repo = S.createRepo("jugyo/failed-claim-cleanup", repoPath);
+  const issue = S.createIssue(repo.id, "issue", "target", "", "me") as any;
+  S.updateIssue(issue.id, { state: "closed" });
+  S.upsertIssueHerdrPane({
+    launchId: "failed-close-launch",
+    repoId: repo.id,
+    issueId: issue.id,
+    paneId: "wFailed:p1",
+    sessionName: "failed-session",
+  });
+
+  const fakeBin = mkdtempSync(join(tmpdir(), "lh-herdr-close-fail-"));
+  writeFileSync(
+    join(fakeBin, "herdr"),
+    [
+      "#!/bin/sh",
+      `if [ "$4" = "process-info" ]; then printf '%s' '{"result":{"process_info":{"foreground_process_group_id":999998}}}'; exit 0; fi`,
+      `if [ "$4" = "close" ]; then exit 1; fi`,
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(fakeBin, "herdr"), 0o755);
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${fakeBin}:${originalPath}`;
+  const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+  const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const row = S.emitEvent(repo.id, "issue.closed", "me", {
+      number: issue.number,
+    });
+    await R.dispatchEvent(row);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      `lh-worker: issue close herdr cleanup failed for ${repo.full_name}#${issue.number}`,
+    );
+    expect(
+      S.getHerdrPaneByLaunch(repo.id, "failed-close-launch")?.closed_at,
+    ).toBeNull();
+  } finally {
+    errorSpy.mockRestore();
     killSpy.mockRestore();
     process.env.PATH = originalPath;
     rmSync(fakeBin, { recursive: true, force: true });
