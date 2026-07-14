@@ -15,6 +15,16 @@ Do not regenerate, replace, or expand it with `git diff`, a fixed-point comparis
 worktree, or another source. The other inputs provide requirements, implementation context, and
 review history, but they do not change the reviewed diff.
 
+You may read surrounding source code as review context for the changes in the fixed diff. Use it to
+check dependencies, caller and callee contracts, types, invariants, and existing tests that the
+changes rely on. Reading source for context does not expand the review subject: do not treat the
+worktree as an additional diff, and do not use it to recalculate, replace, or extend `changes.diff`.
+You may run tests when useful, but do not edit source files.
+
+Limit verdict findings to changes in the fixed diff or problems caused by those changes. You may use
+surrounding code to establish why a changed line is incorrect, but do not cite an unrelated
+pre-existing source issue as grounds for `request_changes`.
+
 During the session, messages beginning with `orchestrator:` are instructions from the workflow parent
 (orchestrator), injected as follow-ups while you work.
 

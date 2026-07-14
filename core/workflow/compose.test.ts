@@ -86,6 +86,24 @@ test("renders contract context into the system prompt", () => {
   expect(contract).toContain("Verify step contract");
 });
 
+test("renders the fixed-diff and worktree-context boundary for Verify", () => {
+  const contract = renderWorkflowContract({
+    template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
+    step: "verify",
+    worktreePath: "/tmp/worktree",
+    baseBranch: "main",
+  });
+
+  expect(contract).toContain(
+    "`changes.diff` is the authoritative and complete review subject",
+  );
+  expect(contract).toContain("surrounding source code as review context");
+  expect(contract).toContain("does not expand the review subject");
+  expect(contract).toMatch(
+    /unrelated\s+pre-existing source issue as grounds for `request_changes`/u,
+  );
+});
+
 test("every rendered contract carries the issue-language instruction", () => {
   for (const step of ["parent", ...WORKFLOW_STEPS] as const) {
     const contract = renderWorkflowContract({

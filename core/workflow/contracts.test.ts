@@ -22,6 +22,24 @@ test("keeps optional review aids subordinate to the Verify contract", () => {
   );
 });
 
+test("separates Verify context reads from the fixed review subject", () => {
+  const verify = workflowContractText("verify");
+
+  expect(verify).toContain("surrounding source code as review context");
+  expect(verify).toContain(
+    "dependencies, caller and callee contracts, types, invariants, and existing tests",
+  );
+  expect(verify).toContain("does not expand the review subject");
+  expect(verify).toContain(
+    "changes in the fixed diff or problems caused by those changes",
+  );
+  expect(verify).toMatch(
+    /unrelated\s+pre-existing source issue as grounds for `request_changes`/u,
+  );
+  expect(verify).toContain("Do not edit source files");
+  expect(verify).toContain("may run tests");
+});
+
 test("prefixes every parent-to-child pane injection with orchestrator", () => {
   const parent = workflowContractText("parent");
   const paneRunCommands = parent.match(/`herdr pane run[^`]+`/gu) ?? [];

@@ -114,6 +114,16 @@ Verify は従来どおり Execute から独立する。launch 時に pin した 
 指摘は verdict に記録する。`changes.diff` がレビュー対象の唯一の正本であり、Verify は
 `git diff <fixed-point>...HEAD` などで対象 diff を再計算、置換、拡張しない。
 
+一方、worktree 内の周辺 source code は、固定 diff の変更が依存する依存関係、呼び出し元・
+呼び出し先の契約、型、不変条件、既存テストを確認するためのレビュー文脈として読み取れる。
+この参照はレビュー対象を拡張しない。worktree を追加の diff として扱ったり、source から
+`changes.diff` を再計算、置換、拡張したりしてはならない。必要なテストは実行できるが、source
+は編集しない。
+
+verdict の指摘は固定 diff に含まれる変更、またはその変更によって生じる問題に限定する。変更行が
+不正である理由を周辺コードから確認することはできるが、固定 diff と無関係な既存 source の問題を
+`request_changes` の根拠にはしない。
+
 利用可能で有用な review skill、レビュー手法、補助 agent は、固定入力、source 非変更、テスト実行
 可、verdict artifact 提出という Verify contract の境界を守る場合に限り、任意の補助手段として
 利用できる。たとえば `code-review` skill の Standards / Spec の二軸は利用できる一方、対象 diff
