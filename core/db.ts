@@ -687,6 +687,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   model              TEXT,
   parent_session_id  TEXT,
   step_sessions_json TEXT NOT NULL DEFAULT '{}',
+  child_sequence     INTEGER NOT NULL DEFAULT 0,
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL
 );
@@ -814,6 +815,9 @@ tryExec(
 );
 tryExec("ALTER TABLE workflow_runs ADD COLUMN runtime TEXT");
 tryExec("ALTER TABLE workflow_runs ADD COLUMN model TEXT");
+tryExec(
+  "ALTER TABLE workflow_runs ADD COLUMN child_sequence INTEGER NOT NULL DEFAULT 0",
+);
 tryExec("ALTER TABLE workflow_placement_claims ADD COLUMN owner_token TEXT");
 tryExec("DROP INDEX IF EXISTS idx_workflow_artifacts_submission");
 tryExec(

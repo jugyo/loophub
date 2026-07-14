@@ -215,7 +215,21 @@ test("start prepares a run, launch-step writes Execute inputs, and run update mi
   expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_RUN=");
   expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_STEP='execute'");
   expect(launched.herdr.command).toContain("--permission-mode 'auto'");
+  expect(launched.agent_name).toBe(`executor #${result.run.id}-1`);
 
+  expect(
+    JSON.parse(S.getWorkflowRun(result.run.id)!.step_sessions_json),
+  ).toEqual({});
+  const unconfirmedLaunch = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    {
+      run: result.run.id,
+      step: "execute",
+      contract: "# Execute retry",
+    },
+    result.session_id,
+  );
+  expect(unconfirmedLaunch.agent_name).toBe(`executor #${result.run.id}-2`);
   expect(
     JSON.parse(S.getWorkflowRun(result.run.id)!.step_sessions_json),
   ).toEqual({});
@@ -305,6 +319,17 @@ test("start prepares a run, launch-step writes Execute inputs, and run update mi
     "# Execute",
   );
   expect(executeLaunch.herdr.command).toContain("--permission-mode 'auto'");
+  expect(executeLaunch.agent_name).toBe(`executor #${result.run.id}-3`);
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: result.run.id,
+      step: executeLaunch.step,
+      sessionId: executeLaunch.session_id,
+      inputFiles: executeLaunch.input_files,
+    },
+    result.session_id,
+  );
 
   const verifyLaunch = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -322,6 +347,18 @@ test("start prepares a run, launch-step writes Execute inputs, and run update mi
     ]),
   );
   expect(verifyLaunch.herdr.command).toContain("--permission-mode 'auto'");
+  expect(verifyLaunch.agent_name).toBe(`verifier #${result.run.id}-4`);
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: result.run.id,
+      step: verifyLaunch.step,
+      sessionId: verifyLaunch.session_id,
+      inputFiles: verifyLaunch.input_files,
+      headSha: verifyLaunch.head_sha,
+    },
+    result.session_id,
+  );
 
   const reworkExecuteLaunch = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -335,6 +372,7 @@ test("start prepares a run, launch-step writes Execute inputs, and run update mi
   expect(reworkExecuteLaunch.herdr.command).toContain(
     "--permission-mode 'auto'",
   );
+  expect(reworkExecuteLaunch.agent_name).toBe(`executor #${result.run.id}-5`);
 });
 
 test("start persists the resolved runtime/model and every step inherits them (#516)", async () => {

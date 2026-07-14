@@ -18,6 +18,18 @@ test("prefixes every parent-to-child pane injection with orchestrator", () => {
   }
 });
 
+test("documents the Workflow Herdr names and shared child launch sequence", () => {
+  const parent = workflowContractText("parent");
+
+  expect(parent).toContain("`orchestrator #<run>`");
+  expect(parent).toContain("`executor #<run>-<sequence>`");
+  expect(parent).toContain("`verifier #<run>-<sequence>`");
+  expect(parent).toContain("shared across Execute and Verify");
+  expect(parent).toContain("record the `agent` line");
+  expect(parent).toContain("`herdr agent get 'executor #<run>-<sequence>'`");
+  expect(parent).toContain("`herdr agent get 'verifier #<run>-<sequence>'`");
+});
+
 test("identifies orchestrator-prefixed messages in every child contract", () => {
   const contracts = workflowStepContracts();
 

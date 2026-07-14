@@ -6,6 +6,8 @@ import {
   scheduledTaskInboxEnv,
   scheduledTaskInboxPromptSuffix,
 } from "../scheduled-task-inbox.ts";
+import type { WorkflowStep } from "../workflow/compose.ts";
+import { workflowStepHerdrAgentName } from "../workflow/herdr-agents.ts";
 import { buildCodexSandboxArgs } from "./codex-launch.ts";
 
 export interface TerminalLaunchRepo {
@@ -15,6 +17,7 @@ export interface TerminalLaunchRepo {
 
 export interface HerdrLaunchPlan {
   sessionName: string;
+  agentName: string;
   command: string;
   cwd: string;
   argv: string[];
@@ -576,6 +579,7 @@ export function buildHerdrLaunchPlan(input: {
   ];
   return {
     sessionName,
+    agentName,
     command: input.command,
     cwd,
     argv,
@@ -585,7 +589,8 @@ export function buildHerdrLaunchPlan(input: {
 export function buildWorkflowStepHerdrLaunchPlan(input: {
   repo: TerminalLaunchRepo;
   runId: number;
-  step: string;
+  step: WorkflowStep;
+  sequence: number;
   // Runtime the parent run resolved (#516). Claude Code launches `claude` with --session-id and
   // --append-system-prompt-file; Codex has neither, so it launches `codex` with the rendered
   // contract folded into its positional prompt and correlates only via the LOOPHUB_SESSION_ID env.
@@ -636,7 +641,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
   return buildHerdrLaunchPlan({
     repo: input.repo,
     command: `${env} ${parts.join(" ")}`,
-    label: `workflow ${input.step} #${input.runId}`,
+    label: workflowStepHerdrAgentName(input.runId, input.step, input.sequence),
     tabId: input.tabId,
     cwd: input.worktree,
     split: "down",

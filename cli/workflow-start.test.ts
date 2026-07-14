@@ -324,13 +324,13 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
           pane_id: "w1:p2",
           tab_id: "w1:t1",
           workspace_id: "w1",
-          label: `workflow-${body.session_id.slice(0, 8)}`,
+          label: `orchestrator #${body.run.id}`,
         },
         {
           pane_id: "w1:p3",
           tab_id: "w1:t1",
           workspace_id: "w1",
-          label: `workflow execute #${body.run.id}`,
+          label: `executor #${body.run.id}-1`,
         },
         {
           pane_id: "w1:p4",
@@ -371,7 +371,9 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     );
 
     expect(launched.exitCode, launched.stderr).toBe(0);
+    expect(launched.stdout).toContain(`agent\texecutor #${body.run.id}-1`);
     const log = readFileSync(runtime.log, "utf8");
+    expect(log).toContain(`agent start executor #${body.run.id}-1`);
     expect(log).toMatch(/agent start .+ --tab w1:t1 --split down --no-focus /);
     expect(log).toContain("pane list");
     expect(log).toContain("tab create --workspace w1 --no-focus");
@@ -453,6 +455,7 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     expect(log).toMatch(
       /--session me-workflow-start-[a-f0-9]{8} worktree open --cwd .+ --path .+/,
     );
+    expect(log).toMatch(/agent start orchestrator #\d+ --cwd /);
     expect(log).toMatch(/agent start .+ --tab w1:t1 /);
     expect(log.indexOf("worktree open")).toBeLessThan(
       log.indexOf("agent start"),

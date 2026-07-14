@@ -73,7 +73,7 @@ describe("Workflow pane grid", () => {
             pane_id: "w1:p11",
             tab_id: "w1:t2",
             workspace_id: "w1",
-            label: "workflow execute #7",
+            label: "executor #7-1",
           },
           {
             pane_id: "w1:p2",
@@ -85,7 +85,7 @@ describe("Workflow pane grid", () => {
             pane_id: "w1:p10",
             tab_id: "w1:t2",
             workspace_id: "w1",
-            label: "workflow-ABCDEF12",
+            label: "orchestrator #7",
           },
         ],
       },
@@ -93,6 +93,31 @@ describe("Workflow pane grid", () => {
     expect(parseWorkflowTabPanes(stdout, "w1:t2", 7)).toEqual([
       { paneId: "w1:p10", workspaceId: "w1" },
       { paneId: "w1:p11", workspaceId: "w1" },
+    ]);
+  });
+
+  test("keeps an existing run's legacy panes eligible for grid layout", () => {
+    const stdout = JSON.stringify({
+      result: {
+        panes: [
+          {
+            pane_id: "w1:p1",
+            tab_id: "w1:t1",
+            workspace_id: "w1",
+            label: "workflow-a1b2c3d4",
+          },
+          {
+            pane_id: "w1:p2",
+            tab_id: "w1:t1",
+            workspace_id: "w1",
+            label: "workflow execute #7",
+          },
+        ],
+      },
+    });
+    expect(parseWorkflowTabPanes(stdout, "w1:t1", 7)).toEqual([
+      { paneId: "w1:p1", workspaceId: "w1" },
+      { paneId: "w1:p2", workspaceId: "w1" },
     ]);
   });
 
@@ -104,7 +129,7 @@ describe("Workflow pane grid", () => {
             pane_id: "w1:p1",
             tab_id: "w1:t1",
             workspace_id: "w1",
-            label: "workflow-11111111",
+            label: "orchestrator #7",
           },
           {
             pane_id: "w1:p2",
@@ -126,13 +151,13 @@ describe("Workflow pane grid", () => {
             pane_id: "w1:p1",
             tab_id: "w1:t1",
             workspace_id: "w1",
-            label: "workflow-11111111",
+            label: "orchestrator #7",
           },
           {
             pane_id: "w1:p2",
             tab_id: "w1:t1",
             workspace_id: "w1",
-            label: "workflow execute #8",
+            label: "verifier #8-1",
           },
         ],
       },

@@ -46,6 +46,7 @@ import {
   WORKFLOW_STEPS,
   type WorkflowStep,
 } from "../workflow/compose.ts";
+import { nextWorkflowChildSequence } from "../workflow/herdr-agents.ts";
 import {
   composeExecuteInputArtifacts,
   composeVerifyInputArtifacts,
@@ -120,6 +121,7 @@ export type WorkflowRunUpdateResult = {
 export type WorkflowLaunchStepResult = {
   run: WorkflowRunUpdateResult["run"];
   step: WorkflowStep;
+  agent_name: string;
   // Runtime the step inherited from the parent run (#516). The CLI preflights this binary before
   // spawning the herdr launch it returns.
   runtime: CodingAgent;
@@ -1007,10 +1009,16 @@ export const workflowRuns = {
     // agent; an explicit launch-step --model override still wins when passed.
     const runtime = runRuntime(run);
     const model = input.model?.trim() || runModel(run);
+    const sequence = S.reserveWorkflowRunChildSequence(
+      run.id,
+      nextWorkflowChildSequence(run.step_sessions_json),
+    );
+    if (sequence == null) throw new ServiceError(404, "Workflow run not found");
     const herdr = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: r.full_name, local_path: r.local_path },
       runId: run.id,
       step,
+      sequence,
       runtime,
       sessionId: childSessionId,
       worktree,
@@ -1025,6 +1033,7 @@ export const workflowRuns = {
     return {
       run: runJSON(run),
       step,
+      agent_name: herdr.agentName,
       runtime,
       session_id: childSessionId,
       worktree,

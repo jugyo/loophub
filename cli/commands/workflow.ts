@@ -21,6 +21,7 @@ import {
   type WorkflowContract,
   workflowContractText,
 } from "../../core/workflow/contracts.ts";
+import { workflowParentHerdrAgentName } from "../../core/workflow/herdr-agents.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   display,
@@ -352,6 +353,7 @@ function nonNegativeInt(
 
 async function launchParentHerdr(input: {
   repo: { full_name: string; local_path: string };
+  runId: number;
   runtime: CodingAgent;
   worktree: string;
   sessionId: string;
@@ -368,7 +370,7 @@ async function launchParentHerdr(input: {
   const agentArgs = parentAgentArgs(input);
   const command = formatSpawnCommand(agentArgs, { bin });
   const commandWithEnv = `LOOPHUB_SESSION_ID=${shQuote(input.sessionId)} ${command}`;
-  const agentName = `workflow-${input.sessionId.slice(0, 8)}`;
+  const agentName = workflowParentHerdrAgentName(input.runId);
   // Open (or reuse) the target PR worktree's own herdr workspace and start the parent there, the
   // same orchestration `lh build --herdr` uses (#873) — without it herdr split whichever pane was
   // focused, so the Workflow parent could land in an unrelated PR's workspace.
@@ -471,6 +473,7 @@ async function startWorkflow(): Promise<void> {
       full_name: repoRecord.full_name,
       local_path: repoRecord.local_path,
     },
+    runId: result.run.id,
     runtime,
     worktree: result.worktree,
     sessionId: result.session_id,
@@ -525,6 +528,7 @@ async function launchStep(): Promise<void> {
   console.log(
     `launched Workflow ${result.step} step for run #${result.run.id}`,
   );
+  console.log(`agent\t${display(result.agent_name)}`);
   console.log(`session\t${display(result.session_id)}`);
   console.log(`worktree\t${display(result.worktree)}`);
   console.log(`contract\t${display(result.system_prompt_path)}`);

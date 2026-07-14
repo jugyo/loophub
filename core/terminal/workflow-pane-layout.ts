@@ -1,3 +1,4 @@
+import { workflowHerdrPaneKind } from "../workflow/herdr-agents.ts";
 import { HERDR_ID } from "./terminal-launch.ts";
 
 export interface WorkflowPane {
@@ -30,10 +31,7 @@ function workflowPaneKind(
   label: unknown,
   runId: number,
 ): "parent" | "step" | null {
-  if (typeof label !== "string") return null;
-  if (/^workflow-[0-9a-f]{8}$/iu.test(label)) return "parent";
-  const step = label.match(/^workflow (?:execute|verify) #(\d+)$/u);
-  return step && Number(step[1]) === runId ? "step" : null;
+  return workflowHerdrPaneKind(label, runId);
 }
 
 /**

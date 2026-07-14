@@ -124,6 +124,7 @@ export interface WorkflowRunRow {
   model: string | null;
   parent_session_id: string | null;
   step_sessions_json: string;
+  child_sequence: number;
   created_at: string;
   updated_at: string;
 }
@@ -430,6 +431,21 @@ export function appendWorkflowRunStepSession(
     [JSON.stringify(parsed), now(), id],
   );
   return getWorkflowRun(id);
+}
+
+export function reserveWorkflowRunChildSequence(
+  id: number,
+  minimumNextSequence: number,
+): number | null {
+  const row = db
+    .query(
+      `UPDATE workflow_runs
+       SET child_sequence = MAX(child_sequence + 1, ?), updated_at = ?
+       WHERE id = ?
+       RETURNING child_sequence`,
+    )
+    .get(minimumNextSequence, now(), id) as { child_sequence: number } | null;
+  return row?.child_sequence ?? null;
 }
 
 function parseStepSessions(value: string): Record<string, string[]> {

@@ -19,18 +19,23 @@ LoopHub (orchestration):
   not the source of truth for transitions. `--status` is one of `running | blocked | completed | stopped`.
 - `lh workflow launch-step --repo '<repo>' --run <run> --step <step> [--note <text|->]`
   — start (or restart) the child for a step. The engine synthesizes the step input and launches the
-  child in a herdr split pane. Call this only when you really want to start or restart a child; it is
-  not a dry-run.
+  child in a herdr split pane, then prints its exact Herdr name on the `agent` line. Call this only
+  when you really want to start or restart a child; it is not a dry-run.
 - `lh workflow step status <run> --repo '<repo>' --json`
   — the query returning each step's completion (`complete` / `missing`) and the latest verdict
   summary (`event`, findings). This is the only basis for transition decisions.
 
-herdr (child liveness and poking — never a basis for transitions). `lh workflow launch-step` starts
-each step's child as a herdr agent named `workflow <step> #<run>` (e.g. `workflow execute #<run>` for this
-run's Execute child), so you can address a child from the run context alone. Below, `<child>` is that
-name and `<child-pane>` is the pane it runs in (read the pane id from `herdr agent get '<child>'`).
-Quote `'<child>'` in every herdr command — the name contains a space and `#`. If you cannot resolve
-or reach a child, treat it as closed and relaunch the step with `lh workflow launch-step`.
+herdr (child liveness and poking — never a basis for transitions). The parent is named
+`orchestrator #<run>`. `lh workflow launch-step` names Execute children
+`executor #<run>-<sequence>` and Verify children `verifier #<run>-<sequence>`. The sequence starts at
+1, is shared across Execute and Verify, and advances for every successful fresh launch, including a
+restart or rework launch. After every launch, record the `agent` line as that role's latest child
+name. Below, `<child>` is the recorded name for the active step and `<child-pane>` is its pane id
+(read it from `herdr agent get '<child>'`). Quote `'<child>'` in every herdr command — the name
+contains a space and `#`. If you cannot resolve or reach a child, treat it as closed and relaunch the
+step with `lh workflow launch-step`, then replace the recorded name with the newly printed one.
+For example, use `herdr agent get 'executor #<run>-<sequence>'` for the recorded Execute child and
+`herdr agent get 'verifier #<run>-<sequence>'` for the recorded Verify child.
 
 - `herdr agent get '<child>'` — check whether the child is still alive and read its pane id.
 - `herdr agent wait '<child>' --status idle --timeout <ms>` — wait for the child to stop working
@@ -80,17 +85,17 @@ When step status shows verify complete with the latest verdict `request_changes`
    passing the new absolute count. You are the only party that increments this count, so track its
    current value yourself across this session — step status does not report it. If the new count
    would exceed 3, escalate instead (see Escalation) — do not launch another Execute.
-2. If the Execute child is still alive (`herdr agent get '<child>'`), poke its pane with
+2. If the latest recorded Execute child is still alive (`herdr agent get '<child>'`), poke its pane with
    `herdr pane run <child-pane> "orchestrator: <what the findings ask for>"` — reusing the session
    preserves its context.
 3. If the Execute pane is closed, restart it with
    `lh workflow launch-step --repo '<repo>' --run <run> --step execute [--note <text>]`. The engine
    synthesizes the latest findings into the step input (`findings.md`); a `--note` is only needed
-   when you have extra context to add.
+   when you have extra context to add. Record the new `agent` line as the latest Execute child.
 4. When Execute re-submits an execution-report for the new head (execute becomes complete again in
    step status), launch **Verify as a fresh child** — always a new child, never a reused reviewer
-   session. The engine carries prior findings into the new Verify input; the fresh child confirms
-   they are resolved.
+   session. Record its new `agent` line as the latest Verify child. The engine carries prior findings
+   into the new Verify input; the fresh child confirms they are resolved.
 
 ## Stall detection and poking
 
