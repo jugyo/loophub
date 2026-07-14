@@ -377,6 +377,7 @@ describe("herdr terminal launch", () => {
     expect(plan.command).toContain(
       "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
     );
+    expect(plan.command).toContain("LOOPHUB_WORKFLOW_REPO='jugyo/loophub'");
     expect(plan.command).toContain("LOOPHUB_WORKFLOW_RUN='12'");
     expect(plan.command).toContain("LOOPHUB_WORKFLOW_STEP='execute'");
     expect(plan.command).toContain(

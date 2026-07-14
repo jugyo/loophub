@@ -611,6 +611,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
 }): HerdrLaunchPlan {
   const env = [
     `LOOPHUB_SESSION_ID=${shellArg(input.sessionId)}`,
+    `LOOPHUB_WORKFLOW_REPO=${shellArg(input.repo.full_name)}`,
     `LOOPHUB_WORKFLOW_RUN=${shellArg(String(input.runId))}`,
     `LOOPHUB_WORKFLOW_STEP=${shellArg(input.step)}`,
   ].join(" ");

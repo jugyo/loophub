@@ -701,7 +701,8 @@ async function stepOutput(): Promise<void> {
   const step = flags.step ?? process.env.LOOPHUB_WORKFLOW_STEP;
   if (!step) fail("--step or LOOPHUB_WORKFLOW_STEP is required");
   const file = flags.file?.[0] ?? "-";
-  const repo = await resolveRepo();
+  const repo =
+    flags.repo ?? process.env.LOOPHUB_WORKFLOW_REPO ?? (await resolveRepo());
   const result = await runOp(async () =>
     (await svc()).workflowRuns.stepOutput(
       repo,

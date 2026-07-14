@@ -8,6 +8,16 @@ test("loads every step contract from the canonical Markdown sources", () => {
   expect(contracts.verify).toContain("# Verify step contract");
 });
 
+test("instructs Execute to submit from trusted launch context without --repo", () => {
+  const execute = workflowContractText("execute");
+
+  expect(execute).toMatch(/trusted workflow launch\s+context/u);
+  expect(execute).toContain(
+    "`lh workflow step output < /path/to/execution-report.json`",
+  );
+  expect(execute).toContain("Do not add `--repo`");
+});
+
 test("keeps optional review aids subordinate to the Verify contract", () => {
   const verify = workflowContractText("verify");
 

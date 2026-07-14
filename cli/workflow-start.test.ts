@@ -4,33 +4,50 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 const CLI = join(import.meta.dirname, "index.ts");
+const TSX = createRequire(import.meta.url).resolve("tsx");
 const HOME = mkdtempSync(join(tmpdir(), "lh-workflow-start-home-"));
-const REPO_PATH = mkdtempSync(join(tmpdir(), "lh-workflow-start-repo-"));
+const REPO_PATH = realpathSync(
+  mkdtempSync(join(tmpdir(), "lh-workflow-start-repo-")),
+);
 const REPO = "me/workflow-start";
+const OTHER_REPO_PATH = realpathSync(
+  mkdtempSync(join(tmpdir(), "lh-workflow-start-other-repo-")),
+);
+const OTHER_REPO = "other/workflow-start";
+const {
+  LOOPHUB_SESSION_ID: _sessionId,
+  LOOPHUB_WORKFLOW_REPO: _workflowRepo,
+  LOOPHUB_WORKFLOW_RUN: _workflowRun,
+  LOOPHUB_WORKFLOW_STEP: _workflowStep,
+  ...BASE_ENV
+} = process.env;
 
-function run(args: string[], env: Record<string, string> = {}) {
+function run(args: string[], env: Record<string, string> = {}, cwd?: string) {
   const result = spawnSync(
     process.execPath,
     [
       "--experimental-sqlite",
       "--disable-warning=ExperimentalWarning",
       "--import",
-      "tsx",
+      TSX,
       CLI,
       ...args,
     ],
     {
+      cwd,
       encoding: "utf8",
       env: {
-        ...process.env,
+        ...BASE_ENV,
         LOOPHUB_HOME: HOME,
         LOOPHUB_DB: join(HOME, "loophub.db"),
         ...env,
@@ -44,8 +61,8 @@ function run(args: string[], env: Record<string, string> = {}) {
   };
 }
 
-function git(args: string[]): void {
-  const result = spawnSync("git", ["-C", REPO_PATH, ...args], {
+function git(args: string[], path = REPO_PATH): void {
+  const result = spawnSync("git", ["-C", path, ...args], {
     encoding: "utf8",
   });
   if ((result.status ?? 0) !== 0) throw new Error(result.stderr);
@@ -138,14 +155,21 @@ const REUSE_TAB_JSON = JSON.stringify({
 });
 
 beforeAll(() => {
-  git(["init", "-q", "-b", "main"]);
-  git(["config", "user.email", "t@example.local"]);
-  git(["config", "user.name", "tester"]);
-  writeFileSync(join(REPO_PATH, "README.md"), "hello\n");
-  git(["add", "-A"]);
-  git(["commit", "-qm", "init"]);
-  const added = run(["repo", "add", REPO_PATH, "--name", REPO]);
-  if (added.exitCode !== 0) throw new Error(added.stderr);
+  for (const path of [REPO_PATH, OTHER_REPO_PATH]) {
+    git(["init", "-q", "-b", "main"], path);
+    git(["config", "user.email", "t@example.local"], path);
+    git(["config", "user.name", "tester"], path);
+    writeFileSync(join(path, "README.md"), "hello\n");
+    git(["add", "-A"], path);
+    git(["commit", "-qm", "init"], path);
+  }
+  for (const [path, name] of [
+    [REPO_PATH, REPO],
+    [OTHER_REPO_PATH, OTHER_REPO],
+  ]) {
+    const added = run(["repo", "add", path, "--name", name]);
+    if (added.exitCode !== 0) throw new Error(added.stderr);
+  }
   const workflow = run([
     "workflow",
     "create",
@@ -156,7 +180,7 @@ beforeAll(() => {
   if (workflow.exitCode !== 0) throw new Error(workflow.stderr);
 });
 
-test("workflow step output uses flags before ambient context and supports ambient-only submission", () => {
+test("workflow step output resolves explicit, launched, and cwd repo contexts", () => {
   const issueOut = run([
     "issue",
     "create",
@@ -200,6 +224,43 @@ test("workflow step output uses flags before ambient context and supports ambien
     }),
   );
 
+  const missingRepoContext = run(
+    ["workflow", "step", "output", "--file", artifactPath],
+    {
+      LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
+      LOOPHUB_WORKFLOW_STEP: "execute",
+    },
+    runResult.worktree,
+  );
+  expect(missingRepoContext.exitCode).not.toBe(0);
+  expect(missingRepoContext.stderr).toContain("Cannot determine the repo");
+
+  const wrongRepoContext = run(
+    ["workflow", "step", "output", "--file", artifactPath],
+    {
+      LOOPHUB_WORKFLOW_REPO: OTHER_REPO,
+      LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
+      LOOPHUB_WORKFLOW_STEP: "execute",
+    },
+    runResult.worktree,
+  );
+  expect(wrongRepoContext.exitCode).not.toBe(0);
+  expect(wrongRepoContext.stderr).toContain(
+    "error 404: Workflow run not found for repo",
+  );
+
+  const launched = run(
+    ["workflow", "step", "output", "--file", artifactPath],
+    {
+      LOOPHUB_WORKFLOW_REPO: REPO,
+      LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
+      LOOPHUB_WORKFLOW_STEP: "execute",
+    },
+    runResult.worktree,
+  );
+  expect(launched.exitCode).toBe(0);
+  expect(launched.stdout).toContain("placed pr-body-report at pr-body");
+
   const explicit = run(
     [
       "workflow",
@@ -214,24 +275,29 @@ test("workflow step output uses flags before ambient context and supports ambien
       "--file",
       artifactPath,
     ],
-    { LOOPHUB_WORKFLOW_RUN: "999999", LOOPHUB_WORKFLOW_STEP: "verify" },
+    {
+      LOOPHUB_WORKFLOW_REPO: OTHER_REPO,
+      LOOPHUB_WORKFLOW_RUN: "999999",
+      LOOPHUB_WORKFLOW_STEP: "verify",
+    },
   );
   expect(explicit.exitCode).toBe(0);
-  expect(explicit.stdout).toContain("placed pr-body-report at pr-body");
 
-  const ambient = run(
-    ["workflow", "step", "output", "--repo", REPO, "--file", artifactPath],
+  const cwd = run(
+    ["workflow", "step", "output", "--file", artifactPath],
     {
       LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
       LOOPHUB_WORKFLOW_STEP: "execute",
     },
+    REPO_PATH,
   );
-  expect(ambient.exitCode).toBe(0);
+  expect(cwd.exitCode).toBe(0);
 });
 
 afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
   rmSync(REPO_PATH, { recursive: true, force: true });
+  rmSync(OTHER_REPO_PATH, { recursive: true, force: true });
 });
 
 test("workflow start rejects conflicting positional and --repo values before DB access", () => {

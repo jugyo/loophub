@@ -20,6 +20,13 @@ During the session, messages beginning with `orchestrator:` are instructions fro
 After the final commit, submit one execution-report artifact with `lh workflow step output`.
 Pass the artifact JSON on stdin to `lh workflow step output`. If you need a temporary file, keep it outside the worktree.
 
+LoopHub supplies the run, step, session, and submission target through trusted workflow launch
+context. Submit from a launched Execute session with no target flag:
+
+`lh workflow step output < /path/to/execution-report.json`
+
+Do not add `--repo`, infer the target from the worktree path, or retry with a remembered owner/name.
+
 The worktree and artifact together must provide:
 
 - commits on the current head branch;
