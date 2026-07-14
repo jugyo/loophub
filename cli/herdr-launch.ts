@@ -7,9 +7,7 @@ import {
   herdrPaneCloseArgv,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
-  herdrTabFocusArgv,
   herdrWorkspaceCloseArgv,
-  herdrWorkspaceFocusArgv,
   normalizeAgentName,
   parseHerdrRootPaneId,
   parseHerdrTabId,
@@ -36,7 +34,7 @@ export interface HerdrLaunchResult {
 // tab; and when the worktree open can't be resolved (herdr not running, worktree_not_found, …) it
 // falls back to a plain repo-root tab (still a new tab, not a split). On any failure to start the
 // agent it cleans up the tab/workspace it created and throws HerdrLaunchError with a reproduce hint;
-// on success it best-effort focuses the new tab/workspace and closes the leftover seed pane.
+// the user-facing agent start focuses its placement atomically, then the leftover seed pane closes.
 export async function launchAgentInWorktreeHerdr(input: {
   repo: TerminalLaunchRepo;
   worktree: string;
@@ -70,10 +68,9 @@ export async function launchAgentInWorktreeHerdr(input: {
   // back null (#873). Set whether the workspace was freshly opened or reused; only ever absent on
   // the plain repo-root tab-create fallback below (which has no worktree workspace at all).
   let placementWorkspaceId: string | null = null;
-  let createdWorkspace = false;
   const acquired = await acquireHerdrWorktreeTab(repo, worktree, runHerdrCmd);
   if (acquired) {
-    ({ tabId, rootPaneId, workspaceId, createdWorkspace } = acquired);
+    ({ tabId, rootPaneId, workspaceId } = acquired);
     placementWorkspaceId = acquired.targetWorkspaceId;
   } else {
     const out = await runHerdrCmd(herdrTabCreateArgv(repo), {
@@ -104,6 +101,9 @@ export async function launchAgentInWorktreeHerdr(input: {
     tabId,
     workspaceId: placementWorkspaceId,
     cwd: worktree,
+    // Keep focus in the same Herdr operation that starts the agent. A separate post-start focus can
+    // race with a newly live Workflow parent launching its Execute child and steal focus then.
+    focus: true,
   });
   const herdrProc = spawnSync(plan.argv[0], plan.argv.slice(1), {
     stdio: "inherit",
@@ -121,7 +121,13 @@ export async function launchAgentInWorktreeHerdr(input: {
   };
   const reproduce = () =>
     herdrCommandLine(
-      buildHerdrLaunchPlan({ repo, command, label, cwd: worktree }),
+      buildHerdrLaunchPlan({
+        repo,
+        command,
+        label,
+        cwd: worktree,
+        focus: true,
+      }),
     );
   if (herdrProc.error) {
     const err = herdrProc.error as NodeJS.ErrnoException;
@@ -148,20 +154,9 @@ export async function launchAgentInWorktreeHerdr(input: {
       `herdr exited with status ${herdrProc.status}\n  reproduce: ${reproduce()}`,
     );
   }
-  // Bring the new agent's tab/workspace to the front (every call above used --no-focus so creation
-  // wouldn't yank focus mid-launch) and close the tab's leftover empty seed pane — best-effort,
-  // since the agent is already running: a focus/close failure must not fail the launch, only leave
-  // one harmless empty pane behind. The seed-pane close below is cleanup (closing a --no-focus
-  // pane doesn't move what's on screen).
-  if (createdWorkspace && workspaceId) {
-    await runHerdrCmd(herdrWorkspaceFocusArgv(repo, workspaceId));
-  } else if (tabId) {
-    await runHerdrCmd(herdrTabFocusArgv(repo, tabId));
-  } else if (placementWorkspaceId) {
-    // Reused workspace whose new tab id failed to parse: the agent launched via
-    // `--workspace placementWorkspaceId`, so bring that workspace forward (#873).
-    await runHerdrCmd(herdrWorkspaceFocusArgv(repo, placementWorkspaceId));
-  }
+  // Creation above stays --no-focus so an incomplete launch never becomes visible. Once agent
+  // start succeeds, its atomic --focus has already brought the final pane forward. Closing the
+  // leftover seed pane is still best-effort cleanup and does not change the selected agent pane.
   if (tabId && rootPaneId) {
     await runHerdrCmd(herdrPaneCloseArgv(repo, rootPaneId));
   }

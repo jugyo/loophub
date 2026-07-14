@@ -411,6 +411,9 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     expect(legacyLaunch.stderr).toContain(
       "warning: skipped Workflow pane layout because no parent Herdr tab id was available",
     );
+    const relaunchedLog = readFileSync(runtime.log, "utf8").slice(log.length);
+    expect(relaunchedLog).toMatch(/agent start .+ --split down --no-focus /);
+    expect(relaunchedLog).not.toMatch(/(?:workspace|tab|agent) focus/);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
@@ -460,13 +463,10 @@ test("workflow start --herdr opens the PR worktree workspace and starts the pare
     expect(log.indexOf("worktree open")).toBeLessThan(
       log.indexOf("agent start"),
     );
-    // The parent is the user-facing Workflow entry point, so a successful fresh-workspace launch
-    // reveals that workspace only after the agent is live. The preceding creation remains
-    // `--no-focus`, avoiding a half-launched workspace becoming visible.
-    expect(log).toContain("workspace focus w1");
-    expect(log.indexOf("agent start")).toBeLessThan(
-      log.indexOf("workspace focus w1"),
-    );
+    // Focus is part of the parent start itself. A later standalone focus command can race with the
+    // newly live parent launching Execute and make that child launch appear to steal focus.
+    expect(log).toMatch(/agent start .+ --tab w1:t1 --focus /);
+    expect(log).not.toContain("workspace focus");
     expect(log).not.toContain("tab focus");
     expect(readFileSync(runtime.log, "utf8")).not.toContain(
       "'--permission-mode' 'auto'",
@@ -567,12 +567,10 @@ test("workflow start --herdr reuses an already-open PR worktree workspace", () =
     expect(log).toMatch(/tab create --workspace w1 /);
     expect(log).toMatch(/agent start .+ --tab w1:t2 /);
     expect(log.indexOf("tab create")).toBeLessThan(log.indexOf("agent start"));
-    // A reused workspace already exists, so reveal the newly created parent tab after agent start.
+    // A reused workspace focuses the new parent tab atomically with agent start as well.
     expect(log).not.toContain("workspace focus");
-    expect(log).toContain("tab focus w1:t2");
-    expect(log.indexOf("agent start")).toBeLessThan(
-      log.indexOf("tab focus w1:t2"),
-    );
+    expect(log).not.toContain("tab focus");
+    expect(log).toMatch(/agent start .+ --tab w1:t2 --focus /);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
@@ -620,10 +618,8 @@ test("workflow start --herdr focuses the reused workspace when its new tab id is
     expect(log).toMatch(/tab create --workspace w1 /);
     expect(log).toMatch(/agent start .+ --workspace w1 /);
     expect(log).not.toContain("tab focus");
-    expect(log).toContain("workspace focus w1");
-    expect(log.indexOf("agent start")).toBeLessThan(
-      log.indexOf("workspace focus w1"),
-    );
+    expect(log).not.toContain("workspace focus");
+    expect(log).toMatch(/agent start .+ --workspace w1 --focus /);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }

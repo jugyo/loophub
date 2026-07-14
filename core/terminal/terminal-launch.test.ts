@@ -339,6 +339,18 @@ describe("herdr terminal launch", () => {
     expect(plan.argv).not.toContain("--workspace");
   });
 
+  test("can focus an explicitly user-facing agent as part of its start", () => {
+    const plan = buildHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      command: "lh workflow start 'jugyo/loophub/444'",
+      label: "workflow parent",
+      tabId: "w9:t2",
+      focus: true,
+    });
+    expect(plan.argv).toContain("--focus");
+    expect(plan.argv).not.toContain("--no-focus");
+  });
+
   test("builds Workflow step Herdr split launch argv and ambient env", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
@@ -360,6 +372,8 @@ describe("herdr terminal launch", () => {
     expect(plan.argv).toContain("--split");
     expect(plan.argv[plan.argv.indexOf("--split") + 1]).toBe("down");
     expect(plan.argv).toContain("--tab");
+    expect(plan.argv).toContain("--no-focus");
+    expect(plan.argv).not.toContain("--focus");
     expect(plan.command).toContain(
       "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
     );

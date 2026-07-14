@@ -552,6 +552,9 @@ export function buildHerdrLaunchPlan(input: {
   // Split an existing pane in the selected tab/workspace. Omitted for the tab-oriented launch
   // flows that create a fresh tab first; Workflow child steps deliberately split the parent run tab.
   split?: "right" | "down";
+  // User-facing entry points can focus the new agent atomically with `agent start`. Workflow
+  // children leave this false so their launch and later pane layout preserve the user's selection.
+  focus?: boolean;
 }): HerdrLaunchPlan {
   const sessionName = herdrSessionName(input.repo);
   const agentName = normalizeAgentName(input.label || "LoopHub workflow");
@@ -571,7 +574,7 @@ export function buildHerdrLaunchPlan(input: {
         ? ["--workspace", input.workspaceId]
         : []),
     ...(input.split ? ["--split", input.split] : []),
-    "--no-focus",
+    input.focus ? "--focus" : "--no-focus",
     "--",
     "zsh",
     "-lc",
