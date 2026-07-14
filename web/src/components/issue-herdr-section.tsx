@@ -6,7 +6,51 @@ import { Bot, Loader2, Terminal } from "lucide-react";
 import type { Issue } from "@/api/types";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useFocusHerdrAgent } from "@/queries/terminal";
+
+export function OpenIssueHerdrButton({
+  owner,
+  repo,
+  paneId,
+  className,
+}: {
+  owner: string;
+  repo: string;
+  paneId: string;
+  className?: string;
+}) {
+  const focus = useFocusHerdrAgent();
+  const { showError } = useToast();
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      className={cn("shrink-0", className)}
+      title="Open the terminal that created this issue in Herdr"
+      aria-label="Open in Herdr"
+      disabled={focus.isPending}
+      onClick={() =>
+        focus.mutate(
+          { repo: `${owner}/${repo}`, paneId },
+          {
+            onError: (e) =>
+              showError(
+                e instanceof Error ? e.message : "Failed to open in Herdr.",
+              ),
+          },
+        )
+      }
+    >
+      {focus.isPending ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : (
+        <Terminal className="size-4" />
+      )}
+      Open in Herdr
+    </Button>
+  );
+}
 
 export function IssueHerdrSection({
   owner,
@@ -18,8 +62,6 @@ export function IssueHerdrSection({
   issue: Issue;
 }) {
   const paneId = issue.herdr_pane?.pane_id;
-  const focus = useFocusHerdrAgent();
-  const { showError } = useToast();
   if (!paneId) return null;
 
   const sessionName = issue.herdr_pane?.session_name ?? paneId;
@@ -39,32 +81,7 @@ export function IssueHerdrSection({
             New Issue pane
           </div>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="shrink-0"
-          title="Open the terminal that created this issue in Herdr"
-          aria-label="Open in Herdr"
-          disabled={focus.isPending}
-          onClick={() =>
-            focus.mutate(
-              { repo: `${owner}/${repo}`, paneId },
-              {
-                onError: (e) =>
-                  showError(
-                    e instanceof Error ? e.message : "Failed to open in Herdr.",
-                  ),
-              },
-            )
-          }
-        >
-          {focus.isPending ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Terminal className="size-4" />
-          )}
-          Open in Herdr
-        </Button>
+        <OpenIssueHerdrButton owner={owner} repo={repo} paneId={paneId} />
       </div>
     </section>
   );

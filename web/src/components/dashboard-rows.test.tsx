@@ -36,6 +36,7 @@ const settingsData = vi.hoisted(() => ({
     agents: {
       "claude-code": { autoModeOnBuild: false, model: "", effort: "" },
       codex: { autoModeOnBuild: false, model: "", effort: "" },
+      grok: { autoModeOnBuild: false, model: "", effort: "" },
     },
     codingAgent: "claude-code",
   } as GlobalSettings | undefined,
@@ -47,6 +48,8 @@ const { focusHerdrAgent, sendHerdrAgentInput } = vi.hoisted(() => ({
   focusHerdrAgent: vi.fn(),
   sendHerdrAgentInput: vi.fn(),
 }));
+const focusHerdrState = vi.hoisted(() => ({ isPending: false }));
+const { showError } = vi.hoisted(() => ({ showError: vi.fn() }));
 const herdrSessionsData = vi.hoisted(() => ({
   value: undefined as HerdrSessions | undefined,
 }));
@@ -54,12 +57,15 @@ vi.mock("@/queries/terminal", () => ({
   useHerdrSessions: () => ({ data: herdrSessionsData.value }),
   useFocusHerdrAgent: () => ({
     mutate: focusHerdrAgent,
-    isPending: false,
+    isPending: focusHerdrState.isPending,
   }),
   useSendHerdrAgentInput: () => ({
     mutate: sendHerdrAgentInput,
     isPending: false,
   }),
+}));
+vi.mock("@/components/toast", () => ({
+  useToast: () => ({ showError }),
 }));
 
 import { IssueRow, PullRow } from "./dashboard-rows";
@@ -71,10 +77,13 @@ afterEach(() => {
   launchTerminal.mockClear();
   focusHerdrAgent.mockClear();
   sendHerdrAgentInput.mockClear();
+  showError.mockClear();
+  focusHerdrState.isPending = false;
   settingsData.value = {
     agents: {
       "claude-code": { autoModeOnBuild: false, model: "", effort: "" },
       codex: { autoModeOnBuild: false, model: "", effort: "" },
+      grok: { autoModeOnBuild: false, model: "", effort: "" },
     },
     codingAgent: "claude-code",
     devCostLimitUsd: 10,
@@ -506,6 +515,194 @@ describe("IssueRow", () => {
     expect(row.className).not.toContain("hover:bg-");
     expect(row.className).toContain("focus:bg-accent");
     expect(row.className).toContain("focus:ring-ring");
+  });
+});
+
+// IssueRow is shared by home Recent issues, repo Open Issues, and /issues, so
+// these assertions cover the issue-title popover on all three list surfaces.
+describe("IssueRow title popover", () => {
+  function issuePopover() {
+    return screen.queryByRole("dialog", { name: "Issue #1 details" });
+  }
+
+  it("shows the issue basics after the standard hover delay", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          state: "closed",
+          body: "A concise issue description.",
+          target_branch: "release/1.0",
+          user: { login: "octocat" },
+          labels: [{ name: "bug", color: null }],
+          comments: 2,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-02T03:04:00Z",
+        })}
+      />,
+    );
+    const title = await screen.findByRole("link", { name: "Example issue" });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.mouseEnter(title);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS - 1);
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "Issue #1 details" }),
+    ).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    const popover = screen.getByRole("dialog", {
+      name: "Issue #1 details",
+    });
+    expect(popover.textContent).toContain("#1");
+    expect(popover.textContent).toContain("closed");
+    expect(popover.textContent).toContain("@octocat");
+    expect(popover.textContent).toContain("bug");
+    expect(popover.textContent).toContain("2 comments");
+    expect(popover.textContent).toContain("release/1.0");
+    expect(popover.textContent).toContain("A concise issue description.");
+    expect(
+      popover.querySelector('time[dateTime="2026-01-01T00:00:00Z"]'),
+    ).toBeTruthy();
+    expect(
+      popover.querySelector('time[dateTime="2026-01-02T03:04:00Z"]'),
+    ).toBeTruthy();
+  });
+
+  it("opens immediately on focus and closes on Escape or focus leaving", async () => {
+    renderInRouter(
+      <>
+        <IssueRow owner="me" repo="proj" issue={makeIssue()} />
+        <button type="button">Outside</button>
+      </>,
+    );
+    const title = await screen.findByRole("link", { name: "Example issue" });
+
+    fireEvent.focus(title);
+    expect(issuePopover()).toBeTruthy();
+
+    fireEvent.keyDown(title, { key: "Escape" });
+    expect(issuePopover()).toBeNull();
+
+    fireEvent.blur(title);
+    fireEvent.focus(title);
+    expect(issuePopover()).toBeTruthy();
+    const outside = screen.getByRole("button", { name: "Outside" });
+    fireEvent.blur(title, { relatedTarget: outside });
+    fireEvent.focus(outside);
+    expect(issuePopover()).toBeNull();
+  });
+
+  it("stays open while the pointer moves from the title into the popover", async () => {
+    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />);
+    const title = await screen.findByRole("link", { name: "Example issue" });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.mouseEnter(title);
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    const popover = issuePopover();
+    expect(popover).toBeTruthy();
+
+    fireEvent.mouseLeave(title, { relatedTarget: popover });
+    fireEvent.mouseEnter(popover!, { relatedTarget: title });
+    expect(issuePopover()).toBeTruthy();
+  });
+
+  it("shows and focuses the recorded New Issue pane", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          herdr_pane: {
+            launch_id: "launch-1",
+            pane_id: "w4:p2",
+            session_name: "me-proj-12345678",
+          },
+        })}
+      />,
+    );
+    fireEvent.focus(await screen.findByRole("link", { name: "Example issue" }));
+
+    expect(screen.getByText("me-proj-12345678")).toBeTruthy();
+    const button = screen.getByRole("button", { name: "Open in Herdr" });
+    fireEvent.click(button);
+    expect(focusHerdrAgent).toHaveBeenCalledWith(
+      { repo: "me/proj", paneId: "w4:p2" },
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
+  });
+
+  it("omits the Herdr action when no New Issue pane ID is recorded", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          herdr_pane: {
+            launch_id: "launch-pending",
+            pane_id: null,
+            session_name: "me-proj-pending",
+          },
+        })}
+      />,
+    );
+    fireEvent.focus(await screen.findByRole("link", { name: "Example issue" }));
+
+    expect(screen.queryByText("me-proj-pending")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
+  });
+
+  it("shows the Herdr action as pending while pane focus is processing", async () => {
+    focusHerdrState.isPending = true;
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          herdr_pane: {
+            launch_id: "launch-1",
+            pane_id: "w4:p2",
+            session_name: "me-proj-12345678",
+          },
+        })}
+      />,
+    );
+    fireEvent.focus(await screen.findByRole("link", { name: "Example issue" }));
+
+    const button = screen.getByRole("button", { name: "Open in Herdr" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.querySelector(".animate-spin")).toBeTruthy();
+  });
+
+  it("reports a pane focus failure through the existing error UI", async () => {
+    focusHerdrAgent.mockImplementationOnce((_input, options) => {
+      options.onError(new Error("Herdr pane is unavailable"));
+    });
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          herdr_pane: {
+            launch_id: "launch-1",
+            pane_id: "w4:p2",
+            session_name: "me-proj-12345678",
+          },
+        })}
+      />,
+    );
+    fireEvent.focus(await screen.findByRole("link", { name: "Example issue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
+
+    expect(showError).toHaveBeenCalledWith("Herdr pane is unavailable");
   });
 });
 

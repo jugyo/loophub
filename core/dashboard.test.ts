@@ -53,6 +53,15 @@ describe("dashboard.overview", () => {
       "sess-1",
     );
     const noPr = svc.issues.create("me/proj", { title: "no PR" });
+    const repo = S.getRepo("me", "proj")!;
+    const noPrRow = S.getIssue(repo.id, noPr.number)!;
+    S.upsertIssueHerdrPane({
+      launchId: "dashboard-launch",
+      repoId: repo.id,
+      issueId: noPrRow.id,
+      paneId: "w3:p1",
+      sessionName: "me-proj-dashboard",
+    });
 
     const overview = await svc.dashboard.overview();
     const item = (n: number) =>
@@ -74,6 +83,10 @@ describe("dashboard.overview", () => {
     const plain = item(noPr.number)!;
     expect(plain.linked_pull_requests).toEqual([]);
     expect(plain.linked_pull_request).toBeNull();
+    expect(plain.herdr_pane).toMatchObject({
+      pane_id: "w3:p1",
+      session_name: "me-proj-dashboard",
+    });
   });
 
   test("linked PR carries github_pull once exported, null otherwise (#629)", async () => {

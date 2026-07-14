@@ -2,16 +2,24 @@ import { createRoute, Link } from "@tanstack/react-router";
 import { Archive, FolderPlus, X } from "lucide-react";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
+import { IssueRow } from "@/components/dashboard-rows";
+import { DashboardSection } from "@/components/dashboard-section";
 import { RepoList } from "@/components/repo-list";
 import { Button } from "@/components/ui/button";
 import { usePageTitle } from "@/lib/page-title";
+import { useRecentIssuesLimit, useRecentOpenIssues } from "@/queries/dashboard";
 import { useCreateRepo, useRepos } from "@/queries/repos";
 import { rootRoute } from "./root";
 
 export function HomePage() {
   usePageTitle(["Repositories"]);
   const repos = useRepos();
+  const issues = useRecentOpenIssues();
+  const recentIssuesLimit = useRecentIssuesLimit().data;
   const [adding, setAdding] = useState(false);
+  const issuesCapped =
+    recentIssuesLimit != null &&
+    (issues.data?.length ?? 0) >= recentIssuesLimit;
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-8">
@@ -44,6 +52,24 @@ export function HomePage() {
           Archived repositories
         </Link>
       </div>
+      <DashboardSection
+        title="Recent issues"
+        query={issues}
+        emptyText="No open issues."
+        keyOf={(item) => `${item.repo.full_name}#${item.issue.number}`}
+        renderItem={(item) => (
+          <IssueRow
+            owner={item.repo.owner}
+            repo={item.repo.name}
+            issue={item.issue}
+            repoLabel={item.repo.full_name}
+            showCreatedAt
+          />
+        )}
+        footerNote={
+          issuesCapped ? `Showing the ${recentIssuesLimit} most recent.` : null
+        }
+      />
       {adding ? <AddRepositoryDialog onClose={() => setAdding(false)} /> : null}
     </div>
   );

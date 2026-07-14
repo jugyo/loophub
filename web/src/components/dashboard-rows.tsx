@@ -7,6 +7,7 @@ import { Loader2, Play } from "lucide-react";
 import type { Issue, Label, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { IssueBranchChip } from "@/components/issue-branch-chip";
+import { OpenIssueHerdrButton } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
 import { useTerminalLauncher } from "@/components/terminal-controller";
@@ -19,6 +20,7 @@ import {
 } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
+import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
 import type { IssueListFilters } from "@/queries/issues";
 
@@ -101,6 +103,106 @@ function RowLabels({
   );
 }
 
+function timestamp(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
+}
+
+function IssuePopover({
+  owner,
+  repo,
+  issue,
+}: {
+  owner: string;
+  repo: string;
+  issue: Issue;
+}) {
+  const paneId = issue.herdr_pane?.pane_id;
+  const sessionName = issue.herdr_pane?.session_name ?? paneId ?? undefined;
+  return (
+    <div className="absolute left-0 top-full z-30 w-[420px] pt-1">
+      <div
+        role="dialog"
+        aria-label={`Issue #${issue.number} details`}
+        className="rounded-md border bg-background p-3 text-foreground shadow-lg"
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-semibold">#{issue.number}</span>
+          <Badge tone={issue.state}>{issue.state}</Badge>
+          <span className="text-xs text-muted-foreground">
+            @{issue.user.login}
+          </span>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {issue.comments} comment{issue.comments === 1 ? "" : "s"}
+          </span>
+        </div>
+        <dl className="mt-3 grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1 text-xs">
+          <div className="contents">
+            <dt className="text-muted-foreground">Labels</dt>
+            <dd className="flex min-w-0 flex-wrap gap-1">
+              {issue.labels.length > 0
+                ? issue.labels.map((label) => (
+                    <Badge key={label.name}>{label.name}</Badge>
+                  ))
+                : "None"}
+            </dd>
+          </div>
+          {issue.target_branch ? (
+            <div className="contents">
+              <dt className="text-muted-foreground">Target</dt>
+              <dd className="min-w-0 truncate font-medium">
+                {issue.target_branch}
+              </dd>
+            </div>
+          ) : null}
+          <div className="contents">
+            <dt className="text-muted-foreground">Created</dt>
+            <dd>
+              <time dateTime={issue.created_at}>
+                {timestamp(issue.created_at)}
+              </time>
+            </dd>
+          </div>
+          <div className="contents">
+            <dt className="text-muted-foreground">Updated</dt>
+            <dd>
+              <time dateTime={issue.updated_at}>
+                {timestamp(issue.updated_at)}
+              </time>
+            </dd>
+          </div>
+        </dl>
+        <p className="mt-3 line-clamp-4 whitespace-pre-wrap break-words border-t pt-3 text-xs text-muted-foreground">
+          {issue.body || "No description."}
+        </p>
+        {paneId ? (
+          <div className="mt-3 flex items-center gap-2 border-t pt-3">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-medium" title={sessionName}>
+                {sessionName}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                New Issue pane
+              </div>
+            </div>
+            <OpenIssueHerdrButton
+              owner={owner}
+              repo={repo}
+              paneId={paneId}
+              className="h-8"
+            />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 // Single issue list row, shared by every issue list (home "Recent issues",
 // repo dashboard "Open Issues", and the dedicated /issues page). Pattern E
 // (#194): the title is the issue link — so a linked PR can render as its own
@@ -129,6 +231,7 @@ export function IssueRow({
   /** Preserves the active issue-list state when label chips filter the list. */
   labelState?: IssueListFilters["state"];
 }) {
+  const popover = useHoverPopover();
   // Usually 0–1 linked PRs; when more than one exists they stack vertically, one
   // sub-row each. Fall back to the singular field for any response shape that
   // only carries it.
@@ -160,13 +263,32 @@ export function IssueRow({
             group absorbs the slack, keeping the Build button / closed badge /
             relative time aligned on the right. #294 */}
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Link
-            to="/r/$owner/$repo/issues/$number"
-            params={{ owner, repo, number: String(issue.number) }}
-            className="min-w-0 truncate font-medium hover:underline"
+          <div
+            className="relative min-w-0 shrink"
+            onMouseLeave={popover.onMouseLeave}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                popover.close();
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") popover.close();
+            }}
           >
-            {issue.title}
-          </Link>
+            <Link
+              to="/r/$owner/$repo/issues/$number"
+              params={{ owner, repo, number: String(issue.number) }}
+              className="block truncate font-medium hover:underline"
+              onMouseEnter={popover.onMouseEnter}
+              onMouseLeave={popover.cancelPending}
+              onFocus={popover.onFocus}
+            >
+              {issue.title}
+            </Link>
+            {popover.open ? (
+              <IssuePopover owner={owner} repo={repo} issue={issue} />
+            ) : null}
+          </div>
           <RowLabels
             labels={issue.labels}
             owner={owner}

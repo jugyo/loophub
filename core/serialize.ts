@@ -225,7 +225,8 @@ export interface IssueWire {
   updated_at: string;
   // Sessions related to this issue (#298), newest first. Detail response only.
   related_sessions?: RelatedSessionWire[];
-  // Herdr pane captured from the New Issue flow (#670). Detail response only.
+  // Herdr pane captured from the New Issue flow (#670). Populated on issue list and detail
+  // responses so every shared IssueRow can expose the pane action without a detail fetch.
   herdr_pane?: HerdrPaneWire | null;
   pull_request?: { url: string };
   linked_pull_requests?: PullSummaryWire[];
@@ -1069,6 +1070,7 @@ export async function issueListItemJSON(
   repo: S.Repo,
 ): Promise<IssueWire> {
   const out = issueJSON(row, repo);
+  out.herdr_pane = herdrPaneJSON(S.getIssueHerdrPane(row.id));
   if (row.kind !== "pull") {
     // All linked PRs (usually 0–1, occasionally more — see linkedPullsForIssue),
     // most-relevant first, so the list can stack them vertically. The singular

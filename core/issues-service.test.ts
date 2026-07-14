@@ -345,6 +345,18 @@ test("issues.create links a New Issue Herdr pane through the launch id (#670)", 
       pane_id: "w4:p2",
       session_name: "me-proj-12345678",
     });
+
+    const list = (await svc.issues.list("me/proj", {
+      kind: "issue",
+      state: "open",
+    })) as any[];
+    expect(
+      list.find((item) => item.number === issue.number)?.herdr_pane,
+    ).toMatchObject({
+      launch_id: "launch-670",
+      pane_id: "w4:p2",
+      session_name: "me-proj-12345678",
+    });
   } finally {
     if (previous === undefined)
       delete process.env[ENV_ISSUE_CREATE_HERDR_LAUNCH];
