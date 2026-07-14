@@ -1164,8 +1164,13 @@ describe("PullDetail", () => {
     expect(currentGroup?.open).toBe(false);
     expect(staleGroup?.open).toBe(false);
 
-    // Existing per-commit state badges are preserved.
-    expect(screen.getByText("current")).toBeTruthy();
+    // The current marker stays neutral while the review verdict keeps its
+    // state-specific color.
+    const currentBadge = screen.getByText("current");
+    expect(currentBadge.className).toContain("text-foreground");
+    expect(currentBadge.className).not.toContain("text-link");
+    const passedBadge = within(currentGroup as HTMLElement).getByText("passed");
+    expect(passedBadge.className).toContain("text-green-600");
     expect(screen.queryByText("STALE")).toBeNull();
 
     // Each summary carries a collapsed verdict: PASS → "passed" on the
