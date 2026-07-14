@@ -46,6 +46,7 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
     status: "running",
     current_step: "execute",
     rework_count: 0,
+    needs_human_reason: null,
     issue_number: 42,
     pr_number: 99,
     created_at: "2026-07-10T00:00:00Z",
@@ -109,7 +110,41 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.queryByText(/Verify passed/)).toBeNull();
   });
 
-  it("surfaces the block reason, verdict summary, and issue / inbox links when blocked", async () => {
+  it("surfaces the wait reason, verdict summary, and issue / inbox links while waiting for a human", async () => {
+    renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({
+          status: "running",
+          current_step: "verify",
+          needs_human_reason: "rework limit exceeded: two criteria unmet",
+          issue_number: 42,
+          latest_verdict: {
+            event: "request_changes",
+            summary: "Two criteria unmet.",
+            findings_count: 2,
+          },
+        })}
+      />,
+    );
+    expect(await screen.findByText("Needs human")).toBeTruthy();
+    expect(
+      screen.getByText(/waiting for a human instruction to its parent session/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("rework limit exceeded: two criteria unmet"),
+    ).toBeTruthy();
+    expect(screen.getByText(/Two criteria unmet\./)).toBeTruthy();
+    const issueLink = screen.getByText("Read issue #42");
+    expect(issueLink.closest("a")?.getAttribute("href")).toBe(
+      "/r/me/loophub/issues/42",
+    );
+    const inboxLink = screen.getByText("Open Inbox");
+    expect(inboxLink.closest("a")?.getAttribute("href")).toBe("/inbox");
+  });
+
+  it("renders a legacy blocked run as a terminal Needs human state", async () => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
@@ -126,16 +161,11 @@ describe("WorkflowRunStatusSection", () => {
         })}
       />,
     );
-    expect(await screen.findByText("Blocked")).toBeTruthy();
+    expect(await screen.findByText("Needs human")).toBeTruthy();
     expect(
-      screen.getByText(/This run is blocked and needs a human/),
+      screen.getByText(/escalated to a human and is no longer running/),
     ).toBeTruthy();
     expect(screen.getByText(/Two criteria unmet\./)).toBeTruthy();
-    const issueLink = screen.getByText("Read issue #42");
-    expect(issueLink.closest("a")?.getAttribute("href")).toBe(
-      "/r/me/loophub/issues/42",
-    );
-    const inboxLink = screen.getByText("Open Inbox");
-    expect(inboxLink.closest("a")?.getAttribute("href")).toBe("/inbox");
+    expect(screen.getByText("Read issue #42")).toBeTruthy();
   });
 });

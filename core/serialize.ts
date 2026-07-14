@@ -1346,9 +1346,12 @@ export interface WorkflowRunStateWire {
   id: number;
   workflow_id: number | null;
   workflow_name: string | null;
-  status: string; // running | blocked | completed | stopped
+  status: string; // running | completed | stopped (legacy terminal rows may still read 'blocked')
   current_step: string; // execute | verify
   rework_count: number;
+  // Non-null while the run waits for an explicit human instruction (#1307). The run stays
+  // `running` (active + resumable); the UI renders this as a Needs human state.
+  needs_human_reason: string | null;
   issue_number: number;
   pr_number: number;
   created_at: string;
@@ -1369,6 +1372,7 @@ export function workflowRunStateJSON(input: {
     status: run.status,
     current_step: run.current_step,
     rework_count: run.rework_count,
+    needs_human_reason: run.needs_human_reason,
     issue_number: run.issue_number,
     pr_number: run.pr_number,
     created_at: run.created_at,
@@ -1428,6 +1432,13 @@ export function workflowRunHistoryEventJSON(
   } else if (row.type === "workflow_run.updated") {
     const status =
       typeof payload.status === "string" ? payload.status : "updated";
+    // `needs_human_reason` is present in the payload only when the update touched the human wait
+    // (#1307): a string marks the escalation, an explicit null marks the human-instructed resume.
+    const touchedNeedsHuman = "needs_human_reason" in payload;
+    const needsHumanReason =
+      typeof payload.needs_human_reason === "string"
+        ? payload.needs_human_reason
+        : null;
     label =
       status === "completed"
         ? "Run completed"
@@ -1435,9 +1446,18 @@ export function workflowRunHistoryEventJSON(
           ? "Run stopped"
           : status === "blocked"
             ? "Run blocked"
-            : "Run state updated";
+            : touchedNeedsHuman
+              ? needsHumanReason !== null
+                ? "Run needs human"
+                : "Run resumed"
+              : "Run state updated";
     const details = [
       `Status: ${workflowStepLabel(status) ?? status}.`,
+      touchedNeedsHuman
+        ? needsHumanReason !== null
+          ? `Waiting for a human: ${needsHumanReason}`
+          : "Human wait cleared; the run may progress again."
+        : null,
       stepLabel ? `Current step: ${stepLabel}.` : null,
       typeof payload.rework_count === "number"
         ? `Rework count: ${payload.rework_count}.`

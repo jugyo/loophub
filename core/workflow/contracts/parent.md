@@ -14,9 +14,11 @@ so the repo cannot be inferred from the working directory.
 
 LoopHub (orchestration):
 
-- `lh workflow run update --repo '<repo>' --run <run> [--step <step>] [--status <status>] [--rework-count <n>]`
+- `lh workflow run update --repo '<repo>' --run <run> [--step <step>] [--status <status>] [--rework-count <n>] [--needs-human <reason>] [--clear-needs-human]`
   — report run state for display (current step, status, rework count). This is a display mirror,
-  not the source of truth for transitions. `--status` is one of `running | blocked | completed | stopped`.
+  not the source of truth for transitions. `--status` is one of `running | completed | stopped`.
+  `--needs-human <reason>` holds the run for a human while it stays `running` (see Escalation);
+  `--clear-needs-human` releases that hold (see Resuming).
 - `lh workflow launch-step --repo '<repo>' --run <run> --step <step> [--note <text|->]`
   — start (or restart) the child for a step. The engine synthesizes the step input and launches the
   child in a herdr split pane, then prints its exact Herdr name on the `agent` line. Call this only
@@ -120,10 +122,33 @@ On escalation, do all three:
    `lh issue comment <issue> --repo '<repo>' --body <text>`.
 2. Notify the human via Inbox:
    `lh inbox send --repo '<repo>' --from '{"kind":"workflow_run","repo":"<repo>","actor":"workflow-parent"}' --title <text> --body <text>`.
-3. Mark the run blocked and stop:
-   `lh workflow run update --repo '<repo>' --run <run> --status blocked`.
+3. Hold the run for a human (the run stays `running`):
+   `lh workflow run update --repo '<repo>' --run <run> --needs-human <reason>`.
+   Keep the reason short and concrete (e.g. "rework limit exceeded: <verdict summary>").
 
-There is no automatic resume in v1 — a human resolves the situation and re-runs `lh workflow start`.
+Then stop all automatic progression: do not launch steps, poke children, or change rework count.
+Stay in this session and wait for an explicit human instruction. Never resume on your own — a timer,
+a new event, or a child finishing is not an instruction.
+
+## Resuming after a human instruction
+
+When a human explicitly tells you (in this session) to continue:
+
+1. Release the hold and reset the automatic rework budget:
+   `lh workflow run update --repo '<repo>' --run <run> --clear-needs-human --rework-count 0`.
+   Track the rework count as 0 from here; the full limit applies again.
+2. Re-check the current state: `lh workflow step status <run> --repo '<repo>' --json` (artifacts and
+   head may have changed while you waited — a human may have pushed fixes).
+3. Resume the same run: return to Execute when the work itself needs to continue or change, or
+   launch a **fresh Verify** when execute is complete for the current head and only the verdict is
+   missing or stale. Returning to Execute here is **not a rework** — do not increment the count
+   (it stays 0 until the next `request_changes` verdict, which then follows the normal Rework
+   procedure). As in Rework, prefer poking a still-live Execute pane
+   (`herdr pane run <child-pane> "orchestrator: <what to continue>"`) and use
+   `lh workflow launch-step` only when the pane is closed.
+
+If the human instead cancels the run, mark it stopped:
+`lh workflow run update --repo '<repo>' --run <run> --status stopped`.
 
 ## Prohibited actions
 

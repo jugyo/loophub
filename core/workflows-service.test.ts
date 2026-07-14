@@ -90,9 +90,27 @@ test("delete is rejected while a running Workflow run references the workflow", 
   expect(svc.workflows.get("in-use").id).toBe(workflow.id);
 });
 
-test("delete is rejected while a blocked Workflow run references the workflow", () => {
-  const workflow = svc.workflows.create({ name: "blocked-run" });
-  const repo = S.createRepo("me/workflow-blocked", HOME);
+test("delete is rejected while a run waiting for a human references the workflow", () => {
+  const workflow = svc.workflows.create({ name: "needs-human-run" });
+  const repo = S.createRepo("me/workflow-needs-human", HOME);
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 1,
+    prNumber: 2,
+    status: "running",
+    currentStep: "verify",
+  });
+  // Waiting for a human keeps the run `running`, so it stays active (#1307).
+  S.updateWorkflowRun(run.id, { needsHumanReason: "rework limit exceeded" });
+
+  expectServiceStatus(() => svc.workflows.delete("needs-human-run"), 409);
+  expect(svc.workflows.get("needs-human-run").id).toBe(workflow.id);
+});
+
+test("delete succeeds when only a legacy blocked run references the workflow", () => {
+  const workflow = svc.workflows.create({ name: "legacy-blocked-run" });
+  const repo = S.createRepo("me/workflow-legacy-blocked", HOME);
   S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
@@ -102,8 +120,9 @@ test("delete is rejected while a blocked Workflow run references the workflow", 
     currentStep: "verify",
   });
 
-  expectServiceStatus(() => svc.workflows.delete("blocked-run"), 409);
-  expect(svc.workflows.get("blocked-run").id).toBe(workflow.id);
+  // Legacy `blocked` is terminal (#1307): its parent session is gone, so it is not active.
+  svc.workflows.delete("legacy-blocked-run");
+  expectServiceStatus(() => svc.workflows.get("legacy-blocked-run"), 404);
 });
 
 test("delete succeeds when no runs reference the workflow", () => {

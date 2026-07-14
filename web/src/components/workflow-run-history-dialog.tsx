@@ -7,10 +7,20 @@ import { useWorkflowRunHistory } from "@/queries/workflow-runs";
 
 const STATUS_LABELS: Record<string, string> = {
   running: "Running",
-  blocked: "Blocked",
+  // Legacy terminal status (#1307): shown like a needs-human run.
+  blocked: "Needs human",
   completed: "Completed",
   stopped: "Stopped",
 };
+
+// A running run holding a needs-human reason is waiting for a human (#1307) — surface that over
+// the plain status, matching the run-status section's badge.
+function statusLabel(state: WorkflowRunState): string {
+  if (state.status === "running" && state.needs_human_reason !== null) {
+    return "Needs human";
+  }
+  return STATUS_LABELS[state.status] ?? state.status;
+}
 
 function displayName(value: string): string {
   return value
@@ -90,7 +100,7 @@ export function WorkflowRunHistoryDialog({
             <div>
               <dt className="text-xs text-muted-foreground">Status</dt>
               <dd className="mt-1">
-                <Badge>{STATUS_LABELS[state.status] ?? state.status}</Badge>
+                <Badge>{statusLabel(state)}</Badge>
               </dd>
             </div>
             <Metadata

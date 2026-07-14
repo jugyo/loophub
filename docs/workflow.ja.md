@@ -1,6 +1,6 @@
 # skill 非依存の Execute / Verify 固定 workflow — 設計メモ
 
-> Status: Implemented · Issue: #975 / #981 / #1284
+> Status: Implemented · Issue: #975 / #981 / #1284 / #1307
 >
 > 本書は、skill（`SKILL.md` / slash command）を使わずに開発 workflow を実行するモデルを
 > 定義する。workflow の step は **Execute / Verify の 2 つに固定**し、ユーザーが設定できるのは
@@ -83,7 +83,8 @@ step = f(入力 artifact, worktree) → (出力 artifact, commits)
 3. `lh workflow step status` の配置済み artifact query だけを根拠に遷移する。
 4. herdr を使って child の停滞を検知し、不足をつつく。
 5. request_changes を Execute へ戻し、修正後は Verify を fresh session で起動する。
-6. 上限超過や解消不能状態を issue comment + Inbox + blocked status で人間へ渡す。
+6. 上限超過や解消不能状態を issue comment + Inbox + needs-human 状態(run は `running` のまま
+   待機理由を保持)で人間へ渡し、明示的な指示があるまで自動遷移を止める。
 7. passing verdict で run を completed にする。merge はしない。
 
 親はコード、review、PR body を直接編集しない。入力合成・schema validation・placement は engine
@@ -240,7 +241,17 @@ rework 上限は 3。生きている Execute pane を優先して再利用し、
 
 1. issue comment に経緯を残す。
 2. Inbox で人間へ通知する。
-3. run を blocked にして停止する。
+3. `lh workflow run update --needs-human <reason>` で待機理由を保存する。run は `running` のまま
+   (active 扱い)で、親は自動遷移をすべて止めて同じ session への人間の明示的な指示を待つ。
+
+人間が続行を指示したら、親は `--clear-needs-human --rework-count 0` で待機を解除して自動 rework
+枠をリセットし、`lh workflow step status` で現在の artifact と head を再確認して、同じ run を
+Execute または fresh Verify から再開する。人間の指示がない限り自動再開しない。キャンセルは
+`--status stopped`(再開しない終端)。過去の escalation と人間介入は run history に残る。
+
+run の status は `running | completed | stopped` のみ。かつての終端 `blocked` status は廃止した。
+既存の `blocked` run は履歴上そのまま残り、UI では needs-human 中の run と同じく Needs human と
+して表示される(終端扱い)。親 session が失われているため再開はできない(新しい run を開始する)。
 
 ## 8. CLI / UI
 
@@ -255,7 +266,9 @@ lh workflow step status <run> --json
 ```
 
 issue / PR detail の run tracker は `Execute → Verify` を表示する。completed run の current step が
-Verify の場合は passing verification で全 step を終えたことを示す。
+Verify の場合は passing verification で全 step を終えたことを示す。人間待ち中の run と legacy
+`blocked` run は Needs human バッジと issue / Inbox へのリンクを目立つ形で表示し、needs-human 中の
+run はさらに待機理由を示す(legacy `blocked` run は待機理由を持たない)。
 
 ## 9. skill / domain 非依存
 
@@ -289,4 +302,7 @@ Verify の場合は passing verification で全 step を終えたことを示す
 - passing verdict で親が run を completed にできる。
 - Settings UI、RPC、CLI に Plan / Reflect prompt が現れない。
 - run tracker が Execute → Verify の 2 step を表示する。
-- Verify の SHA pin、fresh session、request_changes rework、escalation は従来どおり機能する。
+- Verify の SHA pin、fresh session、request_changes rework は従来どおり機能する。
+- escalation は run を `running` のまま needs-human hold として保持し、待機中は launch-step が
+  拒否され、人間の明示的な指示(`--clear-needs-human`)まで自動遷移しない。解除で rework 枠が
+  0 に戻り、escalation と人間介入が run history に残る。

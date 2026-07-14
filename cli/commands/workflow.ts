@@ -589,6 +589,8 @@ async function runUpdate(): Promise<void> {
         step: flags.step,
         status: flags.status,
         reworkCount: nonNegativeInt(flags["rework-count"], "--rework-count"),
+        needsHuman: flags["needs-human"],
+        clearNeedsHuman: Boolean(flags["clear-needs-human"]),
       },
       await writeSession(),
     ),
@@ -599,6 +601,9 @@ async function runUpdate(): Promise<void> {
     console.log(`status\t${display(result.run.status)}`);
     console.log(`step\t${display(result.run.current_step)}`);
     console.log(`rework_count\t${result.run.rework_count}`);
+    if (result.run.needs_human_reason !== null) {
+      console.log(`needs_human\t${display(result.run.needs_human_reason)}`);
+    }
   }
 }
 
@@ -648,6 +653,9 @@ async function stepStatus(): Promise<void> {
   if (flags.json) {
     out(result);
     return;
+  }
+  if (result.needs_human_reason !== null) {
+    console.log(`needs_human\t${display(result.needs_human_reason)}`);
   }
   for (const step of STEP_STATUS_ORDER) {
     const s = result.steps[step];

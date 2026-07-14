@@ -122,10 +122,8 @@ test("workflowRuns/history exposes only the requested run's lifecycle events", a
   const workflow = S.createWorkflow({
     name: "rpc-history",
     description: "",
-    planPrompt: "",
     executePrompt: "",
     verifyPrompt: "",
-    reflectPrompt: "",
   });
   const run = S.createWorkflowRun({
     workflowId: workflow.id,

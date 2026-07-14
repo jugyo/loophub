@@ -87,6 +87,8 @@ export type Flags = {
   run?: string;
   note?: string;
   "rework-count"?: string;
+  "needs-human"?: string;
+  "clear-needs-human"?: boolean;
   "tab-id"?: string;
 };
 const { values, positionals } = parseArgs({
@@ -174,6 +176,8 @@ const { values, positionals } = parseArgs({
     run: { type: "string" },
     note: { type: "string" },
     "rework-count": { type: "string" },
+    "needs-human": { type: "string" },
+    "clear-needs-human": { type: "boolean" },
     "tab-id": { type: "string" },
   },
 });

@@ -4,9 +4,10 @@
 // this deliberately does not re-derive step-completion truth (that stays with
 // `workflow step status` / artifact placement).
 //
-// - blocked: surfaces the human-readable reason (latest verdict summary when present) plus links to
-//   the issue (where the parent files its escalation comment; workflow design: parent transitions)
-//   and the Inbox.
+// - needs human (#1307): a running run with `needs_human_reason` set is waiting for an explicit
+//   human instruction. Surfaces that reason (plus the latest verdict summary when present) and
+//   links to the issue (where the parent files its escalation comment) and the Inbox. Legacy
+//   terminal `blocked` rows get the same prominent display.
 // - completed: states that the run reached a passing Verify verdict and finished.
 //
 // Renders nothing when the issue / PR has no run.
@@ -33,10 +34,20 @@ const STATUS_META: Record<
   { label: string; tone: NonNullable<BadgeProps["tone"]> }
 > = {
   running: { label: "Running", tone: "working" },
-  blocked: { label: "Blocked", tone: "cost-stopped" },
+  // Legacy terminal status (#1307): pre-needs-human escalations; shown like a needs-human run.
+  blocked: { label: "Needs human", tone: "cost-stopped" },
   completed: { label: "Completed", tone: "review-passed" },
   stopped: { label: "Stopped", tone: "closed" },
 };
+
+// Waiting for an explicit human instruction (#1307): a running run holding a needs-human reason,
+// or a legacy terminal `blocked` row.
+function needsHuman(state: WorkflowRunState): boolean {
+  return (
+    (state.status === "running" && state.needs_human_reason !== null) ||
+    state.status === "blocked"
+  );
+}
 
 function isStep(value: string): value is WorkflowStep {
   return (STEP_ORDER as readonly string[]).includes(value);
@@ -56,10 +67,12 @@ export function WorkflowRunStatusSection({
   const [historyOpen, setHistoryOpen] = useState(false);
   if (!state) return null;
 
-  const status = STATUS_META[state.status] ?? {
-    label: state.status,
-    tone: "unknown" as const,
-  };
+  const status = needsHuman(state)
+    ? { label: "Needs human", tone: "cost-stopped" as const }
+    : (STATUS_META[state.status] ?? {
+        label: state.status,
+        tone: "unknown" as const,
+      });
   const currentIndex = isStep(state.current_step)
     ? STEP_ORDER.indexOf(state.current_step)
     : -1;
@@ -98,8 +111,8 @@ export function WorkflowRunStatusSection({
           </p>
         ) : null}
 
-        {state.status === "blocked" ? (
-          <BlockedNotice owner={owner} repo={repo} state={state} />
+        {needsHuman(state) ? (
+          <NeedsHumanNotice owner={owner} repo={repo} state={state} />
         ) : null}
 
         {showHistory ? (
@@ -175,11 +188,12 @@ function StepTracker({
   );
 }
 
-// Blocked means the parent escalated to a human (workflow design: parent transitions): it filed an
-// issue comment summarizing the situation and sent an Inbox notification, then stopped. Point the
-// human at both, and surface the
-// latest verdict summary when one exists as the machine-readable reason behind the stall.
-function BlockedNotice({
+// Needs human means the parent escalated (workflow design: parent transitions): it filed an issue
+// comment summarizing the situation, sent an Inbox notification, and holds the run waiting for an
+// explicit human instruction to its session (#1307). Surface the stored wait reason, point the
+// human at the issue and Inbox, and add the latest verdict summary when one exists. Legacy
+// terminal `blocked` rows render the same way, minus the resumability (their parent is gone).
+function NeedsHumanNotice({
   owner,
   repo,
   state,
@@ -192,8 +206,13 @@ function BlockedNotice({
   return (
     <div className="flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
       <p className="font-medium text-amber-700 dark:text-amber-300">
-        This run is blocked and needs a human.
+        {state.status === "blocked"
+          ? "This run was escalated to a human and is no longer running."
+          : "This run is waiting for a human instruction to its parent session."}
       </p>
+      {state.needs_human_reason !== null ? (
+        <p className="text-muted-foreground">{state.needs_human_reason}</p>
+      ) : null}
       {verdict && verdict.event === "request_changes" ? (
         <p className="text-muted-foreground">
           Latest verdict requested changes

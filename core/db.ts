@@ -818,6 +818,10 @@ tryExec("ALTER TABLE workflow_runs ADD COLUMN model TEXT");
 tryExec(
   "ALTER TABLE workflow_runs ADD COLUMN child_sequence INTEGER NOT NULL DEFAULT 0",
 );
+// Human-wait marker (#1307): non-NULL means the run is waiting for an explicit human instruction
+// while staying `running` (resumable); the text is the reason shown to the human. Legacy terminal
+// `blocked` rows keep their status and never carry a reason.
+tryExec("ALTER TABLE workflow_runs ADD COLUMN needs_human_reason TEXT");
 tryExec("ALTER TABLE workflow_placement_claims ADD COLUMN owner_token TEXT");
 tryExec("DROP INDEX IF EXISTS idx_workflow_artifacts_submission");
 tryExec(

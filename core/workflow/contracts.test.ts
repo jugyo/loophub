@@ -12,7 +12,7 @@ test("prefixes every parent-to-child pane injection with orchestrator", () => {
   const parent = workflowContractText("parent");
   const paneRunCommands = parent.match(/`herdr pane run[^`]+`/gu) ?? [];
 
-  expect(paneRunCommands).toHaveLength(3);
+  expect(paneRunCommands).toHaveLength(4);
   for (const command of paneRunCommands) {
     expect(command).toContain('"orchestrator: ');
   }

@@ -168,6 +168,44 @@ test("start prepares a run, launch-step writes Execute inputs, and run update mi
     status: "running",
     rework_count: 1,
   });
+
+  // The terminal 'blocked' status is retired (#1307): escalation holds the run for a human via
+  // --needs-human while it stays running, launch-step refuses to progress during the hold, and an
+  // explicit clear (human instruction) resumes the same run with a fresh rework budget.
+  expect(() =>
+    svc.workflowRuns.update(
+      repo.full_name,
+      { run: result.run.id, status: "blocked" },
+      result.session_id,
+    ),
+  ).toThrowError(/'blocked' is retired/);
+  const held = svc.workflowRuns.update(
+    repo.full_name,
+    { run: result.run.id, needsHuman: "rework limit exceeded" },
+    result.session_id,
+  );
+  expect(held.run).toMatchObject({
+    status: "running",
+    needs_human_reason: "rework limit exceeded",
+  });
+  await expect(
+    svc.workflowRuns.launchStep(
+      repo.full_name,
+      { run: result.run.id, step: "execute", contract: "# Execute" },
+      result.session_id,
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+  const resumed = svc.workflowRuns.update(
+    repo.full_name,
+    { run: result.run.id, clearNeedsHuman: true, reworkCount: 0 },
+    result.session_id,
+  );
+  expect(resumed.run).toMatchObject({
+    status: "running",
+    needs_human_reason: null,
+    rework_count: 0,
+  });
+
   S.createComment(issue.id, "reviewer", "Use the latest design note.");
 
   const launched = await svc.workflowRuns.launchStep(
@@ -915,10 +953,15 @@ test("parent contract template specifies transitions, rework, and escalation", (
   expect(contract).toContain("would exceed 3");
   expect(contract).toContain("--step execute");
   expect(contract).toContain("Verify as a fresh child");
-  // AC: escalation via issue comment + inbox + run blocked.
+  // AC: escalation via issue comment + inbox + a resumable human hold (#1307) — never the retired
+  // terminal 'blocked' status.
   expect(contract).toContain("lh issue comment");
   expect(contract).toContain("lh inbox send");
-  expect(contract).toContain("--status blocked");
+  expect(contract).toContain("--needs-human");
+  expect(contract).not.toContain("--status blocked");
+  // AC: resume only on an explicit human instruction, clearing the hold and rework budget.
+  expect(contract).toContain("--clear-needs-human --rework-count 0");
+  expect(contract).toContain("Never resume on your own");
   // AC: skill independence — the contract forbids slash commands.
   expect(contract).toContain("Do not call slash commands");
 });
@@ -998,6 +1041,145 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   });
   expect(byPull?.id).toBe(run.id);
   expect(byPull?.workflow_name).toBe("state-wf");
+  expect(byPull?.needs_human_reason).toBeNull();
+
+  // The human-wait reason is part of the display state (#1307).
+  S.updateWorkflowRun(run.id, { needsHumanReason: "waiting for guidance" });
+  const waiting = await svc.workflowRuns.stateForPull(repo.full_name, {
+    pull: 4242,
+  });
+  expect(waiting?.needs_human_reason).toBe("waiting for guidance");
+});
+
+test("run update needs-human guards: sanitization, human cancel, and no-op clear (#1307)", () => {
+  const repo = S.createRepo("me/workflow-hold", REPO_PATH);
+  const workflow = S.createWorkflow({
+    name: "hold-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "44444444-4444-4444-8444-444444444444";
+  S.registerAgentSession(parent, "lh-workflow", parent);
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 11,
+    prNumber: 22,
+    status: "running",
+    currentStep: "execute",
+    parentSessionId: parent,
+  });
+  // The emitted payload carries needs_human_reason only when the update touched the hold on a run
+  // that stays running — the gate run history labels depend on.
+  const latestUpdatedPayload = () => {
+    const events = S.eventsForWorkflowRun(repo.id, run.id).filter(
+      (event) => event.type === "workflow_run.updated",
+    );
+    return JSON.parse(events.at(-1)!.payload) as Record<string, unknown>;
+  };
+
+  // The reason is sanitized at the write point (control chars stripped, whitespace collapsed) and
+  // capped so it stays safe in error messages, event payloads, and history text.
+  expect(() =>
+    svc.workflowRuns.update(
+      repo.full_name,
+      { run: run.id, needsHuman: "x".repeat(501) },
+      parent,
+    ),
+  ).toThrowError(/500/);
+  const held = svc.workflowRuns.update(
+    repo.full_name,
+    { run: run.id, reworkCount: 3, needsHuman: "rework limit\nexceeded" },
+    parent,
+  );
+  expect(held.run.needs_human_reason).toBe("rework limit exceeded");
+  expect(latestUpdatedPayload().needs_human_reason).toBe(
+    "rework limit exceeded",
+  );
+
+  // A stranger session may not update the run; a human (me) CLI session may — the recovery path
+  // for a hold whose parent session died.
+  const stranger = "55555555-5555-4555-8555-555555555555";
+  S.registerAgentSession(stranger, "workflow-step", stranger);
+  expect(() =>
+    svc.workflowRuns.update(
+      repo.full_name,
+      { run: run.id, status: "stopped" },
+      stranger,
+    ),
+  ).toThrowError(/parent session/);
+  const human = "66666666-6666-4666-8666-666666666666";
+  S.registerAgentSession(human, "me", "cli");
+
+  // Clearing the hold restores the rework budget by default (explicit --rework-count still wins);
+  // clearing when no hold exists is a no-op instead of a fake resume.
+  const resumed = svc.workflowRuns.update(
+    repo.full_name,
+    { run: run.id, clearNeedsHuman: true },
+    human,
+  );
+  expect(resumed.run).toMatchObject({
+    needs_human_reason: null,
+    rework_count: 0,
+  });
+  // The resume payload carries the explicit null so history labels it "Run resumed".
+  expect(latestUpdatedPayload().needs_human_reason).toBeNull();
+  expect("needs_human_reason" in latestUpdatedPayload()).toBe(true);
+  const noop = svc.workflowRuns.update(
+    repo.full_name,
+    { run: run.id, clearNeedsHuman: true, reworkCount: 2 },
+    parent,
+  );
+  expect(noop.run).toMatchObject({ needs_human_reason: null, rework_count: 2 });
+  // A reason-less clear is a no-op: no needs_human key, so no fake "Run resumed" in history.
+  expect("needs_human_reason" in latestUpdatedPayload()).toBe(false);
+
+  // A human cancel of a held run ends terminal and no longer waiting; the terminal payload omits
+  // the needs_human key so history reads "Run stopped", not a resume.
+  svc.workflowRuns.update(
+    repo.full_name,
+    { run: run.id, needsHuman: "waiting for guidance" },
+    parent,
+  );
+  const cancelled = svc.workflowRuns.update(
+    repo.full_name,
+    { run: run.id, status: "stopped" },
+    human,
+  );
+  expect(cancelled.run).toMatchObject({
+    status: "stopped",
+    needs_human_reason: null,
+  });
+  expect(latestUpdatedPayload().status).toBe("stopped");
+  expect("needs_human_reason" in latestUpdatedPayload()).toBe(false);
+
+  // Combining --clear-needs-human with a terminal status keeps the historical rework count — the
+  // default reset only applies while the run stays running.
+  const run2 = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 12,
+    prNumber: 23,
+    status: "running",
+    currentStep: "execute",
+    parentSessionId: parent,
+  });
+  svc.workflowRuns.update(
+    repo.full_name,
+    { run: run2.id, reworkCount: 3, needsHuman: "stuck" },
+    parent,
+  );
+  const comboCancelled = svc.workflowRuns.update(
+    repo.full_name,
+    { run: run2.id, clearNeedsHuman: true, status: "stopped" },
+    human,
+  );
+  expect(comboCancelled.run).toMatchObject({
+    status: "stopped",
+    needs_human_reason: null,
+    rework_count: 3,
+  });
 });
 
 test("history returns readable lifecycle events scoped to one Workflow run (#1290)", () => {
@@ -1005,10 +1187,8 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
   const workflow = S.createWorkflow({
     name: "history-wf",
     description: "",
-    planPrompt: "",
     executePrompt: "",
     verifyPrompt: "",
-    reflectPrompt: "",
   });
   const run = S.createWorkflowRun({
     workflowId: workflow.id,
@@ -1057,6 +1237,26 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
     issue_number: 10,
     pr_number: 20,
   });
+  // Escalation and human-instructed resume (#1307): the payload carries needs_human_reason only
+  // when the update touched the hold — a string marks the escalation, null the resume.
+  S.emitEvent(repo.id, "workflow_run.updated", "parent", {
+    id: run.id,
+    status: "running",
+    current_step: "execute",
+    rework_count: 3,
+    needs_human_reason: "rework limit exceeded",
+    issue_number: 10,
+    pr_number: 20,
+  });
+  S.emitEvent(repo.id, "workflow_run.updated", "parent", {
+    id: run.id,
+    status: "running",
+    current_step: "execute",
+    rework_count: 0,
+    needs_human_reason: null,
+    issue_number: 10,
+    pr_number: 20,
+  });
   // Same PR and lifecycle namespace, but a different run id: must not leak into the result.
   S.emitEvent(repo.id, "workflow_step.launched", "other-agent", {
     id: otherRun.id,
@@ -1098,7 +1298,14 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
     description: "Status: Running. Current step: Execute. Rework count: 1.",
   });
   expect(history[3].description).toContain("Placement: pr-body (Evidence)");
+  // Escalation and human-instructed resume are visible in the run history (#1307).
+  expect(history[4]).toMatchObject({ label: "Run needs human" });
+  expect(history[4].description).toContain(
+    "Waiting for a human: rework limit exceeded",
+  );
+  expect(history[5]).toMatchObject({ label: "Run resumed" });
+  expect(history[5].description).toContain("Rework count: 0.");
   // A complete history includes the newest event even after the old 1,000-event boundary.
-  expect(history).toHaveLength(1005);
+  expect(history).toHaveLength(1007);
   expect(history.at(-1)?.label).toBe("Run completed");
 });

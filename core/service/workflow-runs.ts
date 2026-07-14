@@ -113,6 +113,7 @@ export type WorkflowRunUpdateResult = {
     status: string;
     current_step: string;
     rework_count: number;
+    needs_human_reason: string | null;
     parent_session_id: string | null;
     step_sessions_json: string;
   };
@@ -164,6 +165,9 @@ export type WorkflowStepStatusResult = {
   run: number;
   current_step: string;
   status: string;
+  // Non-null while the run is held for a human (#1307) — surfaced here so the parent's re-check
+  // and an operator's inspection see the hold instead of a plain running run.
+  needs_human_reason: string | null;
   head_sha: string | null;
   steps: WorkflowStepStatuses;
 };
@@ -328,6 +332,7 @@ function runJSON(run: S.WorkflowRunRow): WorkflowRunUpdateResult["run"] {
     status: run.status,
     current_step: run.current_step,
     rework_count: run.rework_count,
+    needs_human_reason: run.needs_human_reason,
     parent_session_id: run.parent_session_id,
     step_sessions_json: run.step_sessions_json,
   };
@@ -712,6 +717,18 @@ function assertParentActor(
   }
 }
 
+// Run-state updates accept the parent session or a human CLI session (agent "me", same precedent as
+// stepActorAllowed). The human path exists so a run whose parent session died while waiting for a
+// human (#1307) can still be cancelled — otherwise it would stay `running` forever and permanently
+// block workflow deletion.
+function assertRunUpdateActor(
+  run: S.WorkflowRunRow,
+  sessionId: string | null | undefined,
+) {
+  if (sessionId && S.getAgentSession(sessionId)?.agent === "me") return;
+  assertParentActor(run, sessionId);
+}
+
 export const workflowRuns = {
   async start(
     name: string,
@@ -883,6 +900,8 @@ export const workflowRuns = {
       step?: string;
       status?: string;
       reworkCount?: number;
+      needsHuman?: string;
+      clearNeedsHuman?: boolean;
     },
     sessionId?: string | null,
   ): WorkflowRunUpdateResult {
@@ -892,20 +911,25 @@ export const workflowRuns = {
     if (current.repo_id !== r.id) {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
-    assertParentActor(current, sessionId);
+    assertRunUpdateActor(current, sessionId);
     const patch: {
       status?: string;
       currentStep?: string;
       reworkCount?: number;
+      needsHumanReason?: string | null;
     } = {};
     if (input.step !== undefined) patch.currentStep = workflowStep(input.step);
     if (input.status !== undefined) {
-      if (
-        !["running", "blocked", "completed", "stopped"].includes(input.status)
-      ) {
+      if (input.status === "blocked") {
         throw new ServiceError(
           422,
-          "status must be one of: running, blocked, completed, stopped",
+          "status 'blocked' is retired; use --needs-human <reason> to hold the run for a human (the run stays running)",
+        );
+      }
+      if (!["running", "completed", "stopped"].includes(input.status)) {
+        throw new ServiceError(
+          422,
+          "status must be one of: running, completed, stopped",
         );
       }
       patch.status = input.status;
@@ -919,6 +943,48 @@ export const workflowRuns = {
       }
       patch.reworkCount = input.reworkCount;
     }
+    if (input.needsHuman !== undefined && input.clearNeedsHuman) {
+      throw new ServiceError(
+        422,
+        "pass either --needs-human or --clear-needs-human, not both",
+      );
+    }
+    if (input.needsHuman !== undefined) {
+      // The reason flows into error messages, event payloads, and history text, so strip control
+      // characters at the single write point and keep it short.
+      const reason = inlineText(input.needsHuman);
+      if (!reason) {
+        throw new ServiceError(422, "--needs-human requires a reason");
+      }
+      if (reason.length > 500) {
+        throw new ServiceError(
+          422,
+          "--needs-human reason must be at most 500 characters",
+        );
+      }
+      // The human wait keeps the run resumable, so it only makes sense on a running run.
+      if ((patch.status ?? current.status) !== "running") {
+        throw new ServiceError(
+          422,
+          "--needs-human requires the run to stay running",
+        );
+      }
+      patch.needsHumanReason = reason;
+    } else if (input.clearNeedsHuman && current.needs_human_reason !== null) {
+      patch.needsHumanReason = null;
+      // Releasing the hold restores the automatic rework budget (#1307) — guaranteed here rather
+      // than left to the parent remembering to pass --rework-count 0. An explicit count still
+      // wins, and a run ending in the same update keeps its historical count.
+      if ((patch.status ?? current.status) === "running") {
+        patch.reworkCount ??= 0;
+      }
+    } else if (
+      current.needs_human_reason !== null &&
+      (patch.status === "completed" || patch.status === "stopped")
+    ) {
+      // A terminal run is no longer waiting for anyone.
+      patch.needsHumanReason = null;
+    }
     const updated = S.updateWorkflowRun(current.id, patch);
     if (!updated) throw new ServiceError(404, "Workflow run not found");
     S.emitEvent(updated.repo_id, "workflow_run.updated", actorFor(sessionId), {
@@ -926,6 +992,12 @@ export const workflowRuns = {
       status: updated.status,
       current_step: updated.current_step,
       rework_count: updated.rework_count,
+      // Present only when this update touched the human wait on a run that stays running, so run
+      // history can label the escalation / resume moments (#1307). Terminal transitions auto-clear
+      // the hold but must read as "Run stopped/completed", not as a resume.
+      ...(patch.needsHumanReason !== undefined && updated.status === "running"
+        ? { needs_human_reason: patch.needsHumanReason }
+        : {}),
       // issue / PR numbers let issue & PR detail refresh their run-state query precisely (#1008).
       issue_number: updated.issue_number,
       pr_number: updated.pr_number,
@@ -954,6 +1026,14 @@ export const workflowRuns = {
     }
     if (run.status !== "running") {
       throw new ServiceError(409, `Workflow run is ${run.status}`);
+    }
+    // A run held for a human must not progress on its own (#1307) — the parent clears the wait
+    // (on an explicit human instruction) before relaunching steps.
+    if (run.needs_human_reason !== null) {
+      throw new ServiceError(
+        409,
+        `Workflow run is waiting for a human: ${run.needs_human_reason}`,
+      );
     }
     assertParentActor(run, sessionId);
     const step = workflowStep(input.step);
@@ -1430,6 +1510,7 @@ export const workflowRuns = {
       run: run.id,
       current_step: run.current_step,
       status: run.status,
+      needs_human_reason: run.needs_human_reason,
       head_sha: currentHead,
       steps,
     };

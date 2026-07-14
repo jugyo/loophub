@@ -86,12 +86,14 @@ export function deleteWorkflow(id: number): void {
   db.run(`DELETE FROM workflows WHERE id = ?`, [id]);
 }
 
+// Active means `running` only (#1307) — a run waiting for a human keeps status `running`, so it
+// stays active; legacy terminal `blocked` rows do not.
 export function countActiveWorkflowRunsForWorkflow(workflowId: number): number {
   const row = db
     .query(
       `SELECT COUNT(*) AS count
        FROM workflow_runs
-       WHERE workflow_id = ? AND status IN ('running', 'blocked')`,
+       WHERE workflow_id = ? AND status = 'running'`,
     )
     .get(workflowId) as { count: number } | null;
   return row?.count ?? 0;
@@ -122,6 +124,9 @@ export interface WorkflowRunRow {
   auto_mode: number;
   runtime: string | null;
   model: string | null;
+  // Non-null while the run waits for an explicit human instruction (#1307); the run stays
+  // `running`. NULL on legacy rows and after resume.
+  needs_human_reason: string | null;
   parent_session_id: string | null;
   step_sessions_json: string;
   child_sequence: number;
@@ -363,7 +368,7 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
 // Latest run linked to an issue / PR, used by issue / PR detail to display run state (#1008).
 // A run row is the display-state source (workflow design: CLI / UI); ordering by id DESC returns
 // the most recent run
-// when an issue was re-run (e.g. after a `blocked` escalation was resolved and restarted).
+// when an issue was re-run (e.g. a fresh run started after an earlier one was stopped).
 export function latestWorkflowRunForIssue(
   repoId: number,
   issueNumber: number,
@@ -392,6 +397,8 @@ export function updateWorkflowRun(
     status?: string;
     currentStep?: string;
     reworkCount?: number;
+    // string sets the human-wait reason, explicit null clears it (#1307).
+    needsHumanReason?: string | null;
   },
 ): WorkflowRunRow | null {
   const sets: string[] = [];
@@ -407,6 +414,10 @@ export function updateWorkflowRun(
   if (patch.reworkCount !== undefined) {
     sets.push("rework_count = ?");
     params.push(patch.reworkCount);
+  }
+  if (patch.needsHumanReason !== undefined) {
+    sets.push("needs_human_reason = ?");
+    params.push(patch.needsHumanReason);
   }
   sets.push("updated_at = ?");
   params.push(now(), id);

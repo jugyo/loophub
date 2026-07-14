@@ -18,6 +18,7 @@ const RUN: WorkflowRunState = {
   status: "running",
   current_step: "execute",
   rework_count: 1,
+  needs_human_reason: null,
   issue_number: 42,
   pr_number: 99,
   created_at: "2026-07-10T00:00:00Z",
