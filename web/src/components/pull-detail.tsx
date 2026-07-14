@@ -132,6 +132,8 @@ export function PullDetail({
 
         <WorkflowRunSection owner={owner} repo={repo} number={number} />
 
+        <CommitList commits={pull.commits} />
+
         <FilesChanged
           owner={owner}
           repo={repo}
@@ -197,6 +199,41 @@ export function PullDetail({
         <WorkDuration workDuration={pull.work_duration} />
       </aside>
     </div>
+  );
+}
+
+function CommitList({ commits = [] }: { commits: PullRequest["commits"] }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">Commits ({commits.length})</h2>
+      {commits.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No commits.</p>
+      ) : (
+        <ul className="divide-y overflow-hidden rounded-md border">
+          {commits.map((commit) => (
+            <li
+              key={commit.sha}
+              className="flex min-w-0 items-start gap-3 px-3 py-2"
+            >
+              <code className="mt-0.5 shrink-0 rounded bg-muted px-1 py-0.5 text-xs">
+                {commit.sha.slice(0, 7)}
+              </code>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">
+                  {commit.subject}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {commit.author} ·{" "}
+                  <time dateTime={commit.date} title={commit.date}>
+                    {relativeTime(commit.date)}
+                  </time>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

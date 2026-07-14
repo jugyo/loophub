@@ -5,6 +5,7 @@
 import { statSync } from "node:fs";
 import { agentEffort, agentModel, worktreeRoot } from "./config.ts";
 import {
+  commitLog,
   commitsAhead,
   diffStat,
   hasEffectiveDiff,
@@ -1670,6 +1671,9 @@ export interface PullWire {
   // exported to (null until the export skill records one). The UI swaps Merge ⟷ Create/View PR.
   merge_mode: MergeMode;
   github_pull: GithubPullWire | null;
+  // Detail-only: commits on head not reachable from base (base..head), newest first. Omitted from
+  // list responses so their bounded pagination does not add one git log per row.
+  commits?: PullCommitWire[];
   // Detail-only (#298, #456): the PR's related sessions, aggregate usage, and derived work
   // duration. Gated so the PR list/dashboard stay O(1) git + no extra per-row query.
   related_sessions?: RelatedSessionWire[];
@@ -1677,14 +1681,28 @@ export interface PullWire {
   work_duration?: PullWorkDuration;
 }
 
+export interface PullCommitWire {
+  sha: string;
+  author: string;
+  date: string;
+  subject: string;
+}
+
 export async function pullJSON(
   repo: S.Repo,
   row: S.IssueRow,
-  opts: { withRelatedSessions?: boolean } = {},
+  opts: { withCommits?: boolean; withRelatedSessions?: boolean } = {},
 ): Promise<PullWire> {
   const p = S.getPull(row.id)!;
   const status = await pullStatusFields(repo, row);
-  const mergeFields = await pullMergeFields(repo, row.id);
+  const [mergeFields, commits] = await Promise.all([
+    pullMergeFields(repo, row.id),
+    opts.withCommits
+      ? status.headSha && status.baseSha
+        ? commitLog(repo.local_path, p.base_ref, p.head_ref)
+        : []
+      : undefined,
+  ]);
 
   return {
     number: row.number,
@@ -1721,6 +1739,7 @@ export async function pullJSON(
     // exported to (null until the export skill records one). The UI swaps Merge ⟷ Create/View PR.
     merge_mode: mergeFields.merge_mode,
     github_pull: mergeFields.github_pull,
+    ...(commits !== undefined ? { commits } : {}),
     // Detail-only (#298, #456): the PR's related sessions and derived work duration, newest first.
     // Gated so the PR list/dashboard stay O(1) git + no extra per-row query. Both share the same
     // primarySessionId lookup (primaryDevSessionForPull) — the PR's resume/retro anchor — so it is

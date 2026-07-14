@@ -366,6 +366,11 @@ export async function commitLog(
     "--format=%H%x1f%an%x1f%cI%x1f%s%x1e",
     `${base}..${head}`,
   ]);
+  if (r.code !== 0) {
+    throw new Error(
+      `git log failed for ${base}..${head}: ${r.stderr.trim() || "unknown error"}`,
+    );
+  }
   return r.stdout
     .split("\x1e")
     .map((rec) => rec.replace(/^\n/, ""))

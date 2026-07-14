@@ -80,6 +80,20 @@ const pull: PullRequest = {
   cost_stopped: false,
   merge_mode: "merge",
   github_pull: null,
+  commits: [
+    {
+      sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      author: "Alice",
+      date: "2026-06-18T12:00:00Z",
+      subject: "Latest change",
+    },
+    {
+      sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      author: "Bob",
+      date: "2026-06-17T12:00:00Z",
+      subject: "Earlier change",
+    },
+  ],
 };
 
 const files: PullFile[] = [
@@ -278,6 +292,52 @@ describe("PullDetail", () => {
       filesHeading.compareDocumentPosition(reviewsHeading) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("renders commit metadata newest first in the main PR flow", async () => {
+    renderDetail();
+
+    const heading = await screen.findByRole("heading", {
+      name: "Commits (2)",
+    });
+    const section = heading.closest("section")!;
+    const rows = within(section).getAllByRole("listitem");
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain("aaaaaaa");
+    expect(rows[0].textContent).toContain("Latest change");
+    expect(rows[0].textContent).toContain("Alice");
+    expect(rows[1].textContent).toContain("bbbbbbb");
+    expect(rows[1].textContent).toContain("Earlier change");
+    expect(rows[1].textContent).toContain("Bob");
+    expect(
+      within(rows[0])
+        .getByText(/ago|just now/)
+        .closest("time")?.dateTime,
+    ).toBe("2026-06-18T12:00:00Z");
+  });
+
+  it("renders an empty state when the PR has no commits", async () => {
+    renderDetail({ "pulls/get": () => ({ ...pull, commits: [] }) });
+
+    const heading = await screen.findByRole("heading", {
+      name: "Commits (0)",
+    });
+    const section = heading.closest("section")!;
+
+    expect(within(section).getByText("No commits.")).toBeTruthy();
+    expect(within(section).queryAllByRole("listitem")).toHaveLength(0);
+  });
+
+  it("surfaces a commit retrieval failure through the PR error state", async () => {
+    renderDetail({
+      "pulls/get": () => {
+        throw new RpcFault(500, "simulated git log failure");
+      },
+    });
+
+    expect(await screen.findByText(/Failed to load PR #30/)).toBeTruthy();
+    expect(screen.getByText(/simulated git log failure/)).toBeTruthy();
   });
 
   it("keeps bottom spacing after the comments section when comments are empty", async () => {
