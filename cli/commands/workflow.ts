@@ -342,15 +342,6 @@ function positiveInt(value: string | undefined, name: string): number {
   return Number(value);
 }
 
-function nonNegativeInt(
-  value: string | undefined,
-  name: string,
-): number | undefined {
-  if (value === undefined) return undefined;
-  if (!/^[0-9]+$/.test(value)) fail(`${name} must be a non-negative integer`);
-  return Number(value);
-}
-
 async function launchParentHerdr(input: {
   repo: { full_name: string; local_path: string };
   runId: number;
@@ -577,27 +568,47 @@ async function launchStep(): Promise<void> {
   }
 }
 
-async function runUpdate(): Promise<void> {
-  if (rest[0] !== "update") usage();
+async function runLifecycle(): Promise<void> {
+  const action = rest[0];
   const runId = positiveInt(flags.run, "--run");
   const repo = await resolveRepo();
-  const result = await runOp(async () =>
-    (await svc()).workflowRuns.update(
-      repo,
-      {
-        run: runId,
-        step: flags.step,
-        status: flags.status,
-        reworkCount: nonNegativeInt(flags["rework-count"], "--rework-count"),
-        needsHuman: flags["needs-human"],
-        clearNeedsHuman: Boolean(flags["clear-needs-human"]),
-      },
-      await writeSession(),
-    ),
-  );
+  const sessionId = await writeSession();
+  const service = (await svc()).workflowRuns;
+  const result = await runOp(() => {
+    if (action === "advance-to-verify") {
+      return service.advanceToVerify(repo, { run: runId }, sessionId);
+    }
+    if (action === "complete") {
+      return service.completeRun(repo, { run: runId }, sessionId);
+    }
+    if (action === "request-rework") {
+      return service.requestRework(repo, { run: runId }, sessionId);
+    }
+    if (action === "await-human") {
+      if (!flags.reason) fail("--reason is required");
+      return service.awaitHuman(
+        repo,
+        { run: runId, reason: flags.reason },
+        sessionId,
+      );
+    }
+    if (action === "resume") {
+      if (!flags.step) fail("--step is required");
+      return service.resumeAfterHuman(
+        repo,
+        { run: runId, step: flags.step },
+        sessionId,
+      );
+    }
+    if (action === "stop") {
+      return service.stopRun(repo, { run: runId }, sessionId);
+    }
+    usage();
+    throw new Error("unreachable");
+  });
   if (flags.json) out(result);
   else {
-    console.log(`updated Workflow run #${result.run.id}`);
+    console.log(`${action} Workflow run #${result.run.id}`);
     console.log(`status\t${display(result.run.status)}`);
     console.log(`step\t${display(result.run.current_step)}`);
     console.log(`rework_count\t${result.run.rework_count}`);
@@ -754,7 +765,7 @@ export async function run(): Promise<void> {
   } else if (sub === "launch-step") {
     await launchStep();
   } else if (sub === "run") {
-    await runUpdate();
+    await runLifecycle();
   } else if (sub === "step") {
     if (rest[0] === "input") await stepInput();
     else if (rest[0] === "status") await stepStatus();

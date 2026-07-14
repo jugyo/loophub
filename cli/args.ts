@@ -86,9 +86,7 @@ export type Flags = {
   "no-launch"?: boolean;
   run?: string;
   note?: string;
-  "rework-count"?: string;
-  "needs-human"?: string;
-  "clear-needs-human"?: boolean;
+  reason?: string;
   "tab-id"?: string;
 };
 const { values, positionals } = parseArgs({
@@ -175,9 +173,7 @@ const { values, positionals } = parseArgs({
     "no-launch": { type: "boolean" },
     run: { type: "string" },
     note: { type: "string" },
-    "rework-count": { type: "string" },
-    "needs-human": { type: "string" },
-    "clear-needs-human": { type: "boolean" },
+    reason: { type: "string" },
     "tab-id": { type: "string" },
   },
 });

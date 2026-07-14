@@ -1432,6 +1432,8 @@ export function workflowRunHistoryEventJSON(
   } else if (row.type === "workflow_run.updated") {
     const status =
       typeof payload.status === "string" ? payload.status : "updated";
+    const transition =
+      typeof payload.transition === "string" ? payload.transition : null;
     // `needs_human_reason` is present in the payload only when the update touched the human wait
     // (#1307): a string marks the escalation, an explicit null marks the human-instructed resume.
     const touchedNeedsHuman = "needs_human_reason" in payload;
@@ -1450,7 +1452,11 @@ export function workflowRunHistoryEventJSON(
               ? needsHumanReason !== null
                 ? "Run needs human"
                 : "Run resumed"
-              : "Run state updated";
+              : transition === "advance_to_verify"
+                ? "Run advanced to Verify"
+                : transition === "request_rework"
+                  ? "Run rework requested"
+                  : "Run state updated";
     const details = [
       `Status: ${workflowStepLabel(status) ?? status}.`,
       touchedNeedsHuman

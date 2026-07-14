@@ -79,7 +79,8 @@ step = f(入力 artifact, worktree) → (出力 artifact, commits)
 
 親は run ごとに 1 session 起動される orchestrator である。
 
-1. `lh workflow run update` で表示用の current step / status / rework count を更新する。
+1. `lh workflow run advance-to-verify|complete|request-rework|await-human|resume|stop` の意図ベース
+   command で lifecycle を遷移する。status / current step / rework count の組み合わせは core が決める。
 2. `lh workflow launch-step` で Execute / Verify child を起動する。
 3. `lh workflow step status` の配置済み artifact query だけを根拠に遷移する。
 4. herdr を使って child の停滞を検知し、不足をつつく。
@@ -255,13 +256,13 @@ rework 上限は 3。生きている Execute pane を優先して再利用し、
 
 1. issue comment に経緯を残す。
 2. Inbox で人間へ通知する。
-3. `lh workflow run update --needs-human <reason>` で待機理由を保存する。run は `running` のまま
+3. `lh workflow run await-human --reason <reason>` で待機理由を保存する。run は `running` のまま
    (active 扱い)で、親は自動遷移をすべて止めて同じ session への人間の明示的な指示を待つ。
 
-人間が続行を指示したら、親は `--clear-needs-human --rework-count 0` で待機を解除して自動 rework
-枠をリセットし、`lh workflow step status` で現在の artifact と head を再確認して、同じ run を
-Execute または fresh Verify から再開する。人間の指示がない限り自動再開しない。キャンセルは
-`--status stopped`(再開しない終端)。過去の escalation と人間介入は run history に残る。
+人間が続行を指示したら、親は `lh workflow step status` で現在の artifact と head を再確認し、
+`lh workflow run resume --step execute|verify` で待機解除・自動 rework 枠のリセット・再開 step の
+選択を一つの操作として行う。人間の指示がない限り自動再開しない。キャンセルは
+`lh workflow run stop`(再開しない終端)。過去の escalation と人間介入は run history に残る。
 
 run の status は `running | completed | stopped` のみ。かつての終端 `blocked` status は廃止した。
 既存の `blocked` run は履歴上そのまま残り、UI では needs-human 中の run と同じく Needs human と
@@ -318,5 +319,5 @@ run はさらに待機理由を示す(legacy `blocked` run は待機理由を持
 - run tracker が Execute → Verify の 2 step を表示する。
 - Verify の SHA pin、fresh session、request_changes rework は従来どおり機能する。
 - escalation は run を `running` のまま needs-human hold として保持し、待機中は launch-step が
-  拒否され、人間の明示的な指示(`--clear-needs-human`)まで自動遷移しない。解除で rework 枠が
+  拒否され、人間の明示的な指示(`lh workflow run resume`)まで自動遷移しない。解除で rework 枠が
   0 に戻り、escalation と人間介入が run history に残る。

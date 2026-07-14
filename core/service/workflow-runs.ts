@@ -302,8 +302,7 @@ function parentUserPrompt(input: {
     "Orchestrate this run through Execute -> Verify as described in your contract.",
     `Drive every transition from \`lh workflow step status ${input.runId} --repo ${repo} --json\`; never use pane output or PR body markers to decide a step is complete.`,
     "Start now:",
-    `1. Mark Execute running: \`lh workflow run update --repo ${repo} --run ${input.runId} --step execute --status running\``,
-    `2. Launch the Execute child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step execute\``,
+    `1. Launch the Execute child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step execute\``,
     "Then follow your contract's transition table, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
     "",
   ].join("\n");
@@ -541,6 +540,40 @@ function latestVerdictContent(
   return parsed.artifact;
 }
 
+async function workflowRunProgress(
+  repo: S.Repo,
+  run: S.WorkflowRunRow,
+): Promise<{
+  currentHead: string | null;
+  steps: WorkflowStepStatuses;
+}> {
+  const prIssue = issueOr404(repo, run.pr_number, "pull");
+  const pull = S.getPull(prIssue.id);
+  if (!pull)
+    throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+  const worktree = workflowRunWorktree({
+    repo,
+    prNumber: run.pr_number,
+    headRef: pull.head_ref,
+  });
+  const currentHead = await worktreeHeadOptional(worktree);
+  const headAheadOfBase = await isHeadAheadOfBase(
+    worktree,
+    pull.base_ref,
+    currentHead,
+  );
+  return {
+    currentHead,
+    steps: evaluateWorkflowSteps({
+      currentHead,
+      headAheadOfBase,
+      execute: latestArtifactState(run, "execution-report"),
+      verify: latestArtifactState(run, "verdict"),
+      latestVerdict: latestVerdictContent(run),
+    }),
+  };
+}
+
 // Build the issue / PR detail display state (#1008) from a run row. The row is the display-state
 // source (workflow design: CLI / UI); this does not re-derive step-completion truth (that is
 // `workflow step status`).
@@ -729,6 +762,73 @@ function assertRunUpdateActor(
   assertParentActor(run, sessionId);
 }
 
+type WorkflowRunTransition =
+  | "advance_to_verify"
+  | "await_human"
+  | "resume_after_human"
+  | "stop"
+  | "request_rework"
+  | "complete";
+
+function lifecycleRun(
+  name: string,
+  runId: number,
+  sessionId: string | null | undefined,
+): { repo: S.Repo; run: S.WorkflowRunRow } {
+  const repo = repoOr404(name);
+  ensureWritable(repo);
+  const run = workflowRunOr404(runId);
+  if (run.repo_id !== repo.id) {
+    throw new ServiceError(404, "Workflow run not found for repo");
+  }
+  assertRunUpdateActor(run, sessionId);
+  return { repo, run };
+}
+
+function assertRunningLifecycle(run: S.WorkflowRunRow): void {
+  if (run.status !== "running") {
+    throw new ServiceError(409, `Workflow run is ${run.status}`);
+  }
+}
+
+function assertAutomaticProgressAllowed(run: S.WorkflowRunRow): void {
+  assertRunningLifecycle(run);
+  if (run.needs_human_reason !== null) {
+    throw new ServiceError(
+      409,
+      `Workflow run is waiting for a human: ${run.needs_human_reason}`,
+    );
+  }
+}
+
+function updateRunLifecycle(
+  run: S.WorkflowRunRow,
+  patch: {
+    status?: string;
+    currentStep?: WorkflowStep;
+    reworkCount?: number;
+    needsHumanReason?: string | null;
+  },
+  transition: WorkflowRunTransition,
+  sessionId: string | null | undefined,
+): WorkflowRunUpdateResult {
+  const updated = S.updateWorkflowRun(run.id, patch);
+  if (!updated) throw new ServiceError(404, "Workflow run not found");
+  S.emitEvent(updated.repo_id, "workflow_run.updated", actorFor(sessionId), {
+    id: updated.id,
+    transition,
+    status: updated.status,
+    current_step: updated.current_step,
+    rework_count: updated.rework_count,
+    ...(transition === "await_human" || transition === "resume_after_human"
+      ? { needs_human_reason: updated.needs_human_reason }
+      : {}),
+    issue_number: updated.issue_number,
+    pr_number: updated.pr_number,
+  });
+  return { run: runJSON(updated) };
+}
+
 export const workflowRuns = {
   async start(
     name: string,
@@ -893,116 +993,174 @@ export const workflowRuns = {
     }
   },
 
-  update(
+  async advanceToVerify(
     name: string,
-    input: {
-      run: number;
-      step?: string;
-      status?: string;
-      reworkCount?: number;
-      needsHuman?: string;
-      clearNeedsHuman?: boolean;
-    },
+    input: { run: number },
     sessionId?: string | null,
-  ): WorkflowRunUpdateResult {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const current = workflowRunOr404(input.run);
-    if (current.repo_id !== r.id) {
-      throw new ServiceError(404, "Workflow run not found for repo");
-    }
-    assertRunUpdateActor(current, sessionId);
-    const patch: {
-      status?: string;
-      currentStep?: string;
-      reworkCount?: number;
-      needsHumanReason?: string | null;
-    } = {};
-    if (input.step !== undefined) patch.currentStep = workflowStep(input.step);
-    if (input.status !== undefined) {
-      if (input.status === "blocked") {
-        throw new ServiceError(
-          422,
-          "status 'blocked' is retired; use --needs-human <reason> to hold the run for a human (the run stays running)",
-        );
-      }
-      if (!["running", "completed", "stopped"].includes(input.status)) {
-        throw new ServiceError(
-          422,
-          "status must be one of: running, completed, stopped",
-        );
-      }
-      patch.status = input.status;
-    }
-    if (input.reworkCount !== undefined) {
-      if (!Number.isInteger(input.reworkCount) || input.reworkCount < 0) {
-        throw new ServiceError(
-          422,
-          "rework-count must be a non-negative integer",
-        );
-      }
-      patch.reworkCount = input.reworkCount;
-    }
-    if (input.needsHuman !== undefined && input.clearNeedsHuman) {
+  ): Promise<WorkflowRunUpdateResult> {
+    const { repo, run } = lifecycleRun(name, input.run, sessionId);
+    assertAutomaticProgressAllowed(run);
+    if (run.current_step !== "execute") {
       throw new ServiceError(
-        422,
-        "pass either --needs-human or --clear-needs-human, not both",
+        409,
+        `Workflow run cannot advance to Verify from ${run.current_step}`,
       );
     }
-    if (input.needsHuman !== undefined) {
-      // The reason flows into error messages, event payloads, and history text, so strip control
-      // characters at the single write point and keep it short.
-      const reason = inlineText(input.needsHuman);
-      if (!reason) {
-        throw new ServiceError(422, "--needs-human requires a reason");
-      }
-      if (reason.length > 500) {
-        throw new ServiceError(
-          422,
-          "--needs-human reason must be at most 500 characters",
-        );
-      }
-      // The human wait keeps the run resumable, so it only makes sense on a running run.
-      if ((patch.status ?? current.status) !== "running") {
-        throw new ServiceError(
-          422,
-          "--needs-human requires the run to stay running",
-        );
-      }
-      patch.needsHumanReason = reason;
-    } else if (input.clearNeedsHuman && current.needs_human_reason !== null) {
-      patch.needsHumanReason = null;
-      // Releasing the hold restores the automatic rework budget (#1307) — guaranteed here rather
-      // than left to the parent remembering to pass --rework-count 0. An explicit count still
-      // wins, and a run ending in the same update keeps its historical count.
-      if ((patch.status ?? current.status) === "running") {
-        patch.reworkCount ??= 0;
-      }
-    } else if (
-      current.needs_human_reason !== null &&
-      (patch.status === "completed" || patch.status === "stopped")
-    ) {
-      // A terminal run is no longer waiting for anyone.
-      patch.needsHumanReason = null;
+    const progress = await workflowRunProgress(repo, run);
+    if (!progress.steps.execute.complete) {
+      throw new ServiceError(
+        409,
+        `Workflow Execute is incomplete: ${progress.steps.execute.missing.join("; ")}`,
+      );
     }
-    const updated = S.updateWorkflowRun(current.id, patch);
-    if (!updated) throw new ServiceError(404, "Workflow run not found");
-    S.emitEvent(updated.repo_id, "workflow_run.updated", actorFor(sessionId), {
-      id: updated.id,
-      status: updated.status,
-      current_step: updated.current_step,
-      rework_count: updated.rework_count,
-      // Present only when this update touched the human wait on a run that stays running, so run
-      // history can label the escalation / resume moments (#1307). Terminal transitions auto-clear
-      // the hold but must read as "Run stopped/completed", not as a resume.
-      ...(patch.needsHumanReason !== undefined && updated.status === "running"
-        ? { needs_human_reason: patch.needsHumanReason }
-        : {}),
-      // issue / PR numbers let issue & PR detail refresh their run-state query precisely (#1008).
-      issue_number: updated.issue_number,
-      pr_number: updated.pr_number,
-    });
-    return { run: runJSON(updated) };
+    return updateRunLifecycle(
+      run,
+      { currentStep: "verify" },
+      "advance_to_verify",
+      sessionId,
+    );
+  },
+
+  async completeRun(
+    name: string,
+    input: { run: number },
+    sessionId?: string | null,
+  ): Promise<WorkflowRunUpdateResult> {
+    const { repo, run } = lifecycleRun(name, input.run, sessionId);
+    assertAutomaticProgressAllowed(run);
+    if (run.current_step !== "verify") {
+      throw new ServiceError(
+        409,
+        `Workflow run cannot complete from ${run.current_step}`,
+      );
+    }
+    const progress = await workflowRunProgress(repo, run);
+    if (!progress.steps.verify.complete) {
+      throw new ServiceError(
+        409,
+        `Workflow Verify is incomplete: ${progress.steps.verify.missing.join("; ")}`,
+      );
+    }
+    if (progress.steps.verify.latest_verdict?.event !== "pass") {
+      throw new ServiceError(409, "Workflow Verify verdict is not passing");
+    }
+    return updateRunLifecycle(
+      run,
+      { status: "completed", needsHumanReason: null },
+      "complete",
+      sessionId,
+    );
+  },
+
+  awaitHuman(
+    name: string,
+    input: { run: number; reason: string },
+    sessionId?: string | null,
+  ): WorkflowRunUpdateResult {
+    const { run } = lifecycleRun(name, input.run, sessionId);
+    assertRunningLifecycle(run);
+    if (run.needs_human_reason !== null) {
+      throw new ServiceError(
+        409,
+        "Workflow run is already waiting for a human",
+      );
+    }
+    const reason = inlineText(input.reason);
+    if (!reason) {
+      throw new ServiceError(422, "await-human requires a reason");
+    }
+    if (reason.length > 500) {
+      throw new ServiceError(
+        422,
+        "await-human reason must be at most 500 characters",
+      );
+    }
+    return updateRunLifecycle(
+      run,
+      { needsHumanReason: reason },
+      "await_human",
+      sessionId,
+    );
+  },
+
+  async resumeAfterHuman(
+    name: string,
+    input: { run: number; step: string },
+    sessionId?: string | null,
+  ): Promise<WorkflowRunUpdateResult> {
+    const { repo, run } = lifecycleRun(name, input.run, sessionId);
+    assertRunningLifecycle(run);
+    if (run.needs_human_reason === null) {
+      throw new ServiceError(409, "Workflow run is not waiting for a human");
+    }
+    const step = workflowStep(input.step);
+    if (step === "verify") {
+      const progress = await workflowRunProgress(repo, run);
+      if (!progress.steps.execute.complete) {
+        throw new ServiceError(
+          409,
+          `Workflow cannot resume at Verify: ${progress.steps.execute.missing.join("; ")}`,
+        );
+      }
+    }
+    return updateRunLifecycle(
+      run,
+      { currentStep: step, reworkCount: 0, needsHumanReason: null },
+      "resume_after_human",
+      sessionId,
+    );
+  },
+
+  stopRun(
+    name: string,
+    input: { run: number },
+    sessionId?: string | null,
+  ): WorkflowRunUpdateResult {
+    const { run } = lifecycleRun(name, input.run, sessionId);
+    assertRunningLifecycle(run);
+    return updateRunLifecycle(
+      run,
+      { status: "stopped", needsHumanReason: null },
+      "stop",
+      sessionId,
+    );
+  },
+
+  async requestRework(
+    name: string,
+    input: { run: number },
+    sessionId?: string | null,
+  ): Promise<WorkflowRunUpdateResult> {
+    const { repo, run } = lifecycleRun(name, input.run, sessionId);
+    assertAutomaticProgressAllowed(run);
+    if (run.current_step !== "verify") {
+      throw new ServiceError(
+        409,
+        `Workflow run cannot request rework from ${run.current_step}`,
+      );
+    }
+    const progress = await workflowRunProgress(repo, run);
+    if (!progress.steps.verify.complete) {
+      throw new ServiceError(
+        409,
+        `Workflow Verify is incomplete: ${progress.steps.verify.missing.join("; ")}`,
+      );
+    }
+    if (progress.steps.verify.latest_verdict?.event !== "request_changes") {
+      throw new ServiceError(
+        409,
+        "Workflow Verify verdict does not request changes",
+      );
+    }
+    if (run.rework_count >= 3) {
+      throw new ServiceError(409, "Workflow rework limit reached");
+    }
+    return updateRunLifecycle(
+      run,
+      { currentStep: "execute", reworkCount: run.rework_count + 1 },
+      "request_rework",
+      sessionId,
+    );
   },
 
   async launchStep(
@@ -1024,17 +1182,8 @@ export const workflowRuns = {
     if (run.repo_id !== r.id) {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
-    if (run.status !== "running") {
-      throw new ServiceError(409, `Workflow run is ${run.status}`);
-    }
-    // A run held for a human must not progress on its own (#1307) — the parent clears the wait
-    // (on an explicit human instruction) before relaunching steps.
-    if (run.needs_human_reason !== null) {
-      throw new ServiceError(
-        409,
-        `Workflow run is waiting for a human: ${run.needs_human_reason}`,
-      );
-    }
+    // A terminal or human-held run must not progress on its own (#1307).
+    assertAutomaticProgressAllowed(run);
     assertParentActor(run, sessionId);
     const step = workflowStep(input.step);
     const childSessionId = randomUUID();
@@ -1484,35 +1633,14 @@ export const workflowRuns = {
     if (run.repo_id !== r.id) {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
-    const prIssue = issueOr404(r, run.pr_number, "pull");
-    const pull = S.getPull(prIssue.id);
-    if (!pull)
-      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-    const worktree = workflowRunWorktree({
-      repo: r,
-      prNumber: run.pr_number,
-      headRef: pull.head_ref,
-    });
-    const currentHead = await worktreeHeadOptional(worktree);
-    const headAheadOfBase = await isHeadAheadOfBase(
-      worktree,
-      pull.base_ref,
-      currentHead,
-    );
-    const steps = evaluateWorkflowSteps({
-      currentHead,
-      headAheadOfBase,
-      execute: latestArtifactState(run, "execution-report"),
-      verify: latestArtifactState(run, "verdict"),
-      latestVerdict: latestVerdictContent(run),
-    });
+    const progress = await workflowRunProgress(r, run);
     return {
       run: run.id,
       current_step: run.current_step,
       status: run.status,
       needs_human_reason: run.needs_human_reason,
-      head_sha: currentHead,
-      steps,
+      head_sha: progress.currentHead,
+      steps: progress.steps,
     };
   },
 

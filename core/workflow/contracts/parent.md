@@ -21,11 +21,18 @@ prompt this pane when new or updated GitHub PR feedback appears.
 
 LoopHub (orchestration):
 
-- `lh workflow run update --repo '<repo>' --run <run> [--step <step>] [--status <status>] [--rework-count <n>] [--needs-human <reason>] [--clear-needs-human]`
-  — report run state for display (current step, status, rework count). This is a display mirror,
-  not the source of truth for transitions. `--status` is one of `running | completed | stopped`.
-  `--needs-human <reason>` holds the run for a human while it stays `running` (see Escalation);
-  `--clear-needs-human` releases that hold (see Resuming).
+- `lh workflow run advance-to-verify --repo '<repo>' --run <run>`
+  — move from Execute to Verify after the engine confirms a current-head execution report.
+- `lh workflow run complete --repo '<repo>' --run <run>`
+  — complete the run after the engine confirms a current-head passing Verify verdict.
+- `lh workflow run request-rework --repo '<repo>' --run <run>`
+  — atomically increment rework count and return from a current-head `request_changes` verdict to Execute.
+- `lh workflow run await-human --repo '<repo>' --run <run> --reason <text>`
+  — hold a running run for an explicit human instruction.
+- `lh workflow run resume --repo '<repo>' --run <run> --step <execute|verify>`
+  — explicitly release a human hold, reset the rework budget, and select the legal resume step.
+- `lh workflow run stop --repo '<repo>' --run <run>`
+  — stop a running run permanently.
 - `lh workflow launch-step --repo '<repo>' --run <run> --step <step> [--note <text|->]`
   — start (or restart) the child for a step. The engine synthesizes the step input and launches the
   child in a herdr split pane, then prints its exact Herdr name on the `agent` line. Call this only
@@ -71,15 +78,15 @@ Human handoff (escalation only):
 
 ## Transition table
 
-When you enter a step, mark it with
-`lh workflow run update --repo '<repo>' --run <run> --step <step> --status running`, launch the
-child, then poll `lh workflow step status` until that step is complete.
+Launch the child for the run's current step, then poll `lh workflow step status` until that step is
+complete. The lifecycle commands validate and persist every transition; never assemble status,
+current step, or rework count fields yourself.
 
 | From | Condition (from step status) | Action |
 |---|---|---|
 | start | run started | launch Execute |
-| Execute | execute complete | launch Verify |
-| Verify | verify complete, latest verdict `pass` | `lh workflow run update --repo '<repo>' --run <run> --status completed`, then stop |
+| Execute | execute complete | `lh workflow run advance-to-verify --repo '<repo>' --run <run>`, then launch Verify |
+| Verify | verify complete, latest verdict `pass` | `lh workflow run complete --repo '<repo>' --run <run>`, then stop |
 | Verify | verify complete, latest verdict `request_changes` | rework -> Execute (see Rework) |
 
 The run is complete when Verify has placed a passing verdict for the current head and you have marked
@@ -90,10 +97,10 @@ Do not merge — a human does that.
 
 When step status shows verify complete with the latest verdict `request_changes`:
 
-1. Increment rework: `lh workflow run update --repo '<repo>' --run <run> --rework-count <n+1>`,
-   passing the new absolute count. You are the only party that increments this count, so track its
-   current value yourself across this session — step status does not report it. If the new count
-   would exceed 3, escalate instead (see Escalation) — do not launch another Execute.
+1. Run `lh workflow run request-rework --repo '<repo>' --run <run>`; the engine checks the limit,
+   increments the count, and moves the run to Execute as one validated transition. If it reports
+   that the rework limit has been reached, escalate instead (see Escalation) — do not launch another
+   Execute.
 2. If the latest recorded Execute child is still alive (`herdr agent get '<child>'`), poke its pane with
    `herdr pane run <child-pane> "orchestrator: <what the findings ask for>"` — reusing the session
    preserves its context.
@@ -143,7 +150,7 @@ On escalation, do all three:
 2. Notify the human via Inbox:
    `lh inbox send --repo '<repo>' --from '{"kind":"workflow_run","repo":"<repo>","actor":"workflow-parent"}' --title <text> --body <text>`.
 3. Hold the run for a human (the run stays `running`):
-   `lh workflow run update --repo '<repo>' --run <run> --needs-human <reason>`.
+   `lh workflow run await-human --repo '<repo>' --run <run> --reason <reason>`.
    Keep the reason short and concrete (e.g. "rework limit exceeded: <verdict summary>").
 
 Then stop all automatic progression: do not launch steps, poke children, or change rework count.
@@ -154,21 +161,19 @@ a new event, or a child finishing is not an instruction.
 
 When a human explicitly tells you (in this session) to continue:
 
-1. Release the hold and reset the automatic rework budget:
-   `lh workflow run update --repo '<repo>' --run <run> --clear-needs-human --rework-count 0`.
-   Track the rework count as 0 from here; the full limit applies again.
-2. Re-check the current state: `lh workflow step status <run> --repo '<repo>' --json` (artifacts and
+1. Re-check the current state: `lh workflow step status <run> --repo '<repo>' --json` (artifacts and
    head may have changed while you waited — a human may have pushed fixes).
-3. Resume the same run: return to Execute when the work itself needs to continue or change, or
-   launch a **fresh Verify** when execute is complete for the current head and only the verdict is
-   missing or stale. Returning to Execute here is **not a rework** — do not increment the count
-   (it stays 0 until the next `request_changes` verdict, which then follows the normal Rework
-   procedure). As in Rework, prefer poking a still-live Execute pane
+2. Resume the same run with
+   `lh workflow run resume --repo '<repo>' --run <run> --step <execute|verify>`: choose Execute when
+   the work itself needs to continue or change, or Verify when execute is complete for the current
+   head and only the verdict is missing or stale. The engine releases the hold and resets the
+   automatic rework budget to 0; it rejects Verify when Execute is not current-head complete.
+   Returning to Execute here is **not a rework**. As in Rework, prefer poking a still-live Execute pane
    (`herdr pane run <child-pane> "orchestrator: <what to continue>"`) and use
    `lh workflow launch-step` only when the pane is closed.
 
 If the human instead cancels the run, mark it stopped:
-`lh workflow run update --repo '<repo>' --run <run> --status stopped`.
+`lh workflow run stop --repo '<repo>' --run <run>`.
 
 ## Prohibited actions
 
