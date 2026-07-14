@@ -187,6 +187,23 @@ test("pulls/create can omit base and use a linked issue target branch", async ()
   expect(created.result.base.ref).toBe("integration/stack");
 });
 
+test("pulls/commitFiles routes the PR number and selected SHA", async () => {
+  const commitFiles = vi.spyOn(svc.pulls, "commitFiles").mockResolvedValue([]);
+  const sha = "a".repeat(40);
+  try {
+    const response: any = await call("pulls/commitFiles", {
+      repo: "me/proj",
+      number: 17,
+      sha,
+    });
+
+    expect(response.result).toEqual([]);
+    expect(commitFiles).toHaveBeenCalledWith("me/proj", 17, sha);
+  } finally {
+    commitFiles.mockRestore();
+  }
+});
+
 test("unknown method -> -32601", async () => {
   const r: any = await call("nope/nope", {});
   expect(r.error.code).toBe(ERROR_CODES.METHOD_NOT_FOUND);

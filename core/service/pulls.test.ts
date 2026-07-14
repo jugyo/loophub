@@ -10,14 +10,26 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("../service.ts");
 let repoPath: string;
+let commitFilesRepoPath: string;
+let commitFilesPullNumber: number;
+let featureSha: string;
+let outsideSha: string;
 
-function git(args: string[], env: Record<string, string> = {}): string {
-  const result = spawnSync("git", ["-C", repoPath, ...args], {
+function gitAt(
+  path: string,
+  args: string[],
+  env: Record<string, string> = {},
+): string {
+  const result = spawnSync("git", ["-C", path, ...args], {
     encoding: "utf8",
     env: { ...process.env, ...env },
   });
   if (result.status !== 0) throw new Error(result.stderr);
   return result.stdout.trim();
+}
+
+function git(args: string[], env: Record<string, string> = {}): string {
+  return gitAt(repoPath, args, env);
 }
 
 beforeAll(async () => {
@@ -50,11 +62,45 @@ beforeAll(async () => {
   );
   if (imported.status !== 0) throw new Error(imported.stderr);
   await svc.repos.create({ path: repoPath, name: "me/proj" });
+
+  commitFilesRepoPath = mkdtempSync(
+    join(tmpdir(), "lh-pull-commit-files-repo-"),
+  );
+  const commitGit = (args: string[]) => gitAt(commitFilesRepoPath, args);
+  commitGit(["init", "-q", "-b", "main"]);
+  commitGit(["config", "user.email", "t@t.local"]);
+  commitGit(["config", "user.name", "tester"]);
+  writeFileSync(join(commitFilesRepoPath, "a.txt"), "before\n");
+  commitGit(["add", "-A"]);
+  commitGit(["commit", "-qm", "base"]);
+  commitGit(["checkout", "-qb", "feature"]);
+  writeFileSync(join(commitFilesRepoPath, "a.txt"), "after\n");
+  writeFileSync(join(commitFilesRepoPath, "added.txt"), "new\n");
+  commitGit(["add", "-A"]);
+  commitGit(["commit", "-qm", "feature change"]);
+  featureSha = commitGit(["rev-parse", "HEAD"]);
+  commitGit(["checkout", "-q", "main"]);
+  writeFileSync(join(commitFilesRepoPath, "outside.txt"), "outside\n");
+  commitGit(["add", "-A"]);
+  commitGit(["commit", "-qm", "outside PR"]);
+  outsideSha = commitGit(["rev-parse", "HEAD"]);
+
+  await svc.repos.create({
+    path: commitFilesRepoPath,
+    name: "me/commit-files",
+  });
+  const pull = await svc.pulls.create("me/commit-files", {
+    title: "commit files",
+    head: "feature",
+    base: "main",
+  });
+  commitFilesPullNumber = pull.number;
 });
 
 afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
   rmSync(repoPath, { recursive: true, force: true });
+  rmSync(commitFilesRepoPath, { recursive: true, force: true });
 });
 
 test("pull detail returns the newest 100 base..head commits with wire metadata", async () => {
@@ -125,6 +171,80 @@ exec "${realGit}" "$@"
     await expect(svc.pulls.get("me/proj", pull.number)).rejects.toThrow(
       /simulated git log failure/,
     );
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
+test("commitFiles returns the selected PR commit's parent diff", async () => {
+  const files = await svc.pulls.commitFiles(
+    "me/commit-files",
+    commitFilesPullNumber,
+    featureSha,
+  );
+
+  expect(files).toEqual([
+    {
+      filename: "a.txt",
+      headFilename: "a.txt",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: expect.stringContaining("+after"),
+    },
+    {
+      filename: "added.txt",
+      headFilename: "added.txt",
+      status: "added",
+      additions: 1,
+      deletions: 0,
+      patch: expect.stringContaining("+new"),
+    },
+  ]);
+});
+
+test("commitFiles rejects a SHA outside the pull request's base..head range", async () => {
+  await expect(
+    svc.pulls.commitFiles("me/commit-files", commitFilesPullNumber, outsideSha),
+  ).rejects.toMatchObject({ status: 404, message: "Not Found" });
+});
+
+test("commitFiles rejects an arbitrary ref instead of resolving it", async () => {
+  await expect(
+    svc.pulls.commitFiles("me/commit-files", commitFilesPullNumber, "main"),
+  ).rejects.toMatchObject({ status: 404, message: "Not Found" });
+});
+
+test("commitFiles surfaces a git diff failure", async () => {
+  const bin = mkdtempSync(join(HOME, "commit-diff-bin-"));
+  const fakeGit = join(bin, "git");
+  const realGit = spawnSync("which", ["git"], {
+    encoding: "utf8",
+  }).stdout.trim();
+  writeFileSync(
+    fakeGit,
+    `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "diff" ]; then
+    echo "simulated git diff failure" >&2
+    exit 1
+  fi
+done
+exec "${realGit}" "$@"
+`,
+  );
+  chmodSync(fakeGit, 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${bin}:${originalPath ?? ""}`;
+
+  try {
+    await expect(
+      svc.pulls.commitFiles(
+        "me/commit-files",
+        commitFilesPullNumber,
+        featureSha,
+      ),
+    ).rejects.toThrow(/simulated git diff failure/);
   } finally {
     process.env.PATH = originalPath;
   }

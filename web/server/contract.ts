@@ -921,6 +921,17 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.pulls.files(p.repo, p.number),
   },
+  "pulls/commitFiles": {
+    description:
+      "List files changed by one commit in a pull request, compared with its first parent.",
+    params: params({ repo, number: positiveInt, sha: strNonEmpty }, [
+      "repo",
+      "number",
+      "sha",
+    ]),
+    result: anyArray,
+    handler: (p) => svc.pulls.commitFiles(p.repo, p.number, p.sha),
+  },
   "pulls/fileAtRef": {
     description:
       "Whole-file content of a changed file at the PR's base or head commit (#435), for the Markdown preview modal. `status` is 'ok' (with `content`), 'missing' (the file does not exist at that side — an added or deleted file), or 'binary'.",

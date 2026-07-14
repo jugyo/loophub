@@ -150,15 +150,53 @@ export async function diffFiles(
   base: string,
   head: string,
 ): Promise<DiffFile[]> {
-  const range = `${base}...${head}`;
-  const numstat = await git(repoPath, ["diff", "--numstat", range]);
-  const numstatZ = await git(repoPath, ["diff", "--numstat", "-z", range]);
+  return diffFilesForRevisions(repoPath, [`${base}...${head}`]);
+}
+
+/** Files changed by one commit compared with its first parent. */
+export async function commitDiffFiles(
+  repoPath: string,
+  sha: string,
+): Promise<DiffFile[]> {
+  return diffFilesForRevisions(repoPath, [`${sha}^`, sha]);
+}
+
+/** Whether an exact full commit SHA belongs to base..head. */
+export async function commitInRange(
+  repoPath: string,
+  base: string,
+  head: string,
+  sha: string,
+): Promise<boolean> {
+  if (!/^[0-9a-f]{40}$/i.test(sha)) return false;
+  const commits = await git(repoPath, ["rev-list", `${base}..${head}`]);
+  assertGitSuccess(commits, "git rev-list failed");
+  const normalizedSha = sha.toLowerCase();
+  return commits.stdout
+    .split("\n")
+    .some((commit) => commit.trim().toLowerCase() === normalizedSha);
+}
+
+async function diffFilesForRevisions(
+  repoPath: string,
+  revisions: string[],
+): Promise<DiffFile[]> {
+  const numstat = await git(repoPath, ["diff", "--numstat", ...revisions]);
+  const numstatZ = await git(repoPath, [
+    "diff",
+    "--numstat",
+    "-z",
+    ...revisions,
+  ]);
   const namestatus = await git(repoPath, [
     "diff",
     "--name-status",
     "-z",
-    range,
+    ...revisions,
   ]);
+  assertGitSuccess(numstat, "git diff --numstat failed");
+  assertGitSuccess(numstatZ, "git diff --numstat -z failed");
+  assertGitSuccess(namestatus, "git diff --name-status failed");
   const statusByFile = parseNameStatusZ(namestatus.stdout);
 
   const structured = parseNumstatZ(numstatZ.stdout);
@@ -178,7 +216,13 @@ export async function diffFiles(
       paths?.previousFilename && status === "renamed"
         ? [paths.previousFilename, headFilename]
         : [headFilename];
-    const patch = await git(repoPath, ["diff", range, "--", ...patchPaths]);
+    const patch = await git(repoPath, [
+      "diff",
+      ...revisions,
+      "--",
+      ...patchPaths,
+    ]);
+    assertGitSuccess(patch, "git diff patch failed");
     files.push({
       filename: displayFilename,
       previousFilename: paths?.previousFilename,
@@ -190,6 +234,15 @@ export async function diffFiles(
     });
   }
   return files;
+}
+
+function assertGitSuccess(result: GitResult, context: string): void {
+  if (result.code === 0) return;
+  const detail =
+    result.stderr.trim() ||
+    result.stdout.trim() ||
+    `git exited with code ${result.code}`;
+  throw new Error(`${context}: ${detail}`);
 }
 
 function parseNameStatusZ(stdout: string): Record<string, string> {

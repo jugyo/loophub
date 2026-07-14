@@ -5,6 +5,8 @@ import {
   agentSessionJSON,
   assertExistingLocalBranch,
   clampPerPage,
+  commitDiffFiles,
+  commitInRange,
   commitLog,
   commitsAhead,
   DEFAULT_LIST_PER_PAGE,
@@ -241,6 +243,16 @@ export const pulls = {
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
     return diffFiles(r.local_path, p.base_ref, p.head_ref);
+  },
+
+  async commitFiles(name: string, number: number, sha: string) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const p = S.getPull(row.id)!;
+    if (!(await commitInRange(r.local_path, p.base_ref, p.head_ref, sha))) {
+      throw new ServiceError(404, "Not Found");
+    }
+    return commitDiffFiles(r.local_path, sha);
   },
 
   // Whole-file content of a changed file at the PR's base or head commit (#435), for the

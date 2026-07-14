@@ -317,6 +317,108 @@ describe("PullDetail", () => {
     ).toBe("2026-06-18T12:00:00Z");
   });
 
+  it("opens a commit diff, closes it, and switches to another commit", async () => {
+    const earlierFiles: PullFile[] = [
+      {
+        filename: "web/src/earlier.ts",
+        status: "added",
+        additions: 1,
+        deletions: 0,
+        patch: "@@ -0,0 +1 @@\n+export const earlier = true;",
+      },
+    ];
+    renderDetail({
+      "pulls/commitFiles": (params) =>
+        params.sha === pull.commits?.[0]?.sha ? files : earlierFiles,
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      }),
+    );
+
+    const latestDialog = await screen.findByRole("dialog", {
+      name: "Changes in aaaaaaa: Latest change",
+    });
+    expect(within(latestDialog).getByText("aaaaaaa")).toBeTruthy();
+    expect(within(latestDialog).getByText("Latest change")).toBeTruthy();
+    expect(await within(latestDialog).findByText("+const x = 1;")).toBeTruthy();
+    expect(rpcCall("pulls/commitFiles")?.params).toEqual({
+      repo: "me/proj",
+      number: 30,
+      sha: pull.commits?.[0]?.sha,
+    });
+
+    fireEvent.click(
+      within(latestDialog).getByRole("button", { name: "Close commit diff" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View changes in bbbbbbb: Earlier change",
+      }),
+    );
+    const earlierDialog = await screen.findByRole("dialog", {
+      name: "Changes in bbbbbbb: Earlier change",
+    });
+    expect(
+      await within(earlierDialog).findByText("+export const earlier = true;"),
+    ).toBeTruthy();
+    expect(within(earlierDialog).queryByText("+const x = 1;")).toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("distinguishes loading and empty commit diffs", async () => {
+    let resolveFiles: (files: PullFile[]) => void = () => {};
+    const pending = new Promise<PullFile[]>((resolve) => {
+      resolveFiles = resolve;
+    });
+    renderDetail({ "pulls/commitFiles": () => pending });
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Changes in aaaaaaa: Latest change",
+    });
+    expect(within(dialog).getByText("Loading commit diff…")).toBeTruthy();
+
+    resolveFiles([]);
+    expect(
+      await within(dialog).findByText("No changes in this commit."),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText("Loading commit diff…")).toBeNull();
+  });
+
+  it("shows commit diff retrieval failures in the dialog", async () => {
+    renderDetail({
+      "pulls/commitFiles": () => {
+        throw new RpcFault(500, "simulated commit diff failure");
+      },
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Changes in aaaaaaa: Latest change",
+    });
+    expect(
+      await within(dialog).findByText(/Failed to load commit diff/),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText(/simulated commit diff failure/),
+    ).toBeTruthy();
+  });
+
   it("renders an empty state when the PR has no commits", async () => {
     renderDetail({ "pulls/get": () => ({ ...pull, commits: [] }) });
 

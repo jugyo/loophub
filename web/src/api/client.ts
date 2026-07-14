@@ -700,6 +700,19 @@ export function listPullFiles(owner: string, repo: string, number: number) {
   return rpc<PullFile[]>("pulls/files", { repo: full(owner, repo), number });
 }
 
+export function listPullCommitFiles(
+  owner: string,
+  repo: string,
+  number: number,
+  sha: string,
+) {
+  return rpc<PullFile[]>("pulls/commitFiles", {
+    repo: full(owner, repo),
+    number,
+    sha,
+  });
+}
+
 export function getPullFileAtRef(
   owner: string,
   repo: string,

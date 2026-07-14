@@ -31,6 +31,8 @@ import { isServiceError, ServiceError } from "../errors.ts";
 import { formatEvent, type LoopEvent } from "../events.ts";
 import {
   branchExists,
+  commitDiffFiles,
+  commitInRange,
   commitLog,
   commitsAhead,
   defaultBranch,
@@ -232,6 +234,8 @@ export {
   codingAgent,
   commandForHerdrLaunch,
   commentJSON,
+  commitDiffFiles,
+  commitInRange,
   commitLog,
   commitsAhead,
   configDir,

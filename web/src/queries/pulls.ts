@@ -9,6 +9,7 @@ import {
   getPullDebug,
   getPullFileAtRef,
   listPullComments,
+  listPullCommitFiles,
   listPullFiles,
   listPullHandoffs,
   listPullReviews,
@@ -71,6 +72,23 @@ export function usePullFiles(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: [...queryKeys.pull(full(owner, repo), number), "files"],
     queryFn: () => listPullFiles(owner, repo, number),
+  });
+}
+
+/** One PR commit's changed files, compared with its first parent. */
+export function usePullCommitFiles(
+  owner: string,
+  repo: string,
+  number: number,
+  sha: string,
+) {
+  return useQuery({
+    queryKey: [
+      ...queryKeys.pull(full(owner, repo), number),
+      "commitFiles",
+      sha,
+    ],
+    queryFn: () => listPullCommitFiles(owner, repo, number, sha),
   });
 }
 
