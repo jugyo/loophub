@@ -97,6 +97,7 @@ export function NotificationCenter() {
   function clearAll() {
     if (visible.length === 0 || readAllNotifications.isPending) return;
     readAllNotifications.mutate(undefined, {
+      onSuccess: () => setOpen(false),
       onError: (e) =>
         showError(
           e instanceof Error ? e.message : "Failed to clear notifications.",

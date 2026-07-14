@@ -308,8 +308,12 @@ describe("NotificationCenter", () => {
     ).toBeNull();
   });
 
-  it("clears all visible notifications via the Clear all button", async () => {
+  it("clears all visible notifications and closes the menu", async () => {
     actions.readAll.mockReset();
+    actions.readAll.mockImplementationOnce(
+      (_input: undefined, options: { onSuccess: () => void }) =>
+        options.onSuccess(),
+    );
     notifications.value = [
       makeNotification({ id: 1 }),
       makeNotification({
@@ -327,6 +331,7 @@ describe("NotificationCenter", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Clear all" }));
 
     expect(actions.readAll).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Ready to merge")).toBeNull();
   });
 
   it("shows the API error when clearing all notifications fails", async () => {
