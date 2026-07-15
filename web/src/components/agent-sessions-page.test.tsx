@@ -24,9 +24,13 @@ import {
   formatTokenCount,
 } from "./agent-sessions-page";
 
+const ORIGINAL_TIME_ZONE = process.env.TZ;
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  if (ORIGINAL_TIME_ZONE === undefined) delete process.env.TZ;
+  else process.env.TZ = ORIGINAL_TIME_ZONE;
 });
 
 const SESSIONS: AgentSession[] = [
@@ -151,6 +155,34 @@ function renderPage(sessions: AgentSession[] = SESSIONS) {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+}
+
+function costedSession(
+  id: string,
+  createdAt: string,
+  costUsd: number,
+): AgentSession {
+  return {
+    id,
+    agent: "lh-build",
+    session: id,
+    runtime: "codex",
+    created_at: createdAt,
+    updated_at: createdAt,
+    usage: [
+      {
+        session_id: id,
+        model: "gpt-5.5",
+        input_tokens: 100,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        output_tokens: 10,
+        cost_usd: costUsd,
+        context_usage_percent: null,
+        updated_at: createdAt,
+      },
+    ],
+  };
 }
 
 describe("formatTokenCount", () => {
@@ -375,6 +407,85 @@ describe("AgentSessionsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Weekly" }));
     fireEvent.click(screen.getByRole("button", { name: "By agent" }));
     expect(screen.getByLabelText("Agent cost comparison trend")).toBeTruthy();
+  });
+
+  it("uses local calendar boundaries across the daylight-saving start", async () => {
+    process.env.TZ = "America/Los_Angeles";
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2025-03-10T12:00:00-07:00").getTime(),
+    );
+    renderPage([
+      costedSession("late-local-february", "2025-03-01T07:30:00Z", 0.08),
+      costedSession("before-local-range", "2025-03-04T07:30:00Z", 0.01),
+      costedSession("late-dst-start-day", "2025-03-10T06:30:00Z", 0.02),
+      costedSession("late-local-end-day", "2025-03-11T06:30:00Z", 0.04),
+      costedSession("after-local-range", "2025-03-11T07:00:00Z", 0.08),
+    ]);
+
+    expect(await screen.findByText("last 1 month cost")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "last 1 week" }));
+
+    const overview = screen.getByText("last 1 week cost").parentElement;
+    expect(overview && within(overview).getByText("$0.06")).toBeTruthy();
+    expect(screen.getByLabelText("Mar 9: $0.02")).toBeTruthy();
+    expect(screen.getByLabelText("Mar 10: $0.04")).toBeTruthy();
+    expect(screen.getByText("late-dst-start-day")).toBeTruthy();
+    expect(screen.getByText("late-local-end-day")).toBeTruthy();
+    expect(screen.queryByText("before-local-range")).toBeNull();
+    expect(screen.queryByText("after-local-range")).toBeNull();
+
+    const comparison = screen.getByRole("heading", {
+      name: "Agent comparison",
+    }).parentElement;
+    expect(comparison && within(comparison).getByText("$0.06")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "By agent" }));
+    expect(screen.getByLabelText("Mar 9 Codex: $0.02")).toBeTruthy();
+    expect(screen.getByLabelText("Mar 10 Codex: $0.04")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "last 1 month" }));
+    expect(screen.getByText("late-local-february")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Weekly" }));
+    expect(screen.getByLabelText("Feb 24 Codex: $0.08")).toBeTruthy();
+    expect(screen.getByLabelText("Mar 3 Codex: $0.03")).toBeTruthy();
+    expect(screen.getByLabelText("Mar 10 Codex: $0.04")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    expect(screen.getByLabelText("Feb 2025 Codex: $0.08")).toBeTruthy();
+    expect(screen.getByLabelText("Mar 2025 Codex: $0.07")).toBeTruthy();
+  });
+
+  it("keeps one bucket per local calendar day across the daylight-saving end", async () => {
+    process.env.TZ = "America/Los_Angeles";
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2025-11-03T12:00:00-08:00").getTime(),
+    );
+    renderPage([
+      costedSession("first-0130", "2025-11-02T08:30:00Z", 0.01),
+      costedSession("second-0130", "2025-11-02T09:30:00Z", 0.02),
+      costedSession("late-25-hour-day", "2025-11-03T07:30:00Z", 0.04),
+      costedSession("after-local-range", "2025-11-04T08:00:00Z", 0.08),
+    ]);
+
+    expect(await screen.findByText("last 1 month cost")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "last 1 week" }));
+
+    const chart = screen.getByLabelText("Total cost trend");
+    const bucketLabels = [...chart.querySelectorAll('g[role="img"]')].map(
+      (bucket) => bucket.getAttribute("aria-label"),
+    );
+    expect(bucketLabels).toEqual([
+      "Oct 28: $0.00",
+      "Oct 29: $0.00",
+      "Oct 30: $0.00",
+      "Oct 31: $0.00",
+      "Nov 1: $0.00",
+      "Nov 2: $0.07",
+      "Nov 3: $0.00",
+    ]);
+    expect(screen.getByText("first-0130")).toBeTruthy();
+    expect(screen.getByText("second-0130")).toBeTruthy();
+    expect(screen.getByText("late-25-hour-day")).toBeTruthy();
+    expect(screen.queryByText("after-local-range")).toBeNull();
   });
 
   it("keeps long daily charts inside the chart frame with value guides", async () => {

@@ -156,43 +156,39 @@ function agentLabel(key: string): string {
   return codingAgentLabel(key);
 }
 
-function startOfUtcDay(date: Date): Date {
-  return new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-function startOfUtcWeek(date: Date): Date {
-  const day = date.getUTCDay();
+function startOfLocalWeek(date: Date): Date {
+  const day = date.getDay();
   const mondayOffset = day === 0 ? -6 : 1 - day;
-  return addDays(startOfUtcDay(date), mondayOffset);
+  return addDays(startOfLocalDay(date), mondayOffset);
 }
 
-function startOfUtcMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+function startOfLocalMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
-  d.setUTCDate(d.getUTCDate() + days);
+  d.setDate(d.getDate() + days);
   return d;
 }
 
 function addMonths(date: Date, months: number): Date {
-  return new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1),
-  );
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
 }
 
 function rangeBounds(preset: RangePreset, now: Date) {
-  const end = addDays(startOfUtcDay(now), 1);
+  const end = addDays(startOfLocalDay(now), 1);
   return { start: addDays(end, -preset.days), end };
 }
 
 function bucketStart(date: Date, granularity: Granularity): Date {
-  if (granularity === "day") return startOfUtcDay(date);
-  if (granularity === "week") return startOfUtcWeek(date);
-  return startOfUtcMonth(date);
+  if (granularity === "day") return startOfLocalDay(date);
+  if (granularity === "week") return startOfLocalWeek(date);
+  return startOfLocalMonth(date);
 }
 
 function nextBucketStart(date: Date, granularity: Granularity): Date {
@@ -206,12 +202,10 @@ function bucketLabel(start: Date, granularity: Granularity): string {
     return start.toLocaleDateString(undefined, {
       month: "short",
       year: "numeric",
-      timeZone: "UTC",
     });
   return start.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
-    timeZone: "UTC",
   });
 }
 
