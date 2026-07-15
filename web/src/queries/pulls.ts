@@ -14,7 +14,6 @@ import {
   listPullHandoffs,
   listPullReviews,
   listPulls,
-  markGithubMerged,
   mergePull,
   patchPull,
   pushGithubPull,
@@ -191,19 +190,6 @@ export function useReadyForReview(owner: string, repo: string, number: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => readyForReview(owner, repo, number),
-    onSuccess: () => invalidatePull(qc, owner, repo, number),
-  });
-}
-
-/** Close a GitHub-linked PR as merged (no local git merge), then invalidate the PR + lists. */
-export function useMarkGithubMerged(
-  owner: string,
-  repo: string,
-  number: number,
-) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => markGithubMerged(owner, repo, number),
     onSuccess: () => invalidatePull(qc, owner, repo, number),
   });
 }

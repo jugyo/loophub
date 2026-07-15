@@ -146,6 +146,7 @@ export interface NotificationSignalRow {
   number: number;
   title: string;
   kind: NotificationKind;
+  reason: "cost_stopped" | "review_changes" | "github_merged";
   source_key: string;
   created_at: string;
 }
@@ -230,6 +231,7 @@ export function listNotificationSignalRows(
       `SELECT * FROM (
          SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
                 'over_budget' AS kind,
+                'cost_stopped' AS reason,
                 'cost:' || r.id || ':' || i.number || ':' || e.id AS source_key,
                 e.created_at AS created_at
          FROM events e
@@ -245,6 +247,23 @@ export function listNotificationSignalRows(
          UNION ALL
          SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
                 'human_attention' AS kind,
+                'github_merged' AS reason,
+                'github-merged:' || r.id || ':' || i.number || ':' || e.id AS source_key,
+                e.created_at AS created_at
+         FROM events e
+         JOIN repos r ON r.id = e.repo_id
+         JOIN issues i ON i.repo_id = r.id
+          AND i.kind = 'pull'
+          AND i.number = json_extract(e.payload, '$.number')
+         JOIN pulls p ON p.issue_id = i.id
+         WHERE e.type = 'pull_request.github_merged'
+           AND e.id > ?
+           AND e.id <= ?
+           AND p.merged = 0
+         UNION ALL
+         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
+                'human_attention' AS kind,
+                'review_changes' AS reason,
                 'changes:' || r.id || ':' || i.number || ':' || rv.id AS source_key,
                 rv.created_at AS created_at
          FROM reviews rv
@@ -266,6 +285,8 @@ export function listNotificationSignalRows(
        ORDER BY signals.created_at ASC`,
     )
     .all(
+      cursors.events,
+      highWatermarks.events,
       cursors.events,
       highWatermarks.events,
       cursors.reviews,

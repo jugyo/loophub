@@ -25,16 +25,26 @@ function repoOr404(repoName: string): S.Repo {
   return repo;
 }
 
-function bodyForSignal(signal: S.NotificationSignalRow): string {
-  if (signal.kind === "over_budget") {
-    return `PR #${signal.number} was stopped after exceeding the configured budget.`;
+function contentForSignal(signal: S.NotificationSignalRow): {
+  title: string;
+  body: string;
+} {
+  if (signal.reason === "cost_stopped") {
+    return {
+      title: "Over budget",
+      body: `PR #${signal.number} was stopped after exceeding the configured budget.`,
+    };
   }
-  return `PR #${signal.number} needs human attention before work can continue.`;
-}
-
-function titleForSignal(signal: S.NotificationSignalRow): string {
-  if (signal.kind === "over_budget") return "Over budget";
-  return "Human attention needed";
+  if (signal.reason === "github_merged") {
+    return {
+      title: `${signal.repo_full_name} PR #${signal.number} merged on GitHub`,
+      body: `GitHub reports ${signal.repo_full_name} PR #${signal.number} as merged. Close the LoopHub PR manually to close it in LoopHub.`,
+    };
+  }
+  return {
+    title: "Human attention needed",
+    body: `PR #${signal.number} needs human attention before work can continue.`,
+  };
 }
 
 function assertKind(kind: unknown): S.NotificationKind {
@@ -99,11 +109,12 @@ function backfillFromSignals(): void {
   const cursors = S.notificationSourceCursors();
   const highWatermarks = S.notificationSourceHighWatermarks();
   for (const signal of S.listNotificationSignalRows(cursors, highWatermarks)) {
+    const content = contentForSignal(signal);
     const row = S.createNotification({
       repoId: signal.repo_id,
       kind: signal.kind,
-      title: titleForSignal(signal),
-      body: bodyForSignal(signal),
+      title: content.title,
+      body: content.body,
       resourceKind: "pull",
       resourceNumber: signal.number,
       sourceKey: signal.source_key,

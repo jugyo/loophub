@@ -18,7 +18,10 @@ function git(args: string[]) {
   return spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
 }
 
-async function openGithubLinkedPull(githubNumber: number): Promise<{
+async function openGithubLinkedPull(
+  githubNumber: number,
+  linkedIssueNumber?: number,
+): Promise<{
   number: number;
   issueId: number;
 }> {
@@ -32,6 +35,7 @@ async function openGithubLinkedPull(githubNumber: number): Promise<{
     title: "feat",
     head: branch,
     base: "main",
+    issue: linkedIssueNumber,
   });
   svc.pulls.recordGithubPull("me/proj", pr.number, {
     github_number: githubNumber,
@@ -107,6 +111,67 @@ test("detects a GitHub merge and records it on github_pulls (#800)", async () =>
   const rec = S.getGithubPull(issueId)!;
   expect(rec.github_merged).toBe(1);
   expect(rec.github_merged_at).toBe("2026-01-01T00:00:00Z");
+});
+
+test("a detected GitHub merge creates one close-required notification without changing LoopHub state", async () => {
+  const linkedIssue = await svc.issues.create("me/proj", {
+    title: "Keep open until the user closes the PR",
+  });
+  const { number } = await openGithubLinkedPull(401, linkedIssue.number);
+  const beforeUnread = (await svc.notifications.unreadCount()).count;
+  const { deps, calls } = fakeDeps({
+    "https://github.com/me/proj/pull/401": {
+      merged: true,
+      mergedAt: "2026-04-01T00:00:00Z",
+      mergedByLogin: "octocat",
+    },
+  });
+
+  await sync.syncGithubMergeStatus(deps);
+
+  const firstList = await svc.notifications.list({ limit: 100 });
+  const matching = firstList.filter(
+    (notification: any) =>
+      notification.repo.name === "me/proj" &&
+      notification.resource.kind === "pull" &&
+      notification.resource.number === number &&
+      notification.title === `me/proj PR #${number} merged on GitHub`,
+  );
+  expect(matching).toEqual([
+    expect.objectContaining({
+      kind: "human_attention",
+      body: `GitHub reports me/proj PR #${number} as merged. Close the LoopHub PR manually to close it in LoopHub.`,
+      resource: {
+        kind: "pull",
+        number,
+        href: `/r/me/proj/pulls/${number}`,
+      },
+      read_at: null,
+    }),
+  ]);
+  expect((await svc.notifications.unreadCount()).count).toBe(beforeUnread + 1);
+
+  expect(await sync.syncGithubMergeStatus(deps)).toHaveLength(0);
+  expect(calls).toHaveLength(1);
+  const secondList = await svc.notifications.list({ limit: 100 });
+  expect(
+    secondList.filter(
+      (notification: any) => notification.id === matching[0].id,
+    ),
+  ).toHaveLength(1);
+  expect((await svc.notifications.unreadCount()).count).toBe(beforeUnread + 1);
+
+  expect(await svc.pulls.get("me/proj", number)).toMatchObject({
+    state: "open",
+    merged: false,
+    github_pull: {
+      github_merged: true,
+      github_merged_at: "2026-04-01T00:00:00Z",
+    },
+  });
+  expect(await svc.issues.get("me/proj", linkedIssue.number)).toMatchObject({
+    state: "open",
+  });
 });
 
 test("leaves an unmerged GitHub PR untouched and keeps polling it (#800)", async () => {

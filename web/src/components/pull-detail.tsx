@@ -46,7 +46,6 @@ import { cn } from "@/lib/utils";
 import { useIssueComments } from "@/queries/issues";
 import {
   useGithubPrStatus,
-  useMarkGithubMerged,
   useMergePull,
   usePull,
   usePullComments,
@@ -633,13 +632,7 @@ function GithubPrAction({
   pull: PullRequest;
 }) {
   const { launchTerminal } = useTerminalLauncher();
-  // #813: lh-worker's polling (github-merge-sync.ts) detected the GitHub PR as merged, but the
-  // loophub PR hasn't gone through its own merge/close flow yet — offer a manual close that
-  // mirrors the local merge flow's end state without running a local git merge.
-  const markMerged = useMarkGithubMerged(owner, repo, pull.number);
   const { showError } = useToast();
-  const [isMarkLoading, startMarkLoading] = useFixedLoading();
-  const isMarking = isMarkLoading || markMerged.isPending;
 
   // #848: push local changes to the linked GitHub PR's branch. isPending drives the disabled +
   // spinner state so the click can't fire twice (AC4).
@@ -647,8 +640,6 @@ function GithubPrAction({
 
   const gh = pull.github_pull;
   if (gh) {
-    const canMarkMerged =
-      gh.github_merged && pull.state === "open" && !pull.merged;
     // Unpushed local changes exist when we know what was last pushed (pushed_sha) and the PR's head
     // has moved past it. Gated on an open, unmerged PR and a recorded branch to push onto — a
     // closed/merged PR is past syncing (AC7), and a null pushed_sha (e.g. an externally-attached PR
@@ -695,22 +686,6 @@ function GithubPrAction({
           )}
           {pushChanges.isPending ? "Pushing…" : "Push to GitHub"}
         </Button>
-        {canMarkMerged ? (
-          <Button
-            disabled={isMarking}
-            title="Close this PR (and its linked issue) as merged, matching GitHub — no local git merge is run"
-            onClick={() => {
-              startMarkLoading();
-              markMerged.mutate(undefined, {
-                onError: (e) =>
-                  showError(failureMessage("Mark as merged failed", e)),
-              });
-            }}
-          >
-            {isMarking ? <Loader2 className="size-4 animate-spin" /> : null}
-            Mark as merged
-          </Button>
-        ) : null}
       </>
     );
   }

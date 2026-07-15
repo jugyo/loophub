@@ -1292,13 +1292,21 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
   S.createPull(expiredMerged.id, "loophub/pr-1", "main", null);
   S.registerAgentSession("session-expired-merged", "lh-dev", "external-1");
   S.setPullSession(expiredMerged.id, "session-expired-merged");
-  S.setMergedFromGithub(expiredMerged.id, old);
+  S.setMerged(expiredMerged.id, "expired-merge-sha", "merge");
+  db.run(`UPDATE pulls SET merged_at = ? WHERE issue_id = ?`, [
+    old,
+    expiredMerged.id,
+  ]);
 
   const freshMerged = S.createIssue(repo.id, "pull", "fresh merged", "", "me");
   S.createPull(freshMerged.id, "loophub/pr-2", "main", null);
   S.registerAgentSession("session-fresh-merged", "lh-dev", "external-2");
   S.setPullSession(freshMerged.id, "session-fresh-merged");
-  S.setMergedFromGithub(freshMerged.id, fresh);
+  S.setMerged(freshMerged.id, "fresh-merge-sha", "merge");
+  db.run(`UPDATE pulls SET merged_at = ? WHERE issue_id = ?`, [
+    fresh,
+    freshMerged.id,
+  ]);
 
   const freshClosed = S.createIssue(repo.id, "pull", "fresh closed", "", "me");
   S.createPull(freshClosed.id, "loophub/pr-3", "main", null);

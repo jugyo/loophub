@@ -220,6 +220,7 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
 function isNotificationSourceEvent(event: LoopEvent): boolean {
   if (
     event.type === "pull_request.ready_for_review" ||
+    event.type === "pull_request.github_merged" ||
     event.type === "dev.cost_stopped"
   ) {
     return true;

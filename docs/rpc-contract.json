@@ -2164,35 +2164,6 @@
       }
     },
     {
-      "name": "pulls/markGithubMerged",
-      "description": "Close a GitHub-linked PR (and its linked issue) as merged, without a local git merge, once lh-worker's polling has detected the GitHub PR as merged.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "pulls/githubStatus",
       "description": "GitHub-side status (draft / review / checks / comment counts / merged) of a PR's linked GitHub PR (#850). Fetched on demand via `gh` and cached; 404 when the PR has no linked GitHub PR.",
       "params": {

@@ -489,7 +489,7 @@ CREATE INDEX IF NOT EXISTS idx_github_issues_source ON github_issues(owner, repo
 -- PR's issues row id). payload is the JSON of the normalized status (core/github.ts GhPrStatus) and
 -- synced_at is when it was fetched — the service serves this within a short TTL before hitting gh
 -- again, so it is a cache, not authoritative state (github_pulls.github_merged remains the
--- authoritative merge signal that drives the "Mark as merged" action).
+-- authoritative merge signal used by the worker and Notification Center).
 CREATE TABLE IF NOT EXISTS github_pull_status (
   issue_id   INTEGER PRIMARY KEY REFERENCES issues(id),
   payload    TEXT NOT NULL,

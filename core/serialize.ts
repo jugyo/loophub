@@ -268,8 +268,8 @@ export interface GithubPullWire {
   branch: string | null;
   created_by: string | null;
   created_at: string;
-  // #813: whether lh-worker's polling (github-merge-sync.ts) has detected this GitHub PR as
-  // merged, and when — drives the "Mark as merged" action in the UI.
+  // Whether lh-worker's polling (github-merge-sync.ts) has detected this GitHub PR as merged,
+  // and when. The detail view keeps displaying this status after the manual merge action retires.
   github_merged: boolean;
   github_merged_at: string | null;
   // #848: the loophub head SHA last pushed to the GitHub branch (null if never pushed from here).

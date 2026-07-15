@@ -223,6 +223,15 @@ describe("queryKeysForEvent", () => {
     expect(
       queryKeysForEvent(
         ev({
+          type: "pull_request.github_merged",
+          repo: "me/proj",
+          payload: { number: 12 },
+        }),
+      ),
+    ).toContainEqual(["notifications"]);
+    expect(
+      queryKeysForEvent(
+        ev({
           type: "pull_request.review_submitted",
           repo: "me/proj",
           payload: { number: 12, state: "REQUEST_CHANGES" },

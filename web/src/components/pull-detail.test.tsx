@@ -1885,6 +1885,24 @@ describe("PullDetail — GitHub export action (#406)", () => {
     ).toBeNull();
   });
 
+  it("keeps Close and omits Mark as merged after GitHub merge detection", async () => {
+    renderDetailWithPull({
+      merge_mode: "github_pr",
+      github_pull: {
+        ...linkedGithubPull(null),
+        github_merged: true,
+        github_merged_at: "2026-07-15T00:00:00Z",
+      },
+    });
+
+    expect(
+      await screen.findByRole("button", { name: /^Close$/i }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Mark as merged/i }),
+    ).toBeNull();
+  });
+
   it("disables Push to GitHub when the current head is already pushed", async () => {
     renderDetailWithPull({
       merge_mode: "github_pr",

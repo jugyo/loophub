@@ -265,7 +265,7 @@ test("backfill defers reversible hidden states but ignores merged PR signals", a
   });
   S.updateIssue(closed.id, { state: "closed" });
   S.setRepoArchived(repo.id, true);
-  S.setMergedFromGithub(merged.id, "2026-01-01T00:00:00Z");
+  S.setMerged(merged.id, "merged-sha", "merge");
 
   let notifications = await svc.notifications.list({ limit: 100 });
 

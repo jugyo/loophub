@@ -8,9 +8,9 @@ import * as S from "./store.ts";
 // (S.unmergedGithubPullLinks), record a detected merge into github_pulls, and emit
 // pull_request.github_merged — mirrors watcher.ts's sweepPullUpdates for the analogous
 // local-push-detection sweep. Deliberately does not touch the loophub PR's own state/merged
-// columns (recording only; flow integration is a separate, later issue). A `gh` failure on one
-// link (auth/network/deleted PR) is skipped rather than thrown, so it doesn't block the rest of
-// the sweep — it will simply be retried on the next tick.
+// columns; the emitted event drives the user-facing Notification Center prompt instead. A `gh`
+// failure on one link (auth/network/deleted PR) is skipped rather than thrown, so it doesn't block
+// the rest of the sweep — it will simply be retried on the next tick.
 export async function syncGithubMergeStatus(
   deps: GithubMergeStatusDeps = realGithubMergeStatusDeps,
 ): Promise<S.EventRow[]> {
