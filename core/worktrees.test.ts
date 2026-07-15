@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { git, worktreeAdd } from "./git.ts";
 
-// Isolate the DB before db.ts runs its import-time setup (see AGENTS.md § Tests).
-const HOME = mkdtempSync(join(tmpdir(), "lh-worktrees-"));
-process.env.LOOPHUB_HOME = HOME;
-process.env.LOOPHUB_DB = join(HOME, "test.db");
+// Isolate the DB and sibling worktree fixtures before db.ts runs its import-time setup.
+const TEST_ROOT = mkdtempSync(join(tmpdir(), "lh-worktrees-"));
+process.env.LOOPHUB_HOME = TEST_ROOT;
+process.env.LOOPHUB_DB = join(TEST_ROOT, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
@@ -25,13 +25,17 @@ async function makeRepo(name: string): Promise<{ id: number; path: string }> {
   return { id: repo.id, path };
 }
 
+function worktreePath(name: string): string {
+  return join(TEST_ROOT, name);
+}
+
 beforeAll(async () => {
   S = await import("./store.ts");
   svc = await import("./service.ts");
 });
 
 afterAll(() => {
-  rmSync(HOME, { recursive: true, force: true });
+  rmSync(TEST_ROOT, { recursive: true, force: true });
 });
 
 // plan() classifies each loophub/issue-<n> worktree from issue state, dirtiness and cwd; the
@@ -54,7 +58,7 @@ test("plan classifies done/open/dirty/missing/cwd worktrees", async () => {
   for (const n of [1, 2, 3, 4]) {
     await worktreeAdd(
       repo.path,
-      join(repo.path, "..", `wt-${repo.id}-${n}`),
+      worktreePath(`wt-${repo.id}-${n}`),
       `loophub/issue-${n}`,
       "main",
     );
@@ -62,14 +66,14 @@ test("plan classifies done/open/dirty/missing/cwd worktrees", async () => {
   // a worktree #999 with no issue row → keep (cannot confirm done-ness)
   await worktreeAdd(
     repo.path,
-    join(repo.path, "..", `wt-${repo.id}-999`),
+    worktreePath(`wt-${repo.id}-999`),
     "loophub/issue-999",
     "main",
   );
   // make #3 dirty with a real untracked file
-  writeFileSync(join(repo.path, "..", `wt-${repo.id}-3`, "wip.txt"), "x\n");
+  writeFileSync(join(worktreePath(`wt-${repo.id}-3`), "wip.txt"), "x\n");
 
-  const cwd = join(repo.path, "..", `wt-${repo.id}-4`);
+  const cwd = worktreePath(`wt-${repo.id}-4`);
   const entries = await svc.worktrees.plan({ repo: "me/plan", cwd });
   const byIssue = new Map(entries.map((e) => [e.issue, e]));
 
@@ -90,7 +94,7 @@ test("plan classifies done/open/dirty/missing/cwd worktrees", async () => {
       "worktree",
       "remove",
       "--force",
-      join(repo.path, "..", `wt-${repo.id}-${n}`),
+      worktreePath(`wt-${repo.id}-${n}`),
     ]);
   }
 });
@@ -104,7 +108,7 @@ test("plan marks a worktree as remove when its linked PR is merged", async () =>
   S.createPull(pr.id, "loophub/issue-1", "main", null, issue.id);
   S.setMerged(pr.id, "deadbeef", "squash"); // merge the linked PR
 
-  const wtPath = join(repo.path, "..", `wt-merged-${repo.id}-1`);
+  const wtPath = worktreePath(`wt-merged-${repo.id}-1`);
   await worktreeAdd(repo.path, wtPath, "loophub/issue-1", "main");
 
   const entries = await svc.worktrees.plan({
@@ -132,7 +136,7 @@ test("plan removes clean superseded attempt worktrees but keeps dirty and cwd sa
     const pr = S.createIssue(repo.id, "pull", suffix, "", "me") as any;
     const head = `loophub/pr-${pr.number}`;
     S.createPull(pr.id, head, "main", null, issue.id);
-    const path = join(repo.path, "..", `wt-superseded-${repo.id}-${suffix}`);
+    const path = worktreePath(`wt-superseded-${repo.id}-${suffix}`);
     await worktreeAdd(repo.path, path, head, "main");
     attempts.push({ pr, path, suffix });
   }
@@ -175,7 +179,7 @@ test("remove deletes a clean worktree; tidy prunes admin entries", async () => {
   const repo = await makeRepo("me/remove");
   const i1 = S.createIssue(repo.id, "issue", "closed", "", "me") as any;
   S.updateIssue(i1.id, { state: "closed" });
-  const wtPath = join(repo.path, "..", `wt-rm-${repo.id}-1`);
+  const wtPath = worktreePath(`wt-rm-${repo.id}-1`);
   await worktreeAdd(repo.path, wtPath, "loophub/issue-1", "main");
 
   const res = await svc.worktrees.remove({
@@ -200,7 +204,7 @@ test("remove refuses when the path is no longer the expected worktree", async ()
   const repo = await makeRepo("me/guard");
   const res = await svc.worktrees.remove({
     repoPath: repo.path,
-    path: join(repo.path, "..", "does-not-exist"),
+    path: worktreePath("does-not-exist"),
     issue: 7,
   });
   expect(res.removed).toBe(false);
@@ -216,7 +220,7 @@ test("plan and remove recognize the current loophub/pr-<n> convention", async ()
   S.createPull(pr.id, "loophub/pr-2", "main", null, issue.id);
   S.setMerged(pr.id, "deadbeef", "squash");
 
-  const wtPath = join(repo.path, "..", `wt-prconv-${repo.id}-2`);
+  const wtPath = worktreePath(`wt-prconv-${repo.id}-2`);
   await worktreeAdd(repo.path, wtPath, "loophub/pr-2", "main");
 
   const entries = await svc.worktrees.plan({
