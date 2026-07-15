@@ -1770,7 +1770,10 @@ describe("PullDetail", () => {
 
 // #406: the PR-detail write action follows the PR's effective merge_mode. Render with an overridden
 // pull so we can exercise each mode without touching the shared fixture.
-function renderDetailWithPull(override: Partial<PullRequest>) {
+function renderDetailWithPull(
+  override: Partial<PullRequest>,
+  extraHandlers: Record<string, (params: any) => unknown> = {},
+) {
   vi.stubGlobal(
     "fetch",
     mockRpcFetch({
@@ -1779,6 +1782,19 @@ function renderDetailWithPull(override: Partial<PullRequest>) {
       "reviews/list": () => reviews,
       "reviews/listComments": () => lineComments,
       "comments/list": () => comments,
+      "pulls/githubStatus": () => ({
+        state: "open",
+        is_draft: false,
+        merged: false,
+        mergeable: "mergeable",
+        review_decision: null,
+        checks: "none",
+        comments: 0,
+        reviews: 0,
+        updated_at: null,
+        synced_at: "2026-06-18T12:00:00Z",
+      }),
+      ...extraHandlers,
     }),
   );
   const queryClient = new QueryClient({
@@ -1804,6 +1820,19 @@ function renderDetailWithPull(override: Partial<PullRequest>) {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+}
+
+function linkedGithubPull(pushedSha: string | null) {
+  return {
+    number: 7,
+    url: "https://github.com/me/proj/pull/7",
+    branch: "feature/x",
+    created_by: "impl-bot",
+    created_at: "2026-06-19T00:00:00Z",
+    github_merged: false,
+    github_merged_at: null,
+    pushed_sha: pushedSha,
+  } satisfies NonNullable<PullRequest["github_pull"]>;
 }
 
 describe("PullDetail — GitHub export action (#406)", () => {
@@ -1833,16 +1862,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
   it("swaps to a View PR on GitHub link once exported (double-create guard)", async () => {
     renderDetailWithPull({
       merge_mode: "github_pr",
-      github_pull: {
-        number: 7,
-        url: "https://github.com/me/proj/pull/7",
-        branch: "feature/x",
-        created_by: "impl-bot",
-        created_at: "2026-06-19T00:00:00Z",
-        github_merged: false,
-        github_merged_at: null,
-        pushed_sha: null,
-      },
+      github_pull: linkedGithubPull(null),
     });
     const link = await screen.findByRole("link", {
       name: /View PR on GitHub/i,
@@ -1851,5 +1871,63 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(
       screen.queryByRole("button", { name: /Create PR on GitHub/i }),
     ).toBeNull();
+  });
+
+  it("disables Push to GitHub when the current head is already pushed", async () => {
+    renderDetailWithPull({
+      merge_mode: "github_pr",
+      github_pull: linkedGithubPull(pull.head.sha),
+    });
+
+    const button = await screen.findByRole("button", {
+      name: /Push to GitHub/i,
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(rpcCall("pulls/pushGithubPull")).toBeUndefined();
+  });
+
+  it("pushes an unpushed head and disables the action after the refreshed state arrives", async () => {
+    let pushedSha = "previous-head";
+    let resolveRefresh: (() => void) | undefined;
+    const githubPull = () => linkedGithubPull(pushedSha);
+    renderDetailWithPull(
+      {},
+      {
+        "pulls/get": () => {
+          const refreshedPull = {
+            ...pull,
+            merge_mode: "github_pr" as const,
+            github_pull: githubPull(),
+          };
+          if (pushedSha !== pull.head.sha) return refreshedPull;
+          return new Promise((resolve) => {
+            resolveRefresh = () => resolve(refreshedPull);
+          });
+        },
+        "pulls/pushGithubPull": () => {
+          pushedSha = pull.head.sha!;
+          return githubPull();
+        },
+      },
+    );
+
+    const button = (await screen.findByRole("button", {
+      name: /Push to GitHub/i,
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(rpcCall("pulls/pushGithubPull")?.params).toMatchObject({
+        repo: "me/proj",
+        number: 30,
+      });
+      expect(resolveRefresh).toBeTypeOf("function");
+    });
+    expect(button.disabled).toBe(true);
+
+    resolveRefresh?.();
+    await waitFor(() => expect(button.disabled).toBe(true));
   });
 });

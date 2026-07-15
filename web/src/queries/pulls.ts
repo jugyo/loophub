@@ -20,6 +20,7 @@ import {
   pushGithubPull,
   readyForReview,
 } from "@/api/client";
+import type { PullRequest } from "@/api/types";
 import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
@@ -212,7 +213,14 @@ export function usePushGithubPull(owner: string, repo: string, number: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => pushGithubPull(owner, repo, number),
-    onSuccess: () => invalidatePull(qc, owner, repo, number),
+    onSuccess: (githubPull) => {
+      qc.setQueryData<PullRequest>(
+        queryKeys.pull(full(owner, repo), number),
+        (current) =>
+          current ? { ...current, github_pull: githubPull } : current,
+      );
+      invalidatePull(qc, owner, repo, number);
+    },
   });
 }
 

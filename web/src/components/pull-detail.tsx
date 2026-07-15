@@ -641,9 +641,8 @@ function GithubPrAction({
   const [isMarkLoading, startMarkLoading] = useFixedLoading();
   const isMarking = isMarkLoading || markMerged.isPending;
 
-  // #848: push local changes to the linked GitHub PR's branch. Offered only while there are commits
-  // the export hasn't sent yet — the PR's live head.sha differs from the pushed_sha recorded on the
-  // last push. isPending drives the disabled + spinner state so the click can't fire twice (AC4).
+  // #848: push local changes to the linked GitHub PR's branch. isPending drives the disabled +
+  // spinner state so the click can't fire twice (AC4).
   const pushChanges = usePushGithubPull(owner, repo, pull.number);
 
   const gh = pull.github_pull;
@@ -653,7 +652,7 @@ function GithubPrAction({
     // Unpushed local changes exist when we know what was last pushed (pushed_sha) and the PR's head
     // has moved past it. Gated on an open, unmerged PR and a recorded branch to push onto — a
     // closed/merged PR is past syncing (AC7), and a null pushed_sha (e.g. an externally-attached PR
-    // never pushed from here) reads as "nothing known to be unpushed", so the button stays hidden.
+    // never pushed from here) reads as "nothing known to be unpushed", so the button stays disabled.
     const hasUnpushedChanges =
       pull.state === "open" &&
       !pull.merged &&
@@ -674,26 +673,28 @@ function GithubPrAction({
           View PR on GitHub
           <ExternalLink className="size-3.5 text-muted-foreground" />
         </a>
-        {hasUnpushedChanges ? (
-          <Button
-            variant="secondary"
-            disabled={pushChanges.isPending}
-            title={`Push local changes to the GitHub PR branch (${gh.branch})`}
-            onClick={() =>
-              pushChanges.mutate(undefined, {
-                onError: (e) =>
-                  showError(failureMessage("Push to GitHub failed", e)),
-              })
-            }
-          >
-            {pushChanges.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <UploadCloud className="size-4" />
-            )}
-            {pushChanges.isPending ? "Pushing…" : "Push local changes"}
-          </Button>
-        ) : null}
+        <Button
+          variant="secondary"
+          disabled={!hasUnpushedChanges || pushChanges.isPending}
+          title={
+            hasUnpushedChanges
+              ? `Push local changes to the GitHub PR branch (${gh.branch})`
+              : "No local changes to push to GitHub"
+          }
+          onClick={() =>
+            pushChanges.mutate(undefined, {
+              onError: (e) =>
+                showError(failureMessage("Push to GitHub failed", e)),
+            })
+          }
+        >
+          {pushChanges.isPending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <UploadCloud className="size-4" />
+          )}
+          {pushChanges.isPending ? "Pushing…" : "Push to GitHub"}
+        </Button>
         {canMarkMerged ? (
           <Button
             disabled={isMarking}
