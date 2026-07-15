@@ -220,6 +220,9 @@ describe("PullDetail", () => {
     expect(await screen.findByText("ui2: PR detail")).toBeTruthy();
     expect(screen.getByText("issue-153")).toBeTruthy();
     expect(screen.getByText("main")).toBeTruthy();
+    expect(screen.getByText("Render diff, reviews, comments.")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Develop" })).toBeNull();
+    expect(screen.queryByText("lh resume me/proj/30")).toBeNull();
 
     // The PR detail shows a compact file summary instead of expanding patch lines inline.
     expect(await screen.findByText("web/src/a.ts")).toBeTruthy();

@@ -25,7 +25,6 @@ import type {
 } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
 import { DetailHeaderTitle } from "@/components/detail-title";
-import { PullDevInfo } from "@/components/dev-info";
 import { DiffStat } from "@/components/diff-stat";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { Markdown } from "@/components/markdown";
@@ -510,7 +509,7 @@ function PullHeader({
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-md border bg-muted/30">
+      <div className="rounded-md border bg-muted/30">
         {pull.body ? (
           <Markdown owner={owner} repo={repo} className="p-4">
             {pull.body}
@@ -518,7 +517,6 @@ function PullHeader({
         ) : (
           <p className="p-4 text-sm text-muted-foreground">No description.</p>
         )}
-        <PullDevInfo owner={owner} repo={repo} number={pull.number} />
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
