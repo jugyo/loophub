@@ -32,8 +32,8 @@ export function listReviews(issueId: number): ReviewRow[] {
     db
       // id ASC is a deterministic tiebreaker: now() has 1-second resolution, so
       // two reviews on the same topic in the same second would otherwise have an
-      // undefined order — and computeReviewGate / latestSubstantiveReview rely on
-      // last-write-per-topic to gate merges (#427).
+      // undefined order — and computeReviewStatus relies on last-write-per-topic
+      // to gate merges (#427).
       .query(
         `SELECT * FROM reviews WHERE issue_id = ? ORDER BY created_at ASC, id ASC`,
       )
@@ -74,37 +74,6 @@ export type ReviewState =
   | "STALE"
   | null;
 
-export function latestSubstantiveReview(issueId: number): ReviewRow | null {
-  const reviews = listReviews(issueId);
-  for (let i = reviews.length - 1; i >= 0; i--) {
-    const event = reviews[i].event;
-    if (event === "PASS" || event === "REQUEST_CHANGES") return reviews[i];
-  }
-  return null;
-}
-
-export function computeReviewState(issueId: number): ReviewState {
-  const p = getPull(issueId)!;
-  const latest = latestSubstantiveReview(issueId);
-  if (!latest) {
-    return listReviews(issueId).some((r) => r.event === "COMMENT")
-      ? "COMMENTED"
-      : null;
-  }
-  if (latest.event === "PASS") {
-    // A PASS is stale once the branch head advances past the commit it was made
-    // against. Passes recorded before head_sha tracking (no recorded sha) stay
-    // PASSED, since their staleness can't be determined.
-    if (latest.head_sha && p.head_sha && latest.head_sha !== p.head_sha)
-      return "STALE";
-    return "PASSED";
-  }
-  if (latest.event === "REQUEST_CHANGES") {
-    return p.changes_addressed_at ? "READY_FOR_RE_REVIEW" : "CHANGES_REQUESTED";
-  }
-  return null;
-}
-
 // Per-topic merge gate (#427). The merge gate is no longer a single PASS:
 // every review topic must pass independently. A topic "passes" when its latest
 // substantive review (PASS / REQUEST_CHANGES) is a fresh PASS — i.e. not a
@@ -118,32 +87,118 @@ export interface ReviewGate {
   reviewed: boolean;
   /** Every reviewed topic's latest substantive review passes (fresh PASS). */
   allTopicsPassed: boolean;
+  /** Latest substantive review status for every topic, in first-seen order. */
+  topics: ReviewTopicGate[];
 }
 
-export function computeReviewGate(
-  issueId: number,
-  currentHeadSha: string | null = getPull(issueId)!.head_sha,
+export type ReviewTopicState = "passed" | "stale" | "changes_requested";
+export type ReviewBlockingReason = "stale" | "request_changes";
+
+export interface ReviewTopicGate {
+  topic: string | null;
+  headSha: string | null;
+  state: ReviewTopicState;
+  blockingReason: ReviewBlockingReason | null;
+}
+
+export interface ReviewStatus {
+  state: ReviewState;
+  gate: ReviewGate;
+}
+
+function reviewGate(
+  reviews: ReviewRow[],
+  currentHeadSha: string | null,
 ): ReviewGate {
   // ASC order (listReviews) → the last write per topic wins = latest substantive
   // review for that topic.
   const latestByTopic = new Map<string | null, ReviewRow>();
-  for (const r of listReviews(issueId)) {
+  for (const r of reviews) {
     if (r.event === "PASS" || r.event === "REQUEST_CHANGES")
       latestByTopic.set(r.topic ?? null, r);
   }
-  // No substantive review yet → reviews not gathered; never clean.
-  if (latestByTopic.size === 0)
-    return { reviewed: false, allTopicsPassed: false };
-  for (const r of latestByTopic.values()) {
-    if (r.event === "REQUEST_CHANGES")
-      return { reviewed: true, allTopicsPassed: false };
-    // PASS that went stale (head moved past the reviewed commit) needs a
-    // re-review; passes with no recorded head_sha (pre-tracking) can't be
-    // determined stale, so they count as passing.
-    if (r.head_sha && currentHeadSha && r.head_sha !== currentHeadSha)
-      return { reviewed: true, allTopicsPassed: false };
+  const topics = Array.from(latestByTopic.entries()).map(([topic, r]) => {
+    if (r.event === "REQUEST_CHANGES") {
+      return {
+        topic,
+        headSha: r.head_sha,
+        state: "changes_requested",
+        blockingReason: "request_changes",
+      } satisfies ReviewTopicGate;
+    }
+    // A PASS that went stale needs a re-review. Passes with no recorded
+    // head_sha (pre-tracking) cannot be determined stale, so they still pass.
+    if (r.head_sha && currentHeadSha && r.head_sha !== currentHeadSha) {
+      return {
+        topic,
+        headSha: r.head_sha,
+        state: "stale",
+        blockingReason: "stale",
+      } satisfies ReviewTopicGate;
+    }
+    return {
+      topic,
+      headSha: r.head_sha,
+      state: "passed",
+      blockingReason: null,
+    } satisfies ReviewTopicGate;
+  });
+  return {
+    reviewed: topics.length > 0,
+    allTopicsPassed:
+      topics.length > 0 && topics.every((topic) => topic.state === "passed"),
+    topics,
+  };
+}
+
+/**
+ * Compute the display state and per-topic merge gate from the same review
+ * snapshot. This keeps the user-facing state consistent with merge blocking:
+ * any unresolved change request wins, then any stale topic, and only a fresh
+ * PASS for every reviewed topic produces PASSED.
+ */
+export function computeReviewStatus(
+  issueId: number,
+  currentHeadSha?: string | null,
+): ReviewStatus {
+  const p = getPull(issueId)!;
+  const reviews = listReviews(issueId);
+  const gate = reviewGate(
+    reviews,
+    currentHeadSha === undefined ? p.head_sha : currentHeadSha,
+  );
+  if (!gate.reviewed) {
+    return {
+      state: reviews.some((r) => r.event === "COMMENT") ? "COMMENTED" : null,
+      gate,
+    };
   }
-  return { reviewed: true, allTopicsPassed: true };
+  if (gate.topics.some((topic) => topic.state === "changes_requested")) {
+    return {
+      state: p.changes_addressed_at
+        ? "READY_FOR_RE_REVIEW"
+        : "CHANGES_REQUESTED",
+      gate,
+    };
+  }
+  if (gate.topics.some((topic) => topic.state === "stale")) {
+    return { state: "STALE", gate };
+  }
+  return { state: "PASSED", gate };
+}
+
+export function computeReviewState(
+  issueId: number,
+  currentHeadSha?: string | null,
+): ReviewState {
+  return computeReviewStatus(issueId, currentHeadSha).state;
+}
+
+export function computeReviewGate(
+  issueId: number,
+  currentHeadSha?: string | null,
+): ReviewGate {
+  return computeReviewStatus(issueId, currentHeadSha).gate;
 }
 
 export function markChangesAddressed(issueId: number, actor: string) {

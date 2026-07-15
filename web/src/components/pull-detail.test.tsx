@@ -59,6 +59,18 @@ const pull: PullRequest = {
   mergeable: true,
   mergeable_state: "clean",
   review_state: "PASSED",
+  review_gate: {
+    reviewed: true,
+    all_topics_passed: true,
+    topics: [
+      {
+        topic: "quality",
+        head_sha: "aaa",
+        state: "passed",
+        blocking_reason: null,
+      },
+    ],
+  },
   changes_addressed_at: null,
   changes_addressed_by: null,
   merge_commit_sha: null,

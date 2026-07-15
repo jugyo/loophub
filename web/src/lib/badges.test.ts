@@ -48,6 +48,7 @@ function pull(partial: Partial<PullRequest> = {}): PullRequest {
     mergeable: true,
     mergeable_state: "clean",
     review_state: null,
+    review_gate: { reviewed: false, all_topics_passed: false, topics: [] },
     changes_addressed_at: null,
     changes_addressed_by: null,
     merge_commit_sha: null,

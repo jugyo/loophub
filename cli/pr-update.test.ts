@@ -85,6 +85,23 @@ function viewJSON(n: number) {
   return JSON.parse(stdout);
 }
 
+function review(n: number, topic: string, event = "pass") {
+  const result = lh([
+    "pr",
+    "review",
+    String(n),
+    "--repo",
+    REPO,
+    "--topic",
+    topic,
+    "--event",
+    event,
+    "--body",
+    `${topic}: ${event}`,
+  ]);
+  if (result.exitCode !== 0) throw new Error(result.stderr);
+}
+
 beforeAll(() => {
   home = mkdtempSync(join(tmpdir(), "loophub-prupd-home-"));
   repoPath = mkdtempSync(join(tmpdir(), "loophub-prupd-repo-"));
@@ -169,6 +186,90 @@ test("lh pr view --json exposes the recorded base_sha", () => {
   const n = createPull("base sha", "body");
 
   expect(viewJSON(n).base_sha).toBe(expected);
+});
+
+test("lh pr view --json identifies each topic blocking the current head", () => {
+  const n = createPull("review gate", "body");
+  const reviewedHead = gitOutput(["rev-parse", "feature"]);
+  for (const topic of ["workflow", "quality", "security", "acceptance"])
+    review(n, topic);
+
+  writeFileSync(join(repoPath, "rebase-base.txt"), "new base\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "advance base before review gate rebase"]);
+  git(["checkout", "-q", "feature"]);
+  git(["rebase", "main"]);
+  git(["checkout", "-q", "main"]);
+
+  const currentHead = gitOutput(["rev-parse", "feature"]);
+  expect(currentHead).not.toBe(reviewedHead);
+  for (const topic of ["quality", "security", "acceptance"]) review(n, topic);
+
+  const stale = viewJSON(n);
+  expect(stale.review_state).toBe("STALE");
+  expect(stale.mergeable_state).toBe("blocked");
+  expect(stale.review_gate).toMatchObject({
+    reviewed: true,
+    all_topics_passed: false,
+    topics: [
+      {
+        topic: "workflow",
+        head_sha: reviewedHead,
+        state: "stale",
+        blocking_reason: "stale",
+      },
+      {
+        topic: "quality",
+        head_sha: currentHead,
+        state: "passed",
+        blocking_reason: null,
+      },
+      {
+        topic: "security",
+        head_sha: currentHead,
+        state: "passed",
+        blocking_reason: null,
+      },
+      {
+        topic: "acceptance",
+        head_sha: currentHead,
+        state: "passed",
+        blocking_reason: null,
+      },
+    ],
+  });
+
+  review(n, "workflow");
+  expect(viewJSON(n)).toMatchObject({
+    review_state: "PASSED",
+    mergeable_state: "clean",
+    review_gate: { reviewed: true, all_topics_passed: true },
+  });
+
+  review(n, "security", "request_changes");
+  expect(viewJSON(n)).toMatchObject({
+    review_state: "CHANGES_REQUESTED",
+    mergeable_state: "blocked",
+    review_gate: {
+      reviewed: true,
+      all_topics_passed: false,
+      topics: expect.arrayContaining([
+        {
+          topic: "security",
+          head_sha: currentHead,
+          state: "changes_requested",
+          blocking_reason: "request_changes",
+        },
+      ]),
+    },
+  });
+
+  review(n, "security");
+  expect(viewJSON(n)).toMatchObject({
+    review_state: "PASSED",
+    mergeable_state: "clean",
+    review_gate: { reviewed: true, all_topics_passed: true },
+  });
 });
 
 test("lh pr update --title leaves body untouched", () => {

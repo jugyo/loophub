@@ -709,8 +709,12 @@ export const pulls = {
       });
       return pullJSON(r, S.getIssue(r.id, row.number)!);
     }
-    const latest = S.latestSubstantiveReview(row.id);
-    if (latest?.event !== "REQUEST_CHANGES") {
+    const reviewStatus = S.computeReviewStatus(row.id);
+    if (
+      !reviewStatus.gate.topics.some(
+        (topic) => topic.state === "changes_requested",
+      )
+    ) {
       throw new ServiceError(422, "No pending change requests to address");
     }
     if (p.changes_addressed_at)

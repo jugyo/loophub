@@ -767,4 +767,39 @@ describe("pull draft / ready-for-review", () => {
       svc.pulls.readyForReview("me/proj", number, undefined, "sess-1"),
     ).rejects.toThrowError(/No pending change requests/);
   });
+
+  test("readyForReview accepts a pending change request from any review topic", async () => {
+    const pr = await svc.pulls.create(
+      "me/proj",
+      { title: "topic re-review", head: "main", base: "main" },
+      "sess-1",
+    );
+    await svc.reviews.create(
+      "me/proj",
+      pr.number,
+      {
+        topic: "security",
+        event: "REQUEST_CHANGES",
+        body: "needs security changes",
+      },
+      "sess-1",
+    );
+    await svc.reviews.create(
+      "me/proj",
+      pr.number,
+      { topic: "acceptance", event: "PASS", body: "acceptance passed" },
+      "sess-1",
+    );
+
+    expect((await svc.pulls.get("me/proj", pr.number)).review_state).toBe(
+      "CHANGES_REQUESTED",
+    );
+    const ready = await svc.pulls.readyForReview(
+      "me/proj",
+      pr.number,
+      undefined,
+      "sess-1",
+    );
+    expect(ready.review_state).toBe("READY_FOR_RE_REVIEW");
+  });
 });

@@ -363,7 +363,7 @@ test("multiple ready_for_review events (re-review after changes requested): impl
   // ~400s for the whole review phase (both rounds combined).
   backdateReadyEvent(number, 400);
 
-  svc.reviews.create(
+  await svc.reviews.create(
     "me/proj",
     number,
     { event: "REQUEST_CHANGES", body: "needs fixes" },

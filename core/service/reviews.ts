@@ -5,6 +5,7 @@ import {
   repoOr404,
   reviewCommentJSON,
   reviewJSON,
+  revParse,
   S,
   ServiceError,
 } from "./shared.ts";
@@ -23,7 +24,7 @@ export const reviews = {
     return S.listReviewComments(row.id).map(reviewCommentJSON);
   },
 
-  create(
+  async create(
     name: string,
     number: number,
     input: {
@@ -55,9 +56,16 @@ export const reviews = {
         throw new ServiceError(422, "each comment requires path and body");
     }
     const actor = actorFor(sessionId);
-    // Bind the review to the head it was made against so a PASS can be
-    // marked stale once the branch advances past this commit.
-    const headSha = input.headSha ?? S.getPull(row.id)?.head_sha ?? null;
+    // Bind the review to the live head it was made against. The watcher-backed
+    // stored SHA can lag immediately after a rebase, so it is only a fallback
+    // when the ref cannot be resolved. Workflow placement may pass its pinned
+    // SHA explicitly and must keep taking precedence.
+    const pull = S.getPull(row.id)!;
+    const headSha =
+      input.headSha ??
+      (await revParse(r.local_path, pull.head_ref)) ??
+      pull.head_sha ??
+      null;
     const v = S.createReview(
       row.id,
       actor,

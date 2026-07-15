@@ -720,11 +720,13 @@ async function placeAcceptedArtifact(input: {
       },
       async createReview(review) {
         return String(
-          reviews.create(
-            input.repoName,
-            input.run.pr_number,
-            { ...review, topic: "workflow" },
-            input.sessionId,
+          (
+            await reviews.create(
+              input.repoName,
+              input.run.pr_number,
+              { ...review, topic: "workflow" },
+              input.sessionId,
+            )
           ).id,
         );
       },

@@ -120,6 +120,11 @@ skills-only diff is otherwise documentation-only. But Quality still runs wheneve
 `quality` topic, and it needs that topic active to report a lint failure. Security has no such check, so
 it keeps the plain documentation-only skip.
 
+**Exception — retained blocking topics**: Core retains every topic that has a substantive review. If
+`review_gate.topics` reports `stale` or `request_changes` for Quality, Security, Documentation, or
+Acceptance, that role runs even when the table would otherwise skip it. A current-head review is the
+explicit resolution path; dropping a previously reviewed topic from selection does not dismiss it.
+
 The diff classification that drives this table (`hasCodeChanges` / `hasDocChanges` / `touchesSkills`) is
 computed in A.1; role selection is applied in A.3; which roles ran or were skipped, and why, is recorded
 in the A.4 synthesis and surfaced in the A.6 round report — that record is the audit trail for "why this
@@ -200,8 +205,10 @@ structured JSON regardless; the parent localizes the prose when synthesizing (A.
 round = 1
 while round <= max_rounds:
   A. Review (steps 1–6) → per-topic verdicts → overall verdict (A.4)
-  if overall == pass:           # only when EVERY topic that ran is pass
+  if overall == pass and review_gate.all_topics_passed:
     report completion and exit
+  if review_gate has a blocking externally-owned topic:
+    report its re-review command and exit for the owning validator
   if --review-only:
     report and exit (no fixes)
   B. Fix (step 7) — parent on head
@@ -215,6 +222,8 @@ Each round posts one review **per topic** (quality / security / documentation / 
 applicable), and aggregates them into a single **overall verdict** that drives the loop:
 `request_changes` if **any** topic requests changes, `comment` when only non-blocking findings remain,
 and `pass` only when **every** topic that ran is pass. Only `pass` exits the loop (see A.4 / A.5).
+Even then, completion also requires `review_gate.all_topics_passed`; an externally-owned retained topic
+can still block after every role selected by this skill passes.
 
 Default `max_rounds` **5**. Stop loop if the same finding persists two rounds in a row; escalate.
 
@@ -225,7 +234,7 @@ Do **not** edit code during review (before or after reviewer launch).
 ### A.1 Context (parent)
 
 ```sh
-lh pr view <m> --repo <repo>
+lh pr view <m> --repo <repo> --json
 lh pr diff <m> --repo <repo>
 ```
 
@@ -236,7 +245,9 @@ lh issue view <n> --repo <repo>
 ```
 
 Record: PR number / title / `head.ref` / `base.ref` / repo absolute path / linked issue goal (if any) /
-round number / the diff's file classification (below).
+round number / the diff's file classification (below) / `review_gate.topics`. A topic whose
+`blocking_reason` is `stale` or `request_changes` is unresolved on the current head; record its topic,
+reviewed `head_sha`, and reason before selecting reviewers.
 
 Classify every changed path from `lh pr diff` as **documentation** or **code**:
 
@@ -303,8 +314,27 @@ for routing triggers. Localized issue/PR templates belong in user output, not in
 
 Apply [Review selection policy](#review-selection-policy) to A.1's `hasCodeChanges` / `hasDocChanges` /
 `touchesSkills` flags and linked-issue presence to decide which of **Quality**, **Security**,
-**Documentation**, **Acceptance** run this round. Launch the selected roles as **readonly,
-context-isolated reviewer sessions in parallel**; each runs once per round. Record which roles were
+**Documentation**, **Acceptance** run this round. Then add any of those four roles whose existing
+topic has a non-null `blocking_reason` in `review_gate.topics`, even if the current diff policy would
+otherwise skip it. This preserves the historical topic gate while providing a current-head re-review
+that can resolve it.
+
+A blocking topic outside those four roles is externally owned (for example, `workflow` is owned by
+Workflow Verify). Do not fabricate a pass or silently discard it. Stop pass completion, report the
+topic and reason, and give the owning validator this executable current-head posting path after it
+reruns its checks:
+
+```sh
+lh pr review <m> --repo <repo> --topic <topic> \
+  --event pass --body "Current-head validation passed: <result>"
+# If current-head validation still fails, post request_changes instead:
+lh pr review <m> --repo <repo> --topic <topic> \
+  --event request_changes --body "Current-head validation failed: <result>"
+```
+
+After that review is posted, rerun this skill; the new per-topic result supersedes the stale one.
+Launch the selected roles as **readonly, context-isolated reviewer sessions in parallel**; each runs
+once per round. Record which roles were
 skipped, and why, for A.4. Resolve each launched role's mechanism via
 [Reviewer roles & host mapping](#reviewer-roles--host-mapping) — e.g. on Codex, separate
 non-interactive `codex exec` invocations; on Cursor, `bugbot` / `security-review` / `general-purpose` /
@@ -368,7 +398,7 @@ them into one body.
    `request_changes`.
 4. **Overall verdict** (round-wide, drives the loop): `request_changes` if **any** topic is
    `request_changes`; else `comment` if any topic is `comment`; else `pass` (every topic that ran is
-   pass). Only `pass` exits the loop.
+   pass). Only `pass` can exit the loop, and A.5 must also confirm `review_gate.all_topics_passed`.
 
 Per-topic `--body` template (one per topic; include round number and the same Scope line):
 
@@ -397,20 +427,13 @@ Post **one review per topic that ran** this round (per A.3's launch decisions), 
 never post the same topic twice in one round (the per-round double-post guard now applies per topic;
 multiple rounds across the loop are still fine).
 
-**Posting order matters.** A PR's resolved review state is the **latest substantive (pass /
-request_changes) review regardless of topic**. So post topics whose verdict is `pass` or `comment` **first**, and any
-`request_changes` topic **last**. This guarantees the two states that matter: a round with **any**
-`request_changes` topic ends in `CHANGES_REQUESTED`, and a round where **every** topic passes ends in
-`PASSED`. (An overall `comment` round — Medium-only, no `request_changes` — resolves to `PASSED`
-because a `COMMENT`-only round has no substantive pass/request_changes review to surface as the
-resolved state instead; that is acceptable, since the loop continues on any non-`pass` overall
-verdict and a `comment` topic carries only non-blocking findings.)
+Posting order does not affect the resolved state. Core aggregates the latest substantive review per
+topic: any `request_changes` topic produces `CHANGES_REQUESTED`, any stale pass produces `STALE`, and
+only fresh passes for every retained topic produce `PASSED`.
 
 ```sh
-# pass/comment topics first …
 lh pr review <m> --repo <repo> --topic acceptance --event pass \
   --body "..." --actor reviewer-bot
-# … any request_changes topic last, with its line comments
 echo '[{"path":"src/a.ts","line":12,"body":"[security] ..."}]' \
   | lh pr review <m> --repo <repo> --topic security --event request_changes \
       --body "..." --comments - --actor reviewer-bot
@@ -422,6 +445,11 @@ echo '[{"path":"src/a.ts","line":12,"body":"[security] ..."}]' \
 - Do not post the same `--topic` twice within one round
 - Each comment element requires `path` and `body`
 
+After all posts, fetch `lh pr view <m> --repo <repo> --json` again. The round may complete with pass
+only when `review_gate.all_topics_passed` is true. For each remaining topic with a non-null
+`blocking_reason`, report the topic, reason, and reviewed `head_sha`; route an externally-owned topic
+through the A.3 command above instead of claiming the selected reviewer set made the PR mergeable.
+
 ### A.6 Round report (parent)
 
 Per-topic verdicts + overall verdict / finding count / line comment count / `lh pr review` result per
@@ -432,7 +460,8 @@ human sees the reason without re-deriving it from the diff, e.g. `Selection: qua
 skipped (documentation-only diff); quality ran (touchesSkills — skills-lint exception); documentation,
 acceptance ran.`
 
-If overall `pass` or `--review-only` → full completion report. Otherwise → Phase B.
+If overall `pass` and `review_gate.all_topics_passed`, or `--review-only` → full completion report.
+If an externally-owned topic still blocks, report its resolution command and stop. Otherwise → Phase B.
 
 ## Phase B — Fix (parent, fix phase only)
 

@@ -760,6 +760,30 @@ export function reviewJSON(v: S.ReviewRow): ReviewWire {
   };
 }
 
+export interface ReviewGateWire {
+  reviewed: boolean;
+  all_topics_passed: boolean;
+  topics: Array<{
+    topic: string | null;
+    head_sha: string | null;
+    state: S.ReviewTopicState;
+    blocking_reason: S.ReviewBlockingReason | null;
+  }>;
+}
+
+export function reviewGateJSON(gate: S.ReviewGate): ReviewGateWire {
+  return {
+    reviewed: gate.reviewed,
+    all_topics_passed: gate.allTopicsPassed,
+    topics: gate.topics.map((topic) => ({
+      topic: topic.topic,
+      head_sha: topic.headSha,
+      state: topic.state,
+      blocking_reason: topic.blockingReason,
+    })),
+  };
+}
+
 export interface ReviewCommentWire {
   id: number;
   pull_request_review_id: number | null;
@@ -1000,6 +1024,7 @@ interface PullStatusFields {
   commits_ahead: number;
   working: boolean;
   review_state: S.ReviewState;
+  review_gate: ReviewGateWire;
   linked: LinkedIssueWire | null;
   worktree_path: string | null;
 }
@@ -1014,11 +1039,11 @@ async function pullStatusFields(
     revParse(repo.local_path, p.base_ref),
     resolvePullBaseSha(repo.local_path, p),
   ]);
-  const review_state = S.computeReviewState(row.id);
-  // Merge gate aggregates reviews per topic (#427): clean requires every review
-  // topic to pass, not a single PASS — review_state above stays the display
-  // signal for the overall PR state.
-  const reviewGate = S.computeReviewGate(row.id);
+  // Prefer the live Git head for both display state and merge gate. The stored
+  // watcher SHA is only a fallback when the ref cannot currently be resolved.
+  // computeReviewStatus aggregates once per topic so these two signals cannot
+  // disagree about a stale or changes-requested topic.
+  const reviewStatus = S.computeReviewStatus(row.id, headSha ?? p.head_sha);
   let mergeable: boolean | null = null;
   let mergeable_state: MergeableState = "unknown";
   let commits_ahead = 0;
@@ -1032,8 +1057,8 @@ async function pullStatusFields(
     ({ mergeable, mergeable_state } = resolveMergeable({
       hasEffectiveDiff: effectiveDiff,
       conflict: prev.conflict,
-      reviewed: reviewGate.reviewed,
-      allTopicsPassed: reviewGate.allTopicsPassed,
+      reviewed: reviewStatus.gate.reviewed,
+      allTopicsPassed: reviewStatus.gate.allTopicsPassed,
     }));
   }
   // Diff totals (+/-, changed files) for the PR. Aggregated from numstat over
@@ -1092,7 +1117,8 @@ async function pullStatusFields(
     changed_files,
     commits_ahead,
     working,
-    review_state,
+    review_state: reviewStatus.state,
+    review_gate: reviewGateJSON(reviewStatus.gate),
     linked,
     worktree_path,
   };
@@ -1713,6 +1739,7 @@ export interface PullWire {
   changed_files: number;
   working: boolean;
   review_state: S.ReviewState;
+  review_gate: ReviewGateWire;
   changes_addressed_at: string | null;
   changes_addressed_by: string | null;
   labels: LabelWire[];
@@ -1804,6 +1831,7 @@ export async function pullJSON(
     changed_files: status.changed_files,
     working: status.working,
     review_state: status.review_state,
+    review_gate: status.review_gate,
     changes_addressed_at: p.changes_addressed_at ?? null,
     changes_addressed_by: p.changes_addressed_by ?? null,
     labels: S.issueLabels(row.id).map(labelJSON),

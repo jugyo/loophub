@@ -317,6 +317,7 @@ test("computeReviewGate: no reviews yet is not gathered and never clean (#427)",
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: false,
     allTopicsPassed: false,
+    topics: [],
   });
 });
 
@@ -332,6 +333,20 @@ test("computeReviewGate: every topic must pass independently (#427)", () => {
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
     allTopicsPassed: false,
+    topics: [
+      {
+        topic: "design",
+        headSha: "sha-1",
+        state: "passed",
+        blockingReason: null,
+      },
+      {
+        topic: "security",
+        headSha: "sha-1",
+        state: "changes_requested",
+        blockingReason: "request_changes",
+      },
+    ],
   });
 
   // Resolve the security topic with a fresh PASS -> all topics pass.
@@ -339,6 +354,20 @@ test("computeReviewGate: every topic must pass independently (#427)", () => {
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
     allTopicsPassed: true,
+    topics: [
+      {
+        topic: "design",
+        headSha: "sha-1",
+        state: "passed",
+        blockingReason: null,
+      },
+      {
+        topic: "security",
+        headSha: "sha-1",
+        state: "passed",
+        blockingReason: null,
+      },
+    ],
   });
 });
 
@@ -352,6 +381,14 @@ test("computeReviewGate: a stale PASS on a topic does not pass (#427)", () => {
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
     allTopicsPassed: true,
+    topics: [
+      {
+        topic: "quality",
+        headSha: "sha-1",
+        state: "passed",
+        blockingReason: null,
+      },
+    ],
   });
 
   // Head advances past the reviewed commit -> the pass is stale, not passing.
@@ -359,6 +396,14 @@ test("computeReviewGate: a stale PASS on a topic does not pass (#427)", () => {
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
     allTopicsPassed: false,
+    topics: [
+      {
+        topic: "quality",
+        headSha: "sha-1",
+        state: "stale",
+        blockingReason: "stale",
+      },
+    ],
   });
 
   // Re-pass against the new head -> passes again.
@@ -366,6 +411,59 @@ test("computeReviewGate: a stale PASS on a topic does not pass (#427)", () => {
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
     allTopicsPassed: true,
+    topics: [
+      {
+        topic: "quality",
+        headSha: "sha-2",
+        state: "passed",
+        blockingReason: null,
+      },
+    ],
+  });
+});
+
+test("review state stays stale while any topic only passed an older head", () => {
+  const repo = S.createRepo("me/gate-mixed-heads", "/tmp/gate-mixed-heads");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me");
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot");
+  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
+
+  S.createReview(pr.id, "rev", "PASS", "workflow ok", "sha-1", "workflow");
+  S.setHeadSha(pr.id, "sha-2");
+  S.createReview(pr.id, "rev", "PASS", "quality ok", "sha-2", "quality");
+  S.createReview(pr.id, "rev", "PASS", "security ok", "sha-2", "security");
+  S.createReview(pr.id, "rev", "PASS", "acceptance ok", "sha-2", "acceptance");
+
+  expect(S.computeReviewState(pr.id)).toBe("STALE");
+  expect(S.computeReviewGate(pr.id)).toEqual({
+    reviewed: true,
+    allTopicsPassed: false,
+    topics: [
+      {
+        topic: "workflow",
+        headSha: "sha-1",
+        state: "stale",
+        blockingReason: "stale",
+      },
+      {
+        topic: "quality",
+        headSha: "sha-2",
+        state: "passed",
+        blockingReason: null,
+      },
+      {
+        topic: "security",
+        headSha: "sha-2",
+        state: "passed",
+        blockingReason: null,
+      },
+      {
+        topic: "acceptance",
+        headSha: "sha-2",
+        state: "passed",
+        blockingReason: null,
+      },
+    ],
   });
 });
 
@@ -380,6 +478,14 @@ test("computeReviewGate: a single untagged PASS passes (legacy single-topic)", (
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
     allTopicsPassed: true,
+    topics: [
+      {
+        topic: null,
+        headSha: null,
+        state: "passed",
+        blockingReason: null,
+      },
+    ],
   });
 });
 
