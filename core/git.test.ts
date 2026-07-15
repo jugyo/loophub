@@ -164,6 +164,23 @@ test("worktreeRemove refuses a dirty tree; worktreePrune keeps live worktrees", 
   rmSync(p, { recursive: true, force: true });
 });
 
+// force explicitly bypasses Git's dirty-worktree safety guard.
+test("worktreeRemove force removes a dirty tree", async () => {
+  const p = await makeRepo();
+  const wtPath = join(p, "..", `wt-force-${p.split("/").pop()}`);
+  await worktreeAdd(p, wtPath, "loophub/issue-7", "main");
+  writeFileSync(join(wtPath, "f.txt"), "uncommitted\n");
+  writeFileSync(join(wtPath, "scratch.txt"), "untracked\n");
+
+  await worktreeRemove(p, wtPath, { force: true });
+
+  expect(existsSync(wtPath)).toBe(false);
+  expect(
+    (await worktreeList(p)).some((w) => w.branch === "loophub/issue-7"),
+  ).toBe(false);
+  rmSync(p, { recursive: true, force: true });
+});
+
 // 一過性の index.lock 競合があっても、reset --hard のリトライで最終的に merge が成立する。
 test("merge succeeds despite a transient index.lock held by another process", async () => {
   const p = await makeRepo();

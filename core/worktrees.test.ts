@@ -198,6 +198,39 @@ test("remove deletes a clean worktree; tidy prunes admin entries", async () => {
   expect(after.some((e) => e.issue === 1)).toBe(false);
 });
 
+test("force plans and removes modified, untracked, and clean done worktrees", async () => {
+  const repo = await makeRepo("me/force-remove");
+  const fixtures = [];
+  for (const kind of ["modified", "untracked", "clean"] as const) {
+    const issue = S.createIssue(repo.id, "issue", kind, "", "me") as any;
+    S.updateIssue(issue.id, { state: "closed" });
+    const path = worktreePath(`wt-force-${repo.id}-${issue.number}`);
+    await worktreeAdd(repo.path, path, `loophub/issue-${issue.number}`, "main");
+    fixtures.push({ issue, kind, path });
+  }
+  writeFileSync(join(fixtures[0].path, "f.txt"), "modified\n");
+  writeFileSync(join(fixtures[1].path, "scratch.txt"), "untracked\n");
+
+  const entries = await svc.worktrees.plan({
+    repo: "me/force-remove",
+    cwd: "/nowhere",
+    force: true,
+  });
+  expect(entries).toHaveLength(3);
+  expect(entries.every((entry) => entry.action === "remove")).toBe(true);
+
+  for (const fixture of fixtures) {
+    const res = await svc.worktrees.remove({
+      repoPath: repo.path,
+      path: fixture.path,
+      issue: fixture.issue.number,
+      force: true,
+    });
+    expect(res.removed, fixture.kind).toBe(true);
+    expect(existsSync(fixture.path), fixture.kind).toBe(false);
+  }
+});
+
 // remove() re-asserts the branch invariant: a path that is no longer a loophub/issue-<n>
 // worktree (or the wrong issue number) is refused, not force-deleted.
 test("remove refuses when the path is no longer the expected worktree", async () => {

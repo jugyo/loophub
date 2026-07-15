@@ -643,14 +643,22 @@ export async function worktreeAdd(
   }
 }
 
+export interface WorktreeRemoveOptions {
+  force?: boolean;
+}
+
 // git worktree remove <path>. Without --force git refuses a dirty or locked worktree, which
-// is an extra safety net on top of the caller's clean-tree guard; callers must have verified
-// the tree is clean and the branch matches the loophub/issue-<n> convention before calling.
+// is an extra safety net on top of the caller's clean-tree guard. With force, callers must have
+// explicitly authorized discarding changes and still verified the managed-worktree invariant.
 export async function worktreeRemove(
   repoPath: string,
   path: string,
+  opts: WorktreeRemoveOptions = {},
 ): Promise<void> {
-  const r = await git(repoPath, ["worktree", "remove", path]);
+  const args = opts.force
+    ? ["worktree", "remove", "--force", path]
+    : ["worktree", "remove", path];
+  const r = await git(repoPath, args);
   if (r.code !== 0) {
     throw new Error(
       `git worktree remove failed: ${r.stderr.trim() || r.stdout.trim()}`,

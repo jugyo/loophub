@@ -10,12 +10,13 @@ export async function run(): Promise<void> {
   const s = await svc();
   const dryRun = flags["dry-run"] === true;
   const assumeYes = flags.yes === true;
+  const force = flags.force === true;
   const repoFilter = flags.repo ?? null;
 
   // Scanning, issue/PR resolution and classification live in core (s.worktrees); the CLI only
   // presents, confirms, and reports.
   const entries = await runOp(() =>
-    s.worktrees.plan({ repo: repoFilter, cwd: process.cwd() }),
+    s.worktrees.plan({ repo: repoFilter, cwd: process.cwd(), force }),
   );
   const candidates = entries.filter((e) => e.action === "remove");
   const keep = entries.filter((e) => e.action === "keep");
@@ -59,7 +60,7 @@ export async function run(): Promise<void> {
 
   let removed = 0;
   for (const e of candidates) {
-    const res = await s.worktrees.remove(e);
+    const res = await s.worktrees.remove({ ...e, force });
     if (res.removed) {
       removed++;
       if (!flags.json) console.log(`removed ${e.path}`);

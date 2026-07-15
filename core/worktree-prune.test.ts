@@ -64,6 +64,30 @@ test("classifyWorktree: cwd and dirty guards win over done-ness", () => {
   ).toEqual({ action: "skip", reason: "uncommitted or untracked changes" });
 });
 
+test("classifyWorktree: force bypasses only the dirty guard", () => {
+  expect(
+    classifyWorktree({
+      isCwd: false,
+      dirty: true,
+      force: true,
+      issueState: "closed",
+      prMerged: false,
+      prState: null,
+    }),
+  ).toEqual({ action: "remove", reason: "issue closed" });
+
+  expect(
+    classifyWorktree({
+      isCwd: true,
+      dirty: true,
+      force: true,
+      issueState: "closed",
+      prMerged: true,
+      prState: "closed",
+    }),
+  ).toEqual({ action: "skip", reason: "current working directory" });
+});
+
 test("classifyWorktree: removal candidates are merged PR or closed issue", () => {
   expect(
     classifyWorktree({

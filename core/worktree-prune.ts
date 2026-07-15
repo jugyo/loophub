@@ -53,6 +53,7 @@ export type PruneAction = "remove" | "keep" | "skip";
 export interface ClassifyInput {
   isCwd: boolean; // the worktree is the current working directory (git would refuse to remove it)
   dirty: boolean; // real uncommitted/untracked changes (see porcelainIsDirty)
+  force?: boolean; // explicitly allow dirty worktrees to become removal candidates
   issueState: "open" | "closed" | null; // null = issue not found in LoopHub for this branch
   prMerged: boolean; // a linked PR exists and is merged
   prState: "open" | "closed" | null; // linked PR state, null when there is no linked PR
@@ -63,13 +64,13 @@ export interface Classification {
   reason: string;
 }
 
-// Decide what to do with a single LoopHub worktree. Safety guards (cwd, dirty) win over the
-// done-ness check so we never remove the running checkout or lose uncommitted work; a worktree
-// is a removal candidate only when its issue is closed or its PR merged.
+// Decide what to do with a single LoopHub worktree. The cwd guard always wins; the dirty guard
+// wins unless force explicitly disables it. A worktree is a removal candidate only when its
+// issue is closed or its PR is merged.
 export function classifyWorktree(input: ClassifyInput): Classification {
   if (input.isCwd)
     return { action: "skip", reason: "current working directory" };
-  if (input.dirty)
+  if (input.dirty && !input.force)
     return { action: "skip", reason: "uncommitted or untracked changes" };
   if (input.prMerged) return { action: "remove", reason: "PR merged" };
   if (input.issueState === "closed")

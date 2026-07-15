@@ -49,6 +49,7 @@ export const worktrees = {
   async plan(opts: {
     repo?: string | null;
     cwd: string;
+    force?: boolean;
   }): Promise<WorktreePlanEntry[]> {
     const repoRows = opts.repo ? [repoOr404(opts.repo)] : S.listRepos("all");
     const cwd = canonicalPath(opts.cwd);
@@ -86,6 +87,7 @@ export const worktrees = {
         const { action, reason } = classifyWorktree({
           isCwd: canonicalPath(wt.path) === cwd,
           dirty,
+          force: opts.force,
           issueState,
           prMerged,
           prState,
@@ -114,6 +116,7 @@ export const worktrees = {
     repoPath: string;
     path: string;
     issue: number;
+    force?: boolean;
   }): Promise<{ removed: boolean; reason?: string }> {
     const fresh = await worktreeList(entry.repoPath);
     const match = fresh.find(
@@ -131,7 +134,9 @@ export const worktrees = {
       rmSync(claudeDir, { recursive: true, force: true });
     }
     try {
-      await worktreeRemove(entry.repoPath, entry.path);
+      await worktreeRemove(entry.repoPath, entry.path, {
+        force: entry.force,
+      });
     } catch (e: any) {
       return {
         removed: false,

@@ -35,7 +35,7 @@ export function usage(): void {
   lh handoff list [--pr <m>] [--issue <n>] [--session <id>] [--json]   # list handoffs for a ref, chronological
   lh retro create --pr <m> --input <file|-> [--status draft]   # save a generated retrospective (rubric+findings) for a PR
   lh retro list [--pr <m>] [--status draft]   lh retro view <id>   lh retro pending [--limit N]   # read retros / list merged PRs without one
-  lh worktree prune [--repo owner/name] [--dry-run] [--yes]   # GC done lh-build worktrees (issue closed / PR merged, clean tree)
+  lh worktree prune [--repo owner/name] [--dry-run] [--yes] [--force]   # GC done lh-build worktrees (--force also removes dirty trees)
   lh herdr [--repo owner/name] [--json]                      # show the repo's herdr session as workspace -> tab -> agent(PR)
   lh herdr focus <pr> [--repo owner/name]                     # focus the pane of the running agent for that PR's worktree
   lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image/HTML attachment(s), print markdown
