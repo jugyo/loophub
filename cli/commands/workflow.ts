@@ -219,14 +219,8 @@ function layoutWorkflowTabPanes(
     );
   }
 
-  // pane.move refuses a zoomed source/target tab. The Workflow tab itself is the intended visual
-  // surface, so reveal its full grid before rebuilding it while leaving every other tab untouched.
-  runHerdrPaneLayoutCommand(sessionName, [
-    "pane",
-    "zoom",
-    plan.anchorPaneId,
-    "--off",
-  ]);
+  // Do not defensively run `pane zoom --off` here: Herdr 0.7.1 focuses an explicitly targeted
+  // pane even when it is already unzoomed. Every mutation in this staged rebuild must stay no-focus.
   for (const paneId of plan.stagingPaneIds) {
     runHerdrPaneLayoutCommand(sessionName, [
       "pane",

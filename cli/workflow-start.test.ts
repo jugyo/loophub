@@ -24,6 +24,11 @@ const OTHER_REPO_PATH = realpathSync(
   mkdtempSync(join(tmpdir(), "lh-workflow-start-other-repo-")),
 );
 const OTHER_REPO = "other/workflow-start";
+const UNRELATED_HERDR_FOCUS = {
+  workspace_id: "w9",
+  tab_id: "w9:t8",
+  pane_id: "w9:p7",
+};
 const {
   LOOPHUB_SESSION_ID: _sessionId,
   LOOPHUB_WORKFLOW_REPO: _workflowRepo,
@@ -76,6 +81,7 @@ function git(args: string[], path = REPO_PATH): void {
 function fakeRuntime(
   opts: {
     agentStartExit?: number;
+    focusedState?: Record<string, string>;
     paneCloseExit?: number;
     paneListJson?: string;
     worktreeOpenJson?: string;
@@ -84,6 +90,7 @@ function fakeRuntime(
 ) {
   const {
     agentStartExit = 0,
+    focusedState,
     paneCloseExit = 0,
     paneListJson = "",
     worktreeOpenJson = "",
@@ -91,20 +98,47 @@ function fakeRuntime(
   } = opts;
   const dir = mkdtempSync(join(tmpdir(), "lh-workflow-runtime-"));
   const log = join(dir, "herdr.log");
+  const focusedStatePath = join(dir, "focused-state.json");
   const herdr = join(dir, "herdr");
   const claude = join(dir, "claude");
   const codex = join(dir, "codex");
+  if (focusedState) {
+    writeFileSync(focusedStatePath, JSON.stringify(focusedState));
+  }
   writeFileSync(
     herdr,
     `#!/bin/sh
 if [ "$1" = "--version" ]; then exit 0; fi
 printf '%s\\n' "$*" >> "$HERDR_LOG"
-case " $* " in
-  *" worktree open "*) printf '%s' '${worktreeOpenJson}'; exit 0 ;;
+if [ "$1" = "--session" ]; then shift 2; fi
+command="$*"
+change_focus() {
+  if [ -n "$HERDR_FOCUSED_STATE" ]; then
+    printf '%s' '{"workspace_id":"changed","tab_id":"changed","pane_id":"changed"}' > "$HERDR_FOCUSED_STATE"
+  fi
+}
+change_focus_without_no_focus() {
+  case " $command " in
+    *" --no-focus "*) ;;
+    *) change_focus ;;
+  esac
+}
+change_focus_if_closing() {
+  pattern=$(printf '"%s":"%s"' "$1" "$2")
+  if [ -n "$HERDR_FOCUSED_STATE" ] && grep -Fq "$pattern" "$HERDR_FOCUSED_STATE"; then
+    change_focus
+  fi
+}
+case " $command " in
+  *" worktree open "*) change_focus_without_no_focus; printf '%s' '${worktreeOpenJson}'; exit 0 ;;
   *" pane list "*) printf '%s' '${paneListJson}'; exit 0 ;;
-  *" pane close "*) exit ${paneCloseExit} ;;
-  *" tab create "*) printf '%s' '${tabCreateJson}'; exit 0 ;;
-  *" agent start "*) exit ${agentStartExit} ;;
+  *" pane zoom "*) change_focus; exit 0 ;;
+  *" pane move "*) change_focus_without_no_focus; exit 0 ;;
+  *" pane close "*) change_focus_if_closing pane_id "$3"; exit ${paneCloseExit} ;;
+  *" tab close "*) change_focus_if_closing tab_id "$3"; exit 0 ;;
+  *" tab create "*) change_focus_without_no_focus; printf '%s' '${tabCreateJson}'; exit 0 ;;
+  *" agent start "*) change_focus_without_no_focus; exit ${agentStartExit} ;;
+  *" workspace focus "*|*" tab focus "*|*" agent focus "*|*" pane focus "*) change_focus; exit 0 ;;
 esac
 exit 0
 `,
@@ -117,7 +151,15 @@ exit 0
   chmodSync(herdr, 0o755);
   chmodSync(claude, 0o755);
   chmodSync(codex, 0o755);
-  return { dir, log };
+  return { dir, focusedStatePath, log };
+}
+
+function expectUnrelatedHerdrFocus(runtime: {
+  focusedStatePath: string;
+}): void {
+  expect(JSON.parse(readFileSync(runtime.focusedStatePath, "utf8"))).toEqual(
+    UNRELATED_HERDR_FOCUS,
+  );
 }
 
 // A fakeRuntime with no `claude` binary, so a test asserts a Codex launch never requires claude.
@@ -411,6 +453,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     },
   });
   const runtime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
     paneListJson,
     tabCreateJson: JSON.stringify({
       result: {
@@ -433,6 +476,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_FOCUSED_STATE: runtime.focusedStatePath,
         HERDR_LOG: runtime.log,
         HERDR_TAB_ID: "w1:t1",
         LOOPHUB_SESSION_ID: body.session_id,
@@ -454,7 +498,9 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     );
     expect(log).toContain("tab close w1:t3");
     expect(log).not.toContain("pane move w1:p4");
+    expect(log).not.toContain("pane zoom");
     expect(log).not.toMatch(/(?:workspace|tab|agent) focus/);
+    expectUnrelatedHerdrFocus(runtime);
 
     const legacyLaunch = run(
       [
@@ -469,6 +515,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
       ],
       {
         PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_FOCUSED_STATE: runtime.focusedStatePath,
         HERDR_LOG: runtime.log,
         HERDR_PANE_TAB_ID: "",
         HERDR_TAB: "",
@@ -483,6 +530,7 @@ test("workflow launch-step rebuilds only its parent tab as a staged grid", () =>
     const relaunchedLog = readFileSync(runtime.log, "utf8").slice(log.length);
     expect(relaunchedLog).toMatch(/agent start .+ --split down --no-focus /);
     expect(relaunchedLog).not.toMatch(/(?:workspace|tab|agent) focus/);
+    expectUnrelatedHerdrFocus(runtime);
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
@@ -587,6 +635,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
       ],
       {
         ...parentEnv,
+        HERDR_FOCUSED_STATE: join(runtimeDir, "focused-state.json"),
         PATH: `${runtimeDir}:${process.env.PATH}`,
         HERDR_LOG: log,
         HERDR_TAB_ID: "",
@@ -596,9 +645,11 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     );
 
   const firstRuntime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
     paneListJson: JSON.stringify({ result: { panes: [] } }),
   });
   const freshRuntime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
     paneListJson: JSON.stringify({
       result: {
         panes: [
@@ -611,6 +662,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     }),
   });
   const closeFailureRuntime = fakeRuntime({
+    focusedState: UNRELATED_HERDR_FOCUS,
     paneCloseExit: 42,
     paneListJson: JSON.stringify({
       result: {
@@ -634,6 +686,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     expect(firstVerify.exitCode, firstVerify.stderr).toBe(0);
     expect(firstVerify.stdout).toContain(`agent\tverifier #${body.run.id}-1`);
     expect(readFileSync(firstRuntime.log, "utf8")).not.toContain("pane close");
+    expectUnrelatedHerdrFocus(firstRuntime);
 
     writeFileSync(
       verdictPath,
@@ -658,6 +711,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     const reworkExecute = launch("execute", firstRuntime.dir, firstRuntime.log);
     expect(reworkExecute.exitCode, reworkExecute.stderr).toBe(0);
     expect(reworkExecute.stdout).toContain(`agent\texecutor #${body.run.id}-2`);
+    expectUnrelatedHerdrFocus(firstRuntime);
     writeFileSync(fixturePath, "reworked\n");
     commitWorktree("rework Verify lifecycle fixture");
     writeExecutionReport("Rework Execute completed.");
@@ -669,6 +723,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     const freshVerify = launch("verify", freshRuntime.dir, firstRuntime.log);
     expect(freshVerify.exitCode, freshVerify.stderr).toBe(0);
     expect(freshVerify.stdout).toContain(`agent\tverifier #${body.run.id}-3`);
+    expectUnrelatedHerdrFocus(freshRuntime);
     const log = readFileSync(firstRuntime.log, "utf8");
     const closeIndex = log.indexOf("pane close w1:p3");
     const freshStartIndex = log.indexOf(
