@@ -18,7 +18,7 @@ function git(args: string[]) {
 
 async function openPull(): Promise<number> {
   // A feature branch off main so the PR has a real head/base.
-  git(["checkout", "-q", "-b", "feature"]);
+  git(["checkout", "-q", "-B", "feature", "main"]);
   writeFileSync(join(repoPath, "b.txt"), "y\n");
   git(["add", "-A"]);
   git(["commit", "-qm", "feature work"]);
@@ -460,6 +460,9 @@ test("pushGithubPull pushes the head to the recorded branch and updates pushed_s
   );
   const created = (await svc.pulls.get("me/proj", number)) as any;
   const firstSha = created.head.sha;
+  expect(created.commits).toEqual([
+    expect.objectContaining({ sha: firstSha, pushed_to_github: true }),
+  ]);
 
   // A new commit moves the PR's head past what was exported — now there are unpushed changes.
   git(["checkout", "-q", "feature"]);
@@ -470,6 +473,13 @@ test("pushGithubPull pushes the head to the recorded branch and updates pushed_s
   const moved = (await svc.pulls.get("me/proj", number)) as any;
   expect(moved.head.sha).not.toBe(firstSha);
   expect(moved.github_pull.pushed_sha).toBe(firstSha); // still the old pushed SHA
+  expect(moved.commits).toEqual([
+    expect.objectContaining({
+      sha: moved.head.sha,
+      pushed_to_github: false,
+    }),
+    expect.objectContaining({ sha: firstSha, pushed_to_github: true }),
+  ]);
 
   const rec = await svc.pulls.pushGithubPull(
     "me/proj",
@@ -491,6 +501,23 @@ test("pushGithubPull pushes the head to the recorded branch and updates pushed_s
 
   const afterPush = (await svc.pulls.get("me/proj", number)) as any;
   expect(afterPush.github_pull.pushed_sha).toBe(moved.head.sha);
+  expect(
+    afterPush.commits.every((commit: any) => commit.pushed_to_github === true),
+  ).toBe(true);
+
+  // If the recorded SHA is no longer in the current PR history, do not claim that any commit was
+  // pushed. This can happen after a local history rewrite while pushed_sha still names the old tip.
+  git(["branch", "-f", "feature", "main"]);
+  git(["checkout", "-q", "feature"]);
+  writeFileSync(join(repoPath, "rewritten.txt"), "rewritten\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "rewritten work"]);
+  git(["checkout", "-q", "main"]);
+  const rewritten = (await svc.pulls.get("me/proj", number)) as any;
+  expect(rewritten.commits).toHaveLength(1);
+  expect(rewritten.commits[0]).not.toHaveProperty("pushed_to_github");
+
+  git(["branch", "-f", "feature", afterPush.head.sha]);
 });
 
 test("pushGithubPull refuses a PR with no recorded GitHub PR (#848)", async () => {

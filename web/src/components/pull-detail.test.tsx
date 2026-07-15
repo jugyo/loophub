@@ -331,6 +331,50 @@ describe("PullDetail", () => {
     ).toBe("2026-06-18T12:00:00Z");
   });
 
+  it("marks only confirmed pushed commits for a linked GitHub PR", async () => {
+    renderDetail({
+      "pulls/get": () => ({
+        ...pull,
+        github_pull: {
+          number: 30,
+          url: "https://github.com/me/proj/pull/30",
+          branch: "feature/push-state",
+          created_by: "impl-bot",
+          created_at: "2026-06-18T12:00:00Z",
+          github_merged: false,
+          github_merged_at: null,
+          pushed_sha: pull.commits?.[1]?.sha ?? null,
+        },
+        commits: [
+          { ...pull.commits![0], pushed_to_github: false },
+          { ...pull.commits![1], pushed_to_github: true },
+        ],
+      }),
+    });
+
+    const section = (
+      await screen.findByRole("heading", { name: "Commits (2)" })
+    ).closest("section")!;
+    const rows = within(section).getAllByRole("listitem");
+    expect(within(rows[0]).queryByText("Pushed")).toBeNull();
+    expect(within(rows[1]).getByText("Pushed")).toBeTruthy();
+  });
+
+  it("does not show GitHub push state for an unlinked PR", async () => {
+    renderDetail({
+      "pulls/get": () => ({
+        ...pull,
+        commits: pull.commits?.map((commit) => ({
+          ...commit,
+          pushed_to_github: true,
+        })),
+      }),
+    });
+
+    await screen.findByRole("heading", { name: "Commits (2)" });
+    expect(screen.queryByText("Pushed")).toBeNull();
+  });
+
   it("opens a commit diff, closes it, and switches to another commit", async () => {
     const earlierFiles: PullFile[] = [
       {

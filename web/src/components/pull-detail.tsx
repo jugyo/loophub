@@ -129,6 +129,7 @@ export function PullDetail({
           repo={repo}
           number={number}
           commits={pull.commits}
+          showGithubPushState={!!pull.github_pull}
         />
         <FilesChanged
           owner={owner}
@@ -186,11 +187,13 @@ function CommitList({
   repo,
   number,
   commits = [],
+  showGithubPushState,
 }: {
   owner: string;
   repo: string;
   number: number;
   commits: PullRequest["commits"];
+  showGithubPushState: boolean;
 }) {
   const [selectedCommit, setSelectedCommit] = useState<PullCommit | null>(null);
   return (
@@ -222,6 +225,16 @@ function CommitList({
                     </time>
                   </div>
                 </div>
+                {showGithubPushState && commit.pushed_to_github ? (
+                  <Badge
+                    tone="unknown"
+                    title="Pushed to GitHub"
+                    className="mt-0.5 shrink-0 gap-1"
+                  >
+                    <UploadCloud className="size-3" />
+                    Pushed
+                  </Badge>
+                ) : null}
               </button>
             </li>
           ))}

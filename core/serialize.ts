@@ -10,6 +10,7 @@ import {
   diffStat,
   hasEffectiveDiff,
   mergePreview,
+  pushedCommitShas,
   remoteUrl,
   revParse,
 } from "./git.ts";
@@ -1742,6 +1743,9 @@ export interface PullCommitWire {
   author: string;
   date: string;
   subject: string;
+  // Detail-only, and present only when a linked GitHub PR has a recorded pushed SHA that still
+  // belongs to the current PR history. False means this current-history commit is locally ahead.
+  pushed_to_github?: boolean;
 }
 
 export async function pullJSON(
@@ -1759,6 +1763,25 @@ export async function pullJSON(
         : []
       : undefined,
   ]);
+  const pushedShas =
+    commits !== undefined &&
+    status.headSha &&
+    status.baseSha &&
+    mergeFields.github_pull?.pushed_sha
+      ? await pushedCommitShas(
+          repo.local_path,
+          p.base_ref,
+          p.head_ref,
+          mergeFields.github_pull.pushed_sha,
+        )
+      : null;
+  const commitsWithPushState =
+    commits !== undefined && pushedShas
+      ? commits.map((commit) => ({
+          ...commit,
+          pushed_to_github: pushedShas.has(commit.sha.toLowerCase()),
+        }))
+      : commits;
 
   return {
     number: row.number,
@@ -1795,7 +1818,9 @@ export async function pullJSON(
     // exported to (null until the export skill records one). The UI swaps Merge ⟷ Create/View PR.
     merge_mode: mergeFields.merge_mode,
     github_pull: mergeFields.github_pull,
-    ...(commits !== undefined ? { commits } : {}),
+    ...(commitsWithPushState !== undefined
+      ? { commits: commitsWithPushState }
+      : {}),
     // Detail-only (#298, #456): the PR's related sessions and derived work duration, newest first.
     // Gated so the PR list/dashboard stay O(1) git + no extra per-row query. Both share the same
     // primarySessionId lookup (primaryDevSessionForPull) — the PR's resume/retro anchor — so it is

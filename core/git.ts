@@ -434,6 +434,37 @@ export async function commitLog(
     });
 }
 
+// Return the PR commits known to have reached GitHub through `pushedSha`. A stored SHA is trusted
+// only while it is still part of the current base..head history; after a rebase or other history
+// rewrite, returning null keeps callers from presenting an unverifiable commit as pushed.
+export async function pushedCommitShas(
+  repoPath: string,
+  base: string,
+  head: string,
+  pushedSha: string,
+): Promise<Set<string> | null> {
+  if (!/^[0-9a-f]{40}$/i.test(pushedSha)) return null;
+
+  const current = await git(repoPath, ["rev-list", `${base}..${head}`]);
+  assertGitSuccess(current, "git rev-list failed");
+  const currentShas = new Set(
+    current.stdout
+      .split("\n")
+      .map((sha) => sha.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (!currentShas.has(pushedSha.toLowerCase())) return null;
+
+  const pushed = await git(repoPath, ["rev-list", `${base}..${pushedSha}`]);
+  assertGitSuccess(pushed, "git rev-list failed");
+  return new Set(
+    pushed.stdout
+      .split("\n")
+      .map((sha) => sha.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
 export interface MergePreview {
   conflict: boolean;
   tree: string | null;

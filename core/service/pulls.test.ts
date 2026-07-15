@@ -126,6 +126,9 @@ test("pull detail returns the newest 100 base..head commits with wire metadata",
   expect(
     detail.commits?.every((commit) => /^[0-9a-f]{40}$/.test(commit.sha)),
   ).toBe(true);
+  expect(
+    detail.commits?.every((commit) => !("pushed_to_github" in commit)),
+  ).toBe(true);
 });
 
 test("pull detail returns an empty commit list before the head branch exists", async () => {
