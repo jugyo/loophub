@@ -1,5 +1,6 @@
 import { flags, sub } from "../args.ts";
 import { confirm, out, run as runOp, svc } from "../context.ts";
+import { withLoading } from "../loading.ts";
 import { usage } from "../usage.ts";
 
 export async function run(): Promise<void> {
@@ -16,7 +17,11 @@ export async function run(): Promise<void> {
   // Scanning, issue/PR resolution and classification live in core (s.worktrees); the CLI only
   // presents, confirms, and reports.
   const entries = await runOp(() =>
-    s.worktrees.plan({ repo: repoFilter, cwd: process.cwd(), force }),
+    withLoading(
+      "Scanning worktrees...",
+      () => s.worktrees.plan({ repo: repoFilter, cwd: process.cwd(), force }),
+      { enabled: !flags.json && process.stderr.isTTY === true },
+    ),
   );
   const candidates = entries.filter((e) => e.action === "remove");
   const keep = entries.filter((e) => e.action === "keep");
