@@ -17,10 +17,12 @@ import {
   workflowStepSessionIds,
 } from "../workflow/herdr-agents.ts";
 import {
+  isHerdrExitError,
   runHerdr,
   runHerdrCapture,
   runHerdrLaunch,
   runHerdrLaunchCapture,
+  startHerdrSession,
 } from "./herdr-runner.ts";
 import type {
   CodingAgent,
@@ -47,10 +49,12 @@ import {
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
+  herdrTabCreateInWorkspaceArgv,
   herdrTabFocusArgv,
   herdrWorkspaceCloseArgv,
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
+  herdrWorkspaceListArgv,
   isServiceError,
   issueOr404,
   legacyWorktreePath,
@@ -68,6 +72,7 @@ import {
   parseHerdrSessionListIfValid,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
+  parseHerdrWorkspaceListIfValid,
   RUNTIMES,
   randomUUID,
   repoOr404,
@@ -129,6 +134,30 @@ const LH_DEV_STDERR_TAIL_BYTES = 4 * 1024;
 const CLOSED_PULL_AGENT_GRACE_MS = 60 * 60 * 1000;
 const CLOSED_PULL_AGENT_KILLED_EVENT = "agent_session.killed";
 const CLOSED_PULL_AGENT_KILL_REASON = "pr_closed_grace_elapsed";
+const NEW_ISSUE_WORKSPACE_LABEL = "New Issue";
+// A repo-scoped queue closes the workspace-list/create race between simultaneous New Issue RPCs.
+// It covers placement only; agent start remains outside the queue, and different repo sessions use
+// different keys so their placement calls can also run in parallel.
+const newIssueLaunchQueueTails = new Map<string, Promise<void>>();
+
+async function acquireNewIssueLaunchLock(
+  sessionName: string,
+): Promise<() => void> {
+  const previous =
+    newIssueLaunchQueueTails.get(sessionName) ?? Promise.resolve();
+  let releaseGate = () => {};
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  const tail = previous.then(() => gate);
+  newIssueLaunchQueueTails.set(sessionName, tail);
+  await previous;
+  return () => {
+    releaseGate();
+    if (newIssueLaunchQueueTails.get(sessionName) === tail)
+      newIssueLaunchQueueTails.delete(sessionName);
+  };
+}
 // `label` names the spawned command in the thrown/logged failure messages. Defaults to the Build
 // command since that was the original caller; launchWorkflowRunHerdr passes "lh workflow start" so a
 // workflow-run failure is not misreported as an `lh build` failure (#1007).
@@ -606,15 +635,19 @@ export const terminal = {
       }
     }
 
-    // New Issue and Scheduled Task creation get their own fresh workspaces instead of a tab in the
-    // repo's existing default workspace (#544/#935) — neither has a PR worktree to pin to. The
-    // worktree-backed workflows (Build/issue-dev, resume, github-pr-export) instead open a
-    // workspace pinned to the PR's real worktree (#551, below). `herdr workspace create` seeds the
-    // workspace with one tab and one empty pane in the same output shape `herdr tab create` uses,
-    // so the tab/root-pane parsing below is unchanged either way.
-    const isNewWorkspace =
-      input.workflow === "issue-create" ||
-      input.workflow === "scheduled-task-create";
+    // New Issue launches share one labelled workspace per repo session; Scheduled Task creation
+    // keeps its own fresh workspace (#935). Neither has a PR worktree to pin to. Worktree-backed
+    // workflows instead open a workspace pinned to the PR's real worktree (#551, below).
+    const isNewIssue = input.workflow === "issue-create";
+    const usesRepoRootWorkspace =
+      isNewIssue || input.workflow === "scheduled-task-create";
+    let releaseNewIssueLaunch = isNewIssue
+      ? await acquireNewIssueLaunchLock(herdrSessionName(repo))
+      : null;
+    const releaseNewIssueLaunchNow = () => {
+      releaseNewIssueLaunch?.();
+      releaseNewIssueLaunch = null;
+    };
     // Create a fresh tab (or workspace) first so the agent starts in it instead of splitting the
     // focused pane (#489). Best-effort: on any failure fall back to the tab-less launch (Herdr's
     // default split placement) rather than breaking the launch; a hard herdr failure still
@@ -638,17 +671,88 @@ export const terminal = {
     // isn't this launch's to close.
     let workspaceId: string | null = null;
     let createdWorkspace = false;
+    let newIssuePlacementArgv: string[] | null = null;
     try {
-      if (isNewWorkspace) {
-        const create = herdrWorkspaceCreateArgv(repo);
-        const out = await runHerdr(create[0], create.slice(1), r.local_path, {
-          captureStdout: true,
-          timeoutMs: 10_000,
-        });
+      if (usesRepoRootWorkspace) {
+        let existingWorkspaceId: string | null = null;
+        if (isNewIssue) {
+          const list = herdrWorkspaceListArgv(repo);
+          newIssuePlacementArgv = list;
+          let listed: string | null = null;
+          try {
+            listed = await runHerdr(list[0], list.slice(1), r.local_path, {
+              captureStdout: true,
+              timeoutMs: 10_000,
+            });
+          } catch (error) {
+            if (!isHerdrExitError(error) || error.exitStatus !== 1) throw error;
+            // `workspace list` exits 1 when the named repo session does not exist yet. Confirm
+            // that state through the session registry before creating: an exit 1 from a still-
+            // running session is a real placement failure and stays visible.
+            let runningSessions: string[] | null = null;
+            try {
+              const sessionList = ["herdr", "session", "list", "--json"];
+              const sessionsOut = await runHerdr(
+                sessionList[0],
+                sessionList.slice(1),
+                r.local_path,
+                { captureStdout: true, timeoutMs: 10_000 },
+              );
+              runningSessions = parseHerdrSessionListIfValid(sessionsOut);
+            } catch {
+              // Without a trustworthy absence check, keep the original workspace-list failure
+              // visible instead of risking a duplicate workspace through automatic recovery.
+            }
+            if (
+              runningSessions === null ||
+              runningSessions.includes(herdrSessionName(repo))
+            )
+              throw error;
+            const server = [
+              "herdr",
+              "--session",
+              herdrSessionName(repo),
+              "server",
+            ];
+            newIssuePlacementArgv = server;
+            await startHerdrSession(herdrSessionName(repo), r.local_path);
+          }
+          if (listed !== null) {
+            const workspaces = parseHerdrWorkspaceListIfValid(listed);
+            if (workspaces === null)
+              throw new ServiceError(
+                500,
+                "Herdr workspace list returned an invalid response",
+              );
+            existingWorkspaceId =
+              workspaces.find(
+                (workspace) =>
+                  workspace.label === NEW_ISSUE_WORKSPACE_LABEL &&
+                  HERDR_ID.test(workspace.id),
+              )?.id ?? null;
+          }
+        }
+        const placement = existingWorkspaceId
+          ? herdrTabCreateInWorkspaceArgv(
+              repo,
+              existingWorkspaceId,
+              repo.local_path,
+            )
+          : herdrWorkspaceCreateArgv(
+              repo,
+              isNewIssue ? NEW_ISSUE_WORKSPACE_LABEL : undefined,
+            );
+        if (isNewIssue) newIssuePlacementArgv = placement;
+        const out = await runHerdr(
+          placement[0],
+          placement.slice(1),
+          r.local_path,
+          { captureStdout: true, timeoutMs: 10_000 },
+        );
         tabId = parseHerdrTabId(out);
         rootPaneId = parseHerdrRootPaneId(out);
-        workspaceId = parseHerdrWorkspaceId(out);
-        createdWorkspace = true;
+        workspaceId = existingWorkspaceId ? null : parseHerdrWorkspaceId(out);
+        createdWorkspace = existingWorkspaceId === null;
       } else {
         // Worktree-backed workflows (issue-dev/resume/github-pr-export, #551) open the herdr
         // workspace directly at the PR's real worktree path, so herdr's own workspace/worktree
@@ -691,11 +795,23 @@ export const terminal = {
         console.error(
           "herdr workspace create succeeded but its output had no usable workspace id; failure cleanup may be unable to remove it",
         );
-    } catch {
+    } catch (error) {
+      releaseNewIssueLaunchNow();
+      if (isNewIssue) {
+        if (isServiceError(error) && newIssuePlacementArgv)
+          throw new ServiceError(error.status, error.message, {
+            command: newIssuePlacementArgv.map(displayArg).join(" "),
+            session: isHerdrExitError(error)
+              ? herdrSessionName(repo)
+              : undefined,
+          });
+        throw error;
+      }
       tabId = null;
       rootPaneId = null;
       workspaceId = null;
     }
+    releaseNewIssueLaunchNow();
     // A workspace whose seeded tab id failed to parse can never be targeted — buildHerdrLaunchPlan
     // below only routes the agent into it via --tab — so it would otherwise sit orphaned forever
     // regardless of whether the agent-start call that follows succeeds or fails. Close it now
@@ -766,16 +882,20 @@ export const terminal = {
       // created, close the whole workspace instead — even if tabId itself failed to parse (the
       // two ids come from independent parses of the same response, see the workspaceId comment
       // above, so either one can be set without the other).
-      if (workspaceId) {
-        const cleanup = herdrWorkspaceCloseArgv(repo, workspaceId);
-        runHerdrLaunch(cleanup[0], cleanup.slice(1), r.local_path).catch(
-          () => {},
-        );
+      if (workspaceId && !isNewIssue) {
+        const cleanupArgv = herdrWorkspaceCloseArgv(repo, workspaceId);
+        runHerdrLaunch(
+          cleanupArgv[0],
+          cleanupArgv.slice(1),
+          r.local_path,
+        ).catch(() => {});
       } else if (tabId) {
-        const cleanup = herdrTabCloseArgv(repo, tabId);
-        runHerdrLaunch(cleanup[0], cleanup.slice(1), r.local_path).catch(
-          () => {},
-        );
+        const cleanupArgv = herdrTabCloseArgv(repo, tabId);
+        runHerdrLaunch(
+          cleanupArgv[0],
+          cleanupArgv.slice(1),
+          r.local_path,
+        ).catch(() => {});
       }
       // Attach the actual `herdr ...` invocation (not plan.command, which is only the inner
       // workflow command herdr would run) so the client can re-run the real command locally and
@@ -797,9 +917,7 @@ export const terminal = {
           command: herdrCommandLine(
             buildHerdrLaunchPlan({ repo, command, label: input.label }),
           ),
-          session: /^Herdr exited with status \d+$/.test(e.message)
-            ? plan.sessionName
-            : undefined,
+          session: isHerdrExitError(e) ? plan.sessionName : undefined,
         });
       throw e;
     }

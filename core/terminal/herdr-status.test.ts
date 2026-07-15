@@ -12,6 +12,7 @@ import {
   parseHerdrSessionList,
   parseHerdrTabList,
   parseHerdrWorkspaceList,
+  parseHerdrWorkspaceListIfValid,
   reposWithRunningSession,
 } from "./herdr-status.ts";
 import { herdrSessionName } from "./terminal-launch.ts";
@@ -385,6 +386,24 @@ describe("parseHerdrWorkspaceList", () => {
       { id: "wY", label: "pr-597", number: 1 },
       { id: "w13", label: "loophub", number: 4 },
     ]);
+  });
+
+  test("distinguishes a valid empty list from malformed output", () => {
+    expect(
+      parseHerdrWorkspaceListIfValid(
+        JSON.stringify({ result: { workspaces: [] } }),
+      ),
+    ).toEqual([]);
+    expect(parseHerdrWorkspaceListIfValid(WORKSPACE_LIST)).toEqual([
+      { id: "wY", label: "pr-597", number: 1 },
+      { id: "w13", label: "loophub", number: 4 },
+    ]);
+    expect(parseHerdrWorkspaceListIfValid("not json")).toBeNull();
+    expect(
+      parseHerdrWorkspaceListIfValid(
+        JSON.stringify({ result: { workspaces: [{ workspace_id: "w1" }] } }),
+      ),
+    ).toBeNull();
   });
 
   test("falls back to workspace_id for a missing label, and 0 for a missing number", () => {

@@ -26,43 +26,36 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
-// A real launch attempt always fails in the test environment — either `herdr` is missing on PATH
-// (ENOENT) or it runs and exits non-zero for lack of a real terminal session — exercising the full
-// terminal.launch error path without mocking child_process. Either way, this asserts the two
-// things #483 asks for: a specific (non-generic) reason and the exact command to retry locally.
+// Remove PATH only around the launch so the Herdr ENOENT path is deterministic and cannot depend
+// on or mutate an ambient Herdr session. This asserts the two things #483 asks for: a specific
+// reason and the exact command to retry locally.
 test("terminal.launch attaches a specific reason and the retryable herdr command on launch failure (#483)", async () => {
   const path = initGitRepo();
   await svc.repos.create({ path, name: "me/herdr-launch-svc" });
 
   let err: ServiceError | undefined;
+  const originalPath = process.env.PATH;
   try {
+    process.env.PATH = "";
     await svc.terminal.launch({
       repo: "me/herdr-launch-svc",
-      workflow: "issue-create",
+      workflow: "scheduled-task-create",
     });
   } catch (e) {
     err = e as ServiceError;
+  } finally {
+    process.env.PATH = originalPath;
   }
 
   if (!err) throw new Error("expected terminal.launch to reject");
   expect(err.name).toBe("ServiceError");
-  // The retryable command must be the actual `herdr ...` invocation (so it can reproduce a
-  // herdr-specific failure), not just the inner workflow command run inside the session.
+  // The retryable command is the eventual agent start after the best-effort Scheduled Task
+  // placement hits the same deliberate ENOENT.
   expect(err.data?.command).toMatch(/^herdr /);
   expect(err.data?.command).toContain("agent start");
-  expect(err.data?.command).toContain("lh issue new --repo");
-  expect(err.data?.command).toContain("me/herdr-launch-svc");
-  expect(err.message).toMatch(
-    /^(herdr command not found on PATH|Herdr exited with status \d+|Herdr process was terminated by signal \w+|failed to launch Herdr \(.+\))$/,
-  );
-  // The session-creation hint only applies to the non-zero-exit case (the one empirically tied to
-  // a missing session) — ENOENT/signal-killed have unrelated causes and must NOT carry `session`,
-  // or the client would misleadingly suggest creating a session that has nothing to do with it.
-  if (/^Herdr exited with status \d+$/.test(err.message)) {
-    expect(err.data?.session).toMatch(/^me-herdr-launch-svc-[a-f0-9]{8}$/);
-  } else {
-    expect(err.data?.session).toBeUndefined();
-  }
+  expect(err.data?.command).toContain("me-herdr-launch-svc-");
+  expect(err.message).toBe("herdr command not found on PATH");
+  expect(err.data?.session).toBeUndefined();
 });
 
 // Build (issue-dev) used to open the PR and provision its worktree here, ahead of the herdr call

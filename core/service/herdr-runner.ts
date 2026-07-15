@@ -3,6 +3,26 @@ import { ServiceError, spawn } from "./shared.ts";
 // The expected `herdr tab create` output is one small JSON object; anything past this cap is
 // discarded so a misbehaving herdr streaming output can't grow lh-web memory unbounded.
 const HERDR_CAPTURE_MAX_BYTES = 64 * 1024;
+const HERDR_SERVER_READY = "herdr server running;";
+
+export class HerdrExitError extends ServiceError {
+  readonly exitStatus: number;
+
+  constructor(exitStatus: number) {
+    super(500, `Herdr exited with status ${exitStatus}`);
+    this.exitStatus = exitStatus;
+  }
+}
+
+export function isHerdrExitError(error: unknown): error is HerdrExitError {
+  return error instanceof HerdrExitError;
+}
+
+function unrefReadable(stream: NodeJS.ReadableStream): void {
+  const unref = (stream as NodeJS.ReadableStream & { unref?: () => void })
+    .unref;
+  unref?.call(stream);
+}
 
 // Spawns Herdr asynchronously (never spawnSync — this runs inside the lh-web server process,
 // which also serves RPC for every other client). Errors are deliberately generic: the
@@ -91,8 +111,95 @@ export function runHerdr(
               `Herdr process was terminated by signal ${signal}`,
             ),
           );
+        else if (status !== null) reject(new HerdrExitError(status));
+        else reject(new ServiceError(500, "Herdr exited without a status"));
+      });
+    });
+  });
+}
+
+// Starts a named Herdr session as a detached headless server and resolves once Herdr announces
+// that its API socket is ready. Unlike runHerdr, success does not wait for the resident server to
+// exit. This lets the caller create the first workspace immediately without holding an RPC open
+// for the lifetime of the session.
+export function startHerdrSession(
+  sessionName: string,
+  cwd: string,
+  timeoutMs = 10_000,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("herdr", ["--session", sessionName, "server"], {
+      cwd,
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let settled = false;
+    let output = "";
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      settle(() =>
+        reject(new ServiceError(500, `Herdr timed out after ${timeoutMs}ms`)),
+      );
+    }, timeoutMs);
+
+    const consumeOutput = (chunk: Buffer) => {
+      output = `${output}${chunk.toString("utf8")}`.slice(
+        -HERDR_CAPTURE_MAX_BYTES,
+      );
+      if (!output.includes(HERDR_SERVER_READY)) return;
+      settle(() => {
+        // Keep draining both pipes for the resident server's lifetime. Closing their read ends
+        // here could turn a later Herdr log write into EPIPE and kill the detached session.
+        unrefReadable(child.stdout);
+        unrefReadable(child.stderr);
+        child.unref();
+        resolve();
+      });
+    };
+    child.stdout?.on("data", consumeOutput);
+    child.stderr?.on("data", consumeOutput);
+    child.stdout?.on("error", () => {
+      // A lost readiness stream is handled by close or the startup timeout.
+    });
+    child.stderr?.on("error", () => {
+      // A lost readiness stream is handled by close or the startup timeout.
+    });
+    child.on("error", (err) => {
+      const code = (err as NodeJS.ErrnoException).code;
+      settle(() =>
+        reject(
+          code === "ENOENT"
+            ? new ServiceError(422, "herdr command not found on PATH")
+            : new ServiceError(
+                500,
+                `failed to launch Herdr (${code ?? "spawn error"})`,
+              ),
+        ),
+      );
+    });
+    child.on("close", (status, signal) => {
+      settle(() => {
+        if (signal != null)
+          reject(
+            new ServiceError(
+              500,
+              `Herdr process was terminated by signal ${signal}`,
+            ),
+          );
+        else if (status !== 0) reject(new HerdrExitError(status ?? 1));
         else
-          reject(new ServiceError(500, `Herdr exited with status ${status}`));
+          reject(
+            new ServiceError(
+              500,
+              "Herdr exited before its server became ready",
+            ),
+          );
       });
     });
   });

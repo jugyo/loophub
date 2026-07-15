@@ -317,7 +317,10 @@ export function herdrTabCloseArgv(
 // session (#544). `herdr workspace create` seeds the workspace with one tab and one empty pane,
 // reported in the same shape `herdr tab create` uses (`.result.tab.tab_id` /
 // `.result.root_pane.pane_id`), so parseHerdrTabId/parseHerdrRootPaneId apply here unchanged.
-export function herdrWorkspaceCreateArgv(repo: TerminalLaunchRepo): string[] {
+export function herdrWorkspaceCreateArgv(
+  repo: TerminalLaunchRepo,
+  label?: string,
+): string[] {
   return [
     "herdr",
     "--session",
@@ -326,8 +329,13 @@ export function herdrWorkspaceCreateArgv(repo: TerminalLaunchRepo): string[] {
     "create",
     "--cwd",
     repo.local_path,
+    ...(label ? ["--label", label] : []),
     "--no-focus",
   ];
+}
+
+export function herdrWorkspaceListArgv(repo: TerminalLaunchRepo): string[] {
+  return ["herdr", "--session", herdrSessionName(repo), "workspace", "list"];
 }
 
 // herdr refuses to close a workspace's last tab (`tab_close_failed`), so cleaning up a failed
@@ -366,10 +374,10 @@ export function herdrWorkspaceFocusArgv(
 
 // Switches herdr's focus to a tab (workspace + tab, in one call) by tab id — brings a newly
 // launched agent's pane to the front when it started in its own tab rather than a fresh workspace
-// (#625). The New Issue path selects its whole workspace (herdrWorkspaceFocusArgv), but a *reused*
-// worktree workspace's freshly added tab — and the plain repo-root tab fallback — are selected this
-// way instead: their workspace already existed and isn't this launch's to (re)focus wholesale, so
-// only the new tab is brought forward. Both were created with `--no-focus` so creation itself
+// (#625). A newly created New Issue workspace uses herdrWorkspaceFocusArgv, while a reused New
+// Issue/worktree workspace's freshly added tab — and the plain repo-root tab fallback — are selected
+// this way instead: their workspace already existed and isn't this launch's to (re)focus wholesale,
+// so only the new tab is brought forward. Both were created with `--no-focus` so creation itself
 // wouldn't yank focus mid-launch.
 export function herdrTabFocusArgv(
   repo: TerminalLaunchRepo,

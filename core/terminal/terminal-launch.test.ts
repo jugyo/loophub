@@ -19,6 +19,7 @@ import {
   herdrWorkspaceCloseArgv,
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
+  herdrWorkspaceListArgv,
   herdrWorktreeOpenArgv,
   parseHerdrAgentPaneId,
   parseHerdrRootPaneId,
@@ -491,6 +492,25 @@ describe("herdr terminal launch", () => {
       "--cwd",
       "/repo/main",
       "--no-focus",
+    ]);
+    expect(herdrWorkspaceCreateArgv(repo, "New Issue")).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "workspace",
+      "create",
+      "--cwd",
+      "/repo/main",
+      "--label",
+      "New Issue",
+      "--no-focus",
+    ]);
+    expect(herdrWorkspaceListArgv(repo)).toEqual([
+      "herdr",
+      "--session",
+      sessionName,
+      "workspace",
+      "list",
     ]);
     expect(herdrWorkspaceCloseArgv(repo, "w4")).toEqual([
       "herdr",

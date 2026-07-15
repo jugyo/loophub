@@ -222,27 +222,53 @@ export interface HerdrWorkspace {
 }
 
 export function parseHerdrWorkspaceList(stdout: string): HerdrWorkspace[] {
+  const workspaces = herdrWorkspaceListItems(stdout);
+  if (workspaces === null) return [];
+  return workspaces.flatMap((workspace) => {
+    const parsed = parseHerdrWorkspace(workspace);
+    return parsed ? [parsed] : [];
+  });
+}
+
+export function parseHerdrWorkspaceListIfValid(
+  stdout: string,
+): HerdrWorkspace[] | null {
+  const workspaces = herdrWorkspaceListItems(stdout);
+  if (workspaces === null) return null;
+  const out: HerdrWorkspace[] = [];
+  for (const workspace of workspaces) {
+    const parsed = parseHerdrWorkspace(workspace);
+    if (
+      parsed === null ||
+      typeof (workspace as { label?: unknown }).label !== "string"
+    )
+      return null;
+    out.push(parsed);
+  }
+  return out;
+}
+
+function herdrWorkspaceListItems(stdout: string): unknown[] | null {
   const parsed = tryParse(stdout);
   const workspaces = (parsed as { result?: { workspaces?: unknown } })?.result
     ?.workspaces;
-  if (!Array.isArray(workspaces)) return [];
-  const out: HerdrWorkspace[] = [];
-  for (const w of workspaces) {
-    if (typeof w !== "object" || w === null) continue;
-    const rec = w as {
-      workspace_id?: unknown;
-      label?: unknown;
-      number?: unknown;
-    };
-    if (typeof rec.workspace_id !== "string" || rec.workspace_id === "")
-      continue;
-    out.push({
-      id: rec.workspace_id,
-      label: typeof rec.label === "string" ? rec.label : rec.workspace_id,
-      number: typeof rec.number === "number" ? rec.number : 0,
-    });
-  }
-  return out;
+  return Array.isArray(workspaces) ? workspaces : null;
+}
+
+function parseHerdrWorkspace(value: unknown): HerdrWorkspace | null {
+  if (typeof value !== "object" || value === null) return null;
+  const rec = value as {
+    workspace_id?: unknown;
+    label?: unknown;
+    number?: unknown;
+  };
+  if (typeof rec.workspace_id !== "string" || rec.workspace_id === "")
+    return null;
+  return {
+    id: rec.workspace_id,
+    label: typeof rec.label === "string" ? rec.label : rec.workspace_id,
+    number: typeof rec.number === "number" ? rec.number : 0,
+  };
 }
 
 /** One tab inside a herdr session, from `herdr --session <name> tab list`. */
