@@ -75,6 +75,26 @@ test("parent delivers rework as a review-id pointer without summarizing findings
   );
 });
 
+test("parent reuses a resolvable Execute pane for rework even when the agent is done", () => {
+  const parent = workflowContractText("parent");
+
+  expect(parent).toContain(
+    "`agent_status: done` does **not** mean the pane is closed",
+  );
+  expect(parent).toMatch(
+    /Resolve the latest Execute child with `herdr agent get '<child>'`\.[\s\S]+succeeds and returns a\s+`pane_id`, the Execute pane is reusable even if its status is `agent_status: done`/u,
+  );
+  expect(parent).toContain(
+    "Always try this injection before launching a new Execute child",
+  );
+  expect(parent).toMatch(
+    /Relaunch Execute only if the agent cannot be resolved,\s+no `pane_id` is returned, or the pane\s+injection fails/u,
+  );
+  expect(parent).toMatch(
+    /launch \*\*Verify as a\s+fresh child\*\* — always a new child/u,
+  );
+});
+
 test("parent subscribes its pane to workflow observation and GitHub feedback events", () => {
   const contract = workflowContractText("parent");
 

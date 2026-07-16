@@ -70,9 +70,11 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    起動しない。
 4. `lh workflow run advance-to-verify | complete | request-rework | await-human | resume | stop` の
    意図ベース command で lifecycle を遷移する。
-5. request_changes review に対しては、生きている Execute pane へ「review <id> に対応せよ」という
-   instruction を注入し（pane が閉じていれば `--review <id>` で fresh relaunch）、findings の要約・
-   解釈は行わない。修正後の Verify は常に fresh child とする。
+5. request_changes review に対しては、最新 Execute child を `herdr agent get` で解決し、`pane_id` が
+   得られれば `agent_status: done` でも同じ pane へ「review <id> に対応せよ」という instruction の
+   注入を先に試す。agent を解決できない、`pane_id` がない、または注入に失敗した場合だけ
+   `--review <id>` で fresh relaunch する。findings の要約・解釈は行わず、修正後の Verify は常に
+   fresh child とする。
 6. 上限超過や解消不能状態を issue comment + Inbox + needs-human 状態で人間へ渡す。
 7. passing verdict で run を completed にする。merge はしない。
 
@@ -158,8 +160,11 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 | Verify | 最新 review が fresh + pass | `complete` → 停止 |
 | Verify | 最新 review が fresh + request_changes | rework → Execute |
 
-rework 上限は 3。生きている Execute pane へ `orchestrator: address review #<id>` を注入して優先的に
-再利用し、閉じていれば `--review <id>` で再 launch する。修正後の Verify は常に fresh child とする。
+rework 上限は 3。最新 Execute child に対する `herdr agent get` が成功して `pane_id` を返す場合は、
+`agent_status: done` でも pane は再利用可能と扱い、新規 launch より先に
+`orchestrator: address review #<id>` の注入を試す。agent を解決できない、`pane_id` がない、または
+注入に失敗した場合に限り `--review <id>` で Execute child を再 launch する。修正後の Verify は常に
+fresh child とする。
 
 宣言がないまま run 活動が一定時間停止した場合、worker の stall sweep（`sweepStalledRuns`）が独立して
 その run を needs-human に保持し Inbox で人間へ可視化する。自動回復は試みない。rework 上限・escalation・

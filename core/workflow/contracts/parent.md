@@ -75,10 +75,13 @@ and Verify children `verifier #<run>-<sequence>`. The sequence starts at 1, is s
 and Verify, and advances for every successful fresh launch. After every launch, record the `agent`
 line as that role's latest child name. Below, `<child>` is the recorded name for the active step and
 `<child-pane>` is its pane id (read it from `herdr agent get '<child>'`). Quote `'<child>'` in every
-herdr command — the name contains a space and `#`. If you cannot resolve or reach a child, treat it as
-closed and relaunch the step, then replace the recorded name with the newly printed one.
+herdr command — the name contains a space and `#`. A child's `agent_status` is not a pane-liveness
+signal: `agent_status: done` does **not** mean the pane is closed. If `herdr agent get '<child>'`
+succeeds and returns a `pane_id`, the pane is still reachable for instruction delivery. If you cannot
+resolve the child, it has no `pane_id`, or pane injection fails, treat it as closed and relaunch the
+step, then replace the recorded name with the newly printed one.
 
-- `herdr agent get '<child>'` — check whether the child is still alive and read its pane id.
+- `herdr agent get '<child>'` — resolve the child and read its pane id.
 - `herdr pane run <child-pane> "orchestrator: <text>"` — inject a follow-up instruction into the live
   child's pane. Every instruction you inject must begin with `orchestrator: ` so the child and a human
   observing the pane can identify its source.
@@ -146,11 +149,15 @@ When step status shows a fresh `request_changes` review:
 
 1. Run `lh workflow run request-rework --repo '<repo>' --run <run>`. If it reports the rework limit is
    reached, escalate instead — do not launch another Execute.
-2. If the latest Execute child is still alive (`herdr agent get '<child>'`), inject the rework pointer
-   into its pane: `herdr pane run <child-pane> "orchestrator: address review #<id>"`, where `<id>` is
-   the review id from step status. Reusing the session preserves its context. Do **not** summarize,
-   quote, or interpret the review's findings — name the review by id and let Execute read it.
-3. If the Execute pane is closed, relaunch it with
+2. Resolve the latest Execute child with `herdr agent get '<child>'`. When that succeeds and returns a
+   `pane_id`, the Execute pane is reusable even if its status is `agent_status: done`. Inject the
+   rework pointer into that pane:
+   `herdr pane run <child-pane> "orchestrator: address review #<id>"`, where `<id>` is the review id
+   from step status. Always try this injection before launching a new Execute child. Reusing the
+   session preserves its context. Do **not** summarize, quote, or interpret the review's findings —
+   name the review by id and let Execute read it.
+3. Relaunch Execute only if the agent cannot be resolved, no `pane_id` is returned, or the pane
+   injection fails:
    `lh workflow launch-step --repo '<repo>' --run <run> --step execute --review <id>`. Record the new
    `agent` line as the latest Execute child.
 4. When you next observe execute complete again (HEAD advanced past that review), launch **Verify as a
