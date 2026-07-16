@@ -115,7 +115,7 @@ test("parent subscribes its pane only to workflow observation and GitHub feedbac
     "lh subscribe --repo '<repo>' --event workflow_run.escalated",
   );
   expect(contract).toContain(
-    "lh subscribe --repo '<repo>' --event pull_request.github_feedback",
+    "lh subscribe --repo '<repo>' --event workflow_run.github_event",
   );
   expect(contract).not.toContain(
     "lh subscribe --repo '<repo>' --event workflow_run.usage_updated",
@@ -180,7 +180,7 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
     "workflow_run.turn_done",
     "workflow_run.escalated",
     "workflow_run.review_submitted",
-    "pull_request.github_feedback",
+    "workflow_run.github_event",
   ]) {
     expect(design).toContain(event);
   }

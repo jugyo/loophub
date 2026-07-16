@@ -348,9 +348,9 @@ export function startGithubMergeSweep(
 }
 
 // Poll GitHub feedback for open PRs attached to running Workflow runs. The core sweep persists
-// dedupe state and emits one event per PR; this worker layer owns cadence and visible operational
-// logging only. Failures are already isolated per PR, so log every one and let the next interval be
-// the sole retry mechanism.
+// dedupe state and emits source plus Workflow projection events per PR; this worker layer owns
+// cadence and visible operational logging only. Failures are already isolated per PR, so log every
+// one and let the next interval be the sole retry mechanism.
 export function startGithubFeedbackSweep(
   intervalMs = DEFAULT_GITHUB_FEEDBACK_SWEEP_MS,
   sweep: () => Promise<GithubFeedbackSyncResult> = syncGithubFeedback,

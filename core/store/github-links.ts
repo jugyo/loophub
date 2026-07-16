@@ -85,7 +85,7 @@ export interface WorkflowGithubPullSyncRow extends GithubPullSyncRow {
 
 // GitHub feedback is relevant only while an open LoopHub PR's latest running Workflow run has a
 // registered parent subscription. Waiting for that subscription prevents an early sweep from
-// consuming feedback before the parent pane can receive the event.
+// consuming feedback before the parent pane can receive the projected Workflow event.
 export function activeWorkflowGithubPullLinks(): WorkflowGithubPullSyncRow[] {
   return db
     .query(
@@ -107,7 +107,7 @@ export function activeWorkflowGithubPullLinks(): WorkflowGithubPullSyncRow[] {
          AND EXISTS (
            SELECT 1 FROM event_subscriptions subscription
            WHERE subscription.repo_id = i.repo_id
-             AND subscription.event_type = 'pull_request.github_feedback'
+             AND subscription.event_type = 'workflow_run.github_event'
              AND subscription.session_id = wr.parent_session_id
          )
        ORDER BY i.repo_id, i.number`,

@@ -70,7 +70,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 ### 3.1 workflow agent（親 = 観測とポインタ配達に徹する orchestrator）
 
 1. run 開始時に自 pane を `lh subscribe` で `workflow_run.turn_done`、
-   `workflow_run.review_submitted`、`pull_request.github_feedback` の 3 event に購読する。どの通知も
+   `workflow_run.review_submitted`、`workflow_run.github_event` の 3 event に購読する。どの通知も
    domain state の再観測を促す timing signal であり、完了や verdict そのものではない。
 2. `lh workflow launch-step` で Execute / Verify child を起動する（engine が input ポインタを解決）。
 3. **遷移は「turn done 通知の受領 → `lh workflow step status` で HEAD / review 状態を観測」で決める。**
@@ -159,7 +159,7 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 であり、質問内容の短い要約を入れる。engine はこれらをそれぞれ `workflow_run.turn_done`、
 `workflow_run.escalated` event として
 記録するが、escalate 自体は run lifecycle を変更しない。Verify が review を登録すると
-`workflow_run.review_submitted`、GitHub PR feedback が同期されると `pull_request.github_feedback` が記録
+`workflow_run.review_submitted`、GitHub PR feedback が同期されると `workflow_run.github_event` が記録
 される。worker の generic event pub/sub（`lh subscribe` + `notifyForEvent`、#1232）はこれらを親 pane へ
 配達する。run-scoped event は payload の `parent_session_id` でその run の親に絞り込む。子の contract に
 親の pane id や topology は現れない。

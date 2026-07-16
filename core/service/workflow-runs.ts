@@ -1563,7 +1563,7 @@ export const workflowRuns = {
         issue_number: run.issue_number,
         pr_number: run.pr_number,
         // The worker's pub/sub delivery filters turn-done notifications to the run's own parent
-        // pane by this session id (same pattern as pull_request.github_feedback).
+        // pane by this session id (same pattern as workflow_run.github_event).
         parent_session_id: run.parent_session_id,
         session_id: sessionId ?? null,
       },

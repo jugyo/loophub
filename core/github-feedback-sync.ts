@@ -68,7 +68,7 @@ export async function syncGithubFeedback(
       continue;
     }
 
-    let emitted: S.EventRow | null = null;
+    let emitted: S.EventRow[] = [];
     try {
       db.run("BEGIN IMMEDIATE");
       const changed: Array<{
@@ -100,7 +100,7 @@ export async function syncGithubFeedback(
         });
       }
       if (changed.length > 0) {
-        emitted = S.emitEvent(
+        const source = S.emitEvent(
           link.repo_id,
           "pull_request.github_feedback",
           "lh-worker",
@@ -113,6 +113,23 @@ export async function syncGithubFeedback(
             feedback: changed,
           },
         );
+        const projection = S.emitEvent(
+          link.repo_id,
+          "workflow_run.github_event",
+          "lh-worker",
+          {
+            id: link.workflow_run_id,
+            number: link.number,
+            pr_number: link.number,
+            parent_session_id: link.parent_session_id,
+            source_event_id: source.id,
+            source_event_type: source.type,
+            github_number: link.github_number,
+            github_url: link.url,
+            feedback: changed,
+          },
+        );
+        emitted = [source, projection];
       }
       db.run("COMMIT");
     } catch (error) {
@@ -126,7 +143,7 @@ export async function syncGithubFeedback(
       });
       continue;
     }
-    if (emitted) result.emitted.push(emitted);
+    result.emitted.push(...emitted);
   }
   return result;
 }

@@ -59,7 +59,7 @@ async function workflowGithubPull(
   if (options.subscribe !== false) {
     S.addEventSubscription({
       repoId: repo.id,
-      eventType: "pull_request.github_feedback",
+      eventType: "workflow_run.github_event",
       herdrSession: `session-${githubNumber}`,
       herdrPaneId: `w${githubNumber}:p1`,
       sessionId: parentSessionId,
@@ -106,7 +106,7 @@ afterAll(() => {
   rmSync(repoPath, { recursive: true, force: true });
 });
 
-test("aggregates all three GitHub feedback kinds into one event per PR", async () => {
+test("emits source and Workflow projection events for aggregated GitHub feedback", async () => {
   const pull = await workflowGithubPull(101);
   const result = await sync.syncGithubFeedback({
     async fetchFeedback(_repoPath, url) {
@@ -119,11 +119,12 @@ test("aggregates all three GitHub feedback kinds into one event per PR", async (
     },
   });
 
-  const event = result.emitted.find(
-    (candidate) => JSON.parse(candidate.payload).number === pull.number,
+  const source = result.emitted.find(
+    (candidate) =>
+      candidate.type === "pull_request.github_feedback" &&
+      JSON.parse(candidate.payload).number === pull.number,
   );
-  expect(event?.type).toBe("pull_request.github_feedback");
-  expect(JSON.parse(event!.payload)).toEqual({
+  expect(JSON.parse(source!.payload)).toEqual({
     number: pull.number,
     workflow_run_id: pull.runId,
     parent_session_id: pull.parentSessionId,
@@ -150,6 +151,22 @@ test("aggregates all three GitHub feedback kinds into one event per PR", async (
       },
     ],
   });
+  const projection = result.emitted.find(
+    (candidate) =>
+      candidate.type === "workflow_run.github_event" &&
+      JSON.parse(candidate.payload).number === pull.number,
+  );
+  expect(JSON.parse(projection!.payload)).toEqual({
+    id: pull.runId,
+    number: pull.number,
+    pr_number: pull.number,
+    parent_session_id: pull.parentSessionId,
+    source_event_id: source!.id,
+    source_event_type: "pull_request.github_feedback",
+    github_number: 101,
+    github_url: pull.url,
+    feedback: JSON.parse(source!.payload).feedback,
+  });
 });
 
 test("waits for the target Workflow parent subscription before observing feedback", async () => {
@@ -163,6 +180,13 @@ test("waits for the target Workflow parent subscription before observing feedbac
     },
   };
 
+  S.addEventSubscription({
+    repoId: repo.id,
+    eventType: "pull_request.github_feedback",
+    herdrSession: "legacy-session-150",
+    herdrPaneId: "w150:p0",
+    sessionId: pull.parentSessionId,
+  });
   const beforeSubscription = await sync.syncGithubFeedback(deps);
   expect(called).not.toContain(pull.url);
   expect(
@@ -173,7 +197,7 @@ test("waits for the target Workflow parent subscription before observing feedbac
 
   S.addEventSubscription({
     repoId: repo.id,
-    eventType: "pull_request.github_feedback",
+    eventType: "workflow_run.github_event",
     herdrSession: "session-150",
     herdrPaneId: "w150:p1",
     sessionId: pull.parentSessionId,
@@ -182,7 +206,9 @@ test("waits for the target Workflow parent subscription before observing feedbac
   expect(called).toContain(pull.url);
   expect(
     afterSubscription.emitted.some(
-      (event) => JSON.parse(event.payload).number === pull.number,
+      (event) =>
+        event.type === "workflow_run.github_event" &&
+        JSON.parse(event.payload).number === pull.number,
     ),
   ).toBe(true);
 });
@@ -203,7 +229,9 @@ test("detects edits and durably suppresses the same comment content", async () =
   const first = await sync.syncGithubFeedback(deps);
   expect(
     first.emitted.filter(
-      (event) => JSON.parse(event.payload).number === pull.number,
+      (event) =>
+        event.type === "workflow_run.github_event" &&
+        JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(1);
 
@@ -212,7 +240,9 @@ test("detects edits and durably suppresses the same comment content", async () =
   const afterRestart = await sync.syncGithubFeedback(deps);
   expect(
     afterRestart.emitted.filter(
-      (event) => JSON.parse(event.payload).number === pull.number,
+      (event) =>
+        event.type === "workflow_run.github_event" &&
+        JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(0);
 
@@ -225,13 +255,17 @@ test("detects edits and durably suppresses the same comment content", async () =
   const edited = await sync.syncGithubFeedback(deps);
   expect(
     edited.emitted.filter(
-      (event) => JSON.parse(event.payload).number === pull.number,
+      (event) =>
+        event.type === "workflow_run.github_event" &&
+        JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(1);
   const unchangedEdit = await sync.syncGithubFeedback(deps);
   expect(
     unchangedEdit.emitted.filter(
-      (event) => JSON.parse(event.payload).number === pull.number,
+      (event) =>
+        event.type === "workflow_run.github_event" &&
+        JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(0);
 });
@@ -271,14 +305,18 @@ test("notifies once when a pending review with the same id and body is submitted
   const submitted = await sync.syncGithubFeedback(deps);
   expect(
     submitted.emitted.filter(
-      (event) => JSON.parse(event.payload).number === pull.number,
+      (event) =>
+        event.type === "workflow_run.github_event" &&
+        JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(1);
 
   const unchanged = await sync.syncGithubFeedback(deps);
   expect(
     unchanged.emitted.filter(
-      (event) => JSON.parse(event.payload).number === pull.number,
+      (event) =>
+        event.type === "workflow_run.github_event" &&
+        JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(0);
 });
@@ -312,14 +350,18 @@ test("notifies once for a submitted review with no body", async () => {
   const submitted = await sync.syncGithubFeedback(deps);
   expect(
     submitted.emitted.filter(
-      (event) => JSON.parse(event.payload).number === pull.number,
+      (event) =>
+        event.type === "workflow_run.github_event" &&
+        JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(1);
 
   const unchanged = await sync.syncGithubFeedback(deps);
   expect(
     unchanged.emitted.filter(
-      (event) => JSON.parse(event.payload).number === pull.number,
+      (event) =>
+        event.type === "workflow_run.github_event" &&
+        JSON.parse(event.payload).number === pull.number,
     ),
   ).toHaveLength(0);
 });
