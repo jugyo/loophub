@@ -125,7 +125,7 @@ test("issues.create rejects unregistered, archived, and missing workspace branch
   ).toThrow(/workspace branch must exist locally/);
 });
 
-test("issues.create rejects workspace with target branch creation options", () => {
+test("issues.create rejects workspace with a target branch", () => {
   svc.workspaces.create("me/proj", { branch: "workspace/conflict" });
 
   expect(() =>
@@ -135,14 +135,6 @@ test("issues.create rejects workspace with target branch creation options", () =
       target_branch: "integration/stack",
     }),
   ).toThrow(/workspace cannot be combined with target_branch/);
-
-  expect(() =>
-    svc.issues.create("me/proj", {
-      title: "create conflict",
-      workspace: "workspace/conflict",
-      create_target_branch: true,
-    }),
-  ).toThrow(/workspace cannot be combined with create_target_branch/);
 });
 
 test("issues.create normalizes a blank target branch to null", () => {
@@ -177,41 +169,6 @@ test("issues.create without a target branch does not create a branch", () => {
   expect(after.status).not.toBe(0);
 });
 
-test("issues.create can create a missing target branch from default", () => {
-  const issue = svc.issues.create("me/proj", {
-    title: "new target",
-    target_branch: "feature/new-target",
-    create_target_branch: true,
-  }) as any;
-
-  expect(issue.target_branch).toBe("feature/new-target");
-  expect(
-    git(["show-ref", "--verify", "--quiet", "refs/heads/feature/new-target"])
-      .status,
-  ).toBe(0);
-});
-
-test("issues.create creates missing target branch from the exact default branch ref", () => {
-  writeFileSync(join(repoPath, "default-only.txt"), "default\n");
-  git(["add", "-A"]);
-  git(["commit", "-qm", "default-only"]);
-  const defaultHead = git(["rev-parse", "refs/heads/main"]).stdout.trim();
-  const previousCommit = git(["rev-parse", "main~1"]).stdout.trim();
-  git(["tag", "main", previousCommit]);
-
-  const issue = svc.issues.create("me/proj", {
-    title: "ambiguous default target",
-    target_branch: "feature/ambiguous-default",
-    create_target_branch: true,
-  }) as any;
-
-  expect(issue.target_branch).toBe("feature/ambiguous-default");
-  expect(git(["rev-parse", "feature/ambiguous-default"]).stdout.trim()).toBe(
-    defaultHead,
-  );
-  git(["tag", "-d", "main"]);
-});
-
 test("issues.create rejects a missing target branch", () => {
   expect(() =>
     svc.issues.create("me/proj", {
@@ -239,59 +196,6 @@ test("issues.create rejects revision-special target branch names", () => {
       target_branch: "@",
     }),
   ).toThrow(/target_branch must be a local branch name/);
-
-  expect(() =>
-    svc.issues.create("me/proj", {
-      title: "special new target",
-      target_branch: "HEAD",
-      create_target_branch: true,
-    }),
-  ).toThrow(/target_branch must be a local branch name/);
-});
-
-test("issues.create rejects invalid target branches before create-if-missing", () => {
-  expect(() =>
-    svc.issues.create("me/proj", {
-      title: "invalid target",
-      target_branch: "--output=/tmp/lh-target-branch",
-      create_target_branch: true,
-    }),
-  ).toThrow(/target_branch must be a local branch name/);
-});
-
-test("issues.create rejects revision expressions before create-if-missing", () => {
-  expect(() =>
-    svc.issues.create("me/proj", {
-      title: "revision target",
-      target_branch: "main~1",
-      create_target_branch: true,
-    }),
-  ).toThrow(/target_branch must be a local branch name/);
-});
-
-test("issues.create fails before creating the issue when default branch is missing", () => {
-  const repo = S.createRepo("me/missing-default", repoPath, "missing-default");
-  const before = S.listIssues(repo.id, "issue", "open", "created").length;
-
-  expect(() =>
-    svc.issues.create("me/missing-default", {
-      title: "cannot create branch",
-      target_branch: "feature/from-missing-default",
-      create_target_branch: true,
-    }),
-  ).toThrow(/cannot resolve default branch "missing-default"/);
-
-  expect(S.listIssues(repo.id, "issue", "open", "created")).toHaveLength(
-    before,
-  );
-  expect(
-    git([
-      "show-ref",
-      "--verify",
-      "--quiet",
-      "refs/heads/feature/from-missing-default",
-    ]).status,
-  ).not.toBe(0);
 });
 
 test("issues.list defaults to newest-created order and keeps label filters (#751)", async () => {

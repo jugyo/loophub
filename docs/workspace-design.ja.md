@@ -20,7 +20,7 @@ workspace の中核 3 要素は、いずれも既にコードに存在する。
 
 | 要素 | 既存実装 | 場所 |
 |---|---|---|
-| issue ↔ ブランチの関連付け | `issues.target_branch` カラム(nullable)。issue 作成時に指定でき、存在検証(`assertExistingLocalBranch`)または作成(`ensureLocalBranchFromDefault`、`create_target_branch` フラグ)を行う | `core/db.ts:144`、`core/service/issues.ts:163-175`、`core/service/shared.ts:392-439` |
+| issue ↔ ブランチの関連付け | `issues.target_branch` カラム(nullable)。issue 作成時に指定でき、`assertExistingLocalBranch` で既存ローカルブランチであることを検証する | `core/db.ts:144`、`core/service/issues.ts`、`core/service/shared.ts` |
 | PR base の決定 | `lh build`(`dev.openPr`)と `pulls.create` の両方が `既存 PR の base` → `明示 base 指定` → `issue.target_branch` → `repo.default_branch` の優先順位で base を決める。明示指定を CLI に公開するのは `lh pr create --base` のみ(`dev.openPr` の `input.base` 引数は `lh build` からは渡されない) | `core/service/dev.ts:143-147`、`core/service/pulls.ts:164` |
 | リポジトリトップのブランチ別表示 | issue list は既に `target_branch` で issue をグルーピングし、デフォルトブランチのセクションを先頭に、ブランチ名を `<h2>` 見出しとして表示している | `web/src/components/issue-list.tsx:52-83, 120-124, 372-391` |
 
@@ -36,8 +36,7 @@ workspace の中核 3 要素は、いずれも既にコードに存在する。
 1. **workspace という名前付きの存在**: 空の(まだ issue が 1 件もない)workspace を表現できない。
    現在のグルーピングは「open issue が持つ `target_branch` の値」から導出されるため、
    issue が 0 件になるとセクションごと消える。
-2. **リポジトリトップからの作成導線**: ブランチ作成 + workspace 登録を 1 操作で行う UI がない
-   (現状は `lh issue create --target-branch --create-target-branch` 経由の副作用でしか作れない)。
+2. **リポジトリトップからの作成導線**: ブランチ作成 + workspace 登録を 1 操作で行う UI がない。
 3. **workspace 配下への issue 作成導線**: セクションごとの New issue ボタンと、作成される issue への
    `target_branch` の自動引き継ぎがない。
 

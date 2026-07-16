@@ -140,6 +140,13 @@ export async function run(): Promise<void> {
     }
     process.exit(proc.status ?? 1);
   } else if (sub === "create") {
+    if (
+      (flags as Record<string, string | boolean | string[] | undefined>)[
+        "create-target-branch"
+      ] !== undefined
+    ) {
+      fail("unknown option: --create-target-branch");
+    }
     if (flags.workspace !== undefined && typeof flags.workspace !== "string") {
       fail("--workspace requires a value");
     }
@@ -148,12 +155,6 @@ export async function run(): Promise<void> {
       typeof flags["target-branch"] === "string"
     ) {
       fail("--workspace cannot be combined with --target-branch");
-    }
-    if (
-      typeof flags.workspace === "string" &&
-      flags["create-target-branch"] === true
-    ) {
-      fail("--workspace cannot be combined with --create-target-branch");
     }
     const labels = (flags.label || "")
       .split(",")
@@ -171,7 +172,6 @@ export async function run(): Promise<void> {
             flags.workspace === undefined
               ? (flags["target-branch"] ?? process.env[ENV_WORKSPACE])
               : undefined,
-          create_target_branch: flags["create-target-branch"] === true,
         },
         await writeSession(),
         currentHerdrPaneContext(),

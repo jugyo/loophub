@@ -31,7 +31,6 @@ export type Flags = {
   "default-branch"?: string;
   workspace?: string;
   "target-branch"?: string;
-  "create-target-branch"?: boolean;
   state?: string;
   label?: string;
   title?: string;
@@ -121,7 +120,6 @@ const { values, positionals } = parseArgs({
     "default-branch": { type: "string" },
     workspace: { type: "string" },
     "target-branch": { type: "string" },
-    "create-target-branch": { type: "boolean" },
     state: { type: "string" },
     label: { type: "string" },
     title: { type: "string" },

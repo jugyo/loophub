@@ -6,7 +6,6 @@ import {
   clampPerPage,
   commentJSON,
   DEFAULT_LIST_PER_PAGE,
-  ensureLocalBranchFromDefault,
   ensureWritable,
   githubIssueJSON,
   herdrPaneJSON,
@@ -153,7 +152,6 @@ export const issues = {
       labels?: string[];
       workspace?: string | null;
       target_branch?: string | null;
-      create_target_branch?: boolean;
     },
     sessionId?: string | null,
     currentPane?: CurrentHerdrPaneContext | null,
@@ -176,12 +174,6 @@ export const issues = {
         "workspace cannot be combined with target_branch",
       );
     }
-    if (workspace && input.create_target_branch) {
-      throw new ServiceError(
-        422,
-        "workspace cannot be combined with create_target_branch",
-      );
-    }
     if (workspace) {
       const registered = S.getWorkspace(r.id, workspace);
       if (!registered || registered.archived_at) {
@@ -199,16 +191,7 @@ export const issues = {
     }
     const targetBranch = workspace ?? explicitTargetBranch;
     if (targetBranch) {
-      if (input.create_target_branch) {
-        ensureLocalBranchFromDefault(
-          r.local_path,
-          targetBranch,
-          r.default_branch,
-          "target_branch",
-        );
-      } else {
-        assertExistingLocalBranch(r.local_path, targetBranch);
-      }
+      assertExistingLocalBranch(r.local_path, targetBranch);
     }
     const issue = S.createIssue(
       r.id,

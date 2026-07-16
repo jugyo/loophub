@@ -126,13 +126,14 @@ New issue や `lh issue new --target-branch <branch>` は、この環境変数�
 
 `lh issue create --target-branch <branch>` を明示した場合は、その値が `LOOPHUB_WORKSPACE` より
 優先される。どちらもない場合は従来どおり `target_branch: null` になる。この環境変数は既存の
-workspace ブランチを選ぶコンテキストであり、ブランチを作成しない。新規ブランチを明示的に
-作る場合だけ `--target-branch` と `--create-target-branch` を併用する。
+workspace ブランチを選ぶコンテキストであり、ブランチを作成しない。`--target-branch` も
+既存のローカルブランチだけを受け付ける。
 
 登録済み workspace を明示して起票する場合は
 `lh issue create --workspace <branch> --title <title>` を使う。指定先は対象 repository の active な
 workspace で、ローカルブランチも存在する必要がある。`--workspace` は `LOOPHUB_WORKSPACE` より
-優先され、`--target-branch` または `--create-target-branch` との併用はエラーになる。
+優先され、`--target-branch` との併用はエラーになる。新しい workspace ブランチは先に
+`lh workspace create <branch>` で作成・登録する。
 
 ## 開発
 

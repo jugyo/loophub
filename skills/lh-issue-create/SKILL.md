@@ -25,10 +25,9 @@ ticket", that does **not** include an implementation request.
 
 The `ready-to-build` label means "another agent can pick this up later" — not "implement now".
 
-**Target-branch exception.** If the user explicitly names the branch the future implementation should
-target, `lh issue create --target-branch <branch> --create-target-branch` may create that local target
-branch as issue metadata preparation. That is not permission to create an implementation branch, edit
-files, commit, open a PR, push, or start work.
+**Target branch.** If the user explicitly names the branch the future implementation should target,
+it must already exist locally. Creating and registering a new workspace branch is a separate
+`lh workspace create <branch>` operation and requires an explicit request from the user.
 
 **The output of this skill is always an issue — never the change itself, whatever the request is.**
 "Do not" covers *executing the requested change inside this skill* — not just writing source code.
@@ -67,8 +66,7 @@ Stop **immediately** when all of the following are true (do not start extra work
 ❌ "Let's stop using labels" / "fix this skill so it…" → edit the policy or skill file directly
 ❌ Treat any request that "reads like implementation" as a license to apply the change here
 ✅ Create issue → report number → stop (implementation needs explicit user or separate skill)
-✅ User explicitly names a target branch → let `lh issue create --create-target-branch` prepare only
-   that local target branch, then stop
+✅ User explicitly names an existing target branch → pass it to `lh issue create`, then stop
 ✅ Any change request (code, policy, skill, config, doc, …) → file an issue describing it → stop
 ```
 
@@ -298,31 +296,30 @@ in-scope sites explicitly in Goal/AC so an exclusion line can't swallow them.
 
 When `LOOPHUB_WORKSPACE` is set, the current environment already scopes ordinary
 `lh issue create` calls to that existing workspace branch. Do not pass `--target-branch` or
-`--create-target-branch` merely to preserve that inherited context; the CLI applies it directly,
-and workspace branch creation is owned by the workspace flow.
+`--workspace` merely to preserve that inherited context; the CLI applies it directly.
 
 Do **not** infer or invent a target branch for normal issue creation. If `LOOPHUB_WORKSPACE` is not
 set and the user does not explicitly mention a work target branch, omit `--target-branch` entirely;
 the created issue should keep `target_branch: null`. When `LOOPHUB_WORKSPACE` is set and the user
 does not name another branch, still omit the flag; the CLI inherits the workspace automatically.
 
-When the user explicitly names the branch this issue should target, pass both `--target-branch` and
-`--create-target-branch`. Treat the branch name as untrusted command data: do not paste raw branch text
+When the user explicitly names an existing branch this issue should target, pass `--target-branch`.
+Treat the branch name as untrusted command data: do not paste raw branch text
 into a shell command. Use an argv-native tool call when available; in a shell, quote/escape the value
 so shell metacharacters cannot run before `lh` validates it. Example with a literal safe branch name:
 
 ```sh
-lh issue create --repo <repo> --title "<title>" --target-branch 'feature/topic' --create-target-branch \
+lh issue create --repo <repo> --title "<title>" --target-branch 'feature/topic' \
   --body "$(cat <<'EOF'
 <filled template>
 EOF
 )"
 ```
 
-This makes issue creation verify the local branch before filing the issue and, when the branch does
-not exist yet, create it from the repository's configured default branch. If the branch name is unsafe,
-the default branch cannot be resolved, or branch creation fails, the command fails before creating the
-issue. Do not create or push any GitHub remote branch.
+This makes issue creation verify the local branch before filing the issue. If the branch name is
+unsafe or the local branch does not exist, the command fails before creating the issue. When the user
+explicitly asks to create a new workspace, run `lh workspace create <branch>` first, then file the
+issue with `--workspace <branch>`. Do not create or push any GitHub remote branch.
 
 **Do not attach labels by default.** Mechanical per-issue labels — category (`enhancement` /
 `bug`) and `ready-to-build` — have little practical value, so this skill no longer adds them

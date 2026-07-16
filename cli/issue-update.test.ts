@@ -234,10 +234,7 @@ test("lh issue create explicit workspace overrides LOOPHUB_WORKSPACE", () => {
   expect(viewJSON(Number(match[1])).target_branch).toBe("workspace/selected");
 });
 
-test.each([
-  [["--target-branch", "integration/stack"], "--target-branch"],
-  [["--create-target-branch"], "--create-target-branch"],
-] as const)("lh issue create rejects --workspace with %s", (conflictingArgs, expected) => {
+test("lh issue create rejects --workspace with --target-branch", () => {
   const result = lh([
     "issue",
     "create",
@@ -247,12 +244,13 @@ test.each([
     "workspace conflict",
     "--workspace",
     "workspace/active",
-    ...conflictingArgs,
+    "--target-branch",
+    "integration/stack",
   ]);
 
   expect(result.exitCode).not.toBe(0);
   expect(result.stderr).toContain(
-    `--workspace cannot be combined with ${expected}`,
+    "--workspace cannot be combined with --target-branch",
   );
 });
 
@@ -302,37 +300,18 @@ test("lh issue create rejects an empty --workspace value", () => {
   expect(result.stderr).toContain("workspace branch is required");
 });
 
-test("lh issue create can create a missing target branch from default", () => {
-  const { stdout, exitCode, stderr } = lh([
+test("lh issue create rejects --create-target-branch as an unknown option", () => {
+  const { exitCode, stderr } = lh([
     "issue",
     "create",
     "--repo",
     REPO,
     "--title",
     "new branch target",
-    "--target-branch",
-    "feature/issue-target",
     "--create-target-branch",
   ]);
-  expect(exitCode).toBe(0);
-  const m = stdout.match(/created #(\d+)/);
-  if (!m) throw new Error(`create failed: ${stdout}\n${stderr}`);
-
-  const issue = viewJSON(Number(m[1]));
-  expect(issue.target_branch).toBe("feature/issue-target");
-  const branch = spawnSync(
-    "git",
-    [
-      "-C",
-      repoPath,
-      "show-ref",
-      "--verify",
-      "--quiet",
-      "refs/heads/feature/issue-target",
-    ],
-    { encoding: "utf8" },
-  );
-  expect(branch.status).toBe(0);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain("unknown option: --create-target-branch");
 });
 
 test("lh issue create without target branch does not create a branch", () => {
@@ -512,7 +491,7 @@ test("lh issue create registers and reuses an unregistered current pane by coord
   }
 });
 
-test("lh issue create rejects invalid create-if-missing target branches", () => {
+test("lh issue create rejects option-like target branches", () => {
   const { stderr, exitCode } = lh([
     "issue",
     "create",
@@ -521,14 +500,13 @@ test("lh issue create rejects invalid create-if-missing target branches", () => 
     "--title",
     "bad branch target",
     "--target-branch=--output=/tmp/lh-target-branch",
-    "--create-target-branch",
   ]);
 
   expect(exitCode).not.toBe(0);
   expect(stderr).toContain("target_branch must be a local branch name");
 });
 
-test("lh issue create rejects revision-expression target branches", () => {
+test("lh issue create rejects a missing revision-expression target branch", () => {
   const { stderr, exitCode } = lh([
     "issue",
     "create",
@@ -538,11 +516,12 @@ test("lh issue create rejects revision-expression target branches", () => {
     "revision branch target",
     "--target-branch",
     "main~1",
-    "--create-target-branch",
   ]);
 
   expect(exitCode).not.toBe(0);
-  expect(stderr).toContain("target_branch must be a local branch name");
+  expect(stderr).toContain(
+    "target_branch must name an existing local branch: main~1",
+  );
 });
 
 test("lh issue create rejects revision-special target branches", () => {

@@ -26,13 +26,11 @@ test("lh-issue-create allows natural title word order in the conversation langua
 
 test("lh-issue-create target branch guidance is explicit and metadata-only", () => {
   expect(skill).toContain("creates implementation branches");
-  expect(skill).toContain("Target-branch exception");
-  expect(skill).toContain("issue metadata preparation");
+  expect(skill).toContain("it must already exist locally");
+  expect(skill).toContain("`lh workspace create <branch>`");
   expect(skill).toContain("Do **not** infer or invent a target branch");
   expect(skill).toContain("omit `--target-branch` entirely");
-  expect(skill).toMatch(
-    /`lh issue create --target-branch <branch> --create-target-branch` may create that local target\s+branch/,
-  );
+  expect(skill).not.toContain("--create-target-branch");
 });
 
 test("lh-issue-create relies on the inherited workspace context", () => {
@@ -52,9 +50,7 @@ test("lh-issue-create target branch shell guidance treats branch names as untrus
   expect(skill).toContain("Treat the branch name as untrusted command data");
   expect(skill).toMatch(/do not paste raw branch text\s+into a shell command/);
   expect(skill).toContain("Use an argv-native tool call when available");
-  expect(skill).not.toContain(
-    '--target-branch "<branch>" --create-target-branch',
-  );
+  expect(skill).not.toContain("--create-target-branch");
 });
 
 test("lh-issue-create records user-mentioned related resources", () => {
