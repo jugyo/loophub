@@ -154,6 +154,37 @@ test("notifyForEvent injects per matching subscription and emits an audit event"
   expect(none.notified).toBe(0);
 });
 
+test("usage notifications identify the changed session", async () => {
+  const repo = S.getRepo("me", "subs")!;
+  for (const [sessionId, paneId] of [
+    ["workflow-parent-a", "w6:p6"],
+    ["workflow-parent-b", "w7:p7"],
+  ]) {
+    svc.subscriptions.add({
+      repo: "me/subs",
+      eventType: "workflow_run.usage_updated",
+      herdrSession: `usage-${sessionId}`,
+      herdrPaneId: paneId,
+      sessionId,
+    });
+  }
+  const event = S.emitEvent(repo.id, "workflow_run.usage_updated", "test", {
+    id: 42,
+    number: 12,
+    parent_session_id: "workflow-parent-a",
+    session_id: "executor-session",
+  });
+  const injected: Array<{ sessionId: string | null; text: string }> = [];
+  await svc.subscriptions.notifyForEvent(event, {
+    inject: async (sub, text) => {
+      injected.push({ sessionId: sub.session_id, text });
+    },
+  });
+  expect(injected).toHaveLength(1);
+  expect(injected[0]?.sessionId).toBe("workflow-parent-a");
+  expect(injected[0]?.text).toContain("session_id=executor-session");
+});
+
 test("GitHub feedback notification identifies the PR and safe feedback references without bodies", async () => {
   const repo = S.getRepo("me", "subs")!;
   svc.subscriptions.add({

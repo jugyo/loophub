@@ -440,6 +440,22 @@ export function startUsageSweep(
             ...payload,
             [target.kind === "pull" ? "pr" : "issue"]: target.number,
           });
+          if (target.kind === "pull") {
+            const workflow = sessions.workflowUsageTarget(
+              target.repo_id,
+              target.number,
+              session.session_id,
+            );
+            if (workflow) {
+              events.emit(target.repo_id, "workflow_run.usage_updated", actor, {
+                id: workflow.runId,
+                number: target.number,
+                pr_number: target.number,
+                parent_session_id: workflow.parentSessionId,
+                session_id: session.session_id,
+              });
+            }
+          }
         }
       }
       // #1123: persist the live aggregate tokens/sec into prune-resistant history so the rate time

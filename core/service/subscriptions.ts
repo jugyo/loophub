@@ -134,7 +134,8 @@ export const subscriptions = {
     if (
       row.type === "pull_request.github_feedback" ||
       row.type === "workflow_run.turn_done" ||
-      row.type === "workflow_run.review_submitted"
+      row.type === "workflow_run.review_submitted" ||
+      row.type === "workflow_run.usage_updated"
     ) {
       const parentSessionId = (payload as { parent_session_id?: unknown })
         .parent_session_id;
@@ -143,6 +144,7 @@ export const subscriptions = {
       if (subs.length === 0) return result;
     }
     const number = (payload as { number?: unknown })?.number;
+    const usageSessionId = (payload as { session_id?: unknown })?.session_id;
     const githubUrl = (payload as { github_url?: unknown })?.github_url;
     const rawFeedback = (payload as { feedback?: unknown })?.feedback;
     const feedbackRefs = Array.isArray(rawFeedback)
@@ -168,6 +170,8 @@ export const subscriptions = {
       eventType: row.type,
       repoFullName,
       eventId: row.id,
+      sessionId:
+        typeof usageSessionId === "string" ? usageSessionId : undefined,
       number: typeof number === "number" ? number : undefined,
       githubPr: typeof githubUrl === "string" ? githubUrl : undefined,
       feedbackRefs,

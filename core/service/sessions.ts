@@ -282,6 +282,13 @@ export const sessions = {
     return S.listSessionLinkedTargets(sessionId);
   },
 
+  workflowUsageTarget(repoId: number, prNumber: number, sessionId: string) {
+    const run = S.runningWorkflowRunForSession(repoId, prNumber, sessionId);
+    return run?.parent_session_id
+      ? { runId: run.id, parentSessionId: run.parent_session_id }
+      : null;
+  },
+
   register(input: {
     id: string;
     agent: string;

@@ -26,7 +26,7 @@ export function usage(): void {
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
   lh workflow list|view|create|update|delete <name> [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage global workflow prompt bundles
   lh workflow start <owner>/<repo>/<issue> | <issue> [--repo owner/name] (--workflow <name> | --workflow-id <id>) [--claude-code | --codex] [--model <name>] [--herdr] [--auto] [--no-launch]   # start a Workflow run (default runtime/model from app settings; --auto launches the parent and all step agents in auto mode)
-  lh workflow run advance-to-verify|complete|request-rework|stop --run <id> [--repo owner/name]
+  lh workflow run advance-to-verify|complete|request-rework|stop|enforce-cost-limit --run <id> [--usage-session <id>] [--repo owner/name]
   lh workflow run await-human --run <id> --reason <text> [--repo owner/name]
   lh workflow run resume --run <id> --step execute|verify [--repo owner/name]
   lh workflow turn done [--repo owner/name] [--run <id>]   # (Execute child) declare the turn done — payload-less; the parent observes HEAD/review state

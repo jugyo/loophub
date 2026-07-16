@@ -44,6 +44,19 @@ Also subscribe to GitHub feedback so the worker can prompt you when GitHub PR fe
 
 `lh subscribe --repo '<repo>' --event pull_request.github_feedback`
 
+Also subscribe to usage changes for sessions linked to this PR:
+
+`lh subscribe --repo '<repo>' --event workflow_run.usage_updated`
+
+On every usage notification, take its trusted `session_id` token and run
+`lh workflow run enforce-cost-limit --repo '<repo>' --run <run> --usage-session <session_id>`. The command evaluates the unique
+set of the parent session and all recorded step sessions against the task over-budget limit. An
+under-limit or indeterminate total is a no-op. When the limit is exceeded, it interrupts only the
+currently running child that produced the usage update (or the most recently active live child when
+the parent produced it), records the over-budget event, and stops the run.
+After it reports `stopped`, do not launch or instruct another child. A non-zero exit is a visible
+failure: do not treat the run as successful or continue automatic progression.
+
 ## Commands you may use
 
 LoopHub (orchestration):
@@ -58,6 +71,9 @@ LoopHub (orchestration):
   — explicitly release a human hold, reset the rework budget, and select the legal resume step.
 - `lh workflow run stop --repo '<repo>' --run <run>`
   — stop a running run permanently.
+- `lh workflow run enforce-cost-limit --repo '<repo>' --run <run> --usage-session <session_id>`
+  — evaluate cumulative run cost after a usage notification and stop the active step child when the
+  configured task limit is exceeded.
 - `lh workflow launch-step --repo '<repo>' --run <run> --step <step> [--review <id>] [--note <text|->]`
   — start (or restart) the child for a step. The engine resolves its input pointers (for Verify, the
   base/head SHAs to review; for a rework Execute, `--review <id>` becomes the "address review"

@@ -12,6 +12,7 @@ import {
   agentModel,
   type CodingAgent,
   configDir,
+  devCostLimitUsd,
   worktreeRoot,
 } from "../config.ts";
 import {
@@ -27,8 +28,10 @@ import type {
   WorkflowRunReviewSummaryWire,
   WorkflowRunStateWire,
 } from "../serialize.ts";
+import { parseHerdrAgentPlacements } from "../terminal/herdr-status.ts";
 import {
   buildWorkflowStepHerdrLaunchPlan,
+  HERDR_ID,
   herdrSessionName,
 } from "../terminal/terminal-launch.ts";
 import { parsePreviousWorkflowVerifyPane } from "../terminal/workflow-pane-layout.ts";
@@ -42,6 +45,7 @@ import {
 import {
   nextWorkflowChildSequence,
   parseWorkflowHerdrAgentName,
+  workflowStepSessionIds,
 } from "../workflow/herdr-agents.ts";
 import {
   evaluateWorkflowSteps,
@@ -105,6 +109,14 @@ export type WorkflowRunUpdateResult = {
     parent_session_id: string | null;
     step_sessions_json: string;
   };
+};
+
+export type WorkflowRunCostLimitResult = WorkflowRunUpdateResult & {
+  action: "stopped" | "skipped";
+  reason: "over_limit" | "under_limit" | "unknown_cost" | "already_stopped";
+  cost_usd: number | null;
+  limit_usd: number;
+  stopped_session_id: string | null;
 };
 
 export type WorkflowLaunchStepResult = {
@@ -1002,6 +1014,199 @@ export const workflowRuns = {
       "stop",
       sessionId,
     );
+  },
+
+  async enforceCostLimit(
+    name: string,
+    input: { run: number; usageSession?: string },
+    sessionId?: string | null,
+  ): Promise<WorkflowRunCostLimitResult> {
+    const { repo, run } = lifecycleRun(name, input.run, sessionId);
+    const configuredLimit = devCostLimitUsd();
+    if (S.hasWorkflowRunCostStopEvent(repo.id, run.id)) {
+      return {
+        run: runJSON(run),
+        action: "skipped",
+        reason: "already_stopped",
+        cost_usd: null,
+        limit_usd: configuredLimit,
+        stopped_session_id: null,
+      };
+    }
+    assertAutomaticProgressAllowed(run);
+    const currentStep = workflowStep(run.current_step);
+    const executeSessions = workflowStepSessionIds(
+      run.step_sessions_json,
+      "execute",
+    );
+    const verifySessions = workflowStepSessionIds(
+      run.step_sessions_json,
+      "verify",
+    );
+    const sessionSteps = new Map<string, WorkflowStep>([
+      ...executeSessions.map((id) => [id, "execute"] as const),
+      ...verifySessions.map((id) => [id, "verify"] as const),
+    ]);
+    const sessionIds = [
+      ...(run.parent_session_id ? [run.parent_session_id] : []),
+      ...executeSessions,
+      ...verifySessions,
+    ];
+    const costUsd = S.sessionUsageCostForSessions(sessionIds);
+    if (costUsd === null) {
+      return {
+        run: runJSON(run),
+        action: "skipped",
+        reason: "unknown_cost",
+        cost_usd: null,
+        limit_usd: configuredLimit,
+        stopped_session_id: null,
+      };
+    }
+    if (costUsd <= configuredLimit) {
+      return {
+        run: runJSON(run),
+        action: "skipped",
+        reason: "under_limit",
+        cost_usd: costUsd,
+        limit_usd: configuredLimit,
+        stopped_session_id: null,
+      };
+    }
+    if (
+      input.usageSession &&
+      input.usageSession !== run.parent_session_id &&
+      !sessionSteps.has(input.usageSession)
+    ) {
+      throw new ServiceError(
+        409,
+        "usage session does not belong to Workflow run",
+      );
+    }
+    const agentsOut = await runHerdr(
+      "herdr",
+      ["--session", herdrSessionName(repo), "agent", "list"],
+      repo.local_path,
+      { captureStdout: true, timeoutMs: 15_000 },
+    );
+    const placements = parseHerdrAgentPlacements(
+      agentsOut,
+      worktreeRoot(),
+      repo.full_name,
+    );
+    const candidates = placements.flatMap((placement) => {
+      if (placement.status !== "working" || placement.pull !== run.pr_number) {
+        return [];
+      }
+      const agent = parseWorkflowHerdrAgentName(placement.name);
+      if (agent?.kind !== "step" || agent.runId !== run.id) return [];
+      const session = [...sessionSteps].find(([id, step]) => {
+        return (
+          step === agent.step && S.getAgentSession(id)?.name === placement.name
+        );
+      });
+      if (!session) return [];
+      return [
+        {
+          pane: placement,
+          sessionId: session[0],
+          step: session[1],
+          sequence: agent.sequence,
+          usageUpdatedAt: S.latestSessionUsageAt(session[0]),
+        },
+      ];
+    });
+    const requestedChild = input.usageSession
+      ? sessionSteps.get(input.usageSession)
+      : undefined;
+    const target = requestedChild
+      ? candidates.find(
+          (candidate) => candidate.sessionId === input.usageSession,
+        )
+      : candidates
+          .filter((candidate) => candidate.step === currentStep)
+          .sort((a, b) => {
+            const byUsage = (b.usageUpdatedAt ?? "").localeCompare(
+              a.usageUpdatedAt ?? "",
+            );
+            return byUsage || b.sequence - a.sequence;
+          })[0];
+    if (!target || !HERDR_ID.test(target.pane.id)) {
+      throw new ServiceError(
+        409,
+        "Workflow usage session has no currently running child",
+      );
+    }
+    const updated = S.stopWorkflowRunIfRunning(run.id);
+    if (!updated) {
+      return {
+        run: runJSON(workflowRunOr404(run.id)),
+        action: "skipped",
+        reason: "already_stopped",
+        cost_usd: costUsd,
+        limit_usd: configuredLimit,
+        stopped_session_id: null,
+      };
+    }
+    S.emitEvent(repo.id, "workflow_run.updated", actorFor(sessionId), {
+      id: updated.id,
+      transition: "stop",
+      status: updated.status,
+      current_step: updated.current_step,
+      rework_count: updated.rework_count,
+      issue_number: updated.issue_number,
+      pr_number: updated.pr_number,
+    });
+    try {
+      await runHerdr(
+        "herdr",
+        [
+          "--session",
+          herdrSessionName(repo),
+          "pane",
+          "send-keys",
+          target.pane.id,
+          "Escape",
+        ],
+        repo.local_path,
+        { timeoutMs: 10_000 },
+      );
+    } catch (error) {
+      S.emitEvent(
+        repo.id,
+        "workflow_run.cost_stop_failed",
+        actorFor(sessionId),
+        {
+          id: run.id,
+          number: run.pr_number,
+          pr_number: run.pr_number,
+          session_id: target.sessionId,
+          step: target.step,
+          cost_usd: costUsd,
+          limit_usd: configuredLimit,
+          reason: error instanceof Error ? error.message : "unknown error",
+        },
+      );
+      throw error;
+    }
+    S.emitEvent(repo.id, "dev.cost_stopped", actorFor(sessionId), {
+      number: run.pr_number,
+      pr: run.pr_number,
+      run_id: run.id,
+      session_id: target.sessionId,
+      step: target.step,
+      reason: "cost_limit_exceeded",
+      cost_usd: costUsd,
+      limit_usd: configuredLimit,
+    });
+    return {
+      run: runJSON(updated),
+      action: "stopped",
+      reason: "over_limit",
+      cost_usd: costUsd,
+      limit_usd: configuredLimit,
+      stopped_session_id: target.sessionId,
+    };
   },
 
   async requestRework(

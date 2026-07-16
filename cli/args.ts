@@ -9,6 +9,7 @@ export type Flags = {
   repo?: string;
   "session-id"?: string;
   sessionId?: string;
+  "usage-session"?: string;
   sandbox?: boolean;
   auto?: boolean;
   verbose?: boolean;
@@ -99,6 +100,7 @@ const { values, positionals } = parseArgs({
     repo: { type: "string" },
     "session-id": { type: "string" },
     sessionId: { type: "string" },
+    "usage-session": { type: "string" },
     sandbox: { type: "boolean" },
     auto: { type: "boolean" },
     verbose: { type: "boolean" },

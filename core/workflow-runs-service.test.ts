@@ -380,6 +380,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     },
     parent,
   );
+  const prIssueId = S.getIssue(repo.id, started.pr.number)!.id;
 
   // Launch + confirm the Execute child.
   const exec = await svc.workflowRuns.launchStep(

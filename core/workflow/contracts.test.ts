@@ -109,6 +109,12 @@ test("parent subscribes its pane to workflow observation and GitHub feedback eve
   expect(contract).toContain(
     "lh subscribe --repo '<repo>' --event pull_request.github_feedback",
   );
+  expect(contract).toContain(
+    "lh subscribe --repo '<repo>' --event workflow_run.usage_updated",
+  );
+  expect(contract).not.toContain(
+    "lh subscribe --repo '<repo>' --event agent_session.usage_updated",
+  );
   expect(contract).toContain("only a signal to observe");
 });
 

@@ -16,6 +16,7 @@ export interface NotifyTextInput {
   eventType: string;
   repoFullName: string;
   eventId: number;
+  sessionId?: string;
   // payload.number when present — the issue/PR the event is about.
   number?: number;
   // Trusted references synthesized by LoopHub for a GitHub feedback event. Comment bodies are
@@ -64,6 +65,13 @@ export function buildNotifyText(input: NotifyTextInput): string {
       `LoopHub event: type=${tokenize(input.eventType)} repo=${tokenize(input.repoFullName)}` +
       `${number} event_id=${input.eventId}. ` +
       "The Verify child registered a workflow review. Observe the run state (`lh workflow step status`) before deciding any transition."
+    );
+  }
+  if (input.eventType === "workflow_run.usage_updated" && input.sessionId) {
+    return (
+      `LoopHub event: type=${tokenize(input.eventType)} repo=${tokenize(input.repoFullName)}` +
+      `${number} event_id=${input.eventId} session_id=${tokenize(input.sessionId)}. ` +
+      "A linked agent session's usage changed; evaluate the Workflow run cost according to your instructions."
     );
   }
   return (

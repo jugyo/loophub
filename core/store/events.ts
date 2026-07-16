@@ -82,6 +82,22 @@ export function eventsForWorkflowRun(
     .all(repoId, runId) as EventRow[];
 }
 
+export function hasWorkflowRunCostStopEvent(
+  repoId: number,
+  runId: number,
+): boolean {
+  return (
+    db
+      .query(
+        `SELECT 1 FROM events
+         WHERE repo_id = ? AND type = 'dev.cost_stopped'
+           AND json_extract(payload, '$.run_id') = ?
+         LIMIT 1`,
+      )
+      .get(repoId, runId) !== null
+  );
+}
+
 // The timestamp of the run's latest turn-done declaration, or null when Execute never declared
 // one. A timing signal for the parent's observation — never step-completion truth.
 export function latestWorkflowTurnDoneAt(

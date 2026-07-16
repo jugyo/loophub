@@ -601,6 +601,13 @@ async function runLifecycle(): Promise<void> {
     if (action === "stop") {
       return service.stopRun(repo, { run: runId }, sessionId);
     }
+    if (action === "enforce-cost-limit") {
+      return service.enforceCostLimit(
+        repo,
+        { run: runId, usageSession: flags["usage-session"] },
+        sessionId,
+      );
+    }
     usage();
     throw new Error("unreachable");
   });
@@ -612,6 +619,11 @@ async function runLifecycle(): Promise<void> {
     console.log(`rework_count\t${result.run.rework_count}`);
     if (result.run.needs_human_reason !== null) {
       console.log(`needs_human\t${display(result.run.needs_human_reason)}`);
+    }
+    if ("action" in result && "cost_usd" in result && "limit_usd" in result) {
+      console.log(`cost_action\t${result.action}`);
+      console.log(`cost_usd\t${display(String(result.cost_usd))}`);
+      console.log(`limit_usd\t${result.limit_usd}`);
     }
   }
 }

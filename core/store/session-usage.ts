@@ -292,6 +292,33 @@ export function sessionUsageCostForSession(sessionId: string): number | null {
   return row.cost_usd_sum ?? 0;
 }
 
+// Cumulative top-level cost for a set of sessions. Session ids are de-duplicated before querying
+// because a Workflow parent can also be linked to the PR and step histories are append-only. Any
+// missing or unknown session cost makes the total indeterminate, so callers never stop on a partial
+// sum.
+export function sessionUsageCostForSessions(
+  sessionIds: readonly string[],
+): number | null {
+  const unique = [...new Set(sessionIds)];
+  if (unique.length === 0) return null;
+  let total = 0;
+  for (const sessionId of unique) {
+    const cost = sessionUsageCostForSession(sessionId);
+    if (cost === null) return null;
+    total += cost;
+  }
+  return total;
+}
+
+export function latestSessionUsageAt(sessionId: string): string | null {
+  const row = db
+    .query(
+      `SELECT MAX(updated_at) AS updated_at FROM session_usage WHERE session_id = ?`,
+    )
+    .get(sessionId) as { updated_at: string | null };
+  return row.updated_at;
+}
+
 export function getSessionUsageCursor(
   sessionId: string,
 ): SessionUsageCursorRow | null {

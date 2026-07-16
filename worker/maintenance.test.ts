@@ -289,18 +289,69 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
   const originalHome = process.env.HOME;
   process.env.HOME = HOME;
   const sessionId = "99999999-0000-0000-0000-000000000724";
+  const parentSessionId = "99999999-0000-0000-0000-000000000725";
   S.registerAgentSession(
     sessionId,
-    "lh-build",
+    "workflow-step",
     sessionId,
-    "dev agent",
+    "executor #1-1",
     "claude-code",
-    "dev",
+    "workflow-step",
   );
+  S.registerAgentSession(parentSessionId, "lh-workflow", parentSessionId);
   const repo = S.createRepo("me/usage-sweep", "/tmp/lh-usage-sweep-repo");
   const pull = S.createIssue(repo.id, "pull", "PR", "", "me");
   S.createPull(pull.id, "loophub/issue-724", "main", null);
   S.linkSession(sessionId, pull.id);
+  const workflow = S.createWorkflow({
+    name: "usage-sweep-workflow",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 724,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "execute",
+    parentSessionId,
+  });
+  S.appendWorkflowRunStepSession(run.id, "execute", sessionId);
+  const otherSessionId = "99999999-0000-0000-0000-000000000726";
+  const otherParentSessionId = "99999999-0000-0000-0000-000000000727";
+  S.registerAgentSession(otherSessionId, "workflow-step", otherSessionId);
+  S.registerAgentSession(
+    otherParentSessionId,
+    "lh-workflow",
+    otherParentSessionId,
+  );
+  const otherPull = S.createIssue(repo.id, "pull", "Other PR", "", "me");
+  S.createPull(otherPull.id, "loophub/issue-725", "main", null);
+  S.linkSession(otherSessionId, otherPull.id);
+  const otherRun = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 725,
+    prNumber: otherPull.number,
+    status: "running",
+    currentStep: "execute",
+    parentSessionId: otherParentSessionId,
+  });
+  S.appendWorkflowRunStepSession(otherRun.id, "execute", otherSessionId);
+  expect(
+    svc.sessions.workflowUsageTarget(repo.id, pull.number, otherSessionId),
+  ).toBeNull();
+  expect(
+    svc.sessions.workflowUsageTarget(repo.id, otherPull.number, sessionId),
+  ).toBeNull();
+  expect(
+    svc.sessions.workflowUsageTarget(repo.id, otherPull.number, otherSessionId),
+  ).toEqual({
+    runId: otherRun.id,
+    parentSessionId: otherParentSessionId,
+  });
 
   const projectDir = join(HOME, ".claude", "projects", "repo-worktree");
   mkdirSync(projectDir, { recursive: true });
@@ -318,6 +369,10 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
     S.listEvents(0, repo.id, 100).filter(
       (event) => event.type === "agent_session.usage_updated",
     );
+  const workflowUsageEvents = () =>
+    S.listEvents(0, repo.id, 100).filter(
+      (event) => event.type === "workflow_run.usage_updated",
+    );
 
   const stop = M.startUsageSweep(20);
   try {
@@ -330,6 +385,13 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
       session_id: sessionId,
       messages: 1,
       pr: pull.number,
+    });
+    expect(workflowUsageEvents()).toHaveLength(1);
+    expect(JSON.parse(workflowUsageEvents()[0].payload)).toMatchObject({
+      id: run.id,
+      parent_session_id: parentSessionId,
+      session_id: sessionId,
+      pr_number: pull.number,
     });
 
     await new Promise((resolve) => setTimeout(resolve, 80));
@@ -344,6 +406,7 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
       }),
     );
     await waitUntil(() => usageEvents().length === 2, "second usage event");
+    expect(workflowUsageEvents()).toHaveLength(2);
     expect(S.listSessionUsage(sessionId)[0]).toMatchObject({
       input_tokens: 107,
       output_tokens: 13,

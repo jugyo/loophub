@@ -171,6 +171,24 @@ export function listRunningWorkflowRuns(): WorkflowRunRow[] {
     .all() as WorkflowRunRow[];
 }
 
+export function runningWorkflowRunForSession(
+  repoId: number,
+  prNumber: number,
+  sessionId: string,
+): WorkflowRunRow | null {
+  const matches = db
+    .query(
+      `SELECT * FROM workflow_runs run
+       WHERE run.repo_id = ? AND run.pr_number = ? AND run.status = 'running'
+         AND (run.parent_session_id = ?
+           OR EXISTS (SELECT 1 FROM json_each(run.step_sessions_json, '$.execute') WHERE value = ?)
+           OR EXISTS (SELECT 1 FROM json_each(run.step_sessions_json, '$.verify') WHERE value = ?))
+       ORDER BY run.id DESC LIMIT 2`,
+    )
+    .all(repoId, prNumber, sessionId, sessionId, sessionId) as WorkflowRunRow[];
+  return matches.length === 1 ? matches[0] : null;
+}
+
 // Latest run linked to an issue / PR, used by issue / PR detail to display run state (#1008).
 // A run row is the display-state source (workflow design: CLI / UI); ordering by id DESC returns
 // the most recent run
@@ -245,6 +263,20 @@ export function updateWorkflowRun(
   params.push(now(), id);
   db.run(`UPDATE workflow_runs SET ${sets.join(", ")} WHERE id = ?`, params);
   return getWorkflowRun(id);
+}
+
+// Atomically claim a running Workflow run for an irreversible stop. The conditional update is the
+// concurrency guard for event-driven stop decisions arriving in separate processes: only one
+// caller may proceed to interrupt the child and emit the over-budget notification.
+export function stopWorkflowRunIfRunning(id: number): WorkflowRunRow | null {
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET status = 'stopped', needs_human_reason = NULL, updated_at = ?
+       WHERE id = ? AND status = 'running'
+       RETURNING *`,
+    )
+    .get(now(), id) as WorkflowRunRow | null;
 }
 
 export function appendWorkflowRunStepSession(
