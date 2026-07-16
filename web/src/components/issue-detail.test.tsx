@@ -112,7 +112,7 @@ function renderDetail(
   getIssue?: () => Issue,
   autoModeOnBuild = false,
   extraHandlers: Record<string, (params: any) => unknown> = {},
-  legacy = false,
+  legacy = true,
 ) {
   vi.stubGlobal("fetch", mockFetch(getIssue, autoModeOnBuild, extraHandlers));
   const queryClient = new QueryClient({
@@ -710,9 +710,9 @@ describe("IssueDetail", () => {
     expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
   });
 
-  it("hides the Build button in legacy mode", async () => {
+  it("hides the Build button in normal mode", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
-    renderDetail(() => noPr, false, {}, true);
+    renderDetail(() => noPr, false, {}, false);
 
     await screen.findByRole("button", { name: /close/i });
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();

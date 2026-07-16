@@ -352,7 +352,7 @@ function RowBuildButton({
   const { launchTerminal } = useTerminalLauncher();
   const [isLoading, startLoading] = useFixedLoading();
   const state = issueBuildButtonState(issue);
-  if (legacy || issue.state !== "open" || state !== "build") return null;
+  if (!legacy || issue.state !== "open" || state !== "build") return null;
   return (
     <button
       type="button"

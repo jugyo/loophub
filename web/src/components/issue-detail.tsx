@@ -195,15 +195,15 @@ function IssueHeader({
         {issue.state === "open" ? (
           buildState === "build" ? (
             <>
-              {legacy ? null : (
+              {legacy ? (
                 <BuildControls owner={owner} repo={repo} issue={issue} />
-              )}
+              ) : null}
               <StartWorkflowControls owner={owner} repo={repo} issue={issue} />
             </>
           ) : (
             <>
               <BuildStatusLabel state={buildState} />
-              {!legacy && buildState === "building" && linkedPull ? (
+              {legacy && buildState === "building" && linkedPull ? (
                 <BuildControls
                   owner={owner}
                   repo={repo}

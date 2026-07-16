@@ -10,7 +10,7 @@ export const LH_WEB_HELP = `Usage: lh-web [options]
 Options:
   --port <n>       HTTP port (default: LOOPHUB_PORT or 8730)
   --experimental   Show experimental Web UI, including Inbox and scheduled tasks
-  --legacy         Hide deprecated Build buttons in the Web UI
+  --legacy         Show deprecated Build buttons in the Web UI
   -h, --help       Show this help
 `;
 

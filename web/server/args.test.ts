@@ -33,7 +33,7 @@ describe("parseLhWebArgs", () => {
     expect(LH_WEB_HELP).toContain("Inbox");
     expect(LH_WEB_HELP).toContain("scheduled tasks");
     expect(LH_WEB_HELP).toContain("--legacy");
-    expect(LH_WEB_HELP).toContain("Build buttons");
+    expect(LH_WEB_HELP).toContain("Show deprecated Build buttons");
   });
 
   it("rejects unknown and invalid options", () => {

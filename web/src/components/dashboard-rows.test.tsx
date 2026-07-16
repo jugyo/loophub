@@ -115,7 +115,7 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
 function renderInRouter(
   ui: React.ReactNode,
   handlers: Record<string, (params: any) => unknown> = {},
-  legacy = false,
+  legacy = true,
 ) {
   vi.stubGlobal("fetch", mockRpcFetch(handlers));
   const queryClient = new QueryClient({
@@ -389,11 +389,11 @@ describe("IssueRow", () => {
     ).toBeTruthy();
   });
 
-  it("hides the Build button in legacy mode", async () => {
+  it("hides the Build button in normal mode", async () => {
     renderInRouter(
       <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
       {},
-      true,
+      false,
     );
     expect(await screen.findByText("Example issue")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
