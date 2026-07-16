@@ -154,9 +154,10 @@ Workflow 専用の freshness / dirty / checkpoint 状態は追加しない。
 ## 6. 完了宣言（turn done）
 
 Execute は `lh workflow turn done`（payload なし）でターン完了を宣言する。情報不足や人間の判断が必要な
-場合は、具体的な質問を issue comment に書き、`lh workflow escalate --reason <short pointer>` を宣言する。
-reason は `await-human` と同じ inline text（必須、最大 500 文字）であり、長い質問は comment を指す短い
-文言にする。engine はこれらをそれぞれ `workflow_run.turn_done`、`workflow_run.escalated` event として
+場合は、質問全文を自分の pane に提示し、`lh workflow escalate --reason <short summary>` を宣言して、
+同じ pane で人間の回答・指示を待つ。reason は `await-human` と同じ inline text（必須、最大 500 文字）
+であり、質問内容の短い要約を入れる。engine はこれらをそれぞれ `workflow_run.turn_done`、
+`workflow_run.escalated` event として
 記録するが、escalate 自体は run lifecycle を変更しない。Verify が review を登録すると
 `workflow_run.review_submitted`、GitHub PR feedback が同期されると `pull_request.github_feedback` が記録
 される。worker の generic event pub/sub（`lh subscribe` + `notifyForEvent`、#1232）はこれらを親 pane へ

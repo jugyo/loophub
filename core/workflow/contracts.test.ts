@@ -19,9 +19,10 @@ test("Execute pulls domain state itself and declares turn done", () => {
     "lh workflow turn done --repo '<repo>' --run <run>",
   );
   expect(execute).toContain(
-    "lh workflow escalate --repo '<repo>' --run <run> --reason <short pointer>",
+    "lh workflow escalate --repo '<repo>' --run <run> --reason <short summary>",
   );
-  expect(execute).toContain("write the concrete question in an");
+  expect(execute).toContain("present the full concrete question");
+  expect(execute).toContain("in the same pane");
   // The contract retires the artifact / step-output path by name.
   expect(execute).toContain(
     "There is no execution-report artifact and no `lh workflow step output`",

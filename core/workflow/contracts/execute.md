@@ -38,12 +38,12 @@ by its id; read that review yourself.
    - evidence attachments via `lh attachment add` and PR comments via `lh pr comment` as needed;
    - mark the PR ready for review with `lh pr ready-for-review <pr> --repo '<repo>'` when it is a
      draft and the work is complete.
-   If required issue information or a human decision is missing, write the concrete question in an
-   issue comment, then declare the escalation with
-   `lh workflow escalate --repo '<repo>' --run <run> --reason <short pointer>`. The reason is inline
-   text (required, at most 500 characters), so point to the comment when the question is long. This
-   records a fact for the parent; it does not change the run lifecycle. Stay in this session and wait
-   for a human or `orchestrator:` instruction.
+   If required issue information or a human decision is missing, present the full concrete question
+   in your own pane, then declare the escalation with
+   `lh workflow escalate --repo '<repo>' --run <run> --reason <short summary>`. The reason is inline
+   text (required, at most 500 characters), so summarize the question briefly there. This records a
+   fact for the parent; it does not change the run lifecycle. Stay in this session and wait for a
+   human response or `orchestrator:` instruction in the same pane.
 6. When your turn is complete, **declare it** with a single payload-less command:
 
    `lh workflow turn done --repo '<repo>' --run <run>`
