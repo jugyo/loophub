@@ -44,6 +44,7 @@ export interface OpenTerminalOptions {
   workflowId?: number;
   session?: string;
   cwd?: string;
+  targetBranch?: string;
   // One-shot agent/model override for issue-dev (Build) or issue-create (New issue). Plain buttons
   // omit them, and dropdown selections apply to this launch only.
   agent?: CodingAgent;
@@ -118,6 +119,7 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
           workflowId: opts.workflowId,
           session: opts.session,
           cwd: opts.cwd,
+          targetBranch: opts.targetBranch,
           agent: opts.agent,
           model: opts.model,
         },

@@ -1153,11 +1153,10 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     expect(cleanup).not.toContain("workspace");
   });
 
-  test("closes the seeded root pane once the agent has started, same as the tab path", async () => {
+  test("keeps the seeded root pane after the New Issue agent starts", async () => {
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON_WITH_ROOT_PANE),
-      exitWith(0),
       exitWith(0),
       exitWith(0),
     );
@@ -1168,15 +1167,18 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       label: "New issue",
     });
 
-    // Focus (#556) and the root-pane close are both fire-and-forget, queued in that order.
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
     const focus = herdr.calls[3];
     expect(focus).toContain("workspace");
     expect(focus).toContain("focus");
-    const paneClose = herdr.calls[4];
-    expect(paneClose).toContain("pane");
-    expect(paneClose).toContain("close");
-    expect(paneClose).toContain("w4:p1");
+    expect(
+      herdr.calls.some(
+        (call) =>
+          call.includes("pane") &&
+          call.includes("close") &&
+          call.includes("w4:p1"),
+      ),
+    ).toBe(false);
   });
 
   // tabId and workspaceId are parsed independently from the same `herdr workspace create`

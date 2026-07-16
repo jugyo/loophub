@@ -945,10 +945,10 @@ export const terminal = {
       const focus = herdrTabFocusArgv(repo, tabId);
       runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
     }
-    // The agent's own pane now exists alongside the tab's leftover empty root pane (see the
-    // rootPaneId comment above) — close it. Fire-and-forget: the agent is already running, so a
-    // failure here must not fail the launch, only leave one harmless empty pane behind.
-    if (tabId && rootPaneId) {
+    // New Issue keeps the workspace's seed pane. It is harmless, and avoiding this ancillary
+    // cleanup keeps first-time workspace/session setup independent from agent startup timing.
+    // Other launch paths retain their existing best-effort cleanup.
+    if (!isNewIssue && tabId && rootPaneId) {
       const paneClose = herdrPaneCloseArgv(repo, rootPaneId);
       runHerdrLaunch(paneClose[0], paneClose.slice(1), r.local_path).catch(
         () => {},
