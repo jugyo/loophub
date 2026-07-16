@@ -45,7 +45,7 @@ export function RepositorySearch({
 
   return (
     <>
-      <div className="mx-auto flex max-w-content justify-end">
+      <div className="flex justify-end">
         <button
           type="button"
           aria-label="Search issues and pull requests"

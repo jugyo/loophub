@@ -42,6 +42,7 @@ import type {
   WorkflowRunState,
   WorkflowStepContracts,
   Workspace,
+  WorkspaceResolution,
 } from "./types";
 
 /** Resolved server base. "" => same-origin (proxy). No trailing slash. */
@@ -599,6 +600,10 @@ export function searchIssuesAndPulls(
 
 export function listWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/list", { repo: full(owner, repo) });
+}
+
+export function resolveWorkspace(branch: string) {
+  return rpc<WorkspaceResolution>("workspaces/resolve", { branch });
 }
 
 export function listArchivedWorkspaces(owner: string, repo: string) {

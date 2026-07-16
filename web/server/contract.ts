@@ -593,6 +593,12 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.workspaces.list(p.repo),
   },
+  "workspaces/resolve": {
+    description: "Resolve an active workspace name to its repository.",
+    params: params({ branch: strNonEmpty }, ["branch"]),
+    result: anyObject,
+    handler: (p) => svc.workspaces.resolve(p.branch),
+  },
   "workspaces/listArchived": {
     description: "List archived workspaces in a repository.",
     params: params({ repo }, ["repo"]),

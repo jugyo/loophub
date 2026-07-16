@@ -49,6 +49,8 @@ describe("repository search route placement", () => {
         name: "Search issues and pull requests",
       }),
     ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Workspaces" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New workspace" })).toBeTruthy();
   });
 
   it("does not show the search row on the separate issue list route", async () => {

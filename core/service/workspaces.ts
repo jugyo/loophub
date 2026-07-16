@@ -1,4 +1,8 @@
-import { workspaceJSON } from "../serialize.ts";
+import {
+  repoJSON,
+  type WorkspaceResolutionWire,
+  workspaceJSON,
+} from "../serialize.ts";
 import {
   actorFor,
   assertCreatableLocalBranchName,
@@ -36,6 +40,26 @@ function setArchived(
 }
 
 export const workspaces = {
+  resolve(branch: string): WorkspaceResolutionWire {
+    const matches = S.findActiveWorkspacesByBranch(branch);
+    if (matches.length === 0) {
+      throw new ServiceError(404, `workspace not found: ${branch}`);
+    }
+    if (matches.length > 1) {
+      throw new ServiceError(409, `workspace name is ambiguous: ${branch}`);
+    }
+    const workspace = matches[0];
+    const repo = S.getRepoById(workspace.repo_id);
+    if (!repo) throw new ServiceError(404, "Not Found");
+    return {
+      repo: repoJSON(repo),
+      workspace: workspaceJSON(
+        workspace,
+        localBranchExists(repo.local_path, branch),
+      ),
+    };
+  },
+
   create(repo: string, input: { branch: string }, sessionId?: string | null) {
     const r = repoOr404(repo);
     ensureWritable(r);

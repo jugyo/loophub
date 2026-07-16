@@ -150,6 +150,23 @@ test("workspaces/list routes to the workspace service", async () => {
   ]);
 });
 
+test("workspaces/resolve returns the repository and workspace", async () => {
+  const repo = svc.repos.getByFullName("me/proj");
+  S.createWorkspace(repo!.id, "integration/resolved");
+
+  const resolved: any = await call("workspaces/resolve", {
+    branch: "integration/resolved",
+  });
+
+  expect(resolved.result).toEqual({
+    repo: expect.objectContaining({ full_name: "me/proj" }),
+    workspace: expect.objectContaining({
+      branch: "integration/resolved",
+      branch_exists: false,
+    }),
+  });
+});
+
 test("workspaces/create routes to the workspace service", async () => {
   const created: any = await call("workspaces/create", {
     repo: "me/proj",

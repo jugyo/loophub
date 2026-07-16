@@ -14,7 +14,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
@@ -143,70 +142,6 @@ describe("IssueList", () => {
       name: "Issue state",
     }).parentElement;
     expect(issueControls?.contains(newIssue)).toBe(true);
-  });
-
-  it("creates a workspace from the filter bar dialog", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [],
-        "workspaces/create": () => ({
-          branch: "workspace/new",
-          created_at: "2026-01-01T00:00:00Z",
-          archived_at: null,
-          branch_exists: true,
-        }),
-      }),
-    );
-
-    renderIssueList(
-      <IssueList owner="me" repo="proj" labelFilterMode="select" />,
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "New workspace" }),
-    );
-    fireEvent.change(screen.getByRole("textbox", { name: "Branch name" }), {
-      target: { value: "workspace/new" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
-
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "New workspace" }),
-      ).toBeNull(),
-    );
-    expect(rpcCall("workspaces/create")?.params).toMatchObject({
-      repo: "me/proj",
-      branch: "workspace/new",
-    });
-  });
-
-  it("shows workspace creation errors without clearing the branch name", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [],
-        "workspaces/create": () => {
-          throw new RpcFault(422, "workspace branch already exists: existing");
-        },
-      }),
-    );
-
-    renderIssueList(
-      <IssueList owner="me" repo="proj" labelFilterMode="select" />,
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "New workspace" }),
-    );
-    const input = screen.getByRole("textbox", { name: "Branch name" });
-    fireEvent.change(input, { target: { value: "existing" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
-
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "workspace branch already exists: existing",
-    );
-    expect((input as HTMLInputElement).value).toBe("existing");
-    expect(screen.getByRole("dialog", { name: "New workspace" })).toBeTruthy();
   });
 
   it("launches issue creation from the issue list header", async () => {
@@ -709,7 +644,7 @@ describe("IssueList", () => {
     expect(await screen.findByText("Implicit default issue")).toBeTruthy();
     expect(
       screen.getAllByRole("heading").map((heading) => heading.textContent),
-    ).toEqual(["develop", "feature/aworkspace", "feature/b"]);
+    ).toEqual(["develop", "feature/b"]);
 
     const defaultSection = screen
       .getByRole("heading", {
@@ -719,14 +654,9 @@ describe("IssueList", () => {
     expect(defaultSection?.textContent).toContain("Implicit default issue");
     expect(defaultSection?.textContent).toContain("Explicit default issue");
 
-    const featureSection = screen
-      .getByRole("heading", {
-        name: "feature/a workspace",
-      })
-      .closest("section");
-    expect(featureSection?.textContent).toContain("Feature issue");
-    expect(featureSection?.textContent).toContain("branch:feature/a");
-    expect(featureSection?.textContent).toContain("workspace");
+    const workspaceLink = screen.getByRole("link", { name: /feature\/a/ });
+    expect(workspaceLink.getAttribute("href")).toBe("/r/w/feature%2Fa");
+    expect(screen.queryByText("Feature issue")).toBeNull();
   });
 
   it("renders active workspaces in registry order, including empty and missing branches", async () => {
@@ -775,168 +705,16 @@ describe("IssueList", () => {
     expect(await screen.findByText("Default issue")).toBeTruthy();
     expect(
       screen.getAllByRole("heading").map((heading) => heading.textContent),
-    ).toEqual([
-      "main",
-      "workspace/emptyworkspace",
-      "workspace/missingworkspace branch missing",
-      "workspace/archived",
-    ]);
-    expect(screen.getByText("No issues yet")).toBeTruthy();
+    ).toEqual(["main", "workspace/archived"]);
     expect(
-      screen.getByText("Recreate the branch or archive this workspace."),
-    ).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: /new issue/i })).toHaveLength(
-      3,
-    );
-    const missingSection = screen
-      .getByRole("heading", { name: /workspace\/missing/ })
-      .closest("section");
+      screen
+        .getByRole("link", { name: /workspace\/empty/ })
+        .getAttribute("href"),
+    ).toBe("/r/w/workspace%2Fempty");
     expect(
-      missingSection?.querySelector('button[aria-label="New issue"]'),
-    ).toHaveProperty("disabled", true);
-    const activeSection = screen
-      .getByRole("heading", { name: /workspace\/empty/ })
-      .closest("section");
-    expect(
-      activeSection?.querySelector('button[aria-label="New issue"]'),
-    ).toHaveProperty("disabled", false);
-  });
-
-  it("archives a workspace and removes it from the normal list", async () => {
-    let workspaces = [
-      {
-        branch: "workspace/alpha",
-        created_at: "2026-01-01T00:00:00Z",
-        archived_at: null,
-        branch_exists: true,
-      },
-    ];
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "repos/get": () => ({ default_branch: "main" }),
-        "workspaces/list": () => workspaces,
-        "workspaces/archive": (p) => {
-          workspaces = workspaces.filter((w) => w.branch !== p.branch);
-          return {
-            branch: p.branch,
-            created_at: "2026-01-01T00:00:00Z",
-            archived_at: "2026-01-02T00:00:00Z",
-            branch_exists: true,
-          };
-        },
-        "issues/list": () => [],
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    const section = (
-      await screen.findByRole("heading", {
-        name: "workspace/alpha workspace",
-      })
-    ).closest("section")!;
-    fireEvent.pointerDown(
-      within(section).getByRole("button", {
-        name: "Workspace actions for workspace/alpha",
-      }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
-
-    await waitFor(() => {
-      expect(rpcCall("workspaces/archive")?.params).toMatchObject({
-        repo: "me/proj",
-        branch: "workspace/alpha",
-      });
-    });
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("heading", {
-          name: "workspace/alpha workspace",
-        }),
-      ).toBeNull(),
-    );
-  });
-
-  it("shows workspace archive failures and keeps the workspace visible", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "repos/get": () => ({ default_branch: "main" }),
-        "workspaces/list": () => [
-          {
-            branch: "workspace/alpha",
-            created_at: "2026-01-01T00:00:00Z",
-            archived_at: null,
-            branch_exists: true,
-          },
-        ],
-        "workspaces/archive": () => {
-          throw new RpcFault(500, "workspace archive failed");
-        },
-        "issues/list": () => [],
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-    const section = (
-      await screen.findByRole("heading", {
-        name: "workspace/alpha workspace",
-      })
-    ).closest("section")!;
-    fireEvent.pointerDown(
-      within(section).getByRole("button", {
-        name: "Workspace actions for workspace/alpha",
-      }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
-
-    expect(
-      await within(section).findByText(/workspace archive failed/),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("heading", { name: "workspace/alpha workspace" }),
-    ).toBeTruthy();
-  });
-
-  it("launches New issue from a workspace with that branch as the target", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "repos/get": () => ({ default_branch: "main" }),
-        "workspaces/list": () => [
-          {
-            branch: "workspace/alpha",
-            created_at: "2026-01-01T00:00:00Z",
-            archived_at: null,
-            branch_exists: true,
-          },
-        ],
-        "issues/list": () => [],
-      }),
-    );
-
-    renderIssueList(<IssueList owner="me" repo="proj" />);
-
-    const workspaceSection = (
-      await screen.findByRole("heading", {
-        name: "workspace/alpha workspace",
-      })
-    ).closest("section");
-    fireEvent.click(
-      workspaceSection!.querySelector<HTMLButtonElement>(
-        'button[aria-label="New issue"]',
-      )!,
-    );
-
-    expect(launchTerminal).toHaveBeenCalledWith(
-      expect.objectContaining({
-        repo: "me/proj",
-        workflow: "issue-create",
-        targetBranch: "workspace/alpha",
-      }),
-    );
+      screen.getByRole("link", { name: /workspace\/missing/ }).textContent,
+    ).toContain("branch missing");
+    expect(screen.queryByText("Missing branch issue")).toBeNull();
   });
 
   it("keeps the existing target branch groups when the registry is empty", async () => {
@@ -962,7 +740,7 @@ describe("IssueList", () => {
     ).toEqual(["workspace/old"]);
   });
 
-  it("folds a workspace matching the default branch into the default section", async () => {
+  it("links a workspace matching the default branch to its dedicated page", async () => {
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
@@ -988,17 +766,10 @@ describe("IssueList", () => {
 
     renderIssueList(<IssueList owner="me" repo="proj" />);
 
-    expect(await screen.findByText("Implicit default issue")).toBeTruthy();
-    expect(screen.getAllByRole("heading")).toHaveLength(1);
-    expect(
-      screen.getByRole("heading", {
-        name: "main workspace registered as default branch",
-      }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Workspace actions for main" }),
-    ).toBeTruthy();
-    expect(screen.queryByText("workspace", { exact: true })).toBeNull();
+    const link = await screen.findByRole("link", { name: /main workspace/ });
+    expect(link.getAttribute("href")).toBe("/r/w/main");
+    expect(screen.queryByText("Implicit default issue")).toBeNull();
+    expect(screen.queryByText("Explicit default issue")).toBeNull();
     expect(screen.getAllByRole("button", { name: /new issue/i })).toHaveLength(
       1,
     );

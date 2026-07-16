@@ -3,16 +3,30 @@ import {
   createWorkspace,
   listArchivedWorkspaces,
   listWorkspaces,
+  resolveWorkspace,
   setWorkspaceArchived,
 } from "@/api/client";
 import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
 
-export function useWorkspaces(owner: string, repo: string) {
-  return useQuery({
+export function workspaceQueryOptions(owner: string, repo: string) {
+  return {
     queryKey: queryKeys.workspaces(full(owner, repo)),
     queryFn: () => listWorkspaces(owner, repo),
+  };
+}
+
+export function useWorkspaces(owner: string, repo: string) {
+  return useQuery(workspaceQueryOptions(owner, repo));
+}
+
+export function useWorkspaceResolution(branch: string | null) {
+  return useQuery({
+    queryKey: ["workspaces", "resolve", branch],
+    queryFn: () => resolveWorkspace(branch!),
+    enabled: branch !== null,
+    retry: false,
   });
 }
 
@@ -36,7 +50,7 @@ export function useSetWorkspaceArchived(owner: string, repo: string) {
       setWorkspaceArchived(owner, repo, branch, archived),
     onSuccess: () =>
       queryClient.invalidateQueries({
-        queryKey: queryKeys.workspaces(full(owner, repo)),
+        queryKey: ["workspaces"],
       }),
   });
 }

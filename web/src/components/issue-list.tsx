@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   Check,
   ChevronsUpDown,
-  Ellipsis,
   Loader2,
   Tag,
   X,
@@ -16,7 +15,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { Issue, Workspace } from "@/api/types";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
-import { NewWorkspaceButton } from "@/components/new-workspace-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
 import { cn } from "@/lib/utils";
+import { workspacePath } from "@/lib/workspace-path";
 import {
   DEFAULT_ISSUE_FILTERS,
   ISSUE_LIST_PAGE_SIZE,
@@ -38,7 +37,7 @@ import {
   useLabelsList,
 } from "@/queries/issues";
 import { useRepo } from "@/queries/repos";
-import { useSetWorkspaceArchived, useWorkspaces } from "@/queries/workspaces";
+import { useWorkspaces } from "@/queries/workspaces";
 
 const STATE_TABS: {
   value: IssueListFilters["state"];
@@ -65,47 +64,6 @@ interface IssueSection {
   issues: Issue[];
   workspace?: Workspace;
   defaultWorkspace?: Workspace;
-}
-
-function WorkspaceActionsMenu({
-  owner,
-  repo,
-  branch,
-}: {
-  owner: string;
-  repo: string;
-  branch: string;
-}) {
-  const archive = useSetWorkspaceArchived(owner, repo);
-
-  return (
-    <div className="flex items-center gap-2">
-      {archive.error ? (
-        <span className="text-xs text-destructive">
-          {String(archive.error)}
-        </span>
-      ) : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label={`Workspace actions for ${branch}`}
-            disabled={archive.isPending}
-          >
-            <Ellipsis className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            onSelect={() => archive.mutate({ branch, archived: true })}
-          >
-            Archive
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
 }
 
 function composeIssueSections(
@@ -439,9 +397,6 @@ export function IssueList({
             </Button>
           </>
         )}
-        {labelFilterMode === "select" ? (
-          <NewWorkspaceButton owner={owner} repo={repo} />
-        ) : null}
         <CreateIssueButton repo={`${owner}/${repo}`} />
       </div>
 
@@ -470,69 +425,71 @@ export function IssueList({
         </p>
       ) : (
         <div className="flex flex-col gap-3">
-          {issueSections.map((section) => (
-            <section key={section.branch} className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-2 px-1">
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          {issueSections.map((section) =>
+            section.workspace || section.defaultWorkspace ? (
+              <Link
+                key={section.branch}
+                to={workspacePath(section.branch)}
+                className="flex items-center justify-between gap-3 rounded-md border p-4 transition-colors hover:bg-accent"
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold">
                   {section.branch}
-                  {section.workspace ? <Badge>workspace</Badge> : null}
-                  {section.defaultWorkspace ? (
-                    <span className="text-xs font-normal">
-                      workspace registered as default branch
-                    </span>
-                  ) : null}
+                  <Badge>workspace</Badge>
                   {section.workspace && !section.workspace.branch_exists ? (
                     <Badge tone="review-changes">
                       <AlertTriangle className="mr-1 size-3" /> branch missing
                     </Badge>
                   ) : null}
-                </h2>
-                {section.workspace || section.defaultWorkspace ? (
-                  <div className="flex items-center gap-2">
-                    {section.workspace ? (
-                      <CreateIssueButton
-                        repo={`${owner}/${repo}`}
-                        targetBranch={section.workspace.branch}
-                        disabled={!section.workspace.branch_exists}
-                      />
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  Open workspace
+                </span>
+              </Link>
+            ) : (
+              <section key={section.branch} className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2 px-1">
+                  <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+                    {section.branch}
+                    {section.workspace ? <Badge>workspace</Badge> : null}
+                    {section.defaultWorkspace ? (
+                      <span className="text-xs font-normal">
+                        workspace registered as default branch
+                      </span>
                     ) : null}
-                    <WorkspaceActionsMenu
-                      owner={owner}
-                      repo={repo}
-                      branch={
-                        section.workspace?.branch ??
-                        section.defaultWorkspace!.branch
-                      }
-                    />
-                  </div>
+                    {section.workspace && !section.workspace.branch_exists ? (
+                      <Badge tone="review-changes">
+                        <AlertTriangle className="mr-1 size-3" /> branch missing
+                      </Badge>
+                    ) : null}
+                  </h2>
+                </div>
+                {section.workspace && !section.workspace.branch_exists ? (
+                  <p className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+                    Recreate the branch or archive this workspace.
+                  </p>
                 ) : null}
-              </div>
-              {section.workspace && !section.workspace.branch_exists ? (
-                <p className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-muted-foreground">
-                  Recreate the branch or archive this workspace.
-                </p>
-              ) : null}
-              {section.issues.length === 0 &&
-              (!section.workspace || section.workspace.branch_exists) ? (
-                <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
-                  No issues yet
-                </p>
-              ) : section.issues.length > 0 ? (
-                <ul className="flex flex-col divide-y rounded-md border">
-                  {section.issues.map((issue) => (
-                    <li key={issue.number}>
-                      <IssueRow
-                        owner={owner}
-                        repo={repo}
-                        issue={issue}
-                        labelState={state}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </section>
-          ))}
+                {section.issues.length === 0 &&
+                (!section.workspace || section.workspace.branch_exists) ? (
+                  <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+                    No issues yet
+                  </p>
+                ) : section.issues.length > 0 ? (
+                  <ul className="flex flex-col divide-y rounded-md border">
+                    {section.issues.map((issue) => (
+                      <li key={issue.number}>
+                        <IssueRow
+                          owner={owner}
+                          repo={repo}
+                          issue={issue}
+                          labelState={state}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </section>
+            ),
+          )}
           {query.hasNextPage ? (
             <div className="flex justify-center">
               <Button

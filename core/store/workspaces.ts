@@ -43,6 +43,16 @@ export function listArchivedWorkspaces(repoId: number): Workspace[] {
     .all(repoId) as Workspace[];
 }
 
+export function findActiveWorkspacesByBranch(branch: string): Workspace[] {
+  return db
+    .query(
+      `SELECT * FROM workspaces
+       WHERE branch = ? AND archived_at IS NULL
+       ORDER BY id`,
+    )
+    .all(branch) as Workspace[];
+}
+
 export function setWorkspaceArchived(
   repoId: number,
   branch: string,

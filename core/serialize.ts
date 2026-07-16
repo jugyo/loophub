@@ -79,6 +79,11 @@ export interface WorkspaceWire {
   branch_exists: boolean;
 }
 
+export interface WorkspaceResolutionWire {
+  repo: RepoWire;
+  workspace: WorkspaceWire;
+}
+
 export function workspaceJSON(
   workspace: S.Workspace,
   branchExists: boolean,

@@ -49,6 +49,7 @@ import type {
   WorkflowRunStateWire,
   WorkflowStepContractsWire,
   WorkflowWire,
+  WorkspaceResolutionWire,
   WorkspaceWire,
 } from "../../../core/serialize.ts";
 import type {
@@ -123,6 +124,7 @@ export type Notification = NotificationWire;
 export type Repo = RepoWire;
 
 export type Workspace = WorkspaceWire;
+export type WorkspaceResolution = WorkspaceResolutionWire;
 
 export type { MergeMode };
 
