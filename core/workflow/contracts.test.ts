@@ -93,7 +93,7 @@ test("parent launches fresh Execute children instead of injecting or resuming", 
   );
 });
 
-test("parent polls only its run workflow events and enforces cost limits", () => {
+test("parent polls only its run workflow events and reacts to cost limit facts", () => {
   const contract = workflowContractText("parent");
 
   expect(contract).toContain(
@@ -103,8 +103,9 @@ test("parent polls only its run workflow events and enforces cost limits", () =>
   expect(contract).toContain(
     "The `--type workflow_run --run <run>` filters are mandatory",
   );
-  expect(contract).toContain("workflow_run.usage_updated");
-  expect(contract).toContain("lh workflow run enforce-cost-limit");
+  expect(contract).toContain("workflow_run.cost_exceeded");
+  expect(contract).toContain("lh workflow run stop");
+  expect(contract).not.toContain("lh workflow run enforce-cost-limit");
   expect(contract).toContain("sleep briefly and poll again");
 });
 
@@ -155,11 +156,12 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
     "workflow_run.escalated",
     "workflow_run.review_submitted",
     "workflow_run.github_event",
+    "workflow_run.cost_exceeded",
   ]) {
     expect(design).toContain(event);
   }
   expect(design).toContain(
-    "4 種類の通知はいずれも真実を代替しない timing signal",
+    "5 種類の通知はいずれも真実を代替しない timing signal",
   );
   expect(design).toContain("`resume --step execute`");
 });

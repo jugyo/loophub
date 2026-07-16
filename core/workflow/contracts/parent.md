@@ -44,9 +44,9 @@ Event rows are timing signals, never transition facts:
 - `workflow_run.review_submitted` — observe step status; the review row is the sole verdict source.
 - `workflow_run.escalated` — use the event's `reason` for the human escalation flow.
 - `workflow_run.github_event` — inspect the referenced GitHub feedback.
-- `workflow_run.usage_updated` — call
-  `lh workflow run enforce-cost-limit --repo '<repo>' --run <run>` and continue polling. The polling
-  delay is accepted.
+- `workflow_run.cost_exceeded` — stop the run with
+  `lh workflow run stop --repo '<repo>' --run <run>` and continue polling. The worker emits this
+  edge-triggered fact once when the run's cumulative cost crosses its configured limit.
 
 ## Commands you may use
 
@@ -56,8 +56,6 @@ LoopHub (orchestration):
   — move from Execute to Verify after you observe HEAD is ahead of base with new work.
 - `lh workflow run request-rework --repo '<repo>' --run <run>`
   — atomically increment rework count and return from a fresh `request_changes` review to Execute.
-- `lh workflow run enforce-cost-limit --repo '<repo>' --run <run>`
-  — enforce the run's configured cost limit after a pulled `workflow_run.usage_updated` event.
 - `lh workflow run stop --repo '<repo>' --run <run>`
   — stop a running run permanently.
 - `lh workflow launch-step --repo '<repo>' --run <run> --step <step> [--review <id>] [--note <text|->]`

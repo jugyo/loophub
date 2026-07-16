@@ -160,11 +160,12 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 `workflow_run.escalated` event として
 記録するが、escalate 自体は run lifecycle を変更しない。Verify が review を登録すると
 `workflow_run.review_submitted`、GitHub PR feedback が同期されると `workflow_run.github_event` が記録
-される。worker の generic event pub/sub（`lh subscribe` + `notifyForEvent`、#1232）はこれらを親 pane へ
-配達する。run-scoped event は payload の `parent_session_id` でその run の親に絞り込む。子の contract に
-親の pane id や topology は現れない。
+される。usage sweep が run の累積コスト上限越えを検知すると、edge-triggered に一度だけ
+`workflow_run.cost_exceeded` が記録され、親は `lh workflow run stop` で run を停止する。親は
+`lh events --type workflow_run --run <run>` でこれらを cursor pull し、run-scoped filter は payload の
+`id` を使って対象 run に絞り込む。子の contract に親の pane id や topology は現れない。
 
-4 種類の通知はいずれも真実を代替しない timing signal である。親は通知後に
+5 種類の通知はいずれも真実を代替しない timing signal である。親は通知後に
 `lh workflow step status`、PR review、または参照された GitHub API resource から domain state を再観測して
 判断する。review の verdict や feedback 本文を通知 payload の複製で判断しない。idle 検知は完了推定に
 一切使わない。

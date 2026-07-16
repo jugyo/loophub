@@ -121,6 +121,12 @@ export type WorkflowRunCostLimitResult = WorkflowRunUpdateResult & {
   unknown_cost_session_ids: string[];
 };
 
+export type WorkflowRunCostDetectionResult = {
+  emitted: boolean;
+  cost_usd: number | null;
+  limit_usd: number;
+};
+
 export type WorkflowLaunchStepResult = {
   run: WorkflowRunUpdateResult["run"];
   step: WorkflowStep;
@@ -142,6 +148,18 @@ export type WorkflowLaunchStepResult = {
     argv: string[];
   };
 };
+
+function workflowRunCost(run: S.WorkflowRunRow) {
+  const sessionIds = [
+    ...(run.parent_session_id ? [run.parent_session_id] : []),
+    ...workflowStepSessionIds(run.step_sessions_json, "execute"),
+    ...workflowStepSessionIds(run.step_sessions_json, "verify"),
+  ];
+  return {
+    limitUsd: devCostLimitUsd(),
+    summary: S.sessionUsageCostSummaryForSessions(sessionIds),
+  };
+}
 
 export type WorkflowConfirmStepLaunchResult = {
   run: WorkflowRunUpdateResult["run"];
@@ -1038,13 +1056,75 @@ export const workflowRuns = {
     );
   },
 
+  detectCostExceeded(
+    name: string,
+    input: { run: number; usageSession: string },
+  ): WorkflowRunCostDetectionResult {
+    const repo = repoOr404(name);
+    ensureWritable(repo);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== repo.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    if (run.status !== "running") {
+      return {
+        emitted: false,
+        cost_usd: null,
+        limit_usd: devCostLimitUsd(),
+      };
+    }
+    const { limitUsd, summary } = workflowRunCost(run);
+    if (summary.cost_usd === null || summary.cost_usd <= limitUsd) {
+      return {
+        emitted: false,
+        cost_usd: summary.cost_usd,
+        limit_usd: limitUsd,
+      };
+    }
+    if (
+      input.usageSession !== run.parent_session_id &&
+      !workflowStepSessionIds(run.step_sessions_json, "execute").includes(
+        input.usageSession,
+      ) &&
+      !workflowStepSessionIds(run.step_sessions_json, "verify").includes(
+        input.usageSession,
+      )
+    ) {
+      throw new ServiceError(
+        409,
+        "usage session does not belong to Workflow run",
+      );
+    }
+    const parentSessionId = run.parent_session_id;
+    if (!parentSessionId) {
+      return {
+        emitted: false,
+        cost_usd: summary.cost_usd,
+        limit_usd: limitUsd,
+      };
+    }
+    const event = S.emitWorkflowRunCostExceededOnce(repo.id, "lh-worker", {
+      id: run.id,
+      number: run.pr_number,
+      pr_number: run.pr_number,
+      parent_session_id: parentSessionId,
+      session_id: input.usageSession,
+      cost_usd: summary.cost_usd,
+      limit_usd: limitUsd,
+    });
+    return {
+      emitted: event !== null,
+      cost_usd: summary.cost_usd,
+      limit_usd: limitUsd,
+    };
+  },
+
   async enforceCostLimit(
     name: string,
     input: { run: number; usageSession?: string },
     sessionId?: string | null,
   ): Promise<WorkflowRunCostLimitResult> {
     const { repo, run } = lifecycleRun(name, input.run, sessionId);
-    const configuredLimit = devCostLimitUsd();
     const executeSessions = workflowStepSessionIds(
       run.step_sessions_json,
       "execute",
@@ -1053,12 +1133,7 @@ export const workflowRuns = {
       run.step_sessions_json,
       "verify",
     );
-    const sessionIds = [
-      ...(run.parent_session_id ? [run.parent_session_id] : []),
-      ...executeSessions,
-      ...verifySessions,
-    ];
-    const cost = S.sessionUsageCostSummaryForSessions(sessionIds);
+    const { limitUsd: configuredLimit, summary: cost } = workflowRunCost(run);
     if (S.hasWorkflowRunCostStopEvent(repo.id, run.id)) {
       return {
         run: runJSON(run),

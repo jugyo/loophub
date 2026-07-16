@@ -287,6 +287,14 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
     parentSessionId,
   });
   S.appendWorkflowRunStepSession(run.id, "execute", sessionId);
+  S.upsertSessionUsage(parentSessionId, {
+    model: "test",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 11,
+  });
   const otherSessionId = "99999999-0000-0000-0000-000000000726";
   const otherParentSessionId = "99999999-0000-0000-0000-000000000727";
   S.registerAgentSession(otherSessionId, "workflow-step", otherSessionId);
@@ -341,6 +349,10 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
     S.listEvents(0, repo.id, 100).filter(
       (event) => event.type === "workflow_run.usage_updated",
     );
+  const costExceededEvents = () =>
+    S.listEvents(0, repo.id, 100).filter(
+      (event) => event.type === "workflow_run.cost_exceeded",
+    );
 
   const stop = M.startUsageSweep(20);
   try {
@@ -361,9 +373,20 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
       session_id: sessionId,
       pr_number: pull.number,
     });
+    expect(costExceededEvents()).toHaveLength(1);
+    const costExceededPayload = JSON.parse(costExceededEvents()[0].payload);
+    expect(costExceededPayload).toMatchObject({
+      id: run.id,
+      parent_session_id: parentSessionId,
+      session_id: sessionId,
+      pr_number: pull.number,
+      limit_usd: 10,
+    });
+    expect(costExceededPayload.cost_usd).toBeGreaterThan(11);
 
     await new Promise((resolve) => setTimeout(resolve, 80));
     expect(usageEvents()).toHaveLength(1);
+    expect(costExceededEvents()).toHaveLength(1);
     appendFileSync(
       transcript,
       assistantLine("msg_2", {
@@ -375,6 +398,7 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
     );
     await waitUntil(() => usageEvents().length === 2, "second usage event");
     expect(workflowUsageEvents()).toHaveLength(2);
+    expect(costExceededEvents()).toHaveLength(1);
     expect(S.listSessionUsage(sessionId)[0]).toMatchObject({
       input_tokens: 107,
       output_tokens: 13,

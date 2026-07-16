@@ -120,6 +120,42 @@ export function hasWorkflowRunCostStopEvent(
   );
 }
 
+export function emitWorkflowRunCostExceededOnce(
+  repoId: number,
+  actor: string,
+  payload: {
+    id: number;
+    number: number;
+    pr_number: number;
+    parent_session_id: string;
+    session_id: string;
+    cost_usd: number;
+    limit_usd: number;
+  },
+): EventRow | null {
+  return (
+    (db
+      .query(
+        `INSERT INTO events (repo_id, type, actor, payload, created_at)
+         SELECT ?, 'workflow_run.cost_exceeded', ?, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM events
+           WHERE repo_id = ? AND type = 'workflow_run.cost_exceeded'
+             AND json_extract(payload, '$.id') = ?
+         )
+         RETURNING *`,
+      )
+      .get(
+        repoId,
+        actor,
+        JSON.stringify(payload),
+        now(),
+        repoId,
+        payload.id,
+      ) as EventRow | null) ?? null
+  );
+}
+
 // The timestamp of the run's latest turn-done declaration, or null when Execute never declared
 // one. A timing signal for the parent's observation — never step-completion truth.
 export function latestWorkflowTurnDoneAt(

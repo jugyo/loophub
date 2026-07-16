@@ -436,6 +436,10 @@ export function startUsageSweep(
                 parent_session_id: workflow.parentSessionId,
                 session_id: session.session_id,
               });
+              workflowRuns.detectCostExceeded(target.repo, {
+                run: workflow.runId,
+                usageSession: session.session_id,
+              });
             }
           }
         }
