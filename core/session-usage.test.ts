@@ -88,6 +88,28 @@ test("calculateTokensPerSecond returns null with insufficient samples", () => {
   ).toBeNull();
 });
 
+test("calculateTokensPerSecond returns zero for measured zero throughput", () => {
+  expect(
+    calculateTokensPerSecond(
+      [
+        {
+          session_id: "s1",
+          total_tokens: 100,
+          token_delta: 0,
+          observed_at: "2026-07-10T00:00:30Z",
+        },
+        {
+          session_id: "s1",
+          total_tokens: 100,
+          token_delta: 0,
+          observed_at: "2026-07-10T00:01:00Z",
+        },
+      ],
+      { now: new Date("2026-07-10T00:01:00Z") },
+    ),
+  ).toBe(0);
+});
+
 test("calculateTokensPerSecond ignores resets and decreasing cumulative totals", () => {
   expect(
     calculateTokensPerSecond(

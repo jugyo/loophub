@@ -395,6 +395,7 @@ export const sessions = {
     }
 
     const out = CODING_AGENTS.map((agent) => byAgent.get(agent)!);
+    out[0].tokens_per_second = rate;
     out[0].tokens_per_5m_history = tokensPerFiveMinuteHistory(
       S.listSessionRateHistory(secondsAgo(now, 3 * 60 * 60)),
       { now, liveTokensPerSecond: rate },

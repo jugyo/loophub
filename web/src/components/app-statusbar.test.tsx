@@ -29,6 +29,7 @@ afterEach(() => {
 function renderSettingsShell(
   initial: GlobalSettings,
   tokenRateHistory?: number[],
+  tokensPerSecond?: number | null,
 ) {
   let settings = structuredClone(initial);
   vi.stubGlobal(
@@ -43,6 +44,9 @@ function renderSettingsShell(
           day: 1,
           ...(tokenRateHistory
             ? { tokens_per_5m_history: tokenRateHistory }
+            : {}),
+          ...(tokensPerSecond !== undefined
+            ? { tokens_per_second: tokensPerSecond }
             : {}),
         },
       ],
@@ -193,12 +197,32 @@ describe("AppStatusbar", () => {
     ).toBeNull();
   });
 
+  it("shows unavailable TPS when the current sample is missing without discarding history", async () => {
+    const history = Array(24).fill(0);
+    history[23] = 1_200_000;
+    renderSettingsShell(DEFAULT_SETTINGS, history, null);
+
+    const statusbar = await screen.findByRole("contentinfo", {
+      name: "Application status",
+    });
+    expect(
+      within(statusbar).getByLabelText("TPS: n/a tokens per second"),
+    ).toBeTruthy();
+    const chart = within(statusbar).getByRole("img", {
+      name: "24 token throughput buckets, oldest to newest",
+    });
+    const bars = chart.querySelectorAll<HTMLElement>("[data-token-count]");
+    expect(bars).toHaveLength(24);
+    expect(bars[23].dataset.tokenCount).toBe("1200000");
+    expect(bars[23].style.height).toBe("100%");
+  });
+
   it("shows short TPS without an average qualifier and keeps history buckets in order", async () => {
     const history = Array(24).fill(0);
     history[1] = 600_000;
     history[22] = 300_000;
     history[23] = 1_200_000;
-    renderSettingsShell(DEFAULT_SETTINGS, history);
+    renderSettingsShell(DEFAULT_SETTINGS, history, 4_000);
 
     const statusbar = await screen.findByRole("contentinfo", {
       name: "Application status",
@@ -223,6 +247,22 @@ describe("AppStatusbar", () => {
     expect(bars[22].style.height).toBe("25%");
     expect(bars[23].dataset.tokenCount).toBe("1200000");
     expect(bars[23].style.height).toBe("100%");
+  });
+
+  it("distinguishes measured zero TPS from unavailable current samples", async () => {
+    renderSettingsShell(DEFAULT_SETTINGS, Array(24).fill(0), 0);
+
+    const statusbar = await screen.findByRole("contentinfo", {
+      name: "Application status",
+    });
+    expect(
+      within(statusbar).getByLabelText("TPS: 0 tokens per second"),
+    ).toBeTruthy();
+    expect(
+      within(statusbar).getByRole("img", {
+        name: "24 token throughput buckets, oldest to newest",
+      }),
+    ).toBeTruthy();
   });
 
   it("refreshes the selected agent values after they are changed on Settings", async () => {

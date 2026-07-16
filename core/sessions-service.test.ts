@@ -341,6 +341,7 @@ test("sessions.costSummary returns minimal per-agent period costs", () => {
       week: null,
       day: null,
       tokens_per_5m_history: Array(24).fill(0),
+      tokens_per_second: null,
     },
     { agent: "codex", month: 11, week: 8, day: 6 },
     { agent: "grok", month: 0, week: 0, day: 0 },
@@ -402,6 +403,7 @@ test("sessions.costSummary counts legacy build sessions as Claude Code", () => {
       week: 2,
       day: 2,
       tokens_per_5m_history: Array(24).fill(0),
+      tokens_per_second: null,
     },
     { agent: "codex", month: 0, week: 0, day: 0 },
     { agent: "grok", month: 0, week: 0, day: 0 },
@@ -668,11 +670,11 @@ test("sessions.costSummary limits token rate to in-progress dev sessions", async
     ],
   );
 
-  expect(
-    svc.sessions
-      .costSummary(new Date("2026-07-10T00:01:00Z"))[0]
-      .tokens_per_5m_history?.at(-1),
-  ).toBe(1500);
+  const activeSummary = svc.sessions.costSummary(
+    new Date("2026-07-10T00:01:00Z"),
+  )[0];
+  expect(activeSummary.tokens_per_second).toBe(5);
+  expect(activeSummary.tokens_per_5m_history?.at(-1)).toBe(1500);
 
   await svc.pulls.readyForReview(
     "me/proj",
@@ -682,10 +684,10 @@ test("sessions.costSummary limits token rate to in-progress dev sessions", async
   );
 
   expect(
-    svc.sessions
-      .costSummary(new Date("2026-07-10T00:01:00Z"))[0]
-      .tokens_per_5m_history?.at(-1),
-  ).toBe(0);
+    svc.sessions.costSummary(new Date("2026-07-10T00:01:00Z"))[0],
+  ).toMatchObject({
+    tokens_per_second: null,
+  });
 });
 
 test("sessions.recordLiveRateSample persists rate that survives the 600s sample prune", async () => {

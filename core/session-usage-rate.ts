@@ -72,7 +72,6 @@ export function calculateTokensPerSecond(
     const sessionDelta = rows
       .slice(1)
       .reduce((sum, row) => sum + Math.max(0, row.token_delta), 0);
-    if (sessionDelta <= 0) continue;
     tokensPerSecond += sessionDelta / sessionElapsed;
     sessionsWithRate += 1;
   }

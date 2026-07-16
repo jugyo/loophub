@@ -33,6 +33,7 @@ export function AppStatusbar() {
     },
   ];
   const tokensPer5Minutes = tokenRateHistory(costSummary);
+  const tokensPerSecond = currentTokenRate(costSummary);
 
   return (
     <footer
@@ -40,7 +41,10 @@ export function AppStatusbar() {
       className="flex h-7 shrink-0 items-center border-t bg-card px-3"
     >
       <dl className="ml-auto flex items-center justify-end gap-3 text-right text-[11px] leading-none">
-        <TokenRateStatus values={tokensPer5Minutes} />
+        <TokenRateStatus
+          tokensPerSecond={tokensPerSecond}
+          values={tokensPer5Minutes}
+        />
         {items.map((item) => (
           <div key={item.label} className="flex items-baseline gap-1">
             <dt className="text-muted-foreground">{item.label}</dt>
@@ -50,6 +54,17 @@ export function AppStatusbar() {
       </dl>
     </footer>
   );
+}
+
+function currentTokenRate(
+  summary: Array<{ tokens_per_second?: number | null }> | undefined,
+): number | null {
+  const rate = summary?.find(
+    (row) => "tokens_per_second" in row,
+  )?.tokens_per_second;
+  return typeof rate === "number" && Number.isFinite(rate) && rate >= 0
+    ? rate
+    : null;
 }
 
 function tokenRateHistory(
@@ -66,9 +81,13 @@ function tokenRateHistory(
   );
 }
 
-function TokenRateStatus({ values }: { values: number[] | null }) {
-  const current = values?.at(-1) ?? null;
-  const tokensPerSecond = current == null ? null : current / (5 * 60);
+function TokenRateStatus({
+  tokensPerSecond,
+  values,
+}: {
+  tokensPerSecond: number | null;
+  values: number[] | null;
+}) {
   const formatted =
     tokensPerSecond == null ? "n/a" : formatTokenCountShort(tokensPerSecond);
   return (

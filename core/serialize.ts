@@ -179,6 +179,9 @@ export interface AgentCostSummaryWire {
   // the first row of the compact statusbar cost-summary payload to avoid a separate polling endpoint.
   // Missing buckets are zero, and the final bucket includes the current live rate.
   tokens_per_5m_history?: number[];
+  // Current aggregate token throughput for in-progress development sessions. Null means there is no
+  // recent, calculable sample; zero is a measured rate.
+  tokens_per_second?: number | null;
 }
 
 export interface RelatedSessionWire extends AgentSessionWire {
