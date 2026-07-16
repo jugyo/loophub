@@ -73,69 +73,47 @@ test("parent decides transitions by observation, never idle detection", () => {
 test("parent delivers rework as a review-id pointer without summarizing findings", () => {
   const parent = workflowContractText("parent");
 
-  expect(parent).toContain('"orchestrator: address review #<id>"');
-  expect(parent).toMatch(
-    /Do \*\*not\*\* summarize,\s+quote, or interpret the review's findings/u,
+  expect(parent).toContain(
+    "Do **not** summarize, quote, or interpret the review's",
   );
   expect(parent).toContain(
     "lh workflow launch-step --repo '<repo>' --run <run> --step execute --review <id>",
   );
 });
 
-test("parent reuses a resolvable Execute pane for rework even when the agent is done", () => {
+test("parent launches fresh Execute children instead of injecting or resuming", () => {
   const parent = workflowContractText("parent");
 
-  expect(parent).toContain(
-    "`agent_status: done` does **not** mean the pane is closed",
-  );
-  expect(parent).toMatch(
-    /Resolve the latest Execute child with `herdr agent get '<child>'`\.[\s\S]+succeeds and returns a\s+`pane_id`, the Execute pane is reusable even if its status is `agent_status: done`/u,
-  );
-  expect(parent).toContain(
-    "Always try this injection before launching a new Execute child",
-  );
-  expect(parent).toMatch(
-    /Relaunch Execute only if the agent cannot be resolved,\s+no `pane_id` is returned, or the pane\s+injection fails/u,
-  );
+  expect(parent).not.toContain("herdr pane run");
+  expect(parent).not.toContain("herdr agent get");
+  expect(parent).not.toContain("lh workflow run resume");
+  expect(parent).toContain("Never inject into or resume an earlier child");
   expect(parent).toMatch(
     /launch \*\*Verify as a\s+fresh child\*\* — always a new child/u,
   );
 });
 
-test("parent subscribes its pane only to workflow observation and GitHub feedback events", () => {
+test("parent polls only its run workflow events and enforces cost limits", () => {
   const contract = workflowContractText("parent");
 
   expect(contract).toContain(
-    "lh subscribe --repo '<repo>' --event workflow_run.turn_done",
+    "lh events --since <cursor> --repo '<repo>' --type workflow_run --run <run> --order asc --json",
   );
+  expect(contract).not.toContain("lh subscribe --repo");
   expect(contract).toContain(
-    "lh subscribe --repo '<repo>' --event workflow_run.review_submitted",
+    "The `--type workflow_run --run <run>` filters are mandatory",
   );
-  expect(contract).toContain(
-    "lh subscribe --repo '<repo>' --event workflow_run.escalated",
-  );
-  expect(contract).toContain(
-    "lh subscribe --repo '<repo>' --event workflow_run.github_event",
-  );
-  expect(contract).not.toContain(
-    "lh subscribe --repo '<repo>' --event workflow_run.usage_updated",
-  );
-  expect(contract).not.toContain(
-    "lh subscribe --repo '<repo>' --event agent_session.usage_updated",
-  );
-  expect(contract).not.toContain("lh workflow run enforce-cost-limit");
-  expect(contract).not.toContain("On every usage notification");
-  expect(contract).toContain("only a signal to observe");
+  expect(contract).toContain("workflow_run.usage_updated");
+  expect(contract).toContain("lh workflow run enforce-cost-limit");
+  expect(contract).toContain("sleep briefly and poll again");
 });
 
-test("documents the Workflow Herdr names and shared child launch sequence", () => {
+test("documents fresh child launches without pane addressing", () => {
   const parent = workflowContractText("parent");
 
-  expect(parent).toContain("`orchestrator #<run>`");
-  expect(parent).toContain("`executor #<run>-<sequence>`");
-  expect(parent).toContain("`verifier #<run>-<sequence>`");
-  expect(parent).toMatch(/shared across Execute\s+and Verify/u);
-  expect(parent).toMatch(/record the `agent`\s+line/u);
+  expect(parent).toContain("always starts a fresh child session");
+  expect(parent).toContain("record the new `agent` line");
+  expect(parent).not.toContain("pane_id");
 });
 
 test("identifies orchestrator-prefixed messages in every child contract", () => {
@@ -148,14 +126,10 @@ test("identifies orchestrator-prefixed messages in every child contract", () => 
   }
 });
 
-test("every parent-to-child pane injection is orchestrator-prefixed", () => {
+test("parent contract does not use pane injection", () => {
   const parent = workflowContractText("parent");
-  const paneRunCommands = parent.match(/`herdr pane run[^`]+`/gu) ?? [];
 
-  expect(paneRunCommands.length).toBeGreaterThan(0);
-  for (const command of paneRunCommands) {
-    expect(command).toContain('"orchestrator: ');
-  }
+  expect(parent).not.toContain("herdr pane run");
 });
 
 test("Japanese workflow design documents the continuing lifecycle after a pass", () => {

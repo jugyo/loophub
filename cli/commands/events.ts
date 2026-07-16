@@ -41,6 +41,7 @@ export async function run(): Promise<void> {
     types,
     runId: flags.run ? Number(flags.run) : undefined,
     order: flags.order === "desc" ? "desc" : "asc",
+    limit: flags.limit ? Number(flags.limit) : undefined,
   });
   if (flags.json) out(evs);
   else evs.forEach(printEvent);

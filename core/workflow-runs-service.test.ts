@@ -152,20 +152,19 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   );
   expect(parentSystemPrompt).toContain("step: parent");
   expect(parentSystemPrompt).toContain("# Parent");
-  // The parent observes; it subscribes to step signals and drives transitions from step status.
+  // The parent polls run events and drives transitions from step status.
   expect(result.parent.user_prompt).toContain(`run: ${result.run.id}`);
   expect(result.parent.user_prompt).toContain(`issue: #${result.issue.number}`);
   expect(result.parent.user_prompt).toContain(`pr: #${result.pr.number}`);
   expect(result.parent.user_prompt).toContain(
-    "lh subscribe --repo '" +
-      repo.full_name +
-      "' --event workflow_run.turn_done",
+    `lh events --repo '${repo.full_name}' --order desc --limit 1 --json`,
   );
   expect(result.parent.user_prompt).toContain(
-    "lh subscribe --repo '" +
+    "lh events --since <cursor> --repo '" +
       repo.full_name +
-      "' --event workflow_run.review_submitted",
+      `' --type workflow_run --run ${result.run.id} --order asc --json`,
   );
+  expect(result.parent.user_prompt).not.toContain("lh subscribe");
   expect(result.parent.user_prompt).toContain(
     `lh workflow launch-step --repo '${repo.full_name}' --run ${result.run.id} --step execute`,
   );
@@ -1036,24 +1035,21 @@ test("parent contract template drives transitions by observation, rework, and es
     join(import.meta.dirname, "workflow", "contracts", "parent.md"),
     "utf8",
   );
-  // Allowed LoopHub / herdr commands are listed.
+  // Allowed LoopHub commands are listed.
   expect(contract).not.toContain("lh workflow run complete");
   expect(contract).toContain("lh workflow run request-rework");
   expect(contract).toContain("lh workflow launch-step");
   expect(contract).toContain("lh workflow step status");
-  expect(contract).toContain("herdr pane run");
-  // Transitions come from observation; the turn-done notification is only a timing signal.
+  expect(contract).not.toContain("herdr pane run");
+  // Transitions come from observation; pulled events are only timing signals.
   expect(contract).toContain(
-    "lh subscribe --repo '<repo>' --event workflow_run.turn_done",
+    "lh events --since <cursor> --repo '<repo>' --type workflow_run --run <run> --order asc --json",
   );
-  expect(contract).toContain(
-    "lh subscribe --repo '<repo>' --event workflow_run.review_submitted",
-  );
-  expect(contract).toContain("only a signal to observe");
+  expect(contract).not.toContain("lh subscribe --repo");
+  expect(contract).toContain("timing signals, never transition facts");
   expect(contract).toContain("Transitions are driven only by observation");
   expect(contract).toMatch(/never use pane output|PR body marker/i);
-  // Idle detection is explicitly not used.
-  expect(contract).toContain("You do **not** use idle detection");
+  expect(contract).toContain("Do not use herdr pane injection");
   // The simplified observed transition table.
   expect(contract).toContain("launch Execute");
   expect(contract).toContain("execute complete");
@@ -1062,7 +1058,7 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("launch a fresh Verify child directly");
   expect(contract).toContain("## Continuing after a pass");
   expect(contract).toContain("--step execute --note <instruction>");
-  expect(contract).toContain("must not call `lh workflow run resume`");
+  expect(contract).not.toContain("lh workflow run resume");
   expect(contract).toContain("`request_changes`");
   expect(contract).toContain("planning and reflection");
   // Rework increments the count, caps at 3, delivers a review-id pointer, and re-verifies fresh.
@@ -1070,14 +1066,14 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("would exceed 3");
   expect(contract).toContain("--step execute --review <id>");
   expect(contract).toMatch(/Verify as a\s+fresh child/u);
-  // Escalation via issue comment + inbox + a resumable human hold; never the retired 'blocked'.
+  // Escalation uses issue comment + inbox while the persistent parent waits for human input.
   expect(contract).toContain("lh issue comment");
   expect(contract).toContain("lh inbox send");
-  expect(contract).toContain("run await-human");
+  expect(contract).not.toContain("run await-human");
+  expect(contract).toContain("Keep the run `running`");
   expect(contract).not.toContain("--status blocked");
-  // Resume only on an explicit human instruction; skill independence.
-  expect(contract).toContain("run resume");
-  expect(contract).toContain("Never resume on your own");
+  // The parent stays alive instead of resuming a child session; skill independence.
+  expect(contract).toContain("no resume command is needed");
   expect(contract).toContain("Do not call slash commands");
 });
 
