@@ -1763,6 +1763,35 @@ describe("PullDetail", () => {
     expect(screen.getByRole("button", { name: "View history" })).toBeTruthy();
   });
 
+  it("does not show continuing for a verified running Workflow run", async () => {
+    renderDetail({
+      "workflowRuns/stateForPull": () => ({
+        id: 12,
+        workflow_id: 3,
+        workflow_name: "Implementation loop",
+        status: "running",
+        current_step: "verify",
+        rework_count: 0,
+        needs_human_reason: null,
+        issue_number: 153,
+        pr_number: 30,
+        created_at: "2026-06-18T11:00:00Z",
+        updated_at: "2026-06-18T12:00:00Z",
+        latest_review: null,
+        verification_status: "verified",
+      }),
+    });
+
+    await screen.findByText("Implementation loop");
+    expect(screen.getByText("Verified")).toBeTruthy();
+    expect(
+      screen.getByText("Verify passed for the current HEAD."),
+    ).toBeTruthy();
+    expect(screen.getByText("Verify")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View history" })).toBeTruthy();
+    expect(screen.queryByText(/continuing/i)).toBeNull();
+  });
+
   it("hides Workflow run when none is linked", async () => {
     renderDetail({ "workflowRuns/stateForPull": () => null });
     await screen.findByText("ui2: PR detail");

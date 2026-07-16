@@ -111,7 +111,7 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.queryByText(/Verify passed/)).toBeNull();
   });
 
-  it("distinguishes a verified continuing run from a stale review", async () => {
+  it("keeps a verified running run free of continuing status text", async () => {
     const { rerender } = renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
@@ -122,8 +122,11 @@ describe("WorkflowRunStatusSection", () => {
         })}
       />,
     );
-    expect(await screen.findByText(/run is continuing/)).toBeTruthy();
-    expect(screen.getByText("Verified · continuing")).toBeTruthy();
+    expect(await screen.findByText("Verified")).toBeTruthy();
+    expect(
+      screen.getByText("Verify passed for the current HEAD."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/continuing/i)).toBeNull();
 
     rerender(
       <WorkflowRunStatusSection

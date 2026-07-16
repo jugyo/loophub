@@ -70,7 +70,7 @@ export function WorkflowRunStatusSection({
   const status = needsHuman(state)
     ? { label: "Needs human", tone: "cost-stopped" as const }
     : state.status === "running" && state.verification_status === "verified"
-      ? { label: "Verified · continuing", tone: "review-passed" as const }
+      ? { label: "Verified", tone: "review-passed" as const }
       : state.status === "running" && state.verification_status === "stale"
         ? { label: "Reverify required", tone: "review-changes" as const }
         : (STATUS_META[state.status] ?? {
@@ -81,10 +81,14 @@ export function WorkflowRunStatusSection({
     ? STEP_ORDER.indexOf(state.current_step)
     : -1;
   const completed = state.status === "completed";
-  const continuingVerification =
-    state.status === "running" && state.needs_human_reason === null
-      ? state.verification_status
-      : null;
+  const isStaleVerification =
+    state.status === "running" &&
+    state.needs_human_reason === null &&
+    state.verification_status === "stale";
+  const isVerified =
+    state.status === "running" &&
+    state.needs_human_reason === null &&
+    state.verification_status === "verified";
 
   return (
     <section className="flex flex-col gap-3">
@@ -119,12 +123,11 @@ export function WorkflowRunStatusSection({
           </p>
         ) : null}
 
-        {continuingVerification === "verified" ? (
+        {isVerified ? (
           <p className="text-sm text-muted-foreground">
-            Verify passed for the current HEAD — the run is continuing and
-            waiting for more work or an explicit stop.
+            Verify passed for the current HEAD.
           </p>
-        ) : continuingVerification === "stale" ? (
+        ) : isStaleVerification ? (
           <p className="text-sm text-muted-foreground">
             HEAD changed after Verify passed — a fresh Verify is required.
           </p>
