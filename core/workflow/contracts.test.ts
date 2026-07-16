@@ -102,7 +102,7 @@ test("parent reuses a resolvable Execute pane for rework even when the agent is 
   );
 });
 
-test("parent subscribes its pane to workflow observation and GitHub feedback events", () => {
+test("parent subscribes its pane only to workflow observation and GitHub feedback events", () => {
   const contract = workflowContractText("parent");
 
   expect(contract).toContain(
@@ -117,12 +117,14 @@ test("parent subscribes its pane to workflow observation and GitHub feedback eve
   expect(contract).toContain(
     "lh subscribe --repo '<repo>' --event pull_request.github_feedback",
   );
-  expect(contract).toContain(
+  expect(contract).not.toContain(
     "lh subscribe --repo '<repo>' --event workflow_run.usage_updated",
   );
   expect(contract).not.toContain(
     "lh subscribe --repo '<repo>' --event agent_session.usage_updated",
   );
+  expect(contract).not.toContain("lh workflow run enforce-cost-limit");
+  expect(contract).not.toContain("On every usage notification");
   expect(contract).toContain("only a signal to observe");
 });
 
