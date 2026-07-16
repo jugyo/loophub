@@ -454,6 +454,40 @@ describe("AgentSessionsPage", () => {
     expect(screen.getByLabelText("Mar 2025 Codex: $0.07")).toBeTruthy();
   });
 
+  it("groups UTC boundary sessions by Tokyo calendar days and Monday weeks", async () => {
+    process.env.TZ = "Asia/Tokyo";
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-07-09T12:00:00+09:00").getTime(),
+    );
+    renderPage([
+      costedSession("before-local-range", "2026-07-02T14:59:00Z", 0.16),
+      costedSession("local-friday", "2026-07-02T15:30:00Z", 0.01),
+      costedSession("local-sunday", "2026-07-05T14:30:00Z", 0.02),
+      costedSession("local-monday", "2026-07-05T15:30:00Z", 0.04),
+      costedSession("local-thursday", "2026-07-09T14:30:00Z", 0.08),
+      costedSession("after-local-range", "2026-07-09T15:00:00Z", 0.16),
+    ]);
+
+    expect(await screen.findByText("last 1 month cost")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "last 1 week" }));
+
+    const overview = screen.getByText("last 1 week cost").parentElement;
+    expect(overview && within(overview).getByText("$0.15")).toBeTruthy();
+    expect(screen.getByLabelText("Jul 3: $0.01")).toBeTruthy();
+    expect(screen.getByLabelText("Jul 5: $0.02")).toBeTruthy();
+    expect(screen.getByLabelText("Jul 6: $0.04")).toBeTruthy();
+    expect(screen.getByLabelText("Jul 9: $0.08")).toBeTruthy();
+    expect(screen.queryByText("before-local-range")).toBeNull();
+    expect(screen.queryByText("after-local-range")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Weekly" }));
+    expect(screen.getByLabelText("Jun 29: $0.03")).toBeTruthy();
+    expect(screen.getByLabelText("Jul 6: $0.12")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    expect(screen.getByLabelText("Jul 2026: $0.15")).toBeTruthy();
+  });
+
   it("keeps one bucket per local calendar day across the daylight-saving end", async () => {
     process.env.TZ = "America/Los_Angeles";
     vi.spyOn(Date, "now").mockReturnValue(
