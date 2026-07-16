@@ -1419,3 +1419,127 @@ test("stall sweep surfaces a stuck run to a human and is idempotent (#1358)", as
   });
   expect(again.held).not.toContain(run.id);
 });
+
+test("stall sweep preserves a Verify run with a fresh passing review (#1459)", async () => {
+  const repo = S.createRepo("me/workflow-reviewed-wait", REPO_PATH);
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Wait after review",
+    "body",
+    "me",
+  );
+  const prIssue = S.createIssue(
+    repo.id,
+    "pull",
+    "PR waiting after review",
+    "body",
+    "me",
+  );
+  const reviewedHead = "a".repeat(40);
+  S.createPull(prIssue.id, "reviewed-head", "main", reviewedHead, issue.id);
+  const workflow = S.createWorkflow({
+    name: "reviewed-wait-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: prIssue.number,
+    status: "running",
+    currentStep: "verify",
+    parentSessionId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  });
+  S.emitEvent(repo.id, "workflow_run.started", "parent", {
+    id: run.id,
+    issue_number: issue.number,
+    pr_number: prIssue.number,
+  });
+  createWorkflowReview({
+    prIssueId: prIssue.id,
+    runId: run.id,
+    sequence: 1,
+    event: "PASS",
+    headSha: reviewedHead,
+    body: "Current HEAD passes.",
+  });
+  const activityAt = Date.parse(
+    S.latestWorkflowRunActivityAt(repo.id, run.id)!,
+  );
+
+  const waiting = svc.workflowRuns.sweepStalledRuns({
+    thresholdMs: 30 * 60_000,
+    now: activityAt + 31 * 60_000,
+  });
+  expect(waiting.held).not.toContain(run.id);
+  expect(S.getWorkflowRun(run.id)?.needs_human_reason).toBeNull();
+
+  S.setHeadSha(prIssue.id, "b".repeat(40));
+  const stale = svc.workflowRuns.sweepStalledRuns({
+    thresholdMs: 30 * 60_000,
+    now: activityAt + 31 * 60_000,
+  });
+  expect(stale.held).toContain(run.id);
+  expect(S.getWorkflowRun(run.id)?.needs_human_reason).toMatch(/no turn-done/);
+});
+
+test("stall sweep does not treat request changes as completed review (#1459)", async () => {
+  const repo = S.createRepo("me/workflow-changes-requested", REPO_PATH);
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Address requested changes",
+    "body",
+    "me",
+  );
+  const prIssue = S.createIssue(
+    repo.id,
+    "pull",
+    "PR with requested changes",
+    "body",
+    "me",
+  );
+  const reviewedHead = "c".repeat(40);
+  S.createPull(prIssue.id, "changes-head", "main", reviewedHead, issue.id);
+  const workflow = S.createWorkflow({
+    name: "changes-requested-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: issue.number,
+    prNumber: prIssue.number,
+    status: "running",
+    currentStep: "verify",
+    parentSessionId: "abababab-abab-4bab-8bab-abababababab",
+  });
+  S.emitEvent(repo.id, "workflow_run.started", "parent", {
+    id: run.id,
+    issue_number: issue.number,
+    pr_number: prIssue.number,
+  });
+  createWorkflowReview({
+    prIssueId: prIssue.id,
+    runId: run.id,
+    sequence: 1,
+    event: "REQUEST_CHANGES",
+    headSha: reviewedHead,
+    body: "More work is required.",
+  });
+  const activityAt = Date.parse(
+    S.latestWorkflowRunActivityAt(repo.id, run.id)!,
+  );
+
+  const held = svc.workflowRuns.sweepStalledRuns({
+    thresholdMs: 30 * 60_000,
+    now: activityAt + 31 * 60_000,
+  });
+  expect(held.held).toContain(run.id);
+  expect(S.getWorkflowRun(run.id)?.needs_human_reason).toMatch(/no turn-done/);
+});

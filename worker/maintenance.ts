@@ -294,11 +294,12 @@ export function startConflictSweep(
   };
 }
 
-// Surface a Workflow run that stopped making progress (#1358). A run stalls only when its Execute
-// child never declared turn done — a rare, human-recoverable failure — so the sweep does not try to
-// recover it: it marks the run needs-human and files an Inbox message, and a human resumes or stops
-// it. The decision (which runs are past the threshold, the hold, the Inbox message) lives in the
-// core service; this loop only schedules it and logs the outcome.
+// Surface a Workflow run that stopped making progress (#1358). A run waiting in Verify after a
+// fresh passing review is complete work, not a stall; other inactive runs remain human-recoverable
+// failures. The sweep does not try to recover them: it marks the run needs-human and files an Inbox
+// message, and a human resumes or stops it. The decision (which runs are past the threshold, the
+// hold, the Inbox message) lives in the core service; this loop only schedules it and logs the
+// outcome.
 export function startWorkflowStallSweep(
   intervalMs = DEFAULT_WORKFLOW_STALL_SWEEP_MS,
   thresholdMs = DEFAULT_WORKFLOW_STALL_THRESHOLD_MS,

@@ -490,6 +490,19 @@ function reviewObservation(
   };
 }
 
+function hasFreshPassingWorkflowReview(run: S.WorkflowRunRow): boolean {
+  if (run.current_step !== "verify") return false;
+  const prIssue = S.getIssue(run.repo_id, run.pr_number);
+  if (!prIssue) return false;
+  const pull = S.getPull(prIssue.id);
+  const review = latestWorkflowRunReview(prIssue.id, run.id);
+  return Boolean(
+    pull?.head_sha &&
+      review?.event === "PASS" &&
+      review.head_sha === pull.head_sha,
+  );
+}
+
 function stepActorAllowed(
   run: S.WorkflowRunRow,
   step: WorkflowStep,
@@ -1737,8 +1750,8 @@ export const workflowRuns = {
 
   // Worker-owned stall visibility (#1358): a running, non-held run whose latest lifecycle
   // activity (run started/updated, step launched, turn-done declared) is older than the
-  // threshold is surfaced to a human — needs-human hold + Inbox message. No automatic recovery
-  // is attempted; resume / stop stay explicit human actions.
+  // threshold is surfaced to a human — except a Verify run waiting after a fresh passing review.
+  // No automatic recovery is attempted; resume / stop stay explicit human actions.
   sweepStalledRuns(input: { thresholdMs: number; now?: number }): {
     held: number[];
     failed: number[];
@@ -1764,6 +1777,7 @@ export const workflowRuns = {
         ) {
           continue;
         }
+        if (hasFreshPassingWorkflowReview(run)) continue;
         const reason = `no turn-done declaration or run activity for ${minutes} minutes`;
         // Send the human notification first: if it throws (archived/read-only repo), the run is
         // left running and un-held, so the next tick retries cleanly instead of holding a run whose
