@@ -161,27 +161,6 @@ export function updateRepo(
   return getRepoById(repo.id);
 }
 
-function tableExists(name: string): boolean {
-  return Boolean(
-    db
-      .query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
-      .get(name),
-  );
-}
-
-function deleteLegacyGroupingRows(repoId: number): void {
-  const groups = ["issue", "groups"].join("_");
-  const members = ["issue", "group", "members"].join("_");
-  if (!tableExists(groups)) return;
-  if (tableExists(members)) {
-    db.run(
-      `DELETE FROM ${members} WHERE group_id IN (SELECT id FROM ${groups} WHERE repo_id = ?)`,
-      [repoId],
-    );
-  }
-  db.run(`DELETE FROM ${groups} WHERE repo_id = ?`, [repoId]);
-}
-
 export function deleteRepo(owner: string, name: string): boolean {
   const repo = getRepo(owner, name);
   if (!repo) return false;
@@ -206,9 +185,6 @@ export function deleteRepo(owner: string, name: string): boolean {
   }
   // Herdr panes are repo-owned; their polymorphic resource links cascade from this delete.
   db.run(`DELETE FROM herdr_panes WHERE repo_id = ?`, [repo.id]);
-  // Older databases may still carry retired grouping tables with foreign keys into repos/issues.
-  // Sweep their rows when present so deleting a repo remains backward-compatible.
-  deleteLegacyGroupingRows(repo.id);
   db.run(`DELETE FROM workflow_runs WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM inbox_messages WHERE repo_id = ?`, [repo.id]);
   db.run(`DELETE FROM notification_merge_ready_states WHERE repo_id = ?`, [

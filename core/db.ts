@@ -796,6 +796,20 @@ function tableExists(table: string): boolean {
   );
 }
 
+// Issue groups were retired in #911. Existing databases may still carry their bolt-on tables;
+// discard that obsolete data instead of preserving or converting it. Drop the membership table
+// first because it references both issue_groups and issues. The tables' dedicated indexes are
+// removed automatically with their owning tables, and IF EXISTS makes this safe on fresh and
+// already-migrated databases.
+export function dropRetiredIssueGroupSchema(): void {
+  db.exec(`
+    DROP TABLE IF EXISTS issue_group_members;
+    DROP TABLE IF EXISTS issue_groups;
+  `);
+}
+
+dropRetiredIssueGroupSchema();
+
 // Persistent Issue/PR substring index (#1400). node:sqlite's bundled SQLite does not include FTS5,
 // so store one-, two-, and three-character grams in a normal indexed table. Search uses the longest
 // available grams to narrow candidates, then SQLite verifies the exact substring against issues.

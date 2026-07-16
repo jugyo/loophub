@@ -50,6 +50,23 @@ beforeAll(async () => {
       name TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       UNIQUE (agent, external_session)
     );
+    CREATE TABLE issue_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_id INTEGER NOT NULL REFERENCES repos(id),
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (repo_id, name)
+    );
+    CREATE TABLE issue_group_members (
+      group_id INTEGER NOT NULL REFERENCES issue_groups(id),
+      issue_id INTEGER NOT NULL REFERENCES issues(id),
+      position INTEGER NOT NULL,
+      added_at TEXT NOT NULL,
+      PRIMARY KEY (group_id, issue_id)
+    );
+    CREATE INDEX idx_issue_groups_repo ON issue_groups(repo_id);
+    CREATE INDEX idx_issue_group_members_issue ON issue_group_members(issue_id);
     INSERT INTO repos (id, full_name, name, owner, local_path, created_at)
       VALUES (1, 'me/proj', 'proj', 'me', '/tmp/proj', 't0');
     INSERT INTO issues (id, repo_id, number, kind, title, author, created_at, updated_at)
@@ -59,6 +76,10 @@ beforeAll(async () => {
               '11111111-0000-0000-0000-000000000001', 'dev', 't1', 't1');
     INSERT INTO pulls (issue_id, head_ref, base_ref, linked_issue_id, session_id)
       VALUES (10, 'loophub/issue-7', 'main', NULL, '11111111-0000-0000-0000-000000000001');
+    INSERT INTO issue_groups (id, repo_id, name, created_at, updated_at)
+      VALUES (20, 1, 'obsolete', 't1', 't1');
+    INSERT INTO issue_group_members (group_id, issue_id, position, added_at)
+      VALUES (20, 10, 0, 't1');
   `);
   seed.close();
 
@@ -92,4 +113,21 @@ test("the legacy dev-session pointer survives in session_links (resume anchor pr
 test("the migrated session is stamped kind='dev'", () => {
   const s = S.getAgentSession("11111111-0000-0000-0000-000000000001")!;
   expect(s.kind).toBe("dev");
+});
+
+test("retired issue group tables, data, and indexes are dropped", () => {
+  const names = (
+    D.db
+      .query(
+        `SELECT name FROM sqlite_schema
+         WHERE name IN (
+           'issue_groups',
+           'issue_group_members',
+           'idx_issue_groups_repo',
+           'idx_issue_group_members_issue'
+         )`,
+      )
+      .all() as { name: string }[]
+  ).map((row) => row.name);
+  expect(names).toEqual([]);
 });

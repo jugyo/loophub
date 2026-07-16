@@ -32,6 +32,26 @@ test("WAL journal mode is preserved alongside busy_timeout", () => {
   expect(row.journal_mode.toLowerCase()).toBe("wal");
 });
 
+test("the issue group migration is safe on a table-less database and on re-run", () => {
+  D.dropRetiredIssueGroupSchema();
+  D.dropRetiredIssueGroupSchema();
+
+  const names = (
+    D.db
+      .query(
+        `SELECT name FROM sqlite_schema
+         WHERE name IN (
+           'issue_groups',
+           'issue_group_members',
+           'idx_issue_groups_repo',
+           'idx_issue_group_members_issue'
+         )`,
+      )
+      .all() as { name: string }[]
+  ).map((row) => row.name);
+  expect(names).toEqual([]);
+});
+
 function explain(sql: string, params: unknown[]): string {
   const rows = D.db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as {
     detail: string;
