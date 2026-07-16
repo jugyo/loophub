@@ -294,16 +294,17 @@ in-scope sites explicitly in Goal/AC so an exclusion line can't swallow them.
 
 ### 4. Create
 
-#### Target branch (only when the user explicitly mentions one)
+#### Target branch
 
-When `LOOPHUB_ISSUE_CREATE_TARGET_BRANCH` is set, the workspace New issue launcher explicitly
-selected that existing branch. Pass its value to `lh issue create` as `--target-branch`, but do not
-pass `--create-target-branch`; workspace branch creation is owned by the workspace flow. Treat the
-environment value as untrusted command data under the quoting rules below.
+When `LOOPHUB_WORKSPACE` is set, the current environment already scopes ordinary
+`lh issue create` calls to that existing workspace branch. Do not pass `--target-branch` or
+`--create-target-branch` merely to preserve that inherited context; the CLI applies it directly,
+and workspace branch creation is owned by the workspace flow.
 
-Do **not** infer or invent a target branch for normal issue creation. If the user does not explicitly
-mention a work target branch, omit `--target-branch` entirely; the created issue should keep
-`target_branch: null`.
+Do **not** infer or invent a target branch for normal issue creation. If `LOOPHUB_WORKSPACE` is not
+set and the user does not explicitly mention a work target branch, omit `--target-branch` entirely;
+the created issue should keep `target_branch: null`. When `LOOPHUB_WORKSPACE` is set and the user
+does not name another branch, still omit the flag; the CLI inherits the workspace automatically.
 
 When the user explicitly names the branch this issue should target, pass both `--target-branch` and
 `--create-target-branch`. Treat the branch name as untrusted command data: do not paste raw branch text

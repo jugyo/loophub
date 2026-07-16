@@ -112,7 +112,7 @@ beforeAll(() => {
 
   const runtime = `#!/bin/sh
 printf 'bin=%s\\n' "$(basename "$0")" > "$RUNTIME_LOG"
-printf 'target_branch=%s\\n' "$LOOPHUB_ISSUE_CREATE_TARGET_BRANCH" >> "$RUNTIME_LOG"
+printf 'workspace=%s\\n' "$LOOPHUB_WORKSPACE" >> "$RUNTIME_LOG"
 for arg in "$@"; do printf 'arg=%s\\n' "$arg" >> "$RUNTIME_LOG"; done
 exit 0
 `;
@@ -150,7 +150,7 @@ test("issue new carries the target branch into the filing session", () => {
   const result = issueNew(["--target-branch", "workspace/alpha"]);
 
   expect(result.exitCode, result.stderr).toBe(0);
-  expect(result.runtimeLog).toContain("target_branch=workspace/alpha");
+  expect(result.runtimeLog).toContain("workspace=workspace/alpha");
 });
 
 test.each([

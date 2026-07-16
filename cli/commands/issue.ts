@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { agentModel, codingAgent } from "../../core/config.ts";
+import { ENV_WORKSPACE } from "../../core/environment.ts";
 import {
   ENV_ISSUE_CREATE_SESSION,
-  ENV_ISSUE_CREATE_TARGET_BRANCH,
   LH_ISSUE_CREATE_SESSION_AGENT,
   SESSION_KIND_ISSUE_CREATE,
 } from "../../core/resume.ts";
@@ -119,7 +119,7 @@ export async function run(): Promise<void> {
         [ENV_ISSUE_CREATE_SESSION]: sessionId,
         ...(typeof flags["target-branch"] === "string"
           ? {
-              [ENV_ISSUE_CREATE_TARGET_BRANCH]: flags["target-branch"],
+              [ENV_WORKSPACE]: flags["target-branch"],
             }
           : {}),
       },
@@ -151,7 +151,7 @@ export async function run(): Promise<void> {
           title: flags.title ?? "",
           body: flags.body || "",
           labels,
-          target_branch: flags["target-branch"],
+          target_branch: flags["target-branch"] ?? process.env[ENV_WORKSPACE],
           create_target_branch: flags["create-target-branch"] === true,
         },
         await writeSession(),

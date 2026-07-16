@@ -23,6 +23,7 @@ function lh(args: string[], env: Record<string, string> = {}) {
     HERDR_PANE_ID: _herdrPaneId,
     HERDR_SESSION: _herdrSession,
     LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH: _launchId,
+    LOOPHUB_WORKSPACE: _workspace,
     ...baseEnv
   } = process.env;
   const r = spawnSync(
@@ -144,6 +145,36 @@ test("lh issue create accepts a target branch", () => {
 
   const issue = viewJSON(Number(m[1]));
   expect(issue.target_branch).toBe("integration/stack");
+});
+
+test("lh issue create defaults the target branch from LOOPHUB_WORKSPACE", () => {
+  const issueNumber = createIssueWithEnv("workspace issue", {
+    LOOPHUB_WORKSPACE: "integration/stack",
+  });
+
+  expect(viewJSON(issueNumber).target_branch).toBe("integration/stack");
+});
+
+test("lh issue create explicit target branch overrides LOOPHUB_WORKSPACE", () => {
+  git(["branch", "workspace/explicit"]);
+  const result = lh(
+    [
+      "issue",
+      "create",
+      "--repo",
+      REPO,
+      "--title",
+      "explicit workspace issue",
+      "--target-branch",
+      "workspace/explicit",
+    ],
+    { LOOPHUB_WORKSPACE: "integration/stack" },
+  );
+  expect(result.exitCode, result.stderr).toBe(0);
+  const match = result.stdout.match(/created #(\d+)/);
+  if (!match) throw new Error(`create failed: ${result.stdout}`);
+
+  expect(viewJSON(Number(match[1])).target_branch).toBe("workspace/explicit");
 });
 
 test("lh issue create can create a missing target branch from default", () => {

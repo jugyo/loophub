@@ -62,11 +62,6 @@ export const SESSION_KIND_ISSUE_CREATE = "issue-create";
 // (#299) — the issue number is unknown at launch, so the link is recorded after creation.
 export const ENV_ISSUE_CREATE_SESSION = "LOOPHUB_ISSUE_CREATE_SESSION";
 
-// Optional workspace branch selected by the web New Issue launcher. `lh issue new` carries it
-// into the filing session so /lh-issue-create can persist it on the issue.
-export const ENV_ISSUE_CREATE_TARGET_BRANCH =
-  "LOOPHUB_ISSUE_CREATE_TARGET_BRANCH";
-
 // Correlates the Herdr pane created by the web New Issue launcher with the issue later filed
 // inside that pane. The pane id is only known after `herdr agent start` returns; the issue number
 // is only known after `lh issue create`, so both sides upsert against this launch id.

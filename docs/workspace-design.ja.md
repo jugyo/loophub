@@ -282,10 +282,10 @@ New issue は現在、フォームではなく `/lh-issue-create` スキルを�
    `core/service/terminal.ts` の `TerminalLaunchInput`)に `targetBranch?: string` を追加し、
    `commandForHerdrLaunch` が `lh issue new --repo <repo> --target-branch <branch>` を組み立てる。
 3. **`lh issue new`**: `--target-branch` フラグを受け取り、スキルセッションへ環境変数
-   (`LOOPHUB_ISSUE_CREATE_TARGET_BRANCH`。既存の `LOOPHUB_ISSUE_CREATE_*` env var と同じ
-   `LOOPHUB_` prefix で、`core/resume.ts` に exported な `ENV_*` 定数として定義する流儀)で渡す。
-4. **スキル → 永続化**: `/lh-issue-create` は環境変数があれば `issues/create` に
-   `target_branch` を付けて起票する。`issues.create` 側は既存の検証
+   (`LOOPHUB_WORKSPACE`)で渡す。この変数は issue-create 専用ではなく、現在の workspace を
+   表す一般的な CLI コンテキストである。
+4. **CLI → 永続化**: 通常の `lh issue create` は明示的な `--target-branch` がなければ
+   `LOOPHUB_WORKSPACE` を `issues/create` の `target_branch` に使う。`issues.create` 側は既存の検証
    (`assertExistingLocalBranch`、`core/service/issues.ts:163-175`)のまま変更不要。
    ブランチが消えていれば 422 で失敗し、セッションログに見える(§4.2 の missing 状態では
    ボタン自体を無効化して先回りする)。

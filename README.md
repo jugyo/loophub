@@ -116,6 +116,18 @@ lh pr create --head feature-x --base main --title "impl" --issue 5
 別 checkout を指す場合は `LOOPHUB_ROOT=/path/to/loophub lh ...`。CLI は `core/service` を直接呼び、
 サーバープロセスは不要（同じ `LOOPHUB_HOME` の SQLite に直接読み書きする）。
 
+### Workspace コンテキスト
+
+`LOOPHUB_WORKSPACE` は、現在の workspace をローカルブランチ名で表す。workspace セクションの
+New issue や `lh issue new --target-branch <branch>` は、この環境変数を起票セッションへ渡す。
+そのセッションで通常どおり `lh issue create` を実行すると、環境値が Issue の `target_branch` に
+設定され、後続の `lh build` は同じブランチを PR の base に使う。
+
+`lh issue create --target-branch <branch>` を明示した場合は、その値が `LOOPHUB_WORKSPACE` より
+優先される。どちらもない場合は従来どおり `target_branch: null` になる。この環境変数は既存の
+workspace ブランチを選ぶコンテキストであり、ブランチを作成しない。新規ブランチを明示的に
+作る場合だけ `--target-branch` と `--create-target-branch` を併用する。
+
 ## 開発
 
 ```sh

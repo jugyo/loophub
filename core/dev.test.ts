@@ -13,6 +13,7 @@ let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
 let D: typeof import("./db.ts");
 let repoPath: string;
+const CLI = join(import.meta.dirname, "..", "cli", "index.ts");
 
 function git(args: string[]) {
   spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
@@ -282,6 +283,45 @@ describe("dev.openPr", () => {
     const pullB = (await svc.pulls.get("me/proj", prB.number)) as any;
     expect(pullA.base.ref).toBe("integration/stack");
     expect(pullB.base.ref).toBe("integration/stack");
+  });
+
+  test("uses the workspace environment from issue creation as the build PR base", async () => {
+    const created = spawnSync(
+      process.execPath,
+      [
+        "--experimental-sqlite",
+        "--disable-warning=ExperimentalWarning",
+        "--import",
+        "tsx",
+        CLI,
+        "issue",
+        "create",
+        "--repo",
+        "me/proj",
+        "--title",
+        "workspace environment build",
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          LOOPHUB_HOME: HOME,
+          LOOPHUB_DB: join(HOME, "test.db"),
+          LOOPHUB_WORKSPACE: "integration/stack",
+        },
+      },
+    );
+    expect(created.status, created.stderr).toBe(0);
+    const match = created.stdout.match(/created #(\d+)/);
+    if (!match) throw new Error(`create failed: ${created.stdout}`);
+
+    const pr = await svc.dev.openPr(
+      "me/proj",
+      { issue: Number(match[1]) },
+      "sess-1",
+    );
+    const pull = (await svc.pulls.get("me/proj", pr.number)) as any;
+    expect(pull.base.ref).toBe("integration/stack");
   });
 
   test("falls back to the repo default branch when the issue has no target branch", async () => {
