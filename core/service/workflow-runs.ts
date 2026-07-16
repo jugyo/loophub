@@ -151,6 +151,8 @@ export type WorkflowTurnDoneResult = {
   event_id: number;
 };
 
+export type WorkflowEscalateResult = WorkflowTurnDoneResult;
+
 export type WorkflowStepInputResult = {
   run: WorkflowRunUpdateResult["run"];
   step: WorkflowStep;
@@ -273,6 +275,20 @@ function inlineText(value: string): string {
     .trim();
 }
 
+function workflowHumanReason(reason: string, action: string): string {
+  const normalized = inlineText(reason);
+  if (!normalized) {
+    throw new ServiceError(422, `${action} requires a reason`);
+  }
+  if (normalized.length > 500) {
+    throw new ServiceError(
+      422,
+      `${action} reason must be at most 500 characters`,
+    );
+  }
+  return normalized;
+}
+
 function parentUserPrompt(input: {
   runId: number;
   repoName: string;
@@ -297,8 +313,9 @@ function parentUserPrompt(input: {
     `Decide every transition by observing \`lh workflow step status ${input.runId} --repo ${repo} --json\` after a turn-done or workflow-review notification; never use pane output or PR body markers.`,
     "Start now:",
     `1. Subscribe this pane to turn-done declarations: \`lh subscribe --repo ${repo} --event workflow_run.turn_done\``,
-    `2. Subscribe this pane to Verify review registrations: \`lh subscribe --repo ${repo} --event workflow_run.review_submitted\``,
-    `3. Launch the Execute child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step execute\``,
+    `2. Subscribe this pane to Execute escalations: \`lh subscribe --repo ${repo} --event workflow_run.escalated\``,
+    `3. Subscribe this pane to Verify review registrations: \`lh subscribe --repo ${repo} --event workflow_run.review_submitted\``,
+    `4. Launch the Execute child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step execute\``,
     "Then follow your contract's transition table, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
     "",
   ].join("\n");
@@ -952,16 +969,7 @@ export const workflowRuns = {
         "Workflow run is already waiting for a human",
       );
     }
-    const reason = inlineText(input.reason);
-    if (!reason) {
-      throw new ServiceError(422, "await-human requires a reason");
-    }
-    if (reason.length > 500) {
-      throw new ServiceError(
-        422,
-        "await-human reason must be at most 500 characters",
-      );
-    }
+    const reason = workflowHumanReason(input.reason, "await-human");
     return updateRunLifecycle(
       run,
       { needsHumanReason: reason },
@@ -1532,6 +1540,45 @@ export const workflowRuns = {
         // pane by this session id (same pattern as pull_request.github_feedback).
         parent_session_id: run.parent_session_id,
         session_id: sessionId ?? null,
+      },
+    );
+    return { run: run.id, event_id: event.id };
+  },
+
+  // The Execute child's escalation declaration mirrors turnDone: it records a run-scoped fact for
+  // the worker to deliver to the parent, but does not mutate lifecycle state. The parent reads the
+  // event reason and applies the existing await-human transition.
+  escalate(
+    name: string,
+    input: { run: number; reason: string },
+    sessionId?: string | null,
+  ): WorkflowEscalateResult {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id)
+      throw new ServiceError(404, "Workflow run not found for repo");
+    if (run.status !== "running")
+      throw new ServiceError(422, `Workflow run is ${run.status}`);
+    if (!stepActorAllowed(run, "execute", sessionId)) {
+      throw new ServiceError(
+        403,
+        "Workflow escalation must be declared by a launched Execute session",
+      );
+    }
+    const reason = workflowHumanReason(input.reason, "escalate");
+    const event = S.emitEvent(
+      r.id,
+      "workflow_run.escalated",
+      actorFor(sessionId),
+      {
+        id: run.id,
+        number: run.pr_number,
+        issue_number: run.issue_number,
+        pr_number: run.pr_number,
+        parent_session_id: run.parent_session_id,
+        session_id: sessionId ?? null,
+        reason,
       },
     );
     return { run: run.id, event_id: event.id };

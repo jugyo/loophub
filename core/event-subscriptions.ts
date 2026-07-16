@@ -60,6 +60,13 @@ export function buildNotifyText(input: NotifyTextInput): string {
       "The Execute child declared its turn done. Observe the run state (`lh workflow step status`) before deciding any transition."
     );
   }
+  if (input.eventType === "workflow_run.escalated") {
+    return (
+      `LoopHub event: type=${tokenize(input.eventType)} repo=${tokenize(input.repoFullName)}` +
+      `${number} event_id=${input.eventId}. ` +
+      "The Execute child requested human guidance. Read this event from domain state, then follow the Workflow escalation contract."
+    );
+  }
   if (input.eventType === "workflow_run.review_submitted") {
     return (
       `LoopHub event: type=${tokenize(input.eventType)} repo=${tokenize(input.repoFullName)}` +

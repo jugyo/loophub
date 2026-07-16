@@ -808,6 +808,79 @@ test("turn done is rejected for a non-Execute session", async () => {
   ).toThrowError(/launched Execute session/);
 }, 20_000);
 
+test("Execute escalation records a validated event without changing run lifecycle", async () => {
+  const { repo } = freshRepo("me/workflow-escalate");
+  const issue = S.createIssue(repo.id, "issue", "Escalate", "body", "me");
+  const workflow = S.createWorkflow({
+    name: "escalate-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    {
+      issue: issue.number,
+      workflowId: workflow.id,
+      parentContract: "# Parent",
+    },
+    parent,
+  );
+  const execute = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+  S.registerAgentSession(execute, "workflow-step", execute);
+  S.appendWorkflowRunStepSession(started.run.id, "execute", execute);
+
+  const result = svc.workflowRuns.escalate(
+    repo.full_name,
+    {
+      run: started.run.id,
+      reason: "  See issue comment #12.\nPlease advise.  ",
+    },
+    execute,
+  );
+  expect(result.run).toBe(started.run.id);
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
+    status: "running",
+    current_step: "execute",
+    needs_human_reason: null,
+  });
+  const event = S.eventsForWorkflowRun(repo.id, started.run.id).find(
+    (item) => item.id === result.event_id,
+  );
+  expect(event?.type).toBe("workflow_run.escalated");
+  expect(JSON.parse(event!.payload)).toMatchObject({
+    id: started.run.id,
+    issue_number: issue.number,
+    pr_number: started.pr.number,
+    parent_session_id: parent,
+    session_id: execute,
+    reason: "See issue comment #12. Please advise.",
+  });
+
+  expect(() =>
+    svc.workflowRuns.escalate(
+      repo.full_name,
+      { run: started.run.id, reason: "\n\t" },
+      execute,
+    ),
+  ).toThrowError(/requires a reason/);
+  expect(() =>
+    svc.workflowRuns.escalate(
+      repo.full_name,
+      { run: started.run.id, reason: "x".repeat(501) },
+      execute,
+    ),
+  ).toThrowError(/at most 500 characters/);
+  expect(() =>
+    svc.workflowRuns.escalate(
+      repo.full_name,
+      { run: started.run.id, reason: "help" },
+      "00000000-0000-4000-8000-000000000000",
+    ),
+  ).toThrowError(/launched Execute session/);
+}, 20_000);
+
 test("intent-based run lifecycle rejects invalid transitions and caps rework at 3", async () => {
   const { repo } = freshRepo("me/workflow-lifecycle");
   const issue = S.createIssue(

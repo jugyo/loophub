@@ -45,6 +45,18 @@ test("buildNotifyText tells a workflow parent to observe a registered review", (
   expect(text).not.toContain("request_changes");
 });
 
+test("buildNotifyText tells a workflow parent to inspect an escalation event", () => {
+  const text = buildNotifyText({
+    eventType: "workflow_run.escalated",
+    repoFullName: "me/proj",
+    eventId: 47,
+    number: 7,
+  });
+  expect(text).toContain("Execute child requested human guidance");
+  expect(text).toContain("Read this event from domain state");
+  expect(text).not.toContain("reason=");
+});
+
 test("buildNotifyText folds control characters and whitespace into single tokens", () => {
   // repo full_name is not charset-validated at creation; a hostile name must not be able to add
   // lines or extra tokens to what the worker types into a pane.

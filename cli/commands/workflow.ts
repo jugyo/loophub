@@ -728,6 +728,29 @@ async function turnDone(): Promise<void> {
     );
 }
 
+async function escalate(): Promise<void> {
+  if (!flags.reason) fail("--reason is required");
+  const reason = flags.reason;
+  const runId = positiveInt(
+    flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
+    "--run or LOOPHUB_WORKFLOW_RUN",
+  );
+  const repo =
+    flags.repo ?? process.env.LOOPHUB_WORKFLOW_REPO ?? (await resolveRepo());
+  const result = await runOp(async () =>
+    (await svc()).workflowRuns.escalate(
+      repo,
+      { run: runId, reason },
+      await writeSession(),
+    ),
+  );
+  if (flags.json) out(result);
+  else
+    console.log(
+      `declared escalation for Workflow run #${result.run} (event #${result.event_id})`,
+    );
+}
+
 export async function run(): Promise<void> {
   const s = await svc();
   if (sub === "list") {
@@ -789,6 +812,8 @@ export async function run(): Promise<void> {
     await runLifecycle();
   } else if (sub === "turn") {
     await turnDone();
+  } else if (sub === "escalate") {
+    await escalate();
   } else if (sub === "step") {
     if (rest[0] === "input") await stepInput();
     else if (rest[0] === "status") await stepStatus();

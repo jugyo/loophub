@@ -324,6 +324,24 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
     REPO_PATH,
   );
   expect(cwd.exitCode, cwd.stderr).toBe(0);
+
+  const escalated = run(
+    [
+      "workflow",
+      "escalate",
+      "--repo",
+      REPO,
+      "--run",
+      String(runResult.run.id),
+      "--reason",
+      "See issue comment",
+    ],
+    sessionEnv,
+  );
+  expect(escalated.exitCode, escalated.stderr).toBe(0);
+  expect(escalated.stdout).toContain(
+    `declared escalation for Workflow run #${runResult.run.id}`,
+  );
 });
 
 afterAll(() => {

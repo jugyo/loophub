@@ -30,6 +30,15 @@ look. That line is **only a signal to observe** — it does not tell you the tur
 such notification, run `lh workflow step status` and decide from what you observe. A turn-done with no
 HEAD advance is not a completion: do not launch Verify.
 
+Also subscribe to Execute escalation declarations:
+
+`lh subscribe --repo '<repo>' --event workflow_run.escalated`
+
+When this signal arrives, read the event named by `event_id` from domain state with
+`lh events --repo '<repo>' --since <event_id-1> --order asc --json`; confirm its run id and use its
+`reason` as the short `await-human` reason. The notification deliberately does not interpolate the
+child-provided reason into the parent pane.
+
 Also subscribe to workflow review registrations:
 
 `lh subscribe --repo '<repo>' --event workflow_run.review_submitted`
@@ -127,6 +136,9 @@ Human handoff (escalation only):
 |---|---|---|
 | start | run started | subscribe, then launch Execute |
 | Execute | execute complete (HEAD ahead of base, advanced past the last review) | `lh workflow run advance-to-verify`, then launch Verify |
+| Execute | escalation event from the active Execute child | Read the event reason, then `await-human`; do not progress automatically |
+| Human wait | Execute declares turn done and HEAD advanced past the last review | `resume --step execute`, then follow the ordinary Execute-complete transition to fresh Verify |
+| Human wait | Execute declares turn done without a HEAD advance | Keep the hold and wait for more work or an explicit human `resume` / `stop` |
 | Verify | verify complete, latest review `fresh` + `pass` | Keep the run running and wait for the next human instruction, turn-done notification, or explicit stop |
 | Verified + continuing | human requests additional work | Deliver the instruction to Execute (see Continuing after a pass); do not call `run resume` |
 | Verified + continuing | HEAD advances past the passing review and Execute declares turn done | Launch a fresh Verify child for the new HEAD (the run already remains at Verify) |
@@ -215,14 +227,20 @@ On escalation, do all three:
 
 Then stop all automatic progression: do not launch steps, inject instructions, or change rework count.
 Stay in this session and wait for an explicit human instruction. Never resume on your own — a timer, a
-new event, or a child finishing is not an instruction.
+new unrelated event, or a child merely finishing is not an instruction.
+
+An Execute child can initiate the same hold by declaring `lh workflow escalate`. On that
+`workflow_run.escalated` signal, read the event reason from domain state, notify the human if the
+Execute child has not already left an adequate issue comment, and call `await-human`. Do not duplicate
+an adequate existing comment. This event is a timing signal and does not itself mutate the run.
 
 Note: if this run makes no progress at all, the worker's stall sweep will independently hold it
 needs-human and notify a human. That is a safety net, not a substitute for your own escalation.
 
 ## Resuming after a human instruction
 
-When a human explicitly tells you (in this session) to continue:
+When a human explicitly tells you (in this session) to continue, use the existing explicit resume
+path:
 
 1. Re-check the current state: `lh workflow step status <run> --repo '<repo>' --json` (HEAD and reviews
    may have changed while you waited — a human may have pushed fixes).
@@ -234,6 +252,13 @@ When a human explicitly tells you (in this session) to continue:
    closed.
 
 If the human instead cancels the run, mark it stopped: `lh workflow run stop --repo '<repo>' --run <run>`.
+
+There is also one implicit release path for child-initiated escalation: while the run is held, a
+turn-done signal from Execute tells you to re-observe step status. If HEAD advanced past the latest
+review, treat that committed work as evidence that the blocker was resolved: call
+`lh workflow run resume --repo '<repo>' --run <run> --step execute`, then immediately apply the normal
+Execute-complete transition and launch a fresh Verify. No separate human resume command is required.
+If HEAD did not advance, retain the hold.
 
 ## Prohibited actions
 

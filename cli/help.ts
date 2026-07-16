@@ -171,6 +171,10 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Declare an Execute turn done (payload-less).",
   },
   {
+    path: ["workflow", "escalate"],
+    description: "Declare that an Execute child needs human guidance.",
+  },
+  {
     path: ["workflow", "step"],
     description: "Preview a workflow step input or observe step status.",
   },

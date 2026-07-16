@@ -18,6 +18,10 @@ test("Execute pulls domain state itself and declares turn done", () => {
   expect(execute).toContain(
     "lh workflow turn done --repo '<repo>' --run <run>",
   );
+  expect(execute).toContain(
+    "lh workflow escalate --repo '<repo>' --run <run> --reason <short pointer>",
+  );
+  expect(execute).toContain("write the concrete question in an");
   // The contract retires the artifact / step-output path by name.
   expect(execute).toContain(
     "There is no execution-report artifact and no `lh workflow step output`",
@@ -107,6 +111,9 @@ test("parent subscribes its pane to workflow observation and GitHub feedback eve
     "lh subscribe --repo '<repo>' --event workflow_run.review_submitted",
   );
   expect(contract).toContain(
+    "lh subscribe --repo '<repo>' --event workflow_run.escalated",
+  );
+  expect(contract).toContain(
     "lh subscribe --repo '<repo>' --event pull_request.github_feedback",
   );
   expect(contract).toContain(
@@ -168,12 +175,14 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
 
   for (const event of [
     "workflow_run.turn_done",
+    "workflow_run.escalated",
     "workflow_run.review_submitted",
     "pull_request.github_feedback",
   ]) {
     expect(design).toContain(event);
   }
   expect(design).toContain(
-    "3 種類の通知はいずれも真実を代替しない timing signal",
+    "4 種類の通知はいずれも真実を代替しない timing signal",
   );
+  expect(design).toContain("`resume --step execute`");
 });

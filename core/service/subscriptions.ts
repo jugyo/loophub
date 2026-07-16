@@ -134,6 +134,7 @@ export const subscriptions = {
     if (
       row.type === "pull_request.github_feedback" ||
       row.type === "workflow_run.turn_done" ||
+      row.type === "workflow_run.escalated" ||
       row.type === "workflow_run.review_submitted" ||
       row.type === "workflow_run.usage_updated"
     ) {

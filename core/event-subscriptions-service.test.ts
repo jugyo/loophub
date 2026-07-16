@@ -291,6 +291,46 @@ test("workflow review notification reaches only the owning run parent", async ()
   expect(delivered[0]).toContain("Observe the run state");
 });
 
+test("workflow escalation notification reaches only the owning run parent", async () => {
+  const repo = S.getRepo("me", "subs")!;
+  for (const [sessionId, pane] of [
+    ["escalation-parent", "w8:p8"],
+    ["other-escalation-parent", "w8:p9"],
+  ] as const) {
+    svc.subscriptions.add({
+      repo: "me/subs",
+      eventType: "workflow_run.escalated",
+      herdrSession: sessionId,
+      herdrPaneId: pane,
+      sessionId,
+    });
+  }
+  const event = S.emitEvent(
+    repo.id,
+    "workflow_run.escalated",
+    "executor #83-1",
+    {
+      id: 83,
+      number: 1402,
+      parent_session_id: "escalation-parent",
+      reason: "untrusted\npane text",
+    },
+  );
+  const delivered: string[] = [];
+  const result = await svc.subscriptions.notifyForEvent(event, {
+    inject: async (sub, text) => {
+      delivered.push(`${sub.session_id}:${text}`);
+    },
+  });
+
+  expect(result.notified).toBe(1);
+  expect(delivered).toHaveLength(1);
+  expect(delivered[0]).toContain("escalation-parent:");
+  expect(delivered[0]).toContain("requested human guidance");
+  expect(delivered[0]).not.toContain("untrusted");
+  expect(delivered[0]).not.toContain("\n");
+});
+
 test("notifyForEvent never delivers the audit namespace (no self-loop)", async () => {
   const repo = S.getRepo("me", "subs")!;
   // add() rejects this namespace, so plant the row through the store directly — delivery must

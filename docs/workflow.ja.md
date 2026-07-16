@@ -153,14 +153,17 @@ Workflow 専用の freshness / dirty / checkpoint 状態は追加しない。
 
 ## 6. 完了宣言（turn done）
 
-Execute は `lh workflow turn done`（payload なし）でターン完了を宣言する。engine はこれを
-`workflow_run.turn_done` event として記録する。Verify が review を登録すると
+Execute は `lh workflow turn done`（payload なし）でターン完了を宣言する。情報不足や人間の判断が必要な
+場合は、具体的な質問を issue comment に書き、`lh workflow escalate --reason <short pointer>` を宣言する。
+reason は `await-human` と同じ inline text（必須、最大 500 文字）であり、長い質問は comment を指す短い
+文言にする。engine はこれらをそれぞれ `workflow_run.turn_done`、`workflow_run.escalated` event として
+記録するが、escalate 自体は run lifecycle を変更しない。Verify が review を登録すると
 `workflow_run.review_submitted`、GitHub PR feedback が同期されると `pull_request.github_feedback` が記録
 される。worker の generic event pub/sub（`lh subscribe` + `notifyForEvent`、#1232）はこれらを親 pane へ
 配達する。run-scoped event は payload の `parent_session_id` でその run の親に絞り込む。子の contract に
 親の pane id や topology は現れない。
 
-3 種類の通知はいずれも真実を代替しない timing signal である。親は通知後に
+4 種類の通知はいずれも真実を代替しない timing signal である。親は通知後に
 `lh workflow step status`、PR review、または参照された GitHub API resource から domain state を再観測して
 判断する。review の verdict や feedback 本文を通知 payload の複製で判断しない。idle 検知は完了推定に
 一切使わない。
@@ -171,6 +174,9 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 |---|---|---|
 | start | run started | subscribe → Execute を launch |
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
+| Execute | `workflow_run.escalated` を受領 | event の reason を再取得し、`await-human` で hold |
+| Human wait | Execute の turn done 後、HEAD が最新 review より前進 | `resume --step execute` → 通常の Execute 完了遷移 → fresh Verify |
+| Human wait | Execute の turn done 後、HEAD が不変 | hold を維持し、追加作業または明示的 resume / stop を待つ |
 | Verify | 最新 review が fresh + pass | run を `running` のまま維持し、追加指示・turn-done・明示的 stop を待つ |
 | Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、既存 Execute pane へ注入する。pane が閉じていれば `--note` 付きで Execute を launch |
 | Verified + continuing | Execute の turn done 後、HEAD が passing review より前進 | run は Verify のまま、現在の HEAD に対する Verify を fresh launch |
@@ -209,6 +215,7 @@ lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note
 # lifecycle command。complete は実装上利用可能だが、現在の親の通常フローでは使わない
 lh workflow run advance-to-verify|complete|request-rework|await-human|resume|stop --run <id>
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
+lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測
 ```

@@ -1601,6 +1601,13 @@ export function workflowRunHistoryEventJSON(
     label = "Turn done declared";
     description =
       "Execute declared its turn done. The parent observes HEAD and review state before any transition.";
+  } else if (row.type === "workflow_run.escalated") {
+    label = "Human guidance requested";
+    const reason =
+      typeof payload.reason === "string"
+        ? payload.reason
+        : "No reason recorded.";
+    description = `Execute requested human guidance: ${reason}`;
   }
 
   return {
