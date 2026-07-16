@@ -620,10 +620,30 @@ async function runLifecycle(): Promise<void> {
     if (result.run.needs_human_reason !== null) {
       console.log(`needs_human\t${display(result.run.needs_human_reason)}`);
     }
-    if ("action" in result && "cost_usd" in result && "limit_usd" in result) {
+    if (
+      "action" in result &&
+      "reason" in result &&
+      "cost_usd" in result &&
+      "limit_usd" in result &&
+      "unobserved_session_ids" in result &&
+      Array.isArray(result.unobserved_session_ids) &&
+      "unknown_cost_session_ids" in result &&
+      Array.isArray(result.unknown_cost_session_ids)
+    ) {
       console.log(`cost_action\t${result.action}`);
+      console.log(`cost_reason\t${result.reason}`);
       console.log(`cost_usd\t${display(String(result.cost_usd))}`);
       console.log(`limit_usd\t${result.limit_usd}`);
+      if (result.unobserved_session_ids.length > 0) {
+        console.log(
+          `unobserved_sessions\t${result.unobserved_session_ids.join(",")}`,
+        );
+      }
+      if (result.unknown_cost_session_ids.length > 0) {
+        console.log(
+          `unknown_cost_sessions\t${result.unknown_cost_session_ids.join(",")}`,
+        );
+      }
     }
   }
 }

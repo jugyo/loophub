@@ -117,6 +117,8 @@ export type WorkflowRunCostLimitResult = WorkflowRunUpdateResult & {
   cost_usd: number | null;
   limit_usd: number;
   stopped_session_id: string | null;
+  unobserved_session_ids: string[];
+  unknown_cost_session_ids: string[];
 };
 
 export type WorkflowLaunchStepResult = {
@@ -1044,18 +1046,6 @@ export const workflowRuns = {
   ): Promise<WorkflowRunCostLimitResult> {
     const { repo, run } = lifecycleRun(name, input.run, sessionId);
     const configuredLimit = devCostLimitUsd();
-    if (S.hasWorkflowRunCostStopEvent(repo.id, run.id)) {
-      return {
-        run: runJSON(run),
-        action: "skipped",
-        reason: "already_stopped",
-        cost_usd: null,
-        limit_usd: configuredLimit,
-        stopped_session_id: null,
-      };
-    }
-    assertAutomaticProgressAllowed(run);
-    const currentStep = workflowStep(run.current_step);
     const executeSessions = workflowStepSessionIds(
       run.step_sessions_json,
       "execute",
@@ -1064,16 +1054,31 @@ export const workflowRuns = {
       run.step_sessions_json,
       "verify",
     );
-    const sessionSteps = new Map<string, WorkflowStep>([
-      ...executeSessions.map((id) => [id, "execute"] as const),
-      ...verifySessions.map((id) => [id, "verify"] as const),
-    ]);
     const sessionIds = [
       ...(run.parent_session_id ? [run.parent_session_id] : []),
       ...executeSessions,
       ...verifySessions,
     ];
-    const costUsd = S.sessionUsageCostForSessions(sessionIds);
+    const cost = S.sessionUsageCostSummaryForSessions(sessionIds);
+    if (S.hasWorkflowRunCostStopEvent(repo.id, run.id)) {
+      return {
+        run: runJSON(run),
+        action: "skipped",
+        reason: "already_stopped",
+        cost_usd: cost.cost_usd,
+        limit_usd: configuredLimit,
+        stopped_session_id: null,
+        unobserved_session_ids: cost.unobserved_session_ids,
+        unknown_cost_session_ids: cost.unknown_cost_session_ids,
+      };
+    }
+    assertAutomaticProgressAllowed(run);
+    const currentStep = workflowStep(run.current_step);
+    const sessionSteps = new Map<string, WorkflowStep>([
+      ...executeSessions.map((id) => [id, "execute"] as const),
+      ...verifySessions.map((id) => [id, "verify"] as const),
+    ]);
+    const costUsd = cost.cost_usd;
     if (costUsd === null) {
       return {
         run: runJSON(run),
@@ -1082,6 +1087,8 @@ export const workflowRuns = {
         cost_usd: null,
         limit_usd: configuredLimit,
         stopped_session_id: null,
+        unobserved_session_ids: cost.unobserved_session_ids,
+        unknown_cost_session_ids: cost.unknown_cost_session_ids,
       };
     }
     if (costUsd <= configuredLimit) {
@@ -1092,6 +1099,8 @@ export const workflowRuns = {
         cost_usd: costUsd,
         limit_usd: configuredLimit,
         stopped_session_id: null,
+        unobserved_session_ids: cost.unobserved_session_ids,
+        unknown_cost_session_ids: cost.unknown_cost_session_ids,
       };
     }
     if (
@@ -1167,6 +1176,8 @@ export const workflowRuns = {
         cost_usd: costUsd,
         limit_usd: configuredLimit,
         stopped_session_id: null,
+        unobserved_session_ids: cost.unobserved_session_ids,
+        unknown_cost_session_ids: cost.unknown_cost_session_ids,
       };
     }
     S.emitEvent(repo.id, "workflow_run.updated", actorFor(sessionId), {
@@ -1227,6 +1238,8 @@ export const workflowRuns = {
       cost_usd: costUsd,
       limit_usd: configuredLimit,
       stopped_session_id: target.sessionId,
+      unobserved_session_ids: cost.unobserved_session_ids,
+      unknown_cost_session_ids: cost.unknown_cost_session_ids,
     };
   },
 

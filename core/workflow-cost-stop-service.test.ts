@@ -13,6 +13,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
+let D: typeof import("./db.ts");
 let runSequence = 0;
 
 beforeAll(async () => {
@@ -22,6 +23,7 @@ beforeAll(async () => {
   );
   svc = await import("./service.ts");
   S = await import("./store.ts");
+  D = await import("./db.ts");
 });
 
 afterAll(() => {
@@ -203,6 +205,7 @@ describe.each([
     expect(second).toMatchObject({
       action: "skipped",
       reason: "already_stopped",
+      cost_usd: 11,
     });
     expect(
       S.listEvents(0, repo.id, 100).filter(
@@ -302,9 +305,52 @@ test("parent usage stops only the current Verify child when an older Execute is 
   });
 });
 
-test("does not stop when any recorded run session has unknown cost", async () => {
-  const { repo, run, parent, verify } = setupRun("execute");
+test("stops from recorded costs when another run session has no usage yet", async () => {
+  const { repo, pr, run, parent, execute, verify } = setupRun("execute");
   S.resetSessionUsage(verify);
+  S.upsertSessionUsage(parent, {
+    model: "test",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 18,
+  });
+  S.appendWorkflowRunStepSession(run.id, "execute", parent);
+  installHerdr({
+    result: {
+      agents: [
+        {
+          name: S.getAgentSession(execute)!.name,
+          agent_status: "working",
+          pane_id: "w6:p2",
+          foreground_cwd: `${HOME}/worktrees/${repo.full_name}/pr-${pr.number}`,
+        },
+      ],
+    },
+  });
+
+  const result = await svc.workflowRuns.enforceCostLimit(
+    repo.full_name,
+    { run: run.id, usageSession: execute },
+    parent,
+  );
+
+  expect(result).toMatchObject({
+    action: "stopped",
+    reason: "over_limit",
+    cost_usd: 21,
+    unobserved_session_ids: [verify],
+    unknown_cost_session_ids: [],
+    run: { status: "stopped" },
+  });
+});
+
+test("does not stop and identifies a session with explicitly unknown cost", async () => {
+  const { repo, run, parent, verify } = setupRun("execute");
+  D.db.run(`UPDATE session_usage SET cost_usd = NULL WHERE session_id = ?`, [
+    verify,
+  ]);
 
   const result = await svc.workflowRuns.enforceCostLimit(
     repo.full_name,
@@ -316,6 +362,8 @@ test("does not stop when any recorded run session has unknown cost", async () =>
     action: "skipped",
     reason: "unknown_cost",
     cost_usd: null,
+    unobserved_session_ids: [],
+    unknown_cost_session_ids: [verify],
     run: { status: "running" },
   });
   expect(

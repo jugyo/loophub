@@ -292,22 +292,42 @@ export function sessionUsageCostForSession(sessionId: string): number | null {
   return row.cost_usd_sum ?? 0;
 }
 
+export interface SessionUsageCostSummary {
+  cost_usd: number | null;
+  unobserved_session_ids: string[];
+  unknown_cost_session_ids: string[];
+}
+
 // Cumulative top-level cost for a set of sessions. Session ids are de-duplicated before querying
-// because a Workflow parent can also be linked to the PR and step histories are append-only. Any
-// missing or unknown session cost makes the total indeterminate, so callers never stop on a partial
-// sum.
-export function sessionUsageCostForSessions(
+// because a Workflow parent can also appear in step history. A session with no usage yet contributes
+// nothing: unlike an explicit NULL cost row, it does not make already-recorded costs indeterminate.
+// The diagnostic lists let callers explain why no decision was possible.
+export function sessionUsageCostSummaryForSessions(
   sessionIds: readonly string[],
-): number | null {
+): SessionUsageCostSummary {
   const unique = [...new Set(sessionIds)];
-  if (unique.length === 0) return null;
   let total = 0;
+  let observed = 0;
+  const unobservedSessionIds: string[] = [];
+  const unknownCostSessionIds: string[] = [];
   for (const sessionId of unique) {
-    const cost = sessionUsageCostForSession(sessionId);
-    if (cost === null) return null;
-    total += cost;
+    const rows = listSessionUsage(sessionId);
+    if (rows.length === 0) {
+      unobservedSessionIds.push(sessionId);
+      continue;
+    }
+    observed++;
+    if (rows.some((row) => row.cost_usd === null)) {
+      unknownCostSessionIds.push(sessionId);
+      continue;
+    }
+    total += rows.reduce((sum, row) => sum + (row.cost_usd ?? 0), 0);
   }
-  return total;
+  return {
+    cost_usd: observed === 0 || unknownCostSessionIds.length > 0 ? null : total,
+    unobserved_session_ids: unobservedSessionIds,
+    unknown_cost_session_ids: unknownCostSessionIds,
+  };
 }
 
 export function latestSessionUsageAt(sessionId: string): string | null {
