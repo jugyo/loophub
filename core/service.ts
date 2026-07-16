@@ -37,6 +37,7 @@ export {
 } from "./service/retros.ts";
 export { reviews } from "./service/reviews.ts";
 export { scheduledTasks } from "./service/scheduled-tasks.ts";
+export { search } from "./service/search.ts";
 export { sessions } from "./service/sessions.ts";
 export { settings } from "./service/settings.ts";
 export {

@@ -796,6 +796,49 @@ function tableExists(table: string): boolean {
   );
 }
 
+// Persistent Issue/PR substring index (#1400). node:sqlite's bundled SQLite does not include FTS5,
+// so store one-, two-, and three-character grams in a normal indexed table. Search uses the longest
+// available grams to narrow candidates, then SQLite verifies the exact substring against issues.
+if (!tableExists("issue_search_grams")) {
+  try {
+    db.exec(`
+      BEGIN IMMEDIATE;
+      CREATE TABLE issue_search_grams (
+        issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        gram TEXT NOT NULL,
+        PRIMARY KEY (issue_id, gram)
+      );
+      CREATE INDEX idx_issue_search_grams_gram_issue
+        ON issue_search_grams(gram, issue_id);
+      WITH RECURSIVE
+        source(issue_id, text) AS (
+          SELECT id, lower(title) FROM issues
+          UNION ALL
+          SELECT id, lower(body) FROM issues
+        ),
+        grams(issue_id, text, position, length) AS (
+          SELECT issue_id, text, 1, 1 FROM source
+          UNION ALL
+          SELECT issue_id, text,
+                 CASE WHEN length = 3 THEN position + 1 ELSE position END,
+                 CASE WHEN length = 3 THEN 1 ELSE length + 1 END
+          FROM grams
+          WHERE position + CASE WHEN length = 3 THEN 1 ELSE 0 END <= length(text)
+        )
+      INSERT OR IGNORE INTO issue_search_grams(issue_id, gram)
+      SELECT issue_id, substr(text, position, length)
+      FROM grams
+      WHERE position + length - 1 <= length(text);
+      COMMIT;
+    `);
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {}
+    throw error;
+  }
+}
+
 // Migrate the New Issue-specific registry (#670) into the generic pane/resource model. Keep this
 // transaction strict: silently dropping one legacy association would be worse than making an
 // operator address a visible startup error. Fresh databases never create the retired table.

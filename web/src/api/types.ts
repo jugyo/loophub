@@ -38,6 +38,7 @@ import type {
   ReviewWire,
   ScheduledTaskRunWire,
   ScheduledTaskWire,
+  SearchResultWire,
   SessionLinkedTargetWire,
   SessionSubagentUsageWire,
   SessionUsageWire,
@@ -60,6 +61,8 @@ export type WebConfig = WebConfigWire;
 export type Label = LabelWire;
 
 export type UserRef = UserWire;
+
+export type SearchResult = SearchResultWire;
 
 /**
  * Summary of the pull request linked to an issue. The base fields (including the #783 agent-cost

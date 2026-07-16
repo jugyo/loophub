@@ -8,6 +8,7 @@ import {
   listHerdrPanesForResource,
   registerHerdrPane,
 } from "./herdr-panes.ts";
+import { indexIssueSearch } from "./search.ts";
 
 export const ISSUE_CREATE_CLAIM_PURPOSE = "issue-create-lifecycle";
 export const ISSUE_FILED_FROM_RELATIONSHIP = "filed-from";
@@ -73,22 +74,31 @@ export function createIssue(
 ): IssueRow {
   const number = nextNumber(repoId);
   const t = now();
-  return db
-    .query(
-      `INSERT INTO issues (repo_id, number, kind, state, title, body, target_branch, author, created_at, updated_at)
-       VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?) RETURNING *`,
-    )
-    .get(
-      repoId,
-      number,
-      kind,
-      title,
-      body,
-      targetBranch ?? null,
-      author,
-      t,
-      t,
-    ) as IssueRow;
+  db.run("BEGIN IMMEDIATE");
+  try {
+    const issue = db
+      .query(
+        `INSERT INTO issues (repo_id, number, kind, state, title, body, target_branch, author, created_at, updated_at)
+         VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?) RETURNING *`,
+      )
+      .get(
+        repoId,
+        number,
+        kind,
+        title,
+        body,
+        targetBranch ?? null,
+        author,
+        t,
+        t,
+      ) as IssueRow;
+    indexIssueSearch(issue);
+    db.run("COMMIT");
+    return issue;
+  } catch (error) {
+    db.run("ROLLBACK");
+    throw error;
+  }
 }
 
 export function upsertIssueHerdrPane(input: {
@@ -204,7 +214,19 @@ export function updateIssue(
   sets.push("updated_at = ?");
   params.push(now());
   params.push(id);
-  db.run(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?`, params);
+  const updatesSearch = fields.title !== undefined || fields.body !== undefined;
+  if (updatesSearch) db.run("BEGIN IMMEDIATE");
+  try {
+    db.run(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?`, params);
+    if (updatesSearch) {
+      const issue = getIssueById(id);
+      if (issue) indexIssueSearch(issue);
+      db.run("COMMIT");
+    }
+  } catch (error) {
+    if (updatesSearch) db.run("ROLLBACK");
+    throw error;
+  }
 }
 
 export function getIssueById(id: number): IssueRow | null {

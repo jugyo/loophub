@@ -113,6 +113,22 @@ export interface UserWire {
   login: string;
 }
 
+export interface SearchResultWire {
+  kind: "issue" | "pull";
+  number: number;
+  title: string;
+  state: "open" | "closed";
+}
+
+export function searchResultJSON(row: S.SearchResultRow): SearchResultWire {
+  return {
+    kind: row.kind,
+    number: row.number,
+    title: row.title,
+    state: row.state,
+  };
+}
+
 export interface SessionUsageWire {
   session_id: string;
   model: string;
