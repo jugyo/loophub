@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Bot, Check, Terminal, TriangleAlert } from "lucide-react";
+import { ArrowRight, Check, Terminal, TriangleAlert } from "lucide-react";
 import type { LinkedPull } from "@/api/types";
+import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { DiffStat } from "@/components/diff-stat";
 import { HerdrAgentInput } from "@/components/herdr-agent-input";
 import {
@@ -325,19 +326,11 @@ export function LinkedPullSummaryRow({
           dimInactive && isDone && "opacity-45",
         )}
       >
-        <span
-          className={cn(
-            "relative flex size-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground",
-            showWorkingEffect &&
-              "animate-[linked-pull-pulse_2.4s_ease-out_infinite] bg-indigo-100 text-indigo-700 ring-1 ring-indigo-500/70 dark:bg-sky-950 dark:text-sky-300 dark:ring-sky-300/80",
-            isIdle && "opacity-45",
-          )}
-        >
-          <Bot className="size-3" aria-hidden="true" />
-          {needsAttention ? (
-            <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full border-[1.5px] border-background bg-destructive" />
-          ) : null}
-        </span>
+        <AgentBotIcon
+          working={showWorkingEffect}
+          needsAttention={needsAttention}
+          inactive={isIdle}
+        />
         <span className="min-w-0 shrink truncate" title={runtimeMetadata}>
           {runtimeMetadata}
         </span>

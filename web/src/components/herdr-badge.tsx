@@ -52,16 +52,3 @@ export function isPullHerdrWorking(
   }
   return false;
 }
-
-export function herdrWorkspaceBadgeIconClass(
-  status?: string,
-): "animate-bot-bounce" | "animate-bot-wobble" | "" {
-  switch (status) {
-    case "working":
-      return "animate-bot-wobble";
-    case "blocked":
-      return "animate-bot-bounce";
-    default:
-      return "";
-  }
-}

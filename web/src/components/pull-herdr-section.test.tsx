@@ -163,6 +163,54 @@ describe("PullHerdrSection", () => {
     );
   });
 
+  it("matches the linked PR bot effects for working, blocked, and inactive agents", () => {
+    herdrSessions.value = {
+      ...running,
+      repos: [
+        {
+          ...running.repos[0],
+          agents: [
+            running.repos[0].agents[0],
+            {
+              ...running.repos[0].agents[1],
+              status: "blocked",
+            },
+            {
+              ...running.repos[0].agents[2],
+              status: "done",
+            },
+          ],
+        },
+      ],
+    };
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+
+    const workingIcon = screen
+      .getByText("orchestrator #7")
+      .parentElement?.querySelector("[data-agent-bot-icon]");
+    expect(workingIcon?.className).toContain(
+      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
+    );
+    expect(workingIcon?.className).toContain("bg-indigo-100");
+    expect(workingIcon?.className).toContain("dark:bg-sky-950");
+
+    const blockedIcon = screen
+      .getByText("executor #7-1")
+      .parentElement?.querySelector("[data-agent-bot-icon]");
+    expect(blockedIcon?.className).not.toContain("opacity-45");
+    expect(
+      blockedIcon?.querySelector("[data-agent-bot-attention]"),
+    ).toBeTruthy();
+
+    const inactiveIcon = screen
+      .getByText("verifier #7-2")
+      .parentElement?.querySelector("[data-agent-bot-icon]");
+    expect(inactiveIcon?.className).toContain("opacity-45");
+    expect(inactiveIcon?.className).not.toContain(
+      "animate-[linked-pull-pulse_2.4s_ease-out_infinite]",
+    );
+  });
+
   it("opens pane, agent, session, usage, and cost details on hover", () => {
     vi.useFakeTimers();
     herdrSessions.value = running;

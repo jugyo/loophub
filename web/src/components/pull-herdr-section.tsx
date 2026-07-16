@@ -2,9 +2,9 @@
 // with Workflow parent/child metadata and persisted LoopHub session usage. Pane rows stay compact;
 // hover or keyboard focus reveals the full metadata and the existing focus action.
 
-import { Bot, Loader2, Terminal } from "lucide-react";
+import { Loader2, Terminal } from "lucide-react";
 import type { HerdrAgent } from "@/api/types";
-import { herdrWorkspaceBadgeIconClass } from "@/components/herdr-badge";
+import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { formatCost, formatTokenCount } from "@/lib/session-usage";
@@ -156,11 +156,10 @@ function AgentRow({
         tabIndex={0}
         className="flex items-center gap-2 rounded px-2 py-2 outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Bot
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground",
-            herdrWorkspaceBadgeIconClass(agent.status),
-          )}
+        <AgentBotIcon
+          working={agent.status === "working"}
+          needsAttention={agent.status === "blocked"}
+          inactive={agent.status === "idle" || agent.status === "done"}
         />
         <span
           className="min-w-0 flex-1 truncate font-medium"
