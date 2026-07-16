@@ -1,20 +1,24 @@
 import { createRoute } from "@tanstack/react-router";
 import { IssueList } from "@/components/issue-list";
+import { RepositorySearch } from "@/components/repository-search";
 import { usePageTitle } from "@/lib/page-title";
 import { rootRoute } from "./root";
 
-function RepoPage() {
+export function RepoPage() {
   const { owner, repo } = repoRoute.useParams();
   const { labels, state } = repoRoute.useSearch();
   usePageTitle([`${owner}/${repo}`, "Issues"]);
   return (
-    <IssueList
-      owner={owner}
-      repo={repo}
-      labelsParam={labels}
-      stateParam={state}
-      labelFilterMode="select"
-    />
+    <div className="space-y-4">
+      <RepositorySearch owner={owner} repo={repo} />
+      <IssueList
+        owner={owner}
+        repo={repo}
+        labelsParam={labels}
+        stateParam={state}
+        labelFilterMode="select"
+      />
+    </div>
   );
 }
 

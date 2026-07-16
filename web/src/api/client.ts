@@ -33,6 +33,7 @@ import type {
   ScheduledTask,
   ScheduledTaskRun,
   ScheduledTaskWithRuns,
+  SearchResult,
   Stats,
   TerminalLaunchResult,
   WebConfig,
@@ -581,6 +582,17 @@ export function listIssues(owner: string, repo: string, query = "") {
       sort: sp.get("sort") ?? undefined,
     }),
   );
+}
+
+export function searchIssuesAndPulls(
+  owner: string,
+  repo: string,
+  query: string,
+) {
+  return rpc<SearchResult[]>("search/query", {
+    repo: full(owner, repo),
+    query,
+  });
 }
 
 export function listWorkspaces(owner: string, repo: string) {

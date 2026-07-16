@@ -10,6 +10,7 @@ import {
   listRepos,
   listWorkflows,
   rpc,
+  searchIssuesAndPulls,
   updateWorkflow,
 } from "./client";
 
@@ -134,6 +135,18 @@ describe("typed methods translate to contract params", () => {
         path: "/work/app",
         name: "me/app",
         session_id: "session-1",
+      },
+    });
+  });
+
+  it("searchIssuesAndPulls sends the repository and query without fetching lists", async () => {
+    const fetchMock = mockRpc([]);
+    await searchIssuesAndPulls("me", "proj", "needle");
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "search/query",
+      params: {
+        repo: "me/proj",
+        query: "needle",
       },
     });
   });

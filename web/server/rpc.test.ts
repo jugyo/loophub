@@ -94,6 +94,47 @@ test("a known method routes to the service and returns a result", async () => {
   expect(got.result.title).toBe("hello");
 });
 
+test("search/query routes a repository-scoped query to the search service", async () => {
+  const query = vi.spyOn(svc.search, "query").mockReturnValue([
+    {
+      kind: "issue",
+      number: 1,
+      title: "hello",
+      state: "open",
+    },
+    {
+      kind: "pull",
+      number: 2,
+      title: "hello pull",
+      state: "closed",
+    },
+  ]);
+  try {
+    const searched: any = await call("search/query", {
+      repo: "me/proj",
+      query: "hello",
+    });
+
+    expect(query).toHaveBeenCalledWith("me/proj", "hello");
+    expect(searched.result).toEqual([
+      {
+        kind: "issue",
+        number: 1,
+        title: "hello",
+        state: "open",
+      },
+      {
+        kind: "pull",
+        number: 2,
+        title: "hello pull",
+        state: "closed",
+      },
+    ]);
+  } finally {
+    query.mockRestore();
+  }
+});
+
 test("workspaces/list routes to the workspace service", async () => {
   const repo = svc.repos.getByFullName("me/proj");
   S.createWorkspace(repo!.id, "integration/stack");

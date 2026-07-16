@@ -581,6 +581,12 @@ export const methods: Record<string, MethodDef> = {
         sort: p.sort,
       }),
   },
+  "search/query": {
+    description: "Search issues and pull requests in a repository.",
+    params: params({ repo, query: strNonEmpty }, ["repo", "query"]),
+    result: anyArray,
+    handler: (p) => svc.search.query(p.repo, p.query),
+  },
   "workspaces/list": {
     description: "List registered workspaces in a repository.",
     params: params({ repo }, ["repo"]),
