@@ -9,6 +9,11 @@ export interface EventRow {
   created_at: string;
 }
 
+export interface EventFilters {
+  types?: string[];
+  runId?: number;
+}
+
 // ---- events ----
 // Persist an event for audit history and cursor-based consumers.
 export function emitEvent(
@@ -35,6 +40,7 @@ export function listEvents(
   limit: number,
   labels?: string[],
   order: "asc" | "desc" = "asc",
+  filters: EventFilters = {},
 ): EventRow[] {
   const clauses = ["id > ?"];
   const params: unknown[] = [since];
@@ -53,6 +59,22 @@ export function listEvents(
         AND l.name IN (${placeholders})
     )`);
     params.push(...labels);
+  }
+  if (filters.types && filters.types.length > 0) {
+    const typeClauses = filters.types.map((type) => {
+      if (type.includes(".")) {
+        params.push(type);
+        return "type = ?";
+      }
+      const escaped = type.replaceAll("\\", "\\\\").replaceAll("%", "\\%");
+      params.push(`${escaped.replaceAll("_", "\\_")}.%`);
+      return "type LIKE ? ESCAPE '\\'";
+    });
+    clauses.push(`(${typeClauses.join(" OR ")})`);
+  }
+  if (filters.runId !== undefined) {
+    clauses.push("json_extract(payload, '$.id') = ?");
+    params.push(filters.runId);
   }
   params.push(limit);
   const dir = order === "desc" ? "DESC" : "ASC";

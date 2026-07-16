@@ -18,6 +18,10 @@ export async function run(): Promise<void> {
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
+  const types = (flags.type || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
   const printEvent = (e: {
     id: number;
     type: string;
@@ -34,6 +38,8 @@ export async function run(): Promise<void> {
     since: Number(flags.since || 0),
     repo: flags.repo || null,
     labels,
+    types,
+    runId: flags.run ? Number(flags.run) : undefined,
     order: flags.order === "desc" ? "desc" : "asc",
   });
   if (flags.json) out(evs);

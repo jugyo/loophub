@@ -137,6 +137,8 @@ export function listEvents(
     since?: number;
     repo?: string;
     labels?: string[];
+    types?: string[];
+    runId?: number;
     order?: "asc" | "desc";
     limit?: number;
   } = {},

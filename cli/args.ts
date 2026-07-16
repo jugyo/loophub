@@ -47,6 +47,7 @@ export type Flags = {
   commit?: string;
   event?: string;
   topic?: string;
+  type?: string;
   since?: string;
   order?: string;
   add?: string;
@@ -136,6 +137,7 @@ const { values, positionals } = parseArgs({
     commit: { type: "string" },
     event: { type: "string" },
     topic: { type: "string" },
+    type: { type: "string" },
     since: { type: "string" },
     order: { type: "string" },
     add: { type: "string" },

@@ -8,6 +8,8 @@ export const events = {
       since?: number;
       repo?: string | null;
       labels?: string[];
+      types?: string[];
+      runId?: number;
       order?: "asc" | "desc";
       limit?: number;
     } = {},
@@ -27,7 +29,10 @@ export const events = {
       if (!r) return []; // unknown repo filter -> empty
       repoId = r.id;
     }
-    const rows = S.listEvents(since, repoId, limit, labels, order);
+    const rows = S.listEvents(since, repoId, limit, labels, order, {
+      types: opts.types,
+      runId: opts.runId,
+    });
     return rows.map((row) => {
       const repo =
         opts.repo ??
@@ -52,8 +57,13 @@ export const events = {
   // Single bounded page of raw event rows after `since` (repoId filter, or null = all repos),
   // ascending by id — a direct pass-through with no formatting. Used where a caller manages its
   // own paging/cursor loop, including lh-worker's event dispatch loop.
-  page(since: number, repoId: number | null, limit: number): S.EventRow[] {
-    return S.listEvents(since, repoId, limit);
+  page(
+    since: number,
+    repoId: number | null,
+    limit: number,
+    filters?: S.EventFilters,
+  ): S.EventRow[] {
+    return S.listEvents(since, repoId, limit, undefined, "asc", filters);
   },
 
   // Highest known event id, or 0 if none exist yet. Used to seed a tail/worker cursor at

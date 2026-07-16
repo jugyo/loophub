@@ -880,6 +880,37 @@ test("emitEvent persists and listEvents filters by since/order", () => {
   expect(desc[0].type).toBe("issue.closed");
 });
 
+test("listEvents filters by exact type, type namespace, and workflow run id", () => {
+  const repo = S.createRepo("me/event-filters", "/tmp/event-filters");
+  S.emitEvent(repo.id, "workflow_run.started", "me", { id: 11 });
+  S.emitEvent(repo.id, "workflow_run.updated", "me", { id: 12 });
+  S.emitEvent(repo.id, "workflow_step.started", "me", { id: 11 });
+  S.emitEvent(repo.id, "workflowXrun.started", "me", { id: 11 });
+  S.emitEvent(repo.id, "issue.opened", "me", { number: 11 });
+
+  const namespace = S.listEvents(0, repo.id, 100, undefined, "asc", {
+    types: ["workflow_run"],
+  });
+  expect(namespace.map((event) => event.type)).toEqual([
+    "workflow_run.started",
+    "workflow_run.updated",
+  ]);
+
+  const exactOrNamespace = S.listEvents(0, repo.id, 100, undefined, "asc", {
+    types: ["workflow_run.started", "workflow_step"],
+  });
+  expect(exactOrNamespace.map((event) => event.type)).toEqual([
+    "workflow_run.started",
+    "workflow_step.started",
+  ]);
+
+  const run = S.listEvents(0, repo.id, 100, undefined, "asc", {
+    types: ["workflow_run"],
+    runId: 11,
+  });
+  expect(run.map((event) => event.type)).toEqual(["workflow_run.started"]);
+});
+
 test("setRepoFavorite toggles favorite and stamps/clears favorited_at (#457)", () => {
   const repo = S.createRepo("me/fav", "/tmp/fav");
   expect(S.isFavorite(repo)).toBe(false);
