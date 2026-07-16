@@ -243,6 +243,27 @@ describe("PullDetail", () => {
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
+  it("shows a regular PR author in the header", async () => {
+    renderDetail();
+
+    expect(await screen.findByText(/@impl-bot · opened/)).toBeTruthy();
+  });
+
+  it("hides a Workflow-generated PR author without removing other header details", async () => {
+    renderDetail({
+      "pulls/get": () => ({
+        ...pull,
+        user: { login: "Workflow #153 ui2: PR detail" },
+      }),
+    });
+
+    await screen.findByText("ui2: PR detail");
+    expect(screen.queryByText(/@Workflow #153/)).toBeNull();
+    expect(screen.getByText(/opened .* · wants to merge/)).toBeTruthy();
+    expect(screen.getByText("issue-153")).toBeTruthy();
+    expect(screen.getByText("main")).toBeTruthy();
+  });
+
   // #863: a cost-stopped PR shows an "over budget" badge in the PR-detail header.
   it("shows a cost-stopped badge in the header when the PR was stopped", async () => {
     renderDetail({ "pulls/get": () => ({ ...pull, cost_stopped: true }) });

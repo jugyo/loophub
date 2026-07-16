@@ -435,6 +435,7 @@ function PullHeader({
 
   const badges = pullDetailBadges(pull);
   const linked = pull.linked_issue;
+  const isWorkflowAuthor = /^Workflow #\d+\b/.test(pull.user.login);
 
   const canAct = pull.state === "open" && !pull.merged;
   // A conflicting PR (mergeable_state === "conflict", i.e. mergeable === false) can never merge
@@ -477,8 +478,8 @@ function PullHeader({
       </div>
 
       <div className="text-sm text-muted-foreground">
-        @{pull.user.login} · opened {relativeTime(pull.created_at)} · wants to
-        merge{" "}
+        {isWorkflowAuthor ? null : <>@{pull.user.login} · </>}opened{" "}
+        {relativeTime(pull.created_at)} · wants to merge{" "}
         <span className="inline-flex items-center gap-1 align-middle">
           <code className="rounded bg-muted px-1 py-0.5 text-xs">
             {pull.head.ref}
