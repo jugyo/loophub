@@ -219,6 +219,47 @@ test("GitHub feedback notification identifies the PR and safe feedback reference
   expect(injected[0].text).not.toContain("\n");
 });
 
+test("workflow review notification reaches only the owning run parent", async () => {
+  const repo = S.getRepo("me", "subs")!;
+  for (const [sessionId, pane] of [
+    ["workflow-parent", "w6:p6"],
+    ["other-workflow-parent", "w7:p7"],
+  ] as const) {
+    svc.subscriptions.add({
+      repo: "me/subs",
+      eventType: "workflow_run.review_submitted",
+      herdrSession: sessionId,
+      herdrPaneId: pane,
+      sessionId,
+    });
+  }
+  const event = S.emitEvent(
+    repo.id,
+    "workflow_run.review_submitted",
+    "verifier #82-2",
+    {
+      id: 82,
+      number: 1401,
+      issue_number: 1363,
+      pr_number: 1401,
+      parent_session_id: "workflow-parent",
+      session_id: "verify-child",
+    },
+  );
+  const delivered: string[] = [];
+  const result = await svc.subscriptions.notifyForEvent(event, {
+    inject: async (sub, text) => {
+      delivered.push(`${sub.session_id}:${text}`);
+    },
+  });
+
+  expect(result.notified).toBe(1);
+  expect(delivered).toHaveLength(1);
+  expect(delivered[0]).toContain("workflow-parent:");
+  expect(delivered[0]).toContain("number=1401");
+  expect(delivered[0]).toContain("Observe the run state");
+});
+
 test("notifyForEvent never delivers the audit namespace (no self-loop)", async () => {
   const repo = S.getRepo("me", "subs")!;
   // add() rejects this namespace, so plant the row through the store directly — delivery must

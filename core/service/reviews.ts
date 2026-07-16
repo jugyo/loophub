@@ -10,6 +10,38 @@ import {
   ServiceError,
 } from "./shared.ts";
 
+function workflowRunForVerifyReview(
+  repoId: number,
+  prNumber: number,
+  sessionId: string | null | undefined,
+): S.WorkflowRunRow | null {
+  if (!sessionId) return null;
+  for (const run of S.listRunningWorkflowRuns()) {
+    if (
+      run.repo_id !== repoId ||
+      run.pr_number !== prNumber ||
+      run.current_step !== "verify"
+    ) {
+      continue;
+    }
+    try {
+      const sessions = JSON.parse(run.step_sessions_json) as Record<
+        string,
+        unknown
+      >;
+      if (
+        Array.isArray(sessions.verify) &&
+        sessions.verify.includes(sessionId)
+      ) {
+        return run;
+      }
+    } catch {
+      // A malformed legacy session list cannot safely attribute this review to a run.
+    }
+  }
+  return null;
+}
+
 // ===== reviews =====
 export const reviews = {
   list(name: string, number: number) {
@@ -91,6 +123,23 @@ export const reviews = {
       topic,
       comments: lineComments.length,
     });
+    const workflowRun =
+      event === "PASS" || event === "REQUEST_CHANGES"
+        ? workflowRunForVerifyReview(r.id, row.number, sessionId)
+        : null;
+    if (workflowRun) {
+      // The review row remains the sole verdict source. This run-scoped event is only the reliable
+      // observation trigger for the parent, independent of whether the Verify child later manages
+      // to declare its turn done.
+      S.emitEvent(r.id, "workflow_run.review_submitted", actor, {
+        id: workflowRun.id,
+        number: workflowRun.pr_number,
+        issue_number: workflowRun.issue_number,
+        pr_number: workflowRun.pr_number,
+        parent_session_id: workflowRun.parent_session_id,
+        session_id: sessionId,
+      });
+    }
     return { ...reviewJSON(v), comments: lineComments.length };
   },
 };

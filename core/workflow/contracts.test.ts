@@ -75,11 +75,14 @@ test("parent delivers rework as a review-id pointer without summarizing findings
   );
 });
 
-test("parent subscribes its pane to turn-done and GitHub feedback events", () => {
+test("parent subscribes its pane to workflow observation and GitHub feedback events", () => {
   const contract = workflowContractText("parent");
 
   expect(contract).toContain(
     "lh subscribe --repo '<repo>' --event workflow_run.turn_done",
+  );
+  expect(contract).toContain(
+    "lh subscribe --repo '<repo>' --event workflow_run.review_submitted",
   );
   expect(contract).toContain(
     "lh subscribe --repo '<repo>' --event pull_request.github_feedback",

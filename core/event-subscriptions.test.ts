@@ -33,6 +33,18 @@ test("buildNotifyText omits number when the payload has none", () => {
   expect(text).toContain("event_id=43");
 });
 
+test("buildNotifyText tells a workflow parent to observe a registered review", () => {
+  const text = buildNotifyText({
+    eventType: "workflow_run.review_submitted",
+    repoFullName: "me/proj",
+    eventId: 46,
+    number: 7,
+  });
+  expect(text).toContain("Verify child registered a workflow review");
+  expect(text).toContain("lh workflow step status");
+  expect(text).not.toContain("request_changes");
+});
+
 test("buildNotifyText folds control characters and whitespace into single tokens", () => {
   // repo full_name is not charset-validated at creation; a hostile name must not be able to add
   // lines or extra tokens to what the worker types into a pane.

@@ -133,7 +133,8 @@ export const subscriptions = {
     // to that parent's subscription — a repo can host several concurrent runs.
     if (
       row.type === "pull_request.github_feedback" ||
-      row.type === "workflow_run.turn_done"
+      row.type === "workflow_run.turn_done" ||
+      row.type === "workflow_run.review_submitted"
     ) {
       const parentSessionId = (payload as { parent_session_id?: unknown })
         .parent_session_id;

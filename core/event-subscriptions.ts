@@ -59,6 +59,13 @@ export function buildNotifyText(input: NotifyTextInput): string {
       "The Execute child declared its turn done. Observe the run state (`lh workflow step status`) before deciding any transition."
     );
   }
+  if (input.eventType === "workflow_run.review_submitted") {
+    return (
+      `LoopHub event: type=${tokenize(input.eventType)} repo=${tokenize(input.repoFullName)}` +
+      `${number} event_id=${input.eventId}. ` +
+      "The Verify child registered a workflow review. Observe the run state (`lh workflow step status`) before deciding any transition."
+    );
+  }
   return (
     `LoopHub event: type=${tokenize(input.eventType)} repo=${tokenize(input.repoFullName)}` +
     `${number} event_id=${input.eventId}. ` +

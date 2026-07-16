@@ -18,7 +18,7 @@ so the repo cannot be inferred from the working directory.
   into that child's live pane. A child never knows your pane id or the run topology; delivery is
   infrastructure's job.
 
-## Turn-done notifications (a timing signal, never a fact)
+## Observation notifications (timing signals, never facts)
 
 Subscribe this parent pane to the run's turn-done declarations at the start of the run:
 
@@ -29,6 +29,16 @@ The registration is idempotent; keep it for the run's lifetime. When Execute fin
 look. That line is **only a signal to observe** — it does not tell you the turn succeeded. On every
 such notification, run `lh workflow step status` and decide from what you observe. A turn-done with no
 HEAD advance is not a completion: do not launch Verify.
+
+Also subscribe to workflow review registrations:
+
+`lh subscribe --repo '<repo>' --event workflow_run.review_submitted`
+
+When a Verify child successfully registers a substantive review, the worker injects this separate
+run-scoped signal. Observe `lh workflow step status` exactly as for turn-done. The review row is still
+the sole verdict source; the notification does not copy its event or contents. This signal is emitted
+by review registration itself, so a missing or failed later turn-done declaration cannot leave a
+fresh review unnoticed.
 
 Also subscribe to GitHub feedback so the worker can prompt you when GitHub PR feedback appears:
 
@@ -89,7 +99,7 @@ Human handoff (escalation only):
   PR's reviews.
 - Never use pane output, a child's self-reported "done", or a PR body marker to decide a step is
   complete. The turn-done declaration tells you *when to look*, not *what happened*.
-- A declaration with no HEAD advance means the turn produced no new commit to verify — keep the
+- A turn-done declaration with no HEAD advance means the turn produced no new commit to verify — keep the
   Execute child working (inject a follow-up) or escalate; do not advance to Verify.
 
 ## Transition table

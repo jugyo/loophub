@@ -152,7 +152,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   );
   expect(parentSystemPrompt).toContain("step: parent");
   expect(parentSystemPrompt).toContain("# Parent");
-  // The parent observes; it subscribes to turn-done and drives transitions from step status.
+  // The parent observes; it subscribes to step signals and drives transitions from step status.
   expect(result.parent.user_prompt).toContain(`run: ${result.run.id}`);
   expect(result.parent.user_prompt).toContain(`issue: #${result.issue.number}`);
   expect(result.parent.user_prompt).toContain(`pr: #${result.pr.number}`);
@@ -160,6 +160,11 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     "lh subscribe --repo '" +
       repo.full_name +
       "' --event workflow_run.turn_done",
+  );
+  expect(result.parent.user_prompt).toContain(
+    "lh subscribe --repo '" +
+      repo.full_name +
+      "' --event workflow_run.review_submitted",
   );
   expect(result.parent.user_prompt).toContain(
     `lh workflow launch-step --repo '${repo.full_name}' --run ${result.run.id} --step execute`,
@@ -375,7 +380,6 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     },
     parent,
   );
-  const prIssueId = S.getIssue(repo.id, started.pr.number)!.id;
 
   // Launch + confirm the Execute child.
   const exec = await svc.workflowRuns.launchStep(
@@ -442,6 +446,18 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     { run: started.run.id, step: "verify", contract: "# Verify" },
     parent,
   );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verify.session_id,
+      agentName: verify.agent_name,
+      pointers: verify.pointers,
+      headSha: verify.head_sha,
+    },
+    parent,
+  );
   expect(verify.head_sha).toBe(headA);
   expect(verify.base_sha).toBe(
     gitAt(started.worktree, ["merge-base", "main", headA]),
@@ -454,13 +470,32 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     "head sha",
     "review submission target (do not read the PR)",
   ]);
-  createWorkflowReview({
-    prIssueId,
-    runId: started.run.id,
-    sequence: 1,
-    event: "PASS",
-    headSha: headA,
-    body: "All criteria pass.",
+  const passReview = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "PASS",
+      topic: "workflow",
+      headSha: headA,
+      body: "All criteria pass.",
+    },
+    verify.session_id,
+  );
+
+  // Regression for run 82: registering the fresh review itself emits a parent observation trigger.
+  // Verify does not need a later turn-done declaration, and the event carries only run pointers —
+  // the persisted review remains the verdict source.
+  const reviewEvent = S.listEvents(0, repo.id, 100).find(
+    (event) => event.type === "workflow_run.review_submitted",
+  );
+  expect(reviewEvent).toBeDefined();
+  expect(JSON.parse(reviewEvent!.payload)).toEqual({
+    id: started.run.id,
+    number: started.pr.number,
+    issue_number: issue.number,
+    pr_number: started.pr.number,
+    parent_session_id: parent,
+    session_id: verify.session_id,
   });
 
   status = await svc.workflowRuns.status(repo.full_name, {
@@ -468,6 +503,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   });
   expect(status.steps.verify.complete).toBe(true);
   expect(status.steps.verify.latest_review).toMatchObject({
+    id: passReview.id,
     event: "pass",
     fresh: true,
     headSha: headA,
@@ -631,15 +667,35 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
   );
 
   // Verify requests changes, pinned to headA, with one finding.
-  createWorkflowReview({
-    prIssueId,
-    runId: started.run.id,
-    sequence: 1,
-    event: "REQUEST_CHANGES",
-    headSha: headA,
-    body: "One change required.",
-    findings: 1,
-  });
+  const verify = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify", contract: "# Verify" },
+    parent,
+  );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verify.session_id,
+      agentName: verify.agent_name,
+      pointers: verify.pointers,
+      headSha: verify.head_sha,
+    },
+    parent,
+  );
+  await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "REQUEST_CHANGES",
+      topic: "workflow",
+      headSha: headA,
+      body: "One change required.",
+      comments: [{ path: "file-0.ts", line: 1, body: "needs a fix" }],
+    },
+    verify.session_id,
+  );
   const rcStatus = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
   });
@@ -915,6 +971,9 @@ test("parent contract template drives transitions by observation, rework, and es
   // Transitions come from observation; the turn-done notification is only a timing signal.
   expect(contract).toContain(
     "lh subscribe --repo '<repo>' --event workflow_run.turn_done",
+  );
+  expect(contract).toContain(
+    "lh subscribe --repo '<repo>' --event workflow_run.review_submitted",
   );
   expect(contract).toContain("only a signal to observe");
   expect(contract).toContain("Transitions are driven only by observation");

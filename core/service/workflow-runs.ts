@@ -282,10 +282,11 @@ function parentUserPrompt(input: {
     "",
     "## Instruction",
     "Orchestrate this run through Execute -> Verify as described in your contract.",
-    `Decide every transition by observing \`lh workflow step status ${input.runId} --repo ${repo} --json\` after a turn-done notification; never use pane output or PR body markers.`,
+    `Decide every transition by observing \`lh workflow step status ${input.runId} --repo ${repo} --json\` after a turn-done or workflow-review notification; never use pane output or PR body markers.`,
     "Start now:",
     `1. Subscribe this pane to turn-done declarations: \`lh subscribe --repo ${repo} --event workflow_run.turn_done\``,
-    `2. Launch the Execute child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step execute\``,
+    `2. Subscribe this pane to Verify review registrations: \`lh subscribe --repo ${repo} --event workflow_run.review_submitted\``,
+    `3. Launch the Execute child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step execute\``,
     "Then follow your contract's transition table, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
     "",
   ].join("\n");
