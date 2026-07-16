@@ -60,7 +60,7 @@ function renderSearch() {
 async function openAndSearch(query: string) {
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Search issues and pull requests",
+      name: "Search issues",
     }),
   );
   fireEvent.change(screen.getByRole("searchbox", { name: "Search query" }), {
@@ -69,7 +69,7 @@ async function openAndSearch(query: string) {
 }
 
 describe("RepositorySearch", () => {
-  it("searches the current repository and renders issue, pull, and state details", async () => {
+  it("searches issues by default and includes pulls when toggled", async () => {
     let resolveSearch: (value: unknown) => void = () => {};
     vi.stubGlobal(
       "fetch",
@@ -109,12 +109,28 @@ describe("RepositorySearch", () => {
     const results = await screen.findByRole("list", {
       name: "Search results",
     });
+    const includePulls = screen.getByRole("switch", { name: "Include PR" });
+    expect(includePulls.getAttribute("aria-checked")).toBe("false");
+    expect(
+      screen
+        .getByRole("searchbox", { name: "Search query" })
+        .getAttribute("placeholder"),
+    ).toBe("Search issues");
     expect(within(results).getByText("Issue #12")).toBeTruthy();
-    expect(within(results).getByText("Pull request #18")).toBeTruthy();
     expect(within(results).getByText("Release checklist")).toBeTruthy();
-    expect(within(results).getByText("Release branch")).toBeTruthy();
     expect(within(results).getByText("open")).toBeTruthy();
+
+    expect(within(results).queryByText("Pull request #18")).toBeNull();
+    expect(within(results).queryByText("Release branch")).toBeNull();
+
+    fireEvent.click(includePulls);
+    expect(includePulls.getAttribute("aria-checked")).toBe("true");
+    expect(within(results).getByText("Pull request #18")).toBeTruthy();
+    expect(within(results).getByText("Release branch")).toBeTruthy();
     expect(within(results).getByText("closed")).toBeTruthy();
+
+    fireEvent.click(includePulls);
+    expect(within(results).queryByText("Pull request #18")).toBeNull();
   });
 
   it("shows empty and failure states in the dialog", async () => {
@@ -130,8 +146,11 @@ describe("RepositorySearch", () => {
     renderSearch();
 
     await openAndSearch("missing");
+    expect(await screen.findByText("No matching issues.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("switch", { name: "Include PR" }));
     expect(
-      await screen.findByText("No matching issues or pull requests."),
+      screen.getByText("No matching issues or pull requests."),
     ).toBeTruthy();
 
     fireEvent.change(screen.getByRole("searchbox", { name: "Search query" }), {
@@ -166,8 +185,29 @@ describe("RepositorySearch", () => {
     const router = renderSearch();
 
     await openAndSearch("result");
+    if (result.kind === "pull") {
+      fireEvent.click(screen.getByRole("switch", { name: "Include PR" }));
+    }
     fireEvent.click(await screen.findByText(result.title));
 
     await waitFor(() => expect(router.state.location.pathname).toBe(path));
+  });
+
+  it("resets pull inclusion when the search dialog is reopened", async () => {
+    vi.stubGlobal("fetch", mockRpcFetch({ "search/query": () => [] }));
+    renderSearch();
+
+    await openAndSearch("result");
+    fireEvent.click(screen.getByRole("switch", { name: "Include PR" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close repository search" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Search issues" }));
+
+    expect(
+      screen
+        .getByRole("switch", { name: "Include PR" })
+        .getAttribute("aria-checked"),
+    ).toBe("false");
   });
 });

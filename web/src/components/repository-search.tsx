@@ -15,9 +15,13 @@ export function RepositorySearch({
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [includePulls, setIncludePulls] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const search = useRepositorySearch(owner, repo, query);
   const term = query.trim();
+  const results = (search.data ?? []).filter(
+    (result) => includePulls || result.kind === "issue",
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -30,6 +34,7 @@ export function RepositorySearch({
   function close() {
     setOpen(false);
     setQuery("");
+    setIncludePulls(false);
   }
 
   function select(result: SearchResult) {
@@ -48,13 +53,13 @@ export function RepositorySearch({
       <div className="flex justify-end">
         <button
           type="button"
-          aria-label="Search issues and pull requests"
+          aria-label="Search issues"
           onClick={() => setOpen(true)}
           className="flex w-56 items-center gap-3 rounded-md border bg-background px-3 py-2.5 text-left text-sm text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <Search className="size-4" aria-hidden="true" />
           <span className="truncate">
-            Search issues and pull requests in {owner}/{repo}
+            Search issues in {owner}/{repo}
           </span>
         </button>
       </div>
@@ -86,7 +91,11 @@ export function RepositorySearch({
                 aria-label="Search query"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search issues and pull requests"
+                placeholder={
+                  includePulls
+                    ? "Search issues and pull requests"
+                    : "Search issues"
+                }
                 className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none placeholder:text-muted-foreground"
               />
               <button
@@ -99,11 +108,33 @@ export function RepositorySearch({
               </button>
             </div>
 
+            <div className="flex items-center justify-end border-b px-3 py-2">
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <span>Include PR</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={includePulls}
+                  onClick={() => setIncludePulls((current) => !current)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                    includePulls ? "bg-primary" : "bg-muted"
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none block size-4 translate-y-0.5 rounded-full bg-background shadow-sm transition-transform ${
+                      includePulls ? "translate-x-[18px]" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </label>
+            </div>
+
             <SearchResults
               term={term}
-              results={search.data ?? []}
+              results={results}
               loading={search.isLoading && term.length > 0}
               failed={search.isError}
+              includePulls={includePulls}
               onSelect={select}
             />
           </div>
@@ -118,12 +149,14 @@ function SearchResults({
   results,
   loading,
   failed,
+  includePulls,
   onSelect,
 }: {
   term: string;
   results: SearchResult[];
   loading: boolean;
   failed: boolean;
+  includePulls: boolean;
   onSelect: (result: SearchResult) => void;
 }) {
   if (!term) {
@@ -151,7 +184,9 @@ function SearchResults({
   if (results.length === 0) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        No matching issues or pull requests.
+        {includePulls
+          ? "No matching issues or pull requests."
+          : "No matching issues."}
       </div>
     );
   }

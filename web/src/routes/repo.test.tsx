@@ -46,7 +46,7 @@ describe("repository search route placement", () => {
     renderRoute("/r/me/proj");
     expect(
       await screen.findByRole("button", {
-        name: "Search issues and pull requests",
+        name: "Search issues",
       }),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Workspaces" })).toBeTruthy();
