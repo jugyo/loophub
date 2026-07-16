@@ -207,7 +207,7 @@ first-class な `issue_attempts` テーブル(案 B、§5)は、比較メタデ�
 | **失敗時** | attempt の失敗 = PR close。全 attempt が失敗したら issue は open のまま残り、ガード解除により再 attempt 可能(現状の逐次リトライと同じ)。 |
 | **prune との整合** | 現状でも「merge 前に issue が閉じると作業中 worktree が prune 候補になる」挙動がある。dirty / cwd 使用中は skip する既存の安全弁があるため、並行化で新たに壊れるものはないが、sibling close 直後に走行中セッションの worktree が prune されないよう「session が attach 中の PR は keep」を prune 分類に足すことを検討。 |
 | **base の陳腐化** | attempt 群の base_sha が古くなるほど merge 時の conflict リスクが上がる。比較の公平性(全員同じ base)と鮮度はトレードオフであり、本設計は公平性を優先する。長期化した attempt 群は attempt 一覧の「base is N commits behind」表示(§3.4)で人間に判断させる。 |
-| **コスト** | 並行 attempt はエージェントコストが素朴に N 倍になる。開始時の確認ダイアログ(§3.4)と、既存の cost stop sweep が per-session に効くことで抑止する。attempt 数の hard limit は設けない(運用で判断)。 |
+| **コスト** | 並行 attempt はエージェントコストが素朴に N 倍になる。開始時の確認ダイアログ(§3.4)と既存の usage 表示で可視化し、agent または人間が対応する。attempt 数の hard limit は設けない(運用で判断)。 |
 | **公平性の限界** | base commit を揃えても、issue body の後からの編集、レビューコメント、モデル差などで条件は完全には揃わない。本設計が保証するのは「同じ出発点のコード」まで。それ以外の条件差は attempt 一覧の agent / model / 開始時刻の並記(§3.4)で可視化する。 |
 | **worker / workflow.yml** | `pull_request.opened` は attempt ごとに発火するため、workflow steps が per-PR 前提で書かれていれば追加対応不要。issue 単位で 1 回だけ走らせたい step がある場合は将来の論点。 |
 

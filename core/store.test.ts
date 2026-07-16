@@ -842,76 +842,6 @@ test("pullAgentSummary returns the primary dev session runtime and usage models 
   });
 });
 
-test("sessionUsageCostForSession sums top-level cost, null when unknown or empty (#832)", () => {
-  const s = "88888888-0000-0000-0000-000000000001";
-  S.registerAgentSession(s, "lh-build", "ext-cost1");
-
-  // No usage rows yet: indeterminate → null, not 0.
-  expect(S.sessionUsageCostForSession(s)).toBeNull();
-
-  S.upsertSessionUsage(s, {
-    model: "claude-sonnet-5",
-    input_tokens: 10,
-    cache_creation_input_tokens: 0,
-    cache_read_input_tokens: 0,
-    output_tokens: 0,
-    cost_usd: 4,
-  });
-  S.upsertSessionUsage(s, {
-    model: "claude-opus-4-8",
-    input_tokens: 5,
-    cache_creation_input_tokens: 0,
-    cache_read_input_tokens: 0,
-    output_tokens: 0,
-    cost_usd: 7.5,
-  });
-  expect(S.sessionUsageCostForSession(s)).toBe(11.5);
-
-  // One unknown-cost model row makes the whole session's cost unknown (don't stop on it).
-  S.upsertSessionUsage(s, {
-    model: "some-unpriced-model",
-    input_tokens: 1,
-    cache_creation_input_tokens: 0,
-    cache_read_input_tokens: 0,
-    output_tokens: 0,
-    cost_usd: null,
-  });
-  expect(S.sessionUsageCostForSession(s)).toBeNull();
-});
-
-test("hasCostStopEvent detects a dev.cost_stopped event per session/PR/repo (#832)", () => {
-  const repo = S.createRepo("me/coststop", "/tmp/coststop");
-  const other = S.createRepo("me/coststop2", "/tmp/coststop2");
-  const sess = "aaaaaaaa-0000-0000-0000-000000000001";
-  const resumed = "aaaaaaaa-0000-0000-0000-000000000002";
-
-  expect(S.hasCostStopEvent(repo.id, 7, sess)).toBe(false);
-
-  S.emitEvent(repo.id, "dev.cost_stopped", "lh-worker", {
-    number: 7,
-    session_id: sess,
-    reason: "cost_limit_exceeded",
-    cost_usd: 12,
-    limit_usd: 10,
-  });
-  expect(S.hasCostStopEvent(repo.id, 7, sess)).toBe(true);
-
-  // Guard is per session: a resumed dev session on the same PR is not yet stopped, so it can be
-  // stopped again (a fresh budget) rather than being permanently exempt.
-  expect(S.hasCostStopEvent(repo.id, 7, resumed)).toBe(false);
-
-  // Scoped by PR number and by repo — a different PR or repo is unaffected.
-  expect(S.hasCostStopEvent(repo.id, 8, sess)).toBe(false);
-  expect(S.hasCostStopEvent(other.id, 7, sess)).toBe(false);
-
-  // A different event type on the same PR/session doesn't count as a cost stop.
-  S.emitEvent(other.id, "pull_request.updated", "lh-worker", {
-    number: 7,
-    session_id: sess,
-  });
-  expect(S.hasCostStopEvent(other.id, 7, sess)).toBe(false);
-});
-
 test("hasAnyCostStopEvent detects a dev.cost_stopped event per PR, any session (#863)", () => {
   const repo = S.createRepo("me/anycoststop", "/tmp/anycoststop");
   const other = S.createRepo("me/anycoststop2", "/tmp/anycoststop2");
@@ -926,7 +856,7 @@ test("hasAnyCostStopEvent detects a dev.cost_stopped event per PR, any session (
     cost_usd: 15,
     limit_usd: 10,
   });
-  // Unlike the per-session guard, this is session-agnostic: the PR has been stopped, full stop.
+  // The display state is session-agnostic: the PR has been stopped, full stop.
   expect(S.hasAnyCostStopEvent(repo.id, 9)).toBe(true);
 
   // Scoped by PR number and by repo — a different PR or repo is unaffected.

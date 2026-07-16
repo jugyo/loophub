@@ -155,32 +155,9 @@ export function firstReadyForReviewAt(
   return row?.created_at ?? null;
 }
 
-// Whether a `dev.cost_stopped` event already exists for a specific dev session on a PR (#832). The
-// cost-stop sweep uses this as its idempotency guard: once a session has been stopped for exceeding
-// the cost limit, it must not be sent another Esc on every subsequent tick. Keyed on the PR number
-// *and* the session_id, so the guard is per dev session, not per PR — a PR that is resumed under a
-// new dev session (a new primary dev session) starts with a fresh budget and can be stopped again,
-// rather than being permanently exempt because an earlier session was once stopped.
-export function hasCostStopEvent(
-  repoId: number,
-  prNumber: number,
-  sessionId: string,
-): boolean {
-  return !!db
-    .query(
-      `SELECT 1 AS ok FROM events
-       WHERE repo_id = ? AND type = 'dev.cost_stopped'
-         AND json_extract(payload, '$.number') = ?
-         AND json_extract(payload, '$.session_id') = ?
-       LIMIT 1`,
-    )
-    .get(repoId, prNumber, sessionId);
-}
-
 // Whether *any* `dev.cost_stopped` event exists for a PR, regardless of session (#863). Drives the
-// "cost stopped" badge shown wherever the PR appears: unlike hasCostStopEvent (the per-session
-// idempotency guard for the stop sweep), this asks the display question — "has this PR ever been
-// stopped for exceeding its cost limit?" — so a human can spot a stalled PR at a glance.
+// "cost stopped" badge shown wherever the PR appears. This asks the display question — "has this PR
+// ever been stopped for exceeding its cost limit?" — so a human can spot a stalled PR at a glance.
 export function hasAnyCostStopEvent(repoId: number, prNumber: number): boolean {
   return !!db
     .query(
