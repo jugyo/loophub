@@ -45,6 +45,9 @@ run development loops while a human supervises with minimal attention.
 - **Session**: one recorded agent-runtime invocation. Sessions can be linked to issues or PRs;
   multiple sessions may contribute to one PR, while its primary development session is the
   resume and retrospective anchor.
+- **Workspace**: a local Git branch used as an integration target for a group of issues and
+  their PRs. Its registry row only makes the branch visible to LoopHub; unlike a worktree, a
+  workspace has no dedicated checkout.
 - **Workflow / workflow run**: a workflow is a reusable Execute/Verify definition. Execute owns
   implementation planning and reflection; Verify independently evaluates the result. A workflow
   run is one persisted execution for a specific issue and PR, tracking step state, sessions, and

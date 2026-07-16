@@ -72,6 +72,25 @@ export interface RepoMergeModeWire {
   effective: MergeMode;
 }
 
+export interface WorkspaceWire {
+  branch: string;
+  created_at: string;
+  archived_at: string | null;
+  branch_exists: boolean;
+}
+
+export function workspaceJSON(
+  workspace: S.Workspace,
+  branchExists: boolean,
+): WorkspaceWire {
+  return {
+    branch: workspace.branch,
+    created_at: workspace.created_at,
+    archived_at: workspace.archived_at,
+    branch_exists: branchExists,
+  };
+}
+
 export function repoJSON(r: S.Repo): RepoWire {
   return {
     id: r.id,

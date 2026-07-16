@@ -16,6 +16,7 @@ import * as sessionCmd from "./commands/session.ts";
 import * as subscribeCmd from "./commands/subscribe.ts";
 import * as syncCmd from "./commands/sync.ts";
 import * as workflowCmd from "./commands/workflow.ts";
+import * as workspaceCmd from "./commands/workspace.ts";
 import * as worktreeCmd from "./commands/worktree.ts";
 import { printCommandHelp } from "./help.ts";
 import { usage } from "./usage.ts";
@@ -37,6 +38,7 @@ async function main() {
   if (group === "handoff") return handoffCmd.run();
   if (group === "inbox") return inboxCmd.run();
   if (group === "notification") return notificationCmd.run();
+  if (group === "workspace") return workspaceCmd.run();
   if (group === "worktree") return worktreeCmd.run();
   if (group === "herdr") return herdrCmd.run();
   if (group === "retro") return retroCmd.run();

@@ -105,6 +105,19 @@ export const commandHelp: readonly CommandHelp[] = [
     path: ["notification", "send"],
     description: "Send a topbar notification.",
   },
+  { path: ["workspace"], description: "Manage integration workspaces." },
+  {
+    path: ["workspace", "create"],
+    description: "Create a branch-backed workspace.",
+  },
+  {
+    path: ["workspace", "list"],
+    description: "List active workspaces.",
+  },
+  {
+    path: ["workspace", "archive"],
+    description: "Archive a workspace without deleting its branch.",
+  },
   { path: ["worktree"], description: "Manage pull request worktrees." },
   {
     path: ["worktree", "prune"],

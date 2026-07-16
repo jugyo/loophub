@@ -133,6 +133,15 @@ CREATE TABLE IF NOT EXISTS repos (
   created_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS workspaces (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id     INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+  branch      TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  archived_at TEXT,
+  UNIQUE (repo_id, branch)
+);
+
 CREATE TABLE IF NOT EXISTS issues (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id     INTEGER NOT NULL REFERENCES repos(id),

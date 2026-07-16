@@ -59,5 +59,6 @@ export type {
 export { terminal } from "./service/terminal.ts";
 export { workflowRuns } from "./service/workflow-runs.ts";
 export { workflows } from "./service/workflows.ts";
+export { workspaces } from "./service/workspaces.ts";
 export type { WorktreePlanEntry } from "./service/worktrees.ts";
 export { worktrees } from "./service/worktrees.ts";

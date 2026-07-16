@@ -464,7 +464,10 @@ function isRevisionSpecialBranchName(branch: string): boolean {
   );
 }
 
-function assertCreatableLocalBranchName(branch: string, label: string): void {
+export function assertCreatableLocalBranchName(
+  branch: string,
+  label: string,
+): void {
   assertOptionSafeLocalBranchName(branch, label);
   const result = spawnSync(
     "git",
@@ -476,7 +479,7 @@ function assertCreatableLocalBranchName(branch: string, label: string): void {
   }
 }
 
-function localBranchExists(repoPath: string, branch: string): boolean {
+export function localBranchExists(repoPath: string, branch: string): boolean {
   const result = spawnSync(
     "git",
     ["-C", repoPath, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
