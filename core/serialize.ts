@@ -1436,10 +1436,11 @@ export interface WorkflowStepContractsWire {
 // Workflow run display state (#1008): the current step / status / rework count of the run linked to an
 // issue or PR, for issue / PR detail. The run row is the display-state source (workflow design:
 // CLI / UI) — the
-// *truth* of step completion stays with `workflow step status` (artifact placement + head), which
-// this wire deliberately does not re-derive. `latest_verdict` surfaces the human-readable reason
+// *truth* of step completion stays with `workflow step status` (HEAD vs the pinned review), which
+// this wire deliberately does not re-derive. `latest_review` surfaces the human-readable reason
 // behind a rework / block; the web derives the issue-comment / inbox links from `issue_number`.
-export interface WorkflowRunVerdictSummaryWire {
+export interface WorkflowRunReviewSummaryWire {
+  id: number;
   event: "pass" | "request_changes";
   summary: string;
   findings_count: number;
@@ -1459,13 +1460,13 @@ export interface WorkflowRunStateWire {
   pr_number: number;
   created_at: string;
   updated_at: string;
-  latest_verdict: WorkflowRunVerdictSummaryWire | null;
+  latest_review: WorkflowRunReviewSummaryWire | null;
 }
 
 export function workflowRunStateJSON(input: {
   run: S.WorkflowRunRow;
   workflowName: string | null;
-  latestVerdict: WorkflowRunVerdictSummaryWire | null;
+  latestReview: WorkflowRunReviewSummaryWire | null;
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
@@ -1480,7 +1481,7 @@ export function workflowRunStateJSON(input: {
     pr_number: run.pr_number,
     created_at: run.created_at,
     updated_at: run.updated_at,
-    latest_verdict: input.latestVerdict,
+    latest_review: input.latestReview,
   };
 }
 
@@ -1576,20 +1577,10 @@ export function workflowRunHistoryEventJSON(
   } else if (row.type === "workflow_step.launched") {
     label = `${stepLabel ?? "Workflow"} step started`;
     description = `${stepLabel ?? "Workflow"} step execution started.`;
-  } else if (row.type === "workflow_artifact.placed") {
-    const artifactType =
-      typeof payload.type === "string" ? payload.type : "workflow";
-    const artifactLabel = workflowStepLabel(artifactType.replaceAll("-", " "));
-    label = `${artifactLabel ?? "Workflow"} artifact placed`;
-    const target =
-      typeof payload.target_kind === "string"
-        ? ` Placement: ${payload.target_kind}${
-            typeof payload.target_ref === "string"
-              ? ` (${payload.target_ref})`
-              : ""
-          }.`
-        : "";
-    description = `${artifactLabel ?? "Workflow"} output from the ${stepLabel ?? "workflow"} step was placed.${target}`;
+  } else if (row.type === "workflow_run.turn_done") {
+    label = "Turn done declared";
+    description =
+      "Execute declared its turn done. The parent observes HEAD and review state before any transition.";
   }
 
   return {

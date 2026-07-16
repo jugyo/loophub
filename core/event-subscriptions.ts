@@ -52,6 +52,13 @@ export function buildNotifyText(input: NotifyTextInput): string {
       "GitHub PR feedback was added or updated; review the referenced feedback and decide whether the Workflow needs action."
     );
   }
+  if (input.eventType === "workflow_run.turn_done") {
+    return (
+      `LoopHub event: type=${tokenize(input.eventType)} repo=${tokenize(input.repoFullName)}` +
+      `${number} event_id=${input.eventId}. ` +
+      "The Execute child declared its turn done. Observe the run state (`lh workflow step status`) before deciding any transition."
+    );
+  }
   return (
     `LoopHub event: type=${tokenize(input.eventType)} repo=${tokenize(input.repoFullName)}` +
     `${number} event_id=${input.eventId}. ` +

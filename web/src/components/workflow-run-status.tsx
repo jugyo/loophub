@@ -2,13 +2,13 @@
 // to an issue / PR: workflow name, status, current step (as an Execute → Verify
 // tracker), and rework count. The run row is the display-state source (workflow design: CLI / UI) —
 // this deliberately does not re-derive step-completion truth (that stays with
-// `workflow step status` / artifact placement).
+// `workflow step status` — HEAD vs the pinned Verify review).
 //
 // - needs human (#1307): a running run with `needs_human_reason` set is waiting for an explicit
-//   human instruction. Surfaces that reason (plus the latest verdict summary when present) and
+//   human instruction. Surfaces that reason (plus the latest Verify review summary when present) and
 //   links to the issue (where the parent files its escalation comment) and the Inbox. Legacy
 //   terminal `blocked` rows get the same prominent display.
-// - completed: states that the run reached a passing Verify verdict and finished.
+// - completed: states that the run reached a passing Verify review and finished.
 //
 // Renders nothing when the issue / PR has no run.
 
@@ -191,7 +191,7 @@ function StepTracker({
 // Needs human means the parent escalated (workflow design: parent transitions): it filed an issue
 // comment summarizing the situation, sent an Inbox notification, and holds the run waiting for an
 // explicit human instruction to its session (#1307). Surface the stored wait reason, point the
-// human at the issue and Inbox, and add the latest verdict summary when one exists. Legacy
+// human at the issue and Inbox, and add the latest Verify review summary when one exists. Legacy
 // terminal `blocked` rows render the same way, minus the resumability (their parent is gone).
 function NeedsHumanNotice({
   owner,
@@ -202,7 +202,7 @@ function NeedsHumanNotice({
   repo: string;
   state: WorkflowRunState;
 }) {
-  const verdict = state.latest_verdict;
+  const review = state.latest_review;
   return (
     <div className="flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
       <p className="font-medium text-amber-700 dark:text-amber-300">
@@ -213,15 +213,15 @@ function NeedsHumanNotice({
       {state.needs_human_reason !== null ? (
         <p className="text-muted-foreground">{state.needs_human_reason}</p>
       ) : null}
-      {verdict && verdict.event === "request_changes" ? (
+      {review && review.event === "request_changes" ? (
         <p className="text-muted-foreground">
-          Latest verdict requested changes
-          {verdict.findings_count > 0
-            ? ` (${verdict.findings_count} finding${
-                verdict.findings_count === 1 ? "" : "s"
+          Latest review requested changes
+          {review.findings_count > 0
+            ? ` (${review.findings_count} finding${
+                review.findings_count === 1 ? "" : "s"
               })`
             : ""}
-          : {verdict.summary}
+          : {review.summary}
         </p>
       ) : null}
       <div className="flex flex-wrap gap-3">

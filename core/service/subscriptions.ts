@@ -129,7 +129,12 @@ export const subscriptions = {
     } catch {
       payload = {};
     }
-    if (row.type === "pull_request.github_feedback") {
+    // Events addressed to one run's parent (its session id is in the payload) are delivered only
+    // to that parent's subscription — a repo can host several concurrent runs.
+    if (
+      row.type === "pull_request.github_feedback" ||
+      row.type === "workflow_run.turn_done"
+    ) {
       const parentSessionId = (payload as { parent_session_id?: unknown })
         .parent_session_id;
       if (typeof parentSessionId !== "string") return result;

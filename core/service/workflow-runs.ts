@@ -2,17 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   constants,
-  fstatSync,
   lstatSync,
   mkdirSync,
   openSync,
-  readFileSync,
-  realpathSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, join, relative, sep } from "node:path";
-import { saveAttachment } from "../attachments.ts";
+import { join } from "node:path";
 import {
   agentModel,
   type CodingAgent,
@@ -29,8 +24,8 @@ import { git } from "../git.ts";
 import { resolveWorktreeIdentity } from "../resume.ts";
 import type {
   WorkflowRunHistoryEventWire,
+  WorkflowRunReviewSummaryWire,
   WorkflowRunStateWire,
-  WorkflowRunVerdictSummaryWire,
 } from "../serialize.ts";
 import {
   buildWorkflowStepHerdrLaunchPlan,
@@ -38,16 +33,10 @@ import {
 } from "../terminal/terminal-launch.ts";
 import { parsePreviousWorkflowVerifyPane } from "../terminal/workflow-pane-layout.ts";
 import {
-  parseWorkflowArtifactJson,
-  type WorkflowArtifact,
-  type WorkflowArtifactType,
-  type WorkflowExecutionReportArtifact,
-  type WorkflowVerdictArtifact,
-} from "../workflow/artifacts.ts";
-import {
   composeWorkflowLaunchPrompt,
   renderWorkflowContract,
   WORKFLOW_STEPS,
+  type WorkflowInputPointer,
   type WorkflowStep,
 } from "../workflow/compose.ts";
 import {
@@ -55,16 +44,8 @@ import {
   parseWorkflowHerdrAgentName,
 } from "../workflow/herdr-agents.ts";
 import {
-  composeExecuteInputArtifacts,
-  composeVerifyInputArtifacts,
-  type WorkflowIssueInput,
-  type WorkflowStepInputSet,
-  writeWorkflowStepInputArtifacts,
-} from "../workflow/inputs.ts";
-import { placeWorkflowArtifact } from "../workflow/placement.ts";
-import {
   evaluateWorkflowSteps,
-  type WorkflowLatestArtifactState,
+  type WorkflowLatestReviewState,
   type WorkflowStepStatuses,
 } from "../workflow/steps.ts";
 import {
@@ -77,8 +58,7 @@ import {
 } from "../worktree-provision.ts";
 import { dev } from "./dev.ts";
 import { runHerdr } from "./herdr-runner.ts";
-import { pulls } from "./pulls.ts";
-import { reviews } from "./reviews.ts";
+import { inbox } from "./inbox.ts";
 import {
   actorFor,
   assertExistingLocalBranch,
@@ -138,8 +118,9 @@ export type WorkflowLaunchStepResult = {
   worktree: string;
   system_prompt_path: string;
   user_prompt: string;
-  input_files: Array<{ path: string; description: string }>;
+  pointers: WorkflowInputPointer[];
   head_sha?: string;
+  base_sha?: string;
   herdr: {
     sessionName: string;
     command: string;
@@ -153,11 +134,9 @@ export type WorkflowConfirmStepLaunchResult = {
   session_id: string;
 };
 
-export type WorkflowStepOutputResult = {
-  artifact_id: number;
-  head_sha: string;
-  placement: { kind: string; ref: string };
-  retried: boolean;
+export type WorkflowTurnDoneResult = {
+  run: number;
+  event_id: number;
 };
 
 export type WorkflowStepInputResult = {
@@ -166,7 +145,7 @@ export type WorkflowStepInputResult = {
   system_prompt: string;
   system_prompt_path: string;
   user_prompt: string;
-  input_files: Array<{ path: string; description: string }>;
+  pointers: WorkflowInputPointer[];
 };
 
 export type WorkflowStepStatusResult = {
@@ -177,12 +156,11 @@ export type WorkflowStepStatusResult = {
   // and an operator's inspection see the hold instead of a plain running run.
   needs_human_reason: string | null;
   head_sha: string | null;
+  head_ahead_of_base: boolean;
+  // Timestamp of the latest turn-done declaration event, or null. A timing signal for the
+  // parent's observation — never part of step-completion truth.
+  last_turn_done_at: string | null;
   steps: WorkflowStepStatuses;
-};
-
-const STEP_ARTIFACT_TYPE: Record<WorkflowStep, WorkflowArtifactType> = {
-  execute: "execution-report",
-  verify: "verdict",
 };
 
 function workflowByInput(input: { workflow?: string; workflowId?: number }) {
@@ -289,7 +267,6 @@ function parentUserPrompt(input: {
   workflowName: string;
   issueNumber: number;
   prNumber: number;
-  inputFiles: Array<{ path: string; description: string }>;
   baseRef: string;
 }): string {
   const repo = shellArg(input.repoName);
@@ -301,16 +278,14 @@ function parentUserPrompt(input: {
     `issue: #${input.issueNumber}`,
     `pr: #${input.prNumber}`,
     "current step: execute",
-    "",
-    "## Inputs",
-    ...input.inputFiles.map((file) => `- ${file.path} - ${file.description}`),
     `worktree: . (cwd. base branch: ${input.baseRef})`,
     "",
     "## Instruction",
     "Orchestrate this run through Execute -> Verify as described in your contract.",
-    `Drive every transition from \`lh workflow step status ${input.runId} --repo ${repo} --json\`; never use pane output or PR body markers to decide a step is complete.`,
+    `Decide every transition by observing \`lh workflow step status ${input.runId} --repo ${repo} --json\` after a turn-done notification; never use pane output or PR body markers.`,
     "Start now:",
-    `1. Launch the Execute child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step execute\``,
+    `1. Subscribe this pane to turn-done declarations: \`lh subscribe --repo ${repo} --event workflow_run.turn_done\``,
+    `2. Launch the Execute child: \`lh workflow launch-step --repo ${repo} --run ${input.runId} --step execute\``,
     "Then follow your contract's transition table, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
     "",
   ].join("\n");
@@ -394,95 +369,95 @@ function workflowRunWorktree(input: {
     : prWorktreePath(worktreeRoot(), input.repo.full_name, identity.number);
 }
 
-function issueInput(issue: S.IssueRow): WorkflowIssueInput {
-  return {
-    title: issue.title,
-    body: issue.body,
-    comments: S.listComments(issue.id).map((comment) => ({
-      author: comment.author,
-      createdAt: comment.created_at,
-      body: comment.body,
-    })),
-  };
-}
-
-async function composeLaunchInputs(input: {
-  issue: S.IssueRow;
-  pull: S.PullRow;
+// The pointers handed to a step child at launch. Execute gets domain references it pulls
+// itself over the lh CLI; Verify gets the fixed (issue, base SHA, head SHA) triple it reviews,
+// plus the PR number solely as its review submission target. No content is synthesized.
+function buildStepPointers(input: {
+  repoName: string;
   run: S.WorkflowRunRow;
   step: WorkflowStep;
-  worktree: string;
-}): Promise<WorkflowStepInputSet> {
-  const task = issueInput(input.issue);
+  reviewId?: number;
+  baseSha?: string;
+  headSha?: string;
+}): WorkflowInputPointer[] {
+  const repo = inlineText(input.repoName);
   switch (input.step) {
     case "execute":
-      return composeExecuteInputArtifacts({
-        issue: task,
-        latestVerdict: readLatestArtifactOptional(input.run, "verdict"),
-        verdictHeadSha: latestArtifactHead(input.run, "verdict"),
-      });
+      return [
+        { label: "repo", value: repo },
+        { label: "issue", value: `#${input.run.issue_number}` },
+        { label: "pr", value: `#${input.run.pr_number}` },
+        ...(input.reviewId !== undefined
+          ? [{ label: "address review", value: `#${input.reviewId}` }]
+          : []),
+      ];
     case "verify":
-      return composeVerifyInputArtifacts({
-        issue: task,
-        ...(await pinnedDiff(input.worktree, input.pull.base_ref)),
-        report: readLatestArtifact(input.run, "execution-report"),
-        priorVerdicts: compact([
-          readLatestArtifactOptional(input.run, "verdict"),
-        ]),
-      });
+      return [
+        { label: "repo", value: repo },
+        { label: "issue", value: `#${input.run.issue_number}` },
+        { label: "base sha", value: input.baseSha ?? "" },
+        { label: "head sha", value: input.headSha ?? "" },
+        {
+          label: "review submission target (do not read the PR)",
+          value: `pr #${input.run.pr_number}`,
+        },
+      ];
   }
 }
 
-function latestArtifactHead(
-  run: S.WorkflowRunRow,
-  type: WorkflowArtifactType,
-): string | undefined {
-  return S.latestWorkflowArtifactByType(run.id, type)?.head_sha;
-}
-
-function readLatestArtifact(
-  run: S.WorkflowRunRow,
-  type: "execution-report",
-): WorkflowExecutionReportArtifact;
-function readLatestArtifact(
-  run: S.WorkflowRunRow,
-  type: "verdict",
-): WorkflowVerdictArtifact;
-function readLatestArtifact(
-  run: S.WorkflowRunRow,
-  type: WorkflowArtifactType,
-): WorkflowArtifact {
-  const row = S.latestWorkflowArtifactByType(run.id, type);
-  if (!row) {
-    throw new ServiceError(409, `launch-step requires latest ${type} artifact`);
-  }
-  const parsed = parseWorkflowArtifactJson(row.content_json);
-  if (!parsed.ok) {
+// Validate a rework launch's review pointer: only Execute launches take one (the
+// "address review #<id>" pointer), and it must reference a review on the run's PR.
+function resolveReworkReview(
+  prIssueId: number,
+  step: WorkflowStep,
+  reviewId: number | undefined,
+): number | undefined {
+  if (reviewId === undefined) return undefined;
+  if (step !== "execute") {
     throw new ServiceError(
       422,
-      `invalid ${type} artifact: ${parsed.violations.map((v) => `${v.path} ${v.message}`).join("; ")}`,
+      "a review pointer applies to Execute launches only",
     );
   }
-  if (parsed.artifact.type !== type) {
-    throw new ServiceError(
-      422,
-      `expected ${type} artifact, got ${parsed.artifact.type}`,
-    );
+  if (!S.listReviews(prIssueId).some((review) => review.id === reviewId)) {
+    throw new ServiceError(404, `review #${reviewId} not found on the run PR`);
   }
-  return parsed.artifact;
+  return reviewId;
 }
 
-function readLatestArtifactOptional(
-  run: S.WorkflowRunRow,
-  type: "verdict",
-): WorkflowVerdictArtifact | undefined {
-  return S.latestWorkflowArtifactByType(run.id, type)
-    ? readLatestArtifact(run, type)
-    : undefined;
+// The latest substantive review submitted by this run's own Verify children. Scoped by parsing
+// the review author back to a `verifier #<run>-<seq>` agent name, so reviews from other runs on
+// the same PR (or from humans) never drive this run's transitions — old runs' data cannot gate a
+// new run.
+function latestWorkflowRunReview(
+  prIssueId: number,
+  runId: number,
+): S.ReviewRow | null {
+  const reviews = S.listReviews(prIssueId);
+  for (let i = reviews.length - 1; i >= 0; i--) {
+    const review = reviews[i];
+    if (review.event !== "PASS" && review.event !== "REQUEST_CHANGES") continue;
+    const agent = parseWorkflowHerdrAgentName(review.author);
+    if (
+      agent?.kind === "step" &&
+      agent.step === "verify" &&
+      agent.runId === runId
+    ) {
+      return review;
+    }
+  }
+  return null;
 }
 
-function compact<T>(values: Array<T | undefined>): T[] {
-  return values.filter((value): value is T => value !== undefined);
+function reviewObservation(
+  review: S.ReviewRow | null,
+): WorkflowLatestReviewState | null {
+  if (!review) return null;
+  return {
+    id: review.id,
+    event: review.event === "PASS" ? "pass" : "request_changes",
+    headSha: review.head_sha,
+  };
 }
 
 function stepActorAllowed(
@@ -541,33 +516,12 @@ async function isHeadAheadOfBase(
   }
 }
 
-function latestArtifactState(
-  run: S.WorkflowRunRow,
-  type: WorkflowArtifactType,
-): WorkflowLatestArtifactState | null {
-  const row = S.latestWorkflowArtifactByType(run.id, type);
-  if (!row) return null;
-  return {
-    headSha: row.head_sha,
-    placed: Boolean(S.getWorkflowPlacement(row.id)),
-  };
-}
-
-function latestVerdictContent(
-  run: S.WorkflowRunRow,
-): WorkflowVerdictArtifact | null {
-  const row = S.latestWorkflowArtifactByType(run.id, "verdict");
-  if (!row) return null;
-  const parsed = parseWorkflowArtifactJson(row.content_json);
-  if (!parsed.ok || parsed.artifact.type !== "verdict") return null;
-  return parsed.artifact;
-}
-
 async function workflowRunProgress(
   repo: S.Repo,
   run: S.WorkflowRunRow,
 ): Promise<{
   currentHead: string | null;
+  headAheadOfBase: boolean;
   steps: WorkflowStepStatuses;
 }> {
   const prIssue = issueOr404(repo, run.pr_number, "pull");
@@ -587,12 +541,13 @@ async function workflowRunProgress(
   );
   return {
     currentHead,
+    headAheadOfBase,
     steps: evaluateWorkflowSteps({
       currentHead,
       headAheadOfBase,
-      execute: latestArtifactState(run, "execution-report"),
-      verify: latestArtifactState(run, "verdict"),
-      latestVerdict: latestVerdictContent(run),
+      latestReview: reviewObservation(
+        latestWorkflowRunReview(prIssue.id, run.id),
+      ),
     }),
   };
 }
@@ -600,167 +555,48 @@ async function workflowRunProgress(
 // Build the issue / PR detail display state (#1008) from a run row. The row is the display-state
 // source (workflow design: CLI / UI); this does not re-derive step-completion truth (that is
 // `workflow step status`).
-// `latest_verdict` gives the human-readable reason behind a rework / block.
-function workflowRunState(run: S.WorkflowRunRow): WorkflowRunStateWire {
+// `latest_review` gives the human-readable reason behind a rework / block.
+function workflowRunState(
+  repo: S.Repo,
+  run: S.WorkflowRunRow,
+): WorkflowRunStateWire {
   const workflowName = run.workflow_id
     ? (S.getWorkflowById(run.workflow_id)?.name ?? null)
     : null;
-  const verdict = latestVerdictContent(run);
-  const latestVerdict: WorkflowRunVerdictSummaryWire | null = verdict
+  const prIssue = S.getIssue(repo.id, run.pr_number);
+  const review = prIssue ? latestWorkflowRunReview(prIssue.id, run.id) : null;
+  const latestReview: WorkflowRunReviewSummaryWire | null = review
     ? {
-        event: verdict.event,
-        summary: verdict.summary,
-        findings_count: verdict.findings.length,
+        id: review.id,
+        event: review.event === "PASS" ? "pass" : "request_changes",
+        summary: review.body,
+        findings_count: prIssue
+          ? S.listReviewComments(prIssue.id).filter(
+              (comment) => comment.review_id === review.id,
+            ).length
+          : 0,
       }
     : null;
-  return workflowRunStateJSON({ run, workflowName, latestVerdict });
+  return workflowRunStateJSON({ run, workflowName, latestReview });
 }
 
-function safeEvidenceAttachment(
-  worktree: string,
-  path: string,
-  author: string,
-): string {
-  const candidate = join(worktree, path);
-  if (lstatSync(candidate).isSymbolicLink()) {
-    throw new ServiceError(
-      422,
-      `Workflow evidence path must not be a symlink: ${path}`,
-    );
-  }
-  const fd = openSync(candidate, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const opened = fstatSync(fd);
-    if (!opened.isFile()) {
-      throw new ServiceError(
-        422,
-        `Workflow evidence path must be a regular file: ${path}`,
-      );
-    }
-    const resolved = realpathSync(candidate);
-    const checked = statSync(resolved);
-    if (checked.dev !== opened.dev || checked.ino !== opened.ino) {
-      throw new ServiceError(
-        422,
-        `Workflow evidence path changed while opening: ${path}`,
-      );
-    }
-    const rel = relative(realpathSync(worktree), resolved);
-    if (rel.startsWith("..") || rel.startsWith(sep)) {
-      throw new ServiceError(
-        422,
-        `Workflow evidence path escapes worktree: ${path}`,
-      );
-    }
-    return saveAttachment({
-      data: readFileSync(fd),
-      filename: basename(resolved),
-      author,
-    }).markdown;
-  } finally {
-    closeSync(fd);
-  }
-}
-
-async function placeAcceptedArtifact(input: {
-  repoName: string;
-  run: S.WorkflowRunRow;
-  artifactId: number;
-  ownerToken: string;
-  ownershipLost: () => boolean;
-  artifact: WorkflowArtifact;
-  headSha: string;
-  worktree: string;
-  sessionId?: string | null;
-}): Promise<{ kind: string; ref: string }> {
-  const current = await pulls.get(input.repoName, input.run.pr_number);
-  return placeWorkflowArtifact({
-    artifact: input.artifact,
-    headSha: input.headSha,
-    issueNumber: input.run.issue_number,
-    dependencies: {
-      currentDraft: current.draft,
-      assertOwnership() {
-        if (
-          input.ownershipLost() ||
-          !S.ownsWorkflowPlacementClaim(input.artifactId, input.ownerToken)
-        ) {
-          throw new ServiceError(
-            409,
-            "Workflow artifact placement claim was lost",
-          );
-        }
-      },
-      async updateBody(body) {
-        await pulls.update(
-          input.repoName,
-          input.run.pr_number,
-          { body },
-          input.sessionId,
-        );
-      },
-      async readyForReview() {
-        await pulls.readyForReview(
-          input.repoName,
-          input.run.pr_number,
-          undefined,
-          input.sessionId,
-          () => {
-            if (
-              input.ownershipLost() ||
-              !S.ownsWorkflowPlacementClaim(input.artifactId, input.ownerToken)
-            ) {
-              throw new ServiceError(
-                409,
-                "Workflow artifact placement claim was lost",
-              );
-            }
-          },
-        );
-      },
-      async createReview(review) {
-        return String(
-          (
-            await reviews.create(
-              input.repoName,
-              input.run.pr_number,
-              { ...review, topic: "workflow" },
-              input.sessionId,
-            )
-          ).id,
-        );
-      },
-      attach(path) {
-        return safeEvidenceAttachment(
-          input.worktree,
-          path,
-          actorFor(input.sessionId),
-        );
-      },
-      record(kind, ref) {
-        S.createWorkflowPlacement(input.artifactId, kind, ref);
-      },
-    },
-  });
-}
-
-async function pinnedDiff(
+// The base SHA pinned into a Verify launch: the merge-base of the run's base branch and the
+// head under review, so the (base SHA, head SHA) pointer pair identifies the exact diff even if
+// the base branch advances while Verify runs.
+async function pinnedBaseSha(
   worktree: string,
   baseBranch: string,
-): Promise<{ headSha: string; baseBranch: string; diff: string }> {
-  const head = await git(worktree, ["rev-parse", "HEAD"]);
-  const headSha = head.stdout.trim();
-  if (head.code !== 0 || !headSha) {
-    throw new ServiceError(409, "could not resolve Workflow worktree HEAD");
-  }
-  const diff = await git(worktree, ["diff", `${baseBranch}...${headSha}`]);
-  if (diff.code !== 0) {
+  headSha: string,
+): Promise<string> {
+  const result = await git(worktree, ["merge-base", baseBranch, headSha]);
+  const baseSha = result.stdout.trim();
+  if (result.code !== 0 || !baseSha) {
     throw new ServiceError(
       409,
-      `could not compose verify diff from ${baseBranch}...${headSha}: ${diff.stderr.trim()}`,
+      `could not resolve merge-base of ${baseBranch} and ${headSha}: ${result.stderr.trim()}`,
     );
   }
-  return { headSha, baseBranch, diff: diff.stdout };
+  return baseSha;
 }
 
 function assertParentActor(
@@ -960,10 +796,6 @@ export const workflowRuns = {
         parentSessionId: sessionId,
       });
 
-      const inputFiles = writeWorkflowStepInputArtifacts(
-        ensureWorkflowRunDir(run.id),
-        composeExecuteInputArtifacts({ issue: issueInput(issue) }),
-      );
       const systemPromptPath = writeParentContract(
         run.id,
         renderWorkflowContract({
@@ -1007,7 +839,6 @@ export const workflowRuns = {
             workflowName: workflow.name,
             issueNumber: issue.number,
             prNumber: opened.number,
-            inputFiles,
             baseRef: pull.base_ref,
           }),
         },
@@ -1066,8 +897,8 @@ export const workflowRuns = {
         `Workflow Verify is incomplete: ${progress.steps.verify.missing.join("; ")}`,
       );
     }
-    if (progress.steps.verify.latest_verdict?.event !== "pass") {
-      throw new ServiceError(409, "Workflow Verify verdict is not passing");
+    if (progress.steps.verify.latest_review?.event !== "pass") {
+      throw new ServiceError(409, "Workflow Verify review is not passing");
     }
     return updateRunLifecycle(
       run,
@@ -1120,11 +951,14 @@ export const workflowRuns = {
     }
     const step = workflowStep(input.step);
     if (step === "verify") {
+      // Resuming at Verify only needs something to review (head ahead of base) — a human may
+      // deliberately re-verify the same head, so the execute "advanced past review" condition
+      // does not apply here.
       const progress = await workflowRunProgress(repo, run);
-      if (!progress.steps.execute.complete) {
+      if (!progress.headAheadOfBase) {
         throw new ServiceError(
           409,
-          `Workflow cannot resume at Verify: ${progress.steps.execute.missing.join("; ")}`,
+          "Workflow cannot resume at Verify: head equals base",
         );
       }
     }
@@ -1171,10 +1005,10 @@ export const workflowRuns = {
         `Workflow Verify is incomplete: ${progress.steps.verify.missing.join("; ")}`,
       );
     }
-    if (progress.steps.verify.latest_verdict?.event !== "request_changes") {
+    if (progress.steps.verify.latest_review?.event !== "request_changes") {
       throw new ServiceError(
         409,
-        "Workflow Verify verdict does not request changes",
+        "Workflow Verify review does not request changes",
       );
     }
     if (run.rework_count >= 3) {
@@ -1194,6 +1028,7 @@ export const workflowRuns = {
       run: number;
       step: string;
       note?: string;
+      review?: number;
       contract: string;
       model?: string | null;
       auto?: boolean;
@@ -1216,7 +1051,7 @@ export const workflowRuns = {
       ? S.getWorkflowById(run.workflow_id)
       : null;
     if (!workflow) throw new ServiceError(404, "Workflow not found");
-    const issue = issueOr404(r, run.issue_number, "issue");
+    issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const pull = S.getPull(prIssue.id);
     if (!pull)
@@ -1226,18 +1061,21 @@ export const workflowRuns = {
       prNumber: run.pr_number,
       headRef: pull.head_ref,
     });
-    const inputFiles = writeWorkflowStepInputArtifacts(
-      ensureWorkflowRunDir(run.id),
-      await composeLaunchInputs({
-        issue,
-        pull,
-        run,
-        step,
-        worktree,
-      }),
-    );
+    const reviewId = resolveReworkReview(prIssue.id, step, input.review);
     const headSha =
       step === "verify" ? await worktreeHead(worktree) : undefined;
+    const baseSha =
+      step === "verify" && headSha
+        ? await pinnedBaseSha(worktree, pull.base_ref, headSha)
+        : undefined;
+    const pointers = buildStepPointers({
+      repoName: r.full_name,
+      run,
+      step,
+      reviewId,
+      baseSha,
+      headSha,
+    });
     const composed = composeWorkflowLaunchPrompt(
       {
         template: stepContractForLaunch(step, input.contract),
@@ -1246,7 +1084,7 @@ export const workflowRuns = {
         baseBranch: pull.base_ref,
       },
       {
-        inputFiles,
+        pointers,
         worktreePath: ".",
         baseBranch: pull.base_ref,
         stepPrompt: workflowStepPrompt(workflow, step),
@@ -1297,8 +1135,9 @@ export const workflowRuns = {
       worktree,
       system_prompt_path: systemPromptPath,
       user_prompt: composed.userPrompt,
-      input_files: inputFiles,
+      pointers,
       head_sha: headSha,
+      base_sha: baseSha,
       herdr,
     };
   },
@@ -1344,7 +1183,7 @@ export const workflowRuns = {
       step: string;
       sessionId: string;
       agentName?: string;
-      inputFiles: Array<{ path: string; description: string }>;
+      pointers: WorkflowInputPointer[];
       headSha?: string;
       note?: string;
     },
@@ -1381,16 +1220,14 @@ export const workflowRuns = {
           "confirmed Verify launch requires a commit SHA",
         );
       }
-      S.setWorkflowStepPin(run.id, step, sessionId, input.headSha);
-      if (S.getWorkflowStepPin(run.id, step, sessionId) !== input.headSha) {
-        throw new ServiceError(422, "Verify session pin cannot be changed");
-      }
     }
     const handoffBody = [
       `Launch Workflow ${step} step for run #${run.id}.`,
       "",
       "## Inputs",
-      ...input.inputFiles.map((file) => `- ${file.path} - ${file.description}`),
+      ...input.pointers.map(
+        (pointer) => `- ${pointer.label}: ${pointer.value}`,
+      ),
       ...(input.note?.trim()
         ? ["", "## Note from parent", input.note.trim()]
         : []),
@@ -1433,11 +1270,15 @@ export const workflowRuns = {
     return { run: runJSON(withSession), session_id: sessionId };
   },
 
-  async stepOutput(
+  // The Execute child's payload-less turn-done declaration. It is a timing signal only: the
+  // engine records the fact as an event (the worker delivers it to the subscribed parent pane),
+  // and the parent then observes HEAD / review state before deciding any transition. The
+  // declaration never carries content and never substitutes for domain truth.
+  turnDone(
     name: string,
-    input: { run: number; step: string; content: string },
+    input: { run: number },
     sessionId?: string | null,
-  ): Promise<WorkflowStepOutputResult> {
+  ): WorkflowTurnDoneResult {
     const r = repoOr404(name);
     ensureWritable(r);
     const run = workflowRunOr404(input.run);
@@ -1445,188 +1286,41 @@ export const workflowRuns = {
       throw new ServiceError(404, "Workflow run not found for repo");
     if (run.status !== "running")
       throw new ServiceError(422, `Workflow run is ${run.status}`);
-    const step = workflowStep(input.step);
-    if (!stepActorAllowed(run, step, sessionId)) {
+    if (!stepActorAllowed(run, "execute", sessionId)) {
       throw new ServiceError(
         403,
-        "Workflow step output must be submitted by the parent or launched step session",
+        "Workflow turn done must be declared by a launched Execute session",
       );
     }
-    const parsed = parseWorkflowArtifactJson(input.content);
-    if (!parsed.ok) {
-      throw new ServiceError(
-        422,
-        `invalid artifact: ${parsed.violations.map((v) => `${v.path} ${v.message}`).join("; ")}`,
-      );
-    }
-    const expected = STEP_ARTIFACT_TYPE[step];
-    if (parsed.artifact.type !== expected) {
-      throw new ServiceError(
-        422,
-        `expected ${expected} artifact for ${step}, got ${parsed.artifact.type}`,
-      );
-    }
-    const prIssue = issueOr404(r, run.pr_number, "pull");
-    const pull = S.getPull(prIssue.id);
-    if (!pull)
-      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-    const worktree = workflowRunWorktree({
-      repo: r,
-      prNumber: run.pr_number,
-      headRef: pull.head_ref,
-    });
-    const currentHead = await worktreeHead(worktree);
-    let headSha = currentHead;
-    if (
-      parsed.artifact.type === "verdict" &&
-      sessionId !== run.parent_session_id
-    ) {
-      const actor = sessionId ? S.getAgentSession(sessionId) : null;
-      if (actor?.agent !== "me") {
-        const pin = sessionId
-          ? S.getWorkflowStepPin(run.id, step, sessionId)
-          : null;
-        if (!pin || !/^[0-9a-f]{40,64}$/u.test(pin)) {
-          throw new ServiceError(
-            422,
-            "Verify session has no confirmed launch pin",
-          );
-        }
-        const resolved = await git(worktree, [
-          "cat-file",
-          "-e",
-          `${pin}^{commit}`,
-        ]);
-        if (resolved.code !== 0) {
-          throw new ServiceError(
-            422,
-            "Verify launch pin is not a worktree commit",
-          );
-        }
-        headSha = pin;
-      }
-    }
-    const contentJson = JSON.stringify(parsed.artifact);
-    const latest = S.latestWorkflowArtifact(run.id, step);
-    const latestPlacement = latest ? S.getWorkflowPlacement(latest.id) : null;
-    const retryUnplaced =
-      latest &&
-      !latestPlacement &&
-      latest.content_json === contentJson &&
-      S.getWorkflowArtifactSubmitter(latest.id) === sessionId;
-    const artifact = retryUnplaced
-      ? latest
-      : S.createWorkflowArtifact({
-          runId: run.id,
-          step,
-          type: parsed.artifact.type,
-          contentJson,
-          headSha,
-          submittedBy: sessionId!,
-          dedupeKey: createHash("sha256")
-            .update(
-              `${run.id}\0${step}\0${sessionId}\0${contentJson}\0${headSha}`,
-            )
-            .digest("hex"),
-        });
-    headSha = artifact.head_sha;
-    const existing = S.getWorkflowPlacement(artifact.id);
-    if (existing) {
-      return {
-        artifact_id: artifact.id,
-        head_sha: headSha,
-        placement: { kind: existing.target_kind, ref: existing.target_ref },
-        retried: true,
-      };
-    }
-    let claimToken = S.claimWorkflowPlacement(artifact.id);
-    for (let attempt = 0; !claimToken && attempt < 50; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      const completed = S.getWorkflowPlacement(artifact.id);
-      if (completed) {
-        return {
-          artifact_id: artifact.id,
-          head_sha: headSha,
-          placement: {
-            kind: completed.target_kind,
-            ref: completed.target_ref,
-          },
-          retried: true,
-        };
-      }
-      claimToken = S.claimWorkflowPlacement(artifact.id);
-    }
-    if (!claimToken) {
-      throw new ServiceError(
-        409,
-        "Workflow artifact placement is already in progress",
-      );
-    }
-    const completedAfterClaim = S.getWorkflowPlacement(artifact.id);
-    if (completedAfterClaim) {
-      S.releaseWorkflowPlacementClaim(artifact.id, claimToken);
-      return {
-        artifact_id: artifact.id,
-        head_sha: headSha,
-        placement: {
-          kind: completedAfterClaim.target_kind,
-          ref: completedAfterClaim.target_ref,
-        },
-        retried: true,
-      };
-    }
-    let placed: { kind: string; ref: string };
-    let claimLost = false;
-    const heartbeat = setInterval(() => {
-      try {
-        if (!S.renewWorkflowPlacementClaim(artifact.id, claimToken)) {
-          claimLost = true;
-        }
-      } catch {
-        claimLost = true;
-      }
-    }, 30_000);
-    heartbeat.unref();
-    try {
-      placed = await placeAcceptedArtifact({
-        repoName: r.full_name,
-        run,
-        artifactId: artifact.id,
-        ownerToken: claimToken,
-        ownershipLost: () => claimLost,
-        artifact: parsed.artifact,
-        headSha,
-        worktree,
-        sessionId,
-      });
-      S.clearWorkflowArtifactDedupe(artifact.id);
-    } finally {
-      clearInterval(heartbeat);
-      S.releaseWorkflowPlacementClaim(artifact.id, claimToken);
-    }
-    S.emitEvent(r.id, "workflow_artifact.placed", actorFor(sessionId), {
-      id: run.id,
-      artifact_id: artifact.id,
-      step,
-      type: parsed.artifact.type,
-      head_sha: headSha,
-      target_kind: placed.kind,
-      target_ref: placed.ref,
-      // Both issue / PR numbers so issue & PR detail refresh their run-state query precisely (#1008).
-      issue_number: run.issue_number,
-      pr_number: run.pr_number,
-    });
-    return {
-      artifact_id: artifact.id,
-      head_sha: headSha,
-      placement: placed,
-      retried: Boolean(retryUnplaced),
-    };
+    const event = S.emitEvent(
+      r.id,
+      "workflow_run.turn_done",
+      actorFor(sessionId),
+      {
+        id: run.id,
+        // Both issue / PR numbers so issue & PR detail refresh their run-state query precisely
+        // (#1008); `number` lets the generic pub/sub notify line name the PR.
+        number: run.pr_number,
+        issue_number: run.issue_number,
+        pr_number: run.pr_number,
+        // The worker's pub/sub delivery filters turn-done notifications to the run's own parent
+        // pane by this session id (same pattern as pull_request.github_feedback).
+        parent_session_id: run.parent_session_id,
+        session_id: sessionId ?? null,
+      },
+    );
+    return { run: run.id, event_id: event.id };
   },
 
   async stepInput(
     name: string,
-    input: { run: number; step: string; note?: string; contract: string },
+    input: {
+      run: number;
+      step: string;
+      note?: string;
+      review?: number;
+      contract: string;
+    },
     _sessionId?: string | null,
   ): Promise<WorkflowStepInputResult> {
     const r = repoOr404(name);
@@ -1639,7 +1333,7 @@ export const workflowRuns = {
       ? S.getWorkflowById(run.workflow_id)
       : null;
     if (!workflow) throw new ServiceError(404, "Workflow not found");
-    const issue = issueOr404(r, run.issue_number, "issue");
+    issueOr404(r, run.issue_number, "issue");
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const pull = S.getPull(prIssue.id);
     if (!pull)
@@ -1649,16 +1343,21 @@ export const workflowRuns = {
       prNumber: run.pr_number,
       headRef: pull.head_ref,
     });
-    const inputFiles = writeWorkflowStepInputArtifacts(
-      ensureWorkflowRunDir(run.id),
-      await composeLaunchInputs({
-        issue,
-        pull,
-        run,
-        step,
-        worktree,
-      }),
-    );
+    const reviewId = resolveReworkReview(prIssue.id, step, input.review);
+    const headSha =
+      step === "verify" ? await worktreeHead(worktree) : undefined;
+    const baseSha =
+      step === "verify" && headSha
+        ? await pinnedBaseSha(worktree, pull.base_ref, headSha)
+        : undefined;
+    const pointers = buildStepPointers({
+      repoName: r.full_name,
+      run,
+      step,
+      reviewId,
+      baseSha,
+      headSha,
+    });
     const composed = composeWorkflowLaunchPrompt(
       {
         template: stepContractForLaunch(step, input.contract),
@@ -1667,7 +1366,7 @@ export const workflowRuns = {
         baseBranch: pull.base_ref,
       },
       {
-        inputFiles,
+        pointers,
         worktreePath: ".",
         baseBranch: pull.base_ref,
         stepPrompt: workflowStepPrompt(workflow, step),
@@ -1685,7 +1384,7 @@ export const workflowRuns = {
       system_prompt: composed.systemPrompt,
       system_prompt_path: systemPromptPath,
       user_prompt: composed.userPrompt,
-      input_files: inputFiles,
+      pointers,
     };
   },
 
@@ -1706,6 +1405,8 @@ export const workflowRuns = {
       status: run.status,
       needs_human_reason: run.needs_human_reason,
       head_sha: progress.currentHead,
+      head_ahead_of_base: progress.headAheadOfBase,
+      last_turn_done_at: S.latestWorkflowTurnDoneAt(r.id, run.id),
       steps: progress.steps,
     };
   },
@@ -1720,7 +1421,7 @@ export const workflowRuns = {
   ): WorkflowRunStateWire | null {
     const r = repoOr404(name);
     const run = S.latestWorkflowRunForIssue(r.id, input.issue);
-    return run ? workflowRunState(run) : null;
+    return run ? workflowRunState(r, run) : null;
   },
 
   stateForPull(
@@ -1730,7 +1431,7 @@ export const workflowRuns = {
   ): WorkflowRunStateWire | null {
     const r = repoOr404(name);
     const run = S.latestWorkflowRunForPull(r.id, input.pull);
-    return run ? workflowRunState(run) : null;
+    return run ? workflowRunState(r, run) : null;
   },
 
   // On-demand audit history for the PR detail dialog. The store query matches the persisted run id,
@@ -1748,5 +1449,80 @@ export const workflowRuns = {
     return S.eventsForWorkflowRun(r.id, run.id).map(
       workflowRunHistoryEventJSON,
     );
+  },
+
+  // Worker-owned stall visibility (#1358): a running, non-held run whose latest lifecycle
+  // activity (run started/updated, step launched, turn-done declared) is older than the
+  // threshold is surfaced to a human — needs-human hold + Inbox message. No automatic recovery
+  // is attempted; resume / stop stay explicit human actions.
+  sweepStalledRuns(input: { thresholdMs: number; now?: number }): {
+    held: number[];
+    failed: number[];
+  } {
+    const held: number[] = [];
+    const failed: number[] = [];
+    const nowMs = input.now ?? Date.now();
+    const minutes = Math.max(1, Math.round(input.thresholdMs / 60_000));
+    for (const run of S.listRunningWorkflowRuns()) {
+      // Isolate each run: one repo's failure (e.g. inbox.send -> ensureWritable throwing because
+      // the repo was archived while the run was still running) must not abort the batch and leave
+      // later stalled runs unsurfaced. The sibling GitHub feedback sweep isolates per-PR the same way.
+      try {
+        if (run.needs_human_reason !== null) continue;
+        const repo = S.getRepoById(run.repo_id);
+        if (!repo) continue;
+        const lastActivity =
+          S.latestWorkflowRunActivityAt(run.repo_id, run.id) ?? run.updated_at;
+        const lastActivityMs = Date.parse(lastActivity);
+        if (
+          !Number.isFinite(lastActivityMs) ||
+          nowMs - lastActivityMs < input.thresholdMs
+        ) {
+          continue;
+        }
+        const reason = `no turn-done declaration or run activity for ${minutes} minutes`;
+        // Send the human notification first: if it throws (archived/read-only repo), the run is
+        // left running and un-held, so the next tick retries cleanly instead of holding a run whose
+        // human notice never went out.
+        inbox.send(repo.full_name, {
+          from: {
+            kind: "workflow_run",
+            repo: repo.full_name,
+            actor: "lh-worker",
+          },
+          title: `Workflow run #${run.id} stalled: no turn-done declaration`,
+          body: [
+            `Workflow run #${run.id} (issue #${run.issue_number}, PR #${run.pr_number}) made no`,
+            `progress for ${minutes} minutes: no turn-done declaration and no lifecycle activity.`,
+            "",
+            "The run is now held for a human (needs-human). Inspect the run and either resume it",
+            `(\`lh workflow run resume --repo '${repo.full_name}' --run ${run.id} --step <execute|verify>\`)`,
+            `or stop it (\`lh workflow run stop --repo '${repo.full_name}' --run ${run.id}\`).`,
+          ].join("\n"),
+        });
+        const updated = S.updateWorkflowRun(run.id, {
+          needsHumanReason: reason,
+        });
+        if (!updated) continue;
+        S.emitEvent(run.repo_id, "workflow_run.updated", "lh-worker", {
+          id: updated.id,
+          transition: "await_human",
+          status: updated.status,
+          current_step: updated.current_step,
+          rework_count: updated.rework_count,
+          needs_human_reason: updated.needs_human_reason,
+          issue_number: updated.issue_number,
+          pr_number: updated.pr_number,
+        });
+        held.push(run.id);
+      } catch (e) {
+        failed.push(run.id);
+        console.error(
+          `lh-worker: workflow stall sweep failed for run #${run.id}:`,
+          e instanceof Error ? e.message : e,
+        );
+      }
+    }
+    return { held, failed };
   },
 };

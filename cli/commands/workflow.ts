@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import {
   agentModel,
   type CodingAgent,
@@ -64,18 +64,6 @@ function nameArg(): string {
 async function fileText(path: string): Promise<string> {
   if (path === "-") return readStdin();
   return readFileSync(path, "utf8");
-}
-
-async function submittedArtifactText(path: string): Promise<string> {
-  if (path === "-") return readStdin();
-  if (lstatSync(path).isSymbolicLink()) {
-    fail(`artifact file must not be a symlink: ${path}`);
-  }
-  const resolved = realpathSync(path);
-  if (!lstatSync(resolved).isFile()) {
-    fail(`artifact file must be a regular file: ${path}`);
-  }
-  return readFileSync(resolved, "utf8");
 }
 
 async function promptPatchFromFlags(): Promise<
@@ -483,6 +471,11 @@ async function launchStep(): Promise<void> {
       : typeof flags.note === "string"
         ? flags.note
         : undefined;
+  // The rework pointer: the review the relaunched Execute child must address (#1358).
+  const review =
+    flags.review !== undefined
+      ? positiveInt(flags.review, "--review")
+      : undefined;
   const s = await svc();
   if (flags["no-launch"] === true) {
     fail("--no-launch is not supported for workflow launch-step");
@@ -499,6 +492,7 @@ async function launchStep(): Promise<void> {
         run: runId,
         step,
         note,
+        review,
         contract: contractText(step),
         // The step inherits the parent run's model; only forward an explicit --model override.
         model: explicitModelFlag(),
@@ -526,8 +520,8 @@ async function launchStep(): Promise<void> {
   console.log(`session\t${display(result.session_id)}`);
   console.log(`worktree\t${display(result.worktree)}`);
   console.log(`contract\t${display(result.system_prompt_path)}`);
-  for (const file of result.input_files) {
-    console.log(`input\t${display(file.path)}\t${file.description}`);
+  for (const pointer of result.pointers) {
+    console.log(`input\t${display(pointer.label)}\t${display(pointer.value)}`);
   }
   const confirm = () =>
     runOp(() =>
@@ -538,7 +532,7 @@ async function launchStep(): Promise<void> {
           step: result.step,
           sessionId: result.session_id,
           agentName: result.agent_name,
-          inputFiles: result.input_files,
+          pointers: result.pointers,
           headSha: result.head_sha,
           note,
         },
@@ -628,7 +622,9 @@ async function stepInput(): Promise<void> {
   const runId = positiveInt(rest[1], "<run>");
   const step = rest[2];
   if (!step) {
-    fail("usage: lh workflow step input <run> <step> [--note <text|->]");
+    fail(
+      "usage: lh workflow step input <run> <step> [--note <text|->] [--review <id>]",
+    );
   }
   const note =
     flags.note === "-"
@@ -636,12 +632,17 @@ async function stepInput(): Promise<void> {
       : typeof flags.note === "string"
         ? flags.note
         : undefined;
+  const review =
+    flags.review !== undefined
+      ? positiveInt(flags.review, "--review")
+      : undefined;
   const repo = await resolveRepo();
   const result = await runOp(async () =>
     (await svc()).workflowRuns.stepInput(repo, {
       run: runId,
       step,
       note,
+      review,
       contract: contractText(step),
     }),
   );
@@ -651,9 +652,9 @@ async function stepInput(): Promise<void> {
   }
   console.log(`--- system prompt (contract: ${result.step}) ---`);
   console.log(result.system_prompt);
-  console.log("--- input files ---");
-  for (const file of result.input_files) {
-    console.log(`${display(file.path)}\t${file.description}`);
+  console.log("--- input pointers ---");
+  for (const pointer of result.pointers) {
+    console.log(`${display(pointer.label)}\t${display(pointer.value)}`);
   }
   console.log("--- user prompt ---");
   console.log(result.user_prompt);
@@ -672,43 +673,46 @@ async function stepStatus(): Promise<void> {
   if (result.needs_human_reason !== null) {
     console.log(`needs_human\t${display(result.needs_human_reason)}`);
   }
+  console.log(`head\t${display(result.head_sha ?? "(unresolved)")}`);
+  if (result.last_turn_done_at !== null) {
+    console.log(`last_turn_done\t${display(result.last_turn_done_at)}`);
+  }
   for (const step of STEP_STATUS_ORDER) {
     const s = result.steps[step];
     const label = s.complete
       ? "complete"
       : `incomplete — ${s.missing.join("; ")}`;
     console.log(`${step}\t${label}`);
-    if (step === "verify" && result.steps.verify.latest_verdict) {
-      const v = result.steps.verify.latest_verdict;
+    if (step === "verify" && result.steps.verify.latest_review) {
+      const review = result.steps.verify.latest_review;
       console.log(
-        `\tlatest verdict: ${v.event} (${v.findings.length} findings)`,
+        `\tlatest review: #${review.id} ${review.event} (${review.fresh ? "fresh" : "stale"})`,
       );
     }
   }
 }
 
-async function stepOutput(): Promise<void> {
-  if (rest[0] !== "output") usage();
+// The Execute child's payload-less turn-done declaration (#1358). Target resolution mirrors the
+// launched-session environment (LOOPHUB_WORKFLOW_*), so the child needs no flags.
+async function turnDone(): Promise<void> {
+  if (rest[0] !== "done") usage();
   const runId = positiveInt(
     flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
     "--run or LOOPHUB_WORKFLOW_RUN",
   );
-  const step = flags.step ?? process.env.LOOPHUB_WORKFLOW_STEP;
-  if (!step) fail("--step or LOOPHUB_WORKFLOW_STEP is required");
-  const file = flags.file?.[0] ?? "-";
   const repo =
     flags.repo ?? process.env.LOOPHUB_WORKFLOW_REPO ?? (await resolveRepo());
   const result = await runOp(async () =>
-    (await svc()).workflowRuns.stepOutput(
+    (await svc()).workflowRuns.turnDone(
       repo,
-      { run: runId, step, content: await submittedArtifactText(file) },
+      { run: runId },
       await writeSession(),
     ),
   );
   if (flags.json) out(result);
   else
     console.log(
-      `placed ${result.placement.kind} at ${result.placement.ref} (artifact #${result.artifact_id}, ${result.head_sha})`,
+      `declared turn done for Workflow run #${result.run} (event #${result.event_id})`,
     );
 }
 
@@ -771,9 +775,11 @@ export async function run(): Promise<void> {
     await launchStep();
   } else if (sub === "run") {
     await runLifecycle();
+  } else if (sub === "turn") {
+    await turnDone();
   } else if (sub === "step") {
     if (rest[0] === "input") await stepInput();
     else if (rest[0] === "status") await stepStatus();
-    else await stepOutput();
+    else usage();
   } else usage();
 }

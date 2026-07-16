@@ -1747,7 +1747,7 @@ describe("PullDetail", () => {
         pr_number: 30,
         created_at: "2026-06-18T11:00:00Z",
         updated_at: "2026-06-18T12:00:00Z",
-        latest_verdict: null,
+        latest_review: null,
       }),
     });
 

@@ -135,11 +135,10 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     keys.push([...queryKeys.workflows()]);
   } else if (
     type.startsWith("workflow_run.") ||
-    type.startsWith("workflow_step.") ||
-    type.startsWith("workflow_artifact.")
+    type.startsWith("workflow_step.")
   ) {
     // A Workflow run's step / status / rework count is shown on issue and PR detail (#1008). These
-    // lifecycle events (workflow_run.started/updated, workflow_step.launched, workflow_artifact.placed) all carry
+    // lifecycle events (workflow_run.started/updated/turn_done, workflow_step.launched) all carry
     // both issue_number and pr_number in the payload, so refresh both detail views' run-state query.
     // Fall back to the whole prefix defensively when the repo or numbers are somehow absent.
     const issueNumber = payload?.issue_number;

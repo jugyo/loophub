@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { db, now } from "../db.ts";
 
 export interface WorkflowInput {
@@ -134,207 +133,6 @@ export interface WorkflowRunRow {
   updated_at: string;
 }
 
-export interface WorkflowArtifactRow {
-  id: number;
-  run_id: number;
-  step: string;
-  type: string;
-  content_json: string;
-  head_sha: string;
-  dedupe_key: string | null;
-  created_at: string;
-}
-
-export interface WorkflowPlacementRow {
-  id: number;
-  artifact_id: number;
-  target_kind: string;
-  target_ref: string;
-  placed_at: string;
-}
-
-export function createWorkflowArtifact(input: {
-  runId: number;
-  step: string;
-  type: string;
-  contentJson: string;
-  headSha: string;
-  submittedBy: string;
-  dedupeKey: string;
-}): WorkflowArtifactRow {
-  const created = db
-    .query(
-      `INSERT INTO workflow_artifacts
-        (run_id, step, type, content_json, head_sha, dedupe_key, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING *`,
-    )
-    .get(
-      input.runId,
-      input.step,
-      input.type,
-      input.contentJson,
-      input.headSha,
-      input.dedupeKey,
-      now(),
-    ) as WorkflowArtifactRow | null;
-  const artifact =
-    created ??
-    (db
-      .query(`SELECT * FROM workflow_artifacts WHERE dedupe_key = ?`)
-      .get(input.dedupeKey) as WorkflowArtifactRow);
-  db.run(
-    `INSERT INTO workflow_artifact_submitters (artifact_id, session_id)
-     VALUES (?, ?) ON CONFLICT DO NOTHING`,
-    [artifact.id, input.submittedBy],
-  );
-  return artifact;
-}
-
-export function getWorkflowArtifactSubmitter(
-  artifactId: number,
-): string | null {
-  const row = db
-    .query(
-      `SELECT session_id FROM workflow_artifact_submitters WHERE artifact_id = ?`,
-    )
-    .get(artifactId) as { session_id: string } | null;
-  return row?.session_id ?? null;
-}
-
-export function latestWorkflowArtifact(
-  runId: number,
-  step: string,
-): WorkflowArtifactRow | null {
-  return db
-    .query(
-      `SELECT * FROM workflow_artifacts WHERE run_id = ? AND step = ? ORDER BY id DESC LIMIT 1`,
-    )
-    .get(runId, step) as WorkflowArtifactRow | null;
-}
-
-export function latestWorkflowArtifactByType(
-  runId: number,
-  type: string,
-): WorkflowArtifactRow | null {
-  return db
-    .query(
-      `SELECT * FROM workflow_artifacts
-       WHERE run_id = ? AND type = ? ORDER BY id DESC LIMIT 1`,
-    )
-    .get(runId, type) as WorkflowArtifactRow | null;
-}
-
-export function clearWorkflowArtifactDedupe(artifactId: number): void {
-  db.run(`UPDATE workflow_artifacts SET dedupe_key = NULL WHERE id = ?`, [
-    artifactId,
-  ]);
-}
-
-export function claimWorkflowPlacement(artifactId: number): string | null {
-  const ownerToken = randomUUID();
-  const claimedAt = now();
-  const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString();
-  db.run(
-    `INSERT INTO workflow_placement_claims (artifact_id, owner_token, claimed_at)
-     VALUES (?, ?, ?)
-     ON CONFLICT(artifact_id) DO UPDATE SET
-       owner_token = excluded.owner_token,
-       claimed_at = excluded.claimed_at
-     WHERE workflow_placement_claims.claimed_at < ?`,
-    [artifactId, ownerToken, claimedAt, staleBefore],
-  );
-  const row = db
-    .query(
-      `SELECT owner_token FROM workflow_placement_claims WHERE artifact_id = ?`,
-    )
-    .get(artifactId) as { owner_token: string } | null;
-  return row?.owner_token === ownerToken ? ownerToken : null;
-}
-
-export function releaseWorkflowPlacementClaim(
-  artifactId: number,
-  ownerToken: string,
-): void {
-  db.run(
-    `DELETE FROM workflow_placement_claims
-     WHERE artifact_id = ? AND owner_token = ?`,
-    [artifactId, ownerToken],
-  );
-}
-
-export function renewWorkflowPlacementClaim(
-  artifactId: number,
-  ownerToken: string,
-): boolean {
-  db.run(
-    `UPDATE workflow_placement_claims SET claimed_at = ?
-     WHERE artifact_id = ? AND owner_token = ?`,
-    [now(), artifactId, ownerToken],
-  );
-  return ownsWorkflowPlacementClaim(artifactId, ownerToken);
-}
-
-export function ownsWorkflowPlacementClaim(
-  artifactId: number,
-  ownerToken: string,
-): boolean {
-  const row = db
-    .query(
-      `SELECT owner_token FROM workflow_placement_claims WHERE artifact_id = ?`,
-    )
-    .get(artifactId) as { owner_token: string } | null;
-  return row?.owner_token === ownerToken;
-}
-
-export function getWorkflowPlacement(
-  artifactId: number,
-): WorkflowPlacementRow | null {
-  return db
-    .query(`SELECT * FROM workflow_placements WHERE artifact_id = ?`)
-    .get(artifactId) as WorkflowPlacementRow | null;
-}
-
-export function createWorkflowPlacement(
-  artifactId: number,
-  targetKind: string,
-  targetRef: string,
-): WorkflowPlacementRow {
-  return db
-    .query(
-      `INSERT INTO workflow_placements (artifact_id, target_kind, target_ref, placed_at)
-       VALUES (?, ?, ?, ?) RETURNING *`,
-    )
-    .get(artifactId, targetKind, targetRef, now()) as WorkflowPlacementRow;
-}
-
-export function setWorkflowStepPin(
-  runId: number,
-  step: string,
-  sessionId: string,
-  headSha: string,
-): void {
-  db.run(
-    `INSERT INTO workflow_step_pins (run_id, step, session_id, head_sha, created_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(session_id) DO NOTHING`,
-    [runId, step, sessionId, headSha, now()],
-  );
-}
-
-export function getWorkflowStepPin(
-  runId: number,
-  step: string,
-  sessionId: string,
-): string | null {
-  const row = db
-    .query(
-      `SELECT head_sha FROM workflow_step_pins
-       WHERE run_id = ? AND step = ? AND session_id = ?`,
-    )
-    .get(runId, step, sessionId) as { head_sha: string } | null;
-  return row?.head_sha ?? null;
-}
-
 export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
   const t = now();
   return db
@@ -363,6 +161,14 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
   return db
     .query(`SELECT * FROM workflow_runs WHERE id = ?`)
     .get(id) as WorkflowRunRow | null;
+}
+
+// All active runs, for the worker's stall-visibility sweep. `running` includes runs already held
+// for a human (needs_human_reason set); the sweep skips those itself.
+export function listRunningWorkflowRuns(): WorkflowRunRow[] {
+  return db
+    .query(`SELECT * FROM workflow_runs WHERE status = 'running' ORDER BY id`)
+    .all() as WorkflowRunRow[];
 }
 
 // Latest run linked to an issue / PR, used by issue / PR detail to display run state (#1008).

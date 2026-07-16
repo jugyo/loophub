@@ -734,9 +734,8 @@ CREATE TABLE IF NOT EXISTS workflows (
   updated_at      TEXT NOT NULL
 );
 
--- Minimal run tracking for the workflow delete guard (#997). Full run start/step/artifact
--- behavior is implemented in later Workflow issues; this table is present now so a workflow referenced
--- by an active run cannot be deleted.
+-- Minimal run tracking for the workflow delete guard (#997) plus the run lifecycle state. A
+-- workflow referenced by an active run cannot be deleted.
 CREATE TABLE IF NOT EXISTS workflow_runs (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
   workflow_id        INTEGER REFERENCES workflows(id) ON DELETE SET NULL,
@@ -762,50 +761,12 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
 CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_status
   ON workflow_runs(workflow_id, status);
 
-CREATE TABLE IF NOT EXISTS workflow_artifacts (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id       INTEGER NOT NULL REFERENCES workflow_runs(id),
-  step         TEXT NOT NULL,
-  type         TEXT NOT NULL,
-  content_json TEXT NOT NULL,
-  head_sha     TEXT NOT NULL,
-  dedupe_key   TEXT,
-  created_at   TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_workflow_artifacts_run_step
-  ON workflow_artifacts(run_id, step, id);
-
-CREATE TABLE IF NOT EXISTS workflow_placements (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  artifact_id INTEGER NOT NULL REFERENCES workflow_artifacts(id),
-  target_kind TEXT NOT NULL,
-  target_ref  TEXT NOT NULL,
-  placed_at   TEXT NOT NULL
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_placements_artifact
-  ON workflow_placements(artifact_id);
-
-CREATE TABLE IF NOT EXISTS workflow_step_pins (
-  run_id     INTEGER NOT NULL REFERENCES workflow_runs(id),
-  step       TEXT NOT NULL,
-  session_id TEXT NOT NULL UNIQUE,
-  head_sha   TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  PRIMARY KEY (run_id, step, session_id)
-);
-
-CREATE TABLE IF NOT EXISTS workflow_placement_claims (
-  artifact_id INTEGER PRIMARY KEY REFERENCES workflow_artifacts(id),
-  owner_token TEXT NOT NULL,
-  claimed_at  TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS workflow_artifact_submitters (
-  artifact_id INTEGER PRIMARY KEY REFERENCES workflow_artifacts(id),
-  session_id  TEXT NOT NULL
-);
+-- Retired artifact-contract tables (#1358). The Workflow moved to pointer inputs and
+-- HEAD/review observation: step outputs are commits / PR reviews / attachments / comments, so
+-- nothing reads or writes workflow_artifacts / workflow_placements / workflow_step_pins /
+-- workflow_artifact_submitters anymore. Existing databases keep those tables untouched as
+-- inert history (a new run's progress never consults them); they are simply no longer created
+-- on fresh installs. The transient placement-claim lock table is dropped below.
 `);
 
 // 既存 DB 向けの軽量マイグレーション（カラムが既にあれば throw → 無視）
@@ -928,7 +889,6 @@ tryExec("ALTER TABLE pulls ADD COLUMN base_sha TEXT");
 tryExec(
   "ALTER TABLE pulls ADD COLUMN head_pending_creation INTEGER NOT NULL DEFAULT 0",
 );
-tryExec("ALTER TABLE workflow_artifacts ADD COLUMN dedupe_key TEXT");
 tryExec(
   "ALTER TABLE workflow_runs ADD COLUMN auto_mode INTEGER NOT NULL DEFAULT 0",
 );
@@ -941,11 +901,9 @@ tryExec(
 // while staying `running` (resumable); the text is the reason shown to the human. Legacy terminal
 // `blocked` rows keep their status and never carry a reason.
 tryExec("ALTER TABLE workflow_runs ADD COLUMN needs_human_reason TEXT");
-tryExec("ALTER TABLE workflow_placement_claims ADD COLUMN owner_token TEXT");
-tryExec("DROP INDEX IF EXISTS idx_workflow_artifacts_submission");
-tryExec(
-  "CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_artifacts_inflight_dedupe ON workflow_artifacts(dedupe_key) WHERE dedupe_key IS NOT NULL",
-);
+// Artifact-contract retirement (#1358): the claims table only ever held transient placement
+// locks, so dropping it loses nothing; the artifact/placement/pin history tables stay untouched.
+tryExec("DROP TABLE IF EXISTS workflow_placement_claims");
 tryExec("ALTER TABLE issues ADD COLUMN target_branch TEXT");
 tryExec("ALTER TABLE review_comments ADD COLUMN review_id INTEGER");
 tryExec(

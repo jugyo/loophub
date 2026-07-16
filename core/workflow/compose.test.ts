@@ -11,6 +11,19 @@ import {
 
 const CONTRACT_DIR = join(import.meta.dirname, "contracts");
 
+const executePointers = [
+  { label: "repo", value: "me/proj" },
+  { label: "issue", value: "#42" },
+  { label: "pr", value: "#7" },
+];
+
+const verifyPointers = [
+  { label: "repo", value: "me/proj" },
+  { label: "issue", value: "#42" },
+  { label: "base sha", value: "b".repeat(40) },
+  { label: "head sha", value: "a".repeat(40) },
+];
+
 test("keeps contract and user prompt in separate channels", () => {
   const composed = composeWorkflowLaunchPrompt(
     {
@@ -20,15 +33,10 @@ test("keeps contract and user prompt in separate channels", () => {
       baseBranch: "main",
     },
     {
-      inputFiles: [
-        {
-          path: "/tmp/runs/workflow/run-1/execute/input/task.md",
-          description: "Requested outcome and acceptance criteria",
-        },
-      ],
+      pointers: executePointers,
       baseBranch: "main",
       stepPrompt: "Prefer focused tests. USER-SENTINEL",
-      note: "Check the supplied task file. NOTE-SENTINEL",
+      note: "Read the issue first. NOTE-SENTINEL",
     },
   );
 
@@ -48,12 +56,7 @@ test("keeps a Verify review-skill recommendation additive to the contract", () =
       baseBranch: "main",
     },
     {
-      inputFiles: [
-        {
-          path: "/tmp/runs/workflow/run-1/verify/input/changes.diff",
-          description: "Change diff pinned to abc123",
-        },
-      ],
+      pointers: verifyPointers,
       baseBranch: "main",
       stepPrompt:
         "Use the code-review skill's Standards and Spec perspectives when useful. REVIEW-SKILL-SENTINEL",
@@ -94,13 +97,27 @@ test("renders the fixed-diff and worktree-context boundary for Verify", () => {
     baseBranch: "main",
   });
 
+  expect(contract).toContain("authoritative and complete review subject");
   expect(contract).toContain(
-    "`changes.diff` is the authoritative and complete review subject",
+    "surrounding source code in the worktree as review context",
   );
-  expect(contract).toContain("surrounding source code as review context");
   expect(contract).toContain("does not expand the review subject");
   expect(contract).toMatch(
-    /unrelated\s+pre-existing source issue as grounds for `request_changes`/u,
+    /unrelated pre-existing\s+source issue as grounds for `request_changes`/u,
+  );
+});
+
+test("Verify contract documents the deliberate pull/fixed asymmetry", () => {
+  const contract = renderWorkflowContract({
+    template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
+    step: "verify",
+    worktreePath: "/tmp/worktree",
+    baseBranch: "main",
+  });
+  expect(contract).toContain("Why the asymmetry");
+  expect(contract).toContain("intentional design choice");
+  expect(contract).toContain(
+    "Do not read the PR body, the PR comments, or the implementer's description",
   );
 });
 
@@ -125,12 +142,7 @@ test("launch prompt system channel carries the issue-language instruction", () =
       baseBranch: "main",
     },
     {
-      inputFiles: [
-        {
-          path: "/tmp/runs/workflow/run-1/execute/input/task.md",
-          description: "Requested outcome and acceptance criteria",
-        },
-      ],
+      pointers: executePointers,
       baseBranch: "main",
       stepPrompt: "Keep the change small.",
     },
@@ -139,27 +151,20 @@ test("launch prompt system channel carries the issue-language instruction", () =
   expect(composed.systemPrompt).toContain(WORKFLOW_LANGUAGE_INSTRUCTION);
 });
 
-test("user prompt lists large inputs by absolute path instead of embedding content", () => {
-  const largeDiff = "diff --git a/a.ts b/a.ts\n".repeat(200);
+test("user prompt lists input pointers as label/value lines", () => {
   const composed = composeWorkflowStepPrompt({
-    inputFiles: [
-      {
-        path: "/tmp/runs/workflow/run-1/verify/input/changes.diff",
-        description: "Change diff pinned to abc123",
-      },
-    ],
+    pointers: verifyPointers,
     baseBranch: "main",
     stepPrompt: "Review the diff.",
   });
 
-  expect(composed.userPrompt).toContain(
-    "/tmp/runs/workflow/run-1/verify/input/changes.diff",
-  );
-  expect(composed.userPrompt).not.toContain(largeDiff);
+  expect(composed.userPrompt).toContain("- base sha: " + "b".repeat(40));
+  expect(composed.userPrompt).toContain("- head sha: " + "a".repeat(40));
+  expect(composed.userPrompt).toContain("- issue: #42");
   expect(composed.userPrompt).not.toContain("diff --git");
 });
 
-test("composed prompts do not introduce slash commands or domain identifiers", () => {
+test("parent/step contracts do not introduce slash commands", () => {
   const composed = composeWorkflowLaunchPrompt(
     {
       template: readFileSync(join(CONTRACT_DIR, "execute.md"), "utf8"),
@@ -168,12 +173,7 @@ test("composed prompts do not introduce slash commands or domain identifiers", (
       baseBranch: "main",
     },
     {
-      inputFiles: [
-        {
-          path: "/tmp/runs/workflow/run-1/execute/input/task.md",
-          description: "Requested outcome and acceptance criteria",
-        },
-      ],
+      pointers: executePointers,
       baseBranch: "main",
       stepPrompt: "Keep the change small.",
     },
@@ -181,7 +181,4 @@ test("composed prompts do not introduce slash commands or domain identifiers", (
 
   const allPromptText = `${composed.systemPrompt}\n${composed.userPrompt}`;
   expect(allPromptText).not.toMatch(/\/lh-/u);
-  expect(allPromptText).not.toMatch(/\bissue\s*#?\d+\b/iu);
-  expect(allPromptText).not.toMatch(/\bPR\s*#?\d+\b/u);
-  expect(allPromptText).not.toMatch(/\brepo(?:sitory)?[:/ ]/iu);
 });

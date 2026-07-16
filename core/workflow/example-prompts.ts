@@ -15,10 +15,11 @@ export interface WorkflowExamplePrompts {
 export const WORKFLOW_EXAMPLE_PROMPTS: WorkflowExamplePrompts = {
   description: "Fixed Execute/Verify development workflow.",
   execute_prompt:
-    "Read the task and relevant code, make a focused implementation plan, then implement it. " +
+    "Read the issue and the PR, make a focused implementation plan, then implement it. " +
     "Match the surrounding naming, types, tests, and style, commit with a concise outcome message, " +
-    "and reflect on the work before submitting the execution report.",
+    "update the PR body, and declare the turn done when the work is committed.",
   verify_prompt:
-    "Run the repository's standard test and lint commands. Walk each acceptance criterion and " +
-    "confirm it is met. Report any failure with the exact command and its output rather than a summary.",
+    "Compute the base..head diff and review only that. Run the repository's standard test and lint " +
+    "commands. Walk each acceptance criterion and confirm it is met. Record findings in the review " +
+    "with the exact command and its output rather than a summary.",
 };

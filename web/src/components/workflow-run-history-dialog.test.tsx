@@ -23,7 +23,7 @@ const RUN: WorkflowRunState = {
   pr_number: 99,
   created_at: "2026-07-10T00:00:00Z",
   updated_at: "2026-07-10T01:00:00Z",
-  latest_verdict: null,
+  latest_review: null,
 };
 
 afterEach(() => {

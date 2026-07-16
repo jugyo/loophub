@@ -87,6 +87,7 @@ export type Flags = {
   run?: string;
   note?: string;
   reason?: string;
+  review?: string;
   "tab-id"?: string;
 };
 const { values, positionals } = parseArgs({
@@ -174,6 +175,7 @@ const { values, positionals } = parseArgs({
     run: { type: "string" },
     note: { type: "string" },
     reason: { type: "string" },
+    review: { type: "string" },
     "tab-id": { type: "string" },
   },
 });

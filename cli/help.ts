@@ -167,12 +167,12 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Update a workflow run.",
   },
   {
-    path: ["workflow", "step"],
-    description: "Manage workflow step inputs and outputs.",
+    path: ["workflow", "turn", "done"],
+    description: "Declare an Execute turn done (payload-less).",
   },
   {
-    path: ["workflow", "step", "output"],
-    description: "Record a workflow step output.",
+    path: ["workflow", "step"],
+    description: "Preview a workflow step input or observe step status.",
   },
   {
     path: ["workflow", "step", "input"],

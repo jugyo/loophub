@@ -222,14 +222,14 @@ beforeAll(() => {
   if (workflow.exitCode !== 0) throw new Error(workflow.stderr);
 });
 
-test("workflow step output resolves explicit, launched, and cwd repo contexts", () => {
+test("workflow turn done resolves explicit, launched, and cwd repo contexts", () => {
   const issueOut = run([
     "issue",
     "create",
     "--repo",
     REPO,
     "--title",
-    "Workflow output task",
+    "Workflow turn-done task",
     "--body",
     "Execute the task",
   ]);
@@ -248,41 +248,30 @@ test("workflow step output resolves explicit, launched, and cwd repo contexts", 
   ]);
   expect(started.exitCode, started.stderr).toBe(0);
   const runResult = JSON.parse(started.stdout);
-  const artifactPath = join(HOME, "execution-report.json");
-  writeFileSync(
-    artifactPath,
-    JSON.stringify({
-      type: "execution-report",
-      summary: "Executed the task.",
-      acceptance: [{ criterion: "Execute", met: true, note: "Done" }],
-      tests: [{ command: "true", passed: true, excerpt: "passed" }],
-      evidence: [{ kind: "na", description: "CLI plumbing test" }],
-      reflection: {
-        went_well: ["The CLI accepted the report."],
-        friction: [],
-        suggestions: [],
-        followups: [],
-      },
-    }),
-  );
+  const parentSession = runResult.session_id;
+  // The parent session is allowed to declare turn done (stepActorAllowed treats it as the run
+  // owner), so it exercises the CLI plumbing without spawning a real Execute child.
+  const sessionEnv = { LOOPHUB_SESSION_ID: parentSession };
 
+  // No repo context and no cwd repo -> the CLI cannot resolve the target.
   const missingRepoContext = run(
-    ["workflow", "step", "output", "--file", artifactPath],
+    ["workflow", "turn", "done"],
     {
+      ...sessionEnv,
       LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
-      LOOPHUB_WORKFLOW_STEP: "execute",
     },
     runResult.worktree,
   );
   expect(missingRepoContext.exitCode).not.toBe(0);
   expect(missingRepoContext.stderr).toContain("Cannot determine the repo");
 
+  // A wrong repo context resolves a repo, but the run does not belong to it.
   const wrongRepoContext = run(
-    ["workflow", "step", "output", "--file", artifactPath],
+    ["workflow", "turn", "done"],
     {
+      ...sessionEnv,
       LOOPHUB_WORKFLOW_REPO: OTHER_REPO,
       LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
-      LOOPHUB_WORKFLOW_STEP: "execute",
     },
     runResult.worktree,
   );
@@ -291,49 +280,50 @@ test("workflow step output resolves explicit, launched, and cwd repo contexts", 
     "error 404: Workflow run not found for repo",
   );
 
+  // The launched-session env context (LOOPHUB_WORKFLOW_REPO/RUN) resolves the target.
   const launched = run(
-    ["workflow", "step", "output", "--file", artifactPath],
+    ["workflow", "turn", "done"],
     {
+      ...sessionEnv,
       LOOPHUB_WORKFLOW_REPO: REPO,
       LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
-      LOOPHUB_WORKFLOW_STEP: "execute",
     },
     runResult.worktree,
   );
-  expect(launched.exitCode).toBe(0);
-  expect(launched.stdout).toContain("placed pr-body-report at pr-body");
+  expect(launched.exitCode, launched.stderr).toBe(0);
+  expect(launched.stdout).toContain(
+    `declared turn done for Workflow run #${runResult.run.id}`,
+  );
 
+  // Explicit flags win over a misleading env context.
   const explicit = run(
     [
       "workflow",
-      "step",
-      "output",
+      "turn",
+      "done",
       "--repo",
       REPO,
       "--run",
       String(runResult.run.id),
-      "--step",
-      "execute",
-      "--file",
-      artifactPath,
     ],
     {
+      ...sessionEnv,
       LOOPHUB_WORKFLOW_REPO: OTHER_REPO,
       LOOPHUB_WORKFLOW_RUN: "999999",
-      LOOPHUB_WORKFLOW_STEP: "verify",
     },
   );
-  expect(explicit.exitCode).toBe(0);
+  expect(explicit.exitCode, explicit.stderr).toBe(0);
 
+  // cwd repo resolution when only the run id is supplied.
   const cwd = run(
-    ["workflow", "step", "output", "--file", artifactPath],
+    ["workflow", "turn", "done"],
     {
+      ...sessionEnv,
       LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
-      LOOPHUB_WORKFLOW_STEP: "execute",
     },
     REPO_PATH,
   );
-  expect(cwd.exitCode).toBe(0);
+  expect(cwd.exitCode, cwd.stderr).toBe(0);
 });
 
 afterAll(() => {
@@ -576,42 +566,51 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     );
     expect(committed.status, committed.stderr).toBe(0);
   };
-  const executionReportPath = join(HOME, `execution-${body.run.id}.json`);
-  const verdictPath = join(HOME, `verdict-${body.run.id}.json`);
-  const writeExecutionReport = (summary: string) =>
-    writeFileSync(
-      executionReportPath,
-      JSON.stringify({
-        type: "execution-report",
-        summary,
-        acceptance: [{ criterion: "Execute", met: true, note: "Done" }],
-        tests: [{ command: "true", passed: true, excerpt: "passed" }],
-        evidence: [{ kind: "test", description: "fixture" }],
-        reflection: {
-          went_well: ["The fixture completed."],
-          friction: [],
-          suggestions: [],
-          followups: [],
-        },
-      }),
-    );
-  const submit = (step: "execute" | "verify", path: string) =>
-    run(
+  const headSha = () =>
+    spawnSync("git", ["-C", body.worktree, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).stdout.trim();
+  // Post the domain fact a Verify child would produce: a `workflow`-topic PR review authored by the
+  // run's verifier child, pinned to the reviewed head. A dedicated registered session gives the
+  // review the exact `verifier #<run>-<seq>` author the run reads its verdict from.
+  const postWorkflowReview = (
+    seq: number,
+    event: "pass" | "request_changes",
+    sha: string,
+  ) => {
+    const sid = `verifier-sess-${body.run.id}-${seq}`;
+    const registered = run([
+      "session",
+      "register",
+      "--id",
+      sid,
+      "--agent",
+      "workflow-step",
+      "--session",
+      sid,
+      "--name",
+      `verifier #${body.run.id}-${seq}`,
+    ]);
+    expect(registered.exitCode, registered.stderr).toBe(0);
+    return run(
       [
-        "workflow",
-        "step",
-        "output",
+        "pr",
+        "review",
+        String(body.pr.number),
         "--repo",
         REPO,
-        "--run",
-        String(body.run.id),
-        "--step",
-        step,
-        "--file",
-        path,
+        "--topic",
+        "workflow",
+        "--commit",
+        sha,
+        "--event",
+        event,
+        "--body",
+        `Verify ${event}`,
       ],
-      parentEnv,
+      { LOOPHUB_SESSION_ID: sid },
     );
+  };
   const transition = (action: "advance-to-verify" | "request-rework") =>
     run(
       ["workflow", "run", action, "--repo", REPO, "--run", String(body.run.id)],
@@ -676,9 +675,6 @@ test("fresh Verify closes the previous Verify pane before launching after rework
   try {
     writeFileSync(fixturePath, "initial\n");
     commitWorktree("add Verify lifecycle fixture");
-    writeExecutionReport("Initial Execute completed.");
-    const initialReport = submit("execute", executionReportPath);
-    expect(initialReport.exitCode, initialReport.stderr).toBe(0);
     const firstAdvance = transition("advance-to-verify");
     expect(firstAdvance.exitCode, firstAdvance.stderr).toBe(0);
 
@@ -688,23 +684,8 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     expect(readFileSync(firstRuntime.log, "utf8")).not.toContain("pane close");
     expectUnrelatedHerdrFocus(firstRuntime);
 
-    writeFileSync(
-      verdictPath,
-      JSON.stringify({
-        type: "verdict",
-        event: "request_changes",
-        summary: "Rework is required.",
-        findings: [
-          {
-            file: "README.md",
-            problem: "fixture",
-            expected: "reworked fixture",
-          },
-        ],
-      }),
-    );
-    const verdict = submit("verify", verdictPath);
-    expect(verdict.exitCode, verdict.stderr).toBe(0);
+    const rcReview = postWorkflowReview(1, "request_changes", headSha());
+    expect(rcReview.exitCode, rcReview.stderr).toBe(0);
     const rework = transition("request-rework");
     expect(rework.exitCode, rework.stderr).toBe(0);
 
@@ -714,9 +695,6 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     expectUnrelatedHerdrFocus(firstRuntime);
     writeFileSync(fixturePath, "reworked\n");
     commitWorktree("rework Verify lifecycle fixture");
-    writeExecutionReport("Rework Execute completed.");
-    const reworkReport = submit("execute", executionReportPath);
-    expect(reworkReport.exitCode, reworkReport.stderr).toBe(0);
     const secondAdvance = transition("advance-to-verify");
     expect(secondAdvance.exitCode, secondAdvance.stderr).toBe(0);
 

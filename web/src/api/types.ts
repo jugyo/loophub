@@ -44,8 +44,8 @@ import type {
   UserWire,
   WebConfigWire,
   WorkflowRunHistoryEventWire,
+  WorkflowRunReviewSummaryWire,
   WorkflowRunStateWire,
-  WorkflowRunVerdictSummaryWire,
   WorkflowStepContractsWire,
   WorkflowWire,
 } from "../../../core/serialize.ts";
@@ -252,7 +252,7 @@ export type WorkflowStepContracts = WorkflowStepContractsWire;
 /** Display state of a Workflow run linked to an issue / PR (#1008). */
 export type WorkflowRunState = WorkflowRunStateWire;
 export type WorkflowRunHistoryEvent = WorkflowRunHistoryEventWire;
-export type WorkflowRunVerdictSummary = WorkflowRunVerdictSummaryWire;
+export type WorkflowRunReviewSummary = WorkflowRunReviewSummaryWire;
 
 /** One fire of a scheduled task (#880) — meta only; the output stays on the herdr side. */
 export type ScheduledTaskRun = ScheduledTaskRunWire;

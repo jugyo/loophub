@@ -51,7 +51,7 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
     pr_number: 99,
     created_at: "2026-07-10T00:00:00Z",
     updated_at: "2026-07-10T00:00:00Z",
-    latest_verdict: null,
+    latest_review: null,
     ...partial,
   };
 }
@@ -110,7 +110,7 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.queryByText(/Verify passed/)).toBeNull();
   });
 
-  it("surfaces the wait reason, verdict summary, and issue / inbox links while waiting for a human", async () => {
+  it("surfaces the wait reason, review summary, and issue / inbox links while waiting for a human", async () => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
@@ -120,7 +120,8 @@ describe("WorkflowRunStatusSection", () => {
           current_step: "verify",
           needs_human_reason: "rework limit exceeded: two criteria unmet",
           issue_number: 42,
-          latest_verdict: {
+          latest_review: {
+            id: 5,
             event: "request_changes",
             summary: "Two criteria unmet.",
             findings_count: 2,
@@ -153,7 +154,8 @@ describe("WorkflowRunStatusSection", () => {
           status: "blocked",
           current_step: "verify",
           issue_number: 42,
-          latest_verdict: {
+          latest_review: {
+            id: 5,
             event: "request_changes",
             summary: "Two criteria unmet.",
             findings_count: 2,

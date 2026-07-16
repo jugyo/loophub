@@ -170,6 +170,9 @@ export async function run(): Promise<void> {
           body: flags.body || "",
           ...(flags.topic ? { topic: flags.topic } : {}),
           ...(flags.model ? { model: flags.model } : {}),
+          // Pin the review to an explicit commit (defaults to the PR's current head). A Workflow
+          // Verify child passes the head SHA it was launched against (#1358).
+          ...(flags.commit ? { headSha: flags.commit } : {}),
           comments,
         },
         await writeSession(),

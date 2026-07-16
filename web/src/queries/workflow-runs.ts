@@ -1,6 +1,6 @@
 // Workflow run display-state query hooks (#1008): the latest run linked to an issue / PR, shown on the
 // issue and PR detail pages. Keyed per issue / PR; event-polling invalidation (workflow_run.* /
-// workflow_step.* / workflow_artifact.* in lib/event-keys.ts) keeps the state fresh as the run advances.
+// workflow_step.* in lib/event-keys.ts) keeps the state fresh as the run advances.
 // The query resolves to null when the issue / PR has no run.
 
 import { useQuery } from "@tanstack/react-query";

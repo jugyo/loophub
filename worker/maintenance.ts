@@ -10,6 +10,7 @@ import {
   scheduledTasks,
   sessions,
   terminal,
+  workflowRuns,
 } from "../core/service.ts";
 import { sweepPullUpdates } from "../core/watcher.ts";
 import { workerLog } from "./logger.ts";
@@ -44,6 +45,14 @@ export const DEFAULT_SCHEDULED_TASK_SWEEP_MS = 30000;
 // only when a sibling merges — infrequent, and a human merge is never seconds away — so this runs on
 // its own coarser interval than the 5s pull sweep rather than piggybacking on it.
 export const DEFAULT_CONFLICT_SWEEP_MS = 15000;
+// #1358: how often the worker checks for a Workflow run that stopped making progress. A run only
+// stalls when its Execute child never declared turn done (a rare, human-recoverable failure), so a
+// coarse tick is plenty — this only marks the run needs-human and files an Inbox message.
+export const DEFAULT_WORKFLOW_STALL_SWEEP_MS = 60000;
+// A run is treated as stalled when it has had no lifecycle activity (run started/updated, step
+// launched, turn-done declared) for this long. Generous by design: agent turns can legitimately run
+// for many minutes, and surfacing to a human is a fallback, not a tight watchdog.
+export const DEFAULT_WORKFLOW_STALL_THRESHOLD_MS = 1800000;
 
 export interface MaintenanceLoopOptions {
   sweepMs?: number;
@@ -54,6 +63,8 @@ export interface MaintenanceLoopOptions {
   closedPullCleanupSweepMs?: number;
   scheduledTaskSweepMs?: number;
   conflictSweepMs?: number;
+  workflowStallSweepMs?: number;
+  workflowStallThresholdMs?: number;
 }
 
 export interface NormalizedMaintenanceLoopOptions {
@@ -65,6 +76,8 @@ export interface NormalizedMaintenanceLoopOptions {
   closedPullCleanupSweepMs: number;
   scheduledTaskSweepMs: number;
   conflictSweepMs: number;
+  workflowStallSweepMs: number;
+  workflowStallThresholdMs: number;
 }
 
 export interface MaintenanceHandle {
@@ -100,6 +113,14 @@ export function normalizeMaintenanceLoopOptions(
     conflictSweepMs: finiteOrDefault(
       opts.conflictSweepMs,
       DEFAULT_CONFLICT_SWEEP_MS,
+    ),
+    workflowStallSweepMs: finiteOrDefault(
+      opts.workflowStallSweepMs,
+      DEFAULT_WORKFLOW_STALL_SWEEP_MS,
+    ),
+    workflowStallThresholdMs: finiteOrDefault(
+      opts.workflowStallThresholdMs,
+      DEFAULT_WORKFLOW_STALL_THRESHOLD_MS,
     ),
   };
 }
@@ -158,6 +179,8 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
       opts.scheduledTaskSweepMs > 0 ? `${opts.scheduledTaskSweepMs}ms` : "off",
     conflictSweep:
       opts.conflictSweepMs > 0 ? `${opts.conflictSweepMs}ms` : "off",
+    workflowStallSweep:
+      opts.workflowStallSweepMs > 0 ? `${opts.workflowStallSweepMs}ms` : "off",
   };
 }
 
@@ -187,6 +210,12 @@ export function startMaintenanceLoops(
       : () => {},
     normalized.conflictSweepMs > 0
       ? startConflictSweep(normalized.conflictSweepMs)
+      : () => {},
+    normalized.workflowStallSweepMs > 0
+      ? startWorkflowStallSweep(
+          normalized.workflowStallSweepMs,
+          normalized.workflowStallThresholdMs,
+        )
       : () => {},
   ];
 
@@ -252,6 +281,43 @@ export function startConflictSweep(
       });
     } catch (err) {
       logLoopFailed("conflict sweep", startedAt, err);
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// Surface a Workflow run that stopped making progress (#1358). A run stalls only when its Execute
+// child never declared turn done — a rare, human-recoverable failure — so the sweep does not try to
+// recover it: it marks the run needs-human and files an Inbox message, and a human resumes or stops
+// it. The decision (which runs are past the threshold, the hold, the Inbox message) lives in the
+// core service; this loop only schedules it and logs the outcome.
+export function startWorkflowStallSweep(
+  intervalMs = DEFAULT_WORKFLOW_STALL_SWEEP_MS,
+  thresholdMs = DEFAULT_WORKFLOW_STALL_THRESHOLD_MS,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    const startedAt = logLoopStarted("workflow stall sweep");
+    try {
+      const result = workflowRuns.sweepStalledRuns({ thresholdMs });
+      logLoopCompleted("workflow stall sweep", startedAt, {
+        held: result.held.length,
+        failed: result.failed.length,
+      });
+    } catch (err) {
+      logLoopFailed("workflow stall sweep", startedAt, err);
     } finally {
       running = false;
     }
