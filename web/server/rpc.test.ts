@@ -172,6 +172,29 @@ test("workspaces/create routes to the workspace service", async () => {
   ).toBe(0);
 });
 
+test("workspace archive methods route to the workspace service", async () => {
+  svc.workspaces.create("me/proj", { branch: "workspace/archive-me" });
+
+  const archived: any = await call("workspaces/archive", {
+    repo: "me/proj",
+    branch: "workspace/archive-me",
+  });
+  expect(archived.result.archived_at).toBeTruthy();
+
+  const listed: any = await call("workspaces/listArchived", {
+    repo: "me/proj",
+  });
+  expect(listed.result).toEqual([
+    expect.objectContaining({ branch: "workspace/archive-me" }),
+  ]);
+
+  const unarchived: any = await call("workspaces/unarchive", {
+    repo: "me/proj",
+    branch: "workspace/archive-me",
+  });
+  expect(unarchived.result.archived_at).toBeNull();
+});
+
 test("events/list preserves ascending cursor, repo filter, and limit semantics", async () => {
   const repo = svc.repos.getByFullName("me/proj");
   expect(repo).not.toBeNull();

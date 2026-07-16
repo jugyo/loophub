@@ -593,6 +593,12 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.workspaces.list(p.repo),
   },
+  "workspaces/listArchived": {
+    description: "List archived workspaces in a repository.",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.workspaces.listArchived(p.repo),
+  },
   "workspaces/create": {
     description: "Create and register a workspace branch.",
     params: params({ repo, branch: strNonEmpty, session_id: sid }, [
@@ -602,6 +608,24 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) =>
       svc.workspaces.create(p.repo, { branch: p.branch }, p.session_id),
+  },
+  "workspaces/archive": {
+    description: "Archive a registered workspace.",
+    params: params({ repo, branch: strNonEmpty, session_id: sid }, [
+      "repo",
+      "branch",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.workspaces.archive(p.repo, p.branch, p.session_id),
+  },
+  "workspaces/unarchive": {
+    description: "Restore an archived workspace.",
+    params: params({ repo, branch: strNonEmpty, session_id: sid }, [
+      "repo",
+      "branch",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.workspaces.unarchive(p.repo, p.branch, p.session_id),
   },
   "issues/get": {
     description: "Get one issue by number.",

@@ -139,6 +139,9 @@ test("workspaces archive and unarchive only change the registry and emit events"
   const archived = svc.workspaces.archive("me/proj", "archive/me");
   expect(archived.archived_at).toBeTruthy();
   expect(archived.branch_exists).toBe(true);
+  expect(svc.workspaces.listArchived("me/proj")).toContainEqual(
+    expect.objectContaining({ branch: "archive/me" }),
+  );
   expect(svc.workspaces.list("me/proj")).not.toContainEqual(
     expect.objectContaining({ branch: "archive/me" }),
   );
@@ -150,6 +153,9 @@ test("workspaces archive and unarchive only change the registry and emit events"
 
   const unarchived = svc.workspaces.unarchive("me/proj", "archive/me");
   expect(unarchived.archived_at).toBeNull();
+  expect(svc.workspaces.listArchived("me/proj")).not.toContainEqual(
+    expect.objectContaining({ branch: "archive/me" }),
+  );
   expect(svc.workspaces.list("me/proj")).toContainEqual(
     expect.objectContaining({ branch: "archive/me", branch_exists: true }),
   );

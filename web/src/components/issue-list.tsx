@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Check,
   ChevronsUpDown,
+  Ellipsis,
   Loader2,
   Tag,
   X,
@@ -37,7 +38,7 @@ import {
   useLabelsList,
 } from "@/queries/issues";
 import { useRepo } from "@/queries/repos";
-import { useWorkspaces } from "@/queries/workspaces";
+import { useSetWorkspaceArchived, useWorkspaces } from "@/queries/workspaces";
 
 const STATE_TABS: {
   value: IssueListFilters["state"];
@@ -64,6 +65,47 @@ interface IssueSection {
   issues: Issue[];
   workspace?: Workspace;
   defaultWorkspace?: Workspace;
+}
+
+function WorkspaceActionsMenu({
+  owner,
+  repo,
+  branch,
+}: {
+  owner: string;
+  repo: string;
+  branch: string;
+}) {
+  const archive = useSetWorkspaceArchived(owner, repo);
+
+  return (
+    <div className="flex items-center gap-2">
+      {archive.error ? (
+        <span className="text-xs text-destructive">
+          {String(archive.error)}
+        </span>
+      ) : null}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={`Workspace actions for ${branch}`}
+            disabled={archive.isPending}
+          >
+            <Ellipsis className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            onSelect={() => archive.mutate({ branch, archived: true })}
+          >
+            Archive
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
 }
 
 function composeIssueSections(
@@ -445,12 +487,24 @@ export function IssueList({
                     </Badge>
                   ) : null}
                 </h2>
-                {section.workspace ? (
-                  <CreateIssueButton
-                    repo={`${owner}/${repo}`}
-                    targetBranch={section.workspace.branch}
-                    disabled={!section.workspace.branch_exists}
-                  />
+                {section.workspace || section.defaultWorkspace ? (
+                  <div className="flex items-center gap-2">
+                    {section.workspace ? (
+                      <CreateIssueButton
+                        repo={`${owner}/${repo}`}
+                        targetBranch={section.workspace.branch}
+                        disabled={!section.workspace.branch_exists}
+                      />
+                    ) : null}
+                    <WorkspaceActionsMenu
+                      owner={owner}
+                      repo={repo}
+                      branch={
+                        section.workspace?.branch ??
+                        section.defaultWorkspace!.branch
+                      }
+                    />
+                  </div>
                 ) : null}
               </div>
               {section.workspace && !section.workspace.branch_exists ? (

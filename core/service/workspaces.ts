@@ -78,6 +78,16 @@ export const workspaces = {
     );
   },
 
+  listArchived(repo: string) {
+    const r = repoOr404(repo);
+    return S.listArchivedWorkspaces(r.id).map((workspace) =>
+      workspaceJSON(
+        workspace,
+        localBranchExists(r.local_path, workspace.branch),
+      ),
+    );
+  },
+
   archive(repo: string, branch: string, sessionId?: string | null) {
     return setArchived(repo, branch, true, sessionId);
   },

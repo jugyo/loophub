@@ -17,7 +17,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
-import type { Repo, RepoMergeMode } from "@/api/types";
+import type { Repo, RepoMergeMode, Workspace } from "@/api/types";
 import { RepoSettingsPage } from "./repo-settings-page";
 
 afterEach(() => {
@@ -52,6 +52,14 @@ function mergeMode(setting: RepoMergeMode["setting"]): RepoMergeMode {
 }
 
 function mockFetch(initialArchived: boolean, patchFails = false) {
+  let archivedWorkspaces: Workspace[] = [
+    {
+      branch: "workspace/old",
+      created_at: "2026-01-01T00:00:00Z",
+      archived_at: "2026-06-02T00:00:00Z",
+      branch_exists: true,
+    },
+  ];
   return mockRpcFetch({
     "repos/get": () => repo(initialArchived),
     "repos/mergeMode": () => mergeMode(null),
@@ -70,6 +78,15 @@ function mockFetch(initialArchived: boolean, patchFails = false) {
     "repos/update": (p) => {
       if (patchFails) throw new RpcFault(422, "branch not found: nope");
       return { ...repo(initialArchived), default_branch: p.default_branch };
+    },
+    "workspaces/listArchived": () => archivedWorkspaces,
+    "workspaces/unarchive": (p) => {
+      if (patchFails) throw new RpcFault(500, "workspace restore failed");
+      const workspace = archivedWorkspaces.find((w) => w.branch === p.branch)!;
+      archivedWorkspaces = archivedWorkspaces.filter(
+        (w) => w.branch !== p.branch,
+      );
+      return { ...workspace, archived_at: null };
     },
   });
 }
@@ -255,6 +272,48 @@ describe("RepoSettingsPage", () => {
     fireEvent.click(submit);
 
     expect(await screen.findByText(/branch not found/)).toBeTruthy();
+  });
+
+  it("lists archived workspaces and unarchives one", async () => {
+    renderSettings(false);
+
+    const section = (
+      await screen.findByRole("heading", { name: "Archived workspaces" })
+    ).closest("section")!;
+    expect(within(section).getByText("workspace/old")).toBeTruthy();
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Unarchive workspace/old",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(rpcCall("workspaces/unarchive")?.params).toMatchObject({
+        repo: "me/proj",
+        branch: "workspace/old",
+      });
+    });
+    await waitFor(() =>
+      expect(within(section).queryByText("workspace/old")).toBeNull(),
+    );
+  });
+
+  it("shows workspace unarchive failures", async () => {
+    renderSettings(false, true);
+
+    const section = (
+      await screen.findByRole("heading", { name: "Archived workspaces" })
+    ).closest("section")!;
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Unarchive workspace/old",
+      }),
+    );
+
+    expect(
+      await within(section).findByText(/workspace restore failed/),
+    ).toBeTruthy();
+    expect(within(section).getByText("workspace/old")).toBeTruthy();
   });
 
   it("switches the PR action and persists via repos/setMergeMode", async () => {

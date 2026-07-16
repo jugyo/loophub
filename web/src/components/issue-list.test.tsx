@@ -14,6 +14,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
@@ -801,6 +802,104 @@ describe("IssueList", () => {
     ).toHaveProperty("disabled", false);
   });
 
+  it("archives a workspace and removes it from the normal list", async () => {
+    let workspaces = [
+      {
+        branch: "workspace/alpha",
+        created_at: "2026-01-01T00:00:00Z",
+        archived_at: null,
+        branch_exists: true,
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => workspaces,
+        "workspaces/archive": (p) => {
+          workspaces = workspaces.filter((w) => w.branch !== p.branch);
+          return {
+            branch: p.branch,
+            created_at: "2026-01-01T00:00:00Z",
+            archived_at: "2026-01-02T00:00:00Z",
+            branch_exists: true,
+          };
+        },
+        "issues/list": () => [],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+    const section = (
+      await screen.findByRole("heading", {
+        name: "workspace/alpha workspace",
+      })
+    ).closest("section")!;
+    fireEvent.pointerDown(
+      within(section).getByRole("button", {
+        name: "Workspace actions for workspace/alpha",
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+
+    await waitFor(() => {
+      expect(rpcCall("workspaces/archive")?.params).toMatchObject({
+        repo: "me/proj",
+        branch: "workspace/alpha",
+      });
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", {
+          name: "workspace/alpha workspace",
+        }),
+      ).toBeNull(),
+    );
+  });
+
+  it("shows workspace archive failures and keeps the workspace visible", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [
+          {
+            branch: "workspace/alpha",
+            created_at: "2026-01-01T00:00:00Z",
+            archived_at: null,
+            branch_exists: true,
+          },
+        ],
+        "workspaces/archive": () => {
+          throw new RpcFault(500, "workspace archive failed");
+        },
+        "issues/list": () => [],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+    const section = (
+      await screen.findByRole("heading", {
+        name: "workspace/alpha workspace",
+      })
+    ).closest("section")!;
+    fireEvent.pointerDown(
+      within(section).getByRole("button", {
+        name: "Workspace actions for workspace/alpha",
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+
+    expect(
+      await within(section).findByText(/workspace archive failed/),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "workspace/alpha workspace" }),
+    ).toBeTruthy();
+  });
+
   it("launches New issue from a workspace with that branch as the target", async () => {
     vi.stubGlobal(
       "fetch",
@@ -895,6 +994,9 @@ describe("IssueList", () => {
       screen.getByRole("heading", {
         name: "main workspace registered as default branch",
       }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Workspace actions for main" }),
     ).toBeTruthy();
     expect(screen.queryByText("workspace", { exact: true })).toBeNull();
     expect(screen.getAllByRole("button", { name: /new issue/i })).toHaveLength(

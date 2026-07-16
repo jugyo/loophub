@@ -689,6 +689,9 @@
           "cwd": {
             "type": "string"
           },
+          "targetBranch": {
+            "type": "string"
+          },
           "agent": {
             "enum": [
               "claude-code",
@@ -1223,8 +1226,86 @@
       }
     },
     {
+      "name": "workspaces/listArchived",
+      "description": "List archived workspaces in a repository.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
       "name": "workspaces/create",
       "description": "Create and register a workspace branch.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "branch"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "workspaces/archive",
+      "description": "Archive a registered workspace.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "branch"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "workspaces/unarchive",
+      "description": "Restore an archived workspace.",
       "params": {
         "type": "object",
         "properties": {

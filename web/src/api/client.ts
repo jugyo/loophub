@@ -599,6 +599,12 @@ export function listWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/list", { repo: full(owner, repo) });
 }
 
+export function listArchivedWorkspaces(owner: string, repo: string) {
+  return rpc<Workspace[]>("workspaces/listArchived", {
+    repo: full(owner, repo),
+  });
+}
+
 export function createWorkspace(
   owner: string,
   repo: string,
@@ -610,6 +616,23 @@ export function createWorkspace(
     branch,
     session_id: sessionId,
   });
+}
+
+export function setWorkspaceArchived(
+  owner: string,
+  repo: string,
+  branch: string,
+  archived: boolean,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Workspace>(
+    archived ? "workspaces/archive" : "workspaces/unarchive",
+    {
+      repo: full(owner, repo),
+      branch,
+      session_id: sessionId,
+    },
+  );
 }
 
 export function listLabels(owner: string, repo: string) {

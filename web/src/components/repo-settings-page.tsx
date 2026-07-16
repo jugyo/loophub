@@ -18,6 +18,10 @@ import {
   useSetRepoDefaultBranch,
   useSetRepoMergeMode,
 } from "@/queries/repos";
+import {
+  useArchivedWorkspaces,
+  useSetWorkspaceArchived,
+} from "@/queries/workspaces";
 
 const MERGE_MODE_LABELS: Record<MergeMode, string> = {
   merge: "Merge",
@@ -45,6 +49,7 @@ export function RepoSettingsPage({
         current={data?.default_branch ?? ""}
       />
       <MergeModeSection owner={owner} repo={repo} />
+      <ArchivedWorkspacesSection owner={owner} repo={repo} />
       <ArchiveSection
         owner={owner}
         repo={repo}
@@ -52,6 +57,70 @@ export function RepoSettingsPage({
         archived={archived}
       />
     </div>
+  );
+}
+
+function ArchivedWorkspacesSection({
+  owner,
+  repo,
+}: {
+  owner: string;
+  repo: string;
+}) {
+  const archived = useArchivedWorkspaces(owner, repo);
+  const unarchive = useSetWorkspaceArchived(owner, repo);
+
+  return (
+    <section className="mt-6">
+      <h2 className="text-sm font-medium">Archived workspaces</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Archived workspaces stay registered and keep their Git branches and
+        related issues and PRs.
+      </p>
+      {archived.isLoading ? (
+        <p className="mt-3 text-sm text-muted-foreground">Loading…</p>
+      ) : archived.error ? (
+        <p className="mt-3 text-sm text-destructive">
+          {String(archived.error)}
+        </p>
+      ) : archived.data?.length ? (
+        <ul className="mt-3 max-w-md divide-y rounded-md border">
+          {archived.data.map((workspace) => (
+            <li
+              key={workspace.branch}
+              className="flex items-center justify-between gap-3 px-3 py-2"
+            >
+              <span className="min-w-0 truncate text-sm">
+                {workspace.branch}
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                aria-label={`Unarchive ${workspace.branch}`}
+                disabled={unarchive.isPending}
+                onClick={() =>
+                  unarchive.mutate({
+                    branch: workspace.branch,
+                    archived: false,
+                  })
+                }
+              >
+                {unarchive.isPending ? "Working…" : "Unarchive"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-muted-foreground">
+          No archived workspaces.
+        </p>
+      )}
+      {unarchive.error ? (
+        <p className="mt-2 text-sm text-destructive">
+          {String(unarchive.error)}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
