@@ -9,6 +9,7 @@ import {
 } from "../../core/resume.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
+  display,
   fail,
   out,
   relativeTime,
@@ -48,7 +49,23 @@ export async function run(): Promise<void> {
 
   const s = await svc();
   const repo = await resolveRepo();
-  if (sub === "list") {
+  if (sub === "search") {
+    const query = rest.join(" ").trim();
+    if (!query)
+      fail("usage: lh issue search <query> [--repo owner/name] [--json]");
+    const results = await runOp(() => s.search.query(repo, query));
+    if (flags.json) {
+      out(results);
+    } else if (results.length === 0) {
+      console.log("No results.");
+    } else {
+      for (const result of results) {
+        console.log(
+          `${result.kind}\t#${result.number}\t${result.state}\t${display(result.title)}`,
+        );
+      }
+    }
+  } else if (sub === "list") {
     const state = flags.state || "open";
     const items = await s.issues.list(repo, { state });
     const issues = items.filter((i: any) => !i.pull_request);

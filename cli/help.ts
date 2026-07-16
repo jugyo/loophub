@@ -33,6 +33,10 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Set a repository's pull request merge mode.",
   },
   { path: ["issue"], description: "Manage issues." },
+  {
+    path: ["issue", "search"],
+    description: "Search issues and pull requests in a repository.",
+  },
   { path: ["issue", "list"], description: "List issues." },
   { path: ["issue", "view"], description: "Show an issue." },
   { path: ["issue", "new"], description: "Create an issue interactively." },

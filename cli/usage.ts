@@ -17,7 +17,8 @@ export function usage(): void {
   lh session usage [confirm] [--session <id>] [--json]
   lh session usage sync [--session <id>] [--full] [--json]
   lh session usage recalculate [--session <id>] [--json]
-  lh issue list|view|create|import|update|comment|close|label  [--repo owner/repo]
+  lh issue search|list|view|create|import|update|comment|close|label  [--repo owner/repo]
+  lh issue search <query> [--repo owner/name] [--json]       # search issues and pull requests in one repository
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
   lh inbox send --from '<json>' --title <text> --body <text|-> [--to '<json>'] [--label <name>] [--repo owner/repo]   # send a human-facing Inbox message
