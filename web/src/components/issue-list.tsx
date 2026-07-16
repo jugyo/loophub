@@ -9,7 +9,6 @@ import {
   ChevronsUpDown,
   Loader2,
   Tag,
-  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Issue, Workspace } from "@/api/types";
@@ -330,12 +329,13 @@ export function IssueList({
                       className="size-4 shrink-0 text-muted-foreground"
                       aria-hidden="true"
                     />
-                    <span className="truncate">Labels</span>
-                    {selectedLabels.length > 0 ? (
-                      <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
-                        {selectedLabels.length}
-                      </span>
-                    ) : null}
+                    <span className="truncate">
+                      {selectedLabels.length === 0
+                        ? "Labels"
+                        : selectedLabels.length === 1
+                          ? selectedLabels[0]
+                          : `${selectedLabels.length} selected`}
+                    </span>
                   </span>
                   <ChevronsUpDown
                     className="size-4 shrink-0 text-muted-foreground"
@@ -347,7 +347,19 @@ export function IssueList({
                 align="start"
                 className="max-h-[min(20rem,calc(100vh-5rem))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 overflow-y-auto"
               >
-                <DropdownMenuLabel>Filter by label</DropdownMenuLabel>
+                <DropdownMenuLabel className="flex items-center justify-between gap-2">
+                  <span>Filter by label</span>
+                  {selectedLabels.length > 0 ? (
+                    <button
+                      type="button"
+                      aria-label="Clear label filters"
+                      className="font-normal text-primary hover:underline"
+                      onClick={() => navigateWithLabels([])}
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {labelOptions.length > 0 ? (
                   labelOptions.map((label) => {
@@ -360,19 +372,12 @@ export function IssueList({
                       <DropdownMenuCheckboxItem
                         key={label.name}
                         checked={selected}
-                        className="gap-2"
+                        className="gap-2 pl-2"
                         onSelect={(event) => {
                           event.preventDefault();
                           toggleSelectedLabel(label.name);
                         }}
                       >
-                        <Check
-                          className={cn(
-                            "size-4 shrink-0",
-                            selected ? "opacity-100" : "opacity-0",
-                          )}
-                          aria-hidden="true"
-                        />
                         <span
                           className={cn(
                             LABEL_CHIP_BASE_CLASS,
@@ -382,6 +387,13 @@ export function IssueList({
                         >
                           <span className="truncate">{label.name}</span>
                         </span>
+                        <Check
+                          className={cn(
+                            "ml-auto size-4 shrink-0",
+                            selected ? "opacity-100" : "opacity-0",
+                          )}
+                          aria-hidden="true"
+                        />
                       </DropdownMenuCheckboxItem>
                     );
                   })
@@ -392,42 +404,6 @@ export function IssueList({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-            {selectedLabels.length > 0 ? (
-              <div
-                aria-label="Selected labels"
-                className="flex min-w-0 flex-wrap items-center gap-1"
-              >
-                {selectedLabels.map((label) => (
-                  <span
-                    key={label}
-                    className={cn(
-                      LABEL_CHIP_BASE_CLASS,
-                      labelColorClass(label),
-                      "h-6 max-w-48 gap-1 pr-1",
-                    )}
-                  >
-                    <span className="truncate">{label}</span>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${label} label filter`}
-                      onClick={() => removeSelectedLabel(label)}
-                      className="inline-flex size-4 shrink-0 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/15"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </span>
-                ))}
-                <button
-                  type="button"
-                  aria-label="Clear label filters"
-                  onClick={() => navigateWithLabels([])}
-                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <X className="size-3" />
-                  Clear
-                </button>
-              </div>
-            ) : null}
           </div>
         ) : (
           <>

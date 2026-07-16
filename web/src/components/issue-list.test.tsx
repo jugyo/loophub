@@ -297,9 +297,8 @@ describe("IssueList", () => {
     const picker = await screen.findByRole("button", {
       name: "Label filter",
     });
-    expect(screen.getByLabelText("Selected labels").textContent).toContain(
-      "bug",
-    );
+    expect(picker.textContent).toContain("bug");
+    expect(screen.queryByLabelText("Selected labels")).toBeNull();
 
     fireEvent.pointerDown(picker);
     // The already-selected label exposes its state to assistive tech.
@@ -322,7 +321,7 @@ describe("IssueList", () => {
     );
   });
 
-  it("removes selected dropdown label filters individually", async () => {
+  it("shows the number of selected labels in the picker", async () => {
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
@@ -334,7 +333,7 @@ describe("IssueList", () => {
       }),
     );
 
-    const { router } = renderIssueList(
+    renderIssueList(
       <IssueList
         owner="me"
         repo="proj"
@@ -345,21 +344,11 @@ describe("IssueList", () => {
       "/r/me/proj?labels=bug,ui&state=all",
     );
 
-    await screen.findByText("No issues.");
-    expect(screen.getByLabelText("Selected labels").textContent).toContain(
-      "bug",
-    );
-    expect(screen.getByLabelText("Selected labels").textContent).toContain(
-      "ui",
-    );
-
-    fireEvent.click(screen.getByLabelText("Remove bug label filter"));
-
-    await waitFor(() =>
-      expect(
-        router.state.location.pathname + router.state.location.searchStr,
-      ).toBe("/r/me/proj?labels=ui&state=all"),
-    );
+    const picker = await screen.findByRole("button", {
+      name: "Label filter",
+    });
+    expect(picker.textContent).toContain("2 selected");
+    expect(screen.queryByLabelText("Selected labels")).toBeNull();
   });
 
   it("clears all selected dropdown label filters", async () => {
@@ -385,6 +374,8 @@ describe("IssueList", () => {
     );
 
     await screen.findByText("No open issues.");
+    const picker = screen.getByRole("button", { name: "Label filter" });
+    fireEvent.pointerDown(picker);
     fireEvent.click(screen.getByLabelText("Clear label filters"));
 
     await waitFor(() =>
