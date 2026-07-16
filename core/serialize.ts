@@ -1434,11 +1434,10 @@ export interface WorkflowStepContractsWire {
 }
 
 // Workflow run display state (#1008): the current step / status / rework count of the run linked to an
-// issue or PR, for issue / PR detail. The run row is the display-state source (workflow design:
-// CLI / UI) — the
-// *truth* of step completion stays with `workflow step status` (HEAD vs the pinned review), which
-// this wire deliberately does not re-derive. `latest_review` surfaces the human-readable reason
-// behind a rework / block; the web derives the issue-comment / inbox links from `issue_number`.
+// issue or PR, for issue / PR detail. Lifecycle comes from the run row; verification freshness is
+// derived from the PR current HEAD and the pinned review rather than persisted on the run.
+// `latest_review` surfaces the human-readable reason behind a rework / block; the web derives the
+// issue-comment / inbox links from `issue_number`.
 export interface WorkflowRunReviewSummaryWire {
   id: number;
   event: "pass" | "request_changes";
@@ -1461,12 +1460,14 @@ export interface WorkflowRunStateWire {
   created_at: string;
   updated_at: string;
   latest_review: WorkflowRunReviewSummaryWire | null;
+  verification_status: "unverified" | "verified" | "stale";
 }
 
 export function workflowRunStateJSON(input: {
   run: S.WorkflowRunRow;
   workflowName: string | null;
   latestReview: WorkflowRunReviewSummaryWire | null;
+  verificationStatus: WorkflowRunStateWire["verification_status"];
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
@@ -1482,6 +1483,7 @@ export function workflowRunStateJSON(input: {
     created_at: run.created_at,
     updated_at: run.updated_at,
     latest_review: input.latestReview,
+    verification_status: input.verificationStatus,
   };
 }
 

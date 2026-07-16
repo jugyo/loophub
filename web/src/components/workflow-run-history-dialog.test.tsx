@@ -24,6 +24,7 @@ const RUN: WorkflowRunState = {
   created_at: "2026-07-10T00:00:00Z",
   updated_at: "2026-07-10T01:00:00Z",
   latest_review: null,
+  verification_status: "unverified",
 };
 
 afterEach(() => {

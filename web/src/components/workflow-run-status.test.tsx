@@ -52,6 +52,7 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
     created_at: "2026-07-10T00:00:00Z",
     updated_at: "2026-07-10T00:00:00Z",
     latest_review: null,
+    verification_status: "unverified",
     ...partial,
   };
 }
@@ -108,6 +109,34 @@ describe("WorkflowRunStatusSection", () => {
     expect(await screen.findByText("Completed")).toBeTruthy();
     expect(screen.getByText("The Workflow run is completed.")).toBeTruthy();
     expect(screen.queryByText(/Verify passed/)).toBeNull();
+  });
+
+  it("distinguishes a verified continuing run from a stale review", async () => {
+    const { rerender } = renderInRouter(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({
+          current_step: "verify",
+          verification_status: "verified",
+        })}
+      />,
+    );
+    expect(await screen.findByText(/run is continuing/)).toBeTruthy();
+    expect(screen.getByText("Verified · continuing")).toBeTruthy();
+
+    rerender(
+      <WorkflowRunStatusSection
+        owner="me"
+        repo="loophub"
+        state={state({
+          current_step: "verify",
+          verification_status: "stale",
+        })}
+      />,
+    );
+    expect(await screen.findByText(/fresh Verify is required/)).toBeTruthy();
+    expect(screen.getByText("Reverify required")).toBeTruthy();
   });
 
   it("surfaces the wait reason, review summary, and issue / inbox links while waiting for a human", async () => {

@@ -17,6 +17,7 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("./service.ts");
 let S: typeof import("./store.ts");
+let A: typeof import("./attachments.ts");
 
 function git(args: string[]): void {
   const result = spawnSync("git", ["-C", REPO_PATH, ...args], {
@@ -99,6 +100,7 @@ beforeAll(async () => {
 
   svc = await import("./service.ts");
   S = await import("./store.ts");
+  A = await import("./attachments.ts");
 });
 
 afterAll(() => {
@@ -471,15 +473,72 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     headSha: headA,
   });
 
-  const completed = await svc.workflowRuns.completeRun(
+  // A human can request ordinary additional work while the pass is fresh. The run is not held and
+  // remains at Verify; the parent may launch and register another Execute child with the human note.
+  const additionalExecute = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: started.run.id },
+    {
+      run: started.run.id,
+      step: "execute",
+      note: "Add another requested change.",
+      contract: "# Execute",
+    },
     parent,
   );
-  expect(completed.run.status).toBe("completed");
+  expect(additionalExecute.run).toMatchObject({
+    status: "running",
+    current_step: "verify",
+    needs_human_reason: null,
+  });
+  expect(additionalExecute.user_prompt).toContain(
+    "Add another requested change.",
+  );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: additionalExecute.session_id,
+      agentName: additionalExecute.agent_name,
+      pointers: additionalExecute.pointers,
+      note: "Add another requested change.",
+    },
+    parent,
+  );
+
+  // A passing review verifies the current HEAD without terminating the run. Uploading an
+  // attachment and embedding it in the PR body are non-code edits: neither moves HEAD, so the same
+  // pass remains fresh and the parent can keep observing this run.
+  const attachment = A.saveAttachment({
+    data: Buffer.from("workflow evidence"),
+    filename: "workflow-evidence.png",
+    mime: "image/png",
+    author: "execute-agent",
+  });
+  expect(A.getAttachment(attachment.sha256)).toMatchObject({
+    filename: "workflow-evidence.png",
+    author: "execute-agent",
+  });
+  S.updateIssue(prIssueId, {
+    body: `Updated evidence after Verify passed.\n\n${attachment.markdown}\n`,
+  });
+  let continuing = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(continuing.status).toBe("running");
+  expect(continuing.head_sha).toBe(headA);
+  expect(continuing.steps.verify.latest_review).toMatchObject({
+    event: "pass",
+    fresh: true,
+  });
 
   // A later commit advances HEAD past the reviewed SHA, so the passing review is now stale.
   const headB = commit(started.worktree, "more.txt", "extra\n");
+  svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    additionalExecute.session_id,
+  );
   const staleStatus = await svc.workflowRuns.status(repo.full_name, {
     run: started.run.id,
   });
@@ -487,6 +546,32 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(staleStatus.steps.verify.complete).toBe(false);
   expect(staleStatus.steps.verify.latest_review).toMatchObject({
     fresh: false,
+  });
+
+  // The run is already at Verify, so the parent launches a fresh verifier directly. Its pass is
+  // pinned to headB, and the run continues waiting for another event.
+  const freshVerify = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify", contract: "# Verify" },
+    parent,
+  );
+  expect(freshVerify.head_sha).toBe(headB);
+  createWorkflowReview({
+    prIssueId,
+    runId: started.run.id,
+    sequence: 2,
+    event: "PASS",
+    headSha: headB,
+    body: "Additional work passes.",
+  });
+  continuing = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(continuing.status).toBe("running");
+  expect(continuing.steps.verify.latest_review).toMatchObject({
+    event: "pass",
+    fresh: true,
+    headSha: headB,
   });
 }, 30_000);
 
@@ -822,7 +907,7 @@ test("parent contract template drives transitions by observation, rework, and es
     "utf8",
   );
   // Allowed LoopHub / herdr commands are listed.
-  expect(contract).toContain("lh workflow run complete");
+  expect(contract).not.toContain("lh workflow run complete");
   expect(contract).toContain("lh workflow run request-rework");
   expect(contract).toContain("lh workflow launch-step");
   expect(contract).toContain("lh workflow step status");
@@ -840,6 +925,11 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("launch Execute");
   expect(contract).toContain("execute complete");
   expect(contract).toContain("`pass`");
+  expect(contract).toContain("does not complete or freeze the run");
+  expect(contract).toContain("launch a fresh Verify child directly");
+  expect(contract).toContain("## Continuing after a pass");
+  expect(contract).toContain("--step execute --note <instruction>");
+  expect(contract).toContain("must not call `lh workflow run resume`");
   expect(contract).toContain("`request_changes`");
   expect(contract).toContain("planning and reflection");
   // Rework increments the count, caps at 3, delivers a review-id pointer, and re-verifies fresh.
@@ -862,6 +952,8 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   const repo = S.createRepo("me/workflow-state", REPO_PATH);
   const issue = S.createIssue(repo.id, "issue", "Show run state", "body", "me");
   const prIssue = S.createIssue(repo.id, "pull", "PR for state", "body", "me");
+  const reviewedHead = "0".repeat(40);
+  S.createPull(prIssue.id, "state-head", "main", reviewedHead, issue.id);
   const workflow = S.createWorkflow({
     name: "state-wf",
     description: "",
@@ -898,7 +990,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     runId: run.id,
     sequence: 1,
     event: "REQUEST_CHANGES",
-    headSha: "0".repeat(40),
+    headSha: reviewedHead,
     body: "Two acceptance criteria are unmet.",
     findings: 2,
   });
@@ -921,12 +1013,31 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     summary: "Two acceptance criteria are unmet.",
     findings_count: 2,
   });
+  expect(byIssue?.verification_status).toBe("unverified");
 
   const byPull = await svc.workflowRuns.stateForPull(repo.full_name, {
     pull: prIssue.number,
   });
   expect(byPull?.id).toBe(run.id);
   expect(byPull?.needs_human_reason).toBeNull();
+
+  createWorkflowReview({
+    prIssueId: prIssue.id,
+    runId: run.id,
+    sequence: 2,
+    event: "PASS",
+    headSha: reviewedHead,
+    body: "Current HEAD passes.",
+  });
+  expect(
+    svc.workflowRuns.stateForPull(repo.full_name, { pull: prIssue.number })
+      ?.verification_status,
+  ).toBe("verified");
+  S.setHeadSha(prIssue.id, "1".repeat(40));
+  expect(
+    svc.workflowRuns.stateForPull(repo.full_name, { pull: prIssue.number })
+      ?.verification_status,
+  ).toBe("stale");
 
   S.updateWorkflowRun(run.id, { needsHumanReason: "waiting for guidance" });
   const waiting = await svc.workflowRuns.stateForPull(repo.full_name, {

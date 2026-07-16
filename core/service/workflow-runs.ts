@@ -577,7 +577,25 @@ function workflowRunState(
           : 0,
       }
     : null;
-  return workflowRunStateJSON({ run, workflowName, latestReview });
+  const pull = prIssue ? S.getPull(prIssue.id) : null;
+  const observedReview = reviewObservation(review);
+  const reviewFresh = Boolean(
+    observedReview?.headSha &&
+      pull?.head_sha &&
+      observedReview.headSha === pull.head_sha,
+  );
+  const verificationStatus =
+    observedReview?.event === "pass" && reviewFresh
+      ? "verified"
+      : observedReview?.event === "pass"
+        ? "stale"
+        : "unverified";
+  return workflowRunStateJSON({
+    run,
+    workflowName,
+    latestReview,
+    verificationStatus,
+  });
 }
 
 // The base SHA pinned into a Verify launch: the merge-base of the run's base branch and the
@@ -1412,9 +1430,8 @@ export const workflowRuns = {
     };
   },
 
-  // Display state for issue / PR detail (#1008): the latest run linked to the issue / PR, or null
-  // when none. Reads only the run row (+ workflow name + latest verdict) — no git — so it stays a
-  // cheap display query and does not recompute completion truth.
+  // Display state for issue / PR detail. Verification is derived from the same current HEAD versus
+  // pinned review comparison as `workflow step status`; it is not persisted separately.
   stateForIssue(
     name: string,
     input: { issue: number },

@@ -8,7 +8,7 @@
 //   human instruction. Surfaces that reason (plus the latest Verify review summary when present) and
 //   links to the issue (where the parent files its escalation comment) and the Inbox. Legacy
 //   terminal `blocked` rows get the same prominent display.
-// - completed: states that the run reached a passing Verify review and finished.
+// A running run can be verified for its current HEAD or need re-verification after HEAD advances.
 //
 // Renders nothing when the issue / PR has no run.
 
@@ -69,14 +69,22 @@ export function WorkflowRunStatusSection({
 
   const status = needsHuman(state)
     ? { label: "Needs human", tone: "cost-stopped" as const }
-    : (STATUS_META[state.status] ?? {
-        label: state.status,
-        tone: "unknown" as const,
-      });
+    : state.status === "running" && state.verification_status === "verified"
+      ? { label: "Verified · continuing", tone: "review-passed" as const }
+      : state.status === "running" && state.verification_status === "stale"
+        ? { label: "Reverify required", tone: "review-changes" as const }
+        : (STATUS_META[state.status] ?? {
+            label: state.status,
+            tone: "unknown" as const,
+          });
   const currentIndex = isStep(state.current_step)
     ? STEP_ORDER.indexOf(state.current_step)
     : -1;
   const completed = state.status === "completed";
+  const continuingVerification =
+    state.status === "running" && state.needs_human_reason === null
+      ? state.verification_status
+      : null;
 
   return (
     <section className="flex flex-col gap-3">
@@ -108,6 +116,17 @@ export function WorkflowRunStatusSection({
             {state.current_step === "verify"
               ? "Verify passed — the Workflow run finished all steps."
               : "The Workflow run is completed."}
+          </p>
+        ) : null}
+
+        {continuingVerification === "verified" ? (
+          <p className="text-sm text-muted-foreground">
+            Verify passed for the current HEAD — the run is continuing and
+            waiting for more work or an explicit stop.
+          </p>
+        ) : continuingVerification === "stale" ? (
+          <p className="text-sm text-muted-foreground">
+            HEAD changed after Verify passed — a fresh Verify is required.
           </p>
         ) : null}
 

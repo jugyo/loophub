@@ -40,8 +40,6 @@ LoopHub (orchestration):
 
 - `lh workflow run advance-to-verify --repo '<repo>' --run <run>`
   — move from Execute to Verify after you observe HEAD is ahead of base with new work.
-- `lh workflow run complete --repo '<repo>' --run <run>`
-  — complete the run after you observe a fresh passing Verify review for the current head.
 - `lh workflow run request-rework --repo '<repo>' --run <run>`
   — atomically increment rework count and return from a fresh `request_changes` review to Execute.
 - `lh workflow run await-human --repo '<repo>' --run <run> --reason <text>`
@@ -100,12 +98,37 @@ Human handoff (escalation only):
 |---|---|---|
 | start | run started | subscribe, then launch Execute |
 | Execute | execute complete (HEAD ahead of base, advanced past the last review) | `lh workflow run advance-to-verify`, then launch Verify |
-| Verify | verify complete, latest review `fresh` + `pass` | `lh workflow run complete`, then stop |
+| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running and wait for the next human instruction, turn-done notification, or explicit stop |
+| Verified + continuing | human requests additional work | Deliver the instruction to Execute (see Continuing after a pass); do not call `run resume` |
+| Verified + continuing | HEAD advances past the passing review and Execute declares turn done | Launch a fresh Verify child for the new HEAD (the run already remains at Verify) |
+| Verified + continuing | Execute declares turn done without a HEAD advance | Keep the existing pass fresh and continue waiting |
 | Verify | verify complete, latest review `fresh` + `request_changes` | rework -> Execute (see Rework) |
 
-The run is complete when Verify has a fresh passing review for the current head and you have marked the
-run `completed`. Execute includes planning and reflection in its own work; there is no separate report.
-Do not merge — a human does that.
+A fresh passing review verifies the current HEAD but does not complete or freeze the run. Keep the
+parent observation loop and Execute pane available so a human can request more work in the same run.
+PR body, comment, and attachment updates leave the pass fresh because HEAD did not change. A code
+commit makes it stale; after Execute declares turn done, launch a fresh Verify child directly. Only
+an explicit `lh workflow run stop` ends the run permanently. Execute includes planning and reflection
+in its own work; there is no separate report. Do not merge — a human does that.
+
+## Continuing after a pass
+
+A human instruction received while the current HEAD has a fresh passing review starts ordinary
+additional work; the run is not held, so this path must not call `lh workflow run resume`.
+
+1. Re-check `lh workflow step status` so the instruction is applied to the current HEAD and review.
+2. If the latest Execute child is still alive, inject the human's instruction into its pane as
+   `orchestrator: <instruction>`.
+3. If that Execute pane is closed, launch a new Execute child with
+   `lh workflow launch-step --repo '<repo>' --run <run> --step execute --note <instruction>` and
+   record the new `agent` line.
+4. Wait for that Execute child to declare turn done, then observe step status. A PR body, comment, or
+   attachment-only change leaves HEAD unchanged and the existing pass fresh, so continue waiting. If
+   HEAD advanced past the passing review, launch a fresh Verify child directly; the run already
+   remains at Verify.
+
+This is separate from **Resuming after a human instruction**, which only releases an explicit
+`await-human` hold.
 
 ## Rework (Verify request_changes -> Execute)
 
