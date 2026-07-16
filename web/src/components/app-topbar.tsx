@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { compareSidebarRepos } from "@/lib/repo-sort";
 import { useCurrentRepo } from "@/lib/use-current-repo";
 import { cn } from "@/lib/utils";
+import { useWebConfig } from "@/lib/web-config";
 import { useRepos } from "@/queries/repos";
 
 export function AppTopbar({
@@ -16,6 +17,7 @@ export function AppTopbar({
   onOpenRepoSwitcher?: () => void;
 }) {
   const currentRepo = useCurrentRepo();
+  const { experimental } = useWebConfig();
   const { data, isLoading, isError } = useRepos();
   const repos = useMemo(
     () => [...(data ?? [])].sort(compareSidebarRepos),
@@ -80,9 +82,11 @@ export function AppTopbar({
 
         <div className="hidden min-w-4 flex-1 md:block" aria-hidden="true" />
 
-        <TopbarLink to="/inbox" label="Inbox">
-          <Inbox className="size-4" />
-        </TopbarLink>
+        {experimental ? (
+          <TopbarLink to="/inbox" label="Inbox">
+            <Inbox className="size-4" />
+          </TopbarLink>
+        ) : null}
         <TopbarLink to="/stats" label="Stats">
           <BarChart3 className="size-4" />
         </TopbarLink>

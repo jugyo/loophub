@@ -8,7 +8,7 @@ export const LH_WEB_HELP = `Usage: lh-web [options]
 
 Options:
   --port <n>       HTTP port (default: LOOPHUB_PORT or 8730)
-  --experimental   Show experimental Web UI, including scheduled tasks
+  --experimental   Show experimental Web UI, including Inbox and scheduled tasks
   -h, --help       Show this help
 `;
 

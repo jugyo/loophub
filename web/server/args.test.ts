@@ -22,6 +22,7 @@ describe("parseLhWebArgs", () => {
   it("documents the experimental flag in help", () => {
     expect(parseLhWebArgs(["--help"], {}).help).toBe(true);
     expect(LH_WEB_HELP).toContain("--experimental");
+    expect(LH_WEB_HELP).toContain("Inbox");
     expect(LH_WEB_HELP).toContain("scheduled tasks");
   });
 

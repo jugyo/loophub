@@ -9,6 +9,7 @@ import {
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Repo } from "@/api/types";
+import { WebConfigProvider } from "@/lib/web-config";
 import { AppTopbar } from "./app-topbar";
 
 const reposData = vi.hoisted(() => ({
@@ -80,7 +81,11 @@ function makeRepo(
   };
 }
 
-function renderTopbar(initialPath = "/", onOpenRepoSwitcher = vi.fn()) {
+function renderTopbar(
+  initialPath = "/",
+  onOpenRepoSwitcher = vi.fn(),
+  experimental = false,
+) {
   const rootRoute = createRootRoute({
     component: () => (
       <>
@@ -128,7 +133,11 @@ function renderTopbar(initialPath = "/", onOpenRepoSwitcher = vi.fn()) {
   return {
     router,
     onOpenRepoSwitcher,
-    ...render(<RouterProvider router={router} />),
+    ...render(
+      <WebConfigProvider config={{ experimental }}>
+        <RouterProvider router={router} />
+      </WebConfigProvider>,
+    ),
   };
 }
 
@@ -170,6 +179,18 @@ describe("AppTopbar", () => {
     expect(themeIndex).toBeGreaterThan(repoPickerIndex);
     expect(notificationIndex).toBe(themeIndex - 1);
     expect(themeIndex).toBe(primaryItems.length - 1);
+  });
+
+  it("shows Inbox only when experimental UI is enabled", async () => {
+    renderTopbar();
+    await screen.findByRole("link", { name: /LoopHub/ });
+    expect(screen.queryByRole("link", { name: "Inbox" })).toBeNull();
+
+    cleanup();
+    renderTopbar("/", vi.fn(), true);
+    expect(
+      (await screen.findByRole("link", { name: "Inbox" })).getAttribute("href"),
+    ).toBe("/inbox");
   });
 
   it("opens the Cmd+K repository picker from the repository control", async () => {
