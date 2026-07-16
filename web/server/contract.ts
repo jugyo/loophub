@@ -585,6 +585,16 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.workspaces.list(p.repo),
   },
+  "workspaces/create": {
+    description: "Create and register a workspace branch.",
+    params: params({ repo, branch: strNonEmpty, session_id: sid }, [
+      "repo",
+      "branch",
+    ]),
+    result: anyObject,
+    handler: (p) =>
+      svc.workspaces.create(p.repo, { branch: p.branch }, p.session_id),
+  },
   "issues/get": {
     description: "Get one issue by number.",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),

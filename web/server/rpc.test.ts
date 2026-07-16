@@ -102,6 +102,28 @@ test("workspaces/list routes to the workspace service", async () => {
   ]);
 });
 
+test("workspaces/create routes to the workspace service", async () => {
+  const created: any = await call("workspaces/create", {
+    repo: "me/proj",
+    branch: "workspace/new",
+  });
+
+  expect(created.result).toEqual(
+    expect.objectContaining({
+      branch: "workspace/new",
+      archived_at: null,
+      branch_exists: true,
+    }),
+  );
+  expect(
+    spawnSync(
+      "git",
+      ["-C", repoPath, "show-ref", "--verify", "refs/heads/workspace/new"],
+      { encoding: "utf8" },
+    ).status,
+  ).toBe(0);
+});
+
 test("events/list preserves ascending cursor, repo filter, and limit semantics", async () => {
   const repo = svc.repos.getByFullName("me/proj");
   expect(repo).not.toBeNull();

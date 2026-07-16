@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Issue, Workspace } from "@/api/types";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
+import { NewWorkspaceButton } from "@/components/new-workspace-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -396,6 +397,9 @@ export function IssueList({
             </Button>
           </>
         )}
+        {labelFilterMode === "select" ? (
+          <NewWorkspaceButton owner={owner} repo={repo} />
+        ) : null}
         <CreateIssueButton repo={`${owner}/${repo}`} />
       </div>
 

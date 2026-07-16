@@ -586,6 +586,19 @@ export function listWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/list", { repo: full(owner, repo) });
 }
 
+export function createWorkspace(
+  owner: string,
+  repo: string,
+  branch: string,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<Workspace>("workspaces/create", {
+    repo: full(owner, repo),
+    branch,
+    session_id: sessionId,
+  });
+}
+
 export function listLabels(owner: string, repo: string) {
   return rpc<Label[]>("labels/list", { repo: full(owner, repo) });
 }

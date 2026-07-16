@@ -113,7 +113,9 @@ describe("IssueList", () => {
   it("renders open and closed issue tabs on the repo top route", async () => {
     vi.stubGlobal("fetch", mockRpcFetch({ "issues/list": () => [] }));
 
-    renderIssueList(<IssueList owner="me" repo="proj" />);
+    renderIssueList(
+      <IssueList owner="me" repo="proj" labelFilterMode="select" />,
+    );
 
     expect(await screen.findByText("No open issues.")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "me/proj" })).toBeNull();
@@ -140,6 +142,70 @@ describe("IssueList", () => {
       name: "Issue state",
     }).parentElement;
     expect(issueControls?.contains(newIssue)).toBe(true);
+  });
+
+  it("creates a workspace from the filter bar dialog", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [],
+        "workspaces/create": () => ({
+          branch: "workspace/new",
+          created_at: "2026-01-01T00:00:00Z",
+          archived_at: null,
+          branch_exists: true,
+        }),
+      }),
+    );
+
+    renderIssueList(
+      <IssueList owner="me" repo="proj" labelFilterMode="select" />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New workspace" }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Branch name" }), {
+      target: { value: "workspace/new" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "New workspace" }),
+      ).toBeNull(),
+    );
+    expect(rpcCall("workspaces/create")?.params).toMatchObject({
+      repo: "me/proj",
+      branch: "workspace/new",
+    });
+  });
+
+  it("shows workspace creation errors without clearing the branch name", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": () => [],
+        "workspaces/create": () => {
+          throw new RpcFault(422, "workspace branch already exists: existing");
+        },
+      }),
+    );
+
+    renderIssueList(
+      <IssueList owner="me" repo="proj" labelFilterMode="select" />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New workspace" }),
+    );
+    const input = screen.getByRole("textbox", { name: "Branch name" });
+    fireEvent.change(input, { target: { value: "existing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "workspace branch already exists: existing",
+    );
+    expect((input as HTMLInputElement).value).toBe("existing");
+    expect(screen.getByRole("dialog", { name: "New workspace" })).toBeTruthy();
   });
 
   it("launches issue creation from the issue list header", async () => {
