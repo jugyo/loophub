@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import { workflowContractText, workflowStepContracts } from "./contracts.ts";
 
@@ -138,4 +140,34 @@ test("every parent-to-child pane injection is orchestrator-prefixed", () => {
   for (const command of paneRunCommands) {
     expect(command).toContain('"orchestrator: ');
   }
+});
+
+test("Japanese workflow design documents the continuing lifecycle after a pass", () => {
+  const design = readFileSync(
+    join(import.meta.dirname, "..", "..", "docs", "workflow.ja.md"),
+    "utf8",
+  );
+
+  expect(design).not.toContain("fresh pass review → run completed");
+  expect(design).not.toContain("passing verdict で run を completed にする");
+  expect(design).toContain("run を `running` のまま維持");
+  expect(design).toContain("`run resume` は使わず");
+  expect(design).toContain("`--note` 付きで Execute を launch");
+  expect(design).toContain(
+    "PR body・comment・attachment だけの更新は HEAD を変えない",
+  );
+  expect(design).toContain("`agent_status: done` でも pane は再利用可能");
+  expect(design).toMatch(/修正後の Verify は常に\s+fresh child/u);
+  expect(design).toContain("現在の親の通常フローでは使わない");
+
+  for (const event of [
+    "workflow_run.turn_done",
+    "workflow_run.review_submitted",
+    "pull_request.github_feedback",
+  ]) {
+    expect(design).toContain(event);
+  }
+  expect(design).toContain(
+    "3 種類の通知はいずれも真実を代替しない timing signal",
+  );
 });

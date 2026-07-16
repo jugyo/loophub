@@ -36,6 +36,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 | Execute → 親 | ターン完了の宣言（payload なし） | `lh workflow turn done` が event を記録（fact）。worker が tail して親へ配達 |
 | 親 → Verify | input: (issue 参照, base SHA, head SHA) の 3 ポインタ | 起動プロンプト。合成ファイルなし |
 | Verify → 世界 | pass / request_changes ＋ findings | head SHA に pin された PR review（fact） |
+| 世界 → 親 | turn done、workflow review 登録、GitHub PR feedback の観測通知 | worker が親 pane へ配達する timing signal。親は通知後に domain state を再観測 |
 | Verify ↔ Execute | 直接のやりとりなし | diff と review という domain object 経由 |
 
 ```text
@@ -44,7 +45,8 @@ prompt で設定する。workflow を起動する前提は次のとおり。
             │
             ▼
   workflow agent（親）
-    │  turn_done を subscribe し、通知を受けたら step status を観測して遷移する
+    │  turn_done / review_submitted / github_feedback を subscribe
+    │  通知を受けたら domain state を再観測して遷移する
     │
     ├─ Execute child を起動（input: repo / issue / pr のポインタ）
     │    責務: 計画 → 実装 → テスト/evidence → 振り返り
@@ -56,27 +58,35 @@ prompt で設定する。workflow を起動する前提は次のとおり。
     │    出力: head SHA に pin された PR review
     │
     ├─ request_changes review → 生きている Execute pane へ「review <id> に対応せよ」を注入 → fresh Verify
-    └─ fresh pass review → run completed（merge は人間）
+    └─ fresh pass review → run は running のまま親の観測ループを維持
+         ├─ 追加指示 → Execute pane へ注入（閉じていれば --note 付き launch）
+         ├─ turn done ＋ HEAD 前進 → fresh Verify
+         ├─ turn done ＋ HEAD 不変 → pass は fresh のまま待機
+         └─ 明示的 stop → run を恒久終了（merge は人間）
 ```
 
 ## 3. アクターと責務
 
 ### 3.1 workflow agent（親 = 観測とポインタ配達に徹する orchestrator）
 
-1. run 開始時に自 pane を `lh subscribe --event workflow_run.turn_done` で購読する。
+1. run 開始時に自 pane を `lh subscribe` で `workflow_run.turn_done`、
+   `workflow_run.review_submitted`、`pull_request.github_feedback` の 3 event に購読する。どの通知も
+   domain state の再観測を促す timing signal であり、完了や verdict そのものではない。
 2. `lh workflow launch-step` で Execute / Verify child を起動する（engine が input ポインタを解決）。
 3. **遷移は「turn done 通知の受領 → `lh workflow step status` で HEAD / review 状態を観測」で決める。**
    宣言はタイミングの合図であり真実を代替しない。宣言があっても HEAD が前進していなければ Verify を
    起動しない。
-4. `lh workflow run advance-to-verify | complete | request-rework | await-human | resume | stop` の
-   意図ベース command で lifecycle を遷移する。
+4. `lh workflow run advance-to-verify | request-rework | await-human | resume | stop` の意図ベース
+   command で通常の lifecycle を遷移する。`complete` command の実装は残るが、通常フローの親契約は
+   fresh pass を完了扱いせず使用しない。
 5. request_changes review に対しては、最新 Execute child を `herdr agent get` で解決し、`pane_id` が
    得られれば `agent_status: done` でも同じ pane へ「review <id> に対応せよ」という instruction の
    注入を先に試す。agent を解決できない、`pane_id` がない、または注入に失敗した場合だけ
    `--review <id>` で fresh relaunch する。findings の要約・解釈は行わず、修正後の Verify は常に
    fresh child とする。
 6. 上限超過や解消不能状態を issue comment + Inbox + needs-human 状態で人間へ渡す。
-7. passing verdict で run を completed にする。merge はしない。
+7. passing verdict 後も run と観測ループ、および可能なら Execute pane を維持し、追加指示、turn-done、
+   明示的 stop を待つ。run を恒久終了するのは明示的な `lh workflow run stop` だけである。merge はしない。
 
 親は idle 検知を使わない（`herdr agent wait --status idle` を使わない）。親はコード・review・PR を
 直接編集しない。
@@ -138,18 +148,22 @@ run の current step は `execute | verify` のみで、新しい run は `curre
 
 freshness は review の pin された head_sha と current HEAD の比較だけで導出する。current HEAD に対する
 pass 後、新しい commit で HEAD が進んだ場合は既存 review が stale となり fresh Verify が必要になる。
+一方、PR body・comment・attachment だけの更新は HEAD を変えないため、既存 pass は fresh のままである。
 Workflow 専用の freshness / dirty / checkpoint 状態は追加しない。
 
 ## 6. 完了宣言（turn done）
 
 Execute は `lh workflow turn done`（payload なし）でターン完了を宣言する。engine はこれを
-`workflow_run.turn_done` event として記録し、worker の generic event pub/sub（`lh subscribe` +
-`notifyForEvent`、#1232）が **その run の親 pane にだけ**（payload の `parent_session_id` で絞り込み、
-`pull_request.github_feedback` と同じ仕組み）配達する。子の contract に親の pane id や topology は
-現れない。
+`workflow_run.turn_done` event として記録する。Verify が review を登録すると
+`workflow_run.review_submitted`、GitHub PR feedback が同期されると `pull_request.github_feedback` が記録
+される。worker の generic event pub/sub（`lh subscribe` + `notifyForEvent`、#1232）はこれらを親 pane へ
+配達する。run-scoped event は payload の `parent_session_id` でその run の親に絞り込む。子の contract に
+親の pane id や topology は現れない。
 
-宣言は真実を代替しない: 親は宣言の受領後に `lh workflow step status` で HEAD / review 状態を観測して
-から遷移する。idle 検知は完了推定に一切使わない。
+3 種類の通知はいずれも真実を代替しない timing signal である。親は通知後に
+`lh workflow step status`、PR review、または参照された GitHub API resource から domain state を再観測して
+判断する。review の verdict や feedback 本文を通知 payload の複製で判断しない。idle 検知は完了推定に
+一切使わない。
 
 ## 7. 親の遷移
 
@@ -157,8 +171,18 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 |---|---|---|
 | start | run started | subscribe → Execute を launch |
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
-| Verify | 最新 review が fresh + pass | `complete` → 停止 |
+| Verify | 最新 review が fresh + pass | run を `running` のまま維持し、追加指示・turn-done・明示的 stop を待つ |
+| Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、既存 Execute pane へ注入する。pane が閉じていれば `--note` 付きで Execute を launch |
+| Verified + continuing | Execute の turn done 後、HEAD が passing review より前進 | run は Verify のまま、現在の HEAD に対する Verify を fresh launch |
+| Verified + continuing | Execute の turn done 後、HEAD が不変 | 既存 pass は fresh のまま。Verify を起動せず待機を続ける |
 | Verify | 最新 review が fresh + request_changes | rework → Execute |
+
+fresh pass は現在の HEAD を検証するが、run を完了・凍結しない。親の観測ループと Execute pane を維持し、
+同じ run で追加作業を受け付ける。追加指示時に run は人間待ち hold ではないため `run resume` を使わない。
+生きている Execute pane へ `orchestrator: <instruction>` を注入し、pane が閉じている場合は
+`lh workflow launch-step --step execute --note <instruction>` で起動する。その後の turn done で HEAD が
+進んでいれば fresh Verify を起動し、PR body・comment・attachment だけが変わって HEAD が不変なら既存
+pass を fresh のまま維持する。恒久終了は明示的な `lh workflow run stop` で行う。
 
 rework 上限は 3。最新 Execute child に対する `herdr agent get` が成功して `pane_id` を返す場合は、
 `agent_status: done` でも pane は再利用可能と扱い、新規 launch より先に
@@ -171,6 +195,10 @@ fresh child とする。
 人間による resume / stop は引き続き機能する。run の status は `running | completed | stopped` のみ
 （人間待ちは `running` のまま needs_human_reason を持つ）。
 
+`lh workflow run complete` と `completed` status の実装可能性は互換性のため残る。ただし現在の親契約は
+通常の fresh pass 後に `complete` を呼ばず、run を `running` のまま保つ。`resume` は `await-human` による
+明示的 hold を人間の指示で解除する command であり、fresh pass 後の追加作業には使わない。
+
 ## 8. CLI
 
 ```sh
@@ -178,7 +206,7 @@ lh workflow create <name> [--execute-prompt <text>] [--verify-prompt <text>]
 lh workflow update <name> [--step execute|verify --file <path|->]
 lh workflow start <issue> --workflow <name>
 lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note <text|->]
-# 親の遷移駆動（意図ベース lifecycle command。7 節の遷移表と対応）
+# lifecycle command。complete は実装上利用可能だが、現在の親の通常フローでは使わない
 lh workflow run advance-to-verify|complete|request-rework|await-human|resume|stop --run <id>
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
@@ -214,13 +242,17 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
 
 ## 11. 検証観点
 
-- 「Execute → turn done → Verify pass」「request_changes → rework 注入（review id 指定）→ turn done →
-  fresh Verify pass」「宣言なしタイムアウト → 人間へ可視化」「明示的 stop」の基本フローが artifact
-  なしで決定的に完了する。
+- 「Execute → turn done → Verify pass → running のまま追加指示を待機」「追加指示 → Execute 注入または
+  `--note` 付き launch → HEAD 前進時だけ fresh Verify」「request_changes → rework 注入（review id 指定）
+  → turn done → fresh Verify pass」「宣言なしタイムアウト → 人間へ可視化」「明示的 stop」の基本フローが
+  artifact なしで決定的に進行する。
 - Execute input が issue / PR / (rework 時) review id のポインタのみで、`task.md` / `findings.md` が
   生成されない。
 - Verify input が (issue 参照, base SHA, head SHA) のみで、`changes.diff` / `report.md` /
   `prior-verdicts.md` が生成されない。
 - status は HEAD / base / 最新 review の freshness を返し、head advance で pass が stale になる。
+- PR body・comment・attachment だけの更新では pass が fresh のまま維持される。
+- 親は turn done、review submitted、GitHub feedback の通知を timing signal として購読し、その都度 domain
+  state を再観測する。
 - idle 検知が遷移・完了判定に使われない。
 - 旧 artifact テーブルが新しい run の進行条件にならない。
