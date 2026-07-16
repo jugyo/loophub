@@ -749,10 +749,20 @@ describe("IssueDetail", () => {
     expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
   });
 
-  it("makes Workflow auto mode explicit before launching", async () => {
+  it("shows workflow descriptions without requiring one and preserves selection behavior", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
+    const longDescription =
+      "Runs implementation and independent verification with enough detail to wrap across several lines without widening the workflow menu.";
     renderDetail(() => noPr, false, {
-      "workflows/list": () => [{ id: 9, name: "Standard" }],
+      "workflows/list": () => [
+        {
+          id: 9,
+          name: "Standard",
+          description: "Implement the issue, then verify the result.",
+        },
+        { id: 10, name: "No description", description: null },
+        { id: 11, name: "Detailed workflow", description: longDescription },
+      ],
     });
 
     const button = await screen.findByRole("button", {
@@ -763,7 +773,30 @@ describe("IssueDetail", () => {
     );
 
     fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Standard" }));
+    const standard = await screen.findByRole("menuitem", {
+      name: "Standard Implement the issue, then verify the result.",
+    });
+    expect(standard.className).toContain("px-3");
+    expect(standard.className).toContain("py-3");
+    expect(
+      within(standard).getByText(
+        "Implement the issue, then verify the result.",
+      ),
+    ).toBeTruthy();
+
+    const noDescription = screen.getByRole("menuitem", {
+      name: "No description",
+    });
+    expect(noDescription.textContent).toBe("No description");
+
+    const detailed = screen.getByRole("menuitem", {
+      name: `Detailed workflow ${longDescription}`,
+    });
+    expect(within(detailed).getByText(longDescription).className).toContain(
+      "line-clamp-3",
+    );
+
+    fireEvent.click(standard);
 
     expect(launchTerminal).toHaveBeenCalledWith({
       repo: "me/proj",

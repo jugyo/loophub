@@ -353,17 +353,25 @@ function StartWorkflowControls({
           <ChevronDown className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
+      <DropdownMenuContent align="end" className="w-80">
         {workflows && workflows.length > 0 ? (
           workflows.map((wf) => (
             <DropdownMenuItem
               key={wf.id}
+              className="flex-col items-start gap-1 px-3 py-3 whitespace-normal"
               onSelect={(event) => {
                 event.preventDefault();
                 start(wf.id);
               }}
             >
-              <span className="min-w-0 truncate">{wf.name}</span>
+              <span className="w-full min-w-0 font-medium leading-tight">
+                {wf.name}
+              </span>
+              {wf.description ? (
+                <span className="line-clamp-3 w-full min-w-0 break-words text-xs leading-relaxed text-muted-foreground">
+                  {wf.description}
+                </span>
+              ) : null}
             </DropdownMenuItem>
           ))
         ) : (
