@@ -82,6 +82,8 @@ let otherRepoPath: string;
 
 const TAB_JSON =
   '{"id":"cli:tab:create","result":{"tab":{"tab_id":"w1:t9","workspace_id":"w1"},"type":"tab_created"}}';
+const TAB_JSON_WITH_ROOT_PANE =
+  '{"id":"cli:tab:create","result":{"root_pane":{"pane_id":"w4:p9"},"tab":{"tab_id":"w4:t9","workspace_id":"w4"},"type":"tab_created"}}';
 
 // `herdr workspace create` seeds the new workspace with one tab and one empty pane, reported in
 // the same shape `herdr tab create` uses, plus the new workspace itself.
@@ -1153,10 +1155,11 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     expect(cleanup).not.toContain("workspace");
   });
 
-  test("keeps the seeded root pane after the New Issue agent starts", async () => {
+  test("closes only the seeded root pane after the first New Issue agent starts", async () => {
     herdr.script.push(
       exitWith(0, WORKSPACE_LIST_EMPTY),
       exitWith(0, WORKSPACE_JSON_WITH_ROOT_PANE),
+      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'),
       exitWith(0),
       exitWith(0),
     );
@@ -1167,18 +1170,65 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       label: "New issue",
     });
 
-    await vi.waitFor(() => expect(herdr.calls).toHaveLength(4));
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
     const focus = herdr.calls[3];
     expect(focus).toContain("workspace");
     expect(focus).toContain("focus");
-    expect(
-      herdr.calls.some(
-        (call) =>
-          call.includes("pane") &&
-          call.includes("close") &&
-          call.includes("w4:p1"),
-      ),
-    ).toBe(false);
+    const cleanup = herdr.calls[4];
+    expect(cleanup).toContain("pane");
+    expect(cleanup).toContain("close");
+    expect(cleanup).toContain("w4:p1");
+    expect(cleanup).not.toContain("w4:p2");
+  });
+
+  test("closes only the new tab's seeded root pane when reusing the New Issue workspace", async () => {
+    herdr.script.push(
+      exitWith(0, WORKSPACE_LIST_NEW_ISSUE),
+      exitWith(0, TAB_JSON_WITH_ROOT_PANE),
+      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p10"}}}'),
+      exitWith(0),
+      exitWith(0),
+    );
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-create",
+      label: "New issue",
+    });
+
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
+    const focus = herdr.calls[3];
+    expect(focus).toContain("tab");
+    expect(focus).toContain("focus");
+    expect(focus).toContain("w4:t9");
+    const cleanup = herdr.calls[4];
+    expect(cleanup).toContain("pane");
+    expect(cleanup).toContain("close");
+    expect(cleanup).toContain("w4:p9");
+    expect(cleanup).not.toContain("w4:p10");
+  });
+
+  test("does not wait for New Issue seed pane cleanup to finish", async () => {
+    herdr.script.push(
+      exitWith(0, WORKSPACE_LIST_EMPTY),
+      exitWith(0, WORKSPACE_JSON_WITH_ROOT_PANE),
+      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'),
+      () => {},
+      () => {},
+    );
+
+    await expect(
+      svc.terminal.launch({
+        repo: "me/proj",
+        workflow: "issue-create",
+        label: "New issue",
+      }),
+    ).resolves.toMatchObject({ backend: "herdr" });
+
+    await vi.waitFor(() => expect(herdr.calls).toHaveLength(5));
+    expect(herdr.calls[4]).toEqual(
+      expect.arrayContaining(["pane", "close", "w4:p1"]),
+    );
   });
 
   // tabId and workspaceId are parsed independently from the same `herdr workspace create`

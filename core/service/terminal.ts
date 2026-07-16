@@ -939,10 +939,9 @@ export const terminal = {
       const focus = herdrTabFocusArgv(repo, tabId);
       runHerdrLaunch(focus[0], focus.slice(1), r.local_path).catch(() => {});
     }
-    // New Issue keeps the workspace's seed pane. It is harmless, and avoiding this ancillary
-    // cleanup keeps first-time workspace/session setup independent from agent startup timing.
-    // Other launch paths retain their existing best-effort cleanup.
-    if (!isNewIssue && tabId && rootPaneId) {
+    // The agent is already running, so close only the seed pane captured from this launch.
+    // Fire-and-forget keeps ancillary cleanup from delaying or failing the launch RPC.
+    if (tabId && rootPaneId) {
       const paneClose = herdrPaneCloseArgv(repo, rootPaneId);
       runHerdrLaunch(paneClose[0], paneClose.slice(1), r.local_path).catch(
         () => {},
