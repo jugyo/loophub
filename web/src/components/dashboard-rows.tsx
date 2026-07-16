@@ -22,6 +22,7 @@ import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
+import { useWebConfig } from "@/lib/web-config";
 import type { IssueListFilters } from "@/queries/issues";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
@@ -347,10 +348,11 @@ function RowBuildButton({
   repo: string;
   issue: Issue;
 }) {
+  const { legacy } = useWebConfig();
   const { launchTerminal } = useTerminalLauncher();
   const [isLoading, startLoading] = useFixedLoading();
   const state = issueBuildButtonState(issue);
-  if (issue.state !== "open" || state !== "build") return null;
+  if (legacy || issue.state !== "open" || state !== "build") return null;
   return (
     <button
       type="button"

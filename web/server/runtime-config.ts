@@ -1,9 +1,9 @@
 import { type WebConfigWire, webConfigJSON } from "../../core/serialize.ts";
 
-let config = webConfigJSON(false);
+let config = webConfigJSON(false, false);
 
 export function setWebRuntimeConfig(next: WebConfigWire): void {
-  config = webConfigJSON(next.experimental);
+  config = webConfigJSON(next.experimental, next.legacy);
 }
 
 export function webRuntimeConfig(): WebConfigWire {

@@ -6,6 +6,7 @@ describe("parseLhWebArgs", () => {
     expect(parseLhWebArgs([], {})).toEqual({
       port: 8730,
       experimental: false,
+      legacy: false,
       help: false,
     });
   });
@@ -19,11 +20,20 @@ describe("parseLhWebArgs", () => {
     });
   });
 
+  it("enables legacy Web UI without changing other options", () => {
+    expect(parseLhWebArgs(["--legacy", "--port", "9000"], {})).toMatchObject({
+      port: 9000,
+      legacy: true,
+    });
+  });
+
   it("documents the experimental flag in help", () => {
     expect(parseLhWebArgs(["--help"], {}).help).toBe(true);
     expect(LH_WEB_HELP).toContain("--experimental");
     expect(LH_WEB_HELP).toContain("Inbox");
     expect(LH_WEB_HELP).toContain("scheduled tasks");
+    expect(LH_WEB_HELP).toContain("--legacy");
+    expect(LH_WEB_HELP).toContain("Build buttons");
   });
 
   it("rejects unknown and invalid options", () => {

@@ -21,6 +21,7 @@ import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
+import { WebConfigProvider } from "@/lib/web-config";
 
 // The Build button launches through the terminal backend abstraction; capture the call.
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -111,6 +112,7 @@ function renderDetail(
   getIssue?: () => Issue,
   autoModeOnBuild = false,
   extraHandlers: Record<string, (params: any) => unknown> = {},
+  legacy = false,
 ) {
   vi.stubGlobal("fetch", mockFetch(getIssue, autoModeOnBuild, extraHandlers));
   const queryClient = new QueryClient({
@@ -120,7 +122,11 @@ function renderDetail(
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/",
-    component: () => <IssueDetail owner="me" repo="proj" number={12} />,
+    component: () => (
+      <WebConfigProvider config={{ experimental: false, legacy }}>
+        <IssueDetail owner="me" repo="proj" number={12} />
+      </WebConfigProvider>
+    ),
   });
   // The linked-PR link targets the pulls route; register it for the router.
   const pullsRoute = createRoute({
@@ -702,6 +708,15 @@ describe("IssueDetail", () => {
 
     expect(await screen.findByRole("button", { name: /^Build$/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
+  });
+
+  it("hides the Build button in legacy mode", async () => {
+    const noPr: Issue = { ...issue, linked_pull_request: null };
+    renderDetail(() => noPr, false, {}, true);
+
+    await screen.findByRole("button", { name: /close/i });
+    expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Start workflow" })).toBeTruthy();
   });
 
   // #1256: a closed issue starts no new work. Build / Start workflow / New

@@ -39,6 +39,7 @@ import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useImageUpload } from "@/lib/use-image-upload";
+import { useWebConfig } from "@/lib/web-config";
 import {
   useIssue,
   useIssueComments,
@@ -136,6 +137,7 @@ function IssueHeader({
   issue: Issue;
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
+  const { legacy } = useWebConfig();
   const state = stateBadge(issue, "issues");
   const buildState = issueBuildButtonState(issue);
   const linkedPull = primaryLinkedPull(issue);
@@ -193,13 +195,15 @@ function IssueHeader({
         {issue.state === "open" ? (
           buildState === "build" ? (
             <>
-              <BuildControls owner={owner} repo={repo} issue={issue} />
+              {legacy ? null : (
+                <BuildControls owner={owner} repo={repo} issue={issue} />
+              )}
               <StartWorkflowControls owner={owner} repo={repo} issue={issue} />
             </>
           ) : (
             <>
               <BuildStatusLabel state={buildState} />
-              {buildState === "building" && linkedPull ? (
+              {!legacy && buildState === "building" && linkedPull ? (
                 <BuildControls
                   owner={owner}
                   repo={repo}

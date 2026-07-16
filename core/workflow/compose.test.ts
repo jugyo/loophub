@@ -158,8 +158,8 @@ test("user prompt lists input pointers as label/value lines", () => {
     stepPrompt: "Review the diff.",
   });
 
-  expect(composed.userPrompt).toContain("- base sha: " + "b".repeat(40));
-  expect(composed.userPrompt).toContain("- head sha: " + "a".repeat(40));
+  expect(composed.userPrompt).toContain(`- base sha: ${"b".repeat(40)}`);
+  expect(composed.userPrompt).toContain(`- head sha: ${"a".repeat(40)}`);
   expect(composed.userPrompt).toContain("- issue: #42");
   expect(composed.userPrompt).not.toContain("diff --git");
 });

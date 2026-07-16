@@ -134,7 +134,7 @@ function renderTopbar(
     router,
     onOpenRepoSwitcher,
     ...render(
-      <WebConfigProvider config={{ experimental }}>
+      <WebConfigProvider config={{ experimental, legacy: false }}>
         <RouterProvider router={router} />
       </WebConfigProvider>,
     ),

@@ -1347,10 +1347,14 @@ export function retroJSON(row: S.RetroRow) {
 // drift when new experimental surfaces are added.
 export interface WebConfigWire {
   experimental: boolean;
+  legacy: boolean;
 }
 
-export function webConfigJSON(experimental: boolean): WebConfigWire {
-  return { experimental };
+export function webConfigJSON(
+  experimental: boolean,
+  legacy: boolean,
+): WebConfigWire {
+  return { experimental, legacy };
 }
 
 // A scheduled task (#880): a repo-scoped saved prompt a coding agent runs at one or more times of

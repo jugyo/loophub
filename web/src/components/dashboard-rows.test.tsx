@@ -26,6 +26,7 @@ import type {
 } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
+import { WebConfigProvider } from "@/lib/web-config";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
 vi.mock("@/components/terminal-controller", () => ({
@@ -114,6 +115,7 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
 function renderInRouter(
   ui: React.ReactNode,
   handlers: Record<string, (params: any) => unknown> = {},
+  legacy = false,
 ) {
   vi.stubGlobal("fetch", mockRpcFetch(handlers));
   const queryClient = new QueryClient({
@@ -123,7 +125,11 @@ function renderInRouter(
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/",
-    component: () => <>{ui}</>,
+    component: () => (
+      <WebConfigProvider config={{ experimental: false, legacy }}>
+        {ui}
+      </WebConfigProvider>
+    ),
   });
   const detailRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -381,6 +387,16 @@ describe("IssueRow", () => {
     expect(
       await screen.findByRole("button", { name: "Build issue #7" }),
     ).toBeTruthy();
+  });
+
+  it("hides the Build button in legacy mode", async () => {
+    renderInRouter(
+      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
+      {},
+      true,
+    );
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
   });
 
   // A closed issue starts no new work: the Build button is hidden until it is
