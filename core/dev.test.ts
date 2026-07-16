@@ -324,6 +324,47 @@ describe("dev.openPr", () => {
     expect(pull.base.ref).toBe("integration/stack");
   });
 
+  test("uses an explicitly selected registered workspace as the build PR base", async () => {
+    svc.workspaces.create("me/proj", { branch: "workspace/explicit" });
+    const created = spawnSync(
+      process.execPath,
+      [
+        "--experimental-sqlite",
+        "--disable-warning=ExperimentalWarning",
+        "--import",
+        "tsx",
+        CLI,
+        "issue",
+        "create",
+        "--repo",
+        "me/proj",
+        "--title",
+        "explicit workspace build",
+        "--workspace",
+        "workspace/explicit",
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          LOOPHUB_HOME: HOME,
+          LOOPHUB_DB: join(HOME, "test.db"),
+        },
+      },
+    );
+    expect(created.status, created.stderr).toBe(0);
+    const match = created.stdout.match(/created #(\d+)/);
+    if (!match) throw new Error(`create failed: ${created.stdout}`);
+
+    const pr = await svc.dev.openPr(
+      "me/proj",
+      { issue: Number(match[1]) },
+      "sess-1",
+    );
+    const pull = (await svc.pulls.get("me/proj", pr.number)) as any;
+    expect(pull.base.ref).toBe("workspace/explicit");
+  });
+
   test("falls back to the repo default branch when the issue has no target branch", async () => {
     const issue = svc.issues.create("me/proj", { title: "default base" });
 

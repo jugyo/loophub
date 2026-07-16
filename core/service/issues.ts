@@ -15,6 +15,7 @@ import {
   issueListItemJSON,
   issueOr404,
   labelJSON,
+  localBranchExists,
   MAX_LIST_PER_PAGE,
   paginate,
   parseGithubIssueUrl,
@@ -150,6 +151,7 @@ export const issues = {
       title: string;
       body?: string;
       labels?: string[];
+      workspace?: string | null;
       target_branch?: string | null;
       create_target_branch?: boolean;
     },
@@ -160,7 +162,42 @@ export const issues = {
     ensureWritable(r);
     if (!input.title) throw new ServiceError(422, "title is required");
     const actor = actorFor(sessionId);
-    const targetBranch = input.target_branch?.trim() || null;
+    let workspace: string | null = null;
+    if (input.workspace != null) {
+      if (typeof input.workspace !== "string" || !input.workspace.trim()) {
+        throw new ServiceError(422, "workspace branch is required");
+      }
+      workspace = input.workspace.trim();
+    }
+    const explicitTargetBranch = input.target_branch?.trim() || null;
+    if (workspace && explicitTargetBranch) {
+      throw new ServiceError(
+        422,
+        "workspace cannot be combined with target_branch",
+      );
+    }
+    if (workspace && input.create_target_branch) {
+      throw new ServiceError(
+        422,
+        "workspace cannot be combined with create_target_branch",
+      );
+    }
+    if (workspace) {
+      const registered = S.getWorkspace(r.id, workspace);
+      if (!registered || registered.archived_at) {
+        throw new ServiceError(
+          422,
+          `workspace must name an active registered workspace: ${workspace}`,
+        );
+      }
+      if (!localBranchExists(r.local_path, workspace)) {
+        throw new ServiceError(
+          422,
+          `workspace branch must exist locally: ${workspace}`,
+        );
+      }
+    }
+    const targetBranch = workspace ?? explicitTargetBranch;
     if (targetBranch) {
       if (input.create_target_branch) {
         ensureLocalBranchFromDefault(

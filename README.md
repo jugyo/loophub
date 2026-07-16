@@ -110,6 +110,7 @@ npm run lh-worker               # events を tail（--poll-ms <ms> で間隔指�
 ./scripts/install-lh-wrapper.sh   # ~/.local/bin/lh を作成（node + tsx 起動）
 lh repo add . --name me/proj
 lh issue create --title "do the thing" --label ready-to-build
+lh issue create --title "stacked change" --workspace integration/stack
 lh pr create --head feature-x --base main --title "impl" --issue 5
 ```
 
@@ -127,6 +128,11 @@ New issue や `lh issue new --target-branch <branch>` は、この環境変数�
 優先される。どちらもない場合は従来どおり `target_branch: null` になる。この環境変数は既存の
 workspace ブランチを選ぶコンテキストであり、ブランチを作成しない。新規ブランチを明示的に
 作る場合だけ `--target-branch` と `--create-target-branch` を併用する。
+
+登録済み workspace を明示して起票する場合は
+`lh issue create --workspace <branch> --title <title>` を使う。指定先は対象 repository の active な
+workspace で、ローカルブランチも存在する必要がある。`--workspace` は `LOOPHUB_WORKSPACE` より
+優先され、`--target-branch` または `--create-target-branch` との併用はエラーになる。
 
 ## 開発
 

@@ -177,6 +177,131 @@ test("lh issue create explicit target branch overrides LOOPHUB_WORKSPACE", () =>
   expect(viewJSON(Number(match[1])).target_branch).toBe("workspace/explicit");
 });
 
+test("lh issue create accepts an active registered workspace", () => {
+  const workspace = lh([
+    "workspace",
+    "create",
+    "workspace/active",
+    "--repo",
+    REPO,
+  ]);
+  expect(workspace.exitCode, workspace.stderr).toBe(0);
+
+  const result = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "registered workspace issue",
+    "--workspace",
+    "workspace/active",
+  ]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  const match = result.stdout.match(/created #(\d+)/);
+  if (!match) throw new Error(`create failed: ${result.stdout}`);
+
+  expect(viewJSON(Number(match[1])).target_branch).toBe("workspace/active");
+});
+
+test("lh issue create explicit workspace overrides LOOPHUB_WORKSPACE", () => {
+  const workspace = lh([
+    "workspace",
+    "create",
+    "workspace/selected",
+    "--repo",
+    REPO,
+  ]);
+  expect(workspace.exitCode, workspace.stderr).toBe(0);
+
+  const result = lh(
+    [
+      "issue",
+      "create",
+      "--repo",
+      REPO,
+      "--title",
+      "explicit registered workspace issue",
+      "--workspace",
+      "workspace/selected",
+    ],
+    { LOOPHUB_WORKSPACE: "integration/stack" },
+  );
+  expect(result.exitCode, result.stderr).toBe(0);
+  const match = result.stdout.match(/created #(\d+)/);
+  if (!match) throw new Error(`create failed: ${result.stdout}`);
+
+  expect(viewJSON(Number(match[1])).target_branch).toBe("workspace/selected");
+});
+
+test.each([
+  [["--target-branch", "integration/stack"], "--target-branch"],
+  [["--create-target-branch"], "--create-target-branch"],
+] as const)("lh issue create rejects --workspace with %s", (conflictingArgs, expected) => {
+  const result = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "workspace conflict",
+    "--workspace",
+    "workspace/active",
+    ...conflictingArgs,
+  ]);
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain(
+    `--workspace cannot be combined with ${expected}`,
+  );
+});
+
+test("lh issue create rejects unregistered workspaces", () => {
+  const result = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "unregistered workspace",
+    "--workspace",
+    "workspace/unregistered",
+  ]);
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("active registered workspace");
+});
+
+test("lh issue create requires a value for --workspace", () => {
+  const result = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "missing workspace value",
+    "--workspace",
+  ]);
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("--workspace requires a value");
+});
+
+test("lh issue create rejects an empty --workspace value", () => {
+  const result = lh([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "empty workspace value",
+    "--workspace=",
+  ]);
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("workspace branch is required");
+});
+
 test("lh issue create can create a missing target branch from default", () => {
   const { stdout, exitCode, stderr } = lh([
     "issue",

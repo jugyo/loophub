@@ -140,6 +140,21 @@ export async function run(): Promise<void> {
     }
     process.exit(proc.status ?? 1);
   } else if (sub === "create") {
+    if (flags.workspace !== undefined && typeof flags.workspace !== "string") {
+      fail("--workspace requires a value");
+    }
+    if (
+      typeof flags.workspace === "string" &&
+      typeof flags["target-branch"] === "string"
+    ) {
+      fail("--workspace cannot be combined with --target-branch");
+    }
+    if (
+      typeof flags.workspace === "string" &&
+      flags["create-target-branch"] === true
+    ) {
+      fail("--workspace cannot be combined with --create-target-branch");
+    }
     const labels = (flags.label || "")
       .split(",")
       .map((x) => x.trim())
@@ -151,7 +166,11 @@ export async function run(): Promise<void> {
           title: flags.title ?? "",
           body: flags.body || "",
           labels,
-          target_branch: flags["target-branch"] ?? process.env[ENV_WORKSPACE],
+          workspace: flags.workspace,
+          target_branch:
+            flags.workspace === undefined
+              ? (flags["target-branch"] ?? process.env[ENV_WORKSPACE])
+              : undefined,
           create_target_branch: flags["create-target-branch"] === true,
         },
         await writeSession(),

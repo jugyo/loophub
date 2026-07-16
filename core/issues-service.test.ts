@@ -78,6 +78,73 @@ test("issues.create stores and exposes a target branch", async () => {
   expect(detail.target_branch).toBe("integration/stack");
 });
 
+test("issues.create stores an active registered workspace as the target branch", () => {
+  svc.workspaces.create("me/proj", { branch: "workspace/active" });
+
+  const issue = svc.issues.create("me/proj", {
+    title: "workspace target",
+    workspace: "workspace/active",
+  }) as any;
+
+  expect(issue.target_branch).toBe("workspace/active");
+});
+
+test("issues.create rejects a blank workspace", () => {
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "blank workspace",
+      workspace: "   ",
+    }),
+  ).toThrow(/workspace branch is required/);
+});
+
+test("issues.create rejects unregistered, archived, and missing workspace branches", () => {
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "unregistered workspace",
+      workspace: "workspace/unregistered",
+    }),
+  ).toThrow(/active registered workspace/);
+
+  svc.workspaces.create("me/proj", { branch: "workspace/archived" });
+  svc.workspaces.archive("me/proj", "workspace/archived");
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "archived workspace",
+      workspace: "workspace/archived",
+    }),
+  ).toThrow(/active registered workspace/);
+
+  svc.workspaces.create("me/proj", { branch: "workspace/missing" });
+  git(["branch", "-D", "workspace/missing"]);
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "missing workspace branch",
+      workspace: "workspace/missing",
+    }),
+  ).toThrow(/workspace branch must exist locally/);
+});
+
+test("issues.create rejects workspace with target branch creation options", () => {
+  svc.workspaces.create("me/proj", { branch: "workspace/conflict" });
+
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "target conflict",
+      workspace: "workspace/conflict",
+      target_branch: "integration/stack",
+    }),
+  ).toThrow(/workspace cannot be combined with target_branch/);
+
+  expect(() =>
+    svc.issues.create("me/proj", {
+      title: "create conflict",
+      workspace: "workspace/conflict",
+      create_target_branch: true,
+    }),
+  ).toThrow(/workspace cannot be combined with create_target_branch/);
+});
+
 test("issues.create normalizes a blank target branch to null", () => {
   const issue = svc.issues.create("me/proj", {
     title: "blank target",
