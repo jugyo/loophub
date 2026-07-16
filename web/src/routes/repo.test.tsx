@@ -50,7 +50,7 @@ describe("repository search route placement", () => {
       }),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Workspaces" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "New workspace" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
   });
 
   it("does not show the search row on the separate issue list route", async () => {

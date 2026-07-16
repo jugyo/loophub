@@ -21,6 +21,7 @@ export function RepoPage() {
         labelsParam={labels}
         stateParam={state}
         labelFilterMode="select"
+        issueScope="unassigned"
       />
     </div>
   );

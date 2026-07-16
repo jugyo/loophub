@@ -14,9 +14,15 @@ vi.mock("@/components/app-layout", async () => {
 });
 vi.mock("@/lib/use-loophub-events", () => ({ useLoopHubEvents: () => {} }));
 vi.mock("@/components/workspace-page", () => ({
-  WorkspacePage: ({ workspaceName }: { workspaceName: string }) => (
-    <div>{workspaceName}</div>
-  ),
+  WorkspacePage: ({
+    workspaceName,
+    labels,
+    state,
+  }: {
+    workspaceName: string;
+    labels?: string;
+    state?: string;
+  }) => <div>{[workspaceName, labels, state].filter(Boolean).join("|")}</div>,
 }));
 
 afterEach(cleanup);
@@ -33,5 +39,18 @@ describe("workspace route", () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByText("release%2Fcandidate%")).toBeTruthy();
+  });
+
+  it("validates and passes issue-list search params", async () => {
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([workspaceRoute]),
+      history: createMemoryHistory({
+        initialEntries: ["/r/w/feature%2Falpha?labels=bug&state=closed"],
+      }),
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByText("feature/alpha|bug|closed")).toBeTruthy();
   });
 });

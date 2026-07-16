@@ -47,7 +47,7 @@ export function NewWorkspaceButton({
     <>
       <Button type="button" variant="secondary" onClick={() => setOpen(true)}>
         <Plus className="size-4" />
-        New workspace
+        New
       </Button>
       {open ? (
         <div

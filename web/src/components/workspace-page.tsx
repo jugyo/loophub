@@ -1,21 +1,19 @@
-import { AlertTriangle, Ellipsis, Loader2 } from "lucide-react";
-import { CreateIssueButton } from "@/components/create-issue-button";
-import { IssueRow } from "@/components/dashboard-rows";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { DEFAULT_ISSUE_FILTERS, useIssuesList } from "@/queries/issues";
-import {
-  useSetWorkspaceArchived,
-  useWorkspaceResolution,
-} from "@/queries/workspaces";
+import { Loader2 } from "lucide-react";
+import { IssueList } from "@/components/issue-list";
+import { RepositorySearch } from "@/components/repository-search";
+import { WorkspacePicker } from "@/components/workspace-picker";
+import type { IssueListFilters } from "@/queries/issues";
+import { useWorkspaceResolution } from "@/queries/workspaces";
 
-export function WorkspacePage({ workspaceName }: { workspaceName: string }) {
+export function WorkspacePage({
+  workspaceName,
+  labels,
+  state,
+}: {
+  workspaceName: string;
+  labels?: string;
+  state?: IssueListFilters["state"];
+}) {
   const resolution = useWorkspaceResolution(workspaceName);
 
   if (resolution.isLoading) {
@@ -57,8 +55,9 @@ export function WorkspacePage({ workspaceName }: { workspaceName: string }) {
     <ResolvedWorkspacePage
       owner={repo.owner.login}
       repo={repo.name}
-      defaultBranch={repo.default_branch}
       workspace={workspace}
+      labels={labels}
+      state={state}
     />
   );
 }
@@ -66,130 +65,44 @@ export function WorkspacePage({ workspaceName }: { workspaceName: string }) {
 function ResolvedWorkspacePage({
   owner,
   repo,
-  defaultBranch,
   workspace,
+  labels,
+  state,
 }: {
   owner: string;
   repo: string;
-  defaultBranch: string;
   workspace: {
     branch: string;
     branch_exists: boolean;
   };
+  labels?: string;
+  state?: IssueListFilters["state"];
 }) {
-  const issues = useIssuesList(owner, repo, DEFAULT_ISSUE_FILTERS);
-  const archive = useSetWorkspaceArchived(owner, repo);
-  const visibleIssues = (issues.data?.pages ?? []).flat();
-  const workspaceIssues = visibleIssues.filter(
-    (issue) =>
-      issue.target_branch === workspace.branch ||
-      (workspace.branch === defaultBranch && !issue.target_branch),
-  );
-
   return (
-    <div className="mx-auto flex max-w-content flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold">{workspace.branch}</h1>
-            <Badge>workspace</Badge>
-            {!workspace.branch_exists ? (
-              <Badge tone="review-changes">
-                <AlertTriangle className="mr-1 size-3" /> branch missing
-              </Badge>
-            ) : null}
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {owner}/{repo}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {archive.error ? (
-            <span className="text-xs text-destructive">
-              {String(archive.error)}
-            </span>
-          ) : null}
-          <CreateIssueButton
-            repo={`${owner}/${repo}`}
-            targetBranch={workspace.branch}
-            disabled={!workspace.branch_exists}
-          />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label={`Workspace actions for ${workspace.branch}`}
-                disabled={archive.isPending}
-              >
-                <Ellipsis className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onSelect={() =>
-                  archive.mutate({ branch: workspace.branch, archived: true })
-                }
-              >
-                Archive
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+    <div className="space-y-4">
+      <div className="mx-auto flex max-w-content items-center justify-between gap-3">
+        <WorkspacePicker
+          owner={owner}
+          repo={repo}
+          selectedBranch={workspace.branch}
+        />
+        <RepositorySearch owner={owner} repo={repo} />
       </div>
-
       {!workspace.branch_exists ? (
         <WorkspaceMessage
           title="Workspace branch is missing"
           detail="Recreate the branch or archive this workspace from repository settings."
         />
-      ) : issues.isLoading ? (
-        <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading issues…
-        </div>
-      ) : issues.isError ? (
-        <WorkspaceMessage title="Failed to load workspace issues" />
-      ) : workspaceIssues.length === 0 ? (
-        <>
-          <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
-            No issues yet
-          </p>
-          <WorkspaceLoadMore issues={issues} />
-        </>
       ) : (
-        <>
-          <ul className="flex flex-col divide-y rounded-md border">
-            {workspaceIssues.map((issue) => (
-              <li key={issue.number}>
-                <IssueRow owner={owner} repo={repo} issue={issue} />
-              </li>
-            ))}
-          </ul>
-          <WorkspaceLoadMore issues={issues} />
-        </>
+        <IssueList
+          owner={owner}
+          repo={repo}
+          labelsParam={labels}
+          stateParam={state}
+          labelFilterMode="select"
+          issueScope={{ workspace: workspace.branch }}
+        />
       )}
-    </div>
-  );
-}
-
-function WorkspaceLoadMore({
-  issues,
-}: {
-  issues: ReturnType<typeof useIssuesList>;
-}) {
-  if (!issues.hasNextPage) return null;
-  return (
-    <div className="flex justify-center">
-      <Button
-        variant="secondary"
-        onClick={() => issues.fetchNextPage()}
-        disabled={issues.isFetchingNextPage}
-      >
-        {issues.isFetchingNextPage ? (
-          <Loader2 className="mr-2 size-4 animate-spin" />
-        ) : null}
-        Load more
-      </Button>
     </div>
   );
 }

@@ -1,4 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault } from "@/api/rpc-mock";
@@ -19,13 +26,36 @@ afterEach(() => {
 });
 
 function renderPage(name: string, handlers: Record<string, () => unknown>) {
-  vi.stubGlobal("fetch", mockRpcFetch(handlers));
+  vi.stubGlobal(
+    "fetch",
+    mockRpcFetch({
+      "repos/get": () => repo,
+      "workspaces/list": () => [],
+      "labels/list": () => [],
+      ...handlers,
+    }),
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const rootRoute = createRootRoute();
+  const pageRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/w/$workspaceName",
+    component: () => {
+      const { workspaceName } = pageRoute.useParams();
+      return <WorkspacePage workspaceName={workspaceName} />;
+    },
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([pageRoute]),
+    history: createMemoryHistory({
+      initialEntries: [`/r/w/${encodeURIComponent(name)}`],
+    }),
+  });
   render(
     <QueryClientProvider client={queryClient}>
-      <WorkspacePage workspaceName={name} />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
 }
@@ -58,10 +88,10 @@ describe("WorkspacePage", () => {
     });
 
     expect(
-      await screen.findByRole("heading", { name: "feature/alpha" }),
+      await screen.findByRole("button", { name: "feature/alpha" }),
     ).toBeTruthy();
-    expect(screen.getByText("me/proj")).toBeTruthy();
-    expect(screen.getByText("No issues yet")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+    expect(screen.getByText("No open issues.")).toBeTruthy();
   });
 
   it("shows an understandable empty state for an unknown workspace", async () => {
@@ -111,6 +141,20 @@ describe("WorkspacePage", () => {
             })
           : [
               {
+                number: 101,
+                state: "open",
+                title: "Boundary workspace issue",
+                body: "",
+                target_branch: "feature/alpha",
+                user: { login: "me" },
+                labels: [],
+                comments: 0,
+                created_at: "2026-01-01T00:00:00Z",
+                updated_at: "2026-01-01T00:00:00Z",
+                linked_pull_request: null,
+                linked_pull_requests: [],
+              },
+              {
                 number: 102,
                 state: "open",
                 title: "Later workspace issue",
@@ -127,9 +171,8 @@ describe("WorkspacePage", () => {
             ],
     });
 
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
     expect(await screen.findByText("Boundary workspace issue")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     expect(await screen.findByText("Later workspace issue")).toBeTruthy();
   });
 });

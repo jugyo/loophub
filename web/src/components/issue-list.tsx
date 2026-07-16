@@ -136,6 +136,7 @@ export function IssueList({
   labelsParam,
   stateParam,
   labelFilterMode = "text",
+  issueScope,
 }: {
   owner: string;
   repo: string;
@@ -145,6 +146,8 @@ export function IssueList({
   stateParam?: IssueListFilters["state"];
   /** Repo top uses the dropdown requested in #884; secondary issue lists keep the legacy text filter. */
   labelFilterMode?: "text" | "select";
+  /** Limits the shared list to issues outside workspaces or in one workspace. */
+  issueScope?: "unassigned" | { workspace: string };
 }) {
   const labels = labelsParam ?? "";
   const state = stateParam ?? DEFAULT_ISSUE_FILTERS.state;
@@ -162,7 +165,7 @@ export function IssueList({
   const repoQuery = useRepo(owner, repo);
   const workspacesQuery = useWorkspaces(owner, repo);
   const navigate = useNavigate();
-  const visibleIssues = useMemo(() => {
+  const allVisibleIssues = useMemo(() => {
     const pages = query.data?.pages ?? [];
     return pages.flatMap((page) => page.slice(0, ISSUE_LIST_PAGE_SIZE));
   }, [query.data]);
@@ -170,6 +173,23 @@ export function IssueList({
   const workspaces = Array.isArray(workspacesQuery.data)
     ? workspacesQuery.data
     : [];
+  const visibleIssues = useMemo(() => {
+    if (!issueScope) return allVisibleIssues;
+    if (issueScope !== "unassigned") {
+      return allVisibleIssues.filter(
+        (issue) => issue.target_branch === issueScope.workspace,
+      );
+    }
+    const workspaceBranches = new Set(
+      workspaces
+        .filter((workspace) => workspace.archived_at === null)
+        .map((workspace) => workspace.branch),
+    );
+    return allVisibleIssues.filter((issue) => {
+      const branch = issue.target_branch?.trim();
+      return !branch || !workspaceBranches.has(branch);
+    });
+  }, [allVisibleIssues, issueScope, workspaces]);
   const issueSections = useMemo(
     () => composeIssueSections(visibleIssues, defaultBranch, workspaces),
     [visibleIssues, defaultBranch, workspaces],
@@ -188,27 +208,45 @@ export function IssueList({
   // above then applies it. Keeps the URL authoritative so a reload/share keeps
   // the same filter; an empty box drops the param entirely.
   function apply() {
-    navigate({
-      to: "/r/$owner/$repo",
-      params: { owner, repo },
-      search: {
-        labels: draftLabels.trim() || undefined,
-        state: state === "open" ? undefined : state,
-      },
-    });
+    const search = {
+      labels: draftLabels.trim() || undefined,
+      state: state === "open" ? undefined : state,
+    };
+    if (issueScope && issueScope !== "unassigned") {
+      navigate({
+        to: "/r/w/$workspaceName",
+        params: { workspaceName: issueScope.workspace },
+        search,
+      });
+    } else {
+      navigate({
+        to: "/r/$owner/$repo",
+        params: { owner, repo },
+        search,
+      });
+    }
   }
 
   const selectedLabels = useMemo(() => parseLabelsParam(labels), [labels]);
 
   function navigateWithLabels(nextLabels: string[]) {
-    navigate({
-      to: "/r/$owner/$repo",
-      params: { owner, repo },
-      search: {
-        labels: labelsParamFromList(nextLabels),
-        state: state === "open" ? undefined : state,
-      },
-    });
+    const search = {
+      labels: labelsParamFromList(nextLabels),
+      state: state === "open" ? undefined : state,
+    };
+    if (issueScope && issueScope !== "unassigned") {
+      navigate({
+        to: "/r/w/$workspaceName",
+        params: { workspaceName: issueScope.workspace },
+        search,
+      });
+    } else {
+      navigate({
+        to: "/r/$owner/$repo",
+        params: { owner, repo },
+        search,
+      });
+    }
   }
 
   function addSelectedLabel(nextLabel: string) {
@@ -242,17 +280,28 @@ export function IssueList({
         >
           {STATE_TABS.map((tab) => {
             const active = state === tab.value;
+            const search = {
+              labels: labels || undefined,
+              state: tab.value === "open" ? undefined : tab.value,
+            };
+            const linkProps =
+              issueScope && issueScope !== "unassigned"
+                ? {
+                    to: "/r/w/$workspaceName" as const,
+                    params: { workspaceName: issueScope.workspace },
+                    search,
+                  }
+                : {
+                    to: "/r/$owner/$repo" as const,
+                    params: { owner, repo },
+                    search,
+                  };
             return (
               <Link
                 key={tab.value}
                 role="tab"
                 aria-selected={active}
-                to="/r/$owner/$repo"
-                params={{ owner, repo }}
-                search={{
-                  labels: labels || undefined,
-                  state: tab.value === "open" ? undefined : tab.value,
-                }}
+                {...linkProps}
                 className={cn(
                   "inline-flex h-7 shrink-0 items-center justify-center rounded-sm px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   active
@@ -397,7 +446,14 @@ export function IssueList({
             </Button>
           </>
         )}
-        <CreateIssueButton repo={`${owner}/${repo}`} />
+        <CreateIssueButton
+          repo={`${owner}/${repo}`}
+          targetBranch={
+            issueScope && issueScope !== "unassigned"
+              ? issueScope.workspace
+              : undefined
+          }
+        />
       </div>
 
       {query.isLoading || repoQuery.isLoading || workspacesQuery.isLoading ? (
@@ -415,97 +471,130 @@ export function IssueList({
             ? ` ${workspacesQuery.error.message}`
             : null}
         </div>
-      ) : visibleIssues.length === 0 && workspaces.length === 0 ? (
-        <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
-          {state === "closed"
-            ? "No closed issues."
-            : state === "all"
-              ? "No issues."
-              : "No open issues."}
-        </p>
+      ) : visibleIssues.length === 0 ? (
+        <div className="flex flex-col gap-3">
+          <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+            {state === "closed"
+              ? "No closed issues."
+              : state === "all"
+                ? "No issues."
+                : "No open issues."}
+          </p>
+          <IssueListLoadMore query={query} />
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {issueSections.map((section) =>
-            section.workspace || section.defaultWorkspace ? (
-              <Link
-                key={section.branch}
-                to={workspacePath(section.branch)}
-                className="flex items-center justify-between gap-3 rounded-md border p-4 transition-colors hover:bg-accent"
-              >
-                <span className="flex items-center gap-2 text-sm font-semibold">
-                  {section.branch}
-                  <Badge>workspace</Badge>
-                  {section.workspace && !section.workspace.branch_exists ? (
-                    <Badge tone="review-changes">
-                      <AlertTriangle className="mr-1 size-3" /> branch missing
-                    </Badge>
-                  ) : null}
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  Open workspace
-                </span>
-              </Link>
-            ) : (
-              <section key={section.branch} className="flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-2 px-1">
-                  <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          {issueScope ? (
+            <ul className="flex flex-col divide-y rounded-md border">
+              {visibleIssues.map((issue) => (
+                <li key={issue.number}>
+                  <IssueRow
+                    owner={owner}
+                    repo={repo}
+                    issue={issue}
+                    labelState={state}
+                    labelWorkspace={
+                      issueScope !== "unassigned"
+                        ? issueScope?.workspace
+                        : undefined
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            issueSections.map((section) =>
+              section.workspace || section.defaultWorkspace ? (
+                <Link
+                  key={section.branch}
+                  to={workspacePath(section.branch)}
+                  className="flex items-center justify-between gap-3 rounded-md border p-4 transition-colors hover:bg-accent"
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold">
                     {section.branch}
-                    {section.workspace ? <Badge>workspace</Badge> : null}
-                    {section.defaultWorkspace ? (
-                      <span className="text-xs font-normal">
-                        workspace registered as default branch
-                      </span>
-                    ) : null}
+                    <Badge>workspace</Badge>
                     {section.workspace && !section.workspace.branch_exists ? (
                       <Badge tone="review-changes">
                         <AlertTriangle className="mr-1 size-3" /> branch missing
                       </Badge>
                     ) : null}
-                  </h2>
-                </div>
-                {section.workspace && !section.workspace.branch_exists ? (
-                  <p className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-muted-foreground">
-                    Recreate the branch or archive this workspace.
-                  </p>
-                ) : null}
-                {section.issues.length === 0 &&
-                (!section.workspace || section.workspace.branch_exists) ? (
-                  <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
-                    No issues yet
-                  </p>
-                ) : section.issues.length > 0 ? (
-                  <ul className="flex flex-col divide-y rounded-md border">
-                    {section.issues.map((issue) => (
-                      <li key={issue.number}>
-                        <IssueRow
-                          owner={owner}
-                          repo={repo}
-                          issue={issue}
-                          labelState={state}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </section>
-            ),
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    Open workspace
+                  </span>
+                </Link>
+              ) : (
+                <section key={section.branch} className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+                      {section.branch}
+                      {section.workspace ? <Badge>workspace</Badge> : null}
+                      {section.defaultWorkspace ? (
+                        <span className="text-xs font-normal">
+                          workspace registered as default branch
+                        </span>
+                      ) : null}
+                      {section.workspace && !section.workspace.branch_exists ? (
+                        <Badge tone="review-changes">
+                          <AlertTriangle className="mr-1 size-3" /> branch
+                          missing
+                        </Badge>
+                      ) : null}
+                    </h2>
+                  </div>
+                  {section.workspace && !section.workspace.branch_exists ? (
+                    <p className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+                      Recreate the branch or archive this workspace.
+                    </p>
+                  ) : null}
+                  {section.issues.length === 0 &&
+                  (!section.workspace || section.workspace.branch_exists) ? (
+                    <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+                      No issues yet
+                    </p>
+                  ) : section.issues.length > 0 ? (
+                    <ul className="flex flex-col divide-y rounded-md border">
+                      {section.issues.map((issue) => (
+                        <li key={issue.number}>
+                          <IssueRow
+                            owner={owner}
+                            repo={repo}
+                            issue={issue}
+                            labelState={state}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
+              ),
+            )
           )}
-          {query.hasNextPage ? (
-            <div className="flex justify-center">
-              <Button
-                variant="secondary"
-                onClick={() => query.fetchNextPage()}
-                disabled={query.isFetchingNextPage}
-              >
-                {query.isFetchingNextPage ? (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                ) : null}
-                Load more
-              </Button>
-            </div>
-          ) : null}
+          <IssueListLoadMore query={query} />
         </div>
       )}
+    </div>
+  );
+}
+
+function IssueListLoadMore({
+  query,
+}: {
+  query: ReturnType<typeof useIssuesList>;
+}) {
+  if (!query.hasNextPage) return null;
+  return (
+    <div className="flex justify-center">
+      <Button
+        variant="secondary"
+        onClick={() => query.fetchNextPage()}
+        disabled={query.isFetchingNextPage}
+      >
+        {query.isFetchingNextPage ? (
+          <Loader2 className="mr-2 size-4 animate-spin" />
+        ) : null}
+        Load more
+      </Button>
     </div>
   );
 }
