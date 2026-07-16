@@ -17,6 +17,7 @@ export const queryKeys = {
   labels: (full: string) => ["labels", full] as const,
   issues: (full: string) => ["issues", full] as const,
   issue: (full: string, number: number) => ["issue", full, number] as const,
+  workspaces: (full: string) => ["workspaces", full] as const,
   pulls: (full: string) => ["pulls", full] as const,
   pull: (full: string, number: number) => ["pull", full, number] as const,
   inbox: () => ["inbox"] as const,
@@ -62,6 +63,14 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["issue"]);
     }
     keys.push([...queryKeys.dashboard()]); // cross-repo top page
+  } else if (type.startsWith("workspace.")) {
+    if (repo) {
+      keys.push([...queryKeys.workspaces(repo)]);
+      keys.push([...queryKeys.issues(repo)]);
+    } else {
+      keys.push(["workspaces"]);
+      keys.push(["issues"]);
+    }
   } else if (type.startsWith("pull_request.")) {
     if (repo) {
       keys.push([...queryKeys.pulls(repo)]);

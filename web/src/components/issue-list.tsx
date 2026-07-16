@@ -3,11 +3,19 @@
 // events via the issues query key (event-keys.ts).
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Check, ChevronsUpDown, Loader2, Tag, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronsUpDown,
+  Loader2,
+  Tag,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { Issue } from "@/api/types";
+import type { Issue, Workspace } from "@/api/types";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,6 +36,7 @@ import {
   useLabelsList,
 } from "@/queries/issues";
 import { useRepo } from "@/queries/repos";
+import { useWorkspaces } from "@/queries/workspaces";
 
 const STATE_TABS: {
   value: IssueListFilters["state"];
@@ -49,15 +58,38 @@ function labelsParamFromList(labels: string[]): string | undefined {
   return labels.length > 0 ? labels.join(",") : undefined;
 }
 
-function groupIssuesByBaseBranch(
+interface IssueSection {
+  branch: string;
+  issues: Issue[];
+  workspace?: Workspace;
+  defaultWorkspace?: Workspace;
+}
+
+function composeIssueSections(
   issues: Issue[],
   defaultBranch: string,
-): { branch: string; issues: Issue[] }[] {
-  const defaultGroup: { branch: string; issues: Issue[] } = {
+  workspaces: Workspace[],
+): IssueSection[] {
+  const defaultGroup: IssueSection = {
     branch: defaultBranch,
     issues: [],
   };
-  const branchGroups = new Map<string, Issue[]>();
+  const activeWorkspaces = workspaces.filter(
+    (workspace) => workspace.archived_at === null,
+  );
+  defaultGroup.defaultWorkspace = activeWorkspaces.find(
+    (workspace) => workspace.branch === defaultBranch,
+  );
+  const nonDefaultWorkspaces = activeWorkspaces.filter(
+    (workspace) => workspace.branch !== defaultBranch,
+  );
+  const workspaceBranches = new Set(
+    nonDefaultWorkspaces.map((workspace) => workspace.branch),
+  );
+  const workspaceIssues = new Map(
+    nonDefaultWorkspaces.map((workspace) => [workspace.branch, [] as Issue[]]),
+  );
+  const unregisteredGroups = new Map<string, Issue[]>();
 
   for (const issue of issues) {
     const branch = issue.target_branch?.trim();
@@ -65,21 +97,36 @@ function groupIssuesByBaseBranch(
       defaultGroup.issues.push(issue);
       continue;
     }
-    const group = branchGroups.get(branch);
+    const groups = workspaceBranches.has(branch)
+      ? workspaceIssues
+      : unregisteredGroups;
+    const group = groups.get(branch);
     if (group) {
       group.push(issue);
     } else {
-      branchGroups.set(branch, [issue]);
+      groups.set(branch, [issue]);
     }
   }
 
-  return [
+  const sections: IssueSection[] = [
     defaultGroup,
-    ...Array.from(branchGroups, ([branch, groupedIssues]) => ({
+    ...nonDefaultWorkspaces.map((workspace) => ({
+      branch: workspace.branch,
+      issues: workspaceIssues.get(workspace.branch) ?? [],
+      workspace,
+    })),
+    ...Array.from(unregisteredGroups, ([branch, groupedIssues]) => ({
       branch,
       issues: groupedIssues,
     })),
-  ].filter((group) => group.issues.length > 0);
+  ];
+
+  return sections.filter(
+    (section) =>
+      section.workspace !== undefined ||
+      section.issues.length > 0 ||
+      (section === defaultGroup && workspaces.length > 0),
+  );
 }
 
 export function IssueList({
@@ -112,15 +159,19 @@ export function IssueList({
   const query = useIssuesList(owner, repo, filters);
   const labelsQuery = useLabelsList(owner, repo, labelFilterMode === "select");
   const repoQuery = useRepo(owner, repo);
+  const workspacesQuery = useWorkspaces(owner, repo);
   const navigate = useNavigate();
   const visibleIssues = useMemo(() => {
     const pages = query.data?.pages ?? [];
     return pages.flatMap((page) => page.slice(0, ISSUE_LIST_PAGE_SIZE));
   }, [query.data]);
   const defaultBranch = repoQuery.data?.default_branch ?? "main";
-  const issueGroups = useMemo(
-    () => groupIssuesByBaseBranch(visibleIssues, defaultBranch),
-    [visibleIssues, defaultBranch],
+  const workspaces = Array.isArray(workspacesQuery.data)
+    ? workspacesQuery.data
+    : [];
+  const issueSections = useMemo(
+    () => composeIssueSections(visibleIssues, defaultBranch, workspaces),
+    [visibleIssues, defaultBranch, workspaces],
   );
 
   // The `labels` URL param is the single source of truth for the labels filter,
@@ -348,19 +399,22 @@ export function IssueList({
         <CreateIssueButton repo={`${owner}/${repo}`} />
       </div>
 
-      {query.isLoading || repoQuery.isLoading ? (
+      {query.isLoading || repoQuery.isLoading || workspacesQuery.isLoading ? (
         <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading…
         </div>
-      ) : query.isError || repoQuery.isError ? (
+      ) : query.isError || repoQuery.isError || workspacesQuery.isError ? (
         <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
           Failed to load.
           {query.error instanceof Error ? ` ${query.error.message}` : null}
           {repoQuery.error instanceof Error
             ? ` ${repoQuery.error.message}`
             : null}
+          {workspacesQuery.error instanceof Error
+            ? ` ${workspacesQuery.error.message}`
+            : null}
         </div>
-      ) : visibleIssues.length === 0 ? (
+      ) : visibleIssues.length === 0 && workspaces.length === 0 ? (
         <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
           {state === "closed"
             ? "No closed issues."
@@ -370,23 +424,54 @@ export function IssueList({
         </p>
       ) : (
         <div className="flex flex-col gap-3">
-          {issueGroups.map((group) => (
-            <section key={group.branch} className="flex flex-col gap-2">
-              <h2 className="px-1 text-sm font-semibold text-muted-foreground">
-                {group.branch}
-              </h2>
-              <ul className="flex flex-col divide-y rounded-md border">
-                {group.issues.map((issue) => (
-                  <li key={issue.number}>
-                    <IssueRow
-                      owner={owner}
-                      repo={repo}
-                      issue={issue}
-                      labelState={state}
-                    />
-                  </li>
-                ))}
-              </ul>
+          {issueSections.map((section) => (
+            <section key={section.branch} className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2 px-1">
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+                  {section.branch}
+                  {section.workspace ? <Badge>workspace</Badge> : null}
+                  {section.defaultWorkspace ? (
+                    <span className="text-xs font-normal">
+                      workspace registered as default branch
+                    </span>
+                  ) : null}
+                  {section.workspace && !section.workspace.branch_exists ? (
+                    <Badge tone="review-changes">
+                      <AlertTriangle className="mr-1 size-3" /> branch missing
+                    </Badge>
+                  ) : null}
+                </h2>
+                {section.workspace ? (
+                  <CreateIssueButton
+                    repo={`${owner}/${repo}`}
+                    disabled={!section.workspace.branch_exists}
+                  />
+                ) : null}
+              </div>
+              {section.workspace && !section.workspace.branch_exists ? (
+                <p className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+                  Recreate the branch or archive this workspace.
+                </p>
+              ) : null}
+              {section.issues.length === 0 &&
+              (!section.workspace || section.workspace.branch_exists) ? (
+                <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+                  No issues yet
+                </p>
+              ) : section.issues.length > 0 ? (
+                <ul className="flex flex-col divide-y rounded-md border">
+                  {section.issues.map((issue) => (
+                    <li key={issue.number}>
+                      <IssueRow
+                        owner={owner}
+                        repo={repo}
+                        issue={issue}
+                        labelState={state}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </section>
           ))}
           {query.hasNextPage ? (

@@ -34,6 +34,14 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["pull", "me/proj", 13]);
   });
 
+  it("maps workspace events to the repo workspace list", () => {
+    const keys = queryKeysForEvent(
+      ev({ type: "workspace.archived", repo: "me/proj" }),
+    );
+    expect(keys).toContainEqual(["workspaces", "me/proj"]);
+    expect(keys).toContainEqual(["issues", "me/proj"]);
+  });
+
   it("also refreshes the repo's issue list + details for a pull_request event (#324)", () => {
     // Issue rows embed their linked PR's mergeable/conflict status, so a PR change
     // (e.g. a rebase that clears a conflict) must invalidate the issue views too —

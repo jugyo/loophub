@@ -27,7 +27,13 @@ function launchSuffix(): string {
     : Math.random().toString(36).slice(2, 10);
 }
 
-export function CreateIssueButton({ repo }: { repo: string }) {
+export function CreateIssueButton({
+  repo,
+  disabled = false,
+}: {
+  repo: string;
+  disabled?: boolean;
+}) {
   const { launchTerminal } = useTerminalLauncher();
   const { data: settings } = useSettings();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -48,6 +54,7 @@ export function CreateIssueButton({ repo }: { repo: string }) {
       <Button
         aria-label="New issue"
         title="New issue"
+        disabled={disabled}
         className="rounded-r-none"
         onClick={() => launchIssue()}
       >
@@ -59,7 +66,7 @@ export function CreateIssueButton({ repo }: { repo: string }) {
           <Button
             aria-label="Choose agent and model"
             title="Choose agent and model for this issue creation"
-            disabled={!settings}
+            disabled={disabled || !settings}
             className="rounded-l-none border-l border-primary-foreground/25 px-2"
           >
             <ChevronDown className="size-4" />

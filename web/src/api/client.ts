@@ -40,6 +40,7 @@ import type {
   WorkflowRunHistoryEvent,
   WorkflowRunState,
   WorkflowStepContracts,
+  Workspace,
 } from "./types";
 
 /** Resolved server base. "" => same-origin (proxy). No trailing slash. */
@@ -579,6 +580,10 @@ export function listIssues(owner: string, repo: string, query = "") {
       sort: sp.get("sort") ?? undefined,
     }),
   );
+}
+
+export function listWorkspaces(owner: string, repo: string) {
+  return rpc<Workspace[]>("workspaces/list", { repo: full(owner, repo) });
 }
 
 export function listLabels(owner: string, repo: string) {

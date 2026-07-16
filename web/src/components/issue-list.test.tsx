@@ -608,6 +608,14 @@ describe("IssueList", () => {
       "fetch",
       mockRpcFetch({
         "repos/get": () => ({ default_branch: "develop" }),
+        "workspaces/list": () => [
+          {
+            branch: "feature/a",
+            created_at: "2026-01-01T00:00:00Z",
+            archived_at: null,
+            branch_exists: true,
+          },
+        ],
         "issues/list": () => [
           issue({
             number: 1,
@@ -634,19 +642,159 @@ describe("IssueList", () => {
     expect(await screen.findByText("Implicit default issue")).toBeTruthy();
     expect(
       screen.getAllByRole("heading").map((heading) => heading.textContent),
-    ).toEqual(["develop", "feature/a", "feature/b"]);
+    ).toEqual(["develop", "feature/aworkspace", "feature/b"]);
 
-    const defaultSection = screen.getByRole("heading", {
-      name: "develop",
-    }).parentElement;
+    const defaultSection = screen
+      .getByRole("heading", {
+        name: "develop",
+      })
+      .closest("section");
     expect(defaultSection?.textContent).toContain("Implicit default issue");
     expect(defaultSection?.textContent).toContain("Explicit default issue");
 
-    const featureSection = screen.getByRole("heading", {
-      name: "feature/a",
-    }).parentElement;
+    const featureSection = screen
+      .getByRole("heading", {
+        name: "feature/a workspace",
+      })
+      .closest("section");
     expect(featureSection?.textContent).toContain("Feature issue");
     expect(featureSection?.textContent).toContain("branch:feature/a");
+    expect(featureSection?.textContent).toContain("workspace");
+  });
+
+  it("renders active workspaces in registry order, including empty and missing branches", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [
+          {
+            branch: "workspace/empty",
+            created_at: "2026-01-01T00:00:00Z",
+            archived_at: null,
+            branch_exists: true,
+          },
+          {
+            branch: "workspace/missing",
+            created_at: "2026-01-02T00:00:00Z",
+            archived_at: null,
+            branch_exists: false,
+          },
+          {
+            branch: "workspace/archived",
+            created_at: "2026-01-03T00:00:00Z",
+            archived_at: "2026-01-04T00:00:00Z",
+            branch_exists: true,
+          },
+        ],
+        "issues/list": () => [
+          issue({ number: 1, title: "Default issue" }),
+          issue({
+            number: 2,
+            title: "Missing branch issue",
+            target_branch: "workspace/missing",
+          }),
+          issue({
+            number: 3,
+            title: "Archived issue",
+            target_branch: "workspace/archived",
+          }),
+        ],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("Default issue")).toBeTruthy();
+    expect(
+      screen.getAllByRole("heading").map((heading) => heading.textContent),
+    ).toEqual([
+      "main",
+      "workspace/emptyworkspace",
+      "workspace/missingworkspace branch missing",
+      "workspace/archived",
+    ]);
+    expect(screen.getByText("No issues yet")).toBeTruthy();
+    expect(
+      screen.getByText("Recreate the branch or archive this workspace."),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /new issue/i })).toHaveLength(
+      3,
+    );
+    const missingSection = screen
+      .getByRole("heading", { name: /workspace\/missing/ })
+      .closest("section");
+    expect(
+      missingSection?.querySelector('button[aria-label="New issue"]'),
+    ).toHaveProperty("disabled", true);
+    const activeSection = screen
+      .getByRole("heading", { name: /workspace\/empty/ })
+      .closest("section");
+    expect(
+      activeSection?.querySelector('button[aria-label="New issue"]'),
+    ).toHaveProperty("disabled", false);
+  });
+
+  it("keeps the existing target branch groups when the registry is empty", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [],
+        "issues/list": () => [
+          issue({
+            title: "Targeted issue",
+            target_branch: "workspace/old",
+          }),
+        ],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("Targeted issue")).toBeTruthy();
+    expect(
+      screen.getAllByRole("heading").map((heading) => heading.textContent),
+    ).toEqual(["workspace/old"]);
+  });
+
+  it("folds a workspace matching the default branch into the default section", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [
+          {
+            branch: "main",
+            created_at: "2026-01-01T00:00:00Z",
+            archived_at: null,
+            branch_exists: true,
+          },
+        ],
+        "issues/list": () => [
+          issue({ number: 1, title: "Implicit default issue" }),
+          issue({
+            number: 2,
+            title: "Explicit default issue",
+            target_branch: "main",
+          }),
+        ],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    expect(await screen.findByText("Implicit default issue")).toBeTruthy();
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(
+      screen.getByRole("heading", {
+        name: "main workspace registered as default branch",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("workspace", { exact: true })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /new issue/i })).toHaveLength(
+      1,
+    );
   });
 
   it("waits for repo metadata before rendering branch groups", async () => {

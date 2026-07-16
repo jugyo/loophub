@@ -48,6 +48,7 @@ import type {
   WorkflowRunStateWire,
   WorkflowStepContractsWire,
   WorkflowWire,
+  WorkspaceWire,
 } from "../../../core/serialize.ts";
 import type {
   HerdrIssueWorkspace as HerdrIssueWorkspaceWire,
@@ -117,6 +118,8 @@ export type { InboxJsonObject };
 export type Notification = NotificationWire;
 
 export type Repo = RepoWire;
+
+export type Workspace = WorkspaceWire;
 
 export type { MergeMode };
 

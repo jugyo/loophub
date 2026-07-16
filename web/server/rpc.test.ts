@@ -87,6 +87,21 @@ test("a known method routes to the service and returns a result", async () => {
   expect(got.result.title).toBe("hello");
 });
 
+test("workspaces/list routes to the workspace service", async () => {
+  const repo = svc.repos.getByFullName("me/proj");
+  S.createWorkspace(repo!.id, "integration/stack");
+
+  const listed: any = await call("workspaces/list", { repo: "me/proj" });
+
+  expect(listed.result).toEqual([
+    expect.objectContaining({
+      branch: "integration/stack",
+      archived_at: null,
+      branch_exists: true,
+    }),
+  ]);
+});
+
 test("events/list preserves ascending cursor, repo filter, and limit semantics", async () => {
   const repo = svc.repos.getByFullName("me/proj");
   expect(repo).not.toBeNull();

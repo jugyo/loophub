@@ -579,6 +579,12 @@ export const methods: Record<string, MethodDef> = {
         sort: p.sort,
       }),
   },
+  "workspaces/list": {
+    description: "List registered workspaces in a repository.",
+    params: params({ repo }, ["repo"]),
+    result: anyArray,
+    handler: (p) => svc.workspaces.list(p.repo),
+  },
   "issues/get": {
     description: "Get one issue by number.",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),
