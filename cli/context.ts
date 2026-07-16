@@ -103,9 +103,10 @@ export async function run<T>(fn: () => Promise<T> | T): Promise<T> {
   }
 }
 
-// --repo, or inferred from cwd.
+// --repo, LOOPHUB_REPO, or inferred from cwd.
 export async function resolveRepo(): Promise<string> {
   if (flags.repo) return flags.repo;
+  if (process.env.LOOPHUB_REPO) return process.env.LOOPHUB_REPO;
   const s = await svc();
   const repos = s.repos.list("all");
   const cwd = resolve(process.cwd());
