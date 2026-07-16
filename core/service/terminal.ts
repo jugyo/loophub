@@ -102,6 +102,7 @@ export interface TerminalLaunchInput {
   workflowId?: number;
   session?: string;
   cwd?: string;
+  targetBranch?: string;
   // One-shot agent/model overrides from the issue-dev (Build) or issue-create (New issue)
   // dropdowns (#637, #1275). Plain buttons leave these unset. They map to the corresponding CLI
   // runtime/model flags and never touch persisted Settings defaults.
@@ -601,6 +602,8 @@ export const terminal = {
       cwd: input.cwd,
       codingAgent: input.workflow === "issue-create" ? input.agent : undefined,
       model: input.workflow === "issue-create" ? input.model : undefined,
+      targetBranch:
+        input.workflow === "issue-create" ? input.targetBranch : undefined,
       env:
         issueCreateLaunchId != null
           ? { [ENV_ISSUE_CREATE_HERDR_LAUNCH]: issueCreateLaunchId }

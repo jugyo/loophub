@@ -521,6 +521,7 @@ export function launchTerminalWorkflow(input: {
   workflowId?: number;
   session?: string;
   cwd?: string;
+  targetBranch?: string;
   // One-shot runtime/model overrides from Build or New issue dropdowns (#637, #1275).
   agent?: CodingAgent;
   model?: string;

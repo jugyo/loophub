@@ -1032,6 +1032,30 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     );
   });
 
+  test("forwards the workspace target branch to the Herdr command", async () => {
+    herdr.script.push(
+      exitWith(0, WORKSPACE_LIST_EMPTY),
+      exitWith(0, WORKSPACE_JSON),
+      exitWith(0),
+      exitWith(0),
+    );
+
+    await svc.terminal.launch({
+      repo: "me/proj",
+      workflow: "issue-create",
+      label: "New workspace issue",
+      targetBranch: "workspace/alpha",
+    });
+
+    expect(herdr.calls[2]).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "lh issue new --repo 'me/proj' --target-branch 'workspace/alpha'",
+        ),
+      ]),
+    );
+  });
+
   test("scheduled task creation also starts in a new workspace with the creation skill context", async () => {
     herdr.script.push(exitWith(0, WORKSPACE_JSON), exitWith(0), exitWith(0));
 

@@ -801,6 +801,45 @@ describe("IssueList", () => {
     ).toHaveProperty("disabled", false);
   });
 
+  it("launches New issue from a workspace with that branch as the target", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [
+          {
+            branch: "workspace/alpha",
+            created_at: "2026-01-01T00:00:00Z",
+            archived_at: null,
+            branch_exists: true,
+          },
+        ],
+        "issues/list": () => [],
+      }),
+    );
+
+    renderIssueList(<IssueList owner="me" repo="proj" />);
+
+    const workspaceSection = (
+      await screen.findByRole("heading", {
+        name: "workspace/alpha workspace",
+      })
+    ).closest("section");
+    fireEvent.click(
+      workspaceSection!.querySelector<HTMLButtonElement>(
+        'button[aria-label="New issue"]',
+      )!,
+    );
+
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repo: "me/proj",
+        workflow: "issue-create",
+        targetBranch: "workspace/alpha",
+      }),
+    );
+  });
+
   it("keeps the existing target branch groups when the registry is empty", async () => {
     vi.stubGlobal(
       "fetch",

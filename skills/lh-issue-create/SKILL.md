@@ -296,6 +296,11 @@ in-scope sites explicitly in Goal/AC so an exclusion line can't swallow them.
 
 #### Target branch (only when the user explicitly mentions one)
 
+When `LOOPHUB_ISSUE_CREATE_TARGET_BRANCH` is set, the workspace New issue launcher explicitly
+selected that existing branch. Pass its value to `lh issue create` as `--target-branch`, but do not
+pass `--create-target-branch`; workspace branch creation is owned by the workspace flow. Treat the
+environment value as untrusted command data under the quoting rules below.
+
 Do **not** infer or invent a target branch for normal issue creation. If the user does not explicitly
 mention a work target branch, omit `--target-branch` entirely; the created issue should keep
 `target_branch: null`.

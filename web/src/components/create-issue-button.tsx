@@ -29,9 +29,11 @@ function launchSuffix(): string {
 
 export function CreateIssueButton({
   repo,
+  targetBranch,
   disabled = false,
 }: {
   repo: string;
+  targetBranch?: string;
   disabled?: boolean;
 }) {
   const { launchTerminal } = useTerminalLauncher();
@@ -45,6 +47,7 @@ export function CreateIssueButton({
       repo,
       label: `New issue - ${launchSuffix()}`,
       workflow: "issue-create",
+      ...(targetBranch ? { targetBranch } : {}),
       ...(override ? { agent: override.agent, model: model || undefined } : {}),
     });
   }

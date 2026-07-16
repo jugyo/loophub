@@ -35,6 +35,14 @@ test("lh-issue-create target branch guidance is explicit and metadata-only", () 
   );
 });
 
+test("lh-issue-create uses the workspace launcher target branch without creating it", () => {
+  expect(skill).toContain("LOOPHUB_ISSUE_CREATE_TARGET_BRANCH");
+  expect(skill).toContain(
+    "Pass its value to `lh issue create` as `--target-branch`",
+  );
+  expect(skill).toContain("do not\npass `--create-target-branch`");
+});
+
 test("lh-issue-create target branch shell guidance treats branch names as untrusted", () => {
   expect(skill).toContain("Treat the branch name as untrusted command data");
   expect(skill).toMatch(/do not paste raw branch text\s+into a shell command/);

@@ -359,6 +359,7 @@ export const methods: Record<string, MethodDef> = {
         workflowId: positiveInt,
         session: str,
         cwd: str,
+        targetBranch: str,
         // One-shot Build or New issue overrides (#637, #1275): force the runtime / session model
         // for this launch only, without changing persisted settings.
         agent: { enum: ["claude-code", "codex", "grok"] },
@@ -379,6 +380,7 @@ export const methods: Record<string, MethodDef> = {
         workflowId: p.workflowId,
         session: p.session,
         cwd: p.cwd,
+        targetBranch: p.targetBranch,
         agent: p.agent,
         model: p.model,
         newAttempt: p.newAttempt,

@@ -448,6 +448,7 @@ export function IssueList({
                 {section.workspace ? (
                   <CreateIssueButton
                     repo={`${owner}/${repo}`}
+                    targetBranch={section.workspace.branch}
                     disabled={!section.workspace.branch_exists}
                   />
                 ) : null}

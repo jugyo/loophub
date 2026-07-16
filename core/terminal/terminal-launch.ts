@@ -112,6 +112,7 @@ export function commandForHerdrLaunch(input: {
   cwd?: string;
   codingAgent?: CodingAgent;
   model?: string;
+  targetBranch?: string;
   env?: Record<string, string>;
 }): string {
   const envPrefix = input.env
@@ -128,8 +129,11 @@ export function commandForHerdrLaunch(input: {
       : "";
     const model = input.model?.trim();
     const modelFlag = model ? ` --model ${shellArg(model)}` : "";
+    const targetBranchFlag = input.targetBranch
+      ? ` --target-branch ${shellArg(input.targetBranch)}`
+      : "";
     return withEnv(
-      `lh issue new --repo ${shellArg(input.repo)}${agentFlag}${modelFlag}`,
+      `lh issue new --repo ${shellArg(input.repo)}${targetBranchFlag}${agentFlag}${modelFlag}`,
     );
   }
   if (input.workflow === "scheduled-task-create") {

@@ -44,6 +44,16 @@ describe("CreateIssueButton", () => {
     });
   });
 
+  it("forwards the workspace branch to issue creation", () => {
+    render(<CreateIssueButton repo="me/proj" targetBranch="workspace/alpha" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
+
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ targetBranch: "workspace/alpha" }),
+    );
+  });
+
   it("launches issue creation with a suggested one-shot agent and model", async () => {
     render(<CreateIssueButton repo="me/proj" />);
 

@@ -122,6 +122,18 @@ describe("herdr terminal launch", () => {
     );
   });
 
+  test("adds the selected target branch to New Issue launches", () => {
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "issue-create",
+        targetBranch: "workspace/release candidate",
+      }),
+    ).toBe(
+      "lh issue new --repo 'jugyo/loophub' --target-branch 'workspace/release candidate'",
+    );
+  });
+
   test("uses the configured coding agent for GitHub PR export launches (#660)", () => {
     expect(
       commandForHerdrLaunch({

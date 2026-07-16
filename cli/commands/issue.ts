@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { agentModel, codingAgent } from "../../core/config.ts";
 import {
   ENV_ISSUE_CREATE_SESSION,
+  ENV_ISSUE_CREATE_TARGET_BRANCH,
   LH_ISSUE_CREATE_SESSION_AGENT,
   SESSION_KIND_ISSUE_CREATE,
 } from "../../core/resume.ts";
@@ -113,7 +114,15 @@ export async function run(): Promise<void> {
     const proc = spawnSync(runtimeBin, runtimeArgs, {
       stdio: "inherit",
       cwd: r.local_path,
-      env: { ...process.env, [ENV_ISSUE_CREATE_SESSION]: sessionId },
+      env: {
+        ...process.env,
+        [ENV_ISSUE_CREATE_SESSION]: sessionId,
+        ...(typeof flags["target-branch"] === "string"
+          ? {
+              [ENV_ISSUE_CREATE_TARGET_BRANCH]: flags["target-branch"],
+            }
+          : {}),
+      },
     });
     if (proc.error) {
       const err = proc.error as NodeJS.ErrnoException;
