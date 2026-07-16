@@ -1262,6 +1262,7 @@ export const workflowRuns = {
         id: run.id,
         step,
         session_id: sessionId,
+        handoff_id: handoff.id,
         // Both issue / PR numbers so issue & PR detail refresh their run-state query precisely (#1008).
         issue_number: run.issue_number,
         pr_number: run.pr_number,
@@ -1446,9 +1447,22 @@ export const workflowRuns = {
     if (run.repo_id !== r.id) {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
-    return S.eventsForWorkflowRun(r.id, run.id).map(
-      workflowRunHistoryEventJSON,
-    );
+    return S.eventsForWorkflowRun(r.id, run.id).map((event) => {
+      let handoffId: number | null = null;
+      try {
+        const payload = JSON.parse(event.payload) as Record<string, unknown>;
+        handoffId =
+          typeof payload.handoff_id === "number" ? payload.handoff_id : null;
+      } catch {
+        // Malformed legacy payloads remain visible without launch input.
+      }
+      const handoff = handoffId === null ? null : S.getHandoffById(handoffId);
+      const input =
+        handoff?.repo_id === r.id && handoff.body !== null
+          ? handoff.body
+          : null;
+      return workflowRunHistoryEventJSON(event, input);
+    });
   },
 
   // Worker-owned stall visibility (#1358): a running, non-held run whose latest lifecycle

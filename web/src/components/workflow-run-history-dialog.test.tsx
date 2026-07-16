@@ -57,6 +57,7 @@ describe("Workflow run history dialog", () => {
           type: "workflow_run.started",
           label: "Run started",
           description: "Workflow run #7 started.",
+          input: null,
           step: null,
           actor: "parent-agent",
           created_at: "2026-07-10T00:00:00Z",
@@ -66,6 +67,8 @@ describe("Workflow run history dialog", () => {
           type: "workflow_step.launched",
           label: "Execute step started",
           description: "Execute step execution started.",
+          input:
+            "Launch Workflow execute step for run #7.\n\n## Inputs\n- repo: me/loophub\n- issue: #42\n- pr: #99",
           step: "execute",
           actor: "execute-agent-1",
           created_at: "2026-07-10T00:10:00Z",
@@ -75,6 +78,8 @@ describe("Workflow run history dialog", () => {
           type: "workflow_step.launched",
           label: "Execute step started",
           description: "Execute step execution started.",
+          input:
+            "Launch Workflow execute step for run #7.\n\n## Inputs\n- repo: me/loophub\n- issue: #42\n- pr: #99\n\n## Note from parent\nAddress review #12.",
           step: "execute",
           actor: "execute-agent-2",
           created_at: "2026-07-10T00:30:00Z",
@@ -99,6 +104,8 @@ describe("Workflow run history dialog", () => {
     ).toHaveLength(2);
     expect(within(dialog).getByText("Actor: execute-agent-1")).toBeTruthy();
     expect(within(dialog).getByText("Actor: execute-agent-2")).toBeTruthy();
+    expect(within(dialog).getAllByText("Agent input")).toHaveLength(2);
+    expect(within(dialog).getByText(/Address review #12/)).toBeTruthy();
     const runStarted = within(dialog).getByText("Run started").closest("li");
     expect(runStarted).not.toBeNull();
     expect(

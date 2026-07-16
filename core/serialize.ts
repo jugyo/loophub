@@ -1491,6 +1491,7 @@ export interface WorkflowRunHistoryEventWire {
   type: string;
   label: string;
   description: string;
+  input: string | null;
   step: string | null;
   actor: string;
   created_at: string;
@@ -1515,6 +1516,7 @@ function workflowEventPayload(row: S.EventRow): Record<string, unknown> {
 /** Normalize stored event payloads into stable, reader-facing timeline entries. */
 export function workflowRunHistoryEventJSON(
   row: S.EventRow,
+  input: string | null = null,
 ): WorkflowRunHistoryEventWire {
   const payload = workflowEventPayload(row);
   const step =
@@ -1588,6 +1590,7 @@ export function workflowRunHistoryEventJSON(
     type: row.type,
     label,
     description,
+    input,
     step,
     actor: row.actor,
     created_at: row.created_at,

@@ -195,6 +195,16 @@ function HistoryEntry({ event }: { event: WorkflowRunHistoryEvent }) {
         </time>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">{event.description}</p>
+      {event.input ? (
+        <div className="mt-2 max-h-40 overflow-auto rounded-md border bg-muted/30 px-3 py-2">
+          <p className="text-xs font-medium text-muted-foreground">
+            Agent input
+          </p>
+          <pre className="mt-1 whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-muted-foreground">
+            {event.input}
+          </pre>
+        </div>
+      ) : null}
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <code>{event.type}</code>
         <span>Step: {event.step ? displayName(event.step) : "N/A"}</span>

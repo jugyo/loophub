@@ -250,6 +250,11 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
       body: expect.stringContaining("Launch Workflow execute step"),
     }),
   ]);
+  expect(
+    svc.workflowRuns
+      .history(repo.full_name, { run: result.run.id })
+      .find((event) => event.type === "workflow_step.launched")?.input,
+  ).toContain("## Inputs\n- repo: me/workflow-run");
 }, 20_000);
 
 test("start persists the resolved runtime/model and every step inherits them (#516)", async () => {
@@ -1043,9 +1048,16 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
     issue_number: 10,
     pr_number: 20,
   });
+  const firstInput = S.createHandoff({
+    repoId: repo.id,
+    phase: "execute",
+    direction: "down",
+    body: "## Inputs\n- repo: me/workflow-history\n\n## Note from parent\nFirst launch",
+  });
   S.emitEvent(repo.id, "workflow_step.launched", "execute-agent", {
     id: run.id,
     step: "execute",
+    handoff_id: firstInput.id,
     issue_number: 10,
     pr_number: 20,
   });
@@ -1064,6 +1076,19 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
     issue_number: 10,
     pr_number: 20,
   });
+  const secondInput = S.createHandoff({
+    repoId: repo.id,
+    phase: "execute",
+    direction: "down",
+    body: "## Inputs\n- repo: me/workflow-history\n\n## Note from parent\nSecond launch",
+  });
+  S.emitEvent(repo.id, "workflow_step.launched", "execute-agent-2", {
+    id: run.id,
+    step: "execute",
+    handoff_id: secondInput.id,
+    issue_number: 10,
+    pr_number: 20,
+  });
   // A different run in the same PR namespace must not leak into this run's history.
   S.emitEvent(repo.id, "workflow_step.launched", "other-agent", {
     id: otherRun.id,
@@ -1078,14 +1103,19 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
     "workflow_step.launched",
     "workflow_run.turn_done",
     "workflow_run.updated",
+    "workflow_step.launched",
   ]);
   expect(history.map((event) => event.label)).toEqual([
     "Run started",
     "Execute step started",
     "Turn done declared",
     "Run advanced to Verify",
+    "Execute step started",
   ]);
   expect(history[2].description).toContain("declared its turn done");
+  expect(history[1].input).toContain("First launch");
+  expect(history[4].input).toContain("Second launch");
+  expect(history[0].input).toBeNull();
 });
 
 test("stall sweep surfaces a stuck run to a human and is idempotent (#1358)", async () => {
