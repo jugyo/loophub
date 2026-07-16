@@ -629,6 +629,72 @@ describe("PullDetail", () => {
     ).toBeTruthy();
   });
 
+  it("switches the diff dialog to raw file content and copies the full content", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    renderDetail({
+      "pulls/fileAtRef": () => ({
+        status: "ok",
+        content: "const x = 1;\nconst y = 2;\n",
+      }),
+    });
+
+    expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /Diff for web\/src\/a\.ts/i,
+    });
+    expect(within(dialog).getByText("+const x = 1;")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Raw" }));
+
+    expect(await within(dialog).findByText(/const x = 1;/)).toBeTruthy();
+    expect(within(dialog).queryByText("+const x = 1;")).toBeNull();
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Copy raw file: web/src/a.ts",
+      }),
+    );
+
+    expect(writeText).toHaveBeenCalledWith("const x = 1;\nconst y = 2;\n");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Copied" }),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("loads removed files from the base ref in raw mode", async () => {
+    const removedFile: PullFile = {
+      filename: "removed.txt",
+      status: "removed",
+      additions: 0,
+      deletions: 1,
+      patch: "@@ -1 +0,0 @@\n-old content",
+    };
+    const fileAtRef = vi.fn(() => ({
+      status: "ok" as const,
+      content: "old content\n",
+    }));
+    renderDetail({
+      "pulls/files": () => [removedFile],
+      "pulls/fileAtRef": fileAtRef,
+    });
+
+    expect(await screen.findByText("removed.txt")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /removed\.txt/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Raw" }));
+
+    expect(await screen.findByText("old content")).toBeTruthy();
+    expect(fileAtRef).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "removed.txt",
+        side: "base",
+      }),
+    );
+  });
+
   it("moves between file diffs with Prev and Next without closing the dialog", async () => {
     const multiFileDiff: PullFile[] = [
       ...files,
@@ -771,6 +837,7 @@ describe("PullDetail", () => {
     ).toEqual([
       "Copy file path: README.md",
       "Diff",
+      "Raw",
       "Base",
       "Head",
       "Prev",

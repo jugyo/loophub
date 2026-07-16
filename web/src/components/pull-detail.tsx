@@ -1102,7 +1102,7 @@ function FileSummaryRow({
   );
 }
 
-// Markdown files can switch the same diff dialog between the patch and base/head rendered previews.
+// Markdown files can also switch the same diff dialog to base/head rendered previews.
 const MARKDOWN_FILENAME = /\.(md|markdown)$/i;
 
 // `file.filename` for a rename is git numstat's display label ("old => new" / "dir/{old =>
@@ -1155,7 +1155,7 @@ function visibleCopyPath(path: string) {
   }).join("");
 }
 
-type DiffDialogMode = "diff" | "base" | "head";
+type DiffDialogMode = "diff" | "raw" | "base" | "head";
 
 function DiffFileDialog({
   owner,
@@ -1228,28 +1228,36 @@ function DiffFileDialog({
             </div>
           </div>
           <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-            {isMarkdown ? (
-              <div className="flex overflow-hidden rounded-md border text-xs">
-                <ModeButton
-                  active={mode === "diff"}
-                  onClick={() => setMode("diff")}
-                >
-                  Diff
-                </ModeButton>
-                <ModeButton
-                  active={mode === "base"}
-                  onClick={() => setMode("base")}
-                >
-                  Base
-                </ModeButton>
-                <ModeButton
-                  active={mode === "head"}
-                  onClick={() => setMode("head")}
-                >
-                  Head
-                </ModeButton>
-              </div>
-            ) : null}
+            <div className="flex overflow-hidden rounded-md border text-xs">
+              <ModeButton
+                active={mode === "diff"}
+                onClick={() => setMode("diff")}
+              >
+                Diff
+              </ModeButton>
+              <ModeButton
+                active={mode === "raw"}
+                onClick={() => setMode("raw")}
+              >
+                Raw
+              </ModeButton>
+              {isMarkdown ? (
+                <>
+                  <ModeButton
+                    active={mode === "base"}
+                    onClick={() => setMode("base")}
+                  >
+                    Base
+                  </ModeButton>
+                  <ModeButton
+                    active={mode === "head"}
+                    onClick={() => setMode("head")}
+                  >
+                    Head
+                  </ModeButton>
+                </>
+              ) : null}
+            </div>
             <div className="flex overflow-hidden rounded-md border text-xs">
               <ModeButton disabled={!hasPreviousFile} onClick={onPreviousFile}>
                 <ChevronLeft className="size-3" />
@@ -1332,6 +1340,17 @@ function FileDiffContent({
   mode: DiffDialogMode;
 }) {
   const lines = parsePatch(file.patch);
+  if (mode === "raw") {
+    return (
+      <RawFilePane
+        owner={owner}
+        repo={repo}
+        number={number}
+        path={copyFilename(file)}
+        side={file.status === "removed" ? "base" : "head"}
+      />
+    );
+  }
   if (mode === "base" || mode === "head") {
     return (
       <MarkdownPreviewPane
@@ -1372,6 +1391,56 @@ function FileDiffContent({
           </Markdown>
         </div>
       ))}
+    </div>
+  );
+}
+
+function RawFilePane({
+  owner,
+  repo,
+  number,
+  path,
+  side,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  path: string;
+  side: "base" | "head";
+}) {
+  const file = usePullFileAtRef(owner, repo, number, path, side, true);
+  return (
+    <div className="relative min-h-full">
+      {file.isLoading ? (
+        <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading raw file…
+        </div>
+      ) : file.isError ? (
+        <div className="m-3 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load raw file.
+          {file.error instanceof Error ? ` ${file.error.message}` : null}
+        </div>
+      ) : file.data?.status === "missing" ? (
+        <p className="p-3 text-sm text-muted-foreground">
+          N/A — file does not exist on {side}.
+        </p>
+      ) : file.data?.status === "binary" ? (
+        <p className="p-3 text-sm text-muted-foreground">
+          N/A — binary file, cannot display as raw text.
+        </p>
+      ) : (
+        <>
+          <div className="sticky top-0 z-10 flex justify-end border-b bg-background/95 px-2 py-1 backdrop-blur">
+            <CopyButton
+              value={file.data?.content ?? ""}
+              label={`Copy raw file: ${visibleCopyPath(path)}`}
+            />
+          </div>
+          <pre className="overflow-x-auto whitespace-pre p-3 text-xs leading-relaxed">
+            {file.data?.content ?? ""}
+          </pre>
+        </>
+      )}
     </div>
   );
 }
