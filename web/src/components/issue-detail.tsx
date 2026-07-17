@@ -101,7 +101,10 @@ export function IssueDetail({
   const issue = issueQuery.data;
 
   return (
-    <div className="mx-auto flex max-w-content flex-col gap-6">
+    <div
+      data-debug-component="IssueDetail"
+      className="mx-auto flex max-w-content flex-col gap-6"
+    >
       <IssueHeader owner={owner} repo={repo} issue={issue} />
 
       <LinkedPullSummary owner={owner} repo={repo} issue={issue} />

@@ -10,7 +10,7 @@ export function RepoPage() {
   const { labels, state } = repoRoute.useSearch();
   usePageTitle([`${owner}/${repo}`, "Issues"]);
   return (
-    <div className="space-y-4">
+    <div data-debug-component="RepoPage" className="space-y-4">
       <div className="mx-auto flex max-w-content items-center justify-between gap-3">
         <WorkspacePicker owner={owner} repo={repo} />
         <RepositorySearch owner={owner} repo={repo} />

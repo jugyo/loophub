@@ -173,12 +173,16 @@ describe("AppTopbar", () => {
     const notificationIndex = primaryItems.findIndex(
       (node) => node.getAttribute("aria-label") === "Notifications",
     );
+    const componentDebugIndex = primaryItems.findIndex(
+      (node) => node.getAttribute("aria-label") === "Component debug mode",
+    );
     expect(repoPickerIndex).toBeGreaterThan(-1);
     expect(notificationIndex).toBeGreaterThan(-1);
     expect(themeIndex).toBeGreaterThan(-1);
     expect(themeIndex).toBeGreaterThan(repoPickerIndex);
     expect(notificationIndex).toBe(themeIndex - 1);
-    expect(themeIndex).toBe(primaryItems.length - 1);
+    expect(componentDebugIndex).toBe(themeIndex + 1);
+    expect(componentDebugIndex).toBe(primaryItems.length - 1);
   });
 
   it("shows Inbox only when experimental UI is enabled", async () => {

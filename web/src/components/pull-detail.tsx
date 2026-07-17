@@ -115,7 +115,10 @@ export function PullDetail({
     // `max-w-content-wide` only when the sidebar is present AND beside the content (`lg`); without a
     // sidebar, or while stacked below `lg`, the single column stays at the standard 60rem to line up
     // with the sibling pages (issue-detail, pull-list).
-    <div className="mx-auto flex max-w-content flex-col gap-6 lg:max-w-content-wide lg:flex-row lg:items-start">
+    <div
+      data-debug-component="PullDetail"
+      className="mx-auto flex max-w-content flex-col gap-6 lg:max-w-content-wide lg:flex-row lg:items-start"
+    >
       <div className="flex min-w-0 flex-1 flex-col gap-6">
         {/* No key needed for feedback safety: operation-failure feedback now lives in the app-shell
             error banner (#323), which clears on route change, so a `Merge failed: …` error can no

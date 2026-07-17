@@ -5,6 +5,7 @@ import { Outlet } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { AppStatusbar } from "@/components/app-statusbar";
 import { AppTopbar } from "@/components/app-topbar";
+import { ComponentDebugOverlay } from "@/components/component-debug-overlay";
 import { RepoHerdrWarning } from "@/components/repo-herdr-warning";
 import { RepoSwitcher } from "@/components/repo-switcher";
 import { RepoTopbar } from "@/components/repo-topbar";
@@ -39,6 +40,7 @@ export function AppLayout() {
             <RepoHerdrWarning />
             <main
               ref={mainRef}
+              data-debug-component="RouteContent"
               className="min-h-0 flex-1 overflow-y-auto px-4 pt-6 sm:px-6"
             >
               <Outlet />
@@ -50,6 +52,7 @@ export function AppLayout() {
           {/* Operation feedback (#574): a floating toast above the content, with an explicit
               lifetime independent of any one screen's components (mirrors the old ErrorBanner). */}
           <ToastViewport />
+          <ComponentDebugOverlay />
         </div>
       </ToastProvider>
     </TerminalControllerProvider>

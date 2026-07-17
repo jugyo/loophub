@@ -37,6 +37,7 @@ export function AppStatusbar() {
 
   return (
     <footer
+      data-debug-component="AppStatusbar"
       aria-label="Application status"
       className="flex h-7 shrink-0 items-center border-t bg-card px-3"
     >

@@ -50,7 +50,10 @@ export function RepoTopbar() {
   const { owner, repo, section } = repoState;
 
   return (
-    <header className="flex h-11 shrink-0 items-center gap-4 border-b px-4 sm:px-6">
+    <header
+      data-debug-component="RepoTopbar"
+      className="flex h-11 shrink-0 items-center gap-4 border-b px-4 sm:px-6"
+    >
       <nav
         aria-label="Repository navigation"
         className="flex min-w-0 flex-1 items-stretch self-stretch"

@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { BarChart3, Command, Inbox, Loader2, Settings } from "lucide-react";
 import { useMemo } from "react";
+import { ComponentDebugToggle } from "@/components/component-debug-overlay";
 import { Logo } from "@/components/logo";
 import { NotificationCenter } from "@/components/notification-center";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -31,7 +32,10 @@ export function AppTopbar({
     : "Repository";
 
   return (
-    <header className="flex h-14 shrink-0 items-center border-b bg-card px-2 py-2 sm:px-4">
+    <header
+      data-debug-component="AppTopbar"
+      className="flex h-14 shrink-0 items-center border-b bg-card px-2 py-2 sm:px-4"
+    >
       <div
         className="flex h-9 w-full items-center gap-2 sm:gap-3"
         role="group"
@@ -95,6 +99,7 @@ export function AppTopbar({
         </TopbarLink>
         <NotificationCenter />
         <ThemeToggle />
+        <ComponentDebugToggle />
       </div>
     </header>
   );

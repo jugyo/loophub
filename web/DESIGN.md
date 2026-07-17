@@ -117,6 +117,31 @@ for dimensions and scrolling behavior. The complete route tree is assembled in
 responsibility, route, or structure, update its code and this glossary
 together, following this document's Source of Truth policy.
 
+### Component debug mode
+
+The application header exposes a component debug mode beside the theme picker.
+When enabled, `ComponentDebugOverlay` outlines every visible element carrying a
+`data-debug-component` attribute and provides its React component name plus a
+copy action. Major page and shell components own these explicit markers. This
+keeps the mapping stable across production and development builds without
+reading React internals or changing component layout.
+
+Existing tools were considered before choosing this approach:
+
+- React DevTools provides the complete component tree, props, and state, but it
+  requires a browser extension or a separate standalone panel and does not
+  provide LoopHub's always-visible, copyable all-component overview.
+- React Scan focuses on render-performance diagnostics. Its automatic React
+  instrumentation and performance UI are broader than this mode's component
+  name and box requirements.
+- TanStack Devtools Source Inspector highlights one hovered element and opens
+  its source location. It depends on development-only Vite source injection,
+  whereas this mode must work from the normal LoopHub UI on every route.
+
+The local DOM-marker overlay is therefore the smallest maintainable option: it
+adds no runtime dependency, exposes only intentionally named major components,
+and keeps props, state, and performance data out of scope.
+
 ### App shell
 
 The shell places a scrolling main column between a fixed application header and

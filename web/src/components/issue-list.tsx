@@ -270,7 +270,10 @@ export function IssueList({
   const labelOptions = labelsQuery.data ?? [];
 
   return (
-    <div className="mx-auto flex max-w-content flex-col gap-4">
+    <div
+      data-debug-component="IssueList"
+      className="mx-auto flex max-w-content flex-col gap-4"
+    >
       <div className="flex flex-wrap items-center gap-2">
         <div
           role="tablist"

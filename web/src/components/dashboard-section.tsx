@@ -35,7 +35,10 @@ export function DashboardSection<T>({
   const { data, isLoading, isError, error } = query;
 
   return (
-    <section className="flex flex-col gap-2">
+    <section
+      data-debug-component="DashboardSection"
+      className="flex flex-col gap-2"
+    >
       <header className="flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           {title}

@@ -55,7 +55,7 @@ export function RepoList({
   });
 
   return (
-    <ul className="flex flex-col gap-2">
+    <ul data-debug-component="RepoList" className="flex flex-col gap-2">
       {sorted.map((repo) => (
         <RepoListRow key={repo.id} repo={repo} />
       ))}
