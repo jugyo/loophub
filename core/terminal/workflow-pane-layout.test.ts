@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
+  layoutWorkflowTab,
   parsePreviousWorkflowVerifyPane,
   parseWorkflowTabPanes,
+  WorkflowPaneLayoutError,
   workflowPaneGridPlan,
 } from "./workflow-pane-layout.ts";
 
@@ -219,5 +221,169 @@ describe("Workflow pane grid", () => {
         7,
       ),
     ).toBeNull();
+  });
+});
+
+describe("Workflow tab layout", () => {
+  const paneListJson = (panes: unknown[]) =>
+    JSON.stringify({ result: { panes } });
+  const TAB_CREATE_JSON = JSON.stringify({
+    result: { tab: { tab_id: "w1:t3" }, root_pane: { pane_id: "w1:p10" } },
+  });
+
+  // A fake Herdr seam: records every invocation and replies from `stdout` keyed by the command's
+  // first two words, so a test states only the responses the layout actually reads.
+  function fakeHerdr(stdout: Record<string, string>, fails?: string) {
+    const commands: string[] = [];
+    const herdr = (args: string[], opts?: { captureStdout?: boolean }) => {
+      const command = args.join(" ");
+      commands.push(command);
+      if (fails && command.startsWith(fails)) {
+        throw new Error("herdr exited with status 7");
+      }
+      return opts?.captureStdout
+        ? (stdout[args.slice(0, 2).join(" ")] ?? "")
+        : "";
+    };
+    return { commands, herdr };
+  }
+
+  test("stages panes off the tab, replays the grid, then drops the staging tab", () => {
+    const { commands, herdr } = fakeHerdr({
+      "pane list": paneListJson([
+        {
+          pane_id: "w1:p2",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "orchestrator #7",
+        },
+        {
+          pane_id: "w1:p3",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "executor #7-1",
+        },
+        {
+          pane_id: "w1:p4",
+          tab_id: "w1:t2",
+          workspace_id: "w1",
+          label: "unrelated",
+        },
+      ]),
+      "tab create": TAB_CREATE_JSON,
+    });
+
+    layoutWorkflowTab({ tabId: "w1:t1", runId: 7, herdr });
+
+    expect(commands).toEqual([
+      "pane list",
+      "tab create --workspace w1 --no-focus",
+      "pane move w1:p3 --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
+      "pane move w1:p3 --tab w1:t1 --split right --target-pane w1:p2 --ratio 0.5 --no-focus",
+      "tab close w1:t3",
+    ]);
+    // Layout is ancillary to a launch that already happened: it must never focus or zoom.
+    expect(
+      commands.some((c) =>
+        /focus(?!$)|zoom/.test(c.replace(/--no-focus/g, "")),
+      ),
+    ).toBe(false);
+  });
+
+  test("does nothing beyond reading the panes when the tab holds a single pane", () => {
+    const { commands, herdr } = fakeHerdr({
+      "pane list": paneListJson([
+        {
+          pane_id: "w1:p2",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "orchestrator #7",
+        },
+      ]),
+    });
+
+    layoutWorkflowTab({ tabId: "w1:t1", runId: 7, herdr });
+
+    expect(commands).toEqual(["pane list"]);
+  });
+
+  test("refuses to rebuild a tab that holds a foreign pane", () => {
+    const { commands, herdr } = fakeHerdr({
+      "pane list": paneListJson([
+        {
+          pane_id: "w1:p2",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "orchestrator #7",
+        },
+        {
+          pane_id: "w1:p3",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "someone else",
+        },
+      ]),
+    });
+
+    expect(() =>
+      layoutWorkflowTab({ tabId: "w1:t1", runId: 7, herdr }),
+    ).toThrow(/tab w1:t1 is missing or contains a non-Workflow pane/);
+    expect(commands).toEqual(["pane list"]);
+  });
+
+  test("surfaces invalid tab create JSON before moving any pane", () => {
+    const { commands, herdr } = fakeHerdr({
+      "pane list": paneListJson([
+        {
+          pane_id: "w1:p2",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "orchestrator #7",
+        },
+        {
+          pane_id: "w1:p3",
+          tab_id: "w1:t1",
+          workspace_id: "w1",
+          label: "executor #7-1",
+        },
+      ]),
+      "tab create": "not json",
+    });
+
+    expect(() =>
+      layoutWorkflowTab({ tabId: "w1:t1", runId: 7, herdr }),
+    ).toThrow(/herdr tab create returned invalid JSON/);
+    expect(commands).not.toContain(
+      "pane move w1:p3 --tab w1:t3 --split down --target-pane w1:p10 --ratio 0.5 --no-focus",
+    );
+  });
+
+  test("wraps a failed Herdr command as a layout error and stops the rebuild", () => {
+    const { commands, herdr } = fakeHerdr(
+      {
+        "pane list": paneListJson([
+          {
+            pane_id: "w1:p2",
+            tab_id: "w1:t1",
+            workspace_id: "w1",
+            label: "orchestrator #7",
+          },
+          {
+            pane_id: "w1:p3",
+            tab_id: "w1:t1",
+            workspace_id: "w1",
+            label: "executor #7-1",
+          },
+        ]),
+        "tab create": TAB_CREATE_JSON,
+      },
+      "pane move",
+    );
+
+    expect(() =>
+      layoutWorkflowTab({ tabId: "w1:t1", runId: 7, herdr }),
+    ).toThrow(new WorkflowPaneLayoutError("herdr exited with status 7"));
+    // No cleanup of the half-staged rebuild: the failure is left visible for a human.
+    expect(commands).not.toContain("tab close w1:t3");
   });
 });

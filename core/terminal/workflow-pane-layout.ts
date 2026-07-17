@@ -2,7 +2,11 @@ import {
   parseWorkflowHerdrAgentName,
   workflowHerdrPaneKind,
 } from "../workflow/herdr-agents.ts";
-import { HERDR_ID } from "./terminal-launch.ts";
+import {
+  HERDR_ID,
+  parseHerdrRootPaneId,
+  parseHerdrTabId,
+} from "./terminal-launch.ts";
 
 export interface WorkflowPane {
   paneId: string;
@@ -193,4 +197,108 @@ export function workflowPaneGridPlan(paneIds: string[]): WorkflowPaneGridPlan {
     stagingPaneIds: paneIds.slice(1),
     placements,
   };
+}
+
+/**
+ * The Herdr command seam `layoutWorkflowTab` drives. It runs one `herdr` invocation against the
+ * caller's session and returns its stdout when `captureStdout` is set, "" otherwise. Any failure
+ * (spawn error, signal, non-zero exit) must throw; layoutWorkflowTab surfaces it as a
+ * WorkflowPaneLayoutError rather than continuing a half-applied rebuild.
+ */
+export type WorkflowPaneLayoutHerdr = (
+  args: string[],
+  opts?: { captureStdout?: boolean },
+) => string;
+
+export class WorkflowPaneLayoutError extends Error {
+  constructor(detail: string) {
+    super(`failed to layout Workflow panes: ${detail}`);
+    this.name = "WorkflowPaneLayoutError";
+  }
+}
+
+function runLayoutCommand(
+  herdr: WorkflowPaneLayoutHerdr,
+  args: string[],
+  captureStdout = false,
+): string {
+  try {
+    return herdr(args, { captureStdout });
+  } catch (e: any) {
+    throw new WorkflowPaneLayoutError(e?.message ?? String(e));
+  }
+}
+
+/**
+ * Rebuilds one Workflow tab as a balanced grid: read its panes, stage them on a scratch tab, move
+ * them back in grid order, then drop the scratch tab. The staging detour exists because Herdr can
+ * only split against a pane that is already in the target tab; moving panes out first frees the
+ * anchor's geometry so each placement lands where the plan says.
+ *
+ * Every mutation is `--no-focus`: layout is ancillary to a launch that already happened, so it must
+ * never steal focus from an unrelated tab (the regression in 65cda7cf). Failures throw
+ * WorkflowPaneLayoutError and are left for a human — no cleanup or retry of a partial rebuild.
+ */
+export function layoutWorkflowTab(input: {
+  tabId: string;
+  runId: number;
+  herdr: WorkflowPaneLayoutHerdr;
+}): void {
+  const { tabId, runId, herdr } = input;
+  const paneList = runLayoutCommand(herdr, ["pane", "list"], true);
+  const panes = parseWorkflowTabPanes(paneList, tabId, runId);
+  if (!panes) {
+    throw new WorkflowPaneLayoutError(
+      `tab ${tabId} is missing or contains a non-Workflow pane`,
+    );
+  }
+  const plan = workflowPaneGridPlan(panes.map((pane) => pane.paneId));
+  if (plan.stagingPaneIds.length === 0) return;
+
+  const created = runLayoutCommand(
+    herdr,
+    ["tab", "create", "--workspace", panes[0].workspaceId, "--no-focus"],
+    true,
+  );
+  const stagingTabId = parseHerdrTabId(created);
+  const stagingRootPaneId = parseHerdrRootPaneId(created);
+  if (!stagingTabId || !stagingRootPaneId) {
+    throw new WorkflowPaneLayoutError("herdr tab create returned invalid JSON");
+  }
+
+  // Do not defensively run `pane zoom --off` here: Herdr 0.7.1 focuses an explicitly targeted
+  // pane even when it is already unzoomed. Every mutation in this staged rebuild must stay no-focus.
+  for (const paneId of plan.stagingPaneIds) {
+    runLayoutCommand(herdr, [
+      "pane",
+      "move",
+      paneId,
+      "--tab",
+      stagingTabId,
+      "--split",
+      "down",
+      "--target-pane",
+      stagingRootPaneId,
+      "--ratio",
+      "0.5",
+      "--no-focus",
+    ]);
+  }
+  for (const placement of plan.placements) {
+    runLayoutCommand(herdr, [
+      "pane",
+      "move",
+      placement.paneId,
+      "--tab",
+      tabId,
+      "--split",
+      placement.split,
+      "--target-pane",
+      placement.targetPaneId,
+      "--ratio",
+      String(placement.ratio),
+      "--no-focus",
+    ]);
+  }
+  runLayoutCommand(herdr, ["tab", "close", stagingTabId]);
 }

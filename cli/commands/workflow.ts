@@ -5,14 +5,11 @@ import { removeDevLock } from "../../core/dev-lock.ts";
 import { isClaudeSessionId } from "../../core/resume.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
 import { buildCodexSandboxArgs } from "../../core/terminal/codex-launch.ts";
+import { HERDR_ID } from "../../core/terminal/terminal-launch.ts";
 import {
-  HERDR_ID,
-  parseHerdrRootPaneId,
-  parseHerdrTabId,
-} from "../../core/terminal/terminal-launch.ts";
-import {
-  parseWorkflowTabPanes,
-  workflowPaneGridPlan,
+  layoutWorkflowTab,
+  WorkflowPaneLayoutError,
+  type WorkflowPaneLayoutHerdr,
 } from "../../core/terminal/workflow-pane-layout.ts";
 import {
   type WorkflowContract,
@@ -147,99 +144,26 @@ function preflightStepLaunch(runtime: CodingAgent): void {
   }
 }
 
-function runHerdrPaneLayoutCommand(
-  sessionName: string,
-  args: string[],
-  captureStdout = false,
-): string {
-  const result = spawnSync("herdr", ["--session", sessionName, ...args], {
-    encoding: "utf8",
-    stdio: captureStdout ? ["ignore", "pipe", "inherit"] : "inherit",
-    timeout: 15_000,
-  });
-  if (result.error)
-    fail(`failed to layout Workflow panes: ${result.error.message}`);
-  if (result.signal) {
-    fail(
-      `failed to layout Workflow panes: herdr terminated by signal ${result.signal}`,
-    );
-  }
-  if (result.status == null || result.status !== 0) {
-    fail(
-      `failed to layout Workflow panes: herdr exited with status ${result.status}`,
-    );
-  }
-  return captureStdout ? (result.stdout ?? "") : "";
-}
-
-function layoutWorkflowTabPanes(
-  sessionName: string,
-  tabId: string,
-  runId: number,
-): void {
-  const paneList = runHerdrPaneLayoutCommand(
-    sessionName,
-    ["pane", "list"],
-    true,
-  );
-  const panes = parseWorkflowTabPanes(paneList, tabId, runId);
-  if (!panes) {
-    fail(
-      `failed to layout Workflow panes: tab ${tabId} is missing or contains a non-Workflow pane`,
-    );
-  }
-  const plan = workflowPaneGridPlan(panes.map((pane) => pane.paneId));
-  if (plan.stagingPaneIds.length === 0) return;
-
-  const workspaceId = panes[0].workspaceId;
-  const created = runHerdrPaneLayoutCommand(
-    sessionName,
-    ["tab", "create", "--workspace", workspaceId, "--no-focus"],
-    true,
-  );
-  const stagingTabId = parseHerdrTabId(created);
-  const stagingRootPaneId = parseHerdrRootPaneId(created);
-  if (!stagingTabId || !stagingRootPaneId) {
-    fail(
-      "failed to layout Workflow panes: herdr tab create returned invalid JSON",
-    );
-  }
-
-  // Do not defensively run `pane zoom --off` here: Herdr 0.7.1 focuses an explicitly targeted
-  // pane even when it is already unzoomed. Every mutation in this staged rebuild must stay no-focus.
-  for (const paneId of plan.stagingPaneIds) {
-    runHerdrPaneLayoutCommand(sessionName, [
-      "pane",
-      "move",
-      paneId,
-      "--tab",
-      stagingTabId,
-      "--split",
-      "down",
-      "--target-pane",
-      stagingRootPaneId,
-      "--ratio",
-      "0.5",
-      "--no-focus",
-    ]);
-  }
-  for (const placement of plan.placements) {
-    runHerdrPaneLayoutCommand(sessionName, [
-      "pane",
-      "move",
-      placement.paneId,
-      "--tab",
-      tabId,
-      "--split",
-      placement.split,
-      "--target-pane",
-      placement.targetPaneId,
-      "--ratio",
-      String(placement.ratio),
-      "--no-focus",
-    ]);
-  }
-  runHerdrPaneLayoutCommand(sessionName, ["tab", "close", stagingTabId]);
+// The Herdr seam core's layoutWorkflowTab drives: one spawnSync per command, bound to the run's
+// session. Throwing on failure lets the layout operation decide what a failed command means; the
+// caller turns the resulting WorkflowPaneLayoutError into a visible non-zero exit.
+function herdrPaneLayoutRunner(sessionName: string): WorkflowPaneLayoutHerdr {
+  return (args, opts) => {
+    const captureStdout = opts?.captureStdout === true;
+    const result = spawnSync("herdr", ["--session", sessionName, ...args], {
+      encoding: "utf8",
+      stdio: captureStdout ? ["ignore", "pipe", "inherit"] : "inherit",
+      timeout: 15_000,
+    });
+    if (result.error) throw result.error;
+    if (result.signal) {
+      throw new Error(`herdr terminated by signal ${result.signal}`);
+    }
+    if (result.status == null || result.status !== 0) {
+      throw new Error(`herdr exited with status ${result.status}`);
+    }
+    return captureStdout ? (result.stdout ?? "") : "";
+  };
 }
 
 function requestedSessionId(): string | undefined {
@@ -567,7 +491,16 @@ async function launchStep(): Promise<void> {
   // unrecorded, and launch-step never retries automatically (an explicit retry is a new session).
   await confirm();
   if (tabId) {
-    layoutWorkflowTabPanes(result.herdr.sessionName, tabId, result.run.id);
+    try {
+      layoutWorkflowTab({
+        tabId,
+        runId: result.run.id,
+        herdr: herdrPaneLayoutRunner(result.herdr.sessionName),
+      });
+    } catch (e) {
+      if (e instanceof WorkflowPaneLayoutError) fail(e.message);
+      throw e;
+    }
   } else {
     // Preserve the legacy/headless launch path that had no placement selector. There is no safe
     // target to rebuild in this case, so make the missing visual guarantee explicit without moving
