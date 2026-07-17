@@ -152,25 +152,11 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   );
   expect(parentSystemPrompt).toContain("step: parent");
   expect(parentSystemPrompt).toContain("# Parent");
-  // The parent polls run events and drives transitions from step status.
+  // start wires this run's own identifiers into the parent prompt; its wording and the transition
+  // commands it carries are covered by core/workflow/prompts.test.ts.
   expect(result.parent.user_prompt).toContain(`run: ${result.run.id}`);
   expect(result.parent.user_prompt).toContain(`issue: #${result.issue.number}`);
   expect(result.parent.user_prompt).toContain(`pr: #${result.pr.number}`);
-  expect(result.parent.user_prompt).toContain(
-    `lh events --repo '${repo.full_name}' --order desc --limit 1 --json`,
-  );
-  expect(result.parent.user_prompt).toContain(
-    "lh events --since <cursor> --repo '" +
-      repo.full_name +
-      `' --type workflow_run --run ${result.run.id} --order asc --json`,
-  );
-  expect(result.parent.user_prompt).not.toContain("lh subscribe");
-  expect(result.parent.user_prompt).toContain(
-    `lh workflow launch-step --repo '${repo.full_name}' --run ${result.run.id} --step execute`,
-  );
-  expect(result.parent.user_prompt).toContain(
-    `lh workflow step status ${result.run.id} --repo '${repo.full_name}' --json`,
-  );
   // The parent session id is never leaked into the prompt text.
   expect(result.parent.user_prompt).not.toContain(
     "11111111-1111-4111-8111-111111111111",
