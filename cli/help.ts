@@ -144,15 +144,6 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Detect and publish pull request head updates.",
   },
   { path: ["events"], description: "Show a snapshot of LoopHub events." },
-  {
-    path: ["subscribe"],
-    description: "Subscribe this herdr pane to repo events.",
-  },
-  { path: ["subscribe", "list"], description: "List event subscriptions." },
-  {
-    path: ["unsubscribe"],
-    description: "Remove this pane's event subscriptions.",
-  },
   { path: ["workflow"], description: "Manage workflows and workflow runs." },
   { path: ["workflow", "list"], description: "List workflows." },
   { path: ["workflow", "view"], description: "Show a workflow." },

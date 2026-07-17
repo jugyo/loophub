@@ -20,10 +20,7 @@ function git(args: string[]) {
   return spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
 }
 
-async function workflowGithubPull(
-  githubNumber: number,
-  options: { subscribe?: boolean } = {},
-): Promise<{
+async function workflowGithubPull(githubNumber: number): Promise<{
   number: number;
   url: string;
   runId: number;
@@ -56,15 +53,6 @@ async function workflowGithubPull(
     currentStep: "execute",
     parentSessionId,
   });
-  if (options.subscribe !== false) {
-    S.addEventSubscription({
-      repoId: repo.id,
-      eventType: "workflow_run.github_event",
-      herdrSession: `session-${githubNumber}`,
-      herdrPaneId: `w${githubNumber}:p1`,
-      sessionId: parentSessionId,
-    });
-  }
   return { number: pr.number, url, runId: run.id, parentSessionId };
 }
 
@@ -169,48 +157,51 @@ test("emits source and Workflow projection events for aggregated GitHub feedback
   });
 });
 
-test("waits for the target Workflow parent subscription before observing feedback", async () => {
-  const pull = await workflowGithubPull(150, { subscribe: false });
+test("skips GitHub feedback when the Workflow run has no parent session", async () => {
+  // Same setup as workflowGithubPull but without parentSessionId — the sweep only targets
+  // running Workflow runs that have a parent observer.
+  const githubNumber = 150;
+  const branch = `feedback-${githubNumber}`;
+  git(["checkout", "-q", "-b", branch]);
+  writeFileSync(join(repoPath, `${branch}.txt`), "feedback\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", branch]);
+  git(["checkout", "-q", "main"]);
+  const pr = await svc.pulls.create("me/proj", {
+    title: branch,
+    head: branch,
+    base: "main",
+  });
+  const url = `https://github.com/upstream/proj/pull/${githubNumber}`;
+  svc.pulls.recordGithubPull("me/proj", pr.number, {
+    github_number: githubNumber,
+    url,
+  });
   const repo = S.getRepo("me", "proj")!;
+  S.createWorkflowRun({
+    workflowId,
+    repoId: repo.id,
+    issueNumber: pr.number,
+    prNumber: pr.number,
+    status: "running",
+    currentStep: "execute",
+  });
+
   const called: string[] = [];
   const deps = {
-    async fetchFeedback(_repoPath: string, url: string) {
-      called.push(url);
+    async fetchFeedback(_repoPath: string, urlArg: string) {
+      called.push(urlArg);
       return [feedback({ kind: "issue_comment", id: 25, body: "waiting" })];
     },
   };
 
-  S.addEventSubscription({
-    repoId: repo.id,
-    eventType: "pull_request.github_feedback",
-    herdrSession: "legacy-session-150",
-    herdrPaneId: "w150:p0",
-    sessionId: pull.parentSessionId,
-  });
-  const beforeSubscription = await sync.syncGithubFeedback(deps);
-  expect(called).not.toContain(pull.url);
+  const result = await sync.syncGithubFeedback(deps);
+  expect(called).not.toContain(url);
   expect(
-    beforeSubscription.emitted.some(
-      (event) => JSON.parse(event.payload).number === pull.number,
+    result.emitted.some(
+      (event) => JSON.parse(event.payload).number === pr.number,
     ),
   ).toBe(false);
-
-  S.addEventSubscription({
-    repoId: repo.id,
-    eventType: "workflow_run.github_event",
-    herdrSession: "session-150",
-    herdrPaneId: "w150:p1",
-    sessionId: pull.parentSessionId,
-  });
-  const afterSubscription = await sync.syncGithubFeedback(deps);
-  expect(called).toContain(pull.url);
-  expect(
-    afterSubscription.emitted.some(
-      (event) =>
-        event.type === "workflow_run.github_event" &&
-        JSON.parse(event.payload).number === pull.number,
-    ),
-  ).toBe(true);
 });
 
 test("detects edits and durably suppresses the same comment content", async () => {

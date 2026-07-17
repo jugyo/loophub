@@ -241,9 +241,8 @@ export function startPullSweep(intervalMs = DEFAULT_SWEEP_MS): () => void {
 }
 
 // Fire pull_request.merge_conflict for open PRs whose base advanced into a conflict while they
-// waited for a human merge (#1232). This loop is an event source only — delivery to whatever
-// subscribed (via `lh subscribe`) happens in the worker's event tail, and what the subscriber does
-// with it is its own wiring; no session is launched here.
+// waited for a human merge (#1232). This loop is an event source only — consumers (e.g. a Workflow
+// parent polling `lh events`) observe the emitted events on their own; no session is launched here.
 export function startConflictSweep(
   intervalMs = DEFAULT_CONFLICT_SWEEP_MS,
 ): () => void {

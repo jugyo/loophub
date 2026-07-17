@@ -15,8 +15,7 @@ so the repo cannot be inferred from the working directory.
 - **Facts live in domain state.** Completion, commits, and reviews are recorded in git / the PR /
   reviews. There is no direct message from a child carrying its result, and no artifact to place.
 - **Events are pulled, not delivered.** Stay alive for the run's lifetime and poll the events table
-  yourself. Do not subscribe this pane, wait for injected notifications, or resume an old child
-  session.
+  yourself. Do not wait for injected notifications or resume an old child session.
 
 ## Persistent event loop
 
@@ -214,7 +213,7 @@ run.
 
 - Do not edit source files, write code, or edit the PR — the children do that directly.
 - Do not merge changes.
-- Do not use `lh subscribe`, `lh unsubscribe`, herdr pane injection, or child-session resume.
+- Do not use herdr pane injection or child-session resume.
 - Do not decide transitions from pane output, a child's self-report, PR body markers, or idle
   detection — only from pulled events and `lh workflow step status`.
 - Do not reuse a Verify child across rework — always launch a fresh Verify.

@@ -46,11 +46,6 @@ export {
   MAX_LIST_PER_PAGE,
 } from "./service/shared.ts";
 export { stats } from "./service/stats.ts";
-export type {
-  EventSubscription,
-  NotifyResult,
-} from "./service/subscriptions.ts";
-export { subscriptions } from "./service/subscriptions.ts";
 export { sync } from "./service/sync.ts";
 export type {
   HerdrRepoSessions,

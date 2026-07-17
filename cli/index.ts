@@ -12,7 +12,6 @@ import * as repoCmd from "./commands/repo.ts";
 import * as resumeCmd from "./commands/resume.ts";
 import * as retroCmd from "./commands/retro.ts";
 import * as sessionCmd from "./commands/session.ts";
-import * as subscribeCmd from "./commands/subscribe.ts";
 import * as syncCmd from "./commands/sync.ts";
 import * as workflowCmd from "./commands/workflow.ts";
 import * as workspaceCmd from "./commands/workspace.ts";
@@ -42,8 +41,6 @@ async function main() {
   if (group === "retro") return retroCmd.run();
   if (group === "sync") return syncCmd.run();
   if (group === "events") return eventsCmd.run();
-  if (group === "subscribe") return subscribeCmd.run();
-  if (group === "unsubscribe") return subscribeCmd.runUnsubscribe();
   if (group === "workflow") return workflowCmd.run();
   usage();
 }

@@ -43,9 +43,6 @@ export function usage(): void {
   lh attachment add --file <path> [--file <path> ...] [--actor name]   # upload image/HTML attachment(s), print markdown
   lh sync                                          # detect open-PR head updates and emit events
   lh events [--since <id>] [--repo owner/repo] [--label name[,name]] [--type type[,type]] [--run <id>] [--order asc|desc]   # print a bounded event snapshot; --type accepts exact types or namespace prefixes
-  lh subscribe --event <type>[,<type>...] [--repo owner/repo]   # subscribe this herdr pane to repo events (worker injects a notify line per event)
-  lh subscribe list [--repo owner/repo] [--json]
-  lh unsubscribe --event <type>[,<type>...] | --all  [--repo owner/repo]   # remove this pane's subscriptions (all repos unless --repo)
 
   common: --session-id <uuid>  --json
   examples:

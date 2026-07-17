@@ -705,22 +705,6 @@ CREATE TABLE IF NOT EXISTS pull_conflict_states (
   PRIMARY KEY (repo_id, pull_number)
 );
 
--- Event subscriptions (#1232): the worker's generic pub/sub. A row says "when event_type fires in
--- repo_id, inject a notification into this herdr pane" — the worker carries no knowledge of what
--- the subscriber does with it. The pane identity comes from the HERDR_SESSION / HERDR_PANE_ID env
--- vars herdr sets in every pane; session_id is optional LoopHub-session attribution. The UNIQUE
--- constraint is the duplicate-subscription guard: re-running lh subscribe is idempotent.
-CREATE TABLE IF NOT EXISTS event_subscriptions (
-  id             INTEGER PRIMARY KEY AUTOINCREMENT,
-  repo_id        INTEGER NOT NULL REFERENCES repos(id),
-  event_type     TEXT NOT NULL,
-  herdr_session  TEXT NOT NULL,
-  herdr_pane_id  TEXT NOT NULL,
-  session_id     TEXT,
-  created_at     TEXT NOT NULL,
-  UNIQUE (repo_id, event_type, herdr_session, herdr_pane_id)
-);
-
 -- workflow definitions (#997). Global, user-editable prompt bundles for the fixed
 -- Execute/Verify workflow. Step prompts are plain markdown text; empty strings are
 -- valid and mean "use only the built-in step contract".

@@ -33,10 +33,10 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 |------|------|------|
 | 親 → Execute | input: issue / PR の参照。rework 時は対応すべき review の id | 起動プロンプト、または生きている pane への注入（instruction） |
 | Execute → 世界 | commits、PR body・attachment・comment | git / domain（lh CLI で自分で読み書き） |
-| Execute → 親 | ターン完了の宣言（payload なし） | `lh workflow turn done` が event を記録（fact）。worker が tail して親へ配達 |
+| Execute → 親 | ターン完了の宣言（payload なし） | `lh workflow turn done` が event を記録（fact）。親が cursor pull で観測 |
 | 親 → Verify | input: (issue 参照, base SHA, head SHA) の 3 ポインタ | 起動プロンプト。合成ファイルなし |
 | Verify → 世界 | pass / request_changes ＋ findings | head SHA に pin された PR review（fact） |
-| 世界 → 親 | turn done、workflow review 登録、GitHub PR feedback の観測通知 | worker が親 pane へ配達する timing signal。親は通知後に domain state を再観測 |
+| 世界 → 親 | turn done、workflow review 登録、GitHub PR feedback の観測 | 親が `lh events` で cursor pull する timing signal。観測後に domain state を再確認 |
 | Verify ↔ Execute | 直接のやりとりなし | diff と review という domain object 経由 |
 
 ```text
@@ -45,8 +45,8 @@ prompt で設定する。workflow を起動する前提は次のとおり。
             │
             ▼
   workflow agent（親）
-    │  turn_done / review_submitted / github_feedback を subscribe
-    │  通知を受けたら domain state を再観測して遷移する
+    │  turn_done / review_submitted / github_feedback を
+    │  `lh events` で cursor pull し、domain state を再観測して遷移する
     │
     ├─ Execute child を起動（input: repo / issue / pr のポインタ）
     │    責務: 計画 → 実装 → テスト/evidence → 振り返り
@@ -69,11 +69,12 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 
 ### 3.1 workflow agent（親 = 観測とポインタ配達に徹する orchestrator）
 
-1. run 開始時に自 pane を `lh subscribe` で `workflow_run.turn_done`、
-   `workflow_run.review_submitted`、`workflow_run.github_event` の 3 event に購読する。どの通知も
-   domain state の再観測を促す timing signal であり、完了や verdict そのものではない。
+1. run 開始時に event cursor を seed し、`lh events --type workflow_run --run <run>` で
+   `workflow_run.turn_done` / `workflow_run.review_submitted` / `workflow_run.github_event` などを
+   pull し続ける。どの event も domain state の再観測を促す timing signal であり、完了や verdict
+   そのものではない。
 2. `lh workflow launch-step` で Execute / Verify child を起動する（engine が input ポインタを解決）。
-3. **遷移は「turn done 通知の受領 → `lh workflow step status` で HEAD / review 状態を観測」で決める。**
+3. **遷移は「turn done event の観測 → `lh workflow step status` で HEAD / review 状態を観測」で決める。**
    宣言はタイミングの合図であり真実を代替しない。宣言があっても HEAD が前進していなければ Verify を
    起動しない。
 4. `lh workflow run advance-to-verify | request-rework | await-human | resume | stop` の意図ベース
@@ -175,7 +176,7 @@ Esc で止める（run は `running` のまま再開可能）。親は
 
 | From | 観測条件（step status） | Action |
 |---|---|---|
-| start | run started | subscribe → Execute を launch |
+| start | run started | event cursor を seed → Execute を launch |
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
 | Execute | `workflow_run.escalated` を受領 | event の reason を再取得し、`await-human` で hold |
 | Human wait | Execute の turn done 後、HEAD が最新 review より前進 | `resume --step execute` → 通常の Execute 完了遷移 → fresh Verify |
@@ -266,7 +267,7 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
   `prior-verdicts.md` が生成されない。
 - status は HEAD / base / 最新 review の freshness を返し、head advance で pass が stale になる。
 - PR body・comment・attachment だけの更新では pass が fresh のまま維持される。
-- 親は turn done、review submitted、GitHub feedback の通知を timing signal として購読し、その都度 domain
-  state を再観測する。
+- 親は turn done、review submitted、GitHub feedback の event を `lh events` で pull し、その都度
+  domain state を再観測する。
 - idle 検知が遷移・完了判定に使われない。
 - 旧 artifact テーブルが新しい run の進行条件にならない。

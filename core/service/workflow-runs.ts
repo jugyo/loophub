@@ -1569,9 +1569,9 @@ export const workflowRuns = {
   },
 
   // The Execute child's payload-less turn-done declaration. It is a timing signal only: the
-  // engine records the fact as an event (the worker delivers it to the subscribed parent pane),
-  // and the parent then observes HEAD / review state before deciding any transition. The
-  // declaration never carries content and never substitutes for domain truth.
+  // engine records the fact as an event, and the parent then observes HEAD / review state (via
+  // its event cursor and step status) before deciding any transition. The declaration never
+  // carries content and never substitutes for domain truth.
   turnDone(
     name: string,
     input: { run: number },
