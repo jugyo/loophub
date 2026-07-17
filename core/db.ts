@@ -926,7 +926,8 @@ if (notificationsTable && !notificationsTable.sql.includes("'merge_ready'")) {
 tryExec("ALTER TABLE pulls ADD COLUMN head_sha TEXT");
 tryExec("ALTER TABLE pulls ADD COLUMN base_sha TEXT");
 // Durable provenance for a conventional branch recorded before its first worktree exists. Legacy
-// rows default to initialized/strict; only new `lh build`-managed PRs opt into pending creation.
+// rows default to initialized/strict; only new launcher-managed PRs (Workflow / openPr) opt into
+// pending creation.
 tryExec(
   "ALTER TABLE pulls ADD COLUMN head_pending_creation INTEGER NOT NULL DEFAULT 0",
 );
@@ -984,9 +985,10 @@ tryExec("DROP INDEX IF EXISTS idx_pulls_open_linked_issue");
 tryExec("ALTER TABLE pulls DROP COLUMN open_linked_issue_id");
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_at TEXT");
 tryExec("ALTER TABLE pulls ADD COLUMN changes_addressed_by TEXT");
-// pulls.draft (#413): the PR's WIP lifecycle flag. `lh build` opens a PR at the *start* of work, so a
-// just-opened PR is not yet reviewable; draft=1 marks "still being worked", flipped to 0 (ready) by
-// `lh pr ready-for-review`. Pre-existing PRs (and plain `lh pr create`) default to ready (0).
+// pulls.draft (#413): the PR's WIP lifecycle flag. Workflow / openPr open a PR at the *start* of
+// work, so a just-opened PR is not yet reviewable; draft=1 marks "still being worked", flipped to
+// 0 (ready) by `lh pr ready-for-review`. Pre-existing PRs (and plain `lh pr create`) default to
+// ready (0).
 tryExec("ALTER TABLE pulls ADD COLUMN draft INTEGER NOT NULL DEFAULT 0");
 // #814: the "undo the immediate main merge" feature (#770) was fully removed; converge DBs that
 // already ran its migration (ADD COLUMN + audit table) back to the pre-feature schema. On a
@@ -1046,9 +1048,10 @@ if (
   tryExec(
     "ALTER TABLE pulls ADD COLUMN session_id TEXT REFERENCES agent_sessions(id)",
   );
-  // (#186) Backfill from the old assignee — prefer the PR's own assignee (direct `lh build <pr>`) over
-  // the linked issue's (the common `lh build <issue>` flow): seed the own-row value, then the
-  // linked-issue value for rows still NULL. No-op (and ignored) once the assignee column is gone.
+  // (#186) Backfill from the old assignee — prefer the PR's own assignee (direct PR-targeted
+  // launch) over the linked issue's (the common issue-targeted launch flow): seed the own-row
+  // value, then the linked-issue value for rows still NULL. No-op (and ignored) once the assignee
+  // column is gone.
   tryExec(
     `UPDATE pulls SET session_id = (SELECT assignee_session_id FROM issues WHERE issues.id = pulls.issue_id)
      WHERE session_id IS NULL

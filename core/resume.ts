@@ -5,7 +5,7 @@
 import { isCodingAgent, RUNTIMES } from "./runtimes.ts";
 import { issueNumberFromBranch } from "./worktree-prune.ts";
 
-// The naming scheme that identifies where a PR's `lh build` worktree lives on disk. "pr" is the
+// The naming scheme that identifies where a PR's worktree lives on disk. "pr" is the
 // current (#463+) convention (core/worktree-path.ts worktreeBranch/worktreePath); "legacy-issue"
 // is the pre-#463 convention (legacyWorktreeBranch/legacyWorktreePath), kept recognizable so a
 // worktree provisioned before this change is not orphaned.
@@ -43,11 +43,12 @@ export function decideResume(input: ResumeInputs): ResumeDecision {
   return { ok: false, reason: "unrestorable" };
 }
 
-// The agent label `lh build` registers its session under (cli/index.ts `sessions.register`). A
-// resumable Claude session is specifically one `lh build` launched: it registers under this agent and
-// stores the exact UUID it handed to `claude --session-id`. Another agent's external_session (e.g.
-// an impl-bot's runtime id) is that agent's own id, not a Claude session id, so resume must accept
-// only sessions registered under this agent — UUID shape alone does not prove Claude provenance.
+// Historical agent labels for primary development sessions (pre-Workflow `lh build` / `lh dev`
+// launchers registered under these via `sessions.register`). A resumable Claude session is one
+// registered under these agents that stores the exact UUID handed to `claude --session-id`.
+// Another agent's external_session (e.g. an impl-bot's runtime id) is that agent's own id, not a
+// Claude session id, so resume must accept only sessions under these agents — UUID shape alone
+// does not prove Claude provenance. Constants keep the on-disk agent strings stable.
 export const LH_BUILD_SESSION_AGENT = "lh-build";
 export const LEGACY_LH_DEV_SESSION_AGENT = "lh-dev";
 
@@ -68,8 +69,8 @@ export const ENV_ISSUE_CREATE_SESSION = "LOOPHUB_ISSUE_CREATE_SESSION";
 export const ENV_ISSUE_CREATE_HERDR_LAUNCH =
   "LOOPHUB_ISSUE_CREATE_HERDR_LAUNCH";
 
-// A Claude session id is a UUID (`claude --session-id` requires one; `lh build` stores the exact
-// UUID it generates). `lh resume` reads a *stored* id and feeds it to `claude --resume <id>`, so
+// A Claude session id is a UUID (`claude --session-id` requires one; launchers store the exact
+// UUID they generate). `lh resume` reads a *stored* id and feeds it to `claude --resume <id>`, so
 // validate the shape before it reaches argv: claude's `-r, --resume [value]` takes an OPTIONAL
 // value, meaning a token starting with `-` would be misparsed as a separate flag rather than the
 // resume target (argv/flag injection). Anything not UUID-shaped is not a resumable Claude session.
@@ -84,23 +85,21 @@ export function isClaudeSessionId(id: string | null | undefined): id is string {
 //
 // A session's runtime decides how `lh resume` re-enters it. Before #164 the runtime was *inferred*
 // from the agent label (LH_BUILD_SESSION_AGENT == Claude Code); sessions now carry an explicit
-// runtime so resume stays correct once `lh build` can launch other runtimes (codex, ...). Only
-// claude-code is actually resumable today (the registry's `resumable` flag) — real multi-runtime
-// support is out of scope for #164. These aliases keep the runtime-id string constants importers
-// already use; the runtime *definitions* live in core/runtimes.ts (RUNTIMES).
+// runtime so resume stays correct across coding agents (codex, grok, ...). Only claude-code is
+// actually resumable today (the registry's `resumable` flag) — real multi-runtime support is out
+// of scope for #164. These aliases keep the runtime-id string constants importers already use;
+// the runtime *definitions* live in core/runtimes.ts (RUNTIMES).
 export const RUNTIME_CLAUDE_CODE = RUNTIMES["claude-code"].id;
-// `lh build --codex` launches the dev session in Codex instead (#458). Codex sessions are recorded
-// with this runtime but are not resumable by `lh resume` (resolveRuntimeResume reports
-// unknown-runtime) — Codex resume support is a separate step.
+// Codex sessions (#458) are recorded with this runtime but are not resumable by `lh resume`
+// (resolveRuntimeResume reports unknown-runtime) — Codex resume support is a separate step.
 export const RUNTIME_CODEX = RUNTIMES.codex.id;
-// `lh build --grok` launches the dev session in Grok Build instead. Like Codex, Grok sessions are
-// recorded with this runtime but are not resumable by `lh resume` (resolveRuntimeResume reports
-// unknown-runtime) — Grok resume support is out of scope.
+// Grok sessions are recorded with this runtime but are not resumable by `lh resume`
+// (resolveRuntimeResume reports unknown-runtime) — Grok resume support is out of scope.
 export const RUNTIME_GROK = RUNTIMES.grok.id;
 
 // The effective runtime of a session row, with backward-compat for sessions registered before the
 // runtime column existed. A null-runtime row registered under the build/dev session agent predates
-// the column and — by that era's invariant ("lh build always launched Claude Code") — was a
+// the column and — by that era's invariant (build/dev always launched Claude Code) — was a
 // claude-code session, so treat it as claude-code. Any other null-runtime row has unknown provenance
 // (null).
 // An explicit runtime always wins over the fallback.

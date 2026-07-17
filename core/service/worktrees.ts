@@ -17,7 +17,7 @@ import {
 } from "./shared.ts";
 
 // ===== worktree housekeeping =====
-// Batch GC of stale `lh build` worktrees: the current `loophub/pr-<n>` convention (#463) and the
+// Batch GC of stale LoopHub worktrees: the current `loophub/pr-<n>` convention (#463) and the
 // legacy pre-#463 `loophub/issue-<n>` convention (still recognized so a worktree provisioned
 // before the migration is not orphaned). The orchestration — scanning git worktrees, resolving
 // each one's issue/PR state, and the destructive removal — lives here so the CLI stays a thin
@@ -109,7 +109,7 @@ export const worktrees = {
   // Remove one worktree after re-asserting the safety invariants right before the destructive
   // call: it must still be a registered worktree on its `loophub/pr-<n>` (or legacy
   // `loophub/issue-<n>`) branch (state may have changed since plan()). The LoopHub-injected,
-  // un-gitignored `.claude/` is dropped first (regenerated on the next `lh build`) so the
+  // un-gitignored `.claude/` is dropped first (regenerated on the next provision) so the
   // no-`--force` `git worktree remove` stays a real guard for any other change — but only when it
   // is a real directory, never a symlink.
   async remove(entry: {

@@ -919,9 +919,9 @@ export const terminal = {
     );
   },
 
-  // Kill `lh dev` agents whose PR has been closed/merged for at least one hour (#926). Reuses the
-  // same Herdr pane-kill primitive as the manual kill button and is scheduled by the existing worker
-  // agent-maintenance tick, not by a PR-specific timer.
+  // Kill development agents whose PR has been closed/merged for at least one hour (#926). Reuses
+  // the same Herdr pane-kill primitive as the manual kill button and is scheduled by the existing
+  // worker agent-maintenance tick, not by a PR-specific timer.
   async cleanupClosedPullDevAgents(): Promise<{
     killed: number;
     skipped: number;

@@ -1183,9 +1183,9 @@ async function pullStatusFields(
     merged: !!p.merged,
     state: row.state,
   });
-  // Path of the existing `lh build` worktree backing this PR (same convention as the
-  // "working" flag above), so a consumer can show / copy it without knowing worktreeRoot.
-  // Null when the path is unsafe or the worktree directory has not been provisioned / was removed.
+  // Path of the existing PR worktree (same convention as the "working" flag above), so a
+  // consumer can show / copy it without knowing worktreeRoot. Null when the path is unsafe or
+  // the worktree directory has not been provisioned / was removed.
   let worktree_path: string | null = null;
   try {
     const identity = resolveWorktreeIdentity(p.head_ref, row.number);
@@ -1722,7 +1722,7 @@ export interface PullWorkDuration {
 }
 
 // How long the PR's dev session took (#456), split into three figures anchored at the primary dev
-// session's start (agent_sessions.created_at — set once at `lh build`/`sessions.register` and never
+// session's start (agent_sessions.created_at — set once at `sessions.register` and never
 // touched again by resumes, so it is a stable start marker):
 //   - total: start → the clearest completion signal (see PullWorkDurationBasis), or now.
 //   - implementation: start → the first ready_for_review event — the phase before a
@@ -1827,7 +1827,7 @@ export interface PullWire {
   // Exact fork point captured at PR creation; legacy rows infer it from git merge-base.
   base_sha: string | null;
   merged: boolean;
-  // draft (#413): true while the PR is WIP (opened by `lh build` at the start of work);
+  // draft (#413): true while the PR is WIP (opened at the start of work by Workflow / openPr);
   // cleared by `lh pr ready-for-review`. Lets list/view and consumers tell WIP from reviewable.
   draft: boolean;
   mergeable: boolean | null;
@@ -1919,7 +1919,7 @@ export async function pullJSON(
     base: { ref: p.base_ref, sha: status.baseSha },
     base_sha: status.forkBaseSha,
     merged: !!p.merged,
-    // draft (#413): true while the PR is WIP (opened by `lh build` at the start of work);
+    // draft (#413): true while the PR is WIP (opened at the start of work by Workflow / openPr);
     // cleared by `lh pr ready-for-review`. Lets list/view and consumers tell WIP from reviewable.
     draft: !!p.draft,
     mergeable: status.mergeable,

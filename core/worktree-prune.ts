@@ -2,9 +2,9 @@
 // git/DB side effects so the guard and the keep/remove/skip decision are unit-testable in
 // isolation; the CLI layer feeds it the resolved issue/PR state, dirtiness and cwd flag.
 
-// Legacy (pre-#463) branch convention created by `lh build`: loophub/issue-<n> (see
-// core/worktree-path.ts legacyWorktreeBranch). `lh build` no longer creates these, but a worktree
-// provisioned before #463 may still be on disk, so prune must keep recognizing it.
+// Legacy (pre-#463) branch convention: loophub/issue-<n> (see core/worktree-path.ts
+// legacyWorktreeBranch). Launchers no longer create these, but a worktree provisioned before
+// #463 may still be on disk, so prune must keep recognizing it.
 const LEGACY_LOOPHUB_BRANCH_RE = /^loophub\/issue-(\d+)$/;
 
 // Current (#463+) branch convention: loophub/pr-<n> (see core/worktree-path.ts worktreeBranch).

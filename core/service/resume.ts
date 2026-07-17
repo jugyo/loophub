@@ -57,9 +57,9 @@ export const resume = {
     const headRef: string = pull.head_ref;
 
     // The PR's resume anchor is the latest kind='dev' session linked to it in session_links (#316),
-    // recorded when `lh build` opened the PR (the `lh build <issue>` flow) or re-entered it directly
-    // (`lh build <pr>`). #186 removed the old issue-assignee fallback — the PR is the single source of
-    // truth; #316 derives it from session_links instead of a denormalized pulls.session_id column.
+    // recorded when a launcher opened or re-entered the PR. #186 removed the old issue-assignee
+    // fallback — the PR is the single source of truth; #316 derives it from session_links instead
+    // of a denormalized pulls.session_id column.
     const sessionRowId: string | null = S.primaryDevSessionForPull(prRow.id);
     const sessionRow = sessionRowId ? S.getAgentSession(sessionRowId) : null;
     // The session's runtime selects how to resume it. Prefer the explicit runtime column; fall back

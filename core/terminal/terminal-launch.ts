@@ -565,7 +565,7 @@ export function buildHerdrLaunchPlan(input: {
   // unrelated PR, #873). Ignored when tabId is set. When both are absent the launch omits any
   // placement selector and herdr splits the focused pane — the genuine last resort.
   workspaceId?: string | null;
-  // Overrides repo.local_path as the agent's --cwd (e.g. a PR worktree, #584's `lh build --herdr`)
+  // Overrides repo.local_path as the agent's --cwd (e.g. a PR worktree, #584 herdr worktree launch)
   // without changing the herdr session name, which stays derived from the repo so every launch
   // for it — worktree-pinned or not — lands in the same herdr session.
   cwd?: string;
@@ -709,11 +709,12 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
 
 // An injected herdr command runner. Both callers of the worktree-launch orchestration below spawn
 // the `herdr` binary, but differently: lh-web runs it async (a synchronous spawn would stall the
-// single server process serving every client), while `lh build --herdr` runs it in a short-lived CLI
-// process. Injecting the runner lets the orchestration itself stay spawn-agnostic and unit-testable
-// with a scripted fake. Contract: never throw — a failed call resolves `ok:false` so the caller can
-// fall back, mirroring the best-effort tolerance every direct herdr call in this codebase already
-// has. `stdout` is the captured output when `captureStdout` was set (else ""), used to parse ids.
+// single server process serving every client), while CLI launchers (`lh workflow start --herdr`,
+// etc.) run it in a short-lived process. Injecting the runner lets the orchestration itself stay
+// spawn-agnostic and unit-testable with a scripted fake. Contract: never throw — a failed call
+// resolves `ok:false` so the caller can fall back, mirroring the best-effort tolerance every
+// direct herdr call in this codebase already has. `stdout` is the captured output when
+// `captureStdout` was set (else ""), used to parse ids.
 export type HerdrCmdRunner = (
   argv: string[],
   opts?: { captureStdout?: boolean },
@@ -741,8 +742,8 @@ export interface HerdrWorktreeTab {
 // gets a genuinely new (safely closeable) tab created inside it, since its existing tab may already
 // hold someone else's pane. Returns null when the initial `worktree open` fails outright
 // (worktree_not_found, timeout, unparseable output) — the caller then falls back to a plain
-// repo-root tab-create. Extracted from lh-web's terminal.launch so `lh build --herdr` reuses the same
-// parsing-heavy dance (core/service.ts wraps its async herdr runner around this).
+// repo-root tab-create. Extracted from lh-web's terminal.launch so CLI herdr launchers reuse the
+// same parsing-heavy dance (core/service.ts wraps its async herdr runner around this).
 export async function acquireHerdrWorktreeTab(
   repo: TerminalLaunchRepo,
   worktreeCheckoutPath: string,
