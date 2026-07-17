@@ -4,6 +4,7 @@
 // contract schemas), and error mapping happen here.
 import Ajv, { type ValidateFunction } from "ajv";
 import { isServiceError } from "../../core/errors.ts";
+import { logHumanAction } from "./action-log.ts";
 import { methods } from "./contract.ts";
 
 const ajv = new Ajv({ allErrors: true, strict: false });
@@ -108,6 +109,8 @@ async function dispatchOne(req: unknown): Promise<RpcResponse | null> {
 
   try {
     const result = await def.handler(params);
+    // Record the human action after it completes, so only performed actions are logged.
+    logHumanAction(req.method, params);
     return isNotification ? null : ok(id, result ?? null);
   } catch (e: any) {
     if (isNotification) return null;
