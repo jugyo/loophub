@@ -1,12 +1,13 @@
 // PR-detail Agents section: every live Herdr pane whose cwd resolves to this PR, enriched by core
-// with Workflow parent/child metadata and persisted LoopHub session usage. Pane rows stay compact;
-// hover or keyboard focus reveals the full metadata and the existing focus action.
+// with Workflow parent/child metadata and persisted LoopHub session usage. Pane rows stay compact
+// with a terminal icon that opens the pane in Herdr; hover or keyboard focus reveals the full
+// metadata. AgentTree/pullHerdrAgents are shared with the PR hover popover (linked-pull-summary).
 
 import { Loader2, Terminal } from "lucide-react";
-import type { HerdrAgent } from "@/api/types";
+import type { HerdrAgent, HerdrSessions } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { useToast } from "@/components/toast";
-import { Button } from "@/components/ui/button";
+import { disabledIconButtonStateClasses } from "@/components/ui/button";
 import { formatCost, formatTokenCount } from "@/lib/session-usage";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
@@ -63,6 +64,50 @@ function agentTree(agents: HerdrAgent[]): AgentTreeRow[] {
   return rows;
 }
 
+// Live Herdr panes whose cwd resolves to this PR. Shared by the PR-detail Agents section and the
+// PR hover popover so both render the same list.
+export function pullHerdrAgents(
+  data: HerdrSessions | undefined,
+  owner: string,
+  repo: string,
+  pull: number,
+): HerdrAgent[] {
+  const group = data?.repos?.find(
+    (candidate) => candidate.repo === `${owner}/${repo}`,
+  );
+  return group?.agents.filter((agent) => agent.pull === pull) ?? [];
+}
+
+// Renders the Workflow parent-child pane tree. Returns null when there is nothing to show so callers
+// can drop the surrounding heading/section.
+export function AgentTree({
+  owner,
+  repo,
+  agents,
+}: {
+  owner: string;
+  repo: string;
+  agents: HerdrAgent[];
+}) {
+  if (agents.length === 0) return null;
+  return (
+    <ol
+      aria-label="Agent hierarchy"
+      className="flex flex-col rounded-md border p-2 text-sm"
+    >
+      {agentTree(agents).map(({ agent, depth }) => (
+        <AgentRow
+          key={agent.id}
+          owner={owner}
+          repo={repo}
+          agent={agent}
+          depth={depth}
+        />
+      ))}
+    </ol>
+  );
+}
+
 export function PullHerdrSection({
   owner,
   repo,
@@ -86,29 +131,13 @@ export function PullHerdrSection({
       </section>
     );
   }
-  const group = data?.repos?.find(
-    (candidate) => candidate.repo === `${owner}/${repo}`,
-  );
-  const agents = group?.agents.filter((agent) => agent.pull === pull) ?? [];
-  if (!group || agents.length === 0) return null;
+  const agents = pullHerdrAgents(data, owner, repo, pull);
+  if (agents.length === 0) return null;
 
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold">Agents</h2>
-      <ol
-        aria-label="Agent hierarchy"
-        className="flex flex-col rounded-md border p-2 text-sm"
-      >
-        {agentTree(agents).map(({ agent, depth }) => (
-          <AgentRow
-            key={agent.id}
-            owner={owner}
-            repo={repo}
-            agent={agent}
-            depth={depth}
-          />
-        ))}
-      </ol>
+      <AgentTree owner={owner} repo={repo} agents={agents} />
     </section>
   );
 }
@@ -129,6 +158,17 @@ function AgentRow({
   const { showError } = useToast();
   const usage = agent.session?.usage;
   const cost = formatCost(usage?.cost_usd ?? null);
+
+  const openInHerdr = () =>
+    focus.mutate(
+      { repo: `${owner}/${repo}`, paneId: agent.id },
+      {
+        onError: (error) =>
+          showError(
+            error instanceof Error ? error.message : "Failed to open in Herdr.",
+          ),
+      },
+    );
 
   return (
     <li
@@ -167,6 +207,27 @@ function AgentRow({
         >
           {agent.name}
         </span>
+        <button
+          type="button"
+          aria-label="Open in Herdr"
+          title={
+            agent.focusable
+              ? "Open in Herdr"
+              : "This agent has no focusable Herdr pane"
+          }
+          disabled={!agent.focusable || focus.isPending}
+          onClick={openInHerdr}
+          className={cn(
+            "flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            disabledIconButtonStateClasses,
+          )}
+        >
+          {focus.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Terminal className="size-3.5" />
+          )}
+        </button>
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
           {cost}
         </span>
@@ -210,38 +271,6 @@ function AgentRow({
               />
               <AgentDetail label="Cost" value={cost} />
             </dl>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="mt-3 h-8"
-              disabled={!agent.focusable || focus.isPending}
-              title={
-                agent.focusable
-                  ? "Focus this pane in Herdr"
-                  : "This agent has no focusable Herdr pane"
-              }
-              onClick={() =>
-                focus.mutate(
-                  { repo: `${owner}/${repo}`, paneId: agent.id },
-                  {
-                    onError: (error) =>
-                      showError(
-                        error instanceof Error
-                          ? error.message
-                          : "Failed to open in Herdr.",
-                      ),
-                  },
-                )
-              }
-            >
-              {focus.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Terminal className="size-3.5" />
-              )}
-              Open in Herdr
-            </Button>
           </div>
         </div>
       ) : null}

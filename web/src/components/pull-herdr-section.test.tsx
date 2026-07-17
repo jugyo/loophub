@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HerdrSessions } from "@/api/types";
@@ -230,17 +231,29 @@ describe("PullHerdrSection", () => {
     expect(dialog.textContent).toContain("$1.25");
   });
 
-  it("focuses the selected pane through the existing mutation", () => {
-    vi.useFakeTimers();
+  it("opens each pane in Herdr through the pane-title terminal icon", () => {
     herdrSessions.value = running;
     render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
-    fireEvent.mouseEnter(screen.getByText("executor #7-1").closest("li")!);
-    act(() => vi.advanceTimersByTime(300));
-    fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
+    const row = screen.getByText("executor #7-1").closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Open in Herdr" }));
     expect(focusHerdrAgent).toHaveBeenCalledWith(
       { repo: "me/proj", paneId: "w1:p2" },
       expect.anything(),
     );
+  });
+
+  it("keeps the focus action out of the hover detail popover", () => {
+    vi.useFakeTimers();
+    herdrSessions.value = running;
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+    fireEvent.mouseEnter(screen.getByText("orchestrator #7").closest("li")!);
+    act(() => vi.advanceTimersByTime(300));
+    const dialog = screen.getByRole("dialog", {
+      name: "orchestrator #7 agent details",
+    });
+    expect(
+      within(dialog).queryByRole("button", { name: "Open in Herdr" }),
+    ).toBeNull();
   });
 
   it("keeps the popover open while the pointer moves to its action", () => {
@@ -261,7 +274,7 @@ describe("PullHerdrSection", () => {
     ).toBeTruthy();
   });
 
-  it("disables focus for an agent without a real pane id", () => {
+  it("disables the terminal icon for an agent without a real pane id", () => {
     herdrSessions.value = {
       ...running,
       repos: [
@@ -278,37 +291,30 @@ describe("PullHerdrSection", () => {
       ],
     };
     render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
-    fireEvent.focus(screen.getByText("orchestrator #7").closest("div")!);
 
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Open in Herdr",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
+    const button = screen.getByRole("button", {
+      name: "Open in Herdr",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("This agent has no focusable Herdr pane");
   });
 
-  it("keeps the focus action pending and reports failure through the existing error path", () => {
-    vi.useFakeTimers();
+  it("keeps the terminal icon pending and reports failure through the existing error path", () => {
     herdrSessions.value = running;
     herdrSessions.focusPending = true;
     const { rerender } = render(
       <PullHerdrSection owner="me" repo="proj" pull={42} />,
     );
-    fireEvent.mouseEnter(screen.getByText("orchestrator #7").closest("li")!);
-    act(() => vi.advanceTimersByTime(300));
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Open in Herdr",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
+    for (const button of screen.getAllByRole("button", {
+      name: "Open in Herdr",
+    })) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
 
     herdrSessions.focusPending = false;
     rerender(<PullHerdrSection owner="me" repo="proj" pull={42} />);
-    fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
+    const row = screen.getByText("orchestrator #7").closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Open in Herdr" }));
     act(() =>
       focusHerdrAgent.mock.calls
         .at(-1)?.[1]

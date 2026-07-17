@@ -13,6 +13,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch } from "@/api/rpc-mock";
@@ -113,6 +114,65 @@ describe("LinkedPullSummaryRow actions", () => {
     expect(closeButton.classList.contains("hover:text-destructive")).toBe(
       false,
     );
+  });
+});
+
+describe("LinkedPullSummaryRow popover Agents list (#1493)", () => {
+  function herdrWithPullAgent(): HerdrSessions {
+    return {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [
+            {
+              id: "w1:p2",
+              name: "dev #10",
+              status: "working",
+              pull: 10,
+              pull_closed: false,
+              focusable: true,
+            },
+          ],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
+          issue_workspaces: [],
+        },
+      ],
+    };
+  }
+
+  it("shows the sidebar Agents list and opens a pane from its terminal icon", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    herdrSessionsData.value = herdrWithPullAgent();
+    renderRow();
+    await screen.findByRole("link", { name: "PR #10" });
+
+    fireEvent.mouseEnter(row());
+    act(() => {
+      vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
+    });
+    expect(popoverVisible()).toBe(true);
+
+    const list = screen.getByRole("list", { name: "Agent hierarchy" });
+    expect(within(list).getByText("dev #10")).toBeTruthy();
+    fireEvent.click(
+      within(list).getByRole("button", { name: "Open in Herdr" }),
+    );
+    expect(focusHerdrAgent).toHaveBeenCalledWith(
+      { repo: "me/proj", paneId: "w1:p2" },
+      expect.anything(),
+    );
+  });
+
+  it("omits the Agents list when no live pane resolves to the PR", async () => {
+    herdrSessionsData.value = { repos: [] };
+    renderRow();
+    await screen.findByRole("link", { name: "PR #10" });
+
+    fireEvent.focus(row());
+    expect(popoverVisible()).toBe(true);
+    expect(screen.queryByRole("list", { name: "Agent hierarchy" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
   });
 });
 

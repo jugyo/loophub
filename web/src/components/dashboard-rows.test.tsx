@@ -1031,7 +1031,9 @@ describe("LinkedPullSubRow two-axis colours (#265)", () => {
 });
 
 // #1061: Herdr focus moved from an always-visible badge into the linked-PR
-// hover popover.
+// hover popover. #1493: the single popover button became the per-pane terminal
+// icon in the shared Agents list, so the popover only offers an "Open in Herdr"
+// action when a live pane resolves to this PR.
 describe("linked PR Herdr popover action (#1061)", () => {
   // The popover now opens after a standard hover delay, so advance fake timers
   // past it before asserting the popover contents.
@@ -1041,6 +1043,35 @@ describe("linked PR Herdr popover action (#1061)", () => {
     act(() => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
     });
+  }
+
+  // A live pane resolving to PR #10, plus its derived workspace entry — the
+  // realistic pairing (pull_workspaces is derived from the same agent list).
+  function herdrWithPullAgent(
+    agent: Partial<HerdrSessions["repos"][number]["agents"][number]> = {},
+    repo = "me/proj",
+  ): HerdrSessions {
+    return {
+      repos: [
+        {
+          repo,
+          session_name: "me-proj-abc",
+          agents: [
+            {
+              id: "w1:p2",
+              name: "dev #10",
+              status: "working",
+              pull: 10,
+              pull_closed: false,
+              focusable: true,
+              ...agent,
+            },
+          ],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
+          issue_workspaces: [],
+        },
+      ],
+    };
   }
 
   it("does not render Open in Herdr until the linked PR link is hovered", async () => {
@@ -1071,17 +1102,8 @@ describe("linked PR Herdr popover action (#1061)", () => {
     expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
   });
 
-  it("shows an enabled Open in Herdr action when herdr reports the PR workspace", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/proj",
-          session_name: "me-proj-abc",
-          agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
-        },
-      ],
-    };
+  it("shows an enabled Open in Herdr action when a live pane resolves to the PR", async () => {
+    herdrSessionsData.value = herdrWithPullAgent();
     renderInRouter(
       <IssueRow
         owner="me"
@@ -1104,6 +1126,7 @@ describe("linked PR Herdr popover action (#1061)", () => {
   });
 
   it("renders the popover with an opaque theme background", async () => {
+    herdrSessionsData.value = herdrWithPullAgent();
     renderInRouter(
       <IssueRow
         owner="me"
@@ -1152,17 +1175,8 @@ describe("linked PR Herdr popover action (#1061)", () => {
     );
   });
 
-  it("does not show the badge for an agent running a different PR", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/proj",
-          session_name: "me-proj-abc",
-          agents: [],
-          pull_workspaces: [{ pull: 99, pane_id: "w1:p2", status: "working" }],
-        },
-      ],
-    };
+  it("offers no Open in Herdr action for a pane running a different PR", async () => {
+    herdrSessionsData.value = herdrWithPullAgent({ pull: 99, name: "dev #99" });
     renderInRouter(
       <IssueRow
         owner="me"
@@ -1172,26 +1186,11 @@ describe("linked PR Herdr popover action (#1061)", () => {
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
     openPopover();
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Open in Herdr",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
   });
 
-  it("does not show the badge for an agent running in a different repo", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/other",
-          session_name: "me-other-abc",
-          agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
-        },
-      ],
-    };
+  it("offers no Open in Herdr action for a pane running in a different repo", async () => {
+    herdrSessionsData.value = herdrWithPullAgent({}, "me/other");
     renderInRouter(
       <IssueRow
         owner="me"
@@ -1201,26 +1200,11 @@ describe("linked PR Herdr popover action (#1061)", () => {
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
     openPopover();
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Open in Herdr",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
   });
 
-  it("focuses the agent's pane from the popover action", async () => {
-    herdrSessionsData.value = {
-      repos: [
-        {
-          repo: "me/proj",
-          session_name: "me-proj-abc",
-          agents: [],
-          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
-        },
-      ],
-    };
+  it("focuses the agent's pane from the popover Agents list", async () => {
+    herdrSessionsData.value = herdrWithPullAgent();
     renderInRouter(
       <IssueRow
         owner="me"

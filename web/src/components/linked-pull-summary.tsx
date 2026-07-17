@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Check, Terminal, TriangleAlert } from "lucide-react";
-import type { LinkedPull } from "@/api/types";
+import { ArrowRight, Check, TriangleAlert } from "lucide-react";
+import type { HerdrAgent, LinkedPull } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { DiffStat } from "@/components/diff-stat";
 import { HerdrAgentInput } from "@/components/herdr-agent-input";
@@ -9,6 +9,7 @@ import {
   isPullHerdrWorking,
 } from "@/components/herdr-badge";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
+import { AgentTree, pullHerdrAgents } from "@/components/pull-herdr-section";
 import { useToast } from "@/components/toast";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -27,7 +28,7 @@ import { formatDuration } from "@/lib/time";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
 import { useSetPullState } from "@/queries/pulls";
-import { useFocusHerdrAgent, useHerdrSessions } from "@/queries/terminal";
+import { useHerdrSessions } from "@/queries/terminal";
 import { codingAgentLabel } from "../../../core/runtimes.ts";
 
 const STATUS_TEXT: Record<StatusWordTone, string> = {
@@ -142,6 +143,7 @@ function PullPopover({
   statusLabel,
   herdrStatus,
   workspacePaneId,
+  agents,
 }: {
   owner: string;
   repo: string;
@@ -149,9 +151,8 @@ function PullPopover({
   statusLabel: string;
   herdrStatus?: string;
   workspacePaneId?: string;
+  agents: HerdrAgent[];
 }) {
-  const focus = useFocusHerdrAgent();
-  const { showError } = useToast();
   const details = [
     ["Status", statusLabel],
     herdrStatus === "working" ? null : ["Herdr", herdrStatus || "n/a"],
@@ -190,37 +191,11 @@ function PullPopover({
             </div>
           ))}
         </dl>
-        <div className="mt-3 flex gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="h-8"
-            disabled={!workspacePaneId || focus.isPending}
-            title={
-              workspacePaneId
-                ? "Open the running agent pane in Herdr"
-                : "No running Herdr pane for this PR"
-            }
-            onClick={() => {
-              if (!workspacePaneId) return;
-              focus.mutate(
-                { repo: `${owner}/${repo}`, paneId: workspacePaneId },
-                {
-                  onError: (e) =>
-                    showError(
-                      e instanceof Error
-                        ? e.message
-                        : "Failed to open in Herdr.",
-                    ),
-                },
-              );
-            }}
-          >
-            <Terminal className="size-3.5" />
-            Open in Herdr
-          </Button>
-        </div>
+        {agents.length > 0 ? (
+          <div className="mt-3">
+            <AgentTree owner={owner} repo={repo} agents={agents} />
+          </div>
+        ) : null}
         {workspacePaneId ? (
           <HerdrAgentInput
             repo={`${owner}/${repo}`}
@@ -476,6 +451,7 @@ export function LinkedPullSummaryRow({
           statusLabel={status.label}
           herdrStatus={workspace?.status}
           workspacePaneId={workspace?.pane_id}
+          agents={pullHerdrAgents(herdrSessions, owner, repo, pull.number)}
         />
       ) : null}
     </div>
