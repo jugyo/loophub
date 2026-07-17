@@ -5,27 +5,16 @@ import {
   ensureWritable,
   issueOr404,
   repoOr404,
-  revParse,
   S,
   ServiceError,
   worktreeBranch,
 } from "./shared.ts";
 
-function buildPullOr404(name: string, number: number) {
-  const repo = repoOr404(name);
-  const issue = S.getIssue(repo.id, number);
-  const pull = issue?.kind === "pull" ? S.getPull(issue.id) : null;
-  if (issue?.kind !== "pull" || !pull) {
-    throw new ServiceError(404, `pull request #${number} not found`);
-  }
-  return { repo, issue, pull };
-}
-
 function defaultDraftPrBody(issue: number): string {
   return [
     "## 実装計画",
     "",
-    "<!-- /lh-build は source edit 前にここを短い実装プランで更新してください。",
+    "<!-- Execute ステップは source edit 前にここを短い実装プランで更新してください。",
     "含める内容: 変更予定ファイル/領域、再利用する既存 API/component/module、スコープ境界、更新・実行するテスト。 -->",
     "",
     "## Evidence",
@@ -39,60 +28,23 @@ function defaultDraftPrBody(issue: number): string {
 
 // ===== dev (issue-dev loop support) =====
 //
-// Helpers for the `lh build` development loop: open a draft PR at the start of work so the
-// agent has a place to write its plan, and attribute the dev session to the PR.
+// Helpers for the development loop shared by Workflow runs: open a draft PR at the start of work
+// so the agent has a place to write its plan, and attribute the dev session to the PR.
 
 export const dev = {
-  // Resolve the persisted PR metadata `lh build` needs before worktree provisioning. Keeping the
-  // issue-kind and pull-row checks here prevents the CLI from orchestrating directly over Store.
-  resolveBuildPull(
-    name: string,
-    number: number,
-  ): {
-    headRef: string;
-    baseRef: string;
-    headPendingCreation: boolean;
-    baseSha: string | null;
-  } {
-    const { pull } = buildPullOr404(name, number);
-    return {
-      headRef: pull.head_ref,
-      baseRef: pull.base_ref,
-      headPendingCreation: pull.head_pending_creation === 1,
-      baseSha: pull.base_sha,
-    };
-  },
-
-  // After worktree provisioning succeeds, turn a pending head into a durable branch SHA. This is
-  // deliberately separate from resolveBuildPull so a failed provision never clears the marker.
-  async confirmProvisionedHead(name: string, number: number): Promise<void> {
-    const { repo, issue, pull } = buildPullOr404(name, number);
-    if (pull.head_pending_creation !== 1) return;
-    const provisionedHeadSha = await revParse(repo.local_path, pull.head_ref);
-    if (!provisionedHeadSha) {
-      throw new ServiceError(
-        422,
-        `could not resolve provisioned branch "${pull.head_ref}"`,
-      );
-    }
-    // Clear the durable creation permission together with the first real branch SHA. Established
-    // heads remain the watcher's responsibility, preserving its update events and review resets.
-    S.setHeadSha(issue.id, provisionedHeadSha);
-  },
-
-  // Open the draft PR for an issue's worktree branch at the start of `lh build`. Idempotent:
+  // Open the draft PR for an issue's worktree branch at the start of a run. Idempotent:
   // if the issue already has an open (unmerged) linked PR, return it untouched. The PR can
   // be opened with 0 commits — LoopHub does not require head to be ahead of base (the diff
   // is just empty until the agent commits). The body seeds a plan placeholder the agent
-  // overwrites; `Closes #<n>` links it both ways. `lh build` calls this *before* provisioning the
-  // worktree (#463) so the PR number is known first; head defaults to the PR-id branch
+  // overwrites; `Closes #<n>` links it both ways. The run launcher calls this *before* provisioning
+  // the worktree (#463) so the PR number is known first; head defaults to the PR-id branch
   // convention (worktreeBranch), derived from the PR's own number once assigned — pass an
   // explicit `head` only to override it (e.g. tests simulating a specific branch).
   //
   // `opts.attributeSession` (default true) gates re-pointing an *existing, reused* PR's session
-  // pointer (setPullSession) at `sessionId`. `lh build` needs the PR number before it can claim its
-  // (PR-keyed, #463) dev lock, so it calls this before the lock exists — pass `false` there to
-  // defer the write until after the lock is won, so a losing concurrent `lh build` racing on the
+  // pointer (setPullSession) at `sessionId`. The launcher needs the PR number before it can claim
+  // its (PR-keyed, #463) dev lock, so it calls this before the lock exists — pass `false` there to
+  // defer the write until after the lock is won, so a losing concurrent run racing on the
   // same already-open PR can never overwrite the winner's session pointer. A brand-new PR
   // (created below) is unaffected by this flag: two racing creates for the same issue make two
   // distinct PR rows, each correctly attributed to its own creating session.
@@ -113,7 +65,7 @@ export const dev = {
     const issueRow = issueOr404(r, input.issue, "issue");
     const existing = S.openPullLinkedToIssue(issueRow.id);
     if (existing && !parallel) {
-      // Re-running `lh build <issue>` reuses the open PR but must re-point it at the session it is
+      // Re-running against an issue reuses the open PR but must re-point it at the session it is
       // about to spawn (latest-writer-wins), so `lh resume`/retro resolve the current session rather
       // than a stale one. (The old model re-assigned the issue on every run.)
       if (sessionId && attributeSession) {
@@ -146,7 +98,7 @@ export const dev = {
       issueRow.target_branch ??
       r.default_branch;
     const body = input.body ?? defaultDraftPrBody(input.issue);
-    // `lh build` opens the PR at the *start* of work, so it begins as a draft (#413); the agent
+    // The PR is opened at the *start* of work, so it begins as a draft (#413); the agent
     // flips it to ready via `lh pr ready-for-review` once the implementation is done.
     const pr = await pulls.create(
       name,
@@ -167,12 +119,11 @@ export const dev = {
   },
 
   // Attribute a dev session to an existing PR (via session_links, #316) so `lh resume`/retro can
-  // later find it. Used by `lh build <pr>` (the direct-PR path that does not open a new PR) and, as
-  // of #463, also by `lh build <issue>` to attribute the session to a *reused* open PR — deferred
-  // here until after the caller's PR-keyed dev lock is won (see dev.openPr's `attributeSession`
-  // option), so a losing concurrent launch can never overwrite the winner's pointer. Emits the
-  // same `pull_request.updated` event openPr's reuse branch does, so polling refreshes the PR
-  // detail's related-sessions list here too. Latest linked dev session wins.
+  // later find it. Used to attribute the session to a *reused* open PR — deferred here until after
+  // the caller's PR-keyed dev lock is won (see dev.openPr's `attributeSession` option), so a losing
+  // concurrent launch can never overwrite the winner's pointer. Emits the same `pull_request.updated`
+  // event openPr's reuse branch does, so polling refreshes the PR detail's related-sessions list
+  // here too. Latest linked dev session wins.
   attachSession(
     name: string,
     number: number,

@@ -4,7 +4,7 @@ import {
   costStoppedBadge,
   draftBadge,
   issueBadges,
-  issueBuildButtonState,
+  issueCanStartWork,
   linkedPullPillTone,
   linkedPullStateBadge,
   linkedPullStatus,
@@ -426,7 +426,7 @@ describe("primaryLinkedPull (#598)", () => {
   });
 });
 
-describe("issueBuildButtonState (#598)", () => {
+describe("issueCanStartWork (#598)", () => {
   function linked(partial: Partial<LinkedPull> = {}): LinkedPull {
     return {
       number: 2,
@@ -440,41 +440,41 @@ describe("issueBuildButtonState (#598)", () => {
     };
   }
 
-  it("is 'build' when no PR is linked", () => {
-    expect(issueBuildButtonState(issue())).toBe("build");
+  it("can start when no PR is linked", () => {
+    expect(issueCanStartWork(issue())).toBe(true);
   });
 
-  it("is 'building' while the primary linked PR is open and unmerged", () => {
+  it("cannot start while the primary linked PR is open and unmerged", () => {
     expect(
-      issueBuildButtonState(
+      issueCanStartWork(
         issue({ linked_pull_request: linked({ state: "open" }) }),
       ),
-    ).toBe("building");
+    ).toBe(false);
   });
 
-  it("is 'merged' once the primary linked PR merged", () => {
+  it("cannot start once the primary linked PR merged", () => {
     expect(
-      issueBuildButtonState(
+      issueCanStartWork(
         issue({
           linked_pull_request: linked({ state: "closed", merged: true }),
         }),
       ),
-    ).toBe("merged");
+    ).toBe(false);
   });
 
-  it("is 'build' when the primary linked PR closed unmerged (rejected)", () => {
+  it("can start when the primary linked PR closed unmerged (rejected)", () => {
     expect(
-      issueBuildButtonState(
+      issueCanStartWork(
         issue({
           linked_pull_request: linked({ state: "closed", merged: false }),
         }),
       ),
-    ).toBe("build");
+    ).toBe(true);
   });
 
   it("judges by the most relevant PR (index 0) when several are linked", () => {
     expect(
-      issueBuildButtonState(
+      issueCanStartWork(
         issue({
           linked_pull_requests: [
             linked({ number: 1, state: "closed", merged: false }),
@@ -482,7 +482,7 @@ describe("issueBuildButtonState (#598)", () => {
           ],
         }),
       ),
-    ).toBe("build");
+    ).toBe(true);
   });
 });
 

@@ -58,9 +58,8 @@ test("terminal.launch attaches a specific reason and the retryable herdr command
   expect(err.data?.session).toBeUndefined();
 });
 
-// Build (issue-dev) used to open the PR and provision its worktree here, ahead of the herdr call
-// (#551), so herdr's `worktree open --path` had somewhere to point. That responsibility moved
-// entirely to `lh build --herdr` (#584) — terminal.launch just spawns it now and does no git/PR
-// work of its own; see core/terminal-launch-service.test.ts's "issue-dev spawns `lh build --herdr`"
+// terminal.launch does no git/PR work of its own for a worktree-backed run: for workflow-run it
+// just spawns `lh workflow start --herdr` (#1007), which owns PR open and worktree provisioning.
+// See core/terminal-launch-service.test.ts's "workflow-run spawns `lh workflow start --herdr`"
 // suite for the (mocked-spawn) coverage of that call, and cli/dev.test.ts for worktree
 // provisioning itself.

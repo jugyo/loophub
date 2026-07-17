@@ -6,10 +6,6 @@ export type CommandHelp = {
 export const commandHelp: readonly CommandHelp[] = [
   { path: ["info"], description: "Show the resolved LoopHub environment." },
   {
-    path: ["build"],
-    description: "Start work on an issue in an agent session.",
-  },
-  {
     path: ["resume"],
     description: "Resume the primary development session for a pull request.",
   },

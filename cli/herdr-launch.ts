@@ -85,7 +85,7 @@ export async function launchAgentInWorktreeHerdr(input: {
       // A zero-exit create with no parseable tab id means herdr made a real tab but its output shape
       // drifted: tabId stays null, and with no worktree workspace to fall back to (this is the plain
       // repo-root path) the agent splits the focused pane and the new tab is orphaned with no id to
-      // close it. Surface it (mirrors launchIssueDevHerdr's server-side warning) so the drift is
+      // close it. Surface it (mirrors the server-side herdr launch's warning) so the drift is
       // noticed instead of leaking silently.
       if (!tabId)
         console.error(

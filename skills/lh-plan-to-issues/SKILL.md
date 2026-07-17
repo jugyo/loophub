@@ -101,7 +101,7 @@ Iterate until approved.
 Publish blockers first so `Blocked by` can reference real `#n` values.
 
 **Do not attach labels by default** (category `enhancement` / `bug` and `ready-to-build` add
-little value mechanically). Mark a slice ready for an AFK agent via the Web UI **Build** button
+little value mechanically). Start work on a slice via the Web UI **Start workflow** control
 (shown until a PR is in progress or merged), or pass `--label ready-to-build` **only** when the user
 explicitly asks. To group the slices under a theme, pass that theme label (e.g. `ui-v3`) when the
 user names one.

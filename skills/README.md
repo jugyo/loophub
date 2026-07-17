@@ -13,7 +13,6 @@ context-isolated reviewer sessions (install them with `npx skills add`).
 | `lh-inbox` | `skills/lh-inbox/` | `/lh-inbox` (send, inspect, and update LoopHub Inbox messages) |
 | `lh-plan-to-issues` | `skills/lh-plan-to-issues/` | `/lh-plan-to-issues` |
 | `lh-scheduled-task-create` | `skills/lh-scheduled-task-create/` | `/lh-scheduled-task-create` (create a scheduled task → verify → stop) |
-| `lh-build` | `skills/lh-build/` | `/lh-build {issue id}` (implement → PR → review loop; `lh build` provisions the worktree) |
 | `lh-pr-review` | `skills/lh-pr-review/` | `/lh-pr-review {pr id}` (review → fix → re-review loop) |
 | `lh-rebase-conflict` | `skills/lh-rebase-conflict/` | `/lh-rebase-conflict {pr id}` (resolve conflicts → re-review) |
 | `lh-merge-ready` | `skills/lh-merge-ready/` | `/lh-merge-ready {pr id}` (pre-merge check; human merges) |
@@ -38,14 +37,15 @@ still invoke `/create-github-pr <pr>` directly; do not add it to new customizati
   body, review comments, hand-off summaries), the target language is the **PR's language**, resolved
   in this order: linked issue → human-authored PR body/title → conversation → English fallback. Each
   skill states this rule inline in its own `## Language` section so it stays self-contained and
-  host-portable (see `lh-build` and `lh-pr-review`); keep the order consistent when editing them. For
+  host-portable (see `lh-pr-review`); keep the order consistent when editing them. For
   **issue-only** skills with no PR yet (`lh-issue-create`, `lh-plan-to-issues`), there is nothing to
   resolve against — localize the issue text to the **conversation language**.
   Interactive, non-persisted reports a skill prints back to the operator (e.g. `lh-merge-ready`'s
   pre-merge `## Report`) are session output, not a stored PR artifact, so they intentionally follow the
   **conversation language** too — by design, not an oversight.
 - **PR evidence**: PR bodies require an **Evidence** section (test output excerpts, screenshots for UI,
-  CLI snippets, or explicit N/A). Enforced at PR creation — see `lh-build` § PR (step 5).
+  CLI snippets, or explicit N/A). The draft PR is seeded with an Evidence placeholder when the
+  Workflow run opens it, and the Execute step fills it in before marking the PR ready.
 - **Reviewers are role-based, not vendor-based**: reference reviewers by **role** (Quality, Security,
   Documentation, Acceptance), never by a product name. `lh-pr-review` § Reviewer roles & host mapping
   resolves each role to a context-isolated host mechanism (Codex `codex exec`, Cursor
@@ -58,17 +58,18 @@ still invoke `/create-github-pr <pr>` directly; do not add it to new customizati
 
 ```text
 repo-add (one-time) → issue-create / plan-to-issues
-  → lh-build (implement → PR → review loop) → merge-ready → (human merge)
+  → Start workflow (Workflow run: implement → PR → review) → merge-ready → (human merge)
 
 scheduled-task-create is a standalone operations path: create scheduled task → verify → stop.
 rebase-conflict resolves conflicts on a PR head, then resumes pr-review.
 ```
 
-`lh-build` drives implementation (launched by `lh build`, which opens the linked PR and provisions its
-PR-keyed worktree (`pr-<m>`, #463) — the PR's existence is the "taken" signal, the session is
-attributed to the PR row); these
-skills cover registration, issue authoring, scheduled-task registration, implementation, review,
-conflict resolution, and the pre-merge check.
+A **Workflow run** drives implementation (started via the Web UI **Start workflow** control, i.e.
+`lh workflow start`, which opens the linked PR and provisions its PR-keyed worktree (`pr-<m>`, #463) —
+the PR's existence is the "taken" signal, the session is attributed to the PR row). Its Execute step
+implements and the Verify step reviews. These skills cover registration, issue authoring,
+scheduled-task registration, review, conflict resolution, and the pre-merge check; implementation
+itself is the Workflow run's job, not a standalone skill.
 
 `lh-create-github-pr` is **outside** this chain: it is a separate, UI-triggered export action (the PR
 detail's **Create PR on GitHub** button for repos in `github_pr` merge mode). It pushes the PR's branch
@@ -87,5 +88,5 @@ skill before installing — it becomes instructions your agent follows.
 ```sh
 npx skills add owner/repo                 # from GitHub
 npx skills add .                          # from a local checkout (this repo's root)
-npx skills add owner/repo --skill lh-build  # install one skill by name
+npx skills add owner/repo --skill lh-pr-review  # install one skill by name
 ```

@@ -337,14 +337,13 @@ export const methods: Record<string, MethodDef> = {
   },
   "terminal/launch": {
     description:
-      "Launch a terminal workflow as a named Herdr session. issue-dev (Build) spawns `lh build --herdr` and lets it provision the worktree/PR and the herdr pane itself (#584); the other workflows are orchestrated by this RPC directly.",
+      "Launch a terminal workflow as a named Herdr session. workflow-run (Start workflow) spawns `lh workflow start --herdr` and lets it provision the worktree/PR and the herdr pane itself (#1007); the other workflows are orchestrated by this RPC directly.",
     params: params(
       {
         repo,
         label: str,
         workflow: {
           enum: [
-            "issue-dev",
             "issue-create",
             "scheduled-task-create",
             "resume",
@@ -360,12 +359,10 @@ export const methods: Record<string, MethodDef> = {
         session: str,
         cwd: str,
         targetBranch: str,
-        // One-shot Build or New issue overrides (#637, #1275): force the runtime / session model
+        // One-shot New issue overrides (#1275): force the runtime / session model
         // for this launch only, without changing persisted settings.
         agent: { enum: ["claude-code", "codex", "grok"] },
         model: str,
-        // Explicit confirmation from issue detail to start a parallel PR/worktree attempt (#1140).
-        newAttempt: { type: "boolean" },
       },
       ["repo"],
     ),
@@ -383,7 +380,6 @@ export const methods: Record<string, MethodDef> = {
         targetBranch: p.targetBranch,
         agent: p.agent,
         model: p.model,
-        newAttempt: p.newAttempt,
       }),
   },
 

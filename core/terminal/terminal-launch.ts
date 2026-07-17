@@ -90,18 +90,14 @@ export function displayArg(value: string): string {
 
 // The actual `herdr ...` invocation a caller can paste into their own shell to reproduce a launch
 // failure — distinct from HerdrLaunchPlan.command, which is only the inner workflow command herdr
-// would run once its session existed (e.g. "lh build '...'"). That inner command doesn't depend on
-// `herdr` at all, so it can't reproduce a herdr-specific failure.
+// would run once its session existed (e.g. "lh issue new '...'"). That inner command doesn't depend
+// on `herdr` at all, so it can't reproduce a herdr-specific failure.
 export function herdrCommandLine(plan: HerdrLaunchPlan): string {
   return plan.argv.map(displayArg).join(" ");
 }
 
 export function commandForHerdrLaunch(input: {
   repo: string;
-  // "issue-dev" (the Build button) has no entry here: worktree/PR provisioning and the herdr
-  // launch itself are entirely `lh build --herdr`'s responsibility (#584) — the server only spawns
-  // it directly (see launchIssueDevHerdr in service.ts) rather than building a command string for
-  // an agent-start pane the way the other workflows below do.
   workflow?:
     | "issue-create"
     | "scheduled-task-create"

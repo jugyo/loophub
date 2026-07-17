@@ -4,7 +4,7 @@ description: >-
   Review a LoopHub PR with quality, security, documentation, and acceptance reviewers, selected by
   what the PR diff changes (host-mapped isolated reviewer sessions), fix findings on the head branch,
   and re-review until pass. Use when the user runs /lh-pr-review {pr id}, when asked to review a
-  LoopHub PR, or after issue-dev creates a PR. Posts a per-topic lh pr review each round. Does not merge. Add
+  LoopHub PR, or after a Workflow run's Execute step creates a PR. Posts a per-topic lh pr review each round. Does not merge. Add
   --review-only for a single review without the fix loop.
 ---
 
@@ -47,7 +47,7 @@ Any **one** of these alone is enough:
 
 | Signal | Example |
 |--------|---------|
-| Same-session issue-dev just created the PR | `lh pr create ...` returned `#42` in this chat |
+| Same-session Execute step just created the PR | `lh pr create ...` returned `#42` in this chat |
 | PR already loaded in this session | `lh pr view <m>` or `/lh-pr-review <m>` earlier in chat |
 | User named the PR in the immediately preceding message | "review this" right after posting PR #42 URL |
 | Linked issue maps to exactly one open PR | `lh issue view <n>` → `linked_pull_request`, or single open PR with `--issue <n>` |
@@ -57,7 +57,7 @@ If multiple signals agree on the same `<m>`, use it. If they disagree, treat as 
 #### Not obvious (ask the user)
 
 - Two or more open PRs and no single signal above
-- No PR created yet in this session (issue-dev stopped before PR, etc.)
+- No PR created yet in this session (the Execute step stopped before PR, etc.)
 - Conversation switched to a different PR or issue since the last clear target
 - Signals point to different PR numbers
 
@@ -269,12 +269,12 @@ policy](#review-selection-policy) gates on — apply that table in A.3.
 
 **Do not `git checkout head.ref` on the main checkout.** Bootstrap a worktree on the PR head instead:
 
-1. Record `head.ref` and repo absolute path (`local_path`) from `lh pr view <m>` (A.1). For `lh build`
-   PRs the head is `loophub/pr-<m>`, and its worktree usually already exists at
+1. Record `head.ref` and repo absolute path (`local_path`) from `lh pr view <m>` (A.1). For
+   Workflow-run PRs the head is `loophub/pr-<m>`, and its worktree usually already exists at
    `~/.loophub/worktrees/<owner>/<repo>/pr-<m>`.
-2. If a worktree already has `head.ref` checked out — the session's cwd (e.g. issue-dev → pr-review
-   chain), or the `lh build` worktree above (`git worktree list`) — use that one (adding a second
-   worktree for a checked-out branch fails).
+2. If a worktree already has `head.ref` checked out — the session's cwd (e.g. the Workflow run's
+   Execute → pr-review chain), or the Workflow-run worktree above (`git worktree list`) — use that one
+   (adding a second worktree for a checked-out branch fails).
 3. Else `cd local_path` and check `.worktrees/<head.ref>`: exists → `cd` into it; missing →
    `git worktree add .worktrees/<head.ref> <head.ref>` then `cd`.
 
@@ -282,7 +282,7 @@ policy](#review-selection-policy) gates on — apply that table in A.3.
 ROOT="<local_path>"
 WT="$ROOT/.worktrees/<head.ref>"
 if [ "$(pwd -P)" = "$(cd "$WT" 2>/dev/null && pwd -P)" ]; then
-  : # already in target worktree (e.g. issue-dev → pr-review chain)
+  : # already in target worktree (e.g. Execute → pr-review chain)
 elif [ -d "$WT" ]; then
   cd "$WT"
 else
@@ -495,8 +495,8 @@ ${LOOPHUB_HOME:-$HOME/.loophub}/evidence/<owner>/<repo>/issue-<n>/
 ```
 
 Key it by the **linked issue number** (`issue-<n>` — the issue the PR closes, not the `pr-<m>`
-worktree name; use `pr-<m>` when there is no linked issue) so `lh-build` and `lh-merge-ready` resolve
-the same directory. Do not keep the screenshot only in the session scratchpad / `$TMPDIR` or the
+worktree name; use `pr-<m>` when there is no linked issue) so the Workflow run's Execute step and
+`lh-merge-ready` resolve the same directory. Do not keep the screenshot only in the session scratchpad / `$TMPDIR` or the
 worktree — both can be cleared before `lh-merge-ready` reads the directory at the end of the chain.
 
 ### B.4 Commit

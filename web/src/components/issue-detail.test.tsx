@@ -8,7 +8,6 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import {
-  act,
   cleanup,
   fireEvent,
   render,
@@ -19,7 +18,6 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment } from "@/api/types";
-import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 import { WebConfigProvider } from "@/lib/web-config";
 
 // The Build button launches through the terminal backend abstraction; capture the call.
@@ -101,7 +99,6 @@ function renderDetail(
   getIssue?: () => Issue,
   autoModeOnBuild = false,
   extraHandlers: Record<string, (params: any) => unknown> = {},
-  legacy = true,
 ) {
   vi.stubGlobal("fetch", mockFetch(getIssue, autoModeOnBuild, extraHandlers));
   const queryClient = new QueryClient({
@@ -112,7 +109,7 @@ function renderDetail(
     getParentRoute: () => rootRoute,
     path: "/",
     component: () => (
-      <WebConfigProvider config={{ experimental: false, legacy }}>
+      <WebConfigProvider config={{ experimental: false }}>
         <IssueDetail owner="me" repo="proj" number={12} />
       </WebConfigProvider>
     ),
@@ -413,13 +410,6 @@ describe("IssueDetail", () => {
         .getAttribute("href"),
     ).toBe("/r/me/proj/pulls/31");
     expect(screen.queryByText(/Discard/)).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "New attempt" }));
-    expect(
-      screen.getByRole("button", { name: "Build with Claude Code" }),
-    ).toBeTruthy();
-    expect(screen.queryByText(/PR #31 is already in progress/)).toBeNull();
   });
 
   it("explains when old attempt rows are omitted by the detail limit", async () => {
@@ -488,45 +478,27 @@ describe("IssueDetail", () => {
     await waitFor(() => expect(textarea.value).toBe(""));
   });
 
-  it("replaces the Build button with a disabled Building label when an open PR is linked", async () => {
-    // The default issue has an open linked PR (#30).
-    renderDetail();
-
-    // Building renders, so the header is mounted — Build must be absent.
-    await screen.findByText("Building");
-    expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
-    expect(screen.getByText("Building")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "New attempt" })).toBeTruthy();
-  });
-
-  it("replaces the Build button with a disabled Merged label when the linked PR is merged", async () => {
-    const merged: Issue = {
-      ...issue,
-      linked_pull_request: { ...issue.linked_pull_request!, merged: true },
-    };
-    renderDetail(() => merged);
-
-    await screen.findByRole("button", { name: /close/i });
-    expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
-    expect(screen.getByText("Merged")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
-  });
-
-  it("shows the Build button when no PR is linked", async () => {
+  it("shows Start workflow (and no Build) on an open issue with no linked PR", async () => {
     const noPr: Issue = { ...issue, linked_pull_request: null };
     renderDetail(() => noPr);
 
-    expect(await screen.findByRole("button", { name: /^Build$/ })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: "Start workflow" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
   });
 
-  it("hides the Build button in normal mode", async () => {
-    const noPr: Issue = { ...issue, linked_pull_request: null };
-    renderDetail(() => noPr, false, {}, false);
+  it("shows no implementation-start control on an open issue with an open linked PR", async () => {
+    // The default issue has an open linked PR (#30): no Start workflow, no
+    // Build, no Building/Merged status label — only the header Close action.
+    renderDetail();
 
     await screen.findByRole("button", { name: /close/i });
+    expect(screen.queryByRole("button", { name: "Start workflow" })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
-    expect(screen.getByRole("button", { name: "Start workflow" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "New attempt" })).toBeNull();
+    expect(screen.queryByText("Building")).toBeNull();
   });
 
   // #1256: a closed issue starts no new work. Build / Start workflow / New
@@ -616,215 +588,6 @@ describe("IssueDetail", () => {
       workflow: "workflow-run",
       issueNumber: 12,
       workflowId: 9,
-    });
-  });
-
-  it("shows the Build button when the only linked PR is closed-unmerged", async () => {
-    const rejected: Issue = {
-      ...issue,
-      linked_pull_request: {
-        ...issue.linked_pull_request!,
-        state: "closed",
-        merged: false,
-      },
-    };
-    renderDetail(() => rejected);
-
-    expect(await screen.findByRole("button", { name: /^Build$/ })).toBeTruthy();
-  });
-
-  it("launches `lh build <n> --herdr` in a terminal when the Build button is clicked", async () => {
-    const noPr: Issue = { ...issue, linked_pull_request: null };
-    renderDetail(() => noPr);
-
-    const button = await screen.findByRole("button", { name: /^Build$/ });
-    fireEvent.click(button);
-
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "me/proj",
-      label: "Issue #12 - ui2: issue detail",
-      workflow: "issue-dev",
-      issueNumber: 12,
-    });
-  });
-
-  it("requires agent/model selection before launching a new attempt without confirmation", async () => {
-    renderDetail();
-
-    fireEvent.click(await screen.findByRole("button", { name: "New attempt" }));
-
-    expect(launchTerminal).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("button", { name: "Build with Claude Code" }),
-    ).toBeTruthy();
-    expect(
-      screen.queryByRole("dialog", { name: "Start a parallel attempt?" }),
-    ).toBeNull();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Build with Claude Code" }),
-    );
-
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "me/proj",
-      label: "Issue #12 - ui2: issue detail",
-      workflow: "issue-dev",
-      issueNumber: 12,
-      agent: "claude-code",
-      model: "opus",
-      newAttempt: true,
-    });
-    expect(
-      screen.queryByRole("dialog", { name: "Start a parallel attempt?" }),
-    ).toBeNull();
-  });
-
-  it("uses the selected agent/model for a new attempt", async () => {
-    renderDetail();
-
-    fireEvent.pointerDown(
-      await screen.findByRole("button", { name: "Choose agent and model" }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Codex" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
-    fireEvent.click(
-      await screen.findByRole("menuitem", { name: "gpt-5.6-sol" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Build with Codex" }));
-
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "me/proj",
-      label: "Issue #12 - ui2: issue detail",
-      workflow: "issue-dev",
-      issueNumber: 12,
-      agent: "codex",
-      model: "gpt-5.6-sol",
-      newAttempt: true,
-    });
-  });
-
-  it("shows a neutral tooltip that does not expose the lh build command", async () => {
-    const noPr: Issue = { ...issue, linked_pull_request: null };
-    renderDetail(() => noPr, true);
-
-    const button = await screen.findByRole("button", { name: /^Build$/ });
-
-    expect(button.title).toBe("Build this issue in a terminal");
-    expect(button.title).not.toContain("lh build");
-  });
-
-  it("launches Build with the model selected from the shadcn dropdown", async () => {
-    const noPr: Issue = { ...issue, linked_pull_request: null };
-    renderDetail(() => noPr);
-
-    fireEvent.pointerDown(
-      await screen.findByRole("button", { name: "Choose agent and model" }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "sonnet" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Build with Claude Code" }),
-    );
-
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "me/proj",
-      label: "Issue #12 - ui2: issue detail",
-      workflow: "issue-dev",
-      issueNumber: 12,
-      agent: "claude-code",
-      model: "sonnet",
-    });
-    expect(
-      screen.queryByRole("button", { name: "Build with Claude Code" }),
-    ).toBeNull();
-  });
-
-  it("launches Build with gpt-5.6-sol selected from the Codex model dropdown", async () => {
-    const noPr: Issue = { ...issue, linked_pull_request: null };
-    renderDetail(() => noPr);
-
-    fireEvent.pointerDown(
-      await screen.findByRole("button", { name: "Choose agent and model" }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Codex" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
-    fireEvent.click(
-      await screen.findByRole("menuitem", { name: "gpt-5.6-sol" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Build with Codex" }));
-
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "me/proj",
-      label: "Issue #12 - ui2: issue detail",
-      workflow: "issue-dev",
-      issueNumber: 12,
-      agent: "codex",
-      model: "gpt-5.6-sol",
-    });
-  });
-
-  it("launches Build with a custom one-shot model typed in the dropdown", async () => {
-    const noPr: Issue = { ...issue, linked_pull_request: null };
-    renderDetail(() => noPr);
-
-    fireEvent.pointerDown(
-      await screen.findByRole("button", { name: "Choose agent and model" }),
-      { button: 0, ctrlKey: false },
-    );
-    fireEvent.change(screen.getByLabelText("Custom model"), {
-      target: { value: "vendor/custom-preview" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Build with Claude Code" }),
-    );
-
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "me/proj",
-      label: "Issue #12 - ui2: issue detail",
-      workflow: "issue-dev",
-      issueNumber: 12,
-      agent: "claude-code",
-      model: "vendor/custom-preview",
-    });
-  });
-
-  it("closes the Build model menu with Escape from the custom model input", async () => {
-    const noPr: Issue = { ...issue, linked_pull_request: null };
-    renderDetail(() => noPr);
-
-    fireEvent.pointerDown(
-      await screen.findByRole("button", { name: "Choose agent and model" }),
-      { button: 0, ctrlKey: false },
-    );
-    const customModel = screen.getByLabelText("Custom model");
-    customModel.focus();
-    fireEvent.keyDown(customModel, { key: "Escape" });
-
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("button", { name: "Build with Claude Code" }),
-      ).toBeNull();
-    });
-  });
-
-  it("shows a fixed-duration loading state on the Build button and re-enables it after", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const noPr: Issue = { ...issue, linked_pull_request: null };
-    renderDetail(() => noPr);
-
-    const button = await screen.findByRole("button", { name: /^Build$/ });
-    fireEvent.click(button);
-
-    expect(button.hasAttribute("disabled")).toBe(true);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(ACTION_LOADING_MS);
-    });
-    await waitFor(() => {
-      expect(button.hasAttribute("disabled")).toBe(false);
     });
   });
 });

@@ -39,7 +39,7 @@ Do not create an issue or PR for the task instead of registering the scheduled t
 Do not ask for every field when the conversation already contains enough information.
 Do not invent a schedule when the user did not provide one.
 Do not run the task immediately by default after creating it.
-Do not continue to /lh-build, /lh-pr-review, or /lh-merge-ready.
+Do not continue to a Workflow run (Start workflow), /lh-pr-review, or /lh-merge-ready.
 Create the scheduled task -> verify -> report -> stop.
 ```
 

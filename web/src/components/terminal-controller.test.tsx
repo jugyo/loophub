@@ -42,12 +42,12 @@ vi.mock("@/queries/terminal", () => ({
 }));
 
 function LaunchButton({
-  workflow = "issue-dev",
+  workflow = "workflow-run",
   agent,
   model,
 }: {
   workflow?:
-    | "issue-dev"
+    | "workflow-run"
     | "issue-create"
     | "scheduled-task-create"
     | "resume"
@@ -81,7 +81,7 @@ afterEach(() => {
 });
 
 describe("TerminalController", () => {
-  it("does not show a toast after a Build launch succeeds (#680)", async () => {
+  it("does not show a toast after a workflow-run launch succeeds (#680)", async () => {
     // ToastProvider clears on route change, so it needs a real router in the tree (matches
     // toast.test.tsx / pull-detail.test.tsx).
     const rootRoute = createRootRoute({ component: Outlet });
@@ -109,7 +109,7 @@ describe("TerminalController", () => {
       {
         repo: "jugyo/loophub",
         label: "dev #444",
-        workflow: "issue-dev",
+        workflow: "workflow-run",
         issueNumber: 444,
         prNumber: undefined,
         session: undefined,

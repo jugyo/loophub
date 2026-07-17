@@ -31,7 +31,6 @@ export interface OpenTerminalOptions {
   label?: string;
   // Semantic workflow the Herdr session runs — it does not replay a literal shell command.
   workflow?:
-    | "issue-dev"
     | "issue-create"
     | "scheduled-task-create"
     | "resume"
@@ -45,7 +44,7 @@ export interface OpenTerminalOptions {
   session?: string;
   cwd?: string;
   targetBranch?: string;
-  // One-shot agent/model override for issue-dev (Build) or issue-create (New issue). Plain buttons
+  // One-shot agent/model override for the issue-create (New issue) launch. Plain buttons
   // omit them, and dropdown selections apply to this launch only.
   agent?: CodingAgent;
   model?: string;

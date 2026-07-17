@@ -3,26 +3,17 @@
 // (../lib/badges.ts).
 
 import { Link } from "@tanstack/react-router";
-import { Loader2, Play } from "lucide-react";
 import type { Issue, Label, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
 import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { OpenIssueHerdrButton } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
-import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
-import { disabledIconButtonStateClasses } from "@/components/ui/button";
-import {
-  type Badge as BadgeData,
-  issueBuildButtonState,
-  pullBadges,
-} from "@/lib/badges";
+import { type Badge as BadgeData, pullBadges } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
-import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
-import { useWebConfig } from "@/lib/web-config";
 import type { IssueListFilters } from "@/queries/issues";
 
 function RowBadges({ badges }: { badges: BadgeData[] }) {
@@ -309,10 +300,8 @@ export function IssueRow({
           />
         </div>
         {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}
-        <RowBuildButton owner={owner} repo={repo} issue={issue} />
-        {/* Fixed-width, right-aligned so the Build button to its left stays
-            vertically aligned across rows regardless of the relative-time
-            length ("3m ago" vs "12h ago"). #278 */}
+        {/* Fixed-width, right-aligned relative time keeps rows vertically aligned
+            regardless of the relative-time length ("3m ago" vs "12h ago"). #278 */}
         <span className="w-16 shrink-0 truncate text-right text-xs text-muted-foreground">
           {relativeTime(showCreatedAt ? issue.created_at : issue.updated_at)}
         </span>
@@ -335,57 +324,6 @@ export function IssueRow({
         </div>
       ) : null}
     </div>
-  );
-}
-
-// Build button for an issue row: starts a build for the issue in a terminal, the
-// same action as the issue-detail Build button (issue-detail.tsx). Always visible
-// (not hover-revealed) so the row layout is stable regardless of label presence.
-// Hidden (not replaced by a label — that's issue-detail.tsx only, by request)
-// whenever the issue's primary linked PR is open or merged (issueBuildButtonState,
-// #598) — a closed-unmerged (rejected) PR does NOT hide it, since the issue still
-// needs a fresh attempt. Also hidden on a closed issue: no new work is started
-// from a closed issue until it is reopened.
-function RowBuildButton({
-  owner,
-  repo,
-  issue,
-}: {
-  owner: string;
-  repo: string;
-  issue: Issue;
-}) {
-  const { legacy } = useWebConfig();
-  const { launchTerminal } = useTerminalLauncher();
-  const [isLoading, startLoading] = useFixedLoading();
-  const state = issueBuildButtonState(issue);
-  if (!legacy || issue.state !== "open" || state !== "build") return null;
-  return (
-    <button
-      type="button"
-      title={`Build issue #${issue.number} in a terminal`}
-      aria-label={`Build issue #${issue.number}`}
-      disabled={isLoading}
-      onClick={() => {
-        startLoading();
-        launchTerminal({
-          repo: `${owner}/${repo}`,
-          label: `Issue #${issue.number} - ${issue.title}`,
-          workflow: "issue-dev",
-          issueNumber: issue.number,
-        });
-      }}
-      className={cn(
-        "flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        disabledIconButtonStateClasses,
-      )}
-    >
-      {isLoading ? (
-        <Loader2 className="size-4 animate-spin" />
-      ) : (
-        <Play className="size-4" />
-      )}
-    </button>
   );
 }
 

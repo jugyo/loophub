@@ -311,23 +311,16 @@ export function linkedPullWordTone(tone: BadgeTone): StatusWordTone {
 }
 
 /**
- * Build-button state for an issue (#598), shared by every render site (issue
- * detail header, its grouped-issues rows, the issues list, the repo
- * dashboard, and the home "Recent issues" rows — all render through
- * {@link primaryLinkedPull} + this one switch):
- *   - "build": no linked PR, or the primary one closed without merging
- *     (rejected attempt) — the clickable Build button shows.
- *   - "building": the primary linked PR is open and unmerged — Build is
- *     replaced by a disabled "Building" label.
- *   - "merged": the primary linked PR merged — Build is replaced by a
- *     disabled "Merged" label.
+ * Whether an issue is ready to have work started on it (#598), i.e. it has no
+ * active linked PR: either no linked PR at all, or the primary one closed
+ * without merging (a rejected attempt). Returns false while the primary linked
+ * PR is open (work in progress) or merged. Gates the issue detail's "Start
+ * workflow" control so only one launch is offered per issue at a time.
  */
-export type BuildButtonState = "build" | "building" | "merged";
-
-export function issueBuildButtonState(issue: Issue): BuildButtonState {
+export function issueCanStartWork(issue: Issue): boolean {
   const pull = primaryLinkedPull(issue);
-  if (!pull) return "build";
-  if (pull.merged) return "merged";
-  if (pull.state === "open") return "building";
-  return "build";
+  if (!pull) return true;
+  if (pull.merged) return false;
+  if (pull.state === "open") return false;
+  return true;
 }

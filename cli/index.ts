@@ -1,6 +1,5 @@
 import { flags, group, pos } from "./args.ts";
 import * as attachmentCmd from "./commands/attachment.ts";
-import * as buildCmd from "./commands/build.ts";
 import * as eventsCmd from "./commands/events.ts";
 import * as handoffCmd from "./commands/handoff.ts";
 import * as herdrCmd from "./commands/herdr.ts";
@@ -28,7 +27,6 @@ async function main() {
     return;
   }
   if (group === "info") return infoCmd.run();
-  if (group === "build") return buildCmd.run();
   if (group === "resume") return resumeCmd.run();
   if (group === "repo") return repoCmd.run();
   if (group === "issue") return issueCmd.run();

@@ -13,12 +13,13 @@ Final guard **before a human merges**. Confirm `review_state == PASSED` and no c
 (`mergeable_state != conflict`). If clear, **present `lh pr merge` steps only**.
 
 The preceding `lh-pr-review` (same session) already covered acceptance criteria, scope, and
-green tests; the PR Evidence section was required at creation (`lh-build` § PR). Merge-ready does
-not re-check them.
+green tests; the PR Evidence section was seeded when the Workflow run opened the PR and filled in by
+its Execute step. Merge-ready does not re-check them.
 
 As the **last block of its report**, merge-ready also surfaces the change's **evidence
-screenshots**: it reads the persistent evidence directory (`lh-build` and `lh-pr-review` write here
-during implementation and fixes), validates each image, and prints the **paths** of the valid
+screenshots**: it reads the persistent evidence directory (the Workflow run's Execute step and
+`lh-pr-review` write here during implementation and fixes), validates each image, and prints the
+**paths** of the valid
 ones — or states there is none — so a human can eyeball the change before merging.
 
 **No automatic merge.** Human merges via UI or CLI.
@@ -177,8 +178,7 @@ trailing [Evidence screenshots](#evidence-screenshots-last-block) block:
 ### Evidence screenshots (last block)
 
 Append this as the **last block merge-ready itself emits** — in **both** the mergeable and the
-not-mergeable case — so the change's visual evidence is grouped at the end. (When chained from
-`lh-build`, its final PR-URL line still follows; see the closing note below.)
+not-mergeable case — so the change's visual evidence is grouped at the end.
 
 1. **List** the persistent evidence directory for this PR:
 
@@ -188,9 +188,9 @@ not-mergeable case — so the change's visual evidence is grouped at the end. (W
    ```
 
    `<n>` is the linked issue (PR body `closes #<n>` / the `--issue` link from step 1) — the
-   directory is keyed by the **linked issue number**, not the `pr-<m>` worktree name, so `lh-build`,
-   `lh-pr-review`, and this skill all resolve the same directory. For a PR with no linked issue,
-   use `pr-<m>` instead.
+   directory is keyed by the **linked issue number**, not the `pr-<m>` worktree name, so the Workflow
+   run's Execute step, `lh-pr-review`, and this skill all resolve the same directory. For a PR with no
+   linked issue, use `pr-<m>` instead.
 
 2. **Validate each file — keep only valid evidence.** Open each image and keep it only when it
    **actually shows this PR's change** and is readable. Exclude:
@@ -213,8 +213,7 @@ not-mergeable case — so the change's visual evidence is grouped at the end. (W
    ```
 
 Localize the heading and the "none" line to the conversation language (see [Language](#language));
-keep paths verbatim. When chained from `lh-build`, its final PR-URL line (`lh-build` § 9) still follows
-this block.
+keep paths verbatim.
 
 ## Called from other skills
 
@@ -230,11 +229,11 @@ Also from pr-review sessions when review passes.
 ## Skill chain (full)
 
 ```text
-lh-issue-create → (implementation) → lh-pr-review → lh-merge-ready → (human merge)
+lh-issue-create → Start workflow (Workflow run) → lh-pr-review → lh-merge-ready → (human merge)
 ```
 
 ## Prohibited
 
 - **Do not auto-run `lh pr merge`**
 - Do not show merge steps without pass or with a conflict (`mergeable_state == conflict`)
-- Do not edit code inside merge-ready (send back to issue-dev / pr-review)
+- Do not edit code inside merge-ready (send back to the Workflow run's Execute step / pr-review)

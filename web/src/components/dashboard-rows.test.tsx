@@ -13,7 +13,6 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
@@ -24,7 +23,6 @@ import type {
   LinkedPull,
   PullRequest,
 } from "@/api/types";
-import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 import { WebConfigProvider } from "@/lib/web-config";
 
@@ -115,7 +113,6 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
 function renderInRouter(
   ui: React.ReactNode,
   handlers: Record<string, (params: any) => unknown> = {},
-  legacy = true,
 ) {
   // A linked PR has no workflow run unless a test says otherwise. The generic mock returns `{}`
   // (truthy) for unmapped methods, which would render a bogus WorkflowMiniProgress tracker; the
@@ -132,7 +129,7 @@ function renderInRouter(
     getParentRoute: () => rootRoute,
     path: "/",
     component: () => (
-      <WebConfigProvider config={{ experimental: false, legacy }}>
+      <WebConfigProvider config={{ experimental: false }}>
         {ui}
       </WebConfigProvider>
     ),
@@ -382,150 +379,6 @@ describe("IssueRow", () => {
       />,
     );
     expect(await screen.findByText("closed")).toBeTruthy();
-  });
-
-  // The Build button mirrors the issue-detail Build trigger: visible unless a
-  // linked PR is actively in progress (open) or already merged (done).
-  it("shows the Build button when no PR is linked", async () => {
-    renderInRouter(
-      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
-    );
-    expect(
-      await screen.findByRole("button", { name: "Build issue #7" }),
-    ).toBeTruthy();
-  });
-
-  it("hides the Build button in normal mode", async () => {
-    renderInRouter(
-      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
-      {},
-      false,
-    );
-    expect(await screen.findByText("Example issue")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
-  });
-
-  // A closed issue starts no new work: the Build button is hidden until it is
-  // reopened, regardless of linked-PR state (#1256).
-  it("hides the Build button on a closed issue", async () => {
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({ number: 7, state: "closed" })}
-      />,
-    );
-    expect(await screen.findByText("Example issue")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
-  });
-
-  it("renders the Build button always visible (not hover-revealed)", async () => {
-    renderInRouter(
-      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
-    );
-    const button = await screen.findByRole("button", {
-      name: "Build issue #7",
-    });
-    // No opacity-0 / hover-reveal classes: the button must show without hover so
-    // a label row's layout does not shift on the button appearing/disappearing.
-    expect(button.className).not.toContain("opacity-0");
-    expect(button.className).not.toContain("group-hover:opacity-100");
-  });
-
-  it("launches the typed issue-dev workflow when the Build button is clicked", async () => {
-    renderInRouter(
-      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
-    );
-    const button = await screen.findByRole("button", {
-      name: "Build issue #7",
-    });
-
-    fireEvent.click(button);
-
-    expect(launchTerminal).toHaveBeenCalledWith({
-      repo: "me/proj",
-      label: "Issue #7 - Example issue",
-      workflow: "issue-dev",
-      issueNumber: 7,
-    });
-  });
-
-  it("shows a neutral tooltip that does not expose the lh build command", async () => {
-    renderInRouter(
-      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
-    );
-    const button = await screen.findByRole("button", {
-      name: "Build issue #7",
-    });
-
-    expect(button.title).toBe("Build issue #7 in a terminal");
-    expect(button.title).not.toContain("lh build");
-  });
-
-  it("shows a fixed-duration loading state on the Build button and re-enables it after", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderInRouter(
-      <IssueRow owner="me" repo="proj" issue={makeIssue({ number: 7 })} />,
-    );
-    const button = await screen.findByRole("button", {
-      name: "Build issue #7",
-    });
-
-    fireEvent.click(button);
-    expect(button.hasAttribute("disabled")).toBe(true);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(ACTION_LOADING_MS);
-    });
-    await waitFor(() => {
-      expect(button.hasAttribute("disabled")).toBe(false);
-    });
-  });
-
-  it("shows the Build button when the linked PR is closed unmerged (rejected)", async () => {
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({
-          number: 7,
-          linked_pull_requests: [makePull({ state: "closed", merged: false })],
-        })}
-      />,
-    );
-    expect(
-      await screen.findByRole("button", { name: "Build issue #7" }),
-    ).toBeTruthy();
-  });
-
-  it("hides the Build button while a linked PR is open", async () => {
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({
-          number: 7,
-          linked_pull_requests: [makePull({ state: "open", merged: false })],
-        })}
-      />,
-    );
-    expect(await screen.findByText("Example issue")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
-  });
-
-  it("hides the Build button once a linked PR is merged", async () => {
-    renderInRouter(
-      <IssueRow
-        owner="me"
-        repo="proj"
-        issue={makeIssue({
-          number: 7,
-          linked_pull_requests: [makePull({ state: "closed", merged: true })],
-        })}
-      />,
-    );
-    expect(await screen.findByText("Example issue")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Build issue #7" })).toBeNull();
   });
 
   // The whole-row hover background is removed; keyboard focus keeps its row

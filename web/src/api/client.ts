@@ -513,7 +513,6 @@ export function launchTerminalWorkflow(input: {
   repo: string;
   label?: string;
   workflow?:
-    | "issue-dev"
     | "issue-create"
     | "scheduled-task-create"
     | "resume"
@@ -526,11 +525,9 @@ export function launchTerminalWorkflow(input: {
   session?: string;
   cwd?: string;
   targetBranch?: string;
-  // One-shot runtime/model overrides from Build or New issue dropdowns (#637, #1275).
+  // One-shot runtime/model overrides from the New issue dropdown (#1275).
   agent?: CodingAgent;
   model?: string;
-  // Opt-in parallel attempt after the issue-detail confirmation (#1140).
-  newAttempt?: boolean;
 }) {
   return rpc<TerminalLaunchResult>("terminal/launch", clean(input));
 }

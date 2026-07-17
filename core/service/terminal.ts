@@ -26,9 +26,7 @@ import type {
 } from "./shared.ts";
 import {
   acquireHerdrWorktreeTabCore,
-  autoModeOnBuild,
   buildHerdrLaunchPlan,
-  codingAgent,
   commandForHerdrLaunch,
   displayArg,
   ENV_ISSUE_CREATE_HERDR_LAUNCH,
@@ -67,7 +65,6 @@ import {
   parseHerdrTabId,
   parseHerdrWorkspaceId,
   parseHerdrWorkspaceListIfValid,
-  RUNTIMES,
   randomUUID,
   repoOr404,
   reposWithRunningSession,
@@ -83,7 +80,6 @@ export interface TerminalLaunchInput {
   repo: string;
   label?: string;
   workflow?:
-    | "issue-dev"
     | "issue-create"
     | "scheduled-task-create"
     | "resume"
@@ -97,30 +93,28 @@ export interface TerminalLaunchInput {
   session?: string;
   cwd?: string;
   targetBranch?: string;
-  // One-shot agent/model overrides from the issue-dev (Build) or issue-create (New issue)
-  // dropdowns (#637, #1275). Plain buttons leave these unset. They map to the corresponding CLI
-  // runtime/model flags and never touch persisted Settings defaults.
+  // One-shot agent/model overrides from the issue-create (New issue) dropdown (#1275). Plain
+  // buttons leave these unset. They map to the corresponding CLI runtime/model flags and never
+  // touch persisted Settings defaults.
   agent?: CodingAgent;
   model?: string;
-  // Opt-in parallel attempt from issue detail (#1140). The ordinary Build paths leave this unset,
-  // preserving the existing open-PR reuse behavior in `lh build`.
-  newAttempt?: boolean;
 }
 
-// Spawns `lh build ... --herdr` for the Build button (#584). This is not routed through runHerdr:
-// that helper's error messages are hardcoded around the `herdr` binary ("herdr command not found
-// on PATH", "Herdr exited with status N", …), which would misreport a failure of `lh` itself (a
-// missing PATH entry, an issue lookup failure, a worktree provisioning error, …) as a Herdr
-// problem. `lh build --herdr` owns worktree/PR provisioning and the actual herdr pane launch
-// end-to-end (cli/index.ts), so this call only needs to await it and translate a non-zero exit.
+// Spawns a launcher CLI (`lh workflow start ... --herdr`) that owns its own herdr pane. This is not
+// routed through runHerdr: that helper's error messages are hardcoded around the `herdr` binary
+// ("herdr command not found on PATH", "Herdr exited with status N", …), which would misreport a
+// failure of `lh` itself (a missing PATH entry, an issue lookup failure, a worktree provisioning
+// error, …) as a Herdr problem. The launcher owns worktree/PR provisioning and the actual herdr
+// pane launch end-to-end (cli/index.ts), so this call only needs to await it and translate a
+// non-zero exit.
 //
 // Generous relative to the individual 10s herdr-call timeouts elsewhere in this file: this one
-// bounds the *whole* `lh build --herdr` run — issue lookup, PR open, worktree provisioning (a
-// first-time `git worktree add` on a large repo), and the herdr launch itself — none of which
-// carried an overall deadline before this call replaced the in-process equivalent (#584 review).
+// bounds the *whole* launcher run — issue lookup, PR open, worktree provisioning (a first-time
+// `git worktree add` on a large repo), and the herdr launch itself — none of which carried an
+// overall deadline before this call replaced the in-process equivalent (#584 review).
 const LH_DEV_HERDR_TIMEOUT_MS = 90_000;
 // Bounded tail of the child's stderr, logged server-side only (never in the thrown ServiceError)
-// so an operator can see `lh build`'s actual failure reason (`fail(message)` etc.) without every
+// so an operator can see the launcher's actual failure reason (`fail(message)` etc.) without every
 // failure collapsing to a bare "exited with status N" — but never reaching the HTTP client, same
 // "deliberately generic" policy runHerdr documents above: raw process output can embed the
 // server's absolute paths, a Node stack trace, or other detail that must not reach a non-loopback
@@ -153,13 +147,12 @@ async function acquireNewIssueLaunchLock(
       newIssueLaunchQueueTails.delete(sessionName);
   };
 }
-// `label` names the spawned command in the thrown/logged failure messages. Defaults to the Build
-// command since that was the original caller; launchWorkflowRunHerdr passes "lh workflow start" so a
-// workflow-run failure is not misreported as an `lh build` failure (#1007).
+// `label` names the spawned command in the thrown/logged failure messages; launchWorkflowRunHerdr
+// passes "lh workflow start" so a workflow-run failure is reported against the right command (#1007).
 function runLhDevLaunch(
   args: string[],
   cwd: string,
-  label = "lh build",
+  label = "lh workflow start",
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn("lh", args, {
@@ -239,64 +232,8 @@ function runLhDevLaunch(
   });
 }
 
-// The Build button's whole job (#584): spawn `lh build <owner>/<repo>/<n> --herdr [--auto]` and let
-// it provision the worktree/PR and launch the herdr pane itself — this server no longer does any
-// of that (see the removed issue-dev case in resolveHerdrWorktreeTarget). session_name/attach are
-// still computable up front since herdrSessionName only depends on the repo, not the worktree
-// `lh build` resolves internally.
-//
-// `override` carries the issue-detail Build dropdown's one-shot agent/model choice (#637). When set
-// it forces the runtime via --claude-code|--codex and the session model via --model, without
-// touching the persisted `codingAgent` / `defaultModel` settings. The plain Build button passes no
-// override, keeping the historical default-resolution behavior.
-async function launchIssueDevHerdr(
-  r: S.Repo,
-  issueNumber: number,
-  options?: {
-    agent?: CodingAgent;
-    model?: string;
-    newAttempt?: boolean;
-  },
-) {
-  const repo = { full_name: r.full_name, local_path: r.local_path };
-  // The agent that actually runs: the dropdown override when present, else whichever agent `lh build`
-  // would resolve to (the `codingAgent` setting). Auto-mode is read from *this* agent so a codex
-  // override reads codex's auto setting, not claude-code's (#593).
-  const agent = options?.agent ?? codingAgent();
-  const model = options?.model?.trim();
-  const args = [
-    "build",
-    `${r.full_name}/${issueNumber}`,
-    ...(options?.newAttempt ? ["--new-attempt"] : []),
-    "--herdr",
-    // Force the runtime only when the dropdown overrode it; without an override we pass no runtime
-    // flag so `lh build` resolves the default itself (unchanged plain-Build behavior). The per-runtime
-    // flag comes from the registry (core/runtimes.ts buildFlag).
-    ...(options?.agent ? [RUNTIMES[options.agent].buildFlag] : []),
-    // One-shot session model (#637); omitted when the dropdown left it blank, so `lh build` falls
-    // back to the configured per-agent default.
-    ...(model ? ["--model", model] : []),
-    ...(autoModeOnBuild(agent) ? ["--auto"] : []),
-  ];
-  try {
-    await runLhDevLaunch(args, r.local_path);
-  } catch (e) {
-    if (isServiceError(e))
-      throw new ServiceError(e.status, e.message, {
-        command: `lh ${args.map(displayArg).join(" ")}`,
-      });
-    throw e;
-  }
-  const sessionName = herdrSessionName(repo);
-  return {
-    backend: "herdr" as const,
-    session_name: sessionName,
-    attach: `herdr session attach ${sessionName}`,
-  };
-}
-
 // Spawns `lh workflow start <owner>/<repo>/<n> --workflow-id <id> --herdr --auto` for the issue-detail
-// Start workflow dropdown (#1007). Same shape as launchIssueDevHerdr: this RPC only spawns the CLI
+// Start workflow dropdown (#1007). This RPC only spawns the CLI
 // and lets `lh workflow start` own worktree/PR provisioning, the dev lock, run creation, and the
 // parent herdr launch (workflow design: CLI / UI). Args are passed as an array (no shell),
 // so repo and id need no shell quoting; parent session id is never surfaced here — the CLI sets
@@ -326,8 +263,8 @@ async function launchWorkflowRunHerdr(
     throw e;
   }
   const sessionName = herdrSessionName(repo);
-  // Same shape/convention as launchIssueDevHerdr: `herdr session attach <repoSession>` is the repo's
-  // canonical herdr entry point for launched agents. The web client discards these fields today (only
+  // `herdr session attach <repoSession>` is the repo's canonical herdr entry point for launched
+  // agents. The web client discards these fields today (only
   // the error-path `command` is read); a follow-up could pin the Workflow parent to this session in
   // `lh workflow start` for exact grouping (workflow design: CLI / UI).
   return {
@@ -487,8 +424,8 @@ let herdrSessionsInflight: Promise<HerdrSessionsResult> | null = null;
 // worktree (issue-create) or resolving it fails for any reason — the caller falls back to the
 // plain repo-root tab-create, same as any other herdr failure.
 //
-// issue-dev (Build) has no case here: worktree/PR provisioning is entirely `lh build --herdr`'s
-// responsibility (#584) — see launchIssueDevHerdr, which spawns it directly instead of routing
+// workflow-run (Start workflow) has no case here: worktree/PR provisioning is entirely
+// `lh workflow start --herdr`'s responsibility (#1007), which spawns it directly instead of routing
 // through this tab/workspace-pinning path at all.
 async function resolveHerdrWorktreeTarget(
   r: S.Repo,
@@ -537,7 +474,7 @@ function herdrRunner(cwd: string): HerdrCmdRunner {
 
 // Opens (or reuses) the herdr workspace pinned to `worktreeCheckoutPath` and returns a tab safe to
 // pass to `agent start --tab`. The parsing-heavy dance lives in core/terminal/terminal-launch.ts's
-// acquireHerdrWorktreeTab so `lh build --herdr` reuses it (#674); this thin wrapper just binds it to
+// acquireHerdrWorktreeTab so `lh workflow start --herdr` reuses it (#674); this thin wrapper binds it to
 // runHerdr at the repo's local path. `cwd` is where the herdr client is spawned — irrelevant to the
 // `--session`-scoped calls themselves, but kept as r.local_path for consistency with the rest of
 // terminal.launch.
@@ -563,21 +500,10 @@ export const terminal = {
     if (!input.repo) throw new ServiceError(422, "repo is required");
     const r = repoOr404(input.repo);
 
-    // issue-dev (Build): worktree/PR provisioning and the herdr launch are entirely `lh build
-    // --herdr`'s job now (#584) — this RPC's only role is to spawn it. Short-circuits before any
-    // of the tab/workspace-pinning machinery below, which the other workflows still use.
-    if (input.workflow === "issue-dev") {
-      if (!input.issueNumber)
-        throw new ServiceError(422, "issueNumber is required");
-      return launchIssueDevHerdr(r, input.issueNumber, {
-        agent: input.agent,
-        model: input.model,
-        newAttempt: input.newAttempt,
-      });
-    }
-
-    // workflow-run (Start workflow): like issue-dev, worktree/PR/lock/run provisioning and the parent
+    // workflow-run (Start workflow): worktree/PR/lock/run provisioning and the parent
     // herdr launch are entirely `lh workflow start`'s job (#1007) — this RPC only spawns it.
+    // Short-circuits before any of the tab/workspace-pinning machinery below, which the other
+    // workflows still use.
     if (input.workflow === "workflow-run") {
       if (!input.issueNumber)
         throw new ServiceError(422, "issueNumber is required");
@@ -751,7 +677,7 @@ export const terminal = {
         workspaceId = existingWorkspaceId ? null : parseHerdrWorkspaceId(out);
         createdWorkspace = existingWorkspaceId === null;
       } else {
-        // Worktree-backed workflows (issue-dev/resume/github-pr-export, #551) open the herdr
+        // Worktree-backed workflows (resume/github-pr-export, #551) open the herdr
         // workspace directly at the PR's real worktree path, so herdr's own workspace/worktree
         // metadata reflects it — instead of a plain repo-root tab the launched command cd's
         // into. Falls back to that plain tab below when there is no resolvable worktree path
@@ -1056,7 +982,7 @@ export const terminal = {
   // Kills the agent running in a pane (#521). This used to be `pane
   // close` against the agent's pane_id, but herdr refuses that with a `confirmation_required`
   // error ("closing this pane would close a worktree group") whenever the pane is the last one
-  // in a worktree-linked workspace — which every single-tab `lh build --herdr` launch is, by
+  // in a worktree-linked workspace — which every single-tab `lh workflow start --herdr` launch is, by
   // default (#805). There is no CLI flag to force it through, so that refusal hard-blocked the
   // kill button. Killing the pane's foreground process directly (killPaneForegroundProcess)
   // sidesteps pane/tab/workspace state entirely, so it can never hit that guard. Unlike
@@ -1340,7 +1266,7 @@ async function sweepHerdrSessions(): Promise<HerdrSessionsResult> {
       );
       // PR→issue for the pulls a workspace resolves to, so herdrIssueWorkspacesFromAgentList can
       // key the same panes by issue number (#821). The link is the PR's linked_issue_id, recorded
-      // when `lh build` opened the PR (`Closes #<n>`); a PR with no linked issue is simply absent
+      // when the run opened the PR (`Closes #<n>`); a PR with no linked issue is simply absent
       // from the map and skipped there, matching the parser's degrade-to-empty tolerance.
       const pullToIssue = new Map<number, number>();
       for (const w of pullWorkspaces) {

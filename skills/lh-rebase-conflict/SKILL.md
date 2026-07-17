@@ -44,8 +44,8 @@ Dispatch / cron must pass `<pr id>` explicitly (no inference).
 
 ## Worktree rules
 
-Work on the PR's existing head branch (`head.ref` — `loophub/pr-<m>` for `lh build` PRs), never on
-the main checkout. If the head branch already has a worktree — e.g. the `lh build` one at
+Work on the PR's existing head branch (`head.ref` — `loophub/pr-<m>` for Workflow-run PRs), never on
+the main checkout. If the head branch already has a worktree — e.g. the Workflow-run one at
 `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` — **reuse it** (no new worktree needed). Otherwise,
 add one under `.worktrees/<head.ref>` from repo root (see step 2 for the exact bootstrap procedure).
 
@@ -95,7 +95,7 @@ fi
 
 ### 3. Incorporate base
 
-**Default: rebase** (same as issue-dev conflict section):
+**Default: rebase** (same rebase-first policy the Workflow run's Execute step follows):
 
 ```sh
 git fetch origin main 2>/dev/null || true
@@ -139,16 +139,16 @@ reviewer mechanism is host-mapped there).
 
 Skip pr-review only if user said "stop at rebase".
 
-## Shared with issue-dev
+## Shared with the Execute step
 
-| Item | issue-dev | rebase-conflict |
-|------|-----------|-----------------|
-| worktree location | `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` (provisioned by `lh build`) | that one reused, or `.worktrees/<head.ref>` |
+| Item | Execute step | rebase-conflict |
+|------|--------------|-----------------|
+| worktree location | `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` (provisioned by the Workflow run) | that one reused, or `.worktrees/<head.ref>` |
 | rebase command | `git rebase main` | same |
 | merge | do not | do not |
 | review | pr-review after PR create | pr-review after resolution |
 
-If conflict occurs during an issue-dev session, apply steps 2–6 from this skill.
+If conflict occurs during a Workflow run's Execute session, apply steps 2–6 from this skill.
 
 ## Prohibited
 

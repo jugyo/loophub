@@ -37,7 +37,7 @@ function renderRoute(experimental: boolean) {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <WebConfigProvider config={{ experimental, legacy: false }}>
+      <WebConfigProvider config={{ experimental }}>
         <RouterProvider router={router} />
       </WebConfigProvider>
     </QueryClientProvider>,

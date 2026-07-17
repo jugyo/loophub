@@ -62,7 +62,7 @@ Stop **immediately** when all of the following are true (do not start extra work
 ```text
 ❌ After creating an issue, "while I'm here" cut an implementation branch and start coding
 ❌ Read code to write AC, then fix problems found on the spot
-❌ Auto-start grab / lh-build because you see the skill chain
+❌ Auto-start a Workflow run (Start workflow) because you see the skill chain
 ❌ "Let's stop using labels" / "fix this skill so it…" → edit the policy or skill file directly
 ❌ Treat any request that "reads like implementation" as a license to apply the change here
 ✅ Create issue → report number → stop (implementation needs explicit user or separate skill)
@@ -329,9 +329,9 @@ related multi-issue creation (the exception below), only when the user explicitl
 - **Category** (`enhancement` / `bug`): omit by default. Add only if the user explicitly asks
   to categorize.
 - **`ready-to-build`**: omit by default. It flags "an AFK agent may pick this up"; the human
-  sets it by clicking **Build** in the Web UI (shown until a PR is in progress or merged — it
-  reappears if the linked PR was closed unmerged), or you pass `--label ready-to-build` **only**
-  when the user explicitly asks to mark it ready.
+  starts the work themselves via **Start workflow** in the Web UI (shown until a PR is in progress
+  or merged — it reappears if the linked PR was closed unmerged), or you pass `--label ready-to-build`
+  **only** when the user explicitly asks to mark it ready.
 - **Theme / grouping label** (e.g. `ui-v3`): add only when the user names a theme to group a
   set of issues under — **except** for related multi-issue creation, which is the one case
   where a grouping label is required even without an explicit request (see below).
@@ -374,12 +374,12 @@ After creation:
 ## Follow-on work
 
 ```text
-lh-issue-create → [stop] → start the build from the Web UI (Build / Start workflow) → lh-pr-review → ...
+lh-issue-create → [stop] → start a Workflow run from the Web UI (Start workflow) → lh-pr-review → ...
 ```
 
 Do **not** auto-chain to implementation. After creating the issue, implementation is started from
-the Web UI — the issue's **Build** button or **Start workflow** control. Only implement inside this
-skill if the user explicitly asked to both create and implement in the same message.
+the Web UI — the issue's **Start workflow** control. Only implement inside this skill if the user
+explicitly asked to both create and implement in the same message.
 
 ## Prohibited
 

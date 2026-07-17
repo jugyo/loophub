@@ -39,8 +39,8 @@ const herdr = vi.hoisted(() => ({
   script: [] as Array<(child: ScriptedChild) => void>,
 }));
 
-// `lh build --herdr` spawns (#584): issue-dev (Build) launches now go through this instead of
-// terminal.launch orchestrating herdr tabs/workspaces itself.
+// Launcher CLI spawns (`lh workflow start --herdr`, #1007): workflow-run launches go through this
+// instead of terminal.launch orchestrating herdr tabs/workspaces itself.
 const lhDev = vi.hoisted(() => ({
   calls: [] as string[][],
   script: [] as Array<(child: ScriptedChild) => void>,
@@ -192,276 +192,6 @@ beforeEach(() => {
   lhDev.script.length = 0;
 });
 
-// issue-dev (Build): worktree/PR provisioning and the herdr launch itself are entirely
-// `lh build --herdr`'s job now (#584) — terminal.launch just spawns it and reports the outcome, no
-// tab/workspace orchestration of its own (unlike the other workflows below).
-describe("terminal.launch issue-dev spawns `lh build --herdr` (#584)", () => {
-  test("spawns `lh build <repo>/<issue> --herdr` and reports the herdr session", async () => {
-    lhDev.script.push(exitWith(0));
-
-    const result = await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-    });
-
-    expect(lhDev.calls).toEqual([["lh", "build", "me/proj/1", "--herdr"]]);
-    expect(herdr.calls).toHaveLength(0);
-    expect(result).toMatchObject({ backend: "herdr" });
-    expect(result.session_name).toBeTruthy();
-    expect(result.attach).toContain(result.session_name);
-  });
-
-  test("requires issueNumber", async () => {
-    await expect(
-      svc.terminal.launch({ repo: "me/proj", workflow: "issue-dev" }),
-    ).rejects.toMatchObject({ status: 422 });
-    expect(lhDev.calls).toHaveLength(0);
-  });
-
-  test("appends --auto when the resolved agent's autoModeOnBuild is enabled (#499, #593)", async () => {
-    lhDev.script.push(exitWith(0));
-    // The Build button doesn't pick a runtime itself, so it reads the auto-mode value for
-    // whichever agent `codingAgent` (default claude-code) resolves to.
-    svc.settings.update({ agent: "claude-code", autoModeOnBuild: true });
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-    });
-
-    expect(lhDev.calls[0]).toContain("--auto");
-
-    svc.settings.update({ agent: "claude-code", autoModeOnBuild: false });
-  });
-
-  test("does not append --auto when a different agent's autoModeOnBuild is enabled (#593)", async () => {
-    lhDev.script.push(exitWith(0));
-    svc.settings.update({ agent: "codex", autoModeOnBuild: true });
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-    });
-
-    expect(lhDev.calls[0]).not.toContain("--auto");
-
-    svc.settings.update({ agent: "codex", autoModeOnBuild: false });
-  });
-
-  test("forwards the dropdown agent/model override as --codex --model (#637)", async () => {
-    lhDev.script.push(exitWith(0));
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-      agent: "codex",
-      model: "gpt-5.5",
-    });
-
-    expect(lhDev.calls).toEqual([
-      ["lh", "build", "me/proj/1", "--herdr", "--codex", "--model", "gpt-5.5"],
-    ]);
-  });
-
-  test("forwards the dropdown grok override as --grok --model", async () => {
-    lhDev.script.push(exitWith(0));
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-      agent: "grok",
-      model: "grok-code-fast-1",
-    });
-
-    expect(lhDev.calls).toEqual([
-      [
-        "lh",
-        "build",
-        "me/proj/1",
-        "--herdr",
-        "--grok",
-        "--model",
-        "grok-code-fast-1",
-      ],
-    ]);
-  });
-
-  test("appends --new-attempt for an explicitly confirmed parallel launch (#1140)", async () => {
-    lhDev.script.push(exitWith(0));
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-      newAttempt: true,
-    });
-
-    expect(lhDev.calls).toEqual([
-      ["lh", "build", "me/proj/1", "--new-attempt", "--herdr"],
-    ]);
-  });
-
-  test("forces --claude-code when the override picks it over a codex default (#637)", async () => {
-    lhDev.script.push(exitWith(0));
-    svc.settings.update({ codingAgent: "codex" });
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-      agent: "claude-code",
-    });
-
-    expect(lhDev.calls[0]).toEqual([
-      "lh",
-      "build",
-      "me/proj/1",
-      "--herdr",
-      "--claude-code",
-    ]);
-
-    svc.settings.update({ codingAgent: "claude-code" });
-  });
-
-  test("reads auto-mode from the overridden agent, not the default (#637, #593)", async () => {
-    lhDev.script.push(exitWith(0));
-    // Default agent is claude-code (auto off); enable auto on codex only, then override to codex.
-    svc.settings.update({ agent: "codex", autoModeOnBuild: true });
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-      agent: "codex",
-    });
-
-    expect(lhDev.calls[0]).toContain("--auto");
-
-    svc.settings.update({ agent: "codex", autoModeOnBuild: false });
-  });
-
-  test("omits --model when the override model is blank (#637)", async () => {
-    lhDev.script.push(exitWith(0));
-
-    await svc.terminal.launch({
-      repo: "me/proj",
-      workflow: "issue-dev",
-      issueNumber: 1,
-      agent: "claude-code",
-      model: "   ",
-    });
-
-    expect(lhDev.calls[0]).not.toContain("--model");
-  });
-
-  test("surfaces a non-zero exit as a ServiceError with a reproducible command", async () => {
-    lhDev.script.push(exitWith(1));
-
-    const err = await svc.terminal
-      .launch({ repo: "me/proj", workflow: "issue-dev", issueNumber: 1 })
-      .then(
-        () => null,
-        (e: unknown) => e as { message: string; data?: { command?: string } },
-      );
-
-    expect(err?.message).toBe("lh build exited with status 1");
-    expect(err?.data?.command).toBe("lh build me/proj/1 --herdr");
-  });
-
-  test("reports lh missing from PATH distinctly from a launch failure", async () => {
-    lhDev.script.push((child) =>
-      child.emit(
-        "error",
-        Object.assign(new Error("spawn lh ENOENT"), { code: "ENOENT" }),
-      ),
-    );
-
-    const err = await svc.terminal
-      .launch({ repo: "me/proj", workflow: "issue-dev", issueNumber: 1 })
-      .then(
-        () => null,
-        (e: unknown) => e as { status: number; message: string },
-      );
-
-    expect(err?.status).toBe(422);
-    expect(err?.message).toBe("lh command not found on PATH");
-  });
-
-  test("logs a bounded stderr tail server-side, but never in the client-facing error (#584 security review)", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    lhDev.script.push(exitWithStderr(1, "error 404: Not Found\n"));
-
-    const err = await svc.terminal
-      .launch({ repo: "me/proj", workflow: "issue-dev", issueNumber: 1 })
-      .then(
-        () => null,
-        (e: unknown) => e as { message: string },
-      );
-
-    // The client-facing message stays generic — raw `lh build` stderr can embed the server's
-    // absolute paths or a stack trace, so it must never reach the RPC caller.
-    expect(err?.message).toBe("lh build exited with status 1");
-    expect(
-      consoleError.mock.calls.some((call) =>
-        String(call[0]).includes("error 404: Not Found"),
-      ),
-    ).toBe(true);
-
-    consoleError.mockRestore();
-  });
-
-  test("surfaces a signal-killed child distinctly from a plain exit", async () => {
-    lhDev.script.push(killedBySignal("SIGKILL"));
-
-    const err = await svc.terminal
-      .launch({ repo: "me/proj", workflow: "issue-dev", issueNumber: 1 })
-      .then(
-        () => null,
-        (e: unknown) => e as { message: string },
-      );
-
-    expect(err?.message).toBe("lh build was terminated by signal SIGKILL");
-  });
-
-  test("times out and kills the child if lh build hangs, logging any stderr it printed before wedging", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    vi.useFakeTimers();
-    try {
-      // Prints diagnostic output, then never emits close/error — simulates a hang mid-run.
-      lhDev.script.push((child) =>
-        child.stderr.emit("data", Buffer.from("provisioning worktree...\n")),
-      );
-      const pending = svc.terminal.launch({
-        repo: "me/proj",
-        workflow: "issue-dev",
-        issueNumber: 1,
-      });
-      const assertion = expect(pending).rejects.toMatchObject({
-        message: expect.stringMatching(/^lh build timed out after \d+ms$/),
-      });
-      await vi.advanceTimersByTimeAsync(120_000);
-      await assertion;
-      expect(
-        consoleError.mock.calls.some((call) =>
-          String(call[0]).includes("provisioning worktree..."),
-        ),
-      ).toBe(true);
-    } finally {
-      vi.useRealTimers();
-      consoleError.mockRestore();
-    }
-  });
-});
-
 describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () => {
   test("forwards the saved workflow and reports the canonical herdr session", async () => {
     lhDev.script.push(exitWith(0));
@@ -527,6 +257,114 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
       }),
     ).rejects.toMatchObject({ status: 422 });
     expect(lhDev.calls).toHaveLength(0);
+  });
+
+  test("reports lh missing from PATH distinctly from a launch failure", async () => {
+    lhDev.script.push((child) =>
+      child.emit(
+        "error",
+        Object.assign(new Error("spawn lh ENOENT"), { code: "ENOENT" }),
+      ),
+    );
+
+    const err = await svc.terminal
+      .launch({
+        repo: "me/proj",
+        workflow: "workflow-run",
+        issueNumber: 1,
+        workflowId: 9,
+      })
+      .then(
+        () => null,
+        (e: unknown) => e as { status: number; message: string },
+      );
+
+    expect(err?.status).toBe(422);
+    expect(err?.message).toBe("lh command not found on PATH");
+  });
+
+  test("logs a bounded stderr tail server-side, but never in the client-facing error (#584 security review)", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    lhDev.script.push(exitWithStderr(1, "error 404: Not Found\n"));
+
+    const err = await svc.terminal
+      .launch({
+        repo: "me/proj",
+        workflow: "workflow-run",
+        issueNumber: 1,
+        workflowId: 9,
+      })
+      .then(
+        () => null,
+        (e: unknown) => e as { message: string },
+      );
+
+    // The client-facing message stays generic — raw launcher stderr can embed the server's
+    // absolute paths or a stack trace, so it must never reach the RPC caller.
+    expect(err?.message).toBe("lh workflow start exited with status 1");
+    expect(
+      consoleError.mock.calls.some((call) =>
+        String(call[0]).includes("error 404: Not Found"),
+      ),
+    ).toBe(true);
+
+    consoleError.mockRestore();
+  });
+
+  test("surfaces a signal-killed child distinctly from a plain exit", async () => {
+    lhDev.script.push(killedBySignal("SIGKILL"));
+
+    const err = await svc.terminal
+      .launch({
+        repo: "me/proj",
+        workflow: "workflow-run",
+        issueNumber: 1,
+        workflowId: 9,
+      })
+      .then(
+        () => null,
+        (e: unknown) => e as { message: string },
+      );
+
+    expect(err?.message).toBe(
+      "lh workflow start was terminated by signal SIGKILL",
+    );
+  });
+
+  test("times out and kills the child if the launcher hangs, logging any stderr it printed before wedging", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      // Prints diagnostic output, then never emits close/error — simulates a hang mid-run.
+      lhDev.script.push((child) =>
+        child.stderr.emit("data", Buffer.from("provisioning worktree...\n")),
+      );
+      const pending = svc.terminal.launch({
+        repo: "me/proj",
+        workflow: "workflow-run",
+        issueNumber: 1,
+        workflowId: 9,
+      });
+      const assertion = expect(pending).rejects.toMatchObject({
+        message: expect.stringMatching(
+          /^lh workflow start timed out after \d+ms$/,
+        ),
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+      await assertion;
+      expect(
+        consoleError.mock.calls.some((call) =>
+          String(call[0]).includes("provisioning worktree..."),
+        ),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      consoleError.mockRestore();
+    }
   });
 });
 

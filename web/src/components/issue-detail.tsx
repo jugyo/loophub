@@ -4,11 +4,9 @@
 // Markdown and rendered as GFM via <Markdown>.
 
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Loader2, Play, Workflow } from "lucide-react";
+import { ChevronDown, Loader2, Workflow } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { CodingAgent, Issue, IssueComment } from "@/api/types";
-import { AgentModelPicker } from "@/components/agent-model-picker";
-import { BuildStatusLabel } from "@/components/build-status-label";
+import type { Issue, IssueComment } from "@/api/types";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { IssueHerdrSection } from "@/components/issue-herdr-section";
@@ -24,11 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  issueBuildButtonState,
-  primaryLinkedPull,
-  stateBadge,
-} from "@/lib/badges";
+import { issueCanStartWork, stateBadge } from "@/lib/badges";
 import {
   hasPlainShortcutModifiers,
   isEditableShortcutTarget,
@@ -38,14 +32,12 @@ import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
 import { useImageUpload } from "@/lib/use-image-upload";
-import { useWebConfig } from "@/lib/web-config";
 import {
   useIssue,
   useIssueComments,
   usePostComment,
   useSetIssueState,
 } from "@/queries/issues";
-import { useSettings } from "@/queries/settings";
 import { useWorkflows } from "@/queries/workflows";
 
 export function IssueDetail({
@@ -136,10 +128,7 @@ function IssueHeader({
   issue: Issue;
 }) {
   const setState = useSetIssueState(owner, repo, issue.number);
-  const { legacy } = useWebConfig();
   const state = stateBadge(issue, "issues");
-  const buildState = issueBuildButtonState(issue);
-  const linkedPull = primaryLinkedPull(issue);
   usePageTitle([`${owner}/${repo}`, `Issue #${issue.number}`, issue.title]);
 
   return (
@@ -189,124 +178,21 @@ function IssueHeader({
           ) : null}
           {issue.state === "open" ? "Close" : "Reopen"}
         </Button>
-        {/* No implementation-start action or status label on a closed issue —
-            only Reopen (above) remains until the issue is reopened (#1256). */}
-        {issue.state === "open" ? (
-          buildState === "build" ? (
-            <>
-              {legacy ? (
-                <BuildControls owner={owner} repo={repo} issue={issue} />
-              ) : null}
-              <StartWorkflowControls owner={owner} repo={repo} issue={issue} />
-            </>
-          ) : (
-            <>
-              <BuildStatusLabel state={buildState} />
-              {legacy && buildState === "building" && linkedPull ? (
-                <BuildControls
-                  owner={owner}
-                  repo={repo}
-                  issue={issue}
-                  newAttemptPullNumber={linkedPull.number}
-                />
-              ) : null}
-            </>
-          )
+        {/* No implementation-start action on a closed issue, or on one that already
+            has an active/merged linked PR — only Reopen (above) remains until the
+            issue is reopened (#1256). */}
+        {issue.state === "open" && issueCanStartWork(issue) ? (
+          <StartWorkflowControls owner={owner} repo={repo} issue={issue} />
         ) : null}
       </div>
     </div>
   );
 }
 
-// The Build button plus its agent/model dropdown (#637). The plain Build button launches with the
-// Settings defaults; New attempt always opens the picker first. The selected agent and model apply
-// to a single launch without changing the persisted `codingAgent` / per-agent `defaultModel`.
-function BuildControls({
-  owner,
-  repo,
-  issue,
-  newAttemptPullNumber,
-}: {
-  owner: string;
-  repo: string;
-  issue: Issue;
-  newAttemptPullNumber?: number;
-}) {
-  const { launchTerminal } = useTerminalLauncher();
-  const { data: settings } = useSettings();
-  const [isBuildLoading, startBuildLoading] = useFixedLoading();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const isNewAttempt = newAttemptPullNumber !== undefined;
-
-  // `override` set => the dropdown launch (one-shot agent/model); undefined => the plain button
-  // (default resolution). A blank model is omitted so `lh build` falls back to the per-agent default.
-  function launchBuild(override?: { agent: CodingAgent; model: string }) {
-    startBuildLoading();
-    setMenuOpen(false);
-    const model = override?.model.trim();
-    launchTerminal({
-      repo: `${owner}/${repo}`,
-      label: `Issue #${issue.number} - ${issue.title}`,
-      workflow: "issue-dev",
-      issueNumber: issue.number,
-      agent: override?.agent,
-      model: model ? model : undefined,
-      ...(isNewAttempt ? { newAttempt: true } : {}),
-    });
-  }
-
-  return (
-    <div className="inline-flex">
-      <Button
-        variant={isNewAttempt ? "secondary" : "default"}
-        className="rounded-r-none"
-        title={
-          isNewAttempt
-            ? "Start a new attempt in a terminal"
-            : "Build this issue in a terminal"
-        }
-        disabled={isBuildLoading}
-        onClick={() => (isNewAttempt ? setMenuOpen(true) : launchBuild())}
-      >
-        {isBuildLoading ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : (
-          <Play className="size-4" />
-        )}
-        {isNewAttempt ? "New attempt" : "Build"}
-      </Button>
-      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant={isNewAttempt ? "secondary" : "default"}
-            aria-label="Choose agent and model"
-            title="Choose agent and model for this launch"
-            disabled={isBuildLoading || !settings}
-            className="rounded-l-none border-l border-primary-foreground/25 px-2"
-          >
-            <ChevronDown className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        {settings ? (
-          <DropdownMenuContent align="end" className="w-72 p-3">
-            <AgentModelPicker
-              settings={settings}
-              disabled={isBuildLoading}
-              actionVerb="Build"
-              actionIcon={<Play className="size-4" />}
-              onSelect={(agent, model) => launchBuild({ agent, model })}
-            />
-          </DropdownMenuContent>
-        ) : null}
-      </DropdownMenu>
-    </div>
-  );
-}
-
-// Start workflow dropdown next to Build (#1007): pick a saved workflow by name and launch it
+// Start workflow dropdown (#1007): pick a saved workflow by name and launch it
 // via `terminal/launch` with workflow "workflow-run", which spawns `lh workflow start
-// <owner>/<repo>/<n> --workflow-id <id> --herdr --auto`. It shares Build's linked-open-PR guard (rendered
-// only when buildState === "build"), keeping one launch system per issue at a time
+// <owner>/<repo>/<n> --workflow-id <id> --herdr --auto`. Rendered only when the issue has no
+// active/merged linked PR (issueCanStartWork), keeping one launch per issue at a time
 // (workflow design: CLI / UI). With no saved workflows, the menu links to Settings > Workflows.
 function StartWorkflowControls({
   owner,
