@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { updateAgentAutoModeOnBuild, updateConfig } from "../config.ts";
+import { updateAgentAutoModeOnLaunch, updateConfig } from "../config.ts";
 import {
   acquireHerdrWorktreeTab,
   buildHerdrLaunchPlan,
@@ -29,7 +29,7 @@ import {
 } from "./terminal-launch.ts";
 
 describe("herdr terminal launch", () => {
-  // commandForHerdrLaunch reads codingAgent/autoModeOnBuild from config.json when the caller
+  // commandForHerdrLaunch reads codingAgent/autoModeOnLaunch from config.json when the caller
   // doesn't override them (#660, #809) — isolate LOOPHUB_HOME per test so these tests assert
   // against a clean default config instead of whatever is in the developer's real ~/.loophub.
   let prevHome: string | undefined;
@@ -185,7 +185,7 @@ describe("herdr terminal launch", () => {
   });
 
   test("does not apply build auto-mode to scheduled task creation launches", () => {
-    updateAgentAutoModeOnBuild("codex", true);
+    updateAgentAutoModeOnLaunch("codex", true);
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -196,7 +196,7 @@ describe("herdr terminal launch", () => {
       `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/lh-scheduled-task-create'`,
     );
 
-    updateAgentAutoModeOnBuild("claude-code", true);
+    updateAgentAutoModeOnLaunch("claude-code", true);
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -228,9 +228,9 @@ describe("herdr terminal launch", () => {
     ).toBe("claude '/lh-create-github-pr 451'");
   });
 
-  test("applies the agent's autoModeOnBuild setting to GitHub PR export launches (#809)", () => {
+  test("applies the agent's autoModeOnLaunch setting to GitHub PR export launches (#809)", () => {
     // claude-code: --auto's equivalent is --permission-mode auto, same as lh build --auto
-    // (buildClaudeArgs) — off by default (autoModeOnBuild unset).
+    // (buildClaudeArgs) — off by default (autoModeOnLaunch unset).
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -240,7 +240,7 @@ describe("herdr terminal launch", () => {
       }),
     ).toBe("claude '/lh-create-github-pr 451'");
 
-    updateAgentAutoModeOnBuild("claude-code", true);
+    updateAgentAutoModeOnLaunch("claude-code", true);
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -252,7 +252,7 @@ describe("herdr terminal launch", () => {
 
     // codex: auto mode swaps the sandboxed --sandbox args for the same unsandboxed bypass
     // flag lh build --auto uses (buildCodexArgs), rather than adding a flag on top.
-    updateAgentAutoModeOnBuild("codex", true);
+    updateAgentAutoModeOnLaunch("codex", true);
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -265,7 +265,7 @@ describe("herdr terminal launch", () => {
     );
 
     // claude-code's setting must not leak into codex's launch, and vice versa (#593 parity).
-    updateAgentAutoModeOnBuild("claude-code", false);
+    updateAgentAutoModeOnLaunch("claude-code", false);
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",

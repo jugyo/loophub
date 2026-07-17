@@ -26,15 +26,15 @@ afterEach(() => {
 });
 
 type AgentSettingsForTest = {
-  autoModeOnBuild: boolean;
+  autoModeOnLaunch: boolean;
   model: string;
   effort: string;
 };
 
 function mockFetch(
   initialAgents: Record<CodingAgent, AgentSettingsForTest> = {
-    "claude-code": { autoModeOnBuild: false, model: "opus", effort: "medium" },
-    codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+    "claude-code": { autoModeOnLaunch: false, model: "opus", effort: "medium" },
+    codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
   },
   initialCodingAgent: CodingAgent = "claude-code",
   initialDevCostLimitUsd = 10,
@@ -49,10 +49,10 @@ function mockFetch(
       devCostLimitUsd,
     }),
     "settings/update": (p) => {
-      if (p.agent && p.autoModeOnBuild !== undefined) {
+      if (p.agent && p.autoModeOnLaunch !== undefined) {
         agents[p.agent as CodingAgent] = {
           ...agents[p.agent as CodingAgent],
-          autoModeOnBuild: p.autoModeOnBuild,
+          autoModeOnLaunch: p.autoModeOnLaunch,
         };
       }
       if (p.agent && p.model !== undefined) {
@@ -126,15 +126,19 @@ async function openModelDropdown(label: string): Promise<HTMLElement> {
 }
 
 describe("SettingsPage", () => {
-  it("shows the current auto-mode-on-Build setting per agent", async () => {
+  it("shows the current auto-mode-on-launch setting per agent", async () => {
     renderSettings({
-      "claude-code": { autoModeOnBuild: true, model: "opus", effort: "medium" },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      "claude-code": {
+        autoModeOnLaunch: true,
+        model: "opus",
+        effort: "medium",
+      },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
     });
     // The label ("On"/"Off") and hint text are adjacent in the accessible name, so scope the
     // query to the radiogroup and pick by position instead of matching the name by text.
     const claudeGroup = await screen.findByRole("radiogroup", {
-      name: /auto mode on build \(claude code\)/i,
+      name: /auto mode on launch \(claude code\)/i,
     });
     const [claudeOff, claudeOn] = within(claudeGroup).getAllByRole("radio");
     await waitFor(() =>
@@ -143,16 +147,16 @@ describe("SettingsPage", () => {
     expect(claudeOff.getAttribute("aria-checked")).toBe("false");
 
     const codexGroup = await screen.findByRole("radiogroup", {
-      name: /auto mode on build \(codex\)/i,
+      name: /auto mode on launch \(codex\)/i,
     });
     const [codexOff] = within(codexGroup).getAllByRole("radio");
     expect(codexOff.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("switches auto-mode-on-Build for one agent and persists via settings/update, leaving the other agent untouched", async () => {
+  it("switches auto-mode-on-launch for one agent and persists via settings/update, leaving the other agent untouched", async () => {
     renderSettings();
     const claudeGroup = await screen.findByRole("radiogroup", {
-      name: /auto mode on build \(claude code\)/i,
+      name: /auto mode on launch \(claude code\)/i,
     });
     const [, claudeOn] = within(claudeGroup).getAllByRole(
       "radio",
@@ -165,7 +169,7 @@ describe("SettingsPage", () => {
       expect(call).toBeTruthy();
       expect(call!.params).toMatchObject({
         agent: "claude-code",
-        autoModeOnBuild: true,
+        autoModeOnLaunch: true,
       });
     });
     await waitFor(() =>
@@ -173,7 +177,7 @@ describe("SettingsPage", () => {
     );
 
     const codexGroup = await screen.findByRole("radiogroup", {
-      name: /auto mode on build \(codex\)/i,
+      name: /auto mode on launch \(codex\)/i,
     });
     const [codexOff] = within(codexGroup).getAllByRole("radio");
     expect(codexOff.getAttribute("aria-checked")).toBe("true");
@@ -181,7 +185,7 @@ describe("SettingsPage", () => {
 
   it("shows the current coding agent as checked", async () => {
     renderSettings(undefined, "codex");
-    // "Claude Code" also appears in the Auto-mode-on-Build hint text ("--auto for Claude
+    // "Claude Code" also appears in the Auto-mode-on-launch hint text ("--auto for Claude
     // Code"), so an unscoped name match is ambiguous — scope to the Coding agent radiogroup.
     const group = await screen.findByRole("radiogroup", {
       name: /^coding agent$/i,
@@ -216,8 +220,8 @@ describe("SettingsPage", () => {
 
   it("shows the current default model+effort per agent in the dropdown trigger (#594, #682)", async () => {
     renderSettings({
-      "claude-code": { autoModeOnBuild: false, model: "opus", effort: "high" },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "low" },
+      "claude-code": { autoModeOnLaunch: false, model: "opus", effort: "high" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "low" },
     });
     const claudeDropdown = await modelDropdown("Claude Code");
     await waitFor(() =>
@@ -306,11 +310,11 @@ describe("SettingsPage", () => {
   it("shows a saved model+effort pair outside the suggestion list as its own selected option, instead of silently jumping to a different combination (#682)", async () => {
     renderSettings({
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "claude-fable-5",
         effort: "medium",
       },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
     });
     const claudeDropdown = await modelDropdown("Claude Code");
     await waitFor(() =>
@@ -327,11 +331,11 @@ describe("SettingsPage", () => {
   it("preserves saved model names containing the value separator without re-saving the selected item", async () => {
     renderSettings({
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "vendor::claude-fable-5",
         effort: "medium",
       },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
     });
     const claudeDropdown = await modelDropdown("Claude Code");
     await waitFor(() =>

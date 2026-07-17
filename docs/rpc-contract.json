@@ -353,7 +353,7 @@
     },
     {
       "name": "settings/get",
-      "description": "Instance-level config.json settings (per-agent autoModeOnBuild/model/effort, codingAgent, devCostLimitUsd) (#474, #499, #516, #593, #594, #682, #1027).",
+      "description": "Instance-level config.json settings (per-agent autoModeOnLaunch/model/effort, codingAgent, devCostLimitUsd) (#474, #499, #516, #593, #594, #682, #1027).",
       "params": {
         "type": "object",
         "properties": {},
@@ -366,7 +366,7 @@
     },
     {
       "name": "settings/update",
-      "description": "Update instance-level config.json settings, preserving unrelated fields. autoModeOnBuild/model/effort require agent (#474, #593, #594, #682, #1027).",
+      "description": "Update instance-level config.json settings, preserving unrelated fields. autoModeOnLaunch/model/effort require agent (#474, #593, #594, #682, #1027).",
       "params": {
         "type": "object",
         "properties": {
@@ -377,7 +377,7 @@
               "grok"
             ]
           },
-          "autoModeOnBuild": {
+          "autoModeOnLaunch": {
             "type": "boolean"
           },
           "model": {

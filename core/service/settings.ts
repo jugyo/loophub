@@ -3,14 +3,14 @@ import {
   actorFor,
   agentEffort,
   agentModel,
-  autoModeOnBuild,
+  autoModeOnLaunch,
   CODING_AGENTS,
   codingAgent,
   devCostLimitUsd,
   isCodingAgent,
   S,
   ServiceError,
-  updateAgentAutoModeOnBuild,
+  updateAgentAutoModeOnLaunch,
   updateAgentDefaultEffort,
   updateAgentDefaultModel,
   updateConfig,
@@ -21,7 +21,7 @@ import {
 const CODING_AGENTS_SENTENCE = CODING_AGENTS.join(", ");
 
 interface AgentSettingsShape {
-  autoModeOnBuild: boolean;
+  autoModeOnLaunch: boolean;
   model: string;
   effort: string;
 }
@@ -33,7 +33,7 @@ function agentSettings(): Record<CodingAgent, AgentSettingsShape> {
     CODING_AGENTS.map((agent) => [
       agent,
       {
-        autoModeOnBuild: autoModeOnBuild(agent),
+        autoModeOnLaunch: autoModeOnLaunch(agent),
         model: agentModel(agent),
         effort: agentEffort(agent),
       },
@@ -88,11 +88,11 @@ export const settings = {
 
   update(
     input: {
-      // Which agent autoModeOnBuild/model/effort is being set for (#593, #594, #682); required
+      // Which agent autoModeOnLaunch/model/effort is being set for (#593, #594, #682); required
       // together with any of them, ignored otherwise.
       agent?: CodingAgent;
-      autoModeOnBuild?: boolean;
-      // Default model this agent launches with when `lh build --model` is omitted (#594).
+      autoModeOnLaunch?: boolean;
+      // Default model this agent launches with when no explicit --model is passed (#594).
       model?: string;
       // Default effort paired with model in the Settings screen (#682).
       effort?: string;
@@ -105,9 +105,9 @@ export const settings = {
     codingAgent: CodingAgent;
     devCostLimitUsd: number;
   } {
-    if (input.autoModeOnBuild !== undefined) {
-      if (typeof input.autoModeOnBuild !== "boolean") {
-        throw new ServiceError(422, "autoModeOnBuild must be a boolean");
+    if (input.autoModeOnLaunch !== undefined) {
+      if (typeof input.autoModeOnLaunch !== "boolean") {
+        throw new ServiceError(422, "autoModeOnLaunch must be a boolean");
       }
       validateAgentScopedSetting(input.agent);
     }
@@ -133,10 +133,10 @@ export const settings = {
       validateDevCostLimitUsd(input.devCostLimitUsd);
     }
 
-    if (input.autoModeOnBuild !== undefined) {
+    if (input.autoModeOnLaunch !== undefined) {
       const agent = input.agent;
       validateAgentScopedSetting(agent);
-      updateAgentAutoModeOnBuild(agent, input.autoModeOnBuild);
+      updateAgentAutoModeOnLaunch(agent, input.autoModeOnLaunch);
     }
     if (input.model !== undefined) {
       const agent = input.agent;

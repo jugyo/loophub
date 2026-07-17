@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { autoModeOnBuild, type CodingAgent, codingAgent } from "../config.ts";
+import { autoModeOnLaunch, type CodingAgent, codingAgent } from "../config.ts";
 import { RUNTIMES } from "../runtimes.ts";
 import {
   type ScheduledTaskInboxContext,
@@ -151,10 +151,10 @@ export function commandForHerdrLaunch(input: {
   if (input.workflow === "github-pr-export" && input.prNumber) {
     const command = shellArg(`/lh-create-github-pr ${input.prNumber}`);
     const agent = input.codingAgent ?? codingAgent();
-    // Same auto-mode wiring as the Build button (lh build --auto / autoModeOnBuild,
-    // cli/dev.ts's buildClaudeArgs / buildCodexArgs) so `git push` / `gh pr create` inside
+    // Same auto-mode wiring as other agent launches (autoModeOnLaunch + cli/dev.ts's
+    // buildClaudeArgs / buildCodexArgs) so `git push` / `gh pr create` inside
     // /lh-create-github-pr don't hit permission prompts when auto mode is enabled for this agent.
-    const auto = autoModeOnBuild(agent);
+    const auto = autoModeOnLaunch(agent);
     if (agent === "codex") {
       const codexArgs = (
         auto

@@ -240,8 +240,8 @@ export function SettingsPage() {
             selection above instead of living in a separate flat section. */}
         <div className="mt-3 max-w-md border-l-2 pl-4">
           {CODING_AGENT_OPTIONS.map((agentOption, i) => {
-            const autoModeOnBuild =
-              data?.agents?.[agentOption.value]?.autoModeOnBuild ?? false;
+            const autoModeOnLaunch =
+              data?.agents?.[agentOption.value]?.autoModeOnLaunch ?? false;
             const model = data?.agents?.[agentOption.value]?.model ?? "";
             const effort = data?.agents?.[agentOption.value]?.effort ?? "";
             return (
@@ -250,15 +250,15 @@ export function SettingsPage() {
                 className={i > 0 ? "mt-4" : undefined}
               >
                 <h3 className="text-xs font-medium text-muted-foreground">
-                  {agentOption.label} — Auto mode on Build
+                  {agentOption.label} — Auto mode on launch
                 </h3>
                 <div
                   role="radiogroup"
-                  aria-label={`Auto mode on Build (${agentOption.label})`}
+                  aria-label={`Auto mode on launch (${agentOption.label})`}
                   className="mt-1 max-w-sm rounded-md border"
                 >
                   {autoModeOptions().map((o) => {
-                    const active = autoModeOnBuild === o.value;
+                    const active = autoModeOnLaunch === o.value;
                     return (
                       <button
                         key={String(o.value)}
@@ -274,7 +274,7 @@ export function SettingsPage() {
                           if (active) return;
                           update.mutate({
                             agent: agentOption.value,
-                            autoModeOnBuild: o.value,
+                            autoModeOnLaunch: o.value,
                           });
                         }}
                       >

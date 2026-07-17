@@ -50,7 +50,7 @@ workspace の中核 3 要素は、いずれも既にコードに存在する。
 | **Workspace ブランチ** | workspace の実体であるローカルブランチ。命名は自由(強制プレフィクスなし)。デフォルトブランチと同名は不可 |
 | **Workspace issue** | `target_branch` が workspace ブランチを指す issue。その issue から作る PR の base は workspace ブランチになる |
 | **識別** | `(repo_id, branch)` の組で一意。workspace 名 = ブランチ名であり、別名(表示名)は持たない |
-| **作成時の起点** | デフォルトブランチの**その時点のローカル HEAD**。fetch はしない([lh-build-worktree.ja.md](./lh-build-worktree.ja.md) の「base 鮮度」と同じ方針) |
+| **作成時の起点** | デフォルトブランチの**その時点のローカル HEAD**。fetch はしない([worktree.ja.md](./worktree.ja.md) の「base 鮮度」と同じ方針) |
 
 ### 2.1 名称「workspace」の採用と衝突の整理
 
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   後方互換・データ移行は考慮しない(§8)ため、既存 row の backfill も設計対象外。
 - **ブランチの存在は保存しない**。表示時に git へ問い合わせて導出する(§5.2)。
   「`git worktree list` と DB の PR/session 情報を真実にし、別台帳を持たない」という既存方針
-  ([lh-build-worktree.ja.md](./lh-build-worktree.ja.md) 状態管理)の workspace 版。
+  ([worktree.ja.md](./worktree.ja.md) 状態管理)の workspace 版。
 - issue との関連付けカラムは**持たない**。関連は `issues.target_branch = workspaces.branch`
   という値の一致で導出する(§3.2 の代替案比較を参照)。
 

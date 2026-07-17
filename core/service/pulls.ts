@@ -162,12 +162,12 @@ export const pulls = {
       );
     }
 
-    // No auto-provision: the human (or `lh build`) must have created the attempt worktree.
+    // No auto-provision: a prior start (workflow / openPr + provision) must have created the worktree.
     if (!existsSync(candidate) || !lstatSync(candidate).isDirectory()) {
       throw new ServiceError(
         404,
         `PR #${number}: no worktree at ${candidate}. ` +
-          "Create one with `lh build` first; this command does not provision worktrees.",
+          "Start work via Workflow (or otherwise provision the PR worktree) first; this command does not provision worktrees.",
       );
     }
 

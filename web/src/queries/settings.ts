@@ -19,7 +19,7 @@ export function useUpdateSettings() {
   return useMutation({
     mutationFn: (input: {
       agent?: CodingAgent;
-      autoModeOnBuild?: boolean;
+      autoModeOnLaunch?: boolean;
       model?: string;
       effort?: string;
       codingAgent?: CodingAgent;

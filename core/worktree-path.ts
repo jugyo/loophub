@@ -1,4 +1,4 @@
-// The deterministic `lh build` worktree convention: path and branch are derived purely from
+// The deterministic PR worktree convention (shared by Workflow and resume): path and branch are derived purely from
 // the PR number (no slug), so any consumer can reconstruct them without a ledger. Keyed by PR
 // (not issue, #463) so multiple PRs linked to the same issue get independent worktrees instead
 // of colliding on one. Kept in core (not cli/dev.ts) so both the CLI and core/service.ts (e.g.

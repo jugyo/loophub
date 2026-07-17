@@ -19,7 +19,7 @@ const devCostLimitUsd = {
   maximum: 1000,
   default: 10,
   description:
-    "Per-task USD over-budget stop threshold for lh build agents. Omit to use the $10 default. JSON Schema enforces the positive and $1,000 maximum bounds; the service additionally rejects values with more than two decimal places.",
+    "Per-task USD over-budget stop threshold for implementation agents. Omit to use the $10 default. JSON Schema enforces the positive and $1,000 maximum bounds; the service additionally rejects values with more than two decimal places.",
 } as const;
 const positiveInt = { type: "integer", minimum: 1 } as const;
 const stringArray = { type: "array", items: { type: "string" } } as const;
@@ -211,17 +211,17 @@ export const methods: Record<string, MethodDef> = {
   // ---- global settings ----
   "settings/get": {
     description:
-      "Instance-level config.json settings (per-agent autoModeOnBuild/model/effort, codingAgent, devCostLimitUsd) (#474, #499, #516, #593, #594, #682, #1027).",
+      "Instance-level config.json settings (per-agent autoModeOnLaunch/model/effort, codingAgent, devCostLimitUsd) (#474, #499, #516, #593, #594, #682, #1027).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.settings.get(),
   },
   "settings/update": {
     description:
-      "Update instance-level config.json settings, preserving unrelated fields. autoModeOnBuild/model/effort require agent (#474, #593, #594, #682, #1027).",
+      "Update instance-level config.json settings, preserving unrelated fields. autoModeOnLaunch/model/effort require agent (#474, #593, #594, #682, #1027).",
     params: params({
       agent: { enum: ["claude-code", "codex", "grok"] },
-      autoModeOnBuild: { type: "boolean" },
+      autoModeOnLaunch: { type: "boolean" },
       model: strNonEmpty,
       effort: strNonEmpty,
       codingAgent: { enum: ["claude-code", "codex", "grok"] },
@@ -233,7 +233,7 @@ export const methods: Record<string, MethodDef> = {
       svc.settings.update(
         {
           agent: p.agent,
-          autoModeOnBuild: p.autoModeOnBuild,
+          autoModeOnLaunch: p.autoModeOnLaunch,
           model: p.model,
           effort: p.effort,
           codingAgent: p.codingAgent,

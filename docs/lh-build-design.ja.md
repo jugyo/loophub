@@ -1,6 +1,10 @@
-# lh-build 設計書 — Plan / Code / Test&Verify を独立フェーズで回す開発スキル
+# lh-build 設計書（歴史的記録）— Plan / Code / Test&Verify を独立フェーズで回す開発スキル
 
-> **種別**: 設計提案(ドラフト)。`lh-dev`(v1) の後継スキルの定義。実装は別 issue で行う
+> **Status: historical / superseded.** `lh build` と repo 内 `skills/lh-build` は #1517 / #1518 で廃止済み。
+> 現行の正規着手経路は Workflow（`lh workflow start` / Web の Start workflow）。
+> 本書は設計経緯の参照用として残す。実装や手順の正本としては使わない。
+>
+> **種別**: 設計提案(ドラフト、当時)。`lh-dev`(v1) の後継スキルの定義。実装は別 issue で行う
 > — スキル本体 **#353** / ハンドオフ記録機構 **#352**(本書 §6.5)。
 > **思想的土台 / 出典**: *The New SDLC With Vibe Coding*（Addy Osmani, Shubham Saboo, Sokratis Kartakis,
 > Google, 2026-05）。本書中の `(p.NN)` は同論文の該当ページを指す**外部参照**で、本 repo には同梱しない。

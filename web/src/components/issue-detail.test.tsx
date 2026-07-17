@@ -68,7 +68,7 @@ const comments: IssueComment[] = [
 
 function mockFetch(
   getIssue: () => Issue = () => issue,
-  autoModeOnBuild = false,
+  autoModeOnLaunch = false,
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
   return mockRpcFetch({
@@ -83,9 +83,9 @@ function mockFetch(
     }),
     "settings/get": () => ({
       agents: {
-        "claude-code": { autoModeOnBuild, model: "opus", effort: "medium" },
+        "claude-code": { autoModeOnLaunch, model: "opus", effort: "medium" },
         codex: {
-          autoModeOnBuild: false,
+          autoModeOnLaunch: false,
           model: "gpt-5.5",
           effort: "medium",
         },
@@ -97,10 +97,10 @@ function mockFetch(
 
 function renderDetail(
   getIssue?: () => Issue,
-  autoModeOnBuild = false,
+  autoModeOnLaunch = false,
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
-  vi.stubGlobal("fetch", mockFetch(getIssue, autoModeOnBuild, extraHandlers));
+  vi.stubGlobal("fetch", mockFetch(getIssue, autoModeOnLaunch, extraHandlers));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });

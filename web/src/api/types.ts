@@ -189,17 +189,17 @@ export interface HerdrAgentRead {
 }
 
 /**
- * Coding agent `lh build` launches by default when no --claude-code / --codex / --grok flag is passed
- * (#516). Derived from core (core/runtimes.ts via core/serialize.ts) so the runtime set is defined
- * once — the wire-types SSOT rule (AGENTS.md), same as every other core-derived type here.
+ * Default coding agent when no --claude-code / --codex / --grok flag is passed (#516). Derived
+ * from core (core/runtimes.ts via core/serialize.ts) so the runtime set is defined once — the
+ * wire-types SSOT rule (AGENTS.md), same as every other core-derived type here.
  */
 export type CodingAgent = CodingAgentWire;
 
 /** Per-agent settings (#593, #594, #682). */
 export interface AgentSettings {
-  // Whether the Build button launches this agent with auto mode (#499, #593).
-  autoModeOnBuild: boolean;
-  // Model this agent launches with when `lh build --model` isn't passed explicitly (#594).
+  // Whether agent launches use auto mode (#499, #593, #1581).
+  autoModeOnLaunch: boolean;
+  // Model this agent launches with when no explicit --model is passed (#594).
   model: string;
   // Reasoning effort paired with model in the Settings screen (#682).
   effort: string;
@@ -209,9 +209,9 @@ export interface AgentSettings {
 export interface GlobalSettings {
   // Per-agent settings, keyed by CodingAgent (#593).
   agents: Record<CodingAgent, AgentSettings>;
-  // Default coding agent `lh build` launches (#516).
+  // Default coding agent for launches (#516).
   codingAgent: CodingAgent;
-  // Per-task over-budget threshold for `lh build` implementation agents (#1027).
+  // Per-task over-budget threshold for implementation agents (#1027).
   devCostLimitUsd: number;
 }
 

@@ -50,7 +50,8 @@ export function usage(): void {
     lh repo add . --name me/proj
     SID=$(uuidgen)
     lh session register --id "$SID" --agent impl-bot --session "$RUNTIME"
-    lh issue create --title "do the thing" --label ready-to-build [--workspace integration]
+    lh issue create --title "do the thing" [--workspace integration]
+    lh workflow start 1 --workflow default --herdr
     lh pr create --head feature-x --base main --title "impl" --issue 5 [--draft]
     lh pr comment 3 --body "starting work"
     lh inbox send --from '{"kind":"agent","repo":"me/proj","actor":"impl-bot"}' --title "Needs review" --body "PR is ready" --repo me/proj

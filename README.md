@@ -76,7 +76,8 @@ LAN から開きたいときだけ `LOOPHUB_HOST=0.0.0.0` を指定する。
 on:
   issue.opened:
     - run: ./scripts/triage.sh
-    - run: lh build "$LH_ISSUE_NUMBER" --herdr
+    # Prefer fire-and-forget launchers; do not block the worker on long agent runs.
+    - run: lh workflow start "$LH_ISSUE_NUMBER" --workflow default --herdr
   pull_request.opened:
     - run: npm test
 ```
@@ -94,8 +95,9 @@ npm run lh-worker               # events を tail（--poll-ms <ms> で間隔指�
   =「今から」処理し、再起動は永続値から継続する。あるコマンドが失敗しても後続 run / 後続イベントは止めない。
 
 > **run は即終了する前提**。worker は run を直列・同期実行し、完了するまで次のイベントを処理しない。
-> 重い処理(`lh build` 等)は run 内で外部アプリへ起動を依頼して即 return する設計。長時間ブロックする run は
-> 後続イベントを止めるため、自前でバックグラウンド化(`... &` / nohup)するか即終了させること。
+> 重い処理（`lh workflow start ... --herdr` 等）は run 内で外部アプリへ起動を依頼して即 return する設計。
+> 長時間ブロックする run は後続イベントを止めるため、自前でバックグラウンド化(`... &` / nohup)するか
+> 即終了させること。
 >
 > **run は worker の環境変数をそのまま継承する**。`workflow.yml` はリポジトリの VCS に入った任意シェルを
 > 実行するため、自分のシェルと同程度に信頼できるリポジトリでのみ使うこと(worker 起動時の env にある
@@ -109,8 +111,9 @@ npm run lh-worker               # events を tail（--poll-ms <ms> で間隔指�
 ```sh
 ./scripts/install-lh-wrapper.sh   # ~/.local/bin/lh を作成（node + tsx 起動）
 lh repo add . --name me/proj
-lh issue create --title "do the thing" --label ready-to-build
+lh issue create --title "do the thing"
 lh issue create --title "stacked change" --workspace integration/stack
+lh workflow start 1 --workflow default --herdr
 lh pr create --head feature-x --base main --title "impl" --issue 5
 ```
 
@@ -122,7 +125,7 @@ lh pr create --head feature-x --base main --title "impl" --issue 5
 `LOOPHUB_WORKSPACE` は、現在の workspace をローカルブランチ名で表す。workspace セクションの
 New issue や `lh issue new --target-branch <branch>` は、この環境変数を起票セッションへ渡す。
 そのセッションで通常どおり `lh issue create` を実行すると、環境値が Issue の `target_branch` に
-設定され、後続の `lh build` は同じブランチを PR の base に使う。
+設定され、後続の Workflow 着手（`lh workflow start`）は同じブランチを PR の base に使う。
 
 `lh issue create --target-branch <branch>` を明示した場合は、その値が `LOOPHUB_WORKSPACE` より
 優先される。どちらもない場合は従来どおり `target_branch: null` になる。この環境変数は既存の

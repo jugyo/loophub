@@ -13,7 +13,7 @@ import {
   RUNTIMES,
 } from "./runtimes.ts";
 
-// Which coding agent `lh build` launches by default (#516). The type + ordered list + normalizer are
+// Which coding agent agent launches use by default (#516). The type + ordered list + normalizer are
 // defined in the single runtime registry (core/runtimes.ts); re-exported here so existing importers
 // of `CodingAgent` / `CODING_AGENTS` / `normalizeCodingAgent` from core/config.ts are unchanged.
 export { CODING_AGENTS, type CodingAgent, normalizeCodingAgent };
@@ -21,15 +21,16 @@ export { CODING_AGENTS, type CodingAgent, normalizeCodingAgent };
 // Per-agent settings (#593). Kept as its own shape (rather than flattening fields onto
 // GlobalConfig) so a future setting can be added per-agent without another top-level field.
 export interface AgentConfig {
-  // Whether the Build button (issue row / issue detail) launches this agent with auto mode
-  // (--auto for Claude Code, an equivalent flag for Codex). Default off (#499, #593).
-  autoModeOnBuild?: boolean;
-  // Model this agent launches with when `lh build --model` isn't passed explicitly (#594).
+  // Whether agent launches (workflow parent/steps, github-pr-export, etc.) use auto mode
+  // (--auto for Claude Code, an equivalent flag for Codex). Default off (#499, #593, #1581).
+  // Renamed from autoModeOnBuild after `lh build` was removed; readers still accept the legacy key.
+  autoModeOnLaunch?: boolean;
+  // Model this agent launches with when no explicit --model is passed (#594).
   // Falls back to DEFAULT_AGENT_MODEL when unset.
   defaultModel?: string;
   // Reasoning effort paired with defaultModel in the Settings screen (#682). Falls back to
-  // DEFAULT_AGENT_EFFORT when unset. Not yet wired into `lh build`'s spawn args — the Settings
-  // screen only stores the model+effort pair for now.
+  // DEFAULT_AGENT_EFFORT when unset. Stored for Settings; launch paths that honor it read via
+  // agentEffort().
   defaultEffort?: string;
 }
 
@@ -46,7 +47,7 @@ export const DEFAULT_AGENT_EFFORT: Record<CodingAgent, string> =
     CODING_AGENTS.map((a) => [a, RUNTIMES[a].defaultEffort]),
   ) as Record<CodingAgent, string>;
 
-// Default top-level cumulative cost (USD) at which a `lh build` implementation agent is stopped.
+// Default top-level cumulative cost (USD) at which a development agent is stopped.
 export const DEFAULT_DEV_COST_LIMIT_USD = 10;
 
 // Known config.json fields (#474). Fields are optional — any subset may be present, and
@@ -57,10 +58,10 @@ export interface GlobalConfig {
   url?: string;
   // Per-agent settings, keyed by CodingAgent (#593). Absent entries default to unset (off).
   agents?: Partial<Record<CodingAgent, AgentConfig>>;
-  // Default coding agent `lh build` launches when neither --claude-code nor --codex is passed
-  // (#516). Default "claude-code".
+  // Default coding agent used when neither --claude-code nor --codex is passed (#516).
+  // Default "claude-code".
   codingAgent?: CodingAgent;
-  // Per-task over-budget stop threshold for `lh build` implementation agents. Default $10.
+  // Per-task over-budget stop threshold for implementation agents. Default $10.
   devCostLimitUsd?: number;
 }
 
@@ -78,7 +79,7 @@ export function dbPath(): string {
   return process.env.LOOPHUB_DB ?? join(configDir(), "loophub.db");
 }
 
-// Root for `lh build` worktrees. Override via LOOPHUB_WORKTREE_ROOT or config.json
+// Root for PR/attempt worktrees. Override via LOOPHUB_WORKTREE_ROOT or config.json
 // `worktreeRoot`; default `$LOOPHUB_HOME/worktrees`.
 export function worktreeRoot(): string {
   if (process.env.LOOPHUB_WORKTREE_ROOT)
@@ -122,18 +123,29 @@ export function uiUrl(path: string): string {
   return p ? `${baseUrl()}/${p}` : baseUrl();
 }
 
-// Whether the Build button should launch `agent` with auto mode (#499, #593). Default false.
-export function autoModeOnBuild(agent: CodingAgent): boolean {
+// Whether launches of `agent` should use auto mode (#499, #593, #1581). Default false.
+// Accepts the legacy config key `autoModeOnBuild` so existing config.json keeps working.
+export function autoModeOnLaunch(agent: CodingAgent): boolean {
   try {
-    const cfg: GlobalConfig = JSON.parse(
+    const raw = JSON.parse(
       readFileSync(join(configDir(), "config.json"), "utf8"),
-    );
-    return cfg.agents?.[agent]?.autoModeOnBuild === true;
+    ) as {
+      agents?: Partial<
+        Record<
+          CodingAgent,
+          { autoModeOnLaunch?: boolean; autoModeOnBuild?: boolean }
+        >
+      >;
+    };
+    const entry = raw.agents?.[agent];
+    if (entry?.autoModeOnLaunch === true) return true;
+    if (entry?.autoModeOnLaunch === false) return false;
+    return entry?.autoModeOnBuild === true;
   } catch {}
   return false;
 }
 
-// Model `lh build` launches `agent` with when --model isn't passed explicitly (#594). Falls back
+// Model launches of `agent` use when --model isn't passed explicitly (#594). Falls back
 // to DEFAULT_AGENT_MODEL when config.json has no override for this agent.
 export function agentModel(agent: CodingAgent): string {
   try {
@@ -172,7 +184,7 @@ export function resolveEffectiveAgentConfig(
   });
 }
 
-// Per-task over-budget stop threshold for `lh build` implementation agents (#1027). A malformed
+// Per-task over-budget stop threshold for implementation agents (#1027). A malformed
 // persisted value is ignored rather than disabling the guard.
 export function devCostLimitUsd(): number {
   try {
@@ -191,7 +203,7 @@ export function devCostLimitUsd(): number {
   return DEFAULT_DEV_COST_LIMIT_USD;
 }
 
-// The coding agent `lh build` launches when neither --claude-code nor --codex is passed (#516).
+// The default coding agent when neither --claude-code nor --codex is passed (#516).
 // Default "claude-code".
 export function codingAgent(): CodingAgent {
   try {
@@ -239,17 +251,22 @@ export function updateConfig(patch: Partial<GlobalConfig>): GlobalConfig {
   return merged as GlobalConfig;
 }
 
-// Set a single agent's autoModeOnBuild without disturbing other agents' settings (#593).
+// Set a single agent's autoModeOnLaunch without disturbing other agents' settings (#593, #1581).
 // updateConfig replaces `agents` wholesale, so the existing map is read and merged here first.
-export function updateAgentAutoModeOnBuild(
+// Writes only the new key and drops a legacy `autoModeOnBuild` entry for that agent if present.
+export function updateAgentAutoModeOnLaunch(
   agent: CodingAgent,
   value: boolean,
 ): GlobalConfig {
   const current = readConfigFile() as GlobalConfig;
+  const prev = { ...(current.agents?.[agent] ?? {}) } as AgentConfig & {
+    autoModeOnBuild?: boolean;
+  };
+  delete prev.autoModeOnBuild;
   return updateConfig({
     agents: {
       ...current.agents,
-      [agent]: { ...current.agents?.[agent], autoModeOnBuild: value },
+      [agent]: { ...prev, autoModeOnLaunch: value },
     },
   });
 }

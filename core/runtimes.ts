@@ -1,8 +1,8 @@
-// Single registry (SSOT) for the coding runtimes `lh build` can launch: claude-code (default),
-// codex (#458), and grok (Grok Build). Every runtime-specific fact that was previously duplicated
-// across core/config.ts, core/resume.ts, cli/dev.ts, cli/args.ts, core/service/{terminal,settings}.ts,
-// and the web (agent-models.ts / settings-page.tsx / linked-pull-summary.tsx / agent-sessions-page.tsx)
-// lives here once, so adding a runtime is (close to) adding one entry below.
+// Single registry (SSOT) for coding runtimes: claude-code (default), codex (#458), and grok.
+// Every runtime-specific fact that was previously duplicated across core/config.ts, core/resume.ts,
+// cli/dev.ts, cli/args.ts, core/service/{terminal,settings}.ts, and the web (agent-models.ts /
+// settings-page.tsx / linked-pull-summary.tsx / agent-sessions-page.tsx) lives here once, so adding
+// a runtime is (close to) adding one entry below.
 //
 // This module is a leaf: it imports nothing from node or the rest of core, so the web bundle can
 // import its *values* directly — the same pattern core/workflow/example-prompts.ts established. The
@@ -10,8 +10,8 @@
 // is node-dependent (node:util, core/terminal/codex-launch.ts): the registry keys their dispatch by
 // runtime id rather than owning the functions, keeping this module node-free.
 
-// Which coding agent `lh build` launches. The runtime id doubles as the persisted `codingAgent`
-// config value and the `runtime` recorded on a dev session.
+// Which coding agent launches use. The runtime id doubles as the persisted `codingAgent`
+// config value and the `runtime` recorded on a session.
 export type CodingAgent = "claude-code" | "codex" | "grok";
 
 // The runtime binary spawned for each runtime (`claude` / `codex` / `grok`).
@@ -22,13 +22,13 @@ export type RuntimeBin = "claude" | "codex" | "grok";
 export interface RuntimeDefinition {
   // Runtime id (= CodingAgent value); also the key this entry is stored under in RUNTIMES.
   id: CodingAgent;
-  // The binary `lh build` spawns for this runtime.
+  // The binary spawned for this runtime.
   bin: RuntimeBin;
   // Human-readable label for pickers / session displays (e.g. "Claude Code").
   label: string;
-  // The mutually-exclusive `lh build` flag that selects this runtime (`--claude-code` etc.).
+  // The mutually-exclusive CLI flag that selects this runtime (`--claude-code` etc.).
   buildFlag: string;
-  // Default model used when `lh build --model` and the per-agent Settings override are both absent
+  // Default model used when no explicit --model and no per-agent Settings override are present
   // (#594). claude-code accepts the bare "opus" alias (resolved by the claude CLI itself); codex has
   // no alias support so its default is the full model name. grok's default is xAI's coding model
   // (TENTATIVE — the exact grok model identifier is not verified against a running `grok` CLI here).

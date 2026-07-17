@@ -89,7 +89,7 @@ export async function run(): Promise<void> {
     if (resolution.reason === "no-session") {
       fail(
         `PR #${prNumber}: no Claude session is recorded for this PR, so there is nothing to ` +
-          `resume.\n(A resumable session id is saved when work starts via \`lh build\`.)`,
+          `resume.\n(A resumable session id is saved when a development session starts, e.g. via Workflow.)`,
       );
     }
     if (resolution.reason === "unknown-runtime") {

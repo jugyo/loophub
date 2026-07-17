@@ -180,12 +180,12 @@ function statusValue(
 const DEFAULT_SETTINGS: GlobalSettings = {
   agents: {
     "claude-code": {
-      autoModeOnBuild: false,
+      autoModeOnLaunch: false,
       model: "opus",
       effort: "high",
     },
     codex: {
-      autoModeOnBuild: false,
+      autoModeOnLaunch: false,
       model: "gpt-5.6-sol",
       effort: "medium",
     },

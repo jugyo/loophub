@@ -22,13 +22,13 @@ test("settings.get defaults to auto mode off and the default model/effort for ev
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "opus",
         effort: "medium",
       },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -38,21 +38,21 @@ test("settings.get defaults to auto mode off and the default model/effort for ev
   });
 });
 
-test("settings.update persists a per-agent autoModeOnBuild and is reflected by settings.get (#499, #593)", () => {
+test("settings.update persists a per-agent autoModeOnLaunch and is reflected by settings.get (#499, #593)", () => {
   const result = svc.settings.update({
     agent: "claude-code",
-    autoModeOnBuild: true,
+    autoModeOnLaunch: true,
   });
   expect(result).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnBuild: true,
+        autoModeOnLaunch: true,
         model: "opus",
         effort: "medium",
       },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -63,39 +63,24 @@ test("settings.update persists a per-agent autoModeOnBuild and is reflected by s
   expect(svc.settings.get()).toEqual(result);
 
   const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
-  expect(raw.agents["claude-code"]).toEqual({ autoModeOnBuild: true });
+  expect(raw.agents["claude-code"]).toEqual({ autoModeOnLaunch: true });
 
-  svc.settings.update({ agent: "claude-code", autoModeOnBuild: false });
+  svc.settings.update({ agent: "claude-code", autoModeOnLaunch: false });
 });
 
-test("settings.update sets one agent's autoModeOnBuild without disturbing another's (#593)", () => {
-  svc.settings.update({ agent: "claude-code", autoModeOnBuild: true });
-  svc.settings.update({ agent: "codex", autoModeOnBuild: true });
-  expect(svc.settings.get()).toEqual({
-    agents: {
-      "claude-code": { autoModeOnBuild: true, model: "opus", effort: "medium" },
-      codex: { autoModeOnBuild: true, model: "gpt-5.5", effort: "medium" },
-      grok: {
-        autoModeOnBuild: false,
-        model: "grok-code-fast-1",
-        effort: "medium",
-      },
-    },
-    codingAgent: "claude-code",
-    devCostLimitUsd: 10,
-  });
-
-  svc.settings.update({ agent: "claude-code", autoModeOnBuild: false });
+test("settings.update sets one agent's autoModeOnLaunch without disturbing another's (#593)", () => {
+  svc.settings.update({ agent: "claude-code", autoModeOnLaunch: true });
+  svc.settings.update({ agent: "codex", autoModeOnLaunch: true });
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: true,
         model: "opus",
         effort: "medium",
       },
-      codex: { autoModeOnBuild: true, model: "gpt-5.5", effort: "medium" },
+      codex: { autoModeOnLaunch: true, model: "gpt-5.5", effort: "medium" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -104,36 +89,59 @@ test("settings.update sets one agent's autoModeOnBuild without disturbing anothe
     devCostLimitUsd: 10,
   });
 
-  svc.settings.update({ agent: "codex", autoModeOnBuild: false });
+  svc.settings.update({ agent: "claude-code", autoModeOnLaunch: false });
+  expect(svc.settings.get()).toEqual({
+    agents: {
+      "claude-code": {
+        autoModeOnLaunch: false,
+        model: "opus",
+        effort: "medium",
+      },
+      codex: { autoModeOnLaunch: true, model: "gpt-5.5", effort: "medium" },
+      grok: {
+        autoModeOnLaunch: false,
+        model: "grok-code-fast-1",
+        effort: "medium",
+      },
+    },
+    codingAgent: "claude-code",
+    devCostLimitUsd: 10,
+  });
+
+  svc.settings.update({ agent: "codex", autoModeOnLaunch: false });
 });
 
-test("settings.update rejects a non-boolean autoModeOnBuild (#499)", () => {
+test("settings.update rejects a non-boolean autoModeOnLaunch (#499)", () => {
   expect(() =>
     svc.settings.update({
       agent: "claude-code",
-      autoModeOnBuild: "yes" as any,
+      autoModeOnLaunch: "yes" as any,
     }),
-  ).toThrow(/autoModeOnBuild must be a boolean/);
+  ).toThrow(/autoModeOnLaunch must be a boolean/);
 });
 
-test("settings.update rejects autoModeOnBuild without a valid agent (#593)", () => {
-  expect(() => svc.settings.update({ autoModeOnBuild: true } as any)).toThrow(
+test("settings.update rejects autoModeOnLaunch without a valid agent (#593)", () => {
+  expect(() => svc.settings.update({ autoModeOnLaunch: true } as any)).toThrow(
     /agent must be one of/,
   );
   expect(() =>
-    svc.settings.update({ agent: "bogus" as any, autoModeOnBuild: true }),
+    svc.settings.update({ agent: "bogus" as any, autoModeOnLaunch: true }),
   ).toThrow(/agent must be one of/);
 });
 
-test("settings.update omitting autoModeOnBuild preserves the persisted value (#499)", () => {
-  svc.settings.update({ agent: "claude-code", autoModeOnBuild: true });
+test("settings.update omitting autoModeOnLaunch preserves the persisted value (#499)", () => {
+  svc.settings.update({ agent: "claude-code", autoModeOnLaunch: true });
   svc.settings.update({});
   expect(svc.settings.get()).toEqual({
     agents: {
-      "claude-code": { autoModeOnBuild: true, model: "opus", effort: "medium" },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      "claude-code": {
+        autoModeOnLaunch: true,
+        model: "opus",
+        effort: "medium",
+      },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -142,7 +150,7 @@ test("settings.update omitting autoModeOnBuild preserves the persisted value (#4
     devCostLimitUsd: 10,
   });
 
-  svc.settings.update({ agent: "claude-code", autoModeOnBuild: false });
+  svc.settings.update({ agent: "claude-code", autoModeOnLaunch: false });
 });
 
 test("settings.update persists a per-agent model and is reflected by settings.get (#594)", () => {
@@ -153,13 +161,13 @@ test("settings.update persists a per-agent model and is reflected by settings.ge
   expect(result).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "claude-opus-4-8",
         effort: "medium",
       },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -171,7 +179,7 @@ test("settings.update persists a per-agent model and is reflected by settings.ge
 
   const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
   expect(raw.agents["claude-code"]).toEqual({
-    autoModeOnBuild: false,
+    autoModeOnLaunch: false,
     defaultModel: "claude-opus-4-8",
   });
 
@@ -184,17 +192,17 @@ test("settings.update sets one agent's model without disturbing another's (#594)
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "sonnet",
         effort: "medium",
       },
       codex: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "gpt-5.5-codex",
         effort: "medium",
       },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -231,13 +239,13 @@ test("settings.update omitting model preserves the persisted value (#594)", () =
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "sonnet",
         effort: "medium",
       },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -256,10 +264,10 @@ test("settings.update persists a per-agent effort and is reflected by settings.g
   });
   expect(result).toEqual({
     agents: {
-      "claude-code": { autoModeOnBuild: false, model: "opus", effort: "high" },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      "claude-code": { autoModeOnLaunch: false, model: "opus", effort: "high" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -271,7 +279,7 @@ test("settings.update persists a per-agent effort and is reflected by settings.g
 
   const raw = JSON.parse(readFileSync(join(HOME, "config.json"), "utf8"));
   expect(raw.agents["claude-code"]).toEqual({
-    autoModeOnBuild: false,
+    autoModeOnLaunch: false,
     defaultModel: "opus",
     defaultEffort: "high",
   });
@@ -285,13 +293,13 @@ test("settings.update sets one agent's effort without disturbing another's (#682
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "opus",
         effort: "xhigh",
       },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "low" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "low" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -328,13 +336,13 @@ test("settings.update omitting effort preserves the persisted value (#682)", () 
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "opus",
         effort: "xhigh",
       },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -351,13 +359,13 @@ test("settings.update persists codingAgent and is reflected by settings.get (#51
   expect(result).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "opus",
         effort: "medium",
       },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
@@ -385,7 +393,7 @@ test("settings.update accepts grok as an agent-scoped and default coding agent",
   const got = svc.settings.get();
   expect(got.codingAgent).toBe("grok");
   expect(got.agents.grok).toEqual({
-    autoModeOnBuild: false,
+    autoModeOnLaunch: false,
     model: "grok-4",
     effort: "high",
   });
@@ -402,13 +410,13 @@ test("settings.update omitting codingAgent preserves the persisted value (#516)"
   expect(svc.settings.get()).toEqual({
     agents: {
       "claude-code": {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "opus",
         effort: "medium",
       },
-      codex: { autoModeOnBuild: false, model: "gpt-5.5", effort: "medium" },
+      codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
       grok: {
-        autoModeOnBuild: false,
+        autoModeOnLaunch: false,
         model: "grok-code-fast-1",
         effort: "medium",
       },
