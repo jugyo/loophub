@@ -403,9 +403,9 @@ test("New Issue launch lookup is scoped to its repository", () => {
     paneId: "w2:p2",
   });
 
-  expect(
-    S.getIssueHerdrPaneByLaunch(secondRepo.id, "shared-launch")?.pane_id,
-  ).toBe("w2:p2");
+  expect(S.getHerdrPaneByLaunch(secondRepo.id, "shared-launch")?.pane_id).toBe(
+    "w2:p2",
+  );
 });
 
 test("repos.remove removes Herdr pane links even when issue_id is not assigned yet", () => {

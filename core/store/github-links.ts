@@ -276,17 +276,3 @@ export function recordGithubIssue(input: {
       now(),
     ) as GithubIssue;
 }
-
-// #614: every loophub issue imported from a given GitHub issue (many-to-one). Backs the AC that one
-// GitHub issue can carry multiple loophub imports; resolved via idx_github_issues_source.
-export function loophubIssuesForGithubIssue(
-  owner: string,
-  repo: string,
-  number: number,
-): GithubIssue[] {
-  return db
-    .query(
-      `SELECT * FROM github_issues WHERE owner = ? AND repo = ? AND number = ? ORDER BY issue_id`,
-    )
-    .all(owner, repo, number) as GithubIssue[];
-}

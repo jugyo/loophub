@@ -1,7 +1,6 @@
 import { db, now } from "../db.ts";
 import {
   addHerdrPaneClaim,
-  getHerdrPaneByLaunch,
   type HerdrPaneRow,
   linkHerdrPaneResource,
   listHerdrPanesByOrigin,
@@ -125,13 +124,6 @@ export function upsertIssueHerdrPane(input: {
     });
   }
   return pane;
-}
-
-export function getIssueHerdrPaneByLaunch(
-  repoId: number,
-  launchId: string,
-): IssueHerdrPane | null {
-  return getHerdrPaneByLaunch(repoId, launchId);
 }
 
 export function getIssueHerdrPane(issueId: number): IssueHerdrPane | null {

@@ -134,9 +134,19 @@ test("one GitHub issue can be imported into multiple loophub issues (#614)", asy
 
   // Two distinct loophub issues, both linked to the same GitHub source.
   expect(a.number).not.toBe(b.number);
-  const links = store.loophubIssuesForGithubIssue("acme", "widget", 7);
-  expect(links).toHaveLength(2);
-  expect(new Set(links.map((l) => l.number))).toEqual(new Set([7]));
+  const repoId = store.getRepo("me", "proj")!.id;
+  const aRow = store.getIssue(repoId, a.number)!;
+  const bRow = store.getIssue(repoId, b.number)!;
+  expect(store.getGithubIssue(aRow.id)).toMatchObject({
+    owner: "acme",
+    repo: "widget",
+    number: 7,
+  });
+  expect(store.getGithubIssue(bRow.id)).toMatchObject({
+    owner: "acme",
+    repo: "widget",
+    number: 7,
+  });
 });
 
 test("import rejects a non-GitHub-issue URL before fetching (#614)", async () => {
