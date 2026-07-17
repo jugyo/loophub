@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Check, TriangleAlert } from "lucide-react";
+import { ArrowRight, TriangleAlert } from "lucide-react";
 import type { HerdrAgent, LinkedPull } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { DiffStat } from "@/components/diff-stat";
@@ -272,7 +272,6 @@ export function LinkedPullSummaryRow({
     ? linkedPullAttemptStatus(pull)
     : operationalStatus;
   const costStopped = costStoppedBadge(pull);
-  const passed = !attemptComparison && status.tone === "review-passed";
   const needsAttention =
     operationalStatus.tone === "conflict" ||
     operationalStatus.tone === "review-changes" ||
@@ -358,24 +357,6 @@ export function LinkedPullSummaryRow({
             {pull.title}
           </Link>
         ) : null}
-        <span
-          className={cn(
-            "flex shrink-0 items-center gap-1 font-semibold",
-            STATUS_TEXT[linkedPullWordTone(status.tone)],
-            status.tone === "working" && "text-indigo-600 dark:text-indigo-400",
-          )}
-          title={status.title}
-        >
-          {passed ? (
-            <span
-              className="flex size-3.5 items-center justify-center rounded-full bg-green-600 text-[9px] leading-none text-white"
-              aria-label="passed"
-            >
-              <Check className="size-2.5" aria-hidden="true" />
-            </span>
-          ) : null}
-          {status.label}
-        </span>
         {costStopped ? (
           <span
             className={cn(
