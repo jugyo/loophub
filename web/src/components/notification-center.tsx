@@ -158,6 +158,7 @@ export function NotificationCenter() {
             unread > 0 ? `Notifications: ${unread} unread` : "Notifications"
           }
           title="Notifications"
+          data-debug-component="NotificationCenter"
           className="relative shrink-0"
         >
           <Bell className="size-4" aria-hidden="true" />

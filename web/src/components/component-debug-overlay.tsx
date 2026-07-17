@@ -38,6 +38,7 @@ export function ComponentDebugToggle() {
       aria-label="Component debug mode"
       aria-pressed={enabled}
       title={`Component debug mode: ${enabled ? "on" : "off"}`}
+      data-debug-component="ComponentDebugToggle"
       onClick={() => setComponentDebugMode(!enabled)}
       className={cn(
         "border bg-background shadow-sm",
@@ -153,6 +154,7 @@ export function ComponentDebugOverlay() {
 
 function DebugBoxOverlay({ name, rect }: { name: string; rect: DOMRect }) {
   const [copied, setCopied] = useState(false);
+  const [labelHovered, setLabelHovered] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -179,7 +181,22 @@ function DebugBoxOverlay({ name, rect }: { name: string; rect: DOMRect }) {
       }}
     >
       <div className="pointer-events-auto absolute left-0 top-0 flex max-w-full items-center bg-red-700 text-xs font-medium text-white shadow-sm">
-        <span className="truncate px-1.5 py-0.5">{name}</span>
+        <span
+          className="relative min-w-0 truncate px-1.5 py-0.5"
+          onMouseEnter={() => setLabelHovered(true)}
+          onMouseLeave={() => setLabelHovered(false)}
+        >
+          {name}
+          {labelHovered ? (
+            <span
+              role="tooltip"
+              data-testid="component-debug-name-tooltip"
+              className="absolute left-0 top-full z-10 mt-0.5 max-w-[min(24rem,80vw)] whitespace-normal break-all rounded bg-red-950 px-1.5 py-0.5 text-xs font-medium text-white shadow-md"
+            >
+              {name}
+            </span>
+          ) : null}
+        </span>
         <button
           type="button"
           onClick={copyName}

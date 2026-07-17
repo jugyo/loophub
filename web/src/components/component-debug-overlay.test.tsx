@@ -103,4 +103,34 @@ describe("component debug mode", () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("PullDetail"));
   });
+
+  it("shows the full component name in a tooltip on label hover", async () => {
+    renderDebugUi("VeryLongPurposeSpecificComponentName");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Component debug mode" }),
+    );
+    const label = await screen.findByText(
+      "VeryLongPurposeSpecificComponentName",
+    );
+    expect(screen.queryByTestId("component-debug-name-tooltip")).toBeNull();
+
+    fireEvent.mouseEnter(label);
+    expect(screen.getByTestId("component-debug-name-tooltip").textContent).toBe(
+      "VeryLongPurposeSpecificComponentName",
+    );
+
+    fireEvent.mouseLeave(label);
+    expect(screen.queryByTestId("component-debug-name-tooltip")).toBeNull();
+  });
+
+  it("marks the toggle with a purpose-specific debug name", () => {
+    renderDebugUi();
+    const toggle = screen.getByRole("button", {
+      name: "Component debug mode",
+    });
+    expect(toggle.getAttribute("data-debug-component")).toBe(
+      "ComponentDebugToggle",
+    );
+  });
 });

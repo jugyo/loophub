@@ -122,7 +122,8 @@ together, following this document's Source of Truth policy.
 The application header exposes a component debug mode beside the theme picker.
 When enabled, `ComponentDebugOverlay` outlines every visible element carrying a
 `data-debug-component` attribute and provides its React component name plus a
-copy action. Markers live on:
+copy action. Hovering a truncated label shows the full component name in a
+tooltip so narrow controls stay identifiable. Markers live on:
 
 - Shell regions and major route/page components (home, repo, issues, pulls,
   agents, inbox, stats, settings, workflows, scheduled tasks, and similar
@@ -130,14 +131,21 @@ copy action. Markers live on:
 - Mid-size detail/sidebar sections (for example Sessions, Work duration,
   GitHub PR status, Handoffs, Agents, Workflow run, Worktree, Linked pull
   summary)
-- Shared interactive primitives under `ui/` (`Button`, `Badge`, and the
-  dropdown content surfaces that own a root DOM node)
-- Named text-input wrappers that hold primary search or form inputs
-  (`RepositorySearch`, `HerdrAgentInput`, `AgentModelPicker`, `RepoSwitcher`,
-  `NewWorkspaceButton`)
+- Purpose-named interactive controls and wrappers (for example
+  `CreateIssueButton`, `NewWorkspaceButton`, `ThemeToggle`,
+  `ComponentDebugToggle`, `NotificationCenter`, `RepoSwitcher`,
+  `RepositorySearch`, `HerdrAgentInput`, `AgentModelPicker`)
+- Dropdown content surfaces under `ui/` that own a root DOM node
+  (`DropdownMenuContent`, `DropdownMenuSubContent`)
 
-Names match the React component export (PascalCase). Nested markers may
-coexist with a page-level marker. This keeps the mapping stable across
+Shared primitives such as `ui/Button` and `ui/Badge` do **not** set a generic
+marker by default. Callers may pass `data-debug-component` when a purpose-
+specific name is useful; otherwise leave them unmarked so the overlay is not
+flooded with repeated `Button` / `Badge` labels.
+
+Names match the React component export (PascalCase). Prefer markers on named
+wrappers or role-specific roots over generic primitive names. Nested markers
+may coexist with a page-level marker. This keeps the mapping stable across
 production and development builds without reading React internals or changing
 component layout.
 

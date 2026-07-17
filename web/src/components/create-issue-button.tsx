@@ -73,7 +73,7 @@ export function CreateIssueButton({
   }
 
   return (
-    <div className="inline-flex">
+    <div data-debug-component="CreateIssueButton" className="inline-flex">
       <Button
         aria-label="New issue"
         title="New issue"

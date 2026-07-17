@@ -26,6 +26,7 @@ export function ThemeToggle() {
           size="icon"
           aria-label="Theme"
           title={`Theme: ${activeTheme.label}`}
+          data-debug-component="ThemeToggle"
           className="border bg-background shadow-sm"
         >
           <Palette
