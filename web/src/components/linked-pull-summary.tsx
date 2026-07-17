@@ -12,6 +12,7 @@ import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { AgentTree, pullHerdrAgents } from "@/components/pull-herdr-section";
 import { useToast } from "@/components/toast";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
 import {
   costStoppedBadge,
   linkedPullStateBadge,
@@ -29,6 +30,7 @@ import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
 import { useSetPullState } from "@/queries/pulls";
 import { useHerdrSessions } from "@/queries/terminal";
+import { useWorkflowRunForPull } from "@/queries/workflow-runs";
 import { codingAgentLabel } from "../../../core/runtimes.ts";
 
 const STATUS_TEXT: Record<StatusWordTone, string> = {
@@ -134,6 +136,24 @@ function Metrics({
       ))}
     </span>
   );
+}
+
+// Compact workflow-run step tracker for a PR list row. Renders nothing when the PR has no linked
+// workflow run. Uses `useWorkflowRunForPull`, which is event-poll-invalidated (lib/event-keys.ts),
+// so the tracker stays fresh as the run advances. The tracker itself is the shared
+// WorkflowStepTracker, also used by the detail Workflow run section.
+function WorkflowMiniProgress({
+  owner,
+  repo,
+  pull,
+}: {
+  owner: string;
+  repo: string;
+  pull: LinkedPull;
+}) {
+  const { data: state } = useWorkflowRunForPull(owner, repo, pull.number);
+  if (!state) return null;
+  return <WorkflowStepTracker state={state} size="sm" />;
 }
 
 function PullPopover({
@@ -367,6 +387,7 @@ export function LinkedPullSummaryRow({
             over budget
           </span>
         ) : null}
+        <WorkflowMiniProgress owner={owner} repo={repo} pull={pull} />
         <Metrics pull={pull} overBudget={costStopped !== null} />
       </div>
       {attemptComparison ? (

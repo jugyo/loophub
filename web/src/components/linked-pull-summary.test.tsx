@@ -17,7 +17,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch } from "@/api/rpc-mock";
-import type { HerdrSessions, LinkedPull } from "@/api/types";
+import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 
 const { focusHerdrAgent, sendHerdrAgentInput } = vi.hoisted(() => ({
@@ -101,6 +101,156 @@ function row() {
 function popoverVisible() {
   return screen.queryAllByRole("link", { name: "PR #10" }).length === 2;
 }
+
+function makeWorkflowRunState(
+  overrides: Partial<WorkflowRunState> = {},
+): WorkflowRunState {
+  return {
+    id: 1,
+    workflow_id: 1,
+    workflow_name: "workflow",
+    status: "running",
+    current_step: "execute",
+    rework_count: 0,
+    needs_human_reason: null,
+    issue_number: 5,
+    pr_number: 10,
+    created_at: "2026-07-17T00:00:00Z",
+    updated_at: "2026-07-17T00:00:00Z",
+    latest_review: null,
+    verification_status: "unverified",
+    ...overrides,
+  };
+}
+
+function renderRowWithRun(run: WorkflowRunState | null) {
+  vi.stubGlobal(
+    "fetch",
+    mockRpcFetch({ "workflowRuns/stateForPull": () => run }),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const rootRoute = createRootRoute({ component: Outlet });
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/",
+    component: () => (
+      <LinkedPullSummaryRow owner="me" repo="proj" pull={makePull()} />
+    ),
+  });
+  const pullRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo/pulls/$number",
+    component: () => null,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([indexRoute, pullRoute]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+}
+
+describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
+  it("renders nothing when the PR has no linked workflow run", async () => {
+    renderRowWithRun(null);
+    await screen.findByRole("link", { name: "PR #10" });
+    expect(document.querySelector("[data-workflow-step-tracker]")).toBeNull();
+  });
+
+  it("renders the Execute → Verify → Done tracker and highlights the current step", async () => {
+    renderRowWithRun(
+      makeWorkflowRunState({
+        current_step: "execute",
+        verification_status: "unverified",
+      }),
+    );
+    const tracker = (await screen.findByText("Execute")).closest(
+      "[data-workflow-step-tracker]",
+    );
+    expect(tracker).toBeTruthy();
+    const within_ = within(tracker as HTMLElement);
+    // All three pipeline stages are shown so the whole workflow is visible.
+    expect(within_.getByText("Execute")).toBeTruthy();
+    expect(within_.getByText("Verify")).toBeTruthy();
+    expect(within_.getByText("Done")).toBeTruthy();
+    // The run is on Execute, so that stage is the current one.
+    expect(within_.getByText("Execute").getAttribute("aria-current")).toBe(
+      "step",
+    );
+    expect(within_.getByText("Verify").getAttribute("aria-current")).toBeNull();
+    // Done is not reached yet — no verified check.
+    expect(within_.queryByLabelText("verified")).toBeNull();
+  });
+
+  it("advances the tracker to Done when Verify passes", async () => {
+    renderRowWithRun(
+      makeWorkflowRunState({
+        current_step: "verify",
+        verification_status: "verified",
+      }),
+    );
+    const tracker = (await screen.findByText("Done")).closest(
+      "[data-workflow-step-tracker]",
+    );
+    expect(tracker).toBeTruthy();
+    const within_ = within(tracker as HTMLElement);
+    // Verify pass is the terminal: Done becomes the current stage.
+    expect(within_.getByText("Done").getAttribute("aria-current")).toBe("step");
+  });
+
+  it("annotates the Verify stage with reverify when verification is stale", async () => {
+    renderRowWithRun(
+      makeWorkflowRunState({
+        current_step: "verify",
+        verification_status: "stale",
+      }),
+    );
+    const tracker = (await screen.findByText("Done")).closest(
+      "[data-workflow-step-tracker]",
+    );
+    expect(within(tracker as HTMLElement).getByText(/reverify/)).toBeTruthy();
+  });
+
+  it("surfaces a needs-human run alongside the tracker", async () => {
+    renderRowWithRun(
+      makeWorkflowRunState({
+        current_step: "verify",
+        needs_human_reason: "waiting for a decision",
+      }),
+    );
+    const tracker = (await screen.findByText("needs human")).closest(
+      "[data-workflow-step-tracker]",
+    );
+    expect(tracker).toBeTruthy();
+    // The pipeline is still shown; needs-human is an extra marker, not a replacement.
+    expect(within(tracker as HTMLElement).getByText("Verify")).toBeTruthy();
+  });
+
+  it("does not reach Done for a completed run (completed is not the terminal signal)", async () => {
+    renderRowWithRun(
+      makeWorkflowRunState({
+        status: "completed",
+        current_step: "verify",
+        verification_status: "verified",
+      }),
+    );
+    // `status === completed` is not the terminal — `verified` requires a running run, so Done
+    // stays unreached and Verify remains the current stage.
+    const tracker = (await screen.findByText("Done")).closest(
+      "[data-workflow-step-tracker]",
+    );
+    const within_ = within(tracker as HTMLElement);
+    expect(within_.getByText("Verify").getAttribute("aria-current")).toBe(
+      "step",
+    );
+    expect(within_.getByText("Done").getAttribute("aria-current")).toBeNull();
+  });
+});
 
 describe("LinkedPullSummaryRow actions", () => {
   it("uses the standard secondary button colors for Close", async () => {

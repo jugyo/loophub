@@ -117,7 +117,13 @@ function renderInRouter(
   handlers: Record<string, (params: any) => unknown> = {},
   legacy = true,
 ) {
-  vi.stubGlobal("fetch", mockRpcFetch(handlers));
+  // A linked PR has no workflow run unless a test says otherwise. The generic mock returns `{}`
+  // (truthy) for unmapped methods, which would render a bogus WorkflowMiniProgress tracker; the
+  // real RPC returns null for a PR with no run.
+  vi.stubGlobal(
+    "fetch",
+    mockRpcFetch({ "workflowRuns/stateForPull": () => null, ...handlers }),
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });

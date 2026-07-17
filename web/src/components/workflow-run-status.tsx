@@ -20,14 +20,7 @@ import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WorkflowRunHistoryDialog } from "@/components/workflow-run-history-dialog";
-
-const STEP_ORDER = ["execute", "verify"] as const;
-type WorkflowStep = (typeof STEP_ORDER)[number];
-
-const STEP_LABELS: Record<WorkflowStep, string> = {
-  execute: "Execute",
-  verify: "Verify",
-};
+import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
 
 const STATUS_META: Record<
   string,
@@ -50,10 +43,6 @@ function needsHuman(state: WorkflowRunState): boolean {
     (state.status === "running" && state.needs_human_reason !== null) ||
     state.status === "blocked"
   );
-}
-
-function isStep(value: string): value is WorkflowStep {
-  return (STEP_ORDER as readonly string[]).includes(value);
 }
 
 export function WorkflowRunStatusSection({
@@ -80,9 +69,6 @@ export function WorkflowRunStatusSection({
             label: state.status,
             tone: "unknown" as const,
           });
-  const currentIndex = isStep(state.current_step)
-    ? STEP_ORDER.indexOf(state.current_step)
-    : -1;
   const completed = state.status === "completed";
   const isStaleVerification =
     state.status === "running" &&
@@ -112,11 +98,7 @@ export function WorkflowRunStatusSection({
           ) : null}
         </div>
 
-        <StepTracker
-          currentIndex={currentIndex}
-          currentStep={state.current_step}
-          completed={completed}
-        />
+        <WorkflowStepTracker state={state} size="md" />
 
         {completed ? (
           <p className="text-sm text-muted-foreground">
@@ -162,54 +144,6 @@ export function WorkflowRunStatusSection({
         />
       ) : null}
     </section>
-  );
-}
-
-// The fixed Workflow steps in order, highlighting the run's current step. This reflects the run
-// row's current_step only — it is not a claim that earlier steps are "complete" (that truth lives
-// in `workflow step status`), so steps before the current one are shown as passed-through, not
-// verified-done. A completed run marks steps up to and including current_step as past (normally
-// Verify, so both); it does not force later steps to "done" if the run row completed earlier.
-function StepTracker({
-  currentIndex,
-  currentStep,
-  completed,
-}: {
-  currentIndex: number;
-  currentStep: string;
-  completed: boolean;
-}) {
-  return (
-    <ol className="flex flex-wrap items-center gap-1.5 text-xs">
-      {STEP_ORDER.map((step, index) => {
-        const isCurrent = !completed && index === currentIndex;
-        const isPast =
-          currentIndex >= 0 &&
-          (completed ? index <= currentIndex : index < currentIndex);
-        return (
-          <li key={step} className="flex items-center gap-1.5">
-            <span
-              className={
-                isCurrent
-                  ? "rounded-full border border-primary-border bg-primary-subtle px-2 py-0.5 font-medium text-link"
-                  : isPast
-                    ? "rounded-full border border-border px-2 py-0.5 text-foreground"
-                    : "rounded-full border border-border px-2 py-0.5 text-muted-foreground"
-              }
-              aria-current={isCurrent ? "step" : undefined}
-            >
-              {STEP_LABELS[step]}
-            </span>
-            {index < STEP_ORDER.length - 1 ? (
-              <span className="text-muted-foreground">→</span>
-            ) : null}
-          </li>
-        );
-      })}
-      {currentIndex < 0 && !completed ? (
-        <li className="text-muted-foreground">({currentStep})</li>
-      ) : null}
-    </ol>
   );
 }
 
