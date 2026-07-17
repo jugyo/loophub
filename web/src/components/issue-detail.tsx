@@ -13,7 +13,7 @@ import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { IssueHerdrSection } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
-import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
+import { LinkedPullAttemptSummaryRow } from "@/components/linked-pull-summary";
 import { Markdown } from "@/components/markdown";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +24,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
 import {
   issueBuildButtonState,
   primaryLinkedPull,
@@ -47,7 +46,6 @@ import {
   useSetIssueState,
 } from "@/queries/issues";
 import { useSettings } from "@/queries/settings";
-import { useWorkflowRunForIssue } from "@/queries/workflow-runs";
 import { useWorkflows } from "@/queries/workflows";
 
 export function IssueDetail({
@@ -107,8 +105,6 @@ export function IssueDetail({
       <IssueHeader owner={owner} repo={repo} issue={issue} />
 
       <LinkedPullSummary owner={owner} repo={repo} issue={issue} />
-
-      <WorkflowRunSection owner={owner} repo={repo} number={number} />
 
       <IssueHerdrSection owner={owner} repo={repo} issue={issue} />
 
@@ -395,7 +391,9 @@ function StartWorkflowControls({
 // and not a target of the issue's Close/Build actions. A labelled heading makes
 // that boundary explicit. Each row is a toned `PR #n` link pill + a status word
 // + a visible PR title link. Renders nothing when no PR is linked. Multiple
-// linked PRs stack vertically.
+// linked PRs stack vertically. The issue page keeps this intentionally limited
+// to identity, state, and navigation; review and lifecycle actions belong on
+// the PR detail page.
 function LinkedPullSummary({
   owner,
   repo,
@@ -415,12 +413,11 @@ function LinkedPullSummary({
         {pulls.length > 1 ? "Linked pull requests" : "Linked pull request"}
       </h2>
       {pulls.map((pull) => (
-        <LinkedPullSummaryRow
+        <LinkedPullAttemptSummaryRow
           key={pull.number}
           owner={owner}
           repo={repo}
           pull={pull}
-          attemptComparison
         />
       ))}
       {issue.linked_pull_requests_truncated ? (
@@ -431,21 +428,6 @@ function LinkedPullSummary({
       ) : null}
     </section>
   );
-}
-
-// Workflow run state for this issue (#1008): renders the linked run's status / step / rework via the
-// shared section, or nothing when the issue has no run.
-function WorkflowRunSection({
-  owner,
-  repo,
-  number,
-}: {
-  owner: string;
-  repo: string;
-  number: number;
-}) {
-  const { data } = useWorkflowRunForIssue(owner, repo, number);
-  return <WorkflowRunStatusSection owner={owner} repo={repo} state={data} />;
 }
 
 function CommentList({

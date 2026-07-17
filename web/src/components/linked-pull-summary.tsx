@@ -39,6 +39,20 @@ const STATUS_TEXT: Record<StatusWordTone, string> = {
 
 const COST_STOPPED_TEXT = "text-amber-700 dark:text-amber-300";
 
+function linkedPullAttemptStatus(pull: LinkedPull) {
+  return pull.merged
+    ? { tone: "merged" as const, label: "merged", title: "Merged" }
+    : pull.state === "closed"
+      ? { tone: "closed" as const, label: "closed", title: "Closed" }
+      : pull.draft === false
+        ? {
+            tone: "review-passed" as const,
+            label: "ready",
+            title: "Ready for review",
+          }
+        : { tone: "open" as const, label: "open", title: "Open draft" };
+}
+
 const WORK_BASIS_LABEL: Record<
   NonNullable<LinkedPull["work_duration_total"]>["basis"],
   string
@@ -260,17 +274,7 @@ export function LinkedPullSummaryRow({
   const operationalStatus =
     linkedPullStatus(pull) ?? linkedPullStateBadge(pull);
   const status = attemptComparison
-    ? pull.merged
-      ? { tone: "merged" as const, label: "merged", title: "Merged" }
-      : pull.state === "closed"
-        ? { tone: "closed" as const, label: "closed", title: "Closed" }
-        : pull.draft === false
-          ? {
-              tone: "review-passed" as const,
-              label: "ready",
-              title: "Ready for review",
-            }
-          : { tone: "open" as const, label: "open", title: "Open draft" }
+    ? linkedPullAttemptStatus(pull)
     : operationalStatus;
   const costStopped = costStoppedBadge(pull);
   const passed = !attemptComparison && status.tone === "review-passed";
@@ -474,6 +478,50 @@ export function LinkedPullSummaryRow({
           workspacePaneId={workspace?.pane_id}
         />
       ) : null}
+    </div>
+  );
+}
+
+export function LinkedPullAttemptSummaryRow({
+  owner,
+  repo,
+  pull,
+}: {
+  owner: string;
+  repo: string;
+  pull: LinkedPull;
+}) {
+  const status = linkedPullAttemptStatus(pull);
+
+  return (
+    <div
+      aria-label={`Linked PR #${pull.number}: ${pull.title}`}
+      className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm"
+    >
+      <Link
+        to="/r/$owner/$repo/pulls/$number"
+        params={{ owner, repo, number: String(pull.number) }}
+        className="shrink-0 font-medium text-primary hover:underline"
+      >
+        PR #{pull.number}
+      </Link>
+      <Link
+        to="/r/$owner/$repo/pulls/$number"
+        params={{ owner, repo, number: String(pull.number) }}
+        className="min-w-0 flex-1 truncate text-foreground hover:underline"
+        title={pull.title}
+      >
+        {pull.title}
+      </Link>
+      <span
+        className={cn(
+          "shrink-0 font-semibold",
+          STATUS_TEXT[linkedPullWordTone(status.tone)],
+        )}
+        title={status.title}
+      >
+        {status.label}
+      </span>
     </div>
   );
 }

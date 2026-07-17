@@ -20,7 +20,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment } from "@/api/types";
 import { ACTION_LOADING_MS } from "@/lib/use-fixed-loading";
-import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 import { WebConfigProvider } from "@/lib/web-config";
 
 // The Build button launches through the terminal backend abstraction; capture the call.
@@ -37,16 +36,6 @@ afterEach(() => {
   vi.useRealTimers();
   launchTerminal.mockClear();
 });
-
-// The linked-PR popover now opens after a standard hover delay, so hover the row
-// and advance fake timers past the delay before asserting the popover contents.
-function openLinkedPullPopover(label: string) {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
-  fireEvent.mouseEnter(screen.getByLabelText(label));
-  act(() => {
-    vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
-  });
-}
 
 const issue: Issue = {
   number: 12,
@@ -177,9 +166,12 @@ describe("IssueDetail", () => {
       screen.getByLabelText("Linked PR #30: ui2: issue detail PR"),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("link", { name: "ui2: issue detail PR" }),
-    ).toBeNull();
+      screen
+        .getByRole("link", { name: "ui2: issue detail PR" })
+        .getAttribute("href"),
+    ).toBe("/r/me/proj/pulls/30");
     expect(prLink.closest("div")?.textContent).toContain("open");
+    expect(screen.queryByText("Workflow run")).toBeNull();
   });
 
   it("renders the target branch chip when the issue has a target branch", async () => {
@@ -253,52 +245,6 @@ describe("IssueDetail", () => {
     const ctx = within(statusCell as HTMLElement);
     expect(ctx.queryByText("working")).toBeNull();
     expect(ctx.getByText("open")).toBeTruthy();
-    const bot = statusCell?.querySelector("svg");
-    expect(bot?.parentElement?.className).toContain("dark:bg-sky-950");
-    expect(bot?.parentElement?.className).toContain("dark:text-sky-300");
-  });
-
-  // #863: a cost-stopped PR shows an "over budget" badge on the issue-detail linked-PR row.
-  it("shows a cost-stopped badge on the linked-PR row when the PR was stopped", async () => {
-    renderDetail(() => ({
-      ...issue,
-      linked_pull_request: {
-        ...issue.linked_pull_request!,
-        cost_stopped: true,
-        total_tokens: 1000,
-        cost_usd: 10.01,
-      },
-    }));
-
-    const badge = await screen.findByTitle(
-      "Stopped — agent cost limit exceeded",
-    );
-    expect(badge.textContent).toContain("over budget");
-    const row = screen.getByLabelText("Linked PR #30: ui2: issue detail PR");
-    const cost = row.querySelector<HTMLElement>("[data-linked-pull-cost]");
-    expect(cost?.textContent).toBe("$10");
-    expect(cost?.className).toContain("text-amber-700");
-    expect(cost?.className).toContain("dark:text-amber-300");
-  });
-
-  it("keeps the linked-PR cost muted when it was never stopped", async () => {
-    renderDetail(() => ({
-      ...issue,
-      linked_pull_request: {
-        ...issue.linked_pull_request!,
-        cost_stopped: false,
-        total_tokens: 1000,
-        cost_usd: 30.01,
-      },
-    }));
-    const row = await screen.findByLabelText(
-      "Linked PR #30: ui2: issue detail PR",
-    );
-    expect(screen.queryByText("over budget")).toBeNull();
-    const cost = row.querySelector<HTMLElement>("[data-linked-pull-cost]");
-    expect(cost?.textContent).toBe("$30");
-    expect(cost?.className).toContain("text-muted-foreground/70");
-    expect(cost?.className).not.toContain("text-amber");
   });
 
   it("hides the linked-PR summary when no PR is linked", async () => {
@@ -365,8 +311,7 @@ describe("IssueDetail", () => {
     expect(await screen.findByText("PR #30")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
-    openLinkedPullPopover("Linked PR #30: ui2: issue detail PR");
-    expect(screen.getByRole("button", { name: "Open in Herdr" })).toBeTruthy();
+    expect(screen.queryByText("Herdr")).toBeNull();
   });
 
   it("does not render the issue Sessions section", async () => {
@@ -453,18 +398,20 @@ describe("IssueDetail", () => {
     expect(screen.getByText("PR #29")).toBeTruthy();
     expect(screen.getByLabelText("Linked PR #29: closed attempt")).toBeTruthy();
     expect(screen.getByText("ready")).toBeTruthy();
-    expect(screen.getByText("Diff")).toBeTruthy();
-    expect(screen.getByText("+24")).toBeTruthy();
-    expect(screen.getByText("−7")).toBeTruthy();
-    expect(screen.getByText("Review")).toBeTruthy();
-    expect(screen.getByText("pass")).toBeTruthy();
-    expect(screen.getByText("base is 2 commits behind")).toBeTruthy();
+    expect(screen.queryByText("Diff")).toBeNull();
+    expect(screen.queryByText("Review")).toBeNull();
+    expect(screen.queryByText("base is 2 commits behind")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Review & merge" })).toBeNull();
     expect(
-      screen.getAllByRole("link", { name: "Review & merge" }),
-    ).not.toHaveLength(0);
-    expect(screen.getAllByRole("button", { name: "Close" })).not.toHaveLength(
-      0,
-    );
+      within(
+        screen.getByLabelText("Linked PR #31: current attempt"),
+      ).queryByRole("button", { name: "Close" }),
+    ).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "current attempt" })
+        .getAttribute("href"),
+    ).toBe("/r/me/proj/pulls/31");
     expect(screen.queryByText(/Discard/)).toBeNull();
     expect(screen.queryByRole("button", { name: /^Build$/ })).toBeNull();
 
@@ -473,95 +420,6 @@ describe("IssueDetail", () => {
       screen.getByRole("button", { name: "Build with Claude Code" }),
     ).toBeTruthy();
     expect(screen.queryByText(/PR #31 is already in progress/)).toBeNull();
-  });
-
-  it("hides Diff and Review on linked PRs with no commits yet", async () => {
-    const noCommits: Issue = {
-      ...issue,
-      linked_pull_requests: [
-        {
-          number: 31,
-          title: "empty open attempt",
-          state: "open",
-          merged: false,
-          html_url: "/pulls/31",
-          github_pull: null,
-          cost_stopped: false,
-          draft: false,
-          additions: 0,
-          deletions: 0,
-          changed_files: 0,
-          commits_ahead: 0,
-          review_state: "NONE",
-          base_commits_behind: 0,
-        },
-        {
-          number: 30,
-          title: "empty closed attempt",
-          state: "closed",
-          merged: false,
-          html_url: "/pulls/30",
-          github_pull: null,
-          cost_stopped: false,
-          draft: false,
-          additions: 0,
-          deletions: 0,
-          changed_files: 0,
-          commits_ahead: 0,
-          review_state: "NONE",
-          base_commits_behind: 0,
-        },
-      ],
-    };
-    renderDetail(() => noCommits);
-
-    // Both rows render, but the same rule applies to open and closed: no Diff,
-    // no Review while the attempt has no commits.
-    expect(
-      await screen.findByLabelText("Linked PR #31: empty open attempt"),
-    ).toBeTruthy();
-    expect(
-      screen.getByLabelText("Linked PR #30: empty closed attempt"),
-    ).toBeTruthy();
-    expect(screen.queryByText("Diff")).toBeNull();
-    expect(screen.queryByText("Review")).toBeNull();
-    expect(screen.queryByText("not reviewed")).toBeNull();
-  });
-
-  it("closes a linked PR immediately without confirmation", async () => {
-    renderDetail(undefined, false, {
-      "pulls/update": (params) => ({
-        ...issue.linked_pull_request!,
-        state: params.state,
-      }),
-    });
-
-    const linkedPullRow = await screen.findByLabelText(
-      "Linked PR #30: ui2: issue detail PR",
-    );
-    fireEvent.click(
-      within(linkedPullRow).getByRole("button", { name: "Close" }),
-    );
-    expect(screen.queryByRole("dialog")).toBeNull();
-
-    await waitFor(() =>
-      expect(rpcCall("pulls/update")).toMatchObject({
-        params: {
-          repo: "me/proj",
-          number: 30,
-          state: "closed",
-        },
-      }),
-    );
-    await waitFor(() => {
-      const issueGets = (
-        fetch as unknown as ReturnType<typeof vi.fn>
-      ).mock.calls.filter((call) => {
-        const body = JSON.parse(String((call[1] as RequestInit).body));
-        return body.method === "issues/get";
-      });
-      expect(issueGets.length).toBeGreaterThan(1);
-    });
   });
 
   it("explains when old attempt rows are omitted by the detail limit", async () => {
@@ -593,60 +451,12 @@ describe("IssueDetail", () => {
       ],
     }));
 
-    const activeContent = (
-      await screen.findByLabelText("Linked PR #30: ui2: issue detail PR")
-    ).querySelector("[data-linked-pull-content]");
-    const inactiveContent = screen
-      .getByLabelText("Linked PR #29: merged attempt")
-      .querySelector("[data-linked-pull-content]");
-    expect(activeContent?.className).not.toContain("opacity-45");
-    expect(inactiveContent?.className).not.toContain("opacity-45");
-  });
-
-  it("focuses the linked-PR Herdr pane from the hover popover", async () => {
-    renderDetail(undefined, false, {
-      "terminal/sessions": () => ({
-        repos: [
-          {
-            repo: "me/proj",
-            session_name: "lh-me-proj",
-            agents: [{ id: "%7", name: "dev #12", status: "working" }],
-            pull_workspaces: [{ pull: 30, pane_id: "%7", status: "working" }],
-          },
-        ],
-      }),
-      "terminal/focusAgent": () => ({ ok: true }),
-    });
-
-    expect(await screen.findByText("PR #30")).toBeTruthy();
-    openLinkedPullPopover("Linked PR #30: ui2: issue detail PR");
-    fireEvent.click(screen.getByRole("button", { name: "Open in Herdr" }));
-    await waitFor(() => {
-      expect(rpcCall("terminal/focusAgent")?.params).toEqual({
-        repo: "me/proj",
-        paneId: "%7",
-      });
-    });
-  });
-
-  it("does not treat a blocked linked-PR Herdr workspace as working", async () => {
-    renderDetail(undefined, false, {
-      "terminal/sessions": () => ({
-        repos: [
-          {
-            repo: "me/proj",
-            session_name: "lh-me-proj",
-            agents: [{ id: "%7", name: "dev #12", status: "blocked" }],
-            pull_workspaces: [{ pull: 30, pane_id: "%7", status: "blocked" }],
-          },
-        ],
-      }),
-    });
-
-    expect(await screen.findByText("PR #30")).toBeTruthy();
-    expect(screen.queryByText("working")).toBeNull();
-    openLinkedPullPopover("Linked PR #30: ui2: issue detail PR");
-    expect(screen.getByText("Herdr").nextSibling?.textContent).toBe("blocked");
+    const activeRow = await screen.findByLabelText(
+      "Linked PR #30: ui2: issue detail PR",
+    );
+    const inactiveRow = screen.getByLabelText("Linked PR #29: merged attempt");
+    expect(activeRow.className).not.toContain("opacity-45");
+    expect(inactiveRow.className).not.toContain("opacity-45");
   });
 
   it("shows no Herdr badge on the linked-PR row when no herdr session runs the PR", async () => {
