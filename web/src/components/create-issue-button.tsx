@@ -62,7 +62,10 @@ export function CreateIssueButton({
         onClick={() => launchIssue()}
       >
         <Plus className="size-4" />
-        New issue
+        <span>New issue</span>
+        {targetBranch ? (
+          <span className="font-normal opacity-75">in {targetBranch}</span>
+        ) : null}
       </Button>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>

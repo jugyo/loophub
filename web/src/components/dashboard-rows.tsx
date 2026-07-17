@@ -82,12 +82,14 @@ function RowLabels({
   repo,
   state,
   workspace,
+  workspaceFilter,
 }: {
   labels: Label[];
   owner: string;
   repo: string;
   state?: IssueListFilters["state"];
   workspace?: string;
+  workspaceFilter?: string;
 }) {
   if (labels.length === 0) return null;
   return (
@@ -100,6 +102,7 @@ function RowLabels({
           repo={repo}
           state={state}
           workspace={workspace}
+          workspaceFilter={workspaceFilter}
           className="shrink-0 whitespace-nowrap"
         />
       ))}
@@ -221,6 +224,7 @@ export function IssueRow({
   showCreatedAt = false,
   labelState,
   labelWorkspace,
+  labelWorkspaceFilter,
 }: {
   owner: string;
   repo: string;
@@ -237,6 +241,8 @@ export function IssueRow({
   labelState?: IssueListFilters["state"];
   /** Keeps label-chip filtering on the current workspace page. */
   labelWorkspace?: string;
+  /** Preserves the repo-top workspace filter when a label chip is clicked (#1494). */
+  labelWorkspaceFilter?: string;
 }) {
   const popover = useHoverPopover();
   // Usually 0–1 linked PRs; when more than one exists they stack vertically, one
@@ -302,6 +308,7 @@ export function IssueRow({
             repo={repo}
             state={labelState}
             workspace={labelWorkspace}
+            workspaceFilter={labelWorkspaceFilter}
           />
           <IssueBranchChip
             branch={issue.target_branch}

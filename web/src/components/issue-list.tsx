@@ -134,6 +134,8 @@ export function IssueList({
   repo,
   labelsParam,
   stateParam,
+  workspaceParam,
+  showWorkspaceFilter = false,
   labelFilterMode = "text",
   issueScope,
 }: {
@@ -143,6 +145,10 @@ export function IssueList({
   labelsParam?: string;
   /** `state` search param — omitted for open, `closed` or `all` for the other tabs. */
   stateParam?: IssueListFilters["state"];
+  /** `workspace` search param — omitted means All; the default branch selects unassigned + explicit-default issues (#1494). */
+  workspaceParam?: string;
+  /** Integrates the workspace selector with the repo-top state and label filters (#1494). */
+  showWorkspaceFilter?: boolean;
   /** Repo top uses the dropdown requested in #884; secondary issue lists keep the legacy text filter. */
   labelFilterMode?: "text" | "select";
   /** Limits the shared list to issues outside workspaces or in one workspace. */
@@ -172,7 +178,21 @@ export function IssueList({
   const workspaces = Array.isArray(workspacesQuery.data)
     ? workspacesQuery.data
     : [];
+  const activeWorkspaces = workspaces.filter(
+    (workspace) => workspace.archived_at === null,
+  );
   const visibleIssues = useMemo(() => {
+    if (showWorkspaceFilter) {
+      // All (no param) shows every workspace's issues; the default branch also
+      // covers unassigned issues, treated as the implicit default workspace.
+      if (!workspaceParam) return allVisibleIssues;
+      return allVisibleIssues.filter((issue) => {
+        const branch = issue.target_branch?.trim();
+        return workspaceParam === defaultBranch
+          ? !branch || branch === defaultBranch
+          : branch === workspaceParam;
+      });
+    }
     if (!issueScope) return allVisibleIssues;
     if (issueScope !== "unassigned") {
       return allVisibleIssues.filter(
@@ -188,7 +208,14 @@ export function IssueList({
       const branch = issue.target_branch?.trim();
       return !branch || !workspaceBranches.has(branch);
     });
-  }, [allVisibleIssues, issueScope, workspaces]);
+  }, [
+    allVisibleIssues,
+    defaultBranch,
+    issueScope,
+    showWorkspaceFilter,
+    workspaceParam,
+    workspaces,
+  ]);
   const issueSections = useMemo(
     () => composeIssueSections(visibleIssues, defaultBranch, workspaces),
     [visibleIssues, defaultBranch, workspaces],
@@ -210,6 +237,7 @@ export function IssueList({
     const search = {
       labels: draftLabels.trim() || undefined,
       state: state === "open" ? undefined : state,
+      workspace: showWorkspaceFilter ? workspaceParam : undefined,
     };
     if (issueScope && issueScope !== "unassigned") {
       navigate({
@@ -232,6 +260,7 @@ export function IssueList({
     const search = {
       labels: labelsParamFromList(nextLabels),
       state: state === "open" ? undefined : state,
+      workspace: showWorkspaceFilter ? workspaceParam : undefined,
     };
     if (issueScope && issueScope !== "unassigned") {
       navigate({
@@ -275,6 +304,65 @@ export function IssueList({
       className="mx-auto flex max-w-content flex-col gap-4"
     >
       <div className="flex flex-wrap items-center gap-2">
+        {showWorkspaceFilter ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                aria-label="Workspace filter"
+                className="h-9 min-w-40 justify-between gap-2 border bg-background px-3 font-normal shadow-sm"
+                disabled={workspacesQuery.isLoading || repoQuery.isLoading}
+              >
+                <span className="truncate">
+                  {workspaceParam ?? "All workspaces"}
+                </span>
+                <ChevronsUpDown
+                  className="size-4 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-56">
+              <DropdownMenuLabel>Filter by workspace</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {workspacesQuery.isError || repoQuery.isError ? (
+                <DropdownMenuItem disabled>
+                  Failed to load workspaces
+                </DropdownMenuItem>
+              ) : (
+                // All (undefined) + the implicit default branch + each active
+                // workspace, archived excluded. The default branch stands for
+                // unassigned issues too.
+                [
+                  undefined,
+                  defaultBranch,
+                  ...activeWorkspaces
+                    .map((workspace) => workspace.branch)
+                    .filter((branch) => branch !== defaultBranch),
+                ].map((branch) => (
+                  <DropdownMenuItem
+                    key={branch ?? "all"}
+                    onSelect={() =>
+                      navigate({
+                        to: "/r/$owner/$repo",
+                        params: { owner, repo },
+                        search: {
+                          labels: labels || undefined,
+                          state: state === "open" ? undefined : state,
+                          workspace: branch,
+                        },
+                      })
+                    }
+                  >
+                    {branch ?? "All"}
+                    {branch === defaultBranch ? " (default)" : ""}
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
         <div
           role="tablist"
           aria-label="Issue state"
@@ -285,6 +373,7 @@ export function IssueList({
             const search = {
               labels: labels || undefined,
               state: tab.value === "open" ? undefined : tab.value,
+              workspace: showWorkspaceFilter ? workspaceParam : undefined,
             };
             const linkProps =
               issueScope && issueScope !== "unassigned"
@@ -364,7 +453,11 @@ export function IssueList({
                   ) : null}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {labelOptions.length > 0 ? (
+                {labelsQuery.isError ? (
+                  <DropdownMenuItem disabled>
+                    Failed to load labels
+                  </DropdownMenuItem>
+                ) : labelOptions.length > 0 ? (
                   labelOptions.map((label) => {
                     const selected = selectedLabels.includes(label.name);
                     return (
@@ -428,9 +521,11 @@ export function IssueList({
         <CreateIssueButton
           repo={`${owner}/${repo}`}
           targetBranch={
-            issueScope && issueScope !== "unassigned"
-              ? issueScope.workspace
-              : undefined
+            showWorkspaceFilter
+              ? workspaceParam
+              : issueScope && issueScope !== "unassigned"
+                ? issueScope.workspace
+                : undefined
           }
         />
       </div>
@@ -463,7 +558,7 @@ export function IssueList({
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {issueScope ? (
+          {issueScope || showWorkspaceFilter ? (
             <ul className="flex flex-col divide-y rounded-md border">
               {visibleIssues.map((issue) => (
                 <li key={issue.number}>
@@ -473,9 +568,12 @@ export function IssueList({
                     issue={issue}
                     labelState={state}
                     labelWorkspace={
-                      issueScope !== "unassigned"
-                        ? issueScope?.workspace
+                      issueScope && issueScope !== "unassigned"
+                        ? issueScope.workspace
                         : undefined
+                    }
+                    labelWorkspaceFilter={
+                      showWorkspaceFilter ? workspaceParam : undefined
                     }
                   />
                 </li>

@@ -7,7 +7,7 @@ import { rootRoute } from "./root";
 
 export function RepoPage() {
   const { owner, repo } = repoRoute.useParams();
-  const { labels, state } = repoRoute.useSearch();
+  const { labels, state, workspace } = repoRoute.useSearch();
   usePageTitle([`${owner}/${repo}`, "Issues"]);
   return (
     <div data-debug-component="RepoPage" className="space-y-4">
@@ -20,8 +20,9 @@ export function RepoPage() {
         repo={repo}
         labelsParam={labels}
         stateParam={state}
+        workspaceParam={workspace}
         labelFilterMode="select"
-        issueScope="unassigned"
+        showWorkspaceFilter
       />
     </div>
   );
@@ -39,11 +40,18 @@ export const repoRoute = createRoute({
 export function validateIssueListSearch(search: Record<string, unknown>): {
   labels?: string;
   state?: "closed" | "all";
+  workspace?: string;
 } {
   const labels = typeof search.labels === "string" ? search.labels.trim() : "";
+  const workspace =
+    typeof search.workspace === "string" ? search.workspace.trim() : "";
   const state =
     search.state === "closed" || search.state === "all"
       ? search.state
       : undefined;
-  return { ...(labels ? { labels } : {}), ...(state ? { state } : {}) };
+  return {
+    ...(labels ? { labels } : {}),
+    ...(state ? { state } : {}),
+    ...(workspace ? { workspace } : {}),
+  };
 }

@@ -787,6 +787,130 @@ describe("IssueList", () => {
     expect(screen.queryByText("Other workspace issue")).toBeNull();
   });
 
+  it("combines the repository workspace filter with state and labels", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [
+          {
+            branch: "feature/a",
+            created_at: "2026-01-01T00:00:00Z",
+            archived_at: null,
+            branch_exists: true,
+          },
+          {
+            branch: "feature/archived",
+            created_at: "2026-01-01T00:00:00Z",
+            archived_at: "2026-01-02T00:00:00Z",
+            branch_exists: true,
+          },
+        ],
+        "issues/list": () => [
+          issue({ number: 1, title: "Default issue" }),
+          issue({
+            number: 2,
+            title: "Selected workspace issue",
+            target_branch: "feature/a",
+            labels: [{ name: "ui", color: null }],
+          }),
+          issue({
+            number: 3,
+            title: "Archived workspace issue",
+            target_branch: "feature/archived",
+          }),
+        ],
+        "labels/list": () => [{ name: "bug", color: null }],
+      }),
+    );
+
+    const { router } = renderIssueList(
+      <IssueList
+        owner="me"
+        repo="proj"
+        workspaceParam="feature/a"
+        labelsParam="bug"
+        stateParam="all"
+        labelFilterMode="select"
+        showWorkspaceFilter
+      />,
+      "/r/me/proj?workspace=feature%2Fa&labels=bug&state=all",
+    );
+
+    expect(await screen.findByText("Selected workspace issue")).toBeTruthy();
+    expect(screen.queryByText("Default issue")).toBeNull();
+    expect(screen.queryByText("Archived workspace issue")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Workspace filter" }).textContent,
+    ).toContain("feature/a");
+    expect(
+      screen.getByRole("button", { name: /new issue/i }).textContent,
+    ).toContain("in feature/a");
+    // The state tab and row label chip both keep the active workspace filter.
+    expect(
+      screen.getByRole("tab", { name: "Closed" }).getAttribute("href"),
+    ).toBe("/r/me/proj?labels=bug&state=closed&workspace=feature%2Fa");
+    expect(
+      screen.getByTitle('Filter issues by "ui"').getAttribute("href"),
+    ).toBe("/r/me/proj?labels=ui&state=all&workspace=feature%2Fa");
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Workspace filter" }),
+    );
+    expect(await screen.findByRole("menuitem", { name: "All" })).toBeTruthy();
+    expect(
+      screen.getByRole("menuitem", { name: "main (default)" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "feature/a" })).toBeTruthy();
+    expect(
+      screen.queryByRole("menuitem", { name: "feature/archived" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "All" }));
+
+    await waitFor(() =>
+      expect(
+        router.state.location.pathname + router.state.location.searchStr,
+      ).toBe("/r/me/proj?labels=bug&state=all"),
+    );
+  });
+
+  it("treats unassigned issues as members of the default workspace", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [],
+        "issues/list": () => [
+          issue({ number: 1, title: "Implicit default issue" }),
+          issue({
+            number: 2,
+            title: "Explicit default issue",
+            target_branch: "main",
+          }),
+          issue({
+            number: 3,
+            title: "Other workspace issue",
+            target_branch: "feature/a",
+          }),
+        ],
+      }),
+    );
+
+    renderIssueList(
+      <IssueList
+        owner="me"
+        repo="proj"
+        workspaceParam="main"
+        showWorkspaceFilter
+      />,
+      "/r/me/proj?workspace=main",
+    );
+
+    expect(await screen.findByText("Implicit default issue")).toBeTruthy();
+    expect(screen.getByText("Explicit default issue")).toBeTruthy();
+    expect(screen.queryByText("Other workspace issue")).toBeNull();
+  });
+
   it("renders active workspaces in registry order, including empty and missing branches", async () => {
     vi.stubGlobal(
       "fetch",

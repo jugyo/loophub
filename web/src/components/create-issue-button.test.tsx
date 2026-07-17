@@ -47,6 +47,9 @@ describe("CreateIssueButton", () => {
   it("forwards the workspace branch to issue creation", () => {
     render(<CreateIssueButton repo="me/proj" targetBranch="workspace/alpha" />);
 
+    expect(
+      screen.getByRole("button", { name: /new issue/i }).textContent,
+    ).toContain("in workspace/alpha");
     fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
 
     expect(launchTerminal).toHaveBeenCalledWith(

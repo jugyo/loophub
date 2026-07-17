@@ -7,7 +7,7 @@ import {
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch } from "@/api/rpc-mock";
-import { repoRoute } from "./repo";
+import { repoRoute, validateIssueListSearch } from "./repo";
 import { repoIssuesRoute } from "./repo-issues";
 import { rootRoute } from "./root";
 
@@ -42,6 +42,19 @@ function renderRoute(path: string) {
 }
 
 describe("repository search route placement", () => {
+  it("normalizes workspace, state, and label filters without serializing defaults", () => {
+    expect(
+      validateIssueListSearch({
+        workspace: " feature/alpha ",
+        labels: " bug ",
+        state: "all",
+      }),
+    ).toEqual({ workspace: "feature/alpha", labels: "bug", state: "all" });
+    expect(
+      validateIssueListSearch({ workspace: " ", labels: " ", state: "open" }),
+    ).toEqual({});
+  });
+
   it("shows the search row on the repository top", async () => {
     renderRoute("/r/me/proj");
     expect(
