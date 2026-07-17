@@ -5,6 +5,7 @@ import {
   parseClaudeSubagentJsonl,
   parseClaudeUsageJsonl,
   parseCodexRolloutJsonl,
+  parseGrokUpdatesJsonl,
   priceForModel,
 } from "./session-usage.ts";
 import { calculateTokensPerSecond } from "./session-usage-rate.ts";
@@ -828,4 +829,143 @@ test("adding gpt-5.6-sol leaves the other codex/claude rates unchanged", () => {
   // Unrelated gpt-5.6 tiers stay unpriced (out of scope) instead of borrowing
   // the -sol rate via an over-broad match.
   expect(priceForModel("gpt-5.6-terra")).toBeNull();
+});
+
+test("parseGrokUpdatesJsonl sums turn_completed modelUsage and maps cache/reasoning fields", () => {
+  const text = [
+    JSON.stringify({
+      method: "_x.ai/session/update",
+      params: {
+        update: {
+          sessionUpdate: "turn_completed",
+          prompt_id: "p1",
+          usage: {
+            inputTokens: 1000,
+            outputTokens: 40,
+            cachedReadTokens: 200,
+            reasoningTokens: 10,
+            modelUsage: {
+              "grok-4.5": {
+                inputTokens: 1000,
+                outputTokens: 40,
+                cachedReadTokens: 200,
+                reasoningTokens: 10,
+              },
+            },
+          },
+        },
+      },
+    }),
+    // Later turn_completed for the same prompt_id wins (not double-counted).
+    JSON.stringify({
+      method: "_x.ai/session/update",
+      params: {
+        update: {
+          sessionUpdate: "turn_completed",
+          prompt_id: "p1",
+          usage: {
+            inputTokens: 1200,
+            outputTokens: 50,
+            cachedReadTokens: 300,
+            reasoningTokens: 15,
+            modelUsage: {
+              "grok-4.5": {
+                inputTokens: 1200,
+                outputTokens: 50,
+                cachedReadTokens: 300,
+                reasoningTokens: 15,
+              },
+            },
+          },
+        },
+      },
+    }),
+    JSON.stringify({
+      method: "_x.ai/session/update",
+      params: {
+        update: {
+          sessionUpdate: "turn_completed",
+          prompt_id: "p2",
+          usage: {
+            inputTokens: 100,
+            outputTokens: 5,
+            cachedReadTokens: 0,
+            reasoningTokens: 0,
+            modelUsage: {
+              "grok-code-fast-1": {
+                inputTokens: 100,
+                outputTokens: 5,
+                cachedReadTokens: 0,
+                reasoningTokens: 0,
+              },
+            },
+          },
+        },
+      },
+    }),
+    // Non-usage rows are ignored.
+    JSON.stringify({
+      method: "_x.ai/session/update",
+      params: { update: { sessionUpdate: "agent_message_chunk" } },
+    }),
+  ].join("\n");
+
+  const entries = parseGrokUpdatesJsonl(text);
+  expect(entries).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        model: "grok-4.5",
+        // non-cached input = 1200 - 300
+        input_tokens: 900,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 300,
+        // reasoning folded into output
+        output_tokens: 65,
+      }),
+      expect.objectContaining({
+        model: "grok-code-fast-1",
+        input_tokens: 100,
+        cache_read_input_tokens: 0,
+        output_tokens: 5,
+      }),
+    ]),
+  );
+  expect(entries).toHaveLength(2);
+});
+
+test("priceForModel prices known Grok models and leaves unknown Grok models null", () => {
+  expect(priceForModel("grok-4.5")).toMatchObject({
+    input: 2,
+    cacheRead: 0.5,
+    output: 6,
+  });
+  expect(priceForModel("grok-code-fast-1")).toMatchObject({
+    input: 1,
+    cacheRead: 0.2,
+    output: 2,
+  });
+  expect(priceForModel("grok-4")).toMatchObject({ input: 1.25, output: 2.5 });
+  expect(priceForModel("grok-4-fast")).toMatchObject({
+    input: 1.25,
+    output: 2.5,
+  });
+  expect(priceForModel("grok-3")).toMatchObject({ input: 1.25, output: 2.5 });
+  expect(priceForModel("grok-unknown-future")).toBeNull();
+
+  expect(
+    calculateCostUsd("grok-4.5", {
+      input_tokens: 1_000_000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 1_000_000,
+    }),
+  ).toBeCloseTo(8);
+  expect(
+    calculateCostUsd("grok-unknown-future", {
+      input_tokens: 100,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 10,
+    }),
+  ).toBeNull();
 });

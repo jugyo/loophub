@@ -20,11 +20,14 @@ import {
   findClaudeSubagentTranscriptCandidates,
   findClaudeTranscript,
   findCodexRollouts,
+  findGrokSessionUpdates,
   issueOr404,
   legacyWorktreePath,
   parseClaudeSubagentTranscript,
   parseClaudeUsageJsonl,
+  RUNTIME_CLAUDE_CODE,
   RUNTIME_CODEX,
+  RUNTIME_GROK,
   readTranscriptSlice,
   relatedSessionsJSON,
   repoOr404,
@@ -36,6 +39,29 @@ import {
   worktreePath,
   worktreeRoot,
 } from "./shared.ts";
+
+function worktreeCwdForPullSession(
+  row: S.AgentSessionRow,
+): { cwd: string; pullIssueId: number } | null {
+  const target = S.listSessionLinkedTargets(row.id).find(
+    (x) => x.kind === "pull",
+  );
+  if (!target) return null;
+
+  try {
+    const r = repoOr404(target.repo);
+    const prRow = issueOr404(r, target.number, "pull");
+    const pull = S.getPull(prRow.id)!;
+    const identity = resolveWorktreeIdentity(pull.head_ref, prRow.number);
+    const cwd =
+      identity.scheme === "legacy-issue"
+        ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
+        : worktreePath(worktreeRoot(), r.full_name, identity.number);
+    return { cwd, pullIssueId: prRow.id };
+  } catch {
+    return null;
+  }
+}
 
 function codexUsageOwnerForPull(
   pullIssueId: number,
@@ -58,26 +84,41 @@ function codexUsageTarget(row: S.AgentSessionRow): {
   pullIssueId: number;
 } | null {
   if (sessionRuntime(row) !== RUNTIME_CODEX) return null;
+  const base = worktreeCwdForPullSession(row);
+  if (!base) return null;
+  return {
+    ...base,
+    ownerSessionId: codexUsageOwnerForPull(base.pullIssueId, row.id),
+  };
+}
 
-  const target = S.listSessionLinkedTargets(row.id).find(
-    (x) => x.kind === "pull",
+function grokUsageOwnerForPull(
+  pullIssueId: number,
+  fallbackSessionId: string,
+): string {
+  const primarySessionId = S.primaryDevSessionForPull(pullIssueId);
+  const primary = primarySessionId ? S.getAgentSession(primarySessionId) : null;
+  if (primary && sessionRuntime(primary) === RUNTIME_GROK)
+    return primarySessionId!;
+  return (
+    S.listSessionsForIssue(pullIssueId).find(
+      (session) => sessionRuntime(session) === RUNTIME_GROK,
+    )?.id ?? fallbackSessionId
   );
-  if (!target) return null;
+}
 
-  try {
-    const r = repoOr404(target.repo);
-    const prRow = issueOr404(r, target.number, "pull");
-    const pull = S.getPull(prRow.id)!;
-    const identity = resolveWorktreeIdentity(pull.head_ref, prRow.number);
-    const cwd =
-      identity.scheme === "legacy-issue"
-        ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
-        : worktreePath(worktreeRoot(), r.full_name, identity.number);
-    const ownerSessionId = codexUsageOwnerForPull(prRow.id, row.id);
-    return { cwd, ownerSessionId, pullIssueId: prRow.id };
-  } catch {
-    return null;
-  }
+function grokUsageTarget(row: S.AgentSessionRow): {
+  cwd: string;
+  ownerSessionId: string;
+  pullIssueId: number;
+} | null {
+  if (sessionRuntime(row) !== RUNTIME_GROK) return null;
+  const base = worktreeCwdForPullSession(row);
+  if (!base) return null;
+  return {
+    ...base,
+    ownerSessionId: grokUsageOwnerForPull(base.pullIssueId, row.id),
+  };
 }
 
 function transcriptSetStats(
@@ -114,7 +155,7 @@ function periodStarts(now: Date): Record<PeriodKey, number> {
 }
 
 function isCodingAgent(value: string | null | undefined): value is CodingAgent {
-  return value === "claude-code" || value === "codex";
+  return value === "claude-code" || value === "codex" || value === "grok";
 }
 
 function sessionPeriodCosts(
@@ -267,6 +308,17 @@ function clearOtherCodexUsageForPull(
   for (const session of S.listSessionsForIssue(pullIssueId)) {
     if (session.id === ownerSessionId) continue;
     if (sessionRuntime(session) !== RUNTIME_CODEX) continue;
+    S.resetSessionUsage(session.id);
+  }
+}
+
+function clearOtherGrokUsageForPull(
+  pullIssueId: number,
+  ownerSessionId: string,
+): void {
+  for (const session of S.listSessionsForIssue(pullIssueId)) {
+    if (session.id === ownerSessionId) continue;
+    if (sessionRuntime(session) !== RUNTIME_GROK) continue;
     S.resetSessionUsage(session.id);
   }
 }
@@ -439,6 +491,7 @@ export const sessions = {
       full?: boolean;
       projectsDir?: string;
       codexSessionsDir?: string;
+      grokSessionsDir?: string;
     } = {},
   ) {
     // Default sweep (#1119): scan only sessions linked to an open PR, so closed/merged PRs and
@@ -461,22 +514,36 @@ export const sessions = {
         pullIssueId: number;
       }
     >();
+    const grokTargets = new Map<
+      string,
+      {
+        cwd: string;
+        ownerSessionId: string;
+        pullIssueId: number;
+      }
+    >();
     for (const row of rows) {
-      if (sessionRuntime(row) !== RUNTIME_CODEX) continue;
-      const target = codexUsageTarget(row);
-      if (target) codexTargets.set(codexTargetKey(target), target);
+      if (sessionRuntime(row) === RUNTIME_CODEX) {
+        const target = codexUsageTarget(row);
+        if (target) codexTargets.set(codexTargetKey(target), target);
+        continue;
+      }
+      if (sessionRuntime(row) === RUNTIME_GROK) {
+        const target = grokUsageTarget(row);
+        if (target) grokTargets.set(codexTargetKey(target), target);
+      }
     }
     const codexScan =
       codexTargets.size > 0
         ? createCodexRolloutScan(input.codexSessionsDir)
         : null;
     const claudeIndex = rows.some(
-      (row) => sessionRuntime(row) !== RUNTIME_CODEX,
+      (row) => sessionRuntime(row) === RUNTIME_CLAUDE_CODE,
     )
       ? createClaudeTranscriptIndex(
           input.projectsDir,
           rows
-            .filter((row) => sessionRuntime(row) !== RUNTIME_CODEX)
+            .filter((row) => sessionRuntime(row) === RUNTIME_CLAUDE_CODE)
             .map((row) => row.external_session),
         )
       : null;
@@ -550,6 +617,86 @@ export const sessions = {
           S.upsertSessionUsage(row.id, usage);
         }
         saveCodexSubagentUsage(row.id, rollouts);
+        for (const usage of S.listSessionUsage(row.id)) {
+          S.rewriteSessionUsageCost(
+            row.id,
+            usage.model,
+            calculateCostUsd(usage.model, usage),
+          );
+        }
+        recordUsageSample(row.id);
+
+        return {
+          session_id: row.id,
+          status: fresh.length ? "updated" : "skipped",
+          transcript_path: transcriptPath,
+          messages: fresh.length,
+          models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+        };
+      }
+
+      if (sessionRuntime(row) === RUNTIME_GROK) {
+        const rowTarget = grokUsageTarget(row);
+        const target = rowTarget
+          ? grokTargets.get(codexTargetKey(rowTarget))
+          : null;
+        if (!target) {
+          S.resetSessionUsage(row.id);
+          return {
+            session_id: row.id,
+            status: "missing",
+            messages: 0,
+            models: [],
+          };
+        }
+
+        if (row.id !== target.ownerSessionId) {
+          S.resetSessionUsage(row.id);
+          return {
+            session_id: row.id,
+            status: "skipped",
+            messages: 0,
+            models: [],
+          };
+        }
+
+        const sessions = findGrokSessionUpdates({
+          cwd: target.cwd,
+          sessionsDir: input.grokSessionsDir,
+        });
+        if (sessions.length === 0) {
+          S.resetSessionUsage(row.id);
+          return {
+            session_id: row.id,
+            status: "missing",
+            messages: 0,
+            models: [],
+          };
+        }
+
+        const transcriptPath = sessions.map((x) => x.path).join("\n");
+        const fresh = sessions.flatMap((x) => x.entries);
+        const aggregated = aggregateUsage(fresh);
+        const topLevelUnchanged =
+          !input.full &&
+          modelUsageEqualsStored(aggregated, S.listSessionUsage(row.id));
+        if (topLevelUnchanged) {
+          clearOtherGrokUsageForPull(target.pullIssueId, target.ownerSessionId);
+          recordUsageSample(row.id);
+          return {
+            session_id: row.id,
+            status: "skipped",
+            transcript_path: transcriptPath,
+            messages: 0,
+            models: S.listSessionUsage(row.id).map(sessionUsageJSON),
+          };
+        }
+
+        S.resetSessionUsage(row.id);
+        clearOtherGrokUsageForPull(target.pullIssueId, target.ownerSessionId);
+        for (const usage of aggregated) {
+          S.upsertSessionUsage(row.id, usage);
+        }
         for (const usage of S.listSessionUsage(row.id)) {
           S.rewriteSessionUsageCost(
             row.id,

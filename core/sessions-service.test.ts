@@ -348,6 +348,45 @@ test("sessions.costSummary returns minimal per-agent period costs", () => {
   ]);
 });
 
+test("sessions.costSummary includes grok as a coding agent", () => {
+  const sessionId = "11111111-1017-0000-0000-0000000000g7";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    runtime: "grok",
+    kind: "dev",
+  });
+  D.db.run(`UPDATE agent_sessions SET created_at = ? WHERE id = ?`, [
+    "2032-07-09T01:00:00.000Z",
+    sessionId,
+  ]);
+  D.db.run(
+    `INSERT INTO session_usage
+     (session_id, model, input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, cost_usd, updated_at)
+     VALUES (?, ?, 0, 0, 0, 0, ?, ?)`,
+    [sessionId, "grok-4.5", 3.5, "2032-07-09T01:00:00.000Z"],
+  );
+
+  try {
+    expect(
+      svc.sessions.costSummary(new Date("2032-07-09T12:00:00.000Z")),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          agent: "grok",
+          month: 3.5,
+          week: 3.5,
+          day: 3.5,
+        }),
+      ]),
+    );
+  } finally {
+    D.db.run(`DELETE FROM session_usage WHERE session_id = ?`, [sessionId]);
+    D.db.run(`DELETE FROM agent_sessions WHERE id = ?`, [sessionId]);
+  }
+});
+
 test("sessions.costSummary aggregates persisted rate history into five-minute buckets", () => {
   const observedAt = [
     "2040-07-09T11:31:00.000Z",
@@ -1118,6 +1157,176 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
   expect((svc.sessions.get(sessionId) as any).subagent_usage ?? []).toEqual([]);
 
   rmSync(codexSessionsDir, { recursive: true, force: true });
+});
+
+function grokUpdatesJsonl(
+  prompts: {
+    promptId: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cachedReadTokens?: number;
+    reasoningTokens?: number;
+  }[],
+): string {
+  return prompts
+    .map((p) =>
+      JSON.stringify({
+        method: "_x.ai/session/update",
+        params: {
+          sessionId: "grok-session",
+          update: {
+            sessionUpdate: "turn_completed",
+            prompt_id: p.promptId,
+            usage: {
+              inputTokens: p.inputTokens,
+              outputTokens: p.outputTokens,
+              cachedReadTokens: p.cachedReadTokens ?? 0,
+              reasoningTokens: p.reasoningTokens ?? 0,
+              modelUsage: {
+                [p.model]: {
+                  inputTokens: p.inputTokens,
+                  outputTokens: p.outputTokens,
+                  cachedReadTokens: p.cachedReadTokens ?? 0,
+                  reasoningTokens: p.reasoningTokens ?? 0,
+                },
+              },
+            },
+          },
+        },
+      }),
+    )
+    .join("\n");
+}
+
+test("sessions.usageSync imports Grok updates.jsonl for the linked PR worktree cwd", async () => {
+  const issue = svc.issues.create("me/proj", { title: "grok usage" });
+  const sessionId = "99999999-0000-0000-0000-0000000000g1";
+  const peerId = "99999999-0000-0000-0000-0000000000g2";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    runtime: "grok",
+    kind: "dev",
+  });
+  svc.sessions.register({
+    id: peerId,
+    agent: "workflow-step",
+    session: peerId,
+    runtime: "grok",
+    kind: "workflow-step",
+  });
+  const opened = await svc.dev.openPr(
+    "me/proj",
+    { issue: issue.number, base: "main" },
+    sessionId,
+  );
+  svc.sessions.link("me/proj", { sessionId: peerId, pr: opened.number });
+
+  const worktree = join(HOME, "worktrees", "me", "proj", `pr-${opened.number}`);
+  const grokSessionsDir = mkdtempSync(join(tmpdir(), "lh-grok-sessions-"));
+  const cwdDir = join(grokSessionsDir, encodeURIComponent(worktree));
+  const otherCwdDir = join(
+    grokSessionsDir,
+    encodeURIComponent("/tmp/other-worktree"),
+  );
+  mkdirSync(join(cwdDir, "grok-sess-a"), { recursive: true });
+  mkdirSync(join(cwdDir, "grok-sess-b"), { recursive: true });
+  mkdirSync(join(otherCwdDir, "grok-other"), { recursive: true });
+  writeFileSync(
+    join(cwdDir, "grok-sess-a", "updates.jsonl"),
+    grokUpdatesJsonl([
+      {
+        promptId: "p1",
+        model: "grok-4.5",
+        inputTokens: 1000,
+        outputTokens: 40,
+        cachedReadTokens: 200,
+        reasoningTokens: 10,
+      },
+    ]),
+  );
+  writeFileSync(
+    join(cwdDir, "grok-sess-b", "updates.jsonl"),
+    grokUpdatesJsonl([
+      {
+        promptId: "p2",
+        model: "grok-code-fast-1",
+        inputTokens: 100,
+        outputTokens: 5,
+      },
+    ]),
+  );
+  writeFileSync(
+    join(otherCwdDir, "grok-other", "updates.jsonl"),
+    grokUpdatesJsonl([
+      {
+        promptId: "p-other",
+        model: "grok-4.5",
+        inputTokens: 99999,
+        outputTokens: 999,
+      },
+    ]),
+  );
+
+  const first = svc.sessions.usageSync({ sessionId, grokSessionsDir });
+  expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
+  // Owner (primary dev) stores the worktree aggregate; peer is cleared.
+  const ownerUsage = svc.sessions.get(sessionId).usage ?? [];
+  expect(ownerUsage).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        model: "grok-4.5",
+        input_tokens: 800,
+        cache_read_input_tokens: 200,
+        output_tokens: 50,
+      }),
+      expect.objectContaining({
+        model: "grok-code-fast-1",
+        input_tokens: 100,
+        output_tokens: 5,
+      }),
+    ]),
+  );
+  const grok45 = ownerUsage.find((u) => u.model === "grok-4.5")!;
+  expect(grok45.cost_usd).not.toBeNull();
+  expect(grok45.cost_usd).toBeCloseTo(
+    (800 * 2 + 200 * 0.5 + 50 * 6) / 1_000_000,
+  );
+  expect(svc.sessions.get(peerId).usage ?? []).toEqual([]);
+
+  // Unchanged re-sync is skipped.
+  const second = svc.sessions.usageSync({ sessionId, grokSessionsDir });
+  expect(second).toMatchObject({ synced: 0, skipped: 1, missing: 0 });
+
+  // Unknown model keeps tokens with null cost.
+  writeFileSync(
+    join(cwdDir, "grok-sess-a", "updates.jsonl"),
+    grokUpdatesJsonl([
+      {
+        promptId: "p-unknown",
+        model: "grok-unknown-future",
+        inputTokens: 50,
+        outputTokens: 5,
+      },
+    ]),
+  );
+  writeFileSync(join(cwdDir, "grok-sess-b", "updates.jsonl"), "");
+  const unknown = svc.sessions.usageSync({
+    sessionId,
+    grokSessionsDir,
+    full: true,
+  });
+  expect(unknown).toMatchObject({ synced: 1 });
+  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+    model: "grok-unknown-future",
+    input_tokens: 50,
+    output_tokens: 5,
+    cost_usd: null,
+  });
+
+  rmSync(grokSessionsDir, { recursive: true, force: true });
 });
 
 test("sessions.usageSync clears stale Codex usage when no PR worktree target resolves", () => {

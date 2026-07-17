@@ -171,6 +171,40 @@ const GPT_56_SOL_PRICE: UsagePrice = {
   output: 30,
 };
 
+// xAI Grok rates (USD per 1M tokens). Source: https://docs.x.ai/developers/models
+// and https://docs.x.ai/developers/pricing (checked 2026-07-17). Models with
+// long-context tiers publish a higher rate above a prompt threshold; we store
+// the standard (<200k prompt) tier only — same simplification as Claude/GPT
+// prices here (no per-request prompt-size awareness).
+//
+// grok-4.5: https://docs.x.ai/developers/models/grok-4.5
+//   input $2.00 / cached input $0.50 / output $6.00
+const GROK_45_PRICE: UsagePrice = {
+  input: 2,
+  cacheCreation: 2,
+  cacheRead: 0.5,
+  output: 6,
+};
+// grok-code-fast-1 is an alias of grok-build-0.1
+// (https://docs.x.ai/developers/models/grok-code-fast-1):
+//   input $1.00 / cached input $0.20 / output $2.00
+const GROK_CODE_FAST_PRICE: UsagePrice = {
+  input: 1,
+  cacheCreation: 1,
+  cacheRead: 0.2,
+  output: 2,
+};
+// grok-4.3 family (also the post–May-15-2026 redirect target for retired
+// slugs grok-4 / grok-4-fast / grok-3 — see
+// https://docs.x.ai/developers/migration/may-15-retirement):
+//   input $1.25 / cached input $0.20 / output $2.50
+const GROK_43_PRICE: UsagePrice = {
+  input: 1.25,
+  cacheCreation: 1.25,
+  cacheRead: 0.2,
+  output: 2.5,
+};
+
 const IGNORED_CODEX_ROLLOUT_MODELS = new Set(["codex-auto-review"]);
 
 function isIgnoredCodexRolloutModel(model: string | null): boolean {
@@ -198,6 +232,21 @@ export function priceForModel(model: string): UsagePrice | null {
   if (m.includes("gpt-5.4-mini")) return GPT_54_MINI_PRICE;
   if (m.includes("gpt-5.4")) return GPT_54_PRICE;
   if (m.includes("gpt-5.3-codex-spark")) return GPT_53_CODEX_SPARK_PRICE;
+  // Grok: more-specific model ids first so "grok-4.5" does not fall through to
+  // the broader "grok-4" branch, and "grok-4-fast" does not match plain "grok-4".
+  if (m.includes("grok-4.5")) return GROK_45_PRICE;
+  if (m.includes("grok-code-fast") || m.includes("grok-build"))
+    return GROK_CODE_FAST_PRICE;
+  if (
+    m.includes("grok-4-fast") ||
+    m.includes("grok-4-1-fast") ||
+    m.includes("grok-4.3") ||
+    m.includes("grok-4.20")
+  )
+    return GROK_43_PRICE;
+  // Bare "grok-4" / "grok-4-0709" and "grok-3" are retired API slugs billed at
+  // the grok-4.3 redirect rate after 2026-05-15 (see GROK_43_PRICE comment).
+  if (m.includes("grok-4") || m.includes("grok-3")) return GROK_43_PRICE;
   return null;
 }
 
@@ -444,6 +493,93 @@ function usageDelta(
   return Object.values(delta).some((value) => value < 0) ? current : delta;
 }
 
+// Map one Grok turn_completed.usage (or modelUsage[*]) object onto the shared
+// session_usage columns. Grok reports camelCase totals:
+//   inputTokens / outputTokens / cachedReadTokens / reasoningTokens
+// inputTokens is total input including cached reads, so non-cached input is
+// inputTokens - cachedReadTokens. There is no cache-write field. reasoningTokens
+// have no dedicated column — fold into output_tokens (documented on the PR);
+// xAI bills them as a separate token type, and the model's output rate is the
+// best available estimate without schema expansion.
+function grokTokenUsageFromRaw(u: Record<string, unknown>): TokenUsage {
+  const inputTokens = tokenCount(u.inputTokens);
+  const cachedRead = tokenCount(u.cachedReadTokens);
+  const outputTokens = tokenCount(u.outputTokens);
+  const reasoningTokens = tokenCount(u.reasoningTokens);
+  return {
+    input_tokens: Math.max(0, inputTokens - cachedRead),
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: cachedRead,
+    output_tokens: outputTokens + reasoningTokens,
+  };
+}
+
+// Parse Grok Build `updates.jsonl`. Each `sessionUpdate: turn_completed` row
+// carries per-prompt usage (often with modelUsage[<modelId>]); the same
+// prompt_id may appear more than once as a multi-turn prompt progresses, so
+// the latest row for a prompt_id wins before prompts are summed.
+export function parseGrokUpdatesJsonl(
+  text: string,
+  messageId = "grok-updates",
+): UsageEntry[] {
+  const byPrompt = new Map<string, Map<string, TokenUsage>>();
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const row = objectValue(parsed);
+    if (!row) continue;
+    const params = objectValue(row.params);
+    const update = objectValue(params?.update) ?? objectValue(row.update);
+    if (!update) continue;
+    if (stringValue(update.sessionUpdate) !== "turn_completed") continue;
+    const usage = objectValue(update.usage);
+    if (!usage) continue;
+
+    const meta = objectValue(params?._meta);
+    const promptId =
+      stringValue(update.prompt_id) ??
+      stringValue(meta?.eventId) ??
+      `grok-turn-${byPrompt.size}`;
+
+    const models = new Map<string, TokenUsage>();
+    const modelUsage = objectValue(usage.modelUsage);
+    if (modelUsage) {
+      for (const [model, raw] of Object.entries(modelUsage)) {
+        const mu = objectValue(raw);
+        if (!mu || !stringValue(model)) continue;
+        const tokens = grokTokenUsageFromRaw(mu);
+        if (!hasTokenUsage(tokens)) continue;
+        models.set(model, tokens);
+      }
+    }
+    if (models.size === 0) {
+      const tokens = grokTokenUsageFromRaw(usage);
+      if (hasTokenUsage(tokens)) models.set("grok", tokens);
+    }
+    if (models.size === 0) continue;
+    byPrompt.set(promptId, models);
+  }
+
+  const totals = new Map<string, TokenUsage>();
+  for (const models of byPrompt.values()) {
+    for (const [model, usage] of models) {
+      totals.set(model, addUsage(totals.get(model) ?? ZERO_USAGE, usage));
+    }
+  }
+
+  return [...totals.entries()].map(([model, usage]) => ({
+    message_id: messageId,
+    model,
+    ...usage,
+  }));
+}
+
 export function parseCodexRolloutJsonl(
   text: string,
   messageId = "codex-rollout",
@@ -623,6 +759,20 @@ export function defaultClaudeProjectsDir(): string {
 
 export function defaultCodexSessionsDir(): string {
   return join(homedir(), ".codex", "sessions");
+}
+
+export function defaultGrokSessionsDir(): string {
+  return join(homedir(), ".grok", "sessions");
+}
+
+// Grok Build stores sessions under ~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/.
+export function encodeGrokSessionCwd(cwd: string): string {
+  return encodeURIComponent(cwd);
+}
+
+export interface GrokSessionCandidate extends TranscriptCandidate {
+  sessionId: string;
+  entries: UsageEntry[];
 }
 
 export function createClaudeTranscriptIndex(
@@ -877,4 +1027,37 @@ export function findCodexRollouts(input: {
       entries: parsed.entries,
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+// Locate Grok Build session transcripts for a worktree cwd. Grok does not take
+// --session-id and does not store LOOPHUB_SESSION_ID as its session folder name,
+// so correlation is by cwd (same approach as Codex rollouts), aggregating every
+// Grok session under that worktree.
+export function findGrokSessionUpdates(input: {
+  cwd: string;
+  sessionsDir?: string;
+}): GrokSessionCandidate[] {
+  const sessionsDir = input.sessionsDir ?? defaultGrokSessionsDir();
+  if (!input.cwd || !existsSync(sessionsDir)) return [];
+  const cwdDir = join(sessionsDir, encodeGrokSessionCwd(input.cwd));
+  if (!existsSync(cwdDir)) return [];
+
+  const out: GrokSessionCandidate[] = [];
+  for (const dirent of readdirSync(cwdDir, { withFileTypes: true })) {
+    if (!dirent.isDirectory()) continue;
+    const path = join(cwdDir, dirent.name, "updates.jsonl");
+    if (!existsSync(path)) continue;
+    const st = statSync(path);
+    if (!st.isFile()) continue;
+    const entries = parseGrokUpdatesJsonl(readFileSync(path, "utf8"), path);
+    if (entries.length === 0) continue;
+    out.push({
+      path,
+      size: st.size,
+      mtimeMs: st.mtimeMs,
+      sessionId: dirent.name,
+      entries,
+    });
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path));
 }
