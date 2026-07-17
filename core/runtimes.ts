@@ -50,6 +50,13 @@ export interface RuntimeDefinition {
   // Whether the `--sandbox`/`--allow` managed-settings launch options apply to this runtime. Only
   // claude has that concept; codex/grok reject the combination up front (cli/commands/build.ts).
   sandboxCapable: boolean;
+  // The argv fragment that opts this runtime into auto mode: skip approval prompts and run tools
+  // without asking (`--auto` on the LoopHub side). Every launch path — cli/dev.ts's argv builders,
+  // `lh workflow`'s parent agent, and core/terminal/terminal-launch.ts — appends this verbatim
+  // instead of re-branching on the runtime id (#1588). It is only the approval flag: a runtime's
+  // non-auto posture (Codex's workspace-write sandbox) and its other per-runtime launch differences
+  // stay with the caller.
+  autoApproveArgs: readonly string[];
 }
 
 // The registry entries, in the canonical display/enumeration order. `CODING_AGENTS` and the RUNTIMES
@@ -73,6 +80,7 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     effortSuggestions: ["low", "medium", "high", "xhigh", "max"],
     resumable: true,
     sandboxCapable: true,
+    autoApproveArgs: ["--permission-mode", "auto"],
   },
   {
     id: "codex",
@@ -91,6 +99,9 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     effortSuggestions: ["minimal", "low", "medium", "high"],
     resumable: false,
     sandboxCapable: false,
+    // Codex's closest single flag to Claude Code's auto mode: it also drops the sandbox, so callers
+    // that have a non-auto posture use buildCodexSandboxArgs() instead of this.
+    autoApproveArgs: ["--dangerously-bypass-approvals-and-sandbox"],
   },
   {
     id: "grok",
@@ -109,6 +120,9 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     effortSuggestions: ["low", "medium", "high"],
     resumable: false,
     sandboxCapable: false,
+    // Auto-approve all tool executions. The older tentative `--force` is rejected by current `grok`
+    // CLIs as unknown, which made Web Start workflow (`--auto`) exit the agent pane at once (#1540).
+    autoApproveArgs: ["--always-approve"],
   },
 ];
 

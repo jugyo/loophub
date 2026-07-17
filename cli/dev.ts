@@ -304,7 +304,7 @@ export function buildCodexArgs({
   loopHubHome?: string;
 }): string[] {
   const args: string[] = [];
-  if (auto) args.push("--dangerously-bypass-approvals-and-sandbox");
+  if (auto) args.push(...RUNTIMES.codex.autoApproveArgs);
   else args.push(...buildCodexSandboxArgs(loopHubHome));
   if (model) {
     const m = display(model).trim();
@@ -346,7 +346,7 @@ export function buildGrokArgs({
   // user-facing reasoning-effort flag yet (see core/runtimes.ts effortSuggestions note).
 }): string[] {
   const args: string[] = [];
-  if (auto) args.push("--always-approve");
+  if (auto) args.push(...RUNTIMES.grok.autoApproveArgs);
   if (model) {
     const m = display(model).trim();
     if (m) args.push("--model", m);
@@ -394,7 +394,7 @@ export function buildClaudeArgs({
   }
   if (auto || managedSettings) {
     // Auto mode when explicitly requested (--auto) or implied by the sandbox (managedSettings).
-    args.push("--permission-mode", "auto");
+    args.push(...RUNTIMES["claude-code"].autoApproveArgs);
   }
   if (sessionName) {
     const name = display(sessionName).trim();

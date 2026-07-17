@@ -266,9 +266,7 @@ function parentAgentArgs(input: {
   if (input.runtime === "codex") {
     const systemPrompt = readFileSync(input.systemPromptPath, "utf8");
     return [
-      ...(auto
-        ? ["--dangerously-bypass-approvals-and-sandbox"]
-        : buildCodexSandboxArgs()),
+      ...(auto ? RUNTIMES.codex.autoApproveArgs : buildCodexSandboxArgs()),
       "--model",
       input.model,
       `${systemPrompt}\n\n${input.userPrompt}`,
@@ -276,12 +274,10 @@ function parentAgentArgs(input: {
   }
   if (input.runtime === "grok") {
     const systemPrompt = readFileSync(input.systemPromptPath, "utf8");
-    // Grok has no sandbox concept (mirrors cli/dev.ts buildGrokArgs): auto opts into its
-    // approval-bypass (`--always-approve`); non-auto passes nothing extra. The old tentative
-    // `--force` flag is rejected by current grok CLIs and would exit the agent pane immediately
-    // when Web Start workflow launches with --auto (#1540).
+    // Grok has no sandbox concept (mirrors cli/dev.ts buildGrokArgs): auto opts into its registry
+    // approval-bypass; non-auto passes nothing extra.
     return [
-      ...(auto ? ["--always-approve"] : []),
+      ...(auto ? RUNTIMES.grok.autoApproveArgs : []),
       "--model",
       input.model,
       `${systemPrompt}\n\n${input.userPrompt}`,
@@ -292,7 +288,7 @@ function parentAgentArgs(input: {
     input.sessionId,
     "--model",
     input.model,
-    ...(auto ? ["--permission-mode", "auto"] : []),
+    ...(auto ? RUNTIMES["claude-code"].autoApproveArgs : []),
     "--append-system-prompt-file",
     input.systemPromptPath,
     input.userPrompt,

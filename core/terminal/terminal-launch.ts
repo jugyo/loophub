@@ -157,16 +157,14 @@ export function commandForHerdrLaunch(input: {
     const auto = autoModeOnLaunch(agent);
     if (agent === "codex") {
       const codexArgs = (
-        auto
-          ? ["--dangerously-bypass-approvals-and-sandbox"]
-          : buildCodexSandboxArgs()
+        auto ? RUNTIMES.codex.autoApproveArgs : buildCodexSandboxArgs()
       )
         .map(shellArg)
         .join(" ");
       return `codex ${codexArgs} ${command}`;
     }
     const claudeArgs = auto
-      ? `${shellArg("--permission-mode")} ${shellArg("auto")} `
+      ? `${RUNTIMES["claude-code"].autoApproveArgs.map(shellArg).join(" ")} `
       : "";
     return `claude ${claudeArgs}${command}`;
   }
@@ -218,7 +216,12 @@ export function buildScheduledTaskCommand(input: {
     parts.push(prompt);
     return `${envPrefix}${parts.join(" ")}`;
   }
-  const parts = ["claude", "-p", prompt, "--permission-mode", "auto"];
+  const parts = [
+    "claude",
+    "-p",
+    prompt,
+    ...RUNTIMES["claude-code"].autoApproveArgs,
+  ];
   if (model) parts.push("--model", shellArg(model));
   return `${envPrefix}${parts.join(" ")}`;
 }
@@ -631,7 +634,7 @@ function buildWorkflowStepAgentParts(
       // Match the interactive Build button's Codex posture (cli/dev.ts buildCodexArgs): auto mode
       // bypasses approvals/sandbox, otherwise run inside the workspace-write sandbox.
       ...(input.permissionMode === "auto"
-        ? ["--dangerously-bypass-approvals-and-sandbox"]
+        ? RUNTIMES.codex.autoApproveArgs
         : buildCodexSandboxArgs()
       ).map(shellArg),
       ...(model ? ["--model", shellArg(model)] : []),
@@ -642,12 +645,10 @@ function buildWorkflowStepAgentParts(
   if (input.runtime === "grok") {
     return [
       "grok",
-      // Match cli/dev.ts buildGrokArgs: auto mode opts into grok's `--always-approve` approval
-      // bypass; grok has no sandbox concept, so nothing extra otherwise. Do not use the old
-      // tentative `--force` — current grok CLIs reject it and the agent pane exits immediately
-      // (#1540, Web Start workflow --auto).
+      // Match cli/dev.ts buildGrokArgs: auto mode opts into grok's registry approval bypass; grok
+      // has no sandbox concept, so nothing extra otherwise.
       ...(input.permissionMode === "auto"
-        ? ["--always-approve"].map(shellArg)
+        ? RUNTIMES.grok.autoApproveArgs.map(shellArg)
         : []),
       ...(model ? ["--model", shellArg(model)] : []),
       // Grok takes no system-prompt flag, so fold the rendered contract into the prompt.
@@ -660,7 +661,7 @@ function buildWorkflowStepAgentParts(
     shellArg(input.sessionId),
     ...(model ? ["--model", shellArg(model)] : []),
     ...(input.permissionMode
-      ? ["--permission-mode", shellArg(input.permissionMode)]
+      ? RUNTIMES["claude-code"].autoApproveArgs.map(shellArg)
       : []),
     "--append-system-prompt-file",
     shellArg(input.systemPromptPath),

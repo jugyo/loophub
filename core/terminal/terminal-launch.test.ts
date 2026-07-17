@@ -430,7 +430,7 @@ describe("herdr terminal launch", () => {
       "claude --session-id '11111111-1111-4111-8111-111111111111'",
     );
     expect(plan.command).toContain("--model 'sonnet'");
-    expect(plan.command).toContain("--permission-mode 'auto'");
+    expect(plan.command).toContain("'--permission-mode' 'auto'");
     expect(plan.command).toContain(
       "--append-system-prompt-file '/tmp/run/execute-contract.md'",
     );

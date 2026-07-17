@@ -225,7 +225,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   ]);
   expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_RUN=");
   expect(launched.herdr.command).toContain("LOOPHUB_WORKFLOW_STEP='execute'");
-  expect(launched.herdr.command).toContain("--permission-mode 'auto'");
+  expect(launched.herdr.command).toContain("'--permission-mode' 'auto'");
   expect(launched.agent_name).toBe(`executor #${result.run.id}-1`);
 
   svc.workflowRuns.confirmStepLaunch(
