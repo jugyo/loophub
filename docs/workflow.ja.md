@@ -1,6 +1,6 @@
 # Execute / Verify workflow — ポインタ入力と HEAD/review 観測による親子協調
 
-> Status: Implemented · Issue: #975 / #981 / #1284 / #1307 / #1358
+> Status: Implemented · Issue: #975 / #981 / #1284 / #1307 / #1358 / #1555 / #1556
 >
 > 本書は、特定の skill を必須とせずに開発 workflow を実行するモデルを定義する。step は
 > **Execute / Verify の 2 つに固定**し、ユーザーが設定できるのは各 step に与える prompt だけである。
@@ -12,6 +12,10 @@
   への注入で届ける。**live な子への操作**（`orchestrator:` 注入 / Esc）は parent が `herdr pane run`
   で直接行う（lh CLI のラッパーを挟まない）。子の**起動**は `lh workflow launch-step`、**観測**は
   `lh workflow step status` / `lh events` のまま。子は親の pane・topology を知らない。
+- **rework / 継続作業は同じ Execute セッションを優先する**（#1556）— live な executor pane があれば
+  parent が `orchestrator:` を注入し、毎回 fresh Execute を起こさない。pane が無い・解決できない・
+  注入失敗のときだけ `launch-step` で fresh 起動する。**Verify は常に fresh child**（注入で再利用
+  しない）。注入するかどうかの判断は parent contract に置き、engine には持たせない。
 
 idle 状態の検知は、状態遷移や完了判定のどこにも使わない。
 
@@ -76,24 +80,38 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    pull し続ける。どの event も domain state の再観測を促す timing signal であり、完了や verdict
    そのものではない。
 2. `lh workflow launch-step` で Execute / Verify child を起動する（engine が input ポインタを解決）。
-   出力の `agent` 行（Herdr name）を記録し、`herdr agent get` で `pane_id` を解決して注入先として使う。
+   出力の `agent` 行（Herdr name、例: `executor #<run>-<seq>`）を記録し、`herdr agent get` で
+   `pane_id` を解決して注入先として使う。parent 再起動で agent name を失った場合は
+   `herdr agent list` から当該 run の最新 `executor #<run>-*` を引き直す。
 3. **遷移は「turn done event の観測 → `lh workflow step status` で HEAD / review 状態を観測」で決める。**
    宣言はタイミングの合図であり真実を代替しない。宣言があっても HEAD が前進していなければ Verify を
-   起動しない。pane 出力・子の自己申告・idle 検知は遷移判断に使わない。
+   起動しない。pane 出力・子の自己申告・idle 検知・**注入の成功自体**は遷移判断に使わない。
 4. `lh workflow run advance-to-verify | request-rework | await-human | resume` の意図ベース command で
    通常の lifecycle を遷移する。live な子への注入 / Esc は herdr 直接操作であり、lh の lifecycle
    command ではない。
-5. request_changes review に対しては、最新 Execute child を `herdr agent get` で解決し、`pane_id` が
-   得られれば `agent_status: done` でも同じ pane へ `orchestrator: address review #<id>` を
-   `herdr pane run` で注入する。agent を解決できない、`pane_id` がない、または注入に失敗した場合だけ
-   `--review <id>` で fresh relaunch する。findings の要約・解釈は行わず、修正後の Verify は常に
-   fresh child とする。
+5. request_changes / 継続指示 / merge conflict は **同じ Execute 注入経路** を使う。最新 Execute
+   child を解決し、`pane_id` が得られれば `agent_status: done` でも同じ pane へ **1 行の**
+   `orchestrator: ...` を `herdr pane run` で注入する（改行・制御文字は空白へ潰す）。rework は
+   `orchestrator: address review #<id>` のみ（findings の要約・解釈はしない）。agent を解決できない、
+   `pane_id` がない、または注入に失敗した場合だけ `launch-step`（`--review` / `--note`）で fresh
+   relaunch する。修正後の Verify は常に fresh child とする。
 6. 上限超過や解消不能状態を issue comment + Inbox + needs-human 状態で人間へ渡す。
 7. passing verdict 後も run と観測ループ、および可能なら Execute pane を維持し、追加指示や turn-done を
    待つ。run を恒久終了する command は無く、終了させるのは人間である。merge はしない。
 
-親は idle 検知を使わない（`herdr agent wait --status idle` を使わない）。親はコード・review・PR を
-直接編集しない。
+親は idle 検知を使わない（`herdr agent wait --status idle` を使わない）。注入前に子の idle を待たない。
+rework は通常 Execute の turn done 後に届く。継続指示が作業中に来ても注入し、polling を続ける
+（Esc は `workflow_run.cost_exceeded` のときだけ）。親はコード・review・PR を直接編集しない。
+
+### 注入 round の監査（新しいコマンドは足さない）
+
+注入 round は既存の domain fact だけで追える。監査専用の lh コマンドは追加しない。
+
+- `lh workflow run request-rework` が `rework_count` を増やす。
+- Execute の各ターンは `workflow_run.turn_done` event を残す。
+- 注入成功時は `step_sessions_json.execute` に既に記録済みの **同一 session** が使われる
+  （`launch-step` を呼ばないため execute session id は増えない）。注入失敗後の fresh launch だけが
+  新しい execute session id を追加する — これが「同じセッション継続」と「再起動」の差になる。
 
 ### 3.2 Execute agent（ドメインを知る pull 型開発者）
 
@@ -199,11 +217,13 @@ pane が閉じている場合は `lh workflow launch-step --step execute --note 
 変わって HEAD が不変なら既存 pass を fresh のまま維持する。run を恒久終了する command は無く、
 終了させるのは人間である。
 
-rework 上限は 3。最新 Execute child に対する `herdr agent get` が成功して `pane_id` を返す場合は、
-`agent_status: done` でも pane は再利用可能と扱い、新規 launch より先に parent が
-`herdr pane run` で `orchestrator: address review #<id>` の注入を試す。agent を解決できない、
-`pane_id` がない、または注入に失敗した場合に限り `--review <id>` で Execute child を再 launch する。
-修正後の Verify は常に fresh child とする。
+rework 上限は 3。最新 Execute child に対する `herdr agent get`（必要なら `herdr agent list` で
+agent name を再発見）が成功して `pane_id` を返す場合は、`agent_status: done` でも pane は再利用可能
+と扱い、新規 launch より先に parent が **1 行の** `herdr pane run` で
+`orchestrator: address review #<id>` の注入を試す（同じ Execute セッションで対応する）。agent を
+解決できない、`pane_id` がない、または注入に失敗した場合に限り `--review <id>` で Execute child を
+再 launch する。修正後の Verify は常に fresh child とする。注入の成功自体を execute complete の根拠
+にしない — 次の遷移は `lh workflow step status` の HEAD / review 観測のみ。
 
 宣言がないまま run 活動が一定時間停止した場合、worker の stall sweep（`sweepStalledRuns`）が独立して
 その run を needs-human に保持し Inbox で人間へ可視化する。自動回復は試みない。rework 上限・escalation・
@@ -233,7 +253,8 @@ lh workflow step input <run> <step>         # 合成した contract + input ポ�
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測
 # live child control（parent が herdr を直接叩く。lh ラッパーは無い）
 herdr agent get <agent name>                # launch-step の agent 行から pane_id を解決
-herdr pane run <pane_id> 'orchestrator: ...'  # live な子へ指示を注入
+herdr agent list                            # parent 再起動後に executor #<run>-* を再発見
+herdr pane run <pane_id> 'orchestrator: ...'  # live な子へ 1 行の指示を注入（改行・制御文字は潰す）
 herdr pane run <pane_id> Escape             # コスト超過時に子だけを中断（run は running のまま）
 ```
 
@@ -267,9 +288,12 @@ herdr pane run <pane_id> Escape             # コスト超過時に子だけを�
 ## 11. 検証観点
 
 - 「Execute → turn done → Verify pass → running のまま追加指示を待機」「追加指示 → Execute 注入または
-  `--note` 付き launch → HEAD 前進時だけ fresh Verify」「request_changes → rework 注入（review id 指定）
-  → turn done → fresh Verify pass」「宣言なしタイムアウト → 人間へ可視化」「明示的 stop」の基本フローが
-  artifact なしで決定的に進行する。
+  `--note` 付き launch → HEAD 前進時だけ fresh Verify」「request_changes → rework 注入（review id のみ、
+  同じ Execute セッション優先）→ turn done → fresh Verify pass」「pane 無し時だけ fresh Execute
+  launch」「注入テキストは 1 行」「注入成功は遷移根拠にしない」「宣言なしタイムアウト → 人間へ可視化」
+  「明示的 stop」の基本フローが artifact なしで決定的に進行する。
+- rework 注入 round が `rework_count` + `workflow_run.turn_done` + `step_sessions_json.execute` の
+  同一 session で監査でき、監査専用コマンドが不要である。
 - Execute input が issue / PR / (rework 時) review id のポインタのみで、`task.md` / `findings.md` が
   生成されない。
 - Verify input が (issue 参照, base SHA, head SHA) のみで、`changes.diff` / `report.md` /

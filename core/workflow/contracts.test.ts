@@ -76,6 +76,7 @@ test("parent delivers rework as a review-id pointer without summarizing findings
   expect(parent).toContain(
     "Do **not** summarize, quote, or interpret the review's",
   );
+  expect(parent).toContain("orchestrator: address review #<id>");
   expect(parent).toContain(
     "lh workflow launch-step --repo '<repo>' --run <run> --step execute --review <id>",
   );
@@ -86,6 +87,7 @@ test("parent injects into live children via herdr and falls back to launch-step"
 
   expect(parent).toContain("herdr pane run");
   expect(parent).toContain("herdr agent get");
+  expect(parent).toContain("herdr agent list");
   expect(parent).toContain("record the printed `agent` line");
   expect(parent).toContain("orchestrator:");
   expect(parent).not.toContain("lh workflow run resume");
@@ -94,6 +96,51 @@ test("parent injects into live children via herdr and falls back to launch-step"
     /launch \*\*Verify as a\s+fresh child\*\* — always a new child/u,
   );
   expect(parent).toContain("Do not use child-session resume");
+});
+
+test("parent prefers same-session Execute inject for rework, continuing, and merge conflict", () => {
+  const parent = workflowContractText("parent");
+
+  expect(parent).toContain("shared Execute inject path");
+  expect(parent).toContain("same Execute session");
+  expect(parent).toContain(
+    "Do not launch a fresh Execute on rework / continuing / merge-conflict when the live Execute pane",
+  );
+  expect(parent).toContain(
+    "Verify never reuses a prior verifier session via injection",
+  );
+  expect(parent).toContain(
+    "hand resolution to\n  Execute via the same inject-or-launch path as continuing work",
+  );
+});
+
+test("parent inject text is single-line and inject is not a transition fact", () => {
+  const parent = workflowContractText("parent");
+
+  expect(parent).toContain("The text must be a single line");
+  expect(parent).toContain(
+    "collapse newlines, tabs, and other control characters",
+  );
+  expect(parent).toContain(
+    "Do not inject multi-line or control-character-laden text into a pane",
+  );
+  expect(parent).toContain(
+    "Injecting text is delivery only; it is never itself a",
+  );
+  expect(parent).toContain(
+    "Do **not** wait for the child to go idle before injecting",
+  );
+});
+
+test("parent documents inject-round audit without a new command", () => {
+  const parent = workflowContractText("parent");
+
+  expect(parent).toContain("Auditing inject rounds");
+  expect(parent).toContain("rework_count");
+  expect(parent).toContain("step_sessions_json.execute");
+  expect(parent).toContain(
+    "Do not add a new lh command solely to audit inject rounds",
+  );
 });
 
 test("parent polls only its run workflow events and reacts to cost limit facts", () => {
@@ -137,6 +184,8 @@ test("parent and execute contracts agree that the parent injects orchestrator me
   const execute = workflowContractText("execute");
 
   expect(execute).toContain("messages beginning with `orchestrator:`");
+  expect(execute).toContain("this same live session");
+  expect(execute).toContain("orchestrator: address review #<id>");
   expect(parent).toContain("orchestrator:");
   expect(parent).toContain("herdr pane run");
   expect(parent).not.toContain("Do not use herdr pane injection");
@@ -162,6 +211,14 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain("legacy status");
   expect(design).not.toContain("lh workflow run enforce-cost-limit");
   expect(design).toContain("herdr pane run");
+  expect(design).toContain("herdr agent list");
+  expect(design).toContain(
+    "rework / 継続作業は同じ Execute セッションを優先する",
+  );
+  expect(design).toContain("1 行の");
+  expect(design).toContain("step_sessions_json.execute");
+  expect(design).toContain("注入の成功自体を execute complete の根拠");
+  expect(design).toContain("監査専用の lh コマンドは追加しない");
 
   for (const event of [
     "workflow_run.turn_done",

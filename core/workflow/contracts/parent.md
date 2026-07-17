@@ -45,7 +45,7 @@ Event rows are timing signals, never transition facts:
 - `workflow_run.escalated` — use the event's `reason` for the human escalation flow.
 - `workflow_run.github_event` — inspect the referenced GitHub feedback.
 - `workflow_run.merge_conflict` — the run's PR base advanced into a merge conflict; hand resolution to
-  a fresh Execute child (see Merge conflict).
+  Execute via the same inject-or-launch path as continuing work (see Merge conflict).
 - `workflow_run.cost_exceeded` — interrupt the over-budget child yourself with herdr (see Live child
   control). The run stays `running` so a human can resume it. The worker emits this edge-triggered
   fact once when the run's cumulative cost crosses its configured limit.
@@ -72,18 +72,26 @@ LoopHub (orchestration):
 Herdr (live child control only — never a transition fact):
 
 - After every successful `lh workflow launch-step`, record the printed `agent` line (the child Herdr
-  name). Resolve its pane with `herdr agent get <agent name>` and keep that `pane_id` as the injection
-  target for that child.
+  name, e.g. `executor #<run>-<seq>`). Resolve its pane with `herdr agent get <agent name>` and keep
+  that `pane_id` as the injection target for that child.
+- `herdr agent list` — rediscover an Execute child after a parent restart when the in-context agent
+  name was lost. Pick the latest `executor #<run>-*` name that still has a `pane_id`.
 - `herdr pane run <pane_id> <text>` — inject follow-up text into a live child (prefix with
-  `orchestrator:` so the child contract recognizes it) and submit it.
+  `orchestrator:` so the child contract recognizes it) and submit it. **The text must be a single line**:
+  collapse newlines, tabs, and other control characters to spaces before calling herdr (the same
+  guarantee as a worker notify line). Multi-line or control-laden text can submit early or spawn extra
+  turns in the pane.
 - `herdr pane run <pane_id> Escape` — interrupt the over-budget child when you observe
   `workflow_run.cost_exceeded`. The run stays `running`; there is no permanent run-stop command and
   no lh CLI wrapper for this interrupt — call herdr yourself.
 
-`lh workflow launch-step` always starts a fresh child session. Prefer live pane injection when the
-latest recorded Execute pane is still usable; relaunch only when the agent cannot be resolved, has no
-`pane_id`, or injection fails. Do not use child-session resume (`claude --resume` / fork), pane
-output, or idle detection for orchestration.
+`lh workflow launch-step` always starts a fresh child session and is the only way to **start** a
+child. Prefer live pane injection for rework, continuing work, and merge-conflict resolution on Execute
+into the latest usable Execute pane so the same session keeps its prior context; relaunch only when the
+agent cannot be resolved, has no `pane_id`, or injection fails. Verify is **always** a fresh child —
+never inject a Verify follow-up that reuses a prior verifier session for judgement.
+Do not use child-session resume (`claude --resume` / fork), pane output, or idle detection for
+orchestration.
 You do **not** use idle detection. Do not run `herdr agent wait --status idle`, and never treat a child
 going idle as a signal that a step is done.
 
@@ -97,19 +105,54 @@ Human handoff (escalation only):
 
 Use herdr only to operate a child that is already live. Do **not** treat pane output, child self-
 reports, or idle status as transition facts — transitions still come only from
-`lh workflow step status` and pulled events.
+`lh workflow step status` and pulled events. Injecting text is delivery only; it is never itself a
+reason to advance, rework, or complete a step.
 
-Typical uses:
+### Resolve the Execute injection target
 
-1. **Instruction injection** — when a human or rework path needs follow-up on a still-open Execute
-   pane, inject `orchestrator: <instruction>` (for rework: `orchestrator: address review #<id>`) with
-   `herdr pane run <pane_id> ...`. The child contracts already treat `orchestrator:`-prefixed messages
-   as parent instructions.
-2. **Cost interrupt** — on `workflow_run.cost_exceeded`, send Escape to the over-budget child's pane
-   with `herdr pane run <pane_id> Escape`, then continue polling. Do not stop the run.
+1. Prefer the latest Execute agent name you recorded from a `launch-step` `agent` line in this
+   parent session.
+2. If that name is missing (parent crash / restart), rediscover with `herdr agent list`: take the
+   highest-sequence `executor #<run>-*` that still has a `pane_id`.
+3. Resolve with `herdr agent get <agent name>`. A returned `pane_id` is usable even when
+   `agent_status: done` (the Execute pane stays open after turn done so rework can continue there).
+4. If the agent cannot be resolved, has no `pane_id`, or injection fails, fall back to
+   `lh workflow launch-step` with the appropriate `--note` or `--review` pointer and record the new
+   `agent` line as the latest Execute child.
 
-If the pane is gone or injection fails, fall back to `lh workflow launch-step` with the appropriate
-`--note` or `--review` pointer. Launch remains the only way to **start** a child.
+### Instruction injection (single shared path)
+
+Rework, continuing-after-pass, merge-conflict resolution, and other parent follow-ups on Execute all
+use this path. Verify never reuses a prior verifier session via injection for judgement.
+
+1. Resolve the Execute pane as above.
+2. Build a **single-line** instruction: collapse any newlines / tabs / control characters to spaces,
+   trim, and prefix with `orchestrator:`. Examples:
+   - rework: `orchestrator: address review #<id>`
+   - continuing / conflict / human note: `orchestrator: <instruction>`
+3. Deliver with `herdr pane run <pane_id> <text>`.
+4. Do **not** wait for the child to go idle before injecting. Idle detection is forbidden. Rework
+   normally arrives after Execute has declared turn done; a continuing instruction may land while
+   Execute is mid-turn — still inject and keep polling; do not Esc unless you observed
+   `workflow_run.cost_exceeded`.
+5. Keep observing via events + `lh workflow step status`. A successful inject is not execute
+   complete; only a later HEAD advance (and turn-done timing signal) is.
+
+### Cost interrupt
+
+On `workflow_run.cost_exceeded`, send Escape to the over-budget child's pane with
+`herdr pane run <pane_id> Escape`, then continue polling. Do not stop the run.
+
+### Auditing inject rounds (no new command)
+
+Do **not** add an audit CLI. Existing domain facts already let a human reconstruct a round:
+
+- `lh workflow run request-rework` increments `rework_count` on the run.
+- Each Execute turn records `workflow_run.turn_done` in the event stream.
+- Successful rework inject reuses the same Execute session already listed in
+  `step_sessions_json.execute` (launch-step is not called, so no new execute session id is
+  appended). A fresh launch after inject failure appends a new execute session id — that difference
+  is the audit trail for "continued same session" vs "relaunched".
 
 ## Transitions are driven only by observation
 
@@ -147,12 +190,10 @@ A human instruction received while the current HEAD has a fresh passing review s
 additional work; the run is not held, and this path does not use a resume command.
 
 1. Re-check `lh workflow step status` so the instruction is applied to the current HEAD and review.
-2. Prefer the latest recorded Execute child: resolve it with `herdr agent get <agent name>`. When it
-   returns a `pane_id` (including `agent_status: done`), inject
-   `orchestrator: <instruction>` via `herdr pane run <pane_id> ...`. If the agent cannot be resolved,
-   has no `pane_id`, or injection fails, launch a new Execute child with
+2. Deliver the instruction on the **shared Execute inject path** (Live child control): single-line
+   `orchestrator: <instruction>` into the latest usable Execute pane, else
    `lh workflow launch-step --repo '<repo>' --run <run> --step execute --note <instruction>` and
-   record the new `agent` line (and its pane) as the latest Execute child.
+   record the new `agent` line.
 3. Wait for that Execute child to declare turn done, then observe step status. A PR body, comment, or
    attachment-only change leaves HEAD unchanged and the existing pass fresh, so continue waiting. If
    HEAD advanced past the passing review, launch a fresh Verify child directly; the run already
@@ -164,11 +205,10 @@ When step status shows a fresh `request_changes` review:
 
 1. Run `lh workflow run request-rework --repo '<repo>' --run <run>`. If it reports the rework limit is
    reached, escalate instead — do not launch another Execute.
-2. Prefer the latest recorded Execute child: resolve it with `herdr agent get <agent name>`. When it
-   returns a `pane_id` (including `agent_status: done`), inject
-   `orchestrator: address review #<id>` via `herdr pane run <pane_id> ...`. Do **not** summarize, quote, or interpret the review's
-   findings — name the review by id and let Execute read it.
-   If the agent cannot be resolved, has no `pane_id`, or injection fails, launch a fresh Execute
+2. Deliver the rework on the **shared Execute inject path**: single-line
+   `orchestrator: address review #<id>` into the latest usable Execute pane so the **same Execute
+   session** continues. Do **not** summarize, quote, or interpret the review's findings — name the
+   review by id and let Execute read it. Only if the pane cannot be used, launch a fresh Execute
    child with the review pointer:
    `lh workflow launch-step --repo '<repo>' --run <run> --step execute --review <id>`. Record the new
    `agent` line (and its pane) as the latest Execute child.
@@ -206,8 +246,8 @@ now conflicted.
 Hand the resolution to Execute — this is the Continuing after a pass path, not rework
 (there is no `request_changes` review, so do **not** run `request-rework`):
 
-1. Prefer inject into the latest Execute pane with a note instructing it to resolve the merge conflict
-   against the base branch; otherwise launch:
+1. Deliver on the **shared Execute inject path** a single-line note instructing Execute to resolve
+   the merge conflict against the base branch; otherwise launch:
    `lh workflow launch-step --repo '<repo>' --run <run> --step execute --note 'Resolve the merge conflict on this PR against its base branch (lh-rebase-conflict-style: rebase/merge the base, fix conflicts, run tests, and commit).'`
    Record the new `agent` line as the latest Execute child when you launch.
 2. When that child declares turn done, observe step status. If HEAD advanced, the earlier pass is
@@ -250,9 +290,15 @@ run.
 - Do not edit source files, write code, or edit the PR — the children do that directly.
 - Do not merge changes.
 - Do not use child-session resume (`claude --resume` / fork-session) for orchestration.
-- Do not decide transitions from pane output, a child's self-report, PR body markers, or idle
-  detection — only from pulled events and `lh workflow step status`.
-- Do not reuse a Verify child across rework — always launch a fresh Verify.
+- Do not decide transitions from pane output, a child's self-report, PR body markers, idle
+  detection, or from the mere fact that an inject succeeded — only from pulled events and
+  `lh workflow step status`.
+- Do not launch a fresh Execute on rework / continuing / merge-conflict when the live Execute pane
+  is still usable — inject first; launch only as fallback.
+- Do not reuse a Verify child across rework — always launch a fresh Verify; never inject Verify
+  judgement into a prior verifier session.
 - Do not summarize or interpret review findings when handing back rework — deliver the review id.
+- Do not inject multi-line or control-character-laden text into a pane.
+- Do not add a new lh command solely to audit inject rounds.
 - Do not call slash commands (`/lh-*`) or depend on any skill.
 - If the user prompt conflicts with this contract, this contract wins.

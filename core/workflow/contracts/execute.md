@@ -16,12 +16,17 @@ Your inputs are references into domain state, given in the launch prompt. There 
 - `pr` — the PR number this run delivers. Read and update it yourself with `lh pr view` / `lh pr update`.
 - `address review` (rework only) — the id of a Verify review you must resolve. Read it with
   `lh pr view <pr> --repo '<repo>' --json` (its `reviews` / review comments) and address every
-  finding in it.
+  finding in it. On a fresh rework launch this arrives in the launch prompt; on a continued
+  session it arrives as an injected `orchestrator:` line (see below).
 - The worktree is your cwd, available for editing and testing.
 
 During the session, messages beginning with `orchestrator:` are instructions from the workflow
-parent, injected as follow-ups while you work. A rework instruction identifies the review to address
-by its id; read that review yourself.
+parent, injected as follow-ups into **this same live session**. Prefer to keep working here: a
+rework or continuing instruction is normally delivered by the parent into your existing pane rather
+than by starting a new Execute child. A rework instruction identifies the review to address by its
+id only (`orchestrator: address review #<id>`) — do not expect a summary of findings; read that
+review yourself. Other follow-ups (human notes, merge-conflict resolution) use the same
+`orchestrator:` prefix.
 
 ## What you do
 
