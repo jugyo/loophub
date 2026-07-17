@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { flags, rest, sub } from "../args.ts";
 import {
@@ -189,6 +190,33 @@ export async function run(): Promise<void> {
       ),
     );
     console.log(`PR #${p.number} marked ready for review (${p.review_state})`);
+  } else if (sub === "crit") {
+    // Launch the external `crit` browser UI against this PR's attempt worktree.
+    // Resolution (worktree path + range base) lives in core; the CLI only spawns with stdio
+    // inherited. crit is optional — missing binary is a clear error, not an auto-install.
+    if (rest[0] == null || rest[0] === "")
+      fail("usage: lh pr crit <pr> [--repo owner/name]");
+    const plan = await runOp(() => s.pulls.critLaunch(repo, Number(rest[0])));
+    console.error(`crit PR #${plan.number}`);
+    console.error(`  worktree: ${plan.worktreePath}`);
+    console.error(`  range:    ${plan.range}`);
+    const proc = spawnSync("crit", ["--range", plan.range], {
+      stdio: "inherit",
+      cwd: plan.worktreePath,
+    });
+    if (proc.error) {
+      const err = proc.error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") {
+        fail(
+          "crit not found on PATH. Install it first (this command does not install crit):\n" +
+            "  brew install crit\n" +
+            "  # or: go install github.com/tomasz-tomczyk/crit@latest\n" +
+            "  # see https://crit.md for other install options",
+        );
+      }
+      fail(`failed to launch crit: ${err.message}`);
+    }
+    process.exit(proc.status ?? 1);
   } else if (sub === "close") {
     await runOp(async () =>
       s.pulls.update(

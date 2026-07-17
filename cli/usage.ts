@@ -19,7 +19,8 @@ export function usage(): void {
   lh issue search|list|view|create|import|update|comment|close|label  [--repo owner/repo]
   lh issue search <query> [--repo owner/name] [--json]       # search issues and pull requests in one repository
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
-  lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|crit|close|reopen  [--repo owner/repo]
+  lh pr crit <pr> [--repo owner/repo]          # open crit --range <base>..HEAD in the PR worktree (requires crit on PATH)
   lh inbox send --from '<json>' --title <text> --body <text|-> [--to '<json>'] [--label <name>] [--repo owner/repo]   # send a human-facing Inbox message
   lh inbox read|unread|archive|unarchive|delete <message-id> [--json]   # update an Inbox message state (delete is a soft state)
   lh notification send --kind merge_ready|over_budget|human_attention --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
