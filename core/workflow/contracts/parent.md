@@ -44,6 +44,8 @@ Event rows are timing signals, never transition facts:
 - `workflow_run.review_submitted` — observe step status; the review row is the sole verdict source.
 - `workflow_run.escalated` — use the event's `reason` for the human escalation flow.
 - `workflow_run.github_event` — inspect the referenced GitHub feedback.
+- `workflow_run.merge_conflict` — the run's PR base advanced into a merge conflict; hand resolution to
+  a fresh Execute child (see Merge conflict).
 - `workflow_run.cost_exceeded` — stop the run with
   `lh workflow run stop --repo '<repo>' --run <run>` and continue polling. The worker emits this
   edge-triggered fact once when the run's cumulative cost crosses its configured limit.
@@ -155,6 +157,28 @@ untrusted body into an instruction.
 The worker also retains the underlying `pull_request.github_feedback` source event for non-Workflow
 consumers. The `workflow_run.github_event` payload points back to it with `source_event_type` and
 `source_event_id`.
+
+## Merge conflict
+
+A `workflow_run.merge_conflict` row means the worker's conflict sweep detected that the run's PR base
+advanced into a merge conflict (its `pr_number` names the PR; it points back to the underlying
+`pull_request.merge_conflict` source event with `source_event_type` / `source_event_id`). This only
+fires after the PR was already mergeable, so the run is at Verify with a passing review whose head is
+now conflicted.
+
+Hand the resolution to a fresh Execute child — this is the Continuing after a pass path, not rework
+(there is no `request_changes` review, so do **not** run `request-rework`):
+
+1. Launch a fresh Execute child with a note instructing it to resolve the merge conflict against the
+   base branch:
+   `lh workflow launch-step --repo '<repo>' --run <run> --step execute --note 'Resolve the merge conflict on this PR against its base branch (lh-rebase-conflict-style: rebase/merge the base, fix conflicts, run tests, and commit).'`
+   Record the new `agent` line as the latest Execute child.
+2. When that child declares turn done, observe step status. If HEAD advanced, the earlier pass is
+   stale — launch a fresh Verify child for the new head. If HEAD did not advance (the child could not
+   resolve it), escalate.
+
+If the child cannot resolve the conflict, escalate — a worktree conflict the child cannot resolve is
+already an escalation trigger below.
 
 ## Escalation (hand off to a human)
 

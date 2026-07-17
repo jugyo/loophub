@@ -215,6 +215,22 @@ export function latestWorkflowRunForPull(
     .get(repoId, prNumber) as WorkflowRunRow | null;
 }
 
+// The latest still-running Workflow run for a PR, used by the worker conflict sweep to project a
+// detected merge conflict into a run-scoped event the parent observes (#1516). Scoped to `running`
+// so a conflict on a PR whose run already stopped/completed emits no orphan projection.
+export function runningWorkflowRunForPull(
+  repoId: number,
+  prNumber: number,
+): WorkflowRunRow | null {
+  return db
+    .query(
+      `SELECT * FROM workflow_runs
+       WHERE repo_id = ? AND pr_number = ? AND status = 'running'
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(repoId, prNumber) as WorkflowRunRow | null;
+}
+
 export function workflowRunForLegacyParent(
   repoId: number,
   prNumber: number,

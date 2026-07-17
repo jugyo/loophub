@@ -8,9 +8,11 @@ import * as S from "./store.ts";
 // mergeable state; the git/DB computation is injected so the transition and idempotency logic
 // stay unit-testable without spawning git.
 //
-// This sweep is an event *source* only. What reacts to the event — e.g. a resolution agent that
-// subscribed via `lh subscribe` and runs its own rebase skill — is the subscriber's wiring; the
-// worker knows no skill names and launches nothing (that dispatch coupling is what #1232 removes).
+// This sweep is an event *source* only: it emits pull_request.merge_conflict and — for a PR under a
+// running Workflow run — a run-scoped workflow_run.merge_conflict projection (#1516). What reacts to
+// either event — e.g. a resolution agent that subscribed via `lh subscribe`, or a Workflow parent
+// polling its run cursor — is the consumer's wiring; the worker knows no skill names and launches
+// nothing (that dispatch coupling is what #1232 removes).
 
 // Whether this sweep should fire the conflict event for a state change. Only a clean -> conflict
 // edge qualifies: `clean` already requires reviewed && all-topics-passed (see resolveMergeable),
@@ -57,10 +59,32 @@ export async function sweepPullConflicts(
     );
     if (!classifyConflictTransition(transition.previous, transition.current))
       continue;
-    S.emitEvent(pull.repo_id, "pull_request.merge_conflict", "lh-worker", {
-      number: pull.number,
-    });
+    const source = S.emitEvent(
+      pull.repo_id,
+      "pull_request.merge_conflict",
+      "lh-worker",
+      {
+        number: pull.number,
+      },
+    );
     emitted++;
+    // When the conflicted PR is under a running Workflow run, project the conflict into a
+    // run-scoped event carrying the run's parent_session_id, mirroring how github-feedback-sync
+    // projects pull_request.github_feedback into workflow_run.github_event (#1516). The parent
+    // observes this on its existing `lh events --type workflow_run --run <run>` cursor and hands
+    // resolution to a fresh Execute child; the source event above still serves non-Workflow
+    // subscribers unchanged.
+    const run = S.runningWorkflowRunForPull(pull.repo_id, pull.number);
+    if (run?.parent_session_id) {
+      S.emitEvent(pull.repo_id, "workflow_run.merge_conflict", "lh-worker", {
+        id: run.id,
+        number: pull.number,
+        pr_number: pull.number,
+        parent_session_id: run.parent_session_id,
+        source_event_id: source.id,
+        source_event_type: source.type,
+      });
+    }
   }
   return { checked: pulls.length, emitted };
 }
