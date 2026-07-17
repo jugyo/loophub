@@ -384,6 +384,19 @@
   }
 }
 
+/* Subtle slow glow for the current workflow stage pill while its agent is working.
+   Tuned to harmonize with the AgentBotIcon working pulse (same --linked-pull-pulse
+   hue) rather than draw attention with a sharp blink. */
+@keyframes workflow-stage-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--linked-pull-pulse) / 0);
+  }
+  50% {
+    box-shadow: 0 0 5px 1px hsl(var(--linked-pull-pulse) / 0.55);
+  }
+}
+
 @layer utilities {
   .animate-bot-wobble {
     animation: bot-wobble 0.8s ease-in-out infinite;

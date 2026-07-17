@@ -106,6 +106,29 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByText("Done")).toBeTruthy();
   });
 
+  it("glows only the current stage pill while the agent is working", () => {
+    render(
+      <WorkflowStepTracker state={state({ current_step: "verify" })} working />,
+    );
+    // The current stage (Verify) gets the slow glow; the others do not.
+    expect(screen.getByText("Verify").className).toContain(
+      "animate-[workflow-stage-glow",
+    );
+    expect(screen.getByText("Execute").className).not.toContain(
+      "workflow-stage-glow",
+    );
+    expect(screen.getByText("Done").className).not.toContain(
+      "workflow-stage-glow",
+    );
+  });
+
+  it("stays static when the agent is not working", () => {
+    render(<WorkflowStepTracker state={state({ current_step: "verify" })} />);
+    expect(screen.getByText("Verify").className).not.toContain(
+      "workflow-stage-glow",
+    );
+  });
+
   it("uses larger pills at size md", () => {
     const { rerender } = render(
       <WorkflowStepTracker state={state()} size="sm" />,

@@ -65,10 +65,17 @@ function workflowTrackerTitle(
 export function WorkflowStepTracker({
   state,
   size = "sm",
+  working = false,
 }: {
   state: WorkflowRunState;
   /** `sm` for the compact PR-row tracker, `md` for the detail Workflow run section. */
   size?: "sm" | "md";
+  /**
+   * When the linked agent is actively working, gently glow the current stage pill so the
+   * run reads as live at a glance. Defaults to `false`, so callers that omit it keep the
+   * previous static rendering.
+   */
+  working?: boolean;
 }) {
   const tracker = workflowTrackerState(state);
   const { activeIndex, verified, stale, needsHuman } = tracker;
@@ -113,6 +120,9 @@ export function WorkflowStepTracker({
                       : isPast
                         ? "border-border bg-muted text-foreground"
                         : "border-border text-muted-foreground",
+                isCurrent &&
+                  working &&
+                  "animate-[workflow-stage-glow_2.4s_ease-in-out_infinite]",
               )}
             >
               {stage.label}

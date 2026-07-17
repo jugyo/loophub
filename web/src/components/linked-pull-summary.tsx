@@ -146,14 +146,17 @@ function WorkflowMiniProgress({
   owner,
   repo,
   pull,
+  working,
 }: {
   owner: string;
   repo: string;
   pull: LinkedPull;
+  /** Whether the linked agent is actively working (glow the current stage pill). */
+  working: boolean;
 }) {
   const { data: state } = useWorkflowRunForPull(owner, repo, pull.number);
   if (!state) return null;
-  return <WorkflowStepTracker state={state} size="sm" />;
+  return <WorkflowStepTracker state={state} size="sm" working={working} />;
 }
 
 function PullPopover({
@@ -369,7 +372,12 @@ export function LinkedPullSummaryRow({
             over budget
           </span>
         ) : null}
-        <WorkflowMiniProgress owner={owner} repo={repo} pull={pull} />
+        <WorkflowMiniProgress
+          owner={owner}
+          repo={repo}
+          pull={pull}
+          working={showWorkingEffect}
+        />
         <Metrics pull={pull} overBudget={costStopped !== null} />
       </div>
       {attemptComparison ? (
