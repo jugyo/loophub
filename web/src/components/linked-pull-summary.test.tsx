@@ -305,9 +305,16 @@ describe("LinkedPullSummaryRow popover Agents list (#1493)", () => {
 
     const list = screen.getByRole("list", { name: "Agent hierarchy" });
     expect(within(list).getByText("dev #10")).toBeTruthy();
-    fireEvent.click(
-      within(list).getByRole("button", { name: "Open in Herdr" }),
-    );
+    const agentRow = within(list).getByText("dev #10").closest("li")!;
+    const cost = within(agentRow).getByText("n/a");
+    const open = within(list).getByRole("button", { name: "Open in Herdr" });
+    expect(
+      cost.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      within(list).getByRole("listitem", { name: "Total cost" }),
+    ).toBeTruthy();
+    fireEvent.click(open);
     expect(focusHerdrAgent).toHaveBeenCalledWith(
       { repo: "me/proj", paneId: "w1:p2" },
       expect.anything(),

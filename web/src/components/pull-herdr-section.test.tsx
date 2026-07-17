@@ -155,13 +155,60 @@ describe("PullHerdrSection", () => {
     expect(screen.getByText("verifier #7-2")).toBeTruthy();
     expect(screen.queryByText("dev #99")).toBeNull();
     expect(screen.getByText("$1.25")).toBeTruthy();
-    expect(screen.getAllByText("n/a")).toHaveLength(2);
+    // Two agent rows with unknown cost, plus the Total footer (any null → n/a).
+    expect(screen.getAllByText("n/a")).toHaveLength(3);
     expect(screen.getByText("executor #7-1").closest("li")?.dataset.depth).toBe(
       "1",
     );
     expect(screen.getByText("verifier #7-2").closest("li")?.dataset.depth).toBe(
       "1",
     );
+  });
+
+  it("places cost left of Open in Herdr and shows a Total footer", () => {
+    herdrSessions.value = {
+      ...running,
+      repos: [
+        {
+          ...running.repos[0],
+          agents: [
+            running.repos[0].agents[0],
+            {
+              ...running.repos[0].agents[1],
+              session: {
+                id: "execute-session",
+                agent: "workflow-step",
+                runtime: "codex",
+                kind: "workflow-step",
+                usage: {
+                  sessions_with_usage: 1,
+                  input_tokens: 10,
+                  cache_creation_input_tokens: 0,
+                  cache_read_input_tokens: 0,
+                  output_tokens: 5,
+                  total_tokens: 15,
+                  cost_usd: 0.75,
+                  has_unknown_cost: false,
+                  context_usage_percent: null,
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+
+    const row = screen.getByText("orchestrator #7").closest("li")!;
+    const cost = within(row).getByText("$1.25");
+    const open = within(row).getByRole("button", { name: "Open in Herdr" });
+    expect(
+      cost.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    const total = screen.getByRole("listitem", { name: "Total cost" });
+    expect(within(total).getByText("Total")).toBeTruthy();
+    expect(within(total).getByText("$2.00")).toBeTruthy();
   });
 
   it("matches the linked PR bot effects for working, blocked, and inactive agents", () => {

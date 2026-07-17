@@ -78,6 +78,18 @@ export function pullHerdrAgents(
   return group?.agents.filter((agent) => agent.pull === pull) ?? [];
 }
 
+// Sum costs of displayed agent rows. Matches UsageTotalsWire / related-sessions: any null or
+// missing cost makes the aggregate null so formatCost shows "n/a".
+function agentsCostTotal(agents: HerdrAgent[]): number | null {
+  let total = 0;
+  for (const agent of agents) {
+    const cost = agent.session?.usage?.cost_usd;
+    if (cost == null || !Number.isFinite(cost)) return null;
+    total += cost;
+  }
+  return total;
+}
+
 // Renders the Workflow parent-child pane tree. Returns null when there is nothing to show so callers
 // can drop the surrounding heading/section.
 export function AgentTree({
@@ -90,12 +102,14 @@ export function AgentTree({
   agents: HerdrAgent[];
 }) {
   if (agents.length === 0) return null;
+  const rows = agentTree(agents);
+  const totalCost = formatCost(agentsCostTotal(rows.map(({ agent }) => agent)));
   return (
     <ol
       aria-label="Agent hierarchy"
       className="flex flex-col rounded-md border p-2 text-sm"
     >
-      {agentTree(agents).map(({ agent, depth }) => (
+      {rows.map(({ agent, depth }) => (
         <AgentRow
           key={agent.id}
           owner={owner}
@@ -104,6 +118,16 @@ export function AgentTree({
           depth={depth}
         />
       ))}
+      <li aria-label="Total cost" className="mt-1 border-t pt-2">
+        <div className="flex items-center gap-2 px-2 py-1">
+          <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+            Total
+          </span>
+          <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
+            {totalCost}
+          </span>
+        </div>
+      </li>
     </ol>
   );
 }
@@ -207,6 +231,9 @@ function AgentRow({
         >
           {agent.name}
         </span>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {cost}
+        </span>
         <button
           type="button"
           aria-label="Open in Herdr"
@@ -228,9 +255,6 @@ function AgentRow({
             <Terminal className="size-3.5" />
           )}
         </button>
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {cost}
-        </span>
       </div>
 
       {popover.open ? (
