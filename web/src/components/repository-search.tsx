@@ -50,7 +50,7 @@ export function RepositorySearch({
 
   return (
     <>
-      <div className="flex justify-end">
+      <div data-debug-component="RepositorySearch" className="flex justify-end">
         <button
           type="button"
           aria-label="Search issues"
@@ -70,6 +70,7 @@ export function RepositorySearch({
           }}
         >
           <div
+            data-debug-component="RepositorySearch"
             role="dialog"
             aria-modal="true"
             aria-label="Search repository"

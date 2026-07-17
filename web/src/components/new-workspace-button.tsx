@@ -48,15 +48,17 @@ export function NewWorkspaceButton({
 
   return (
     <>
-      <Button
-        type="button"
-        variant="secondary"
-        size={size}
-        onClick={() => setOpen(true)}
-      >
-        <Plus className="size-4" />
-        New
-      </Button>
+      <div data-debug-component="NewWorkspaceButton" className="inline-flex">
+        <Button
+          type="button"
+          variant="secondary"
+          size={size}
+          onClick={() => setOpen(true)}
+        >
+          <Plus className="size-4" />
+          New
+        </Button>
+      </div>
       {open
         ? // Portal to the body so the fixed overlay is viewport-relative even when
           // the trigger lives inside a transformed container (the workspace filter
@@ -67,6 +69,7 @@ export function NewWorkspaceButton({
               onClick={close}
             >
               <form
+                data-debug-component="NewWorkspaceButton"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="new-workspace-title"

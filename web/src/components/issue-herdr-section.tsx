@@ -67,7 +67,10 @@ export function IssueHerdrSection({
   const sessionName = issue.herdr_pane?.session_name ?? paneId;
 
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      data-debug-component="IssueHerdrSection"
+      className="flex flex-col gap-3"
+    >
       <div className="flex items-center gap-2">
         <h2 className="text-lg font-semibold">Agents</h2>
       </div>

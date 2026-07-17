@@ -380,7 +380,10 @@ function WorkflowRunSection({
   const query = useWorkflowRunForPull(owner, repo, number);
   if (query.isLoading) {
     return (
-      <section className="flex flex-col gap-3">
+      <section
+        data-debug-component="WorkflowRunSection"
+        className="flex flex-col gap-3"
+      >
         <h2 className="text-sm font-medium text-muted-foreground">
           Workflow run
         </h2>
@@ -392,7 +395,10 @@ function WorkflowRunSection({
   }
   if (query.isError) {
     return (
-      <section className="flex flex-col gap-3">
+      <section
+        data-debug-component="WorkflowRunSection"
+        className="flex flex-col gap-3"
+      >
         <h2 className="text-sm font-medium text-muted-foreground">
           Workflow run
         </h2>
@@ -599,7 +605,10 @@ function PullHeader({
 
 function WorktreeSection({ value }: { value: string | null }) {
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      data-debug-component="WorktreeSection"
+      className="flex flex-col gap-3"
+    >
       <h2 className="text-lg font-semibold">Worktree</h2>
       {value ? (
         <div className="flex items-start gap-2 rounded-md border p-3 text-sm">

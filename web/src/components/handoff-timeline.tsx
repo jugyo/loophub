@@ -48,7 +48,10 @@ export function HandoffTimeline({
   if (!isLoading && !isError && list.length === 0) return null;
 
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      data-debug-component="HandoffTimeline"
+      className="flex flex-col gap-3"
+    >
       <h2 className="text-lg font-semibold">Handoffs</h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

@@ -297,7 +297,10 @@ function LinkedPullSummary({
     (issue.linked_pull_request ? [issue.linked_pull_request] : []);
   if (pulls.length === 0) return null;
   return (
-    <section className="flex flex-col gap-2">
+    <section
+      data-debug-component="LinkedPullSummary"
+      className="flex flex-col gap-2"
+    >
       <h2 className="text-sm font-medium text-muted-foreground">
         {pulls.length > 1 ? "Linked pull requests" : "Linked pull request"}
       </h2>

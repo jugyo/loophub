@@ -82,7 +82,10 @@ export function GithubPrStatusSection({
   // error. A failed background refetch keeps `status`, so it stays on the data branch. See the JSX.
 }) {
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      data-debug-component="GithubPrStatusSection"
+      className="flex flex-col gap-3"
+    >
       <h2 className="text-lg font-semibold">GitHub PR</h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

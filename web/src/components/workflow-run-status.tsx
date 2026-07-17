@@ -83,7 +83,10 @@ export function WorkflowRunStatusSection({
     state.verification_status === "verified";
 
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      data-debug-component="WorkflowRunStatusSection"
+      className="flex flex-col gap-3"
+    >
       <h2 className="text-sm font-medium text-muted-foreground">
         Workflow run
       </h2>

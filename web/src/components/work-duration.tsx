@@ -45,7 +45,10 @@ export function WorkDuration({
   const reviewText = phaseText(workDuration?.review ?? null);
 
   return (
-    <section className="flex flex-col gap-1">
+    <section
+      data-debug-component="WorkDuration"
+      className="flex flex-col gap-1"
+    >
       <h2 className="text-lg font-semibold">Work duration</h2>
       {total.seconds == null || total.basis == null ? (
         <p className="text-sm text-muted-foreground">N/A</p>

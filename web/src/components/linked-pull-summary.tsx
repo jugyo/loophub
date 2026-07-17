@@ -296,6 +296,7 @@ export function LinkedPullSummaryRow({
 
   return (
     <div
+      data-debug-component="LinkedPullSummaryRow"
       data-linked-pull-row
       aria-label={`Linked PR #${pull.number}: ${pull.title}`}
       className={cn(
@@ -492,6 +493,7 @@ export function LinkedPullAttemptSummaryRow({
 
   return (
     <div
+      data-debug-component="LinkedPullAttemptSummaryRow"
       aria-label={`Linked PR #${pull.number}: ${pull.title}`}
       className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm"
     >

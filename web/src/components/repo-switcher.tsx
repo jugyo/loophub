@@ -138,6 +138,7 @@ export function RepoSwitcher({ openRequest = 0 }: { openRequest?: number }) {
 
   return (
     <div
+      data-debug-component="RepoSwitcher"
       className="fixed inset-0 z-50 flex items-start justify-center bg-background/70 px-4 pt-24"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) close();

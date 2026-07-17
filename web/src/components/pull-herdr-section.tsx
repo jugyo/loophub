@@ -144,7 +144,10 @@ export function PullHerdrSection({
   const { data, isError } = useHerdrSessions();
   if (isError) {
     return (
-      <section className="flex flex-col gap-3">
+      <section
+        data-debug-component="PullHerdrSection"
+        className="flex flex-col gap-3"
+      >
         <h2 className="text-lg font-semibold">Agents</h2>
         <div
           role="alert"
@@ -159,7 +162,10 @@ export function PullHerdrSection({
   if (agents.length === 0) return null;
 
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      data-debug-component="PullHerdrSection"
+      className="flex flex-col gap-3"
+    >
       <h2 className="text-lg font-semibold">Agents</h2>
       <AgentTree owner={owner} repo={repo} agents={agents} />
     </section>

@@ -48,7 +48,7 @@ export function AgentModelPicker({
   }
 
   return (
-    <>
+    <div data-debug-component="AgentModelPicker">
       <p className="mb-1 text-xs font-medium text-muted-foreground">Agent</p>
       <div className="mb-3 flex gap-1">
         {(Object.keys(CODING_AGENT_LABELS) as CodingAgent[]).map(
@@ -121,7 +121,7 @@ export function AgentModelPicker({
         {actionIcon}
         {actionVerb} with {CODING_AGENT_LABELS[agent]}
       </Button>
-    </>
+    </div>
   );
 }
 

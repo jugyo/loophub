@@ -41,6 +41,7 @@ const DropdownMenuSubContent = React.forwardRef<
     <DropdownMenuPrimitive.SubContent
       ref={ref}
       sideOffset={sideOffset}
+      data-debug-component="DropdownMenuSubContent"
       className={cn(
         "z-50 min-w-32 overflow-hidden rounded-md border bg-card p-1 text-card-foreground shadow-md outline-none",
         "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
@@ -63,6 +64,7 @@ const DropdownMenuContent = React.forwardRef<
     <DropdownMenuPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
+      data-debug-component="DropdownMenuContent"
       className={cn(
         "z-50 min-w-32 overflow-hidden rounded-md border bg-card p-1 text-card-foreground shadow-md outline-none",
         "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",

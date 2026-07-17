@@ -90,7 +90,10 @@ export function RelatedSessions({
   if (!sessions || sessions.length === 0) return null;
 
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      data-debug-component="RelatedSessions"
+      className="flex flex-col gap-3"
+    >
       <h2 className="text-lg font-semibold">Sessions</h2>
       <ul className="flex flex-col gap-2">
         {sessions.map((s) => {
@@ -210,7 +213,10 @@ export function TokenUsageSummary({ usage }: { usage: RelatedSessionsUsage }) {
   const detailsId = useId();
   const hasCategories = usage.by_kind.length > 0;
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      data-debug-component="TokenUsageSummary"
+      className="flex flex-col gap-3"
+    >
       <h2 className="text-lg font-semibold">Token usage</h2>
       <div className="flex flex-col gap-3 rounded-md border p-3 text-sm">
         <dl className="flex flex-col gap-1.5">

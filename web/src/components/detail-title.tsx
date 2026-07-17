@@ -12,7 +12,10 @@ export function DetailHeaderTitle({
   title: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
+    <div
+      data-debug-component="DetailHeaderTitle"
+      className="flex min-w-0 flex-col gap-1"
+    >
       <span className="text-sm font-medium text-muted-foreground">
         {kind} #{number}
       </span>

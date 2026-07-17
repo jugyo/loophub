@@ -42,7 +42,13 @@ export interface BadgeProps
     VariantProps<typeof badgeVariants> {}
 
 export function Badge({ className, tone, ...props }: BadgeProps) {
-  return <span className={cn(badgeVariants({ tone }), className)} {...props} />;
+  return (
+    <span
+      className={cn(badgeVariants({ tone }), className)}
+      {...props}
+      data-debug-component="Badge"
+    />
+  );
 }
 
 export { badgeVariants };

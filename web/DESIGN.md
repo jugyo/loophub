@@ -122,9 +122,22 @@ together, following this document's Source of Truth policy.
 The application header exposes a component debug mode beside the theme picker.
 When enabled, `ComponentDebugOverlay` outlines every visible element carrying a
 `data-debug-component` attribute and provides its React component name plus a
-copy action. Shell regions and major route/page components (home, repo, issues,
-pulls, agents, inbox, stats, settings, workflows, scheduled tasks, and similar
-screens) own these explicit markers. This keeps the mapping stable across
+copy action. Markers live on:
+
+- Shell regions and major route/page components (home, repo, issues, pulls,
+  agents, inbox, stats, settings, workflows, scheduled tasks, and similar
+  screens)
+- Mid-size detail/sidebar sections (for example Sessions, Work duration,
+  GitHub PR status, Handoffs, Agents, Workflow run, Worktree, Linked pull
+  summary)
+- Shared interactive primitives under `ui/` (`Button`, `Badge`, and the
+  dropdown content surfaces that own a root DOM node)
+- Named text-input wrappers that hold primary search or form inputs
+  (`RepositorySearch`, `HerdrAgentInput`, `AgentModelPicker`, `RepoSwitcher`,
+  `NewWorkspaceButton`)
+
+Names match the React component export (PascalCase). Nested markers may
+coexist with a page-level marker. This keeps the mapping stable across
 production and development builds without reading React internals or changing
 component layout.
 

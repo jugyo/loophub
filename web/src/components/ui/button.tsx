@@ -45,6 +45,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       ref={ref}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
+      data-debug-component="Button"
     />
   ),
 );
