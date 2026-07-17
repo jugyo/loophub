@@ -530,7 +530,6 @@ function PullHeader({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <CritReviewAction owner={owner} repo={repo} pull={pull} />
         {!pull.merged ? (
           <Button
             variant="secondary"
@@ -627,16 +626,17 @@ function WorktreeSection({ value }: { value: string | null }) {
   );
 }
 
-// Crit review (#1578): fire-and-forget herdr pane running `lh pr crit <n>`. Worktree absence and
-// a missing crit binary surface as visible errors inside that pane — no defensive pre-checks here.
+// Review with Crit (#1578 / #1594): fire-and-forget herdr pane running `lh pr crit <n>`.
+// Lives on the Files changed header row (right-aligned). Worktree absence and a missing crit
+// binary surface as visible errors inside that pane — no defensive pre-checks here.
 function CritReviewAction({
   owner,
   repo,
-  pull,
+  number,
 }: {
   owner: string;
   repo: string;
-  pull: PullRequest;
+  number: number;
 }) {
   const { launchTerminal } = useTerminalLauncher();
   return (
@@ -646,13 +646,13 @@ function CritReviewAction({
       onClick={() =>
         launchTerminal({
           repo: `${owner}/${repo}`,
-          label: `crit PR #${pull.number}`,
+          label: `crit PR #${number}`,
           workflow: "pr-crit",
-          prNumber: pull.number,
+          prNumber: number,
         })
       }
     >
-      Crit review
+      Review with Crit
     </Button>
   );
 }
@@ -1050,16 +1050,19 @@ function FilesChanged({
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
-        Files changed{files ? ` (${files.length})` : ""}
-        {files && files.length > 0 ? (
-          <DiffStat
-            additions={totalAdditions}
-            deletions={totalDeletions}
-            className="text-sm font-normal"
-          />
-        ) : null}
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
+          Files changed{files ? ` (${files.length})` : ""}
+          {files && files.length > 0 ? (
+            <DiffStat
+              additions={totalAdditions}
+              deletions={totalDeletions}
+              className="text-sm font-normal"
+            />
+          ) : null}
+        </h2>
+        <CritReviewAction owner={owner} repo={repo} number={number} />
+      </div>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading diff…

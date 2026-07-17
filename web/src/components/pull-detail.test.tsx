@@ -1967,10 +1967,17 @@ function linkedGithubPull(pushedSha: string | null) {
   } satisfies NonNullable<PullRequest["github_pull"]>;
 }
 
-describe("PullDetail — Crit review action (#1578)", () => {
-  it("offers Crit review and launches pr-crit in Herdr", async () => {
+describe("PullDetail — Review with Crit action (#1578 / #1594)", () => {
+  it("offers Review with Crit on the Files changed header and launches pr-crit in Herdr", async () => {
     renderDetailWithPull({ merge_mode: "merge" });
-    const button = await screen.findByRole("button", { name: /Crit review/i });
+    const filesHeading = await screen.findByRole("heading", {
+      name: /Files changed/,
+    });
+    const headerRow = filesHeading.parentElement!;
+    const button = within(headerRow).getByRole("button", {
+      name: /Review with Crit/i,
+    });
+    expect(screen.queryByRole("button", { name: /^Crit review$/i })).toBeNull();
     fireEvent.click(button);
     expect(launchTerminal).toHaveBeenCalledTimes(1);
     const opts = launchTerminal.mock.calls[0][0];
