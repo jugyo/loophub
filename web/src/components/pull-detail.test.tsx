@@ -344,185 +344,22 @@ describe("PullDetail", () => {
     ).toBeTruthy();
   });
 
-  it("renders commit metadata newest first in the main PR flow", async () => {
+  // The Commits section's own behaviour is covered by pull-commits-section.test.tsx; the PR detail
+  // only has to place it, with this PR's commits, before Files changed.
+  it("places the PR's commits before files changed in the main PR flow", async () => {
     renderDetail();
 
-    const heading = await screen.findByRole("heading", {
+    const commitsHeading = await screen.findByRole("heading", {
       name: "Commits (2)",
     });
-    const section = heading.closest("section")!;
-    const rows = within(section).getAllByRole("listitem");
+    const filesHeading = screen.getByRole("heading", {
+      name: /Files changed \(1\)/,
+    });
 
-    expect(rows).toHaveLength(2);
-    expect(rows[0].textContent).toContain("aaaaaaa");
-    expect(rows[0].textContent).toContain("Latest change");
-    expect(rows[0].textContent).toContain("Alice");
-    expect(rows[1].textContent).toContain("bbbbbbb");
-    expect(rows[1].textContent).toContain("Earlier change");
-    expect(rows[1].textContent).toContain("Bob");
     expect(
-      within(rows[0])
-        .getByText(/ago|just now/)
-        .closest("time")?.dateTime,
-    ).toBe("2026-06-18T12:00:00Z");
-  });
-
-  it("marks only confirmed pushed commits for a linked GitHub PR", async () => {
-    renderDetail({
-      "pulls/get": () => ({
-        ...pull,
-        github_pull: {
-          number: 30,
-          url: "https://github.com/me/proj/pull/30",
-          branch: "feature/push-state",
-          created_by: "impl-bot",
-          created_at: "2026-06-18T12:00:00Z",
-          github_merged: false,
-          github_merged_at: null,
-          pushed_sha: pull.commits?.[1]?.sha ?? null,
-        },
-        commits: [
-          { ...pull.commits![0], pushed_to_github: false },
-          { ...pull.commits![1], pushed_to_github: true },
-        ],
-      }),
-    });
-
-    const section = (
-      await screen.findByRole("heading", { name: "Commits (2)" })
-    ).closest("section")!;
-    const rows = within(section).getAllByRole("listitem");
-    expect(within(rows[0]).queryByText("Pushed")).toBeNull();
-    expect(within(rows[1]).getByText("Pushed")).toBeTruthy();
-  });
-
-  it("does not show GitHub push state for an unlinked PR", async () => {
-    renderDetail({
-      "pulls/get": () => ({
-        ...pull,
-        commits: pull.commits?.map((commit) => ({
-          ...commit,
-          pushed_to_github: true,
-        })),
-      }),
-    });
-
-    await screen.findByRole("heading", { name: "Commits (2)" });
-    expect(screen.queryByText("Pushed")).toBeNull();
-  });
-
-  it("opens a commit diff, closes it, and switches to another commit", async () => {
-    const earlierFiles: PullFile[] = [
-      {
-        filename: "web/src/earlier.ts",
-        status: "added",
-        additions: 1,
-        deletions: 0,
-        patch: "@@ -0,0 +1 @@\n+export const earlier = true;",
-      },
-    ];
-    renderDetail({
-      "pulls/commitFiles": (params) =>
-        params.sha === pull.commits?.[0]?.sha ? files : earlierFiles,
-    });
-
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "View changes in aaaaaaa: Latest change",
-      }),
-    );
-
-    const latestDialog = await screen.findByRole("dialog", {
-      name: "Changes in aaaaaaa: Latest change",
-    });
-    expect(within(latestDialog).getByText("aaaaaaa")).toBeTruthy();
-    expect(within(latestDialog).getByText("Latest change")).toBeTruthy();
-    expect(await within(latestDialog).findByText("+const x = 1;")).toBeTruthy();
-    expect(rpcCall("pulls/commitFiles")?.params).toEqual({
-      repo: "me/proj",
-      number: 30,
-      sha: pull.commits?.[0]?.sha,
-    });
-
-    fireEvent.click(
-      within(latestDialog).getByRole("button", { name: "Close commit diff" }),
-    );
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "View changes in bbbbbbb: Earlier change",
-      }),
-    );
-    const earlierDialog = await screen.findByRole("dialog", {
-      name: "Changes in bbbbbbb: Earlier change",
-    });
-    expect(
-      await within(earlierDialog).findByText("+export const earlier = true;"),
+      commitsHeading.compareDocumentPosition(filesHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(within(earlierDialog).queryByText("+const x = 1;")).toBeNull();
-
-    fireEvent.keyDown(document, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  });
-
-  it("distinguishes loading and empty commit diffs", async () => {
-    let resolveFiles: (files: PullFile[]) => void = () => {};
-    const pending = new Promise<PullFile[]>((resolve) => {
-      resolveFiles = resolve;
-    });
-    renderDetail({ "pulls/commitFiles": () => pending });
-
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "View changes in aaaaaaa: Latest change",
-      }),
-    );
-    const dialog = await screen.findByRole("dialog", {
-      name: "Changes in aaaaaaa: Latest change",
-    });
-    expect(within(dialog).getByText("Loading commit diff…")).toBeTruthy();
-
-    resolveFiles([]);
-    expect(
-      await within(dialog).findByText("No changes in this commit."),
-    ).toBeTruthy();
-    expect(within(dialog).queryByText("Loading commit diff…")).toBeNull();
-  });
-
-  it("shows commit diff retrieval failures in the dialog", async () => {
-    renderDetail({
-      "pulls/commitFiles": () => {
-        throw new RpcFault(500, "simulated commit diff failure");
-      },
-    });
-
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "View changes in aaaaaaa: Latest change",
-      }),
-    );
-    const dialog = await screen.findByRole("dialog", {
-      name: "Changes in aaaaaaa: Latest change",
-    });
-    expect(
-      await within(dialog).findByText(/Failed to load commit diff/),
-    ).toBeTruthy();
-    expect(
-      within(dialog).getByText(/simulated commit diff failure/),
-    ).toBeTruthy();
-  });
-
-  it("renders an empty state when the PR has no commits", async () => {
-    renderDetail({ "pulls/get": () => ({ ...pull, commits: [] }) });
-
-    const heading = await screen.findByRole("heading", {
-      name: "Commits (0)",
-    });
-    const section = heading.closest("section")!;
-
-    expect(within(section).getByText("No commits.")).toBeTruthy();
-    expect(within(section).queryAllByRole("listitem")).toHaveLength(0);
   });
 
   it("surfaces a commit retrieval failure through the PR error state", async () => {
