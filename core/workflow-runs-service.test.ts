@@ -320,6 +320,63 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   expect(S.getAgentSession(launched.session_id)?.runtime).toBe("codex");
 });
 
+test("a grok run's steps launch grok, not claude (#1521)", async () => {
+  const repo = S.getRepo("me", "workflow-run")!;
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Grok run",
+    "## Acceptance criteria\n- [ ] It works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "grok-standard",
+    description: "",
+    executePrompt: "Plan and implement it.",
+    verifyPrompt: "",
+  });
+
+  const result = await svc.workflowRuns.start(
+    repo.full_name,
+    {
+      issue: issue.number,
+      workflowId: workflow.id,
+      parentContract: "# Parent\nDo the run.",
+      runtime: "grok",
+      model: "grok-code-fast-1",
+    },
+    "12121212-1212-4121-8121-121212121212",
+  );
+
+  const row = S.getWorkflowRun(result.run.id)!;
+  expect(row.runtime).toBe("grok");
+  expect(row.model).toBe("grok-code-fast-1");
+  expect(S.getAgentSession(result.session_id)?.runtime).toBe("grok");
+
+  const launched = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: result.run.id, step: "execute", contract: "# Execute\n{{step}}" },
+    result.session_id,
+  );
+  expect(launched.runtime).toBe("grok");
+  expect(launched.herdr.command).toContain("grok ");
+  expect(launched.herdr.command).not.toContain("claude");
+  expect(launched.herdr.command).not.toContain("--session-id");
+  expect(launched.herdr.command).toContain("--model 'grok-code-fast-1'");
+
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: result.run.id,
+      step: launched.step,
+      sessionId: launched.session_id,
+      pointers: launched.pointers,
+    },
+    result.session_id,
+  );
+  expect(S.getAgentSession(launched.session_id)?.runtime).toBe("grok");
+});
+
 test("start defaults to claude-code and the config default model when unspecified (#516)", async () => {
   const repo = S.getRepo("me", "workflow-run")!;
   const issue = S.createIssue(repo.id, "issue", "Default run", "Body", "me");

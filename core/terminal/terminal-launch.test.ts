@@ -461,6 +461,61 @@ describe("herdr terminal launch", () => {
     );
   });
 
+  test("builds a Grok Workflow step launch that folds the contract into the prompt (#1521)", () => {
+    const plan = buildWorkflowStepHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      runId: 12,
+      step: "execute",
+      sequence: 1,
+      runtime: "grok",
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      worktree: "/repo/worktrees/pr-7",
+      systemPromptPath: "/tmp/run/execute-contract.md",
+      systemPrompt: "# Execute contract\nstep: execute\n",
+      userPrompt: "## Inputs\n- task.md\n",
+      tabId: "w1:t2",
+      model: "grok-code-fast-1",
+      permissionMode: "auto",
+    });
+
+    // Grok correlates through the ambient session env like Codex, and never gets a --session-id flag.
+    expect(plan.command).toContain(
+      "LOOPHUB_SESSION_ID='11111111-1111-4111-8111-111111111111'",
+    );
+    expect(plan.command).toContain("grok ");
+    expect(plan.command).not.toContain("claude");
+    expect(plan.command).not.toContain("codex");
+    expect(plan.command).not.toContain("--session-id");
+    expect(plan.command).not.toContain("--append-system-prompt-file");
+    // auto mode opts into grok's `--force` approval bypass; grok has no sandbox posture.
+    expect(plan.command).toContain("--force");
+    expect(plan.command).not.toContain("--sandbox");
+    expect(plan.command).toContain("--model 'grok-code-fast-1'");
+    // The rendered contract is prepended to the positional prompt (single quoted as one arg).
+    expect(plan.command).toContain("# Execute contract");
+    expect(plan.command).toContain("## Inputs");
+  });
+
+  test("a non-auto Grok Workflow step omits the --force approval bypass (#1521)", () => {
+    const plan = buildWorkflowStepHerdrLaunchPlan({
+      repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
+      runId: 3,
+      step: "execute",
+      sequence: 1,
+      runtime: "grok",
+      sessionId: "22222222-2222-4222-8222-222222222222",
+      worktree: "/repo/worktrees/pr-7",
+      systemPromptPath: "/tmp/run/execute-contract.md",
+      systemPrompt: "contract",
+      userPrompt: "do it",
+      model: "grok-code-fast-1",
+    });
+
+    expect(plan.command).toContain("grok ");
+    expect(plan.command).not.toContain("--force");
+    expect(plan.command).not.toContain("--sandbox");
+  });
+
   test("builds Herdr tab create/close argv scoped to the repo session", () => {
     const repo = { full_name: "jugyo/loophub", local_path: "/repo/main" };
     const sessionName = herdrSessionName(repo);

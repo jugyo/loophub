@@ -7,6 +7,7 @@ import {
 } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { isClaudeSessionId } from "../../core/resume.ts";
+import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
 import { buildCodexSandboxArgs } from "../../core/terminal/codex-launch.ts";
 import {
   HERDR_ID,
@@ -124,9 +125,10 @@ function commandAvailable(command: string): boolean {
   return !result.error && (result.status ?? 0) === 0;
 }
 
-// The binary a runtime launches: Claude Code spawns `claude`, Codex spawns `codex` (#516).
-function runtimeBin(runtime: CodingAgent): "claude" | "codex" {
-  return runtime === "codex" ? "codex" : "claude";
+// The binary a runtime launches: Claude Code spawns `claude`, Codex spawns `codex`, Grok spawns
+// `grok` (#516). Keyed off the runtime registry so a new runtime needs no branch here.
+function runtimeBin(runtime: CodingAgent): RuntimeBin {
+  return RUNTIMES[runtime].bin;
 }
 
 function preflightParentLaunch(runtime: CodingAgent): void {
@@ -255,8 +257,8 @@ function requestedSessionId(): string | undefined {
 }
 
 // Build the parent agent argv for the resolved runtime (#516). Claude Code takes --session-id and
-// --append-system-prompt-file; Codex has neither, so the rendered contract is folded into its
-// positional prompt and correlation happens only through the LOOPHUB_SESSION_ID env prefix.
+// --append-system-prompt-file; Codex and Grok have neither, so the rendered contract is folded into
+// their positional prompt and correlation happens only through the LOOPHUB_SESSION_ID env prefix.
 function parentAgentArgs(input: {
   runtime: CodingAgent;
   sessionId: string;
@@ -271,6 +273,18 @@ function parentAgentArgs(input: {
       ...(auto
         ? ["--dangerously-bypass-approvals-and-sandbox"]
         : buildCodexSandboxArgs()),
+      "--model",
+      input.model,
+      `${systemPrompt}\n\n${input.userPrompt}`,
+    ];
+  }
+  if (input.runtime === "grok") {
+    const systemPrompt = readFileSync(input.systemPromptPath, "utf8");
+    // Grok has no sandbox concept (mirrors cli/dev.ts buildGrokArgs): auto opts into its
+    // approval-bypass (`--force`); non-auto passes nothing extra. TENTATIVE grok launch flags, same
+    // caveat as the `lh build` grok path.
+    return [
+      ...(auto ? ["--force"] : []),
       "--model",
       input.model,
       `${systemPrompt}\n\n${input.userPrompt}`,
@@ -379,7 +393,7 @@ async function launchParentHerdr(input: {
 async function startWorkflow(): Promise<void> {
   const target = rest[0];
   const usageLine =
-    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex] [--model <name>] [--herdr] [--auto] [--no-launch]";
+    "usage: lh workflow start <owner>/<repo>/<issue>|<issue> --workflow <name>|--workflow-id <id> [--claude-code | --codex | --grok] [--model <name>] [--herdr] [--auto] [--no-launch]";
   if (!target) fail(usageLine);
 
   let parsed: { repo?: string; id: number };
@@ -399,6 +413,7 @@ async function startWorkflow(): Promise<void> {
   const runtime = resolveDevRuntime({
     claudeCode: flags["claude-code"] === true,
     codex: flags.codex === true,
+    grok: flags.grok === true,
     defaultRuntime: codingAgent(),
   });
   const sessionId = requestedSessionId();

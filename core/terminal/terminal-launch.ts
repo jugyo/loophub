@@ -601,19 +601,76 @@ export function buildHerdrLaunchPlan(input: {
   };
 }
 
+// The step agent's shell-escaped argv, dispatched on the parent run's runtime (#516, #1521). Each
+// branch mirrors its interactive `lh build` counterpart in cli/dev.ts: claude takes --session-id and
+// --append-system-prompt-file; codex folds the contract into a positional prompt and carries a
+// sandbox posture; grok also folds the contract into a positional prompt but has no sandbox concept,
+// so auto mode only opts into its `--force` approval bypass (TENTATIVE grok flags, same caveat as the
+// `lh build --grok` path).
+function buildWorkflowStepAgentParts(
+  input: {
+    runtime: CodingAgent;
+    sessionId: string;
+    systemPromptPath: string;
+    systemPrompt: string;
+    userPrompt: string;
+    permissionMode?: "auto";
+  },
+  model: string | undefined,
+): string[] {
+  if (input.runtime === "codex") {
+    return [
+      "codex",
+      // Match the interactive Build button's Codex posture (cli/dev.ts buildCodexArgs): auto mode
+      // bypasses approvals/sandbox, otherwise run inside the workspace-write sandbox.
+      ...(input.permissionMode === "auto"
+        ? ["--dangerously-bypass-approvals-and-sandbox"]
+        : buildCodexSandboxArgs()
+      ).map(shellArg),
+      ...(model ? ["--model", shellArg(model)] : []),
+      // Codex takes no system-prompt flag, so fold the rendered contract into the prompt.
+      shellArg(`${input.systemPrompt}\n\n${input.userPrompt}`),
+    ];
+  }
+  if (input.runtime === "grok") {
+    return [
+      "grok",
+      // Match the interactive Build button's Grok posture (cli/dev.ts buildGrokArgs): auto mode opts
+      // into grok's `--force` approval bypass; grok has no sandbox concept, so nothing extra otherwise.
+      ...(input.permissionMode === "auto" ? ["--force"].map(shellArg) : []),
+      ...(model ? ["--model", shellArg(model)] : []),
+      // Grok takes no system-prompt flag, so fold the rendered contract into the prompt.
+      shellArg(`${input.systemPrompt}\n\n${input.userPrompt}`),
+    ];
+  }
+  return [
+    "claude",
+    "--session-id",
+    shellArg(input.sessionId),
+    ...(model ? ["--model", shellArg(model)] : []),
+    ...(input.permissionMode
+      ? ["--permission-mode", shellArg(input.permissionMode)]
+      : []),
+    "--append-system-prompt-file",
+    shellArg(input.systemPromptPath),
+    shellArg(input.userPrompt),
+  ];
+}
+
 export function buildWorkflowStepHerdrLaunchPlan(input: {
   repo: TerminalLaunchRepo;
   runId: number;
   step: WorkflowStep;
   sequence: number;
   // Runtime the parent run resolved (#516). Claude Code launches `claude` with --session-id and
-  // --append-system-prompt-file; Codex has neither, so it launches `codex` with the rendered
-  // contract folded into its positional prompt and correlates only via the LOOPHUB_SESSION_ID env.
+  // --append-system-prompt-file; Codex and Grok have neither, so they launch their own binary with
+  // the rendered contract folded into the positional prompt and correlate only via the
+  // LOOPHUB_SESSION_ID env.
   runtime: CodingAgent;
   sessionId: string;
   worktree: string;
   systemPromptPath: string;
-  // The rendered contract text (same content written to systemPromptPath). Codex has no
+  // The rendered contract text (same content written to systemPromptPath). Codex and Grok have no
   // --append-system-prompt-file equivalent, so the text is prepended to the positional prompt.
   systemPrompt: string;
   userPrompt: string;
@@ -628,32 +685,7 @@ export function buildWorkflowStepHerdrLaunchPlan(input: {
     `LOOPHUB_WORKFLOW_STEP=${shellArg(input.step)}`,
   ].join(" ");
   const model = input.model?.trim();
-  const parts =
-    input.runtime === "codex"
-      ? [
-          "codex",
-          // Match the interactive Build button's Codex posture (cli/dev.ts buildCodexArgs): auto mode
-          // bypasses approvals/sandbox, otherwise run inside the workspace-write sandbox.
-          ...(input.permissionMode === "auto"
-            ? ["--dangerously-bypass-approvals-and-sandbox"]
-            : buildCodexSandboxArgs()
-          ).map(shellArg),
-          ...(model ? ["--model", shellArg(model)] : []),
-          // Codex takes no system-prompt flag, so fold the rendered contract into the prompt.
-          shellArg(`${input.systemPrompt}\n\n${input.userPrompt}`),
-        ]
-      : [
-          "claude",
-          "--session-id",
-          shellArg(input.sessionId),
-          ...(model ? ["--model", shellArg(model)] : []),
-          ...(input.permissionMode
-            ? ["--permission-mode", shellArg(input.permissionMode)]
-            : []),
-          "--append-system-prompt-file",
-          shellArg(input.systemPromptPath),
-          shellArg(input.userPrompt),
-        ];
+  const parts = buildWorkflowStepAgentParts(input, model);
   return buildHerdrLaunchPlan({
     repo: input.repo,
     command: `${env} ${parts.join(" ")}`,

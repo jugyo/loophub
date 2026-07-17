@@ -13,6 +13,7 @@ import {
   type CodingAgent,
   configDir,
   devCostLimitUsd,
+  normalizeCodingAgent,
   worktreeRoot,
 } from "../config.ts";
 import {
@@ -345,9 +346,12 @@ function stepContractForLaunch(_step: WorkflowStep, template: string): string {
 }
 
 // The runtime the parent run resolved at start (#516). A null-runtime row predates the column and
-// — by that era's invariant (Workflow always launched Claude Code) — was a claude-code run.
+// — by that era's invariant (Workflow always launched Claude Code) — was a claude-code run;
+// normalizeCodingAgent maps that (and any unrecognized value) to claude-code while passing every
+// known runtime (codex, grok) through, so a grok run's steps stay on grok instead of collapsing to
+// claude (#1521).
 function runRuntime(run: S.WorkflowRunRow): CodingAgent {
-  return run.runtime === "codex" ? "codex" : "claude-code";
+  return normalizeCodingAgent(run.runtime);
 }
 
 // The model the parent run resolved at start. A null-runtime/model row falls back to the agent's

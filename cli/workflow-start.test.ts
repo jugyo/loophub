@@ -102,6 +102,7 @@ function fakeRuntime(
   const herdr = join(dir, "herdr");
   const claude = join(dir, "claude");
   const codex = join(dir, "codex");
+  const grok = join(dir, "grok");
   if (focusedState) {
     writeFileSync(focusedStatePath, JSON.stringify(focusedState));
   }
@@ -148,9 +149,11 @@ exit 0
     '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n',
   );
   writeFileSync(codex, '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n');
+  writeFileSync(grok, '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 0\n');
   chmodSync(herdr, 0o755);
   chmodSync(claude, 0o755);
   chmodSync(codex, 0o755);
+  chmodSync(grok, 0o755);
   return { dir, focusedStatePath, log };
 }
 
@@ -164,6 +167,13 @@ function expectUnrelatedHerdrFocus(runtime: {
 
 // A fakeRuntime with no `claude` binary, so a test asserts a Codex launch never requires claude.
 function codexOnlyRuntime() {
+  const runtime = fakeRuntime();
+  rmSync(join(runtime.dir, "claude"), { force: true });
+  return runtime;
+}
+
+// A fakeRuntime with no `claude` binary, so a test asserts a Grok launch never requires claude.
+function grokOnlyRuntime() {
   const runtime = fakeRuntime();
   rmSync(join(runtime.dir, "claude"), { force: true });
   return runtime;
@@ -1144,6 +1154,98 @@ test("workflow start --codex --model overrides the config default model (#516)",
     expect(log).toContain("codex '");
     expect(log).toContain("'--model' 'gpt-custom'");
     expect(log).not.toContain("gpt-5.5");
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --grok launches the grok runtime without requiring claude", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Grok parent session",
+    "--body",
+    "Do it with grok",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = grokOnlyRuntime();
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--grok",
+        "--herdr",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    // Exit 0 with no `claude` on PATH already proves the Grok launch never required claude.
+    expect(started.exitCode, started.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    // The parent launches grok with the grok config default model. `<bin> '` marks the real binary
+    // invocation (the folded prompt escapes its own quotes), so `claude '` never appears and grok is
+    // handed neither `--session-id` (claude-only) nor a sandbox posture (grok has none).
+    expect(log).toContain("grok '");
+    expect(log).not.toContain("claude '");
+    expect(log).toContain("'--model' 'grok-code-fast-1'");
+    expect(log).not.toContain("'--session-id'");
+    expect(log).not.toContain("'--force'");
+  } finally {
+    rmSync(runtime.dir, { recursive: true, force: true });
+  }
+});
+
+test("workflow start --grok --auto opts into grok's approval bypass", () => {
+  const issueOut = run([
+    "issue",
+    "create",
+    "--repo",
+    REPO,
+    "--title",
+    "Grok auto parent session",
+    "--body",
+    "Do it unattended with grok",
+  ]);
+  const issue = issueOut.stdout.match(/created #(\d+)/)?.[1];
+  if (!issue) throw new Error(issueOut.stdout);
+  const runtime = grokOnlyRuntime();
+  try {
+    const started = run(
+      [
+        "workflow",
+        "start",
+        issue,
+        "--repo",
+        REPO,
+        "--workflow",
+        "standard",
+        "--grok",
+        "--herdr",
+        "--auto",
+      ],
+      {
+        PATH: `${runtime.dir}:${process.env.PATH}`,
+        HERDR_LOG: runtime.log,
+      },
+    );
+
+    expect(started.exitCode, started.stderr).toBe(0);
+    const log = readFileSync(runtime.log, "utf8");
+    expect(log).toContain("grok '");
+    expect(log).toContain("'--force'");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }
