@@ -92,8 +92,9 @@ export async function isGitRepo(repoPath: string): Promise<boolean> {
 
 // Absolute path to the shared (common) git directory. For a linked worktree this is the
 // primary checkout's `.git` — where objects/refs/logs and the per-worktree gitdir live —
-// not the worktree's `.git` pointer file. Agent launchers need it to grant the sandbox write
-// access to the real commit target (see cli/dev.ts buildManagedSettings).
+// not the worktree's `.git` pointer file. A linked worktree's commit writes into this shared
+// common dir (objects/refs/logs), so callers that need to reason about the real commit target
+// resolve it here rather than trusting the worktree's `.git` pointer file.
 export async function gitCommonDir(repoPath: string): Promise<string> {
   const r = await git(repoPath, [
     "rev-parse",

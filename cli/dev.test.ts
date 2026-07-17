@@ -2,34 +2,23 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
-  realpathSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import { expect, test } from "vitest";
-import {
-  branchExists,
-  git,
-  gitCommonDir,
-  gitDirOf,
-  worktreeList,
-} from "../core/git.ts";
+import { branchExists, git, worktreeList } from "../core/git.ts";
 import {
   acquireDevLock,
   buildClaudeArgs,
   buildCodexArgs,
   buildGrokArgs,
-  buildManagedSettings,
   buildResumeArgs,
   buildRuntimeLaunch,
   devLockPath,
   displayMultiline,
-  formatLaunchPlan,
   formatLaunchSummary,
   formatSpawnCommand,
   legacyWorktreeBranch,
@@ -42,8 +31,6 @@ import {
   removeDevLock,
   resolveDevRuntime,
   shouldCreateMissingConventionBranch,
-  validateDomain,
-  validateExistingLocalBranch,
   worktreeBranch,
   worktreePath,
 } from "./dev.ts";
@@ -121,105 +108,6 @@ test("displayMultiline strips ANSI/VT sequences and other control bytes but keep
   // \x1b[31m = red ANSI; \r and \b are line-overwriting control bytes; \n must survive.
   const body = "line one\x1b[31m red\r\nline\btwo";
   expect(displayMultiline(body)).toBe("line one red\nlinetwo");
-});
-
-// ---- managed settings (pure) ----
-
-test("buildManagedSettings emits a sandboxed config with the default allow-list", () => {
-  const { json, allowedDomains } = buildManagedSettings({
-    repo: "jugyo/local-github",
-  });
-  expect(allowedDomains).toEqual(["api.anthropic.com", "github.com"]);
-  const s = JSON.parse(json);
-  expect(s.sandbox.enabled).toBe(true);
-  expect(s.sandbox.allowUnsandboxedCommands).toBe(false);
-  expect(s.sandbox.network.allowManagedDomainsOnly).toBe(true);
-  expect(s.sandbox.network.allowedDomains).toEqual([
-    "api.anthropic.com",
-    "github.com",
-  ]);
-});
-
-test("git paths produce a minimal branch-scoped write allow-list (not the whole gitdir)", () => {
-  const { json } = buildManagedSettings({
-    repo: "me/proj",
-    git: {
-      gitDir: "/repo/.git",
-      worktreeGitDir: "/repo/.git/worktrees/issue-7",
-      branch: "loophub/issue-7",
-    },
-  });
-  const fs = JSON.parse(json).sandbox.filesystem;
-  expect(fs.allowWrite).toEqual([
-    "/repo/.git/objects",
-    "/repo/.git/worktrees/issue-7",
-    "/repo/.git/refs/heads/loophub/issue-7",
-    "/repo/.git/refs/heads/loophub/issue-7.lock",
-    "/repo/.git/logs/refs/heads/loophub/issue-7",
-  ]);
-  // The whole gitdir, other refs (main), hooks and config are NOT writable.
-  expect(fs.allowWrite).not.toContain("/repo/.git");
-  expect(fs.allowWrite.some((p: string) => p.includes("refs/heads/main"))).toBe(
-    false,
-  );
-  expect(
-    fs.allowWrite.some(
-      (p: string) => p.endsWith("/hooks") || p.endsWith("/config"),
-    ),
-  ).toBe(false);
-  // denyWrite should not be present.
-  expect(fs.denyWrite).toBeUndefined();
-  // denyRead is unchanged by the gitdir grant.
-  expect(fs.denyRead).toContain("~/.ssh");
-});
-
-test("a detached worktree (no branch) grants no shared ref writes", () => {
-  const { json } = buildManagedSettings({
-    repo: "me/proj",
-    git: {
-      gitDir: "/repo/.git",
-      worktreeGitDir: "/repo/.git/worktrees/x",
-      branch: null,
-    },
-  });
-  const fs = JSON.parse(json).sandbox.filesystem;
-  expect(fs.allowWrite).toEqual([
-    "/repo/.git/objects",
-    "/repo/.git/worktrees/x",
-  ]);
-});
-
-test("without git paths the filesystem config carries no write allow-list", () => {
-  const { json } = buildManagedSettings({ repo: "me/proj" });
-  const fs = JSON.parse(json).sandbox.filesystem;
-  expect(fs.allowWrite).toBeUndefined();
-  expect(fs.denyWrite).toBeUndefined();
-});
-
-test("--allow unions validated domains into the proxy allow-list", () => {
-  const { allowedDomains } = buildManagedSettings({
-    repo: "me/proj",
-    allow: "example.com,*.test.dev",
-  });
-  expect(allowedDomains).toEqual([
-    "api.anthropic.com",
-    "github.com",
-    "example.com",
-    "*.test.dev",
-  ]);
-});
-
-test("invalid --allow domain is rejected (injection guard)", () => {
-  expect(() =>
-    buildManagedSettings({ repo: "me/proj", allow: 'evil",":' }),
-  ).toThrow(/invalid --allow domain/);
-  expect(() => validateDomain('a"b')).toThrow(/invalid --allow domain/);
-});
-
-test("invalid --repo is rejected", () => {
-  expect(() => buildManagedSettings({ repo: "not-a-repo" })).toThrow(
-    /invalid --repo/,
-  );
 });
 
 // ---- interactive launch args (pure) ----
@@ -383,103 +271,6 @@ test("buildClaudeArgs omits --model when the model is only control characters", 
     model: "\x1b[0m\r\x07",
   });
   expect(args.indexOf("--model")).toBe(-1);
-});
-
-// ---- launch plan (pure) ----
-
-function plan(overrides: Partial<Parameters<typeof formatLaunchPlan>[0]> = {}) {
-  const { json } = buildManagedSettings({
-    repo: "me/proj",
-    allow: "example.com",
-  });
-  const claudeArgs = buildClaudeArgs({
-    sessionId: "sid-1",
-    managedSettings: json,
-    slashCommand: "/lh-build 42",
-  });
-  return formatLaunchPlan({
-    repo: "me/proj",
-    worktree: "/root/me/proj/issue-42",
-    sessionId: "sid-1",
-    slashCommand: "/lh-build 42",
-    managedSettings: json,
-    claudeArgs,
-    ...overrides,
-  });
-}
-
-test("formatLaunchPlan shows context (repo / worktree / session / command)", () => {
-  const out = plan();
-  expect(out).toContain("repo:        me/proj");
-  expect(out).toContain("worktree:    /root/me/proj/issue-42");
-  expect(out).toContain("session-id:  sid-1");
-  expect(out).toContain("command:     /lh-build 42");
-});
-
-test("formatLaunchPlan summarizes the managed sandbox settings (not raw JSON)", () => {
-  const out = plan();
-  expect(out).toContain("sandbox:            enabled (fail if unavailable)");
-  expect(out).toContain("unsandboxed cmds:   denied");
-  expect(out).toContain("excluded cmds:      gh *");
-  expect(out).toContain(
-    "network domains:    api.anthropic.com, github.com, example.com (managed only)",
-  );
-  expect(out).toContain("permissions mode:   auto");
-  expect(out).toContain("filesystem denyRead:");
-  expect(out).toContain("- ~/.ssh");
-  // readable summary, never a raw one-line JSON blob
-  expect(out).not.toContain('{"sandbox"');
-});
-
-test("formatLaunchPlan reports the --permission-mode passed on the command line", () => {
-  const out = plan();
-  expect(out).toContain("--permission-mode:  auto");
-});
-
-test("formatLaunchPlan shows no permission mode for a no-sandbox launch", () => {
-  // No --sandbox: managed-settings empty and buildClaudeArgs omits --permission-mode, so the
-  // plan must consistently report both as (default) — Claude's normal approval mode.
-  const claudeArgs = buildClaudeArgs({
-    sessionId: "sid-1",
-    slashCommand: "/lh-build 42",
-  });
-  const out = formatLaunchPlan({
-    repo: "me/proj",
-    worktree: "/root/me/proj/issue-42",
-    sessionId: "sid-1",
-    slashCommand: "/lh-build 42",
-    managedSettings: "{}",
-    claudeArgs,
-  });
-  expect(out).toContain("sandbox:            disabled");
-  expect(out).toContain("permissions mode:   (default)");
-  expect(out).toContain("--permission-mode:  (default)");
-});
-
-test("formatLaunchPlan tolerates missing managed-settings fields without throwing", () => {
-  const out = formatLaunchPlan({
-    repo: "me/proj",
-    worktree: "/wt",
-    sessionId: "sid",
-    slashCommand: "/lh-build 1",
-    managedSettings: "{}",
-    claudeArgs: [], // no --permission-mode
-  });
-  expect(out).toContain("sandbox:            disabled");
-  expect(out).toContain("excluded cmds:      (none)");
-  expect(out).toContain("network domains:    (none)");
-  expect(out).toContain("permissions mode:   (default)");
-  expect(out).toContain("filesystem denyRead: (none)");
-  expect(out).toContain("--permission-mode:  (default)");
-});
-
-test("formatLaunchPlan strips terminal control sequences so a crafted name can't forge the plan", () => {
-  // A repo name carrying ANSI cursor-up + erase-line could overwrite the rendered settings.
-  const out = plan({ repo: "me/\x1b[2K\x1b[1Aevil", worktree: "/wt/\x07bell" });
-  expect(out).not.toContain("\x1b"); // no ESC byte survives
-  expect(out).not.toContain("\x07"); // no BEL byte survives
-  expect(out).toContain("repo:        me/evil"); // ESC sequences fully consumed, printable text remains
-  expect(out).toContain("worktree:    /wt/bell");
 });
 
 // ---- runtime selection (pure) ----
@@ -770,13 +561,9 @@ test("formatSpawnCommand wraps the line in ANSI dim only when color is requested
 test("formatSpawnCommand matches the argv handed to spawnSync (single source of truth)", () => {
   // Reuse buildClaudeArgs — the very array passed to spawnSync("claude", claudeArgs) — so the
   // displayed command is provably what runs.
-  const { json } = buildManagedSettings({
-    repo: "me/proj",
-    allow: "example.com",
-  });
   const claudeArgs = buildClaudeArgs({
     sessionId: "sid-1",
-    managedSettings: json,
+    managedSettings: "{}",
     slashCommand: "/lh-build 42",
     sessionName: "#42 title",
   });
@@ -784,20 +571,6 @@ test("formatSpawnCommand matches the argv handed to spawnSync (single source of 
   expect(line).toBe(
     `claude ${claudeArgs.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ")}`,
   );
-});
-
-test("formatLaunchPlan handles --permission-mode flag with no value (defensive)", () => {
-  const { json } = buildManagedSettings({ repo: "me/proj" });
-  // Edge case: claudeArgs ends with --permission-mode and no value (buildClaudeArgs never does this, but formatLaunchPlan is pure).
-  const out = formatLaunchPlan({
-    repo: "me/proj",
-    worktree: "/wt",
-    sessionId: "sid",
-    slashCommand: "/lh-build 1",
-    managedSettings: json,
-    claudeArgs: ["--session-id", "sid", "--permission-mode"], // flag, no value
-  });
-  expect(out).toContain("--permission-mode:  (default)");
 });
 
 // ---- launch summary (pure, default/minimal output) ----
@@ -849,26 +622,6 @@ test("worktreePath rejects repo names that would traverse out of the root", () =
   expect(() => worktreePath("/root", "me//proj", 1)).toThrow(
     /invalid repo name/,
   );
-});
-
-test("validateExistingLocalBranch accepts existing branches and rejects unsafe refs", async () => {
-  const repo = await makeRepo();
-  await git(repo, ["branch", "integration/stack"]);
-
-  await expect(
-    validateExistingLocalBranch(repo, "integration/stack", "PR base ref"),
-  ).resolves.toBeUndefined();
-  await expect(
-    validateExistingLocalBranch(repo, "missing/stack", "PR base ref"),
-  ).rejects.toThrow(/PR base ref must name an existing local branch/);
-  await expect(
-    validateExistingLocalBranch(repo, "--output=/tmp/lh-base", "PR base ref"),
-  ).rejects.toThrow(/PR base ref must be a local branch name/);
-  await expect(
-    validateExistingLocalBranch(repo, "main~0", "PR base ref"),
-  ).rejects.toThrow(/PR base ref must name an existing local branch/);
-
-  rmSync(repo, { recursive: true, force: true });
 });
 
 test("legacy worktree path and branch are deterministic from the issue number (pre-#463)", () => {
@@ -1167,83 +920,6 @@ test("skips the .claude/ copy without error when the primary has none", async ()
   const root = tmpRoot();
   const path = await provision(repo, root, 7);
   expect(existsSync(join(path, ".claude"))).toBe(false);
-  rmSync(repo, { recursive: true, force: true });
-  rmSync(root, { recursive: true, force: true });
-});
-
-// ---- sandbox write-allow sufficiency + confinement (issue #28) ----
-//
-// A linked worktree's commit writes into the shared common dir and the per-worktree gitdir.
-// This proves the *minimal* allow-list is both sufficient and tight: (a) every path a real
-// `git add` + `git commit` writes is covered by the allow-list and not carved out by deny,
-// (b) the list does not grant the whole gitdir, and (c) other refs (`main`), hooks, config
-// and per-worktree config.worktree are not net-writable.
-function walkFiles(
-  dir: string,
-  mtimes = new Map<string, number>(),
-): Map<string, number> {
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) walkFiles(p, mtimes);
-    else if (e.isFile()) mtimes.set(p, statSync(p).mtimeMs);
-  }
-  return mtimes;
-}
-
-function isWithin(child: string, parent: string): boolean {
-  // Lexical containment (paths may not exist, e.g. transient lock files), realpath'd when possible.
-  const c = existsSync(child) ? realpathSync(child) : child;
-  const root = existsSync(parent) ? realpathSync(parent) : parent;
-  return c === root || c.startsWith(root + sep);
-}
-
-function netWritable(p: string, allow: string[], deny: string[] = []): boolean {
-  return allow.some((a) => isWithin(p, a)) && !deny.some((d) => isWithin(p, d));
-}
-
-test("worktree commit writes are all covered by the minimal allow-list, which excludes main/hooks/config", async () => {
-  const repo = await makeRepo();
-  const root = tmpRoot();
-  const worktree = await provision(repo, root, 28);
-
-  // The worktree's shared gitdir is the primary checkout's `.git`; the per-worktree dir is its child.
-  const gitDir = await gitCommonDir(worktree);
-  const worktreeGitDir = await gitDirOf(worktree);
-  expect(isWithin(gitDir, join(repo, ".git"))).toBe(true);
-  expect(isWithin(worktreeGitDir, gitDir)).toBe(true);
-  expect(await gitCommonDir(repo)).toBe(gitDir);
-
-  const { json } = buildManagedSettings({
-    repo: "me/proj",
-    git: { gitDir, worktreeGitDir, branch: "loophub/pr-28" },
-  });
-  const fs = JSON.parse(json).sandbox.filesystem;
-  const allow: string[] = fs.allowWrite;
-  const deny: string[] = fs.denyWrite;
-
-  // Snapshot the gitdir, then make a real commit from inside the worktree.
-  const before = walkFiles(gitDir);
-  writeFileSync(join(worktree, "f.txt"), "changed\n");
-  expect((await git(worktree, ["add", "-A"])).code).toBe(0);
-  expect((await git(worktree, ["commit", "-qm", "wt commit"])).code).toBe(0);
-
-  // Every newly written / modified file is net-writable under the allow-list (sufficiency).
-  const after = walkFiles(gitDir);
-  const written = [...after]
-    .filter(([p, m]) => before.get(p) !== m)
-    .map(([p]) => p);
-  expect(written.length).toBeGreaterThan(0); // the commit really touched the gitdir
-  for (const p of written) expect(netWritable(p, allow, deny)).toBe(true);
-
-  // Confinement: the dangerous paths are NOT net-writable.
-  expect(netWritable(gitDir, allow, deny)).toBe(false); // not the whole gitdir
-  expect(netWritable(join(gitDir, "refs/heads/main"), allow, deny)).toBe(false);
-  expect(netWritable(join(gitDir, "hooks/pre-commit"), allow, deny)).toBe(
-    false,
-  );
-  expect(netWritable(join(gitDir, "config"), allow, deny)).toBe(false);
-  expect(netWritable(join(gitDir, "packed-refs"), allow, deny)).toBe(false);
-
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
