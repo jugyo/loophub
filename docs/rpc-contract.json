@@ -213,26 +213,6 @@
       }
     },
     {
-      "name": "repos/remove",
-      "description": "Remove a repository and its issues/PRs.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "null"
-      }
-    },
-    {
       "name": "repos/setMergeMode",
       "description": "Pin the repo's PR-detail write action ('merge' | 'github_pr'), or 'auto' to clear it (#406).",
       "params": {
@@ -703,19 +683,6 @@
       }
     },
     {
-      "name": "terminal/config",
-      "description": "Terminal launch backend, always herdr — terminal workflows launch as external Herdr sessions (#562).",
-      "params": {
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "terminal/launch",
       "description": "Launch a terminal workflow as a named Herdr session. workflow-run (Start workflow) spawns `lh workflow start --herdr` and lets it provision the worktree/PR and the herdr pane itself (#1007); the other workflows are orchestrated by this RPC directly.",
       "params": {
@@ -734,6 +701,7 @@
               "scheduled-task-create",
               "resume",
               "github-pr-export",
+              "pr-crit",
               "workflow-run"
             ]
           },
@@ -909,106 +877,6 @@
       }
     },
     {
-      "name": "sessions/register",
-      "description": "Register (or update) an agent session.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "agent": {
-            "type": "string",
-            "minLength": 1
-          },
-          "session": {
-            "type": "string",
-            "minLength": 1
-          },
-          "name": {
-            "type": "string"
-          },
-          "runtime": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "agent",
-          "session"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "sessions/link",
-      "description": "Link a registered session to an issue or a PR (exactly one of issue/pr). Generalized attach point for session kinds beyond dev; idempotent.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "sessionId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "issue": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "pr": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "repo",
-          "sessionId"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
-      "name": "sessions/listFor",
-      "description": "Related sessions for an issue or a PR (exactly one of issue/pr), newest first, with per-row resume verdicts.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "issue": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "pr": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "repo"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "array"
-      }
-    },
-    {
       "name": "sessions/list",
       "description": "List agent sessions.",
       "params": {
@@ -1032,26 +900,6 @@
       },
       "result": {
         "type": "array"
-      }
-    },
-    {
-      "name": "sessions/get",
-      "description": "Get one agent session by id.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
       }
     },
     {
@@ -1596,40 +1444,6 @@
       }
     },
     {
-      "name": "issues/removeLabel",
-      "description": "Remove a label from an issue.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "label": {
-            "type": "string",
-            "minLength": 1
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number",
-          "label"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "null"
-      }
-    },
-    {
       "name": "comments/list",
       "description": "List an issue's comments.",
       "params": {
@@ -1718,74 +1532,6 @@
       },
       "result": {
         "type": "array"
-      }
-    },
-    {
-      "name": "handoffs/record",
-      "description": "Record a handoff: a parent's instruction (dir=down) or a child's return (dir=up). Binds to a PR and/or issue (one required) plus the recording session. Pass body for inline content (instruction/Verify report), or src+hash to reference a canonical copy (plan=PR, diff=commit) without duplicating it.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "phase": {
-            "type": "string",
-            "minLength": 1
-          },
-          "dir": {
-            "enum": [
-              "down",
-              "up"
-            ]
-          },
-          "pr": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "issue": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "from": {
-            "type": "string"
-          },
-          "to": {
-            "type": "string"
-          },
-          "body": {
-            "type": "string"
-          },
-          "src": {
-            "type": "string"
-          },
-          "hash": {
-            "type": "string"
-          },
-          "summary": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
-          },
-          "cost": {
-            "type": "string"
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "phase",
-          "dir"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
       }
     },
     {
@@ -2103,54 +1849,6 @@
       }
     },
     {
-      "name": "pulls/create",
-      "description": "Open a pull request.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1
-          },
-          "body": {
-            "type": "string"
-          },
-          "head": {
-            "type": "string",
-            "minLength": 1
-          },
-          "base": {
-            "type": "string",
-            "minLength": 1
-          },
-          "issue": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "draft": {
-            "type": "boolean"
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "title",
-          "head"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "pulls/update",
       "description": "Edit a pull request's title/body/state.",
       "params": {
@@ -2320,50 +2018,8 @@
       }
     },
     {
-      "name": "pulls/recordGithubPull",
-      "description": "Record the GitHub PR a loophub PR was exported to (#406). Idempotent on the PR.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "github_number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "url": {
-            "type": "string",
-            "minLength": 1
-          },
-          "branch": {
-            "type": "string"
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number",
-          "github_number",
-          "url"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "pulls/createGithubPull",
-      "description": "Submit a loophub PR to GitHub as a Draft PR (#411): push the head branch under `branch`, open (or recover) a Draft PR, and record it. Atomic — a retry recovers a created-but-unrecorded PR instead of duplicating.",
+      "description": "External agent/skill surface (not used by the SPA). Submit a loophub PR to GitHub as a Draft PR (#411): push the head branch under `branch`, open (or recover) a Draft PR, and record it. Atomic — a retry recovers a created-but-unrecorded PR instead of duplicating. Same core orchestration as `lh pr create-github-pr` / skill `lh-create-github-pr`.",
       "params": {
         "type": "object",
         "properties": {
@@ -2567,84 +2223,6 @@
       }
     },
     {
-      "name": "reviews/create",
-      "description": "Submit a review (optionally with line comments).",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "event": {
-            "enum": [
-              "COMMENT",
-              "PASS",
-              "REQUEST_CHANGES",
-              "comment",
-              "pass",
-              "request_changes",
-              "APPROVE",
-              "approve"
-            ]
-          },
-          "body": {
-            "type": "string"
-          },
-          "topic": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
-          },
-          "comments": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "line": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "side": {
-                  "type": "string"
-                },
-                "body": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              },
-              "required": [
-                "path",
-                "body"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "events/list",
       "description": "Poll events (webhook-style) by id cursor.",
       "params": {
@@ -2719,7 +2297,7 @@
     },
     {
       "name": "sync/run",
-      "description": "Sweep open-PR heads and emit pull_request.updated when a head moved.",
+      "description": "External / manual surface (not used by the SPA). Sweep open-PR heads and emit pull_request.updated when a head moved. Kept alongside `lh sync` so operators can force a sweep outside the worker poll loop (see worker/maintenance.ts).",
       "params": {
         "type": "object",
         "properties": {},

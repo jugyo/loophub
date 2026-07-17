@@ -146,12 +146,6 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.repos.rename(p.name, p.new_name, p.session_id),
   },
-  "repos/remove": {
-    description: "Remove a repository and its issues/PRs.",
-    params: params({ name: repo }, ["name"]),
-    result: { type: "null" },
-    handler: (p) => svc.repos.remove(p.name) ?? null,
-  },
   "repos/setMergeMode": {
     description:
       "Pin the repo's PR-detail write action ('merge' | 'github_pr'), or 'auto' to clear it (#406).",
@@ -362,13 +356,6 @@ export const methods: Record<string, MethodDef> = {
   },
 
   // ---- terminal launch ----
-  "terminal/config": {
-    description:
-      "Terminal launch backend, always herdr — terminal workflows launch as external Herdr sessions (#562).",
-    params: EMPTY_PARAMS,
-    result: anyObject,
-    handler: () => svc.terminal.config(),
-  },
   "terminal/launch": {
     description:
       "Launch a terminal workflow as a named Herdr session. workflow-run (Start workflow) spawns `lh workflow start --herdr` and lets it provision the worktree/PR and the herdr pane itself (#1007); the other workflows are orchestrated by this RPC directly.",
@@ -475,52 +462,6 @@ export const methods: Record<string, MethodDef> = {
   },
 
   // ---- agent sessions ----
-  "sessions/register": {
-    description: "Register (or update) an agent session.",
-    params: params(
-      {
-        id: sid,
-        agent: strNonEmpty,
-        session: strNonEmpty,
-        name: str,
-        runtime: str,
-        kind: str,
-      },
-      ["id", "agent", "session"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.sessions.register({
-        id: p.id,
-        agent: p.agent,
-        session: p.session,
-        name: p.name,
-        runtime: p.runtime,
-        kind: p.kind,
-      }),
-  },
-  "sessions/link": {
-    description:
-      "Link a registered session to an issue or a PR (exactly one of issue/pr). Generalized attach point for session kinds beyond dev; idempotent.",
-    params: params(
-      { repo, sessionId: sid, issue: positiveInt, pr: positiveInt },
-      ["repo", "sessionId"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.sessions.link(p.repo, {
-        sessionId: p.sessionId,
-        issue: p.issue,
-        pr: p.pr,
-      }),
-  },
-  "sessions/listFor": {
-    description:
-      "Related sessions for an issue or a PR (exactly one of issue/pr), newest first, with per-row resume verdicts.",
-    params: params({ repo, issue: positiveInt, pr: positiveInt }, ["repo"]),
-    result: anyArray,
-    handler: (p) => svc.sessions.listFor(p.repo, { issue: p.issue, pr: p.pr }),
-  },
   "sessions/list": {
     description: "List agent sessions.",
     params: EMPTY_PARAMS,
@@ -533,12 +474,6 @@ export const methods: Record<string, MethodDef> = {
     params: EMPTY_PARAMS,
     result: anyArray,
     handler: () => svc.sessions.costSummary(),
-  },
-  "sessions/get": {
-    description: "Get one agent session by id.",
-    params: params({ id: sid }, ["id"]),
-    result: anyObject,
-    handler: (p) => svc.sessions.get(p.id),
   },
 
   // ---- inbox ----
@@ -731,16 +666,6 @@ export const methods: Record<string, MethodDef> = {
     handler: (p) =>
       svc.issues.addLabels(p.repo, p.number, p.labels, p.session_id),
   },
-  "issues/removeLabel": {
-    description: "Remove a label from an issue.",
-    params: params(
-      { repo, number: positiveInt, label: strNonEmpty, session_id: sid },
-      ["repo", "number", "label"],
-    ),
-    result: { type: "null" },
-    handler: (p) =>
-      svc.issues.removeLabel(p.repo, p.number, p.label, p.session_id) ?? null,
-  },
 
   // ---- comments ----
   "comments/list": {
@@ -774,49 +699,6 @@ export const methods: Record<string, MethodDef> = {
         issue: p.issue,
         session: p.session,
       }),
-  },
-  "handoffs/record": {
-    description:
-      "Record a handoff: a parent's instruction (dir=down) or a child's return (dir=up). Binds to a PR and/or issue (one required) plus the recording session. Pass body for inline content (instruction/Verify report), or src+hash to reference a canonical copy (plan=PR, diff=commit) without duplicating it.",
-    params: params(
-      {
-        repo,
-        phase: strNonEmpty,
-        dir: { enum: ["down", "up"] },
-        pr: positiveInt,
-        issue: positiveInt,
-        from: str,
-        to: str,
-        body: str,
-        src: str,
-        hash: str,
-        summary: str,
-        model: str,
-        cost: str,
-        session_id: sid,
-      },
-      ["repo", "phase", "dir"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.handoffs.record(
-        p.repo,
-        {
-          phase: p.phase,
-          direction: p.dir,
-          pr: p.pr,
-          issue: p.issue,
-          from: p.from,
-          to: p.to,
-          body: p.body,
-          src: p.src,
-          hash: p.hash,
-          summary: p.summary,
-          model: p.model,
-          cost: p.cost,
-        },
-        p.session_id,
-      ),
   },
 
   // ---- labels ----
@@ -950,36 +832,6 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.pulls.get(p.repo, p.number),
   },
-  "pulls/create": {
-    description: "Open a pull request.",
-    params: params(
-      {
-        repo,
-        title: strNonEmpty,
-        body: str,
-        head: strNonEmpty,
-        base: strNonEmpty,
-        issue: positiveInt,
-        draft: { type: "boolean" },
-        session_id: sid,
-      },
-      ["repo", "title", "head"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.pulls.create(
-        p.repo,
-        {
-          title: p.title,
-          body: p.body,
-          head: p.head,
-          base: p.base,
-          issue: p.issue,
-          draft: p.draft,
-        },
-        p.session_id,
-      ),
-  },
   "pulls/update": {
     description: "Edit a pull request's title/body/state.",
     params: params(
@@ -1054,32 +906,9 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
-  "pulls/recordGithubPull": {
-    description:
-      "Record the GitHub PR a loophub PR was exported to (#406). Idempotent on the PR.",
-    params: params(
-      {
-        repo,
-        number: positiveInt,
-        github_number: positiveInt,
-        url: strNonEmpty,
-        branch: str,
-        session_id: sid,
-      },
-      ["repo", "number", "github_number", "url"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.pulls.recordGithubPull(
-        p.repo,
-        p.number,
-        { github_number: p.github_number, url: p.url, branch: p.branch },
-        p.session_id,
-      ),
-  },
   "pulls/createGithubPull": {
     description:
-      "Submit a loophub PR to GitHub as a Draft PR (#411): push the head branch under `branch`, open (or recover) a Draft PR, and record it. Atomic — a retry recovers a created-but-unrecorded PR instead of duplicating.",
+      "External agent/skill surface (not used by the SPA). Submit a loophub PR to GitHub as a Draft PR (#411): push the head branch under `branch`, open (or recover) a Draft PR, and record it. Atomic — a retry recovers a created-but-unrecorded PR instead of duplicating. Same core orchestration as `lh pr create-github-pr` / skill `lh-create-github-pr`.",
     params: params(
       {
         repo,
@@ -1148,62 +977,6 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.reviews.listComments(p.repo, p.number),
   },
-  "reviews/create": {
-    description: "Submit a review (optionally with line comments).",
-    params: params(
-      {
-        repo,
-        number: positiveInt,
-        event: {
-          enum: [
-            "COMMENT",
-            "PASS",
-            "REQUEST_CHANGES",
-            "comment",
-            "pass",
-            "request_changes",
-            // Back-compat (#428): "approve" was the vocabulary before the
-            // pass/fail rename; core/service.ts normalizes it to PASS.
-            "APPROVE",
-            "approve",
-          ],
-        },
-        body: str,
-        topic: str,
-        model: str,
-        comments: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              path: strNonEmpty,
-              line: positiveInt,
-              side: str,
-              body: strNonEmpty,
-            },
-            required: ["path", "body"],
-            additionalProperties: false,
-          },
-        },
-        session_id: sid,
-      },
-      ["repo", "number"],
-    ),
-    result: anyObject,
-    handler: (p) =>
-      svc.reviews.create(
-        p.repo,
-        p.number,
-        {
-          event: p.event,
-          body: p.body,
-          topic: p.topic,
-          model: p.model,
-          comments: p.comments,
-        },
-        p.session_id,
-      ),
-  },
 
   // ---- events ----
   "events/list": {
@@ -1251,7 +1024,7 @@ export const methods: Record<string, MethodDef> = {
   // ---- sync ----
   "sync/run": {
     description:
-      "Sweep open-PR heads and emit pull_request.updated when a head moved.",
+      "External / manual surface (not used by the SPA). Sweep open-PR heads and emit pull_request.updated when a head moved. Kept alongside `lh sync` so operators can force a sweep outside the worker poll loop (see worker/maintenance.ts).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.sync.run(),

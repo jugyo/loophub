@@ -288,23 +288,6 @@ test("issues/create accepts an explicit null target_branch", async () => {
   expect(created.result.target_branch).toBeNull();
 });
 
-test("pulls/create can omit base and use a linked issue target branch", async () => {
-  const issue: any = await call("issues/create", {
-    repo: "me/proj",
-    title: "targeted rpc issue",
-    target_branch: "integration/stack",
-  });
-
-  const created: any = await call("pulls/create", {
-    repo: "me/proj",
-    title: "targeted rpc pr",
-    head: "main",
-    issue: issue.result.number,
-  });
-
-  expect(created.result.base.ref).toBe("integration/stack");
-});
-
 test("pulls/commitFiles routes the PR number and selected SHA", async () => {
   const commitFiles = vi.spyOn(svc.pulls, "commitFiles").mockResolvedValue([]);
   const sha = "a".repeat(40);
