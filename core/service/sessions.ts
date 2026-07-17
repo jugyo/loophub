@@ -25,6 +25,7 @@ import {
   findClaudeTranscript,
   findCodexRollouts,
   findGrokSessionUpdates,
+  isCodingAgent,
   issueOr404,
   legacyWorktreePath,
   parseClaudeSubagentTranscript,
@@ -156,10 +157,6 @@ function periodStarts(now: Date): Record<PeriodKey, number> {
     week: week.getTime(),
     day: day.getTime(),
   };
-}
-
-function isCodingAgent(value: string | null | undefined): value is CodingAgent {
-  return value === "claude-code" || value === "codex" || value === "grok";
 }
 
 function sessionPeriodCosts(

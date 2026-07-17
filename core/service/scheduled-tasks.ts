@@ -10,12 +10,14 @@ import {
   agentModel,
   buildHerdrLaunchPlan,
   buildScheduledTaskCommand,
+  CODING_AGENTS,
   type CodingAgent,
   ensureWritable,
   herdrPaneCloseArgv,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
   herdrTabFocusArgv,
+  isCodingAgent,
   isServiceError,
   parseHerdrAgentPaneId,
   parseHerdrRootPaneId,
@@ -65,9 +67,20 @@ function normalizeTimes(times: unknown): string[] {
   return [...out].sort();
 }
 
+// The runtimes a scheduled task may run. Derived from the registry (core/runtimes.ts) minus grok,
+// which is deliberately out of scope for scheduled tasks — adding a runtime should not silently
+// widen this set.
+const SCHEDULED_TASK_AGENTS: readonly CodingAgent[] = CODING_AGENTS.filter(
+  (a) => a !== "grok",
+);
+
 function normalizeAgent(agent: unknown): CodingAgent {
-  if (agent === "claude-code" || agent === "codex") return agent;
-  throw new ServiceError(422, "agent must be 'claude-code' or 'codex'");
+  if (isCodingAgent(agent) && SCHEDULED_TASK_AGENTS.includes(agent))
+    return agent;
+  throw new ServiceError(
+    422,
+    `agent must be one of: ${SCHEDULED_TASK_AGENTS.join(", ")}`,
+  );
 }
 
 function requireNonEmpty(value: unknown, field: string): string {

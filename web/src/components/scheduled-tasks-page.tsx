@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import type { CodingAgent, ScheduledTask } from "@/api/types";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button } from "@/components/ui/button";
+import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import {
   useDeleteScheduledTask,
   useRunScheduledTask,
@@ -16,14 +17,6 @@ import {
   useScheduledTasks,
   useUpdateScheduledTask,
 } from "@/queries/scheduled-tasks";
-
-const AGENT_LABELS: Record<CodingAgent, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  // Scheduled tasks stay claude-code/codex-only (Grok runtime is out of scope for scheduled tasks);
-  // this label only keeps the Record exhaustive over CodingAgent.
-  grok: "Grok Build",
-};
 
 // Parse a free-text times field ("09:00, 18:00" / newline / space separated) into a string array.
 // Validation of the HH:MM shape happens server-side; this only splits.
@@ -146,7 +139,7 @@ function TaskCard({
         <div className="min-w-0">
           <h2 className="font-medium">{task.title}</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {AGENT_LABELS[task.agent as CodingAgent] ?? task.agent} ·{" "}
+            {CODING_AGENT_LABELS[task.agent as CodingAgent] ?? task.agent} ·{" "}
             {task.times.length > 0 ? task.times.join(", ") : "no times"} ·{" "}
             {task.model ?? `${task.default_model} (default)`}
             {task.agent === "codex"
