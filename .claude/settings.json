@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(lh:*)",
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(npx vitest:*)",
+      "Bash(vitest:*)",
+      "Bash(cargo test:*)",
+      "Bash(mdv:*)"
+    ],
+    "ask": [
+      "Bash(lh pr merge:*)",
+      "Bash(lh repo remove:*)",
+      "Bash(lh repo archive:*)",
+      "Bash(lh repo unarchive:*)",
+      "Bash(lh dev:*)"
+    ]
+  }
+}
