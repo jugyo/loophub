@@ -325,9 +325,10 @@ export function buildCodexArgs({
 // (claude-only --sandbox/--allow are rejected up front by the CLI, same as codex) and no
 // --session-id / --name / --settings equivalent.
 //
-// NOTE: the grok headless launch flags are TENTATIVE — no running `grok` CLI was available to verify
-// against at implementation time. The positional prompt + `--model` + auto-bypass shape follows the
-// codex pattern and must be re-verified against the official `grok` CLI before relying on it.
+// Grok's auto-mode equivalent is `--always-approve` (auto-approve all tool executions), matching
+// Claude Code's `--permission-mode auto` and Codex's `--dangerously-bypass-approvals-and-sandbox`.
+// An older tentative flag (`--force`) is rejected by current `grok` CLIs as unknown, which made
+// Web Start workflow (`--auto`) exit the agent pane immediately with status 2 (#1540).
 export function buildGrokArgs({
   slashCommand,
   auto,
@@ -336,7 +337,6 @@ export function buildGrokArgs({
   slashCommand: string;
   // Opt into grok's auto-mode equivalent: skip approval prompts and auto-run tools, matching Claude
   // Code's --auto (`--permission-mode auto`) and Codex's --dangerously-bypass-approvals-and-sandbox.
-  // `--force` is grok's closest single flag for that (TENTATIVE — see the NOTE above).
   auto?: boolean;
   // Model for the session (`--model <name>`). No name validation — an unknown name is the grok CLI's
   // error to raise. Omitted => grok's own default. Control characters are stripped (see display()),
@@ -346,7 +346,7 @@ export function buildGrokArgs({
   // user-facing reasoning-effort flag yet (see core/runtimes.ts effortSuggestions note).
 }): string[] {
   const args: string[] = [];
-  if (auto) args.push("--force");
+  if (auto) args.push("--always-approve");
   if (model) {
     const m = display(model).trim();
     if (m) args.push("--model", m);

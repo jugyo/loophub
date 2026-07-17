@@ -277,10 +277,11 @@ function parentAgentArgs(input: {
   if (input.runtime === "grok") {
     const systemPrompt = readFileSync(input.systemPromptPath, "utf8");
     // Grok has no sandbox concept (mirrors cli/dev.ts buildGrokArgs): auto opts into its
-    // approval-bypass (`--force`); non-auto passes nothing extra. TENTATIVE grok launch flags, same
-    // caveat as the `lh build` grok path.
+    // approval-bypass (`--always-approve`); non-auto passes nothing extra. The old tentative
+    // `--force` flag is rejected by current grok CLIs and would exit the agent pane immediately
+    // when Web Start workflow launches with --auto (#1540).
     return [
-      ...(auto ? ["--force"] : []),
+      ...(auto ? ["--always-approve"] : []),
       "--model",
       input.model,
       `${systemPrompt}\n\n${input.userPrompt}`,

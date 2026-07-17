@@ -1202,6 +1202,7 @@ test("workflow start --grok launches the grok runtime without requiring claude",
     expect(log).not.toContain("claude '");
     expect(log).toContain("'--model' 'grok-code-fast-1'");
     expect(log).not.toContain("'--session-id'");
+    expect(log).not.toContain("'--always-approve'");
     expect(log).not.toContain("'--force'");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
@@ -1245,7 +1246,9 @@ test("workflow start --grok --auto opts into grok's approval bypass", () => {
     expect(started.exitCode, started.stderr).toBe(0);
     const log = readFileSync(runtime.log, "utf8");
     expect(log).toContain("grok '");
-    expect(log).toContain("'--force'");
+    expect(log).toContain("'--always-approve'");
+    // Current grok CLIs reject the old tentative `--force` flag (#1540).
+    expect(log).not.toContain("'--force'");
   } finally {
     rmSync(runtime.dir, { recursive: true, force: true });
   }

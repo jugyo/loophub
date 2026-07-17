@@ -604,11 +604,10 @@ export function buildHerdrLaunchPlan(input: {
 }
 
 // The step agent's shell-escaped argv, dispatched on the parent run's runtime (#516, #1521). Each
-// branch mirrors its interactive `lh build` counterpart in cli/dev.ts: claude takes --session-id and
+// branch mirrors its interactive counterpart in cli/dev.ts: claude takes --session-id and
 // --append-system-prompt-file; codex folds the contract into a positional prompt and carries a
 // sandbox posture; grok also folds the contract into a positional prompt but has no sandbox concept,
-// so auto mode only opts into its `--force` approval bypass (TENTATIVE grok flags, same caveat as the
-// `lh build --grok` path).
+// so auto mode only opts into its `--always-approve` approval bypass.
 function buildWorkflowStepAgentParts(
   input: {
     runtime: CodingAgent;
@@ -637,9 +636,13 @@ function buildWorkflowStepAgentParts(
   if (input.runtime === "grok") {
     return [
       "grok",
-      // Match the interactive Build button's Grok posture (cli/dev.ts buildGrokArgs): auto mode opts
-      // into grok's `--force` approval bypass; grok has no sandbox concept, so nothing extra otherwise.
-      ...(input.permissionMode === "auto" ? ["--force"].map(shellArg) : []),
+      // Match cli/dev.ts buildGrokArgs: auto mode opts into grok's `--always-approve` approval
+      // bypass; grok has no sandbox concept, so nothing extra otherwise. Do not use the old
+      // tentative `--force` — current grok CLIs reject it and the agent pane exits immediately
+      // (#1540, Web Start workflow --auto).
+      ...(input.permissionMode === "auto"
+        ? ["--always-approve"].map(shellArg)
+        : []),
       ...(model ? ["--model", shellArg(model)] : []),
       // Grok takes no system-prompt flag, so fold the rendered contract into the prompt.
       shellArg(`${input.systemPrompt}\n\n${input.userPrompt}`),

@@ -490,8 +490,10 @@ describe("herdr terminal launch", () => {
     expect(plan.command).not.toContain("codex");
     expect(plan.command).not.toContain("--session-id");
     expect(plan.command).not.toContain("--append-system-prompt-file");
-    // auto mode opts into grok's `--force` approval bypass; grok has no sandbox posture.
-    expect(plan.command).toContain("--force");
+    // auto mode opts into grok's `--always-approve` approval bypass; grok has no sandbox posture.
+    expect(plan.command).toContain("--always-approve");
+    // Current grok CLIs reject the old tentative `--force` flag (#1540).
+    expect(plan.command).not.toContain("--force");
     expect(plan.command).not.toContain("--sandbox");
     expect(plan.command).toContain("--model 'grok-code-fast-1'");
     // The rendered contract is prepended to the positional prompt (single quoted as one arg).
@@ -499,7 +501,7 @@ describe("herdr terminal launch", () => {
     expect(plan.command).toContain("## Inputs");
   });
 
-  test("a non-auto Grok Workflow step omits the --force approval bypass (#1521)", () => {
+  test("a non-auto Grok Workflow step omits the --always-approve approval bypass (#1521)", () => {
     const plan = buildWorkflowStepHerdrLaunchPlan({
       repo: { full_name: "jugyo/loophub", local_path: "/repo/main" },
       runId: 3,
@@ -515,6 +517,7 @@ describe("herdr terminal launch", () => {
     });
 
     expect(plan.command).toContain("grok ");
+    expect(plan.command).not.toContain("--always-approve");
     expect(plan.command).not.toContain("--force");
     expect(plan.command).not.toContain("--sandbox");
   });

@@ -682,7 +682,7 @@ test("buildGrokArgs keeps the slash command last and omits --model / auto flags 
 
 test("buildGrokArgs adds the auto-bypass flag before the prompt when auto is set", () => {
   expect(buildGrokArgs({ slashCommand: "/lh-build 42", auto: true })).toEqual([
-    "--force",
+    "--always-approve",
     "/lh-build 42",
   ]);
 });
