@@ -192,7 +192,7 @@ export function SettingsPage() {
     !devCostLimitError && parsedDevCostLimit !== devCostLimitUsd;
 
   return (
-    <div className="mx-auto max-w-content">
+    <div data-debug-component="SettingsPage" className="mx-auto max-w-content">
       <h1 className="text-2xl font-semibold">Settings</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Instance-level settings for this LoopHub server.

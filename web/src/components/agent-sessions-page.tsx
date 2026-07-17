@@ -308,7 +308,10 @@ export function AgentSessionsPage() {
   );
 
   return (
-    <div className="flex w-full flex-col">
+    <div
+      data-debug-component="AgentSessionsPage"
+      className="flex w-full flex-col"
+    >
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Agent sessions</h1>

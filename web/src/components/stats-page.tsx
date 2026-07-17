@@ -31,7 +31,10 @@ export function formatBytes(n: number): string {
 
 export function StatsPage() {
   return (
-    <div className="mx-auto flex max-w-content flex-col">
+    <div
+      data-debug-component="StatsPage"
+      className="mx-auto flex max-w-content flex-col"
+    >
       <h1 className="text-2xl font-semibold">Stats</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Server statistics and agent session activity.
@@ -90,7 +93,10 @@ export function DatabaseStatsPage() {
   const { data, isLoading, isError } = useStats();
 
   return (
-    <div className="flex w-full flex-col">
+    <div
+      data-debug-component="DatabaseStatsPage"
+      className="flex w-full flex-col"
+    >
       <h1 className="text-2xl font-semibold">DB Stats</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Database statistics for this LoopHub server.

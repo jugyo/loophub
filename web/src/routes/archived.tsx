@@ -8,7 +8,7 @@ function ArchivedPage() {
   usePageTitle(["Archived repositories"]);
   const query = useArchivedRepos();
   return (
-    <div className="mx-auto max-w-content">
+    <div data-debug-component="ArchivedPage" className="mx-auto max-w-content">
       <h1 className="text-2xl font-semibold">Archived</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Repositories that have been archived.

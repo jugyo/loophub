@@ -48,7 +48,10 @@ export function RepoSettingsPage({
   const archived = data?.archived ?? false;
 
   return (
-    <div className="mx-auto max-w-content">
+    <div
+      data-debug-component="RepoSettingsPage"
+      className="mx-auto max-w-content"
+    >
       <RenameSection owner={owner} repo={repo} loaded={loaded} />
       <BaseBranchSection
         owner={owner}

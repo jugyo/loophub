@@ -93,7 +93,7 @@ export function InboxPage() {
     : data?.filter((message) => scheduledTaskSource(message.from) == null);
 
   return (
-    <div className="flex w-full flex-col">
+    <div data-debug-component="InboxPage" className="flex w-full flex-col">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Inbox</h1>
         <div className="inline-flex rounded-md border bg-background p-1">

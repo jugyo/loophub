@@ -112,6 +112,7 @@ function UiCatalogPage() {
   return (
     <div
       ref={setPortalContainer}
+      data-debug-component="UiCatalogPage"
       className={cn(
         "min-h-screen bg-background text-foreground",
         themeDefinition.appearance === "dark" && "dark",

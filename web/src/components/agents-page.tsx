@@ -67,7 +67,10 @@ export function AgentsPage() {
   const trees = buildAgentsTrees(data);
 
   return (
-    <div className="mx-auto flex max-w-content flex-col">
+    <div
+      data-debug-component="AgentsPage"
+      className="mx-auto flex max-w-content flex-col"
+    >
       <h1 className="text-2xl font-semibold">Agents</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         LoopHub-managed herdr sessions, their PR worktrees, and running agents.

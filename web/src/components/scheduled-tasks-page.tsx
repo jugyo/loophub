@@ -50,7 +50,10 @@ export function ScheduledTasksPage({
   const { data: tasks, isLoading, isError } = useScheduledTasks(owner, repo);
 
   return (
-    <div className="mx-auto max-w-content">
+    <div
+      data-debug-component="ScheduledTasksPage"
+      className="mx-auto max-w-content"
+    >
       <p className="text-sm text-muted-foreground">
         A scheduled task runs a saved prompt with the chosen agent at one or
         more times of day. Each registered time fires once per day; use Run now

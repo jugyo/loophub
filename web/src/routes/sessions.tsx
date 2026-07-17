@@ -11,7 +11,10 @@ function SessionsRedirect() {
   }, [navigate]);
 
   return (
-    <div className="mx-auto flex max-w-content items-center gap-2 py-8 text-sm text-muted-foreground">
+    <div
+      data-debug-component="SessionsRedirect"
+      className="mx-auto flex max-w-content items-center gap-2 py-8 text-sm text-muted-foreground"
+    >
       <Loader2 className="size-4 animate-spin" /> Opening agent sessions…
     </div>
   );

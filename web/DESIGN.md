@@ -122,9 +122,11 @@ together, following this document's Source of Truth policy.
 The application header exposes a component debug mode beside the theme picker.
 When enabled, `ComponentDebugOverlay` outlines every visible element carrying a
 `data-debug-component` attribute and provides its React component name plus a
-copy action. Major page and shell components own these explicit markers. This
-keeps the mapping stable across production and development builds without
-reading React internals or changing component layout.
+copy action. Shell regions and major route/page components (home, repo, issues,
+pulls, agents, inbox, stats, settings, workflows, scheduled tasks, and similar
+screens) own these explicit markers. This keeps the mapping stable across
+production and development builds without reading React internals or changing
+component layout.
 
 Existing tools were considered before choosing this approach:
 

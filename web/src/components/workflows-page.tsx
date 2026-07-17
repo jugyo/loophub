@@ -44,7 +44,7 @@ export function WorkflowsPage() {
   const [creating, setCreating] = useState(false);
 
   return (
-    <div className="mx-auto max-w-content">
+    <div data-debug-component="WorkflowsPage" className="mx-auto max-w-content">
       <h1 className="text-2xl font-semibold">Workflows</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Workflows are global prompt bundles for the fixed Execute/Verify

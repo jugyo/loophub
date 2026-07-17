@@ -34,14 +34,20 @@ function RefRedirect() {
 
   if (isError) {
     return (
-      <div className="mx-auto max-w-content rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+      <div
+        data-debug-component="RefRedirect"
+        className="mx-auto max-w-content rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive"
+      >
         #{number} not found.
         {error instanceof Error ? ` ${error.message}` : null}
       </div>
     );
   }
   return (
-    <div className="mx-auto flex max-w-content items-center gap-2 py-8 text-sm text-muted-foreground">
+    <div
+      data-debug-component="RefRedirect"
+      className="mx-auto flex max-w-content items-center gap-2 py-8 text-sm text-muted-foreground"
+    >
       <Loader2 className="size-4 animate-spin" /> Resolving #{number}…
     </div>
   );
