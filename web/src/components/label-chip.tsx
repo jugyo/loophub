@@ -16,7 +16,6 @@ export function LabelChip({
   owner,
   repo,
   state,
-  workspace,
   workspaceFilter,
   className,
 }: {
@@ -24,7 +23,6 @@ export function LabelChip({
   owner: string;
   repo: string;
   state?: "open" | "closed" | "all";
-  workspace?: string;
   /** Repo-top workspace filter to carry into the `/r/:owner/:repo` label link (#1494). */
   workspaceFilter?: string;
   className?: string;
@@ -34,20 +32,11 @@ export function LabelChip({
     state: state === "open" ? undefined : state,
     workspace: workspaceFilter,
   };
-  const linkProps = workspace
-    ? {
-        to: "/r/w/$workspaceName" as const,
-        params: { workspaceName: workspace },
-        search,
-      }
-    : {
-        to: "/r/$owner/$repo" as const,
-        params: { owner, repo },
-        search,
-      };
   return (
     <Link
-      {...linkProps}
+      to="/r/$owner/$repo"
+      params={{ owner, repo }}
+      search={search}
       title={`Filter issues by "${name}"`}
       onClick={(e) => e.stopPropagation()}
       className={cn(

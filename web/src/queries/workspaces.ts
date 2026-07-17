@@ -3,7 +3,6 @@ import {
   createWorkspace,
   listArchivedWorkspaces,
   listWorkspaces,
-  resolveWorkspace,
   setWorkspaceArchived,
 } from "@/api/client";
 import { queryKeys } from "./keys";
@@ -19,15 +18,6 @@ export function workspaceQueryOptions(owner: string, repo: string) {
 
 export function useWorkspaces(owner: string, repo: string) {
   return useQuery(workspaceQueryOptions(owner, repo));
-}
-
-export function useWorkspaceResolution(branch: string | null) {
-  return useQuery({
-    queryKey: ["workspaces", "resolve", branch],
-    queryFn: () => resolveWorkspace(branch!),
-    enabled: branch !== null,
-    retry: false,
-  });
 }
 
 export function useArchivedWorkspaces(owner: string, repo: string) {

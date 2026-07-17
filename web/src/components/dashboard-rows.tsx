@@ -81,14 +81,12 @@ function RowLabels({
   owner,
   repo,
   state,
-  workspace,
   workspaceFilter,
 }: {
   labels: Label[];
   owner: string;
   repo: string;
   state?: IssueListFilters["state"];
-  workspace?: string;
   workspaceFilter?: string;
 }) {
   if (labels.length === 0) return null;
@@ -101,7 +99,6 @@ function RowLabels({
           owner={owner}
           repo={repo}
           state={state}
-          workspace={workspace}
           workspaceFilter={workspaceFilter}
           className="shrink-0 whitespace-nowrap"
         />
@@ -223,7 +220,6 @@ export function IssueRow({
   repoLabel,
   showCreatedAt = false,
   labelState,
-  labelWorkspace,
   labelWorkspaceFilter,
 }: {
   owner: string;
@@ -239,8 +235,6 @@ export function IssueRow({
   showCreatedAt?: boolean;
   /** Preserves the active issue-list state when label chips filter the list. */
   labelState?: IssueListFilters["state"];
-  /** Keeps label-chip filtering on the current workspace page. */
-  labelWorkspace?: string;
   /** Preserves the repo-top workspace filter when a label chip is clicked (#1494). */
   labelWorkspaceFilter?: string;
 }) {
@@ -307,7 +301,6 @@ export function IssueRow({
             owner={owner}
             repo={repo}
             state={labelState}
-            workspace={labelWorkspace}
             workspaceFilter={labelWorkspaceFilter}
           />
           <IssueBranchChip

@@ -47,17 +47,8 @@ function renderIssueList(ui: React.ReactNode, initialPath = "/r/me/proj") {
     path: "/r/$owner/$repo/issues",
     component: () => <>{ui}</>,
   });
-  const workspaceRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/r/w/$workspaceName",
-    component: () => <>{ui}</>,
-  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([
-      repoRoute,
-      repoIssuesRoute,
-      workspaceRoute,
-    ]),
+    routeTree: rootRoute.addChildren([repoRoute, repoIssuesRoute]),
     history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
   const rendered = render(
@@ -404,53 +395,6 @@ describe("IssueList", () => {
     expect(chip.getAttribute("href")).toBe("/r/me/proj?labels=bug&state=all");
   });
 
-  it("keeps state and label navigation on the selected workspace route", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "issues/list": () => [
-          issue({
-            target_branch: "feature/alpha",
-            labels: [{ name: "bug", color: null }],
-          }),
-        ],
-        "labels/list": () => [{ name: "bug", color: null }],
-      }),
-    );
-
-    const { router } = renderIssueList(
-      <IssueList
-        owner="me"
-        repo="proj"
-        labelsParam="ui"
-        labelFilterMode="select"
-        issueScope={{ workspace: "feature/alpha" }}
-      />,
-      "/r/w/feature%2Falpha?labels=ui",
-    );
-
-    const closedTab = await screen.findByRole("tab", { name: "Closed" });
-    expect(closedTab.getAttribute("href")).toBe(
-      "/r/w/feature%2Falpha?labels=ui&state=closed",
-    );
-
-    const rowLabel = screen.getByRole("link", { name: "bug" });
-    expect(rowLabel.getAttribute("href")).toBe(
-      "/r/w/feature%2Falpha?labels=bug",
-    );
-
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Label filter" }));
-    fireEvent.click(
-      await screen.findByRole("menuitemcheckbox", { name: "bug" }),
-    );
-
-    await waitFor(() =>
-      expect(
-        router.state.location.pathname + router.state.location.searchStr,
-      ).toBe("/r/w/feature%2Falpha?labels=ui%2Cbug"),
-    );
-  });
-
   it("shows the target branch chip on issue rows only when set", async () => {
     vi.stubGlobal(
       "fetch",
@@ -689,9 +633,13 @@ describe("IssueList", () => {
     renderIssueList(<IssueList owner="me" repo="proj" />);
 
     expect(await screen.findByText("Implicit default issue")).toBeTruthy();
-    expect(
-      screen.getAllByRole("heading").map((heading) => heading.textContent),
-    ).toEqual(["develop", "feature/b"]);
+    const headings = screen
+      .getAllByRole("heading")
+      .map((heading) => heading.textContent ?? "");
+    expect(headings).toHaveLength(3);
+    expect(headings[0]).toBe("develop");
+    expect(headings[1]).toContain("feature/a");
+    expect(headings[2]).toBe("feature/b");
 
     const defaultSection = screen
       .getByRole("heading", {
@@ -701,90 +649,13 @@ describe("IssueList", () => {
     expect(defaultSection?.textContent).toContain("Implicit default issue");
     expect(defaultSection?.textContent).toContain("Explicit default issue");
 
-    const workspaceLink = screen.getByRole("link", { name: /feature\/a/ });
-    expect(workspaceLink.getAttribute("href")).toBe("/r/w/feature%2Fa");
-    expect(screen.queryByText("Feature issue")).toBeNull();
-  });
-
-  it("shows only issues outside registered workspaces on the repository top", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "repos/get": () => ({ default_branch: "main" }),
-        "workspaces/list": () => [
-          {
-            branch: "feature/a",
-            created_at: "2026-01-01T00:00:00Z",
-            archived_at: null,
-            branch_exists: true,
-          },
-        ],
-        "issues/list": () => [
-          issue({ number: 1, title: "Unassigned issue" }),
-          issue({
-            number: 2,
-            title: "Workspace issue",
-            target_branch: "feature/a",
-          }),
-          issue({
-            number: 3,
-            title: "Unregistered branch issue",
-            target_branch: "feature/old",
-          }),
-        ],
-      }),
-    );
-
-    renderIssueList(
-      <IssueList owner="me" repo="proj" issueScope="unassigned" />,
-    );
-
-    expect(await screen.findByText("Unassigned issue")).toBeTruthy();
-    expect(screen.getByText("Unregistered branch issue")).toBeTruthy();
-    expect(screen.queryByText("Workspace issue")).toBeNull();
+    // Workspace-registered branches now render inline as non-link sections
+    // instead of linking to a dedicated workspace page.
+    const workspaceSection = screen
+      .getByRole("heading", { name: /feature\/a/ })
+      .closest("section");
+    expect(workspaceSection?.textContent).toContain("Feature issue");
     expect(screen.queryByText("Open workspace")).toBeNull();
-  });
-
-  it("shows only issues assigned to the selected workspace", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "repos/get": () => ({ default_branch: "main" }),
-        "workspaces/list": () => [
-          {
-            branch: "feature/a",
-            created_at: "2026-01-01T00:00:00Z",
-            archived_at: null,
-            branch_exists: true,
-          },
-        ],
-        "issues/list": () => [
-          issue({ number: 1, title: "Unassigned issue" }),
-          issue({
-            number: 2,
-            title: "Workspace issue",
-            target_branch: "feature/a",
-          }),
-          issue({
-            number: 3,
-            title: "Other workspace issue",
-            target_branch: "feature/b",
-          }),
-        ],
-      }),
-    );
-
-    renderIssueList(
-      <IssueList
-        owner="me"
-        repo="proj"
-        issueScope={{ workspace: "feature/a" }}
-      />,
-    );
-
-    expect(await screen.findByText("Workspace issue")).toBeTruthy();
-    expect(screen.queryByText("Unassigned issue")).toBeNull();
-    expect(screen.queryByText("Other workspace issue")).toBeNull();
   });
 
   it("combines the repository workspace filter with state and labels", async () => {
@@ -980,18 +851,23 @@ describe("IssueList", () => {
     renderIssueList(<IssueList owner="me" repo="proj" />);
 
     expect(await screen.findByText("Default issue")).toBeTruthy();
-    expect(
-      screen.getAllByRole("heading").map((heading) => heading.textContent),
-    ).toEqual(["main", "workspace/archived"]);
-    expect(
-      screen
-        .getByRole("link", { name: /workspace\/empty/ })
-        .getAttribute("href"),
-    ).toBe("/r/w/workspace%2Fempty");
-    expect(
-      screen.getByRole("link", { name: /workspace\/missing/ }).textContent,
-    ).toContain("branch missing");
-    expect(screen.queryByText("Missing branch issue")).toBeNull();
+    const headings = screen
+      .getAllByRole("heading")
+      .map((heading) => heading.textContent ?? "");
+    expect(headings).toHaveLength(4);
+    expect(headings[0]).toBe("main");
+    expect(headings[1]).toContain("workspace/empty");
+    expect(headings[2]).toContain("workspace/missing");
+    expect(headings[3]).toBe("workspace/archived");
+
+    // A workspace whose branch is gone surfaces the warning and its issues
+    // inline now that the dedicated workspace page is removed.
+    const missingSection = screen
+      .getByRole("heading", { name: /workspace\/missing/ })
+      .closest("section");
+    expect(missingSection?.textContent).toContain("branch missing");
+    expect(missingSection?.textContent).toContain("Missing branch issue");
+    expect(screen.queryByText("Open workspace")).toBeNull();
   });
 
   it("keeps the existing target branch groups when the registry is empty", async () => {
@@ -1017,7 +893,7 @@ describe("IssueList", () => {
     ).toEqual(["workspace/old"]);
   });
 
-  it("links a workspace matching the default branch to its dedicated page", async () => {
+  it("renders a workspace matching the default branch inline without a link", async () => {
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
@@ -1043,10 +919,12 @@ describe("IssueList", () => {
 
     renderIssueList(<IssueList owner="me" repo="proj" />);
 
-    const link = await screen.findByRole("link", { name: /main workspace/ });
-    expect(link.getAttribute("href")).toBe("/r/w/main");
-    expect(screen.queryByText("Implicit default issue")).toBeNull();
-    expect(screen.queryByText("Explicit default issue")).toBeNull();
+    expect(await screen.findByText("Implicit default issue")).toBeTruthy();
+    expect(screen.getByText("Explicit default issue")).toBeTruthy();
+    expect(
+      screen.getByText("workspace registered as default branch"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Open workspace")).toBeNull();
     expect(screen.getAllByRole("button", { name: /new issue/i })).toHaveLength(
       1,
     );

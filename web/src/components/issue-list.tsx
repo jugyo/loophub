@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LABEL_CHIP_BASE_CLASS, labelColorClass } from "@/lib/label-color";
 import { cn } from "@/lib/utils";
-import { workspacePath } from "@/lib/workspace-path";
 import {
   DEFAULT_ISSUE_FILTERS,
   ISSUE_LIST_PAGE_SIZE,
@@ -138,7 +137,6 @@ export function IssueList({
   workspaceParam,
   showWorkspaceFilter = false,
   labelFilterMode = "text",
-  issueScope,
 }: {
   owner: string;
   repo: string;
@@ -152,8 +150,6 @@ export function IssueList({
   showWorkspaceFilter?: boolean;
   /** Repo top uses the dropdown requested in #884; secondary issue lists keep the legacy text filter. */
   labelFilterMode?: "text" | "select";
-  /** Limits the shared list to issues outside workspaces or in one workspace. */
-  issueScope?: "unassigned" | { workspace: string };
 }) {
   const labels = labelsParam ?? "";
   const state = stateParam ?? DEFAULT_ISSUE_FILTERS.state;
@@ -183,40 +179,16 @@ export function IssueList({
     (workspace) => workspace.archived_at === null,
   );
   const visibleIssues = useMemo(() => {
-    if (showWorkspaceFilter) {
-      // All (no param) shows every workspace's issues; the default branch also
-      // covers unassigned issues, treated as the implicit default workspace.
-      if (!workspaceParam) return allVisibleIssues;
-      return allVisibleIssues.filter((issue) => {
-        const branch = issue.target_branch?.trim();
-        return workspaceParam === defaultBranch
-          ? !branch || branch === defaultBranch
-          : branch === workspaceParam;
-      });
-    }
-    if (!issueScope) return allVisibleIssues;
-    if (issueScope !== "unassigned") {
-      return allVisibleIssues.filter(
-        (issue) => issue.target_branch === issueScope.workspace,
-      );
-    }
-    const workspaceBranches = new Set(
-      workspaces
-        .filter((workspace) => workspace.archived_at === null)
-        .map((workspace) => workspace.branch),
-    );
+    // All (no param) shows every workspace's issues; the default branch also
+    // covers unassigned issues, treated as the implicit default workspace.
+    if (!showWorkspaceFilter || !workspaceParam) return allVisibleIssues;
     return allVisibleIssues.filter((issue) => {
       const branch = issue.target_branch?.trim();
-      return !branch || !workspaceBranches.has(branch);
+      return workspaceParam === defaultBranch
+        ? !branch || branch === defaultBranch
+        : branch === workspaceParam;
     });
-  }, [
-    allVisibleIssues,
-    defaultBranch,
-    issueScope,
-    showWorkspaceFilter,
-    workspaceParam,
-    workspaces,
-  ]);
+  }, [allVisibleIssues, defaultBranch, showWorkspaceFilter, workspaceParam]);
   const issueSections = useMemo(
     () => composeIssueSections(visibleIssues, defaultBranch, workspaces),
     [visibleIssues, defaultBranch, workspaces],
@@ -235,47 +207,29 @@ export function IssueList({
   // above then applies it. Keeps the URL authoritative so a reload/share keeps
   // the same filter; an empty box drops the param entirely.
   function apply() {
-    const search = {
-      labels: draftLabels.trim() || undefined,
-      state: state === "open" ? undefined : state,
-      workspace: showWorkspaceFilter ? workspaceParam : undefined,
-    };
-    if (issueScope && issueScope !== "unassigned") {
-      navigate({
-        to: "/r/w/$workspaceName",
-        params: { workspaceName: issueScope.workspace },
-        search,
-      });
-    } else {
-      navigate({
-        to: "/r/$owner/$repo",
-        params: { owner, repo },
-        search,
-      });
-    }
+    navigate({
+      to: "/r/$owner/$repo",
+      params: { owner, repo },
+      search: {
+        labels: draftLabels.trim() || undefined,
+        state: state === "open" ? undefined : state,
+        workspace: showWorkspaceFilter ? workspaceParam : undefined,
+      },
+    });
   }
 
   const selectedLabels = useMemo(() => parseLabelsParam(labels), [labels]);
 
   function navigateWithLabels(nextLabels: string[]) {
-    const search = {
-      labels: labelsParamFromList(nextLabels),
-      state: state === "open" ? undefined : state,
-      workspace: showWorkspaceFilter ? workspaceParam : undefined,
-    };
-    if (issueScope && issueScope !== "unassigned") {
-      navigate({
-        to: "/r/w/$workspaceName",
-        params: { workspaceName: issueScope.workspace },
-        search,
-      });
-    } else {
-      navigate({
-        to: "/r/$owner/$repo",
-        params: { owner, repo },
-        search,
-      });
-    }
+    navigate({
+      to: "/r/$owner/$repo",
+      params: { owner, repo },
+      search: {
+        labels: labelsParamFromList(nextLabels),
+        state: state === "open" ? undefined : state,
+        workspace: showWorkspaceFilter ? workspaceParam : undefined,
+      },
+    });
   }
 
   function addSelectedLabel(nextLabel: string) {
@@ -383,24 +337,14 @@ export function IssueList({
               state: tab.value === "open" ? undefined : tab.value,
               workspace: showWorkspaceFilter ? workspaceParam : undefined,
             };
-            const linkProps =
-              issueScope && issueScope !== "unassigned"
-                ? {
-                    to: "/r/w/$workspaceName" as const,
-                    params: { workspaceName: issueScope.workspace },
-                    search,
-                  }
-                : {
-                    to: "/r/$owner/$repo" as const,
-                    params: { owner, repo },
-                    search,
-                  };
             return (
               <Link
                 key={tab.value}
                 role="tab"
                 aria-selected={active}
-                {...linkProps}
+                to="/r/$owner/$repo"
+                params={{ owner, repo }}
+                search={search}
                 className={cn(
                   "inline-flex h-7 shrink-0 items-center justify-center rounded-sm px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   active
@@ -528,13 +472,7 @@ export function IssueList({
         )}
         <CreateIssueButton
           repo={`${owner}/${repo}`}
-          targetBranch={
-            showWorkspaceFilter
-              ? workspaceParam
-              : issueScope && issueScope !== "unassigned"
-                ? issueScope.workspace
-                : undefined
-          }
+          targetBranch={showWorkspaceFilter ? workspaceParam : undefined}
         />
       </div>
 
@@ -566,7 +504,7 @@ export function IssueList({
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {issueScope || showWorkspaceFilter ? (
+          {showWorkspaceFilter ? (
             <ul className="flex flex-col divide-y rounded-md border">
               {visibleIssues.map((issue) => (
                 <li key={issue.number}>
@@ -575,11 +513,6 @@ export function IssueList({
                     repo={repo}
                     issue={issue}
                     labelState={state}
-                    labelWorkspace={
-                      issueScope && issueScope !== "unassigned"
-                        ? issueScope.workspace
-                        : undefined
-                    }
                     labelWorkspaceFilter={
                       showWorkspaceFilter ? workspaceParam : undefined
                     }
@@ -588,72 +521,50 @@ export function IssueList({
               ))}
             </ul>
           ) : (
-            issueSections.map((section) =>
-              section.workspace || section.defaultWorkspace ? (
-                <Link
-                  key={section.branch}
-                  to={workspacePath(section.branch)}
-                  className="flex items-center justify-between gap-3 rounded-md border p-4 transition-colors hover:bg-accent"
-                >
-                  <span className="flex items-center gap-2 text-sm font-semibold">
+            issueSections.map((section) => (
+              <section key={section.branch} className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2 px-1">
+                  <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
                     {section.branch}
-                    <Badge>workspace</Badge>
+                    {section.workspace ? <Badge>workspace</Badge> : null}
+                    {section.defaultWorkspace ? (
+                      <span className="text-xs font-normal">
+                        workspace registered as default branch
+                      </span>
+                    ) : null}
                     {section.workspace && !section.workspace.branch_exists ? (
                       <Badge tone="review-changes">
                         <AlertTriangle className="mr-1 size-3" /> branch missing
                       </Badge>
                     ) : null}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    Open workspace
-                  </span>
-                </Link>
-              ) : (
-                <section key={section.branch} className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between gap-2 px-1">
-                    <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-                      {section.branch}
-                      {section.workspace ? <Badge>workspace</Badge> : null}
-                      {section.defaultWorkspace ? (
-                        <span className="text-xs font-normal">
-                          workspace registered as default branch
-                        </span>
-                      ) : null}
-                      {section.workspace && !section.workspace.branch_exists ? (
-                        <Badge tone="review-changes">
-                          <AlertTriangle className="mr-1 size-3" /> branch
-                          missing
-                        </Badge>
-                      ) : null}
-                    </h2>
-                  </div>
-                  {section.workspace && !section.workspace.branch_exists ? (
-                    <p className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-muted-foreground">
-                      Recreate the branch or archive this workspace.
-                    </p>
-                  ) : null}
-                  {section.issues.length === 0 &&
-                  (!section.workspace || section.workspace.branch_exists) ? (
-                    <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
-                      No issues yet
-                    </p>
-                  ) : section.issues.length > 0 ? (
-                    <ul className="flex flex-col divide-y rounded-md border">
-                      {section.issues.map((issue) => (
-                        <li key={issue.number}>
-                          <IssueRow
-                            owner={owner}
-                            repo={repo}
-                            issue={issue}
-                            labelState={state}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </section>
-              ),
-            )
+                  </h2>
+                </div>
+                {section.workspace && !section.workspace.branch_exists ? (
+                  <p className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+                    Recreate the branch or archive this workspace.
+                  </p>
+                ) : null}
+                {section.issues.length === 0 &&
+                (!section.workspace || section.workspace.branch_exists) ? (
+                  <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+                    No issues yet
+                  </p>
+                ) : section.issues.length > 0 ? (
+                  <ul className="flex flex-col divide-y rounded-md border">
+                    {section.issues.map((issue) => (
+                      <li key={issue.number}>
+                        <IssueRow
+                          owner={owner}
+                          repo={repo}
+                          issue={issue}
+                          labelState={state}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </section>
+            ))
           )}
           <IssueListLoadMore query={query} />
         </div>
