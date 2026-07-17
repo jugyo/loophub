@@ -768,6 +768,8 @@ describe("IssueDetail", () => {
     const button = await screen.findByRole("button", {
       name: "Start workflow",
     });
+    expect(button.className).toContain("bg-primary");
+    expect(button.className).toContain("text-primary-foreground");
     expect(button.title).toBe(
       "Start a saved workflow in auto mode (no approval prompts, no sandbox)",
     );

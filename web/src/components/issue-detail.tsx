@@ -340,7 +340,6 @@ function StartWorkflowControls({
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="secondary"
           title="Start a saved workflow in auto mode (no approval prompts, no sandbox)"
           disabled={isLaunching || isLoading}
         >
