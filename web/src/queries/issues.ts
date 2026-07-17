@@ -32,7 +32,7 @@ export const DEFAULT_ISSUE_FILTERS: IssueListFilters = {
   labels: "",
 };
 
-export const ISSUE_LIST_PAGE_SIZE = 100;
+export const ISSUE_LIST_PAGE_SIZE = 20;
 const ISSUE_LIST_FETCH_SIZE = ISSUE_LIST_PAGE_SIZE + 1;
 
 function hasMoreIssuePages(pages: Awaited<ReturnType<typeof listIssues>>[]) {

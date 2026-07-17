@@ -66,7 +66,7 @@ the embedded Vite path is the primary dev flow.
 - Serialized responses are limited to 10 MiB. The bounded serializer retains at most the limit and
   replaces an oversized result with HTTP 200 and a small `-32001 Response too large` JSON-RPC error.
 
-These limits leave headroom above existing SPA defaults. An issue-list page requests 101 records (100
+These limits leave headroom above existing SPA defaults. An issue-list page requests 21 records (20
 visible rows plus one lookahead record), and each event poll requests at most 100 events. The `lh` CLI
 does not use this transport; it calls `core/service` directly.
 

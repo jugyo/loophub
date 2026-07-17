@@ -190,7 +190,7 @@ describe("IssueList", () => {
         kind: "issue",
         state: "all",
         labels: ["bug", "ui"],
-        perPage: 101,
+        perPage: 21,
         page: 1,
       }),
     );
@@ -966,31 +966,31 @@ describe("IssueList", () => {
     expect(screen.getByText("Implicit default issue")).toBeTruthy();
   });
 
-  it("shows at most 100 issues initially and offers load more when more exist", async () => {
-    vi.stubGlobal("fetch", mockRpcFetch({ "issues/list": () => issues(101) }));
+  it("shows at most 20 issues initially and offers load more when more exist", async () => {
+    vi.stubGlobal("fetch", mockRpcFetch({ "issues/list": () => issues(21) }));
 
     renderIssueList(<IssueList owner="me" repo="proj" />);
 
-    expect(await screen.findByText("Issue 100")).toBeTruthy();
-    expect(screen.queryByText("Issue 101")).toBeNull();
+    expect(await screen.findByText("Issue 20")).toBeTruthy();
+    expect(screen.queryByText("Issue 21")).toBeNull();
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
   });
 
-  it("does not show load more when the first page has exactly 100 issues", async () => {
-    vi.stubGlobal("fetch", mockRpcFetch({ "issues/list": () => issues(100) }));
+  it("does not show load more when the first page has exactly 20 issues", async () => {
+    vi.stubGlobal("fetch", mockRpcFetch({ "issues/list": () => issues(20) }));
 
     renderIssueList(<IssueList owner="me" repo="proj" />);
 
-    expect(await screen.findByText("Issue 100")).toBeTruthy();
+    expect(await screen.findByText("Issue 20")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
-  it("loads the next 100 issues with the existing filters", async () => {
+  it("loads the next 20 issues with the existing filters", async () => {
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
         "issues/list": (params) =>
-          params.page === 1 ? issues(101) : issues(100, 101),
+          params.page === 1 ? issues(21) : issues(20, 21),
       }),
     );
 
@@ -1001,8 +1001,8 @@ describe("IssueList", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
 
-    expect(await screen.findByText("Issue 101")).toBeTruthy();
-    expect(await screen.findByText("Issue 200")).toBeTruthy();
+    expect(await screen.findByText("Issue 21")).toBeTruthy();
+    expect(await screen.findByText("Issue 40")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
     await waitFor(() =>
       expect(rpcCalls("issues/list").at(-1)?.params).toMatchObject({
@@ -1010,7 +1010,7 @@ describe("IssueList", () => {
         kind: "issue",
         state: "all",
         labels: ["bug"],
-        perPage: 101,
+        perPage: 21,
         page: 2,
       }),
     );
@@ -1021,9 +1021,9 @@ describe("IssueList", () => {
       "fetch",
       mockRpcFetch({
         "issues/list": (params) => {
-          if (params.page === 1) return issues(101);
-          if (params.page === 2) return issues(101, 101);
-          return issues(1, 201);
+          if (params.page === 1) return issues(21);
+          if (params.page === 2) return issues(21, 21);
+          return issues(1, 41);
         },
       }),
     );
@@ -1032,11 +1032,11 @@ describe("IssueList", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
 
-    expect(await screen.findByText("Issue 200")).toBeTruthy();
-    expect(screen.queryByText("Issue 201")).toBeNull();
+    expect(await screen.findByText("Issue 40")).toBeTruthy();
+    expect(screen.queryByText("Issue 41")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
-    expect(await screen.findByText("Issue 201")).toBeTruthy();
+    expect(await screen.findByText("Issue 41")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 });
