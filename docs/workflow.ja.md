@@ -123,6 +123,15 @@ rework は通常 Execute の turn done 後に届く。継続指示が作業中�
 5. ターン完了を `lh workflow turn done`（payload なし）で宣言する。**commit 前に宣言しても run は
    進まない**（親が HEAD 前進を観測しないため）。
 
+`orchestrator:` 注入や launch 時の `--note` で届く **追加作業指示**（rework 以外の human note /
+continuing instruction など）は、自然に Issue / PR への追加要望と読めるならそのように扱い、同じ
+issue・PR に対して実装する。完了後は通常の Execute と同じく **commit（ドメイン変更がある場合）→
+必要なら PR body / comment / attachment の更新 → `lh workflow turn done`** に戻る。rework
+（`address review #<id>`）は review 対応であり追加要望とは別だが、どちらも完了後の経路は同じ。
+質問のみ・判断待ちは escalate して同 pane で待機し、確認のみや HEAD を進めない更新（PR body 等）は
+commit せず turn done してよい（親は HEAD 不変なら既存 pass を維持し、HEAD 前進時だけ fresh Verify
+する）。issue body への追記は必須ではない。
+
 ### 3.3 Verify agent（固定ポインタの独立検証者）
 
 launch 時に (issue 参照, base SHA, head SHA) を受け取り、`git diff <base>..<head>` を自分で計算して

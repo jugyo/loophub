@@ -16,8 +16,10 @@ export const WORKFLOW_EXAMPLE_PROMPTS: WorkflowExamplePrompts = {
   description: "Fixed Execute/Verify development workflow.",
   execute_prompt:
     "Read the issue and the PR, make a focused implementation plan, then implement it. " +
-    "Match the surrounding naming, types, tests, and style, commit with a concise outcome message, " +
-    "update the PR body, and declare the turn done when the work is committed.",
+    "When a follow-up note or orchestrator instruction is additional work (not rework), treat it as " +
+    "an Issue/PR request when it naturally reads that way. Match the surrounding naming, types, " +
+    "tests, and style, commit with a concise outcome message, update the PR body, and declare the " +
+    "turn done when the work is committed.",
   verify_prompt:
     "Compute the base..head diff and review only that. Run the repository's standard test and lint " +
     "commands. Walk each acceptance criterion and confirm it is met. Record findings in the review " +

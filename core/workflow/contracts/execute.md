@@ -23,14 +23,53 @@ Your inputs are references into domain state, given in the launch prompt. There 
 During the session, messages beginning with `orchestrator:` are instructions from the workflow
 parent, injected as follow-ups into **this same live session**. Prefer to keep working here: a
 rework or continuing instruction is normally delivered by the parent into your existing pane rather
-than by starting a new Execute child. A rework instruction identifies the review to address by its
-id only (`orchestrator: address review #<id>`) — do not expect a summary of findings; read that
-review yourself. Other follow-ups (human notes, merge-conflict resolution) use the same
-`orchestrator:` prefix.
+than by starting a new Execute child. The same text may also arrive on a fresh Execute launch as
+`--note` when the parent could not inject into a live pane — treat launch-prompt notes and
+`orchestrator:` follow-ups the same way once you are working.
+
+## Follow-ups: rework vs additional work
+
+Classify each follow-up, then act. Both paths return to the same ordinary completion sequence
+(commit when the domain changed → update PR body / comment / attachment as needed →
+`lh workflow turn done`).
+
+### Rework (`orchestrator: address review #<id>`)
+
+A rework instruction identifies the Verify review to address by its id only — do not expect a
+summary of findings; read that review yourself with `lh pr view` and resolve every finding in it.
+Rework is **review response**, not a free-form extension of the issue.
+
+### Additional work (human notes, continuing instructions, other non-rework notes)
+
+When the instruction is **not** `address review #<id>` — for example a human note, a continuing
+instruction after a pass, merge-conflict resolution text, or any other non-rework
+`orchestrator:` / `--note` body — and it **naturally reads as an additional request against the
+Issue or PR** (new acceptance criteria, a follow-on feature, a fix beyond the open review, conflict
+resolution on this PR, and similar), treat it as such and implement it against the same issue and
+PR. You do **not** have to rewrite the issue body to record the request; implement it, and update
+the PR body / comments when that helps the next Verify or a human.
+
+"Naturally" means ordinary product or engineering work on this issue/PR. Keep the edge cases narrow:
+
+- **Question-only or blocked on a human decision** — present the full concrete question in your
+  pane, declare `lh workflow escalate ... --reason <short summary>`, and wait in the same pane.
+  Do not invent a domain change just to advance HEAD.
+- **Confirmation or no domain change required** (e.g. the note only asks you to acknowledge state,
+  or PR body / comment / attachment updates suffice) — make those PR operations if needed, then
+  declare turn done **without** a commit. The parent keeps a fresh pass when HEAD is unchanged and
+  only launches a new Verify when HEAD advances past the last reviewed commit.
+- **Ambiguous but still in scope** — prefer the smallest implementation that satisfies the note as
+  an Issue/PR request; escalate only when a real human choice is missing.
+
+Do not invent a special completion path for additional work. After you finish (whether rework or
+additional work), use the same sequence as a fresh Execute turn: commit any code change first,
+update domain state as needed, then declare turn done so the parent can observe HEAD and review
+state.
 
 ## What you do
 
-1. Read the issue and the PR. On rework, also read the review you were told to address.
+1. Read the issue and the PR. On rework, also read the review you were told to address. On
+   additional work, treat the follow-up note as part of the spec together with the issue and PR.
 2. Inspect the relevant code and make a concrete implementation plan. Keep that plan in this session
    so a human can inspect or change it by intervening in the live Execute agent — do not submit it as
    a separate artifact or gate.
@@ -56,14 +95,18 @@ review yourself. Other follow-ups (human notes, merge-conflict resolution) use t
    (the run id is in your launch context, and `LOOPHUB_WORKFLOW_RUN` / `LOOPHUB_WORKFLOW_REPO` are
    set for you). This is only a timing signal telling the parent to look; it carries no content and
    does not claim success. The parent observes HEAD and review state before deciding anything — so
-   commit your work **before** declaring turn done.
+   commit any code change **before** declaring turn done. The same commit-then-turn-done rule applies
+   to rework and to additional work; a turn with no commit is valid only when no HEAD advance is
+   needed (see Follow-ups above).
 
 ## Completion is observed, not submitted
 
 There is no execution-report artifact and no `lh workflow step output`. Your turn is "complete" to the
 parent when it observes that HEAD has advanced past the last reviewed commit (there is new work to
 verify). Declaring turn done without having committed does not advance the run — the parent will see
-HEAD unchanged and will not launch Verify.
+HEAD unchanged and will not launch Verify (after a pass, an unchanged HEAD leaves the existing pass
+fresh). That is intentional for confirmation-only or metadata-only turns; it is not a substitute for
+committing real implementation work.
 
 ## Prohibited actions
 

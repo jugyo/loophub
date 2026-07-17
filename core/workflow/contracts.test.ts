@@ -191,6 +191,31 @@ test("parent and execute contracts agree that the parent injects orchestrator me
   expect(parent).not.toContain("Do not use herdr pane injection");
 });
 
+test("Execute treats additional work notes as Issue/PR requests and completes via turn done", () => {
+  const execute = workflowContractText("execute");
+
+  expect(execute).toContain("Follow-ups: rework vs additional work");
+  expect(execute).toContain("additional request against the\nIssue or PR");
+  expect(execute).toContain("human notes, continuing instructions");
+  expect(execute).toContain("--note");
+  expect(execute).toContain(
+    "Do not invent a special completion path for additional work",
+  );
+  expect(execute).toContain(
+    "lh workflow turn done --repo '<repo>' --run <run>",
+  );
+  // Rework stays distinct from free-form extension, but both end the same way.
+  expect(execute).toContain("review response");
+  expect(execute).toContain(
+    "same commit-then-turn-done rule applies\n   to rework and to additional work",
+  );
+  // Narrow non-implementation edges stay compatible with parent observation.
+  expect(execute).toContain("Question-only or blocked on a human decision");
+  expect(execute).toContain("declare turn done **without** a commit");
+  expect(execute).toContain("unchanged HEAD leaves the existing pass\nfresh");
+  expect(execute).toContain("You do **not** have to rewrite the issue body");
+});
+
 test("Japanese workflow design documents the continuing lifecycle after a pass", () => {
   const design = readFileSync(
     join(import.meta.dirname, "..", "..", "docs", "workflow.ja.md"),
@@ -219,6 +244,13 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain("step_sessions_json.execute");
   expect(design).toContain("注入の成功自体を execute complete の根拠");
   expect(design).toContain("監査専用の lh コマンドは追加しない");
+  // Execute-side interpretation of additional work (issue/PR extension, same completion path).
+  expect(design).toContain("追加作業指示");
+  expect(design).toContain("Issue / PR への追加要望");
+  expect(design).toContain(
+    "commit（ドメイン変更がある場合）→\n必要なら PR body / comment / attachment の更新 → `lh workflow turn done`",
+  );
+  expect(design).toContain("issue body への追記は必須ではない");
 
   for (const event of [
     "workflow_run.turn_done",
