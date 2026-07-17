@@ -73,8 +73,8 @@ describe("ImageLightbox", () => {
   });
 
   it("closes on Escape and does not leak the keydown to a document-level listener", () => {
-    // Simulates being nested inside another modal (e.g. MarkdownPreviewModal) that also
-    // listens for Escape on `document` — the lightbox must stop the event from reaching it.
+    // Simulates being nested inside another modal that also listens for Escape on
+    // `document` — the lightbox must stop the event from reaching it.
     const onClose = vi.fn();
     const outerListener = vi.fn();
     document.addEventListener("keydown", outerListener);

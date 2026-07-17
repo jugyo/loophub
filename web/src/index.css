@@ -261,9 +261,9 @@
 
   /* Full-file preview (#462): a more spacious vertical rhythm for reading a
      whole rendered file, scoped via an extra class alongside .markdown-body
-     (see MarkdownPreviewModal) so the shared issue/PR/comment rules above are
-     untouched. Selectors combine both classes for specificity, independent of
-     declaration order.
+     (e.g. PR body preview in pull-detail) so the shared issue/PR/comment rules
+     above are untouched. Selectors combine both classes for specificity,
+     independent of declaration order.
 
      Spacing is modeled after the @tailwindcss/typography `prose` scale
      (mirrored by GitHub's own rendered-Markdown spacing): larger top margin

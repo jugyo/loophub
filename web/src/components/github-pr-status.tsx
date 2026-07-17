@@ -4,10 +4,9 @@
 // it sits alongside the other sidebar sections (work duration, sessions, handoff) without crowding
 // them — a badge row plus a few small labeled rows and a freshness footnote.
 //
-// Loading / error states mirror the sibling sidebar sections (HandoffTimeline): a spinner while
+// Loading / error states mirror the sibling sidebar sections (e.g. WorkDuration): a spinner while
 // fetching and a destructive box on failure. The "not linked" state is handled by the caller — the
-// section is not rendered at all when github_pull is absent — matching how Sessions/Handoffs hide
-// themselves when there is nothing to show.
+// section is not rendered at all when github_pull is absent.
 
 import { Loader2 } from "lucide-react";
 import type { GithubPrStatus } from "@/api/types";

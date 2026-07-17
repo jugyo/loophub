@@ -104,8 +104,8 @@ export function PullDetail({
 
   const pull = pullQuery.data;
   // The sidebar column is now always reserved (#456): WorkDuration always renders (with an "N/A"
-  // fallback), so there is no longer a PR that leaves the aside empty. RelatedSessions and
-  // HandoffTimeline still hide themselves individually when a PR has neither.
+  // fallback), so there is no longer a PR that leaves the aside empty. Other sidebar sections
+  // (Herdr, workflow run, GitHub PR status) hide themselves individually when empty.
 
   return (
     // The whole PR detail is a two-column layout (#346): the main column (header, reviews, diff,

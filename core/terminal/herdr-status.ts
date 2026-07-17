@@ -524,9 +524,9 @@ export function parseHerdrPaneLayout(
 }
 
 // herdr's recent-pane buffer is raw terminal output: SGR color codes, cursor moves,
-// and lone carriage returns (progress-bar overwrites) are all still in there. The
-// sidebar preview (#554) renders SGR sequences as actual color via ansi_up, so those
-// are kept intact; everything else here doesn't mean anything outside a live terminal
+// and lone carriage returns (progress-bar overwrites) are all still in there. SGR
+// sequences are kept intact so a caller can render them as color (or strip them for
+// plain text); everything else here doesn't mean anything outside a live terminal
 // (cursor moves, OSC titles/hyperlinks) or breaks a plain <pre> (stray \r/\r\n runs
 // that look like broken wrapping) and is stripped, once, so every caller gets terminal
 // output that's safe to render as either colored HTML or plain text.
@@ -543,8 +543,8 @@ export function parseHerdrPaneLayout(
 const ANSI_CSI = /\x1b\[[0-9;:?]*[@-~]/g;
 // SGR (color/style) sequences specifically — same parameter-byte class as ANSI_CSI
 // above, restricted to the 'm' final byte. Extracted via split/match in stripAnsi
-// below *before* the generic stripping runs, so these survive intact for ansi_up to
-// render as color: the generic passes below (especially ANSI_CSI_TRUNCATED, which has
+// below *before* the generic stripping runs, so these survive intact for callers that
+// render color: the generic passes below (especially ANSI_CSI_TRUNCATED, which has
 // no final-byte requirement at all) can't tell a still-open CSI from one whose final
 // byte is a color code worth keeping, so they'd otherwise eat an SGR sequence's
 // leading parameter bytes (e.g. the "\x1b[32" of "\x1b[32m").

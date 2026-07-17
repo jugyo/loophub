@@ -1,6 +1,6 @@
 // Shared modal chrome for full-size previews of Markdown-embedded content (images, Mermaid
 // diagrams — see image-lightbox.tsx / mermaid-diagram.tsx). Follows the same role="dialog" +
-// fixed inset-0 backdrop pattern as markdown-preview-modal.tsx / pull-debug-menu.tsx.
+// fixed inset-0 backdrop pattern as pull-debug-menu.tsx.
 //
 // Mouse-wheel zoom is exponential (multiplicative per tick) so it feels consistent regardless of
 // current scale; scroll up zooms in, scroll down zooms out. Content is wrapped once here so the
@@ -11,7 +11,7 @@
 // inside a React onWheel handler is silently ignored and the page behind the dialog would still
 // scroll. Escape is handled as a React onKeyDown on the focused dialog element rather than a
 // document-level listener, so it doesn't also trigger an ancestor's own document Escape listener
-// (e.g. this can be opened from inside <MarkdownPreviewModal>, which listens on document).
+// when nested inside another modal that listens on document.
 
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";

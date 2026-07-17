@@ -2,7 +2,7 @@
 // this specific failure with a dialog carrying the actual reason plus the exact `herdr` command
 // the user can re-run locally to see the full output themselves (the server deliberately never
 // forwards raw stdout/stderr — see the comment on runHerdrLaunch in core/service.ts). Follows the
-// same role="dialog" + fixed inset-0 backdrop pattern as markdown-preview-modal.tsx.
+// same role="dialog" + fixed inset-0 backdrop pattern as pull-debug-menu.tsx.
 
 import { AlertTriangle, X } from "lucide-react";
 import { useEffect, useState } from "react";
