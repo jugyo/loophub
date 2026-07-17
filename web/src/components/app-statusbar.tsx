@@ -1,5 +1,7 @@
 import { CODING_AGENT_LABELS } from "@/lib/agent-models";
 import { formatCost, formatTokenCountShort } from "@/lib/session-usage";
+import { useCurrentRepo } from "@/lib/use-current-repo";
+import { useRepoAgentConfig } from "@/queries/repos";
 import { useAgentCostSummary } from "@/queries/sessions";
 import { useSettings } from "@/queries/settings";
 
@@ -9,23 +11,59 @@ function configuredValue(value: string | undefined): string {
 
 export function AppStatusbar() {
   const { data, isError } = useSettings();
+  const currentRepo = useCurrentRepo();
+  const [owner = "", repo = ""] = currentRepo?.split("/") ?? [];
+  const onRepoPage = Boolean(owner && repo);
+  const { data: repoAgentConfig, isError: isRepoAgentError } =
+    useRepoAgentConfig(owner, repo, onRepoPage);
   const { data: costSummary } = useAgentCostSummary();
   const unavailableValue = isError ? "Unavailable" : "Loading…";
-  const agent = data?.codingAgent;
-  const agentSettings = agent ? data.agents[agent] : undefined;
+
+  // On a repo-scoped route, Agent / Model / Effort follow the repo's resolved Coding agent
+  // config (#1536): override fields win when set, otherwise the API already falls back to the
+  // application defaults in `effective`. TPS and Cost limit stay instance-wide.
+  let agentValue: string;
+  let modelValue: string;
+  let effortValue: string;
+  if (onRepoPage) {
+    if (repoAgentConfig) {
+      const { runtime, model, effort } = repoAgentConfig.effective;
+      agentValue = CODING_AGENT_LABELS[runtime];
+      modelValue = configuredValue(model);
+      effortValue = configuredValue(effort);
+    } else if (isRepoAgentError) {
+      agentValue = "Unavailable";
+      modelValue = "Unavailable";
+      effortValue = "Unavailable";
+    } else {
+      agentValue = "Loading…";
+      modelValue = "Loading…";
+      effortValue = "Loading…";
+    }
+  } else {
+    const agent = data?.codingAgent;
+    const agentSettings = agent ? data.agents[agent] : undefined;
+    agentValue = agent ? CODING_AGENT_LABELS[agent] : unavailableValue;
+    modelValue = data
+      ? configuredValue(agentSettings?.model)
+      : unavailableValue;
+    effortValue = data
+      ? configuredValue(agentSettings?.effort)
+      : unavailableValue;
+  }
 
   const items = [
     {
       label: "Agent",
-      value: agent ? CODING_AGENT_LABELS[agent] : unavailableValue,
+      value: agentValue,
     },
     {
       label: "Model",
-      value: data ? configuredValue(agentSettings?.model) : unavailableValue,
+      value: modelValue,
     },
     {
       label: "Effort",
-      value: data ? configuredValue(agentSettings?.effort) : unavailableValue,
+      value: effortValue,
     },
     {
       label: "Cost limit / session",

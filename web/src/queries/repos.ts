@@ -149,10 +149,15 @@ export function useSetRepoMergeMode(owner: string, repo: string) {
 }
 
 /** Resolved Coding agent override view for the repo settings toggle (#1532). */
-export function useRepoAgentConfig(owner: string, repo: string) {
+export function useRepoAgentConfig(
+  owner: string,
+  repo: string,
+  enabled = true,
+) {
   return useQuery({
     queryKey: [...queryKeys.repo(full(owner, repo)), "agent-config"],
     queryFn: () => getRepoAgentConfig(owner, repo),
+    enabled: enabled && Boolean(owner && repo),
   });
 }
 

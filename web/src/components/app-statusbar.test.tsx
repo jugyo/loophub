@@ -16,8 +16,8 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockRpcFetch } from "@/api/rpc-mock";
-import type { CodingAgent, GlobalSettings } from "@/api/types";
+import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
+import type { CodingAgent, GlobalSettings, RepoAgentConfig } from "@/api/types";
 import { SettingsPage } from "@/components/settings-page";
 import { AppStatusbar } from "./app-statusbar";
 
@@ -25,6 +25,28 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+
+function costSummaryHandlers(
+  tokenRateHistory?: number[],
+  tokensPerSecond?: number | null,
+) {
+  return {
+    "sessions/costSummary": () => [
+      {
+        agent: "claude-code",
+        month: 1,
+        week: 1,
+        day: 1,
+        ...(tokenRateHistory
+          ? { tokens_per_5m_history: tokenRateHistory }
+          : {}),
+        ...(tokensPerSecond !== undefined
+          ? { tokens_per_second: tokensPerSecond }
+          : {}),
+      },
+    ],
+  };
+}
 
 function renderSettingsShell(
   initial: GlobalSettings,
@@ -36,20 +58,7 @@ function renderSettingsShell(
     "fetch",
     mockRpcFetch({
       "settings/get": () => settings,
-      "sessions/costSummary": () => [
-        {
-          agent: "claude-code",
-          month: 1,
-          week: 1,
-          day: 1,
-          ...(tokenRateHistory
-            ? { tokens_per_5m_history: tokenRateHistory }
-            : {}),
-          ...(tokensPerSecond !== undefined
-            ? { tokens_per_second: tokensPerSecond }
-            : {}),
-        },
-      ],
+      ...costSummaryHandlers(tokenRateHistory, tokensPerSecond),
       "settings/update": (params) => {
         const agent = params.agent as CodingAgent | undefined;
         settings = {
@@ -111,6 +120,61 @@ function renderSettingsShell(
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+}
+
+function renderRepoShell(
+  initial: GlobalSettings,
+  agentConfig: RepoAgentConfig,
+  initialPath = "/r/me/proj",
+) {
+  vi.stubGlobal(
+    "fetch",
+    mockRpcFetch({
+      "settings/get": () => structuredClone(initial),
+      ...costSummaryHandlers(),
+      "repos/agentConfig": () => agentConfig,
+    }),
+  );
+
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const rootRoute = createRootRoute({
+    component: () => (
+      <>
+        <Outlet />
+        <AppStatusbar />
+      </>
+    ),
+  });
+  const repoRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/r/$owner/$repo",
+    component: () => null,
+  });
+  const homeRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/",
+    component: () => null,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([homeRoute, repoRoute]),
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+}
+
+function statusValue(
+  statusbar: HTMLElement,
+  label: string,
+): string | null | undefined {
+  const term = within(statusbar).getByText(label);
+  return term.nextElementSibling?.textContent;
 }
 
 const DEFAULT_SETTINGS: GlobalSettings = {
@@ -300,5 +364,94 @@ describe("AppStatusbar", () => {
     await waitFor(() =>
       expect(within(statusbar).getByText("$7.25")).toBeTruthy(),
     );
+  });
+
+  it("shows the repo Coding agent override on a repo-scoped page (#1536)", async () => {
+    renderRepoShell(DEFAULT_SETTINGS, {
+      setting: {
+        override: true,
+        runtime: "codex",
+        model: "gpt-5.4",
+        effort: "xhigh",
+      },
+      effective: {
+        runtime: "codex",
+        model: "gpt-5.4",
+        effort: "xhigh",
+      },
+    });
+
+    const statusbar = await screen.findByRole("contentinfo", {
+      name: "Application status",
+    });
+    await waitFor(() => {
+      expect(statusValue(statusbar, "Agent")).toBe("Codex");
+      expect(statusValue(statusbar, "Model")).toBe("gpt-5.4");
+      expect(statusValue(statusbar, "Effort")).toBe("xhigh");
+    });
+    // Cost limit / TPS stay instance-wide even when the agent triple is repo-scoped.
+    expect(statusValue(statusbar, "Cost limit / session")).toBe("$12.50");
+    expect(
+      within(statusbar).getByLabelText("TPS: n/a tokens per second"),
+    ).toBeTruthy();
+    expect(rpcCall("repos/agentConfig")?.params).toEqual({ name: "me/proj" });
+  });
+
+  it("falls back to application defaults when the repo has no Coding agent override (#1536)", async () => {
+    renderRepoShell(DEFAULT_SETTINGS, {
+      setting: {
+        override: false,
+        runtime: null,
+        model: null,
+        effort: null,
+      },
+      // API already resolves effective from application settings while override is off.
+      effective: {
+        runtime: "claude-code",
+        model: "opus",
+        effort: "high",
+      },
+    });
+
+    const statusbar = await screen.findByRole("contentinfo", {
+      name: "Application status",
+    });
+    await waitFor(() => {
+      expect(statusValue(statusbar, "Agent")).toBe("Claude Code");
+      expect(statusValue(statusbar, "Model")).toBe("opus");
+      expect(statusValue(statusbar, "Effort")).toBe("high");
+    });
+    expect(statusValue(statusbar, "Cost limit / session")).toBe("$12.50");
+  });
+
+  it("keeps application Coding agent settings on pages that are not repo-scoped (#1536)", async () => {
+    renderRepoShell(
+      DEFAULT_SETTINGS,
+      {
+        setting: {
+          override: true,
+          runtime: "codex",
+          model: "gpt-5.4",
+          effort: "xhigh",
+        },
+        effective: {
+          runtime: "codex",
+          model: "gpt-5.4",
+          effort: "xhigh",
+        },
+      },
+      "/",
+    );
+
+    const statusbar = await screen.findByRole("contentinfo", {
+      name: "Application status",
+    });
+    await waitFor(() => {
+      expect(statusValue(statusbar, "Agent")).toBe("Claude Code");
+      expect(statusValue(statusbar, "Model")).toBe("opus");
+      expect(statusValue(statusbar, "Effort")).toBe("high");
+    });
+    expect(statusValue(statusbar, "Cost limit / session")).toBe("$12.50");
+    expect(rpcCall("repos/agentConfig")).toBeUndefined();
   });
 });
