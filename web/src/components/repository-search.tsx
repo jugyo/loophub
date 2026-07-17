@@ -91,11 +91,7 @@ export function RepositorySearch({
                 aria-label="Search query"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder={
-                  includePulls
-                    ? "Search issues and pull requests"
-                    : "Search issues"
-                }
+                placeholder="Search"
                 className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none placeholder:text-muted-foreground"
               />
               <button

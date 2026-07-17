@@ -115,7 +115,7 @@ describe("RepositorySearch", () => {
       screen
         .getByRole("searchbox", { name: "Search query" })
         .getAttribute("placeholder"),
-    ).toBe("Search issues");
+    ).toBe("Search");
     expect(within(results).getByText("Issue #12")).toBeTruthy();
     expect(within(results).getByText("Release checklist")).toBeTruthy();
     expect(within(results).getByText("open")).toBeTruthy();
