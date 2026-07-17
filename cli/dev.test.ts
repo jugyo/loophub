@@ -696,6 +696,14 @@ test("buildGrokArgs passes --model through verbatim and keeps the slash command 
   expect(args[args.length - 1]).toBe("/lh-build 42");
 });
 
+test("buildGrokArgs passes --model grok-4.5 when that model is selected", () => {
+  const args = buildGrokArgs({
+    slashCommand: "/lh-build 42",
+    model: "grok-4.5",
+  });
+  expect(args).toEqual(["--model", "grok-4.5", "/lh-build 42"]);
+});
+
 test("buildGrokArgs strips control characters from the model before argv", () => {
   const args = buildGrokArgs({
     slashCommand: "/lh-build 42",
