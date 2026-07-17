@@ -200,12 +200,13 @@ fresh child とする。
 
 宣言がないまま run 活動が一定時間停止した場合、worker の stall sweep（`sweepStalledRuns`）が独立して
 その run を needs-human に保持し Inbox で人間へ可視化する。自動回復は試みない。rework 上限・escalation・
-人間による resume / stop は引き続き機能する。run の status は `running | completed | stopped` のみ
-（人間待ちは `running` のまま needs_human_reason を持つ）。
+人間による resume / stop は引き続き機能する。新規に到達し得る run の status は `running | stopped` のみ
+（人間待ちは `running` のまま needs_human_reason を持つ）。`completed` は legacy status で、書き込み経路は
+削除済み（#1513）。古い DB 行として残り得るため UI / serialize は read-only 表示だけ維持する。
 
-`lh workflow run complete` と `completed` status の実装可能性は互換性のため残る。ただし現在の親契約は
-通常の fresh pass 後に `complete` を呼ばず、run を `running` のまま保つ。`resume` は `await-human` による
-明示的 hold を人間の指示で解除する command であり、fresh pass 後の追加作業には使わない。
+fresh pass 後も run は complete せず `running` + `verification_status: verified` のまま保つ。恒久終了は
+明示的な `lh workflow run stop` で行う。`resume` は `await-human` による明示的 hold を人間の指示で解除する
+command であり、fresh pass 後の追加作業には使わない。
 
 ## 8. CLI
 
@@ -214,8 +215,8 @@ lh workflow create <name> [--execute-prompt <text>] [--verify-prompt <text>]
 lh workflow update <name> [--step execute|verify --file <path|->]
 lh workflow start <issue> --workflow <name>
 lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note <text|->]
-# lifecycle command。complete は実装上利用可能だが、現在の親の通常フローでは使わない
-lh workflow run advance-to-verify|complete|request-rework|await-human|resume|stop --run <id>
+# lifecycle command
+lh workflow run advance-to-verify|request-rework|await-human|resume|stop --run <id>
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
 lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run

@@ -36,6 +36,9 @@ const STATUS_META: Record<
   running: { label: "Running", tone: "working" },
   // Legacy terminal status (#1307): pre-needs-human escalations; shown like a needs-human run.
   blocked: { label: "Needs human", tone: "cost-stopped" },
+  // Legacy terminal status (#1513): the run-complete write path was removed — a passing Verify now
+  // keeps the run `running` + `verification_status: verified`. Old rows may still be `completed`, so
+  // keep the read-only rendering for them.
   completed: { label: "Completed", tone: "review-passed" },
   stopped: { label: "Stopped", tone: "closed" },
 };

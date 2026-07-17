@@ -149,7 +149,7 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   );
   expect(design).toContain("`agent_status: done` でも pane は再利用可能");
   expect(design).toMatch(/修正後の Verify は常に\s+fresh child/u);
-  expect(design).toContain("現在の親の通常フローでは使わない");
+  expect(design).toContain("`completed` は legacy status");
 
   for (const event of [
     "workflow_run.turn_done",

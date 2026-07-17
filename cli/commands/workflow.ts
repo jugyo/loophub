@@ -576,9 +576,6 @@ async function runLifecycle(): Promise<void> {
     if (action === "advance-to-verify") {
       return service.advanceToVerify(repo, { run: runId }, sessionId);
     }
-    if (action === "complete") {
-      return service.completeRun(repo, { run: runId }, sessionId);
-    }
     if (action === "request-rework") {
       return service.requestRework(repo, { run: runId }, sessionId);
     }

@@ -769,12 +769,17 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     headSha: headB,
     body: "Fixed.",
   });
-  const completed = await svc.workflowRuns.completeRun(
-    repo.full_name,
-    { run: started.run.id },
-    parent,
-  );
-  expect(completed.run.status).toBe("completed");
+  // The fresh pass verifies the reworked HEAD without terminating the run: it stays `running` and
+  // the parent keeps observing (#1513 — no run-complete path).
+  const reworked = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(reworked.status).toBe("running");
+  expect(reworked.steps.verify.latest_review).toMatchObject({
+    event: "pass",
+    fresh: true,
+    headSha: headB,
+  });
 }, 30_000);
 
 test("turn done is rejected for a non-Execute session", async () => {
@@ -915,14 +920,8 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
       );
 
   expect("update" in svc.workflowRuns).toBe(false);
-  // Nothing committed yet: neither complete nor advance is legal.
-  await expect(
-    svc.workflowRuns.completeRun(
-      repo.full_name,
-      { run: started.run.id },
-      parent,
-    ),
-  ).rejects.toMatchObject({ status: 409 });
+  expect("completeRun" in svc.workflowRuns).toBe(false);
+  // Nothing committed yet: advancing to Verify is illegal (Execute is incomplete).
   await expect(
     svc.workflowRuns.advanceToVerify(
       repo.full_name,
@@ -937,14 +936,6 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
     { run: started.run.id },
     parent,
   );
-  // In Verify with no fresh review, completing is refused.
-  await expect(
-    svc.workflowRuns.completeRun(
-      repo.full_name,
-      { run: started.run.id },
-      parent,
-    ),
-  ).rejects.toMatchObject({ status: 409 });
 
   // Drive the rework budget to its cap. Each request_changes review is pinned to the current head,
   // and each rework advances the head so the next review is fresh again.
@@ -992,7 +983,8 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
   ).rejects.toThrowError(/rework limit/);
   expect(S.getWorkflowRun(started.run.id)?.rework_count).toBe(3);
 
-  // A fresh pass completes the run; a completed run refuses resume/stop.
+  // A fresh pass verifies the current HEAD without terminating the run (#1513): it stays `running`,
+  // so resume is refused (no human wait) while an explicit stop is still allowed and is terminal.
   createWorkflowReview({
     prIssueId,
     runId: started.run.id,
@@ -1001,12 +993,15 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
     headSha: head,
     body: "All criteria pass.",
   });
-  const completed = await svc.workflowRuns.completeRun(
-    repo.full_name,
-    { run: started.run.id },
-    parent,
-  );
-  expect(completed.run.status).toBe("completed");
+  const passed = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(passed.status).toBe("running");
+  expect(passed.steps.verify.latest_review).toMatchObject({
+    event: "pass",
+    fresh: true,
+    headSha: head,
+  });
   await expect(
     svc.workflowRuns.resumeAfterHuman(
       repo.full_name,
@@ -1014,9 +1009,15 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
       parent,
     ),
   ).rejects.toMatchObject({ status: 409 });
+  const stopped = svc.workflowRuns.stopRun(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  expect(stopped.run.status).toBe("stopped");
   expect(() =>
     svc.workflowRuns.stopRun(repo.full_name, { run: started.run.id }, parent),
-  ).toThrowError(/completed/);
+  ).toThrowError(/stopped/);
 
   expect(lifecycleTransitions()).toEqual([
     "advance_to_verify",
@@ -1026,7 +1027,7 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
     "advance_to_verify",
     "request_rework",
     "advance_to_verify",
-    "complete",
+    "stop",
   ]);
 }, 40_000);
 

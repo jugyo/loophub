@@ -708,8 +708,7 @@ type WorkflowRunTransition =
   | "await_human"
   | "resume_after_human"
   | "stop"
-  | "request_rework"
-  | "complete";
+  | "request_rework";
 
 function lifecycleRun(
   name: string,
@@ -953,37 +952,6 @@ export const workflowRuns = {
       run,
       { currentStep: "verify" },
       "advance_to_verify",
-      sessionId,
-    );
-  },
-
-  async completeRun(
-    name: string,
-    input: { run: number },
-    sessionId?: string | null,
-  ): Promise<WorkflowRunUpdateResult> {
-    const { repo, run } = lifecycleRun(name, input.run, sessionId);
-    assertAutomaticProgressAllowed(run);
-    if (run.current_step !== "verify") {
-      throw new ServiceError(
-        409,
-        `Workflow run cannot complete from ${run.current_step}`,
-      );
-    }
-    const progress = await workflowRunProgress(repo, run);
-    if (!progress.steps.verify.complete) {
-      throw new ServiceError(
-        409,
-        `Workflow Verify is incomplete: ${progress.steps.verify.missing.join("; ")}`,
-      );
-    }
-    if (progress.steps.verify.latest_review?.event !== "pass") {
-      throw new ServiceError(409, "Workflow Verify review is not passing");
-    }
-    return updateRunLifecycle(
-      run,
-      { status: "completed", needsHumanReason: null },
-      "complete",
       sessionId,
     );
   },
