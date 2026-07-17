@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Issue, Workspace } from "@/api/types";
 import { CreateIssueButton } from "@/components/create-issue-button";
 import { IssueRow } from "@/components/dashboard-rows";
+import { NewWorkspaceButton } from "@/components/new-workspace-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -360,6 +361,13 @@ export function IssueList({
                   </DropdownMenuItem>
                 ))
               )}
+              <DropdownMenuSeparator />
+              {/* New workspace lives inside the filter now that the standalone
+                  picker is gone (#1511); the modal stays mounted with the open
+                  menu, so a click here opens it without closing the dropdown. */}
+              <div className="flex justify-end px-1 py-0.5">
+                <NewWorkspaceButton owner={owner} repo={repo} size="sm" />
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}

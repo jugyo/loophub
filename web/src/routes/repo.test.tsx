@@ -62,8 +62,9 @@ describe("repository search route placement", () => {
         name: "Search issues",
       }),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Workspaces" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+    // The standalone workspace picker was removed (#1511); New workspace now
+    // lives inside the IssueList workspace filter dropdown.
+    expect(screen.queryByRole("button", { name: "Workspaces" })).toBeNull();
   });
 
   it("does not show the search row on the separate issue list route", async () => {

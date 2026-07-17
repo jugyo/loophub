@@ -874,6 +874,31 @@ describe("IssueList", () => {
     );
   });
 
+  it("opens the New workspace dialog from inside the workspace filter", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "repos/get": () => ({ default_branch: "main" }),
+        "workspaces/list": () => [],
+        "issues/list": () => [issue({ number: 1, title: "Default issue" })],
+      }),
+    );
+
+    renderIssueList(
+      <IssueList owner="me" repo="proj" showWorkspaceFilter />,
+      "/r/me/proj",
+    );
+
+    await screen.findByText("Default issue");
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Workspace filter" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /new/i }));
+    expect(
+      await screen.findByRole("dialog", { name: "New workspace" }),
+    ).toBeTruthy();
+  });
+
   it("treats unassigned issues as members of the default workspace", async () => {
     vi.stubGlobal(
       "fetch",

@@ -1,7 +1,6 @@
 import { createRoute } from "@tanstack/react-router";
 import { IssueList } from "@/components/issue-list";
 import { RepositorySearch } from "@/components/repository-search";
-import { WorkspacePicker } from "@/components/workspace-picker";
 import { usePageTitle } from "@/lib/page-title";
 import { rootRoute } from "./root";
 
@@ -11,8 +10,7 @@ export function RepoPage() {
   usePageTitle([`${owner}/${repo}`, "Issues"]);
   return (
     <div data-debug-component="RepoPage" className="space-y-4">
-      <div className="mx-auto flex max-w-content items-center justify-between gap-3">
-        <WorkspacePicker owner={owner} repo={repo} />
+      <div className="mx-auto flex max-w-content items-center justify-end gap-3">
         <RepositorySearch owner={owner} repo={repo} />
       </div>
       <IssueList
