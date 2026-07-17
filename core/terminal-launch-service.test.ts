@@ -861,12 +861,13 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
       label: "New issue",
       agent: "codex",
       model: "gpt-5.6-sol",
+      effort: "high",
     });
 
     expect(herdr.calls[2]).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          "lh issue new --repo 'me/proj' --codex --model 'gpt-5.6-sol'",
+          "lh issue new --repo 'me/proj' --codex --model 'gpt-5.6-sol' --effort 'high'",
         ),
       ]),
     );

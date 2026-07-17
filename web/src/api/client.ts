@@ -554,9 +554,10 @@ export function launchTerminalWorkflow(input: {
   session?: string;
   cwd?: string;
   targetBranch?: string;
-  // One-shot runtime/model overrides from the New issue dropdown (#1275).
+  // One-shot runtime/model/effort overrides from the New issue dropdown (#1275/#1534).
   agent?: CodingAgent;
   model?: string;
+  effort?: string;
 }) {
   return rpc<TerminalLaunchResult>("terminal/launch", clean(input));
 }

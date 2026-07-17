@@ -9,11 +9,28 @@ vi.mock("@/queries/settings", () => ({
   useSettings: () => ({
     data: {
       agents: {
-        "claude-code": { model: "opus" },
-        codex: { model: "gpt-5.5" },
-        grok: { model: "grok-code-fast-1" },
+        "claude-code": { model: "opus", effort: "medium" },
+        codex: { model: "gpt-5.5", effort: "medium" },
+        grok: { model: "grok-code-fast-1", effort: "medium" },
       },
       codingAgent: "claude-code",
+    },
+  }),
+}));
+vi.mock("@/queries/repos", () => ({
+  useRepoAgentConfig: () => ({
+    data: {
+      setting: {
+        override: false,
+        runtime: null,
+        model: null,
+        effort: null,
+      },
+      effective: {
+        runtime: "claude-code",
+        model: "opus",
+        effort: "medium",
+      },
     },
   }),
 }));
@@ -57,7 +74,7 @@ describe("CreateIssueButton", () => {
     );
   });
 
-  it("launches issue creation with a suggested one-shot agent and model", async () => {
+  it("launches issue creation with a suggested one-shot agent, model, and effort", async () => {
     render(<CreateIssueButton repo="me/proj" />);
 
     fireEvent.pointerDown(
@@ -71,6 +88,8 @@ describe("CreateIssueButton", () => {
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "gpt-5.6-sol" }),
     );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Effort" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "high" }));
     fireEvent.click(screen.getByRole("button", { name: "Create with Codex" }));
 
     expect(launchTerminal).toHaveBeenCalledWith({
@@ -79,6 +98,7 @@ describe("CreateIssueButton", () => {
       workflow: "issue-create",
       agent: "codex",
       model: "gpt-5.6-sol",
+      effort: "high",
     });
   });
 
@@ -104,6 +124,7 @@ describe("CreateIssueButton", () => {
       workflow: "issue-create",
       agent: "claude-code",
       model: "vendor/custom-preview",
+      effort: "medium",
     });
   });
 

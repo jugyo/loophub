@@ -45,6 +45,7 @@ function LaunchButton({
   workflow = "workflow-run",
   agent,
   model,
+  effort,
 }: {
   workflow?:
     | "workflow-run"
@@ -54,6 +55,7 @@ function LaunchButton({
     | "github-pr-export";
   agent?: "claude-code" | "codex" | "grok";
   model?: string;
+  effort?: string;
 }) {
   const { launchTerminal } = useTerminalLauncher();
   return (
@@ -67,6 +69,7 @@ function LaunchButton({
           issueNumber: 444,
           agent,
           model,
+          effort,
         })
       }
     >
@@ -149,7 +152,7 @@ describe("TerminalController", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("forwards one-shot New issue agent and model overrides", async () => {
+  it("forwards one-shot New issue agent, model, and effort overrides", async () => {
     const rootRoute = createRootRoute({ component: Outlet });
     const indexRoute = createRoute({
       getParentRoute: () => rootRoute,
@@ -161,6 +164,7 @@ describe("TerminalController", () => {
               workflow="issue-create"
               agent="codex"
               model="gpt-5.6-sol"
+              effort="high"
             />
           </ToastProvider>
         </TerminalControllerProvider>
@@ -179,6 +183,7 @@ describe("TerminalController", () => {
         workflow: "issue-create",
         agent: "codex",
         model: "gpt-5.6-sol",
+        effort: "high",
       }),
       expect.objectContaining({ onError: expect.any(Function) }),
     );

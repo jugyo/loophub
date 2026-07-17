@@ -108,6 +108,8 @@ export function commandForHerdrLaunch(input: {
   cwd?: string;
   codingAgent?: CodingAgent;
   model?: string;
+  // One-shot reasoning effort for New issue launches (#1534). Maps to `lh issue new --effort`.
+  effort?: string;
   targetBranch?: string;
   env?: Record<string, string>;
 }): string {
@@ -120,16 +122,20 @@ export function commandForHerdrLaunch(input: {
     envPrefix ? `${envPrefix} ${command}` : command;
   if (input.workflow === "issue-create") {
     // `lh issue new` is the recorded LoopHub entrypoint for the /lh-issue-create workflow.
+    // When agent/model/effort are omitted, `lh issue new` resolves them from the repo's
+    // effective Coding agent config (#1532/#1534) — same path as `lh workflow start`.
     const agentFlag = input.codingAgent
       ? ` ${RUNTIMES[input.codingAgent].buildFlag}`
       : "";
     const model = input.model?.trim();
     const modelFlag = model ? ` --model ${shellArg(model)}` : "";
+    const effort = input.effort?.trim();
+    const effortFlag = effort ? ` --effort ${shellArg(effort)}` : "";
     const targetBranchFlag = input.targetBranch
       ? ` --target-branch ${shellArg(input.targetBranch)}`
       : "";
     return withEnv(
-      `lh issue new --repo ${shellArg(input.repo)}${targetBranchFlag}${agentFlag}${modelFlag}`,
+      `lh issue new --repo ${shellArg(input.repo)}${targetBranchFlag}${agentFlag}${modelFlag}${effortFlag}`,
     );
   }
   if (input.workflow === "scheduled-task-create") {

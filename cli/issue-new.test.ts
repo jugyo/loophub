@@ -76,6 +76,29 @@ function sessions(): Array<{ runtime: string | null }> {
   }
 }
 
+function setRepoAgentOverride(config: {
+  override: boolean;
+  runtime: string | null;
+  model: string | null;
+  effort: string | null;
+}): void {
+  const db = new DatabaseSync(join(home, "loophub.db"));
+  try {
+    db.prepare(
+      `UPDATE repos SET agent_override = ?, agent_runtime = ?, agent_model = ?, agent_effort = ?
+       WHERE full_name = ?`,
+    ).run(
+      config.override ? 1 : 0,
+      config.runtime,
+      config.model,
+      config.effort,
+      REPO,
+    );
+  } finally {
+    db.close();
+  }
+}
+
 function issueNew(args: string[] = []) {
   writeFileSync(runtimeLog, "");
   const result = run(["issue", "new", "--repo", REPO, ...args]);
@@ -134,7 +157,9 @@ afterAll(() => {
 test("issue new uses the configured default runtime and model", () => {
   writeConfig({
     codingAgent: "codex",
-    agents: { codex: { defaultModel: "configured-codex-model" } },
+    agents: {
+      codex: { defaultModel: "configured-codex-model", defaultEffort: "high" },
+    },
   });
 
   const result = issueNew();
@@ -142,8 +167,71 @@ test("issue new uses the configured default runtime and model", () => {
   expect(result.exitCode, result.stderr).toBe(0);
   expect(result.runtimeLog).toContain("bin=codex");
   expect(result.runtimeLog).toContain("arg=configured-codex-model");
+  expect(result.runtimeLog).toContain("arg=model_reasoning_effort=high");
   expect(result.runtimeLog).toContain("arg=/lh-issue-create");
   expect(sessions().at(-1)?.runtime).toBe("codex");
+});
+
+test("issue new uses the repo Coding agent override over the app defaults (#1534)", () => {
+  writeConfig({
+    codingAgent: "claude-code",
+    agents: {
+      "claude-code": { defaultModel: "opus", defaultEffort: "medium" },
+      codex: { defaultModel: "gpt-5.5", defaultEffort: "medium" },
+    },
+  });
+  setRepoAgentOverride({
+    override: true,
+    runtime: "codex",
+    model: "gpt-5.6-sol",
+    effort: "low",
+  });
+
+  const result = issueNew();
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.runtimeLog).toContain("bin=codex");
+  expect(result.runtimeLog).toContain("arg=gpt-5.6-sol");
+  expect(result.runtimeLog).toContain("arg=model_reasoning_effort=low");
+  expect(sessions().at(-1)?.runtime).toBe("codex");
+
+  setRepoAgentOverride({
+    override: false,
+    runtime: null,
+    model: null,
+    effort: null,
+  });
+});
+
+test("issue new falls back to app defaults when the repo override is off (#1534)", () => {
+  writeConfig({
+    codingAgent: "claude-code",
+    agents: {
+      "claude-code": { defaultModel: "opus", defaultEffort: "xhigh" },
+    },
+  });
+  setRepoAgentOverride({
+    override: false,
+    runtime: "codex",
+    model: "ignored-model",
+    effort: "ignored-effort",
+  });
+
+  const result = issueNew();
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.runtimeLog).toContain("bin=claude");
+  expect(result.runtimeLog).toContain("arg=opus");
+  expect(result.runtimeLog).toContain("arg=--effort");
+  expect(result.runtimeLog).toContain("arg=xhigh");
+  expect(sessions().at(-1)?.runtime).toBe("claude-code");
+
+  setRepoAgentOverride({
+    override: false,
+    runtime: null,
+    model: null,
+    effort: null,
+  });
 });
 
 test("issue new carries the target branch into the filing session", () => {
@@ -161,11 +249,17 @@ test.each([
   writeConfig({ codingAgent: configuredAgent });
   const model = `${expectedRuntime}-custom-model`;
 
-  const result = issueNew([flag, "--model", model]);
+  const result = issueNew([flag, "--model", model, "--effort", "high"]);
 
   expect(result.exitCode, result.stderr).toBe(0);
   expect(result.runtimeLog).toContain(`bin=${expectedBin}`);
   expect(result.runtimeLog).toContain(`arg=${model}`);
+  if (expectedBin === "claude") {
+    expect(result.runtimeLog).toContain("arg=--effort");
+    expect(result.runtimeLog).toContain("arg=high");
+  } else if (expectedBin === "codex") {
+    expect(result.runtimeLog).toContain("arg=model_reasoning_effort=high");
+  }
   expect(result.runtimeLog).toContain("arg=/lh-issue-create");
   expect(sessions().at(-1)?.runtime).toBe(expectedRuntime);
 });
@@ -184,6 +278,15 @@ test("issue new rejects a value-less --model before registering or spawning", ()
 
   expect(result.exitCode).not.toBe(0);
   expect(result.stderr).toContain("--model requires a value");
+  expect(result.runtimeLog).toBe("");
+  expect(result.dbCreated).toBe(false);
+});
+
+test("issue new rejects a value-less --effort before registering or spawning", () => {
+  const result = invalidIssueNew(["--effort"]);
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("--effort requires a value");
   expect(result.runtimeLog).toBe("");
   expect(result.dbCreated).toBe(false);
 });

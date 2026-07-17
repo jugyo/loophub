@@ -717,7 +717,7 @@
     },
     {
       "name": "terminal/launch",
-      "description": "Launch a terminal workflow as a named Herdr session. issue-dev (Build) spawns `lh build --herdr` and lets it provision the worktree/PR and the herdr pane itself (#584); the other workflows are orchestrated by this RPC directly.",
+      "description": "Launch a terminal workflow as a named Herdr session. workflow-run (Start workflow) spawns `lh workflow start --herdr` and lets it provision the worktree/PR and the herdr pane itself (#1007); the other workflows are orchestrated by this RPC directly.",
       "params": {
         "type": "object",
         "properties": {
@@ -730,7 +730,6 @@
           },
           "workflow": {
             "enum": [
-              "issue-dev",
               "issue-create",
               "scheduled-task-create",
               "resume",
@@ -769,8 +768,8 @@
           "model": {
             "type": "string"
           },
-          "newAttempt": {
-            "type": "boolean"
+          "effort": {
+            "type": "string"
           }
         },
         "required": [

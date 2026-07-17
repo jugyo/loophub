@@ -393,10 +393,11 @@ export const methods: Record<string, MethodDef> = {
         session: str,
         cwd: str,
         targetBranch: str,
-        // One-shot New issue overrides (#1275): force the runtime / session model
+        // One-shot New issue overrides (#1275/#1534): force the runtime / model / effort
         // for this launch only, without changing persisted settings.
         agent: { enum: ["claude-code", "codex", "grok"] },
         model: str,
+        effort: str,
       },
       ["repo"],
     ),
@@ -414,6 +415,7 @@ export const methods: Record<string, MethodDef> = {
         targetBranch: p.targetBranch,
         agent: p.agent,
         model: p.model,
+        effort: p.effort,
       }),
   },
 

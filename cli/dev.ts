@@ -283,6 +283,7 @@ export function buildCodexArgs({
   slashCommand,
   auto,
   model,
+  effort,
   loopHubHome,
 }: {
   slashCommand: string;
@@ -295,6 +296,9 @@ export function buildCodexArgs({
   // the codex CLI's error to raise. Omitted => codex's own default. Control characters are
   // stripped (see display()), same invariant as buildClaudeArgs' model.
   model?: string;
+  // Reasoning effort (`-c model_reasoning_effort=<level>`, #682/#1534). Same Codex config override
+  // the scheduled-task launcher uses. Omitted => codex's own default.
+  effort?: string;
   // Effective LOOPHUB_HOME to grant as a Codex sandbox writable root. Defaults to the same
   // configDir() resolution used by LoopHub DB/config writes.
   loopHubHome?: string;
@@ -305,6 +309,10 @@ export function buildCodexArgs({
   if (model) {
     const m = display(model).trim();
     if (m) args.push("--model", m);
+  }
+  if (effort) {
+    const e = display(effort).trim();
+    if (e) args.push("-c", `model_reasoning_effort=${e}`);
   }
   args.push(slashCommand);
   return args;
@@ -334,6 +342,8 @@ export function buildGrokArgs({
   // error to raise. Omitted => grok's own default. Control characters are stripped (see display()),
   // same invariant as buildCodexArgs' model.
   model?: string;
+  // effort is accepted on the launch path (#1534) but not forwarded: grok has no verified
+  // user-facing reasoning-effort flag yet (see core/runtimes.ts effortSuggestions note).
 }): string[] {
   const args: string[] = [];
   if (auto) args.push("--force");
@@ -352,6 +362,7 @@ export function buildClaudeArgs({
   slashCommand,
   sessionName,
   model,
+  effort,
 }: {
   sessionId: string;
   managedSettings?: string;
@@ -368,11 +379,18 @@ export function buildClaudeArgs({
   // stripped (see display()) like every other argv value that reaches terminal output
   // (the echoed spawn line), same invariant as sessionName.
   model?: string;
+  // Reasoning effort (`--effort <level>`, #682/#1534). Mirrors the Settings screen's effort
+  // levels for claude-code. Omitted => claude's own default.
+  effort?: string;
 }): string[] {
   const args = ["--session-id", sessionId];
   if (model) {
     const m = display(model).trim();
     if (m) args.push("--model", m);
+  }
+  if (effort) {
+    const e = display(effort).trim();
+    if (e) args.push("--effort", e);
   }
   if (auto || managedSettings) {
     // Auto mode when explicitly requested (--auto) or implied by the sandbox (managedSettings).
@@ -402,6 +420,7 @@ type RuntimeArgvInput = {
   slashCommand: string;
   sessionName?: string;
   model?: string;
+  effort?: string;
 };
 
 const RUNTIME_ARGV_BUILDERS: Record<
@@ -415,6 +434,7 @@ const RUNTIME_ARGV_BUILDERS: Record<
     slashCommand,
     sessionName,
     model,
+    effort,
   }) =>
     buildClaudeArgs({
       sessionId,
@@ -423,9 +443,10 @@ const RUNTIME_ARGV_BUILDERS: Record<
       slashCommand,
       sessionName,
       model,
+      effort,
     }),
-  codex: ({ slashCommand, auto, model }) =>
-    buildCodexArgs({ slashCommand, auto, model }),
+  codex: ({ slashCommand, auto, model, effort }) =>
+    buildCodexArgs({ slashCommand, auto, model, effort }),
   grok: ({ slashCommand, auto, model }) =>
     buildGrokArgs({ slashCommand, auto, model }),
 };
@@ -438,6 +459,7 @@ export function buildRuntimeLaunch({
   slashCommand,
   sessionName,
   model,
+  effort,
 }: RuntimeArgvInput & {
   runtime: DevRuntime;
 }): { bin: "claude" | "codex" | "grok"; args: string[] } {
@@ -450,6 +472,7 @@ export function buildRuntimeLaunch({
       slashCommand,
       sessionName,
       model,
+      effort,
     }),
   };
 }

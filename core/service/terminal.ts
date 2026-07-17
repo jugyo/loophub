@@ -93,11 +93,13 @@ export interface TerminalLaunchInput {
   session?: string;
   cwd?: string;
   targetBranch?: string;
-  // One-shot agent/model overrides from the issue-create (New issue) dropdown (#1275). Plain
-  // buttons leave these unset. They map to the corresponding CLI runtime/model flags and never
-  // touch persisted Settings defaults.
+  // One-shot agent/model/effort overrides from the issue-create (New issue) dropdown
+  // (#1275/#1534). Plain buttons leave these unset so `lh issue new` resolves the repo's
+  // effective Coding agent config. They map to the corresponding CLI flags and never touch
+  // persisted Settings defaults.
   agent?: CodingAgent;
   model?: string;
+  effort?: string;
 }
 
 // Spawns a launcher CLI (`lh workflow start ... --herdr`) that owns its own herdr pane. This is not
@@ -522,6 +524,7 @@ export const terminal = {
       cwd: input.cwd,
       codingAgent: input.workflow === "issue-create" ? input.agent : undefined,
       model: input.workflow === "issue-create" ? input.model : undefined,
+      effort: input.workflow === "issue-create" ? input.effort : undefined,
       targetBranch:
         input.workflow === "issue-create" ? input.targetBranch : undefined,
       env:

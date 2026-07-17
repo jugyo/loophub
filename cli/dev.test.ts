@@ -597,6 +597,28 @@ test("buildCodexArgs passes --model through verbatim and keeps the slash command
   expect(args[args.length - 1]).toBe("/lh-build 42");
 });
 
+test("buildCodexArgs passes effort as model_reasoning_effort (#1534)", () => {
+  const args = buildCodexArgs({
+    slashCommand: "/lh-issue-create",
+    model: "gpt-5.5",
+    effort: "high",
+    loopHubHome: "/tmp/lh-home",
+  });
+  expect(args).toContain("model_reasoning_effort=high");
+  expect(args[args.length - 1]).toBe("/lh-issue-create");
+});
+
+test("buildClaudeArgs passes --effort through (#1534)", () => {
+  const args = buildClaudeArgs({
+    sessionId: "sid-1",
+    slashCommand: "/lh-issue-create",
+    model: "opus",
+    effort: "xhigh",
+  });
+  expect(args[args.indexOf("--effort") + 1]).toBe("xhigh");
+  expect(args[args.length - 1]).toBe("/lh-issue-create");
+});
+
 test("buildCodexArgs omits --model when not provided (backend default model) (#594)", () => {
   const args = buildCodexArgs({
     slashCommand: "/lh-build 42",

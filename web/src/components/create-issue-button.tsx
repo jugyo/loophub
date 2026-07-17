@@ -14,6 +14,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useRepoAgentConfig } from "@/queries/repos";
 import { useSettings } from "@/queries/settings";
 
 // Unlike Issue/PR/Resume launches (#497), there is no issue number yet to make the herdr agent
@@ -38,17 +39,36 @@ export function CreateIssueButton({
 }) {
   const { launchTerminal } = useTerminalLauncher();
   const { data: settings } = useSettings();
+  // Same resolution path as `lh workflow start` / `lh issue new`: repos/agentConfig → effective
+  // runtime/model/effort (#1532/#1534). Seeds the one-shot picker; the plain button omits
+  // overrides so the CLI resolves the effective config itself.
+  const [owner, name] = repo.split("/");
+  const { data: agentConfig } = useRepoAgentConfig(owner ?? "", name ?? "");
   const [menuOpen, setMenuOpen] = useState(false);
 
-  function launchIssue(override?: { agent: CodingAgent; model: string }) {
+  const effective = agentConfig?.effective;
+  const pickerReady = Boolean(settings && effective);
+
+  function launchIssue(override?: {
+    agent: CodingAgent;
+    model: string;
+    effort: string;
+  }) {
     setMenuOpen(false);
     const model = override?.model.trim();
+    const effort = override?.effort.trim();
     launchTerminal({
       repo,
       label: `New issue - ${launchSuffix()}`,
       workflow: "issue-create",
       ...(targetBranch ? { targetBranch } : {}),
-      ...(override ? { agent: override.agent, model: model || undefined } : {}),
+      ...(override
+        ? {
+            agent: override.agent,
+            model: model || undefined,
+            effort: effort || undefined,
+          }
+        : {}),
     });
   }
 
@@ -72,20 +92,28 @@ export function CreateIssueButton({
           <Button
             aria-label="Choose agent and model"
             title="Choose agent and model for this issue creation"
-            disabled={disabled || !settings}
+            disabled={disabled || !pickerReady}
             className="rounded-l-none border-l border-primary-foreground/25 px-2"
           >
             <ChevronDown className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        {settings ? (
+        {settings && effective ? (
           <DropdownMenuContent align="end" className="w-72 p-3">
             <AgentModelPicker
+              key={`${effective.runtime}:${effective.model}:${effective.effort}`}
               settings={settings}
+              defaults={{
+                agent: effective.runtime,
+                model: effective.model,
+                effort: effective.effort,
+              }}
               disabled={false}
               actionVerb="Create"
               actionIcon={<Plus className="size-4" />}
-              onSelect={(agent, model) => launchIssue({ agent, model })}
+              onSelect={(agent, model, effort) =>
+                launchIssue({ agent, model, effort })
+              }
             />
           </DropdownMenuContent>
         ) : null}

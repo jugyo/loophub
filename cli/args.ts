@@ -68,6 +68,7 @@ export type Flags = {
   to?: string;
   hash?: string;
   model?: string;
+  effort?: string;
   cost?: string;
   number?: string;
   url?: string;
@@ -158,6 +159,7 @@ const { values, positionals } = parseArgs({
     to: { type: "string" },
     hash: { type: "string" },
     model: { type: "string" },
+    effort: { type: "string" },
     cost: { type: "string" },
     number: { type: "string" },
     url: { type: "string" },

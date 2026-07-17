@@ -101,15 +101,18 @@ describe("herdr terminal launch", () => {
     ).toBe("cd '/tmp/work tree' && claude --resume 'session-1'");
   });
 
-  test("adds one-shot runtime and model flags to New Issue launches", () => {
+  test("adds one-shot runtime, model, and effort flags to New Issue launches", () => {
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
         workflow: "issue-create",
         codingAgent: "codex",
         model: "gpt-5.6-sol",
+        effort: "high",
       }),
-    ).toBe("lh issue new --repo 'jugyo/loophub' --codex --model 'gpt-5.6-sol'");
+    ).toBe(
+      "lh issue new --repo 'jugyo/loophub' --codex --model 'gpt-5.6-sol' --effort 'high'",
+    );
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",

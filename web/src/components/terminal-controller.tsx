@@ -44,10 +44,12 @@ export interface OpenTerminalOptions {
   session?: string;
   cwd?: string;
   targetBranch?: string;
-  // One-shot agent/model override for the issue-create (New issue) launch. Plain buttons
-  // omit them, and dropdown selections apply to this launch only.
+  // One-shot agent/model/effort override for the issue-create (New issue) launch. Plain
+  // buttons omit them so the CLI resolves the repo's effective config; dropdown selections
+  // apply to this launch only (#1275/#1534).
   agent?: CodingAgent;
   model?: string;
+  effort?: string;
 }
 
 export type OpenTerminal = (opts?: OpenTerminalOptions) => void;
@@ -121,6 +123,7 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
           targetBranch: opts.targetBranch,
           agent: opts.agent,
           model: opts.model,
+          effort: opts.effort,
         },
         {
           onError: (e) =>
