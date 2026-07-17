@@ -1041,7 +1041,7 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
   expect(S.getWorkflowRun(started.run.id)?.rework_count).toBe(3);
 
   // A fresh pass verifies the current HEAD without terminating the run (#1513): it stays `running`,
-  // so resume is refused (no human wait) while an explicit stop is still allowed and is terminal.
+  // so resume is refused (no human wait). There is no run-stop transition anymore (#1525).
   createWorkflowReview({
     prIssueId,
     runId: started.run.id,
@@ -1066,15 +1066,7 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
       parent,
     ),
   ).rejects.toMatchObject({ status: 409 });
-  const stopped = svc.workflowRuns.stopRun(
-    repo.full_name,
-    { run: started.run.id },
-    parent,
-  );
-  expect(stopped.run.status).toBe("stopped");
-  expect(() =>
-    svc.workflowRuns.stopRun(repo.full_name, { run: started.run.id }, parent),
-  ).toThrowError(/stopped/);
+  expect("stopRun" in svc.workflowRuns).toBe(false);
 
   expect(lifecycleTransitions()).toEqual([
     "advance_to_verify",
@@ -1084,7 +1076,6 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
     "advance_to_verify",
     "request_rework",
     "advance_to_verify",
-    "stop",
   ]);
 }, 40_000);
 
@@ -1233,7 +1224,7 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
   expect(waiting?.needs_human_reason).toBe("waiting for guidance");
 });
 
-test("human lifecycle intents sanitize reasons and authorize explicit resume or stop (#1307)", async () => {
+test("human lifecycle intents sanitize reasons and authorize explicit resume (#1307)", async () => {
   const repo = S.createRepo("me/workflow-hold", REPO_PATH);
   const workflow = S.createWorkflow({
     name: "hold-wf",
@@ -1278,9 +1269,13 @@ test("human lifecycle intents sanitize reasons and authorize explicit resume or 
 
   const stranger = "55555555-5555-4555-8555-555555555555";
   S.registerAgentSession(stranger, "workflow-step", stranger);
-  expect(() =>
-    svc.workflowRuns.stopRun(repo.full_name, { run: run.id }, stranger),
-  ).toThrowError(/parent session/);
+  await expect(
+    svc.workflowRuns.resumeAfterHuman(
+      repo.full_name,
+      { run: run.id, step: "execute" },
+      stranger,
+    ),
+  ).rejects.toThrowError(/parent session/);
   const human = "66666666-6666-4666-8666-666666666666";
   S.registerAgentSession(human, "me", "cli");
 
@@ -1295,23 +1290,6 @@ test("human lifecycle intents sanitize reasons and authorize explicit resume or 
   });
   expect(latestUpdatedPayload().needs_human_reason).toBeNull();
   expect("needs_human_reason" in latestUpdatedPayload()).toBe(true);
-
-  // A human cancel of a held run ends terminal; the terminal payload omits the needs_human key.
-  svc.workflowRuns.awaitHuman(
-    repo.full_name,
-    { run: run.id, reason: "waiting for guidance" },
-    parent,
-  );
-  const cancelled = svc.workflowRuns.stopRun(
-    repo.full_name,
-    { run: run.id },
-    human,
-  );
-  expect(cancelled.run).toMatchObject({
-    status: "stopped",
-    needs_human_reason: null,
-  });
-  expect("needs_human_reason" in latestUpdatedPayload()).toBe(false);
 });
 
 test("history returns readable lifecycle events scoped to one Workflow run (#1290)", () => {

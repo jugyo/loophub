@@ -711,7 +711,6 @@ type WorkflowRunTransition =
   | "advance_to_verify"
   | "await_human"
   | "resume_after_human"
-  | "stop"
   | "request_rework";
 
 function lifecycleRun(
@@ -1013,21 +1012,6 @@ export const workflowRuns = {
     );
   },
 
-  stopRun(
-    name: string,
-    input: { run: number },
-    sessionId?: string | null,
-  ): WorkflowRunUpdateResult {
-    const { run } = lifecycleRun(name, input.run, sessionId);
-    assertRunningLifecycle(run);
-    return updateRunLifecycle(
-      run,
-      { status: "stopped", needsHumanReason: null },
-      "stop",
-      sessionId,
-    );
-  },
-
   detectCostExceeded(
     name: string,
     input: { run: number; usageSession: string },
@@ -1213,28 +1197,10 @@ export const workflowRuns = {
         "Workflow usage session has no currently running child",
       );
     }
-    const updated = S.stopWorkflowRunIfRunning(run.id);
-    if (!updated) {
-      return {
-        run: runJSON(workflowRunOr404(run.id)),
-        action: "skipped",
-        reason: "already_stopped",
-        cost_usd: costUsd,
-        limit_usd: configuredLimit,
-        stopped_session_id: null,
-        unobserved_session_ids: cost.unobserved_session_ids,
-        unknown_cost_session_ids: cost.unknown_cost_session_ids,
-      };
-    }
-    S.emitEvent(repo.id, "workflow_run.updated", actorFor(sessionId), {
-      id: updated.id,
-      transition: "stop",
-      status: updated.status,
-      current_step: updated.current_step,
-      rework_count: updated.rework_count,
-      issue_number: updated.issue_number,
-      pr_number: updated.pr_number,
-    });
+    // Stop only the running child, not the run: send Escape to its pane and leave the run `running`
+    // so a human can resume it (#1525). The `dev.cost_stopped` event is the single source of truth
+    // for "this run's agent was cost-stopped" — it is the idempotency guard (checked at entry and
+    // again below) and drives the #863 badge — so it is emitted only after the interrupt succeeds.
     try {
       await runHerdr(
         "herdr",
@@ -1267,6 +1233,21 @@ export const workflowRuns = {
       );
       throw error;
     }
+    // A concurrent enforcement may have interrupted the same child and recorded the stop while this
+    // call awaited Escape. Re-check synchronously (no await before the emit) so only one event is
+    // written; the loser reports `already_stopped` without a second event.
+    if (S.hasWorkflowRunCostStopEvent(repo.id, run.id)) {
+      return {
+        run: runJSON(run),
+        action: "skipped",
+        reason: "already_stopped",
+        cost_usd: costUsd,
+        limit_usd: configuredLimit,
+        stopped_session_id: null,
+        unobserved_session_ids: cost.unobserved_session_ids,
+        unknown_cost_session_ids: cost.unknown_cost_session_ids,
+      };
+    }
     S.emitEvent(repo.id, "dev.cost_stopped", actorFor(sessionId), {
       number: run.pr_number,
       pr: run.pr_number,
@@ -1278,7 +1259,7 @@ export const workflowRuns = {
       limit_usd: configuredLimit,
     });
     return {
-      run: runJSON(updated),
+      run: runJSON(run),
       action: "stopped",
       reason: "over_limit",
       cost_usd: costUsd,
@@ -1852,9 +1833,8 @@ export const workflowRuns = {
             `Workflow run #${run.id} (issue #${run.issue_number}, PR #${run.pr_number}) made no`,
             `progress for ${minutes} minutes: no turn-done declaration and no lifecycle activity.`,
             "",
-            "The run is now held for a human (needs-human). Inspect the run and either resume it",
-            `(\`lh workflow run resume --repo '${repo.full_name}' --run ${run.id} --step <execute|verify>\`)`,
-            `or stop it (\`lh workflow run stop --repo '${repo.full_name}' --run ${run.id}\`).`,
+            "The run is now held for a human (needs-human). Inspect the run and resume it",
+            `(\`lh workflow run resume --repo '${repo.full_name}' --run ${run.id} --step <execute|verify>\`).`,
           ].join("\n"),
         });
         const updated = S.updateWorkflowRun(run.id, {

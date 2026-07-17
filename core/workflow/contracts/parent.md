@@ -46,9 +46,11 @@ Event rows are timing signals, never transition facts:
 - `workflow_run.github_event` — inspect the referenced GitHub feedback.
 - `workflow_run.merge_conflict` — the run's PR base advanced into a merge conflict; hand resolution to
   a fresh Execute child (see Merge conflict).
-- `workflow_run.cost_exceeded` — stop the run with
-  `lh workflow run stop --repo '<repo>' --run <run>` and continue polling. The worker emits this
-  edge-triggered fact once when the run's cumulative cost crosses its configured limit.
+- `workflow_run.cost_exceeded` — stop the over-budget child with
+  `lh workflow run enforce-cost-limit --repo '<repo>' --run <run>` and continue polling. This
+  interrupts only the running child (Esc); the run stays `running` so a human can resume it. The
+  worker emits this edge-triggered fact once when the run's cumulative cost crosses its configured
+  limit.
 
 ## Commands you may use
 
@@ -58,8 +60,9 @@ LoopHub (orchestration):
   — move from Execute to Verify after you observe HEAD is ahead of base with new work.
 - `lh workflow run request-rework --repo '<repo>' --run <run>`
   — atomically increment rework count and return from a fresh `request_changes` review to Execute.
-- `lh workflow run stop --repo '<repo>' --run <run>`
-  — stop a running run permanently.
+- `lh workflow run enforce-cost-limit --repo '<repo>' --run <run>`
+  — interrupt the running child that pushed the run over its cost limit (Esc to its pane). The run
+  stays `running` so a human can resume it; there is no permanent run-stop command.
 - `lh workflow launch-step --repo '<repo>' --run <run> --step <step> [--review <id>] [--note <text|->]`
   — start (or restart) the child for a step. The engine resolves its input pointers (for Verify, the
   base/head SHAs to review; for a rework Execute, `--review <id>` becomes the "address review"
@@ -98,7 +101,7 @@ Human handoff (escalation only):
 | start | run started | seed the event cursor, launch Execute, then enter the pull loop |
 | Execute | execute complete (HEAD ahead of base, advanced past the last review) | `lh workflow run advance-to-verify`, then launch Verify |
 | Execute | escalation event from the active Execute child | Read the event reason, notify the human, and stop automatic progression |
-| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running and wait for the next human instruction, pulled event, or explicit stop |
+| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running and wait for the next human instruction or pulled event |
 | Verified + continuing | human requests additional work | Launch a fresh Execute child with the instruction (see Continuing after a pass) |
 | Verified + continuing | HEAD advances past the passing review and Execute declares turn done | Launch a fresh Verify child for the new HEAD (the run already remains at Verify) |
 | Verified + continuing | Execute declares turn done without a HEAD advance | Keep the existing pass fresh and continue waiting |
@@ -107,9 +110,9 @@ Human handoff (escalation only):
 A fresh passing review verifies the current HEAD but does not complete or freeze the run. Keep the
 parent observation loop available so a human can request more work in the same run.
 PR body, comment, and attachment updates leave the pass fresh because HEAD did not change. A code
-commit makes it stale; after Execute declares turn done, launch a fresh Verify child directly. Only
-an explicit `lh workflow run stop` ends the run permanently. Execute includes planning and reflection
-in its own work; there is no separate report. Do not merge — a human does that.
+commit makes it stale; after Execute declares turn done, launch a fresh Verify child directly. The
+run has no permanent-stop command: it stays `running` until a human ends it. Execute includes
+planning and reflection in its own work; there is no separate report. Do not merge — a human does that.
 
 ## Continuing after a pass
 

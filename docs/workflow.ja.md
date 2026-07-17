@@ -85,8 +85,8 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    `--review <id>` で fresh relaunch する。findings の要約・解釈は行わず、修正後の Verify は常に
    fresh child とする。
 6. 上限超過や解消不能状態を issue comment + Inbox + needs-human 状態で人間へ渡す。
-7. passing verdict 後も run と観測ループ、および可能なら Execute pane を維持し、追加指示、turn-done、
-   明示的 stop を待つ。run を恒久終了するのは明示的な `lh workflow run stop` だけである。merge はしない。
+7. passing verdict 後も run と観測ループ、および可能なら Execute pane を維持し、追加指示や turn-done を
+   待つ。run を恒久終了する command は無く、終了させるのは人間である。merge はしない。
 
 親は idle 検知を使わない（`herdr agent wait --status idle` を使わない）。親はコード・review・PR を
 直接編集しない。
@@ -161,7 +161,8 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 記録するが、escalate 自体は run lifecycle を変更しない。Verify が review を登録すると
 `workflow_run.review_submitted`、GitHub PR feedback が同期されると `workflow_run.github_event` が記録
 される。usage sweep が run の累積コスト上限越えを検知すると、edge-triggered に一度だけ
-`workflow_run.cost_exceeded` が記録され、親は `lh workflow run stop` で run を停止する。親は
+`workflow_run.cost_exceeded` が記録され、親は `lh workflow run enforce-cost-limit` で超過した子だけを
+Esc で止める（run は `running` のまま再開可能）。親は
 `lh events --type workflow_run --run <run>` でこれらを cursor pull し、run-scoped filter は payload の
 `id` を使って対象 run に絞り込む。子の contract に親の pane id や topology は現れない。
 
@@ -178,8 +179,8 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
 | Execute | `workflow_run.escalated` を受領 | event の reason を再取得し、`await-human` で hold |
 | Human wait | Execute の turn done 後、HEAD が最新 review より前進 | `resume --step execute` → 通常の Execute 完了遷移 → fresh Verify |
-| Human wait | Execute の turn done 後、HEAD が不変 | hold を維持し、追加作業または明示的 resume / stop を待つ |
-| Verify | 最新 review が fresh + pass | run を `running` のまま維持し、追加指示・turn-done・明示的 stop を待つ |
+| Human wait | Execute の turn done 後、HEAD が不変 | hold を維持し、追加作業または明示的 resume を待つ |
+| Verify | 最新 review が fresh + pass | run を `running` のまま維持し、追加指示・turn-done を待つ |
 | Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、既存 Execute pane へ注入する。pane が閉じていれば `--note` 付きで Execute を launch |
 | Verified + continuing | Execute の turn done 後、HEAD が passing review より前進 | run は Verify のまま、現在の HEAD に対する Verify を fresh launch |
 | Verified + continuing | Execute の turn done 後、HEAD が不変 | 既存 pass は fresh のまま。Verify を起動せず待機を続ける |
@@ -190,7 +191,7 @@ fresh pass は現在の HEAD を検証するが、run を完了・凍結しな�
 生きている Execute pane へ `orchestrator: <instruction>` を注入し、pane が閉じている場合は
 `lh workflow launch-step --step execute --note <instruction>` で起動する。その後の turn done で HEAD が
 進んでいれば fresh Verify を起動し、PR body・comment・attachment だけが変わって HEAD が不変なら既存
-pass を fresh のまま維持する。恒久終了は明示的な `lh workflow run stop` で行う。
+pass を fresh のまま維持する。run を恒久終了する command は無く、終了させるのは人間である。
 
 rework 上限は 3。最新 Execute child に対する `herdr agent get` が成功して `pane_id` を返す場合は、
 `agent_status: done` でも pane は再利用可能と扱い、新規 launch より先に
@@ -200,13 +201,15 @@ fresh child とする。
 
 宣言がないまま run 活動が一定時間停止した場合、worker の stall sweep（`sweepStalledRuns`）が独立して
 その run を needs-human に保持し Inbox で人間へ可視化する。自動回復は試みない。rework 上限・escalation・
-人間による resume / stop は引き続き機能する。新規に到達し得る run の status は `running | stopped` のみ
-（人間待ちは `running` のまま needs_human_reason を持つ）。`completed` は legacy status で、書き込み経路は
-削除済み（#1513）。古い DB 行として残り得るため UI / serialize は read-only 表示だけ維持する。
+人間による resume は引き続き機能する。新規に到達し得る run の status は `running` のみ
+（人間待ちは `running` のまま needs_human_reason を持つ）。`completed`（#1513）と `stopped`（#1525）は
+legacy status で、いずれも書き込み経路は削除済み。古い DB 行として残り得るため UI / serialize は
+read-only 表示だけ維持する。
 
-fresh pass 後も run は complete せず `running` + `verification_status: verified` のまま保つ。恒久終了は
-明示的な `lh workflow run stop` で行う。`resume` は `await-human` による明示的 hold を人間の指示で解除する
-command であり、fresh pass 後の追加作業には使わない。
+fresh pass 後も run は complete せず `running` + `verification_status: verified` のまま保つ。run を恒久
+終了する command は無い。コスト超過時は `lh workflow run enforce-cost-limit` が超過した子だけを Esc で
+止め、run は `running` のまま再開可能に保つ。`resume` は `await-human` による明示的 hold を人間の指示で
+解除する command であり、fresh pass 後の追加作業には使わない。
 
 ## 8. CLI
 
@@ -216,7 +219,8 @@ lh workflow update <name> [--step execute|verify --file <path|->]
 lh workflow start <issue> --workflow <name>
 lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note <text|->]
 # lifecycle command
-lh workflow run advance-to-verify|request-rework|await-human|resume|stop --run <id>
+lh workflow run advance-to-verify|request-rework|await-human|resume --run <id>
+lh workflow run enforce-cost-limit --run <id>  # コスト超過した子を Esc で止める（run は running のまま）
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
 lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run

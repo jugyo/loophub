@@ -33,6 +33,9 @@ const STATUS_META: Record<
   // keeps the run `running` + `verification_status: verified`. Old rows may still be `completed`, so
   // keep the read-only rendering for them.
   completed: { label: "Completed", tone: "review-passed" },
+  // Legacy terminal status (#1525): the run-stop write path was removed — a cost stop now interrupts
+  // only the child (Esc) and leaves the run `running`. Old rows may still be `stopped`, so keep the
+  // read-only rendering for them.
   stopped: { label: "Stopped", tone: "closed" },
 };
 

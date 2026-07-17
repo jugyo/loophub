@@ -173,7 +173,8 @@ describe.each([
       cost_usd: 11,
       limit_usd: 10,
       stopped_session_id: target,
-      run: { status: "stopped" },
+      // The run is not terminated — only the child is interrupted, so it stays resumable (#1525).
+      run: { status: "running" },
     });
     expect(
       S.listEvents(0, repo.id, 100).filter(
@@ -342,7 +343,7 @@ test("stops from recorded costs when another run session has no usage yet", asyn
     cost_usd: 21,
     unobserved_session_ids: [verify],
     unknown_cost_session_ids: [],
-    run: { status: "stopped" },
+    run: { status: "running" },
   });
 });
 
@@ -457,7 +458,9 @@ test("records a visible failure and never reports a successful stop event when E
       parent,
     ),
   ).rejects.toMatchObject({ status: 500 });
-  expect(S.getWorkflowRun(run.id)?.status).toBe("stopped");
+  // A failed interrupt leaves the run untouched: it stays `running` and no cost-stop is recorded, so
+  // the visible failure event is the only signal (#1525).
+  expect(S.getWorkflowRun(run.id)?.status).toBe("running");
   expect(S.listEvents(0, repo.id, 100).map((event) => event.type)).toContain(
     "workflow_run.cost_stop_failed",
   );

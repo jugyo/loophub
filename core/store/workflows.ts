@@ -281,20 +281,6 @@ export function updateWorkflowRun(
   return getWorkflowRun(id);
 }
 
-// Atomically claim a running Workflow run for an irreversible stop. The conditional update is the
-// concurrency guard for event-driven stop decisions arriving in separate processes: only one
-// caller may proceed to interrupt the child and emit the over-budget notification.
-export function stopWorkflowRunIfRunning(id: number): WorkflowRunRow | null {
-  return db
-    .query(
-      `UPDATE workflow_runs
-       SET status = 'stopped', needs_human_reason = NULL, updated_at = ?
-       WHERE id = ? AND status = 'running'
-       RETURNING *`,
-    )
-    .get(now(), id) as WorkflowRunRow | null;
-}
-
 export function appendWorkflowRunStepSession(
   id: number,
   step: string,

@@ -1473,7 +1473,7 @@ export interface WorkflowRunStateWire {
   id: number;
   workflow_id: number | null;
   workflow_name: string | null;
-  status: string; // running | stopped (legacy terminal rows may still read 'completed' or 'blocked')
+  status: string; // running (legacy terminal rows may still read 'stopped', 'completed', or 'blocked')
   current_step: string; // execute | verify
   rework_count: number;
   // Non-null while the run waits for an explicit human instruction (#1307). The run stays
@@ -1573,9 +1573,10 @@ export function workflowRunHistoryEventJSON(
       typeof payload.needs_human_reason === "string"
         ? payload.needs_human_reason
         : null;
-    // `completed` is a legacy terminal status (#1513): no write path reaches it anymore — a passing
-    // Verify keeps the run `running` + `verification_status: verified`. Old event rows can still
-    // carry it, so keep the read-only label like the legacy `blocked` case.
+    // `completed` (#1513) and `stopped` (#1525) are legacy terminal statuses: no write path reaches
+    // them anymore — a passing Verify keeps the run `running` + `verification_status: verified`, and
+    // a cost stop interrupts only the child. Old event rows can still carry them, so keep the
+    // read-only labels like the legacy `blocked` case.
     label =
       status === "completed"
         ? "Run completed"

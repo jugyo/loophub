@@ -610,9 +610,6 @@ async function runLifecycle(): Promise<void> {
         sessionId,
       );
     }
-    if (action === "stop") {
-      return service.stopRun(repo, { run: runId }, sessionId);
-    }
     if (action === "enforce-cost-limit") {
       return service.enforceCostLimit(
         repo,

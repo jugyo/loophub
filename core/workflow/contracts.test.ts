@@ -104,8 +104,8 @@ test("parent polls only its run workflow events and reacts to cost limit facts",
     "The `--type workflow_run --run <run>` filters are mandatory",
   );
   expect(contract).toContain("workflow_run.cost_exceeded");
-  expect(contract).toContain("lh workflow run stop");
-  expect(contract).not.toContain("lh workflow run enforce-cost-limit");
+  expect(contract).toContain("lh workflow run enforce-cost-limit");
+  expect(contract).not.toContain("lh workflow run stop");
   expect(contract).toContain("sleep briefly and poll again");
 });
 
@@ -149,7 +149,8 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   );
   expect(design).toContain("`agent_status: done` でも pane は再利用可能");
   expect(design).toMatch(/修正後の Verify は常に\s+fresh child/u);
-  expect(design).toContain("`completed` は legacy status");
+  expect(design).toContain("`stopped`（#1525）は");
+  expect(design).toContain("legacy status");
 
   for (const event of [
     "workflow_run.turn_done",
