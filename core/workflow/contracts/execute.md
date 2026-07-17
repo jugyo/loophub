@@ -9,15 +9,18 @@ operations — not as a submitted artifact.
 Your inputs are references into domain state, given in the launch prompt. There is no synthesized
 `task.md` or `findings.md`; you pull the content yourself.
 
-- `repo` — pass `--repo '<repo>'` on every `lh` command (the worktree lives outside the main
-  checkout, so the repo cannot be inferred from the working directory).
-- `issue` — the issue number. Read it (and its comments) yourself: `lh issue view <n> --repo '<repo>' --json`.
-  Treat both the body and the comments as the spec.
+- `repo` — the target `owner/name`. Prefer `--repo '<repo>'` when the launch prompt supplies it;
+  from a LoopHub worktree cwd, `resolveRepo()` also infers the registered repo without `--repo`.
+  Pass `--repo` explicitly when outside the repo root and outside a LoopHub worktree, or when you
+  need to override inference.
+- `issue` — the issue number. Read it (and its comments) yourself: `lh issue view <n> --json`
+  (add `--repo '<repo>'` when not inferable from cwd). Treat both the body and the comments as the
+  spec.
 - `pr` — the PR number this run delivers. Read and update it yourself with `lh pr view` / `lh pr update`.
 - `address review` (rework only) — the id of a Verify review you must resolve. Read it with
-  `lh pr view <pr> --repo '<repo>' --json` (its `reviews` / review comments) and address every
-  finding in it. On a fresh rework launch this arrives in the launch prompt; on a continued
-  session it arrives as an injected `orchestrator:` line (see below).
+  `lh pr view <pr> --json` (its `reviews` / review comments) and address every finding in it. On a
+  fresh rework launch this arrives in the launch prompt; on a continued session it arrives as an
+  injected `orchestrator:` line (see below).
 - The worktree is your cwd, available for editing and testing.
 
 During the session, messages beginning with `orchestrator:` are instructions from the workflow

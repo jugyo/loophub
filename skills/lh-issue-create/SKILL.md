@@ -121,7 +121,8 @@ is created, **stop** — do not implement (see § Scope boundary).
 
 - **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
 - **CLI**: `lh` (on PATH)
-- **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
+- **`--repo owner/name`**: omit when cwd is the registered repo root or a LoopHub worktree for that
+  repo; required outside those paths
 - `--actor triage-bot` (default) or user-specified
 
 | Action | CLI |

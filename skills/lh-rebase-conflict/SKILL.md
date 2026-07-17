@@ -37,7 +37,8 @@ Dispatch / cron must pass `<pr id>` explicitly (no inference).
 
 - **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
 - **CLI**: `lh` (on PATH)
-- **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
+- **`--repo owner/name`**: omit when cwd is the registered repo root or a LoopHub worktree for that
+  repo; required outside those paths
 - **Auto-sync**: `lh-web` sweeps open PRs' head SHAs and auto-fires `pull_request.updated` — after
   committing, rebasing, or merging on a PR head, no manual sync call is needed
 - `--actor impl-bot` (when posting comments)

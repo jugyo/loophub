@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stripVTControlCharacters } from "node:util";
-import { configDir } from "../core/config.ts";
+import { configDir, worktreeRoot } from "../core/config.ts";
+import { fullNameFromWorktreePath } from "../core/worktree-path.ts";
 import { flags } from "./args.ts";
 
 // Lazily load the service layer (which opens the DB at import time) so DB-free commands
@@ -103,7 +104,8 @@ export async function run<T>(fn: () => Promise<T> | T): Promise<T> {
   }
 }
 
-// --repo, LOOPHUB_REPO, or inferred from cwd.
+// --repo, LOOPHUB_REPO, or inferred from cwd (registered repo root, or a LoopHub worktree
+// path under worktreeRoot for a registered owner/name — #1595).
 export async function resolveRepo(): Promise<string> {
   if (flags.repo) return flags.repo;
   if (process.env.LOOPHUB_REPO) return process.env.LOOPHUB_REPO;
@@ -112,8 +114,15 @@ export async function resolveRepo(): Promise<string> {
   const cwd = resolve(process.cwd());
   const hit = repos.find((r) => resolve(r.local_path) === cwd);
   if (hit) return hit.full_name;
+  // Path-shaped LoopHub worktree (<worktreeRoot>/<owner>/<repo>/(pr|issue)-<n>). Only accept
+  // when that owner/name is already registered — never invent a repo from a stray directory.
+  const fromWorktree = fullNameFromWorktreePath(worktreeRoot(), cwd);
+  if (fromWorktree) {
+    const registered = repos.find((r) => r.full_name === fromWorktree);
+    if (registered) return registered.full_name;
+  }
   fail(
-    "Cannot determine the repo. Pass --repo owner/name or run from the repo root.",
+    "Cannot determine the repo. Pass --repo owner/name or run from the repo root or a LoopHub worktree.",
   );
 }
 

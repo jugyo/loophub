@@ -4,7 +4,26 @@
 // of colliding on one. Kept in core (not cli/dev.ts) so both the CLI and core/service.ts (e.g.
 // `lh resume`) share one source of truth. cli/dev.ts re-exports these for its existing callers/
 // tests. See also worktree-prune.ts (prNumberFromBranch) which decodes the same branch convention.
-import { basename, dirname, join } from "node:path";
+import { realpathSync } from "node:fs";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
+
+// Prefer the realpath when the target exists so macOS /var → /private/var (and similar
+// symlink roots) still compare equal between process.cwd() and a configured worktreeRoot.
+function resolvePath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+}
 
 // Exported for reuse wherever a full_name feeds a derived path or the repos.full_name
 // column (worktree paths here, the rename write in core/store.ts).
@@ -78,4 +97,34 @@ export function pullNumberFromWorktreePath(
   if (dirname(checkoutPath) !== join(worktreeRoot, fullName)) return null;
   const m = PR_DIR_RE.exec(basename(checkoutPath));
   return m ? Number(m[1]) : null;
+}
+
+// Reverse of worktreePath / legacyWorktreePath for CLI repo inference (#1595): recover the
+// owner/name encoded in a LoopHub worktree directory under worktreeRoot. Accepts both the
+// current pr-<n> leaf and the legacy issue-<n> leaf. Returns null for anything that is not
+// exactly <worktreeRoot>/<owner>/<repo>/(pr|issue)-<n> — never guesses from nested or
+// unrelated paths. Callers must still confirm the returned full_name is a registered repo.
+const WORKTREE_LEAF_RE = /^(?:pr|issue)-\d+$/;
+
+export function fullNameFromWorktreePath(
+  worktreeRoot: string,
+  checkoutPath: string,
+): string | null {
+  const root = resolvePath(worktreeRoot);
+  const abs = resolvePath(checkoutPath);
+  const rel = relative(root, abs);
+  if (!rel || rel === "." || isAbsolute(rel) || rel.split(sep).includes("..")) {
+    return null;
+  }
+  const parts = rel.split(sep);
+  if (parts.length !== 3) return null;
+  const [owner, name, leaf] = parts;
+  if (!WORKTREE_LEAF_RE.test(leaf)) return null;
+  const fullName = `${owner}/${name}`;
+  try {
+    assertSafeRepoSegments(fullName, "worktree path");
+  } catch {
+    return null;
+  }
+  return fullName;
 }

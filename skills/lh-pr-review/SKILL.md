@@ -182,7 +182,8 @@ weaker pass was acceptable. Prefer the strongest available mechanism for the Sec
 
 - **Server**: default `http://localhost:8730` (`~/.loophub/config.json`)
 - **CLI**: `lh` (on PATH)
-- **`--repo owner/name`**: omit only when cwd is the repo root; required inside a worktree
+- **`--repo owner/name`**: omit when cwd is the registered repo root or a LoopHub worktree for that
+  repo; required outside those paths
 - **Auto-sync**: `lh-web` sweeps open PRs' head SHAs and auto-fires `pull_request.updated` — after
   committing, rebasing, or merging on a PR head, no manual sync call is needed
 - `--actor reviewer-bot` (review posts) / `--actor impl-bot` (fix comments, etc.)
@@ -291,8 +292,9 @@ fi
 ```
 
 - Cannot add worktree (dirty / conflict) → blocker. Stash only after user confirmation
-- Pass `--repo owner/name` on all CLI calls from inside the worktree (`resolveRepo()` omits it only
-  when cwd is the repo root)
+- `--repo owner/name` is optional inside a LoopHub worktree (`resolveRepo()` infers the registered
+  repo from the worktree path as well as from the repo root); pass it when cwd is elsewhere or when
+  overriding inference
 - Pass the **working cwd (worktree absolute path)** as the reviewer sessions' repository path (see
   [reviewer-prompts.md](reviewer-prompts.md), "Repository path")
 

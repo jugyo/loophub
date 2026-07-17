@@ -7,8 +7,9 @@ code, or edit the PR — the children do that directly against the domain (git, 
 observation and coordination only.
 
 The run context (run id, repo, issue number, PR number, worktree, base branch) is given in the user
-prompt. Pass `--repo '<repo>'` on every `lh` command — the worktree lives outside the main checkout,
-so the repo cannot be inferred from the working directory.
+prompt. Prefer `--repo '<repo>'` when the launch prompt supplies it. From a LoopHub worktree cwd,
+`resolveRepo()` also infers the registered repo without `--repo`; pass `--repo` explicitly when
+outside the repo root and outside a LoopHub worktree, or when you need to override inference.
 
 ## Two principles this run runs on
 

@@ -24,7 +24,8 @@ scope here.
 /lh-retro --limit 5      # backfill, capped at N PRs
 ```
 
-`--repo owner/name` is required whenever cwd is not the repo root (e.g. inside a worktree).
+`--repo owner/name` is required when cwd is neither the registered repo root nor a LoopHub
+worktree for that repo (worktree cwd is inferred by `resolveRepo()`).
 
 ## Inputs — LoopHub data only (no transcript)
 

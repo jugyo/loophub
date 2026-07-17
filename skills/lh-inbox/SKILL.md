@@ -16,7 +16,8 @@ This skill covers existing Inbox operations only; do not add or change `lh inbox
 - **Server**: default `http://localhost:8730`; resolve it with `lh info --json | jq -r .baseUrl`.
 - **CLI**: `lh` on PATH.
 - **RPC tools**: `jq` and `curl` for listing/fetching Inbox messages through the web API.
-- **Repository**: use `--repo owner/name` when outside the main checkout or inside a LoopHub worktree.
+- **Repository**: use `--repo owner/name` when outside the registered repo root and outside a
+  LoopHub worktree (worktree cwd is inferred by `resolveRepo()`).
 - **Session**: agents must set `SESSION_ID` to their registered LoopHub session id before CLI state
   changes. If `SESSION_ID` is empty, stop and resolve the agent session first; omitting `--session-id`
   intentionally attributes the write to the default persisted human CLI session.

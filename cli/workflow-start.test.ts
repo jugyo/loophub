@@ -263,14 +263,28 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
   // owner), so it exercises the CLI plumbing without spawning a real Execute child.
   const sessionEnv = { LOOPHUB_SESSION_ID: parentSession };
 
-  // No repo context and no cwd repo -> the CLI cannot resolve the target.
-  const missingRepoContext = run(
+  // Worktree cwd alone is enough: resolveRepo infers the registered owner/name (#1595).
+  const fromWorktree = run(
     ["workflow", "turn", "done"],
     {
       ...sessionEnv,
       LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
     },
     runResult.worktree,
+  );
+  expect(fromWorktree.exitCode, fromWorktree.stderr).toBe(0);
+  expect(fromWorktree.stdout).toContain(
+    `declared turn done for Workflow run #${runResult.run.id}`,
+  );
+
+  // Outside any registered root/worktree, repo context is still required.
+  const missingRepoContext = run(
+    ["workflow", "turn", "done"],
+    {
+      ...sessionEnv,
+      LOOPHUB_WORKFLOW_RUN: String(runResult.run.id),
+    },
+    HOME,
   );
   expect(missingRepoContext.exitCode).not.toBe(0);
   expect(missingRepoContext.stderr).toContain("Cannot determine the repo");

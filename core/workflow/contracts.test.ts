@@ -13,7 +13,12 @@ test("loads every step contract from the canonical Markdown sources", () => {
 test("Execute pulls domain state itself and declares turn done", () => {
   const execute = workflowContractText("execute");
 
-  expect(execute).toContain("lh issue view <n> --repo '<repo>' --json");
+  // Repo may be inferred from a LoopHub worktree cwd (#1595); --repo is only required when
+  // not inferable from cwd, or when overriding inference.
+  expect(execute).toContain("lh issue view <n> --json");
+  expect(execute).toContain(
+    "`resolveRepo()` also infers the registered repo without `--repo`",
+  );
   expect(execute).toContain("lh pr update <pr>");
   expect(execute).toContain(
     "lh workflow turn done --repo '<repo>' --run <run>",
