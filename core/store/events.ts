@@ -157,25 +157,6 @@ export function latestWorkflowTurnDoneAt(
   return row?.created_at ?? null;
 }
 
-// The timestamp of the run's latest lifecycle activity (run started/updated, step launched,
-// turn-done declared). The stall sweep compares this against its threshold to surface a run whose
-// Execute never declared turn done — visibility only, no automatic recovery.
-export function latestWorkflowRunActivityAt(
-  repoId: number,
-  runId: number,
-): string | null {
-  const row = db
-    .query(
-      `SELECT created_at FROM events
-       WHERE repo_id = ?
-         AND (type GLOB 'workflow_run.*' OR type GLOB 'workflow_step.*')
-         AND json_extract(payload, '$.id') = ?
-       ORDER BY id DESC LIMIT 1`,
-    )
-    .get(repoId, runId) as { created_at: string } | null;
-  return row?.created_at ?? null;
-}
-
 // The timestamp of the PR's earliest `pull_request.ready_for_review` event, or null if it never
 // fired. Both transitions that emit this event type (draft→ready, and re-review after change
 // requests — see service.ts `readyForReview`) carry the same `{ number, draft: false }` payload, so

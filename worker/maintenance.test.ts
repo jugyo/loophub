@@ -66,8 +66,6 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
       closedPullCleanupSweepMs: Number.NaN,
       scheduledTaskSweepMs: Number.NaN,
       conflictSweepMs: Number.NaN,
-      workflowStallSweepMs: 0,
-      workflowStallThresholdMs: Number.NaN,
     }),
   ).toEqual({
     sweepMs: 0,
@@ -77,8 +75,6 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
     conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
-    workflowStallSweepMs: 0,
-    workflowStallThresholdMs: M.DEFAULT_WORKFLOW_STALL_THRESHOLD_MS,
   });
 
   expect(M.normalizeMaintenanceLoopOptions()).toEqual({
@@ -89,8 +85,6 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
     conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
-    workflowStallSweepMs: M.DEFAULT_WORKFLOW_STALL_SWEEP_MS,
-    workflowStallThresholdMs: M.DEFAULT_WORKFLOW_STALL_THRESHOLD_MS,
   });
 });
 
@@ -108,8 +102,6 @@ test("maintenance summary reports disabled loops as off", () => {
       closedPullCleanupSweepMs: 600000,
       scheduledTaskSweepMs: 0,
       conflictSweepMs: 0,
-      workflowStallSweepMs: 0,
-      workflowStallThresholdMs: M.DEFAULT_WORKFLOW_STALL_THRESHOLD_MS,
     }),
   ).toEqual({
     pullSweep: "off",
@@ -119,7 +111,6 @@ test("maintenance summary reports disabled loops as off", () => {
     closedPullCleanupSweep: "600000ms",
     scheduledTaskSweep: "off",
     conflictSweep: "off",
-    workflowStallSweep: "off",
   });
 });
 

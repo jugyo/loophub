@@ -63,7 +63,6 @@ import {
 } from "../worktree-provision.ts";
 import { dev } from "./dev.ts";
 import { runHerdr } from "./herdr-runner.ts";
-import { inbox } from "./inbox.ts";
 import {
   actorFor,
   assertExistingLocalBranch,
@@ -392,19 +391,6 @@ function reviewObservation(
     event: review.event === "PASS" ? "pass" : "request_changes",
     headSha: review.head_sha,
   };
-}
-
-function hasFreshPassingWorkflowReview(run: S.WorkflowRunRow): boolean {
-  if (run.current_step !== "verify") return false;
-  const prIssue = S.getIssue(run.repo_id, run.pr_number);
-  if (!prIssue) return false;
-  const pull = S.getPull(prIssue.id);
-  const review = latestWorkflowRunReview(prIssue.id, run.id);
-  return Boolean(
-    pull?.head_sha &&
-      review?.event === "PASS" &&
-      review.head_sha === pull.head_sha,
-  );
 }
 
 function stepActorAllowed(
@@ -1472,80 +1458,5 @@ export const workflowRuns = {
           : null;
       return workflowRunHistoryEventJSON(event, input);
     });
-  },
-
-  // Worker-owned stall visibility (#1358): a running, non-held run whose latest lifecycle
-  // activity (run started/updated, step launched, turn-done declared) is older than the
-  // threshold is surfaced to a human — except a Verify run waiting after a fresh passing review.
-  // No automatic recovery is attempted; resume / stop stay explicit human actions.
-  sweepStalledRuns(input: { thresholdMs: number; now?: number }): {
-    held: number[];
-    failed: number[];
-  } {
-    const held: number[] = [];
-    const failed: number[] = [];
-    const nowMs = input.now ?? Date.now();
-    const minutes = Math.max(1, Math.round(input.thresholdMs / 60_000));
-    for (const run of S.listRunningWorkflowRuns()) {
-      // Isolate each run: one repo's failure (e.g. inbox.send -> ensureWritable throwing because
-      // the repo was archived while the run was still running) must not abort the batch and leave
-      // later stalled runs unsurfaced. The sibling GitHub feedback sweep isolates per-PR the same way.
-      try {
-        if (run.needs_human_reason !== null) continue;
-        const repo = S.getRepoById(run.repo_id);
-        if (!repo) continue;
-        const lastActivity =
-          S.latestWorkflowRunActivityAt(run.repo_id, run.id) ?? run.updated_at;
-        const lastActivityMs = Date.parse(lastActivity);
-        if (
-          !Number.isFinite(lastActivityMs) ||
-          nowMs - lastActivityMs < input.thresholdMs
-        ) {
-          continue;
-        }
-        if (hasFreshPassingWorkflowReview(run)) continue;
-        const reason = `no turn-done declaration or run activity for ${minutes} minutes`;
-        // Send the human notification first: if it throws (archived/read-only repo), the run is
-        // left running and un-held, so the next tick retries cleanly instead of holding a run whose
-        // human notice never went out.
-        inbox.send(repo.full_name, {
-          from: {
-            kind: "workflow_run",
-            repo: repo.full_name,
-            actor: "lh-worker",
-          },
-          title: `Workflow run #${run.id} stalled: no turn-done declaration`,
-          body: [
-            `Workflow run #${run.id} (issue #${run.issue_number}, PR #${run.pr_number}) made no`,
-            `progress for ${minutes} minutes: no turn-done declaration and no lifecycle activity.`,
-            "",
-            "The run is now held for a human (needs-human). Inspect the run and resume it",
-            `(\`lh workflow run resume --repo '${repo.full_name}' --run ${run.id} --step <execute|verify>\`).`,
-          ].join("\n"),
-        });
-        const updated = S.updateWorkflowRun(run.id, {
-          needsHumanReason: reason,
-        });
-        if (!updated) continue;
-        S.emitEvent(run.repo_id, "workflow_run.updated", "lh-worker", {
-          id: updated.id,
-          transition: "await_human",
-          status: updated.status,
-          current_step: updated.current_step,
-          rework_count: updated.rework_count,
-          needs_human_reason: updated.needs_human_reason,
-          issue_number: updated.issue_number,
-          pr_number: updated.pr_number,
-        });
-        held.push(run.id);
-      } catch (e) {
-        failed.push(run.id);
-        console.error(
-          `lh-worker: workflow stall sweep failed for run #${run.id}:`,
-          e instanceof Error ? e.message : e,
-        );
-      }
-    }
-    return { held, failed };
   },
 };

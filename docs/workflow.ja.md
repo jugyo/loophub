@@ -234,8 +234,9 @@ agent name を再発見）が成功して `pane_id` を返す場合は、`agent_
 再 launch する。修正後の Verify は常に fresh child とする。注入の成功自体を execute complete の根拠
 にしない — 次の遷移は `lh workflow step status` の HEAD / review 観測のみ。
 
-宣言がないまま run 活動が一定時間停止した場合、worker の stall sweep（`sweepStalledRuns`）が独立して
-その run を needs-human に保持し Inbox で人間へ可視化する。自動回復は試みない。rework 上限・escalation・
+宣言がないまま run 活動が停止しても、worker が時間経過だけで run を自動ホールドすることはない。進捗の
+有無は turn done と HEAD / review を観測する parent が扱い、本当に死んだ run は人間が気づいて stop /
+resume する（人間がリカバリ可能な失敗に自動機構を足さない原則）。rework 上限・escalation・
 人間による resume は引き続き機能する。新規に到達し得る run の status は `running` のみ
 （人間待ちは `running` のまま needs_human_reason を持つ）。`completed`（#1513）と `stopped`（#1525）は
 legacy status で、いずれも書き込み経路は削除済み。古い DB 行として残り得るため UI / serialize は
@@ -288,10 +289,9 @@ herdr pane run <pane_id> Escape             # コスト超過時に子だけを�
 | `core/workflow/contracts/` | parent / Execute / Verify contract |
 | `core/workflow/compose.ts` | contract render と「ポインタ + step prompt」の launch prompt 合成 |
 | `core/workflow/steps.ts` | HEAD / review 観測から 2 step の状態を導く pure query |
-| `core/service/workflow-runs.ts` | run start、child launch、turn done、status、rework、stall sweep |
+| `core/service/workflow-runs.ts` | run start、child launch、turn done、status、rework |
 | `core/store/workflows.ts` / `core/serialize.ts` | 2 prompt の persistence / wire shape |
 | `cli/commands/workflow.ts` | thin CLI |
-| `worker/maintenance.ts` | 宣言なし停滞 run の needs-human 可視化 sweep |
 | `web/src/components/workflow-run-status.tsx` | Execute → Verify tracker と最新 review 表示 |
 
 ## 11. 検証観点
