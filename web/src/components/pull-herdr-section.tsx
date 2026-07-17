@@ -251,7 +251,7 @@ function AgentRow({
           onClick={openInHerdr}
           // Dark gray chrome so the terminal control reads as a clickable action
           // (same zinc treatment as notification-center's Open in Herdr).
-          className="flex size-7 shrink-0 items-center justify-center rounded-md border border-zinc-400 bg-zinc-500 text-zinc-50 transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+          className="flex size-5 shrink-0 items-center justify-center rounded-md border border-zinc-400 bg-zinc-500 text-zinc-50 transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
         >
           {focus.isPending ? (
             <Loader2 className="size-2.5 animate-spin" />

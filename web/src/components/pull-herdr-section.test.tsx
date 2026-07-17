@@ -358,6 +358,20 @@ describe("PullHerdrSection", () => {
     expect(button.className).toContain("text-zinc-50");
   });
 
+  it("keeps the Open in Herdr control compact (size-5 frame, size-2.5 icon)", () => {
+    herdrSessions.value = running;
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+
+    const button = screen.getAllByRole("button", {
+      name: "Open in Herdr",
+    })[0] as HTMLButtonElement;
+    expect(button.className).toContain("size-5");
+    expect(button.className).not.toContain("size-7");
+    expect(button.className).not.toContain("size-6");
+    const icon = button.querySelector("svg");
+    expect(icon?.getAttribute("class") ?? "").toContain("size-2.5");
+  });
+
   it("keeps the terminal icon pending and reports failure through the existing error path", () => {
     herdrSessions.value = running;
     herdrSessions.focusPending = true;
