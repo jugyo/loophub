@@ -58,9 +58,7 @@ export function RepositorySearch({
           className="flex w-56 items-center gap-3 rounded-md border bg-background px-3 py-2.5 text-left text-sm text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <Search className="size-4" aria-hidden="true" />
-          <span className="truncate">
-            Search issues in {owner}/{repo}
-          </span>
+          <span className="truncate">Search issues</span>
         </button>
       </div>
 
