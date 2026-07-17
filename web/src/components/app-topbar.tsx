@@ -1,5 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { BarChart3, Command, Inbox, Loader2, Settings } from "lucide-react";
+import {
+  BarChart3,
+  Bot,
+  Command,
+  Inbox,
+  Loader2,
+  Settings,
+} from "lucide-react";
 import { useMemo } from "react";
 import { ComponentDebugToggle } from "@/components/component-debug-overlay";
 import { Logo } from "@/components/logo";
@@ -91,6 +98,9 @@ export function AppTopbar({
             <Inbox className="size-4" />
           </TopbarLink>
         ) : null}
+        <TopbarLink to="/agents" label="Agents">
+          <Bot className="size-4" />
+        </TopbarLink>
         <TopbarLink to="/stats" label="Stats">
           <BarChart3 className="size-4" />
         </TopbarLink>

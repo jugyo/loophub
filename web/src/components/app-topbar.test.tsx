@@ -104,6 +104,11 @@ function renderTopbar(
     path: "/settings",
     component: () => null,
   });
+  const agentsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/agents",
+    component: () => null,
+  });
   const statsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/stats",
@@ -122,6 +127,7 @@ function renderTopbar(
   const router = createRouter({
     routeTree: rootRoute.addChildren([
       indexRoute,
+      agentsRoute,
       settingsRoute,
       statsRoute,
       archivedRoute,
@@ -147,12 +153,22 @@ describe("AppTopbar", () => {
     await screen.findByRole("link", { name: /LoopHub/ });
 
     expect(
+      screen.getByRole("link", { name: "Agents" }).getAttribute("href"),
+    ).toBe("/agents");
+    expect(
       screen.getByRole("link", { name: "Stats" }).getAttribute("href"),
     ).toBe("/stats");
     expect(screen.queryByRole("link", { name: "Events" })).toBeNull();
     expect(
       screen.getByRole("link", { name: "Settings" }).getAttribute("href"),
     ).toBe("/settings");
+
+    const agentsLink = screen.getByRole("link", { name: "Agents" });
+    const statsLink = screen.getByRole("link", { name: "Stats" });
+    expect(
+      agentsLink.compareDocumentPosition(statsLink) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       screen.queryByRole("link", { name: "Archived repositories" }),
     ).toBeNull();
@@ -251,7 +267,10 @@ describe("AppTopbar", () => {
     await screen.findByRole("link", { name: /LoopHub/ });
 
     expect(screen.queryByText("Repositories")).toBeNull();
-    expect(screen.queryByText("Agents")).toBeNull();
+    // Global Agents is a topbar link to /agents; the old sidebar list is gone.
+    expect(
+      screen.getByRole("link", { name: "Agents" }).getAttribute("href"),
+    ).toBe("/agents");
     expect(screen.queryByRole("complementary")).toBeNull();
   });
 

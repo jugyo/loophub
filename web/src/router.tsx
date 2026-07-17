@@ -1,4 +1,5 @@
 import { createRouter } from "@tanstack/react-router";
+import { agentsRoute } from "./routes/agents";
 import { archivedRoute } from "./routes/archived";
 import { inboxRoute } from "./routes/inbox";
 import { indexRoute } from "./routes/index";
@@ -20,6 +21,7 @@ import { uiCatalogRoute } from "./routes/ui-catalog";
 // replace each screen in place without changing this tree.
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  agentsRoute,
   archivedRoute,
   inboxRoute,
   repoRoute,
