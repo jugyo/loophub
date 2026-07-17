@@ -7,7 +7,6 @@ import { Loader2, Terminal } from "lucide-react";
 import type { HerdrAgent, HerdrSessions } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { useToast } from "@/components/toast";
-import { disabledIconButtonStateClasses } from "@/components/ui/button";
 import { formatCost, formatTokenCount } from "@/lib/session-usage";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
@@ -250,15 +249,14 @@ function AgentRow({
           }
           disabled={!agent.focusable || focus.isPending}
           onClick={openInHerdr}
-          className={cn(
-            "flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            disabledIconButtonStateClasses,
-          )}
+          // Dark gray chrome so the terminal control reads as a clickable action
+          // (same zinc treatment as notification-center's Open in Herdr).
+          className="flex size-7 shrink-0 items-center justify-center rounded-md border border-zinc-400 bg-zinc-500 text-zinc-50 transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
         >
           {focus.isPending ? (
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loader2 className="size-2.5 animate-spin" />
           ) : (
-            <Terminal className="size-3.5" />
+            <Terminal className="size-2.5" />
           )}
         </button>
       </div>

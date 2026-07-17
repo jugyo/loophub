@@ -346,6 +346,18 @@ describe("PullHerdrSection", () => {
     expect(button.title).toBe("This agent has no focusable Herdr pane");
   });
 
+  it("gives the terminal icon a dark gray background so it reads as a control", () => {
+    herdrSessions.value = running;
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+
+    const button = screen.getAllByRole("button", {
+      name: "Open in Herdr",
+    })[0] as HTMLButtonElement;
+    expect(button.className).toContain("bg-zinc-500");
+    expect(button.className).toContain("dark:bg-zinc-900");
+    expect(button.className).toContain("text-zinc-50");
+  });
+
   it("keeps the terminal icon pending and reports failure through the existing error path", () => {
     herdrSessions.value = running;
     herdrSessions.focusPending = true;
