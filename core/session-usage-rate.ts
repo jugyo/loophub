@@ -79,3 +79,97 @@ export function calculateTokensPerSecond(
   if (sessionsWithRate === 0) return null;
   return tokensPerSecond;
 }
+
+export interface GrokTurnRateTurn {
+  totalTokens: number;
+  apiDurationMs: number | null;
+}
+
+export interface PlannedUsageSample {
+  totalTokens: number;
+  tokenDelta: number;
+  observedAt: string;
+}
+
+// Sum apiDurationMs for the portion of turns that pushed the cumulative total
+// past `previousTotal`. Partial credit when a single turn straddles the cursor
+// (same prompt_id updated with higher usage).
+export function newGrokWorkDurationMs(
+  turns: ReadonlyArray<GrokTurnRateTurn>,
+  previousTotal: number,
+): number | null {
+  let cum = 0;
+  let durationMs = 0;
+  let any = false;
+  for (const turn of turns) {
+    const turnTokens = Math.max(0, turn.totalTokens);
+    if (turnTokens <= 0) continue;
+    const prevCum = cum;
+    cum += turnTokens;
+    if (cum <= previousTotal) continue;
+    if (turn.apiDurationMs == null || turn.apiDurationMs <= 0) continue;
+    if (prevCum >= previousTotal) {
+      durationMs += turn.apiDurationMs;
+      any = true;
+      continue;
+    }
+    const newInTurn = cum - previousTotal;
+    durationMs += turn.apiDurationMs * (newInTurn / turnTokens);
+    any = true;
+  }
+  return any ? durationMs : null;
+}
+
+// Grok only reports billed usage on turn_completed. A single sample at the
+// jump would store token_delta=0 on the first observation (no previous sample),
+// so live TPS stays 0. Reconstruct the turn's average rate as a two-point
+// sample pair: place an anchor at (now - span) and a positive-delta sample at
+// now. When the turn is longer than the live 60s window, cap span and scale
+// token_delta so calculateTokensPerSecond ≈ newTokens / (apiDurationMs/1000).
+export function planGrokTurnRateSamples(input: {
+  previousTotal: number;
+  newTotal: number;
+  turns: ReadonlyArray<GrokTurnRateTurn>;
+  now?: Date;
+  /** Keep the pair inside liveTokensPerSecond's default 60s window. */
+  maxSpanSeconds?: number;
+}): PlannedUsageSample[] | null {
+  const previousTotal = Math.max(0, input.previousTotal);
+  const newTotal = Math.max(0, input.newTotal);
+  const delta = newTotal - previousTotal;
+  if (!(delta > 0)) return null;
+
+  const now = input.now ?? new Date();
+  const nowMs = now.getTime();
+  if (!Number.isFinite(nowMs)) return null;
+
+  const maxSpanSeconds = input.maxSpanSeconds ?? 55;
+  const durationMs = newGrokWorkDurationMs(input.turns, previousTotal);
+  const durationSec =
+    durationMs != null && durationMs > 0 ? durationMs / 1000 : null;
+  // Fallback when apiDurationMs is missing: 1s span with the full delta so the
+  // first turn still produces a two-sample rate instead of a lone delta-0 row.
+  const spanSec = Math.min(
+    Math.max(durationSec ?? 1, 1e-3),
+    Math.max(maxSpanSeconds, 1e-3),
+  );
+  const scaledDelta =
+    durationSec != null && durationSec > 0
+      ? delta * (spanSec / durationSec)
+      : delta;
+
+  const anchorAt = new Date(nowMs - spanSec * 1000).toISOString();
+  const endAt = now.toISOString();
+  return [
+    {
+      totalTokens: previousTotal,
+      tokenDelta: 0,
+      observedAt: anchorAt,
+    },
+    {
+      totalTokens: newTotal,
+      tokenDelta: scaledDelta,
+      observedAt: endAt,
+    },
+  ];
+}

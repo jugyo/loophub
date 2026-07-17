@@ -118,6 +118,8 @@ export function recordSessionUsageSample(input: {
   sessionId: string;
   totalTokens: number;
   observedAt?: string;
+  /** Override auto delta (used by Grok turn-rate reconstruction). */
+  tokenDelta?: number;
 }): void {
   const observedAt = input.observedAt ?? now();
   const previous = db
@@ -131,7 +133,12 @@ export function recordSessionUsageSample(input: {
     .get(input.sessionId) as { total_tokens: number } | null;
   const rawDelta =
     previous == null ? 0 : input.totalTokens - previous.total_tokens;
-  const tokenDelta = rawDelta > 0 ? rawDelta : 0;
+  const tokenDelta =
+    input.tokenDelta != null
+      ? Math.max(0, input.tokenDelta)
+      : rawDelta > 0
+        ? rawDelta
+        : 0;
   db.run(
     `INSERT INTO session_usage_samples
        (session_id, total_tokens, token_delta, observed_at)

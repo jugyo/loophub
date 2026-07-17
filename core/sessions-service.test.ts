@@ -1167,6 +1167,7 @@ function grokUpdatesJsonl(
     outputTokens: number;
     cachedReadTokens?: number;
     reasoningTokens?: number;
+    apiDurationMs?: number;
   }[],
 ): string {
   return prompts
@@ -1183,6 +1184,9 @@ function grokUpdatesJsonl(
               outputTokens: p.outputTokens,
               cachedReadTokens: p.cachedReadTokens ?? 0,
               reasoningTokens: p.reasoningTokens ?? 0,
+              ...(p.apiDurationMs != null
+                ? { apiDurationMs: p.apiDurationMs }
+                : {}),
               modelUsage: {
                 [p.model]: {
                   inputTokens: p.inputTokens,
@@ -1325,6 +1329,94 @@ test("sessions.usageSync imports Grok updates.jsonl for the linked PR worktree c
     output_tokens: 5,
     cost_usd: null,
   });
+
+  rmSync(grokSessionsDir, { recursive: true, force: true });
+});
+
+test("sessions.usageSync reconstructs Grok turn rate samples for live TPS", async () => {
+  const issue = svc.issues.create("me/proj", { title: "grok tps" });
+  const sessionId = "99999999-0000-0000-0000-0000000000g3";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    runtime: "grok",
+    kind: "dev",
+  });
+  const opened = await svc.dev.openPr(
+    "me/proj",
+    { issue: issue.number, base: "main" },
+    sessionId,
+  );
+
+  const worktree = join(HOME, "worktrees", "me", "proj", `pr-${opened.number}`);
+  const grokSessionsDir = mkdtempSync(join(tmpdir(), "lh-grok-tps-"));
+  const cwdDir = join(grokSessionsDir, encodeURIComponent(worktree));
+  mkdirSync(join(cwdDir, "grok-sess"), { recursive: true });
+
+  // 1500 mapped tokens (no cache/reasoning) over 10s → 150 TPS after first turn.
+  writeFileSync(
+    join(cwdDir, "grok-sess", "updates.jsonl"),
+    grokUpdatesJsonl([
+      {
+        promptId: "p1",
+        model: "grok-4.5",
+        inputTokens: 1000,
+        outputTokens: 500,
+        apiDurationMs: 10_000,
+      },
+    ]),
+  );
+
+  const synced = svc.sessions.usageSync({ sessionId, grokSessionsDir });
+  expect(synced).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
+
+  const samples = D.db
+    .query(
+      `SELECT total_tokens, token_delta, observed_at
+       FROM session_usage_samples
+       WHERE session_id = ?
+       ORDER BY observed_at, id`,
+    )
+    .all(sessionId) as {
+    total_tokens: number;
+    token_delta: number;
+    observed_at: string;
+  }[];
+  expect(samples).toHaveLength(2);
+  expect(samples[0]).toMatchObject({ total_tokens: 0, token_delta: 0 });
+  expect(samples[1]).toMatchObject({ total_tokens: 1500, token_delta: 1500 });
+  expect(samples[1].token_delta).toBeGreaterThan(0);
+
+  // Reconstruct rate from this session's samples only (costSummary aggregates every
+  // in-progress dev session in the shared test DB).
+  const rateNow = new Date(samples[1].observed_at);
+  const { calculateTokensPerSecond } = await import("./session-usage-rate.ts");
+  expect(
+    calculateTokensPerSecond(
+      samples.map((sample) => ({
+        session_id: sessionId,
+        total_tokens: sample.total_tokens,
+        token_delta: sample.token_delta,
+        observed_at: sample.observed_at,
+      })),
+      { now: rateNow },
+    ),
+  ).toBe(150);
+  // Status-bar path must also see a non-null live rate while this PR is in progress.
+  const summary = svc.sessions.costSummary(rateNow)[0];
+  expect(summary.tokens_per_second).not.toBeNull();
+  expect(summary.tokens_per_second!).toBeGreaterThan(0);
+
+  // Cost columns stay single-counted (one upsert path only).
+  const usage = svc.sessions.get(sessionId).usage ?? [];
+  expect(usage).toHaveLength(1);
+  expect(usage[0]).toMatchObject({
+    model: "grok-4.5",
+    input_tokens: 1000,
+    output_tokens: 500,
+  });
+  expect(usage[0].cost_usd).toBeCloseTo((1000 * 2 + 500 * 6) / 1_000_000);
 
   rmSync(grokSessionsDir, { recursive: true, force: true });
 });

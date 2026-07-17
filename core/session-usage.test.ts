@@ -5,10 +5,15 @@ import {
   parseClaudeSubagentJsonl,
   parseClaudeUsageJsonl,
   parseCodexRolloutJsonl,
+  parseGrokTurnUsages,
   parseGrokUpdatesJsonl,
   priceForModel,
 } from "./session-usage.ts";
-import { calculateTokensPerSecond } from "./session-usage-rate.ts";
+import {
+  calculateTokensPerSecond,
+  newGrokWorkDurationMs,
+  planGrokTurnRateSamples,
+} from "./session-usage-rate.ts";
 
 test("parseClaudeUsageJsonl extracts assistant usage and dedupes message ids", () => {
   const text = [
@@ -844,6 +849,7 @@ test("parseGrokUpdatesJsonl sums turn_completed modelUsage and maps cache/reason
             outputTokens: 40,
             cachedReadTokens: 200,
             reasoningTokens: 10,
+            apiDurationMs: 5000,
             modelUsage: {
               "grok-4.5": {
                 inputTokens: 1000,
@@ -868,6 +874,7 @@ test("parseGrokUpdatesJsonl sums turn_completed modelUsage and maps cache/reason
             outputTokens: 50,
             cachedReadTokens: 300,
             reasoningTokens: 15,
+            apiDurationMs: 12000,
             modelUsage: {
               "grok-4.5": {
                 inputTokens: 1200,
@@ -891,6 +898,7 @@ test("parseGrokUpdatesJsonl sums turn_completed modelUsage and maps cache/reason
             outputTokens: 5,
             cachedReadTokens: 0,
             reasoningTokens: 0,
+            apiDurationMs: 2000,
             modelUsage: {
               "grok-code-fast-1": {
                 inputTokens: 100,
@@ -931,6 +939,111 @@ test("parseGrokUpdatesJsonl sums turn_completed modelUsage and maps cache/reason
     ]),
   );
   expect(entries).toHaveLength(2);
+
+  const turns = parseGrokTurnUsages(text);
+  expect(turns).toHaveLength(2);
+  expect(turns[0]).toMatchObject({
+    promptId: "p1",
+    // latest p1 wins
+    totalTokens: 900 + 300 + 65,
+    apiDurationMs: 12000,
+  });
+  expect(turns[1]).toMatchObject({
+    promptId: "p2",
+    totalTokens: 105,
+    apiDurationMs: 2000,
+  });
+});
+
+test("planGrokTurnRateSamples reconstructs turn tokens/apiDurationMs as a live TPS pair", () => {
+  const now = new Date("2026-07-10T00:01:00Z");
+  // First turn: 1500 tokens over 10s → 150 TPS.
+  const plan = planGrokTurnRateSamples({
+    previousTotal: 0,
+    newTotal: 1500,
+    turns: [{ totalTokens: 1500, apiDurationMs: 10_000 }],
+    now,
+  });
+  expect(plan).toEqual([
+    {
+      totalTokens: 0,
+      tokenDelta: 0,
+      observedAt: "2026-07-10T00:00:50.000Z",
+    },
+    {
+      totalTokens: 1500,
+      tokenDelta: 1500,
+      observedAt: "2026-07-10T00:01:00.000Z",
+    },
+  ]);
+  expect(
+    calculateTokensPerSecond(
+      plan!.map((sample) => ({
+        session_id: "s1",
+        total_tokens: sample.totalTokens,
+        token_delta: sample.tokenDelta,
+        observed_at: sample.observedAt,
+      })),
+      { now },
+    ),
+  ).toBe(150);
+
+  // Long turn: span capped to 55s, delta scaled so rate ≈ tokens/duration.
+  const long = planGrokTurnRateSamples({
+    previousTotal: 0,
+    newTotal: 200_000,
+    turns: [{ totalTokens: 200_000, apiDurationMs: 200_000 }],
+    now,
+    maxSpanSeconds: 55,
+  });
+  expect(long).toHaveLength(2);
+  expect(long![1].tokenDelta).toBeCloseTo(200_000 * (55 / 200));
+  expect(
+    calculateTokensPerSecond(
+      long!.map((sample) => ({
+        session_id: "s1",
+        total_tokens: sample.totalTokens,
+        token_delta: sample.tokenDelta,
+        observed_at: sample.observedAt,
+      })),
+      { now },
+    ),
+  ).toBeCloseTo(1000);
+
+  // Incremental turn: only the new work's duration counts.
+  expect(
+    newGrokWorkDurationMs(
+      [
+        { totalTokens: 1000, apiDurationMs: 10_000 },
+        { totalTokens: 500, apiDurationMs: 5_000 },
+      ],
+      1000,
+    ),
+  ).toBe(5_000);
+  expect(
+    planGrokTurnRateSamples({
+      previousTotal: 1000,
+      newTotal: 1500,
+      turns: [
+        { totalTokens: 1000, apiDurationMs: 10_000 },
+        { totalTokens: 500, apiDurationMs: 5_000 },
+      ],
+      now,
+    }),
+  ).toMatchObject([
+    { totalTokens: 1000, tokenDelta: 0 },
+    { totalTokens: 1500, tokenDelta: 500 },
+  ]);
+
+  // No advance → no plan (caller records a normal heartbeat sample).
+  expect(
+    planGrokTurnRateSamples({
+      previousTotal: 100,
+      newTotal: 100,
+      turns: [{ totalTokens: 100, apiDurationMs: 1000 }],
+      now,
+    }),
+  ).toBeNull();
 });
 
 test("priceForModel prices known Grok models and leaves unknown Grok models null", () => {

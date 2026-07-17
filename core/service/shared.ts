@@ -119,6 +119,7 @@ import type {
   ClaudeSubagentTranscript,
   ClaudeSubagentTranscriptCandidate,
   CodexRolloutScan,
+  GrokTurnUsage,
   ModelUsage,
   UsageEntry,
 } from "../session-usage.ts";
@@ -213,6 +214,7 @@ export type {
   GithubDeps,
   GithubIssueDeps,
   GithubPrStatusDeps,
+  GrokTurnUsage,
   HerdrAgent,
   HerdrCmdRunner,
   HerdrIssueWorkspace,

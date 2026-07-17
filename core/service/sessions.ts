@@ -1,10 +1,14 @@
 import { CODING_AGENTS, type CodingAgent } from "../config.ts";
 import type { AgentCostSummaryWire } from "../serialize.ts";
 import { tokensPerFiveMinuteHistory } from "../session-rate-history.ts";
-import { calculateTokensPerSecond } from "../session-usage-rate.ts";
+import {
+  calculateTokensPerSecond,
+  planGrokTurnRateSamples,
+} from "../session-usage-rate.ts";
 import type {
   ClaudeSubagentTranscript,
   ClaudeSubagentTranscriptCandidate,
+  GrokTurnUsage,
   ModelUsage,
   UsageEntry,
 } from "./shared.ts";
@@ -188,6 +192,41 @@ function recordUsageSample(sessionId: string): void {
   const totalTokens = S.totalTokensForSession(sessionId);
   if (totalTokens == null) return;
   S.recordSessionUsageSample({ sessionId, totalTokens });
+  S.pruneSessionUsageSamples(secondsAgo(new Date(), 600));
+}
+
+// Grok has no mid-turn billed usage events. After session_usage is rewritten,
+// reconstruct live TPS from turn tokens × apiDurationMs as a sample pair so
+// calculateTokensPerSecond sees a positive delta over a positive span (including
+// the first turn, where a lone sample would store token_delta=0). Does not touch
+// session_usage cost columns.
+function recordGrokUsageRateSamples(
+  sessionId: string,
+  previousTotal: number | null,
+  turns: GrokTurnUsage[],
+): void {
+  const newTotal = S.totalTokensForSession(sessionId);
+  if (newTotal == null) return;
+  const plan = planGrokTurnRateSamples({
+    previousTotal: previousTotal ?? 0,
+    newTotal,
+    turns: turns.map((turn) => ({
+      totalTokens: turn.totalTokens,
+      apiDurationMs: turn.apiDurationMs,
+    })),
+  });
+  if (!plan) {
+    recordUsageSample(sessionId);
+    return;
+  }
+  for (const sample of plan) {
+    S.recordSessionUsageSample({
+      sessionId,
+      totalTokens: sample.totalTokens,
+      observedAt: sample.observedAt,
+      tokenDelta: sample.tokenDelta,
+    });
+  }
   S.pruneSessionUsageSamples(secondsAgo(new Date(), 600));
 }
 
@@ -676,12 +715,16 @@ export const sessions = {
 
         const transcriptPath = sessions.map((x) => x.path).join("\n");
         const fresh = sessions.flatMap((x) => x.entries);
+        const turns = sessions.flatMap((x) => x.turns);
         const aggregated = aggregateUsage(fresh);
+        const previousTotal = S.totalTokensForSession(row.id);
         const topLevelUnchanged =
           !input.full &&
           modelUsageEqualsStored(aggregated, S.listSessionUsage(row.id));
         if (topLevelUnchanged) {
           clearOtherGrokUsageForPull(target.pullIssueId, target.ownerSessionId);
+          // Unchanged totals: keep a heartbeat sample (delta 0). Rate pairs are
+          // only written when turn usage advances.
           recordUsageSample(row.id);
           return {
             session_id: row.id,
@@ -704,7 +747,7 @@ export const sessions = {
             calculateCostUsd(usage.model, usage),
           );
         }
-        recordUsageSample(row.id);
+        recordGrokUsageRateSamples(row.id, previousTotal, turns);
 
         return {
           session_id: row.id,
