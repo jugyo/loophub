@@ -382,6 +382,7 @@ export const methods: Record<string, MethodDef> = {
             "scheduled-task-create",
             "resume",
             "github-pr-export",
+            "pr-crit",
             "workflow-run",
           ],
         },

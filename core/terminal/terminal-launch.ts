@@ -102,7 +102,8 @@ export function commandForHerdrLaunch(input: {
     | "issue-create"
     | "scheduled-task-create"
     | "resume"
-    | "github-pr-export";
+    | "github-pr-export"
+    | "pr-crit";
   prNumber?: number;
   session?: string;
   cwd?: string;
@@ -168,6 +169,11 @@ export function commandForHerdrLaunch(input: {
       ? `${shellArg("--permission-mode")} ${shellArg("auto")} `
       : "";
     return `claude ${claudeArgs}${command}`;
+  }
+  // PR detail Crit review button: run the CLI entrypoint in a herdr pane. Worktree / range
+  // resolution and the optional crit binary live in `lh pr crit` itself — no defensive checks here.
+  if (input.workflow === "pr-crit" && input.prNumber) {
+    return `lh pr crit ${input.prNumber} --repo ${shellArg(input.repo)}`;
   }
   if (input.workflow === "resume" && input.session) {
     const resume = `claude --resume ${shellArg(input.session)}`;

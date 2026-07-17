@@ -1967,6 +1967,20 @@ function linkedGithubPull(pushedSha: string | null) {
   } satisfies NonNullable<PullRequest["github_pull"]>;
 }
 
+describe("PullDetail — Crit review action (#1578)", () => {
+  it("offers Crit review and launches pr-crit in Herdr", async () => {
+    renderDetailWithPull({ merge_mode: "merge" });
+    const button = await screen.findByRole("button", { name: /Crit review/i });
+    fireEvent.click(button);
+    expect(launchTerminal).toHaveBeenCalledTimes(1);
+    const opts = launchTerminal.mock.calls[0][0];
+    expect(opts.repo).toBe("me/proj");
+    expect(opts.workflow).toBe("pr-crit");
+    expect(opts.prNumber).toBe(30);
+    expect(opts.label).toBe("crit PR #30");
+  });
+});
+
 describe("PullDetail — GitHub export action (#406)", () => {
   it("offers Merge (not Create PR) in 'merge' mode", async () => {
     renderDetailWithPull({ merge_mode: "merge" });

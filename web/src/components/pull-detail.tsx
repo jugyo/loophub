@@ -530,6 +530,7 @@ function PullHeader({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
+        <CritReviewAction owner={owner} repo={repo} pull={pull} />
         {!pull.merged ? (
           <Button
             variant="secondary"
@@ -623,6 +624,36 @@ function WorktreeSection({ value }: { value: string | null }) {
         </p>
       )}
     </section>
+  );
+}
+
+// Crit review (#1578): fire-and-forget herdr pane running `lh pr crit <n>`. Worktree absence and
+// a missing crit binary surface as visible errors inside that pane — no defensive pre-checks here.
+function CritReviewAction({
+  owner,
+  repo,
+  pull,
+}: {
+  owner: string;
+  repo: string;
+  pull: PullRequest;
+}) {
+  const { launchTerminal } = useTerminalLauncher();
+  return (
+    <Button
+      variant="secondary"
+      title="Open crit against this PR's worktree in a new Herdr pane"
+      onClick={() =>
+        launchTerminal({
+          repo: `${owner}/${repo}`,
+          label: `crit PR #${pull.number}`,
+          workflow: "pr-crit",
+          prNumber: pull.number,
+        })
+      }
+    >
+      Crit review
+    </Button>
   );
 }
 

@@ -546,6 +546,7 @@ export function launchTerminalWorkflow(input: {
     | "scheduled-task-create"
     | "resume"
     | "github-pr-export"
+    | "pr-crit"
     | "workflow-run";
   issueNumber?: number;
   prNumber?: number;

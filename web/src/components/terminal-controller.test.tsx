@@ -52,7 +52,8 @@ function LaunchButton({
     | "issue-create"
     | "scheduled-task-create"
     | "resume"
-    | "github-pr-export";
+    | "github-pr-export"
+    | "pr-crit";
   agent?: "claude-code" | "codex" | "grok";
   model?: string;
   effort?: string;
