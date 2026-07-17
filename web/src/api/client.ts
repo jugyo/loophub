@@ -29,6 +29,7 @@ import type {
   PullRequest,
   PullReview,
   Repo,
+  RepoAgentConfig,
   RepoMergeMode,
   ScheduledTask,
   ScheduledTaskRun,
@@ -243,6 +244,34 @@ export function setRepoMergeMode(
   return rpc<Repo>("repos/setMergeMode", {
     name: full(owner, repo),
     mode,
+    session_id: sessionId,
+  });
+}
+
+// #1532: resolved Coding agent view (raw override + effective config) for the settings UI.
+export function getRepoAgentConfig(owner: string, repo: string) {
+  return rpc<RepoAgentConfig>("repos/agentConfig", { name: full(owner, repo) });
+}
+
+// #1532: set the repo's Coding agent override — the toggle plus runtime/model/effort. When
+// `override` is false the run falls back to the application defaults.
+export function setRepoAgentConfig(
+  owner: string,
+  repo: string,
+  input: {
+    override: boolean;
+    runtime?: CodingAgent | null;
+    model?: string | null;
+    effort?: string | null;
+  },
+  sessionId: string = getSessionId(),
+) {
+  return rpc<RepoAgentConfig>("repos/setAgentConfig", {
+    name: full(owner, repo),
+    override: input.override,
+    runtime: input.runtime ?? undefined,
+    model: input.model ?? undefined,
+    effort: input.effort ?? undefined,
     session_id: sessionId,
   });
 }

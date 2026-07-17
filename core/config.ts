@@ -2,6 +2,11 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  type EffectiveAgentConfig,
+  effectiveRepoAgentConfig,
+  type RepoAgentSetting,
+} from "./repo-agent-config.ts";
+import {
   CODING_AGENTS,
   type CodingAgent,
   normalizeCodingAgent,
@@ -152,6 +157,19 @@ export function agentEffort(agent: CodingAgent): string {
     if (configured) return configured;
   } catch {}
   return DEFAULT_AGENT_EFFORT[agent];
+}
+
+// Resolve a repo's raw Coding agent override (#1532) against the live application defaults
+// (codingAgent() / agentModel() / agentEffort()). The binding lives here — where the app defaults
+// live — so callers pass only the repo's stored setting and the pure resolver stays config-free.
+export function resolveEffectiveAgentConfig(
+  setting: RepoAgentSetting,
+): EffectiveAgentConfig {
+  return effectiveRepoAgentConfig(setting, {
+    runtime: codingAgent(),
+    model: agentModel,
+    effort: agentEffort,
+  });
 }
 
 // Per-task over-budget stop threshold for `lh build` implementation agents (#1027). A malformed

@@ -976,6 +976,17 @@ tryExec("ALTER TABLE repos ADD COLUMN archived_at TEXT");
 // mode falls back to a per-repo default (github_pr when the repo has a GitHub remote, else merge —
 // see core/merge-mode.ts). The two modes are mutually exclusive in the UI.
 tryExec("ALTER TABLE repos ADD COLUMN merge_mode TEXT");
+// repos.agent_* (#1532): the per-repo Coding agent override. agent_override is the on/off toggle;
+// while on, agent_runtime / agent_model / agent_effort pin the runtime / model / effort a workflow
+// run launches with, otherwise the effective config falls back to the application config.json
+// defaults (codingAgent / agentModel / agentEffort — see core/repo-agent-config.ts). The values are
+// kept even while the toggle is off so flipping it back on restores the prior choices.
+tryExec(
+  "ALTER TABLE repos ADD COLUMN agent_override INTEGER NOT NULL DEFAULT 0",
+);
+tryExec("ALTER TABLE repos ADD COLUMN agent_runtime TEXT");
+tryExec("ALTER TABLE repos ADD COLUMN agent_model TEXT");
+tryExec("ALTER TABLE repos ADD COLUMN agent_effort TEXT");
 // The issue assignee (`@lh-build`, #186) and the denormalized pulls.session_id (#186) it migrated into
 // are both retired; their one-time migration into session_links and final column drops are
 // consolidated in the guarded block at the end of this migration section (search "#316").

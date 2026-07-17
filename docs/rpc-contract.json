@@ -285,6 +285,73 @@
       }
     },
     {
+      "name": "repos/setAgentConfig",
+      "description": "Set the repo's Coding agent override: toggle plus runtime/model/effort, or falls back to app defaults when off (#1532).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "override": {
+            "type": "boolean"
+          },
+          "runtime": {
+            "enum": [
+              "claude-code",
+              "codex",
+              "grok"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "override"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "repos/agentConfig",
+      "description": "Resolved Coding agent view: raw per-repo override (toggle + runtime/model/effort) and the effective config a run launches with (#1532).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "settings/get",
       "description": "Instance-level config.json settings (per-agent autoModeOnBuild/model/effort, codingAgent, devCostLimitUsd) (#474, #499, #516, #593, #594, #682, #1027).",
       "params": {
@@ -1206,6 +1273,31 @@
       }
     },
     {
+      "name": "search/query",
+      "description": "Search issues and pull requests in a repository.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "array"
+      }
+    },
+    {
       "name": "workspaces/list",
       "description": "List registered workspaces in a repository.",
       "params": {
@@ -1223,6 +1315,26 @@
       },
       "result": {
         "type": "array"
+      }
+    },
+    {
+      "name": "workspaces/resolve",
+      "description": "Resolve an active workspace name to its repository.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "branch"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
       }
     },
     {
@@ -2552,6 +2664,15 @@
             "items": {
               "type": "string"
             }
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "runId": {
+            "type": "integer"
           },
           "order": {
             "enum": [

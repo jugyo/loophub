@@ -219,3 +219,92 @@ test("rename works on an archived repo (#485)", async () => {
   expect(renamed.full_name).toBe("me/rn-arch2");
   expect(renamed.archived).toBe(true);
 });
+
+// #1532: the per-repo Coding agent override end-to-end (persistence + effective resolution). No
+// config.json is written in this HOME, so the application defaults are the built-in ones
+// (claude-code / opus / medium).
+test("agentConfig falls back to the application defaults while the override is off (#1532)", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/agent-off" });
+
+  const fresh = svc.repos.agentConfig("me/agent-off");
+  expect(fresh.setting).toEqual({
+    override: false,
+    runtime: null,
+    model: null,
+    effort: null,
+  });
+  expect(fresh.effective).toEqual({
+    runtime: "claude-code",
+    model: "opus",
+    effort: "medium",
+  });
+
+  // Values stored while the toggle is off persist but stay ineffective.
+  const stored = svc.repos.setAgentConfig("me/agent-off", {
+    override: false,
+    runtime: "codex",
+    model: "gpt-5.6-sol",
+    effort: "low",
+  });
+  expect(stored.setting).toEqual({
+    override: false,
+    runtime: "codex",
+    model: "gpt-5.6-sol",
+    effort: "low",
+  });
+  expect(stored.effective).toEqual({
+    runtime: "claude-code",
+    model: "opus",
+    effort: "medium",
+  });
+});
+
+test("agentConfig resolves the repo override while it is on (#1532)", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/agent-on" });
+
+  const pinned = svc.repos.setAgentConfig("me/agent-on", {
+    override: true,
+    runtime: "codex",
+    model: "gpt-5.6-sol",
+    effort: "low",
+  });
+  expect(pinned.effective).toEqual({
+    runtime: "codex",
+    model: "gpt-5.6-sol",
+    effort: "low",
+  });
+  // The resolved view survives a re-read (it is persisted, not per-call state).
+  expect(svc.repos.agentConfig("me/agent-on").effective).toEqual(
+    pinned.effective,
+  );
+
+  // Clearing model/effort keeps the pinned runtime and falls back to that runtime's defaults.
+  const runtimeOnly = svc.repos.setAgentConfig("me/agent-on", {
+    override: true,
+    runtime: "codex",
+    model: "",
+    effort: null,
+  });
+  expect(runtimeOnly.setting.model).toBeNull();
+  expect(runtimeOnly.effective).toEqual({
+    runtime: "codex",
+    model: "gpt-5.5",
+    effort: "medium",
+  });
+});
+
+test("setAgentConfig rejects an unknown runtime and a non-boolean override (#1532)", async () => {
+  await svc.repos.create({ path: initGitRepo(), name: "me/agent-bad" });
+
+  expect(() =>
+    svc.repos.setAgentConfig("me/agent-bad", {
+      override: true,
+      runtime: "gpt",
+    }),
+  ).toThrow(/runtime must be one of/);
+  expect(() =>
+    svc.repos.setAgentConfig("me/agent-bad", {
+      override: "yes" as unknown as boolean,
+    }),
+  ).toThrow(/override must be a boolean/);
+});

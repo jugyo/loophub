@@ -3,7 +3,12 @@
 // shaping is reusable and side-effect free.
 
 import { statSync } from "node:fs";
-import { agentEffort, agentModel, worktreeRoot } from "./config.ts";
+import {
+  agentEffort,
+  agentModel,
+  resolveEffectiveAgentConfig,
+  worktreeRoot,
+} from "./config.ts";
 import {
   commitLog,
   commitsAhead,
@@ -22,6 +27,8 @@ import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import { resolvePullBaseSha } from "./pull-base.ts";
 import { pullWorktreeDirty } from "./pull-worktree.ts";
+import type { EffectiveAgentConfig } from "./repo-agent-config.ts";
+import { normalizeRepoAgentRuntime } from "./repo-agent-config.ts";
 import {
   resolveRuntimeResume,
   resolveWorktreeIdentity,
@@ -72,6 +79,24 @@ export interface RepoMergeModeWire {
   effective: MergeMode;
 }
 
+// #1532: resolved per-repo Coding agent override for the repo settings UI — the raw stored setting
+// (toggle + runtime/model/effort as entered) and the effective config the run launches with (repo
+// override when on, else the application defaults). Same "raw stored vs resolved effective" shape as
+// RepoMergeModeWire.
+export interface RepoAgentConfigWire {
+  setting: {
+    override: boolean;
+    runtime: CodingAgent | null;
+    model: string | null;
+    effort: string | null;
+  };
+  effective: {
+    runtime: CodingAgent;
+    model: string;
+    effort: string;
+  };
+}
+
 export interface WorkspaceWire {
   branch: string;
   created_at: string;
@@ -111,6 +136,30 @@ export function repoJSON(r: S.Repo): RepoWire {
     favorited_at: r.favorited_at ?? null,
     merge_mode: (r.merge_mode as MergeMode | null) ?? null,
     herdr_session_name: herdrSessionName(r),
+  };
+}
+
+// #1532: the effective coding-agent config a workflow run on this repo launches with — the repo
+// override when its toggle is on, else the application config.json defaults. Shared by the repo
+// settings view (repoAgentConfigJSON) and the workflow-run launch path (runModel fallback).
+export function effectiveRepoAgentConfigFor(r: S.Repo): EffectiveAgentConfig {
+  return resolveEffectiveAgentConfig({
+    override: r.agent_override === 1,
+    runtime: normalizeRepoAgentRuntime(r.agent_runtime),
+    model: r.agent_model ?? null,
+    effort: r.agent_effort ?? null,
+  });
+}
+
+export function repoAgentConfigJSON(r: S.Repo): RepoAgentConfigWire {
+  return {
+    setting: {
+      override: r.agent_override === 1,
+      runtime: normalizeRepoAgentRuntime(r.agent_runtime),
+      model: r.agent_model ?? null,
+      effort: r.agent_effort ?? null,
+    },
+    effective: effectiveRepoAgentConfigFor(r),
   };
 }
 

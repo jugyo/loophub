@@ -1,10 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import {
-  agentModel,
-  type CodingAgent,
-  codingAgent,
-} from "../../core/config.ts";
+import { agentModel, type CodingAgent } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { isClaudeSessionId } from "../../core/resume.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
@@ -326,11 +322,6 @@ function explicitModelFlag(): string | undefined {
   return model || undefined;
 }
 
-// The parent's launch model: an explicit --model override, else the runtime's config default (#594).
-function modelFlag(runtime: CodingAgent): string {
-  return explicitModelFlag() ?? agentModel(runtime);
-}
-
 function positiveInt(value: string | undefined, name: string): number {
   if (!value || !/^[0-9]+$/.test(value) || Number(value) <= 0) {
     fail(`${name} must be a positive integer`);
@@ -410,19 +401,28 @@ async function startWorkflow(): Promise<void> {
   }
   const repo = targetRepo ?? (await resolveRepo());
   const workflowId = workflowIdFlag();
+  if (flags.json === true && flags["no-launch"] !== true) {
+    fail("--json can only be used with --no-launch for workflow start");
+  }
+  const s = await svc();
+  // The repo's effective Coding agent config (#1532) supplies the defaults an explicit
+  // --claude-code / --codex / --grok / --model flag still overrides: the run's runtime and — when
+  // that runtime matches the effective config's — its model. A flag that selects a different runtime
+  // than the override falls back to that runtime's application-default model (agentModel).
+  const agentCfg = await runOp(() => s.repos.agentConfig(repo));
   const runtime = resolveDevRuntime({
     claudeCode: flags["claude-code"] === true,
     codex: flags.codex === true,
     grok: flags.grok === true,
-    defaultRuntime: codingAgent(),
+    defaultRuntime: agentCfg.effective.runtime,
   });
   const sessionId = requestedSessionId();
-  const model = modelFlag(runtime);
-  if (flags.json === true && flags["no-launch"] !== true) {
-    fail("--json can only be used with --no-launch for workflow start");
-  }
+  const model =
+    explicitModelFlag() ??
+    (runtime === agentCfg.effective.runtime
+      ? agentCfg.effective.model
+      : agentModel(runtime));
   if (flags["no-launch"] !== true) preflightParentLaunch(runtime);
-  const s = await svc();
   const result = await runOp(() =>
     s.workflowRuns.start(
       repo,

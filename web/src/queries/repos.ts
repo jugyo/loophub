@@ -5,14 +5,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createRepo,
   getRepo,
+  getRepoAgentConfig,
   getRepoMergeMode,
   listRepos,
   renameRepo,
+  setRepoAgentConfig,
   setRepoArchived,
   setRepoDefaultBranch,
   setRepoFavorite,
   setRepoMergeMode,
 } from "@/api/client";
+import type { CodingAgent } from "@/api/types";
 import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
@@ -141,6 +144,36 @@ export function useSetRepoMergeMode(owner: string, repo: string) {
       qc.invalidateQueries({ queryKey: queryKeys.repo(full(owner, repo)) });
       qc.invalidateQueries({ queryKey: ["pull"] });
       qc.invalidateQueries({ queryKey: queryKeys.pulls(full(owner, repo)) });
+    },
+  });
+}
+
+/** Resolved Coding agent override view for the repo settings toggle (#1532). */
+export function useRepoAgentConfig(owner: string, repo: string) {
+  return useQuery({
+    queryKey: [...queryKeys.repo(full(owner, repo)), "agent-config"],
+    queryFn: () => getRepoAgentConfig(owner, repo),
+  });
+}
+
+/**
+ * Set the repo's Coding agent override, then invalidate the resolved view. Only workflow starts read
+ * the effective config (at launch), so no PR/issue query carries it — the resolved view is the only
+ * thing to refresh.
+ */
+export function useSetRepoAgentConfig(owner: string, repo: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      override: boolean;
+      runtime?: CodingAgent | null;
+      model?: string | null;
+      effort?: string | null;
+    }) => setRepoAgentConfig(owner, repo, input),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: [...queryKeys.repo(full(owner, repo)), "agent-config"],
+      });
     },
   });
 }

@@ -32,6 +32,7 @@ import type {
   RelatedSessionsUsageByKindWire,
   RelatedSessionsUsageWire,
   RelatedSessionWire,
+  RepoAgentConfigWire,
   RepoMergeModeWire,
   RepoWire,
   ReviewCommentWire,
@@ -130,6 +131,9 @@ export type { MergeMode };
 
 /** Resolved merge-mode view for the repo settings UI (`repos/mergeMode`, #406). */
 export type RepoMergeMode = RepoMergeModeWire;
+
+/** Resolved Coding agent override view for the repo settings UI (`repos/agentConfig`, #1532). */
+export type RepoAgentConfig = RepoAgentConfigWire;
 
 export type TerminalLaunchBackend = "builtin" | "herdr";
 

@@ -24,10 +24,11 @@ import {
 } from "../dev-lock.ts";
 import { git } from "../git.ts";
 import { resolveWorktreeIdentity } from "../resume.ts";
-import type {
-  WorkflowRunHistoryEventWire,
-  WorkflowRunReviewSummaryWire,
-  WorkflowRunStateWire,
+import {
+  effectiveRepoAgentConfigFor,
+  type WorkflowRunHistoryEventWire,
+  type WorkflowRunReviewSummaryWire,
+  type WorkflowRunStateWire,
 } from "../serialize.ts";
 import { parseHerdrAgentPlacements } from "../terminal/herdr-status.ts";
 import {
@@ -354,10 +355,21 @@ function runRuntime(run: S.WorkflowRunRow): CodingAgent {
   return normalizeCodingAgent(run.runtime);
 }
 
-// The model the parent run resolved at start. A null-runtime/model row falls back to the agent's
-// config default, so a step launched from an old run still gets a concrete model.
+// The model the parent run resolved at start. When the row pinned no model (an old run, or a start
+// that passed none), fall back to the repo's effective Coding agent config (#1532): the repo
+// override's model when its toggle is on and its runtime matches this run's, else the application
+// default for this run's runtime. This keeps the fallback aligned with the effective config a fresh
+// run resolves at start rather than reading the raw application default directly.
 function runModel(run: S.WorkflowRunRow): string {
-  return run.model?.trim() || agentModel(runRuntime(run));
+  const pinned = run.model?.trim();
+  if (pinned) return pinned;
+  const runtime = runRuntime(run);
+  const repo = S.getRepoById(run.repo_id);
+  if (repo) {
+    const effective = effectiveRepoAgentConfigFor(repo);
+    if (effective.runtime === runtime) return effective.model;
+  }
+  return agentModel(runtime);
 }
 
 function runJSON(run: S.WorkflowRunRow): WorkflowRunUpdateResult["run"] {

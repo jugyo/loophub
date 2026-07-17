@@ -15,6 +15,13 @@ export interface Repo {
   merge_mode: string | null;
   favorite: number;
   favorited_at: string | null;
+  // #1532: per-repo Coding agent override. agent_override is the on/off toggle (0/1); while on, the
+  // three values pin runtime / model / effort, else the effective config falls back to config.json
+  // (see core/repo-agent-config.ts). Values persist while off so re-enabling restores them.
+  agent_override: number;
+  agent_runtime: string | null;
+  agent_model: string | null;
+  agent_effort: string | null;
 }
 
 // ---- repos ----
@@ -86,6 +93,24 @@ export function setRepoMergeMode(
   mode: "merge" | "github_pr" | null,
 ) {
   db.run(`UPDATE repos SET merge_mode = ? WHERE id = ?`, [mode, id]);
+}
+
+// #1532: set the repo's Coding agent override in one write. The toggle and the three values are
+// stored together; the caller validates them. Values are persisted even when `override` is false so
+// re-enabling the toggle restores the prior choices.
+export function setRepoAgentConfig(
+  id: number,
+  config: {
+    override: boolean;
+    runtime: string | null;
+    model: string | null;
+    effort: string | null;
+  },
+) {
+  db.run(
+    `UPDATE repos SET agent_override = ?, agent_runtime = ?, agent_model = ?, agent_effort = ? WHERE id = ?`,
+    [config.override ? 1 : 0, config.runtime, config.model, config.effort, id],
+  );
 }
 
 export function getRepoById(id: number): Repo | null {

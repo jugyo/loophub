@@ -1,20 +1,23 @@
-import type { RepoMergeModeWire } from "../serialize.ts";
-import type { MergeMode } from "./shared.ts";
+import type { RepoAgentConfigWire, RepoMergeModeWire } from "../serialize.ts";
+import type { CodingAgent, MergeMode } from "./shared.ts";
 import {
   actorFor,
   branchExists,
+  CODING_AGENTS,
   canonicalPath,
   configDir,
   defaultBranch,
   effectiveMergeMode,
   ensureWritable,
   existsSync,
+  isCodingAgent,
   isGithubRemoteUrl,
   isGitRepo,
   join,
   normalizeMergeMode,
   readdirSync,
   remoteUrl,
+  repoAgentConfigJSON,
   repoJSON,
   repoOr404,
   resolve,
@@ -239,6 +242,63 @@ export const repos = {
       has_github_remote,
       effective: effectiveMergeMode(r.merge_mode, has_github_remote),
     };
+  },
+
+  // #1532: set (or clear) the repo's Coding agent override. `override` toggles whether the repo's
+  // own runtime / model / effort win over the application defaults; the three values are stored
+  // regardless so re-enabling the toggle restores them. Archived repos stay editable — like
+  // setMergeMode, this is a config preference, not a write to the repo's contents.
+  setAgentConfig(
+    name: string,
+    input: {
+      override: boolean;
+      runtime?: string | null;
+      model?: string | null;
+      effort?: string | null;
+    },
+    sessionId?: string | null,
+  ): RepoAgentConfigWire {
+    const r = repoOr404(name);
+    if (typeof input.override !== "boolean") {
+      throw new ServiceError(422, "override must be a boolean");
+    }
+    // A runtime, when given, must be a known coding agent. model / effort are free-form strings the
+    // launched runtime interprets (mirrors settings/update); an empty string is normalized to null.
+    if (
+      input.runtime != null &&
+      !isCodingAgent(input.runtime as CodingAgent | undefined)
+    ) {
+      throw new ServiceError(
+        422,
+        `runtime must be one of: ${CODING_AGENTS.join(", ")}`,
+      );
+    }
+    const normalizeText = (value: string | null | undefined): string | null => {
+      if (value == null) return null;
+      if (typeof value !== "string") {
+        throw new ServiceError(422, "model and effort must be strings");
+      }
+      const trimmed = value.trim();
+      return trimmed === "" ? null : trimmed;
+    };
+    S.setRepoAgentConfig(r.id, {
+      override: input.override,
+      runtime: (input.runtime as CodingAgent | null | undefined) ?? null,
+      model: normalizeText(input.model),
+      effort: normalizeText(input.effort),
+    });
+    S.emitEvent(r.id, "repo.agent_config_changed", actorFor(sessionId), {
+      full_name: r.full_name,
+      override: input.override,
+    });
+    return repoAgentConfigJSON(repoOr404(name));
+  },
+
+  // #1532: resolved Coding agent view for the repo settings UI — the raw stored override (toggle +
+  // values as entered) and the effective config a workflow run launches with (repo override when on,
+  // else the application defaults). Sync: the effective resolution reads config.json, not git.
+  agentConfig(name: string): RepoAgentConfigWire {
+    return repoAgentConfigJSON(repoOr404(name));
   },
 
   async update(

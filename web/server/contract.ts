@@ -173,6 +173,40 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.repos.mergeMode(p.name),
   },
+  "repos/setAgentConfig": {
+    description:
+      "Set the repo's Coding agent override: toggle plus runtime/model/effort, or falls back to app defaults when off (#1532).",
+    params: params(
+      {
+        name: repo,
+        override: { type: "boolean" },
+        runtime: { enum: ["claude-code", "codex", "grok"] },
+        model: strOrNull,
+        effort: strOrNull,
+        session_id: sid,
+      },
+      ["name", "override"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.repos.setAgentConfig(
+        p.name,
+        {
+          override: p.override,
+          runtime: p.runtime,
+          model: p.model,
+          effort: p.effort,
+        },
+        p.session_id,
+      ),
+  },
+  "repos/agentConfig": {
+    description:
+      "Resolved Coding agent view: raw per-repo override (toggle + runtime/model/effort) and the effective config a run launches with (#1532).",
+    params: params({ name: repo }, ["name"]),
+    result: anyObject,
+    handler: (p) => svc.repos.agentConfig(p.name),
+  },
 
   // ---- global settings ----
   "settings/get": {

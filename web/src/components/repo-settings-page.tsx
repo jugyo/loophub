@@ -7,13 +7,20 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { MergeMode } from "@/api/types";
+import type { CodingAgent, MergeMode } from "@/api/types";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
+import {
+  CODING_AGENT_LABELS,
+  EFFORT_SUGGESTIONS,
+  MODEL_SUGGESTIONS,
+} from "@/lib/agent-models";
 import { cn } from "@/lib/utils";
 import {
   useRenameRepo,
   useRepo,
+  useRepoAgentConfig,
   useRepoMergeMode,
+  useSetRepoAgentConfig,
   useSetRepoArchived,
   useSetRepoDefaultBranch,
   useSetRepoMergeMode,
@@ -22,6 +29,7 @@ import {
   useArchivedWorkspaces,
   useSetWorkspaceArchived,
 } from "@/queries/workspaces";
+import { CODING_AGENTS } from "../../../core/runtimes.ts";
 
 const MERGE_MODE_LABELS: Record<MergeMode, string> = {
   merge: "Merge",
@@ -49,6 +57,7 @@ export function RepoSettingsPage({
         current={data?.default_branch ?? ""}
       />
       <MergeModeSection owner={owner} repo={repo} />
+      <AgentConfigSection owner={owner} repo={repo} />
       <ArchivedWorkspacesSection owner={owner} repo={repo} />
       <ArchiveSection
         owner={owner}
@@ -340,6 +349,202 @@ function MergeModeSection({ owner, repo }: { owner: string; repo: string }) {
       </div>
       {setMode.error ? (
         <p className="mt-2 text-sm text-destructive">{String(setMode.error)}</p>
+      ) : null}
+    </section>
+  );
+}
+
+// #1532: per-repo Coding agent override. The toggle picks whether this repo pins its own runtime /
+// model / effort or falls back to the application (Settings screen) defaults. While off, the editors
+// are hidden and the effective config the run launches with is shown inline. Mirrors the raw-setting
+// vs effective structure of MergeModeSection.
+const OVERRIDE_LABELS: { value: boolean; label: string }[] = [
+  { value: false, label: "Off (use application settings)" },
+  { value: true, label: "On (override for this repo)" },
+];
+
+// An empty string means "use the runtime's default", stored as null. A currently-saved value outside
+// the suggestion list is injected as a leading option so the picker reflects the real saved state.
+function OverrideSelect({
+  label,
+  value,
+  suggestions,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  suggestions: string[];
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const options =
+    value && !suggestions.includes(value)
+      ? [value, ...suggestions]
+      : suggestions;
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <select
+        aria-label={label}
+        className="rounded-md border bg-background px-3 py-1.5 text-sm disabled:opacity-50"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">Default</option>
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function AgentConfigSection({ owner, repo }: { owner: string; repo: string }) {
+  const { data, isLoading } = useRepoAgentConfig(owner, repo);
+  const save = useSetRepoAgentConfig(owner, repo);
+
+  const setting = data?.setting;
+  const override = setting?.override ?? false;
+  // While editing, base the model/effort lists on the stored override runtime, else the effective
+  // runtime so the suggestions match what a save would default to.
+  const runtime: CodingAgent =
+    setting?.runtime ?? data?.effective.runtime ?? "claude-code";
+  const model = setting?.model ?? "";
+  const effort = setting?.effort ?? "";
+  const disabled = isLoading || save.isPending;
+
+  // Persist the full triple on every edit so a single change never wipes the other stored values.
+  function update(patch: {
+    override?: boolean;
+    runtime?: CodingAgent;
+    model?: string;
+    effort?: string;
+  }) {
+    save.mutate({
+      override: patch.override ?? override,
+      runtime: patch.runtime ?? runtime,
+      model: patch.model ?? model,
+      effort: patch.effort ?? effort,
+    });
+  }
+
+  const effective = data?.effective;
+  const effectiveHint = effective
+    ? `${effective.runtime} · ${effective.model} · ${effective.effort}`
+    : "";
+
+  return (
+    <section className="mt-6">
+      <h2 className="text-sm font-medium">Coding agent</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Override the application's Coding agent settings (runtime, model,
+        effort) for this repository's workflow runs. When off, runs use the
+        application Settings defaults.
+      </p>
+      <div
+        role="radiogroup"
+        aria-label="Override application Coding agent settings"
+        className="mt-3 max-w-md rounded-md border"
+      >
+        {OVERRIDE_LABELS.map((o) => {
+          const active = override === o.value;
+          return (
+            <button
+              key={String(o.value)}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={disabled}
+              className={cn(
+                "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
+                disabledButtonStateClasses,
+              )}
+              onClick={() => {
+                if (active) return;
+                update({ override: o.value });
+              }}
+            >
+              <Check
+                className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
+                aria-hidden="true"
+              />
+              <span className="flex flex-col">
+                <span>{o.label}</span>
+                {/* The hint describes the *current* effective config, so it belongs under whichever
+                    option is active: the application defaults while off, the override while on. */}
+                {active && effectiveHint ? (
+                  <span className="text-xs text-muted-foreground">
+                    effective — {effectiveHint}
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {override ? (
+        <div className="mt-3 max-w-md border-l-2 pl-4">
+          <h3 className="text-xs font-medium text-muted-foreground">Runtime</h3>
+          <div
+            role="radiogroup"
+            aria-label="Runtime"
+            className="mt-1 rounded-md border"
+          >
+            {CODING_AGENTS.map((value) => {
+              const active = runtime === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={disabled}
+                  className={cn(
+                    "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
+                    disabledButtonStateClasses,
+                  )}
+                  onClick={() => {
+                    if (active) return;
+                    // Switching runtime clears model/effort so they fall back to the new runtime's
+                    // defaults rather than carrying a value that runtime may not accept.
+                    update({ runtime: value, model: "", effort: "" });
+                  }}
+                >
+                  <Check
+                    className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
+                    aria-hidden="true"
+                  />
+                  <span>{CODING_AGENT_LABELS[value]}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 flex flex-col gap-3">
+            <OverrideSelect
+              label="Model"
+              value={model}
+              suggestions={MODEL_SUGGESTIONS[runtime]}
+              disabled={disabled}
+              onChange={(value) => update({ model: value })}
+            />
+            <OverrideSelect
+              label="Effort"
+              value={effort}
+              suggestions={EFFORT_SUGGESTIONS[runtime]}
+              disabled={disabled}
+              onChange={(value) => update({ effort: value })}
+            />
+          </div>
+        </div>
+      ) : null}
+      {save.error ? (
+        <p className="mt-2 text-sm text-destructive">{String(save.error)}</p>
       ) : null}
     </section>
   );
