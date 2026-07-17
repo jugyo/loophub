@@ -81,16 +81,19 @@ test("parent delivers rework as a review-id pointer without summarizing findings
   );
 });
 
-test("parent launches fresh Execute children instead of injecting or resuming", () => {
+test("parent injects into live children via herdr and falls back to launch-step", () => {
   const parent = workflowContractText("parent");
 
-  expect(parent).not.toContain("herdr pane run");
-  expect(parent).not.toContain("herdr agent get");
+  expect(parent).toContain("herdr pane run");
+  expect(parent).toContain("herdr agent get");
+  expect(parent).toContain("record the printed `agent` line");
+  expect(parent).toContain("orchestrator:");
   expect(parent).not.toContain("lh workflow run resume");
-  expect(parent).toContain("Never inject into or resume an earlier child");
+  expect(parent).not.toContain("lh workflow run enforce-cost-limit");
   expect(parent).toMatch(
     /launch \*\*Verify as a\s+fresh child\*\* — always a new child/u,
   );
+  expect(parent).toContain("Do not use child-session resume");
 });
 
 test("parent polls only its run workflow events and reacts to cost limit facts", () => {
@@ -104,17 +107,19 @@ test("parent polls only its run workflow events and reacts to cost limit facts",
     "The `--type workflow_run --run <run>` filters are mandatory",
   );
   expect(contract).toContain("workflow_run.cost_exceeded");
-  expect(contract).toContain("lh workflow run enforce-cost-limit");
+  expect(contract).toContain("herdr pane run <pane_id> Escape");
+  expect(contract).not.toContain("lh workflow run enforce-cost-limit");
   expect(contract).not.toContain("lh workflow run stop");
   expect(contract).toContain("sleep briefly and poll again");
 });
 
-test("documents fresh child launches without pane addressing", () => {
+test("documents recording the launch-step agent line as the injection target", () => {
   const parent = workflowContractText("parent");
 
   expect(parent).toContain("always starts a fresh child session");
-  expect(parent).toContain("record the new `agent` line");
-  expect(parent).not.toContain("pane_id");
+  expect(parent).toContain("record the printed `agent` line");
+  expect(parent).toContain("pane_id");
+  expect(parent).toContain("Prefer live pane injection");
 });
 
 test("identifies orchestrator-prefixed messages in every child contract", () => {
@@ -127,10 +132,14 @@ test("identifies orchestrator-prefixed messages in every child contract", () => 
   }
 });
 
-test("parent contract does not use pane injection", () => {
+test("parent and execute contracts agree that the parent injects orchestrator messages", () => {
   const parent = workflowContractText("parent");
+  const execute = workflowContractText("execute");
 
-  expect(parent).not.toContain("herdr pane run");
+  expect(execute).toContain("messages beginning with `orchestrator:`");
+  expect(parent).toContain("orchestrator:");
+  expect(parent).toContain("herdr pane run");
+  expect(parent).not.toContain("Do not use herdr pane injection");
 });
 
 test("Japanese workflow design documents the continuing lifecycle after a pass", () => {
@@ -151,6 +160,8 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toMatch(/修正後の Verify は常に\s+fresh child/u);
   expect(design).toContain("`stopped`（#1525）は");
   expect(design).toContain("legacy status");
+  expect(design).not.toContain("lh workflow run enforce-cost-limit");
+  expect(design).toContain("herdr pane run");
 
   for (const event of [
     "workflow_run.turn_done",

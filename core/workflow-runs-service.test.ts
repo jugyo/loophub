@@ -1089,7 +1089,8 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("lh workflow run request-rework");
   expect(contract).toContain("lh workflow launch-step");
   expect(contract).toContain("lh workflow step status");
-  expect(contract).not.toContain("herdr pane run");
+  expect(contract).toContain("herdr pane run");
+  expect(contract).toContain("record the printed `agent` line");
   // Transitions come from observation; pulled events are only timing signals.
   expect(contract).toContain(
     "lh events --since <cursor> --repo '<repo>' --type workflow_run --run <run> --order asc --json",
@@ -1098,7 +1099,8 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("timing signals, never transition facts");
   expect(contract).toContain("Transitions are driven only by observation");
   expect(contract).toMatch(/never use pane output|PR body marker/i);
-  expect(contract).toContain("Do not use herdr pane injection");
+  expect(contract).toContain("Do not use child-session resume");
+  expect(contract).not.toContain("lh workflow run enforce-cost-limit");
   // The simplified observed transition table.
   expect(contract).toContain("launch Execute");
   expect(contract).toContain("execute complete");

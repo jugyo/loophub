@@ -9,7 +9,9 @@
 - **fact はドメイン状態に書く** — 完了・commits・review などの事実は event / git / DB に記録する。
   エージェント間の直接メッセージ（提出物・artifact）は存在しない。
 - **instruction は injection で配達する** — agent への入力は起動プロンプト、または生きている pane
-  への注入で届ける。配達はインフラ（worker / engine）の仕事であり、子は親の pane・topology を知らない。
+  への注入で届ける。**live な子への操作**（`orchestrator:` 注入 / Esc）は parent が `herdr pane run`
+  で直接行う（lh CLI のラッパーを挟まない）。子の**起動**は `lh workflow launch-step`、**観測**は
+  `lh workflow step status` / `lh events` のまま。子は親の pane・topology を知らない。
 
 idle 状態の検知は、状態遷移や完了判定のどこにも使わない。
 
@@ -74,15 +76,16 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    pull し続ける。どの event も domain state の再観測を促す timing signal であり、完了や verdict
    そのものではない。
 2. `lh workflow launch-step` で Execute / Verify child を起動する（engine が input ポインタを解決）。
+   出力の `agent` 行（Herdr name）を記録し、`herdr agent get` で `pane_id` を解決して注入先として使う。
 3. **遷移は「turn done event の観測 → `lh workflow step status` で HEAD / review 状態を観測」で決める。**
    宣言はタイミングの合図であり真実を代替しない。宣言があっても HEAD が前進していなければ Verify を
-   起動しない。
-4. `lh workflow run advance-to-verify | request-rework | await-human | resume | stop` の意図ベース
-   command で通常の lifecycle を遷移する。`complete` command の実装は残るが、通常フローの親契約は
-   fresh pass を完了扱いせず使用しない。
+   起動しない。pane 出力・子の自己申告・idle 検知は遷移判断に使わない。
+4. `lh workflow run advance-to-verify | request-rework | await-human | resume` の意図ベース command で
+   通常の lifecycle を遷移する。live な子への注入 / Esc は herdr 直接操作であり、lh の lifecycle
+   command ではない。
 5. request_changes review に対しては、最新 Execute child を `herdr agent get` で解決し、`pane_id` が
-   得られれば `agent_status: done` でも同じ pane へ「review <id> に対応せよ」という instruction の
-   注入を先に試す。agent を解決できない、`pane_id` がない、または注入に失敗した場合だけ
+   得られれば `agent_status: done` でも同じ pane へ `orchestrator: address review #<id>` を
+   `herdr pane run` で注入する。agent を解決できない、`pane_id` がない、または注入に失敗した場合だけ
    `--review <id>` で fresh relaunch する。findings の要約・解釈は行わず、修正後の Verify は常に
    fresh child とする。
 6. 上限超過や解消不能状態を issue comment + Inbox + needs-human 状態で人間へ渡す。
@@ -162,8 +165,9 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 記録するが、escalate 自体は run lifecycle を変更しない。Verify が review を登録すると
 `workflow_run.review_submitted`、GitHub PR feedback が同期されると `workflow_run.github_event` が記録
 される。usage sweep が run の累積コスト上限越えを検知すると、edge-triggered に一度だけ
-`workflow_run.cost_exceeded` が記録され、親は `lh workflow run enforce-cost-limit` で超過した子だけを
-Esc で止める（run は `running` のまま再開可能）。親は
+`workflow_run.cost_exceeded` が記録され、親は記録済みの子 pane に対して
+`herdr pane run <pane_id> Escape` を自分で送る（run は `running` のまま再開可能。
+コスト中断用の lh CLI ラッパーは無い）。親は
 `lh events --type workflow_run --run <run>` でこれらを cursor pull し、run-scoped filter は payload の
 `id` を使って対象 run に絞り込む。子の contract に親の pane id や topology は現れない。
 
@@ -182,23 +186,24 @@ Esc で止める（run は `running` のまま再開可能）。親は
 | Human wait | Execute の turn done 後、HEAD が最新 review より前進 | `resume --step execute` → 通常の Execute 完了遷移 → fresh Verify |
 | Human wait | Execute の turn done 後、HEAD が不変 | hold を維持し、追加作業または明示的 resume を待つ |
 | Verify | 最新 review が fresh + pass | run を `running` のまま維持し、追加指示・turn-done を待つ |
-| Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、既存 Execute pane へ注入する。pane が閉じていれば `--note` 付きで Execute を launch |
+| Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、既存 Execute pane へ `herdr pane run` で注入する。pane が閉じていれば `--note` 付きで Execute を launch |
 | Verified + continuing | Execute の turn done 後、HEAD が passing review より前進 | run は Verify のまま、現在の HEAD に対する Verify を fresh launch |
 | Verified + continuing | Execute の turn done 後、HEAD が不変 | 既存 pass は fresh のまま。Verify を起動せず待機を続ける |
 | Verify | 最新 review が fresh + request_changes | rework → Execute |
 
 fresh pass は現在の HEAD を検証するが、run を完了・凍結しない。親の観測ループと Execute pane を維持し、
 同じ run で追加作業を受け付ける。追加指示時に run は人間待ち hold ではないため `run resume` を使わない。
-生きている Execute pane へ `orchestrator: <instruction>` を注入し、pane が閉じている場合は
-`lh workflow launch-step --step execute --note <instruction>` で起動する。その後の turn done で HEAD が
-進んでいれば fresh Verify を起動し、PR body・comment・attachment だけが変わって HEAD が不変なら既存
-pass を fresh のまま維持する。run を恒久終了する command は無く、終了させるのは人間である。
+生きている Execute pane へ parent が `herdr pane run` で `orchestrator: <instruction>` を注入し、
+pane が閉じている場合は `lh workflow launch-step --step execute --note <instruction>` で起動する。
+その後の turn done で HEAD が進んでいれば fresh Verify を起動し、PR body・comment・attachment だけが
+変わって HEAD が不変なら既存 pass を fresh のまま維持する。run を恒久終了する command は無く、
+終了させるのは人間である。
 
 rework 上限は 3。最新 Execute child に対する `herdr agent get` が成功して `pane_id` を返す場合は、
-`agent_status: done` でも pane は再利用可能と扱い、新規 launch より先に
-`orchestrator: address review #<id>` の注入を試す。agent を解決できない、`pane_id` がない、または
-注入に失敗した場合に限り `--review <id>` で Execute child を再 launch する。修正後の Verify は常に
-fresh child とする。
+`agent_status: done` でも pane は再利用可能と扱い、新規 launch より先に parent が
+`herdr pane run` で `orchestrator: address review #<id>` の注入を試す。agent を解決できない、
+`pane_id` がない、または注入に失敗した場合に限り `--review <id>` で Execute child を再 launch する。
+修正後の Verify は常に fresh child とする。
 
 宣言がないまま run 活動が一定時間停止した場合、worker の stall sweep（`sweepStalledRuns`）が独立して
 その run を needs-human に保持し Inbox で人間へ可視化する。自動回復は試みない。rework 上限・escalation・
@@ -208,9 +213,10 @@ legacy status で、いずれも書き込み経路は削除済み。古い DB �
 read-only 表示だけ維持する。
 
 fresh pass 後も run は complete せず `running` + `verification_status: verified` のまま保つ。run を恒久
-終了する command は無い。コスト超過時は `lh workflow run enforce-cost-limit` が超過した子だけを Esc で
-止め、run は `running` のまま再開可能に保つ。`resume` は `await-human` による明示的 hold を人間の指示で
-解除する command であり、fresh pass 後の追加作業には使わない。
+終了する command は無い。コスト超過時は parent が `herdr pane run <pane_id> Escape` で超過した子だけを
+止め、run は `running` のまま再開可能に保つ（コスト中断用の lh CLI ラッパーは無い）。
+`resume` は `await-human` による明示的 hold を人間の指示で解除する command であり、fresh pass 後の
+追加作業には使わない。
 
 ## 8. CLI
 
@@ -221,11 +227,14 @@ lh workflow start <issue> --workflow <name>
 lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note <text|->]
 # lifecycle command
 lh workflow run advance-to-verify|request-rework|await-human|resume --run <id>
-lh workflow run enforce-cost-limit --run <id>  # コスト超過した子を Esc で止める（run は running のまま）
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
 lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測
+# live child control（parent が herdr を直接叩く。lh ラッパーは無い）
+herdr agent get <agent name>                # launch-step の agent 行から pane_id を解決
+herdr pane run <pane_id> 'orchestrator: ...'  # live な子へ指示を注入
+herdr pane run <pane_id> Escape             # コスト超過時に子だけを中断（run は running のまま）
 ```
 
 `lh workflow step output` は廃止した。Verify の出力は `lh pr review --topic workflow --commit <sha>`
