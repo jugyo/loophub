@@ -637,6 +637,20 @@ export interface HerdrSessionsWire {
   running_repos?: string[];
 }
 
+export type TerminalLaunchBackendWire = "builtin" | "herdr";
+
+// Result of `terminal/launch`: which backend handled it plus the herdr coordinates the client
+// surfaces (session_name / command / cwd / attach). `focused` is true when a "resume" launch
+// switched focus to a terminal already running the session instead of opening a new one (#578).
+export interface TerminalLaunchResultWire {
+  backend: TerminalLaunchBackendWire;
+  session_name?: string;
+  command?: string;
+  cwd?: string;
+  attach?: string;
+  focused?: boolean;
+}
+
 export function herdrPaneSessionJSON(
   sessionId: string | null,
 ): HerdrPaneSessionWire | null {

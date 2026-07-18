@@ -43,6 +43,8 @@ import type {
   SessionLinkedTargetWire,
   SessionSubagentUsageWire,
   SessionUsageWire,
+  TerminalLaunchBackendWire,
+  TerminalLaunchResultWire,
   UserWire,
   WebConfigWire,
   WorkflowRunHistoryEventWire,
@@ -135,19 +137,9 @@ export type RepoMergeMode = RepoMergeModeWire;
 /** Resolved Coding agent override view for the repo settings UI (`repos/agentConfig`, #1532). */
 export type RepoAgentConfig = RepoAgentConfigWire;
 
-export type TerminalLaunchBackend = "builtin" | "herdr";
+export type TerminalLaunchBackend = TerminalLaunchBackendWire;
 
-export interface TerminalLaunchResult {
-  backend: TerminalLaunchBackend;
-  session_name?: string;
-  command?: string;
-  cwd?: string;
-  attach?: string;
-  // True when the "resume" workflow found a terminal already running this session and switched
-  // focus to it instead of starting a new one (#578) — distinguishes that from a fresh launch so
-  // the client can show "switched to existing terminal" rather than "launched in ...".
-  focused?: boolean;
-}
+export type TerminalLaunchResult = TerminalLaunchResultWire;
 
 /** One agent inside a running herdr session (`terminal/sessions`, #495). */
 export type HerdrAgent = HerdrSessionAgentWire;

@@ -2,6 +2,7 @@ import type {
   HerdrRepoSessionsWire,
   HerdrSessionAgentWire,
   HerdrSessionsWire,
+  TerminalLaunchResultWire,
 } from "../serialize.ts";
 import { projectHerdrRepoSessions } from "../terminal/session-projection.ts";
 import {
@@ -237,7 +238,7 @@ async function launchWorkflowRunHerdr(
   r: S.Repo,
   issueNumber: number,
   workflowId: number,
-) {
+): Promise<TerminalLaunchResultWire> {
   const repo = { full_name: r.full_name, local_path: r.local_path };
   const args = [
     "workflow",
@@ -364,7 +365,7 @@ export const terminal = {
     return { backend: "herdr" };
   },
 
-  async launch(input: TerminalLaunchInput) {
+  async launch(input: TerminalLaunchInput): Promise<TerminalLaunchResultWire> {
     if (!input.repo) throw new ServiceError(422, "repo is required");
     const r = repoOr404(input.repo);
 
