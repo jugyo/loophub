@@ -394,6 +394,71 @@ describe("IssueRow", () => {
   });
 });
 
+// #1622: a PR-less issue list row shows a small Start workflow button in the
+// linked-PR position, wiring the same terminal/launch flow as issue-detail.
+describe("IssueRow Start workflow button (#1622)", () => {
+  it("shows the button when the issue has no linked PR", async () => {
+    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />, {
+      "workflows/list": () => [],
+    });
+    expect(
+      await screen.findByRole("button", { name: /Start workflow/ }),
+    ).toBeTruthy();
+  });
+
+  it("does not show the button when the issue has a linked PR", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+      />,
+      { "workflows/list": () => [] },
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Start workflow/ })).toBeNull();
+  });
+
+  it("does not show the button on a closed issue with no linked PR", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ state: "closed" })}
+      />,
+      { "workflows/list": () => [] },
+    );
+    expect(await screen.findByText("Example issue")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Start workflow/ })).toBeNull();
+  });
+
+  it("launches the chosen workflow for the issue", async () => {
+    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />, {
+      "workflows/list": () => [
+        { id: 7, name: "Dev loop", description: "Build then review" },
+      ],
+    });
+    const button = await screen.findByRole("button", {
+      name: /Start workflow/,
+    });
+    // Radix opens the menu on pointerDown, not a synthetic click.
+    fireEvent.pointerDown(button, { button: 0, ctrlKey: false });
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Dev loop Build then review",
+      }),
+    );
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repo: "me/proj",
+        workflow: "workflow-run",
+        issueNumber: 1,
+        workflowId: 7,
+      }),
+    );
+  });
+});
+
 // IssueRow is shared by home Recent issues, repo Open Issues, and /issues, so
 // these assertions cover the issue-title popover on all three list surfaces.
 describe("IssueRow title popover", () => {
