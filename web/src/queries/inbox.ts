@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   archiveInboxMessage,
   deleteInboxMessage,
-  getInboxMessage,
   listInboxMessages,
   readInboxMessage,
   unarchiveInboxMessage,
@@ -17,13 +16,6 @@ export function useInboxMessages(
   return useQuery({
     queryKey: [...queryKeys.inbox(), "list", input],
     queryFn: () => listInboxMessages(input),
-  });
-}
-
-export function useInboxMessage(id: number) {
-  return useQuery({
-    queryKey: queryKeys.inboxMessage(id),
-    queryFn: () => getInboxMessage(id),
   });
 }
 

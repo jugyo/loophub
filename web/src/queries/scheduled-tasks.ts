@@ -5,7 +5,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  createScheduledTask,
   deleteScheduledTask,
   getScheduledTask,
   listScheduledTasks,
@@ -44,15 +43,6 @@ function useInvalidateTasks(owner: string, repo: string) {
         queryKey: queryKeys.scheduledTask(full(owner, repo), id),
       });
   };
-}
-
-export function useCreateScheduledTask(owner: string, repo: string) {
-  const invalidate = useInvalidateTasks(owner, repo);
-  return useMutation({
-    mutationFn: (input: ScheduledTaskInput) =>
-      createScheduledTask(owner, repo, input),
-    onSuccess: () => invalidate(),
-  });
 }
 
 export function useUpdateScheduledTask(owner: string, repo: string) {

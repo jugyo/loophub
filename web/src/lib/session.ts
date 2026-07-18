@@ -26,10 +26,6 @@ export function getSessionId(): string {
   return id;
 }
 
-export function setSessionId(id: string): void {
-  sessionStorage.setItem(SESSION_KEY, id);
-}
-
 /** Last event id seen by the web UI event poller. */
 export function getLastEventId(): number {
   return Number(localStorage.getItem(LAST_EVENT_KEY) ?? 0) || 0;

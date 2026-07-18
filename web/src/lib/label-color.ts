@@ -83,8 +83,6 @@ const PALETTE: readonly string[] = [
   "bg-pink-300 text-pink-900 border-pink-400 dark:bg-pink-800 dark:text-pink-100 dark:border-pink-700",
 ];
 
-export const LABEL_COLOR_PALETTE = PALETTE;
-
 // Shared shape/size utilities for a label chip, so every place that renders a
 // label (issue detail, list rows) stays visually identical. Pair with
 // `labelColorClass(name)` for the colour. Vertical padding is intentionally

@@ -494,26 +494,6 @@
       }
     },
     {
-      "name": "workflows/get",
-      "description": "Get one workflow definition by name.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "workflows/create",
       "description": "Create a global workflow definition.",
       "params": {
@@ -1165,26 +1145,6 @@
       }
     },
     {
-      "name": "workspaces/resolve",
-      "description": "Resolve an active workspace name to its repository.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "branch": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "branch"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "workspaces/listArchived",
       "description": "List archived workspaces in a repository.",
       "params": {
@@ -1405,42 +1365,6 @@
       },
       "result": {
         "type": "object"
-      }
-    },
-    {
-      "name": "issues/addLabels",
-      "description": "Add labels to an issue.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "labels": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number",
-          "labels"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "array"
       }
     },
     {

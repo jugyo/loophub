@@ -9,11 +9,9 @@ import {
   linkedPullStateBadge,
   linkedPullStatus,
   linkedPullWordTone,
-  mergeableBadge,
   primaryLinkedPull,
   pullBadges,
   pullDetailBadges,
-  reviewBadge,
   stateBadge,
 } from "./badges";
 
@@ -82,48 +80,6 @@ describe("stateBadge", () => {
       stateBadge(pull({ state: "open", merged: false }), "pulls"),
     ).toBeNull();
     expect(stateBadge(pull({ merged: true }), "pulls")?.tone).toBe("merged");
-  });
-});
-
-describe("reviewBadge", () => {
-  it("returns null without a review state", () => {
-    expect(reviewBadge(pull({ review_state: null }))).toBeNull();
-  });
-
-  it("humanizes the review state label", () => {
-    const badge = reviewBadge(pull({ review_state: "CHANGES_REQUESTED" }));
-    expect(badge).toEqual({
-      tone: "review-changes",
-      label: "changes",
-    });
-  });
-});
-
-describe("mergeableBadge", () => {
-  it("flags a conflicting open PR as conflict", () => {
-    expect(mergeableBadge(pull({ mergeable_state: "conflict" }))?.tone).toBe(
-      "conflict",
-    );
-  });
-
-  it("marks a clean open PR as mergeable", () => {
-    const badge = mergeableBadge(pull({ mergeable_state: "clean" }));
-    expect(badge).toEqual({ tone: "mergeable", label: "mergeable" });
-  });
-
-  it("hides the muted states (unknown / no_commits / blocked)", () => {
-    expect(mergeableBadge(pull({ mergeable_state: "unknown" }))).toBeNull();
-    expect(mergeableBadge(pull({ mergeable_state: "no_commits" }))).toBeNull();
-    expect(mergeableBadge(pull({ mergeable_state: "blocked" }))).toBeNull();
-  });
-
-  it("does not flag merged or non-open PRs", () => {
-    expect(
-      mergeableBadge(pull({ merged: true, mergeable_state: "conflict" })),
-    ).toBeNull();
-    expect(
-      mergeableBadge(pull({ state: "closed", mergeable_state: "clean" })),
-    ).toBeNull();
   });
 });
 

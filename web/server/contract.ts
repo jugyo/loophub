@@ -279,12 +279,6 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: () => svc.workflows.list(),
   },
-  "workflows/get": {
-    description: "Get one workflow definition by name.",
-    params: params({ name: strNonEmpty }, ["name"]),
-    result: anyObject,
-    handler: (p) => svc.workflows.get(p.name),
-  },
   "workflows/create": {
     description: "Create a global workflow definition.",
     params: params({ name: strNonEmpty, ...workflowFields, session_id: sid }, [
@@ -561,12 +555,6 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.workspaces.list(p.repo),
   },
-  "workspaces/resolve": {
-    description: "Resolve an active workspace name to its repository.",
-    params: params({ branch: strNonEmpty }, ["branch"]),
-    result: anyObject,
-    handler: (p) => svc.workspaces.resolve(p.branch),
-  },
   "workspaces/listArchived": {
     description: "List archived workspaces in a repository.",
     params: params({ repo }, ["repo"]),
@@ -655,16 +643,6 @@ export const methods: Record<string, MethodDef> = {
         { title: p.title, body: p.body, state: p.state, labels: p.labels },
         p.session_id,
       ),
-  },
-  "issues/addLabels": {
-    description: "Add labels to an issue.",
-    params: params(
-      { repo, number: positiveInt, labels: stringArray, session_id: sid },
-      ["repo", "number", "labels"],
-    ),
-    result: anyArray,
-    handler: (p) =>
-      svc.issues.addLabels(p.repo, p.number, p.labels, p.session_id),
   },
 
   // ---- comments ----

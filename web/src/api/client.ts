@@ -43,7 +43,6 @@ import type {
   WorkflowRunState,
   WorkflowStepContracts,
   Workspace,
-  WorkspaceResolution,
 } from "./types";
 
 /** Resolved server base. "" => same-origin (proxy). No trailing slash. */
@@ -372,10 +371,6 @@ export function getWorkflowContracts() {
   return rpc<WorkflowStepContracts>("workflows/contracts", {});
 }
 
-export function getWorkflow(name: string) {
-  return rpc<Workflow>("workflows/get", { name });
-}
-
 export function createWorkflow(
   input: WorkflowInput,
   sessionId: string = getSessionId(),
@@ -630,10 +625,6 @@ export function listWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/list", { repo: full(owner, repo) });
 }
 
-export function resolveWorkspace(branch: string) {
-  return rpc<WorkspaceResolution>("workspaces/resolve", { branch });
-}
-
 export function listArchivedWorkspaces(owner: string, repo: string) {
   return rpc<Workspace[]>("workspaces/listArchived", {
     repo: full(owner, repo),
@@ -733,21 +724,6 @@ export function patchIssue(
     "issues/update",
     clean({ repo: full(owner, repo), number, ...patch, session_id: sessionId }),
   );
-}
-
-export function addIssueLabels(
-  owner: string,
-  repo: string,
-  number: number,
-  labels: string[],
-  sessionId: string = getSessionId(),
-) {
-  return rpc<{ name: string; color?: string }[]>("issues/addLabels", {
-    repo: full(owner, repo),
-    number,
-    labels,
-    session_id: sessionId,
-  });
 }
 
 // --- pulls ---

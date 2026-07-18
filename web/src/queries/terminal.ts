@@ -1,17 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   focusHerdrAgent,
-  getHerdrAgentRead,
   getHerdrSessions,
-  killHerdrAgent,
   launchTerminalWorkflow,
   sendHerdrAgentInput,
 } from "@/api/client";
 
 export const terminalKeys = {
   sessions: ["terminal", "sessions"] as const,
-  agentRead: (repo: string, target: string) =>
-    ["terminal", "agentRead", repo, target] as const,
 };
 
 export function useLaunchTerminalWorkflow() {
@@ -35,42 +31,6 @@ export function useHerdrSessions(opts: { enabled?: boolean } = {}) {
     enabled: opts.enabled ?? true,
     refetchInterval: 3000,
     retry: false,
-  });
-}
-
-/**
- * Recent terminal output for one herdr agent, for terminal previews (#500).
- * `enabled` gates the fetch on the caller's own hover debounce, so a quick pass over
- * a row never spawns a herdr process. `staleTime` then lets a second hover shortly
- * after reuse the cached preview instead of shelling out again — between the two,
- * hovering repeatedly can't flood herdr with reads.
- */
-export function useHerdrAgentRead(
-  repo: string,
-  target: string,
-  opts: { enabled: boolean },
-) {
-  return useQuery({
-    queryKey: terminalKeys.agentRead(repo, target),
-    queryFn: () => getHerdrAgentRead({ repo, target }),
-    enabled: opts.enabled,
-    staleTime: 15_000,
-    retry: false,
-  });
-}
-
-/**
- * Kill button mutation (#521): closes the pane a herdr agent is running in. Invalidates the
- * sessions list on success so the closed agent drops out of the UI without waiting for
- * the next terminal sessions poll.
- */
-export function useKillHerdrAgent() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: killHerdrAgent,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: terminalKeys.sessions });
-    },
   });
 }
 

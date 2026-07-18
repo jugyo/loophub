@@ -6,23 +6,9 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   getWorkflowRunHistory,
-  getWorkflowRunStateForIssue,
   getWorkflowRunStateForPull,
 } from "@/api/client";
 import { queryKeys } from "./keys";
-
-/** Latest Workflow run linked to an issue, or null. */
-export function useWorkflowRunForIssue(
-  owner: string,
-  repo: string,
-  number: number,
-) {
-  const full = `${owner}/${repo}`;
-  return useQuery({
-    queryKey: queryKeys.workflowRunForIssue(full, number),
-    queryFn: () => getWorkflowRunStateForIssue(full, number),
-  });
-}
 
 /** Latest Workflow run linked to a PR, or null. */
 export function useWorkflowRunForPull(

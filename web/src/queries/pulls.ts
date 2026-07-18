@@ -11,9 +11,7 @@ import {
   listPullComments,
   listPullCommitFiles,
   listPullFiles,
-  listPullHandoffs,
   listPullReviews,
-  listPulls,
   mergePull,
   patchPull,
   pushGithubPull,
@@ -23,23 +21,6 @@ import type { PullRequest } from "@/api/types";
 import { queryKeys } from "./keys";
 
 const full = (owner: string, repo: string) => `${owner}/${repo}`;
-
-/** State filter for the PR list view. */
-export type PullListState = "open" | "closed" | "all";
-
-export const DEFAULT_PULL_STATE: PullListState = "open";
-
-/** PR list with v1-parity state filter. */
-export function usePullsList(
-  owner: string,
-  repo: string,
-  state: PullListState,
-) {
-  return useQuery({
-    queryKey: [...queryKeys.pulls(full(owner, repo)), "list", state],
-    queryFn: () => listPulls(owner, repo, `state=${state}`),
-  });
-}
 
 /** Single PR (detail), including linked_issue and review_state. */
 export function usePull(owner: string, repo: string, number: number) {
@@ -129,18 +110,6 @@ export function usePullComments(owner: string, repo: string, number: number) {
   return useQuery({
     queryKey: [...queryKeys.pull(full(owner, repo), number), "comments"],
     queryFn: () => listPullComments(owner, repo, number),
-  });
-}
-
-/**
- * Orchestrator<->subagent handoffs (#352) for a PR, chronological. Keyed under the pull key so the
- * event map (event-keys.ts) refetches it via the pull prefix on each `handoff.recorded` event. Backed
- * by the dedicated handoffs/list endpoint (not the events feed), so there is no 100-event cap.
- */
-export function usePullHandoffs(owner: string, repo: string, number: number) {
-  return useQuery({
-    queryKey: [...queryKeys.pull(full(owner, repo), number), "handoffs"],
-    queryFn: () => listPullHandoffs(owner, repo, number),
   });
 }
 

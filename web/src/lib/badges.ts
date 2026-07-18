@@ -132,22 +132,6 @@ const REVIEW_LABEL: Record<NonNullable<PullRequest["review_state"]>, string> = {
   STALE: "re-review",
 };
 
-/** Review-state badge for a PR, or null when there is no review yet. */
-export function reviewBadge(pr: PullRequest): Badge | null {
-  return resolveReviewState(pr.review_state);
-}
-
-/**
- * Mergeable-state badge for an open, unmerged PR: a green "mergeable" when the
- * tree merges cleanly, a red "conflict" on a dirty tree. Returns null for every
- * other state — merged or non-open PRs, and the muted states ("no commits",
- * "blocked"/needs approval, and the not-yet-computed "unknown"), which carry
- * little signal and only add noise.
- */
-export function mergeableBadge(pr: PullRequest): Badge | null {
-  return resolveMergeableState(pr.merged, pr.state, pr.mergeable_state);
-}
-
 /**
  * "draft" badge for an open, unmerged WIP PR (#413). `lh build` opens the PR at the start of work,
  * so it stays draft until `lh pr ready-for-review` flips it; surfacing it keeps a still-in-progress
