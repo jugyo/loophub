@@ -78,8 +78,8 @@ export type ReviewState =
 // every review topic must pass independently. A topic "passes" when its latest
 // substantive review (PASS / REQUEST_CHANGES) is a fresh PASS — i.e. not a
 // REQUEST_CHANGES (no unresolved change request) and not a pass made stale by
-// the head advancing past the reviewed commit (mirrors computeReviewState's STALE
-// rule, so a passed-then-changed PR is not silently mergeable again). Topics are
+// the head advancing past the reviewed commit (the same STALE rule computeReviewStatus
+// applies, so a passed-then-changed PR is not silently mergeable again). Topics are
 // aggregated separately so a REQUEST_CHANGES on any one aspect blocks merge even
 // when other aspects passed. The untagged (NULL) topic is one bucket of its own.
 export interface ReviewGate {
@@ -185,13 +185,6 @@ export function computeReviewStatus(
     return { state: "STALE", gate };
   }
   return { state: "PASSED", gate };
-}
-
-export function computeReviewState(
-  issueId: number,
-  currentHeadSha?: string | null,
-): ReviewState {
-  return computeReviewStatus(issueId, currentHeadSha).state;
 }
 
 export function computeReviewGate(

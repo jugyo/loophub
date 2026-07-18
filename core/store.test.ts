@@ -102,18 +102,9 @@ test("issues, labels, comments, and review state round-trip through the adapter"
   S.createComment(issue.id, "me", "hi");
   expect(S.countComments(issue.id)).toBe(1);
 
-  // PR + review state machine
+  // merge closes the PR and its linked issue
   const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
   S.createPull(pr.id, "feat", "main", "abc123", issue.id);
-  expect(S.computeReviewState(pr.id)).toBe(null);
-  S.createReview(pr.id, "rev", "REQUEST_CHANGES", "fix it");
-  expect(S.computeReviewState(pr.id)).toBe("CHANGES_REQUESTED");
-  S.markChangesAddressed(pr.id, "bot");
-  expect(S.computeReviewState(pr.id)).toBe("READY_FOR_RE_REVIEW");
-  S.createReview(pr.id, "rev", "PASS", "lgtm");
-  expect(S.computeReviewState(pr.id)).toBe("PASSED");
-
-  // merge closes the PR and its linked issue
   const linkedNumber = S.setMerged(pr.id, "deadbeef", "squash");
   expect(linkedNumber).toBe(issue.number);
   expect(S.getIssueById(issue.id)!.state).toBe("closed");
@@ -230,37 +221,6 @@ test("listIssues keeps filters when using the default created sort (#751)", () =
   );
 
   expect(titles).toEqual(["newest open", "old open"]);
-});
-
-test("a PASS goes stale once the PR head advances past the passed commit", () => {
-  const repo = S.createRepo("me/stale", "/tmp/stale");
-  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
-  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
-  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
-
-  // pass against the current head -> PASSED, and unchanged head keeps it
-  S.createReview(pr.id, "rev", "PASS", "lgtm", "sha-1");
-  expect(S.computeReviewState(pr.id)).toBe("PASSED");
-
-  // head advances -> the pass is stale, no longer PASSED
-  S.setHeadSha(pr.id, "sha-2");
-  expect(S.computeReviewState(pr.id)).toBe("STALE");
-
-  // re-passing against the new head restores PASSED
-  S.createReview(pr.id, "rev", "PASS", "lgtm again", "sha-2");
-  expect(S.computeReviewState(pr.id)).toBe("PASSED");
-});
-
-test("a PASS with no recorded head stays PASSED (legacy passes)", () => {
-  const repo = S.createRepo("me/legacy", "/tmp/legacy");
-  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
-  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
-  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
-
-  // pass without a head_sha (pre-tracking), then head moves -> still PASSED
-  S.createReview(pr.id, "rev", "PASS", "lgtm");
-  S.setHeadSha(pr.id, "sha-2");
-  expect(S.computeReviewState(pr.id)).toBe("PASSED");
 });
 
 test("one commit can carry several reviews distinguished by topic (#209)", () => {
@@ -434,7 +394,6 @@ test("review state stays stale while any topic only passed an older head", () =>
   S.createReview(pr.id, "rev", "PASS", "security ok", "sha-2", "security");
   S.createReview(pr.id, "rev", "PASS", "acceptance ok", "sha-2", "acceptance");
 
-  expect(S.computeReviewState(pr.id)).toBe("STALE");
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
     allTopicsPassed: false,
@@ -913,17 +872,17 @@ test("listEvents filters by exact type, type namespace, and workflow run id", ()
 
 test("setRepoFavorite toggles favorite and stamps/clears favorited_at (#457)", () => {
   const repo = S.createRepo("me/fav", "/tmp/fav");
-  expect(S.isFavorite(repo)).toBe(false);
+  expect(!!repo.favorite).toBe(false);
   expect(repo.favorited_at).toBeNull();
 
   S.setRepoFavorite(repo.id, true);
   const favorited = S.getRepoById(repo.id)!;
-  expect(S.isFavorite(favorited)).toBe(true);
+  expect(!!favorited.favorite).toBe(true);
   expect(favorited.favorited_at).not.toBeNull();
 
   S.setRepoFavorite(repo.id, false);
   const unfavorited = S.getRepoById(repo.id)!;
-  expect(S.isFavorite(unfavorited)).toBe(false);
+  expect(!!unfavorited.favorite).toBe(false);
   expect(unfavorited.favorited_at).toBeNull();
 });
 

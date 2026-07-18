@@ -349,19 +349,4 @@ export const issues = {
     });
     return S.issueLabels(row.id).map(labelJSON);
   },
-
-  removeLabel(
-    name: string,
-    number: number,
-    label: string,
-    sessionId?: string | null,
-  ) {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const row = issueOr404(r, number);
-    S.removeLabel(r.id, row.id, label);
-    const actor = actorFor(sessionId);
-    const labels = S.issueLabels(row.id).map((l) => l.name);
-    S.emitEvent(r.id, "issue.labeled", actor, { number: row.number, labels });
-  },
 };

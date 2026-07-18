@@ -16,14 +16,6 @@ export interface HerdrPaneRow {
 
 export type HerdrPaneRelationship = "related" | "filed-from";
 
-export interface HerdrPaneResourceRow {
-  pane_id: number;
-  resource_kind: string;
-  resource_key: string;
-  relationship: HerdrPaneRelationship;
-  created_at: string;
-}
-
 export interface HerdrPaneClaimRow {
   id: number;
   pane_id: number;

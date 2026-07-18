@@ -44,13 +44,3 @@ export function setLabels(repoId: number, issueId: number, names: string[]) {
   db.run(`DELETE FROM issue_labels WHERE issue_id = ?`, [issueId]);
   addLabels(repoId, issueId, names);
 }
-export function removeLabel(repoId: number, issueId: number, name: string) {
-  const l = db
-    .query(`SELECT id FROM labels WHERE repo_id = ? AND name = ?`)
-    .get(repoId, name) as Pick<LabelRow, "id"> | null;
-  if (l)
-    db.run(`DELETE FROM issue_labels WHERE issue_id = ? AND label_id = ?`, [
-      issueId,
-      l.id,
-    ]);
-}

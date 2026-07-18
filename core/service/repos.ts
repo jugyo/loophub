@@ -39,13 +39,6 @@ export const repos = {
     return S.getRepoById(id);
   },
 
-  // Raw split, not S.splitName: splitName defaults an owner-less name to "me/<name>", which
-  // would silently change exact repo-filter matching for callers that pass an unslashed name.
-  getByFullName(fullName: string): S.Repo | null {
-    const [owner, name] = fullName.split("/");
-    return S.getRepo(owner, name);
-  },
-
   async create(
     input: { path: string; name: string },
     sessionId?: string | null,

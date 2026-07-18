@@ -54,17 +54,6 @@ export function listSessionSubagentUsage(
     .all(sessionId) as SessionSubagentUsageRow[];
 }
 
-export function hasSessionSubagentUsage(sessionId: string): boolean {
-  return !!db
-    .query(
-      `SELECT 1 AS ok
-       FROM session_usage_subagents
-       WHERE session_id = ?
-       LIMIT 1`,
-    )
-    .get(sessionId);
-}
-
 export function deleteSessionSubagentUsageByKind(
   sessionId: string,
   kind: string,
@@ -185,19 +174,6 @@ export function listSessionRateHistory(since: string): SessionRateHistoryRow[] {
     .all(since) as SessionRateHistoryRow[];
 }
 
-export function listRecentSessionUsageSamples(
-  since: string,
-): SessionUsageSample[] {
-  return db
-    .query(
-      `SELECT session_id, total_tokens, token_delta, observed_at
-       FROM session_usage_samples
-       WHERE observed_at >= ?
-       ORDER BY observed_at, id`,
-    )
-    .all(since) as SessionUsageSample[];
-}
-
 export function listRecentInProgressSessionUsageSamples(
   since: string,
 ): SessionUsageSample[] {
@@ -311,15 +287,6 @@ export function sessionUsageCostSummaryForSessions(
     unobserved_session_ids: unobservedSessionIds,
     unknown_cost_session_ids: unknownCostSessionIds,
   };
-}
-
-export function latestSessionUsageAt(sessionId: string): string | null {
-  const row = db
-    .query(
-      `SELECT MAX(updated_at) AS updated_at FROM session_usage WHERE session_id = ?`,
-    )
-    .get(sessionId) as { updated_at: string | null };
-  return row.updated_at;
 }
 
 export function getSessionUsageCursor(

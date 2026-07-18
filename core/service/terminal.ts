@@ -1,6 +1,5 @@
 import type {
   HerdrRepoSessionsWire,
-  HerdrSessionAgentWire,
   HerdrSessionsWire,
   TerminalLaunchResultWire,
 } from "../serialize.ts";
@@ -274,7 +273,6 @@ async function launchWorkflowRunHerdr(
 // clients can mute those rows so no-longer-needed agents stand out at a glance. An
 // agent with no resolvable PR (repo-root cwd, legacy worktree convention, or a pr-<n> dir
 // with no matching PR row) stays false: unknown must render as a normal row, not a stale one.
-export type HerdrSessionAgent = HerdrSessionAgentWire;
 export type HerdrRepoSessions = HerdrRepoSessionsWire;
 export type HerdrSessionsResult = HerdrSessionsWire;
 
@@ -360,10 +358,6 @@ function acquireHerdrWorktreeTab(
 
 // ===== terminal launch =====
 export const terminal = {
-  config(): { backend: "herdr" } {
-    return { backend: "herdr" };
-  },
-
   async launch(input: TerminalLaunchInput): Promise<TerminalLaunchResultWire> {
     if (!input.repo) throw new ServiceError(422, "repo is required");
     const r = repoOr404(input.repo);

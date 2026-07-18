@@ -34,7 +34,6 @@ import {
   RUNTIME_CODEX,
   RUNTIME_GROK,
   readTranscriptSlice,
-  relatedSessionsJSON,
   repoOr404,
   resolveWorktreeIdentity,
   S,
@@ -507,12 +506,6 @@ export const sessions = {
     return rate;
   },
 
-  get(id: string) {
-    const row = S.getAgentSession(id);
-    if (!row) throw new ServiceError(404, "Not Found");
-    return agentSessionJSON(row);
-  },
-
   usage(id?: string) {
     if (id) {
       if (!S.getAgentSession(id)) throw new ServiceError(404, "Not Found");
@@ -854,20 +847,5 @@ export const sessions = {
       missing: results.filter((r) => r.status === "missing").length,
       sessions: results,
     };
-  },
-
-  // The related-sessions list for a PR or issue (#298), standalone — same payload pullJSON/issueJSON
-  // embed as `related_sessions`, exposed directly for clients that want it without the full detail.
-  listFor(name: string, input: { issue?: number; pr?: number }): any[] {
-    const r = repoOr404(name);
-    const { issue, pr } = input;
-    if ((issue == null) === (pr == null))
-      throw new ServiceError(422, "exactly one of issue or pr is required");
-    if (issue != null)
-      return relatedSessionsJSON(issueOr404(r, issue, "issue"));
-    const row = issueOr404(r, pr as number, "pull");
-    return relatedSessionsJSON(row, {
-      primarySessionId: S.primaryDevSessionForPull(row.id),
-    });
   },
 };

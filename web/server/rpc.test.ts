@@ -133,7 +133,7 @@ test("search/query routes a repository-scoped query to the search service", asyn
 });
 
 test("workspaces/list routes to the workspace service", async () => {
-  const repo = svc.repos.getByFullName("me/proj");
+  const repo = S.getRepo("me", "proj");
   S.createWorkspace(repo!.id, "integration/stack");
 
   const listed: any = await call("workspaces/list", { repo: "me/proj" });
@@ -193,7 +193,7 @@ test("workspace archive methods route to the workspace service", async () => {
 });
 
 test("events/list preserves ascending cursor, repo filter, and limit semantics", async () => {
-  const repo = svc.repos.getByFullName("me/proj");
+  const repo = S.getRepo("me", "proj");
   expect(repo).not.toBeNull();
   const since = svc.events.newestId();
   svc.events.emit(repo!.id, "issue.updated", "tester", { number: 301 });
@@ -223,7 +223,7 @@ test("events/list preserves ascending cursor, repo filter, and limit semantics",
 });
 
 test("workflowRuns/history exposes only the requested run's lifecycle events", async () => {
-  const repo = svc.repos.getByFullName("me/proj")!;
+  const repo = S.getRepo("me", "proj")!;
   const workflow = S.createWorkflow({
     name: "rpc-history",
     description: "",

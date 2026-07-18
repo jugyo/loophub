@@ -82,10 +82,6 @@ export function setRepoFavorite(id: number, favorite: boolean) {
   ]);
 }
 
-export function isFavorite(repo: Repo): boolean {
-  return !!repo.favorite;
-}
-
 // #406: set (or clear) the repo's merge-mode toggle. `mode` of null resets to the default-by-remote
 // behavior; 'merge' / 'github_pr' pin the choice. The caller validates the value.
 export function setRepoMergeMode(

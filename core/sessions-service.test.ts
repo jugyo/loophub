@@ -36,7 +36,17 @@ process.env.LOOPHUB_DB = join(HOME, "test.db");
 let svc: typeof import("./service.ts");
 let D: typeof import("./db.ts");
 let SU: typeof import("./session-usage.ts");
+let ST: typeof import("./store.ts");
+let serialize: typeof import("./serialize.ts");
 let repoPath: string;
+
+// sessions.get was removed as a dead production export (#1632); it only wrapped a store row in
+// agentSessionJSON, so tests read the serialized session detail directly through that same path.
+function getSession(id: string) {
+  const row = ST.getAgentSession(id);
+  if (!row) throw new Error(`session not found: ${id}`);
+  return serialize.agentSessionJSON(row);
+}
 
 function git(args: string[]) {
   spawnSync("git", ["-C", repoPath, ...args], { encoding: "utf8" });
@@ -98,6 +108,8 @@ beforeAll(async () => {
   svc = await import("./service.ts");
   D = await import("./db.ts");
   SU = await import("./session-usage.ts");
+  ST = await import("./store.ts");
+  serialize = await import("./serialize.ts");
   repoPath = mkdtempSync(join(tmpdir(), "lh-sess-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -189,10 +201,10 @@ test("sessions.link attaches a session to an issue; issue detail lists it, resum
   expect(s.resume.reason).toBe("resume-via-pull");
 });
 
-test("sessions.link is idempotent and rejects ambiguous / missing targets", () => {
+test("sessions.link is idempotent and rejects ambiguous / missing targets", async () => {
   // Idempotent: re-linking does not duplicate.
   svc.sessions.link("me/proj", { sessionId: REVIEW_UUID, issue: 1 });
-  const list = svc.sessions.listFor("me/proj", { issue: 1 });
+  const list = ((await svc.issues.get("me/proj", 1)) as any).related_sessions;
   expect(list.filter((x: any) => x.id === REVIEW_UUID).length).toBe(1);
 
   // Exactly one of issue/pr is required.
@@ -206,13 +218,6 @@ test("sessions.link is idempotent and rejects ambiguous / missing targets", () =
   expect(() =>
     svc.sessions.link("me/proj", { sessionId: "no-such", issue: 1 }),
   ).toThrow();
-});
-
-test("sessions.listFor a PR marks the primary dev session resumable", () => {
-  const list = svc.sessions.listFor("me/proj", { pr: 2 });
-  expect(list.length).toBe(2);
-  expect(list.some((s: any) => s.resume.resumable)).toBe(true);
-  expect(list[0].linked_targets).toBeUndefined();
 });
 
 test("sessions.list includes linked targets for the sessions page", () => {
@@ -469,7 +474,8 @@ test("a session linked to a PR with no primary dev session is NOT resumable (not
   });
   svc.sessions.link("me/proj", { sessionId: anchorless, pr: pr.number });
 
-  const list = svc.sessions.listFor("me/proj", { pr: pr.number });
+  const list = ((await svc.pulls.get("me/proj", pr.number)) as any)
+    .related_sessions;
   const s = list.find((x: any) => x.id === anchorless);
   expect(s.resume.resumable).toBe(false);
   expect(s.resume.reason).toBe("not-anchor");
@@ -562,13 +568,13 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   const first = svc.sessions.usageSync({ sessionId, projectsDir });
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(first.sessions[0].messages).toBe(1);
-  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+  expect(getSession(sessionId).usage![0]).toMatchObject({
     model: "claude-sonnet-4-6-20260601",
     input_tokens: 100,
     output_tokens: 10,
     context_usage_percent: 0.042,
   });
-  expect(svc.sessions.get(sessionId).usage![0].cost_usd).toBeCloseTo(0.000615);
+  expect(getSession(sessionId).usage![0].cost_usd).toBeCloseTo(0.000615);
   expect(
     D.db
       .query(
@@ -595,7 +601,7 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   } finally {
     chmodSync(transcript, 0o600);
   }
-  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+  expect(getSession(sessionId).usage![0]).toMatchObject({
     input_tokens: 100,
     output_tokens: 10,
     context_usage_percent: null,
@@ -604,7 +610,7 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
   const backfilled = svc.sessions.usageSync({ sessionId, projectsDir });
   expect(backfilled).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(backfilled.sessions[0].messages).toBe(1);
-  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+  expect(getSession(sessionId).usage![0]).toMatchObject({
     context_usage_percent: 0.042,
   });
 
@@ -634,7 +640,7 @@ test("sessions.usageSync imports Claude transcript usage incrementally", () => {
 
   const second = svc.sessions.usageSync({ sessionId, projectsDir });
   expect(second.sessions[0].messages).toBe(1);
-  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+  expect(getSession(sessionId).usage![0]).toMatchObject({
     input_tokens: 107,
     output_tokens: 13,
   });
@@ -833,7 +839,7 @@ test("sessions.usageSync does not repeatedly backfill unavailable Claude context
 
   const first = svc.sessions.usageSync({ sessionId, projectsDir });
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+  expect(getSession(sessionId).usage![0]).toMatchObject({
     model: "claude-sonnet-4-6-20260601",
     input_tokens: 0,
     cache_creation_input_tokens: 0,
@@ -908,7 +914,7 @@ test("sessions.usageSync imports Claude sidechain usage as subagent detail", () 
   const synced = svc.sessions.usageSync({ sessionId, projectsDir });
   expect(synced).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(synced.sessions[0].messages).toBe(2);
-  const session = svc.sessions.get(sessionId) as any;
+  const session = getSession(sessionId) as any;
   expect(session.usage).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -938,7 +944,7 @@ test("sessions.usageSync imports Claude sidechain usage as subagent detail", () 
   );
   const backfilled = svc.sessions.usageSync({ sessionId, projectsDir });
   expect(backfilled).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-  expect((svc.sessions.get(sessionId) as any).subagent_usage[0]).toMatchObject({
+  expect((getSession(sessionId) as any).subagent_usage[0]).toMatchObject({
     context_usage_percent: 0.0125,
   });
 
@@ -1044,14 +1050,14 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
   const first = svc.sessions.usageSync({ sessionId, codexSessionsDir });
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   expect(first.sessions[0].messages).toBe(3);
-  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+  expect(getSession(sessionId).usage![0]).toMatchObject({
     model: "gpt-5.5",
     input_tokens: 140,
     cache_read_input_tokens: 30,
     output_tokens: 10,
   });
-  expect(svc.sessions.get(sessionId).usage![0].cost_usd).toBeCloseTo(0.001015);
-  expect((svc.sessions.get(sessionId) as any).subagent_usage[0]).toMatchObject({
+  expect(getSession(sessionId).usage![0].cost_usd).toBeCloseTo(0.001015);
+  expect((getSession(sessionId) as any).subagent_usage[0]).toMatchObject({
     source_id: "subagent-thread",
     parent_source_id: "root-thread",
     label: "Codex thread subagent-thread",
@@ -1065,7 +1071,7 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
   ]);
   const backfilled = svc.sessions.usageSync({ sessionId, codexSessionsDir });
   expect(backfilled).toMatchObject({ synced: 0, skipped: 1, missing: 0 });
-  expect((svc.sessions.get(sessionId) as any).subagent_usage[0]).toMatchObject({
+  expect((getSession(sessionId) as any).subagent_usage[0]).toMatchObject({
     source_id: "subagent-thread",
     parent_source_id: "root-thread",
     kind: "codex-child-rollout",
@@ -1126,7 +1132,7 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
   );
   const detailChanged = svc.sessions.usageSync({ sessionId, codexSessionsDir });
   expect(detailChanged).toMatchObject({ synced: 0, skipped: 1, missing: 0 });
-  expect((svc.sessions.get(sessionId) as any).subagent_usage[0]).toMatchObject({
+  expect((getSession(sessionId) as any).subagent_usage[0]).toMatchObject({
     source_id: "subagent-thread",
     input_tokens: 35,
     output_tokens: 2,
@@ -1153,8 +1159,8 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
   for (const file of rolloutFiles) rmSync(file, { force: true });
   const missing = svc.sessions.usageSync({ sessionId, codexSessionsDir });
   expect(missing).toMatchObject({ synced: 0, skipped: 0, missing: 1 });
-  expect(svc.sessions.get(sessionId).usage ?? []).toEqual([]);
-  expect((svc.sessions.get(sessionId) as any).subagent_usage ?? []).toEqual([]);
+  expect(getSession(sessionId).usage ?? []).toEqual([]);
+  expect((getSession(sessionId) as any).subagent_usage ?? []).toEqual([]);
 
   rmSync(codexSessionsDir, { recursive: true, force: true });
 });
@@ -1277,7 +1283,7 @@ test("sessions.usageSync imports Grok updates.jsonl for the linked PR worktree c
   const first = svc.sessions.usageSync({ sessionId, grokSessionsDir });
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
   // Owner (primary dev) stores the worktree aggregate; peer is cleared.
-  const ownerUsage = svc.sessions.get(sessionId).usage ?? [];
+  const ownerUsage = getSession(sessionId).usage ?? [];
   expect(ownerUsage).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -1298,7 +1304,7 @@ test("sessions.usageSync imports Grok updates.jsonl for the linked PR worktree c
   expect(grok45.cost_usd).toBeCloseTo(
     (800 * 2 + 200 * 0.5 + 50 * 6) / 1_000_000,
   );
-  expect(svc.sessions.get(peerId).usage ?? []).toEqual([]);
+  expect(getSession(peerId).usage ?? []).toEqual([]);
 
   // Unchanged re-sync is skipped.
   const second = svc.sessions.usageSync({ sessionId, grokSessionsDir });
@@ -1323,7 +1329,7 @@ test("sessions.usageSync imports Grok updates.jsonl for the linked PR worktree c
     full: true,
   });
   expect(unknown).toMatchObject({ synced: 1 });
-  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+  expect(getSession(sessionId).usage![0]).toMatchObject({
     model: "grok-unknown-future",
     input_tokens: 50,
     output_tokens: 5,
@@ -1409,7 +1415,7 @@ test("sessions.usageSync reconstructs Grok turn rate samples for live TPS", asyn
   expect(summary.tokens_per_second!).toBeGreaterThan(0);
 
   // Cost columns stay single-counted (one upsert path only).
-  const usage = svc.sessions.get(sessionId).usage ?? [];
+  const usage = getSession(sessionId).usage ?? [];
   expect(usage).toHaveLength(1);
   expect(usage[0]).toMatchObject({
     model: "grok-4.5",
@@ -1440,7 +1446,7 @@ test("sessions.usageSync clears stale Codex usage when no PR worktree target res
   const result = svc.sessions.usageSync({ sessionId });
   expect(result).toMatchObject({ synced: 0, skipped: 0, missing: 1 });
   expect(result.sessions[0].models).toEqual([]);
-  expect(svc.sessions.get(sessionId).usage ?? []).toEqual([]);
+  expect(getSession(sessionId).usage ?? []).toEqual([]);
 });
 
 test("sessions.usageSync records one Codex worktree aggregate for hundreds of linked sessions", async () => {
@@ -1516,11 +1522,11 @@ test("sessions.usageSync records one Codex worktree aggregate for hundreds of li
       firstStatuses.filter((x: any) => x.status === "skipped"),
     ).toHaveLength(sessionCount - 1);
     const primarySessionId = sessionIds[sessionIds.length - 1];
-    expect(svc.sessions.get(primarySessionId).usage![0]).toMatchObject({
+    expect(getSession(primarySessionId).usage![0]).toMatchObject({
       input_tokens: 21900,
       output_tokens: 200,
     });
-    expect(svc.sessions.get(sessionIds[0]).usage ?? []).toEqual([]);
+    expect(getSession(sessionIds[0]).usage ?? []).toEqual([]);
 
     for (const file of rolloutFiles) chmodSync(file, 0);
     const second = svc.sessions.usageSync({ codexSessionsDir });
@@ -1572,7 +1578,7 @@ test("sessions.usageSync keeps multiple same-worktree Codex roots aggregated", a
 
   const first = svc.sessions.usageSync({ sessionId, codexSessionsDir });
   expect(first).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+  expect(getSession(sessionId).usage![0]).toMatchObject({
     input_tokens: 10,
     output_tokens: 1,
   });
@@ -1593,7 +1599,7 @@ test("sessions.usageSync keeps multiple same-worktree Codex roots aggregated", a
 
   const result = svc.sessions.usageSync({ sessionId, codexSessionsDir });
   expect(result).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-  expect(svc.sessions.get(sessionId).usage![0]).toMatchObject({
+  expect(getSession(sessionId).usage![0]).toMatchObject({
     input_tokens: 30,
     output_tokens: 3,
   });
@@ -1690,13 +1696,11 @@ test("sessions.usageSync sums all Codex rollouts in the PR worktree without peer
     codexSessionsDir,
   });
   expect(result).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
-  expect(svc.sessions.get(firstSessionId).usage![0]).toMatchObject({
+  expect(getSession(firstSessionId).usage![0]).toMatchObject({
     input_tokens: 1030,
     output_tokens: 103,
   });
-  expect(
-    (svc.sessions.get(firstSessionId) as any).subagent_usage[0],
-  ).toMatchObject({
+  expect((getSession(firstSessionId) as any).subagent_usage[0]).toMatchObject({
     source_id: "child",
     parent_source_id: "root",
     input_tokens: 20,
@@ -1774,11 +1778,11 @@ test("sessions.usageSync stores Codex worktree usage on the primary PR session o
       }),
     ]),
   );
-  expect(svc.sessions.get(firstSessionId).usage![0]).toMatchObject({
+  expect(getSession(firstSessionId).usage![0]).toMatchObject({
     input_tokens: 10,
     output_tokens: 1,
   });
-  expect(svc.sessions.get(secondSessionId).usage ?? []).toEqual([]);
+  expect(getSession(secondSessionId).usage ?? []).toEqual([]);
 
   rmSync(codexSessionsDir, { recursive: true, force: true });
 });
@@ -1845,8 +1849,8 @@ test("sessions.usageSync preserves Codex worktree usage when the PR primary sess
       }),
     ]),
   );
-  expect(svc.sessions.get(devSessionId).usage ?? []).toEqual([]);
-  expect(svc.sessions.get(codexSessionId).usage![0]).toMatchObject({
+  expect(getSession(devSessionId).usage ?? []).toEqual([]);
+  expect(getSession(codexSessionId).usage![0]).toMatchObject({
     input_tokens: 40,
     cache_read_input_tokens: 10,
     output_tokens: 4,
