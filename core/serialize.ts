@@ -26,6 +26,7 @@ import { effectiveMergeMode, isGithubRemoteUrl } from "./merge-mode.ts";
 import type { MergeableState } from "./mergeable.ts";
 import { resolveMergeable } from "./mergeable.ts";
 import { resolvePullBaseSha } from "./pull-base.ts";
+import { cachedPullShaStatus } from "./pull-status-cache.ts";
 import { pullWorktreeDirty } from "./pull-worktree.ts";
 import type { EffectiveAgentConfig } from "./repo-agent-config.ts";
 import { normalizeRepoAgentRuntime } from "./repo-agent-config.ts";
@@ -1124,7 +1125,11 @@ function pullSummary(repo: S.Repo, pr: S.LinkedPullIssueRow): PullSummaryWire {
 // "working" flag, and review state. Shared by pullJSON (PR list/detail) and the
 // issue list's linked-PR summary so both compute status identically. The git
 // fan-out (revParse/mergePreview/diffStat/status) is bounded — callers keep
-// their lists paginated.
+// their lists paginated — and its SHA-derived slice (merge preview, commits
+// ahead, effective diff, diff stat) is cached on the (baseSha, headSha) pair so
+// a list refetch with no moved ref reuses the result instead of respawning git
+// (#1668, see pull-status-cache.ts). "working" and review state are not
+// SHA-determined and are recomputed every call.
 interface PullStatusFields {
   // The PR row this status was computed from — already fetched here, so callers reuse it instead of
   // a second S.getPull for the same id (e.g. linkedPullDetail's #882 work-duration lookup).
@@ -1165,38 +1170,55 @@ async function pullStatusFields(
   let mergeable: boolean | null = null;
   let mergeable_state: MergeableState = "unknown";
   let commits_ahead = 0;
-  if (!p.merged && headSha && baseSha) {
-    const [prev, ahead, effectiveDiff] = await Promise.all([
-      mergePreview(repo.local_path, p.base_ref, p.head_ref),
-      commitsAhead(repo.local_path, p.base_ref, p.head_ref),
-      hasEffectiveDiff(repo.local_path, p.base_ref, p.head_ref),
-    ]);
-    commits_ahead = ahead;
-    ({ mergeable, mergeable_state } = resolveMergeable({
-      hasEffectiveDiff: effectiveDiff,
-      conflict: prev.conflict,
-      reviewed: reviewStatus.gate.reviewed,
-      allTopicsPassed: reviewStatus.gate.allTopicsPassed,
-    }));
-  }
-  // Diff totals (+/-, changed files) for the PR. Aggregated from numstat over
-  // base...head; left at 0 when refs can't be resolved so list/detail render
-  // gracefully. Skip merged PRs (like the mergeable fan-out above): base...head
+  // Diff totals (+/-, changed files) for the PR. Left at 0 when refs can't be
+  // resolved so list/detail render gracefully. Skip merged PRs: base...head
   // would be empty for a merge commit but show the full original diff for a
   // squash/rebase merge whose head branch still exists — inconsistent, so don't.
   let additions = 0;
   let deletions = 0;
   let changed_files = 0;
   if (!p.merged && headSha && baseSha) {
-    try {
-      ({
-        additions,
-        deletions,
-        changedFiles: changed_files,
-      } = await diffStat(repo.local_path, p.base_ref, p.head_ref));
-    } catch {
-      // leave zeros — a diff stat failure must not break serialization
-    }
+    // #1668: the merge preview, commits-ahead, effective-diff, and diff stat
+    // are all deterministic in (baseSha, headSha), so cache the whole fan-out
+    // on that pair — a refetch with no moved ref spawns zero git subprocesses.
+    // Run each git command against the resolved SHAs (not the refs) so the
+    // cached value matches its key even if a ref moves after we resolved it.
+    const status = await cachedPullShaStatus(
+      repo.local_path,
+      baseSha,
+      headSha,
+      async () => {
+        const [prev, ahead, effectiveDiff, stat] = await Promise.all([
+          mergePreview(repo.local_path, baseSha, headSha),
+          commitsAhead(repo.local_path, baseSha, headSha),
+          hasEffectiveDiff(repo.local_path, baseSha, headSha),
+          // A diff stat failure must not break serialization — fall back to zeros.
+          diffStat(repo.local_path, baseSha, headSha).catch(() => ({
+            additions: 0,
+            deletions: 0,
+            changedFiles: 0,
+          })),
+        ]);
+        return {
+          conflict: prev.conflict,
+          commitsAhead: ahead,
+          hasEffectiveDiff: effectiveDiff,
+          additions: stat.additions,
+          deletions: stat.deletions,
+          changedFiles: stat.changedFiles,
+        };
+      },
+    );
+    commits_ahead = status.commitsAhead;
+    additions = status.additions;
+    deletions = status.deletions;
+    changed_files = status.changedFiles;
+    ({ mergeable, mergeable_state } = resolveMergeable({
+      hasEffectiveDiff: status.hasEffectiveDiff,
+      conflict: status.conflict,
+      reviewed: reviewStatus.gate.reviewed,
+      allTopicsPassed: reviewStatus.gate.allTopicsPassed,
+    }));
   }
   // "working" badge: real uncommitted changes in this PR's worktree. Guarded so the
   // git status only runs for an open PR whose worktree directory actually exists (see
