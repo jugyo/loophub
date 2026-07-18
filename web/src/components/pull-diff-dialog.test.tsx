@@ -1,0 +1,481 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mockRpcFetch } from "@/api/rpc-mock";
+import type { PullFile, PullLineComment } from "@/api/types";
+
+import { DiffFileDialog } from "./pull-diff-dialog";
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+const file: PullFile = {
+  filename: "web/src/a.ts",
+  status: "modified",
+  additions: 1,
+  deletions: 1,
+  patch: "@@ -1 +1 @@\n-const x = 0;\n+const x = 1;",
+};
+
+const lineComments: PullLineComment[] = [
+  {
+    id: 1,
+    pull_request_review_id: 1,
+    user: { login: "design-bot" },
+    path: "web/src/a.ts",
+    line: 1,
+    side: "RIGHT",
+    body: "nice constant",
+    created_at: "2026-06-18T11:30:00Z",
+  },
+];
+
+function renderDialog({
+  file: dialogFile = file,
+  comments = [],
+  hasPreviousFile = false,
+  hasNextFile = false,
+  onPreviousFile = () => {},
+  onNextFile = () => {},
+  onClose = () => {},
+  handlers = {},
+}: {
+  file?: PullFile;
+  comments?: PullLineComment[];
+  hasPreviousFile?: boolean;
+  hasNextFile?: boolean;
+  onPreviousFile?: () => void;
+  onNextFile?: () => void;
+  onClose?: () => void;
+  handlers?: Record<string, (params: any) => unknown>;
+} = {}) {
+  vi.stubGlobal("fetch", mockRpcFetch(handlers));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <DiffFileDialog
+        owner="me"
+        repo="proj"
+        number={30}
+        file={dialogFile}
+        comments={comments}
+        hasPreviousFile={hasPreviousFile}
+        hasNextFile={hasNextFile}
+        onPreviousFile={onPreviousFile}
+        onNextFile={onNextFile}
+        onClose={onClose}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+describe("DiffFileDialog", () => {
+  it("renders the diff with its line comments", () => {
+    renderDialog({ comments: lineComments });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for web\/src\/a\.ts/i,
+    });
+    expect(within(dialog).getByText("+const x = 1;")).toBeTruthy();
+    expect(within(dialog).getAllByText("nice constant").length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("closes on Escape and on a backdrop click", async () => {
+    const onClose = vi.fn();
+    renderDialog({ onClose });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for web\/src\/a\.ts/i,
+    });
+    fireEvent.click(dialog.parentElement as HTMLElement);
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the dialog open when the panel itself is clicked", () => {
+    const onClose = vi.fn();
+    renderDialog({ onClose });
+
+    fireEvent.click(
+      screen.getByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("disables Prev/Next at the ends and fires navigation otherwise", () => {
+    const onPreviousFile = vi.fn();
+    const onNextFile = vi.fn();
+    renderDialog({ hasNextFile: true, onPreviousFile, onNextFile });
+
+    const prev = screen.getByRole("button", { name: /Prev/i });
+    const next = screen.getByRole("button", { name: /Next/i });
+    expect((prev as HTMLButtonElement).disabled).toBe(true);
+    expect((next as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(prev);
+    expect(onPreviousFile).not.toHaveBeenCalled();
+    fireEvent.click(next);
+    expect(onNextFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("copies the displayed file path with visible feedback", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const dialog = renderDialog().container;
+
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Copy file path: web/src/a.ts",
+      }),
+    );
+
+    expect(writeText).toHaveBeenCalledWith("web/src/a.ts");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Copied" }),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("switches to raw file content and copies the full content", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    renderDialog({
+      handlers: {
+        "pulls/fileAtRef": () => ({
+          status: "ok",
+          content: "const x = 1;\nconst y = 2;\n",
+        }),
+      },
+    });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for web\/src\/a\.ts/i,
+    });
+    expect(within(dialog).getByText("+const x = 1;")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Raw" }));
+
+    expect(await within(dialog).findByText(/const x = 1;/)).toBeTruthy();
+    expect(within(dialog).queryByText("+const x = 1;")).toBeNull();
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Copy raw file: web/src/a.ts",
+      }),
+    );
+
+    expect(writeText).toHaveBeenCalledWith("const x = 1;\nconst y = 2;\n");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Copied" }),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("loads removed files from the base ref in raw mode", async () => {
+    const removedFile: PullFile = {
+      filename: "removed.txt",
+      status: "removed",
+      additions: 0,
+      deletions: 1,
+      patch: "@@ -1 +0,0 @@\n-old content",
+    };
+    const fileAtRef = vi.fn(() => ({
+      status: "ok" as const,
+      content: "old content\n",
+    }));
+    renderDialog({
+      file: removedFile,
+      handlers: { "pulls/fileAtRef": fileAtRef },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+
+    expect(await screen.findByText("old content")).toBeTruthy();
+    expect(fileAtRef).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "removed.txt",
+        side: "base",
+      }),
+    );
+  });
+
+  it("integrates Markdown base/head preview into the diff dialog (#435)", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-# old\n+# new",
+    };
+    renderDialog({
+      file: mdFile,
+      hasPreviousFile: true,
+      hasNextFile: true,
+      handlers: {
+        "pulls/fileAtRef": (p) =>
+          p.side === "base"
+            ? { status: "ok", content: "# old\n" }
+            : { status: "ok", content: "# new\n" },
+      },
+    });
+
+    const dialog = screen.getByRole("dialog", { name: /Diff for README.md/i });
+    expect(
+      within(dialog)
+        .getAllByRole("button")
+        .map(
+          (button) =>
+            button.getAttribute("aria-label") ?? button.textContent?.trim(),
+        ),
+    ).toEqual([
+      "Copy file path: README.md",
+      "Diff",
+      "Raw",
+      "Base",
+      "Head",
+      "Prev",
+      "Next",
+      "Close diff",
+    ]);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Head" }));
+    expect(await screen.findByRole("heading", { name: "new" })).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Base" }));
+    expect(await screen.findByRole("heading", { name: "old" })).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Diff" }));
+    expect(await within(dialog).findByText("+# new")).toBeTruthy();
+  });
+
+  it("hides Preview but copies the target path for a renamed Markdown file (mangled numstat path, #436)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    // git numstat renders a cross-directory rename as "old => new" — this still ends in ".md" but
+    // is not a resolvable git path, so `pulls.fileAtRef` would always report "missing" for it.
+    const renamedFile: PullFile = {
+      filename: "docs/old.md => top.md",
+      status: "renamed",
+      additions: 1,
+      deletions: 0,
+      patch: "@@ -1 +1 @@\n-# old\n+# old\n+extra",
+    };
+    renderDialog({ file: renamedFile });
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Copy file path: top.md" }),
+      );
+    });
+    expect(writeText).toHaveBeenCalledWith("top.md");
+    expect(screen.queryByRole("button", { name: /^Preview$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Base" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Head" })).toBeNull();
+  });
+
+  it("copies the target path for a braced renamed file path", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const renamedFile: PullFile = {
+      filename: "sub/{old/name.md => new/name2.md}",
+      status: "renamed",
+      additions: 1,
+      deletions: 0,
+      patch: "",
+    };
+    renderDialog({ file: renamedFile });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for sub\/\{old\/name\.md => new\/name2\.md\}/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: sub/new/name2.md",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("sub/new/name2.md");
+  });
+
+  it("copies structured head filenames for renamed targets containing the rename marker text", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const renamedFile: PullFile = {
+      filename: "old.txt => new => target.txt",
+      previousFilename: "old.txt",
+      headFilename: "new => target.txt",
+      status: "renamed",
+      additions: 0,
+      deletions: 0,
+      patch: "",
+    };
+    renderDialog({ file: renamedFile });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for old\.txt => new => target\.txt/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: new => target.txt",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("new => target.txt");
+  });
+
+  it("keeps the diff dialog copy button for a non-renamed file path containing the rename marker text", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const literalMarkerFile: PullFile = {
+      filename: "docs/a => b.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-old\n+new",
+    };
+    renderDialog({ file: literalMarkerFile });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for docs\/a => b\.ts/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: docs/a => b.ts",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("docs/a => b.ts");
+  });
+
+  it("copies a visible escaped path for filenames with hidden control characters", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const controlCharFile: PullFile = {
+      filename: "docs/readme\n\tinstall.md",
+      headFilename: "docs/readme\n\tinstall.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-old\n+new",
+    };
+    renderDialog({ file: controlCharFile });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for docs\/readme\s+install\.md/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: docs/readme\\n\\tinstall.md",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("docs/readme\\n\\tinstall.md");
+  });
+
+  it("copies a visible escaped path for filenames with zero-width characters", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const zeroWidthFile: PullFile = {
+      filename: "docs/readme\u200binstall.md",
+      headFilename: "docs/readme\u200binstall.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-old\n+new",
+    };
+    renderDialog({ file: zeroWidthFile });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for docs\/readme.*install\.md/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: docs/readme\\u200binstall.md",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("docs/readme\\u200binstall.md");
+  });
+
+  it("copies a visible escaped path for filenames with default-ignorable characters", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const defaultIgnorableFile: PullFile = {
+      filename: "docs/readme\ufe0finstall.md",
+      headFilename: "docs/readme\ufe0finstall.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-old\n+new",
+    };
+    renderDialog({ file: defaultIgnorableFile });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for docs\/readme.*install\.md/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: docs/readme\\ufe0finstall.md",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("docs/readme\\ufe0finstall.md");
+  });
+
+  it("copies a braced escape for supplementary default-ignorable characters", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const supplementaryFile: PullFile = {
+      filename: "docs/readme\u{e0100}install.md",
+      headFilename: "docs/readme\u{e0100}install.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-old\n+new",
+    };
+    renderDialog({ file: supplementaryFile });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for docs\/readme.*install\.md/i,
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Copy file path: docs/readme\\u{e0100}install.md",
+        }),
+      );
+    });
+
+    expect(writeText).toHaveBeenCalledWith("docs/readme\\u{e0100}install.md");
+  });
+});
