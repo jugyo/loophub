@@ -52,12 +52,6 @@ The terminal opens at the **repo root** (`owner/name`), not inside the PR worktr
 there: `lh pr create-github-pr` resolves the branch/worktree location internally, so this skill no
 longer `cd`s anywhere. If the id is omitted, ask the user for the LoopHub PR number; do not guess.
 
-### Compatibility alias
-
-`/create-github-pr <pr id>` remains available as a deprecated compatibility alias in
-`skills/create-github-pr/`. New UI launches, docs, and customizable/selectable workflow-skill lists
-should use `/lh-create-github-pr` so all LoopHub workflow skills share the `lh-*` naming convention.
-
 ## Design constraints (#406)
 
 - **Leave minimal LoopHub traces on GitHub.** Use a normal, content-based branch name (e.g.
@@ -232,7 +226,7 @@ GitHub PR row in `github_pulls`.
 - Do not merge, review, or mark the GitHub PR ready
 - Do not edit source or commit changes in the worktree (submit only)
 - Do not squash, rebase, or rewrite history to strip commit trailers (#406: "don't reshape")
-- Do not run the LoopHub review loop (`lh-pr-review`) or merge-ready check
+- Do not run the LoopHub review or pre-merge check (that is the Workflow run's Verify step / a human)
 - Do not push the internal `loophub/issue-<n>` branch as the GitHub branch (use a content-based name)
 - Do not include LoopHub boilerplate / `Closes #<n>` / Evidence in the GitHub PR description
 - Do not create a second GitHub PR for one that already has a `github_pull` (double-create)

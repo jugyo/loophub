@@ -2,15 +2,15 @@
 name: lh-rebase-conflict
 description: >-
   Resolve merge conflicts on a LoopHub PR head branch in a worktree, run tests, commit, and
-  hand off to lh-pr-review. Use when the user runs /lh-rebase-conflict {pr id}, when
+  hand off for re-review. Use when the user runs /lh-rebase-conflict {pr id}, when
   pull_request.merge_conflict events fire, or when babysit/dispatch routes conflict resolution. Does
   not merge.
 ---
 
 # LoopHub rebase conflict
 
-Resolve **merge conflicts on a worktree** after main moves → test → commit → resume
-`lh-pr-review` if needed. **Do not merge.**
+Resolve **merge conflicts on a worktree** after main moves → test → commit → let the PR be
+re-reviewed. **Do not merge.**
 
 ## Invocation
 
@@ -22,8 +22,8 @@ Resolve **merge conflicts on a worktree** after main moves → test → commit �
 
 ### PR number resolution (when `<pr id>` omitted)
 
-Same rules as `lh-pr-review` (obvious → infer; not obvious → ask). Typical when
-`pull_request.merge_conflict` or babysit routes to a PR already named in the session.
+Obvious → infer; not obvious → ask. Typical when `pull_request.merge_conflict` or babysit routes to
+a PR already named in the session.
 
 Before starting, state the chosen PR in one line:
 
@@ -120,7 +120,7 @@ git rebase --continue   # or git commit for merge
 
 Repo standard (e.g. `npm test` or `bun test`). **Green before proceeding**, same as before PR.
 
-### 6. Report and resume review
+### 6. Report and hand off for re-review
 
 LoopHub reads the same `.git` directly (no push); auto-sync (see [§ LoopHub](#loophub)) picks up
 the new head — no manual sync needed.
@@ -129,16 +129,10 @@ the new head — no manual sync needed.
 lh pr comment <m> --body "Conflict resolution complete. Please re-review." --actor impl-bot --repo <repo>
 ```
 
-**Continue in same session (default):**
-
-```text
-/lh-pr-review <m>
-```
-
-Re-review with the quality + security reviewers until `pass` (follow `lh-pr-review` SKILL;
-reviewer mechanism is host-mapped there).
-
-Skip pr-review only if user said "stop at rebase".
+Committing on the head branch advances HEAD past the last reviewed commit. The PR's **Workflow run**
+observes this and re-runs its **Verify** step; if no run is active, a human resumes review from the
+Web UI (**Start workflow**) or merges. This skill's job ends once conflicts are resolved, tests are
+green, and the new head is committed — it does not run the review itself.
 
 ## Shared with the Execute step
 
@@ -147,7 +141,7 @@ Skip pr-review only if user said "stop at rebase".
 | worktree location | `~/.loophub/worktrees/<owner>/<repo>/pr-<m>` (provisioned by the Workflow run) | that one reused, or `.worktrees/<head.ref>` |
 | rebase command | `git rebase main` | same |
 | merge | do not | do not |
-| review | pr-review after PR create | pr-review after resolution |
+| review | Verify step after the head advances | Verify step (or human) after resolution |
 
 If conflict occurs during a Workflow run's Execute session, apply steps 2–6 from this skill.
 

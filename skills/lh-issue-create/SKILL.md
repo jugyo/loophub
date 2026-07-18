@@ -375,7 +375,7 @@ After creation:
 ## Follow-on work
 
 ```text
-lh-issue-create → [stop] → start a Workflow run from the Web UI (Start workflow) → lh-pr-review → ...
+lh-issue-create → [stop] → start a Workflow run from the Web UI (Start workflow: implement → PR → review) → ...
 ```
 
 Do **not** auto-chain to implementation. After creating the issue, implementation is started from
