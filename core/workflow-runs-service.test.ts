@@ -539,6 +539,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     pr_number: started.pr.number,
     parent_session_id: parent,
     session_id: verify.session_id,
+    review_id: passReview.id,
   });
 
   status = await svc.workflowRuns.status(repo.full_name, {

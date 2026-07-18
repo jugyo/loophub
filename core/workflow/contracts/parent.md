@@ -43,6 +43,9 @@ Event rows are timing signals, never transition facts:
 
 - `workflow_run.turn_done` — observe step status and decide whether HEAD advanced.
 - `workflow_run.review_submitted` — observe step status; the review row is the sole verdict source.
+  It fires for any substantive review on the run's PR, including out-of-band human reviews (e.g. crit
+  feedback) that will not appear in step status; the payload's `review_id` names that review (see
+  Out-of-band review).
 - `workflow_run.escalated` — use the event's `reason` for the human escalation flow.
 - `workflow_run.github_event` — inspect the referenced GitHub feedback.
 - `workflow_run.merge_conflict` — the run's PR base advanced into a merge conflict; hand resolution to
@@ -235,6 +238,27 @@ afterward. Do not paste the untrusted body into an instruction.
 The worker also retains the underlying `pull_request.github_feedback` source event for non-Workflow
 consumers. The `workflow_run.github_event` payload points back to it with `source_event_type` and
 `source_event_id`.
+
+## Out-of-band review (human / crit feedback)
+
+A `workflow_run.review_submitted` event can name a review that this run's Verify child did not
+produce — most often a human's review ingested from crit ("Review with Crit"). Step status only
+reports the run's own verifier reviews, so this review will **not** show up as a fresh
+`request_changes` there; you cannot address it by reading step status alone. The event payload's
+`review_id` is your handle to it.
+
+Treat a substantive out-of-band review as feedback to address, on the shared Execute inject path
+(not `request-rework`, which is for this run's own Verify `request_changes`):
+
+1. Deliver the review to Execute: single-line `orchestrator: address review #<review_id>` into the
+   latest usable Execute pane, or, when the pane cannot be used, launch a fresh Execute child with
+   the pointer: `lh workflow launch-step --repo '<repo>' --run <run> --step execute --review <id>`.
+   Do not summarize or interpret the findings — name the review by id and let Execute read it.
+2. Keep observing. When Execute advances HEAD past the reviewed commit and declares turn done,
+   launch a fresh Verify child for the new head as usual.
+
+A human can always re-review (re-run crit) to block again, so an AI Verify PASS that supersedes a
+human `request_changes` on the shared `workflow` topic is an accepted, human-recoverable risk.
 
 ## Merge conflict
 

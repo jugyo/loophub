@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import type { CritLaunchPlan } from "../../core/service/pulls.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   fail,
@@ -11,7 +12,45 @@ import {
   svc,
   writeSession,
 } from "../context.ts";
+import { buildCritReview, parseCritComments } from "../crit-comments.ts";
 import { usage } from "../usage.ts";
+
+// After crit's "Finish Review", fold its unresolved comments into a single REQUEST_CHANGES review
+// via the existing `reviews.create` path (#1654). Zero unresolved comments → nothing is submitted.
+// The review's actor is the human session, so a running workflow run observes it as normal feedback.
+async function ingestCritReview(
+  s: Awaited<ReturnType<typeof svc>>,
+  repo: string,
+  plan: CritLaunchPlan,
+): Promise<void> {
+  const res = spawnSync("crit", ["comments", "--json"], {
+    cwd: plan.worktreePath,
+    encoding: "utf8",
+  });
+  // A non-zero exit means crit could not read the review (e.g. no review file) — nothing to ingest.
+  if (res.status !== 0) return;
+  const review = buildCritReview(parseCritComments(res.stdout));
+  if (!review) {
+    console.error("crit: no unresolved comments; no review submitted");
+    return;
+  }
+  await runOp(async () =>
+    s.reviews.create(
+      repo,
+      plan.number,
+      {
+        event: "REQUEST_CHANGES",
+        topic: "workflow",
+        body: review.body,
+        comments: review.comments,
+      },
+      await writeSession(),
+    ),
+  );
+  console.error(
+    `crit: submitted REQUEST_CHANGES review (${review.comments.length} line comment(s))`,
+  );
+}
 
 export async function run(): Promise<void> {
   const s = await svc();
@@ -215,6 +254,11 @@ export async function run(): Promise<void> {
         );
       }
       fail(`failed to launch crit: ${err.message}`);
+    }
+    // crit blocks until the human clicks "Finish Review"; a clean exit is that submit signal.
+    // A pane kill (no exit status) or a non-zero exit is not a submission — do not ingest.
+    if (proc.status === 0) {
+      await ingestCritReview(s, repo, plan);
     }
     process.exit(proc.status ?? 1);
   } else if (sub === "close") {

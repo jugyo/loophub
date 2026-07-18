@@ -10,34 +10,17 @@ import {
   ServiceError,
 } from "./shared.ts";
 
-function workflowRunForVerifyReview(
+// The running workflow run for this PR, if any. Unlike `latestWorkflowRunReview` (which stays
+// scoped to this run's verifier children for transition decisions), the run-scoped observation
+// event fires for *any* substantive review on the run's PR — including a human's out-of-band
+// review ingested from crit (#1654) — so the parent always re-observes step status. It carries no
+// verdict; the persisted review row remains the sole verdict source.
+function runningWorkflowRunForPull(
   repoId: number,
   prNumber: number,
-  sessionId: string | null | undefined,
 ): S.WorkflowRunRow | null {
-  if (!sessionId) return null;
   for (const run of S.listRunningWorkflowRuns()) {
-    if (
-      run.repo_id !== repoId ||
-      run.pr_number !== prNumber ||
-      run.current_step !== "verify"
-    ) {
-      continue;
-    }
-    try {
-      const sessions = JSON.parse(run.step_sessions_json) as Record<
-        string,
-        unknown
-      >;
-      if (
-        Array.isArray(sessions.verify) &&
-        sessions.verify.includes(sessionId)
-      ) {
-        return run;
-      }
-    } catch {
-      // A malformed legacy session list cannot safely attribute this review to a run.
-    }
+    if (run.repo_id === repoId && run.pr_number === prNumber) return run;
   }
   return null;
 }
@@ -125,19 +108,21 @@ export const reviews = {
     });
     const workflowRun =
       event === "PASS" || event === "REQUEST_CHANGES"
-        ? workflowRunForVerifyReview(r.id, row.number, sessionId)
+        ? runningWorkflowRunForPull(r.id, row.number)
         : null;
     if (workflowRun) {
       // The review row remains the sole verdict source. This run-scoped event is only the reliable
       // observation trigger for the parent, independent of whether the Verify child later manages
-      // to declare its turn done.
+      // to declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human/crit)
+      // review straight to Execute, since it will not appear in the run's own step status.
       S.emitEvent(r.id, "workflow_run.review_submitted", actor, {
         id: workflowRun.id,
         number: workflowRun.pr_number,
         issue_number: workflowRun.issue_number,
         pr_number: workflowRun.pr_number,
         parent_session_id: workflowRun.parent_session_id,
-        session_id: sessionId,
+        session_id: sessionId ?? null,
+        review_id: v.id,
       });
     }
     return { ...reviewJSON(v), comments: lineComments.length };
