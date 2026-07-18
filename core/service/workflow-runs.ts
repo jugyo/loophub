@@ -13,7 +13,6 @@ import {
   pidAlive,
   removeDevLock,
 } from "../dev-lock.ts";
-import { git } from "../git.ts";
 import { resolveWorktreeIdentity } from "../resume.ts";
 import {
   effectiveRepoAgentConfigFor,
@@ -48,11 +47,16 @@ import {
   writeParentContract,
   writeStepContract,
 } from "../workflow/run-files.ts";
-import {
-  evaluateWorkflowSteps,
-  type WorkflowLatestReviewState,
-  type WorkflowStepStatuses,
+import type {
+  WorkflowLatestReviewState,
+  WorkflowStepStatuses,
 } from "../workflow/steps.ts";
+import {
+  workflowRunProgress as observeWorkflowRunProgress,
+  pinnedBaseSha,
+  type WorkflowRunProgress,
+  worktreeHead,
+} from "../workflow-run-progress.ts";
 import {
   legacyWorktreePath,
   worktreePath as prWorktreePath,
@@ -412,77 +416,28 @@ function stepActorAllowed(
   }
 }
 
-async function worktreeHead(worktree: string): Promise<string> {
-  const result = await git(worktree, ["rev-parse", "HEAD"]);
-  const sha = result.stdout.trim();
-  if (result.code !== 0 || !sha) {
-    throw new ServiceError(422, "could not resolve Workflow worktree HEAD");
-  }
-  return sha;
-}
-
-async function worktreeHeadOptional(worktree: string): Promise<string | null> {
-  try {
-    const result = await git(worktree, ["rev-parse", "HEAD"]);
-    const sha = result.stdout.trim();
-    return result.code === 0 && sha ? sha : null;
-  } catch {
-    return null;
-  }
-}
-
-async function isHeadAheadOfBase(
-  worktree: string,
-  baseBranch: string,
-  head: string | null,
-): Promise<boolean> {
-  if (!head) return false;
-  try {
-    const result = await git(worktree, [
-      "rev-list",
-      "--count",
-      `${baseBranch}..${head}`,
-    ]);
-    return result.code === 0 && Number(result.stdout.trim()) > 0;
-  } catch {
-    return false;
-  }
-}
-
+// Resolve a run's (worktree, base ref, latest review) and observe its progress. The git-touching
+// observation lives in core/workflow-run-progress.ts; this adapter only supplies the store-derived
+// inputs (review resolution stays here — see resolveReworkReview / latestWorkflowRunReview).
 async function workflowRunProgress(
   repo: S.Repo,
   run: S.WorkflowRunRow,
-): Promise<{
-  currentHead: string | null;
-  headAheadOfBase: boolean;
-  steps: WorkflowStepStatuses;
-}> {
+): Promise<WorkflowRunProgress> {
   const prIssue = issueOr404(repo, run.pr_number, "pull");
   const pull = S.getPull(prIssue.id);
   if (!pull)
     throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-  const worktree = workflowRunWorktree({
-    repo,
-    prNumber: run.pr_number,
-    headRef: pull.head_ref,
-  });
-  const currentHead = await worktreeHeadOptional(worktree);
-  const headAheadOfBase = await isHeadAheadOfBase(
-    worktree,
-    pull.base_ref,
-    currentHead,
-  );
-  return {
-    currentHead,
-    headAheadOfBase,
-    steps: evaluateWorkflowSteps({
-      currentHead,
-      headAheadOfBase,
-      latestReview: reviewObservation(
-        latestWorkflowRunReview(prIssue.id, run.id),
-      ),
+  return observeWorkflowRunProgress({
+    worktree: workflowRunWorktree({
+      repo,
+      prNumber: run.pr_number,
+      headRef: pull.head_ref,
     }),
-  };
+    baseBranch: pull.base_ref,
+    latestReview: reviewObservation(
+      latestWorkflowRunReview(prIssue.id, run.id),
+    ),
+  });
 }
 
 // Build the issue / PR detail display state (#1008) from a run row. The row is the display-state
@@ -529,25 +484,6 @@ function workflowRunState(
     latestReview,
     verificationStatus,
   });
-}
-
-// The base SHA pinned into a Verify launch: the merge-base of the run's base branch and the
-// head under review, so the (base SHA, head SHA) pointer pair identifies the exact diff even if
-// the base branch advances while Verify runs.
-async function pinnedBaseSha(
-  worktree: string,
-  baseBranch: string,
-  headSha: string,
-): Promise<string> {
-  const result = await git(worktree, ["merge-base", baseBranch, headSha]);
-  const baseSha = result.stdout.trim();
-  if (result.code !== 0 || !baseSha) {
-    throw new ServiceError(
-      409,
-      `could not resolve merge-base of ${baseBranch} and ${headSha}: ${result.stderr.trim()}`,
-    );
-  }
-  return baseSha;
 }
 
 function assertParentActor(
