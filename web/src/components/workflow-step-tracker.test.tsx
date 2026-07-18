@@ -63,6 +63,40 @@ describe("WorkflowStepTracker", () => {
     expect(done.className).toContain("text-green");
   });
 
+  it("shows a checkmark before Done only once it is reached", () => {
+    const { rerender } = render(
+      <WorkflowStepTracker state={state({ current_step: "verify" })} />,
+    );
+    // Done not reached yet: no checkmark icon in the pill.
+    expect(screen.getByText("Done").querySelector("svg")).toBeNull();
+    rerender(
+      <WorkflowStepTracker
+        state={state({
+          current_step: "verify",
+          verification_status: "verified",
+        })}
+      />,
+    );
+    // Done reached: a checkmark precedes the label.
+    expect(screen.getByText("Done").querySelector("svg")).toBeTruthy();
+  });
+
+  it("does not glow Done even while working once it is reached", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({
+          current_step: "verify",
+          verification_status: "verified",
+        })}
+        working
+      />,
+    );
+    // Done is terminal, so it must not carry the working glow.
+    expect(screen.getByText("Done").className).not.toContain(
+      "workflow-stage-glow",
+    );
+  });
+
   it("annotates Verify with reverify when verification is stale", () => {
     render(
       <WorkflowStepTracker

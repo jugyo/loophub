@@ -8,7 +8,7 @@
 // after Verify passes (#1401 / #1460). A stale verification annotates Verify with "reverify"; a
 // needs-human run (#1307, or a legacy `blocked` row) appends a warning marker.
 
-import { TriangleAlert } from "lucide-react";
+import { Check, TriangleAlert } from "lucide-react";
 import { Fragment } from "react";
 import type { WorkflowRunState } from "@/api/types";
 import { cn } from "@/lib/utils";
@@ -120,11 +120,16 @@ export function WorkflowStepTracker({
                       : isPast
                         ? "border-border bg-muted text-foreground"
                         : "border-border text-muted-foreground",
+                // Done is a terminal, not an active step — never glow it, even while working.
                 isCurrent &&
                   working &&
+                  !isDoneVerified &&
                   "animate-[workflow-stage-glow_2.4s_ease-in-out_infinite]",
               )}
             >
+              {isDoneVerified ? (
+                <Check className="size-3" aria-hidden="true" />
+              ) : null}
               {stage.label}
               {isStaleVerify ? (
                 <span className="font-normal">· reverify</span>
