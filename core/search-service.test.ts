@@ -49,26 +49,23 @@ test("search queries the persistent index across issue and PR title/body", () =>
   S.updateIssue(closed.id, { state: "closed" });
   S.createIssue(otherRepo.id, "issue", "Alpha elsewhere", "", "me");
 
-  expect(svc.search.query("me/search", "pHa")).toEqual([
-    {
-      kind: "issue",
-      number: closed.number,
-      title: "Closed alphabet task",
-      state: "closed",
-    },
-    {
-      kind: "pull",
-      number: pull.number,
-      title: "Unrelated title",
-      state: "open",
-    },
-    {
-      kind: "issue",
-      number: issue.number,
-      title: "Alpha release",
-      state: "open",
-    },
+  // Relevance orders the hits: in "Alpha release" the query ends "alpha" at a word boundary
+  // (higher), in "Closed alphabet task" it is buried inside "alphabet" (title weight), and the
+  // pull only matches in its body (lowest). Each result also carries a highlighted snippet.
+  const phaResults = svc.search.query("me/search", "pHa");
+  expect(phaResults.map((r) => [r.kind, r.number])).toEqual([
+    ["issue", issue.number],
+    ["issue", closed.number],
+    ["pull", pull.number],
   ]);
+  for (const result of phaResults) {
+    expect(result.snippet).not.toBeNull();
+    expect(
+      result.snippet?.segments
+        .filter((segment) => segment.match)
+        .map((segment) => segment.text.toLowerCase()),
+    ).toContain("pha");
+  }
   expect(svc.search.query("me/search", "a")).toHaveLength(3);
   expect(svc.search.query("me/search", "al")).toHaveLength(3);
   expect(svc.search.query("me/search", "missing")).toEqual([]);
@@ -97,6 +94,75 @@ test("search index follows title/body updates and deletes", () => {
 
   D.db.run("DELETE FROM issues WHERE id = ?", [issue.id]);
   expect(svc.search.query("me/search-sync", "searchable")).toEqual([]);
+});
+
+test("search ranks whole-word and boundary matches above buried substrings", () => {
+  const repo = S.createRepo("me/search-rank", "/tmp/search-rank");
+  // Same field (title); only match kind differs. "crit" is buried in "hypocrite",
+  // a prefix (word boundary) in "critical", and a whole word in "the crit product".
+  const buried = S.createIssue(repo.id, "issue", "hypocrite report", "", "me");
+  const boundary = S.createIssue(repo.id, "issue", "critical bug", "", "me");
+  const whole = S.createIssue(repo.id, "issue", "the crit product", "", "me");
+
+  const ranked = svc.search.query("me/search-rank", "crit");
+  expect(ranked.map((r) => r.number)).toEqual([
+    whole.number,
+    boundary.number,
+    buried.number,
+  ]);
+});
+
+test("search weights title matches above body matches", () => {
+  const repo = S.createRepo("me/search-field", "/tmp/search-field");
+  const inBody = S.createIssue(
+    repo.id,
+    "issue",
+    "unrelated",
+    "widget here",
+    "me",
+  );
+  const inTitle = S.createIssue(repo.id, "issue", "widget", "unrelated", "me");
+
+  const ranked = svc.search.query("me/search-field", "widget");
+  expect(ranked.map((r) => r.number)).toEqual([inTitle.number, inBody.number]);
+});
+
+test("search returns a highlighted snippet from the matching field", () => {
+  const repo = S.createRepo("me/search-snippet", "/tmp/search-snippet");
+  S.createIssue(
+    repo.id,
+    "issue",
+    "Release notes",
+    "The widget subsystem gained a new caching layer this week.",
+    "me",
+  );
+
+  const [result] = svc.search.query("me/search-snippet", "widget");
+  expect(result.snippet?.field).toBe("body");
+  const matched = result.snippet?.segments.filter((segment) => segment.match);
+  expect(matched).toEqual([{ text: "widget", match: true }]);
+  expect(
+    result.snippet?.segments.map((segment) => segment.text).join(""),
+  ).toContain("caching layer");
+});
+
+test("search breaks relevance ties by updated_at, newest first", () => {
+  const repo = S.createRepo("me/search-recency", "/tmp/search-recency");
+  // Same field, same match kind → identical relevance. Set updated_at explicitly because now() is
+  // second-precision and both issues would otherwise share a timestamp.
+  const older = S.createIssue(repo.id, "issue", "widget alpha", "", "me");
+  const newer = S.createIssue(repo.id, "issue", "widget beta", "", "me");
+  D.db.run("UPDATE issues SET updated_at = ? WHERE id = ?", [
+    "2026-01-01T00:00:00Z",
+    older.id,
+  ]);
+  D.db.run("UPDATE issues SET updated_at = ? WHERE id = ?", [
+    "2026-01-02T00:00:00Z",
+    newer.id,
+  ]);
+
+  const ranked = svc.search.query("me/search-recency", "widget");
+  expect(ranked.map((r) => r.number)).toEqual([newer.number, older.number]);
 });
 
 test("search index failures roll back issue creation and updates", () => {

@@ -87,12 +87,26 @@ test("issue search returns machine-readable JSON", () => {
       number: 2,
       title: "Shared search pull",
       state: "open",
+      snippet: {
+        field: "title",
+        segments: [
+          { text: "Shared", match: true },
+          { text: " search pull", match: false },
+        ],
+      },
     },
     {
       kind: "issue",
       number: 1,
       title: "Shared search issue",
       state: "open",
+      snippet: {
+        field: "title",
+        segments: [
+          { text: "Shared", match: true },
+          { text: " search issue", match: false },
+        ],
+      },
     },
   ]);
 });

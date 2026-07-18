@@ -96,12 +96,21 @@ describe("RepositorySearch", () => {
           number: 12,
           title: "Release checklist",
           state: "open",
+          snippet: {
+            field: "body",
+            segments: [
+              { text: "prepare the ", match: false },
+              { text: "release", match: true },
+              { text: " notes", match: false },
+            ],
+          },
         },
         {
           kind: "pull",
           number: 18,
           title: "Release branch",
           state: "closed",
+          snippet: null,
         },
       ]);
     });
@@ -119,6 +128,14 @@ describe("RepositorySearch", () => {
     expect(within(results).getByText("Issue #12")).toBeTruthy();
     expect(within(results).getByText("Release checklist")).toBeTruthy();
     expect(within(results).getByText("open")).toBeTruthy();
+    // The matching snippet renders with the query term highlighted.
+    const highlighted = within(results).getByText("release", {
+      selector: "mark",
+    });
+    expect(highlighted).toBeTruthy();
+    expect(highlighted.parentElement?.textContent).toBe(
+      "prepare the release notes",
+    );
 
     expect(within(results).queryByText("Pull request #18")).toBeNull();
     expect(within(results).queryByText("Release branch")).toBeNull();

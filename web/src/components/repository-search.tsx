@@ -214,6 +214,22 @@ function SearchResults({
                 <span className="block text-xs text-muted-foreground">
                   {isIssue ? "Issue" : "Pull request"} #{result.number}
                 </span>
+                {result.snippet ? (
+                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                    {result.snippet.segments.map((segment, index) =>
+                      segment.match ? (
+                        <mark
+                          key={index}
+                          className="bg-transparent font-semibold text-foreground"
+                        >
+                          {segment.text}
+                        </mark>
+                      ) : (
+                        <span key={index}>{segment.text}</span>
+                      ),
+                    )}
+                  </span>
+                ) : null}
               </span>
               <Badge tone={result.state}>{result.state}</Badge>
             </button>

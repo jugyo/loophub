@@ -94,12 +94,14 @@ test("search/query routes a repository-scoped query to the search service", asyn
       number: 1,
       title: "hello",
       state: "open",
+      snippet: null,
     },
     {
       kind: "pull",
       number: 2,
       title: "hello pull",
       state: "closed",
+      snippet: null,
     },
   ]);
   try {
@@ -115,12 +117,14 @@ test("search/query routes a repository-scoped query to the search service", asyn
         number: 1,
         title: "hello",
         state: "open",
+        snippet: null,
       },
       {
         kind: "pull",
         number: 2,
         title: "hello pull",
         state: "closed",
+        snippet: null,
       },
     ]);
   } finally {

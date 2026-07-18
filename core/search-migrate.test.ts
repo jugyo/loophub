@@ -71,18 +71,34 @@ test("migration backfills existing issues and pull requests into search", () => 
 
   expect(result.stderr).toBe("");
   expect(result.status).toBe(0);
+  // The title match on the issue outranks the body-only match on the pull, so the issue leads.
   expect(JSON.parse(result.stdout)).toEqual([
-    {
-      kind: "pull",
-      number: 2,
-      title: "Legacy pull",
-      state: "closed",
-    },
     {
       kind: "issue",
       number: 1,
       title: "Legacy indexed issue",
       state: "open",
+      snippet: {
+        field: "title",
+        segments: [
+          { text: "Legacy ", match: false },
+          { text: "indexed", match: true },
+          { text: " issue", match: false },
+        ],
+      },
+    },
+    {
+      kind: "pull",
+      number: 2,
+      title: "Legacy pull",
+      state: "closed",
+      snippet: {
+        field: "body",
+        segments: [
+          { text: "indexed", match: true },
+          { text: " body", match: false },
+        ],
+      },
     },
   ]);
 });

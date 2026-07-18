@@ -167,11 +167,22 @@ export interface UserWire {
   login: string;
 }
 
+export interface SearchSnippetSegmentWire {
+  text: string;
+  match: boolean;
+}
+
+export interface SearchSnippetWire {
+  field: "title" | "body";
+  segments: SearchSnippetSegmentWire[];
+}
+
 export interface SearchResultWire {
   kind: "issue" | "pull";
   number: number;
   title: string;
   state: "open" | "closed";
+  snippet: SearchSnippetWire | null;
 }
 
 export function searchResultJSON(row: S.SearchResultRow): SearchResultWire {
@@ -180,6 +191,7 @@ export function searchResultJSON(row: S.SearchResultRow): SearchResultWire {
     number: row.number,
     title: row.title,
     state: row.state,
+    snippet: row.snippet,
   };
 }
 
