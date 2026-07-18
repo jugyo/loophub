@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
 import type { Workflow, WorkflowStepContracts } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { errorMessage } from "@/lib/error-message";
 import {
   useCreateWorkflow,
   useDeleteWorkflow,
@@ -20,13 +21,6 @@ import {
 // create-form prefill (workflow design: workflow definitions — prefill from a constant, do not
 // seed a DB row).
 import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts.ts";
-
-// ApiError extends Error, so String(err) prefixes the class name ("ApiError: <message>"). Render the
-// bare server message (e.g. the 422 validation text, the 409 delete-refusal text) instead — matching
-// the codebase's dominant error-display pattern (issue-list, pull-list, ...).
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 // The fixed Workflow steps, in order, with the wire field each maps to. Rendered as one textarea
 // per step in the form.

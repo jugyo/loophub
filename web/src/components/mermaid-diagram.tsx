@@ -11,6 +11,7 @@
 // collisions with the inline copy), so it carries no additional XSS risk.
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Lightbox } from "@/components/lightbox";
+import { errorMessage } from "@/lib/error-message";
 
 let mermaidModulePromise: Promise<typeof import("mermaid").default> | null =
   null;
@@ -121,7 +122,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
+          setError(errorMessage(err));
         }
       });
     return () => {

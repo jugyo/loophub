@@ -39,6 +39,7 @@ import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { WorkDuration } from "@/components/work-duration";
 import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
 import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
+import { errorMessage } from "@/lib/error-message";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
@@ -351,7 +352,7 @@ function PullHeader({
             disabled={setState.isPending}
             onClick={() =>
               setState.mutate(pull.state === "open" ? "closed" : "open", {
-                onError: (e) => showError(failureMessage("Update failed", e)),
+                onError: (e) => showError(errorMessage(e, "Update failed")),
               })
             }
           >
@@ -367,7 +368,7 @@ function PullHeader({
             disabled={ready.isPending}
             onClick={() =>
               ready.mutate(undefined, {
-                onError: (e) => showError(failureMessage("Update failed", e)),
+                onError: (e) => showError(errorMessage(e, "Update failed")),
               })
             }
           >
@@ -404,7 +405,7 @@ function PullHeader({
               onClick={() => {
                 startMergeLoading();
                 merge.mutate(method, {
-                  onError: (e) => showError(failureMessage("Merge failed", e)),
+                  onError: (e) => showError(errorMessage(e, "Merge failed")),
                 });
               }}
             >
@@ -532,7 +533,7 @@ function GithubPrAction({
           onClick={() =>
             pushChanges.mutate(undefined, {
               onError: (e) =>
-                showError(failureMessage("Push to GitHub failed", e)),
+                showError(errorMessage(e, "Push to GitHub failed")),
             })
           }
         >
@@ -564,12 +565,6 @@ function GithubPrAction({
       Create PR on GitHub
     </Button>
   );
-}
-
-// Format a mutation failure for the error banner: `"<prefix>: <message>"` when the error carries a
-// message, else `"<prefix>."`. Mirrors the wording the inline isError blocks used before #323.
-function failureMessage(prefix: string, error: unknown): string {
-  return error instanceof Error ? `${prefix}: ${error.message}` : `${prefix}.`;
 }
 
 const REVIEW_VERDICT_TONE: Record<PullReview["state"], string> = {

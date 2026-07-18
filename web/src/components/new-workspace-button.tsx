@@ -2,11 +2,8 @@ import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button, type ButtonProps } from "@/components/ui/button";
+import { errorMessage } from "@/lib/error-message";
 import { useCreateWorkspace } from "@/queries/workspaces";
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function NewWorkspaceButton({
   owner,
