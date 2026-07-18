@@ -189,7 +189,7 @@ export function listRecentInProgressSessionUsageSamples(
            JOIN issues i ON i.id = l.issue_id
            JOIN pulls p ON p.issue_id = i.id
            WHERE l.session_id = sus.session_id
-             AND s.kind = 'dev'
+             AND s.kind IN ('dev', 'workflow-step')
              AND i.kind = 'pull'
              AND i.state = 'open'
              AND p.merged = 0

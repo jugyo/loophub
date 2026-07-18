@@ -735,6 +735,63 @@ test("sessions.costSummary limits token rate to in-progress dev sessions", async
   });
 });
 
+test("sessions.costSummary counts in-progress workflow-step sessions toward the live rate", async () => {
+  // Under workflow-first the token-consuming session is kind='workflow-step', not 'dev'. Its samples
+  // must still feed the live TPS as long as the linked pull is open, unmerged, and not yet marked
+  // ready-for-review (#1662).
+  const sessionId = "99999999-0000-0000-0000-0000000000af";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "workflow-step",
+    session: sessionId,
+    runtime: "claude-code",
+    kind: "workflow-step",
+  });
+  const issue = svc.issues.create("me/proj", {
+    title: "rate workflow-step pr",
+  });
+  const opened = await svc.dev.openPr(
+    "me/proj",
+    { issue: issue.number, base: "main" },
+    undefined,
+  );
+  svc.sessions.link("me/proj", { sessionId, pr: opened.number });
+  D.db.run(
+    `INSERT INTO session_usage_samples
+       (session_id, total_tokens, token_delta, observed_at)
+     VALUES (?, ?, ?, ?), (?, ?, ?, ?)`,
+    [
+      sessionId,
+      100,
+      0,
+      "2026-07-12T00:00:30Z",
+      sessionId,
+      250,
+      150,
+      "2026-07-12T00:01:00Z",
+    ],
+  );
+
+  const activeSummary = svc.sessions.costSummary(
+    new Date("2026-07-12T00:01:00Z"),
+  )[0];
+  expect(activeSummary.tokens_per_second).toBe(5);
+  expect(activeSummary.tokens_per_5m_history?.at(-1)).toBe(1500);
+
+  await svc.pulls.readyForReview(
+    "me/proj",
+    opened.number,
+    undefined,
+    sessionId,
+  );
+
+  expect(
+    svc.sessions.costSummary(new Date("2026-07-12T00:01:00Z"))[0],
+  ).toMatchObject({
+    tokens_per_second: null,
+  });
+});
+
 test("sessions.recordLiveRateSample persists rate that survives the 600s sample prune", async () => {
   const sessionId = "99999999-0000-0000-0000-0000000000ad";
   svc.sessions.register({

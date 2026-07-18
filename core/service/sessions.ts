@@ -230,8 +230,9 @@ function recordGrokUsageRateSamples(
 // series survives, bounded so the table cannot grow without limit.
 const RATE_HISTORY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
 
-// The live aggregate tokens/sec used by the topbar's current five-minute bucket: in-progress dev
-// sessions over the trailing 60s. The persisted history and current bucket share this definition.
+// The live aggregate tokens/sec used by the topbar's current five-minute bucket: in-progress dev and
+// workflow-step sessions over the trailing 60s. The persisted history and current bucket share this
+// definition.
 function liveTokensPerSecond(now: Date): number | null {
   return calculateTokensPerSecond(
     S.listRecentInProgressSessionUsageSamples(secondsAgo(now, 60)),
