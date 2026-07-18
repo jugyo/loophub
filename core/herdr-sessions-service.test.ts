@@ -512,6 +512,8 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
     expiredMerged.id,
   ]);
 
+  // Merged but not yet past the grace window, so it must be skipped — the grace/eligibility
+  // arithmetic itself is unit-tested in core/terminal/herdr-cleanup.test.ts.
   const freshMerged = S.createIssue(repo.id, "pull", "fresh merged", "", "me");
   S.createPull(freshMerged.id, "loophub/pr-2", "main", null);
   S.registerAgentSession("session-fresh-merged", "lh-dev", "external-2");
@@ -522,17 +524,6 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
     freshMerged.id,
   ]);
 
-  const freshClosed = S.createIssue(repo.id, "pull", "fresh closed", "", "me");
-  S.createPull(freshClosed.id, "loophub/pr-3", "main", null);
-  S.registerAgentSession("session-fresh-closed", "lh-dev", "external-3");
-  S.setPullSession(freshClosed.id, "session-fresh-closed");
-  S.updateIssue(freshClosed.id, { state: "closed" });
-  db.run(`UPDATE issues SET closed_at = ?, updated_at = ? WHERE id = ?`, [
-    fresh,
-    fresh,
-    freshClosed.id,
-  ]);
-
   const expiredClosed = S.createIssue(
     repo.id,
     "pull",
@@ -540,8 +531,8 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
     "",
     "me",
   );
-  S.createPull(expiredClosed.id, "loophub/pr-4", "main", null);
-  S.registerAgentSession("session-expired-closed", "lh-dev", "external-4");
+  S.createPull(expiredClosed.id, "loophub/pr-3", "main", null);
+  S.registerAgentSession("session-expired-closed", "lh-dev", "external-3");
   S.setPullSession(expiredClosed.id, "session-expired-closed");
   S.updateIssue(expiredClosed.id, { state: "closed" });
   db.run(`UPDATE issues SET closed_at = ?, updated_at = ? WHERE id = ?`, [
@@ -557,7 +548,7 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
     "",
     "me",
   );
-  S.createPull(unlinkedClosed.id, "loophub/pr-5", "main", null);
+  S.createPull(unlinkedClosed.id, "loophub/pr-4", "main", null);
   S.updateIssue(unlinkedClosed.id, { state: "closed" });
   db.run(`UPDATE issues SET closed_at = ?, updated_at = ? WHERE id = ?`, [
     old,
@@ -607,14 +598,6 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
         {
           agent: "claude",
           agent_status: "working",
-          name: "dev #5",
-          pane_id: "wC:p5",
-          workspace_id: "wC5",
-          foreground_cwd: worktreePath(root, repo.full_name, 5),
-        },
-        {
-          agent: "claude",
-          agent_status: "working",
           name: "repo root",
           pane_id: "wR:p1",
           workspace_id: "wR",
@@ -640,17 +623,16 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
   try {
     await expect(svc.terminal.cleanupClosedPullDevAgents()).resolves.toEqual({
       killed: 2,
-      skipped: 3,
+      skipped: 2,
       failed: 0,
     });
     expect(killSpy).not.toHaveBeenCalled();
     const { readFileSync } = await import("node:fs");
     const calls = readFileSync(CALLS_FILE, "utf8");
     expect(calls).toContain(`--session ${sessionName} workspace close wC1`);
-    expect(calls).toContain(`--session ${sessionName} workspace close wC4`);
+    expect(calls).toContain(`--session ${sessionName} workspace close wC3`);
     expect(calls).not.toContain("workspace close wC2");
-    expect(calls).not.toContain("workspace close wC3");
-    expect(calls).not.toContain("workspace close wC5");
+    expect(calls).not.toContain("workspace close wC4");
     expect(calls).not.toContain("workspace close wR");
     expect(calls).not.toContain("pane process-info");
     expect(calls).not.toContain("pane close");
