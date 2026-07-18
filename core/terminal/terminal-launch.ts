@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { autoModeOnLaunch, type CodingAgent, codingAgent } from "../config.ts";
+import { buildRuntimeArgs, runtimeApprovalArgs } from "../runtime-args.ts";
 import { RUNTIMES } from "../runtimes.ts";
 import {
   type ScheduledTaskInboxContext,
@@ -8,7 +9,6 @@ import {
 } from "../scheduled-task-inbox.ts";
 import type { WorkflowStep } from "../workflow/compose.ts";
 import { workflowStepHerdrAgentName } from "../workflow/herdr-agents.ts";
-import { buildCodexSandboxArgs } from "./codex-launch.ts";
 
 export interface TerminalLaunchRepo {
   full_name: string;
@@ -140,33 +140,27 @@ export function commandForHerdrLaunch(input: {
     );
   }
   if (input.workflow === "scheduled-task-create") {
-    const command = shellArg("/lh-scheduled-task-create");
     const agent = input.codingAgent ?? codingAgent();
-    if (agent === "codex") {
-      const codexArgs = buildCodexSandboxArgs().map(shellArg).join(" ");
-      return `codex ${codexArgs} ${command}`;
-    }
-    return `claude ${command}`;
+    // Scheduled-task creation always launches in the runtime's non-auto posture (Build's auto-mode
+    // setting deliberately does not apply here). buildRuntimeArgs supplies the per-runtime posture
+    // (codex sandboxes; claude/grok add nothing) keyed by the registry, not a runtime-id branch.
+    const argv = buildRuntimeArgs({
+      runtime: agent,
+      prompt: "/lh-scheduled-task-create",
+    });
+    return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }
   if (input.workflow === "github-pr-export" && input.prNumber) {
-    const command = shellArg(`/lh-create-github-pr ${input.prNumber}`);
     const agent = input.codingAgent ?? codingAgent();
-    // Same auto-mode wiring as other agent launches (autoModeOnLaunch + cli/dev.ts's
-    // buildClaudeArgs / buildCodexArgs) so `git push` / `gh pr create` inside
-    // /lh-create-github-pr don't hit permission prompts when auto mode is enabled for this agent.
-    const auto = autoModeOnLaunch(agent);
-    if (agent === "codex") {
-      const codexArgs = (
-        auto ? RUNTIMES.codex.autoApproveArgs : buildCodexSandboxArgs()
-      )
-        .map(shellArg)
-        .join(" ");
-      return `codex ${codexArgs} ${command}`;
-    }
-    const claudeArgs = auto
-      ? `${RUNTIMES["claude-code"].autoApproveArgs.map(shellArg).join(" ")} `
-      : "";
-    return `claude ${claudeArgs}${command}`;
+    // Auto mode follows the agent's autoModeOnLaunch setting so `git push` / `gh pr create` inside
+    // /lh-create-github-pr don't hit permission prompts when it is enabled (#809). The per-runtime
+    // posture (auto-bypass, or codex's sandbox when off) comes from buildRuntimeArgs.
+    const argv = buildRuntimeArgs({
+      runtime: agent,
+      auto: autoModeOnLaunch(agent),
+      prompt: `/lh-create-github-pr ${input.prNumber}`,
+    });
+    return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }
   // PR detail Crit review button: run the CLI entrypoint in a herdr pane. Worktree / range
   // resolution and the optional crit binary live in `lh pr crit` itself — no defensive checks here.
@@ -184,10 +178,11 @@ export function commandForHerdrLaunch(input: {
 // handed to the agent's non-interactive mode. Claude uses `claude -p <prompt>` (print mode); Codex
 // uses `codex exec <prompt>`. A scheduled fire is unattended, so both launch in a no-approval-prompt
 // mode — there is no human to answer a mid-run prompt. Deliberately kept at the LIGHTER end: Codex
-// runs inside its normal workspace-write sandbox (buildCodexSandboxArgs, the same posture the
-// interactive Build button uses when auto mode is off) rather than the full
-// `--dangerously-bypass-approvals-and-sandbox`, which is not needed for non-interactive execution and
-// would be asymmetric with the claude branch's `--permission-mode auto` (mirroring buildClaudeArgs).
+// runs inside its normal workspace-write sandbox (the runtime's non-auto posture from
+// runtimeApprovalArgs) rather than the full `--dangerously-bypass-approvals-and-sandbox`, which is
+// not needed for non-interactive execution and would be asymmetric with the claude branch's
+// `--permission-mode auto` (its auto posture from the same helper). The print/exec invocation shape
+// is scheduled-task-specific, so it stays here; only the approval posture is shared.
 // `model` applies to both; `effort` is a Codex-only reasoning knob (claude has no effort flag),
 // passed as its `model_reasoning_effort` config override. The prompt (and every interpolated value)
 // is single-quote-escaped before it reaches `zsh -lc`, so a crafted prompt cannot inject a command.
@@ -209,7 +204,11 @@ export function buildScheduledTaskCommand(input: {
     : "";
   const model = input.model?.trim();
   if (input.agent === "codex") {
-    const parts = ["codex", "exec", ...buildCodexSandboxArgs().map(shellArg)];
+    const parts = [
+      "codex",
+      "exec",
+      ...runtimeApprovalArgs({ runtime: "codex" }).map(shellArg),
+    ];
     if (model) parts.push("--model", shellArg(model));
     const effort = input.effort?.trim();
     if (effort) parts.push("-c", shellArg(`model_reasoning_effort=${effort}`));
@@ -220,7 +219,7 @@ export function buildScheduledTaskCommand(input: {
     "claude",
     "-p",
     prompt,
-    ...RUNTIMES["claude-code"].autoApproveArgs,
+    ...runtimeApprovalArgs({ runtime: "claude-code", auto: true }),
   ];
   if (model) parts.push("--model", shellArg(model));
   return `${envPrefix}${parts.join(" ")}`;
@@ -612,11 +611,11 @@ export function buildHerdrLaunchPlan(input: {
   };
 }
 
-// The step agent's shell-escaped argv, dispatched on the parent run's runtime (#516, #1521). Each
-// branch mirrors its interactive counterpart in cli/dev.ts: claude takes --session-id and
-// --append-system-prompt-file; codex folds the contract into a positional prompt and carries a
-// sandbox posture; grok also folds the contract into a positional prompt but has no sandbox concept,
-// so auto mode only opts into its `--always-approve` approval bypass.
+// The step agent's shell-escaped argv, dispatched on the parent run's runtime (#516, #1521). The
+// per-runtime shape — claude's --session-id / --append-system-prompt-file, codex/grok folding the
+// rendered contract into a positional prompt, the sandbox-vs-approval posture — comes from the
+// registry-driven buildRuntimeArgs; here we only shell-escape each token and prefix the runtime
+// binary (every token uniformly quoted, matching the other herdr command builders).
 function buildWorkflowStepAgentParts(
   input: {
     runtime: CodingAgent;
@@ -628,45 +627,16 @@ function buildWorkflowStepAgentParts(
   },
   model: string | undefined,
 ): string[] {
-  if (input.runtime === "codex") {
-    return [
-      "codex",
-      // Match the interactive Build button's Codex posture (cli/dev.ts buildCodexArgs): auto mode
-      // bypasses approvals/sandbox, otherwise run inside the workspace-write sandbox.
-      ...(input.permissionMode === "auto"
-        ? RUNTIMES.codex.autoApproveArgs
-        : buildCodexSandboxArgs()
-      ).map(shellArg),
-      ...(model ? ["--model", shellArg(model)] : []),
-      // Codex takes no system-prompt flag, so fold the rendered contract into the prompt.
-      shellArg(`${input.systemPrompt}\n\n${input.userPrompt}`),
-    ];
-  }
-  if (input.runtime === "grok") {
-    return [
-      "grok",
-      // Match cli/dev.ts buildGrokArgs: auto mode opts into grok's registry approval bypass; grok
-      // has no sandbox concept, so nothing extra otherwise.
-      ...(input.permissionMode === "auto"
-        ? RUNTIMES.grok.autoApproveArgs.map(shellArg)
-        : []),
-      ...(model ? ["--model", shellArg(model)] : []),
-      // Grok takes no system-prompt flag, so fold the rendered contract into the prompt.
-      shellArg(`${input.systemPrompt}\n\n${input.userPrompt}`),
-    ];
-  }
-  return [
-    "claude",
-    "--session-id",
-    shellArg(input.sessionId),
-    ...(model ? ["--model", shellArg(model)] : []),
-    ...(input.permissionMode
-      ? RUNTIMES["claude-code"].autoApproveArgs.map(shellArg)
-      : []),
-    "--append-system-prompt-file",
-    shellArg(input.systemPromptPath),
-    shellArg(input.userPrompt),
-  ];
+  const argv = buildRuntimeArgs({
+    runtime: input.runtime,
+    auto: input.permissionMode === "auto",
+    model,
+    sessionId: input.sessionId,
+    systemPromptFile: input.systemPromptPath,
+    systemPrompt: input.systemPrompt,
+    prompt: input.userPrompt,
+  });
+  return [RUNTIMES[input.runtime].bin, ...argv.map(shellArg)];
 }
 
 export function buildWorkflowStepHerdrLaunchPlan(input: {

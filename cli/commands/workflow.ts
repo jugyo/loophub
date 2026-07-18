@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { agentModel, type CodingAgent } from "../../core/config.ts";
 import { removeDevLock } from "../../core/dev-lock.ts";
 import { isClaudeSessionId } from "../../core/resume.ts";
+import { buildRuntimeArgs } from "../../core/runtime-args.ts";
 import { RUNTIMES, type RuntimeBin } from "../../core/runtimes.ts";
-import { buildCodexSandboxArgs } from "../../core/terminal/codex-launch.ts";
 import { HERDR_ID } from "../../core/terminal/terminal-launch.ts";
 import {
   layoutWorkflowTab,
@@ -176,9 +176,10 @@ function requestedSessionId(): string | undefined {
   return sessionId;
 }
 
-// Build the parent agent argv for the resolved runtime (#516). Claude Code takes --session-id and
-// --append-system-prompt-file; Codex and Grok have neither, so the rendered contract is folded into
-// their positional prompt and correlation happens only through the LOOPHUB_SESSION_ID env prefix.
+// Build the parent agent argv for the resolved runtime (#516) via the registry-driven core helper.
+// Claude Code takes --session-id and --append-system-prompt-file; Codex and Grok have neither, so the
+// rendered contract is folded into their positional prompt (read from the file only for those
+// runtimes) and correlation happens only through the LOOPHUB_SESSION_ID env prefix.
 function parentAgentArgs(input: {
   runtime: CodingAgent;
   sessionId: string;
@@ -186,37 +187,18 @@ function parentAgentArgs(input: {
   userPrompt: string;
   model: string;
 }): string[] {
-  const auto = flags.auto === true;
-  if (input.runtime === "codex") {
-    const systemPrompt = readFileSync(input.systemPromptPath, "utf8");
-    return [
-      ...(auto ? RUNTIMES.codex.autoApproveArgs : buildCodexSandboxArgs()),
-      "--model",
-      input.model,
-      `${systemPrompt}\n\n${input.userPrompt}`,
-    ];
-  }
-  if (input.runtime === "grok") {
-    const systemPrompt = readFileSync(input.systemPromptPath, "utf8");
-    // Grok has no sandbox concept (mirrors cli/dev.ts buildGrokArgs): auto opts into its registry
-    // approval-bypass; non-auto passes nothing extra.
-    return [
-      ...(auto ? RUNTIMES.grok.autoApproveArgs : []),
-      "--model",
-      input.model,
-      `${systemPrompt}\n\n${input.userPrompt}`,
-    ];
-  }
-  return [
-    "--session-id",
-    input.sessionId,
-    "--model",
-    input.model,
-    ...(auto ? RUNTIMES["claude-code"].autoApproveArgs : []),
-    "--append-system-prompt-file",
-    input.systemPromptPath,
-    input.userPrompt,
-  ];
+  return buildRuntimeArgs({
+    runtime: input.runtime,
+    auto: flags.auto === true,
+    model: input.model,
+    sessionId: input.sessionId,
+    systemPromptFile: input.systemPromptPath,
+    systemPrompt:
+      input.runtime === "claude-code"
+        ? undefined
+        : readFileSync(input.systemPromptPath, "utf8"),
+    prompt: input.userPrompt,
+  });
 }
 
 function inheritedHerdrTabId(): string | null {

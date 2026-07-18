@@ -1,9 +1,8 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { stripVTControlCharacters } from "node:util";
 import { isClaudeSessionId } from "../core/resume.ts";
+import { buildRuntimeArgs } from "../core/runtime-args.ts";
 import { CODING_AGENTS, type CodingAgent, RUNTIMES } from "../core/runtimes.ts";
-import { buildCodexSandboxArgs } from "../core/terminal/codex-launch.ts";
 import {
   legacyWorktreeBranch,
   legacyWorktreePath,
@@ -154,19 +153,14 @@ export function buildCodexArgs({
   // configDir() resolution used by LoopHub DB/config writes.
   loopHubHome?: string;
 }): string[] {
-  const args: string[] = [];
-  if (auto) args.push(...RUNTIMES.codex.autoApproveArgs);
-  else args.push(...buildCodexSandboxArgs(loopHubHome));
-  if (model) {
-    const m = display(model).trim();
-    if (m) args.push("--model", m);
-  }
-  if (effort) {
-    const e = display(effort).trim();
-    if (e) args.push("-c", `model_reasoning_effort=${e}`);
-  }
-  args.push(slashCommand);
-  return args;
+  return buildRuntimeArgs({
+    runtime: "codex",
+    auto,
+    model,
+    effort,
+    loopHubHome,
+    prompt: slashCommand,
+  });
 }
 
 // Build the `grok` argv for the interactive dev session. Mirrors buildCodexArgs: grok takes the
@@ -196,14 +190,12 @@ export function buildGrokArgs({
   // effort is accepted on the launch path (#1534) but not forwarded: grok has no verified
   // user-facing reasoning-effort flag yet (see core/runtimes.ts effortSuggestions note).
 }): string[] {
-  const args: string[] = [];
-  if (auto) args.push(...RUNTIMES.grok.autoApproveArgs);
-  if (model) {
-    const m = display(model).trim();
-    if (m) args.push("--model", m);
-  }
-  args.push(slashCommand);
-  return args;
+  return buildRuntimeArgs({
+    runtime: "grok",
+    auto,
+    model,
+    prompt: slashCommand,
+  });
 }
 
 export function buildClaudeArgs({
@@ -232,31 +224,19 @@ export function buildClaudeArgs({
   // levels for claude-code. Omitted => claude's own default.
   effort?: string;
 }): string[] {
-  const args = ["--session-id", sessionId];
-  if (model) {
-    const m = display(model).trim();
-    if (m) args.push("--model", m);
-  }
-  if (effort) {
-    const e = display(effort).trim();
-    if (e) args.push("--effort", e);
-  }
-  if (auto) {
-    // Auto mode when explicitly requested (--auto).
-    args.push(...RUNTIMES["claude-code"].autoApproveArgs);
-  }
-  if (sessionName) {
-    const name = display(sessionName).trim();
-    if (name) args.push("--name", name);
-  }
-  args.push(slashCommand);
-  return args;
+  return buildRuntimeArgs({
+    runtime: "claude-code",
+    sessionId,
+    auto,
+    sessionName,
+    model,
+    effort,
+    prompt: slashCommand,
+  });
 }
 
-// Per-runtime argv builders, keyed by runtime id. The builders themselves stay in this (node-dependent)
-// module — core/runtimes.ts is node-free — so the registry drives the dispatch by id and supplies the
-// `bin`, while the functions live here. Adding a runtime means adding one entry here plus its registry
-// definition, not another branch in buildRuntimeLaunch.
+// The interactive launch input shared by every runtime; buildRuntimeArgs (core) turns it into the
+// runtime's argv, keyed by the registry rather than a branch here.
 type RuntimeArgvInput = {
   sessionId: string;
   auto?: boolean;
@@ -264,32 +244,6 @@ type RuntimeArgvInput = {
   sessionName?: string;
   model?: string;
   effort?: string;
-};
-
-const RUNTIME_ARGV_BUILDERS: Record<
-  DevRuntime,
-  (input: RuntimeArgvInput) => string[]
-> = {
-  "claude-code": ({
-    sessionId,
-    auto,
-    slashCommand,
-    sessionName,
-    model,
-    effort,
-  }) =>
-    buildClaudeArgs({
-      sessionId,
-      auto,
-      slashCommand,
-      sessionName,
-      model,
-      effort,
-    }),
-  codex: ({ slashCommand, auto, model, effort }) =>
-    buildCodexArgs({ slashCommand, auto, model, effort }),
-  grok: ({ slashCommand, auto, model }) =>
-    buildGrokArgs({ slashCommand, auto, model }),
 };
 
 export function buildRuntimeLaunch({
@@ -305,13 +259,14 @@ export function buildRuntimeLaunch({
 }): { bin: "claude" | "codex" | "grok"; args: string[] } {
   return {
     bin: RUNTIMES[runtime].bin,
-    args: RUNTIME_ARGV_BUILDERS[runtime]({
+    args: buildRuntimeArgs({
+      runtime,
       sessionId,
       auto,
-      slashCommand,
       sessionName,
       model,
       effort,
+      prompt: slashCommand,
     }),
   };
 }
@@ -333,18 +288,6 @@ export function buildResumeArgs({
     );
   }
   return ["--resume", sessionId];
-}
-
-// Strip ANSI/terminal control sequences from any value rendered into launch output. The
-// spawn command line and summary are safety artifacts a human reads before launch; a value
-// sourced from a repo's full_name (not validated at registration) must not be able to forge
-// or hide the displayed settings.
-function display(v: string): string {
-  // Remove ANSI/VT escape sequences first, then any remaining C0/C1 control bytes (CR, BEL,
-  // backspace, …) — a bare \r or \b can still overwrite the rendered line on its own. The range
-  // covers DEL (0x7f) and the 8-bit C1 controls (0x80-0x9f), so a single C1 OSC/CSI introducer
-  // (e.g. 0x9d) in an attacker-controlled title can't reach a terminal title (claude --name).
-  return stripVTControlCharacters(v).replace(/[\x00-\x1f\x7f-\x9f]/g, "");
 }
 
 // Single-quote a value for a shell command string so it survives copy-paste / re-exec verbatim.

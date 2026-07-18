@@ -291,7 +291,7 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   expect(launched.herdr.command).toContain("codex ");
   expect(launched.herdr.command).not.toContain("claude");
   expect(launched.herdr.command).not.toContain("--session-id");
-  expect(launched.herdr.command).toContain("--model 'gpt-5.5'");
+  expect(launched.herdr.command).toContain("'--model' 'gpt-5.5'");
 
   svc.workflowRuns.confirmStepLaunch(
     repo.full_name,
@@ -348,7 +348,7 @@ test("a grok run's steps launch grok, not claude (#1521)", async () => {
   expect(launched.herdr.command).toContain("grok ");
   expect(launched.herdr.command).not.toContain("claude");
   expect(launched.herdr.command).not.toContain("--session-id");
-  expect(launched.herdr.command).toContain("--model 'grok-code-fast-1'");
+  expect(launched.herdr.command).toContain("'--model' 'grok-code-fast-1'");
 
   svc.workflowRuns.confirmStepLaunch(
     repo.full_name,
@@ -393,8 +393,8 @@ test("start defaults to claude-code and the config default model when unspecifie
     result.session_id,
   );
   expect(launched.runtime).toBe("claude-code");
-  expect(launched.herdr.command).toContain("claude --session-id");
-  expect(launched.herdr.command).toContain("--model 'opus'");
+  expect(launched.herdr.command).toContain("claude '--session-id'");
+  expect(launched.herdr.command).toContain("'--model' 'opus'");
 });
 
 test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a new commit makes it stale", async () => {

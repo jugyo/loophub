@@ -427,12 +427,12 @@ describe("herdr terminal launch", () => {
     expect(plan.command).toContain("LOOPHUB_WORKFLOW_RUN='12'");
     expect(plan.command).toContain("LOOPHUB_WORKFLOW_STEP='execute'");
     expect(plan.command).toContain(
-      "claude --session-id '11111111-1111-4111-8111-111111111111'",
+      "claude '--session-id' '11111111-1111-4111-8111-111111111111'",
     );
-    expect(plan.command).toContain("--model 'sonnet'");
+    expect(plan.command).toContain("'--model' 'sonnet'");
     expect(plan.command).toContain("'--permission-mode' 'auto'");
     expect(plan.command).toContain(
-      "--append-system-prompt-file '/tmp/run/execute-contract.md'",
+      "'--append-system-prompt-file' '/tmp/run/execute-contract.md'",
     );
     // The claude branch does not carry a codex sandbox flag.
     expect(plan.command).not.toContain("--sandbox");
@@ -467,7 +467,7 @@ describe("herdr terminal launch", () => {
     expect(plan.command).toContain(
       "--dangerously-bypass-approvals-and-sandbox",
     );
-    expect(plan.command).toContain("--model 'gpt-5.5'");
+    expect(plan.command).toContain("'--model' 'gpt-5.5'");
     // The rendered contract is prepended to the positional prompt (single quoted as one arg).
     expect(plan.command).toContain("# Execute contract");
     expect(plan.command).toContain("## Inputs");
@@ -525,7 +525,7 @@ describe("herdr terminal launch", () => {
     // Current grok CLIs reject the old tentative `--force` flag (#1540).
     expect(plan.command).not.toContain("--force");
     expect(plan.command).not.toContain("--sandbox");
-    expect(plan.command).toContain("--model 'grok-code-fast-1'");
+    expect(plan.command).toContain("'--model' 'grok-code-fast-1'");
     // The rendered contract is prepended to the positional prompt (single quoted as one arg).
     expect(plan.command).toContain("# Execute contract");
     expect(plan.command).toContain("## Inputs");
