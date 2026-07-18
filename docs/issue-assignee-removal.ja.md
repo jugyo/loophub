@@ -1,5 +1,9 @@
 # issue assignee（`@lh-build`）の廃止 — 設計判断
 
+> **Note: 歴史的記録.** 本書中の `lh build` は #1517 / #1518 で廃止済みのコマンドで、現行の正規着手
+> 経路は Workflow（`lh workflow start` / Web の Start workflow）。本書は設計経緯の参照用として残す。
+> `lh build ...` を現在形の手順として読まないこと。
+
 > Status: Decision（方針確定・実装は別 issue） · Issue: #180 · PR: #181
 > 本書は「issue の assignee（`assignee_session_id` / UI の `@lh-build` 表示）を**仕組みごと廃止する**」
 > という方針と、その移行計画を記録する。実装そのものは本 issue のスコープ外。

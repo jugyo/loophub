@@ -27,7 +27,7 @@ import { currentHerdrPaneContext } from "../herdr-context.ts";
 import { usage } from "../usage.ts";
 
 export async function run(): Promise<void> {
-  // Match `lh build`'s fail-fast runtime validation: conflicting runtime flags and a value-less
+  // Fail-fast runtime validation: conflicting runtime flags and a value-less
   // --model / --effort must fail before svc() opens/migrates the DB or any session/spawn side effect
   // occurs. The real default runtime comes from the repo's effective Coding agent config after the
   // DB is open (#1534); this early pass only rejects mutually exclusive flags.
@@ -94,8 +94,8 @@ export async function run(): Promise<void> {
     // `lh issue new` files an issue *with an AI session* (#299): it launches the configured
     // coding-agent runtime (#658) running the `/lh-issue-create` skill, records the session as
     // kind=issue-create, and later links it to the created issue. The New Issue button runs this.
-    // Mirrors `lh build`: register the session, then spawn the resolved runtime — here in the repo
-    // root (no worktree; filing an issue does not touch a branch).
+    // Same launch shape as a dev session: register the session, then spawn the resolved runtime —
+    // here in the repo root (no worktree; filing an issue does not touch a branch).
     //
     // Defaults come from the repo's effective Coding agent config (#1532/#1534) — the same
     // `repos.agentConfig` path `lh workflow start` uses. Explicit --claude-code / --codex /

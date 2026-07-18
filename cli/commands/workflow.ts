@@ -262,7 +262,7 @@ async function launchParentHerdr(input: {
   // Fire-and-forget (`--herdr`): start the parent agent in its herdr pane and return without the
   // interactive attach, so a non-interactive caller — lh-web's terminal.launch spawns
   // `lh workflow start ... --herdr` headless (#1007) — gets a prompt exit instead of blocking on an
-  // attach it has no TTY for. Mirrors `lh build --herdr` (cli/commands/build.ts).
+  // attach it has no TTY for.
   detach?: boolean;
 }): Promise<void> {
   const bin = runtimeBin(input.runtime);
@@ -270,8 +270,8 @@ async function launchParentHerdr(input: {
   const command = formatSpawnCommand(agentArgs, { bin });
   const commandWithEnv = `LOOPHUB_SESSION_ID=${shQuote(input.sessionId)} ${command}`;
   const agentName = workflowParentHerdrAgentName(input.runId);
-  // Open (or reuse) the target PR worktree's own herdr workspace and start the parent there, the
-  // same orchestration `lh build --herdr` uses (#873) — without it herdr split whichever pane was
+  // Open (or reuse) the target PR worktree's own herdr workspace and start the parent there via the
+  // shared launchAgentInWorktreeHerdr helper (#873) — without it herdr split whichever pane was
   // focused, so the Workflow parent could land in an unrelated PR's workspace.
   let launched: HerdrLaunchResult;
   try {
@@ -287,7 +287,7 @@ async function launchParentHerdr(input: {
   }
   if (input.detach) {
     // The agent now runs in its herdr pane; exit without attaching. process.exit(0) fires the
-    // dev-lock release handler registered in startWorkflow, same as `lh build --herdr`.
+    // dev-lock release handler registered in startWorkflow.
     console.error(
       `Launched Workflow parent in herdr agent ${launched.agentName}. Attach with: herdr --session ${launched.sessionName} agent attach ${launched.agentName}`,
     );

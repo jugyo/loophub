@@ -1,5 +1,9 @@
 # Workspace 設計 — Git ブランチを実体とする作業スペース
 
+> **Note: 歴史的記録.** 本書中の `lh build` とその実装 `cli/commands/build.ts` は #1517 / #1518 で
+> 廃止済みで、現行の正規着手経路は Workflow（`lh workflow start` / Web の Start workflow）。本書は
+> 設計経緯の参照用として残す。`lh build ...` を現在形の手順として読まないこと。
+
 リポジトリトップで「デフォルトブランチとは別の統合先ブランチ」を workspace として作成・表示し、
 その配下に issue をぶら下げ、issue から作る PR の base branch を workspace ブランチへ一貫して
 向けるための設計文書。起票 issue は #1352。実装は本書の §11 で分割する後続 issue で行う。

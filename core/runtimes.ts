@@ -48,7 +48,8 @@ export interface RuntimeDefinition {
   // unknown-runtime for them.
   resumable: boolean;
   // Whether the `--sandbox`/`--allow` managed-settings launch options apply to this runtime. Only
-  // claude has that concept; codex/grok reject the combination up front (cli/commands/build.ts).
+  // claude has that concept; codex/grok don't, and the CLI rejects the `--sandbox`/`--allow`
+  // combination for them up front.
   sandboxCapable: boolean;
   // The argv fragment that opts this runtime into auto mode: skip approval prompts and run tools
   // without asking (`--auto` on the LoopHub side). Every launch path — cli/dev.ts's argv builders,

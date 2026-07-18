@@ -2,8 +2,9 @@ import { parseArgs } from "node:util";
 
 // ---- arg parsing ----
 // Declare each flag's type so boolean flags (--verbose/--json) never swallow the
-// next token: `lh build --verbose 123` and `lh build 123 --verbose` parse identically, and
-// `--repo=me/x` works. strict:false keeps the old lenient behavior for any undeclared flag.
+// next token: `lh workflow start --verbose 123` and `lh workflow start 123 --verbose` parse
+// identically, and `--repo=me/x` works. strict:false keeps the old lenient behavior for any
+// undeclared flag.
 export type Flags = {
   help?: boolean;
   repo?: string;

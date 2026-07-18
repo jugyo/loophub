@@ -1198,7 +1198,7 @@ async function pullStatusFields(
       // leave zeros — a diff stat failure must not break serialization
     }
   }
-  // "working" badge: real uncommitted changes in this PR's lh-build worktree. Guarded so the
+  // "working" badge: real uncommitted changes in this PR's worktree. Guarded so the
   // git status only runs for an open PR whose worktree directory actually exists (see
   // pullWorktreeDirty); merged/closed and worktree-less PRs skip git.
   const linked = linkedIssueSummary(repo, row.id);

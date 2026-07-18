@@ -133,7 +133,7 @@ const REVIEW_LABEL: Record<NonNullable<PullRequest["review_state"]>, string> = {
 };
 
 /**
- * "draft" badge for an open, unmerged WIP PR (#413). `lh build` opens the PR at the start of work,
+ * "draft" badge for an open, unmerged WIP PR (#413). The PR is opened at the start of work,
  * so it stays draft until `lh pr ready-for-review` flips it; surfacing it keeps a still-in-progress
  * PR from reading as reviewable. Null for merged/closed PRs and once the PR is ready.
  */

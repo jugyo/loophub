@@ -1,5 +1,9 @@
 # ワークフロー(Loop)改善の仕組み — Phase 1 設計(取得・保存)
 
+> **Note: 歴史的記録.** 本書中の `lh build` は #1517 / #1518 で廃止済みのコマンドで、現行の正規着手
+> 経路は Workflow（`lh workflow start` / Web の Start workflow）。本書は設計経緯の参照用として残す。
+> `lh build ...` を現在形の手順として読まないこと。
+
 > Status: Design (Phase 1 — retro / decision log の取得・保存) · Issue: #82 · 関連: #74(canon docs)
 > 前提となる要求・方針(What/Why)は [`loop-retrospective-prd.ja.md`](./loop-retrospective-prd.ja.md)。
 > 本書の対象は **Phase 1 = 振り返りと decision log を生成し「保存」する所まで**。

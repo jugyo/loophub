@@ -273,8 +273,8 @@ function PullHeader({
     pull.review_state === "PASSED" &&
     !hasConflict &&
     !hasNoCommits;
-  // "Ready for review" covers two transitions (#413): a draft PR (opened WIP by `lh build`) becoming
-  // ready, or an already-ready PR resubmitting after change requests. Draft takes precedence.
+  // "Ready for review" covers two transitions (#413): a draft PR (opened WIP when work starts)
+  // becoming ready, or an already-ready PR resubmitting after change requests. Draft takes precedence.
   const canReady =
     canAct && (pull.draft || pull.review_state === "CHANGES_REQUESTED");
   const mergeBlockedReason = hasConflict

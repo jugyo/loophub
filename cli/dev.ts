@@ -45,10 +45,10 @@ export function validateRepo(repo: string): void {
 // (force push, `terraform destroy`, `curl | bash`, …) — so an unattended dev loop is not blocked
 // on routine approvals. Centralized here so the displayed spawn command line (formatSpawnCommand)
 // and the real spawn share one source of truth.
-// Parse the `lh build` positional target. Two accepted forms:
+// Parse a target-taking command's positional target. Two accepted forms:
 //   <id>                  e.g. "116"            → { id: 116 }            (repo from cwd/--repo)
 //   <owner>/<repo>/<id>   e.g. "jugyo/lh/116"   → { repo: "jugyo/lh", id: 116 }
-// The owner/repo/id form lets `lh build` start from outside the target repo's working directory
+// The owner/repo/id form lets a command start from outside the target repo's working directory
 // without `--repo`; the bare-id form is the shorthand that defers repo resolution to the caller
 // (resolveRepo: cwd match or --repo). A malformed target (non-numeric id, wrong segment count,
 // or an empty owner/repo segment) throws a usage error. Pure so it can be unit-tested.
@@ -91,8 +91,8 @@ export function reconcileTargetRepo(
 
 // ---- runtime selection ----
 //
-// `lh build` can launch the interactive dev session in Claude Code (default), Codex (#458), or
-// Grok Build. The worktree/PR/session preparation is runtime-independent; only the final spawn
+// A dev session can launch the interactive runtime in Claude Code (default), Codex (#458), or
+// Grok. The worktree/PR/session preparation is runtime-independent; only the final spawn
 // differs. DevRuntime is the CLI-side alias of the core runtime id (core/runtimes.ts CodingAgent) —
 // the two are the same set of values, kept as one type here so the union isn't declared twice.
 export type DevRuntime = CodingAgent;
@@ -100,7 +100,7 @@ export type DevRuntime = CodingAgent;
 // Resolve the runtime from the mutually-exclusive `--claude-code` / `--codex` / `--grok` flags.
 // Passing more than one is ambiguous — fail loudly rather than pick one. When no flag is passed,
 // `defaultRuntime` (the `codingAgent` app setting, #516) decides; omitting it too falls back to the
-// historical default (Claude Code), so plain `lh build <id>` behavior is unchanged for callers that
+// historical default (Claude Code), so the resolved runtime is unchanged for callers that
 // don't pass it (e.g. existing tests). The flag names are read from the registry so a new runtime
 // only needs its entry, not another branch here.
 export function resolveDevRuntime(flags: {
@@ -124,7 +124,7 @@ export function resolveDevRuntime(flags: {
 }
 
 // Build the `codex` argv for the interactive dev session. Codex takes the initial prompt as a
-// positional (`codex [PROMPT]`), so the same `/lh-build <id>` slash command Claude receives is
+// positional (`codex [PROMPT]`), so the same slash command Claude receives is
 // handed to Codex verbatim — the rest of the context (worktree cwd, registered session, linked
 // PR) is prepared before spawn and is runtime-independent. Codex has no `--session-id` /
 // `--name` / `--settings` equivalents. Sandboxed launches receive a Codex config override that
@@ -170,7 +170,7 @@ export function buildCodexArgs({
 }
 
 // Build the `grok` argv for the interactive dev session. Mirrors buildCodexArgs: grok takes the
-// initial prompt as a positional, so the same `/lh-build <id>` slash command the other runtimes
+// initial prompt as a positional, so the same slash command the other runtimes
 // receive is handed to grok verbatim — the rest of the context (worktree cwd, registered session,
 // linked PR) is prepared before spawn and is runtime-independent. grok has no sandbox concept
 // (claude-only --sandbox/--allow are rejected up front by the CLI, same as codex) and no
@@ -386,16 +386,16 @@ export {
 
 // ---- dev lock (single-host duplicate-launch guard) ----
 //
-// A `lh build` worktree is deterministic per PR (#463 — previously per issue), so a second
-// `lh build` targeting the same PR reuses the *same* worktree — two live sessions editing one tree
+// A dev-session worktree is deterministic per PR (#463 — previously per issue), so a second
+// dev session targeting the same PR reuses the *same* worktree — two live sessions editing one tree
 // clobber each other. We guard this with a lock file keyed by (repo, PR) under LOOPHUB_HOME
-// recording the running `lh build` process: `lh build` launches `claude` via a blocking `spawnSync`,
+// recording the running dev-session process: the launcher runs `claude` via a blocking `spawnSync`,
 // so the `lh` process is alive for exactly the session's lifetime, making its PID a precise
 // liveness signal. A new launch that finds a lock whose PID is still alive refuses (unless
 // --force); one whose PID is gone (crash / Ctrl-C) treats it as stale and reclaims it — so a
 // finished/interrupted session never blocks a relaunch. Keying by PR (not issue) means two PRs
-// linked to the same issue can now run `lh build` concurrently without colliding; a second
-// concurrent `lh build <issue>` racing to open the *first* PR for that issue is not separately
+// linked to the same issue can run dev sessions concurrently without colliding; a second
+// concurrent dev session racing to open the *first* PR for that issue is not separately
 // guarded — out of scope for #463. The lock is host-local by design (cross-host exclusion is out
 // of scope) and lives outside the worktree, so it never leaks into a PR. Pure decision logic is
 // split from the fs/PID side effects so it can be unit-tested.
@@ -469,9 +469,9 @@ export function acquireDevLock(
 }
 
 // Read + parse the lock file. Missing / unreadable / malformed all collapse to null (no lock),
-// so a corrupt or partial lock never wedges `lh build` — it's treated as free and reclaimed. The
-// full shape is validated (not just `pid`), so a truncated `{"pid":N}` doesn't slip through and
-// surface as `undefined` fields in the block message.
+// so a corrupt or partial lock never wedges a dev-session launch — it's treated as free and
+// reclaimed. The full shape is validated (not just `pid`), so a truncated `{"pid":N}` doesn't
+// slip through and surface as `undefined` fields in the block message.
 export function readDevLock(path: string): DevLock | null {
   try {
     const v = JSON.parse(readFileSync(path, "utf8"));

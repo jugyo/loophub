@@ -30,9 +30,8 @@ export interface HerdrLaunchResult {
 }
 
 // Opens (or reuses) the target worktree's own herdr workspace and starts `command` in a fresh tab
-// there, instead of splitting whatever pane is currently focused (#674, #873) — the same
-// orchestration `lh build --herdr` used inline. Both `lh build --herdr` and `lh workflow start
-// --herdr` call this so a Workflow parent lands in the same worktree workspace a normal Build would.
+// there, instead of splitting whatever pane is currently focused (#674, #873). `lh workflow start
+// --herdr` calls this so a Workflow parent lands in the target worktree's own workspace.
 // A first-time `worktree open` creates a brand-new single-tab workspace; a reused one gets a fresh
 // tab; and when the worktree open can't be resolved (herdr not running, worktree_not_found, …) it
 // falls back to a plain repo-root tab (still a new tab, not a split). On any failure to start the

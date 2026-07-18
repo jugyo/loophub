@@ -27,8 +27,8 @@ export interface IssueRow {
   closed_at: string | null;
 }
 
-// Compatibility shape for the existing New Issue flow. Persistence is owned by the generic
-// Herdr pane registry; callers can migrate to herdrPanes independently in follow-up work.
+// Compatibility alias for the existing New Issue flow. Persistence is owned by the generic
+// Herdr pane registry (HerdrPaneRow); this alias keeps the issue-scoped call sites readable.
 export type IssueHerdrPane = HerdrPaneRow;
 
 export function linkIssueFiledFromHerdrPane(input: {

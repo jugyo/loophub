@@ -163,8 +163,9 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
     .get(id) as WorkflowRunRow | null;
 }
 
-// All active runs, for the worker's stall-visibility sweep. `running` includes runs already held
-// for a human (needs_human_reason set); the sweep skips those itself.
+// All runs in the `running` status (includes runs already held for a human, needs_human_reason
+// set). Consumed by Verify-review attribution (core/service/reviews.ts) to match a review's
+// session back to its running run.
 export function listRunningWorkflowRuns(): WorkflowRunRow[] {
   return db
     .query(`SELECT * FROM workflow_runs WHERE status = 'running' ORDER BY id`)
