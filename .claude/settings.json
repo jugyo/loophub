@@ -13,8 +13,7 @@
       "Bash(lh pr merge:*)",
       "Bash(lh repo remove:*)",
       "Bash(lh repo archive:*)",
-      "Bash(lh repo unarchive:*)",
-      "Bash(lh dev:*)"
+      "Bash(lh repo unarchive:*)"
     ]
   }
 }

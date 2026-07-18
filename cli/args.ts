@@ -1,8 +1,8 @@
 import { parseArgs } from "node:util";
 
 // ---- arg parsing ----
-// Declare each flag's type so boolean flags (--sandbox/--verbose/--json) never swallow the
-// next token: `lh build --sandbox 123` and `lh build 123 --sandbox` parse identically, and
+// Declare each flag's type so boolean flags (--verbose/--json) never swallow the
+// next token: `lh build --verbose 123` and `lh build 123 --verbose` parse identically, and
 // `--repo=me/x` works. strict:false keeps the old lenient behavior for any undeclared flag.
 export type Flags = {
   help?: boolean;
@@ -10,7 +10,6 @@ export type Flags = {
   "session-id"?: string;
   sessionId?: string;
   "usage-session"?: string;
-  sandbox?: boolean;
   auto?: boolean;
   verbose?: boolean;
   herdr?: boolean;
@@ -103,7 +102,6 @@ const { values, positionals } = parseArgs({
     "session-id": { type: "string" },
     sessionId: { type: "string" },
     "usage-session": { type: "string" },
-    sandbox: { type: "boolean" },
     auto: { type: "boolean" },
     verbose: { type: "boolean" },
     herdr: { type: "boolean" },

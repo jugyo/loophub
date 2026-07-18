@@ -25,10 +25,9 @@ export {
   shouldCreateMissingConventionBranch,
 };
 
-// `lh build` provisions an isolated git worktree (outside the sandbox) and launches an
-// interactive Claude session in it. Everything here is pure CLI-side policy — it imports
-// git plumbing from core but no DB — so it can be unit-tested and later moved to a
-// swappable same-repo runner without touching core.
+// `lh build` provisions an isolated git worktree and launches an interactive Claude session in
+// it. Everything here is pure CLI-side policy — it imports git plumbing from core but no DB — so
+// it can be unit-tested and later moved to a swappable same-repo runner without touching core.
 
 export function validateRepo(repo: string): void {
   if (repo && !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo)) {
@@ -39,25 +38,13 @@ export function validateRepo(repo: string): void {
 // ---- interactive launch args ----
 //
 // Build the `claude` argv for the interactive dev session. Auto mode (`--permission-mode auto`)
-// is enabled when either the sandbox managed-settings are present (`--sandbox`, the historical
-// coupling) or the caller explicitly passes `--auto`. `--auto` alone deliberately relaxes the old
-// safety premise — it enables auto-run *without* the sandbox guard rails — so it takes effect only
-// when the user opts in explicitly (never by default). Without `--auto` and without the sandbox,
-// the session starts in Claude's normal approval mode.
+// is enabled only when the caller explicitly passes `--auto` (never by default); without it the
+// session starts in Claude's normal approval mode.
 // `auto` (vs `acceptEdits`) lets the session run Bash/network/edits without prompting — driven
 // by Claude's safety classifier, which still stops to confirm genuinely destructive actions
-// (force push, `terraform destroy`, `curl | bash`, …) — so a sandboxed dev loop is not blocked
-// on routine approvals. The OS sandbox enforces the filesystem/network boundary independently.
-// The settings JSON is handed to `claude` via `--settings <json>` (the flag that loads an inline
-// settings object — `sandbox` block + `permissions.defaultMode`); a CLI `--permission-mode auto`
-// (higher precedence than a settings file) is also passed so the live interactive mode is driven
-// explicitly regardless of how `defaultMode` is merged. `--settings` is the command-line tier
-// (above project/local/user settings) but NOT the managed/policy tier, so `sandbox.enabled` /
-// `failIfUnavailable` / `defaultMode` take effect while managed-only lockdown keys (e.g.
-// `allowManagedDomainsOnly`) are best-effort here. (Historically this used `--managed-settings`,
-// which is not a real `claude` flag — `claude` silently dropped the whole JSON, so neither the
-// sandbox nor auto mode ever took effect.) Centralized here so the displayed spawn command line
-// (formatSpawnCommand) and the real spawn share one source of truth.
+// (force push, `terraform destroy`, `curl | bash`, …) — so an unattended dev loop is not blocked
+// on routine approvals. Centralized here so the displayed spawn command line (formatSpawnCommand)
+// and the real spawn share one source of truth.
 // Parse the `lh build` positional target. Two accepted forms:
 //   <id>                  e.g. "116"            → { id: 116 }            (repo from cwd/--repo)
 //   <owner>/<repo>/<id>   e.g. "jugyo/lh/116"   → { repo: "jugyo/lh", id: 116 }
@@ -221,7 +208,6 @@ export function buildGrokArgs({
 
 export function buildClaudeArgs({
   sessionId,
-  managedSettings,
   auto,
   slashCommand,
   sessionName,
@@ -229,9 +215,8 @@ export function buildClaudeArgs({
   effort,
 }: {
   sessionId: string;
-  managedSettings?: string;
-  // Opt into auto mode (`--permission-mode auto`) without the sandbox. `--sandbox` already
-  // implies auto via managedSettings; `--auto` enables it independently (no guard rails).
+  // Opt into auto mode (`--permission-mode auto`). Enabled only when explicitly requested (never
+  // by default); without it the session starts in Claude's normal approval mode.
   auto?: boolean;
   slashCommand: string;
   // Display name for the session picker / terminal title (e.g. `#54 <issue title>`). Stripped
@@ -256,18 +241,13 @@ export function buildClaudeArgs({
     const e = display(effort).trim();
     if (e) args.push("--effort", e);
   }
-  if (auto || managedSettings) {
-    // Auto mode when explicitly requested (--auto) or implied by the sandbox (managedSettings).
+  if (auto) {
+    // Auto mode when explicitly requested (--auto).
     args.push(...RUNTIMES["claude-code"].autoApproveArgs);
   }
   if (sessionName) {
     const name = display(sessionName).trim();
     if (name) args.push("--name", name);
-  }
-  if (managedSettings) {
-    // `--settings` (file-or-json) is the flag that loads an inline settings object; the
-    // long-gone `--managed-settings` was silently ignored, dropping the whole JSON.
-    args.push("--settings", managedSettings);
   }
   args.push(slashCommand);
   return args;
@@ -279,7 +259,6 @@ export function buildClaudeArgs({
 // definition, not another branch in buildRuntimeLaunch.
 type RuntimeArgvInput = {
   sessionId: string;
-  managedSettings?: string;
   auto?: boolean;
   slashCommand: string;
   sessionName?: string;
@@ -293,7 +272,6 @@ const RUNTIME_ARGV_BUILDERS: Record<
 > = {
   "claude-code": ({
     sessionId,
-    managedSettings,
     auto,
     slashCommand,
     sessionName,
@@ -302,7 +280,6 @@ const RUNTIME_ARGV_BUILDERS: Record<
   }) =>
     buildClaudeArgs({
       sessionId,
-      managedSettings,
       auto,
       slashCommand,
       sessionName,
@@ -318,7 +295,6 @@ const RUNTIME_ARGV_BUILDERS: Record<
 export function buildRuntimeLaunch({
   runtime,
   sessionId,
-  managedSettings,
   auto,
   slashCommand,
   sessionName,
@@ -331,7 +307,6 @@ export function buildRuntimeLaunch({
     bin: RUNTIMES[runtime].bin,
     args: RUNTIME_ARGV_BUILDERS[runtime]({
       sessionId,
-      managedSettings,
       auto,
       slashCommand,
       sessionName,
@@ -370,36 +345,6 @@ function display(v: string): string {
   // covers DEL (0x7f) and the 8-bit C1 controls (0x80-0x9f), so a single C1 OSC/CSI introducer
   // (e.g. 0x9d) in an attacker-controlled title can't reach a terminal title (claude --name).
   return stripVTControlCharacters(v).replace(/[\x00-\x1f\x7f-\x9f]/g, "");
-}
-
-// Like display(), but for multi-line values (e.g. an issue body) where newlines carry meaning.
-// Sanitizes each line independently and rejoins with "\n", so genuine line breaks survive while
-// every other control byte (CR, BEL, backspace, …) and ANSI/VT sequence is still stripped.
-export function displayMultiline(v: string): string {
-  return v.split("\n").map(display).join("\n");
-}
-
-// The default (non-verbose) launch output: just the basic context a human needs to see what is
-// being worked on and where. By default the issue body and sandbox details are suppressed (#383).
-// Pure (string in, string out); values are control-char stripped (see display()) so a crafted
-// repo/branch can't forge the displayed lines.
-export function formatLaunchSummary({
-  repo,
-  worktree,
-  branch,
-  sessionId,
-}: {
-  repo: string;
-  worktree: string;
-  branch: string;
-  sessionId: string;
-}): string {
-  return [
-    `  repo:        ${display(repo)}`,
-    `  worktree:    ${display(worktree)}`,
-    `  branch:      ${display(branch)}`,
-    `  session-id:  ${display(sessionId)}`,
-  ].join("\n");
 }
 
 // Single-quote a value for a shell command string so it survives copy-paste / re-exec verbatim.

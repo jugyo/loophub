@@ -18,8 +18,6 @@ import {
   buildResumeArgs,
   buildRuntimeLaunch,
   devLockPath,
-  displayMultiline,
-  formatLaunchSummary,
   formatSpawnCommand,
   legacyWorktreeBranch,
   legacyWorktreePath,
@@ -95,47 +93,10 @@ test("reconcileTargetRepo returns undefined when neither repo is provided", () =
   expect(reconcileTargetRepo(undefined, undefined)).toBeUndefined();
 });
 
-// ---- displayMultiline (pure) ----
-
-test("displayMultiline preserves newlines in a multi-line body", () => {
-  const body = "First line\nSecond line\n\nFourth after blank";
-  expect(displayMultiline(body)).toBe(
-    "First line\nSecond line\n\nFourth after blank",
-  );
-});
-
-test("displayMultiline strips ANSI/VT sequences and other control bytes but keeps \\n", () => {
-  // \x1b[31m = red ANSI; \r and \b are line-overwriting control bytes; \n must survive.
-  const body = "line one\x1b[31m red\r\nline\btwo";
-  expect(displayMultiline(body)).toBe("line one red\nlinetwo");
-});
-
 // ---- interactive launch args (pure) ----
 
-test("buildClaudeArgs adds auto mode only when sandbox managed-settings are present", () => {
-  // --sandbox → managed-settings present → auto mode passed explicitly so the live interactive
-  // mode is driven regardless of how the settings `defaultMode` is merged.
-  const sandboxed = buildClaudeArgs({
-    sessionId: "sid-1",
-    managedSettings: "{}",
-    slashCommand: "/lh-build 42",
-  });
-  const i = sandboxed.indexOf("--permission-mode");
-  expect(i).toBeGreaterThanOrEqual(0);
-  expect(sandboxed[i + 1]).toBe("auto");
-
-  // No --sandbox → no managed-settings → no --permission-mode (Claude's normal approval mode),
-  // so an unattended session never auto-edits without the sandbox guard rails.
-  const plain = buildClaudeArgs({
-    sessionId: "sid-1",
-    slashCommand: "/lh-build 42",
-  });
-  expect(plain.indexOf("--permission-mode")).toBe(-1);
-});
-
-test("buildClaudeArgs adds auto mode when --auto is set without the sandbox", () => {
-  // --auto → auto mode without managed-settings (no sandbox guard rails), enabled only because
-  // the user opted in explicitly.
+test("buildClaudeArgs adds auto mode only when --auto is set", () => {
+  // --auto → auto mode, enabled only because the user opted in explicitly.
   const auto = buildClaudeArgs({
     sessionId: "sid-1",
     auto: true,
@@ -144,10 +105,9 @@ test("buildClaudeArgs adds auto mode when --auto is set without the sandbox", ()
   const i = auto.indexOf("--permission-mode");
   expect(i).toBeGreaterThanOrEqual(0);
   expect(auto[i + 1]).toBe("auto");
-  // No managed-settings → no --settings, even though auto mode is on.
-  expect(auto.indexOf("--settings")).toBe(-1);
 
-  // auto: false (default) → no auto mode, matching the non-flagged no-sandbox launch.
+  // auto: false (default) → no --permission-mode (Claude's normal approval mode), so an
+  // unattended session never auto-edits without an explicit opt-in.
   const off = buildClaudeArgs({
     sessionId: "sid-1",
     auto: false,
@@ -156,18 +116,15 @@ test("buildClaudeArgs adds auto mode when --auto is set without the sandbox", ()
   expect(off.indexOf("--permission-mode")).toBe(-1);
 });
 
-test("buildClaudeArgs carries session id, managed settings, and the slash command", () => {
+test("buildClaudeArgs carries the session id and the slash command", () => {
   const args = buildClaudeArgs({
     sessionId: "sid-1",
-    managedSettings: "{}",
     slashCommand: "/lh-build 42",
   });
   expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
-  // The settings JSON must ride on `--settings` (the real claude flag), not the long-gone
-  // `--managed-settings`, which claude silently dropped — sandbox + auto mode never applied.
-  expect(args[args.indexOf("--settings") + 1]).toBe("{}");
-  expect(args.indexOf("--managed-settings")).toBe(-1);
   expect(args[args.length - 1]).toBe("/lh-build 42");
+  // No --auto → no auto mode.
+  expect(args.indexOf("--permission-mode")).toBe(-1);
 });
 
 test("buildResumeArgs resumes a UUID session id with no extra flags", () => {
@@ -185,18 +142,6 @@ test("buildResumeArgs rejects a flag-like / non-UUID session id (argv injection 
   expect(() => buildResumeArgs({ sessionId: "sid-9" })).toThrow(
     /invalid session id/,
   );
-});
-
-test("buildClaudeArgs omits --settings when not provided (no-sandbox mode)", () => {
-  const args = buildClaudeArgs({
-    sessionId: "sid-1",
-    slashCommand: "/lh-build 42",
-  });
-  expect(args.indexOf("--settings")).toBe(-1);
-  expect(args[args.indexOf("--session-id") + 1]).toBe("sid-1");
-  // No sandbox → no auto mode.
-  expect(args.indexOf("--permission-mode")).toBe(-1);
-  expect(args[args.length - 1]).toBe("/lh-build 42");
 });
 
 test("buildClaudeArgs sets --name to the session name and keeps the slash command last", () => {
@@ -563,7 +508,6 @@ test("formatSpawnCommand matches the argv handed to spawnSync (single source of 
   // displayed command is provably what runs.
   const claudeArgs = buildClaudeArgs({
     sessionId: "sid-1",
-    managedSettings: "{}",
     slashCommand: "/lh-build 42",
     sessionName: "#42 title",
   });
@@ -571,38 +515,6 @@ test("formatSpawnCommand matches the argv handed to spawnSync (single source of 
   expect(line).toBe(
     `claude ${claudeArgs.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ")}`,
   );
-});
-
-// ---- launch summary (pure, default/minimal output) ----
-
-test("formatLaunchSummary shows only the basic context (repo / worktree / branch / session-id)", () => {
-  const out = formatLaunchSummary({
-    repo: "me/proj",
-    worktree: "/root/me/proj/issue-42",
-    branch: "loophub/issue-42",
-    sessionId: "sid-1",
-  });
-  expect(out).toContain("repo:        me/proj");
-  expect(out).toContain("worktree:    /root/me/proj/issue-42");
-  expect(out).toContain("branch:      loophub/issue-42");
-  expect(out).toContain("session-id:  sid-1");
-  // The minimal summary omits the sandbox / managed-settings details (those are --verbose only).
-  expect(out).not.toContain("sandbox");
-  expect(out).not.toContain("network domains");
-  expect(out).not.toContain("denyRead");
-});
-
-test("formatLaunchSummary strips terminal control sequences so a crafted value can't forge it", () => {
-  const out = formatLaunchSummary({
-    repo: "me/\x1b[2K\x1b[1Aevil",
-    worktree: "/wt/\x07bell",
-    branch: "loophub/issue-1",
-    sessionId: "sid",
-  });
-  expect(out).not.toContain("\x1b");
-  expect(out).not.toContain("\x07");
-  expect(out).toContain("repo:        me/evil");
-  expect(out).toContain("worktree:    /wt/bell");
 });
 
 // ---- worktree naming (pure) ----
