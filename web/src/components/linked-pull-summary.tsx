@@ -147,16 +147,26 @@ function WorkflowMiniProgress({
   repo,
   pull,
   working,
+  conflict,
 }: {
   owner: string;
   repo: string;
   pull: LinkedPull;
   /** Whether the linked agent is actively working (glow the current stage pill). */
   working: boolean;
+  /** PR is in merge conflict — flip the terminal Done pill to "Conflict!" (#1659). */
+  conflict: boolean;
 }) {
   const { data: state } = useWorkflowRunForPull(owner, repo, pull.number);
   if (!state) return null;
-  return <WorkflowStepTracker state={state} size="sm" working={working} />;
+  return (
+    <WorkflowStepTracker
+      state={state}
+      size="sm"
+      working={working}
+      conflict={conflict}
+    />
+  );
 }
 
 function PullPopover({
@@ -377,6 +387,7 @@ export function LinkedPullSummaryRow({
           repo={repo}
           pull={pull}
           working={showWorkingEffect}
+          conflict={operationalStatus.tone === "conflict"}
         />
         <Metrics pull={pull} overBudget={costStopped !== null} />
       </div>

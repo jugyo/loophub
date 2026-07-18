@@ -123,7 +123,10 @@ function makeWorkflowRunState(
   };
 }
 
-function renderRowWithRun(run: WorkflowRunState | null) {
+function renderRowWithRun(
+  run: WorkflowRunState | null,
+  pullOverrides: Partial<LinkedPull> = {},
+) {
   vi.stubGlobal(
     "fetch",
     mockRpcFetch({ "workflowRuns/stateForPull": () => run }),
@@ -136,7 +139,11 @@ function renderRowWithRun(run: WorkflowRunState | null) {
     getParentRoute: () => rootRoute,
     path: "/",
     component: () => (
-      <LinkedPullSummaryRow owner="me" repo="proj" pull={makePull()} />
+      <LinkedPullSummaryRow
+        owner="me"
+        repo="proj"
+        pull={makePull(pullOverrides)}
+      />
     ),
   });
   const pullRoute = createRoute({
@@ -229,6 +236,22 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
     expect(tracker).toBeTruthy();
     // The pipeline is still shown; needs-human is an extra marker, not a replacement.
     expect(within(tracker as HTMLElement).getByText("Verify")).toBeTruthy();
+  });
+
+  it("flips the mini tracker's Done pill to Conflict! when the PR is in merge conflict (#1659)", async () => {
+    renderRowWithRun(makeWorkflowRunState({ current_step: "execute" }), {
+      mergeable_state: "conflict",
+    });
+    const tracker = (await screen.findByText("Conflict!")).closest(
+      "[data-workflow-step-tracker]",
+    );
+    expect(tracker).toBeTruthy();
+    const within_ = within(tracker as HTMLElement);
+    // Terminal pill reads Conflict! (danger), the earlier stages are unchanged.
+    expect(within_.queryByText("Done")).toBeNull();
+    expect(within_.getByText("Conflict!").className).toContain("text-red");
+    expect(within_.getByText("Execute")).toBeTruthy();
+    expect(within_.getByText("Verify")).toBeTruthy();
   });
 
   it("does not reach Done for a completed run (completed is not the terminal signal)", async () => {

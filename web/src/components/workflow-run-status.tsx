@@ -53,11 +53,14 @@ export function WorkflowRunStatusSection({
   repo,
   state,
   showHistory = false,
+  conflict = false,
 }: {
   owner: string;
   repo: string;
   state: WorkflowRunState | null | undefined;
   showHistory?: boolean;
+  /** PR is in merge conflict — flip the shared tracker's Done pill to "Conflict!" (#1659). */
+  conflict?: boolean;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   if (!state) return null;
@@ -104,7 +107,7 @@ export function WorkflowRunStatusSection({
           ) : null}
         </div>
 
-        <WorkflowStepTracker state={state} size="md" />
+        <WorkflowStepTracker state={state} size="md" conflict={conflict} />
 
         {completed ? (
           <p className="text-sm text-muted-foreground">

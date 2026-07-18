@@ -49,7 +49,11 @@ export function workflowTrackerState(
 function workflowTrackerTitle(
   state: WorkflowRunState,
   { verified, stale, needsHuman }: WorkflowTrackerState,
+  conflict: boolean,
 ): string {
+  if (conflict) {
+    return "Merge conflict — resolve it before this PR can merge";
+  }
   if (needsHuman) {
     return "Workflow run is waiting for a human instruction";
   }
@@ -66,6 +70,7 @@ export function WorkflowStepTracker({
   state,
   size = "sm",
   working = false,
+  conflict = false,
 }: {
   state: WorkflowRunState;
   /** `sm` for the compact PR-row tracker, `md` for the detail Workflow run section. */
@@ -76,6 +81,13 @@ export function WorkflowStepTracker({
    * previous static rendering.
    */
   working?: boolean;
+  /**
+   * PR-level merge conflict (`mergeable_state === "conflict"`), which the run's
+   * {@link WorkflowRunState} does not carry. When set, the terminal "Done" pill flips to a
+   * danger-toned "Conflict!" so the row/section reads as un-mergeable at a glance (#1659).
+   * Defaults to `false`, keeping the plain Execute → Verify → Done pipeline.
+   */
+  conflict?: boolean;
 }) {
   const tracker = workflowTrackerState(state);
   const { activeIndex, verified, stale, needsHuman } = tracker;
@@ -86,12 +98,15 @@ export function WorkflowStepTracker({
     <div
       data-workflow-step-tracker
       className="flex min-w-0 shrink-0 items-center gap-1"
-      title={workflowTrackerTitle(state, tracker)}
+      title={workflowTrackerTitle(state, tracker, conflict)}
     >
       {STAGES.map((stage, index) => {
         const isCurrent = index === activeIndex;
         const isPast = index < activeIndex;
-        const isDoneVerified = stage.key === "done" && verified;
+        // A PR-level conflict wins the terminal pill regardless of the run's step: an un-mergeable
+        // PR is the most actionable state to surface, so "Done" becomes "Conflict!" (#1659).
+        const isDoneConflict = stage.key === "done" && conflict;
+        const isDoneVerified = stage.key === "done" && verified && !conflict;
         const isStaleVerify = stage.key === "verify" && isCurrent && stale;
         return (
           <Fragment key={stage.key}>
@@ -111,15 +126,17 @@ export function WorkflowStepTracker({
               className={cn(
                 "flex items-center gap-1 whitespace-nowrap rounded-full border font-medium leading-none",
                 pillSize,
-                isStaleVerify
-                  ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                  : isDoneVerified
-                    ? "border-green-600/40 bg-green-600/10 text-green-700 dark:text-green-400"
-                    : isCurrent
-                      ? "border-primary-border bg-primary-subtle text-link"
-                      : isPast
-                        ? "border-border bg-muted text-foreground"
-                        : "border-border text-muted-foreground",
+                isDoneConflict
+                  ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-400"
+                  : isStaleVerify
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                    : isDoneVerified
+                      ? "border-green-600/40 bg-green-600/10 text-green-700 dark:text-green-400"
+                      : isCurrent
+                        ? "border-primary-border bg-primary-subtle text-link"
+                        : isPast
+                          ? "border-border bg-muted text-foreground"
+                          : "border-border text-muted-foreground",
                 // Done is a terminal, not an active step — never glow it, even while working.
                 isCurrent &&
                   working &&
@@ -127,10 +144,12 @@ export function WorkflowStepTracker({
                   "animate-[workflow-stage-glow_2.4s_ease-in-out_infinite]",
               )}
             >
-              {isDoneVerified ? (
+              {isDoneConflict ? (
+                <TriangleAlert className="size-3" aria-hidden="true" />
+              ) : isDoneVerified ? (
                 <Check className="size-3" aria-hidden="true" />
               ) : null}
-              {stage.label}
+              {isDoneConflict ? "Conflict!" : stage.label}
               {isStaleVerify ? (
                 <span className="font-normal">· reverify</span>
               ) : null}

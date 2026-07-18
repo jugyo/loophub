@@ -126,6 +126,53 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByText("Done").getAttribute("aria-current")).toBeNull();
   });
 
+  it("flips the terminal Done pill to Conflict! in a danger tone when the PR conflicts", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({ current_step: "execute" })}
+        conflict
+      />,
+    );
+    // The terminal pill now reads "Conflict!" (danger red), not "Done".
+    expect(screen.queryByText("Done")).toBeNull();
+    const conflictPill = screen.getByText("Conflict!");
+    expect(conflictPill.className).toContain("text-red");
+    // A warning icon precedes the label.
+    expect(conflictPill.querySelector("svg")).toBeTruthy();
+    // Execute → Verify are untouched.
+    expect(screen.getByText("Execute").getAttribute("aria-current")).toBe(
+      "step",
+    );
+    expect(screen.getByText("Verify")).toBeTruthy();
+  });
+
+  it("keeps the plain Done pill when the PR does not conflict", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({ current_step: "execute" })}
+        conflict={false}
+      />,
+    );
+    expect(screen.getByText("Done")).toBeTruthy();
+    expect(screen.queryByText("Conflict!")).toBeNull();
+  });
+
+  it("lets a conflict override the verified-green Done pill", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({
+          current_step: "verify",
+          verification_status: "verified",
+        })}
+        conflict
+      />,
+    );
+    // Even a verified run shows Conflict! — the PR still can't merge.
+    const conflictPill = screen.getByText("Conflict!");
+    expect(conflictPill.className).toContain("text-red");
+    expect(conflictPill.className).not.toContain("text-green");
+  });
+
   it("appends a needs-human marker while keeping the pipeline", () => {
     render(
       <WorkflowStepTracker
