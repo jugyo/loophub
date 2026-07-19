@@ -16,6 +16,7 @@ import {
   ServiceError,
   worktreeRoot,
 } from "../service/shared.ts";
+import { herdrSnapshotSignature } from "./herdr-snapshot-signature.ts";
 import { projectHerdrRepoSessions } from "./session-projection.ts";
 
 const CLOSED_PULL_AGENT_GRACE_MS = 60 * 60 * 1000;
@@ -60,6 +61,48 @@ export async function sweepHerdrSessions(): Promise<HerdrSessionsWire> {
   return {
     repos: groups.filter((g) => g !== null),
     running_repos: runningRepos,
+  };
+}
+
+const TERMINAL_SESSIONS_UPDATED_EVENT = "terminal.sessions_updated";
+
+export interface HerdrSnapshotSweepResult {
+  repos: number;
+  running_repos: number;
+  changed: boolean;
+  captured_at: string;
+}
+
+export interface HerdrSnapshotSweepDeps {
+  // Capture the current herdr snapshot. Defaults to the live subprocess sweep; injected in tests so
+  // the persist/diff/emit logic can run without a herdr on PATH.
+  sweep?: () => Promise<HerdrSessionsWire>;
+}
+
+// One worker tick (#1665): capture the live herdr snapshot, persist it as the single row
+// terminal/sessions reads, and fire a global terminal.sessions_updated event only when the
+// structural signature changed (herdrSnapshotSignature excludes token usage so a busy fleet does
+// not flood the events table). This is the ONLY path that spawns herdr for session state now — the
+// RPC is a pure DB read — so the whole herdr load is decoupled from the number of open browser tabs.
+// captured_at is refreshed every tick so a stopped worker surfaces as staleness, not silent
+// automatic fallback.
+export async function snapshotHerdrSessionsImpl(
+  deps: HerdrSnapshotSweepDeps = {},
+): Promise<HerdrSnapshotSweepResult> {
+  const capture = deps.sweep ?? sweepHerdrSessions;
+  const snapshot = await capture();
+  const signature = herdrSnapshotSignature(snapshot);
+  const record = S.recordHerdrSessionSnapshot(snapshot, signature);
+  if (record.changed) {
+    // Global (repo_id = null): the snapshot spans every repo, and clients invalidate one shared
+    // terminal/sessions query rather than a repo-scoped one.
+    S.emitEvent(null, TERMINAL_SESSIONS_UPDATED_EVENT, "lh-worker", {});
+  }
+  return {
+    repos: snapshot.repos.length,
+    running_repos: snapshot.running_repos?.length ?? 0,
+    changed: record.changed,
+    captured_at: record.captured_at,
   };
 }
 

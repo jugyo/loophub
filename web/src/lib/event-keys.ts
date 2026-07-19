@@ -6,6 +6,7 @@
 //   notification.*   -> notification center list/count
 //   repo.*           -> repos list (+ old-name keys on repo.renamed)
 //   agent_session.*  -> agent-sessions
+//   terminal.*       -> terminal sessions (herdr snapshot, worker-owned #1665)
 // See ../../../API.md for the full event type list.
 
 import type { LoopEvent } from "@/api/types";
@@ -24,6 +25,7 @@ export const queryKeys = {
   inboxMessage: (id: number) => ["inbox-message", id] as const,
   notifications: () => ["notifications"] as const,
   agentSessions: () => ["agent-sessions"] as const,
+  terminalSessions: () => ["terminal", "sessions"] as const,
   events: () => ["events"] as const,
   dashboard: () => ["dashboard"] as const,
   scheduledTasks: (full: string) => ["scheduled-tasks", full] as const,
@@ -201,6 +203,12 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
       keys.push(["pull", from]);
       keys.push([...queryKeys.events(), from]);
     }
+  } else if (type.startsWith("terminal.")) {
+    // The worker's herdr snapshot sweep (#1665) fires terminal.sessions_updated (global, no repo)
+    // only when the displayed herdr session state changed. Invalidate the single shared
+    // terminal/sessions query so every terminal-aware surface refetches the new snapshot — this
+    // replaces the old per-tab 3s poll.
+    keys.push([...queryKeys.terminalSessions()]);
   } else if (type.startsWith("agent_session.")) {
     keys.push([...queryKeys.agentSessions()]);
     // Some agent_session events target a specific PR or issue (for example linked/usage_updated);

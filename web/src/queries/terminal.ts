@@ -17,19 +17,19 @@ export function useLaunchTerminalWorkflow() {
 }
 
 /**
- * Running herdr sessions for UI surfaces that actually render terminal state. This polls while
- * mounted instead of depending on the old terminal event invalidation path; React Query shares the
- * single query across observers, so multiple components in one tab do not spawn parallel reads.
- * Errors are not retried; note react-query keeps the last successful `data` across a failed
- * refetch, so the component checks `isError` to hide the section rather than relying on `data`
- * becoming undefined.
+ * Running herdr sessions for UI surfaces that actually render terminal state. terminal/sessions is
+ * now a pure DB read of the worker-owned snapshot (#1665), so this no longer polls: lh-worker's
+ * global sweep emits terminal.sessions_updated when the state changes, and the shared events poll
+ * (use-loophub-events) invalidates this query's key on that event. React Query shares the single
+ * query across observers, so multiple components in one tab do not spawn parallel reads. Errors are
+ * not retried; note react-query keeps the last successful `data` across a failed refetch, so the
+ * component checks `isError` to hide the section rather than relying on `data` becoming undefined.
  */
 export function useHerdrSessions(opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: terminalKeys.sessions,
     queryFn: getHerdrSessions,
     enabled: opts.enabled ?? true,
-    refetchInterval: 3000,
     retry: false,
   });
 }

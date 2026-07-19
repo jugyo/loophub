@@ -55,6 +55,16 @@ afterAll(() => {
   rmSync(HOME, { recursive: true, force: true });
 });
 
+// terminal.sessions is now a pure DB read of the worker-owned snapshot (#1665): the herdr capture
+// and projection run in snapshotHerdrSessions. Drive that first, then read the persisted snapshot,
+// dropping the captured_at freshness stamp the RPC adds so the projection assertions stay focused.
+async function snapshotAndReadSessions() {
+  await svc.terminal.snapshotHerdrSessions();
+  const result = svc.terminal.sessions();
+  delete (result as { captured_at?: string | null }).captured_at;
+  return result;
+}
+
 test("terminal.sessions reports running repos independently from visible agent groups", async () => {
   const withAgents = await svc.repos.create({
     path: initGitRepo(),
@@ -127,7 +137,7 @@ test("terminal.sessions reports running repos independently from visible agent g
   chmodSync(join(FAKE_BIN, "herdr"), 0o755);
   process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
   try {
-    const result = await svc.terminal.sessions();
+    const result = await snapshotAndReadSessions();
     expect(result.running_repos).toEqual([
       "me/with-agents",
       "me/agentless",
@@ -178,7 +188,7 @@ test("terminal.sessions reports running repos independently from visible agent g
 test("terminal.sessions is empty when herdr is not on PATH", async () => {
   process.env.PATH = EMPTY_BIN;
   try {
-    expect(await svc.terminal.sessions()).toEqual({ repos: [] });
+    expect(await snapshotAndReadSessions()).toEqual({ repos: [] });
   } finally {
     process.env.PATH = ORIGINAL_PATH;
   }
@@ -189,7 +199,7 @@ test("terminal.sessions is empty when herdr exits non-zero", async () => {
   chmodSync(join(FAKE_BIN, "herdr"), 0o755);
   process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
   try {
-    expect(await svc.terminal.sessions()).toEqual({ repos: [] });
+    expect(await snapshotAndReadSessions()).toEqual({ repos: [] });
   } finally {
     process.env.PATH = ORIGINAL_PATH;
   }
@@ -203,7 +213,7 @@ test("terminal.sessions distinguishes a confirmed empty list from malformed outp
   chmodSync(join(FAKE_BIN, "herdr"), 0o755);
   process.env.PATH = `${FAKE_BIN}:${ORIGINAL_PATH}`;
   try {
-    expect(await svc.terminal.sessions()).toEqual({
+    expect(await snapshotAndReadSessions()).toEqual({
       repos: [],
       running_repos: [],
     });
@@ -212,13 +222,13 @@ test("terminal.sessions distinguishes a confirmed empty list from malformed outp
       join(FAKE_BIN, "herdr"),
       "#!/bin/sh\nprintf '%s' 'not-json'\n",
     );
-    expect(await svc.terminal.sessions()).toEqual({ repos: [] });
+    expect(await snapshotAndReadSessions()).toEqual({ repos: [] });
 
     writeFileSync(
       join(FAKE_BIN, "herdr"),
       `#!/bin/sh\nprintf '%s' '${JSON.stringify({ sessions: [{ running: true }, 42] })}'\n`,
     );
-    expect(await svc.terminal.sessions()).toEqual({ repos: [] });
+    expect(await snapshotAndReadSessions()).toEqual({ repos: [] });
   } finally {
     process.env.PATH = ORIGINAL_PATH;
   }

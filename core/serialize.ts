@@ -648,6 +648,11 @@ export interface HerdrRepoSessionsWire {
 export interface HerdrSessionsWire {
   repos: HerdrRepoSessionsWire[];
   running_repos?: string[];
+  // When lh-worker last wrote this snapshot (ISO). The `terminal/sessions` RPC is a pure DB read of
+  // the worker-owned snapshot (#1665), so a stopped worker leaves this timestamp frozen — clients
+  // surface the staleness instead of an automatic herdr fallback that would hide the stopped worker.
+  // Null when no snapshot has ever been written (worker never ran, or a fresh DB).
+  captured_at?: string | null;
 }
 
 export type TerminalLaunchBackendWire = "builtin" | "herdr";

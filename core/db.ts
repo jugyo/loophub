@@ -689,6 +689,21 @@ CREATE TABLE IF NOT EXISTS notification_cursors (
   last_id   INTEGER NOT NULL
 );
 
+-- Single-row snapshot of running herdr sessions for the worker-owned sweep (#1665). lh-worker
+-- polls herdr (session list + per-repo agent list) on a global interval, projects the same wire
+-- shape terminal/sessions returns, and upserts it here every tick; the RPC then reads this row
+-- with zero herdr subprocess spawn. snapshot is the serialized HerdrSessionsWire; signature is the
+-- structural digest (agents/status/workspaces, excluding volatile token usage) used to emit a
+-- terminal.sessions_updated event only when the displayed state actually changed. captured_at is
+-- refreshed every successful sweep even when nothing changed, so a frozen value means a stopped
+-- worker (surfaced as staleness), not merely an idle herdr.
+CREATE TABLE IF NOT EXISTS herdr_session_snapshots (
+  id           INTEGER PRIMARY KEY CHECK (id = 1),
+  snapshot     TEXT NOT NULL,
+  signature    TEXT NOT NULL,
+  captured_at  TEXT NOT NULL
+);
+
 -- Last observed mergeable state per open PR for the worker's conflict sweep (#1232). A
 -- clean -> conflict transition (a reviewed PR whose base advanced into a conflict while it waited
 -- for a human merge) fires pull_request.merge_conflict once. State is recorded every tick, so once

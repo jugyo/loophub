@@ -34,6 +34,11 @@ describe("queryKeysForEvent", () => {
     expect(keys).toContainEqual(["pull", "me/proj", 13]);
   });
 
+  it("maps a global terminal.sessions_updated event to the terminal sessions query (#1665)", () => {
+    const keys = queryKeysForEvent(ev({ type: "terminal.sessions_updated" }));
+    expect(keys).toContainEqual(["terminal", "sessions"]);
+  });
+
   it("maps workspace events to the repo workspace list", () => {
     const keys = queryKeysForEvent(
       ev({ type: "workspace.archived", repo: "me/proj" }),

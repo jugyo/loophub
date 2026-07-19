@@ -66,6 +66,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
       closedPullCleanupSweepMs: Number.NaN,
       scheduledTaskSweepMs: Number.NaN,
       conflictSweepMs: Number.NaN,
+      herdrSweepMs: Number.NaN,
     }),
   ).toEqual({
     sweepMs: 0,
@@ -75,6 +76,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
     conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
+    herdrSweepMs: M.DEFAULT_HERDR_SWEEP_MS,
   });
 
   expect(M.normalizeMaintenanceLoopOptions()).toEqual({
@@ -85,6 +87,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     closedPullCleanupSweepMs: M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS,
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
     conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
+    herdrSweepMs: M.DEFAULT_HERDR_SWEEP_MS,
   });
 });
 
@@ -102,6 +105,7 @@ test("maintenance summary reports disabled loops as off", () => {
       closedPullCleanupSweepMs: 600000,
       scheduledTaskSweepMs: 0,
       conflictSweepMs: 0,
+      herdrSweepMs: 0,
     }),
   ).toEqual({
     pullSweep: "off",
@@ -111,6 +115,7 @@ test("maintenance summary reports disabled loops as off", () => {
     closedPullCleanupSweep: "600000ms",
     scheduledTaskSweep: "off",
     conflictSweep: "off",
+    herdrSweep: "off",
   });
 });
 
@@ -190,6 +195,29 @@ test("closed pull cleanup sweep kills closed-PR agents", async () => {
   } finally {
     stop();
     cleanupSpy.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+test("herdr snapshot sweep persists the snapshot every tick", async () => {
+  vi.useFakeTimers();
+  const snapshotSpy = vi
+    .spyOn(svc.terminal, "snapshotHerdrSessions")
+    .mockResolvedValue({
+      repos: 1,
+      running_repos: 1,
+      changed: true,
+      captured_at: "2026-07-19T00:00:00.000Z",
+    });
+  const stop = M.startHerdrSnapshotSweep(10);
+  try {
+    await vi.advanceTimersByTimeAsync(10);
+    expect(snapshotSpy).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(snapshotSpy).toHaveBeenCalledTimes(2);
+  } finally {
+    stop();
+    snapshotSpy.mockRestore();
     vi.useRealTimers();
   }
 });

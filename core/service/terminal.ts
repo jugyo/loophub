@@ -7,8 +7,9 @@ import {
   cleanupClosedIssuePanesImpl,
   cleanupClosedPullDevAgentsImpl,
   closeManagedHerdrPaneIfUnclaimed,
+  type HerdrSnapshotSweepResult,
   killPaneForegroundProcess,
-  sweepHerdrSessions,
+  snapshotHerdrSessionsImpl,
 } from "../terminal/herdr-cleanup.ts";
 import {
   isHerdrExitError,
@@ -275,11 +276,6 @@ async function launchWorkflowRunHerdr(
 // with no matching PR row) stays false: unknown must render as a normal row, not a stale one.
 export type HerdrRepoSessions = HerdrRepoSessionsWire;
 export type HerdrSessionsResult = HerdrSessionsWire;
-
-// Coalesces concurrent terminal.sessions calls onto one herdr sweep. Every client polls this
-// RPC (15s interval per tab), so without sharing, N tabs would each spawn their own
-// `herdr session list` + per-repo `agent list` process trees against the same state.
-let herdrSessionsInflight: Promise<HerdrSessionsResult> | null = null;
 
 // Resolves the on-disk worktree path herdr's `worktree open` should target for a launch (#551),
 // so herdr's own workspace/worktree metadata is pinned to the PR's real worktree instead of a
@@ -745,17 +741,23 @@ export const terminal = {
     };
   },
 
-  // Running herdr sessions grouped by repo, for terminal-aware UI surfaces (#495).
-  // Read-only and deliberately failure-tolerant: herdr missing from PATH, no running
-  // sessions, or unparseable output all degrade to an empty list — clients hide
-  // the section instead of surfacing an error. Not gated on the configured launch
-  // backend: sessions started outside LoopHub are just as real to a supervisor.
-  sessions(): Promise<HerdrSessionsResult> {
-    if (herdrSessionsInflight) return herdrSessionsInflight;
-    herdrSessionsInflight = sweepHerdrSessions().finally(() => {
-      herdrSessionsInflight = null;
-    });
-    return herdrSessionsInflight;
+  // Running herdr sessions grouped by repo, for terminal-aware UI surfaces (#495). As of #1665 this
+  // is a pure read of the worker-owned snapshot (herdr_session_snapshots): lh-worker's global sweep
+  // (snapshotHerdrSessions) does the herdr subprocess capture, so this RPC spawns nothing regardless
+  // of how many browser tabs poll it. Read-only and deliberately failure-tolerant: no snapshot yet
+  // (worker never ran) degrades to an empty list with captured_at: null, and clients surface the
+  // captured_at staleness rather than an automatic herdr fallback that would hide a stopped worker.
+  sessions(): HerdrSessionsResult {
+    const snapshot = S.getHerdrSessionSnapshot();
+    if (!snapshot) return { repos: [], captured_at: null };
+    return { ...snapshot.snapshot, captured_at: snapshot.captured_at };
+  },
+
+  // lh-worker tick (#1665): capture the live herdr snapshot into the DB and emit
+  // terminal.sessions_updated only when the displayed state changed. Kept in the terminal service
+  // (not the worker) so the herdr orchestration stays in core and unit-testable.
+  async snapshotHerdrSessions(): Promise<HerdrSnapshotSweepResult> {
+    return snapshotHerdrSessionsImpl();
   },
 
   async cleanupClosedIssuePanes(input: {

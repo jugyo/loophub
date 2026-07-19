@@ -39,6 +39,7 @@ function invalidateReconnectQueries(
     queryKeys.inbox(),
     ["inbox-message"],
     queryKeys.agentSessions(),
+    queryKeys.terminalSessions(),
     queryKeys.events(),
     queryKeys.dashboard(),
     ["settings"],

@@ -3,9 +3,11 @@
 // so Open in Herdr / bot-icon status match the PR Agents UI.
 
 import { Link } from "@tanstack/react-router";
-import { GitPullRequest, Loader2 } from "lucide-react";
+import { GitPullRequest, Loader2, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { HerdrAgent, HerdrRepoSessions, HerdrSessions } from "@/api/types";
 import { AgentTree } from "@/components/pull-herdr-section";
+import { classifyHerdrSnapshotFreshness } from "@/lib/herdr-snapshot-freshness";
 import { useHerdrSessions } from "@/queries/terminal";
 
 export type PullWorkspaceGroup = {
@@ -76,6 +78,10 @@ export function AgentsPage() {
         LoopHub-managed herdr sessions, their PR worktrees, and running agents.
       </p>
 
+      {data && !isError ? (
+        <HerdrSnapshotStaleness capturedAt={data.captured_at} />
+      ) : null}
+
       <div className="mt-6">
         {isLoading && !data ? (
           <p
@@ -116,6 +122,52 @@ export function AgentsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function formatSnapshotAge(ageMs: number): string {
+  const seconds = Math.round(ageMs / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  return `${minutes}m ago`;
+}
+
+// Surfaces the freshness of the worker-owned herdr snapshot (#1665). Since terminal/sessions no
+// longer polls, a stopped lh-worker would otherwise never re-render this view — so a display-only
+// ticker (no network) re-evaluates captured_at against the wall clock, flipping to a visible
+// warning when the snapshot goes stale. This is the "staleness must be visible, no automatic
+// fallback" acceptance criterion.
+function HerdrSnapshotStaleness({
+  capturedAt,
+}: {
+  capturedAt: string | null | undefined;
+}) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const freshness = classifyHerdrSnapshotFreshness(capturedAt, nowMs);
+  if (freshness.state === "fresh") {
+    // Supplementary muted info; deliberately no live-region role so it does not compete with the
+    // page's primary status/empty-state region.
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        Snapshot updated {formatSnapshotAge(freshness.ageMs)}.
+      </p>
+    );
+  }
+
+  const message =
+    freshness.state === "missing"
+      ? "No herdr snapshot yet — is lh-worker running?"
+      : `Herdr snapshot is stale (last updated ${formatSnapshotAge(freshness.ageMs)}) — lh-worker may be stopped.`;
+  return (
+    <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+      <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+      {message}
+    </p>
   );
 }
 

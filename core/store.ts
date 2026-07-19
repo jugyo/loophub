@@ -3,6 +3,7 @@ export * from "./store/events.ts";
 export * from "./store/github-links.ts";
 export * from "./store/handoffs.ts";
 export * from "./store/herdr-panes.ts";
+export * from "./store/herdr-snapshots.ts";
 export * from "./store/inbox.ts";
 export * from "./store/issues.ts";
 export * from "./store/labels.ts";

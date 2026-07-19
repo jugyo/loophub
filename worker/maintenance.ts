@@ -37,6 +37,11 @@ export const DEFAULT_SCHEDULED_TASK_SWEEP_MS = 30000;
 // only when a sibling merges — infrequent, and a human merge is never seconds away — so this runs on
 // its own coarser interval than the 5s pull sweep rather than piggybacking on it.
 export const DEFAULT_CONFLICT_SWEEP_MS = 15000;
+// #1665: herdr session snapshot sweep. lh-worker owns the herdr subprocess capture (session list +
+// per-repo agent list) that terminal/sessions used to run per browser tab; the RPC is now a pure DB
+// read of the snapshot this sweep persists. 3s matches the old per-tab poll's freshness, and the
+// whole herdr load is now ~1 capture/tick regardless of how many tabs are open.
+export const DEFAULT_HERDR_SWEEP_MS = 3000;
 
 export interface MaintenanceLoopOptions {
   sweepMs?: number;
@@ -46,6 +51,7 @@ export interface MaintenanceLoopOptions {
   closedPullCleanupSweepMs?: number;
   scheduledTaskSweepMs?: number;
   conflictSweepMs?: number;
+  herdrSweepMs?: number;
 }
 
 export interface NormalizedMaintenanceLoopOptions {
@@ -56,6 +62,7 @@ export interface NormalizedMaintenanceLoopOptions {
   closedPullCleanupSweepMs: number;
   scheduledTaskSweepMs: number;
   conflictSweepMs: number;
+  herdrSweepMs: number;
 }
 
 export interface MaintenanceHandle {
@@ -88,6 +95,7 @@ export function normalizeMaintenanceLoopOptions(
       opts.conflictSweepMs,
       DEFAULT_CONFLICT_SWEEP_MS,
     ),
+    herdrSweepMs: finiteOrDefault(opts.herdrSweepMs, DEFAULT_HERDR_SWEEP_MS),
   };
 }
 
@@ -143,6 +151,7 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
       opts.scheduledTaskSweepMs > 0 ? `${opts.scheduledTaskSweepMs}ms` : "off",
     conflictSweep:
       opts.conflictSweepMs > 0 ? `${opts.conflictSweepMs}ms` : "off",
+    herdrSweep: opts.herdrSweepMs > 0 ? `${opts.herdrSweepMs}ms` : "off",
   };
 }
 
@@ -169,6 +178,9 @@ export function startMaintenanceLoops(
       : () => {},
     normalized.conflictSweepMs > 0
       ? startConflictSweep(normalized.conflictSweepMs)
+      : () => {},
+    normalized.herdrSweepMs > 0
+      ? startHerdrSnapshotSweep(normalized.herdrSweepMs)
       : () => {},
   ];
 
@@ -452,6 +464,44 @@ export function startClosedPullCleanupSweep(
       });
     } catch (err) {
       logLoopFailed("closed pull cleanup sweep", startedAt, err);
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// Snapshot running herdr sessions into the DB every tick (#1665) so terminal/sessions is a pure DB
+// read instead of a per-tab herdr subprocess spawn. This loop is the single owner of that herdr
+// capture; it persists the projected wire and emits terminal.sessions_updated only when the
+// displayed state changed (the diff/emit bookkeeping lives in the core terminal service). Runs on
+// its own 3s interval matching the old per-tab poll's freshness — coarser than the pull sweep since
+// it is display-only and unrelated to pane cleanup.
+export function startHerdrSnapshotSweep(
+  intervalMs = DEFAULT_HERDR_SWEEP_MS,
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    const startedAt = logLoopStarted("herdr snapshot sweep");
+    try {
+      const result = await terminal.snapshotHerdrSessions();
+      logLoopCompleted("herdr snapshot sweep", startedAt, {
+        repos: result.repos,
+        running_repos: result.running_repos,
+        changed: result.changed ? 1 : 0,
+      });
+    } catch (err) {
+      logLoopFailed("herdr snapshot sweep", startedAt, err);
     } finally {
       running = false;
     }
