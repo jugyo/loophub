@@ -42,7 +42,7 @@ export function parseCritComments(stdout: string): CritComment[] {
 }
 
 /**
- * Fold unresolved crit comments into a single REQUEST_CHANGES review:
+ * Fold unresolved crit comments into a single review submission (posted as FEEDBACK by the caller):
  * - review-level comments (`scope: "review"`, or no path) collapse into the review body;
  * - file/line comments (they carry a path; `start_line: 0` means file-level) become review
  *   comments, keeping the line number only for line comments.

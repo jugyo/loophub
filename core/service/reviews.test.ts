@@ -121,6 +121,49 @@ test("a substantive review on a PR with no running run does not emit review_subm
   expect(reviewEvents().length).toBe(before);
 });
 
+test("a FEEDBACK review on a PR with a running run emits review_submitted with review_id", async () => {
+  const pr = await newPull("feedback-emit");
+  const runId = startRun(pr, "execute");
+  const before = reviewEvents().length;
+
+  // Non-blocking human/crit feedback (as `lh pr crit` now ingests it): must still route to Execute.
+  const review = await svc.reviews.create(
+    "me/reviews",
+    pr,
+    { event: "FEEDBACK", topic: "workflow", body: "consider this" },
+    "human-session",
+  );
+
+  const events = reviewEvents();
+  expect(events.length).toBe(before + 1);
+  expect(JSON.parse(events.at(-1)!.payload)).toEqual({
+    id: runId,
+    number: pr,
+    issue_number: pr,
+    pr_number: pr,
+    parent_session_id: "parent-session",
+    session_id: "human-session",
+    review_id: review.id,
+  });
+});
+
+test("a FEEDBACK review is gate-neutral: it does not block merge and does not pass", async () => {
+  const pr = await newPull("feedback-gate");
+
+  await svc.reviews.create(
+    "me/reviews",
+    pr,
+    { event: "FEEDBACK", topic: "workflow", body: "consider this" },
+    "human-session",
+  );
+
+  const detail = await svc.pulls.get("me/reviews", pr);
+  // No topic bucket is formed → unreviewed (not mergeable-by-itself), but not blocked either.
+  expect(detail.review_gate.reviewed).toBe(false);
+  expect(detail.review_gate.all_topics_passed).toBe(false);
+  expect(detail.review_gate.topics).toEqual([]);
+});
+
 test("a non-substantive COMMENT review never emits review_submitted even with a running run", async () => {
   const pr = await newPull("comment-only");
   startRun(pr, "execute");

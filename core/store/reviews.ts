@@ -111,7 +111,9 @@ function reviewGate(
   currentHeadSha: string | null,
 ): ReviewGate {
   // ASC order (listReviews) → the last write per topic wins = latest substantive
-  // review for that topic.
+  // review for that topic. FEEDBACK (non-blocking human/crit feedback, #1674) is
+  // deliberately excluded here so it never forms a topic bucket: a FEEDBACK-only PR
+  // stays gate-neutral (unreviewed, not blocked, not mergeable-by-itself).
   const latestByTopic = new Map<string | null, ReviewRow>();
   for (const r of reviews) {
     if (r.event === "PASS" || r.event === "REQUEST_CHANGES")

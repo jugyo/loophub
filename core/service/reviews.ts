@@ -12,9 +12,10 @@ import {
 
 // The running workflow run for this PR, if any. Unlike `latestWorkflowRunReview` (which stays
 // scoped to this run's verifier children for transition decisions), the run-scoped observation
-// event fires for *any* substantive review on the run's PR — including a human's out-of-band
-// review ingested from crit (#1654) — so the parent always re-observes step status. It carries no
-// verdict; the persisted review row remains the sole verdict source.
+// event fires for any review the parent must route — the substantive PASS / REQUEST_CHANGES and
+// the non-blocking-but-must-handle FEEDBACK (human/crit out-of-band, #1674) — so the parent always
+// re-observes step status. It carries no verdict; the persisted review row remains the sole
+// verdict source.
 function runningWorkflowRunForPull(
   repoId: number,
   prNumber: number,
@@ -107,14 +108,14 @@ export const reviews = {
       comments: lineComments.length,
     });
     const workflowRun =
-      event === "PASS" || event === "REQUEST_CHANGES"
+      event === "PASS" || event === "REQUEST_CHANGES" || event === "FEEDBACK"
         ? runningWorkflowRunForPull(r.id, row.number)
         : null;
     if (workflowRun) {
       // The review row remains the sole verdict source. This run-scoped event is only the reliable
       // observation trigger for the parent, independent of whether the Verify child later manages
-      // to declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human/crit)
-      // review straight to Execute, since it will not appear in the run's own step status.
+      // to declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human/crit
+      // FEEDBACK) review straight to Execute, since it will not appear in the run's own step status.
       S.emitEvent(r.id, "workflow_run.review_submitted", actor, {
         id: workflowRun.id,
         number: workflowRun.pr_number,

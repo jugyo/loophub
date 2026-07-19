@@ -857,9 +857,10 @@ export function commentJSON(m: S.CommentRow): CommentWire {
 export interface ReviewWire {
   id: number;
   user: UserWire;
-  // Not narrowed to "PASS" | "REQUEST_CHANGES" | "COMMENT": reviews.create (core/service/reviews.ts)
-  // only special-cases "APPROVE" -> "PASS" and otherwise stores the caller's uppercased string
-  // verbatim, so the wire value isn't actually guaranteed to be one of the three.
+  // Not narrowed to "PASS" | "REQUEST_CHANGES" | "COMMENT" | "FEEDBACK": reviews.create
+  // (core/service/reviews.ts) only special-cases "APPROVE" -> "PASS" and otherwise stores the
+  // caller's uppercased string verbatim, so the wire value isn't actually guaranteed to be one of
+  // the known events. FEEDBACK (#1674) is the non-blocking human/crit feedback type.
   state: string;
   body: string;
   // The commit this review was made against (lets clients group reviews by

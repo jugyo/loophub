@@ -43,9 +43,9 @@ Event rows are timing signals, never transition facts:
 
 - `workflow_run.turn_done` — observe step status and decide whether HEAD advanced.
 - `workflow_run.review_submitted` — observe step status; the review row is the sole verdict source.
-  It fires for any substantive review on the run's PR, including out-of-band human reviews (e.g. crit
-  feedback) that will not appear in step status; the payload's `review_id` names that review (see
-  Out-of-band review).
+  It fires for any review the parent must route: this run's substantive PASS / REQUEST_CHANGES, and
+  out-of-band `FEEDBACK` (non-blocking human/crit feedback, e.g. ingested from crit) that will not
+  appear in step status; the payload's `review_id` names that review (see Out-of-band review).
 - `workflow_run.escalated` — use the event's `reason` for the human escalation flow.
 - `workflow_run.github_event` — inspect the referenced GitHub feedback.
 - `workflow_run.merge_conflict` — the run's PR base advanced into a merge conflict; hand resolution to
@@ -242,12 +242,12 @@ consumers. The `workflow_run.github_event` payload points back to it with `sourc
 ## Out-of-band review (human / crit feedback)
 
 A `workflow_run.review_submitted` event can name a review that this run's Verify child did not
-produce — most often a human's review ingested from crit ("Review with Crit"). Step status only
-reports the run's own verifier reviews, so this review will **not** show up as a fresh
-`request_changes` there; you cannot address it by reading step status alone. The event payload's
-`review_id` is your handle to it.
+produce — most often a human's review ingested from crit ("Review with Crit"), submitted as the
+non-blocking `FEEDBACK` event. Step status only reports the run's own verifier reviews, so this
+review will **not** show up as a fresh `request_changes` there; you cannot address it by reading step
+status alone. The event payload's `review_id` is your handle to it.
 
-Treat a substantive out-of-band review as feedback to address, on the shared Execute inject path
+Treat an out-of-band review as feedback to address, on the shared Execute inject path
 (not `request-rework`, which is for this run's own Verify `request_changes`):
 
 1. Deliver the review to Execute: single-line `orchestrator: address review #<review_id>` into the
@@ -257,8 +257,11 @@ Treat a substantive out-of-band review as feedback to address, on the shared Exe
 2. Keep observing. When Execute advances HEAD past the reviewed commit and declares turn done,
    launch a fresh Verify child for the new head as usual.
 
-A human can always re-review (re-run crit) to block again, so an AI Verify PASS that supersedes a
-human `request_changes` on the shared `workflow` topic is an accepted, human-recoverable risk.
+`FEEDBACK` is gate-neutral: it does not block merge and forms no review topic, so a later AI Verify
+PASS does not "supersede" it — the feedback is routed to Execute, not the merge gate. A human who
+wants to block merge submits an explicit `REQUEST_CHANGES` (which a subsequent AI Verify PASS on the
+same `workflow` topic can still supersede — an accepted, human-recoverable risk, since the human can
+always re-review to block again).
 
 ## Merge conflict
 

@@ -15,9 +15,11 @@ import {
 import { buildCritReview, parseCritComments } from "../crit-comments.ts";
 import { usage } from "../usage.ts";
 
-// After crit's "Finish Review", fold its unresolved comments into a single REQUEST_CHANGES review
-// via the existing `reviews.create` path (#1654). Zero unresolved comments → nothing is submitted.
-// The review's actor is the human session, so a running workflow run observes it as normal feedback.
+// After crit's "Finish Review", fold its unresolved comments into a single FEEDBACK review via the
+// existing `reviews.create` path (#1654, #1674). FEEDBACK is non-blocking (gate-neutral) yet still
+// routes to a running run's Execute as out-of-band feedback to address. Zero unresolved comments →
+// nothing is submitted. To submit an explicit merge-blocking review instead, use
+// `lh pr review --event REQUEST_CHANGES`.
 async function ingestCritReview(
   s: Awaited<ReturnType<typeof svc>>,
   repo: string,
@@ -39,7 +41,7 @@ async function ingestCritReview(
       repo,
       plan.number,
       {
-        event: "REQUEST_CHANGES",
+        event: "FEEDBACK",
         topic: "workflow",
         body: review.body,
         comments: review.comments,
@@ -48,7 +50,7 @@ async function ingestCritReview(
     ),
   );
   console.error(
-    `crit: submitted REQUEST_CHANGES review (${review.comments.length} line comment(s))`,
+    `crit: submitted FEEDBACK review (${review.comments.length} line comment(s))`,
   );
 }
 
