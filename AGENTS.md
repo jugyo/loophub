@@ -141,6 +141,14 @@ screenshot with Playwright MCP, save it under
 section. Use screenshot N/A only when Playwright MCP is unavailable or unsuitable and every other
 practical capture path is blocked; record the alternative verification and the specific reason.
 
+Clean up after evidence capture. Stop or close anything you started in the worktree to take a
+screenshot — an `lh-web` you launched, a browser tab you opened — before the session ends; a server
+left running keeps consuming CPU and a stale tab keeps polling it. There is no standalone Vite dev
+server; serve the worktree's UI from its own `lh-web` on a non-prod port and a separate
+`LOOPHUB_HOME` (`LOOPHUB_HOME=$(mktemp -d) npm run lh-web -- --port 8731`), and shut it down when
+done. If the sandbox blocks `kill` and a process leaks anyway, say so in the PR so a human can stop
+it rather than leaving it running silently.
+
 ## Data location
 
 State lives in `LOOPHUB_HOME` (default `~/.loophub`), SQLite at `LOOPHUB_DB`

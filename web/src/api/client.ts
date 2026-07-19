@@ -1,9 +1,9 @@
 // JSON-RPC 2.0 client for the LoopHub lh-web server (single endpoint POST /rpc).
 //
 // The contract is language-neutral (see docs/rpc-contract.json); this module is written
-// against it and never imports core types — the wire shapes live in ./types. Base URL is
-// VITE_LOOPHUB_API_URL when set, otherwise same-origin ("") so requests go through the Vite
-// dev proxy (vite.config.ts).
+// against it and never imports core types — the wire shapes live in ./types. The SPA is
+// always served same-origin by its own lh-web (issue #1669), so requests are same-origin
+// ("" base); there is no separate-backend override.
 
 import { getSessionId } from "@/lib/session";
 import type {
@@ -45,10 +45,8 @@ import type {
   Workspace,
 } from "./types";
 
-/** Resolved server base. "" => same-origin (proxy). No trailing slash. */
-export const API_BASE: string = (
-  import.meta.env?.VITE_LOOPHUB_API_URL ?? ""
-).replace(/\/$/, "");
+/** Server base. Always same-origin: the SPA is served by its own lh-web. */
+export const API_BASE = "";
 
 export const RPC_URL = `${API_BASE}/rpc`;
 

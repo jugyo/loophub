@@ -184,16 +184,16 @@ npm run build     # tsc --noEmit + vite build, no type errors
 Then eyeball it in a browser (optional but recommended):
 
 ```sh
-# terminal 1 — lh-web server (from repo root); :8730 may be taken, pick a free port
+# lh-web server (from repo root); :8730 may be taken, pick a free port.
+# lh-web embeds Vite in middleware mode and serves the API, UI, and HMR on the same port
+# (no separate dev server).
 cd /Users/jugyo/workspace/jugyo/loophub
 LOOPHUB_HOME=/tmp/lh-shadcn-home \
   node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx \
   web/server/index.ts --port 8799
 # (first register a repo + a couple of issues/PRs with the lh CLI so there's data to see;
 #  see AGENTS.md and the repo README for lh usage)
-
-# terminal 2 — Vite dev server with HMR, proxies API routes to :8799
-cd /Users/jugyo/workspace/jugyo/loophub/web && npm run dev   # http://localhost:5173
+# open http://localhost:8799
 ```
 
 Confirm the dropdown menu, dialogs, and selects look and behave the same, dark theme intact.
@@ -201,7 +201,7 @@ Confirm the dropdown menu, dialogs, and selects look and behave the same, dark t
 ## References (in the repo)
 
 - `AGENTS.md` — conventions, runtime, test isolation.
-- `web/README.md` — web stack, dev/build/preview, dual-process setup.
+- `web/README.md` — web stack, build/test, single-process (embedded Vite) setup.
 - `web/src/components/ui/button.tsx` — example of the shadcn style already in use.
 - The `*.test.tsx` files next to each component — the parity contract.
 

@@ -15,7 +15,8 @@ test("isAllowedOrigin allows absent/loopback origins and rejects cross-origin (C
   expect(isAllowedOrigin(undefined)).toBe(true);
 
   expect(isAllowedOrigin("http://localhost:8730")).toBe(true);
-  expect(isAllowedOrigin("http://127.0.0.1:5173")).toBe(true);
+  // Any loopback port is allowed, not just lh-web's own.
+  expect(isAllowedOrigin("http://127.0.0.1:3000")).toBe(true);
   expect(isAllowedOrigin("http://[::1]:8730")).toBe(true);
 
   // Cross-origin browser requests are rejected.

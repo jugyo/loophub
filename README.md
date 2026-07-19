@@ -62,8 +62,17 @@ npm run lh-web                  # http://localhost:8730 — API + UI + HMR を 1
 既定では loopback（`127.0.0.1`）にのみ bind する（内蔵 Vite が web/ のソースを配信するため）。
 LAN から開きたいときだけ `LOOPHUB_HOST=0.0.0.0` を指定する。
 
-> フロントだけを触りたいときは `cd web && npm run dev`（:5173）で Vite を単体起動も可能。
-> その場合は `/rpc` と `/attachments` route を別起動の lh-web（:8730）へ proxy する。
+SPA は常に自分の lh-web から same-origin・same-process で配信される。frontend を単体起動して `/rpc`
+を別プロセスの backend へ向ける経路は無い。
+
+> worktree のコードで UI 開発・動作確認をするときは、その worktree の lh-web を prod とは別ポート・
+> 別 HOME で起動する（prod の DB / ポートに触れない）:
+>
+> ```sh
+> LOOPHUB_HOME=$(mktemp -d) npm run lh-web -- --port 8731   # worktree 内で
+> ```
+>
+> http://localhost:8731 を開いて確認し、終わったら停止する。
 
 ## lh-worker（イベント駆動ランナー・v1）
 

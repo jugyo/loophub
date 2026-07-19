@@ -27,23 +27,27 @@ npm run lh-web          # http://localhost:8730 — API + UI + HMR, one process
 Open http://localhost:8730. Editing files under `web/src` hot-reloads the browser.
 `lh-web` mounts Vite (middleware mode) for everything except `/rpc` and `/attachments` routes.
 
-### Standalone Vite (optional)
+There is no standalone Vite dev server or API proxy. The SPA is always served same-origin, same
+process, by its own `lh-web`, and `src/api/client.ts` always uses a same-origin base — there is no
+way to point the frontend at a different backend.
 
-For frontend-only work you can still run Vite on its own; it proxies `/rpc` and `/attachments` routes
-to a separately running `lh-web`:
+### UI dev / verification in a worktree
+
+Run the worktree's *own* `lh-web`, isolated from your prod instance, on a non-prod port and a separate
+`LOOPHUB_HOME` so it never touches the prod DB or port:
 
 ```sh
-npm run lh-web          # repo root → :8730 (API)
-cd web && npm run dev   # :5173 (proxies to :8730)
+LOOPHUB_HOME=$(mktemp -d) npm run lh-web -- --port 8731   # inside the worktree
 ```
+
+Open http://localhost:8731 to develop or capture evidence against that worktree's code, and stop it
+when done.
 
 ## Scripts (in `web/`)
 
 | Script | Purpose |
 |--------|---------|
-| `npm run dev` | Standalone Vite dev server (:5173) with API proxies |
 | `npm run build` | Type-check + production build to `dist/` |
-| `npm run preview` | Preview the production build (:4173) |
 | `npm run test` | Vitest |
 
 `lh-web`'s default static handler can also serve a built `dist/` (Vite-free) as a fallback;

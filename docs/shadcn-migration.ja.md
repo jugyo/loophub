@@ -179,15 +179,14 @@ npm run build     # tsc --noEmit + vite build、型エラー無し
 ブラウザ目視（任意・推奨）:
 
 ```sh
-# ターミナル1 — lh-web サーバ（repo ルートから）。:8730 は埋まっていることがあるので空きポートを選ぶ
+# lh-web サーバ（repo ルートから）。:8730 は埋まっていることがあるので空きポートを選ぶ。
+# lh-web が Vite を middleware mode で内蔵し、API も UI も HMR も同じポートで配信する（別 dev server は不要）
 cd /Users/jugyo/workspace/jugyo/loophub
 LOOPHUB_HOME=/tmp/lh-shadcn-home \
   node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx \
   web/server/index.ts --port 8799
 # （先に lh CLI で repo と issue/PR をいくつか登録してデータを用意。lh の使い方は AGENTS.md / repo README 参照）
-
-# ターミナル2 — Vite dev（HMR、API route を :8799 へ proxy）
-cd /Users/jugyo/workspace/jugyo/loophub/web && npm run dev   # http://localhost:5173
+# http://localhost:8799 を開く
 ```
 
 ドロップダウン・ダイアログ・セレクトの見た目と挙動が同じで、ダークテーマが保たれていることを確認。
@@ -197,7 +196,7 @@ cd /Users/jugyo/workspace/jugyo/loophub/web && npm run dev   # http://localhost:
 ## 参照（repo 内）
 
 - `AGENTS.md` — 規約・ランタイム・テストの隔離手順。
-- `web/README.md` — web スタック、dev/build/preview、2プロセス構成。
+- `web/README.md` — web スタック、build/test、単一プロセス（embedded Vite）構成。
 - `web/src/components/ui/button.tsx` — 既に使われている shadcn スタイルの実例。
 - 各コンポーネント隣の `*.test.tsx` — パリティの契約。
 
