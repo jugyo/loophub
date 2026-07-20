@@ -1,81 +1,179 @@
-// PR-detail Commits section: the PR's commit history newest first, each row opening a dialog with
-// that commit's diff. Commit selection, the per-commit diff query, the dialog's dismissal, and the
-// GitHub push badge all stay inside; the PR detail only places the section and says whether push
-// state is meaningful (i.e. the PR has a linked GitHub PR).
+// PR-detail commit/review timeline: commits stay newest first, and each row owns the reviews made
+// against that exact SHA. Reviews without a listed commit remain visible in fallback groups.
+// Commit selection, per-commit diff loading, and the GitHub push badge stay inside this component.
 
 import { Loader2, UploadCloud, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { PullRequest } from "@/api/types";
+import { useEffect, useRef, useState } from "react";
+import type { PullLineComment, PullRequest, PullReview } from "@/api/types";
 import { DiffLines } from "@/components/diff-lines";
 import { DiffStat } from "@/components/diff-stat";
+import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type { BadgeTone } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
 import { usePullCommitFiles } from "@/queries/pulls";
 
 type PullCommit = NonNullable<PullRequest["commits"]>[number];
+type SelectedReviewGroup = {
+  label: string;
+  reviews: PullReview[];
+};
 
 export function PullCommitsSection({
   owner,
   repo,
   number,
   commits = [],
+  reviews = [],
+  lineComments = [],
+  isReviewsLoading,
+  isReviewsError,
   showGithubPushState,
 }: {
   owner: string;
   repo: string;
   number: number;
   commits: PullRequest["commits"];
+  reviews: PullReview[] | undefined;
+  lineComments: PullLineComment[] | undefined;
+  isReviewsLoading: boolean;
+  isReviewsError: boolean;
   showGithubPushState: boolean;
 }) {
   const [selectedCommit, setSelectedCommit] = useState<PullCommit | null>(null);
+  const [selectedReviewGroup, setSelectedReviewGroup] =
+    useState<SelectedReviewGroup | null>(null);
+  const commentsByReview = new Map<number, PullLineComment[]>();
+  for (const comment of lineComments) {
+    if (comment.pull_request_review_id == null) continue;
+    const list = commentsByReview.get(comment.pull_request_review_id) ?? [];
+    list.push(comment);
+    commentsByReview.set(comment.pull_request_review_id, list);
+  }
+  const commitShas = new Set(commits.map((commit) => commit.sha));
+  const unknownReviewGroups = new Map<string | null, PullReview[]>();
+  for (const review of reviews) {
+    if (review.head_sha && commitShas.has(review.head_sha)) continue;
+    const list = unknownReviewGroups.get(review.head_sha) ?? [];
+    list.push(review);
+    unknownReviewGroups.set(review.head_sha, list);
+  }
   return (
     <section
       data-debug-component="PullCommitsSection"
       className="flex flex-col gap-3"
     >
       <h2 className="text-lg font-semibold">Commits ({commits.length})</h2>
+      {isReviewsLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading reviews…
+        </div>
+      ) : isReviewsError ? (
+        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load reviews.
+        </div>
+      ) : null}
       {commits.length === 0 ? (
         <p className="text-sm text-muted-foreground">No commits.</p>
       ) : (
         <ul className="divide-y overflow-hidden rounded-md border">
-          {commits.map((commit) => (
-            <li key={commit.sha} data-debug-component="PullCommitRow">
-              <button
-                type="button"
-                aria-label={`View changes in ${commit.sha.slice(0, 7)}: ${commit.subject}`}
-                className="flex w-full min-w-0 items-start gap-3 px-3 py-2 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                onClick={() => setSelectedCommit(commit)}
-              >
-                <code className="mt-0.5 shrink-0 rounded bg-muted px-1 py-0.5 text-xs">
-                  {commit.sha.slice(0, 7)}
-                </code>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">
-                    {commit.subject}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {commit.author} ·{" "}
-                    <time dateTime={commit.date} title={commit.date}>
-                      {relativeTime(commit.date)}
-                    </time>
-                  </div>
-                </div>
-                {showGithubPushState && commit.pushed_to_github ? (
-                  <Badge
-                    tone="unknown"
-                    title="Pushed to GitHub"
-                    className="mt-0.5 shrink-0 gap-1"
+          {commits.map((commit) => {
+            const commitReviews = reviews.filter(
+              (review) => review.head_sha === commit.sha,
+            );
+            const shortSha = commit.sha.slice(0, 7);
+            return (
+              <li key={commit.sha} data-debug-component="PullCommitRow">
+                <div className="flex min-w-0 items-center gap-3 px-3 py-2">
+                  <button
+                    type="button"
+                    aria-label={`View changes in ${shortSha}: ${commit.subject}`}
+                    className="flex min-w-0 flex-1 items-start gap-3 rounded text-left hover:text-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    onClick={() => setSelectedCommit(commit)}
                   >
-                    <UploadCloud className="size-3" />
-                    Pushed
-                  </Badge>
-                ) : null}
-              </button>
-            </li>
-          ))}
+                    <code className="mt-0.5 shrink-0 rounded bg-muted px-1 py-0.5 text-xs">
+                      {shortSha}
+                    </code>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">
+                        {commit.subject}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {commit.author} ·{" "}
+                        <time dateTime={commit.date} title={commit.date}>
+                          {relativeTime(commit.date)}
+                        </time>
+                      </div>
+                    </div>
+                  </button>
+                  {!isReviewsLoading && !isReviewsError ? (
+                    <CommitReviewStatus
+                      reviews={commitReviews}
+                      commentsByReview={commentsByReview}
+                      label={`${shortSha}: ${commit.subject}`}
+                      onOpen={() =>
+                        setSelectedReviewGroup({
+                          label: `${shortSha}: ${commit.subject}`,
+                          reviews: commitReviews,
+                        })
+                      }
+                    />
+                  ) : null}
+                  {showGithubPushState && commit.pushed_to_github ? (
+                    <Badge
+                      tone="unknown"
+                      title="Pushed to GitHub"
+                      className="shrink-0 gap-1"
+                    >
+                      <UploadCloud className="size-3" />
+                      Pushed
+                    </Badge>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
+      {!isReviewsLoading && !isReviewsError && unknownReviewGroups.size > 0 ? (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Reviews for unknown commits
+          </h3>
+          {[...unknownReviewGroups].map(([headSha, groupedReviews]) => {
+            const reviewLabel = headSha?.slice(0, 7) ?? "unknown commit";
+            return (
+              <div
+                key={headSha ?? "unknown"}
+                data-debug-component="UnknownCommitReviewGroup"
+                className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+              >
+                <div className="text-sm font-medium">
+                  {headSha ? (
+                    <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                      {reviewLabel}
+                    </code>
+                  ) : (
+                    reviewLabel
+                  )}
+                </div>
+                <CommitReviewStatus
+                  reviews={groupedReviews}
+                  commentsByReview={commentsByReview}
+                  label={reviewLabel}
+                  onOpen={() =>
+                    setSelectedReviewGroup({
+                      label: reviewLabel,
+                      reviews: groupedReviews,
+                    })
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       {selectedCommit ? (
         <CommitDiffDialog
           owner={owner}
@@ -85,7 +183,262 @@ export function PullCommitsSection({
           onClose={() => setSelectedCommit(null)}
         />
       ) : null}
+      {selectedReviewGroup ? (
+        <ReviewDetailsDialog
+          owner={owner}
+          repo={repo}
+          label={selectedReviewGroup.label}
+          reviews={selectedReviewGroup.reviews}
+          commentsByReview={commentsByReview}
+          onClose={() => setSelectedReviewGroup(null)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+const REVIEW_VERDICT_TONE: Record<string, string> = {
+  PASS: "text-green-600 dark:text-green-400",
+  REQUEST_CHANGES: "text-destructive",
+  COMMENT: "text-muted-foreground",
+};
+
+function reviewGroupVerdict(reviews: PullReview[]): {
+  tone: BadgeTone;
+  label: string;
+} {
+  // reviews/list returns submitted_at ascending, matching computeReviewGate's latest-topic-wins
+  // rule: later blocking reviews overwrite earlier reviews for the same topic.
+  const latestByTopic = new Map<string | null, PullReview>();
+  for (const review of reviews) {
+    if (review.state === "PASS" || review.state === "REQUEST_CHANGES") {
+      latestByTopic.set(review.topic ?? null, review);
+    }
+  }
+  const latest = [...latestByTopic.values()];
+  if (latest.some((review) => review.state === "REQUEST_CHANGES")) {
+    return { tone: "review-changes", label: "changes requested" };
+  }
+  if (latest.some((review) => review.state === "PASS")) {
+    return { tone: "review-passed", label: "passed" };
+  }
+  return { tone: "review-commented", label: "commented" };
+}
+
+function CommitReviewStatus({
+  reviews,
+  commentsByReview,
+  label,
+  onOpen,
+}: {
+  reviews: PullReview[];
+  commentsByReview: Map<number, PullLineComment[]>;
+  label: string;
+  onOpen: () => void;
+}) {
+  if (reviews.length === 0) {
+    return (
+      <span className="shrink-0 text-xs text-muted-foreground">
+        Not reviewed
+      </span>
+    );
+  }
+  const commentCount = reviews.reduce(
+    (sum, review) => sum + (commentsByReview.get(review.id)?.length ?? 0),
+    0,
+  );
+  return (
+    <button
+      type="button"
+      aria-label={`View ${reviews.length} review${reviews.length === 1 ? "" : "s"} for ${label}`}
+      className="flex shrink-0 items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={onOpen}
+    >
+      <span className="font-medium text-link">Reviewed</span>
+      <ReviewVerdictSummary reviews={reviews} />
+      {commentCount > 0 ? (
+        <span className="text-muted-foreground">
+          {commentCount} comment{commentCount === 1 ? "" : "s"}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function ReviewDetailsDialog({
+  owner,
+  repo,
+  label,
+  reviews,
+  commentsByReview,
+  onClose,
+}: {
+  owner: string;
+  repo: string;
+  label: string;
+  reviews: PullReview[];
+  commentsByReview: Map<number, PullLineComment[]>;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const returnFocus = document.activeElement;
+    closeButtonRef.current?.focus();
+    return () => {
+      if (returnFocus instanceof HTMLElement) returnFocus.focus();
+    };
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        data-debug-component="ReviewDetailsDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Reviews for ${label}`}
+        tabIndex={-1}
+        className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-md border bg-background shadow-lg"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onClose();
+            return;
+          }
+          if (event.key !== "Tab") return;
+          const focusable = Array.from(
+            dialogRef.current?.querySelectorAll<HTMLElement>(
+              'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+            ) ?? [],
+          );
+          if (focusable.length === 0) {
+            event.preventDefault();
+            dialogRef.current?.focus();
+            return;
+          }
+          const currentIndex = focusable.indexOf(
+            document.activeElement as HTMLElement,
+          );
+          const nextIndex = event.shiftKey
+            ? (currentIndex - 1 + focusable.length) % focusable.length
+            : (currentIndex + 1) % focusable.length;
+          event.preventDefault();
+          focusable[nextIndex]?.focus();
+        }}
+      >
+        <header className="flex items-center justify-between gap-3 border-b px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <h3 className="truncate text-sm font-semibold">
+              Reviews for {label}
+            </h3>
+            <ReviewVerdictSummary reviews={reviews} />
+          </div>
+          <Button
+            ref={closeButtonRef}
+            variant="secondary"
+            size="sm"
+            aria-label="Close reviews"
+            className="h-7 w-7 shrink-0 p-0"
+            onClick={onClose}
+          >
+            <X className="size-4" />
+          </Button>
+        </header>
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4">
+          {reviews.map((review) => (
+            <ReviewItem
+              key={review.id}
+              owner={owner}
+              repo={repo}
+              review={review}
+              comments={commentsByReview.get(review.id) ?? []}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewVerdictSummary({ reviews }: { reviews: PullReview[] }) {
+  const verdict = reviewGroupVerdict(reviews);
+  return (
+    <>
+      <Badge tone={verdict.tone}>{verdict.label}</Badge>
+      <span className="text-xs font-normal text-muted-foreground">
+        {reviews.length} review{reviews.length === 1 ? "" : "s"}
+      </span>
+    </>
+  );
+}
+
+function ReviewItem({
+  owner,
+  repo,
+  review,
+  comments,
+}: {
+  owner: string;
+  repo: string;
+  review: PullReview;
+  comments: PullLineComment[];
+}) {
+  return (
+    <article
+      data-debug-component="ReviewItem"
+      className="rounded-md border bg-background p-3"
+    >
+      <header className="mb-1 text-sm">
+        <span
+          className={`font-medium ${REVIEW_VERDICT_TONE[review.state] ?? "text-muted-foreground"}`}
+        >
+          ● {review.state}
+        </span>{" "}
+        {review.topic ? (
+          <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+            {review.topic}
+          </span>
+        ) : null}
+        <span className="font-medium">@{review.user.login}</span>{" "}
+        {review.model ? (
+          <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+            {review.model}
+          </span>
+        ) : null}
+        <span className="text-xs text-muted-foreground">
+          {relativeTime(review.submitted_at)}
+        </span>
+      </header>
+      {review.body ? (
+        <Markdown owner={owner} repo={repo}>
+          {review.body}
+        </Markdown>
+      ) : null}
+      {comments.length > 0 ? (
+        <ul className="mt-2 flex flex-col gap-2">
+          {comments.map((comment) => (
+            <li key={comment.id} className="rounded-md border bg-muted/20 p-2">
+              <div className="mb-1 text-xs">
+                💬 @{comment.user.login}{" "}
+                <span className="text-muted-foreground">
+                  {comment.path}:{comment.line ?? "?"}
+                </span>
+              </div>
+              <Markdown owner={owner} repo={repo}>
+                {comment.body}
+              </Markdown>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
   );
 }
 

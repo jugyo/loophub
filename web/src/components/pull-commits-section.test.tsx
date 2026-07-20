@@ -9,7 +9,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
-import type { PullFile, PullRequest } from "@/api/types";
+import type {
+  PullFile,
+  PullLineComment,
+  PullRequest,
+  PullReview,
+} from "@/api/types";
 
 import { PullCommitsSection } from "./pull-commits-section";
 
@@ -46,10 +51,18 @@ const files: PullFile[] = [
 
 function renderSection({
   commits: sectionCommits = commits,
+  reviews = [],
+  lineComments = [],
+  isReviewsLoading = false,
+  isReviewsError = false,
   showGithubPushState = false,
   handlers = {},
 }: {
   commits?: PullRequest["commits"];
+  reviews?: PullReview[];
+  lineComments?: PullLineComment[];
+  isReviewsLoading?: boolean;
+  isReviewsError?: boolean;
   showGithubPushState?: boolean;
   handlers?: Record<string, (params: any) => unknown>;
 } = {}) {
@@ -67,6 +80,10 @@ function renderSection({
         repo="proj"
         number={30}
         commits={sectionCommits}
+        reviews={reviews}
+        lineComments={lineComments}
+        isReviewsLoading={isReviewsLoading}
+        isReviewsError={isReviewsError}
         showGithubPushState={showGithubPushState}
       />
     </QueryClientProvider>,
@@ -74,6 +91,241 @@ function renderSection({
 }
 
 describe("PullCommitsSection", () => {
+  it("opens review details from a compact status while keeping unreviewed commits simple", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 1,
+        user: { login: "quality-bot" },
+        state: "PASS",
+        body: "**Looks good.** [Details](https://example.com)",
+        topic: "quality",
+        head_sha: commits![0].sha,
+        model: "claude-opus-4-8",
+        submitted_at: "2026-06-18T12:30:00Z",
+      },
+    ];
+    const lineComments: PullLineComment[] = [
+      {
+        id: 10,
+        pull_request_review_id: 1,
+        user: { login: "quality-bot" },
+        path: "web/src/a.ts",
+        line: 4,
+        side: "RIGHT",
+        body: "Keep this guard.",
+        created_at: "2026-06-18T12:31:00Z",
+      },
+    ];
+
+    renderSection({ reviews, lineComments });
+
+    const reviewedCommit = screen
+      .getByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      })
+      .closest("li")!;
+    expect(reviewedCommit.dataset.debugComponent).toBe("PullCommitRow");
+    const reviewStatus = within(reviewedCommit).getByRole("button", {
+      name: "View 1 review for aaaaaaa: Latest change",
+    });
+    expect(within(reviewStatus).getByText("Reviewed")).toBeTruthy();
+    expect(within(reviewStatus).getByText("passed")).toBeTruthy();
+    expect(within(reviewStatus).getByText("1 review")).toBeTruthy();
+    expect(within(reviewStatus).getByText("1 comment")).toBeTruthy();
+    expect(within(reviewedCommit).queryByText("Looks good.")).toBeNull();
+
+    reviewStatus.focus();
+    fireEvent.click(reviewStatus);
+
+    const reviewDialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    const closeButton = within(reviewDialog).getByRole("button", {
+      name: "Close reviews",
+    });
+    const detailsLink = within(reviewDialog).getByRole("link", {
+      name: "Details",
+    });
+    expect(document.activeElement).toBe(closeButton);
+    fireEvent.keyDown(closeButton, { key: "Tab" });
+    expect(document.activeElement).toBe(detailsLink);
+    fireEvent.keyDown(detailsLink, { key: "Tab" });
+    expect(document.activeElement).toBe(closeButton);
+    fireEvent.keyDown(closeButton, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(detailsLink);
+    expect(reviewDialog.dataset.debugComponent).toBe("ReviewDetailsDialog");
+    expect(
+      reviewDialog.querySelector('[data-debug-component="ReviewItem"]'),
+    ).toBeTruthy();
+    expect(within(reviewDialog).getByText(/PASS/)).toBeTruthy();
+    expect(within(reviewDialog).getByText("@quality-bot")).toBeTruthy();
+    expect(within(reviewDialog).getByText("quality")).toBeTruthy();
+    expect(within(reviewDialog).getByText("claude-opus-4-8")).toBeTruthy();
+    expect(within(reviewDialog).getByText("Looks good.")).toBeTruthy();
+    expect(within(reviewDialog).getByText("web/src/a.ts:4")).toBeTruthy();
+    expect(within(reviewDialog).getByText("Keep this guard.")).toBeTruthy();
+    fireEvent.click(closeButton);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(reviewStatus);
+
+    const unreviewedCommit = screen
+      .getByRole("button", {
+        name: "View changes in bbbbbbb: Earlier change",
+      })
+      .closest("li")!;
+    expect(within(unreviewedCommit).getByText("Not reviewed")).toBeTruthy();
+    expect(
+      within(unreviewedCommit).queryByRole("button", {
+        name: /View .* review/,
+      }),
+    ).toBeNull();
+    expect(within(unreviewedCommit).queryByText("Looks good.")).toBeNull();
+  });
+
+  it("keeps null and out-of-range reviews in compact unknown commit groups", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 2,
+        user: { login: "legacy-bot" },
+        state: "COMMENT",
+        body: "Legacy review",
+        topic: null,
+        head_sha: null,
+        model: null,
+        submitted_at: "2026-06-16T10:00:00Z",
+      },
+      {
+        id: 3,
+        user: { login: "security-bot" },
+        state: "REQUEST_CHANGES",
+        body: "Review for a commit outside this diff",
+        topic: "security",
+        head_sha: "cccccccccccccccccccccccccccccccccccccccc",
+        model: null,
+        submitted_at: "2026-06-17T10:00:00Z",
+      },
+    ];
+
+    renderSection({ commits: [], reviews });
+
+    const unknownReviews = screen
+      .getByRole("heading", { name: "Reviews for unknown commits" })
+      .closest("div")!;
+    expect(within(unknownReviews).queryByText("Legacy review")).toBeNull();
+    expect(
+      within(unknownReviews).queryByText(
+        "Review for a commit outside this diff",
+      ),
+    ).toBeNull();
+
+    fireEvent.click(
+      within(unknownReviews).getByRole("button", {
+        name: "View 1 review for unknown commit",
+      }),
+    );
+    const legacyDialog = await screen.findByRole("dialog", {
+      name: "Reviews for unknown commit",
+    });
+    expect(within(legacyDialog).getByText("Legacy review")).toBeTruthy();
+    fireEvent.click(
+      within(legacyDialog).getByRole("button", { name: "Close reviews" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(
+      within(unknownReviews).getByRole("button", {
+        name: "View 1 review for ccccccc",
+      }),
+    );
+    const staleDialog = await screen.findByRole("dialog", {
+      name: "Reviews for ccccccc",
+    });
+    expect(
+      within(staleDialog).getByText("Review for a commit outside this diff"),
+    ).toBeTruthy();
+  });
+
+  it("computes each commit verdict from the latest blocking review per topic", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 4,
+        user: { login: "quality-bot" },
+        state: "REQUEST_CHANGES",
+        body: "Round 1",
+        topic: "quality",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T10:00:00Z",
+      },
+      {
+        id: 5,
+        user: { login: "quality-bot" },
+        state: "PASS",
+        body: "Round 2",
+        topic: "quality",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T11:00:00Z",
+      },
+    ];
+
+    renderSection({ reviews });
+
+    const reviewedCommit = screen
+      .getByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      })
+      .closest("li")!;
+    expect(within(reviewedCommit).getByText("passed")).toBeTruthy();
+    expect(within(reviewedCommit).queryByText("changes requested")).toBeNull();
+    expect(within(reviewedCommit).queryByText("Round 1")).toBeNull();
+
+    fireEvent.click(
+      within(reviewedCommit).getByRole("button", {
+        name: "View 2 reviews for aaaaaaa: Latest change",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    expect(within(dialog).getByText("Round 1")).toBeTruthy();
+    expect(within(dialog).getByText("Round 2")).toBeTruthy();
+  });
+
+  it("keeps commits visible while reporting review loading and failures", () => {
+    const { rerender } = renderSection({ isReviewsLoading: true });
+
+    expect(screen.getByText("Loading reviews…")).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("No reviews.")).toBeNull();
+
+    rerender(
+      <PullCommitsSection
+        owner="me"
+        repo="proj"
+        number={30}
+        commits={commits}
+        reviews={[]}
+        lineComments={[]}
+        isReviewsLoading={false}
+        isReviewsError={true}
+        showGithubPushState={false}
+      />,
+    );
+
+    expect(screen.getByText("Failed to load reviews.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("No reviews.")).toBeNull();
+  });
+
   it("renders commit metadata newest first", () => {
     renderSection();
 

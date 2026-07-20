@@ -1,26 +1,15 @@
 // PR detail view (/r/:owner/:repo/pulls/:number). v1 parity: title, body,
 // state + review badges, head→base, the linked issue (bidirectional with the
-// issue's linked PR), reviews, the file diff with line comments,
+// issue's linked PR), the commit/review timeline, the file diff with line comments,
 // issue comments, plus the write operations — merge (when PASSED), "mark ready
 // for re-review" (when CHANGES_REQUESTED), and close/reopen (when not merged).
 // Body, reviews, and comments are stored as plain Markdown and rendered as GFM
 // via <Markdown>.
 
 import { Link } from "@tanstack/react-router";
-import {
-  ChevronRight,
-  ExternalLink,
-  Github,
-  Loader2,
-  UploadCloud,
-} from "lucide-react";
+import { ExternalLink, Github, Loader2, UploadCloud } from "lucide-react";
 import { useEffect, useState } from "react";
-import type {
-  PullFile,
-  PullLineComment,
-  PullRequest,
-  PullReview,
-} from "@/api/types";
+import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { DiffStat } from "@/components/diff-stat";
@@ -36,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WorkDuration } from "@/components/work-duration";
 import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
-import { type BadgeTone, pullDetailBadges } from "@/lib/badges";
+import { pullDetailBadges } from "@/lib/badges";
 import { errorMessage } from "@/lib/error-message";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
@@ -105,8 +94,8 @@ export function PullDetail({
   // (Herdr, workflow run, GitHub PR status) hide themselves individually when empty.
 
   return (
-    // The whole PR detail is a two-column layout (#346): the main column (header, reviews, diff,
-    // comments) on the left and the Sessions sidebar on the right, running alongside from the top
+    // The whole PR detail is a two-column layout (#346): the main column (header, commit/review
+    // timeline, diff, comments) on the left and the Sessions sidebar on the right, from the top
     // so ancillary info never interrupts the main vertical flow. Below `lg` the columns stack
     // (flex-col) so the sidebar wraps under the main content on narrow screens. The page widens to
     // `max-w-content-wide` only when the sidebar is present AND beside the content (`lg`); without a
@@ -130,6 +119,10 @@ export function PullDetail({
           repo={repo}
           number={number}
           commits={pull.commits}
+          reviews={reviewsQuery.data}
+          lineComments={lineCommentsQuery.data}
+          isReviewsLoading={reviewsQuery.isLoading}
+          isReviewsError={reviewsQuery.isError}
           showGithubPushState={!!pull.github_pull}
         />
         <FilesChanged
@@ -140,16 +133,6 @@ export function PullDetail({
           lineComments={lineCommentsQuery.data}
           isLoading={filesQuery.isLoading}
           isError={filesQuery.isError}
-        />
-
-        <ReviewList
-          owner={owner}
-          repo={repo}
-          reviews={reviewsQuery.data}
-          lineComments={lineCommentsQuery.data}
-          currentHeadSha={pull.head.sha}
-          isLoading={reviewsQuery.isLoading}
-          isError={reviewsQuery.isError}
         />
 
         <CommentList
@@ -575,253 +558,6 @@ function GithubPrAction({
       <Github className="size-4" />
       Create PR on GitHub
     </Button>
-  );
-}
-
-const REVIEW_VERDICT_TONE: Record<PullReview["state"], string> = {
-  PASS: "text-green-600 dark:text-green-400",
-  REQUEST_CHANGES: "text-destructive",
-  COMMENT: "text-muted-foreground",
-};
-
-type ReviewGroup = {
-  /** The commit (head_sha) the reviews were made against; null for legacy reviews. */
-  headSha: string | null;
-  reviews: PullReview[];
-  /** Whether this group targets the PR's current head commit. */
-  isCurrent: boolean;
-};
-
-// Collapse a group's reviews into a single verdict shown on the (always-visible)
-// summary, so a reader sees each group's state without expanding it (#268).
-// Mirrors core/store.ts's computeReviewGate: only the latest review per topic
-// counts, so a REQUEST_CHANGES that a later PASS on the same topic resolves no
-// longer dominates the verdict (#533). Reviews arrive in created_at ASC order
-// (see groupReviewsByCommit), so the last write per topic wins.
-function reviewGroupVerdict(reviews: PullReview[]): {
-  tone: BadgeTone;
-  label: string;
-} {
-  const latestByTopic = new Map<string | null, PullReview>();
-  for (const r of reviews) {
-    if (r.state === "PASS" || r.state === "REQUEST_CHANGES")
-      latestByTopic.set(r.topic ?? null, r);
-  }
-  const latest = [...latestByTopic.values()];
-  if (latest.some((r) => r.state === "REQUEST_CHANGES"))
-    return { tone: "review-changes", label: "changes requested" };
-  if (latest.some((r) => r.state === "PASS"))
-    return { tone: "review-passed", label: "passed" };
-  return { tone: "review-commented", label: "commented" };
-}
-
-// Group reviews by the commit (head_sha) they were made against. The group for
-// the PR's current head comes first; the remaining groups follow
-// newest-review-first. Every group renders collapsed by default (#268) — the
-// summary carries the verdict (see {@link reviewGroupVerdict}) so the state is
-// visible without expanding.
-function groupReviewsByCommit(
-  reviews: PullReview[],
-  currentHeadSha: string | null,
-): ReviewGroup[] {
-  const byCommit = new Map<string, PullReview[]>();
-  for (const r of reviews) {
-    const key = r.head_sha ?? "";
-    const list = byCommit.get(key) ?? [];
-    list.push(r);
-    byCommit.set(key, list);
-  }
-  const groups: ReviewGroup[] = [];
-  for (const [key, list] of byCommit) {
-    groups.push({
-      headSha: key === "" ? null : key,
-      reviews: list,
-      isCurrent: key !== "" && key === currentHeadSha,
-    });
-  }
-  // Max submitted_at in the group; computed explicitly so the non-current
-  // group ordering does not depend on the backend's row order.
-  const latest = (g: ReviewGroup) =>
-    g.reviews.reduce((m, r) => (r.submitted_at > m ? r.submitted_at : m), "");
-  groups.sort((a, b) => {
-    if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
-    return latest(b).localeCompare(latest(a));
-  });
-  return groups;
-}
-
-function ReviewList({
-  owner,
-  repo,
-  reviews,
-  lineComments,
-  currentHeadSha,
-  isLoading,
-  isError,
-}: {
-  owner: string;
-  repo: string;
-  reviews: PullReview[] | undefined;
-  lineComments: PullLineComment[] | undefined;
-  currentHeadSha: string | null;
-  isLoading: boolean;
-  isError: boolean;
-}) {
-  // Inline comments keyed by the review they belong to, so each review shows its
-  // own line comments inside its commit group (collapsing with the group).
-  const commentsByReview = new Map<number, PullLineComment[]>();
-  for (const c of lineComments ?? []) {
-    if (c.pull_request_review_id == null) continue;
-    const list = commentsByReview.get(c.pull_request_review_id) ?? [];
-    list.push(c);
-    commentsByReview.set(c.pull_request_review_id, list);
-  }
-
-  const groups =
-    reviews && reviews.length > 0
-      ? groupReviewsByCommit(reviews, currentHeadSha)
-      : [];
-
-  return (
-    <section data-debug-component="ReviewList" className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Reviews</h2>
-      {isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading reviews…
-        </div>
-      ) : isError ? (
-        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
-          Failed to load reviews.
-        </div>
-      ) : groups.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No reviews.</p>
-      ) : (
-        groups.map((g) => (
-          <ReviewCommitGroup
-            key={g.headSha ?? "unknown"}
-            owner={owner}
-            repo={repo}
-            group={g}
-            commentsByReview={commentsByReview}
-          />
-        ))
-      )}
-    </section>
-  );
-}
-
-function ReviewCommitGroup({
-  owner,
-  repo,
-  group,
-  commentsByReview,
-}: {
-  owner: string;
-  repo: string;
-  group: ReviewGroup;
-  commentsByReview: Map<number, PullLineComment[]>;
-}) {
-  const shortSha = group.headSha ? group.headSha.slice(0, 7) : null;
-  const count = group.reviews.length;
-  const verdict = reviewGroupVerdict(group.reviews);
-  return (
-    <details
-      data-debug-component="ReviewCommitGroup"
-      className="group overflow-hidden rounded-md border"
-    >
-      <summary className="flex cursor-pointer flex-wrap items-center gap-2 bg-muted/40 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden list-none">
-        <ChevronRight
-          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
-          aria-hidden="true"
-        />
-        {shortSha ? (
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">
-            {shortSha}
-          </code>
-        ) : (
-          <span className="font-medium">unknown commit</span>
-        )}
-        {group.isCurrent ? (
-          <Badge className="text-foreground">current</Badge>
-        ) : null}
-        <Badge tone={verdict.tone}>{verdict.label}</Badge>
-        <span className="text-xs text-muted-foreground">
-          {count} review{count === 1 ? "" : "s"}
-        </span>
-      </summary>
-      <div className="flex flex-col gap-3 p-3">
-        {group.reviews.map((r) => (
-          <ReviewItem
-            key={r.id}
-            owner={owner}
-            repo={repo}
-            review={r}
-            comments={commentsByReview.get(r.id) ?? []}
-          />
-        ))}
-      </div>
-    </details>
-  );
-}
-
-function ReviewItem({
-  owner,
-  repo,
-  review,
-  comments,
-}: {
-  owner: string;
-  repo: string;
-  review: PullReview;
-  comments: PullLineComment[];
-}) {
-  return (
-    <article
-      data-debug-component="ReviewItem"
-      className="rounded-md border p-3"
-    >
-      <header className="mb-1 text-sm">
-        <span className={`font-medium ${REVIEW_VERDICT_TONE[review.state]}`}>
-          ● {review.state}
-        </span>{" "}
-        {review.topic ? (
-          <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-            {review.topic}
-          </span>
-        ) : null}
-        <span className="font-medium">@{review.user.login}</span>{" "}
-        {review.model ? (
-          <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-            {review.model}
-          </span>
-        ) : null}
-        <span className="text-xs text-muted-foreground">
-          {relativeTime(review.submitted_at)}
-        </span>
-      </header>
-      {review.body ? (
-        <Markdown owner={owner} repo={repo}>
-          {review.body}
-        </Markdown>
-      ) : null}
-      {comments.length > 0 ? (
-        <ul className="mt-2 flex flex-col gap-2">
-          {comments.map((c) => (
-            <li key={c.id} className="rounded-md border bg-muted/20 p-2">
-              <div className="mb-1 text-xs">
-                💬 @{c.user.login}{" "}
-                <span className="text-muted-foreground">
-                  {c.path}:{c.line ?? "?"}
-                </span>
-              </div>
-              <Markdown owner={owner} repo={repo}>
-                {c.body}
-              </Markdown>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </article>
   );
 }
 

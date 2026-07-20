@@ -125,7 +125,7 @@ const reviews: PullReview[] = [
     state: "PASS",
     body: "LGTM",
     topic: "design",
-    head_sha: "aaa",
+    head_sha: pull.commits![0].sha,
     model: "claude-opus-4-8",
     submitted_at: "2026-06-18T11:30:00Z",
   },
@@ -227,14 +227,31 @@ describe("PullDetail", () => {
     // The PR detail shows a compact file summary instead of expanding patch lines inline.
     expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
     expect(screen.queryByText("+const x = 1;")).toBeNull();
-    // Review body and verdict.
-    expect(screen.getByText("LGTM")).toBeTruthy();
+    const reviewedCommit = screen
+      .getByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      })
+      .closest("li")!;
+    expect(within(reviewedCommit).getByText("Reviewed")).toBeTruthy();
+    expect(within(reviewedCommit).getByText("passed")).toBeTruthy();
+    expect(within(reviewedCommit).getByText("1 comment")).toBeTruthy();
+    expect(within(reviewedCommit).queryByText("LGTM")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Reviews" })).toBeNull();
+    fireEvent.click(
+      within(reviewedCommit).getByRole("button", {
+        name: "View 1 review for aaaaaaa: Latest change",
+      }),
+    );
+    const reviewDialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    expect(within(reviewDialog).getByText("LGTM")).toBeTruthy();
     // Review topic tag (#209).
-    expect(screen.getByText("design")).toBeTruthy();
+    expect(within(reviewDialog).getByText("design")).toBeTruthy();
     // Review model tag (#1107).
-    expect(screen.getByText("claude-opus-4-8")).toBeTruthy();
-    // Line comment — shown both inline in the diff and within its review group.
-    expect(screen.getAllByText("nice constant").length).toBeGreaterThan(0);
+    expect(within(reviewDialog).getByText("claude-opus-4-8")).toBeTruthy();
+    // Line comment.
+    expect(within(reviewDialog).getByText("nice constant")).toBeTruthy();
     // Issue comment.
     expect(screen.getByText("Thanks!")).toBeTruthy();
 
@@ -258,8 +275,8 @@ describe("PullDetail", () => {
       "PullDetail",
       "PullHeader",
       "PullCommitsSection",
+      "PullCommitRow",
       "FilesChanged",
-      "ReviewList",
       "PullCommentList",
       "PullSidebar",
       "WorktreeSection",
@@ -355,18 +372,13 @@ describe("PullDetail", () => {
     ).toBeNull();
   });
 
-  it("renders files changed before reviews in the main PR flow", async () => {
+  it("does not render an independent Reviews section", async () => {
     renderDetail();
 
-    const filesHeading = await screen.findByRole("heading", {
+    await screen.findByRole("heading", {
       name: /Files changed \(1\)/,
     });
-    const reviewsHeading = screen.getByRole("heading", { name: "Reviews" });
-
-    expect(
-      filesHeading.compareDocumentPosition(reviewsHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Reviews" })).toBeNull();
   });
 
   // The Commits section's own behaviour is covered by pull-commits-section.test.tsx; the PR detail
@@ -765,9 +777,8 @@ describe("PullDetail", () => {
     expect(rpcCall("pulls/merge")).toBeFalsy();
   });
 
-  it("groups reviews by commit, collapsed by default with a verdict on each summary (#268)", async () => {
-    // Two reviews against different commits: one on the PR's current head ("aaa")
-    // and one on a superseded commit.
+  it("groups reviews under matching commits and keeps superseded commits visible", async () => {
+    // One review matches a listed commit; the other targets a commit outside base..head.
     const grouped: PullReview[] = [
       {
         id: 2,
@@ -783,7 +794,7 @@ describe("PullDetail", () => {
         user: { login: "design-bot" },
         state: "PASS",
         body: "LGTM now",
-        head_sha: "aaa",
+        head_sha: pull.commits![0].sha,
         topic: null,
         submitted_at: "2026-06-18T11:30:00Z",
       },
@@ -822,47 +833,44 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
-    // Both commit groups render with a short-SHA heading.
-    const currentSummary = await screen.findByText("aaa");
-    const staleSummary = await screen.findByText("old1234");
-
-    // Every group is collapsed by default (#268); the verdict on the summary
-    // tells the state apart without expanding.
-    const currentGroup = currentSummary.closest("details");
-    const staleGroup = staleSummary.closest("details");
-    expect(currentGroup?.open).toBe(false);
-    expect(staleGroup?.open).toBe(false);
-
-    // The current marker stays neutral while the review verdict keeps its
-    // state-specific color.
-    const currentBadge = screen.getByText("current");
-    expect(currentBadge.className).toContain("text-foreground");
-    expect(currentBadge.className).not.toContain("text-link");
-    const passedBadge = within(currentGroup as HTMLElement).getByText("passed");
+    const currentGroup = (
+      await screen.findByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      })
+    ).closest("li")!;
+    const passedBadge = within(currentGroup).getByText("passed");
     expect(passedBadge.className).toContain("text-green-600");
-    expect(screen.queryByText("STALE")).toBeNull();
+    expect(within(currentGroup).queryByText("LGTM now")).toBeNull();
+    fireEvent.click(
+      within(currentGroup).getByRole("button", {
+        name: "View 1 review for aaaaaaa: Latest change",
+      }),
+    );
+    const currentDialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    expect(within(currentDialog).getByText("LGTM now")).toBeTruthy();
+    fireEvent.click(
+      within(currentDialog).getByRole("button", { name: "Close reviews" }),
+    );
 
-    // Each summary carries a collapsed verdict: PASS → "passed" on the
-    // current group, REQUEST_CHANGES → "changes requested" on the old group.
-    expect(currentGroup?.querySelector("summary")?.textContent).toContain(
-      "passed",
-    );
-    expect(staleGroup?.querySelector("summary")?.textContent).toContain(
-      "changes requested",
-    );
-    expect(staleGroup?.querySelector("summary")?.textContent).not.toContain(
-      "STALE",
-    );
-    expect(staleGroup).toBeTruthy();
-    const staleGroupContent = within(staleGroup as HTMLElement);
-    expect(staleGroupContent.getByText("needs work")).toBeTruthy();
-    expect(staleGroupContent.getByText("@design-bot")).toBeTruthy();
-    expect(staleGroupContent.getByText("quality")).toBeTruthy();
+    const staleReviewStatus = screen.getByRole("button", {
+      name: "View 1 review for old1234",
+    });
+    expect(
+      within(staleReviewStatus).getByText("changes requested"),
+    ).toBeTruthy();
+    expect(screen.queryByText("needs work")).toBeNull();
+    fireEvent.click(staleReviewStatus);
+    const staleDialog = await screen.findByRole("dialog", {
+      name: "Reviews for old1234",
+    });
+    expect(within(staleDialog).getByText("needs work")).toBeTruthy();
+    expect(within(staleDialog).getByText("@design-bot")).toBeTruthy();
+    expect(within(staleDialog).getByText("quality")).toBeTruthy();
   });
 
-  it("keeps all groups collapsed when no review targets the current head (#268)", async () => {
-    // The branch advanced past every reviewed commit, so no group is current.
-    // Every group stays collapsed; the verdict on each summary surfaces the state.
+  it("keeps every review visible when none targets a listed commit", async () => {
     const grouped: PullReview[] = [
       {
         id: 1,
@@ -917,20 +925,36 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
-    const newest = await screen.findByText("newer34");
-    const older = await screen.findByText("older12");
-    expect(newest.closest("details")?.open).toBe(false);
-    expect(older.closest("details")?.open).toBe(false);
-    // No group targets the current head, so no "current" badge is shown.
+    expect(await screen.findByText("newer34")).toBeTruthy();
+    expect(screen.getByText("older12")).toBeTruthy();
+    expect(screen.queryByText("newest feedback")).toBeNull();
+    expect(screen.queryByText("older feedback")).toBeNull();
     expect(screen.queryByText("current")).toBeNull();
-    // Both groups are REQUEST_CHANGES → each summary shows "changes requested".
     expect(screen.getAllByText("changes requested").length).toBe(2);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "View 1 review for newer34" }),
+    );
+    const newestDialog = await screen.findByRole("dialog", {
+      name: "Reviews for newer34",
+    });
+    expect(within(newestDialog).getByText("newest feedback")).toBeTruthy();
+    fireEvent.click(
+      within(newestDialog).getByRole("button", { name: "Close reviews" }),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "View 1 review for older12" }),
+    );
+    const olderDialog = await screen.findByRole("dialog", {
+      name: "Reviews for older12",
+    });
+    expect(within(olderDialog).getByText("older feedback")).toBeTruthy();
   });
 
   it("resolves a group's verdict per-topic, so a later PASS clears an earlier REQUEST_CHANGES on the same topic (#533)", async () => {
     // Round 1: quality REQUEST_CHANGES against the current head. Round 2:
-    // quality PASS against the same head, resolving it. A REQUEST_CHANGES on a
-    // different topic (security) stays unresolved and must still dominate.
+    // quality PASS against the same head resolves it, while security also passes.
     const grouped: PullReview[] = [
       {
         id: 1,
@@ -938,7 +962,7 @@ describe("PullDetail", () => {
         state: "REQUEST_CHANGES",
         topic: "quality",
         body: "round 1: needs work",
-        head_sha: "aaa",
+        head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:00:00Z",
       },
       {
@@ -947,7 +971,7 @@ describe("PullDetail", () => {
         state: "PASS",
         topic: "security",
         body: "security ok",
-        head_sha: "aaa",
+        head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:05:00Z",
       },
       {
@@ -956,7 +980,7 @@ describe("PullDetail", () => {
         state: "PASS",
         topic: "quality",
         body: "round 2: looks good now",
-        head_sha: "aaa",
+        head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T11:00:00Z",
       },
     ];
@@ -994,13 +1018,15 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
-    const summary = (await screen.findByText("aaa")).closest("details");
+    const summary = (
+      await screen.findByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      })
+    ).closest("li")!;
     // The quality topic's REQUEST_CHANGES is superseded by its own later PASS,
     // so the group reads "passed" rather than "changes requested".
-    expect(summary?.querySelector("summary")?.textContent).toContain("passed");
-    expect(summary?.querySelector("summary")?.textContent).not.toContain(
-      "changes requested",
-    );
+    expect(within(summary).getByText("passed")).toBeTruthy();
+    expect(within(summary).queryByText("changes requested")).toBeNull();
   });
 
   it("keeps a group's verdict as changes requested when an unresolved REQUEST_CHANGES sits alongside a passed topic (#533)", async () => {
@@ -1013,7 +1039,7 @@ describe("PullDetail", () => {
         state: "PASS",
         topic: "security",
         body: "security ok",
-        head_sha: "aaa",
+        head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:00:00Z",
       },
       {
@@ -1022,7 +1048,7 @@ describe("PullDetail", () => {
         state: "REQUEST_CHANGES",
         topic: "quality",
         body: "still needs work",
-        head_sha: "aaa",
+        head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:05:00Z",
       },
     ];
@@ -1060,10 +1086,12 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
-    const summary = (await screen.findByText("aaa")).closest("details");
-    expect(summary?.querySelector("summary")?.textContent).toContain(
-      "changes requested",
-    );
+    const summary = (
+      await screen.findByRole("button", {
+        name: "View changes in aaaaaaa: Latest change",
+      })
+    ).closest("li")!;
+    expect(within(summary).getByText("changes requested")).toBeTruthy();
   });
 
   it("does not render a Resume button in the PR header (#325 — moved to the Sessions section)", async () => {
