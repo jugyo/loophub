@@ -506,6 +506,15 @@ async function runLifecycle(): Promise<void> {
     if (action === "request-rework") {
       return service.requestRework(repo, { run: runId }, sessionId);
     }
+    if (action === "activate-step") {
+      if (!flags.step) fail("--step is required");
+      if (!flags.session) fail("--session is required");
+      return service.activateStep(
+        repo,
+        { run: runId, step: flags.step, sessionId: flags.session },
+        sessionId,
+      );
+    }
     if (action === "await-human") {
       if (!flags.reason) fail("--reason is required");
       return service.awaitHuman(
@@ -530,6 +539,12 @@ async function runLifecycle(): Promise<void> {
     console.log(`${action} Workflow run #${result.run.id}`);
     console.log(`status\t${display(result.run.status)}`);
     console.log(`step\t${display(result.run.current_step)}`);
+    if (result.run.active_step !== null) {
+      console.log(`active_step\t${display(result.run.active_step)}`);
+      console.log(
+        `active_session\t${display(result.run.active_session_id ?? "(unresolved)")}`,
+      );
+    }
     console.log(`rework_count\t${result.run.rework_count}`);
     if (result.run.needs_human_reason !== null) {
       console.log(`needs_human\t${display(result.run.needs_human_reason)}`);

@@ -1,7 +1,11 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   aggregateUsage,
   calculateCostUsd,
+  findCodexRollouts,
   parseClaudeSubagentJsonl,
   parseClaudeUsageJsonl,
   parseCodexRolloutJsonl,
@@ -578,6 +582,111 @@ test("parseCodexRolloutJsonl extracts final cumulative token count", () => {
     context_usage_percent: 45,
   });
   expect(calculateCostUsd("gpt-5.5", parsed.entries[0])).toBeCloseTo(0.000735);
+});
+
+test("findCodexRollouts removes inherited counters when children copy parent metadata", () => {
+  const sessionsDir = mkdtempSync(join(tmpdir(), "lh-codex-forks-"));
+  const dayDir = join(sessionsDir, "2026", "07", "19");
+  const cwd = "/tmp/worktree";
+  mkdirSync(dayDir, { recursive: true });
+
+  const count = (
+    inputTokens: number,
+    cachedInputTokens: number,
+    outputTokens: number,
+  ) =>
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: inputTokens,
+            cached_input_tokens: cachedInputTokens,
+            output_tokens: outputTokens,
+          },
+        },
+      },
+    });
+  const rollout = (
+    id: string,
+    parentThreadId: string | null,
+    totals: Array<[number, number, number]>,
+  ) =>
+    [
+      JSON.stringify({
+        type: "session_meta",
+        payload: {
+          id,
+          ...(parentThreadId ? { parent_thread_id: parentThreadId } : {}),
+          cwd,
+          model: "gpt-5.5",
+          timestamp: "2026-07-19T15:00:00.000Z",
+        },
+      }),
+      ...(parentThreadId
+        ? [
+            JSON.stringify({
+              type: "session_meta",
+              payload: {
+                id: parentThreadId,
+                cwd,
+                model: "gpt-5.5",
+                timestamp: "2026-07-19T15:00:00.000Z",
+              },
+            }),
+          ]
+        : []),
+      ...totals.map(([input, cached, output]) => count(input, cached, output)),
+    ].join("\n");
+  const inherited: Array<[number, number, number]> = [
+    [100, 40, 10],
+    [140, 50, 14],
+  ];
+
+  try {
+    writeFileSync(
+      join(dayDir, "rollout-parent.jsonl"),
+      rollout("parent", null, inherited),
+    );
+    writeFileSync(
+      join(dayDir, "rollout-child-a.jsonl"),
+      rollout("child-a", "parent", [...inherited, [170, 60, 17]]),
+    );
+    writeFileSync(
+      join(dayDir, "rollout-child-b.jsonl"),
+      rollout("child-b", "parent", [...inherited, [160, 55, 16]]),
+    );
+
+    const rollouts = findCodexRollouts({ cwd, sessionsDir });
+    const usage = aggregateUsage(rollouts.flatMap((row) => row.entries));
+
+    expect(rollouts).toHaveLength(3);
+    expect(
+      rollouts.find((row) => row.threadId === "child-a")?.entries[0],
+    ).toMatchObject({
+      input_tokens: 20,
+      cache_read_input_tokens: 10,
+      output_tokens: 3,
+    });
+    expect(
+      rollouts.find((row) => row.threadId === "child-b")?.entries[0],
+    ).toMatchObject({
+      input_tokens: 15,
+      cache_read_input_tokens: 5,
+      output_tokens: 2,
+    });
+    expect(usage).toMatchObject([
+      {
+        model: "gpt-5.5",
+        input_tokens: 125,
+        cache_read_input_tokens: 65,
+        output_tokens: 19,
+      },
+    ]);
+  } finally {
+    rmSync(sessionsDir, { recursive: true, force: true });
+  }
 });
 
 test("parseCodexRolloutJsonl preserves zero context usage as 0%", () => {

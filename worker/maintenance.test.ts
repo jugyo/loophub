@@ -277,6 +277,7 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
   process.env.HOME = HOME;
   const sessionId = "99999999-0000-0000-0000-000000000724";
   const parentSessionId = "99999999-0000-0000-0000-000000000725";
+  const activeVerifySessionId = "99999999-0000-0000-0000-000000000728";
   S.registerAgentSession(
     sessionId,
     "workflow-step",
@@ -286,6 +287,14 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
     "workflow-step",
   );
   S.registerAgentSession(parentSessionId, "lh-workflow", parentSessionId);
+  S.registerAgentSession(
+    activeVerifySessionId,
+    "workflow-step",
+    activeVerifySessionId,
+    "verifier #1-2",
+    "claude-code",
+    "workflow-step",
+  );
   const repo = S.createRepo("me/usage-sweep", "/tmp/lh-usage-sweep-repo");
   const pull = S.createIssue(repo.id, "pull", "PR", "", "me");
   S.createPull(pull.id, "loophub/issue-724", "main", null);
@@ -306,6 +315,12 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
     parentSessionId,
   });
   S.appendWorkflowRunStepSession(run.id, "execute", sessionId);
+  S.appendWorkflowRunStepSession(run.id, "verify", activeVerifySessionId);
+  S.updateWorkflowRun(run.id, {
+    currentStep: "verify",
+    activeStep: "verify",
+    activeSessionId: activeVerifySessionId,
+  });
   S.upsertSessionUsage(parentSessionId, {
     model: "test",
     input_tokens: 1,
@@ -387,6 +402,9 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
       id: run.id,
       parent_session_id: parentSessionId,
       session_id: sessionId,
+      usage_session_id: sessionId,
+      active_step: "verify",
+      active_session_id: activeVerifySessionId,
       pr_number: pull.number,
       limit_usd: 10,
     });

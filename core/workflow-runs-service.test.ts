@@ -553,6 +553,45 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     headSha: headA,
   });
 
+  // A live Execute injection after a fresh pass keeps lifecycle at Verify, but records the actual
+  // child that receives pane input. Cost detection must target that executor, not the last verifier.
+  const activated = svc.workflowRuns.activateStep(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+    },
+    parent,
+  );
+  expect(activated.run).toMatchObject({
+    current_step: "verify",
+    active_step: "execute",
+    active_session_id: exec.session_id,
+  });
+  S.upsertSessionUsage(parent, {
+    model: "test",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 11,
+  });
+  expect(
+    svc.workflowRuns.detectCostExceeded(repo.full_name, {
+      run: started.run.id,
+      usageSession: parent,
+    }),
+  ).toMatchObject({ emitted: true, cost_usd: 11, limit_usd: 10 });
+  const costEvent = S.listEvents(0, repo.id, 100).find(
+    (event) => event.type === "workflow_run.cost_exceeded",
+  );
+  expect(JSON.parse(costEvent!.payload)).toMatchObject({
+    usage_session_id: parent,
+    active_step: "execute",
+    active_session_id: exec.session_id,
+  });
+
   // A human can request ordinary additional work while the pass is fresh. The run is not held and
   // remains at Verify; the parent may launch and register another Execute child with the human note.
   const additionalExecute = await svc.workflowRuns.launchStep(
@@ -1096,7 +1135,7 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("launch a fresh Verify child directly");
   expect(contract).toContain("## Continuing after a pass");
   expect(contract).toContain("--step execute --note <instruction>");
-  expect(contract).not.toContain("lh workflow run resume");
+  expect(contract).toContain("lh workflow run resume");
   expect(contract).toContain("`request_changes`");
   expect(contract).toContain("planning and reflection");
   // Rework increments the count, caps at 3, delivers a review-id pointer, and re-verifies fresh.
@@ -1107,7 +1146,7 @@ test("parent contract template drives transitions by observation, rework, and es
   // Escalation uses issue comment + inbox while the persistent parent waits for human input.
   expect(contract).toContain("lh issue comment");
   expect(contract).toContain("lh inbox send");
-  expect(contract).not.toContain("run await-human");
+  expect(contract).toContain("run await-human");
   expect(contract).toContain("Keep the run `running`");
   expect(contract).not.toContain("--status blocked");
   // The parent stays alive instead of resuming a child session; skill independence.

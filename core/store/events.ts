@@ -112,7 +112,13 @@ export function emitWorkflowRunCostExceededOnce(
     number: number;
     pr_number: number;
     parent_session_id: string;
+    // Legacy alias retained for existing event readers. New orchestration must use the explicit
+    // usage/active fields below so the session whose aggregate changed is never treated as the pane
+    // that should be interrupted.
     session_id: string;
+    usage_session_id: string;
+    active_step: string | null;
+    active_session_id: string | null;
     cost_usd: number;
     limit_usd: number;
   },

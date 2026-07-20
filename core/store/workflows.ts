@@ -128,6 +128,10 @@ export interface WorkflowRunRow {
   needs_human_reason: string | null;
   parent_session_id: string | null;
   step_sessions_json: string;
+  // The child pane most recently launched or reactivated for live input. This can intentionally
+  // differ from current_step while additional Execute work runs after a fresh Verify pass.
+  active_step: string | null;
+  active_session_id: string | null;
   child_sequence: number;
   created_at: string;
   updated_at: string;
@@ -256,6 +260,8 @@ export function updateWorkflowRun(
     reworkCount?: number;
     // string sets the human-wait reason, explicit null clears it (#1307).
     needsHumanReason?: string | null;
+    activeStep?: string | null;
+    activeSessionId?: string | null;
   },
 ): WorkflowRunRow | null {
   const sets: string[] = [];
@@ -275,6 +281,14 @@ export function updateWorkflowRun(
   if (patch.needsHumanReason !== undefined) {
     sets.push("needs_human_reason = ?");
     params.push(patch.needsHumanReason);
+  }
+  if (patch.activeStep !== undefined) {
+    sets.push("active_step = ?");
+    params.push(patch.activeStep);
+  }
+  if (patch.activeSessionId !== undefined) {
+    sets.push("active_session_id = ?");
+    params.push(patch.activeSessionId);
   }
   sets.push("updated_at = ?");
   params.push(now(), id);

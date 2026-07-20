@@ -51,8 +51,10 @@ Event rows are timing signals, never transition facts:
 - `workflow_run.merge_conflict` — the run's PR base advanced into a merge conflict; hand resolution to
   Execute via the same inject-or-launch path as continuing work (see Merge conflict).
 - `workflow_run.cost_exceeded` — interrupt the over-budget child yourself with herdr (see Live child
-  control). The run stays `running` so a human can resume it. The worker emits this edge-triggered
-  fact once when the run's cumulative cost crosses its configured limit.
+  control), hold automatic progression, and ask the human once whether to continue. The payload
+  separates `usage_session_id` (the aggregate whose update detected the crossing) from
+  `active_step` / `active_session_id` (the child that must be interrupted). The worker emits this
+  edge-triggered fact once when the run's cumulative cost crosses its configured limit.
 
 ## Commands you may use
 
@@ -62,6 +64,13 @@ LoopHub (orchestration):
   — move from Execute to Verify after you observe HEAD is ahead of base with new work.
 - `lh workflow run request-rework --repo '<repo>' --run <run>`
   — atomically increment rework count and return from a fresh `request_changes` review to Execute.
+- `lh workflow run activate-step --repo '<repo>' --run <run> --step execute --session <session_id>`
+  — record the already-launched Execute child as the live control target immediately before
+  injecting a follow-up into its pane. This does not change the lifecycle step.
+- `lh workflow run await-human --repo '<repo>' --run <run> --reason <text>`
+  — hold automatic progression while the cost continuation decision is pending.
+- `lh workflow run resume --repo '<repo>' --run <run> --step <step>`
+  — clear that hold only after the human explicitly chooses yes.
 - `lh workflow launch-step --repo '<repo>' --run <run> --step <step> [--review <id>] [--note <text|->]`
   — start (or restart) the child for a step. The engine resolves its input pointers (for Verify, the
   base/head SHAs to review; for a rework Execute, `--review <id>` becomes the "address review"
@@ -85,9 +94,9 @@ Herdr (live child control only — never a transition fact):
   collapse newlines, tabs, and other control characters to spaces before calling herdr (the same
   guarantee as a worker notify line). Multi-line or control-laden text can submit early or spawn extra
   turns in the pane.
-- `herdr pane run <pane_id> Escape` — interrupt the over-budget child when you observe
-  `workflow_run.cost_exceeded`. The run stays `running`; there is no permanent run-stop command and
-  no lh CLI wrapper for this interrupt — call herdr yourself.
+- `herdr pane send-keys <pane_id> Escape` — send the actual Esc key to the active child when you
+  observe `workflow_run.cost_exceeded`. Do not use `herdr pane run <pane_id> Escape`: that submits
+  the literal text `Escape`.
 
 `lh workflow launch-step` always starts a fresh child session and is the only way to **start** a
 child. Prefer live pane injection for rework, continuing work, and merge-conflict resolution on Execute
@@ -134,22 +143,65 @@ use this path. Verify never reuses a prior verifier session via injection for ju
    trim, and prefix with `orchestrator:`. Examples:
    - rework: `orchestrator: address review #<id>`
    - continuing / conflict / human note: `orchestrator: <instruction>`
-3. Deliver with `herdr pane run <pane_id> <text>`.
-4. Do **not** wait for the child to go idle before injecting. Idle detection is forbidden. Rework
+3. Use the `session` line recorded with that Execute launch and call
+   `lh workflow run activate-step --repo '<repo>' --run <run> --step execute --session <session_id>`.
+   This must succeed **before** delivery so a concurrent cost event names the actual child to
+   interrupt. After a parent restart, pair the rediscovered agent with its registered Execute
+   session; if the exact session cannot be established, do not guess — use a fresh Execute launch.
+   Fresh `launch-step` confirmation records its active step and session automatically.
+4. Deliver with `herdr pane run <pane_id> <text>`. If delivery fails after activation, follow the
+   visible injection-failure path and fresh-launch fallback; never inject first and update the
+   active target afterward.
+5. Do **not** wait for the child to go idle before injecting. Idle detection is forbidden. Rework
    normally arrives after Execute has declared turn done; a continuing instruction may land while
    Execute is mid-turn — still inject and keep polling; do not Esc unless you observed
    `workflow_run.cost_exceeded`.
-5. Keep observing via events + `lh workflow step status`. A successful inject is not execute
+6. Keep observing via events + `lh workflow step status`. A successful inject is not execute
    complete; only a later HEAD advance (and turn-done timing signal) is.
 
 ### Cost interrupt
 
-On `workflow_run.cost_exceeded`, send Escape to the over-budget child's pane with
-`herdr pane run <pane_id> Escape`, then continue polling. Do not stop the run.
+Handle each `workflow_run.cost_exceeded` event id exactly once:
 
-### Auditing inject rounds (no new command)
+1. Read `cost_usd`, `limit_usd`, `usage_session_id`, `active_step`, and `active_session_id` from the
+   payload. `usage_session_id` only says which persisted usage aggregate changed; never resolve or
+   interrupt a pane from it.
+2. Resolve the latest recorded child agent for `active_step` whose launch registered
+   `active_session_id` (`executor #<run>-*` for Execute, `verifier #<run>-*` for Verify), then resolve
+   its `pane_id` with `herdr agent get`. If in-context launch records were lost, use
+   `herdr agent list` and the highest matching sequence for that step. A missing active session,
+   agent, or pane is an interrupt failure — do not guess another pane.
+3. Put the run in its visible human hold with
+   `lh workflow run await-human --repo '<repo>' --run <run> --reason 'Cost limit exceeded: current $<cost>, limit $<limit>; human decision required'`.
+4. Send the actual key with `herdr pane send-keys <pane_id> Escape`. Never use `pane run` for Esc.
+5. After Esc succeeds, send exactly one single-line text notification to the same pane:
+   `herdr pane run <pane_id> 'orchestrator: Cost limit exceeded: current $<cost>, limit $<limit>. Wait for human instruction.'`
+6. Display exactly one human confirmation in the parent pane: **“Cost limit exceeded. Continue?”**
+   with only **yes** and **no** choices. Prefer the runtime's interactive choice UI when available;
+   otherwise print the question and wait for an unambiguous `yes` or `no`. Remember the event id in
+   this live context and do not display the pane notification or confirmation again while polling.
+7. Make the selected result visible in the parent pane as `Continuation decision: yes` or
+   `Continuation decision: no`.
+   - **yes**: first run `lh workflow step status <run> --repo '<repo>' --json` and use its current
+     domain state. Then clear the hold with `lh workflow run resume ... --step <active_step>`.
+     For Execute, inject one single-line `orchestrator:` instruction into the same Execute pane to
+     re-check domain state and continue. For Verify, do not reuse the interrupted verifier: launch
+     Verify as a fresh child for the current HEAD.
+   - **no**: leave the human hold in place. Do not inject more text, launch a child, advance a step,
+     or otherwise resume automatic progression. Wait for the human's next explicit instruction.
 
-Do **not** add an audit CLI. Existing domain facts already let a human reconstruct a round:
+Every command above is fallible. If resolving the active pane, setting the hold, sending Esc,
+sending the notification, or displaying the confirmation fails, do not report the interrupt /
+confirmation as successful and do not resume. Print the failing command and error in the parent
+pane, record the same failure in an issue comment and Inbox notification, and retain or establish the
+human hold so an operator can recover it. A later poll of the same edge-triggered event must not
+silently retry side effects or duplicate the question.
+
+### Auditing inject rounds
+
+`activate-step` is a live-control safety command, not an audit command: it records which child a
+cost interrupt must target without changing the lifecycle step. Do **not** add a command solely for
+auditing. Existing domain facts already let a human reconstruct a round:
 
 - `lh workflow run request-rework` increments `rework_count` on the run.
 - Each Execute turn records `workflow_run.turn_done` in the event stream.

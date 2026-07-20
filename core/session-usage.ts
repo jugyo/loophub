@@ -67,6 +67,7 @@ export interface CodexRolloutCandidate extends TranscriptCandidate {
 
 interface ParsedCodexRollout extends CodexRolloutCandidate {
   cwd: string | null;
+  observations: CodexTokenObservation[];
 }
 
 interface CachedCodexRollout {
@@ -116,6 +117,13 @@ function nonNegativeNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
     : null;
+}
+
+interface CodexTokenObservation {
+  model: string | null;
+  usage: TokenUsage;
+  modelContextWindow: number | null;
+  lastTotalTokens: number | null;
 }
 
 export function claudeContextWindowForModel(model: string): number | null {
@@ -466,16 +474,16 @@ export function parseCodexRolloutJsonl(
   threadId: string | null;
   parentThreadId: string | null;
   entries: UsageEntry[];
+  observations: CodexTokenObservation[];
 } {
   let cwd: string | null = null;
   let model: string | null = null;
-  let previousUsage: TokenUsage | null = null;
-  const usageByModel = new Map<string, TokenUsage>();
-  const contextByModel = new Map<string, number>();
   let modelContextWindow: number | null = null;
   let startedAtMs: number | null = null;
   let threadId: string | null = null;
   let parentThreadId: string | null = null;
+  let hasSessionIdentity = false;
+  const observations: CodexTokenObservation[] = [];
 
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
@@ -495,8 +503,16 @@ export function parseCodexRolloutJsonl(
     if (type === "session_meta") {
       cwd = stringValue(payload.cwd) ?? cwd;
       model = stringValue(payload.model) ?? model;
-      threadId = stringValue(payload.id) ?? threadId;
-      parentThreadId = stringValue(payload.parent_thread_id) ?? parentThreadId;
+      // A fork rollout starts with its own metadata, followed by a copy of the parent's transcript
+      // (including the parent's session_meta). Only the first valid row identifies this rollout.
+      if (!hasSessionIdentity) {
+        const id = stringValue(payload.id);
+        if (id) {
+          threadId = id;
+          parentThreadId = stringValue(payload.parent_thread_id);
+          hasSessionIdentity = true;
+        }
+      }
       continue;
     }
 
@@ -544,39 +560,65 @@ export function parseCodexRolloutJsonl(
       cache_read_input_tokens: cacheRead,
       output_tokens: outputTokens,
     };
-    const delta = usageDelta(currentUsage, previousUsage);
-    previousUsage = currentUsage;
-    if (isIgnoredCodexRolloutModel(model)) continue;
-    const usageModel = model ?? "codex";
-    usageByModel.set(
-      usageModel,
-      addUsage(usageByModel.get(usageModel) ?? ZERO_USAGE, delta),
-    );
-    if (modelContextWindow != null && lastTotalTokens != null) {
-      contextByModel.set(
-        usageModel,
-        Math.max(
-          contextByModel.get(usageModel) ?? 0,
-          (lastTotalTokens / modelContextWindow) * 100,
-        ),
-      );
-    }
+    observations.push({
+      model,
+      usage: currentUsage,
+      modelContextWindow,
+      lastTotalTokens,
+    });
   }
 
-  if (usageByModel.size === 0)
-    return { cwd, startedAtMs, threadId, parentThreadId, entries: [] };
   return {
     cwd,
     startedAtMs,
     threadId,
     parentThreadId,
-    entries: [...usageByModel.entries()].map(([model, usage]) => ({
-      message_id: messageId,
-      model,
-      context_usage_percent: contextByModel.get(model) ?? null,
-      ...usage,
-    })),
+    entries: codexUsageEntries(observations, messageId),
+    observations,
   };
+}
+
+function codexUsageEntries(
+  observations: CodexTokenObservation[],
+  messageId: string,
+  inheritedPrefixLength = 0,
+): UsageEntry[] {
+  const usageByModel = new Map<string, TokenUsage>();
+  const contextByModel = new Map<string, number>();
+  let previousUsage =
+    inheritedPrefixLength > 0
+      ? observations[inheritedPrefixLength - 1]?.usage
+      : null;
+
+  for (const observation of observations.slice(inheritedPrefixLength)) {
+    const delta = usageDelta(observation.usage, previousUsage);
+    previousUsage = observation.usage;
+    if (isIgnoredCodexRolloutModel(observation.model)) continue;
+    const usageModel = observation.model ?? "codex";
+    usageByModel.set(
+      usageModel,
+      addUsage(usageByModel.get(usageModel) ?? ZERO_USAGE, delta),
+    );
+    if (
+      observation.modelContextWindow != null &&
+      observation.lastTotalTokens != null
+    ) {
+      contextByModel.set(
+        usageModel,
+        Math.max(
+          contextByModel.get(usageModel) ?? 0,
+          (observation.lastTotalTokens / observation.modelContextWindow) * 100,
+        ),
+      );
+    }
+  }
+
+  return [...usageByModel.entries()].map(([model, usage]) => ({
+    message_id: messageId,
+    model,
+    context_usage_percent: contextByModel.get(model) ?? null,
+    ...usage,
+  }));
 }
 
 export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
@@ -859,6 +901,7 @@ function parseCachedCodexRollout(
           threadId: parsed.threadId,
           parentThreadId: parsed.parentThreadId,
           entries: parsed.entries,
+          observations: parsed.observations,
         };
   codexRolloutCache.set(file.path, {
     size: file.size,
@@ -866,6 +909,66 @@ function parseCachedCodexRollout(
     parsed: result,
   });
   return result;
+}
+
+function sameCodexTokenObservation(
+  a: CodexTokenObservation,
+  b: CodexTokenObservation,
+): boolean {
+  return (
+    a.model === b.model &&
+    a.usage.input_tokens === b.usage.input_tokens &&
+    a.usage.cache_creation_input_tokens ===
+      b.usage.cache_creation_input_tokens &&
+    a.usage.cache_read_input_tokens === b.usage.cache_read_input_tokens &&
+    a.usage.output_tokens === b.usage.output_tokens
+  );
+}
+
+function inheritedCodexPrefixLength(
+  child: ParsedCodexRollout,
+  parent: ParsedCodexRollout,
+): number {
+  const length = Math.min(
+    child.observations.length,
+    parent.observations.length,
+  );
+  let shared = 0;
+  while (
+    shared < length &&
+    sameCodexTokenObservation(
+      child.observations[shared],
+      parent.observations[shared],
+    )
+  ) {
+    shared += 1;
+  }
+  return shared;
+}
+
+function removeInheritedCodexUsage(
+  rollouts: ParsedCodexRollout[],
+): ParsedCodexRollout[] {
+  const byThreadId = new Map(
+    rollouts
+      .filter((rollout) => rollout.threadId !== null)
+      .map((rollout) => [rollout.threadId!, rollout]),
+  );
+  return rollouts.map((rollout) => {
+    if (!rollout.parentThreadId) return rollout;
+    const parent = byThreadId.get(rollout.parentThreadId);
+    if (!parent) return rollout;
+    const inheritedPrefixLength = inheritedCodexPrefixLength(rollout, parent);
+    if (inheritedPrefixLength === 0) return rollout;
+    return {
+      ...rollout,
+      entries: codexUsageEntries(
+        rollout.observations,
+        rollout.path,
+        inheritedPrefixLength,
+      ),
+    };
+  });
 }
 
 function parsedRolloutsByCwd(
@@ -895,7 +998,9 @@ export function findCodexRollouts(input: {
     input.scan ??
     createCodexRolloutScan(input.sessionsDir ?? defaultCodexSessionsDir());
   if (!input.cwd || scan.files.length === 0) return [];
-  return (parsedRolloutsByCwd(scan).get(input.cwd) ?? [])
+  return removeInheritedCodexUsage(
+    parsedRolloutsByCwd(scan).get(input.cwd) ?? [],
+  )
     .map((parsed) => ({
       path: parsed.path,
       size: parsed.size,

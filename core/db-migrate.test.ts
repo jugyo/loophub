@@ -5,10 +5,9 @@ import { join } from "node:path";
 import type * as SqliteNS from "node:sqlite";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-// #316 backward-compat: an existing DB carrying the (now-retired) pulls.session_id pointer must have
-// that attribution migrated into session_links BEFORE the column is dropped, so `lh resume`/retro
-// keep resolving the PR's dev session. We simulate a pre-#316 DB by hand-building the old schema with
-// node:sqlite directly, THEN importing core (which runs the import-time migration against it).
+// Backward compatibility: hand-build an old schema with node:sqlite, THEN import core so its
+// import-time migrations run against existing tables. This covers both the retired
+// pulls.session_id pointer (#316) and newer additive Workflow run columns.
 const { DatabaseSync } = createRequire(import.meta.url)(
   "node:sqlite",
 ) as typeof SqliteNS;
@@ -65,6 +64,20 @@ beforeAll(async () => {
       added_at TEXT NOT NULL,
       PRIMARY KEY (group_id, issue_id)
     );
+    CREATE TABLE workflow_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workflow_id INTEGER,
+      repo_id INTEGER NOT NULL REFERENCES repos(id),
+      issue_number INTEGER NOT NULL,
+      pr_number INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      current_step TEXT NOT NULL,
+      rework_count INTEGER NOT NULL DEFAULT 0,
+      parent_session_id TEXT,
+      step_sessions_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
     CREATE INDEX idx_issue_groups_repo ON issue_groups(repo_id);
     CREATE INDEX idx_issue_group_members_issue ON issue_group_members(issue_id);
     INSERT INTO repos (id, full_name, name, owner, local_path, created_at)
@@ -100,6 +113,14 @@ test("pulls.session_id is dropped after migration", () => {
   expect(cols).toContain("head_pending_creation");
   expect(S.getPull(10)?.base_sha).toBeNull();
   expect(S.getPull(10)?.head_pending_creation).toBe(0);
+});
+
+test("workflow runs gain explicit active child columns", () => {
+  const cols = (
+    D.db.query("PRAGMA table_info(workflow_runs)").all() as { name: string }[]
+  ).map((c) => c.name);
+  expect(cols).toContain("active_step");
+  expect(cols).toContain("active_session_id");
 });
 
 test("the legacy dev-session pointer survives in session_links (resume anchor preserved)", () => {

@@ -752,6 +752,10 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   model              TEXT,
   parent_session_id  TEXT,
   step_sessions_json TEXT NOT NULL DEFAULT '{}',
+  -- Child most recently launched or explicitly reactivated for live pane input. Kept separate from
+  -- current_step because continuing Execute work after a fresh pass leaves lifecycle at Verify.
+  active_step        TEXT,
+  active_session_id  TEXT,
   child_sequence     INTEGER NOT NULL DEFAULT 0,
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL
@@ -958,6 +962,8 @@ tryExec(
 // while staying `running` (resumable); the text is the reason shown to the human. Legacy terminal
 // `blocked` rows keep their status and never carry a reason.
 tryExec("ALTER TABLE workflow_runs ADD COLUMN needs_human_reason TEXT");
+tryExec("ALTER TABLE workflow_runs ADD COLUMN active_step TEXT");
+tryExec("ALTER TABLE workflow_runs ADD COLUMN active_session_id TEXT");
 // Artifact-contract retirement (#1358): the claims table only ever held transient placement
 // locks, so dropping it loses nothing; the artifact/placement/pin history tables stay untouched.
 tryExec("DROP TABLE IF EXISTS workflow_placement_claims");

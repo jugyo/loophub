@@ -95,7 +95,7 @@ test("parent injects into live children via herdr and falls back to launch-step"
   expect(parent).toContain("herdr agent list");
   expect(parent).toContain("record the printed `agent` line");
   expect(parent).toContain("orchestrator:");
-  expect(parent).not.toContain("lh workflow run resume");
+  expect(parent).toContain("lh workflow run resume");
   expect(parent).not.toContain("lh workflow run enforce-cost-limit");
   expect(parent).toMatch(
     /launch \*\*Verify as a\s+fresh child\*\* — always a new child/u,
@@ -159,7 +159,44 @@ test("parent polls only its run workflow events and reacts to cost limit facts",
     "The `--type workflow_run --run <run>` filters are mandatory",
   );
   expect(contract).toContain("workflow_run.cost_exceeded");
-  expect(contract).toContain("herdr pane run <pane_id> Escape");
+  expect(contract).toContain("herdr pane send-keys <pane_id> Escape");
+  expect(contract).toContain("submits\n  the literal text `Escape`");
+  expect(contract).toContain("usage_session_id");
+  expect(contract).toContain("active_step");
+  expect(contract).toContain("active_session_id");
+  expect(contract).toContain(
+    "lh workflow run activate-step --repo '<repo>' --run <run> --step execute --session <session_id>",
+  );
+  expect(contract).toContain("Cost limit exceeded. Continue?");
+  expect(contract).toContain("only **yes** and **no** choices");
+  expect(contract).toContain(
+    "Handle each `workflow_run.cost_exceeded` event id exactly once",
+  );
+  expect(contract).toContain(
+    "first run `lh workflow step status <run> --repo '<repo>' --json`",
+  );
+  expect(contract).toContain(
+    "For Verify, do not reuse the interrupted verifier",
+  );
+  expect(contract).toContain("leave the human hold in place");
+  expect(contract).toContain(
+    "do not display the pane notification or confirmation again",
+  );
+  expect(
+    contract.indexOf("Put the run in its visible human hold"),
+  ).toBeLessThan(
+    contract.indexOf(
+      "Send the actual key with `herdr pane send-keys <pane_id> Escape`",
+    ),
+  );
+  expect(
+    contract.indexOf(
+      "Send the actual key with `herdr pane send-keys <pane_id> Escape`",
+    ),
+  ).toBeLessThan(contract.indexOf("After Esc succeeds, send exactly one"));
+  expect(contract).toContain(
+    "do not report the interrupt /\nconfirmation as successful",
+  );
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
   expect(contract).not.toContain("lh workflow run stop");
   expect(contract).toContain("sleep briefly and poll again");
@@ -249,6 +286,15 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain("step_sessions_json.execute");
   expect(design).toContain("注入の成功自体を execute complete の根拠");
   expect(design).toContain("監査専用の lh コマンドは追加しない");
+  expect(design).toContain("`usage_session_id`");
+  expect(design).toContain("`active_step`");
+  expect(design).toContain("`active_session_id`");
+  expect(design).toContain(
+    "`lh workflow run activate-step --step execute --session <session_id>`",
+  );
+  expect(design).toContain("`herdr pane send-keys <pane_id> Escape`");
+  expect(design).toContain("「続けますか？」という yes / no");
+  expect(design).toContain("人間の yes なしには再開しない");
   // Execute-side interpretation of additional work (issue/PR extension, same completion path).
   expect(design).toContain("追加作業指示");
   expect(design).toContain("Issue / PR への追加要望");

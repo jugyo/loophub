@@ -112,6 +112,8 @@ export type WorkflowRunUpdateResult = {
     needs_human_reason: string | null;
     parent_session_id: string | null;
     step_sessions_json: string;
+    active_step: string | null;
+    active_session_id: string | null;
   };
 };
 
@@ -261,6 +263,8 @@ function runJSON(run: S.WorkflowRunRow): WorkflowRunUpdateResult["run"] {
     needs_human_reason: run.needs_human_reason,
     parent_session_id: run.parent_session_id,
     step_sessions_json: run.step_sessions_json,
+    active_step: run.active_step,
+    active_session_id: run.active_session_id,
   };
 }
 
@@ -512,6 +516,7 @@ function assertRunUpdateActor(
 
 type WorkflowRunTransition =
   | "advance_to_verify"
+  | "activate_step"
   | "await_human"
   | "resume_after_human"
   | "request_rework";
@@ -554,6 +559,8 @@ function updateRunLifecycle(
     currentStep?: WorkflowStep;
     reworkCount?: number;
     needsHumanReason?: string | null;
+    activeStep?: WorkflowStep | null;
+    activeSessionId?: string | null;
   },
   transition: WorkflowRunTransition,
   sessionId: string | null | undefined,
@@ -568,6 +575,12 @@ function updateRunLifecycle(
     rework_count: updated.rework_count,
     ...(transition === "await_human" || transition === "resume_after_human"
       ? { needs_human_reason: updated.needs_human_reason }
+      : {}),
+    ...(transition === "activate_step"
+      ? {
+          active_step: updated.active_step,
+          active_session_id: updated.active_session_id,
+        }
       : {}),
     issue_number: updated.issue_number,
     pr_number: updated.pr_number,
@@ -756,7 +769,11 @@ export const workflowRuns = {
     }
     return updateRunLifecycle(
       run,
-      { currentStep: "verify" },
+      {
+        currentStep: "verify",
+        activeStep: null,
+        activeSessionId: null,
+      },
       "advance_to_verify",
       sessionId,
     );
@@ -809,8 +826,46 @@ export const workflowRuns = {
     }
     return updateRunLifecycle(
       run,
-      { currentStep: step, reworkCount: 0, needsHumanReason: null },
+      {
+        currentStep: step,
+        reworkCount: 0,
+        needsHumanReason: null,
+        activeStep: null,
+        activeSessionId: null,
+      },
       "resume_after_human",
+      sessionId,
+    );
+  },
+
+  activateStep(
+    name: string,
+    input: { run: number; step: string; sessionId: string },
+    sessionId?: string | null,
+  ): WorkflowRunUpdateResult {
+    const { run } = lifecycleRun(name, input.run, sessionId);
+    assertAutomaticProgressAllowed(run);
+    const step = workflowStep(input.step);
+    if (step !== "execute") {
+      throw new ServiceError(
+        422,
+        "Only an Execute step can be reactivated for live pane input",
+      );
+    }
+    if (
+      !workflowStepSessionIds(run.step_sessions_json, step).includes(
+        input.sessionId,
+      )
+    ) {
+      throw new ServiceError(
+        422,
+        "active session is not registered for the Workflow step",
+      );
+    }
+    return updateRunLifecycle(
+      run,
+      { activeStep: step, activeSessionId: input.sessionId },
+      "activate_step",
       sessionId,
     );
   },
@@ -868,6 +923,9 @@ export const workflowRuns = {
       pr_number: run.pr_number,
       parent_session_id: parentSessionId,
       session_id: input.usageSession,
+      usage_session_id: input.usageSession,
+      active_step: run.active_step,
+      active_session_id: run.active_session_id,
       cost_usd: summary.cost_usd,
       limit_usd: limitUsd,
     });
@@ -909,7 +967,12 @@ export const workflowRuns = {
     }
     return updateRunLifecycle(
       run,
-      { currentStep: "execute", reworkCount: run.rework_count + 1 },
+      {
+        currentStep: "execute",
+        reworkCount: run.rework_count + 1,
+        activeStep: null,
+        activeSessionId: null,
+      },
       "request_rework",
       sessionId,
     );
@@ -1106,6 +1169,11 @@ export const workflowRuns = {
     S.linkSession(sessionId, prIssue.id);
     const withSession = S.appendWorkflowRunStepSession(run.id, step, sessionId);
     if (!withSession) throw new ServiceError(404, "Workflow run not found");
+    const withActive = S.updateWorkflowRun(run.id, {
+      activeStep: step,
+      activeSessionId: sessionId,
+    });
+    if (!withActive) throw new ServiceError(404, "Workflow run not found");
     if (step === "verify") {
       if (!input.headSha || !/^[0-9a-f]{40,64}$/u.test(input.headSha)) {
         throw new ServiceError(
@@ -1161,7 +1229,7 @@ export const workflowRuns = {
         pr_number: run.pr_number,
       },
     );
-    return { run: runJSON(withSession), session_id: sessionId };
+    return { run: runJSON(withActive), session_id: sessionId };
   },
 
   // The Execute child's payload-less turn-done declaration. It is a timing signal only: the
