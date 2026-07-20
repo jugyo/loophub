@@ -163,6 +163,53 @@ function renderRowWithRun(
 }
 
 describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
+  it("opens the matching Workflow step pane from the compact tracker", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    herdrSessionsData.value = {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "lh-me-proj",
+          agents: [
+            {
+              id: "w1:p2",
+              name: "executor #1-1",
+              status: "working",
+              pull: 10,
+              pull_closed: false,
+              focusable: true,
+              workflow: {
+                kind: "step",
+                runId: 1,
+                step: "execute",
+                sequence: 1,
+              },
+            },
+          ],
+          pull_workspaces: [],
+          issue_workspaces: [],
+        },
+      ],
+    };
+    renderRowWithRun(makeWorkflowRunState());
+
+    const execute = await screen.findByText("Execute");
+    fireEvent.mouseEnter(row());
+    fireEvent.mouseEnter(execute.parentElement!);
+    act(() => vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS));
+    const dialog = screen.getByRole("dialog", {
+      name: "Execute workflow step details",
+    });
+    expect(popoverVisible()).toBe(false);
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Open in Herdr" }),
+    );
+    expect(focusHerdrAgent).toHaveBeenCalledWith(
+      { repo: "me/proj", paneId: "w1:p2" },
+      expect.anything(),
+    );
+  });
+
   it("renders nothing when the PR has no linked workflow run", async () => {
     renderRowWithRun(null);
     await screen.findByRole("link", { name: "PR #10" });

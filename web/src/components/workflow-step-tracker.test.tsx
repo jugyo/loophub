@@ -1,9 +1,32 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
-import type { WorkflowRunState } from "@/api/types";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { HerdrSessions, WorkflowRunState } from "@/api/types";
+import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
+
+const { focusHerdrAgent } = vi.hoisted(() => ({
+  focusHerdrAgent: vi.fn(),
+}));
+vi.mock("@/queries/terminal", () => ({
+  useFocusHerdrAgent: () => ({
+    mutate: focusHerdrAgent,
+    isPending: false,
+  }),
+}));
+
 import { WorkflowStepTracker } from "./workflow-step-tracker";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  focusHerdrAgent.mockClear();
+});
 
 function state(partial: Partial<WorkflowRunState> = {}): WorkflowRunState {
   return {
@@ -24,7 +47,210 @@ function state(partial: Partial<WorkflowRunState> = {}): WorkflowRunState {
   };
 }
 
+const herdrSessions: HerdrSessions = {
+  repos: [
+    {
+      repo: "me/proj",
+      session_name: "lh-me-proj",
+      agents: [
+        {
+          id: "w1:p1",
+          name: "executor #1-1",
+          status: "done",
+          pull: 10,
+          pull_closed: false,
+          focusable: true,
+          workflow: {
+            kind: "step",
+            runId: 1,
+            step: "execute",
+            sequence: 1,
+          },
+        },
+        {
+          id: "w1:p3",
+          name: "executor #1-3",
+          status: "working",
+          pull: 10,
+          pull_closed: false,
+          focusable: true,
+          workflow: {
+            kind: "step",
+            runId: 1,
+            step: "execute",
+            sequence: 3,
+          },
+        },
+        {
+          id: "synthetic",
+          name: "verifier #1-4",
+          status: "working",
+          pull: 10,
+          pull_closed: false,
+          focusable: false,
+          workflow: {
+            kind: "step",
+            runId: 1,
+            step: "verify",
+            sequence: 4,
+          },
+        },
+        {
+          id: "w1:p9",
+          name: "executor #9-1",
+          status: "working",
+          pull: 10,
+          pull_closed: false,
+          focusable: true,
+          workflow: {
+            kind: "step",
+            runId: 9,
+            step: "execute",
+            sequence: 1,
+          },
+        },
+      ],
+      pull_workspaces: [],
+      issue_workspaces: [],
+    },
+  ],
+};
+
 describe("WorkflowStepTracker", () => {
+  it("opens an identifying popup for every stage on hover", () => {
+    vi.useFakeTimers();
+    render(<WorkflowStepTracker state={state()} />);
+
+    for (const label of ["Execute", "Verify", "Done"]) {
+      const pill = screen.getByText(label);
+      fireEvent.mouseEnter(pill.parentElement!);
+      act(() => vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS));
+
+      const dialog = screen.getByRole("dialog", {
+        name: `${label} workflow step details`,
+      });
+      expect(dialog.textContent).toContain(`${label} step`);
+      expect(dialog.textContent).toContain("Run #1");
+
+      fireEvent.mouseLeave(pill.parentElement!);
+      expect(
+        screen.queryByRole("dialog", {
+          name: `${label} workflow step details`,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it("opens the latest matching focusable step pane and offers no wrong action", () => {
+    render(
+      <WorkflowStepTracker
+        owner="me"
+        repo="proj"
+        state={state()}
+        herdrSessions={herdrSessions}
+      />,
+    );
+
+    fireEvent.focus(screen.getByText("Execute"));
+    const executeDialog = screen.getByRole("dialog", {
+      name: "Execute workflow step details",
+    });
+    fireEvent.click(
+      within(executeDialog).getByRole("button", { name: "Open in Herdr" }),
+    );
+    expect(focusHerdrAgent).toHaveBeenCalledWith(
+      { repo: "me/proj", paneId: "w1:p3" },
+      expect.anything(),
+    );
+
+    fireEvent.blur(screen.getByText("Execute"));
+    fireEvent.focus(screen.getByText("Verify"));
+    expect(
+      within(
+        screen.getByRole("dialog", {
+          name: "Verify workflow step details",
+        }),
+      ).queryByRole("button", { name: "Open in Herdr" }),
+    ).toBeNull();
+
+    fireEvent.blur(screen.getByText("Verify"));
+    fireEvent.focus(screen.getByText("Done"));
+    expect(
+      within(
+        screen.getByRole("dialog", {
+          name: "Done workflow step details",
+        }),
+      ).queryByRole("button", { name: "Open in Herdr" }),
+    ).toBeNull();
+  });
+
+  it("shows why pane actions are unavailable when the Herdr snapshot fails", () => {
+    render(
+      <WorkflowStepTracker
+        owner="me"
+        repo="proj"
+        state={state()}
+        herdrUnavailable
+      />,
+    );
+
+    const execute = screen.getByText("Execute");
+    expect(execute.className).toContain("focus-visible:ring-2");
+    fireEvent.focus(execute);
+    const dialog = screen.getByRole("dialog", {
+      name: "Execute workflow step details",
+    });
+    expect(dialog.textContent).toContain("Herdr pane data is unavailable.");
+    expect(
+      within(dialog).queryByRole("button", { name: "Open in Herdr" }),
+    ).toBeNull();
+  });
+
+  it("keeps the popup open while pointer or keyboard focus moves to its action", () => {
+    vi.useFakeTimers();
+    render(
+      <WorkflowStepTracker
+        owner="me"
+        repo="proj"
+        state={state()}
+        herdrSessions={herdrSessions}
+      />,
+    );
+    const execute = screen.getByText("Execute");
+    const stage = execute.parentElement!;
+
+    fireEvent.mouseEnter(stage);
+    act(() => vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS));
+    const dialog = screen.getByRole("dialog", {
+      name: "Execute workflow step details",
+    });
+    fireEvent.mouseLeave(stage, { relatedTarget: dialog });
+    expect(
+      screen.getByRole("dialog", {
+        name: "Execute workflow step details",
+      }),
+    ).toBeTruthy();
+
+    fireEvent.mouseLeave(stage);
+    fireEvent.focus(execute);
+    const button = screen.getByRole("button", { name: "Open in Herdr" });
+    fireEvent.blur(execute, { relatedTarget: button });
+    act(() => button.focus());
+    expect(document.activeElement).toBe(button);
+    expect(
+      screen.getByRole("dialog", {
+        name: "Execute workflow step details",
+      }),
+    ).toBeTruthy();
+
+    fireEvent.keyDown(button, { key: "Escape" });
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Execute workflow step details",
+      }),
+    ).toBeNull();
+  });
+
   it("shows Execute → Verify → Done and colors only the current stage", () => {
     render(<WorkflowStepTracker state={state({ current_step: "execute" })} />);
     const execute = screen.getByText("Execute");

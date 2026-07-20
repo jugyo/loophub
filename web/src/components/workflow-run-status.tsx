@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { WorkflowRunHistoryDialog } from "@/components/workflow-run-history-dialog";
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
+import { useHerdrSessions } from "@/queries/terminal";
 
 const STATUS_META: Record<
   string,
@@ -63,6 +64,11 @@ export function WorkflowRunStatusSection({
   conflict?: boolean;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Pull detail already loads this shared query for its Agents section. Observe that cache
+  // without starting a second, otherwise-unrelated request when this section is rendered alone.
+  const { data: herdrSessions, isError: herdrSessionsError } = useHerdrSessions(
+    { enabled: false },
+  );
   if (!state) return null;
 
   const status = needsHuman(state)
@@ -107,7 +113,15 @@ export function WorkflowRunStatusSection({
           ) : null}
         </div>
 
-        <WorkflowStepTracker state={state} size="md" conflict={conflict} />
+        <WorkflowStepTracker
+          owner={owner}
+          repo={repo}
+          state={state}
+          herdrSessions={herdrSessionsError ? undefined : herdrSessions}
+          herdrUnavailable={herdrSessionsError}
+          size="md"
+          conflict={conflict}
+        />
 
         {completed ? (
           <p className="text-sm text-muted-foreground">

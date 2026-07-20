@@ -6,12 +6,38 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
-import type { WorkflowRunState } from "@/api/types";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { HerdrSessions, WorkflowRunState } from "@/api/types";
+
+const mocks = vi.hoisted(() => ({
+  herdrSessions: undefined as HerdrSessions | undefined,
+  focusHerdrAgent: vi.fn(),
+}));
+vi.mock("@/queries/terminal", () => ({
+  useHerdrSessions: () => ({
+    data: mocks.herdrSessions,
+    isError: false,
+  }),
+  useFocusHerdrAgent: () => ({
+    mutate: mocks.focusHerdrAgent,
+    isPending: false,
+  }),
+}));
+
 import { WorkflowRunStatusSection } from "./workflow-run-status";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  mocks.herdrSessions = undefined;
+  mocks.focusHerdrAgent.mockClear();
+});
 
 // The section renders <Link> to the issue and inbox, which need a router context.
 function renderInRouter(ui: React.ReactNode) {
@@ -58,6 +84,50 @@ function state(partial: Partial<WorkflowRunState>): WorkflowRunState {
 }
 
 describe("WorkflowRunStatusSection", () => {
+  it("opens the matching Workflow step pane from the detail tracker", async () => {
+    mocks.herdrSessions = {
+      repos: [
+        {
+          repo: "me/loophub",
+          session_name: "lh-me-loophub",
+          agents: [
+            {
+              id: "w7:p1",
+              name: "executor #7-1",
+              status: "working",
+              pull: 99,
+              pull_closed: false,
+              focusable: true,
+              workflow: {
+                kind: "step",
+                runId: 7,
+                step: "execute",
+                sequence: 1,
+              },
+            },
+          ],
+          pull_workspaces: [],
+          issue_workspaces: [],
+        },
+      ],
+    };
+    renderInRouter(
+      <WorkflowRunStatusSection owner="me" repo="loophub" state={state({})} />,
+    );
+
+    fireEvent.focus(await screen.findByText("Execute"));
+    const dialog = screen.getByRole("dialog", {
+      name: "Execute workflow step details",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Open in Herdr" }),
+    );
+    expect(mocks.focusHerdrAgent).toHaveBeenCalledWith(
+      { repo: "me/loophub", paneId: "w7:p1" },
+      expect.anything(),
+    );
+  });
+
   it("renders nothing when there is no run", () => {
     const { container } = renderInRouter(
       <WorkflowRunStatusSection owner="me" repo="loophub" state={null} />,

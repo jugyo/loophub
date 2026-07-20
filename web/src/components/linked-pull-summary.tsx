@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, TriangleAlert } from "lucide-react";
-import type { HerdrAgent, LinkedPull } from "@/api/types";
+import type { HerdrAgent, HerdrSessions, LinkedPull } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { DiffStat } from "@/components/diff-stat";
 import { HerdrAgentInput } from "@/components/herdr-agent-input";
@@ -146,12 +146,18 @@ function WorkflowMiniProgress({
   owner,
   repo,
   pull,
+  herdrSessions,
+  herdrUnavailable,
+  onStageInteract,
   working,
   conflict,
 }: {
   owner: string;
   repo: string;
   pull: LinkedPull;
+  herdrSessions?: HerdrSessions;
+  herdrUnavailable?: boolean;
+  onStageInteract?: () => void;
   /** Whether the linked agent is actively working (glow the current stage pill). */
   working: boolean;
   /** PR is in merge conflict — flip the terminal Done pill to "Conflict!" (#1659). */
@@ -162,6 +168,11 @@ function WorkflowMiniProgress({
   return (
     <WorkflowStepTracker
       state={state}
+      owner={owner}
+      repo={repo}
+      herdrSessions={herdrSessions}
+      herdrUnavailable={herdrUnavailable}
+      onStageInteract={onStageInteract}
       size="sm"
       working={working}
       conflict={conflict}
@@ -266,7 +277,8 @@ export function LinkedPullSummaryRow({
 }) {
   const popover = useHoverPopover();
   const { showError } = useToast();
-  const { data: herdrSessions } = useHerdrSessions();
+  const { data: herdrSessions, isError: herdrSessionsError } =
+    useHerdrSessions();
   const setState = useSetPullState(owner, repo, pull.number);
   const repoFullName = `${owner}/${repo}`;
   const workspace = findPullHerdrWorkspace(
@@ -386,6 +398,9 @@ export function LinkedPullSummaryRow({
           owner={owner}
           repo={repo}
           pull={pull}
+          herdrSessions={herdrSessionsError ? undefined : herdrSessions}
+          herdrUnavailable={herdrSessionsError}
+          onStageInteract={popover.close}
           working={showWorkingEffect}
           conflict={operationalStatus.tone === "conflict"}
         />
@@ -490,6 +505,13 @@ export function LinkedPullAttemptSummaryRow({
   pull: LinkedPull;
 }) {
   const status = linkedPullAttemptStatus(pull);
+  const { data: herdrSessions, isError: herdrSessionsError } =
+    useHerdrSessions();
+  const working = isPullHerdrWorking(
+    herdrSessions,
+    `${owner}/${repo}`,
+    pull.number,
+  );
 
   return (
     <div
@@ -512,6 +534,15 @@ export function LinkedPullAttemptSummaryRow({
       >
         {pull.title}
       </Link>
+      <WorkflowMiniProgress
+        owner={owner}
+        repo={repo}
+        pull={pull}
+        herdrSessions={herdrSessionsError ? undefined : herdrSessions}
+        herdrUnavailable={herdrSessionsError}
+        working={working}
+        conflict={pull.mergeable_state === "conflict"}
+      />
       <span
         className={cn(
           "shrink-0 font-semibold",

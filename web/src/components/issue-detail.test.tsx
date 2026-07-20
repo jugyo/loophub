@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -18,6 +19,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
 import type { Issue, IssueComment } from "@/api/types";
+import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 import { WebConfigProvider } from "@/lib/web-config";
 
 // The Build button launches through the terminal backend abstraction; capture the call.
@@ -72,6 +74,8 @@ function mockFetch(
   extraHandlers: Record<string, (params: any) => unknown> = {},
 ) {
   return mockRpcFetch({
+    "workflowRuns/stateForPull": () => null,
+    "terminal/sessions": () => ({ repos: [] }),
     ...extraHandlers,
     "issues/get": getIssue,
     "comments/list": () => comments,
@@ -169,6 +173,75 @@ describe("IssueDetail", () => {
     ).toBe("/r/me/proj/pulls/30");
     expect(prLink.closest("div")?.textContent).toContain("open");
     expect(screen.queryByText("Workflow run")).toBeNull();
+  });
+
+  it("opens a linked PR Workflow step pane from the issue detail", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderDetail(undefined, false, {
+      "workflowRuns/stateForPull": () => ({
+        id: 41,
+        workflow_id: 7,
+        workflow_name: "Build",
+        status: "running",
+        current_step: "execute",
+        rework_count: 0,
+        needs_human_reason: null,
+        issue_number: 12,
+        pr_number: 30,
+        created_at: "2026-07-20T00:00:00Z",
+        updated_at: "2026-07-20T00:00:00Z",
+        latest_review: null,
+        verification_status: "unverified",
+      }),
+      "terminal/sessions": () => ({
+        repos: [
+          {
+            repo: "me/proj",
+            session_name: "lh-me-proj",
+            agents: [
+              {
+                id: "w1:p2",
+                name: "executor #41-1",
+                status: "working",
+                pull: 30,
+                pull_closed: false,
+                focusable: true,
+                workflow: {
+                  kind: "step",
+                  runId: 41,
+                  step: "execute",
+                  sequence: 1,
+                },
+              },
+            ],
+            pull_workspaces: [],
+            issue_workspaces: [],
+          },
+        ],
+      }),
+      "terminal/focusAgent": () => ({ ok: true }),
+    });
+
+    const row = await screen.findByLabelText(
+      "Linked PR #30: ui2: issue detail PR",
+    );
+    const execute = within(row).getByText("Execute");
+    fireEvent.mouseEnter(execute.parentElement!);
+    act(() => vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS));
+
+    const dialog = screen.getByRole("dialog", {
+      name: "Execute workflow step details",
+    });
+    expect(within(dialog).getByText("Run #41")).toBeTruthy();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Open in Herdr" }),
+    );
+    await waitFor(() => {
+      expect(rpcCall("terminal/focusAgent")?.params).toEqual({
+        repo: "me/proj",
+        paneId: "w1:p2",
+      });
+    });
   });
 
   it("renders the target branch chip when the issue has a target branch", async () => {
