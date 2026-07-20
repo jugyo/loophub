@@ -94,7 +94,10 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
 
   if (editing) {
     return (
-      <div className="rounded-md border p-4">
+      <div
+        data-debug-component="WorkflowCard"
+        className="rounded-md border p-4"
+      >
         <WorkflowForm
           mode="edit"
           workflow={workflow}
@@ -106,7 +109,7 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
   }
 
   return (
-    <div className="rounded-md border p-4">
+    <div data-debug-component="WorkflowCard" className="rounded-md border p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-medium">{workflow.name}</h2>
@@ -232,6 +235,7 @@ function WorkflowForm({
 
   return (
     <form
+      data-debug-component="WorkflowForm"
       className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
@@ -347,6 +351,7 @@ function SystemPromptDialog({
       onClick={onClose}
     >
       <div
+        data-debug-component="SystemPromptDialog"
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -424,6 +429,7 @@ function ConfirmDialog({
       }}
     >
       <div
+        data-debug-component="ConfirmDialog"
         role="dialog"
         aria-modal="true"
         aria-label={title}

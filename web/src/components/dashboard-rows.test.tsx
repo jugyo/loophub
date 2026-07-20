@@ -500,6 +500,7 @@ describe("IssueRow title popover", () => {
     const popover = screen.getByRole("dialog", {
       name: "Issue #1 details",
     });
+    expect(popover.getAttribute("data-debug-component")).toBe("IssuePopover");
     expect(popover.textContent).toContain("#1");
     expect(popover.textContent).toContain("closed");
     expect(popover.textContent).toContain("@octocat");

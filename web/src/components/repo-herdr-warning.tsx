@@ -31,6 +31,7 @@ export function RepoHerdrWarning() {
 
   return (
     <div
+      data-debug-component="RepoHerdrWarning"
       role="alert"
       className="flex shrink-0 items-center gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100 sm:px-6"
     >

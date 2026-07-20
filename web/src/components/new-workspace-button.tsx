@@ -66,7 +66,7 @@ export function NewWorkspaceButton({
               onClick={close}
             >
               <form
-                data-debug-component="NewWorkspaceButton"
+                data-debug-component="NewWorkspaceDialog"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="new-workspace-title"

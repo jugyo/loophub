@@ -158,7 +158,7 @@ function InboxTable({
   }
 
   return (
-    <div className="mt-6 overflow-x-auto">
+    <div data-debug-component="InboxTable" className="mt-6 overflow-x-auto">
       <table className="min-w-[1120px] w-full text-sm">
         <thead>
           <tr className="border-b text-left text-xs uppercase text-muted-foreground">
@@ -220,6 +220,7 @@ function MessageRows({
   return (
     <>
       <tr
+        data-debug-component="InboxMessageRow"
         className={cn(
           "border-b align-top last:border-b-0",
           message.state === "unread" && "bg-primary-subtle/40",
@@ -344,7 +345,10 @@ function MessageRows({
         </td>
       </tr>
       {expanded ? (
-        <tr className="border-b bg-muted/30 align-top">
+        <tr
+          data-debug-component="InboxMessageDetails"
+          className="border-b bg-muted/30 align-top"
+        >
           <td />
           <td colSpan={8} className="px-3 py-3">
             <pre className="whitespace-pre-wrap break-words rounded-md border bg-background p-3 text-sm leading-6">

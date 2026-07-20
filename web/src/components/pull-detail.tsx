@@ -116,7 +116,10 @@ export function PullDetail({
       data-debug-component="PullDetail"
       className="mx-auto flex max-w-content flex-col gap-6 lg:max-w-content-wide lg:flex-row lg:items-start"
     >
-      <div className="flex min-w-0 flex-1 flex-col gap-6">
+      <div
+        data-debug-component="PullMainContent"
+        className="flex min-w-0 flex-1 flex-col gap-6"
+      >
         {/* No key needed for feedback safety: operation-failure feedback now lives in the app-shell
             error banner (#323), which clears on route change, so a `Merge failed: …` error can no
             longer leak onto the next PR the way the inline mutation-observer error did (#321). */}
@@ -158,7 +161,10 @@ export function PullDetail({
         />
       </div>
 
-      <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
+      <aside
+        data-debug-component="PullSidebar"
+        className="flex w-full shrink-0 flex-col gap-6 lg:w-80"
+      >
         <PullHerdrSection owner={owner} repo={repo} pull={number} />
         <WorkflowRunSection
           owner={owner}
@@ -293,7 +299,7 @@ function PullHeader({
       : undefined;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div data-debug-component="PullHeader" className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
         <DetailHeaderTitle kind="PR" number={pull.number} title={pull.title} />
         <PullDebugMenu owner={owner} repo={repo} number={pull.number} />
@@ -677,7 +683,7 @@ function ReviewList({
       : [];
 
   return (
-    <section className="flex flex-col gap-3">
+    <section data-debug-component="ReviewList" className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold">Reviews</h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -719,7 +725,10 @@ function ReviewCommitGroup({
   const count = group.reviews.length;
   const verdict = reviewGroupVerdict(group.reviews);
   return (
-    <details className="group overflow-hidden rounded-md border">
+    <details
+      data-debug-component="ReviewCommitGroup"
+      className="group overflow-hidden rounded-md border"
+    >
       <summary className="flex cursor-pointer flex-wrap items-center gap-2 bg-muted/40 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden list-none">
         <ChevronRight
           className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
@@ -767,7 +776,10 @@ function ReviewItem({
   comments: PullLineComment[];
 }) {
   return (
-    <article className="rounded-md border p-3">
+    <article
+      data-debug-component="ReviewItem"
+      className="rounded-md border p-3"
+    >
       <header className="mb-1 text-sm">
         <span className={`font-medium ${REVIEW_VERDICT_TONE[review.state]}`}>
           ● {review.state}
@@ -856,7 +868,10 @@ function FilesChanged({
   const totalDeletions = files?.reduce((s, f) => s + f.deletions, 0) ?? 0;
 
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      data-debug-component="FilesChanged"
+      className="flex flex-col gap-3"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
           Files changed{files ? ` (${files.length})` : ""}
@@ -933,7 +948,7 @@ function FileSummaryRow({
   onOpen: () => void;
 }) {
   return (
-    <li>
+    <li data-debug-component="FileSummaryRow">
       <button
         type="button"
         onClick={onOpen}
@@ -969,7 +984,10 @@ function CommentList({
   isError: boolean;
 }) {
   return (
-    <section className="flex flex-col gap-3 pb-6">
+    <section
+      data-debug-component="PullCommentList"
+      className="flex flex-col gap-3 pb-6"
+    >
       <h2 className="text-lg font-semibold">Comments</h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -983,7 +1001,11 @@ function CommentList({
         <p className="text-sm text-muted-foreground">No comments.</p>
       ) : (
         comments.map((c) => (
-          <article key={c.id} className="rounded-md border p-3">
+          <article
+            key={c.id}
+            data-debug-component="PullComment"
+            className="rounded-md border p-3"
+          >
             <header className="mb-1 text-sm font-medium">
               @{c.user.login}{" "}
               <span className="text-xs font-normal text-muted-foreground">

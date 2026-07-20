@@ -175,9 +175,14 @@ function ObjectArrayTable({ rows }: { rows: Record<string, unknown>[] }) {
 /** The whole dump: one collapsible section per top-level key, arrays tagged with their length. */
 export function DebugDataView({ data }: { data: Record<string, unknown> }) {
   return (
-    <div className="flex flex-col gap-3">
+    <div data-debug-component="DebugDataView" className="flex flex-col gap-3">
       {Object.entries(data).map(([key, value]) => (
-        <details key={key} open className="overflow-hidden rounded-md border">
+        <details
+          key={key}
+          data-debug-component="DebugDataSection"
+          open
+          className="overflow-hidden rounded-md border"
+        >
           <summary className="cursor-pointer list-none bg-muted/40 px-3 py-2 font-mono text-sm font-medium [&::-webkit-details-marker]:hidden">
             {key}
             {Array.isArray(value) ? (

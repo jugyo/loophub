@@ -110,6 +110,7 @@ function AddRepositoryDialog({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <form
+        data-debug-component="AddRepositoryDialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-repository-title"

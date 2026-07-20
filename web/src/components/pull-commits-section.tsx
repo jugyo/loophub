@@ -30,14 +30,17 @@ export function PullCommitsSection({
 }) {
   const [selectedCommit, setSelectedCommit] = useState<PullCommit | null>(null);
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      data-debug-component="PullCommitsSection"
+      className="flex flex-col gap-3"
+    >
       <h2 className="text-lg font-semibold">Commits ({commits.length})</h2>
       {commits.length === 0 ? (
         <p className="text-sm text-muted-foreground">No commits.</p>
       ) : (
         <ul className="divide-y overflow-hidden rounded-md border">
           {commits.map((commit) => (
-            <li key={commit.sha}>
+            <li key={commit.sha} data-debug-component="PullCommitRow">
               <button
                 type="button"
                 aria-label={`View changes in ${commit.sha.slice(0, 7)}: ${commit.subject}`}
@@ -118,6 +121,7 @@ function CommitDiffDialog({
       }}
     >
       <div
+        data-debug-component="CommitDiffDialog"
         role="dialog"
         aria-modal="true"
         aria-label={`Changes in ${shortSha}: ${commit.subject}`}
@@ -161,6 +165,7 @@ function CommitDiffDialog({
               {filesQuery.data.map((file) => (
                 <article
                   key={file.filename}
+                  data-debug-component="CommitDiffFile"
                   className="overflow-hidden rounded-md border"
                 >
                   <header className="flex items-center justify-between gap-3 bg-muted/40 px-3 py-2">

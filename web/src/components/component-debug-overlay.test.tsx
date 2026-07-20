@@ -104,6 +104,28 @@ describe("component debug mode", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("PullDetail"));
   });
 
+  it("renders every instance when repeated components share a name", async () => {
+    render(
+      <>
+        <ComponentDebugToggle />
+        <div data-debug-component="IssueRow">First issue</div>
+        <div data-debug-component="IssueRow">Second issue</div>
+        <ComponentDebugOverlay />
+      </>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Component debug mode" }),
+    );
+
+    expect(await screen.findAllByText("IssueRow")).toHaveLength(2);
+    expect(
+      screen.getAllByRole("button", {
+        name: "Copy component name: IssueRow",
+      }),
+    ).toHaveLength(2);
+  });
+
   it("shows the full component name in a tooltip on label hover", async () => {
     renderDebugUi("VeryLongPurposeSpecificComponentName");
 

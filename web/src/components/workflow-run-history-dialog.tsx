@@ -65,6 +65,7 @@ export function WorkflowRunHistoryDialog({
       onClick={onClose}
     >
       <div
+        data-debug-component="WorkflowRunHistoryDialog"
         role="dialog"
         aria-modal="true"
         aria-label={`Workflow run #${state.id} history`}
@@ -121,6 +122,7 @@ export function WorkflowRunHistoryDialog({
           </dl>
 
           <section
+            data-debug-component="WorkflowRunHistory"
             className="mt-6"
             aria-labelledby="workflow-run-history-heading"
           >
@@ -183,7 +185,10 @@ function Metadata({
 
 function HistoryEntry({ event }: { event: WorkflowRunHistoryEvent }) {
   return (
-    <li className="relative pb-5 last:pb-0">
+    <li
+      data-debug-component="WorkflowRunHistoryEntry"
+      className="relative pb-5 last:pb-0"
+    >
       <span className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-primary ring-4 ring-background" />
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h4 className="text-sm font-medium">{event.label}</h4>

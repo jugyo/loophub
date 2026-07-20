@@ -117,6 +117,7 @@ export function DiffFileDialog({
       }}
     >
       <div
+        data-debug-component="DiffFileDialog"
         role="dialog"
         aria-modal="true"
         aria-label={`Diff for ${file.filename}`}
@@ -276,7 +277,7 @@ function FileDiffContent({
   }
 
   return (
-    <div>
+    <div data-debug-component="FileDiffContent">
       <DiffLines patch={file.patch} />
       {comments.map((c) => (
         <div key={c.id} className="m-2 rounded-md border bg-muted/20 p-2">
@@ -310,7 +311,7 @@ function RawFilePane({
 }) {
   const file = usePullFileAtRef(owner, repo, number, path, side, true);
   return (
-    <div className="relative min-h-full">
+    <div data-debug-component="RawFilePane" className="relative min-h-full">
       {file.isLoading ? (
         <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading raw file…
@@ -360,7 +361,7 @@ function MarkdownPreviewPane({
 }) {
   const file = usePullFileAtRef(owner, repo, number, path, side, true);
   return (
-    <div className="p-3">
+    <div data-debug-component="MarkdownPreviewPane" className="p-3">
       {file.isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading preview…

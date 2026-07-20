@@ -89,6 +89,10 @@ describe("DiffFileDialog", () => {
     const dialog = screen.getByRole("dialog", {
       name: /Diff for web\/src\/a\.ts/i,
     });
+    expect(dialog.getAttribute("data-debug-component")).toBe("DiffFileDialog");
+    expect(dialog.parentElement?.hasAttribute("data-debug-component")).toBe(
+      false,
+    );
     expect(within(dialog).getByText("+const x = 1;")).toBeTruthy();
     expect(within(dialog).getAllByText("nice constant").length).toBeGreaterThan(
       0,

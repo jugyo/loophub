@@ -44,7 +44,11 @@ export function PullDebugMenu({
   }, [menuOpen]);
 
   return (
-    <div ref={containerRef} className="relative inline-block">
+    <div
+      ref={containerRef}
+      data-debug-component="PullDebugMenu"
+      className="relative inline-block"
+    >
       <Button
         variant="ghost"
         size="icon"
@@ -58,6 +62,7 @@ export function PullDebugMenu({
 
       {menuOpen ? (
         <div
+          data-debug-component="PullDebugMenuContent"
           role="menu"
           className="absolute right-0 z-50 mt-1 min-w-48 rounded-md border bg-background p-1 shadow-md"
         >
@@ -117,6 +122,7 @@ function DebugDataModal({
       onClick={onClose}
     >
       <div
+        data-debug-component="DebugDataModal"
         role="dialog"
         aria-modal="true"
         aria-label={`Debug data for PR #${number}`}

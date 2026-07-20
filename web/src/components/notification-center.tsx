@@ -236,6 +236,7 @@ function NotificationItem({
   const Icon = kindIcon(notification.kind);
   return (
     <div
+      data-debug-component="NotificationItem"
       className={cn(
         "group relative rounded-md transition-colors hover:bg-accent hover:text-accent-foreground focus-within:bg-accent focus-within:text-accent-foreground",
         read && "opacity-70",

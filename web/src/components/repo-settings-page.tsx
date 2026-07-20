@@ -83,7 +83,7 @@ function ArchivedWorkspacesSection({
   const unarchive = useSetWorkspaceArchived(owner, repo);
 
   return (
-    <section className="mt-6">
+    <section data-debug-component="ArchivedWorkspacesSection" className="mt-6">
       <h2 className="text-sm font-medium">Archived workspaces</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Archived workspaces stay registered and keep their Git branches and
@@ -172,7 +172,7 @@ function RenameSection({
   }
 
   return (
-    <section className="mt-6">
+    <section data-debug-component="RenameSection" className="mt-6">
       <h2 className="text-sm font-medium">Rename</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Changes the repository's owner/name in LoopHub. The local git folder is
@@ -252,7 +252,7 @@ function BaseBranchSection({
   }
 
   return (
-    <section className="mt-6">
+    <section data-debug-component="BaseBranchSection" className="mt-6">
       <h2 className="text-sm font-medium">Base branch</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         The default branch new PRs target and the issue list groups by. Must be
@@ -305,7 +305,7 @@ function MergeModeSection({ owner, repo }: { owner: string; repo: string }) {
     ];
 
   return (
-    <section className="mt-6">
+    <section data-debug-component="MergeModeSection" className="mt-6">
       <h2 className="text-sm font-medium">PR action</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Which write action the PR detail screen offers: the internal Merge
@@ -441,7 +441,7 @@ function AgentConfigSection({ owner, repo }: { owner: string; repo: string }) {
     : "";
 
   return (
-    <section className="mt-6">
+    <section data-debug-component="AgentConfigSection" className="mt-6">
       <h2 className="text-sm font-medium">Coding agent</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Override the application's Coding agent settings (runtime, model,
@@ -584,7 +584,7 @@ function ArchiveSection({
   }
 
   return (
-    <section className="mt-6">
+    <section data-debug-component="ArchiveSection" className="mt-6">
       <h2 className="text-sm font-medium">{action}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         {archived
@@ -648,6 +648,7 @@ function ConfirmArchiveDialog({
       onClick={onCancel}
     >
       <div
+        data-debug-component="ConfirmArchiveDialog"
         role="dialog"
         aria-modal="true"
         aria-label={`${action} repository`}

@@ -96,6 +96,7 @@ export function WorkflowStepTracker({
   const connectorSize = size === "md" ? "w-4" : "w-2.5";
   return (
     <div
+      data-debug-component="WorkflowStepTracker"
       data-workflow-step-tracker
       className="flex min-w-0 shrink-0 items-center gap-1"
       title={workflowTrackerTitle(state, tracker, conflict)}

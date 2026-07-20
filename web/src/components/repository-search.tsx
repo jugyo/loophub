@@ -70,7 +70,7 @@ export function RepositorySearch({
           }}
         >
           <div
-            data-debug-component="RepositorySearch"
+            data-debug-component="RepositorySearchDialog"
             role="dialog"
             aria-modal="true"
             aria-label="Search repository"
@@ -190,7 +190,10 @@ function SearchResults({
       {results.map((result) => {
         const isIssue = result.kind === "issue";
         return (
-          <li key={`${result.kind}-${result.number}`}>
+          <li
+            key={`${result.kind}-${result.number}`}
+            data-debug-component="SearchResultRow"
+          >
             <button
               type="button"
               onClick={() => onSelect(result)}

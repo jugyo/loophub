@@ -71,6 +71,7 @@ function StatsLink({
 }) {
   return (
     <Link
+      data-debug-component="StatsLink"
       to={to}
       className="group rounded-md border p-4 transition-colors hover:bg-accent hover:text-accent-foreground"
     >
@@ -126,7 +127,7 @@ export function DatabaseStatsPage() {
 
 function DatabaseSection({ database }: { database: Stats["database"] }) {
   return (
-    <section className="mt-6">
+    <section data-debug-component="DatabaseSection" className="mt-6">
       <h2 className="text-sm font-medium">Database file</h2>
       <p
         className="mt-1 truncate text-sm text-muted-foreground"
@@ -164,7 +165,7 @@ function SizeRow({
 
 function TablesSection({ tables }: { tables: Stats["tables"] }) {
   return (
-    <section className="mt-6">
+    <section data-debug-component="TablesSection" className="mt-6">
       <h2 className="text-sm font-medium">Tables</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Row counts for every table.
@@ -195,7 +196,7 @@ function TablesSection({ tables }: { tables: Stats["tables"] }) {
 
 function ReposSection({ repos }: { repos: Stats["repos"] }) {
   return (
-    <section className="mt-6">
+    <section data-debug-component="ReposSection" className="mt-6">
       <h2 className="text-sm font-medium">Repositories</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Issue and pull request counts per repository.

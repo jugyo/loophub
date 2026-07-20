@@ -105,6 +105,7 @@ export function AgentTree({
   const totalCost = formatCost(agentsCostTotal(rows.map(({ agent }) => agent)));
   return (
     <ol
+      data-debug-component="AgentTree"
       aria-label="Agent hierarchy"
       className="flex flex-col rounded-md border p-2 text-sm"
     >
@@ -201,6 +202,7 @@ function AgentRow({
 
   return (
     <li
+      data-debug-component="AgentRow"
       data-depth={depth}
       className={cn("relative", depth === 1 && "ml-5 border-l pl-2")}
       onMouseEnter={popover.onMouseEnter}
@@ -264,6 +266,7 @@ function AgentRow({
       {popover.open ? (
         <div className="absolute right-0 top-full z-30 w-72 pt-1">
           <div
+            data-debug-component="AgentDetails"
             role="dialog"
             aria-label={`${agent.name} agent details`}
             className="rounded-md border bg-background p-3 text-foreground shadow-lg"

@@ -243,6 +243,31 @@ describe("PullDetail", () => {
     expect(linked?.getAttribute("href")).toBe("/r/me/proj/issues/153");
   });
 
+  it("names the major PR regions for component debugging", async () => {
+    const { container } = renderDetail();
+
+    await screen.findByText("ui2: PR detail");
+    const names = new Set(
+      Array.from(
+        container.querySelectorAll<HTMLElement>("[data-debug-component]"),
+        (element) => element.dataset.debugComponent,
+      ),
+    );
+
+    for (const name of [
+      "PullDetail",
+      "PullHeader",
+      "PullCommitsSection",
+      "FilesChanged",
+      "ReviewList",
+      "PullCommentList",
+      "PullSidebar",
+      "WorktreeSection",
+    ]) {
+      expect(names.has(name)).toBe(true);
+    }
+  });
+
   it("shows a regular PR author in the header", async () => {
     renderDetail();
 

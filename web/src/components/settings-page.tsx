@@ -198,7 +198,7 @@ export function SettingsPage() {
         Instance-level settings for this LoopHub server.
       </p>
 
-      <section className="mt-6">
+      <section data-debug-component="CodingAgentSettings" className="mt-6">
         <h2 className="text-sm font-medium">Coding agent</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Default coding agent for builds.
@@ -315,7 +315,10 @@ export function SettingsPage() {
         </div>
       </section>
 
-      <section className="mt-8 max-w-md">
+      <section
+        data-debug-component="CostLimitSettings"
+        className="mt-8 max-w-md"
+      >
         <h2 className="text-sm font-medium">Task over-budget limit</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Stop a running build agent after its task cost exceeds this amount.
@@ -369,7 +372,10 @@ export function SettingsPage() {
         ) : null}
       </section>
 
-      <section className="mt-8 max-w-md">
+      <section
+        data-debug-component="WorkflowSettingsLink"
+        className="mt-8 max-w-md"
+      >
         <h2 className="text-sm font-medium">Workflows</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Create and edit workflows — the Execute/Verify prompt bundles used by

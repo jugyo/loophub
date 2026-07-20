@@ -121,7 +121,7 @@ function TaskCard({
 
   if (editing) {
     return (
-      <div className="rounded-md border p-4">
+      <div data-debug-component="TaskCard" className="rounded-md border p-4">
         <TaskForm
           owner={owner}
           repo={repo}
@@ -134,7 +134,7 @@ function TaskCard({
   }
 
   return (
-    <div className="rounded-md border p-4">
+    <div data-debug-component="TaskCard" className="rounded-md border p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-medium">{task.title}</h2>
@@ -241,7 +241,10 @@ function RunLog({
     return <p className="mt-2 text-xs text-muted-foreground">No runs yet.</p>;
 
   return (
-    <ul className="mt-2 flex flex-col gap-1 text-xs">
+    <ul
+      data-debug-component="RunLog"
+      className="mt-2 flex flex-col gap-1 text-xs"
+    >
       {runs.map((r) => (
         <li key={r.id} className="flex flex-wrap items-center gap-2">
           <span
@@ -312,6 +315,7 @@ function TaskForm({
 
   return (
     <form
+      data-debug-component="TaskForm"
       className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
@@ -442,6 +446,7 @@ function ConfirmDialog({
       onClick={onCancel}
     >
       <div
+        data-debug-component="ConfirmDialog"
         role="dialog"
         aria-modal="true"
         aria-label={title}

@@ -68,7 +68,10 @@ function RepoListRow({ repo }: { repo: Repo }) {
   const setFavorite = useSetRepoFavorite(owner, name);
 
   return (
-    <li className="flex items-center gap-1 rounded-md border pr-2 hover:bg-accent hover:text-accent-foreground">
+    <li
+      data-debug-component="RepoListRow"
+      className="flex items-center gap-1 rounded-md border pr-2 hover:bg-accent hover:text-accent-foreground"
+    >
       <Link
         to="/r/$owner/$repo"
         params={{ owner, repo: name }}

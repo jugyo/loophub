@@ -60,6 +60,7 @@ export function HerdrLaunchErrorDialog({
       onClick={onClose}
     >
       <div
+        data-debug-component="HerdrLaunchErrorDialog"
         role="dialog"
         aria-modal="true"
         aria-label="Herdr launch failed"

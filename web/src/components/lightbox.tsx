@@ -157,6 +157,7 @@ export function Lightbox({
   return (
     <div
       ref={dialogRef}
+      data-debug-component="Lightbox"
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}

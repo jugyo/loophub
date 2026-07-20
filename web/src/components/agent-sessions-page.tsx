@@ -380,7 +380,10 @@ function Controls({
   onChartModeChange: (value: ChartMode) => void;
 }) {
   return (
-    <div className="mt-6 flex flex-wrap items-center gap-4 border-b pb-4">
+    <div
+      data-debug-component="AgentSessionControls"
+      className="mt-6 flex flex-wrap items-center gap-4 border-b pb-4"
+    >
       <SegmentedControl
         icon={<CalendarRange className="size-4" />}
         label="Range"
@@ -459,7 +462,10 @@ function Overview({
   const topAgent = agentCosts[0];
 
   return (
-    <div className="mt-5 grid grid-cols-4 gap-3">
+    <div
+      data-debug-component="AgentSessionOverview"
+      className="mt-5 grid grid-cols-4 gap-3"
+    >
       <Metric
         label={`${preset.label} cost`}
         value={formatCostTotal(totalCost)}
@@ -580,7 +586,7 @@ function CostChart({
   const yTicks = maxCost > 0 ? yScale.ticks(4) : [0];
 
   return (
-    <section className="mt-6">
+    <section data-debug-component="CostChart" className="mt-6">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-sm font-medium">Cost trend</h2>
         {mode === "agent" && agentCosts.length > 0 ? (
@@ -919,7 +925,7 @@ function AgentComparison({ agents }: { agents: AgentCost[] }) {
   );
 
   return (
-    <section className="mt-6">
+    <section data-debug-component="AgentComparison" className="mt-6">
       <h2 className="text-sm font-medium">Agent comparison</h2>
       {agents.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">
@@ -958,7 +964,7 @@ function SessionsTable({ sessions }: { sessions: AgentSession[] }) {
   const sortedSessions = sortedByCost(sessions);
 
   return (
-    <section className="mt-6">
+    <section data-debug-component="SessionsTable" className="mt-6">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-sm font-medium">Sessions in selected period</h2>
         <div className="text-xs text-muted-foreground">Sorted by cost desc</div>
@@ -994,6 +1000,7 @@ function SessionsTable({ sessions }: { sessions: AgentSession[] }) {
                 return (
                   <tr
                     key={session.id}
+                    data-debug-component="AgentSessionRow"
                     className="border-b align-top last:border-b-0"
                   >
                     <td className="max-w-[220px] px-3 py-2">

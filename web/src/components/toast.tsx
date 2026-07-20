@@ -131,11 +131,15 @@ export function ToastViewport() {
   const { toasts, dismiss } = useContext(ToastContext);
   if (toasts.length === 0) return null;
   return (
-    <div className="pointer-events-none fixed top-4 right-4 z-40 flex w-80 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-2">
+    <div
+      data-debug-component="ToastViewport"
+      className="pointer-events-none fixed top-4 right-4 z-40 flex w-80 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-2"
+    >
       {toasts.map((toast) => {
         return (
           <div
             key={toast.id}
+            data-debug-component="Toast"
             role="alert"
             className={cn(
               "pointer-events-auto flex items-start gap-2 rounded-md border p-3 text-sm shadow-lg",

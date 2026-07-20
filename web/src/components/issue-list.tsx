@@ -258,7 +258,10 @@ export function IssueList({
       data-debug-component="IssueList"
       className="mx-auto flex max-w-content flex-col gap-4"
     >
-      <div className="flex flex-wrap items-center gap-2">
+      <div
+        data-debug-component="IssueListFilters"
+        className="flex flex-wrap items-center gap-2"
+      >
         {showWorkspaceFilter ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -522,7 +525,11 @@ export function IssueList({
             </ul>
           ) : (
             issueSections.map((section) => (
-              <section key={section.branch} className="flex flex-col gap-2">
+              <section
+                key={section.branch}
+                data-debug-component="IssueWorkspaceSection"
+                className="flex flex-col gap-2"
+              >
                 <div className="flex items-center justify-between gap-2 px-1">
                   <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
                     {section.branch}

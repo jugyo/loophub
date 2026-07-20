@@ -174,6 +174,7 @@ function HerdrSnapshotStaleness({
 function SessionSection({ tree }: { tree: SessionTree }) {
   return (
     <section
+      data-debug-component="SessionSection"
       aria-label={`Herdr session ${tree.sessionName}`}
       className="flex flex-col gap-3 rounded-md border p-4"
     >
@@ -228,7 +229,10 @@ function PullWorkspaceSection({
   const worktreeDir = `pr-${workspace.pull}`;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      data-debug-component="PullWorkspaceSection"
+      className="flex flex-col gap-2"
+    >
       <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
         <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
           <GitPullRequest

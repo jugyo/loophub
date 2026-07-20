@@ -71,6 +71,7 @@ function ExpandedDiagram({ svg, renderId }: { svg: string; renderId: string }) {
   return (
     <div
       ref={ref}
+      data-debug-component="ExpandedDiagram"
       className="max-h-[90vh] max-w-[90vw] overflow-auto rounded bg-white p-6 shadow-2xl [&_svg]:h-auto [&_svg]:max-w-full"
     />
   );
@@ -135,6 +136,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
     return (
       <>
         <div
+          data-debug-component="MermaidDiagram"
           className="mermaid-diagram cursor-zoom-in overflow-x-auto"
           role="button"
           tabIndex={0}

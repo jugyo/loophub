@@ -134,6 +134,7 @@ function IssuePopover({
   return (
     <div className="absolute left-0 top-full z-30 w-[420px] pt-1">
       <div
+        data-debug-component="IssuePopover"
         role="dialog"
         aria-label={`Issue #${issue.number} details`}
         className="rounded-md border bg-background p-3 text-foreground shadow-lg"
@@ -340,6 +341,7 @@ export function IssueRow({
     (issue.linked_pull_request ? [issue.linked_pull_request] : []);
   return (
     <div
+      data-debug-component="IssueRow"
       data-issue-row
       // Stable identity so keyboard selection can be restored when the list
       // re-appears after opening an issue and navigating back (#869).
@@ -450,6 +452,7 @@ export function PullRow({
 }) {
   return (
     <Link
+      data-debug-component="PullRow"
       to="/r/$owner/$repo/pulls/$number"
       params={{ owner, repo, number: String(pull.number) }}
       className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"

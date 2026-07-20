@@ -29,7 +29,10 @@ export function AppLayout() {
     // dialog here at the shell level.
     <TerminalControllerProvider>
       <ToastProvider>
-        <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
+        <div
+          data-debug-component="AppLayout"
+          className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground"
+        >
           <AppTopbar
             onOpenRepoSwitcher={() =>
               setRepoSwitcherRequest((request) => request + 1)

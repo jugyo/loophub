@@ -103,7 +103,10 @@ export function IssueDetail({
 
       <IssueHerdrSection owner={owner} repo={repo} issue={issue} />
 
-      <section className="flex flex-col gap-6 pb-6">
+      <section
+        data-debug-component="IssueDiscussion"
+        className="flex flex-col gap-6 pb-6"
+      >
         <CommentList
           owner={owner}
           repo={repo}
@@ -132,7 +135,7 @@ function IssueHeader({
   usePageTitle([`${owner}/${repo}`, `Issue #${issue.number}`, issue.title]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div data-debug-component="IssueHeader" className="flex flex-col gap-3">
       <DetailHeaderTitle
         kind="Issue"
         number={issue.number}
@@ -353,9 +356,16 @@ function CommentList({
     return <p className="text-sm text-muted-foreground">No comments yet.</p>;
   }
   return (
-    <div className="flex flex-col gap-3">
+    <div
+      data-debug-component="IssueCommentList"
+      className="flex flex-col gap-3"
+    >
       {comments.map((c) => (
-        <article key={c.id} className="rounded-md border p-3">
+        <article
+          key={c.id}
+          data-debug-component="IssueComment"
+          className="rounded-md border p-3"
+        >
           <header className="mb-1 text-sm font-medium">
             @{c.user.login}{" "}
             <span className="text-xs font-normal text-muted-foreground">
@@ -392,7 +402,10 @@ function CommentForm({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      data-debug-component="IssueCommentForm"
+      className="flex flex-col gap-2"
+    >
       <textarea
         ref={textareaRef}
         aria-label="Add a comment"
