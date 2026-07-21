@@ -31,6 +31,11 @@ type Param = unknown;
 // call) up to this many ms for the lock before giving up — the primary fix.
 const BUSY_TIMEOUT_MS = 5000;
 
+// SQLite auto-checkpoints WAL at 1,000 pages (about 4 MiB with the default
+// page size). Keep one additional checkpoint window for reuse while preventing
+// old write bursts from leaving an indefinitely large WAL on disk.
+const JOURNAL_SIZE_LIMIT_BYTES = 8 * 1024 * 1024;
+
 // busy_timeout covers the common contention case. In rare situations SQLite can still
 // return SQLITE_BUSY after the timeout elapses (e.g. a checkpoint/deadlock-prone moment),
 // so we add a small bounded retry on writes as a backstop. Reads are left to busy_timeout.
@@ -119,6 +124,7 @@ mkdirSync(dirname(path), { recursive: true });
 
 export const db = new Db(path);
 db.exec("PRAGMA journal_mode = WAL;");
+db.exec(`PRAGMA journal_size_limit = ${JOURNAL_SIZE_LIMIT_BYTES};`);
 db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};`);
 db.exec("PRAGMA foreign_keys = ON;");
 

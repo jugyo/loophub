@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -30,6 +30,28 @@ test("WAL journal mode is preserved alongside busy_timeout", () => {
     journal_mode: string;
   };
   expect(row.journal_mode.toLowerCase()).toBe("wal");
+});
+
+test("journal_size_limit caps the WAL after a checkpoint", () => {
+  const limit = D.db.query("PRAGMA journal_size_limit").get() as {
+    journal_size_limit: number;
+  };
+  expect(limit.journal_size_limit).toBe(8 * 1024 * 1024);
+
+  D.db.exec("CREATE TABLE wal_size_test (payload BLOB NOT NULL)");
+  D.db.exec("BEGIN");
+  for (let i = 0; i < 12; i++) {
+    D.db.run("INSERT INTO wal_size_test VALUES (zeroblob(1048576))");
+  }
+  D.db.exec("COMMIT");
+  D.db.query("PRAGMA wal_checkpoint(RESTART)").get();
+  // RESTART makes the next writer reset the WAL; that reset is when SQLite
+  // applies journal_size_limit to the existing file.
+  D.db.run("INSERT INTO wal_size_test VALUES (zeroblob(1))");
+
+  expect(statSync(`${process.env.LOOPHUB_DB}-wal`).size).toBeLessThanOrEqual(
+    limit.journal_size_limit,
+  );
 });
 
 test("the issue group migration is safe on a table-less database and on re-run", () => {
