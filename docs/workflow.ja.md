@@ -12,7 +12,7 @@
   への注入で届ける。**live な子への操作**は parent が Herdr を直接使い、テキスト注入は
   `herdr pane run`、実 Esc 入力は `herdr pane send-keys <pane_id> Escape` で行う（lh CLI の
   ラッパーを挟まない）。子の**起動**は `lh workflow launch-step`、**観測**は
-  `lh workflow step status` / `lh events` のまま。event 到着待ちは pure shell の one-shot watcher が
+  `lh workflow step status` / `lh events` のまま。event 到着待ちは detached `lh workflow watch` process が
   担い、親 model は wake 後だけ起動する。子は親の pane・topology を知らない。
 - **rework / 継続作業は同じ Execute セッションを優先する**（#1556）— live な executor pane があれば
   parent が `orchestrator:` を注入し、毎回 fresh Execute を起こさない。注入直前に
@@ -43,7 +43,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 |------|------|------|
 | 親 → Execute | input: issue / PR の参照。rework 時は対応すべき review の id | 起動プロンプト、または生きている pane への注入（instruction） |
 | Execute → 世界 | commits、PR body・attachment・comment | git / domain（lh CLI で自分で読み書き） |
-| Execute → 親 | ターン完了の宣言（payload なし） | `lh workflow turn done` が event を記録（fact）。shell watcher が固定 wake を送り、親が cursor drain で観測 |
+| Execute → 親 | ターン完了の宣言（payload なし） | `lh workflow turn done` が event を記録（fact）。workflow watcher が固定 wake を送り、親が cursor drain で観測 |
 | 親 → Verify | input: (issue 参照, base SHA, head SHA) の 3 ポインタ | 起動プロンプト。合成ファイルなし |
 | Verify → 世界 | pass / request_changes ＋ findings | head SHA に pin された PR review（fact） |
 | 世界 → 親 | turn done、workflow review 登録、GitHub PR feedback の観測 | one-shot watcher の固定 wake 後、親が `lh events` を cursor drain する timing signal。観測後に domain state を再確認 |
@@ -55,7 +55,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
             │
             ▼
   workflow agent（親）
-    │  shell watcher の固定 wake 後に turn_done / review_submitted / github_feedback を
+    │  workflow watcher の固定 wake 後に turn_done / review_submitted / github_feedback を
     │  `lh events` で cursor drain し、domain state を再観測して遷移する
     │
     ├─ Execute child を起動（input: repo / issue / pr のポインタ）
@@ -79,7 +79,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 
 ### 3.1 workflow agent（親 = 観測とポインタ配達に徹する orchestrator）
 
-1. run 開始時に event cursor を seed し、Execute 起動後に pure shell の one-shot watcher を1個 arm する。
+1. run 開始時に event cursor を seed し、Execute 起動後に `lh workflow watch` を1個 arm する。
    watcher は `lh events --type workflow_run --run <run>` の非空結果だけを検知し、親 pane へ固定 wake
    `orchestrator: workflow-events-ready` を最大1回送って終了する。wake 後の親は run event を空になるまで
    drain し、`lh workflow step status` などの domain state を再観測して遷移する。event と wake は timing
@@ -124,7 +124,7 @@ rework は通常 Execute の turn done 後に届く。継続指示が作業中�
 process として次を起動する。
 
 ```sh
-nohup scripts/workflow-parent-watch.sh \
+nohup lh workflow watch \
   --repo "$repo" \
   --run "$run" \
   --since "$cursor" \
@@ -150,8 +150,8 @@ wake は timing signal に限り、event id・type・payload・外部入力を�
 `id > cursor` query が検知する。
 
 watcher は runtime 名・model 名を受け取らず、agent binary を起動しない。wake transport は Herdr のみで、
-Claude Code／Codex／Grok の親 pane に同じ固定文字列を送る。`lh`、`sleep`、Herdr delivery の失敗は log と
-非0 exit で可視化し、retry や fallback delivery は行わない。event 待機中は shell process だけが poll し、
+Claude Code／Codex／Grok の親 pane に同じ固定文字列を送る。event 読み取り、待機、Herdr delivery の失敗は log と
+非0 exit で可視化し、retry や fallback delivery は行わない。event 待機中は独立した `lh` process だけが poll し、
 親の model turn や LLM tool resume は発生しない。
 
 #### Issue #1697 の実測 Evidence
@@ -182,27 +182,22 @@ herdr pane run <pane> 'orchestrator: workflow-events-ready'
   provider から `You hit your weekly limit.` が返った。transport と runtime の turn 開始は成功し、model
   応答完了だけが provider quota により失敗した。runtime 固有の分岐や wake 文字列は不要だった。
 
-同日、fake `lh` が全 argv を記録して常に空 stdout を返し、fake `herdr` が配送回数を記録する環境で、
-watcher を30秒間実行した。計測終了時だけ watcher PID を終了した。
+移行後の deterministic test は、event reader・待機・Herdr delivery を core procedure の依存として差し替え、
+空結果から非空結果への遷移を再現する。各 poll が同じ exact filter を使い、非空になった時点で固定 wake を
+1回だけ配送して正常終了することを確認する。
 
 ```sh
-PATH=<fake-bin> WATCH_EVIDENCE_DIR=<tmp> scripts/workflow-parent-watch.sh \
-  --repo jugyo/loophub --run 246 --since 999999999 \
-  --herdr-session evidence-session --parent-pane evidence-pane &
-watcher_pid=$!
-sleep 30
-kill "$watcher_pid"
+npm test -- core/service/workflow-watch.test.ts cli/workflow-watch.test.ts
 ```
 
-結果は `elapsed_seconds=30`、`poll_count=30`、`wake_count=0`、計測終了時の watcher status は `143` だった。
-最初と最後の poll はいずれも次の argv であり、30秒間 server-side filter を維持した。
+core test が検証する poll query は毎回次の filter である。
 
 ```text
-events --since 999999999 --repo jugyo/loophub --type workflow_run --run 246 --order asc --limit 1
+since=7 repo=jugyo/loophub types=[workflow_run] runId=42 order=asc limit=1
 ```
 
-この区間は単一 shell tool call 内で完結し、Herdr delivery が0回だったため、追加 parent model turn / LLM
-tool resume は0回だった。確認後、専用 workspace は close し、計測用一時 directory は Trash へ移動した。
+CLI integration test は実 DB event と fake Herdr command を使い、`lh workflow watch` が固定 wake を配送して
+0 終了することを確認する。不正引数と各依存 failure は poll／retry／fallback を起こさず非0で可視化する。
 
 ### 注入 round の監査
 
@@ -439,7 +434,7 @@ herdr pane send-keys <pane_id> Escape       # コスト超過時に active child
   `prior-verdicts.md` が生成されない。
 - status は HEAD / base / 最新 review の freshness を返し、head advance で pass が stale になる。
 - PR body・comment・attachment だけの更新では pass が fresh のまま維持される。
-- 親は turn done、review submitted、GitHub feedback の event を shell watcher の固定 wake 後に
+- 親は turn done、review submitted、GitHub feedback の event を workflow watcher の固定 wake 後に
   `lh events` で空まで drain し、その都度 domain state を再観測する。空待機中に親 model turn は発生しない。
 - 親 rollout と同じ累積 token counter prefix を引き継ぐ fork 子 2 本を集約しても prefix は 1 回だけ
   加算され、各子は fork 後の増分だけになる。

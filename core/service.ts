@@ -25,6 +25,10 @@ export { sync } from "./service/sync.ts";
 export type { HerdrRepoSessions } from "./service/terminal.ts";
 export { terminal } from "./service/terminal.ts";
 export { workflowRuns } from "./service/workflow-runs.ts";
+export {
+  parseWorkflowWatchArgs,
+  workflowWatch,
+} from "./service/workflow-watch.ts";
 export { workflows } from "./service/workflows.ts";
 export { workspaces } from "./service/workspaces.ts";
 export { worktrees } from "./service/worktrees.ts";

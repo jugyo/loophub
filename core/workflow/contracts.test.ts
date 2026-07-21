@@ -212,12 +212,12 @@ test("parent documents inject-round audit without a new command", () => {
   );
 });
 
-test("parent uses one-shot shell watchers and reacts to cost limit facts", () => {
+test("parent uses one-shot workflow watchers and reacts to cost limit facts", () => {
   const contract = workflowContractText("parent");
 
-  expect(contract).toContain("## One-shot shell watcher protocol");
+  expect(contract).toContain("## One-shot workflow watcher protocol");
   expect(contract).toContain("orchestrator: workflow-events-ready");
-  expect(contract).toContain("scripts/workflow-parent-watch.sh");
+  expect(contract).toContain("nohup lh workflow watch");
   expect(contract).toContain("watcher_armed");
   expect(contract).toContain("nohup");
   expect(contract).toContain('--herdr-session "$HERDR_SESSION"');
@@ -402,10 +402,10 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
     "`lh workflow run increase-cost-limit --run <run> --expected-limit <limit_usd>`",
   );
   expect(design).toContain("orchestrator: workflow-events-ready");
-  expect(design).toContain("scripts/workflow-parent-watch.sh");
+  expect(design).toContain("nohup lh workflow watch");
   expect(design).toContain("watcher_armed=true");
   expect(design).toContain("親 model turn を終える");
-  expect(design).toContain("shell process だけが poll");
+  expect(design).toContain("独立した `lh` process だけが poll");
   expect(design).toContain("空まで drain");
   // Execute-side interpretation of additional work (issue/PR extension, same completion path).
   expect(design).toContain("追加作業指示");

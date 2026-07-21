@@ -25,7 +25,7 @@ test("the parent prompt states the run context it must not re-derive", () => {
   expect(prompt).toContain("worktree: . (cwd. base branch: main)");
 });
 
-// The parent decides every transition by observing step status after a shell-watcher wake — never
+// The parent decides every transition by observing step status after a watcher wake — never
 // from pane output or the wake itself. The exact commands are the prompt's contract with the parent.
 test("the parent prompt seeds, launches Execute, arms a watcher, then drains on wake", () => {
   const prompt = parentUserPrompt(INPUT);
@@ -33,7 +33,7 @@ test("the parent prompt seeds, launches Execute, arms a watcher, then drains on 
     "lh events --repo 'me/workflow-run' --order desc --limit 1 --json";
   const launch =
     "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute";
-  const arm = "scripts/workflow-parent-watch.sh";
+  const arm = "lh workflow watch";
   const drain =
     "lh events --since <cursor> --repo 'me/workflow-run' --type workflow_run --run 42 --order asc --json";
   expect(prompt).toContain(seed);

@@ -15,12 +15,12 @@ outside the repo root and outside a LoopHub worktree, or when you need to overri
 
 - **Facts live in domain state.** Completion, commits, and reviews are recorded in git / the PR /
   reviews. There is no direct message from a child carrying its result, and no artifact to place.
-- **Events wake; domain state decides.** A pure shell one-shot watcher polls the events table while
+- **Events wake; domain state decides.** A detached `lh workflow watch` process polls the events table while
   no model turn is active. It delivers one fixed wake to this parent pane; the parent then pulls the
   rows and observes domain state. Live control of a child (text injection, Esc) is something **you**
   do via herdr when needed — neither that delivery nor the watcher wake is a transition signal.
 
-## One-shot shell watcher protocol
+## One-shot workflow watcher protocol
 
 Keep two values in this live context: a monotonically increasing event `cursor` and a boolean
 `watcher_armed`. Do not perform persistent event polling in a model turn, sleep in a model turn, or
@@ -40,7 +40,7 @@ use an LLM tool-resume loop while waiting for events.
    ```sh
    log_dir="${LOOPHUB_HOME:-$HOME/.loophub}/logs/workflow-parent-watch"
    mkdir -p "$log_dir"
-   nohup scripts/workflow-parent-watch.sh \
+   nohup lh workflow watch \
      --repo "<repo>" \
      --run "<run>" \
      --since "$cursor" \
@@ -48,7 +48,7 @@ use an LLM tool-resume loop while waiting for events.
      --parent-pane "$HERDR_PANE_ID" \
      >>"$log_dir/run-<run>.log" 2>&1 </dev/null &
    ```
-4. After the arm command succeeds, set `watcher_armed=true` and end the model turn. The watcher shell
+4. After the arm command succeeds, set `watcher_armed=true` and end the model turn. The detached `lh`
    process is the only component that polls during an empty wait.
 
 Do not start a second watcher while `watcher_armed=true`, including when a human message starts a

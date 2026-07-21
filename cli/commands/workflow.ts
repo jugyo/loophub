@@ -688,6 +688,19 @@ async function escalate(): Promise<void> {
     );
 }
 
+async function watch(): Promise<void> {
+  const watchIndex = process.argv.indexOf("watch", 2);
+  const service = await svc();
+  try {
+    const input = service.parseWorkflowWatchArgs(
+      process.argv.slice(watchIndex + 1),
+    );
+    await service.workflowWatch.watch(input);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
 export async function run(): Promise<void> {
   const s = await svc();
   if (sub === "list") {
@@ -751,6 +764,8 @@ export async function run(): Promise<void> {
     await turnDone();
   } else if (sub === "escalate") {
     await escalate();
+  } else if (sub === "watch") {
+    await watch();
   } else if (sub === "step") {
     if (rest[0] === "input") await stepInput();
     else if (rest[0] === "status") await stepStatus();
