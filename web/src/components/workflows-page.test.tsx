@@ -1,5 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
+import {
   cleanup,
   fireEvent,
   render,
@@ -47,11 +55,27 @@ function renderPage(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const rootRoute = createRootRoute({ component: Outlet });
+  const settingsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings",
+    component: () => <div data-testid="settings-page" />,
+  });
+  const workflowsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings/workflows",
+    component: WorkflowsPage,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([settingsRoute, workflowsRoute]),
+    history: createMemoryHistory({ initialEntries: ["/settings/workflows"] }),
+  });
+  const result = render(
     <QueryClientProvider client={queryClient}>
-      <WorkflowsPage />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { ...result, router };
 }
 
 afterEach(() => {
@@ -60,6 +84,41 @@ afterEach(() => {
 });
 
 describe("WorkflowsPage", () => {
+  it("shows the shared tab navigation and returns to Agent settings", async () => {
+    const { router } = renderPage({});
+
+    const tablist = await screen.findByRole("tablist", {
+      name: "Settings categories",
+    });
+    expect(
+      within(tablist)
+        .getByRole("tab", { name: "Workflows" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+
+    fireEvent.click(within(tablist).getByRole("tab", { name: "Agent" }));
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/settings"),
+    );
+    expect(screen.getByTestId("settings-page")).toBeTruthy();
+  });
+
+  it("shows the shared settings header above the workflow management content", async () => {
+    renderPage({});
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Instance-level settings for this LoopHub server."),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Workflows" }),
+    ).toBeTruthy();
+    expect(await screen.findByText("No workflows yet.")).toBeTruthy();
+  });
+
   it("lists saved workflows with their name and description", async () => {
     renderPage({}, [workflow()]);
     expect(await screen.findByText("standard")).toBeTruthy();

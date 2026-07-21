@@ -3,8 +3,9 @@
 
 import { Link } from "@tanstack/react-router";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { CodingAgent } from "@/api/types";
+import { SettingsHeader, type SettingsTab } from "@/components/settings-header";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -176,9 +177,7 @@ function AgentModelEffortDropdown({
 export function SettingsPage() {
   const { data, isLoading } = useSettings();
   const update = useUpdateSettings();
-  const [activeTab, setActiveTab] = useState<"agent" | "workflows">("agent");
-  const agentTabRef = useRef<HTMLButtonElement>(null);
-  const workflowsTabRef = useRef<HTMLButtonElement>(null);
+  const [activeTab, setActiveTab] = useState<SettingsTab>("agent");
   const devCostLimitUsd = data?.devCostLimitUsd ?? 10;
   const [devCostLimitInput, setDevCostLimitInput] = useState(
     moneyInputValue(devCostLimitUsd),
@@ -195,65 +194,16 @@ export function SettingsPage() {
   const devCostLimitChanged =
     !devCostLimitError && parsedDevCostLimit !== devCostLimitUsd;
 
-  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const nextTab = activeTab === "agent" ? "workflows" : "agent";
-    setActiveTab(nextTab);
-    (nextTab === "agent" ? agentTabRef : workflowsTabRef).current?.focus();
-  };
-
   return (
     <div data-debug-component="SettingsPage" className="mx-auto max-w-content">
-      <h1 className="text-2xl font-semibold">Settings</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Instance-level settings for this LoopHub server.
-      </p>
-
-      <div
-        role="tablist"
-        aria-label="Settings categories"
-        className="mt-6 flex h-11 items-end gap-1 border-b"
-      >
-        <button
-          ref={agentTabRef}
-          id="settings-agent-tab"
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "agent"}
-          aria-controls="settings-agent-panel"
-          tabIndex={activeTab === "agent" ? 0 : -1}
-          className={cn(
-            "-mb-px inline-flex h-11 items-center justify-center border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            activeTab === "agent"
-              ? "border-primary text-foreground"
-              : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-          )}
-          onClick={() => setActiveTab("agent")}
-          onKeyDown={handleTabKeyDown}
-        >
-          Agent
-        </button>
-        <button
-          ref={workflowsTabRef}
-          id="settings-workflows-tab"
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "workflows"}
-          aria-controls="settings-workflows-panel"
-          tabIndex={activeTab === "workflows" ? 0 : -1}
-          className={cn(
-            "-mb-px inline-flex h-11 items-center justify-center border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            activeTab === "workflows"
-              ? "border-primary text-foreground"
-              : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-          )}
-          onClick={() => setActiveTab("workflows")}
-          onKeyDown={handleTabKeyDown}
-        >
-          Workflows
-        </button>
-      </div>
+      <SettingsHeader
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        panelIds={{
+          agent: "settings-agent-panel",
+          workflows: "settings-workflows-panel",
+        }}
+      />
 
       <div
         id="settings-agent-panel"

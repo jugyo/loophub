@@ -4,10 +4,12 @@
 // are the only user-configurable part. Same workflows/* RPCs the CLI uses; this is the
 // management UI. Start-workflow and run status are intentionally out of scope here.
 
+import { useNavigate } from "@tanstack/react-router";
 import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
 import type { Workflow, WorkflowStepContracts } from "@/api/types";
+import { SettingsHeader } from "@/components/settings-header";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
 import { useSettings } from "@/queries/settings";
@@ -35,54 +37,72 @@ const STEP_FIELDS: {
 ];
 
 export function WorkflowsPage() {
+  const navigate = useNavigate();
   const { data: workflows, isLoading, isError } = useWorkflows();
   const [creating, setCreating] = useState(false);
 
   return (
     <div data-debug-component="WorkflowsPage" className="mx-auto max-w-content">
-      <h1 className="text-2xl font-semibold">Workflows</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Workflows are global prompt bundles for the fixed Execute/Verify
-        development loop. Each step's prompt is the only configurable part; the
-        step contracts are fixed.
-      </p>
+      <SettingsHeader
+        activeTab="workflows"
+        onTabChange={(tab) => {
+          if (tab === "agent") void navigate({ to: "/settings" });
+        }}
+        panelIds={{ workflows: "settings-workflow-management-panel" }}
+      />
 
-      <div className="mt-4">
-        {creating ? null : (
-          <Button
-            aria-label="New workflow"
-            title="New workflow"
-            onClick={() => setCreating(true)}
-          >
-            <Plus className="size-4" />
-            New workflow
-          </Button>
-        )}
-      </div>
+      <div
+        id="settings-workflow-management-panel"
+        role="tabpanel"
+        aria-labelledby="settings-workflows-tab"
+        className="mt-6"
+      >
+        <h2 className="text-2xl font-semibold">Workflows</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Workflows are global prompt bundles for the fixed Execute/Verify
+          development loop. Each step's prompt is the only configurable part;
+          the step contracts are fixed.
+        </p>
 
-      {creating ? (
-        <div className="mt-4 rounded-md border p-4">
-          <h2 className="mb-3 font-medium">New workflow</h2>
-          <WorkflowForm
-            mode="create"
-            onDone={() => setCreating(false)}
-            onCancel={() => setCreating(false)}
-          />
+        <div className="mt-4">
+          {creating ? null : (
+            <Button
+              aria-label="New workflow"
+              title="New workflow"
+              onClick={() => setCreating(true)}
+            >
+              <Plus className="size-4" />
+              New workflow
+            </Button>
+          )}
         </div>
-      ) : null}
 
-      <div className="mt-6 flex flex-col gap-3">
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : isError ? (
-          <p className="text-sm text-destructive">Failed to load workflows.</p>
-        ) : !workflows || workflows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No workflows yet.</p>
-        ) : (
-          workflows.map((workflow) => (
-            <WorkflowCard key={workflow.id} workflow={workflow} />
-          ))
-        )}
+        {creating ? (
+          <div className="mt-4 rounded-md border p-4">
+            <h2 className="mb-3 font-medium">New workflow</h2>
+            <WorkflowForm
+              mode="create"
+              onDone={() => setCreating(false)}
+              onCancel={() => setCreating(false)}
+            />
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex flex-col gap-3">
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : isError ? (
+            <p className="text-sm text-destructive">
+              Failed to load workflows.
+            </p>
+          ) : !workflows || workflows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No workflows yet.</p>
+          ) : (
+            workflows.map((workflow) => (
+              <WorkflowCard key={workflow.id} workflow={workflow} />
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
