@@ -3,7 +3,7 @@
 
 import { Link } from "@tanstack/react-router";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { CodingAgent } from "@/api/types";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
@@ -176,6 +176,9 @@ function AgentModelEffortDropdown({
 export function SettingsPage() {
   const { data, isLoading } = useSettings();
   const update = useUpdateSettings();
+  const [activeTab, setActiveTab] = useState<"agent" | "workflows">("agent");
+  const agentTabRef = useRef<HTMLButtonElement>(null);
+  const workflowsTabRef = useRef<HTMLButtonElement>(null);
   const devCostLimitUsd = data?.devCostLimitUsd ?? 10;
   const [devCostLimitInput, setDevCostLimitInput] = useState(
     moneyInputValue(devCostLimitUsd),
@@ -191,6 +194,14 @@ export function SettingsPage() {
   const devCostLimitChanged =
     !devCostLimitError && parsedDevCostLimit !== devCostLimitUsd;
 
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const nextTab = activeTab === "agent" ? "workflows" : "agent";
+    setActiveTab(nextTab);
+    (nextTab === "agent" ? agentTabRef : workflowsTabRef).current?.focus();
+  };
+
   return (
     <div data-debug-component="SettingsPage" className="mx-auto max-w-content">
       <h1 className="text-2xl font-semibold">Settings</h1>
@@ -198,196 +209,257 @@ export function SettingsPage() {
         Instance-level settings for this LoopHub server.
       </p>
 
-      <section data-debug-component="CodingAgentSettings" className="mt-6">
-        <h2 className="text-sm font-medium">Coding agent</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Default coding agent for builds.
-        </p>
-        <div
-          role="radiogroup"
-          aria-label="Coding agent"
-          className="mt-3 max-w-md rounded-md border"
-        >
-          {CODING_AGENT_OPTIONS.map((o) => {
-            const active = codingAgent === o.value;
-            return (
-              <button
-                key={o.value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                disabled={isLoading || update.isPending}
-                className={cn(
-                  "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
-                  disabledButtonStateClasses,
-                )}
-                onClick={() => {
-                  if (active) return;
-                  update.mutate({ codingAgent: o.value });
-                }}
-              >
-                <Check
-                  className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
-                  aria-hidden="true"
-                />
-                <span>{o.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Child settings, one block per agent, indented under the agent
-            selection above instead of living in a separate flat section. */}
-        <div className="mt-3 max-w-md border-l-2 pl-4">
-          {CODING_AGENT_OPTIONS.map((agentOption, i) => {
-            const autoModeOnLaunch =
-              data?.agents?.[agentOption.value]?.autoModeOnLaunch ?? false;
-            const model = data?.agents?.[agentOption.value]?.model ?? "";
-            const effort = data?.agents?.[agentOption.value]?.effort ?? "";
-            return (
-              <div
-                key={agentOption.value}
-                className={i > 0 ? "mt-4" : undefined}
-              >
-                <h3 className="text-xs font-medium text-muted-foreground">
-                  {agentOption.label} — Auto mode on launch
-                </h3>
-                <div
-                  role="radiogroup"
-                  aria-label={`Auto mode on launch (${agentOption.label})`}
-                  className="mt-1 max-w-sm rounded-md border"
-                >
-                  {autoModeOptions().map((o) => {
-                    const active = autoModeOnLaunch === o.value;
-                    return (
-                      <button
-                        key={String(o.value)}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        disabled={isLoading || update.isPending}
-                        className={cn(
-                          "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
-                          disabledButtonStateClasses,
-                        )}
-                        onClick={() => {
-                          if (active) return;
-                          update.mutate({
-                            agent: agentOption.value,
-                            autoModeOnLaunch: o.value,
-                          });
-                        }}
-                      >
-                        <Check
-                          className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
-                          aria-hidden="true"
-                        />
-                        <span>{o.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <h3 className="mt-4 text-xs font-medium text-muted-foreground">
-                  {agentOption.label} — Default model & effort
-                </h3>
-                <div className="mt-1 max-w-sm">
-                  <AgentModelEffortDropdown
-                    label={agentOption.label}
-                    model={model}
-                    effort={effort}
-                    modelSuggestions={MODEL_SUGGESTIONS[agentOption.value]}
-                    effortSuggestions={EFFORT_SUGGESTIONS[agentOption.value]}
-                    disabled={isLoading}
-                    saving={update.isPending}
-                    onSave={(m, ef) =>
-                      update.mutate({
-                        agent: agentOption.value,
-                        model: m,
-                        effort: ef,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section
-        data-debug-component="CostLimitSettings"
-        className="mt-8 max-w-md"
+      <div
+        role="tablist"
+        aria-label="Settings categories"
+        className="mt-6 flex h-11 items-end gap-1 border-b"
       >
-        <h2 className="text-sm font-medium">Task over-budget limit</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Stop a running build agent after its task cost exceeds this amount.
-        </p>
-        <form
-          className="mt-3 flex items-start gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (devCostLimitError || !devCostLimitChanged) return;
-            update.mutate({ devCostLimitUsd: parsedDevCostLimit });
-          }}
+        <button
+          ref={agentTabRef}
+          id="settings-agent-tab"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "agent"}
+          aria-controls="settings-agent-panel"
+          tabIndex={activeTab === "agent" ? 0 : -1}
+          className={cn(
+            "-mb-px inline-flex h-11 items-center justify-center border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            activeTab === "agent"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+          )}
+          onClick={() => setActiveTab("agent")}
+          onKeyDown={handleTabKeyDown}
         >
-          <label className="flex-1 text-sm">
-            <span className="sr-only">Task over-budget limit in USD</span>
-            <span className="flex rounded-md border bg-background shadow-sm focus-within:outline-none focus-within:ring-2 focus-within:ring-ring">
-              <span className="select-none border-r px-3 py-2 text-muted-foreground">
-                $
-              </span>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={devCostLimitInput}
-                disabled={isLoading || update.isPending}
-                aria-label="Task over-budget limit in USD"
-                aria-invalid={devCostLimitError ? "true" : undefined}
-                aria-describedby={
-                  devCostLimitError ? "dev-cost-limit-error" : undefined
-                }
-                className="min-w-0 flex-1 bg-transparent px-3 py-2 tabular-nums outline-none disabled:opacity-50"
-                onChange={(event) => setDevCostLimitInput(event.target.value)}
-              />
-            </span>
-          </label>
-          <Button
-            type="submit"
-            variant="secondary"
-            disabled={
-              isLoading ||
-              update.isPending ||
-              Boolean(devCostLimitError) ||
-              !devCostLimitChanged
-            }
-          >
-            Save
-          </Button>
-        </form>
-        {devCostLimitError ? (
-          <p id="dev-cost-limit-error" className="mt-2 text-sm text-red-600">
-            {devCostLimitError}
+          Agent
+        </button>
+        <button
+          ref={workflowsTabRef}
+          id="settings-workflows-tab"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "workflows"}
+          aria-controls="settings-workflows-panel"
+          tabIndex={activeTab === "workflows" ? 0 : -1}
+          className={cn(
+            "-mb-px inline-flex h-11 items-center justify-center border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            activeTab === "workflows"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+          )}
+          onClick={() => setActiveTab("workflows")}
+          onKeyDown={handleTabKeyDown}
+        >
+          Workflows
+        </button>
+      </div>
+
+      <div
+        id="settings-agent-panel"
+        role="tabpanel"
+        aria-labelledby="settings-agent-tab"
+        hidden={activeTab !== "agent"}
+        className="mt-6"
+      >
+        <section data-debug-component="CodingAgentSettings">
+          <h2 className="text-sm font-medium">Coding agent</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Default coding agent for builds.
           </p>
-        ) : null}
-      </section>
+          <div
+            role="radiogroup"
+            aria-label="Coding agent"
+            className="mt-3 max-w-md rounded-md border"
+          >
+            {CODING_AGENT_OPTIONS.map((o) => {
+              const active = codingAgent === o.value;
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={isLoading || update.isPending}
+                  className={cn(
+                    "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
+                    disabledButtonStateClasses,
+                  )}
+                  onClick={() => {
+                    if (active) return;
+                    update.mutate({ codingAgent: o.value });
+                  }}
+                >
+                  <Check
+                    className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
+                    aria-hidden="true"
+                  />
+                  <span>{o.label}</span>
+                </button>
+              );
+            })}
+          </div>
 
-      <section
-        data-debug-component="WorkflowSettingsLink"
-        className="mt-8 max-w-md"
-      >
-        <h2 className="text-sm font-medium">Workflows</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Create and edit workflows — the Execute/Verify prompt bundles used by
-          the development loop.
-        </p>
-        <Link
-          to="/settings/workflows"
-          className="mt-3 inline-flex items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+          {/* Child settings, one block per agent, indented under the agent
+            selection above instead of living in a separate flat section. */}
+          <div className="mt-3 max-w-md border-l-2 pl-4">
+            {CODING_AGENT_OPTIONS.map((agentOption, i) => {
+              const autoModeOnLaunch =
+                data?.agents?.[agentOption.value]?.autoModeOnLaunch ?? false;
+              const model = data?.agents?.[agentOption.value]?.model ?? "";
+              const effort = data?.agents?.[agentOption.value]?.effort ?? "";
+              return (
+                <div
+                  key={agentOption.value}
+                  className={i > 0 ? "mt-4" : undefined}
+                >
+                  <h3 className="text-xs font-medium text-muted-foreground">
+                    {agentOption.label} — Auto mode on launch
+                  </h3>
+                  <div
+                    role="radiogroup"
+                    aria-label={`Auto mode on launch (${agentOption.label})`}
+                    className="mt-1 max-w-sm rounded-md border"
+                  >
+                    {autoModeOptions().map((o) => {
+                      const active = autoModeOnLaunch === o.value;
+                      return (
+                        <button
+                          key={String(o.value)}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          disabled={isLoading || update.isPending}
+                          className={cn(
+                            "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
+                            disabledButtonStateClasses,
+                          )}
+                          onClick={() => {
+                            if (active) return;
+                            update.mutate({
+                              agent: agentOption.value,
+                              autoModeOnLaunch: o.value,
+                            });
+                          }}
+                        >
+                          <Check
+                            className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
+                            aria-hidden="true"
+                          />
+                          <span>{o.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <h3 className="mt-4 text-xs font-medium text-muted-foreground">
+                    {agentOption.label} — Default model & effort
+                  </h3>
+                  <div className="mt-1 max-w-sm">
+                    <AgentModelEffortDropdown
+                      label={agentOption.label}
+                      model={model}
+                      effort={effort}
+                      modelSuggestions={MODEL_SUGGESTIONS[agentOption.value]}
+                      effortSuggestions={EFFORT_SUGGESTIONS[agentOption.value]}
+                      disabled={isLoading}
+                      saving={update.isPending}
+                      onSave={(m, ef) =>
+                        update.mutate({
+                          agent: agentOption.value,
+                          model: m,
+                          effort: ef,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section
+          data-debug-component="CostLimitSettings"
+          className="mt-8 max-w-md"
         >
-          Manage workflows
-        </Link>
-      </section>
+          <h2 className="text-sm font-medium">Task over-budget limit</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Stop a running build agent after its task cost exceeds this amount.
+          </p>
+          <form
+            className="mt-3 flex items-start gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (devCostLimitError || !devCostLimitChanged) return;
+              update.mutate({ devCostLimitUsd: parsedDevCostLimit });
+            }}
+          >
+            <label className="flex-1 text-sm">
+              <span className="sr-only">Task over-budget limit in USD</span>
+              <span className="flex rounded-md border bg-background shadow-sm focus-within:outline-none focus-within:ring-2 focus-within:ring-ring">
+                <span className="select-none border-r px-3 py-2 text-muted-foreground">
+                  $
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={devCostLimitInput}
+                  disabled={isLoading || update.isPending}
+                  aria-label="Task over-budget limit in USD"
+                  aria-invalid={devCostLimitError ? "true" : undefined}
+                  aria-describedby={
+                    devCostLimitError ? "dev-cost-limit-error" : undefined
+                  }
+                  className="min-w-0 flex-1 bg-transparent px-3 py-2 tabular-nums outline-none disabled:opacity-50"
+                  onChange={(event) => setDevCostLimitInput(event.target.value)}
+                />
+              </span>
+            </label>
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={
+                isLoading ||
+                update.isPending ||
+                Boolean(devCostLimitError) ||
+                !devCostLimitChanged
+              }
+            >
+              Save
+            </Button>
+          </form>
+          {devCostLimitError ? (
+            <p id="dev-cost-limit-error" className="mt-2 text-sm text-red-600">
+              {devCostLimitError}
+            </p>
+          ) : null}
+        </section>
+      </div>
+
+      <div
+        id="settings-workflows-panel"
+        role="tabpanel"
+        aria-labelledby="settings-workflows-tab"
+        hidden={activeTab !== "workflows"}
+        className="mt-6"
+      >
+        <section
+          data-debug-component="WorkflowSettingsLink"
+          className="max-w-md"
+        >
+          <h2 className="text-sm font-medium">Workflows</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Create and edit workflows — the Execute/Verify prompt bundles used
+            by the development loop.
+          </p>
+          <Link
+            to="/settings/workflows"
+            className="mt-3 inline-flex items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Manage workflows
+          </Link>
+        </section>
+      </div>
     </div>
   );
 }

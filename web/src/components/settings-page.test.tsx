@@ -31,15 +31,25 @@ type AgentSettingsForTest = {
   effort: string;
 };
 
-function mockFetch(
-  initialAgents: Record<CodingAgent, AgentSettingsForTest> = {
-    "claude-code": { autoModeOnLaunch: false, model: "opus", effort: "medium" },
-    codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
+const DEFAULT_AGENT_SETTINGS: Record<CodingAgent, AgentSettingsForTest> = {
+  "claude-code": { autoModeOnLaunch: false, model: "opus", effort: "medium" },
+  codex: { autoModeOnLaunch: false, model: "gpt-5.5", effort: "medium" },
+  grok: {
+    autoModeOnLaunch: false,
+    model: "grok-code-fast-1",
+    effort: "medium",
   },
+};
+
+function mockFetch(
+  initialAgents: Partial<Record<CodingAgent, AgentSettingsForTest>> = {},
   initialCodingAgent: CodingAgent = "claude-code",
   initialDevCostLimitUsd = 10,
 ) {
-  const agents = { ...initialAgents };
+  const agents: Record<CodingAgent, AgentSettingsForTest> = {
+    ...DEFAULT_AGENT_SETTINGS,
+    ...initialAgents,
+  };
   let codingAgent = initialCodingAgent;
   let devCostLimitUsd = initialDevCostLimitUsd;
   return mockRpcFetch({
@@ -77,7 +87,7 @@ function mockFetch(
 }
 
 function renderSettings(
-  initialAgents?: Record<CodingAgent, AgentSettingsForTest>,
+  initialAgents?: Partial<Record<CodingAgent, AgentSettingsForTest>>,
   initialCodingAgent: CodingAgent = "claude-code",
   initialDevCostLimitUsd = 10,
 ) {
@@ -126,6 +136,102 @@ async function openModelDropdown(label: string): Promise<HTMLElement> {
 }
 
 describe("SettingsPage", () => {
+  it("shows Agent and Workflows tabs with Agent selected initially", async () => {
+    renderSettings();
+
+    const tablist = await screen.findByRole("tablist", {
+      name: "Settings categories",
+    });
+    const agentTab = within(tablist).getByRole("tab", { name: "Agent" });
+    const workflowsTab = within(tablist).getByRole("tab", {
+      name: "Workflows",
+    });
+
+    expect(agentTab.getAttribute("aria-selected")).toBe("true");
+    expect(workflowsTab.getAttribute("aria-selected")).toBe("false");
+
+    const agentPanel = screen.getByRole("tabpanel", { name: "Agent" });
+    expect(
+      within(agentPanel).getByRole("heading", { name: "Coding agent" }),
+    ).toBeTruthy();
+    expect(
+      within(agentPanel).getByRole("heading", {
+        name: "Task over-budget limit",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Manage workflows" })).toBeNull();
+  });
+
+  it("keeps each controlled panel in the DOM and hides only the inactive panel", async () => {
+    renderSettings();
+
+    const agentTab = await screen.findByRole("tab", { name: "Agent" });
+    const workflowsTab = screen.getByRole("tab", { name: "Workflows" });
+    const agentPanel = document.getElementById(
+      agentTab.getAttribute("aria-controls") ?? "",
+    );
+    const workflowsPanel = document.getElementById(
+      workflowsTab.getAttribute("aria-controls") ?? "",
+    );
+
+    expect(agentPanel?.hidden).toBe(false);
+    expect(workflowsPanel?.hidden).toBe(true);
+
+    fireEvent.click(workflowsTab);
+
+    expect(agentPanel?.hidden).toBe(true);
+    expect(workflowsPanel?.hidden).toBe(false);
+  });
+
+  it("switches to the Workflows content and opens workflow management", async () => {
+    renderSettings();
+
+    const agentTab = await screen.findByRole("tab", { name: "Agent" });
+    const workflowsTab = screen.getByRole("tab", { name: "Workflows" });
+    fireEvent.click(workflowsTab);
+
+    expect(agentTab.getAttribute("aria-selected")).toBe("false");
+    expect(workflowsTab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("tabpanel", { name: "Agent" })).toBeNull();
+
+    const workflowsPanel = screen.getByRole("tabpanel", {
+      name: "Workflows",
+    });
+    expect(
+      within(workflowsPanel).getByRole("heading", { name: "Workflows" }),
+    ).toBeTruthy();
+    expect(
+      within(workflowsPanel).getByText(/Execute\/Verify prompt bundles/),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      within(workflowsPanel).getByRole("link", {
+        name: "Manage workflows",
+      }),
+    );
+    expect(await screen.findByTestId("workflows-page")).toBeTruthy();
+  });
+
+  it("switches tabs with arrow keys and keeps only the selected tab in the tab order", async () => {
+    renderSettings();
+
+    const agentTab = await screen.findByRole("tab", { name: "Agent" });
+    const workflowsTab = screen.getByRole("tab", { name: "Workflows" });
+    expect(agentTab.getAttribute("tabindex")).toBe("0");
+    expect(workflowsTab.getAttribute("tabindex")).toBe("-1");
+
+    agentTab.focus();
+    fireEvent.keyDown(agentTab, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(workflowsTab);
+    expect(agentTab.getAttribute("tabindex")).toBe("-1");
+    expect(workflowsTab.getAttribute("tabindex")).toBe("0");
+    expect(workflowsTab.getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.keyDown(workflowsTab, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(agentTab);
+    expect(agentTab.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("shows the current auto-mode-on-launch setting per agent", async () => {
     renderSettings({
       "claude-code": {
