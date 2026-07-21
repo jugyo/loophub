@@ -16,7 +16,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockRpcFetch, RpcFault } from "@/api/rpc-mock";
+import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { Workflow } from "@/api/types";
 import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts.ts";
 import { WorkflowsPage } from "./workflows-page";
@@ -119,6 +119,29 @@ describe("WorkflowsPage", () => {
     expect(await screen.findByText("No workflows yet.")).toBeTruthy();
   });
 
+  it("shows and saves the workflow contract language beside the workflow list", async () => {
+    renderPage({
+      "settings/get": () => ({ workflowContractLanguage: "ja" }),
+      "settings/update": () => ({ workflowContractLanguage: "en" }),
+    });
+
+    const group = await screen.findByRole("radiogroup", {
+      name: "Workflow contract language",
+    });
+    expect(
+      within(group)
+        .getByRole("radio", { name: "日本語" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+
+    fireEvent.click(within(group).getByRole("radio", { name: "English" }));
+    await waitFor(() =>
+      expect(rpcCall("settings/update")?.params).toMatchObject({
+        workflowContractLanguage: "en",
+      }),
+    );
+  });
+
   it("lists saved workflows with their name and description", async () => {
     renderPage({}, [workflow()]);
     expect(await screen.findByText("standard")).toBeTruthy();
@@ -135,10 +158,73 @@ describe("WorkflowsPage", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "New workflow" }),
     );
-    const executeField = (await screen.findByRole("textbox", {
+    const dialog = await screen.findByRole("dialog", { name: "New workflow" });
+    const executeField = within(dialog).getByRole("textbox", {
       name: "Execute prompt",
-    })) as HTMLTextAreaElement;
+    }) as HTMLTextAreaElement;
     expect(executeField.value).toBe(WORKFLOW_EXAMPLE_PROMPTS.execute_prompt);
+  });
+
+  it("creates a workflow in a dialog and refreshes the list", async () => {
+    let workflows: Workflow[] = [];
+    renderPage({
+      "workflows/list": () => workflows,
+      "workflows/create": (params) => {
+        const created = workflow({
+          id: 2,
+          name: params.name,
+          description: params.description,
+          execute_prompt: params.execute_prompt,
+          verify_prompt: params.verify_prompt,
+        });
+        workflows = [created];
+        return created;
+      },
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New workflow" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "New workflow" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), {
+      target: { value: "fast-loop" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create workflow" }),
+    );
+
+    expect(await screen.findByText("fast-loop")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "New workflow" })).toBeNull();
+  });
+
+  it("edits a workflow in a dialog and refreshes the list", async () => {
+    let workflows = [workflow()];
+    renderPage({
+      "workflows/list": () => workflows,
+      "workflows/update": (params) => {
+        const updated = workflow({
+          ...workflows[0],
+          name: params.new_name,
+          description: params.description,
+        });
+        workflows = [updated];
+        return updated;
+      },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const dialog = screen.getByRole("dialog", { name: 'Edit "standard"' });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), {
+      target: { value: "standard-v2" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+
+    expect(await screen.findByText("standard-v2")).toBeTruthy();
+    expect(
+      screen.queryByRole("dialog", { name: 'Edit "standard"' }),
+    ).toBeNull();
   });
 
   it("shows every system prompt in a read-only dialog on the create form", async () => {
@@ -159,8 +245,57 @@ describe("WorkflowsPage", () => {
     ).toBeTruthy();
     expect(within(dialog).queryByRole("textbox")).toBeNull();
 
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(
+      screen.queryByRole("dialog", { name: "Execute system prompt" }),
+    ).toBeNull();
+    expect(screen.getByRole("dialog", { name: "New workflow" })).toBeTruthy();
+  });
+
+  it("keeps the workflow dialog and its input open when closing a nested dialog from its backdrop", async () => {
+    renderPage({});
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New workflow" }),
+    );
+    const workflowDialog = screen.getByRole("dialog", {
+      name: "New workflow",
+    });
+    const name = within(workflowDialog).getByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "unsaved workflow" } });
+    fireEvent.click(
+      within(workflowDialog).getAllByRole("button", {
+        name: "System prompt",
+      })[0],
+    );
+
+    const systemPromptDialog = screen.getByRole("dialog", {
+      name: "Execute system prompt",
+    });
+    fireEvent.click(systemPromptDialog.parentElement!);
+
+    expect(
+      screen.queryByRole("dialog", { name: "Execute system prompt" }),
+    ).toBeNull();
+    expect(
+      within(screen.getByRole("dialog", { name: "New workflow" })).getByRole(
+        "textbox",
+        { name: "Name" },
+      ),
+    ).toHaveProperty("value", "unsaved workflow");
+  });
+
+  it("focuses the workflow form so Escape closes the dialog immediately", async () => {
+    renderPage({});
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New workflow" }),
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "New workflow" });
+    const name = within(dialog).getByRole("textbox", { name: "Name" });
+    expect(document.activeElement).toBe(name);
+    fireEvent.keyDown(name, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "New workflow" })).toBeNull();
   });
 
   it("shows the fixed system prompt in the configured language", async () => {
@@ -179,9 +314,9 @@ describe("WorkflowsPage", () => {
     );
 
     expect(
-      await within(screen.getByRole("dialog")).findByText(
-        /日本語の contract 本文/,
-      ),
+      await within(
+        screen.getByRole("dialog", { name: "Execute system prompt" }),
+      ).findByText(/日本語の contract 本文/),
     ).toBeTruthy();
   });
 
@@ -204,7 +339,12 @@ describe("WorkflowsPage", () => {
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Close system prompt" }),
     );
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Verify system prompt" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("dialog", { name: 'Edit "standard"' }),
+    ).toBeTruthy();
   });
 
   it("surfaces a 422 validation error as a form error on create", async () => {

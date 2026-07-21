@@ -5,14 +5,15 @@
 // management UI. Start-workflow and run status are intentionally out of scope here.
 
 import { useNavigate } from "@tanstack/react-router";
-import { Plus, X } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
 import type { Workflow, WorkflowStepContracts } from "@/api/types";
 import { SettingsHeader } from "@/components/settings-header";
-import { Button } from "@/components/ui/button";
+import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
-import { useSettings } from "@/queries/settings";
+import { cn } from "@/lib/utils";
+import { useSettings, useUpdateSettings } from "@/queries/settings";
 import {
   useCreateWorkflow,
   useDeleteWorkflow,
@@ -57,15 +58,17 @@ export function WorkflowsPage() {
         aria-labelledby="settings-workflows-tab"
         className="mt-6"
       >
-        <h2 className="text-2xl font-semibold">Workflows</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Workflows are global prompt bundles for the fixed Execute/Verify
-          development loop. Each step's prompt is the only configurable part;
-          the step contracts are fixed.
-        </p>
+        <WorkflowContractLanguageSettings />
 
-        <div className="mt-4">
-          {creating ? null : (
+        <section className="mt-8">
+          <h2 className="text-2xl font-semibold">Workflows</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Workflows are global prompt bundles for the fixed Execute/Verify
+            development loop. Each step's prompt is the only configurable part;
+            the step contracts are fixed.
+          </p>
+
+          <div className="mt-4">
             <Button
               aria-label="New workflow"
               title="New workflow"
@@ -74,37 +77,93 @@ export function WorkflowsPage() {
               <Plus className="size-4" />
               New workflow
             </Button>
-          )}
-        </div>
-
-        {creating ? (
-          <div className="mt-4 rounded-md border p-4">
-            <h2 className="mb-3 font-medium">New workflow</h2>
-            <WorkflowForm
-              mode="create"
-              onDone={() => setCreating(false)}
-              onCancel={() => setCreating(false)}
-            />
           </div>
-        ) : null}
 
-        <div className="mt-6 flex flex-col gap-3">
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : isError ? (
-            <p className="text-sm text-destructive">
-              Failed to load workflows.
-            </p>
-          ) : !workflows || workflows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No workflows yet.</p>
-          ) : (
-            workflows.map((workflow) => (
-              <WorkflowCard key={workflow.id} workflow={workflow} />
-            ))
-          )}
-        </div>
+          {creating ? (
+            <WorkflowDialog
+              title="New workflow"
+              onClose={() => setCreating(false)}
+            >
+              <WorkflowForm
+                mode="create"
+                onDone={() => setCreating(false)}
+                onCancel={() => setCreating(false)}
+              />
+            </WorkflowDialog>
+          ) : null}
+
+          <div className="mt-6 flex flex-col gap-3">
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : isError ? (
+              <p className="text-sm text-destructive">
+                Failed to load workflows.
+              </p>
+            ) : !workflows || workflows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No workflows yet.</p>
+            ) : (
+              workflows.map((workflow) => (
+                <WorkflowCard key={workflow.id} workflow={workflow} />
+              ))
+            )}
+          </div>
+        </section>
       </div>
     </div>
+  );
+}
+
+function WorkflowContractLanguageSettings() {
+  const { data, isLoading } = useSettings();
+  const update = useUpdateSettings();
+  const language = data?.workflowContractLanguage ?? "en";
+
+  return (
+    <section
+      data-debug-component="WorkflowContractLanguageSettings"
+      className="max-w-md"
+    >
+      <h2 className="text-sm font-medium">Workflow contract language</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Language for LoopHub&apos;s fixed Parent, Execute, and Verify
+        instructions. New runs keep the language selected when they start.
+      </p>
+      <div
+        role="radiogroup"
+        aria-label="Workflow contract language"
+        className="mt-3 rounded-md border"
+      >
+        {[
+          { value: "en" as const, label: "English" },
+          { value: "ja" as const, label: "日本語" },
+        ].map((option) => {
+          const active = language === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={isLoading || update.isPending}
+              className={cn(
+                "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
+                disabledButtonStateClasses,
+              )}
+              onClick={() => {
+                if (active) return;
+                update.mutate({ workflowContractLanguage: option.value });
+              }}
+            >
+              <Check
+                className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
+                aria-hidden="true"
+              />
+              <span>{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -112,22 +171,6 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const del = useDeleteWorkflow();
-
-  if (editing) {
-    return (
-      <div
-        data-debug-component="WorkflowCard"
-        className="rounded-md border p-4"
-      >
-        <WorkflowForm
-          mode="edit"
-          workflow={workflow}
-          onDone={() => setEditing(false)}
-          onCancel={() => setEditing(false)}
-        />
-      </div>
-    );
-  }
 
   return (
     <div data-debug-component="WorkflowCard" className="rounded-md border p-4">
@@ -158,6 +201,20 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
         </div>
       </div>
 
+      {editing ? (
+        <WorkflowDialog
+          title={`Edit "${workflow.name}"`}
+          onClose={() => setEditing(false)}
+        >
+          <WorkflowForm
+            mode="edit"
+            workflow={workflow}
+            onDone={() => setEditing(false)}
+            onCancel={() => setEditing(false)}
+          />
+        </WorkflowDialog>
+      ) : null}
+
       {confirmingDelete ? (
         <ConfirmDialog
           title={`Delete "${workflow.name}"?`}
@@ -182,6 +239,51 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+function WorkflowDialog({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[6vh]"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+    >
+      <div
+        data-debug-component="WorkflowDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="flex max-h-[88vh] w-full max-w-4xl flex-col rounded-lg border bg-background shadow-lg"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="flex items-center justify-between gap-2 border-b px-5 py-4">
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={`Close ${title}`}
+            onClick={onClose}
+          >
+            <X className="size-4" />
+          </Button>
+        </header>
+        <div className="min-h-0 overflow-y-auto p-5">{children}</div>
+      </div>
     </div>
   );
 }
@@ -273,6 +375,7 @@ function WorkflowForm({
           className="rounded-md border bg-background px-3 py-1.5 text-sm"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          autoFocus
           required
         />
       </label>
@@ -360,19 +463,15 @@ function SystemPromptDialog({
   error: boolean;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const title = `${stepLabel} system prompt`;
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-4"
       onClick={onClose}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Escape") onClose();
+      }}
     >
       <div
         data-debug-component="SystemPromptDialog"

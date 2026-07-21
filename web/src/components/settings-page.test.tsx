@@ -110,7 +110,6 @@ function renderSettings(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  // SettingsPage renders a <Link> to /settings/workflows (#1006), which needs a router context.
   const rootRoute = createRootRoute({ component: Outlet });
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -126,11 +125,12 @@ function renderSettings(
     routeTree: rootRoute.addChildren([indexRoute, workflowsRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { ...result, router };
 }
 
 async function modelDropdown(label: string): Promise<HTMLButtonElement> {
@@ -174,74 +174,15 @@ describe("SettingsPage", () => {
     expect(screen.queryByRole("link", { name: "Manage workflows" })).toBeNull();
   });
 
-  it("keeps each controlled panel in the DOM and hides only the inactive panel", async () => {
-    renderSettings();
+  it("opens the Workflows tab at /settings/workflows", async () => {
+    const { router } = renderSettings();
 
-    const agentTab = await screen.findByRole("tab", { name: "Agent" });
-    const workflowsTab = screen.getByRole("tab", { name: "Workflows" });
-    const agentPanel = document.getElementById(
-      agentTab.getAttribute("aria-controls") ?? "",
-    );
-    const workflowsPanel = document.getElementById(
-      workflowsTab.getAttribute("aria-controls") ?? "",
-    );
+    fireEvent.click(await screen.findByRole("tab", { name: "Workflows" }));
 
-    expect(agentPanel?.hidden).toBe(false);
-    expect(workflowsPanel?.hidden).toBe(true);
-
-    fireEvent.click(workflowsTab);
-
-    expect(agentPanel?.hidden).toBe(true);
-    expect(workflowsPanel?.hidden).toBe(false);
-  });
-
-  it("switches to the Workflows content and opens workflow management", async () => {
-    renderSettings();
-
-    const agentTab = await screen.findByRole("tab", { name: "Agent" });
-    const workflowsTab = screen.getByRole("tab", { name: "Workflows" });
-    fireEvent.click(workflowsTab);
-
-    expect(agentTab.getAttribute("aria-selected")).toBe("false");
-    expect(workflowsTab.getAttribute("aria-selected")).toBe("true");
-    expect(screen.queryByRole("tabpanel", { name: "Agent" })).toBeNull();
-
-    const workflowsPanel = screen.getByRole("tabpanel", {
-      name: "Workflows",
-    });
-    expect(
-      within(workflowsPanel).getByRole("heading", { name: "Workflows" }),
-    ).toBeTruthy();
-    expect(
-      within(workflowsPanel).getByText(/Execute\/Verify prompt bundles/),
-    ).toBeTruthy();
-
-    fireEvent.click(
-      within(workflowsPanel).getByRole("link", {
-        name: "Manage workflows",
-      }),
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/settings/workflows"),
     );
     expect(await screen.findByTestId("workflows-page")).toBeTruthy();
-  });
-
-  it("switches tabs with arrow keys and keeps only the selected tab in the tab order", async () => {
-    renderSettings();
-
-    const agentTab = await screen.findByRole("tab", { name: "Agent" });
-    const workflowsTab = screen.getByRole("tab", { name: "Workflows" });
-    expect(agentTab.getAttribute("tabindex")).toBe("0");
-    expect(workflowsTab.getAttribute("tabindex")).toBe("-1");
-
-    agentTab.focus();
-    fireEvent.keyDown(agentTab, { key: "ArrowRight" });
-    expect(document.activeElement).toBe(workflowsTab);
-    expect(agentTab.getAttribute("tabindex")).toBe("-1");
-    expect(workflowsTab.getAttribute("tabindex")).toBe("0");
-    expect(workflowsTab.getAttribute("aria-selected")).toBe("true");
-
-    fireEvent.keyDown(workflowsTab, { key: "ArrowLeft" });
-    expect(document.activeElement).toBe(agentTab);
-    expect(agentTab.getAttribute("aria-selected")).toBe("true");
   });
 
   it("shows the current auto-mode-on-launch setting per agent", async () => {
@@ -505,26 +446,5 @@ describe("SettingsPage", () => {
         .disabled,
     ).toBe(true);
     expect(rpcCall("settings/update")).toBeUndefined();
-  });
-
-  it("shows and saves the workflow contract language on the Workflows tab", async () => {
-    renderSettings(undefined, "claude-code", 10, "ja");
-    fireEvent.click(await screen.findByRole("tab", { name: "Workflows" }));
-
-    const group = screen.getByRole("radiogroup", {
-      name: "Workflow contract language",
-    });
-    expect(
-      within(group)
-        .getByRole("radio", { name: "日本語" })
-        .getAttribute("aria-checked"),
-    ).toBe("true");
-
-    fireEvent.click(within(group).getByRole("radio", { name: "English" }));
-    await waitFor(() =>
-      expect(rpcCall("settings/update")?.params).toMatchObject({
-        workflowContractLanguage: "en",
-      }),
-    );
   });
 });

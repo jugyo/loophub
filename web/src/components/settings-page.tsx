@@ -1,11 +1,11 @@
 // Instance-level settings (#474) — the first entry point for global config.json settings, as
 // opposed to the per-repo settings screen (see repo-settings-page.tsx's MergeModeSection).
 
-import { Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CodingAgent } from "@/api/types";
-import { SettingsHeader, type SettingsTab } from "@/components/settings-header";
+import { SettingsHeader } from "@/components/settings-header";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -175,9 +175,9 @@ function AgentModelEffortDropdown({
 }
 
 export function SettingsPage() {
+  const navigate = useNavigate();
   const { data, isLoading } = useSettings();
   const update = useUpdateSettings();
-  const [activeTab, setActiveTab] = useState<SettingsTab>("agent");
   const devCostLimitUsd = data?.devCostLimitUsd ?? 10;
   const [devCostLimitInput, setDevCostLimitInput] = useState(
     moneyInputValue(devCostLimitUsd),
@@ -188,7 +188,6 @@ export function SettingsPage() {
   }, [devCostLimitUsd]);
 
   const codingAgent = data?.codingAgent ?? "claude-code";
-  const workflowContractLanguage = data?.workflowContractLanguage ?? "en";
   const devCostLimitError = validateDevCostLimit(devCostLimitInput);
   const parsedDevCostLimit = Number(devCostLimitInput.trim());
   const devCostLimitChanged =
@@ -197,19 +196,19 @@ export function SettingsPage() {
   return (
     <div data-debug-component="SettingsPage" className="mx-auto max-w-content">
       <SettingsHeader
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        panelIds={{
-          agent: "settings-agent-panel",
-          workflows: "settings-workflows-panel",
+        activeTab="agent"
+        onTabChange={(tab) => {
+          if (tab === "workflows") {
+            void navigate({ to: "/settings/workflows" });
+          }
         }}
+        panelIds={{ agent: "settings-agent-panel" }}
       />
 
       <div
         id="settings-agent-panel"
         role="tabpanel"
         aria-labelledby="settings-agent-tab"
-        hidden={activeTab !== "agent"}
         className="mt-6"
       >
         <section data-debug-component="CodingAgentSettings">
@@ -384,79 +383,6 @@ export function SettingsPage() {
               {devCostLimitError}
             </p>
           ) : null}
-        </section>
-      </div>
-
-      <div
-        id="settings-workflows-panel"
-        role="tabpanel"
-        aria-labelledby="settings-workflows-tab"
-        hidden={activeTab !== "workflows"}
-        className="mt-6"
-      >
-        <section
-          data-debug-component="WorkflowContractLanguageSettings"
-          className="max-w-md"
-        >
-          <h2 className="text-sm font-medium">Workflow contract language</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Language for LoopHub&apos;s fixed Parent, Execute, and Verify
-            instructions. New runs keep the language selected when they start.
-          </p>
-          <div
-            role="radiogroup"
-            aria-label="Workflow contract language"
-            className="mt-3 rounded-md border"
-          >
-            {[
-              { value: "en" as const, label: "English" },
-              { value: "ja" as const, label: "日本語" },
-            ].map((option) => {
-              const active = workflowContractLanguage === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  disabled={isLoading || update.isPending}
-                  className={cn(
-                    "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
-                    disabledButtonStateClasses,
-                  )}
-                  onClick={() => {
-                    if (active) return;
-                    update.mutate({
-                      workflowContractLanguage: option.value,
-                    });
-                  }}
-                >
-                  <Check
-                    className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
-                    aria-hidden="true"
-                  />
-                  <span>{option.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <section
-          data-debug-component="WorkflowSettingsLink"
-          className="mt-8 max-w-md"
-        >
-          <h2 className="text-sm font-medium">Workflows</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create and edit workflows — the Execute/Verify prompt bundles used
-            by the development loop.
-          </p>
-          <Link
-            to="/settings/workflows"
-            className="mt-3 inline-flex items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
-          >
-            Manage workflows
-          </Link>
         </section>
       </div>
     </div>
