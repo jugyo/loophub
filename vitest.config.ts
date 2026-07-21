@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     include: [
       "vitest.config.test.ts",
+      "scripts/**/*.test.ts",
       "core/**/*.test.ts",
       "cli/**/*.test.ts",
       "web/server/**/*.test.ts",

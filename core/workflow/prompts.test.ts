@@ -25,22 +25,33 @@ test("the parent prompt states the run context it must not re-derive", () => {
   expect(prompt).toContain("worktree: . (cwd. base branch: main)");
 });
 
-// The parent decides every transition by observing step status after polling a run event — never
-// from pane output. The exact commands are the prompt's contract with the parent agent.
-test("the parent prompt drives transitions by polling events and observing step status", () => {
+// The parent decides every transition by observing step status after a shell-watcher wake — never
+// from pane output or the wake itself. The exact commands are the prompt's contract with the parent.
+test("the parent prompt seeds, launches Execute, arms a watcher, then drains on wake", () => {
   const prompt = parentUserPrompt(INPUT);
-  expect(prompt).toContain(
-    "lh events --repo 'me/workflow-run' --order desc --limit 1 --json",
-  );
-  expect(prompt).toContain(
-    "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute",
-  );
-  expect(prompt).toContain(
-    "lh events --since <cursor> --repo 'me/workflow-run' --type workflow_run --run 42 --order asc --json",
-  );
+  const seed =
+    "lh events --repo 'me/workflow-run' --order desc --limit 1 --json";
+  const launch =
+    "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute";
+  const arm = "scripts/workflow-parent-watch.sh";
+  const drain =
+    "lh events --since <cursor> --repo 'me/workflow-run' --type workflow_run --run 42 --order asc --json";
+  expect(prompt).toContain(seed);
+  expect(prompt).toContain(launch);
+  expect(prompt).toContain(arm);
+  expect(prompt).toContain('--herdr-session "$HERDR_SESSION"');
+  expect(prompt).toContain('--parent-pane "$HERDR_PANE_ID"');
+  expect(prompt).toContain("orchestrator: workflow-events-ready");
+  expect(prompt).toContain(drain);
   expect(prompt).toContain(
     "lh workflow step status 42 --repo 'me/workflow-run' --json",
   );
+  expect(prompt.indexOf(seed)).toBeLessThan(prompt.indexOf(launch));
+  expect(prompt.indexOf(launch)).toBeLessThan(prompt.indexOf(arm));
+  expect(prompt.indexOf("orchestrator: workflow-events-ready")).toBeLessThan(
+    prompt.indexOf(drain),
+  );
+  expect(prompt).not.toContain("Stay alive and poll");
   expect(prompt).not.toContain("lh subscribe");
 });
 

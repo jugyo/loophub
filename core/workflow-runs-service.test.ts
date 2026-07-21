@@ -1171,7 +1171,7 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("would exceed 3");
   expect(contract).toContain("--step execute --review <id>");
   expect(contract).toMatch(/Verify as a\s+fresh child/u);
-  // Escalation uses issue comment + inbox while the persistent parent waits for human input.
+  // Escalation uses issue comment + inbox while the parent waits for human input.
   expect(contract).toContain("lh issue comment");
   expect(contract).toContain("lh inbox send");
   expect(contract).toContain("run await-human");

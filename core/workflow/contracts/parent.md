@@ -15,29 +15,73 @@ outside the repo root and outside a LoopHub worktree, or when you need to overri
 
 - **Facts live in domain state.** Completion, commits, and reviews are recorded in git / the PR /
   reviews. There is no direct message from a child carrying its result, and no artifact to place.
-- **Events are pulled, not delivered.** Stay alive for the run's lifetime and poll the events table
-  yourself. Do not wait for injected notifications into *your* pane. Live control of a child (text
-  injection, Esc) is something **you** do via herdr when needed — it is not a transition signal.
+- **Events wake; domain state decides.** A pure shell one-shot watcher polls the events table while
+  no model turn is active. It delivers one fixed wake to this parent pane; the parent then pulls the
+  rows and observes domain state. Live control of a child (text injection, Esc) is something **you**
+  do via herdr when needed — neither that delivery nor the watcher wake is a transition signal.
 
-## Persistent event loop
+## One-shot shell watcher protocol
 
-Seed an in-context cursor once at startup from the newest repository event id:
+Keep two values in this live context: a monotonically increasing event `cursor` and a boolean
+`watcher_armed`. Do not perform persistent event polling in a model turn, sleep in a model turn, or
+use an LLM tool-resume loop while waiting for events.
 
-`lh events --repo '<repo>' --order desc --limit 1 --json`
+### Initial seed, Execute, and arm
 
-Use the returned event id, or `0` when the result is empty. Then remain active and repeat:
+1. Seed `cursor` once from the newest repository event id:
 
-1. Pull only this run's workflow events, in ascending order:
+   `lh events --repo '<repo>' --order desc --limit 1 --json`
+
+   Use the returned event id, or `0` when the result is empty.
+2. Launch Execute as described below and record its `agent` and `session` lines.
+3. Require this parent to be running in Herdr (`HERDR_ENV=1`) with `HERDR_SESSION` and
+   `HERDR_PANE_ID` set. Create the watcher log directory, then arm the watcher from the worktree:
+
+   ```sh
+   log_dir="${LOOPHUB_HOME:-$HOME/.loophub}/logs/workflow-parent-watch"
+   mkdir -p "$log_dir"
+   nohup scripts/workflow-parent-watch.sh \
+     --repo "<repo>" \
+     --run "<run>" \
+     --since "$cursor" \
+     --herdr-session "$HERDR_SESSION" \
+     --parent-pane "$HERDR_PANE_ID" \
+     >>"$log_dir/run-<run>.log" 2>&1 </dev/null &
+   ```
+4. After the arm command succeeds, set `watcher_armed=true` and end the model turn. The watcher shell
+   process is the only component that polls during an empty wait.
+
+Do not start a second watcher while `watcher_armed=true`, including when a human message starts a
+parent turn. Human instructions still use the existing continuing / cost / escalation paths; keep the
+already armed watcher and do not duplicate it.
+
+### Fixed wake, drain, and re-arm
+
+Treat only the exact line `orchestrator: workflow-events-ready` as the internal watcher wake. It is a
+timing signal only and contains no event id, type, payload, or external input. On that wake:
+
+1. Set `watcher_armed=false`. Infer no domain fact from the wake itself.
+2. Pull only this run's workflow events in ascending order:
 
    `lh events --since <cursor> --repo '<repo>' --type workflow_run --run <run> --order asc --json`
-2. Process every returned row in order as described below.
-3. Advance the cursor to the largest processed event id.
-4. When no rows are returned, sleep briefly and poll again.
+3. Process every returned row in id order. Re-read `lh workflow step status` (and any review or
+   referenced GitHub resource required by the event) before deciding a transition. Advance `cursor`
+   only to the largest processed event id; never advance it for the wake or an unprocessed row.
+4. Repeat the same query with the updated cursor until it returns no rows. Include events created by
+   the parent's own transition operations in this drain.
+5. Re-arm exactly one watcher with the latest cursor, set `watcher_armed=true`, and end the model
+   turn. Keep doing this after a fresh passing verdict because the run remains `running`.
 
-The `--type workflow_run --run <run>` filters are mandatory. Do not fetch unrelated events and filter
-them client-side. Keep the cursor in this live context or the run journal. After a parent crash, seed
-again from the newest id; at-least-once handling and visible, human-recoverable duplicate side effects
-are acceptable.
+The `--type workflow_run --run <run>` filters are mandatory on every parent drain query and every
+watcher poll. Do not fetch unrelated events and filter them client-side. An event arriving after the
+final empty drain but before re-arm is still found by the new watcher's first `id > cursor` query.
+
+The watcher log is the visible failure path. If `lh`, `sleep`, or Herdr delivery fails, the one-shot
+watcher exits non-zero without retry or fallback delivery. Do not silently auto-recover; report the
+log and let a human decide whether to re-arm. Do not pass an agent runtime or model to the watcher,
+and do not launch `claude`, `codex`, `grok`, or any other agent binary from it; Herdr is its only wake
+transport. After a parent crash, seed again from the newest id; at-least-once handling and visible,
+human-recoverable duplicate side effects are acceptable.
 
 Event rows are timing signals, never transition facts:
 
@@ -117,9 +161,9 @@ Human handoff (escalation only):
 ## Live child control
 
 Use herdr only to operate a child that is already live. Do **not** treat pane output, child self-
-reports, or idle status as transition facts — transitions still come only from
-`lh workflow step status` and pulled events. Injecting text is delivery only; it is never itself a
-reason to advance, rework, or complete a step.
+reports, idle status, or the fixed watcher wake as transition facts — transitions still come only
+from `lh workflow step status` and domain resources re-read during an event drain.
+Injecting text is delivery only; it is never itself a reason to advance, rework, or complete a step.
 
 ### Resolve the Execute injection target
 
@@ -154,10 +198,10 @@ use this path. Verify never reuses a prior verifier session via injection for ju
    active target afterward.
 5. Do **not** wait for the child to go idle before injecting. Idle detection is forbidden. Rework
    normally arrives after Execute has declared turn done; a continuing instruction may land while
-   Execute is mid-turn — still inject and keep polling; do not Esc unless you observed
-   `workflow_run.cost_exceeded`.
-6. Keep observing via events + `lh workflow step status`. A successful inject is not execute
-   complete; only a later HEAD advance (and turn-done timing signal) is.
+   Execute is mid-turn — still inject, keep the existing watcher armed, and do not arm another one.
+   Do not Esc unless you observed `workflow_run.cost_exceeded`.
+6. On the next fixed wake, drain events and re-read `lh workflow step status`. A successful inject is
+   not execute complete; only a later HEAD advance (and turn-done timing signal) is.
 
 ### Cost interrupt
 
@@ -179,7 +223,8 @@ Handle each `workflow_run.cost_exceeded` event id exactly once:
 6. Display exactly one human confirmation in the parent pane: **“Cost limit exceeded. Continue?”**
    with only **yes** and **no** choices. Prefer the runtime's interactive choice UI when available;
    otherwise print the question and wait for an unambiguous `yes` or `no`. Remember the event id in
-   this live context and do not display the pane notification or confirmation again while polling.
+   this live context and do not display the pane notification or confirmation again across later
+   wake / drain cycles.
 7. Make the selected result visible in the parent pane as `Continuation decision: yes` or
    `Continuation decision: no`.
    - **yes**: first run `lh workflow step status <run> --repo '<repo>' --json` and use its current
@@ -194,7 +239,7 @@ Every command above is fallible. If resolving the active pane, setting the hold,
 sending the notification, or displaying the confirmation fails, do not report the interrupt /
 confirmation as successful and do not resume. Print the failing command and error in the parent
 pane, record the same failure in an issue comment and Inbox notification, and retain or establish the
-human hold so an operator can recover it. A later poll of the same edge-triggered event must not
+human hold so an operator can recover it. Later handling of the same edge-triggered event must not
 silently retry side effects or duplicate the question.
 
 ### Auditing inject rounds
@@ -224,17 +269,17 @@ auditing. Existing domain facts already let a human reconstruct a round:
 
 | From | Condition (observed via step status) | Action |
 |---|---|---|
-| start | run started | seed the event cursor, launch Execute, then enter the pull loop |
+| start | run started | seed the event cursor, launch Execute, arm one watcher, then end the model turn |
 | Execute | execute complete (HEAD ahead of base, advanced past the last review) | `lh workflow run advance-to-verify`, then launch Verify |
 | Execute | escalation event from the active Execute child | Read the event reason, notify the human, and stop automatic progression |
-| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running and wait for the next human instruction or pulled event |
+| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running, re-arm one watcher, and wait for the next human instruction or fixed wake |
 | Verified + continuing | human requests additional work | Prefer inject into the live Execute pane; otherwise launch with `--note` (see Continuing after a pass) |
 | Verified + continuing | HEAD advances past the passing review and Execute declares turn done | Launch a fresh Verify child for the new HEAD (the run already remains at Verify) |
 | Verified + continuing | Execute declares turn done without a HEAD advance | Keep the existing pass fresh and continue waiting |
 | Verify | verify complete, latest review `fresh` + `request_changes` | rework -> Execute (see Rework) |
 
 A fresh passing review verifies the current HEAD but does not complete or freeze the run. Keep the
-parent observation loop available so a human can request more work in the same run.
+one-shot watcher protocol available so a human can request more work in the same run.
 PR body, comment, and attachment updates leave the pass fresh because HEAD did not change. A code
 commit makes it stale; after Execute declares turn done, launch a fresh Verify child directly. The
 run has no permanent-stop command: it stays `running` until a human ends it. Execute includes
@@ -353,8 +398,9 @@ On escalation, do both:
 2. Notify the human via Inbox (command above).
 
 Keep the run `running`, but stop all automatic progression: do not launch steps or change rework
-count. Stay in this session, continue advancing the event cursor without acting on progression events,
-and wait for an explicit human instruction. A timer, a new unrelated event, or a child merely
+count. Stay in this session; on each fixed wake, drain and advance the event cursor without acting on
+progression events, re-arm one watcher, end the model turn, and wait for an explicit human instruction.
+A timer, a new unrelated event, or a child merely
 finishing is not an instruction. When the human answers, re-check step status and deliver the
 instruction to Execute (inject when live, otherwise launch a fresh Execute or Verify child with the
 instruction as a note); no resume command is needed.
@@ -371,8 +417,8 @@ run.
 - Do not merge changes.
 - Do not use child-session resume (`claude --resume` / fork-session) for orchestration.
 - Do not decide transitions from pane output, a child's self-report, PR body markers, idle
-  detection, or from the mere fact that an inject succeeded — only from pulled events and
-  `lh workflow step status`.
+  detection, the fixed watcher wake, or the mere fact that an inject succeeded — only from domain
+  state re-read during an event drain, especially `lh workflow step status`.
 - Do not launch a fresh Execute on rework / continuing / merge-conflict when the live Execute pane
   is still usable — inject first; launch only as fallback.
 - Do not reuse a Verify child across rework — always launch a fresh Verify; never inject Verify

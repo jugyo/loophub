@@ -203,11 +203,28 @@ test("parent documents inject-round audit without a new command", () => {
   );
 });
 
-test("parent polls only its run workflow events and reacts to cost limit facts", () => {
+test("parent uses one-shot shell watchers and reacts to cost limit facts", () => {
   const contract = workflowContractText("parent");
 
+  expect(contract).toContain("## One-shot shell watcher protocol");
+  expect(contract).toContain("orchestrator: workflow-events-ready");
+  expect(contract).toContain("scripts/workflow-parent-watch.sh");
+  expect(contract).toContain("watcher_armed");
+  expect(contract).toContain("nohup");
+  expect(contract).toContain('--herdr-session "$HERDR_SESSION"');
+  expect(contract).toContain('--parent-pane "$HERDR_PANE_ID"');
   expect(contract).toContain(
     "lh events --since <cursor> --repo '<repo>' --type workflow_run --run <run> --order asc --json",
+  );
+  expect(contract).toContain("largest processed event id");
+  expect(contract).toContain("drain");
+  expect(contract).toContain("re-arm");
+  expect(contract).toContain("timing signal only");
+  expect(contract).toContain(
+    "Do not perform persistent event polling in a model turn",
+  );
+  expect(contract).toContain(
+    "Do not start a second watcher while `watcher_armed=true`",
   );
   expect(contract).not.toContain("lh subscribe --repo");
   expect(contract).toContain(
@@ -254,7 +271,7 @@ test("parent polls only its run workflow events and reacts to cost limit facts",
   );
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
   expect(contract).not.toContain("lh workflow run stop");
-  expect(contract).toContain("sleep briefly and poll again");
+  expect(contract).not.toContain("sleep briefly and poll again");
 });
 
 test("documents recording the launch-step agent line as the injection target", () => {
@@ -350,6 +367,12 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain("`herdr pane send-keys <pane_id> Escape`");
   expect(design).toContain("「続けますか？」という yes / no");
   expect(design).toContain("人間の yes なしには再開しない");
+  expect(design).toContain("orchestrator: workflow-events-ready");
+  expect(design).toContain("scripts/workflow-parent-watch.sh");
+  expect(design).toContain("watcher_armed=true");
+  expect(design).toContain("親 model turn を終える");
+  expect(design).toContain("shell process だけが poll");
+  expect(design).toContain("空まで drain");
   // Execute-side interpretation of additional work (issue/PR extension, same completion path).
   expect(design).toContain("追加作業指示");
   expect(design).toContain("Issue / PR への追加要望");
