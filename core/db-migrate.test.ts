@@ -127,9 +127,8 @@ test("workflow runs gain active child, watcher cursor, and cost limit columns", 
   expect(cols).toContain("active_session_id");
   expect(cols).toContain("contract_language");
   expect(S.getWorkflowRun(30)?.contract_language).toBe("en");
-  expect(cols).toContain("event_ack_cursor");
-  expect(cols).toContain("event_delivered_cursor");
-  expect(S.getWorkflowRun(30)?.event_ack_cursor).toBe(0);
+  expect(cols).not.toContain("event_ack_cursor");
+  expect(cols).not.toContain("event_delivered_cursor");
   expect(cols).toContain("cost_increment_usd");
   expect(cols).toContain("cost_limit_usd");
 });

@@ -60,7 +60,7 @@ test("Japanese contracts preserve the required commands and decision branches", 
   expect(parent).toContain("`increment_usd`");
   expect(parent).toContain("`next_limit_usd`");
   expect(parent).toContain("`status: pending`");
-  expect(parent).not.toContain("cursor を seed");
+  expect(parent).toContain("cursor を seed");
   expect(parent).not.toContain("pull loop");
   expect(parent).toContain(
     "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
@@ -217,18 +217,18 @@ test("parent documents inject-round audit without a new command", () => {
   );
 });
 
-test("parent uses runtime-managed workflow watchers and reacts to cost limit facts", () => {
+test("parent uses a foreground workflow watcher and reacts to cost limit facts", () => {
   const contract = workflowContractText("parent");
 
-  expect(contract).toContain("## Runtime-managed workflow watcher protocol");
+  expect(contract).toContain("## Foreground workflow watcher protocol");
   expect(contract).toContain(
-    "lh workflow watch --repo '<repo>' --run <run> --json",
+    "lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json",
   );
-  expect(contract).toContain("--ack <cursor.delivered>");
-  expect(contract).toContain("background task managed");
-  expect(contract).toContain("CLI replays the event");
+  expect(contract).not.toContain("--ack");
+  expect(contract).toContain("remain blocked until it exits");
+  expect(contract).toMatch(/does not persist\s+or acknowledge this cursor/);
   expect(contract).toContain("contains exactly one event");
-  expect(contract).toContain("at least once");
+  expect(contract).toContain("do not expect automatic replay");
   expect(contract).not.toContain("watcher_armed");
   expect(contract).not.toContain("HERDR_PANE_ID");
   expect(contract).not.toContain("nohup lh workflow watch");
@@ -394,11 +394,11 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain(
     "`lh workflow run increase-cost-limit --run <run> --expected-limit <limit_usd>`",
   );
-  expect(design).toContain("Runtime-managed watcher protocol");
-  expect(design).toContain('--ack "$delivered_cursor"');
-  expect(design).toContain("event_ack_cursor");
-  expect(design).toContain("model turn を終了する");
-  expect(design).toContain("task completion で同じ親が再開");
+  expect(design).toContain("Foreground watcher protocol");
+  expect(design).toContain('--since "$cursor"');
+  expect(design).not.toContain("event_ack_cursor");
+  expect(design).toContain("foreground で実行");
+  expect(design).toContain("自動 replay しない");
   expect(design).not.toContain("watcher_armed");
   // Execute-side interpretation of additional work (issue/PR extension, same completion path).
   expect(design).toContain("追加作業指示");

@@ -13,48 +13,45 @@ root / worktree 外、または上書き時は明示します。
 
 - **事実はドメイン状態にある。** 完了、commit、review は git / PR / reviews に記録されます。child
   から結果を運ぶ direct message や配置する artifact はありません。
-- **event は wake だけを担い、判断は domain state で行う。** blocking `lh workflow watch` を agent
-  runtime 管理の background task として実行します。task completion で同じ parent が昇順 event batch
-  とともに再開されます。child への text injection や Esc は必要時に自分が herdr で行う live control
-  であり、task completion も event row も遷移の事実ではありません。
+- **event は wake だけを担い、判断は domain state で行う。** blocking `lh workflow watch` を foreground
+  で実行します。昇順の run event が 1 件返ったら、判断前に domain state を観測します。child への text
+  injection や Esc は必要時に自分が herdr で行う live control であり、command completion も event row
+  も遷移の事実ではありません。
 
-## Runtime-managed workflow watcher protocol
+## Foreground workflow watcher protocol
 
-model turn 内で poll、sleep、event cursor の計算を行いません。shell process を detach せず、この pane
-への wake も注入しません。run ごとの durable acknowledgement cursor は `lh workflow watch` が所有し、
-background task と同じ parent の再開は agent runtime が管理します。
+model turn 内で poll や sleep を行いません。shell process の detach、background-task option、deferred
+cell への yield、この pane への wake 注入を行いません。parent が処理済みの最新 event id を live context
+に保持し、`--since` で明示的に渡します。LoopHub はこの cursor を永続化も acknowledge もしません。
 
-1. 下記の手順で Execute を launch し、`agent` と `session` line を記録します。
-2. runtime の background-task option を使い、
-   `lh workflow watch --repo '<repo>' --run <run> --json` を開始します。block 中は model turn を終了します。
-   shell の `&`、`nohup`、redirection、Herdr identifier、手動 poll loop を追加しません。
-3. task completion でこの parent が再開されたら JSON result を読みます。昇順の `events` array は正確に
-   1 event を含むため、durable checkpoint は event 単位になります。遷移判断前に
+1. Execute launch 前に
+   `lh events --repo '<repo>' --type workflow_run --run <run> --order desc --limit 1 --json` が返す最新 event id
+   から `<cursor>` を seed します。event がなければ `0` を使います。
+2. 下記の手順で Execute を launch し、`agent` と `session` line を記録します。
+3. `lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json` を foreground で実行し、終了まで
+   block します。shell の `&`、`nohup`、redirection、background-task option、Herdr identifier、手動 poll
+   loop を追加しません。
+4. JSON result を読みます。昇順の `events` array は正確に 1 event を含みます。遷移判断前に
    `lh workflow step status` と、event が要求する review / GitHub resource を再観測します。
-4. その event の処理後に限り、次の runtime-managed background task を
-   `lh workflow watch --repo '<repo>' --run <run> --ack <cursor.delivered> --json` で開始します。CLI は ack を
-   durable な last-delivered cursor と照合してから checkpoint を進めます。
-5. fresh pass 後も含め、run の全期間 3–4 を繰り返します。parent の transition command が
+5. event の処理後に `<cursor>` を `events[0].id` へ進め、fresh pass 後も含め run の全期間 3–5 を
+   繰り返します。parent の transition command が
    `workflow_run.updated` を生成した場合、次の watch は block 前に利用可能な row を確認するため取りこぼし
    ません。
 
-返却 batch を acknowledge する前に parent が停止した場合、restart 後は `--ack` を省略します。durable
-checkpoint は進んでいないため CLI が同じ event を replay します。transition command は idempotent に保ち、
-event id を at-least-once として扱います。transaction 外の effect は後述の receipt で guard します。
-1-event batch の処理後だけ acknowledge するため、event 間の停止で checkpoint 済みの event は replay
-されません。同じ適用済み ack の retry は安全です。blocking
-command が non-zero で終了した場合、retry や fallback delivery を追加せず、可視な
-error を保持して人間へ判断を求めます。
+parent が停止して memory 上の cursor を失った場合、自動 replay を期待しません。
+`lh events --repo '<repo>' --type workflow_run --run <run> --order asc --json` で run の履歴を確認し、
+`lh workflow step status` と参照先 review / GitHub resource を再観測します。その domain fact から current
+state を復元し、確認済みの最新 event id を次の cursor にして続行します。blocking command が non-zero
+で終了した場合、retry や fallback delivery を追加せず、可視な error を保持して人間へ判断を求めます。
 
 transaction 外の side effect（Esc、pane notification、human confirmation、Issue comment、Inbox message）
 ごとに、実行前に
 `lh workflow effect begin --repo '<repo>' --run <run> --event <event.id> --effect <key> --json` で durable
 receipt を取得します。`execute: true` の場合だけ side effect を実行し、直後に同じ identifier で
 `lh workflow effect complete ...` を記録します。key は `cost.escape`、`cost.pane-notification`、
-`cost.human-confirmation`、`escalation.issue-comment`、`escalation.inbox` のように固定します。replay で
-`status: pending` が返る場合、以前の parent が effect claim 後の曖昧な window で停止しています。自動で
-再実行せず、pending receipt を表示して recovery の要否を人間へ確認します。その event に pending receipt
-がある間は watcher acknowledgement が拒否されるため、ambiguity を暗黙 checkpoint して失いません。
+`cost.human-confirmation`、`escalation.issue-comment`、`escalation.inbox` のように固定します。recovery
+または意図的な再処理で `status: pending` が返る場合、以前の parent が effect claim 後の曖昧な
+window で停止しています。自動で再実行せず、pending receipt を表示して recovery の要否を人間へ確認します。
 
 event row は timing signal で、遷移の事実ではありません。
 
@@ -211,7 +208,7 @@ audit 専用 command を追加しません。既存事実で round を復元で�
 
 | From | `step status` で観測する条件 | Action |
 |---|---|---|
-| start | run started | Execute を launch、runtime-managed watcher task を開始、model turn を終了 |
+| start | run started | event cursor を seed、Execute を launch、foreground watcher で block |
 | Execute | HEAD が base より先で last review より進んだ | `advance-to-verify` 後に Verify launch |
 | Execute | active Execute の escalation event | reason を読み人間へ通知し自動進行停止 |
 | Verify | latest review が `fresh` + `pass` | run を running のまま人間の次指示/event を待つ |
@@ -292,8 +289,8 @@ merge を block したい人間は明示的 `REQUEST_CHANGES` を提出できま
 1. `lh issue comment <issue> --repo '<repo>' --body <text>` で Issue に summary を記録します。
 2. 上記 `lh inbox send` で人間へ通知します。
 
-run は `running` のまま、自動進行を止めます。step launch / rework count change をせず、各 event を処理して
-acknowledge し、runtime-managed watcher task で explicit human instruction を待ちます。timer、無関係 event、
+run は `running` のまま、自動進行を止めます。step launch / rework count change をせず、foreground watcher
+が返す各 event を確認して memory 上の cursor を進め、explicit human instruction を待ちます。timer、無関係 event、
 child finishing は instruction ではありません。
 回答後は step status を再確認し、Execute へ inject または fresh Execute / Verify を note 付き launch
 します。resume command は不要です。

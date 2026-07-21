@@ -48,7 +48,7 @@ const liveTest =
   process.env.LOOPHUB_LIVE_AGENT_RUNTIME === "claude-code" ? test : test.skip;
 
 liveTest(
-  "the production agent runtime resumes the same parent after a background watch completes",
+  "the production agent runtime resumes the same parent after a foreground watch completes",
   async () => {
     const nonce = `parent-${crypto.randomUUID()}`;
     const command = [
@@ -60,14 +60,16 @@ liveTest(
       "me/workflow-runtime",
       "--run",
       String(runId),
+      "--since",
+      "0",
       "--json",
     ].join(" ");
     const prompt = [
       `Your parent identity is ${nonce}.`,
-      "Use the Bash tool once with run_in_background=true to run this exact blocking command:",
+      "Use the Bash tool once to run this exact blocking command in the foreground:",
       command,
-      "Do not use shell backgrounding, a pane, or another agent.",
-      `After that background task completes, inspect its JSON and reply exactly: PARENT_RESUMED ${nonce} <event type>`,
+      "Do not use run_in_background, shell backgrounding, a pane, or another agent.",
+      `After that foreground command completes, inspect its JSON and reply exactly: PARENT_RESUMED ${nonce} <event type>`,
     ].join("\n");
     const child = spawn(
       "claude",
@@ -96,7 +98,12 @@ liveTest(
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
       stdout += chunk;
-      if (!emitted && /run_in_background\\?"?:\s*true/.test(stdout)) {
+      if (
+        !emitted &&
+        /"type"\s*:\s*"tool_use"/.test(stdout) &&
+        /"name"\s*:\s*"Bash"/.test(stdout) &&
+        stdout.includes("me/workflow-runtime")
+      ) {
         emitted = true;
         const result = spawnSync(
           process.execPath,

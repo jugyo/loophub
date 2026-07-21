@@ -39,12 +39,13 @@ test("the English parent prompt remains byte-identical", () => {
       "",
       "## Instruction",
       "Orchestrate this run through Execute -> Verify as described in your contract.",
-      "Decide every transition by observing `lh workflow step status 42 --repo 'me/workflow-run' --json` after a background watch task returns an event batch; task completion, pane output, and PR body markers are never transition facts.",
+      "Decide every transition by observing `lh workflow step status 42 --repo 'me/workflow-run' --json` after the foreground watch returns an event; command completion, pane output, and PR body markers are never transition facts.",
       "Start now:",
-      "1. Launch the Execute child: `lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute`.",
-      "2. Start `lh workflow watch --repo 'me/workflow-run' --run 42 --json` with the agent runtime's background-task option and end the model turn while it blocks.",
-      "3. On task completion, process the single event in the returned `events` array and re-observe step status for every transition. One event per batch makes acknowledgement the side-effect boundary.",
-      "4. After that event is processed, start the next background task with `lh workflow watch --repo 'me/workflow-run' --run 42 --ack <cursor.delivered> --json`. If the parent stopped before processing, omit `--ack` so the durable cursor replays the event.",
+      "1. Seed <cursor> from the latest id returned by `lh events --repo 'me/workflow-run' --type workflow_run --run 42 --order desc --limit 1 --json`; use 0 when no event exists.",
+      "2. Launch the Execute child: `lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute`.",
+      "3. Run `lh workflow watch --repo 'me/workflow-run' --run 42 --since <cursor> --json` in the foreground and remain blocked until it exits. Do not use a background-task option or deferred cell.",
+      "4. Process the single event in the returned `events` array, re-observe step status for every transition, set <cursor> to `events[0].id`, and repeat the foreground watch.",
+      "If the parent restarts or loses its cursor, inspect `lh events --repo 'me/workflow-run' --type workflow_run --run 42 --order asc --json` and current step status instead of expecting automatic replay.",
       "Then follow your contract's transition table, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
       "",
     ].join("\n"),
@@ -69,21 +70,23 @@ test("the Japanese parent prompt translates prose without changing commands", ()
   expect(prompt).toContain(
     "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute",
   );
-  expect(prompt).toContain("background-task option");
-  expect(prompt).toContain("--ack <cursor.delivered>");
+  expect(prompt).toContain("--since <cursor>");
+  expect(prompt).toContain("foreground で実行");
+  expect(prompt).toContain("自動 replay を期待せず");
 });
 
-// The parent decides every transition by observing step status after a returned event batch.
-test("the parent prompt launches Execute and delegates blocking waits to the runtime", () => {
+// The parent decides every transition by observing step status after a returned event.
+test("the parent prompt launches Execute and blocks on the foreground watcher", () => {
   const prompt = parentUserPrompt(INPUT, "en");
   const launch =
     "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute";
-  const watch = "lh workflow watch --repo 'me/workflow-run' --run 42 --json";
+  const watch =
+    "lh workflow watch --repo 'me/workflow-run' --run 42 --since <cursor> --json";
   expect(prompt).toContain(launch);
   expect(prompt).toContain(watch);
-  expect(prompt).toContain("--ack <cursor.delivered>");
-  expect(prompt).toContain("durable cursor replays the event");
-  expect(prompt).toContain("acknowledgement the side-effect boundary");
+  expect(prompt).toContain("remain blocked until it exits");
+  expect(prompt).toContain("set <cursor> to `events[0].id`");
+  expect(prompt).toContain("instead of expecting automatic replay");
   expect(prompt).toContain(
     "lh workflow step status 42 --repo 'me/workflow-run' --json",
   );

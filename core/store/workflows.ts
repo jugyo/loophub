@@ -138,8 +138,6 @@ export interface WorkflowRunRow {
   active_step: string | null;
   active_session_id: string | null;
   child_sequence: number;
-  event_ack_cursor: number;
-  event_delivered_cursor: number;
   cost_increment_usd: number | null;
   cost_limit_usd: number | null;
   created_at: string;
@@ -210,28 +208,6 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
     .get(id) as WorkflowRunRow | null;
 }
 
-export function acknowledgeWorkflowRunEvents(
-  id: number,
-  cursor: number,
-): WorkflowRunRow | null {
-  return db
-    .query(
-      `UPDATE workflow_runs
-       SET event_ack_cursor = ?, updated_at = ?
-       WHERE id = ?
-         AND event_delivered_cursor = ?
-         AND event_ack_cursor <= ?
-         AND NOT EXISTS (
-           SELECT 1 FROM workflow_event_effects effect
-           WHERE effect.run_id = workflow_runs.id
-             AND effect.event_id = ?
-             AND effect.status = 'pending'
-         )
-       RETURNING *`,
-    )
-    .get(cursor, now(), id, cursor, cursor, cursor) as WorkflowRunRow | null;
-}
-
 export interface WorkflowEventEffectRow {
   run_id: number;
   event_id: number;
@@ -295,20 +271,6 @@ export function completeWorkflowEventEffect(
        RETURNING *`,
     )
     .get(now(), runId, eventId, effect) as WorkflowEventEffectRow | null;
-}
-
-export function recordWorkflowRunEventDelivery(
-  id: number,
-  cursor: number,
-): WorkflowRunRow | null {
-  return db
-    .query(
-      `UPDATE workflow_runs
-       SET event_delivered_cursor = ?, updated_at = ?
-       WHERE id = ? AND event_ack_cursor < ?
-       RETURNING *`,
-    )
-    .get(cursor, now(), id, cursor) as WorkflowRunRow | null;
 }
 
 // All runs in the `running` status (includes runs already held for a human, needs_human_reason

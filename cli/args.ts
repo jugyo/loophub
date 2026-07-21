@@ -50,7 +50,6 @@ export type Flags = {
   topic?: string;
   type?: string;
   since?: string;
-  ack?: string;
   order?: string;
   add?: string;
   yes?: boolean;
@@ -144,7 +143,6 @@ const { values, positionals } = parseArgs({
     topic: { type: "string" },
     type: { type: "string" },
     since: { type: "string" },
-    ack: { type: "string" },
     order: { type: "string" },
     add: { type: "string" },
     yes: { type: "boolean" },

@@ -774,11 +774,6 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   active_step        TEXT,
   active_session_id  TEXT,
   child_sequence     INTEGER NOT NULL DEFAULT 0,
-  -- Durable acknowledgement boundary for the runtime-managed parent watcher. A delivery does not
-  -- advance event_ack_cursor; the parent explicitly acknowledges event_delivered_cursor only after
-  -- it has processed the batch, so a stopped parent replays unacknowledged events.
-  event_ack_cursor   INTEGER NOT NULL DEFAULT 0,
-  event_delivered_cursor INTEGER NOT NULL DEFAULT 0,
   -- Snapshot the configured per-interval allowance when the run starts. The current cumulative
   -- limit advances only through the explicit cost-limit increase operation.
   cost_increment_usd REAL NOT NULL,
@@ -999,12 +994,6 @@ tryExec(
 );
 tryExec(
   "ALTER TABLE workflow_runs ADD COLUMN child_sequence INTEGER NOT NULL DEFAULT 0",
-);
-tryExec(
-  "ALTER TABLE workflow_runs ADD COLUMN event_ack_cursor INTEGER NOT NULL DEFAULT 0",
-);
-tryExec(
-  "ALTER TABLE workflow_runs ADD COLUMN event_delivered_cursor INTEGER NOT NULL DEFAULT 0",
 );
 // Human-wait marker (#1307): non-NULL means the run is waiting for an explicit human instruction
 // while staying `running` (resumable); the text is the reason shown to the human. Legacy terminal

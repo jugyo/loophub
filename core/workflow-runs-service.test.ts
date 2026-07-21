@@ -300,6 +300,8 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   const row = S.getWorkflowRun(result.run.id)!;
   expect(row.runtime).toBe("codex");
   expect(row.model).toBe("gpt-5.5");
+  expect(result.parent.user_prompt).toContain("--since <cursor>");
+  expect(result.parent.user_prompt).toContain("in the foreground");
   expect(S.getAgentSession(result.session_id)?.runtime).toBe("codex");
 
   const launched = await svc.workflowRuns.launchStep(
@@ -1397,9 +1399,9 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("record the printed `agent` line");
   // Transitions come from observation; watcher events are only timing signals.
   expect(contract).toContain(
-    "lh workflow watch --repo '<repo>' --run <run> --json",
+    "lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json",
   );
-  expect(contract).toContain("--ack <cursor.delivered>");
+  expect(contract).not.toContain("--ack");
   expect(contract).not.toContain("lh subscribe --repo");
   expect(contract).toContain("timing signals, never transition facts");
   expect(contract).toContain("Transitions are driven only by observation");

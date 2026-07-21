@@ -15,41 +15,40 @@ outside the repo root and outside a LoopHub worktree, or when you need to overri
 
 - **Facts live in domain state.** Completion, commits, and reviews are recorded in git / the PR /
   reviews. There is no direct message from a child carrying its result, and no artifact to place.
-- **Events wake; domain state decides.** Run blocking `lh workflow watch` as a background task managed
-  by the agent runtime. Its completion resumes this same parent with an ordered event batch; the parent
-  then observes domain state. Live control of a child (text injection, Esc) is something **you** do via
-  herdr when needed — neither task completion nor an event row is a transition fact.
+- **Events wake; domain state decides.** Run blocking `lh workflow watch` in the foreground. When it
+  returns one ordered run event, observe domain state before deciding anything. Live control of a
+  child (text injection, Esc) is something **you** do via herdr when needed — neither command
+  completion nor an event row is a transition fact.
 
-## Runtime-managed workflow watcher protocol
+## Foreground workflow watcher protocol
 
-Do not poll, sleep, or calculate an event cursor in a model turn. Do not detach a shell process or
-inject a wake into this pane. `lh workflow watch` owns the durable acknowledgement cursor for this run;
-the agent runtime owns the background task and resumes this same parent when the command exits.
+Do not poll or sleep in a model turn. Do not detach the shell process, use a background-task option,
+yield the command into a deferred cell, or inject a wake into this pane. The parent keeps the latest
+processed event id in its live context and passes it explicitly as `--since`; LoopHub does not persist
+or acknowledge this cursor.
 
 ### Initial wait and every subsequent wait
 
-1. Launch Execute as described below and record its `agent` and `session` lines.
-2. Start `lh workflow watch --repo '<repo>' --run <run> --json` with the runtime's background-task
-   option and end the model turn while it blocks. Do not add shell `&`, `nohup`, redirection, Herdr
-   identifiers, or a manually managed polling loop.
-3. When task completion resumes this parent, parse the JSON result. The ascending `events` array
-   contains exactly one event, making the durable checkpoint event-level. Re-read
+1. Before launching Execute, seed `<cursor>` from the latest existing event id returned by
+   `lh events --repo '<repo>' --type workflow_run --run <run> --order desc --limit 1 --json`; use `0`
+   when no event exists.
+2. Launch Execute as described below and record its `agent` and `session` lines.
+3. Run `lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json` in the foreground and
+   remain blocked until it exits. Do not add shell `&`, `nohup`, redirection, a background-task
+   option, Herdr identifiers, or a manually managed polling loop.
+4. Parse the JSON result. The ascending `events` array contains exactly one event. Re-read
    `lh workflow step status` (and any review or referenced GitHub resource required by the event)
    before deciding a transition.
-4. Only after that event is fully processed, start the next runtime-managed background task with
-   `lh workflow watch --repo '<repo>' --run <run> --ack <cursor.delivered> --json`. The CLI validates
-   that acknowledgement against its durable last-delivered cursor before moving the checkpoint.
-5. Repeat steps 3–4 for the lifetime of the run, including after a fresh passing verdict. A transition
-   command may create `workflow_run.updated`; the next watch checks for already-available rows before
-   blocking, so those events are not lost.
+5. After that event is fully processed, set `<cursor>` to `events[0].id` and repeat steps 3–5 for the
+   lifetime of the run, including after a fresh passing verdict. A transition command may create
+   `workflow_run.updated`; the next watch checks for already-available rows before blocking.
 
-If this parent stops before acknowledging a returned batch, omit `--ack` after restart: the durable
-checkpoint has not advanced and the CLI replays the event. Keep transition commands idempotent and
-handle event ids at least once: guard non-transactional effects with the receipts below and
-acknowledge only after processing the event.
-Because each batch contains one event, stopping between events never replays a previously checkpointed event. Retrying the
-same already-applied acknowledgement is safe. If the blocking command exits non-zero, preserve the visible
-error and ask a human how to proceed rather than adding retries or fallback delivery.
+If this parent stops or loses its in-memory cursor, do not expect automatic replay. Inspect the run's
+ordered history with `lh events --repo '<repo>' --type workflow_run --run <run> --order asc --json`,
+then re-read `lh workflow step status` and any referenced review or GitHub resource. Reconstruct the
+current state from those domain facts, choose the latest inspected event id as the next cursor, and
+continue. If the blocking command exits non-zero, preserve the visible error and ask a human how to
+proceed rather than adding retries or fallback delivery.
 
 Before every non-transactional side effect (Esc, pane notification, human confirmation, issue comment,
 or Inbox message), acquire a durable receipt with
@@ -57,10 +56,10 @@ or Inbox message), acquire a durable receipt with
 Run the side effect only when `execute: true`, then immediately record
 `lh workflow effect complete ...` with the same identifiers. Use stable keys such as `cost.escape`,
 `cost.pane-notification`, `cost.human-confirmation`, `escalation.issue-comment`, and
-`escalation.inbox`. If replay returns `status: pending`, the previous parent stopped in the ambiguous
+`escalation.inbox`. If recovery or deliberate reprocessing returns `status: pending`, the previous
+parent stopped in the ambiguous
 window after claiming the effect: do not repeat it automatically. Show the pending receipt and ask a
-human whether recovery is needed. A watcher acknowledgement is rejected while that event has a pending
-receipt, so the ambiguity cannot be silently checkpointed or lost.
+human whether recovery is needed.
 
 Event rows are timing signals, never transition facts:
 
@@ -146,8 +145,8 @@ Human handoff (escalation only):
 ## Live child control
 
 Use herdr only to operate a child that is already live. Do **not** treat pane output, child self-
-reports, idle status, or background-task completion as transition facts — transitions still come
-only from `lh workflow step status` and domain resources re-read while processing an event batch.
+reports, idle status, or watcher command completion as transition facts — transitions still come
+only from `lh workflow step status` and domain resources re-read while processing an event.
 Injecting text is delivery only; it is never itself a reason to advance, rework, or complete a step.
 
 ### Resolve the Execute injection target
@@ -185,7 +184,7 @@ use this path. Verify never reuses a prior verifier session via injection for ju
    normally arrives after Execute has declared turn done; a continuing instruction may land while
    Execute is mid-turn — still inject. Do not Esc unless you observed
    `workflow_run.cost_exceeded`.
-6. On the next watcher task completion, process the event batch and re-read
+6. When the foreground watcher returns the next event, process it and re-read
    `lh workflow step status`. A successful inject is not execute complete; only a later HEAD advance
    (and turn-done timing signal) is.
 
@@ -209,8 +208,8 @@ Handle each `workflow_run.cost_exceeded` event id exactly once:
 6. Display exactly one human confirmation in the parent pane: **“Cost limit exceeded. Continue?”**
    with only **yes** and **no** choices. Prefer the runtime's interactive choice UI when available;
    otherwise print the question and wait for an unambiguous `yes` or `no`. Remember the event id in
-   this live context and do not display the pane notification or confirmation again when an event is
-   replayed.
+   this live context and do not display the pane notification or confirmation again if recovery
+   revisits the same event.
 7. Make the selected result visible in the parent pane as `Continuation decision: yes` or
    `Continuation decision: no`.
    - **yes**: first run `lh workflow step status <run> --repo '<repo>' --json` and use its current
@@ -258,17 +257,17 @@ auditing. Existing domain facts already let a human reconstruct a round:
 
 | From | Condition (observed via step status) | Action |
 |---|---|---|
-| start | run started | launch Execute, start one runtime-managed background watcher, then end the model turn |
+| start | run started | seed the event cursor, launch Execute, then block in the foreground watcher |
 | Execute | execute complete (HEAD ahead of base, advanced past the last review) | `lh workflow run advance-to-verify`, then launch Verify |
 | Execute | escalation event from the active Execute child | Read the event reason, notify the human, and stop automatic progression |
-| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running, acknowledge the processed batch, and start the next background watcher |
+| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running and block in the next foreground watch |
 | Verified + continuing | human requests additional work | Prefer inject into the live Execute pane; otherwise launch with `--note` (see Continuing after a pass) |
 | Verified + continuing | HEAD advances past the passing review and Execute declares turn done | Launch a fresh Verify child for the new HEAD (the run already remains at Verify) |
 | Verified + continuing | Execute declares turn done without a HEAD advance | Keep the existing pass fresh and continue waiting |
 | Verify | verify complete, latest review `fresh` + `request_changes` | rework -> Execute (see Rework) |
 
 A fresh passing review verifies the current HEAD but does not complete or freeze the run. Keep the
-runtime-managed watcher protocol available so a human can request more work in the same run.
+foreground watcher protocol available so a human can request more work in the same run.
 PR body, comment, and attachment updates leave the pass fresh because HEAD did not change. A code
 commit makes it stale; after Execute declares turn done, launch a fresh Verify child directly. The
 run has no permanent-stop command: it stays `running` until a human ends it. Execute includes
@@ -387,8 +386,8 @@ On escalation, do both:
 2. Notify the human via Inbox (command above).
 
 Keep the run `running`, but stop all automatic progression: do not launch steps or change rework
-count. Stay in this session; on each watcher completion, process and acknowledge the batch without
-acting on progression events, start the next runtime-managed watcher, and wait for an explicit human instruction.
+count. Stay in this session; whenever the foreground watcher returns, inspect the event and advance
+the in-memory cursor without acting on progression events, then wait for an explicit human instruction.
 A timer, a new unrelated event, or a child merely
 finishing is not an instruction. When the human answers, re-check step status and deliver the
 instruction to Execute (inject when live, otherwise launch a fresh Execute or Verify child with the
@@ -406,8 +405,8 @@ run.
 - Do not merge changes.
 - Do not use child-session resume (`claude --resume` / fork-session) for orchestration.
 - Do not decide transitions from pane output, a child's self-report, PR body markers, idle
-  detection, background-task completion, or the mere fact that an inject succeeded — only from
-  domain state re-read while processing an event batch, especially `lh workflow step status`.
+  detection, watcher command completion, or the mere fact that an inject succeeded — only from
+  domain state re-read while processing an event, especially `lh workflow step status`.
 - Do not launch a fresh Execute on rework / continuing / merge-conflict when the live Execute pane
   is still usable — inject first; launch only as fallback.
 - Do not reuse a Verify child across rework — always launch a fresh Verify; never inject Verify

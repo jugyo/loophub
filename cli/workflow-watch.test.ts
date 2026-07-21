@@ -30,19 +30,21 @@ function runCli(args: string[]) {
   });
 }
 
-function watchArgs(run: number, extra: string[] = []) {
+function watchArgs(run: number, since = 0, extra: string[] = []) {
   return [
     "--repo",
     "me/workflow-watch",
     "--run",
     String(run),
+    "--since",
+    String(since),
     "--json",
     ...extra,
   ];
 }
 
-function runWatch(run: number, extra: string[] = []) {
-  return runCli(["workflow", "watch", ...watchArgs(run, extra)]);
+function runWatch(run: number, since = 0, extra: string[] = []) {
+  return runCli(["workflow", "watch", ...watchArgs(run, since, extra)]);
 }
 
 function createRun(): number {
@@ -106,13 +108,12 @@ afterAll(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-test("lh workflow watch returns JSON and replays until its event cursor is acknowledged", () => {
+test("lh workflow watch returns the next event after the caller-provided cursor", () => {
   const run = createRun();
   S.emitEvent(repoId, "workflow_run.turn_done", "test", { id: run });
   S.emitEvent(repoId, "workflow_run.escalated", "test", { id: run });
 
   const first = runWatch(run);
-  const replay = runWatch(run);
   const firstResult = JSON.parse(first.stdout);
 
   expect(first.error).toBeUndefined();
@@ -120,15 +121,16 @@ test("lh workflow watch returns JSON and replays until its event cursor is ackno
   expect(firstResult.events).toEqual([
     expect.objectContaining({ type: "workflow_run.turn_done" }),
   ]);
-  expect(JSON.parse(replay.stdout)).toEqual(firstResult);
-
-  const skipped = runWatch(run, [
-    "--ack",
-    String(firstResult.cursor.delivered + 1),
+  const next = JSON.parse(runWatch(run, firstResult.events[0].id).stdout);
+  expect(next.events).toEqual([
+    expect.objectContaining({ type: "workflow_run.escalated" }),
   ]);
-  expect(skipped.status).not.toBe(0);
-  expect(skipped.stderr).toContain("cannot acknowledge cursor");
+});
 
+test("workflow effect receipts remain idempotent without watcher acknowledgement", () => {
+  const run = createRun();
+  S.emitEvent(repoId, "workflow_run.turn_done", "test", { id: run });
+  const firstResult = JSON.parse(runWatch(run).stdout);
   const eventId = firstResult.events[0].id;
   const effectArgs = [
     "--repo",
@@ -156,26 +158,8 @@ test("lh workflow watch returns JSON and replays until its event cursor is ackno
     ambiguous: true,
     status: "pending",
   });
-  const ackWhilePending = runWatch(run, [
-    "--ack",
-    String(firstResult.cursor.delivered),
-  ]);
-  expect(ackWhilePending.status).not.toBe(0);
-  expect(ackWhilePending.stderr).toContain("could not be acknowledged");
   expect(runCli(["workflow", "effect", "complete", ...effectArgs]).status).toBe(
     0,
-  );
-
-  const afterEventCheckpoint = JSON.parse(
-    runWatch(run, ["--ack", String(firstResult.cursor.delivered)]).stdout,
-  );
-  const replayAfterStop = JSON.parse(runWatch(run).stdout);
-  expect(afterEventCheckpoint.events).toEqual([
-    expect.objectContaining({ type: "workflow_run.escalated" }),
-  ]);
-  expect(replayAfterStop).toEqual(afterEventCheckpoint);
-  expect(replayAfterStop.events).not.toContainEqual(
-    expect.objectContaining({ type: "workflow_run.turn_done" }),
   );
 });
 
@@ -212,6 +196,10 @@ test.each([
     ["--repo", "me/workflow-watch", "--run", "999", "--runtime", "codex"],
   ],
   ["invalid run", ["--repo", "me/workflow-watch", "--run", "0"]],
+  [
+    "invalid since",
+    ["--repo", "me/workflow-watch", "--run", "999", "--since", "-1"],
+  ],
 ])("lh workflow watch rejects %s with a visible non-zero exit", (_name, args) => {
   const result = runCli(["workflow", "watch", ...args]);
 
