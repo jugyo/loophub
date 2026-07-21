@@ -247,6 +247,44 @@ test("the English step prompt remains byte-identical", () => {
   );
 });
 
+test("the Japanese run composes translated contract and step prompt wrappers", () => {
+  const composed = composeWorkflowLaunchPrompt(
+    {
+      template: readFileSync(join(CONTRACT_DIR, "execute.ja.md"), "utf8"),
+      step: "execute",
+      worktreePath: "/tmp/worktree",
+      baseBranch: "main",
+    },
+    {
+      pointers: executePointers,
+      worktreePath: ".",
+      baseBranch: "main",
+      note: "Issue を先に読んでください。",
+    },
+    "ja",
+  );
+
+  expect(composed.systemPrompt).toContain("## Workflow contract コンテキスト");
+  expect(composed.systemPrompt).toContain("## 言語");
+  expect(composed.systemPrompt).toContain("# Execute ステップ contract");
+  expect(composed.userPrompt).toBe(
+    [
+      "## 入力",
+      "- repo: me/proj",
+      "- issue: #42",
+      "- pr: #7",
+      "worktree: . (cwd。base branch: main)",
+      "",
+      "## Step prompt（ユーザー設定）",
+      "(none - contract に従ってください)",
+      "",
+      "## Workflow agent からの note",
+      "Issue を先に読んでください。",
+      "",
+    ].join("\n"),
+  );
+});
+
 test("parent/step contracts do not introduce slash commands", () => {
   const composed = composeWorkflowLaunchPrompt(
     {

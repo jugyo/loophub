@@ -345,9 +345,16 @@ test("start snapshots the contract language for parent and every later step", as
   svc.settings.update({ workflowContractLanguage: "en" });
 
   expect(S.getWorkflowRun(started.run.id)?.contract_language).toBe("ja");
-  expect(started.parent.user_prompt).toContain("## Run context");
+  expect(started.parent.user_prompt).toContain("## Run コンテキスト");
+  expect(started.parent.user_prompt).toContain("## 指示");
   expect(readFileSync(started.parent.system_prompt_path, "utf8")).toContain(
     "# Parent workflow contract",
+  );
+  expect(readFileSync(started.parent.system_prompt_path, "utf8")).toContain(
+    "## Workflow contract コンテキスト",
+  );
+  expect(readFileSync(started.parent.system_prompt_path, "utf8")).toContain(
+    "## 言語",
   );
   const execute = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -357,7 +364,8 @@ test("start snapshots the contract language for parent and every later step", as
   expect(readFileSync(execute.system_prompt_path, "utf8")).toContain(
     "# Execute ステップ contract",
   );
-  expect(execute.user_prompt).toContain("## Step prompt (user-configured)");
+  expect(execute.user_prompt).toContain("## Step prompt（ユーザー設定）");
+  expect(execute.user_prompt).toContain("(none - contract に従ってください)");
   const verify = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "verify" },
@@ -369,6 +377,38 @@ test("start snapshots the contract language for parent and every later step", as
   expect(verify.pointers.at(-1)?.label).toBe(
     "review submission target (do not read the PR)",
   );
+
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: execute.step,
+      sessionId: execute.session_id,
+      pointers: execute.pointers,
+      note: "Issue を先に読んでください。",
+    },
+    started.session_id,
+  );
+  expect(
+    S.listHandoffs(repo.id, {
+      prId: S.getIssue(repo.id, started.pr.number)!.id,
+    }),
+  ).toEqual([
+    expect.objectContaining({
+      body: [
+        `Workflow execute step を run #${started.run.id} 向けに起動します。`,
+        "",
+        "## 入力",
+        `- repo: ${repo.full_name}`,
+        `- issue: #${issue.number}`,
+        `- pr: #${started.pr.number}`,
+        "",
+        "## Parent からの note",
+        "Issue を先に読んでください。",
+      ].join("\n"),
+      summary: "execute step を起動",
+    }),
+  ]);
 });
 
 test("cost limit increases are explicit, guarded, and repeatable", async () => {

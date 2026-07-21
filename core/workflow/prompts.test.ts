@@ -57,6 +57,27 @@ test("the English parent prompt remains byte-identical", () => {
   );
 });
 
+test("the Japanese parent prompt translates prose without changing commands", () => {
+  const prompt = parentUserPrompt(INPUT, "ja");
+
+  expect(prompt).toContain("## Run コンテキスト");
+  expect(prompt).toContain(
+    "repo: me/workflow-run (すべての lh command で --repo 'me/workflow-run' を渡してください)",
+  );
+  expect(prompt).toContain("current step: execute");
+  expect(prompt).toContain("## 指示");
+  expect(prompt).toContain(
+    "contract の記述に従い、この run を Execute -> Verify の順に orchestrate してください。",
+  );
+  expect(prompt).toContain(
+    "lh workflow step status 42 --repo 'me/workflow-run' --json",
+  );
+  expect(prompt).toContain(
+    "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute",
+  );
+  expect(prompt).toContain("orchestrator: workflow-events-ready");
+});
+
 // The parent decides every transition by observing step status after a watcher wake — never
 // from pane output or the wake itself. The exact commands are the prompt's contract with the parent.
 test("the parent prompt seeds, launches Execute, arms a watcher, then drains on wake", () => {
