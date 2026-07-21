@@ -44,6 +44,8 @@ function startRun(prNumber: number, currentStep: string): number {
     prNumber,
     status: "running",
     currentStep,
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: "parent-session",
   });
   return run.id;

@@ -47,9 +47,10 @@ event row は timing signal で、遷移の事実ではありません。
 - `workflow_run.merge_conflict` — PR base 更新による conflict を、continuing work と同じ
   inject-or-launch path で Execute に渡します。
 - `workflow_run.cost_exceeded` — herdr で over-budget child を interrupt し、自動進行を hold して人間に
-  継続を 1 回だけ確認します。payload は crossing を検出した `usage_session_id` と、interrupt 対象の
-  `active_step` / `active_session_id` を分けています。worker は累積 cost が設定 limit を越えた edge で
-  1 回だけ発行します。
+  継続を 1 回だけ確認します。payload は現在 cost の `cost_usd`、現在 limit の `limit_usd`、固定増分の
+  `increment_usd`、増額後 limit の `next_limit_usd`、crossing を検出した `usage_session_id` と、interrupt
+  対象の `active_step` / `active_session_id` を分けています。worker は累積 cost が現在 limit を越えた
+  run・limit ごとの edge で 1 回だけ発行します。
 
 ## 使用可能なコマンド
 
@@ -64,8 +65,10 @@ LoopHub orchestration:
   step は変更しません。
 - `lh workflow run await-human --repo '<repo>' --run <run> --reason <text>` — cost 継続判断中の自動進行を
   hold します。
+- `lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>` — 人間が
+  明示的に yes を選んだ後、event の現在 limit と DB の現在 limit が一致する場合だけ固定増分を加えます。
 - `lh workflow run resume --repo '<repo>' --run <run> --step <step>` — 人間が明示的に yes を選んだ後だけ
-  hold を解除します。
+  増額操作が成功してから hold を解除します。通常の resume 自体は cost limit を変更しません。
 - `lh workflow launch-step --repo '<repo>' --run <run> --step <step> [--review <id>] [--note <text|->]` —
   step child を開始・再開始します。engine が input pointers を解決し、herdr split pane へ起動して
   `agent` line に正確な Herdr name を表示します。本当に child の開始・再開始が必要な時だけ呼びます。
@@ -136,8 +139,9 @@ Verify judgement は prior verifier session へ inject しません。
 
 各 `workflow_run.cost_exceeded` event id を正確に 1 回処理します。
 
-1. payload の `cost_usd`、`limit_usd`、`usage_session_id`、`active_step`、`active_session_id` を読みます。
-   `usage_session_id` は更新された aggregate の識別だけに使い、pane の解決・interrupt には使いません。
+1. payload の `cost_usd`、`limit_usd`、`increment_usd`、`next_limit_usd`、`usage_session_id`、
+   `active_step`、`active_session_id` を読みます。`usage_session_id` は更新された aggregate の識別だけに
+   使い、pane の解決・interrupt には使いません。
 2. `active_session_id` を登録した `active_step` の最新 agent（Execute は `executor #<run>-*`、Verify は
    `verifier #<run>-*`）を解決し、`herdr agent get` で `pane_id` を得ます。記録を失ったら
    `herdr agent list` の最大 matching sequence を使います。active session / agent / pane がなければ
@@ -152,9 +156,12 @@ Verify judgement は prior verifier session へ inject しません。
    を記憶し、poll 中に pane notification や confirmation を再表示しません。
 7. `Continuation decision: yes` または `Continuation decision: no` を表示します。
    - **yes**: 最初に `lh workflow step status <run> --repo '<repo>' --json` を実行し current domain state
-     を使います。次に `lh workflow run resume ... --step <active_step>` で hold を解除します。Execute は
-     同じ pane に再確認・継続の single-line `orchestrator:` instruction を inject します。Verify は
-     interrupted verifier を再利用せず current HEAD 用の fresh child を起動します。
+     を使います。次に
+     `lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>` で現在の
+     累計 limit に固定増分を加えます。non-zero exit なら human hold を維持します。増額が成功した後だけ
+     `lh workflow run resume ... --step <active_step>` で hold を解除します。Execute は同じ pane に
+     再確認・継続の single-line `orchestrator:` instruction を inject します。Verify は interrupted
+     verifier を再利用せず current HEAD 用の fresh child を起動します。
    - **no**: human hold を残します。追加 text injection、child launch、step advance、その他の自動再開を
      行わず、人間の次の明示指示を待ちます。
 

@@ -128,6 +128,13 @@ export type WorkflowRunCostDetectionResult = {
   limit_usd: number;
 };
 
+export type WorkflowRunCostLimitIncreaseResult = {
+  run: number;
+  increment_usd: number;
+  previous_limit_usd: number;
+  current_limit_usd: number;
+};
+
 export type WorkflowLaunchStepResult = {
   run: WorkflowRunUpdateResult["run"];
   step: WorkflowStep;
@@ -157,7 +164,8 @@ function workflowRunCost(run: S.WorkflowRunRow) {
     ...workflowStepSessionIds(run.step_sessions_json, "verify"),
   ];
   return {
-    limitUsd: devCostLimitUsd(),
+    incrementUsd: run.cost_increment_usd ?? devCostLimitUsd(),
+    limitUsd: run.cost_limit_usd ?? run.cost_increment_usd ?? devCostLimitUsd(),
     summary: S.sessionUsageCostSummaryForSessions(sessionIds),
   };
 }
@@ -190,6 +198,8 @@ export type WorkflowStepStatusResult = {
   // Non-null while the run is held for a human (#1307) — surfaced here so the parent's re-check
   // and an operator's inspection see the hold instead of a plain running run.
   needs_human_reason: string | null;
+  cost_increment_usd: number;
+  cost_limit_usd: number;
   head_sha: string | null;
   head_ahead_of_base: boolean;
   // Timestamp of the latest turn-done declaration event, or null. A timing signal for the
@@ -690,6 +700,8 @@ export const workflowRuns = {
 
       dev.attachSession(r.full_name, opened.number, sessionId);
 
+      const costIncrementUsd = devCostLimitUsd();
+
       const run = S.createWorkflowRun({
         workflowId: workflow.id,
         repoId: r.id,
@@ -702,6 +714,8 @@ export const workflowRuns = {
         model: input.model?.trim() || null,
         contractLanguage,
         parentSessionId: sessionId,
+        costIncrementUsd,
+        costLimitUsd: costIncrementUsd,
       });
 
       const systemPromptPath = writeParentContract(
@@ -894,10 +908,11 @@ export const workflowRuns = {
       return {
         emitted: false,
         cost_usd: null,
-        limit_usd: devCostLimitUsd(),
+        limit_usd:
+          run.cost_limit_usd ?? run.cost_increment_usd ?? devCostLimitUsd(),
       };
     }
-    const { limitUsd, summary } = workflowRunCost(run);
+    const { incrementUsd, limitUsd, summary } = workflowRunCost(run);
     if (summary.cost_usd === null || summary.cost_usd <= limitUsd) {
       return {
         emitted: false,
@@ -938,11 +953,83 @@ export const workflowRuns = {
       active_session_id: run.active_session_id,
       cost_usd: summary.cost_usd,
       limit_usd: limitUsd,
+      increment_usd: incrementUsd,
+      next_limit_usd: limitUsd + incrementUsd,
     });
     return {
       emitted: event !== null,
       cost_usd: summary.cost_usd,
       limit_usd: limitUsd,
+    };
+  },
+
+  increaseCostLimit(
+    name: string,
+    input: { run: number; expectedLimitUsd: number },
+    sessionId?: string | null,
+  ): WorkflowRunCostLimitIncreaseResult {
+    const { repo, run } = lifecycleRun(name, input.run, sessionId);
+    assertRunningLifecycle(run);
+    if (
+      !Number.isFinite(input.expectedLimitUsd) ||
+      input.expectedLimitUsd <= 0
+    ) {
+      throw new ServiceError(
+        422,
+        "expected cost limit must be a positive number",
+      );
+    }
+    if (run.needs_human_reason === null) {
+      throw new ServiceError(409, "Workflow run is not waiting for a human");
+    }
+    if (run.cost_increment_usd === null || run.cost_limit_usd === null) {
+      throw new ServiceError(409, "Workflow run has no persisted cost limit");
+    }
+    if (run.cost_limit_usd !== input.expectedLimitUsd) {
+      throw new ServiceError(
+        409,
+        `expected cost limit $${input.expectedLimitUsd} does not match current limit $${run.cost_limit_usd}`,
+      );
+    }
+    if (
+      !S.hasWorkflowRunCostExceededEvent(
+        repo.id,
+        run.id,
+        input.expectedLimitUsd,
+      )
+    ) {
+      throw new ServiceError(
+        409,
+        `no cost exceeded event exists for limit $${input.expectedLimitUsd}`,
+      );
+    }
+    const increased = S.increaseWorkflowRunCostLimit(
+      run.id,
+      input.expectedLimitUsd,
+    );
+    if (!increased) {
+      throw new ServiceError(
+        409,
+        "Workflow cost limit was not increased because its state changed",
+      );
+    }
+    S.emitEvent(
+      repo.id,
+      "workflow_run.cost_limit_increased",
+      actorFor(sessionId),
+      {
+        id: run.id,
+        issue_number: run.issue_number,
+        pr_number: run.pr_number,
+        increment_usd: run.cost_increment_usd,
+        previous_limit_usd: increased.previous_limit_usd,
+        current_limit_usd: increased.current_limit_usd,
+      },
+    );
+    return {
+      run: run.id,
+      increment_usd: run.cost_increment_usd,
+      ...increased,
     };
   },
 
@@ -1414,11 +1501,14 @@ export const workflowRuns = {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
     const progress = await workflowRunProgress(r, run);
+    const costIncrementUsd = run.cost_increment_usd ?? devCostLimitUsd();
     return {
       run: run.id,
       current_step: run.current_step,
       status: run.status,
       needs_human_reason: run.needs_human_reason,
+      cost_increment_usd: costIncrementUsd,
+      cost_limit_usd: run.cost_limit_usd ?? costIncrementUsd,
       head_sha: progress.currentHead,
       head_ahead_of_base: progress.headAheadOfBase,
       last_turn_done_at: S.latestWorkflowTurnDoneAt(r.id, run.id),

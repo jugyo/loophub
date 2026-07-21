@@ -121,6 +121,8 @@ export function emitWorkflowRunCostExceededOnce(
     active_session_id: string | null;
     cost_usd: number;
     limit_usd: number;
+    increment_usd: number;
+    next_limit_usd: number;
   },
 ): EventRow | null {
   return (
@@ -132,6 +134,7 @@ export function emitWorkflowRunCostExceededOnce(
            SELECT 1 FROM events
            WHERE repo_id = ? AND type = 'workflow_run.cost_exceeded'
              AND json_extract(payload, '$.id') = ?
+             AND json_extract(payload, '$.limit_usd') = ?
          )
          RETURNING *`,
       )
@@ -142,8 +145,25 @@ export function emitWorkflowRunCostExceededOnce(
         now(),
         repoId,
         payload.id,
+        payload.limit_usd,
       ) as EventRow | null) ?? null
   );
+}
+
+export function hasWorkflowRunCostExceededEvent(
+  repoId: number,
+  runId: number,
+  limitUsd: number,
+): boolean {
+  return !!db
+    .query(
+      `SELECT 1 AS ok FROM events
+       WHERE repo_id = ? AND type = 'workflow_run.cost_exceeded'
+         AND json_extract(payload, '$.id') = ?
+         AND json_extract(payload, '$.limit_usd') = ?
+       LIMIT 1`,
+    )
+    .get(repoId, runId, limitUsd);
 }
 
 // The timestamp of the run's latest turn-done declaration, or null when Execute never declared

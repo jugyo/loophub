@@ -774,6 +774,10 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   active_step        TEXT,
   active_session_id  TEXT,
   child_sequence     INTEGER NOT NULL DEFAULT 0,
+  -- Snapshot the configured per-interval allowance when the run starts. The current cumulative
+  -- limit advances only through the explicit cost-limit increase operation.
+  cost_increment_usd REAL NOT NULL,
+  cost_limit_usd     REAL NOT NULL,
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL
 );
@@ -984,6 +988,8 @@ tryExec(
 tryExec("ALTER TABLE workflow_runs ADD COLUMN needs_human_reason TEXT");
 tryExec("ALTER TABLE workflow_runs ADD COLUMN active_step TEXT");
 tryExec("ALTER TABLE workflow_runs ADD COLUMN active_session_id TEXT");
+tryExec("ALTER TABLE workflow_runs ADD COLUMN cost_increment_usd REAL");
+tryExec("ALTER TABLE workflow_runs ADD COLUMN cost_limit_usd REAL");
 // Artifact-contract retirement (#1358): the claims table only ever held transient placement
 // locks, so dropping it loses nothing; the artifact/placement/pin history tables stay untouched.
 tryExec("DROP TABLE IF EXISTS workflow_placement_claims");

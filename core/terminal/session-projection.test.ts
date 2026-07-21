@@ -385,6 +385,8 @@ test("projectHerdrRepoSessions enriches Workflow panes with hierarchy and sessio
     prNumber: pr.number,
     status: "running",
     currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: parentSession,
   });
   S.registerAgentSession(
@@ -552,6 +554,8 @@ test("projectHerdrRepoSessions enriches Workflow panes with hierarchy and sessio
     prNumber: pr.number,
     status: "running",
     currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: "a1b2c3d4-colliding-parent",
   });
   expect(collidingRun.id).not.toBe(run.id);

@@ -84,6 +84,8 @@ test("delete is rejected while a running Workflow run references the workflow", 
     prNumber: 2,
     status: "running",
     currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
   });
   expect(run.contract_language).toBe("en");
 
@@ -101,6 +103,8 @@ test("delete is rejected while a run waiting for a human references the workflow
     prNumber: 2,
     status: "running",
     currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
   });
   // Waiting for a human keeps the run `running`, so it stays active (#1307).
   S.updateWorkflowRun(run.id, { needsHumanReason: "rework limit exceeded" });
@@ -119,6 +123,8 @@ test("delete succeeds when only a legacy blocked run references the workflow", (
     prNumber: 2,
     status: "blocked",
     currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
   });
 
   // Legacy `blocked` is terminal (#1307): its parent session is gone, so it is not active.
@@ -143,6 +149,8 @@ test("delete succeeds when only non-running runs reference the workflow", () => 
     prNumber: 2,
     status: "completed",
     currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
   });
 
   expect(svc.workflows.delete("done-run")).toEqual({ ok: true });

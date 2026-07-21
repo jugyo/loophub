@@ -96,9 +96,11 @@ Event rows are timing signals, never transition facts:
   Execute via the same inject-or-launch path as continuing work (see Merge conflict).
 - `workflow_run.cost_exceeded` — interrupt the over-budget child yourself with herdr (see Live child
   control), hold automatic progression, and ask the human once whether to continue. The payload
-  separates `usage_session_id` (the aggregate whose update detected the crossing) from
-  `active_step` / `active_session_id` (the child that must be interrupted). The worker emits this
-  edge-triggered fact once when the run's cumulative cost crosses its configured limit.
+  carries `cost_usd`, the current cumulative `limit_usd`, the run's fixed `increment_usd`, and the
+  `next_limit_usd`, while separating `usage_session_id` (the aggregate whose update detected the
+  crossing) from `active_step` / `active_session_id` (the child that must be interrupted). The
+  worker emits this edge-triggered fact once per run and cumulative limit; after an explicit limit
+  increase, the new limit can emit its own crossing event.
 
 ## Commands you may use
 
@@ -113,8 +115,12 @@ LoopHub (orchestration):
   injecting a follow-up into its pane. This does not change the lifecycle step.
 - `lh workflow run await-human --repo '<repo>' --run <run> --reason <text>`
   — hold automatic progression while the cost continuation decision is pending.
+- `lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>`
+  — after the human explicitly chooses yes, add exactly the run's fixed increment if the event limit
+  still matches the current persisted limit.
 - `lh workflow run resume --repo '<repo>' --run <run> --step <step>`
-  — clear that hold only after the human explicitly chooses yes.
+  — clear that hold only after the explicit cost-limit increase succeeds. Ordinary resume never
+  changes the cost limit itself.
 - `lh workflow launch-step --repo '<repo>' --run <run> --step <step> [--review <id>] [--note <text|->]`
   — start (or restart) the child for a step. The engine resolves its input pointers (for Verify, the
   base/head SHAs to review; for a rework Execute, `--review <id>` becomes the "address review"
@@ -207,9 +213,9 @@ use this path. Verify never reuses a prior verifier session via injection for ju
 
 Handle each `workflow_run.cost_exceeded` event id exactly once:
 
-1. Read `cost_usd`, `limit_usd`, `usage_session_id`, `active_step`, and `active_session_id` from the
-   payload. `usage_session_id` only says which persisted usage aggregate changed; never resolve or
-   interrupt a pane from it.
+1. Read `cost_usd`, `limit_usd`, `increment_usd`, `next_limit_usd`, `usage_session_id`,
+   `active_step`, and `active_session_id` from the payload. `usage_session_id` only says which
+   persisted usage aggregate changed; never resolve or interrupt a pane from it.
 2. Resolve the latest recorded child agent for `active_step` whose launch registered
    `active_session_id` (`executor #<run>-*` for Execute, `verifier #<run>-*` for Verify), then resolve
    its `pane_id` with `herdr agent get`. If in-context launch records were lost, use
@@ -228,10 +234,13 @@ Handle each `workflow_run.cost_exceeded` event id exactly once:
 7. Make the selected result visible in the parent pane as `Continuation decision: yes` or
    `Continuation decision: no`.
    - **yes**: first run `lh workflow step status <run> --repo '<repo>' --json` and use its current
-     domain state. Then clear the hold with `lh workflow run resume ... --step <active_step>`.
-     For Execute, inject one single-line `orchestrator:` instruction into the same Execute pane to
-     re-check domain state and continue. For Verify, do not reuse the interrupted verifier: launch
-     Verify as a fresh child for the current HEAD.
+     domain state. Increase the cumulative limit by exactly the run's fixed increment with
+     `lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>`;
+     a non-zero exit means the hold must remain. Only after that succeeds, clear the hold with
+     `lh workflow run resume ... --step <active_step>`. For Execute, inject one single-line
+     `orchestrator:` instruction into the same Execute pane to re-check domain state and continue.
+     For Verify, do not reuse the interrupted verifier: launch Verify as a fresh child for the
+     current HEAD.
    - **no**: leave the human hold in place. Do not inject more text, launch a child, advance a step,
      or otherwise resume automatic progression. Wait for the human's next explicit instruction.
 

@@ -155,6 +155,8 @@ test("projects a run-scoped conflict event for a PR under a running Workflow run
     prNumber: issue.number,
     status: "running",
     currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: "parent-session-1",
   });
 

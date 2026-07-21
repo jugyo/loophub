@@ -90,6 +90,7 @@ export type Flags = {
   run?: string;
   note?: string;
   reason?: string;
+  "expected-limit"?: string;
   review?: string;
   "tab-id"?: string;
 };
@@ -180,6 +181,7 @@ const { values, positionals } = parseArgs({
     run: { type: "string" },
     note: { type: "string" },
     reason: { type: "string" },
+    "expected-limit": { type: "string" },
     review: { type: "string" },
     "tab-id": { type: "string" },
   },

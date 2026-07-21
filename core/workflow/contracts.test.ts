@@ -30,6 +30,7 @@ test("Japanese contracts preserve the required commands and decision branches", 
     "lh workflow run request-rework",
     "lh workflow run activate-step",
     "lh workflow run await-human",
+    "lh workflow run increase-cost-limit",
     "lh workflow run resume",
     "lh workflow launch-step",
     "lh workflow step status",
@@ -54,6 +55,14 @@ test("Japanese contracts preserve the required commands and decision branches", 
   ]) {
     expect(parent).toContain(branch);
   }
+  expect(parent).toContain("`increment_usd`");
+  expect(parent).toContain("`next_limit_usd`");
+  expect(parent).toContain(
+    "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
+  );
+  expect(parent).toMatch(
+    /最初に `lh workflow step status <run> --repo '<repo>' --json`[\s\S]*`lh workflow run increase-cost-limit[\s\S]*増額が成功した後だけ[\s\S]*`lh workflow run resume/u,
+  );
   expect(execute).toContain("lh issue view <n> --json");
   expect(execute).toContain("lh pr update <pr>");
   expect(execute).toContain("lh workflow escalate");
@@ -231,9 +240,28 @@ test("parent uses one-shot shell watchers and reacts to cost limit facts", () =>
     "The `--type workflow_run --run <run>` filters are mandatory",
   );
   expect(contract).toContain("workflow_run.cost_exceeded");
+  const eventOverview = contract.slice(
+    contract.indexOf("- `workflow_run.cost_exceeded`"),
+    contract.indexOf("## Commands you may use"),
+  );
+  expect(eventOverview).toContain("current cumulative `limit_usd`");
+  expect(eventOverview).toContain("run's fixed `increment_usd`");
+  expect(eventOverview).toContain("once per run and cumulative limit");
+  const commandOverview = contract.slice(
+    contract.indexOf("## Commands you may use"),
+    contract.indexOf("## Live child control"),
+  );
+  expect(commandOverview).toContain(
+    "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
+  );
+  expect(commandOverview).toContain(
+    "Ordinary resume never\n  changes the cost limit itself",
+  );
   expect(contract).toContain("herdr pane send-keys <pane_id> Escape");
   expect(contract).toContain("submits\n  the literal text `Escape`");
   expect(contract).toContain("usage_session_id");
+  expect(contract).toContain("increment_usd");
+  expect(contract).toContain("next_limit_usd");
   expect(contract).toContain("active_step");
   expect(contract).toContain("active_session_id");
   expect(contract).toContain(
@@ -246,6 +274,9 @@ test("parent uses one-shot shell watchers and reacts to cost limit facts", () =>
   );
   expect(contract).toContain(
     "first run `lh workflow step status <run> --repo '<repo>' --json`",
+  );
+  expect(contract).toContain(
+    "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
   );
   expect(contract).toContain(
     "For Verify, do not reuse the interrupted verifier",
@@ -366,7 +397,10 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   );
   expect(design).toContain("`herdr pane send-keys <pane_id> Escape`");
   expect(design).toContain("「続けますか？」という yes / no");
-  expect(design).toContain("人間の yes なしには再開しない");
+  expect(design).toContain("人間の yes なしには増額も再開もしない");
+  expect(design).toContain(
+    "`lh workflow run increase-cost-limit --run <run> --expected-limit <limit_usd>`",
+  );
   expect(design).toContain("orchestrator: workflow-events-ready");
   expect(design).toContain("scripts/workflow-parent-watch.sh");
   expect(design).toContain("watcher_armed=true");

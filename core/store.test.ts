@@ -46,6 +46,8 @@ test("deleteRepo removes Workflow runs before deleting the repo", () => {
     prNumber: 2,
     status: "completed",
     currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
   });
 
   expect(S.deleteRepo("me", "workflow-remove")).toBe(true);

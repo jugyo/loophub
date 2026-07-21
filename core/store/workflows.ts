@@ -111,6 +111,8 @@ export interface WorkflowRunInput {
   model?: string | null;
   contractLanguage?: WorkflowContractLanguage;
   parentSessionId?: string | null;
+  costIncrementUsd: number;
+  costLimitUsd: number;
 }
 
 export interface WorkflowRunRow {
@@ -136,6 +138,8 @@ export interface WorkflowRunRow {
   active_step: string | null;
   active_session_id: string | null;
   child_sequence: number;
+  cost_increment_usd: number | null;
+  cost_limit_usd: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -145,8 +149,8 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
   return db
     .query(
       `INSERT INTO workflow_runs
-        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, contract_language, parent_session_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, contract_language, parent_session_id, cost_increment_usd, cost_limit_usd, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       input.workflowId,
@@ -160,9 +164,42 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
       input.model ?? null,
       input.contractLanguage ?? "en",
       input.parentSessionId ?? null,
+      input.costIncrementUsd,
+      input.costLimitUsd,
       t,
       t,
     ) as WorkflowRunRow;
+}
+
+export function increaseWorkflowRunCostLimit(
+  id: number,
+  expectedLimitUsd: number,
+): { previous_limit_usd: number; current_limit_usd: number } | null {
+  const row = db
+    .query(
+      `UPDATE workflow_runs
+       SET cost_limit_usd = cost_limit_usd + cost_increment_usd, updated_at = ?
+       WHERE id = ?
+         AND status = 'running'
+         AND needs_human_reason IS NOT NULL
+         AND cost_increment_usd IS NOT NULL
+         AND cost_limit_usd = ?
+         AND EXISTS (
+           SELECT 1 FROM events
+           WHERE repo_id = workflow_runs.repo_id
+             AND type = 'workflow_run.cost_exceeded'
+             AND json_extract(payload, '$.id') = workflow_runs.id
+             AND json_extract(payload, '$.limit_usd') = workflow_runs.cost_limit_usd
+         )
+       RETURNING cost_limit_usd`,
+    )
+    .get(now(), id, expectedLimitUsd) as { cost_limit_usd: number } | null;
+  return row
+    ? {
+        previous_limit_usd: expectedLimitUsd,
+        current_limit_usd: row.cost_limit_usd,
+      }
+    : null;
 }
 
 export function getWorkflowRun(id: number): WorkflowRunRow | null {

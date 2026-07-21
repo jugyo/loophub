@@ -217,6 +217,15 @@ function positiveInt(value: string | undefined, name: string): number {
   return Number(value);
 }
 
+function positiveNumber(value: string | undefined, name: string): number {
+  if (value === undefined) fail(`${name} is required`);
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    fail(`${name} must be a positive number`);
+  }
+  return parsed;
+}
+
 async function launchParentHerdr(input: {
   repo: { full_name: string; local_path: string };
   runId: number;
@@ -482,6 +491,26 @@ async function runLifecycle(): Promise<void> {
   const repo = await resolveRepo();
   const sessionId = await writeSession();
   const service = (await svc()).workflowRuns;
+  if (action === "increase-cost-limit") {
+    const expectedLimitUsd = positiveNumber(
+      flags["expected-limit"],
+      "--expected-limit",
+    );
+    const result = await runOp(() =>
+      service.increaseCostLimit(
+        repo,
+        { run: runId, expectedLimitUsd },
+        sessionId,
+      ),
+    );
+    if (flags.json) out(result);
+    else {
+      console.log(`increased cost limit for Workflow run #${result.run}`);
+      console.log(`previous_limit_usd\t${result.previous_limit_usd}`);
+      console.log(`current_limit_usd\t${result.current_limit_usd}`);
+    }
+    return;
+  }
   const result = await runOp(() => {
     if (action === "advance-to-verify") {
       return service.advanceToVerify(repo, { run: runId }, sessionId);
@@ -591,6 +620,8 @@ async function stepStatus(): Promise<void> {
   if (result.needs_human_reason !== null) {
     console.log(`needs_human\t${display(result.needs_human_reason)}`);
   }
+  console.log(`cost_increment_usd\t${result.cost_increment_usd}`);
+  console.log(`cost_limit_usd\t${result.cost_limit_usd}`);
   console.log(`head\t${display(result.head_sha ?? "(unresolved)")}`);
   if (result.last_turn_done_at !== null) {
     console.log(`last_turn_done\t${display(result.last_turn_done_at)}`);

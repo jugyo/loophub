@@ -312,6 +312,8 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
     prNumber: pull.number,
     status: "running",
     currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId,
   });
   S.appendWorkflowRunStepSession(run.id, "execute", sessionId);
@@ -347,6 +349,8 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
     prNumber: otherPull.number,
     status: "running",
     currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: otherParentSessionId,
   });
   S.appendWorkflowRunStepSession(otherRun.id, "execute", otherSessionId);
@@ -407,6 +411,8 @@ test("usage sweep syncs changed usage and emits linked target events only on upd
       active_session_id: activeVerifySessionId,
       pr_number: pull.number,
       limit_usd: 10,
+      increment_usd: 10,
+      next_limit_usd: 20,
     });
     expect(costExceededPayload.cost_usd).toBeGreaterThan(11);
 

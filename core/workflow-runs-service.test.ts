@@ -141,6 +141,16 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     rework_count: 0,
     parent_session_id: "11111111-1111-4111-8111-111111111111",
   });
+  expect(S.getWorkflowRun(result.run.id)).toMatchObject({
+    cost_increment_usd: 10,
+    cost_limit_usd: 10,
+  });
+  svc.settings.update({ devCostLimitUsd: 1 });
+  expect(S.getWorkflowRun(result.run.id)).toMatchObject({
+    cost_increment_usd: 10,
+    cost_limit_usd: 10,
+  });
+  svc.settings.update({ devCostLimitUsd: 10 });
   expect(result.pr.number).toBeGreaterThan(issue.number);
   expect(existsSync(result.worktree)).toBe(true);
   expect(existsSync(result.lock_path)).toBe(true);
@@ -341,6 +351,188 @@ test("start snapshots the contract language for parent and every later step", as
   expect(readFileSync(verify.system_prompt_path, "utf8")).toContain(
     "# Verify ステップ contract",
   );
+});
+
+test("cost limit increases are explicit, guarded, and repeatable", async () => {
+  const repo = S.createRepo("me/workflow-cost-limit", REPO_PATH);
+  const pull = S.createIssue(repo.id, "pull", "Cost-limited PR", "", "me");
+  S.createPull(pull.id, "cost-limit", "main", null);
+  const workflow = S.createWorkflow({
+    name: "cost-limit-workflow",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parentSessionId = "77777777-7777-4777-8777-777777777777";
+  const childSessionId = "88888888-8888-4888-8888-888888888888";
+  S.registerAgentSession(parentSessionId, "lh-workflow", parentSessionId);
+  S.registerAgentSession(childSessionId, "workflow-step", childSessionId);
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: pull.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 2.5,
+    costLimitUsd: 2.5,
+    parentSessionId,
+  });
+  S.appendWorkflowRunStepSession(run.id, "execute", childSessionId);
+  S.updateWorkflowRun(run.id, {
+    activeStep: "execute",
+    activeSessionId: childSessionId,
+  });
+  S.upsertSessionUsage(childSessionId, {
+    model: "test",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 3,
+  });
+
+  expect(
+    svc.workflowRuns.detectCostExceeded(repo.full_name, {
+      run: run.id,
+      usageSession: childSessionId,
+    }),
+  ).toEqual({ emitted: true, cost_usd: 3, limit_usd: 2.5 });
+  expect(
+    svc.workflowRuns.detectCostExceeded(repo.full_name, {
+      run: run.id,
+      usageSession: childSessionId,
+    }),
+  ).toEqual({ emitted: false, cost_usd: 3, limit_usd: 2.5 });
+  const firstEvent = S.eventsForWorkflowRun(repo.id, run.id).find(
+    (event) => event.type === "workflow_run.cost_exceeded",
+  );
+  expect(JSON.parse(firstEvent!.payload)).toMatchObject({
+    cost_usd: 3,
+    limit_usd: 2.5,
+    increment_usd: 2.5,
+    next_limit_usd: 5,
+  });
+
+  expect(() =>
+    svc.workflowRuns.increaseCostLimit(
+      repo.full_name,
+      { run: run.id, expectedLimitUsd: 2.5 },
+      parentSessionId,
+    ),
+  ).toThrow("Workflow run is not waiting for a human");
+  svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: run.id, reason: "Cost limit exceeded" },
+    parentSessionId,
+  );
+  expect(() =>
+    svc.workflowRuns.increaseCostLimit(
+      repo.full_name,
+      { run: run.id, expectedLimitUsd: 1 },
+      parentSessionId,
+    ),
+  ).toThrow("does not match current limit");
+  expect(
+    svc.workflowRuns.increaseCostLimit(
+      repo.full_name,
+      { run: run.id, expectedLimitUsd: 2.5 },
+      parentSessionId,
+    ),
+  ).toEqual({
+    run: run.id,
+    increment_usd: 2.5,
+    previous_limit_usd: 2.5,
+    current_limit_usd: 5,
+  });
+  expect(() =>
+    svc.workflowRuns.increaseCostLimit(
+      repo.full_name,
+      { run: run.id, expectedLimitUsd: 2.5 },
+      parentSessionId,
+    ),
+  ).toThrow("does not match current limit");
+
+  const resumed = await svc.workflowRuns.resumeAfterHuman(
+    repo.full_name,
+    { run: run.id, step: "execute" },
+    parentSessionId,
+  );
+  expect(resumed.run.needs_human_reason).toBeNull();
+  expect(S.getWorkflowRun(run.id)?.cost_limit_usd).toBe(5);
+  S.upsertSessionUsage(childSessionId, {
+    model: "test",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 5.5,
+  });
+  expect(
+    svc.workflowRuns.detectCostExceeded(repo.full_name, {
+      run: run.id,
+      usageSession: childSessionId,
+    }),
+  ).toEqual({ emitted: true, cost_usd: 5.5, limit_usd: 5 });
+  const costEvents = S.eventsForWorkflowRun(repo.id, run.id).filter(
+    (event) => event.type === "workflow_run.cost_exceeded",
+  );
+  expect(costEvents).toHaveLength(2);
+  expect(JSON.parse(costEvents[1].payload)).toMatchObject({
+    limit_usd: 5,
+    increment_usd: 2.5,
+    next_limit_usd: 7.5,
+  });
+  svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: run.id, reason: "Cost limit exceeded again" },
+    parentSessionId,
+  );
+  expect(
+    svc.workflowRuns.increaseCostLimit(
+      repo.full_name,
+      { run: run.id, expectedLimitUsd: 5 },
+      parentSessionId,
+    ),
+  ).toMatchObject({ previous_limit_usd: 5, current_limit_usd: 7.5 });
+
+  const heldWithoutEvent = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: pull.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 2.5,
+    costLimitUsd: 2.5,
+    parentSessionId,
+  });
+  svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: heldWithoutEvent.id, reason: "Ordinary human hold" },
+    parentSessionId,
+  );
+  expect(() =>
+    svc.workflowRuns.increaseCostLimit(
+      repo.full_name,
+      { run: heldWithoutEvent.id, expectedLimitUsd: 2.5 },
+      parentSessionId,
+    ),
+  ).toThrow("no cost exceeded event exists");
+  expect(S.getWorkflowRun(heldWithoutEvent.id)).toMatchObject({
+    cost_increment_usd: 2.5,
+    cost_limit_usd: 2.5,
+  });
+  await svc.workflowRuns.resumeAfterHuman(
+    repo.full_name,
+    { run: heldWithoutEvent.id, step: "execute" },
+    parentSessionId,
+  );
+  expect(S.getWorkflowRun(heldWithoutEvent.id)).toMatchObject({
+    needs_human_reason: null,
+    cost_increment_usd: 2.5,
+    cost_limit_usd: 2.5,
+  });
 });
 
 test("a grok run's steps launch grok, not claude (#1521)", async () => {
@@ -1214,6 +1406,8 @@ test("stateForIssue / stateForPull expose run display state, or null when absent
     prNumber: prIssue.number,
     status: "running",
     currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: "22222222-2222-4222-8222-222222222222",
   });
   S.updateWorkflowRun(run.id, { reworkCount: 2 });
@@ -1297,6 +1491,8 @@ test("human lifecycle intents sanitize reasons and authorize explicit resume (#1
     prNumber: 22,
     status: "running",
     currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: parent,
   });
   const latestUpdatedPayload = () => {
@@ -1363,6 +1559,8 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
     prNumber: 20,
     status: "running",
     currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: "33333333-3333-4333-8333-333333333333",
   });
   const otherRun = S.createWorkflowRun({
@@ -1372,6 +1570,8 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
     prNumber: 20,
     status: "running",
     currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: "44444444-4444-4444-8444-444444444444",
   });
 

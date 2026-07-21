@@ -95,7 +95,8 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    通常の lifecycle を遷移する。`current_step` はこの lifecycle を表す。一方、
    `active_step` / `active_session_id` は実際に操作中の child を表し、fresh launch の確認時と
    live Execute 注入直前の `activate-step` で更新する。live な子への注入 / Esc は herdr
-   直接操作であり、`activate-step` 自体は lifecycle を遷移しない。
+   直接操作であり、`activate-step` 自体は lifecycle を遷移しない。コスト超過後の継続許可時だけは、
+   lifecycle の resume より先に専用の `increase-cost-limit --expected-limit <usd>` を実行する。
 5. request_changes / 継続指示 / merge conflict は **同じ Execute 注入経路** を使う。最新 Execute
    child とその登録済み session id を解決し、注入前に
    `lh workflow run activate-step --step execute --session <session_id>` を成功させる。
@@ -293,7 +294,10 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 記録するが、escalate 自体は run lifecycle を変更しない。Verify が review を登録すると
 `workflow_run.review_submitted`、GitHub PR feedback が同期されると `workflow_run.github_event` が記録
 される。usage sweep が run の累積コスト上限越えを検知すると、edge-triggered に一度だけ
-`workflow_run.cost_exceeded` が記録される。payload の `usage_session_id` はコスト更新を検知した
+`workflow_run.cost_exceeded` が run・累計上限ごとに1回だけ記録される。run 開始時には設定された
+上限を固定増分 `B` と初期累計上限 `B` の両方として保存するため、その後の設定変更は既存 run に
+影響しない。payload には `cost_usd`、`limit_usd`、`increment_usd`、`next_limit_usd` が含まれる。
+`usage_session_id` はコスト更新を検知した
 usage 集約であり、中断対象ではない。中断対象は別フィールドの `active_step` /
 `active_session_id` である。passing Verify 後の追加 Execute 中も `current_step` は Verify のままだが、
 注入直前の `activate-step` により active target は Execute になる。親はその step の最新 child pane を
@@ -306,8 +310,11 @@ usage 集約であり、中断対象ではない。中断対象は別フィー�
 `lh events --type workflow_run --run <run>` でこれらを cursor drain し、run-scoped filter は payload の
 `id` を使って対象 run に絞り込む。子の contract に親の pane id や topology は現れない。
 
-yes の場合は、まず `lh workflow step status` で current HEAD / review / step を再観測してから
-`resume --step <active_step>` で hold を解除する。Execute は同じ pane へ domain state 再確認を含む
+yes の場合は、まず `lh workflow step status` で current HEAD / review / step を再観測し、
+`lh workflow run increase-cost-limit --run <run> --expected-limit <limit_usd>` で累計上限を固定増分 `B`
+だけ増やす。この操作は run が human hold 中で、期待上限が DB の現在値と一致し、その上限に対応する
+cost exceeded event がある場合だけ原子的に成功する。成功後に限り `resume --step <active_step>` で
+hold を解除する。通常の resume 自体は上限を変更しない。Execute は同じ pane へ domain state 再確認を含む
 1 行指示を注入して続行し、Verify は中断した子を再利用せず current HEAD に対する fresh child を
 起動する。no の場合は hold を維持し、注入・step 遷移・子起動をせず次の明示的な人間指示を待つ。
 確認待ちと `Continuation decision: yes|no` は親 pane に表示する。pane 解決、hold、Esc、通知、確認
@@ -327,7 +334,7 @@ yes の場合は、まず `lh workflow step status` で current HEAD / review / 
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
 | Execute | `workflow_run.escalated` を受領 | event の reason を再取得し、`await-human` で hold |
 | Execute / Verify | `workflow_run.cost_exceeded` を受領 | active child を解決 → `await-human` → 実 Esc + 1 行通知 → yes / no を一度だけ確認 |
-| Cost confirmation | yes | `step status` を再確認 → hold を解除。Execute は同じ pane で続行、Verify は current HEAD に fresh launch |
+| Cost confirmation | yes | `step status` を再確認 → 期待上限付き専用操作で `B` 増額 → hold を解除。Execute は同じ pane で続行、Verify は current HEAD に fresh launch |
 | Cost confirmation | no | hold を維持し、子起動・注入・自動遷移を行わず次の明示的指示を待つ |
 | Human wait | Execute の turn done 後、HEAD が最新 review より前進 | `resume --step execute` → 通常の Execute 完了遷移 → fresh Verify |
 | Human wait | Execute の turn done 後、HEAD が不変 | hold を維持し、追加作業または明示的 resume を待つ |
@@ -364,7 +371,7 @@ read-only 表示だけ維持する。
 fresh pass 後も run は complete せず `running` + `verification_status: verified` のまま保つ。run を恒久
 終了する command は無い。コスト超過時は parent が needs-human hold を先に設定し、
 `herdr pane send-keys <pane_id> Escape` で active child だけを中断してから yes / no を確認し、
-人間の yes なしには再開しない（コスト中断用の lh CLI ラッパーは無い）。
+人間の yes なしには増額も再開もしない（child の Esc 送信自体に lh CLI ラッパーは無い）。
 `resume` は `await-human` による明示的 hold を人間の指示で解除する command であり、fresh pass 後の
 追加作業には使わない。
 
@@ -377,6 +384,7 @@ lh workflow start <issue> --workflow <name>
 lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note <text|->]
 # lifecycle command
 lh workflow run advance-to-verify|request-rework|await-human|resume --run <id>
+lh workflow run increase-cost-limit --run <id> --expected-limit <usd>
 # live control target（lifecycle step は変更しない）
 lh workflow run activate-step --run <id> --step execute --session <session_id>
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
@@ -440,7 +448,9 @@ herdr pane send-keys <pane_id> Escape       # コスト超過時に active child
   `send-keys ... Escape` で中断し、1 行通知を一度だけ送る。
 - fresh pass 後の追加 Execute では `current_step: verify` を維持しつつ
   `active_step: execute` / 当該 session を記録し、コスト超過時に verifier ではなく executor を止める。
-- コスト続行確認は yes / no を一度だけ表示し、yes は step status 再確認後に再開（Verify は fresh
-  child）、no は自動進行なし、操作・確認失敗は可視な error として残る。
+- コスト続行確認は yes / no を一度だけ表示し、yes は step status 再確認後、期待する現在上限を指定した
+  専用操作で固定増分 `B` だけ増額してから再開する（Verify は fresh child）。重複操作や古い event、
+  通常 hold に対する増額は非0で拒否され、通常 resume は上限を変えない。no は増額も自動進行もせず、
+  操作・確認失敗は可視な error として残る。
 - idle 検知が遷移・完了判定に使われない。
 - 旧 artifact テーブルが新しい run の進行条件にならない。

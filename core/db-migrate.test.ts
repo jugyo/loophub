@@ -119,7 +119,7 @@ test("pulls.session_id is dropped after migration", () => {
   expect(S.getPull(10)?.head_pending_creation).toBe(0);
 });
 
-test("workflow runs gain explicit active child columns", () => {
+test("workflow runs gain active child and cost limit columns", () => {
   const cols = (
     D.db.query("PRAGMA table_info(workflow_runs)").all() as { name: string }[]
   ).map((c) => c.name);
@@ -127,6 +127,8 @@ test("workflow runs gain explicit active child columns", () => {
   expect(cols).toContain("active_session_id");
   expect(cols).toContain("contract_language");
   expect(S.getWorkflowRun(30)?.contract_language).toBe("en");
+  expect(cols).toContain("cost_increment_usd");
+  expect(cols).toContain("cost_limit_usd");
 });
 
 test("the legacy dev-session pointer survives in session_links (resume anchor preserved)", () => {

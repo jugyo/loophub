@@ -237,6 +237,8 @@ test("workflowRuns/history exposes only the requested run's lifecycle events", a
     prNumber: 702,
     status: "running",
     currentStep: "plan",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: "55555555-5555-4555-8555-555555555555",
   });
   const otherRun = S.createWorkflowRun({
@@ -246,6 +248,8 @@ test("workflowRuns/history exposes only the requested run's lifecycle events", a
     prNumber: 702,
     status: "running",
     currentStep: "plan",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId: "66666666-6666-4666-8666-666666666666",
   });
   S.emitEvent(repo.id, "workflow_run.started", "rpc-parent", { id: run.id });

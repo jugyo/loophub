@@ -51,6 +51,8 @@ async function workflowGithubPull(githubNumber: number): Promise<{
     prNumber: pr.number,
     status: "running",
     currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
     parentSessionId,
   });
   return { number: pr.number, url, runId: run.id, parentSessionId };
@@ -185,6 +187,8 @@ test("skips GitHub feedback when the Workflow run has no parent session", async 
     prNumber: pr.number,
     status: "running",
     currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
   });
 
   const called: string[] = [];
