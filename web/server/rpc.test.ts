@@ -610,6 +610,18 @@ test("workflow CRUD is exposed through JSON-RPC", async () => {
   expect(deleted.result).toEqual({ ok: true });
 });
 
+test("settings RPC persists and selects the workflow contract language", async () => {
+  const updated: any = await call("settings/update", {
+    workflowContractLanguage: "ja",
+  });
+  expect(updated.result.workflowContractLanguage).toBe("ja");
+
+  const contracts: any = await call("workflows/contracts", {});
+  expect(contracts.result.execute).toContain("# Execute ステップ contract");
+
+  await call("settings/update", { workflowContractLanguage: "en" });
+});
+
 test("dispatchRaw turns invalid JSON into -32700", async () => {
   const r: any = await dispatchRaw("{not json");
   expect(r.error.code).toBe(ERROR_CODES.PARSE_ERROR);

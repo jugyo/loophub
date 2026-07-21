@@ -45,6 +45,7 @@ function mockFetch(
   initialAgents: Partial<Record<CodingAgent, AgentSettingsForTest>> = {},
   initialCodingAgent: CodingAgent = "claude-code",
   initialDevCostLimitUsd = 10,
+  initialWorkflowContractLanguage: "en" | "ja" = "en",
 ) {
   const agents: Record<CodingAgent, AgentSettingsForTest> = {
     ...DEFAULT_AGENT_SETTINGS,
@@ -52,11 +53,13 @@ function mockFetch(
   };
   let codingAgent = initialCodingAgent;
   let devCostLimitUsd = initialDevCostLimitUsd;
+  let workflowContractLanguage = initialWorkflowContractLanguage;
   return mockRpcFetch({
     "settings/get": () => ({
       agents,
       codingAgent,
       devCostLimitUsd,
+      workflowContractLanguage,
     }),
     "settings/update": (p) => {
       if (p.agent && p.autoModeOnLaunch !== undefined) {
@@ -81,7 +84,10 @@ function mockFetch(
       if (p.devCostLimitUsd !== undefined) {
         devCostLimitUsd = p.devCostLimitUsd as number;
       }
-      return { agents, codingAgent, devCostLimitUsd };
+      if (p.workflowContractLanguage) {
+        workflowContractLanguage = p.workflowContractLanguage as "en" | "ja";
+      }
+      return { agents, codingAgent, devCostLimitUsd, workflowContractLanguage };
     },
   });
 }
@@ -90,10 +96,16 @@ function renderSettings(
   initialAgents?: Partial<Record<CodingAgent, AgentSettingsForTest>>,
   initialCodingAgent: CodingAgent = "claude-code",
   initialDevCostLimitUsd = 10,
+  initialWorkflowContractLanguage: "en" | "ja" = "en",
 ) {
   vi.stubGlobal(
     "fetch",
-    mockFetch(initialAgents, initialCodingAgent, initialDevCostLimitUsd),
+    mockFetch(
+      initialAgents,
+      initialCodingAgent,
+      initialDevCostLimitUsd,
+      initialWorkflowContractLanguage,
+    ),
   );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -493,5 +505,26 @@ describe("SettingsPage", () => {
         .disabled,
     ).toBe(true);
     expect(rpcCall("settings/update")).toBeUndefined();
+  });
+
+  it("shows and saves the workflow contract language on the Workflows tab", async () => {
+    renderSettings(undefined, "claude-code", 10, "ja");
+    fireEvent.click(await screen.findByRole("tab", { name: "Workflows" }));
+
+    const group = screen.getByRole("radiogroup", {
+      name: "Workflow contract language",
+    });
+    expect(
+      within(group)
+        .getByRole("radio", { name: "日本語" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+
+    fireEvent.click(within(group).getByRole("radio", { name: "English" }));
+    await waitFor(() =>
+      expect(rpcCall("settings/update")?.params).toMatchObject({
+        workflowContractLanguage: "en",
+      }),
+    );
   });
 });

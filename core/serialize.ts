@@ -51,6 +51,7 @@ import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
 // summary, scheduled tasks, per-agent settings). Re-export it from the registry so web/src/api/types.ts
 // derives `CodingAgent` from core via a type-only import instead of re-declaring the union.
 export type { CodingAgent } from "./runtimes.ts";
+export type { WorkflowContractLanguage as WorkflowContractLanguageWire } from "./workflow/contracts.ts";
 
 export interface RepoWire {
   id: number;

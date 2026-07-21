@@ -93,6 +93,10 @@ beforeAll(async () => {
       VALUES (20, 1, 'obsolete', 't1', 't1');
     INSERT INTO issue_group_members (group_id, issue_id, position, added_at)
       VALUES (20, 10, 0, 't1');
+    INSERT INTO workflow_runs
+      (id, workflow_id, repo_id, issue_number, pr_number, status, current_step,
+       parent_session_id, created_at, updated_at)
+      VALUES (30, NULL, 1, 6, 7, 'running', 'execute', NULL, 't1', 't1');
   `);
   seed.close();
 
@@ -121,6 +125,8 @@ test("workflow runs gain explicit active child columns", () => {
   ).map((c) => c.name);
   expect(cols).toContain("active_step");
   expect(cols).toContain("active_session_id");
+  expect(cols).toContain("contract_language");
+  expect(S.getWorkflowRun(30)?.contract_language).toBe("en");
 });
 
 test("the legacy dev-session pointer survives in session_links (resume anchor preserved)", () => {

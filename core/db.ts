@@ -739,6 +739,14 @@ CREATE TABLE IF NOT EXISTS workflows (
   updated_at      TEXT NOT NULL
 );
 
+-- Instance-wide settings whose source of truth must be shared by every process. Values are stored
+-- as text and validated by their owning service before writes.
+CREATE TABLE IF NOT EXISTS instance_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 -- Minimal run tracking for the workflow delete guard (#997) plus the run lifecycle state. A
 -- workflow referenced by an active run cannot be deleted.
 CREATE TABLE IF NOT EXISTS workflow_runs (
@@ -756,6 +764,9 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   -- claude-code + the config default model when read.
   runtime            TEXT,
   model              TEXT,
+  -- Fixed contract language captured when the run starts. Existing rows and databases default to
+  -- English so an instance setting change cannot alter an in-progress or historical run.
+  contract_language  TEXT NOT NULL DEFAULT 'en',
   parent_session_id  TEXT,
   step_sessions_json TEXT NOT NULL DEFAULT '{}',
   -- Child most recently launched or explicitly reactivated for live pane input. Kept separate from
@@ -961,6 +972,9 @@ tryExec(
 );
 tryExec("ALTER TABLE workflow_runs ADD COLUMN runtime TEXT");
 tryExec("ALTER TABLE workflow_runs ADD COLUMN model TEXT");
+tryExec(
+  "ALTER TABLE workflow_runs ADD COLUMN contract_language TEXT NOT NULL DEFAULT 'en'",
+);
 tryExec(
   "ALTER TABLE workflow_runs ADD COLUMN child_sequence INTEGER NOT NULL DEFAULT 0",
 );

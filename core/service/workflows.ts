@@ -1,5 +1,6 @@
 import type { WorkflowStepContractsWire } from "../serialize.ts";
 import { workflowStepContracts } from "../workflow/contracts.ts";
+import { workflowContractLanguage } from "./settings.ts";
 import { actorFor, S, ServiceError, workflowJSON } from "./shared.ts";
 
 const MAX_NAME_LENGTH = 64;
@@ -35,7 +36,7 @@ function workflowOr404(name: string) {
 
 export const workflows = {
   contracts(): WorkflowStepContractsWire {
-    return workflowStepContracts();
+    return workflowStepContracts(workflowContractLanguage());
   },
 
   list() {

@@ -33,6 +33,10 @@ import {
   type WorkflowStep,
 } from "../workflow/compose.ts";
 import {
+  type WorkflowContractLanguage,
+  workflowContractText,
+} from "../workflow/contracts.ts";
+import {
   nextWorkflowChildSequence,
   parseWorkflowHerdrAgentName,
   workflowStepSessionIds,
@@ -67,6 +71,7 @@ import {
 } from "../worktree-provision.ts";
 import { dev } from "./dev.ts";
 import { runHerdr } from "./herdr-runner.ts";
+import { workflowContractLanguage } from "./settings.ts";
 import {
   actorFor,
   assertExistingLocalBranch,
@@ -234,6 +239,10 @@ function workflowHumanReason(reason: string, action: string): string {
 // claude (#1521).
 function runRuntime(run: S.WorkflowRunRow): CodingAgent {
   return normalizeCodingAgent(run.runtime);
+}
+
+function runContractLanguage(run: S.WorkflowRunRow): WorkflowContractLanguage {
+  return run.contract_language === "ja" ? "ja" : "en";
 }
 
 // The model the parent run resolved at start. When the row pinned no model (an old run, or a start
@@ -595,7 +604,6 @@ export const workflowRuns = {
       issue: number;
       workflow?: string;
       workflowId?: number;
-      parentContract: string;
       auto?: boolean;
       // Runtime + model the CLI resolved for the parent (#516). Persisted on the run row so every
       // step inherits the same values. Omitted => claude-code + the agent's config default model.
@@ -610,6 +618,7 @@ export const workflowRuns = {
     const workflow = workflowByInput(input);
     const issue = issueOr404(r, input.issue, "issue");
     const runtime: CodingAgent = input.runtime ?? "claude-code";
+    const contractLanguage = workflowContractLanguage();
 
     S.registerAgentSession(
       sessionId,
@@ -691,13 +700,14 @@ export const workflowRuns = {
         autoMode: input.auto,
         runtime,
         model: input.model?.trim() || null,
+        contractLanguage,
         parentSessionId: sessionId,
       });
 
       const systemPromptPath = writeParentContract(
         run.id,
         renderWorkflowContract({
-          template: input.parentContract,
+          template: workflowContractText("parent", contractLanguage),
           step: "parent",
           worktreePath: wtPath,
           baseBranch: pull.base_ref,
@@ -985,7 +995,6 @@ export const workflowRuns = {
       step: string;
       note?: string;
       review?: number;
-      contract: string;
       model?: string | null;
       auto?: boolean;
       tabId?: string | null;
@@ -1034,7 +1043,10 @@ export const workflowRuns = {
     });
     const composed = composeWorkflowLaunchPrompt(
       {
-        template: stepContractForLaunch(step, input.contract),
+        template: stepContractForLaunch(
+          step,
+          workflowContractText(step, runContractLanguage(run)),
+        ),
         step,
         worktreePath: worktree,
         baseBranch: pull.base_ref,
@@ -1320,7 +1332,6 @@ export const workflowRuns = {
       step: string;
       note?: string;
       review?: number;
-      contract: string;
     },
     _sessionId?: string | null,
   ): Promise<WorkflowStepInputResult> {
@@ -1361,7 +1372,10 @@ export const workflowRuns = {
     });
     const composed = composeWorkflowLaunchPrompt(
       {
-        template: stepContractForLaunch(step, input.contract),
+        template: stepContractForLaunch(
+          step,
+          workflowContractText(step, runContractLanguage(run)),
+        ),
         step,
         worktreePath: worktree,
         baseBranch: pull.base_ref,

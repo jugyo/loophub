@@ -10,6 +10,7 @@ import type { WorkflowInput } from "@/api/client";
 import type { Workflow, WorkflowStepContracts } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
+import { useSettings } from "@/queries/settings";
 import {
   useCreateWorkflow,
   useDeleteWorkflow,
@@ -180,7 +181,10 @@ function WorkflowForm({
 }) {
   const create = useCreateWorkflow();
   const update = useUpdateWorkflow();
-  const contracts = useWorkflowContracts();
+  const settings = useSettings();
+  const contracts = useWorkflowContracts(
+    settings.data?.workflowContractLanguage,
+  );
   const mutation = mode === "create" ? create : update;
   const [openContract, setOpenContract] = useState<
     (typeof STEP_FIELDS)[number] | null

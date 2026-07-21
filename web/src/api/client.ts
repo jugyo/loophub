@@ -424,7 +424,7 @@ export function getWorkflowRunHistory(repo: string, run: number) {
 }
 
 // --- global settings ---
-// Instance-level config.json settings (#474), as opposed to the per-repo settings above.
+// Instance-level settings (#474), as opposed to the per-repo settings above.
 export function getSettings() {
   return rpc<GlobalSettings>("settings/get");
 }
@@ -437,6 +437,7 @@ export function updateSettings(
     effort?: string;
     codingAgent?: CodingAgent;
     devCostLimitUsd?: number;
+    workflowContractLanguage?: GlobalSettings["workflowContractLanguage"];
   },
   sessionId: string = getSessionId(),
 ) {

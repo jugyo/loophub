@@ -129,7 +129,6 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     {
       issue: issue.number,
       workflowId: workflow.id,
-      parentContract: "# Parent\nDo the run.",
       auto: true,
     },
     "11111111-1111-4111-8111-111111111111",
@@ -151,7 +150,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     "utf8",
   );
   expect(parentSystemPrompt).toContain("step: parent");
-  expect(parentSystemPrompt).toContain("# Parent");
+  expect(parentSystemPrompt).toContain("# workflow parent contract");
   // start wires this run's own identifiers into the parent prompt; its wording and the transition
   // commands it carries are covered by core/workflow/prompts.test.ts.
   expect(result.parent.user_prompt).toContain(`run: ${result.run.id}`);
@@ -171,7 +170,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
   await expect(
     svc.workflowRuns.launchStep(
       repo.full_name,
-      { run: result.run.id, step: "execute", contract: "# Execute" },
+      { run: result.run.id, step: "execute" },
       result.session_id,
     ),
   ).rejects.toMatchObject({ status: 409 });
@@ -193,7 +192,6 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     {
       run: result.run.id,
       step: "execute",
-      contract: "# Execute contract\n{{step}} {{worktreePath}} {{baseBranch}}",
       model: "sonnet",
     },
     result.session_id,
@@ -270,7 +268,6 @@ test("start persists the resolved runtime/model and every step inherits them (#5
     {
       issue: issue.number,
       workflowId: workflow.id,
-      parentContract: "# Parent\nDo the run.",
       runtime: "codex",
       model: "gpt-5.5",
     },
@@ -284,7 +281,7 @@ test("start persists the resolved runtime/model and every step inherits them (#5
 
   const launched = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: result.run.id, step: "execute", contract: "# Execute\n{{step}}" },
+    { run: result.run.id, step: "execute" },
     result.session_id,
   );
   expect(launched.runtime).toBe("codex");
@@ -304,6 +301,46 @@ test("start persists the resolved runtime/model and every step inherits them (#5
     result.session_id,
   );
   expect(S.getAgentSession(launched.session_id)?.runtime).toBe("codex");
+});
+
+test("start snapshots the contract language for parent and every later step", async () => {
+  const { repo } = freshRepo("me/workflow-language-run");
+  const issue = S.createIssue(repo.id, "issue", "Japanese run", "", "me");
+  const workflow = S.createWorkflow({
+    name: "language-standard",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+
+  svc.settings.update({ workflowContractLanguage: "ja" });
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    "77777777-7777-4777-8777-777777777777",
+  );
+  svc.settings.update({ workflowContractLanguage: "en" });
+
+  expect(S.getWorkflowRun(started.run.id)?.contract_language).toBe("ja");
+  expect(readFileSync(started.parent.system_prompt_path, "utf8")).toContain(
+    "# Parent workflow contract",
+  );
+  const execute = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    started.session_id,
+  );
+  expect(readFileSync(execute.system_prompt_path, "utf8")).toContain(
+    "# Execute ステップ contract",
+  );
+  const verify = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    started.session_id,
+  );
+  expect(readFileSync(verify.system_prompt_path, "utf8")).toContain(
+    "# Verify ステップ contract",
+  );
 });
 
 test("a grok run's steps launch grok, not claude (#1521)", async () => {
@@ -327,7 +364,6 @@ test("a grok run's steps launch grok, not claude (#1521)", async () => {
     {
       issue: issue.number,
       workflowId: workflow.id,
-      parentContract: "# Parent\nDo the run.",
       runtime: "grok",
       model: "grok-code-fast-1",
     },
@@ -341,7 +377,7 @@ test("a grok run's steps launch grok, not claude (#1521)", async () => {
 
   const launched = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: result.run.id, step: "execute", contract: "# Execute\n{{step}}" },
+    { run: result.run.id, step: "execute" },
     result.session_id,
   );
   expect(launched.runtime).toBe("grok");
@@ -378,7 +414,6 @@ test("start defaults to claude-code and the config default model when unspecifie
     {
       issue: issue.number,
       workflowId: workflow.id,
-      parentContract: "# Parent",
     },
     "44444444-4444-4444-8444-444444444444",
   );
@@ -389,7 +424,7 @@ test("start defaults to claude-code and the config default model when unspecifie
 
   const launched = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: result.run.id, step: "execute", contract: "# Execute" },
+    { run: result.run.id, step: "execute" },
     result.session_id,
   );
   expect(launched.runtime).toBe("claude-code");
@@ -418,7 +453,6 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     {
       issue: issue.number,
       workflowId: workflow.id,
-      parentContract: "# Parent",
     },
     parent,
   );
@@ -427,7 +461,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   // Launch + confirm the Execute child.
   const exec = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: started.run.id, step: "execute", contract: "# Execute" },
+    { run: started.run.id, step: "execute" },
     parent,
   );
   svc.workflowRuns.confirmStepLaunch(
@@ -486,7 +520,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   // Verify submits a passing review pinned to the reviewed head.
   const verify = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: started.run.id, step: "verify", contract: "# Verify" },
+    { run: started.run.id, step: "verify" },
     parent,
   );
   svc.workflowRuns.confirmStepLaunch(
@@ -600,7 +634,6 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
       run: started.run.id,
       step: "execute",
       note: "Add another requested change.",
-      contract: "# Execute",
     },
     parent,
   );
@@ -671,7 +704,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   // pinned to headB, and the run continues waiting for another event.
   const freshVerify = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: started.run.id, step: "verify", contract: "# Verify" },
+    { run: started.run.id, step: "verify" },
     parent,
   );
   expect(freshVerify.head_sha).toBe(headB);
@@ -715,14 +748,13 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     {
       issue: issue.number,
       workflowId: workflow.id,
-      parentContract: "# Parent",
     },
     parent,
   );
   const prIssueId = S.getIssue(repo.id, started.pr.number)!.id;
   const exec = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: started.run.id, step: "execute", contract: "# Execute" },
+    { run: started.run.id, step: "execute" },
     parent,
   );
   svc.workflowRuns.confirmStepLaunch(
@@ -752,7 +784,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
   // Verify requests changes, pinned to headA, with one finding.
   const verify = await svc.workflowRuns.launchStep(
     repo.full_name,
-    { run: started.run.id, step: "verify", contract: "# Verify" },
+    { run: started.run.id, step: "verify" },
     parent,
   );
   svc.workflowRuns.confirmStepLaunch(
@@ -806,7 +838,6 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
       run: started.run.id,
       step: "execute",
       review: reviewId,
-      contract: "# Execute",
     },
     parent,
   );
@@ -880,7 +911,6 @@ test("turn done is rejected for a non-Execute session", async () => {
     {
       issue: issue.number,
       workflowId: workflow.id,
-      parentContract: "# Parent",
     },
     parent,
   );
@@ -910,7 +940,6 @@ test("Execute escalation records a validated event without changing run lifecycl
     {
       issue: issue.number,
       workflowId: workflow.id,
-      parentContract: "# Parent",
     },
     parent,
   );
@@ -989,7 +1018,6 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
     {
       issue: issue.number,
       workflowId: workflow.id,
-      parentContract: "# Parent",
     },
     parent,
   );

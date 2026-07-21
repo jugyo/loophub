@@ -5,6 +5,7 @@ export * from "./store/handoffs.ts";
 export * from "./store/herdr-panes.ts";
 export * from "./store/herdr-snapshots.ts";
 export * from "./store/inbox.ts";
+export * from "./store/instance-settings.ts";
 export * from "./store/issues.ts";
 export * from "./store/labels.ts";
 export * from "./store/notifications.ts";

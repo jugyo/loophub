@@ -1,3 +1,7 @@
+import {
+  WORKFLOW_CONTRACT_LANGUAGES,
+  type WorkflowContractLanguage,
+} from "../workflow/contracts.ts";
 import type { CodingAgent } from "./shared.ts";
 import {
   actorFor,
@@ -19,6 +23,12 @@ import {
 
 // The accepted coding-agent ids, for validation error messages ("claude-code, codex, grok").
 const CODING_AGENTS_SENTENCE = CODING_AGENTS.join(", ");
+const WORKFLOW_CONTRACT_LANGUAGE_KEY = "workflow_contract_language";
+
+export function workflowContractLanguage(): WorkflowContractLanguage {
+  const value = S.getInstanceSetting(WORKFLOW_CONTRACT_LANGUAGE_KEY);
+  return value === "ja" ? "ja" : "en";
+}
 
 interface AgentSettingsShape {
   autoModeOnLaunch: boolean;
@@ -72,17 +82,20 @@ function validateDevCostLimitUsd(value: unknown): asserts value is number {
 }
 
 // ===== global settings =====
-// Instance-level config.json settings, as opposed to the repo-scoped settings above (#474).
+// Instance-level settings, as opposed to repo-scoped settings. Existing agent/cost values live in
+// config.json; Workflow contract language lives in SQLite so every process shares one source.
 export const settings = {
   get(): {
     agents: Record<CodingAgent, AgentSettingsShape>;
     codingAgent: CodingAgent;
     devCostLimitUsd: number;
+    workflowContractLanguage: WorkflowContractLanguage;
   } {
     return {
       agents: agentSettings(),
       codingAgent: codingAgent(),
       devCostLimitUsd: devCostLimitUsd(),
+      workflowContractLanguage: workflowContractLanguage(),
     };
   },
 
@@ -98,12 +111,14 @@ export const settings = {
       effort?: string;
       codingAgent?: CodingAgent;
       devCostLimitUsd?: number;
+      workflowContractLanguage?: WorkflowContractLanguage;
     },
     sessionId?: string | null,
   ): {
     agents: Record<CodingAgent, AgentSettingsShape>;
     codingAgent: CodingAgent;
     devCostLimitUsd: number;
+    workflowContractLanguage: WorkflowContractLanguage;
   } {
     if (input.autoModeOnLaunch !== undefined) {
       if (typeof input.autoModeOnLaunch !== "boolean") {
@@ -132,6 +147,15 @@ export const settings = {
     if (input.devCostLimitUsd !== undefined) {
       validateDevCostLimitUsd(input.devCostLimitUsd);
     }
+    if (
+      input.workflowContractLanguage !== undefined &&
+      !WORKFLOW_CONTRACT_LANGUAGES.includes(input.workflowContractLanguage)
+    ) {
+      throw new ServiceError(
+        422,
+        "workflowContractLanguage must be one of: en, ja",
+      );
+    }
 
     if (input.autoModeOnLaunch !== undefined) {
       const agent = input.agent;
@@ -153,6 +177,12 @@ export const settings = {
     }
     if (input.devCostLimitUsd !== undefined) {
       updateDevCostLimitUsd(input.devCostLimitUsd);
+    }
+    if (input.workflowContractLanguage !== undefined) {
+      S.setInstanceSetting(
+        WORKFLOW_CONTRACT_LANGUAGE_KEY,
+        input.workflowContractLanguage,
+      );
     }
     const actor = actorFor(sessionId);
     S.emitEvent(null, "settings.updated", actor, input);

@@ -11,10 +11,6 @@ import {
   WorkflowPaneLayoutError,
   type WorkflowPaneLayoutHerdr,
 } from "../../core/terminal/workflow-pane-layout.ts";
-import {
-  type WorkflowContract,
-  workflowContractText,
-} from "../../core/workflow/contracts.ts";
 import { workflowParentHerdrAgentName } from "../../core/workflow/herdr-agents.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
@@ -97,17 +93,6 @@ function workflowIdFlag(): number | undefined {
     fail("--workflow-id must be a positive integer");
   }
   return Number(flags["workflow-id"]);
-}
-
-function parentContract(): string {
-  return contractText("parent");
-}
-
-function contractText(step: string): string {
-  if (!["parent", "execute", "verify"].includes(step)) {
-    fail("step must be one of: execute, verify");
-  }
-  return workflowContractText(step as WorkflowContract);
 }
 
 function commandAvailable(command: string): boolean {
@@ -333,7 +318,6 @@ async function startWorkflow(): Promise<void> {
         issue: parsed.id,
         workflow: flags.workflow,
         workflowId,
-        parentContract: parentContract(),
         auto: flags.auto === true,
         runtime,
         // Persist the resolved model (explicit override or config default) so steps inherit it
@@ -411,7 +395,6 @@ async function launchStep(): Promise<void> {
         step,
         note,
         review,
-        contract: contractText(step),
         // The step inherits the parent run's model; only forward an explicit --model override.
         model: explicitModelFlag(),
         auto: flags.auto === true,
@@ -579,7 +562,6 @@ async function stepInput(): Promise<void> {
       step,
       note,
       review,
-      contract: contractText(step),
     }),
   );
   if (flags.json) {

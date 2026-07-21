@@ -40,6 +40,7 @@ function renderPage(
     mockRpcFetch({
       "workflows/list": () => workflows,
       "workflows/contracts": () => STEP_CONTRACTS,
+      "settings/get": () => ({ workflowContractLanguage: "en" }),
       ...handlers,
     }),
   );
@@ -101,6 +102,28 @@ describe("WorkflowsPage", () => {
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows the fixed system prompt in the configured language", async () => {
+    renderPage({
+      "settings/get": () => ({ workflowContractLanguage: "ja" }),
+      "workflows/contracts": () => ({
+        execute: "# Execute ステップ contract\n日本語の contract 本文",
+        verify: "# Verify ステップ contract\n日本語の contract 本文",
+      }),
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New workflow" }),
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "System prompt" })[0],
+    );
+
+    expect(
+      await within(screen.getByRole("dialog")).findByText(
+        /日本語の contract 本文/,
+      ),
+    ).toBeTruthy();
   });
 
   it("shows system prompt links on the edit form and closes the dialog with its button", async () => {

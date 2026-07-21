@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSettings, updateSettings } from "@/api/client";
-import type { CodingAgent } from "@/api/types";
+import type { CodingAgent, WorkflowContractLanguage } from "@/api/types";
 
 export const settingsKeys = {
   all: ["settings"] as const,
@@ -24,6 +24,7 @@ export function useUpdateSettings() {
       effort?: string;
       codingAgent?: CodingAgent;
       devCostLimitUsd?: number;
+      workflowContractLanguage?: WorkflowContractLanguage;
     }) => updateSettings(input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: settingsKeys.all });

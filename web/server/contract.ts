@@ -205,14 +205,14 @@ export const methods: Record<string, MethodDef> = {
   // ---- global settings ----
   "settings/get": {
     description:
-      "Instance-level config.json settings (per-agent autoModeOnLaunch/model/effort, codingAgent, devCostLimitUsd) (#474, #499, #516, #593, #594, #682, #1027).",
+      "Instance-level settings (per-agent autoModeOnLaunch/model/effort, codingAgent, devCostLimitUsd, workflowContractLanguage).",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.settings.get(),
   },
   "settings/update": {
     description:
-      "Update instance-level config.json settings, preserving unrelated fields. autoModeOnLaunch/model/effort require agent (#474, #593, #594, #682, #1027).",
+      "Update instance-level settings. autoModeOnLaunch/model/effort require agent; workflowContractLanguage is DB-backed.",
     params: params({
       agent: { enum: ["claude-code", "codex", "grok"] },
       autoModeOnLaunch: { type: "boolean" },
@@ -220,6 +220,7 @@ export const methods: Record<string, MethodDef> = {
       effort: strNonEmpty,
       codingAgent: { enum: ["claude-code", "codex", "grok"] },
       devCostLimitUsd,
+      workflowContractLanguage: { enum: ["en", "ja"] },
       session_id: sid,
     }),
     result: anyObject,
@@ -232,6 +233,7 @@ export const methods: Record<string, MethodDef> = {
           effort: p.effort,
           codingAgent: p.codingAgent,
           devCostLimitUsd: p.devCostLimitUsd,
+          workflowContractLanguage: p.workflowContractLanguage,
         },
         p.session_id,
       ),

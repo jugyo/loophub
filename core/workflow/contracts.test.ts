@@ -10,6 +10,61 @@ test("loads every step contract from the canonical Markdown sources", () => {
   expect(contracts.verify).toContain("# Verify step contract");
 });
 
+test("loads Japanese translations for every fixed contract", () => {
+  const contracts = workflowStepContracts("ja");
+
+  expect(workflowContractText("parent", "ja")).toContain(
+    "# Parent workflow contract",
+  );
+  expect(contracts.execute).toContain("# Execute ステップ contract");
+  expect(contracts.verify).toContain("# Verify ステップ contract");
+});
+
+test("Japanese contracts preserve the required commands and decision branches", () => {
+  const parent = workflowContractText("parent", "ja");
+  const execute = workflowContractText("execute", "ja");
+  const verify = workflowContractText("verify", "ja");
+
+  for (const command of [
+    "lh workflow run advance-to-verify",
+    "lh workflow run request-rework",
+    "lh workflow run activate-step",
+    "lh workflow run await-human",
+    "lh workflow run resume",
+    "lh workflow launch-step",
+    "lh workflow step status",
+    "herdr agent get",
+    "herdr agent list",
+    "herdr pane run",
+    "herdr pane send-keys",
+    "lh issue comment",
+    "lh inbox send",
+  ]) {
+    expect(parent).toContain(command);
+  }
+  for (const branch of [
+    "workflow_run.turn_done",
+    "workflow_run.review_submitted",
+    "workflow_run.escalated",
+    "workflow_run.github_event",
+    "workflow_run.merge_conflict",
+    "workflow_run.cost_exceeded",
+    "request_changes",
+    "FEEDBACK",
+  ]) {
+    expect(parent).toContain(branch);
+  }
+  expect(execute).toContain("lh issue view <n> --json");
+  expect(execute).toContain("lh pr update <pr>");
+  expect(execute).toContain("lh workflow escalate");
+  expect(execute).toContain("lh workflow turn done");
+  expect(verify).toContain("git diff <base sha>..<head sha>");
+  expect(verify).toContain("lh pr review <pr>");
+  expect(verify).toContain("--event pass|request_changes");
+  expect(verify).toContain("--topic workflow");
+  expect(verify).toContain("--commit <head sha>");
+});
+
 test("Execute pulls domain state itself and declares turn done", () => {
   const execute = workflowContractText("execute");
 

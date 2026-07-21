@@ -189,6 +189,7 @@ export function SettingsPage() {
   }, [devCostLimitUsd]);
 
   const codingAgent = data?.codingAgent ?? "claude-code";
+  const workflowContractLanguage = data?.workflowContractLanguage ?? "en";
   const devCostLimitError = validateDevCostLimit(devCostLimitInput);
   const parsedDevCostLimit = Number(devCostLimitInput.trim());
   const devCostLimitChanged =
@@ -444,8 +445,56 @@ export function SettingsPage() {
         className="mt-6"
       >
         <section
-          data-debug-component="WorkflowSettingsLink"
+          data-debug-component="WorkflowContractLanguageSettings"
           className="max-w-md"
+        >
+          <h2 className="text-sm font-medium">Workflow contract language</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Language for LoopHub&apos;s fixed Parent, Execute, and Verify
+            instructions. New runs keep the language selected when they start.
+          </p>
+          <div
+            role="radiogroup"
+            aria-label="Workflow contract language"
+            className="mt-3 rounded-md border"
+          >
+            {[
+              { value: "en" as const, label: "English" },
+              { value: "ja" as const, label: "日本語" },
+            ].map((option) => {
+              const active = workflowContractLanguage === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={isLoading || update.isPending}
+                  className={cn(
+                    "flex w-full items-start gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent hover:text-accent-foreground",
+                    disabledButtonStateClasses,
+                  )}
+                  onClick={() => {
+                    if (active) return;
+                    update.mutate({
+                      workflowContractLanguage: option.value,
+                    });
+                  }}
+                >
+                  <Check
+                    className={`mt-0.5 size-4 shrink-0 ${active ? "" : "invisible"}`}
+                    aria-hidden="true"
+                  />
+                  <span>{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section
+          data-debug-component="WorkflowSettingsLink"
+          className="mt-8 max-w-md"
         >
           <h2 className="text-sm font-medium">Workflows</h2>
           <p className="mt-1 text-sm text-muted-foreground">

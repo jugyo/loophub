@@ -1,4 +1,5 @@
 import { db, now } from "../db.ts";
+import type { WorkflowContractLanguage } from "../workflow/contracts.ts";
 
 export interface WorkflowInput {
   name: string;
@@ -108,6 +109,7 @@ export interface WorkflowRunInput {
   autoMode?: boolean;
   runtime?: string | null;
   model?: string | null;
+  contractLanguage?: WorkflowContractLanguage;
   parentSessionId?: string | null;
 }
 
@@ -123,6 +125,7 @@ export interface WorkflowRunRow {
   auto_mode: number;
   runtime: string | null;
   model: string | null;
+  contract_language: string;
   // Non-null while the run waits for an explicit human instruction (#1307); the run stays
   // `running`. NULL on legacy rows and after resume.
   needs_human_reason: string | null;
@@ -142,8 +145,8 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
   return db
     .query(
       `INSERT INTO workflow_runs
-        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, parent_session_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        (workflow_id, repo_id, issue_number, pr_number, status, current_step, auto_mode, runtime, model, contract_language, parent_session_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       input.workflowId,
@@ -155,6 +158,7 @@ export function createWorkflowRun(input: WorkflowRunInput): WorkflowRunRow {
       input.autoMode === true ? 1 : 0,
       input.runtime ?? null,
       input.model ?? null,
+      input.contractLanguage ?? "en",
       input.parentSessionId ?? null,
       t,
       t,

@@ -47,6 +47,7 @@ import type {
   TerminalLaunchResultWire,
   UserWire,
   WebConfigWire,
+  WorkflowContractLanguageWire,
   WorkflowRunHistoryEventWire,
   WorkflowRunReviewSummaryWire,
   WorkflowRunStateWire,
@@ -197,7 +198,7 @@ export interface AgentSettings {
   effort: string;
 }
 
-/** Instance-level config.json settings (`settings/get`, `settings/update`, #474). */
+/** Instance-level settings (`settings/get`, `settings/update`, #474). */
 export interface GlobalSettings {
   // Per-agent settings, keyed by CodingAgent (#593).
   agents: Record<CodingAgent, AgentSettings>;
@@ -205,7 +206,11 @@ export interface GlobalSettings {
   codingAgent: CodingAgent;
   // Per-task over-budget threshold for implementation agents (#1027).
   devCostLimitUsd: number;
+  // Language used by fixed Workflow contracts and captured on each new run (#1699).
+  workflowContractLanguage: WorkflowContractLanguageWire;
 }
+
+export type WorkflowContractLanguage = WorkflowContractLanguageWire;
 
 /** Database statistics (`stats/get`, #587) for the /stats page. */
 export interface Stats {

@@ -77,7 +77,7 @@ test("update patches fields and can rename uniquely", () => {
 test("delete is rejected while a running Workflow run references the workflow", () => {
   const workflow = svc.workflows.create({ name: "in-use" });
   const repo = S.createRepo("me/workflow", HOME);
-  S.createWorkflowRun({
+  const run = S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
     issueNumber: 1,
@@ -85,6 +85,7 @@ test("delete is rejected while a running Workflow run references the workflow", 
     status: "running",
     currentStep: "execute",
   });
+  expect(run.contract_language).toBe("en");
 
   expectServiceStatus(() => svc.workflows.delete("in-use"), 409);
   expect(svc.workflows.get("in-use").id).toBe(workflow.id);

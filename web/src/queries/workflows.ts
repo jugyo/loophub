@@ -12,6 +12,7 @@ import {
   updateWorkflow,
   type WorkflowInput,
 } from "@/api/client";
+import type { WorkflowContractLanguage } from "@/api/types";
 import { queryKeys } from "./keys";
 
 /** All workflows. */
@@ -22,11 +23,12 @@ export function useWorkflows() {
   });
 }
 
-export function useWorkflowContracts() {
+export function useWorkflowContracts(language?: WorkflowContractLanguage) {
   return useQuery({
-    queryKey: ["workflows", "contracts"],
+    queryKey: ["workflows", "contracts", language],
     queryFn: getWorkflowContracts,
     staleTime: Infinity,
+    enabled: language !== undefined,
   });
 }
 
