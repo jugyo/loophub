@@ -1222,6 +1222,87 @@ test("sessions.usageSync imports Codex rollouts for the linked PR worktree cwd",
   rmSync(codexSessionsDir, { recursive: true, force: true });
 });
 
+test("sessions.usageSync keeps a known Codex cost when token counts precede model context", async () => {
+  const issue = svc.issues.create("me/proj", { title: "late Codex model" });
+  const sessionId = "99999999-0000-0000-0000-0000000000f1";
+  svc.sessions.register({
+    id: sessionId,
+    agent: "lh-build",
+    session: sessionId,
+    runtime: "codex",
+    kind: "dev",
+  });
+  const opened = await svc.dev.openPr(
+    "me/proj",
+    { issue: issue.number, base: "main" },
+    sessionId,
+  );
+  const worktree = join(HOME, "worktrees", "me", "proj", `pr-${opened.number}`);
+  const codexSessionsDir = mkdtempSync(join(tmpdir(), "lh-codex-late-model-"));
+  const dayDir = join(codexSessionsDir, "2026", "07", "05");
+  mkdirSync(dayDir, { recursive: true });
+  const tokenCount = (
+    inputTokens: number,
+    cachedTokens: number,
+    outputTokens: number,
+  ) =>
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: inputTokens,
+            cached_input_tokens: cachedTokens,
+            output_tokens: outputTokens,
+          },
+        },
+      },
+    });
+  writeFileSync(
+    join(dayDir, "rollout-late-model.jsonl"),
+    [
+      JSON.stringify({
+        type: "session_meta",
+        payload: {
+          id: "late-model-root",
+          cwd: worktree,
+          model: null,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+      tokenCount(100, 40, 10),
+      JSON.stringify({
+        type: "turn_context",
+        payload: { model: "gpt-5.6-sol" },
+      }),
+      tokenCount(150, 60, 15),
+    ].join("\n"),
+  );
+
+  const result = svc.sessions.usageSync({ sessionId, codexSessionsDir });
+  expect(result).toMatchObject({ synced: 1, skipped: 0, missing: 0 });
+  const [savedUsage] = getSession(sessionId).usage ?? [];
+  expect(savedUsage).toMatchObject({
+    model: "gpt-5.6-sol",
+  });
+  expect(savedUsage.cost_usd).toBeCloseTo(0.00093);
+  const pull = (await svc.pulls.get("me/proj", opened.number)) as any;
+  expect(pull.related_sessions_usage).toMatchObject({
+    sessions_with_usage: 1,
+    has_unknown_cost: false,
+  });
+  expect(pull.related_sessions_usage.cost_usd).toBeCloseTo(0.00093);
+  expect(pull.related_sessions).toEqual([
+    expect.objectContaining({
+      id: sessionId,
+      usage: [expect.objectContaining({ cost_usd: savedUsage.cost_usd })],
+    }),
+  ]);
+
+  rmSync(codexSessionsDir, { recursive: true, force: true });
+});
+
 function grokUpdatesJsonl(
   prompts: {
     promptId: string;

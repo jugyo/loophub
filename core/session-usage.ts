@@ -568,14 +568,36 @@ export function parseCodexRolloutJsonl(
     });
   }
 
+  const normalizedObservations =
+    backfillLeadingCodexObservationModels(observations);
   return {
     cwd,
     startedAtMs,
     threadId,
     parentThreadId,
-    entries: codexUsageEntries(observations, messageId),
-    observations,
+    entries: codexUsageEntries(normalizedObservations, messageId),
+    observations: normalizedObservations,
   };
+}
+
+function backfillLeadingCodexObservationModels(
+  observations: CodexTokenObservation[],
+): CodexTokenObservation[] {
+  // Forked Codex rollouts can emit cumulative token counts before their first turn_context. Those
+  // counts use the same model once the context arrives; leaving them as the synthetic "codex"
+  // model would add an unknown-cost row and make the otherwise-known session total indeterminate.
+  const firstKnownModel = observations.find(
+    (observation) => observation.model != null,
+  )?.model;
+  if (!firstKnownModel) return observations;
+
+  let reachedKnownModel = false;
+  return observations.map((observation) => {
+    if (observation.model != null) reachedKnownModel = true;
+    return !reachedKnownModel && observation.model == null
+      ? { ...observation, model: firstKnownModel }
+      : observation;
+  });
 }
 
 function codexUsageEntries(

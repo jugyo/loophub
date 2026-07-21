@@ -584,6 +584,77 @@ test("parseCodexRolloutJsonl extracts final cumulative token count", () => {
   expect(calculateCostUsd("gpt-5.5", parsed.entries[0])).toBeCloseTo(0.000735);
 });
 
+test("parseCodexRolloutJsonl prices leading token counts emitted before the model context", () => {
+  const tokenCount = (
+    inputTokens: number,
+    cachedTokens: number,
+    outputTokens: number,
+  ) =>
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: inputTokens,
+            cached_input_tokens: cachedTokens,
+            output_tokens: outputTokens,
+          },
+        },
+      },
+    });
+  const text = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { cwd: "/tmp/worktree", model: null },
+    }),
+    tokenCount(100, 40, 10),
+    JSON.stringify({
+      type: "turn_context",
+      payload: { model: "gpt-5.6-sol" },
+    }),
+    tokenCount(150, 60, 15),
+  ].join("\n");
+
+  const parsed = parseCodexRolloutJsonl(text, "late-model-rollout");
+  expect(parsed.entries).toEqual([
+    expect.objectContaining({
+      model: "gpt-5.6-sol",
+      input_tokens: 90,
+      cache_read_input_tokens: 60,
+      output_tokens: 15,
+    }),
+  ]);
+  expect(aggregateUsage(parsed.entries)[0].cost_usd).toBeCloseTo(0.00093);
+});
+
+test("parseCodexRolloutJsonl keeps usage unknown when no model context arrives", () => {
+  const parsed = parseCodexRolloutJsonl(
+    [
+      JSON.stringify({
+        type: "session_meta",
+        payload: { cwd: "/tmp/worktree", model: null },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            total_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 40,
+              output_tokens: 10,
+            },
+          },
+        },
+      }),
+    ].join("\n"),
+  );
+
+  expect(parsed.entries[0].model).toBe("codex");
+  expect(aggregateUsage(parsed.entries)[0].cost_usd).toBeNull();
+});
+
 test("findCodexRollouts removes inherited counters when children copy parent metadata", () => {
   const sessionsDir = mkdtempSync(join(tmpdir(), "lh-codex-forks-"));
   const dayDir = join(sessionsDir, "2026", "07", "19");
