@@ -203,6 +203,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
       run: result.run.id,
       step: "execute",
       model: "sonnet",
+      note: "Read the issue first.",
     },
     result.session_id,
   );
@@ -230,6 +231,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
       sessionId: launched.session_id,
       agentName: launched.agent_name,
       pointers: launched.pointers,
+      note: "Read the issue first.",
     },
     result.session_id,
   );
@@ -247,7 +249,18 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     expect.objectContaining({
       phase: "execute",
       direction: "down",
-      body: expect.stringContaining("Launch Workflow execute step"),
+      body: [
+        `Launch Workflow execute step for run #${result.run.id}.`,
+        "",
+        "## Inputs",
+        `- repo: ${repo.full_name}`,
+        `- issue: #${result.issue.number}`,
+        `- pr: #${result.pr.number}`,
+        "",
+        "## Note from parent",
+        "Read the issue first.",
+      ].join("\n"),
+      summary: "Launch execute step",
     }),
   ]);
   expect(
@@ -332,6 +345,7 @@ test("start snapshots the contract language for parent and every later step", as
   svc.settings.update({ workflowContractLanguage: "en" });
 
   expect(S.getWorkflowRun(started.run.id)?.contract_language).toBe("ja");
+  expect(started.parent.user_prompt).toContain("## Run context");
   expect(readFileSync(started.parent.system_prompt_path, "utf8")).toContain(
     "# Parent workflow contract",
   );
@@ -343,6 +357,7 @@ test("start snapshots the contract language for parent and every later step", as
   expect(readFileSync(execute.system_prompt_path, "utf8")).toContain(
     "# Execute ステップ contract",
   );
+  expect(execute.user_prompt).toContain("## Step prompt (user-configured)");
   const verify = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "verify" },
@@ -350,6 +365,9 @@ test("start snapshots the contract language for parent and every later step", as
   );
   expect(readFileSync(verify.system_prompt_path, "utf8")).toContain(
     "# Verify ステップ contract",
+  );
+  expect(verify.pointers.at(-1)?.label).toBe(
+    "review submission target (do not read the PR)",
   );
 });
 

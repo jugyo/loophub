@@ -41,6 +41,7 @@ import {
   parseWorkflowHerdrAgentName,
   workflowStepSessionIds,
 } from "../workflow/herdr-agents.ts";
+import { workflowMessages } from "../workflow/messages.ts";
 import {
   inlineText,
   parentUserPrompt,
@@ -335,6 +336,7 @@ function workflowRunWorktree(input: {
 function buildStepPointers(input: {
   repoName: string;
   run: S.WorkflowRunRow;
+  language: WorkflowContractLanguage;
   step: WorkflowStep;
   reviewId?: number;
   baseSha?: string;
@@ -351,17 +353,19 @@ function buildStepPointers(input: {
           ? [{ label: "address review", value: `#${input.reviewId}` }]
           : []),
       ];
-    case "verify":
+    case "verify": {
+      const messages = workflowMessages(input.language);
       return [
         { label: "repo", value: repo },
         { label: "issue", value: `#${input.run.issue_number}` },
         { label: "base sha", value: input.baseSha ?? "" },
         { label: "head sha", value: input.headSha ?? "" },
         {
-          label: "review submission target (do not read the PR)",
+          label: `review submission target (${messages.reviewSubmissionInstruction})`,
           value: `pr #${input.run.pr_number}`,
         },
       ];
+    }
   }
 }
 
@@ -720,12 +724,15 @@ export const workflowRuns = {
 
       const systemPromptPath = writeParentContract(
         run.id,
-        renderWorkflowContract({
-          template: workflowContractText("parent", contractLanguage),
-          step: "parent",
-          worktreePath: wtPath,
-          baseBranch: pull.base_ref,
-        }),
+        renderWorkflowContract(
+          {
+            template: workflowContractText("parent", contractLanguage),
+            step: "parent",
+            worktreePath: wtPath,
+            baseBranch: pull.base_ref,
+          },
+          contractLanguage,
+        ),
       );
 
       S.emitEvent(r.id, "workflow_run.started", actorFor(sessionId), {
@@ -755,14 +762,17 @@ export const workflowRuns = {
         lock_path: lockPath,
         parent: {
           system_prompt_path: systemPromptPath,
-          user_prompt: parentUserPrompt({
-            runId: run.id,
-            repoName: r.full_name,
-            workflowName: workflow.name,
-            issueNumber: issue.number,
-            prNumber: opened.number,
-            baseRef: pull.base_ref,
-          }),
+          user_prompt: parentUserPrompt(
+            {
+              runId: run.id,
+              repoName: r.full_name,
+              workflowName: workflow.name,
+              issueNumber: issue.number,
+              prNumber: opened.number,
+              baseRef: pull.base_ref,
+            },
+            contractLanguage,
+          ),
         },
       };
     } catch (e) {
@@ -1123,6 +1133,7 @@ export const workflowRuns = {
     const pointers = buildStepPointers({
       repoName: r.full_name,
       run,
+      language: runContractLanguage(run),
       step,
       reviewId,
       baseSha,
@@ -1145,6 +1156,7 @@ export const workflowRuns = {
         stepPrompt: workflowStepPrompt(workflow, step),
         note: input.note,
       },
+      runContractLanguage(run),
     );
     const systemPromptPath = writeStepContract(
       run.id,
@@ -1281,15 +1293,16 @@ export const workflowRuns = {
         );
       }
     }
+    const messages = workflowMessages(runContractLanguage(run));
     const handoffBody = [
-      `Launch Workflow ${step} step for run #${run.id}.`,
+      messages.handoffLaunchIntro(step, run.id),
       "",
-      "## Inputs",
+      messages.inputsHeading,
       ...input.pointers.map(
         (pointer) => `- ${pointer.label}: ${pointer.value}`,
       ),
       ...(input.note?.trim()
-        ? ["", "## Note from parent", input.note.trim()]
+        ? ["", messages.handoffParentNoteHeading, input.note.trim()]
         : []),
     ].join("\n");
     const handoff = S.createHandoff({
@@ -1303,7 +1316,7 @@ export const workflowRuns = {
       toRole: `${step}-step`,
       body: handoffBody,
       hash: createHash("sha256").update(handoffBody).digest("hex"),
-      summary: `Launch ${step} step`,
+      summary: messages.handoffSummary(step),
     });
     S.emitEvent(r.id, "handoff.recorded", actorFor(run.parent_session_id), {
       number: run.pr_number,
@@ -1452,6 +1465,7 @@ export const workflowRuns = {
     const pointers = buildStepPointers({
       repoName: r.full_name,
       run,
+      language: runContractLanguage(run),
       step,
       reviewId,
       baseSha,
@@ -1474,6 +1488,7 @@ export const workflowRuns = {
         stepPrompt: workflowStepPrompt(workflow, step),
         note: input.note,
       },
+      runContractLanguage(run),
     );
     const systemPromptPath = writeStepContract(
       run.id,
