@@ -695,9 +695,35 @@ async function watch(): Promise<void> {
     const input = service.parseWorkflowWatchArgs(
       process.argv.slice(watchIndex + 1),
     );
-    await service.workflowWatch.watch(input);
+    out(await service.workflowWatch.watch(input));
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function effect(): Promise<void> {
+  const action = rest[0];
+  if (action !== "begin" && action !== "complete") usage();
+  const run = positiveInt(flags.run, "--run");
+  const event = positiveInt(flags.event, "--event");
+  if (!flags.effect) fail("--effect is required");
+  const repo = await resolveRepo();
+  const service = (await svc()).workflowWatch;
+  const input = { repo, run, event, effect: flags.effect };
+  const result = await runOp(() =>
+    action === "begin"
+      ? service.beginEffect(input)
+      : service.completeEffect(input),
+  );
+  if (flags.json) out(result);
+  else if (action === "begin") {
+    console.log(
+      result.execute
+        ? `claimed effect ${result.effect} for event #${result.event}`
+        : `${result.status} effect ${result.effect} for event #${result.event}`,
+    );
+  } else {
+    console.log(`completed effect ${result.effect} for event #${result.event}`);
   }
 }
 
@@ -766,6 +792,8 @@ export async function run(): Promise<void> {
     await escalate();
   } else if (sub === "watch") {
     await watch();
+  } else if (sub === "effect") {
+    await effect();
   } else if (sub === "step") {
     if (rest[0] === "input") await stepInput();
     else if (rest[0] === "status") await stepStatus();

@@ -774,6 +774,11 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   active_step        TEXT,
   active_session_id  TEXT,
   child_sequence     INTEGER NOT NULL DEFAULT 0,
+  -- Durable acknowledgement boundary for the runtime-managed parent watcher. A delivery does not
+  -- advance event_ack_cursor; the parent explicitly acknowledges event_delivered_cursor only after
+  -- it has processed the batch, so a stopped parent replays unacknowledged events.
+  event_ack_cursor   INTEGER NOT NULL DEFAULT 0,
+  event_delivered_cursor INTEGER NOT NULL DEFAULT 0,
   -- Snapshot the configured per-interval allowance when the run starts. The current cumulative
   -- limit advances only through the explicit cost-limit increase operation.
   cost_increment_usd REAL NOT NULL,
@@ -784,6 +789,19 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
 
 CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_status
   ON workflow_runs(workflow_id, status);
+
+-- Durable idempotency receipts for non-transactional parent side effects. A pending row means the
+-- parent stopped in the ambiguous window after claiming an effect; replay must surface it for human
+-- recovery instead of automatically repeating Esc, pane input, or a human notification.
+CREATE TABLE IF NOT EXISTS workflow_event_effects (
+  run_id      INTEGER NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+  event_id    INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  effect      TEXT NOT NULL,
+  status      TEXT NOT NULL CHECK (status IN ('pending', 'completed')),
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  PRIMARY KEY (run_id, event_id, effect)
+);
 
 -- Retired artifact-contract tables (#1358). The Workflow moved to pointer inputs and
 -- HEAD/review observation: step outputs are commits / PR reviews / attachments / comments, so
@@ -981,6 +999,12 @@ tryExec(
 );
 tryExec(
   "ALTER TABLE workflow_runs ADD COLUMN child_sequence INTEGER NOT NULL DEFAULT 0",
+);
+tryExec(
+  "ALTER TABLE workflow_runs ADD COLUMN event_ack_cursor INTEGER NOT NULL DEFAULT 0",
+);
+tryExec(
+  "ALTER TABLE workflow_runs ADD COLUMN event_delivered_cursor INTEGER NOT NULL DEFAULT 0",
 );
 // Human-wait marker (#1307): non-NULL means the run is waiting for an explicit human instruction
 // while staying `running` (resumable); the text is the reason shown to the human. Legacy terminal

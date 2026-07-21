@@ -1395,10 +1395,11 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("lh workflow step status");
   expect(contract).toContain("herdr pane run");
   expect(contract).toContain("record the printed `agent` line");
-  // Transitions come from observation; pulled events are only timing signals.
+  // Transitions come from observation; watcher events are only timing signals.
   expect(contract).toContain(
-    "lh events --since <cursor> --repo '<repo>' --type workflow_run --run <run> --order asc --json",
+    "lh workflow watch --repo '<repo>' --run <run> --json",
   );
+  expect(contract).toContain("--ack <cursor.delivered>");
   expect(contract).not.toContain("lh subscribe --repo");
   expect(contract).toContain("timing signals, never transition facts");
   expect(contract).toContain("Transitions are driven only by observation");

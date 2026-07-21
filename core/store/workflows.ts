@@ -138,6 +138,8 @@ export interface WorkflowRunRow {
   active_step: string | null;
   active_session_id: string | null;
   child_sequence: number;
+  event_ack_cursor: number;
+  event_delivered_cursor: number;
   cost_increment_usd: number | null;
   cost_limit_usd: number | null;
   created_at: string;
@@ -206,6 +208,107 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
   return db
     .query(`SELECT * FROM workflow_runs WHERE id = ?`)
     .get(id) as WorkflowRunRow | null;
+}
+
+export function acknowledgeWorkflowRunEvents(
+  id: number,
+  cursor: number,
+): WorkflowRunRow | null {
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET event_ack_cursor = ?, updated_at = ?
+       WHERE id = ?
+         AND event_delivered_cursor = ?
+         AND event_ack_cursor <= ?
+         AND NOT EXISTS (
+           SELECT 1 FROM workflow_event_effects effect
+           WHERE effect.run_id = workflow_runs.id
+             AND effect.event_id = ?
+             AND effect.status = 'pending'
+         )
+       RETURNING *`,
+    )
+    .get(cursor, now(), id, cursor, cursor, cursor) as WorkflowRunRow | null;
+}
+
+export interface WorkflowEventEffectRow {
+  run_id: number;
+  event_id: number;
+  effect: string;
+  status: "pending" | "completed";
+  created_at: string;
+  updated_at: string;
+}
+
+export function beginWorkflowEventEffect(
+  runId: number,
+  eventId: number,
+  effect: string,
+): { row: WorkflowEventEffectRow; acquired: boolean } | null {
+  const t = now();
+  const inserted = db
+    .query(
+      `INSERT INTO workflow_event_effects
+         (run_id, event_id, effect, status, created_at, updated_at)
+       SELECT ?, ?, ?, 'pending', ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM workflow_runs run
+         JOIN events event ON event.id = ?
+         WHERE run.id = ?
+           AND event.repo_id = run.repo_id
+           AND event.type GLOB 'workflow_run.*'
+           AND json_extract(event.payload, '$.id') = run.id
+       )
+       ON CONFLICT(run_id, event_id, effect) DO NOTHING
+       RETURNING *`,
+    )
+    .get(
+      runId,
+      eventId,
+      effect,
+      t,
+      t,
+      eventId,
+      runId,
+    ) as WorkflowEventEffectRow | null;
+  if (inserted) return { row: inserted, acquired: true };
+  const existing = db
+    .query(
+      `SELECT * FROM workflow_event_effects
+       WHERE run_id = ? AND event_id = ? AND effect = ?`,
+    )
+    .get(runId, eventId, effect) as WorkflowEventEffectRow | null;
+  return existing ? { row: existing, acquired: false } : null;
+}
+
+export function completeWorkflowEventEffect(
+  runId: number,
+  eventId: number,
+  effect: string,
+): WorkflowEventEffectRow | null {
+  return db
+    .query(
+      `UPDATE workflow_event_effects
+       SET status = 'completed', updated_at = ?
+       WHERE run_id = ? AND event_id = ? AND effect = ?
+       RETURNING *`,
+    )
+    .get(now(), runId, eventId, effect) as WorkflowEventEffectRow | null;
+}
+
+export function recordWorkflowRunEventDelivery(
+  id: number,
+  cursor: number,
+): WorkflowRunRow | null {
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET event_delivered_cursor = ?, updated_at = ?
+       WHERE id = ? AND event_ack_cursor < ?
+       RETURNING *`,
+    )
+    .get(cursor, now(), id, cursor) as WorkflowRunRow | null;
 }
 
 // All runs in the `running` status (includes runs already held for a human, needs_human_reason

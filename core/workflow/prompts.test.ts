@@ -26,7 +26,6 @@ test("the parent prompt states the run context it must not re-derive", () => {
 });
 
 test("the English parent prompt remains byte-identical", () => {
-  const loophubHome = "$" + "{LOOPHUB_HOME:-$HOME/.loophub}";
   expect(parentUserPrompt(INPUT, "en")).toBe(
     [
       "## Run context",
@@ -40,17 +39,12 @@ test("the English parent prompt remains byte-identical", () => {
       "",
       "## Instruction",
       "Orchestrate this run through Execute -> Verify as described in your contract.",
-      "Decide every transition by observing `lh workflow step status 42 --repo 'me/workflow-run' --json` after a watcher wake and event drain; the wake, pane output, and PR body markers are never transition facts.",
+      "Decide every transition by observing `lh workflow step status 42 --repo 'me/workflow-run' --json` after a background watch task returns an event batch; task completion, pane output, and PR body markers are never transition facts.",
       "Start now:",
-      "1. Seed the event cursor from the newest event id: `lh events --repo 'me/workflow-run' --order desc --limit 1 --json` (use 0 when empty).",
-      "2. Launch the Execute child: `lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute`.",
-      "3. With `HERDR_ENV=1`, create `" +
-        loophubHome +
-        '/logs/workflow-parent-watch` and arm one detached watcher: `nohup lh workflow watch --repo \'me/workflow-run\' --run 42 --since "$cursor" --herdr-session "$HERDR_SESSION" --parent-pane "$HERDR_PANE_ID" >>"' +
-        loophubHome +
-        '/logs/workflow-parent-watch/run-42.log" 2>&1 </dev/null &`.',
-      "4. Set `watcher_armed=true` and end the model turn; only the detached `lh` process polls while waiting.",
-      "5. On the exact wake `orchestrator: workflow-events-ready`, set `watcher_armed=false`, drain `lh events --since <cursor> --repo 'me/workflow-run' --type workflow_run --run 42 --order asc --json` to empty while advancing the cursor only to the largest processed event id, re-observe step status for transitions, then re-arm exactly one watcher at the latest cursor.",
+      "1. Launch the Execute child: `lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute`.",
+      "2. Start `lh workflow watch --repo 'me/workflow-run' --run 42 --json` with the agent runtime's background-task option and end the model turn while it blocks.",
+      "3. On task completion, process the single event in the returned `events` array and re-observe step status for every transition. One event per batch makes acknowledgement the side-effect boundary.",
+      "4. After that event is processed, start the next background task with `lh workflow watch --repo 'me/workflow-run' --run 42 --ack <cursor.delivered> --json`. If the parent stopped before processing, omit `--ack` so the durable cursor replays the event.",
       "Then follow your contract's transition table, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
       "",
     ].join("\n"),
@@ -75,35 +69,28 @@ test("the Japanese parent prompt translates prose without changing commands", ()
   expect(prompt).toContain(
     "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute",
   );
-  expect(prompt).toContain("orchestrator: workflow-events-ready");
+  expect(prompt).toContain("background-task option");
+  expect(prompt).toContain("--ack <cursor.delivered>");
 });
 
-// The parent decides every transition by observing step status after a watcher wake — never
-// from pane output or the wake itself. The exact commands are the prompt's contract with the parent.
-test("the parent prompt seeds, launches Execute, arms a watcher, then drains on wake", () => {
+// The parent decides every transition by observing step status after a returned event batch.
+test("the parent prompt launches Execute and delegates blocking waits to the runtime", () => {
   const prompt = parentUserPrompt(INPUT, "en");
-  const seed =
-    "lh events --repo 'me/workflow-run' --order desc --limit 1 --json";
   const launch =
     "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute";
-  const arm = "lh workflow watch";
-  const drain =
-    "lh events --since <cursor> --repo 'me/workflow-run' --type workflow_run --run 42 --order asc --json";
-  expect(prompt).toContain(seed);
+  const watch = "lh workflow watch --repo 'me/workflow-run' --run 42 --json";
   expect(prompt).toContain(launch);
-  expect(prompt).toContain(arm);
-  expect(prompt).toContain('--herdr-session "$HERDR_SESSION"');
-  expect(prompt).toContain('--parent-pane "$HERDR_PANE_ID"');
-  expect(prompt).toContain("orchestrator: workflow-events-ready");
-  expect(prompt).toContain(drain);
+  expect(prompt).toContain(watch);
+  expect(prompt).toContain("--ack <cursor.delivered>");
+  expect(prompt).toContain("durable cursor replays the event");
+  expect(prompt).toContain("acknowledgement the side-effect boundary");
   expect(prompt).toContain(
     "lh workflow step status 42 --repo 'me/workflow-run' --json",
   );
-  expect(prompt.indexOf(seed)).toBeLessThan(prompt.indexOf(launch));
-  expect(prompt.indexOf(launch)).toBeLessThan(prompt.indexOf(arm));
-  expect(prompt.indexOf("orchestrator: workflow-events-ready")).toBeLessThan(
-    prompt.indexOf(drain),
-  );
+  expect(prompt.indexOf(launch)).toBeLessThan(prompt.indexOf(watch));
+  expect(prompt).not.toContain("watcher_armed");
+  expect(prompt).not.toContain("HERDR_PANE_ID");
+  expect(prompt).not.toContain("nohup");
   expect(prompt).not.toContain("Stay alive and poll");
   expect(prompt).not.toContain("lh subscribe");
 });

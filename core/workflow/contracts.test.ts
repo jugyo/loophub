@@ -34,6 +34,8 @@ test("Japanese contracts preserve the required commands and decision branches", 
     "lh workflow run resume",
     "lh workflow launch-step",
     "lh workflow step status",
+    "lh workflow effect begin",
+    "lh workflow effect complete",
     "herdr agent get",
     "herdr agent list",
     "herdr pane run",
@@ -57,6 +59,9 @@ test("Japanese contracts preserve the required commands and decision branches", 
   }
   expect(parent).toContain("`increment_usd`");
   expect(parent).toContain("`next_limit_usd`");
+  expect(parent).toContain("`status: pending`");
+  expect(parent).not.toContain("cursor を seed");
+  expect(parent).not.toContain("pull loop");
   expect(parent).toContain(
     "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
   );
@@ -212,33 +217,21 @@ test("parent documents inject-round audit without a new command", () => {
   );
 });
 
-test("parent uses one-shot workflow watchers and reacts to cost limit facts", () => {
+test("parent uses runtime-managed workflow watchers and reacts to cost limit facts", () => {
   const contract = workflowContractText("parent");
 
-  expect(contract).toContain("## One-shot workflow watcher protocol");
-  expect(contract).toContain("orchestrator: workflow-events-ready");
-  expect(contract).toContain("nohup lh workflow watch");
-  expect(contract).toContain("watcher_armed");
-  expect(contract).toContain("nohup");
-  expect(contract).toContain('--herdr-session "$HERDR_SESSION"');
-  expect(contract).toContain('--parent-pane "$HERDR_PANE_ID"');
+  expect(contract).toContain("## Runtime-managed workflow watcher protocol");
   expect(contract).toContain(
-    "lh events --since <cursor> --repo '<repo>' --type workflow_run --run <run> --order asc --json",
+    "lh workflow watch --repo '<repo>' --run <run> --json",
   );
-  expect(contract).toContain("largest processed event id");
-  expect(contract).toContain("drain");
-  expect(contract).toContain("re-arm");
-  expect(contract).toContain("timing signal only");
-  expect(contract).toContain(
-    "Do not perform persistent event polling in a model turn",
-  );
-  expect(contract).toContain(
-    "Do not start a second watcher while `watcher_armed=true`",
-  );
-  expect(contract).not.toContain("lh subscribe --repo");
-  expect(contract).toContain(
-    "The `--type workflow_run --run <run>` filters are mandatory",
-  );
+  expect(contract).toContain("--ack <cursor.delivered>");
+  expect(contract).toContain("background task managed");
+  expect(contract).toContain("CLI replays the event");
+  expect(contract).toContain("contains exactly one event");
+  expect(contract).toContain("at least once");
+  expect(contract).not.toContain("watcher_armed");
+  expect(contract).not.toContain("HERDR_PANE_ID");
+  expect(contract).not.toContain("nohup lh workflow watch");
   expect(contract).toContain("workflow_run.cost_exceeded");
   const eventOverview = contract.slice(
     contract.indexOf("- `workflow_run.cost_exceeded`"),
@@ -401,12 +394,12 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain(
     "`lh workflow run increase-cost-limit --run <run> --expected-limit <limit_usd>`",
   );
-  expect(design).toContain("orchestrator: workflow-events-ready");
-  expect(design).toContain("nohup lh workflow watch");
-  expect(design).toContain("watcher_armed=true");
-  expect(design).toContain("親 model turn を終える");
-  expect(design).toContain("独立した `lh` process だけが poll");
-  expect(design).toContain("空まで drain");
+  expect(design).toContain("Runtime-managed watcher protocol");
+  expect(design).toContain('--ack "$delivered_cursor"');
+  expect(design).toContain("event_ack_cursor");
+  expect(design).toContain("model turn を終了する");
+  expect(design).toContain("task completion で同じ親が再開");
+  expect(design).not.toContain("watcher_armed");
   // Execute-side interpretation of additional work (issue/PR extension, same completion path).
   expect(design).toContain("追加作業指示");
   expect(design).toContain("Issue / PR への追加要望");
