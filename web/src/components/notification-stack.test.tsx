@@ -198,9 +198,11 @@ describe("NotificationStack", () => {
     ];
     const { router } = renderStack();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Open PR #12 in Herdr" }),
-    );
+    const openButton = await screen.findByRole("button", {
+      name: "Open PR #12 in Herdr",
+    });
+    expect(openButton.querySelector("svg.lucide-terminal")).toBeTruthy();
+    fireEvent.click(openButton);
 
     expect(actions.focus).toHaveBeenCalledWith(
       { repo: "me/proj", paneId: "pane_live_1234567890" },

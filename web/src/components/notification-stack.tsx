@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
-  Bot,
   CheckCircle2,
   CircleDollarSign,
+  Terminal,
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -251,7 +251,7 @@ function NotificationItem({
             onClick={() => onFocusHerdr(herdrPaneId)}
             className="inline-flex size-5 items-center justify-center self-center rounded-md border border-zinc-400 bg-zinc-500 text-zinc-50 hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
           >
-            <Bot className="size-2.5" aria-hidden="true" />
+            <Terminal className="size-2.5" aria-hidden="true" />
           </button>
         ) : null}
       </div>
