@@ -73,51 +73,58 @@ export function CreateIssueButton({
   }
 
   return (
-    <div data-debug-component="CreateIssueButton" className="inline-flex">
-      <Button
-        aria-label="New issue"
-        title="New issue"
-        disabled={disabled}
-        className="rounded-r-none"
-        onClick={() => launchIssue()}
-      >
-        <Plus className="size-4" />
-        <span>New issue</span>
-        {targetBranch ? (
-          <span className="font-normal opacity-75">in {targetBranch}</span>
-        ) : null}
-      </Button>
-      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            aria-label="Choose agent and model"
-            title="Choose agent and model for this issue creation"
-            disabled={disabled || !pickerReady}
-            className="rounded-l-none border-l border-primary-foreground/25 px-2"
-          >
-            <ChevronDown className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        {settings && effective ? (
-          <DropdownMenuContent align="end" className="w-72 p-3">
-            <AgentModelPicker
-              key={`${effective.runtime}:${effective.model}:${effective.effort}`}
-              settings={settings}
-              defaults={{
-                agent: effective.runtime,
-                model: effective.model,
-                effort: effective.effort,
-              }}
-              disabled={false}
-              actionVerb="Create"
-              actionIcon={<Plus className="size-4" />}
-              onSelect={(agent, model, effort) =>
-                launchIssue({ agent, model, effort })
-              }
-            />
-          </DropdownMenuContent>
-        ) : null}
-      </DropdownMenu>
+    <div
+      data-debug-component="CreateIssueButton"
+      className="inline-flex min-w-0 flex-col items-start"
+    >
+      <div className="inline-flex max-w-full">
+        <Button
+          aria-label="New issue"
+          title="New issue"
+          disabled={disabled}
+          className="rounded-r-none"
+          onClick={() => launchIssue()}
+        >
+          <Plus className="size-4" />
+          <span>New issue</span>
+        </Button>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              aria-label="Choose agent and model"
+              title="Choose agent and model for this issue creation"
+              disabled={disabled || !pickerReady}
+              className="rounded-l-none border-l border-primary-foreground/25 px-2"
+            >
+              <ChevronDown className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          {settings && effective ? (
+            <DropdownMenuContent align="end" className="w-72 p-3">
+              <AgentModelPicker
+                key={`${effective.runtime}:${effective.model}:${effective.effort}`}
+                settings={settings}
+                defaults={{
+                  agent: effective.runtime,
+                  model: effective.model,
+                  effort: effective.effort,
+                }}
+                disabled={false}
+                actionVerb="Create"
+                actionIcon={<Plus className="size-4" />}
+                onSelect={(agent, model, effort) =>
+                  launchIssue({ agent, model, effort })
+                }
+              />
+            </DropdownMenuContent>
+          ) : null}
+        </DropdownMenu>
+      </div>
+      {targetBranch ? (
+        <span className="max-w-56 truncate text-xs font-normal text-muted-foreground">
+          in {targetBranch}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -103,14 +103,32 @@ describe("CreateIssueButton", () => {
   it("forwards the workspace branch to issue creation", () => {
     render(<CreateIssueButton repo="me/proj" targetBranch="workspace/alpha" />);
 
-    expect(
-      screen.getByRole("button", { name: /new issue/i }).textContent,
-    ).toContain("in workspace/alpha");
+    expect(screen.getByText("in workspace/alpha")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /new issue/i }).textContent).toBe(
+      "New issue",
+    );
     fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
 
     expect(launchTerminal).toHaveBeenCalledWith(
       expect.objectContaining({ targetBranch: "workspace/alpha" }),
     );
+  });
+
+  it("keeps a long workspace name out of the action button", () => {
+    render(
+      <CreateIssueButton
+        repo="me/proj"
+        targetBranch="workspace/with-a-very-long-name-that-should-not-wrap-the-button"
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: /new issue/i });
+    expect(button.textContent).toBe("New issue");
+    expect(
+      screen.getByText(
+        "in workspace/with-a-very-long-name-that-should-not-wrap-the-button",
+      ).className,
+    ).toContain("text-xs");
   });
 
   it("launches issue creation with a suggested one-shot agent, model, and effort", async () => {
