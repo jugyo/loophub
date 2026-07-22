@@ -409,7 +409,7 @@ function WorkflowForm({
           </div>
           <textarea
             id={`workflow-${mode}-${step.key}`}
-            className="min-h-24 rounded-md border bg-background px-3 py-1.5 text-sm"
+            className="min-h-48 rounded-md border bg-background px-3 py-1.5 text-sm"
             value={prompts[step.key]}
             onChange={(e) =>
               setPrompts((prev) => ({ ...prev, [step.key]: e.target.value }))

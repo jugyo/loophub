@@ -165,6 +165,20 @@ describe("WorkflowsPage", () => {
     expect(executeField.value).toBe(WORKFLOW_EXAMPLE_PROMPTS.execute_prompt);
   });
 
+  it("shows both prompt fields at a comfortable multiline height", async () => {
+    renderPage({});
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New workflow" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "New workflow" });
+
+    for (const name of ["Execute prompt", "Verify prompt"]) {
+      expect(within(dialog).getByRole("textbox", { name }).classList).toContain(
+        "min-h-48",
+      );
+    }
+  });
+
   it("creates a workflow in a dialog and refreshes the list", async () => {
     let workflows: Workflow[] = [];
     renderPage({
