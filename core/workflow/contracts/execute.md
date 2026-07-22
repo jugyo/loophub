@@ -83,8 +83,8 @@ state.
    - the PR body via `lh pr update <pr> --repo '<repo>' --body ...` (summary, acceptance criteria,
      test plan, evidence) — you own the PR body;
    - evidence attachments via `lh attachment add` and PR comments via `lh pr comment` as needed;
-   - mark the PR ready for review with `lh pr ready-for-review <pr> --repo '<repo>'` when it is a
-     draft and the work is complete.
+   - after addressing change requests, resubmit the PR for review with
+     `lh pr ready-for-review <pr> --repo '<repo>'`.
    If required issue information or a human decision is missing, present the full concrete question
    in your own pane, then declare the escalation with
    `lh workflow escalate --repo '<repo>' --run <run> --reason <short summary>`. The reason is inline

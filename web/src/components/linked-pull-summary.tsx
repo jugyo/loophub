@@ -47,13 +47,7 @@ function linkedPullAttemptStatus(pull: LinkedPull) {
     ? { tone: "merged" as const, label: "merged", title: "Merged" }
     : pull.state === "closed"
       ? { tone: "closed" as const, label: "closed", title: "Closed" }
-      : pull.draft === false
-        ? {
-            tone: "review-passed" as const,
-            label: "ready",
-            title: "Ready for review",
-          }
-        : { tone: "open" as const, label: "open", title: "Open draft" };
+      : { tone: "open" as const, label: "open", title: "Open" };
 }
 
 const WORK_BASIS_LABEL: Record<

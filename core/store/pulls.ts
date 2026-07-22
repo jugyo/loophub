@@ -1,7 +1,7 @@
 import { db, now } from "../db.ts";
 import type { MergeableState } from "../mergeable.ts";
 import type { IssueRow } from "./issues.ts";
-import { getIssueById, touchIssue } from "./issues.ts";
+import { getIssueById } from "./issues.ts";
 import { linkSession, setSessionKind } from "./sessions.ts";
 
 export interface PullRow {
@@ -11,7 +11,6 @@ export interface PullRow {
   base_sha: string | null;
   head_sha: string | null;
   head_pending_creation: number;
-  draft: number;
   merged: number;
   merged_at: string | null;
   merge_commit_sha: string | null;
@@ -84,15 +83,14 @@ export function createPull(
   headSha: string | null,
   linkedIssueId: number | null = null,
   sessionId: string | null = null,
-  draft = false,
   baseSha: string | null = null,
   headPendingCreation = false,
 ) {
   db.run(
     `INSERT INTO pulls
        (issue_id, head_ref, base_ref, base_sha, head_sha, head_pending_creation,
-        linked_issue_id, draft)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        linked_issue_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
       issueId,
       head,
@@ -101,7 +99,6 @@ export function createPull(
       headSha,
       headPendingCreation ? 1 : 0,
       linkedIssueId,
-      draft ? 1 : 0,
     ],
   );
   // The PR's dev session is recorded only in the generalized session_links bridge (kind='dev'); the
@@ -216,15 +213,6 @@ export function setHeadSha(issueId: number, sha: string | null) {
        WHERE issue_id = ?`,
     [sha, sha, issueId],
   );
-}
-
-// Flip a PR's draft (#413) WIP flag. `lh pr ready-for-review` clears it (draft→ready).
-export function setPullDraft(issueId: number, draft: boolean) {
-  db.run(`UPDATE pulls SET draft = ? WHERE issue_id = ?`, [
-    draft ? 1 : 0,
-    issueId,
-  ]);
-  touchIssue(issueId);
 }
 
 export function listOpenPullsForRepo(repoId: number): OpenPullSummaryRow[] {

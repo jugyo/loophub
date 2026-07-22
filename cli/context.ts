@@ -57,16 +57,9 @@ export function fail(message: string): never {
   process.exit(1);
 }
 
-// One-word status label for a PR in `lh pr list` / `view` (#413). "draft" only applies to an open WIP
-// PR — a draft closed before ready-for-review reads as "closed", not "draft" (mirrors the web
-// draftBadge guard, which gates on `state === "open"`).
-export function prStatusLabel(p: {
-  merged?: boolean;
-  draft?: boolean;
-  state: string;
-}): string {
+// One-word status label for a PR in `lh pr list` / `view`.
+export function prStatusLabel(p: { merged?: boolean; state: string }): string {
   if (p.merged) return "merged";
-  if (p.state === "open" && p.draft) return "draft";
   return p.state;
 }
 

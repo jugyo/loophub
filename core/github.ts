@@ -1,4 +1,4 @@
-// #411: the gh/git seam for submitting a loophub PR to GitHub as a Draft PR. Kept separate from
+// #411: the gh/git seam for submitting a loophub PR to GitHub. Kept separate from
 // service.ts so the orchestration there (push → create/recover → record) can be unit-tested with
 // these injected — `gh` and a GitHub remote are not available in CI. service.ts composes the real
 // implementations via `realGithubDeps`; tests pass fakes.
@@ -96,16 +96,15 @@ export async function viewPr(
   return null;
 }
 
-// Create a Draft GitHub PR for `head` against `base`. Resolves the new PR's number+url via a
+// Create a GitHub PR for `head` against `base`. Resolves the new PR's number+url via a
 // follow-up `pr view` (authoritative), falling back to parsing the URL `gh pr create` prints.
-export async function createDraftPr(
+export async function createPr(
   repoPath: string,
   input: { base: string; head: string; title: string; body: string },
 ): Promise<GhPr> {
   const created = await gh(repoPath, [
     "pr",
     "create",
-    "--draft",
     "--base",
     input.base,
     "--head",
@@ -139,13 +138,13 @@ export async function createDraftPr(
 export interface GithubDeps {
   push: typeof pushBranch;
   view: typeof viewPr;
-  create: typeof createDraftPr;
+  create: typeof createPr;
 }
 
 export const realGithubDeps: GithubDeps = {
   push: pushBranch,
   view: viewPr,
-  create: createDraftPr,
+  create: createPr,
 };
 
 // #614: the GitHub identity of an issue, parsed from its web URL.
@@ -442,7 +441,6 @@ export const realGithubFeedbackDeps: GithubFeedbackDeps = {
 // figures so the UI can label each and never conflate the two counts (#850 AC).
 export interface GhPrStatus {
   state: "open" | "closed" | "merged";
-  isDraft: boolean;
   merged: boolean;
   mergeable: "mergeable" | "conflicting" | "unknown";
   reviewDecision: "approved" | "changes_requested" | "review_required" | null;
@@ -511,7 +509,7 @@ export async function fetchGithubPrStatus(
     "pr",
     "view",
     "--json",
-    "state,isDraft,mergeable,reviewDecision,statusCheckRollup,comments,reviews,updatedAt",
+    "state,mergeable,reviewDecision,statusCheckRollup,comments,reviews,updatedAt",
     // Pass the URL after `--` so it can never be mistaken for a flag, matching viewPr — the value is
     // already GitHub-validated at every write path, so this is defense-in-depth against that ever
     // being loosened.
@@ -522,7 +520,6 @@ export async function fetchGithubPrStatus(
     throw new Error(`gh pr view failed: ${r.stderr.trim() || r.stdout.trim()}`);
   let j: {
     state?: unknown;
-    isDraft?: unknown;
     mergeable?: unknown;
     reviewDecision?: unknown;
     statusCheckRollup?: unknown;
@@ -539,7 +536,6 @@ export async function fetchGithubPrStatus(
     lowerEnum(j.state, ["open", "closed", "merged"] as const) ?? "open";
   return {
     state,
-    isDraft: j.isDraft === true,
     merged: state === "merged",
     mergeable:
       lowerEnum(j.mergeable, [

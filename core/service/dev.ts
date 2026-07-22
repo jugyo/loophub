@@ -10,7 +10,7 @@ import {
   worktreeBranch,
 } from "./shared.ts";
 
-function defaultDraftPrBody(issue: number): string {
+function defaultPrBody(issue: number): string {
   return [
     "## 実装計画",
     "",
@@ -19,7 +19,7 @@ function defaultDraftPrBody(issue: number): string {
     "",
     "## Evidence",
     "",
-    "- **Visual evidence gate**: TODO - before ready-for-review, record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason.",
+    "- **Visual evidence gate**: TODO - record `UI / visual candidate: yes|no`; for `yes`, include screenshot evidence or a specific `N/A` reason.",
     "",
     `Closes #${issue}`,
     "",
@@ -28,11 +28,11 @@ function defaultDraftPrBody(issue: number): string {
 
 // ===== dev (issue-dev loop support) =====
 //
-// Helpers for the development loop shared by Workflow runs: open a draft PR at the start of work
-// so the agent has a place to write its plan, and attribute the dev session to the PR.
+// Helpers for the development loop shared by Workflow runs: open a PR at the start of work and
+// attribute the dev session to it.
 
 export const dev = {
-  // Open the draft PR for an issue's worktree branch at the start of a run. Idempotent:
+  // Open the PR for an issue's worktree branch at the start of a run. Idempotent:
   // if the issue already has an open (unmerged) linked PR, return it untouched. The PR can
   // be opened with 0 commits — LoopHub does not require head to be ahead of base (the diff
   // is just empty until the agent commits). The body seeds a plan placeholder the agent
@@ -97,9 +97,7 @@ export const dev = {
       input.base ??
       issueRow.target_branch ??
       r.default_branch;
-    const body = input.body ?? defaultDraftPrBody(input.issue);
-    // The PR is opened at the *start* of work, so it begins as a draft (#413); the agent
-    // flips it to ready via `lh pr ready-for-review` once the implementation is done.
+    const body = input.body ?? defaultPrBody(input.issue);
     const pr = await pulls.create(
       name,
       {
@@ -109,7 +107,6 @@ export const dev = {
         headFromNumber: input.head ? undefined : worktreeBranch,
         base,
         issue: input.issue,
-        draft: true,
         parallel,
         baseSha: inheritedBaseSha,
       },

@@ -5,7 +5,6 @@ import { GithubPrStatusSection } from "./github-pr-status";
 
 const BASE: GithubPrStatus = {
   state: "open",
-  is_draft: true,
   merged: false,
   mergeable: "conflicting",
   review_decision: "changes_requested",
@@ -39,7 +38,6 @@ describe("GithubPrStatusSection", () => {
     const text = container.textContent ?? "";
     expect(text).toContain("GitHub PR");
     expect(text).toContain("Open");
-    expect(text).toContain("Draft");
     expect(text).toContain("Changes requested");
     expect(text).toContain("Failing");
     expect(text).toContain("Conflicts");
@@ -56,7 +54,6 @@ describe("GithubPrStatusSection", () => {
           ...BASE,
           state: "merged",
           merged: true,
-          is_draft: false,
           review_decision: "approved",
           checks: "none",
           mergeable: "unknown",
@@ -67,7 +64,6 @@ describe("GithubPrStatusSection", () => {
     const text = container.textContent ?? "";
     expect(text).toContain("Merged");
     expect(text).toContain("Approved");
-    expect(text).not.toContain("Draft");
     // none checks / unknown mergeable rows are omitted to keep the panel compact.
     expect(text).not.toContain("Checks");
     expect(text).not.toContain("Mergeable");

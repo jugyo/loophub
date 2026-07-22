@@ -209,7 +209,6 @@ export const pulls = {
       headFromNumber?: (prNumber: number) => string;
       base?: string;
       issue?: number;
-      draft?: boolean;
       // Explicit opt-in for proposal/attempt flows that intentionally link another open PR to
       // the same issue. Ordinary PR creation keeps the one-open-PR soft guard above.
       parallel?: boolean;
@@ -221,7 +220,7 @@ export const pulls = {
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
-    const { title, body = "", issue, draft = false } = input;
+    const { title, body = "", issue } = input;
     if (!title || (!input.head && !input.headFromNumber))
       throw new ServiceError(422, "title, head, base are required");
     const actor = actorFor(sessionId);
@@ -266,19 +265,15 @@ export const pulls = {
       headSha,
       linkedIssueId,
       sessionId ?? null,
-      draft,
       resolvedBaseSha,
       // A PR-number-derived branch is deliberately recorded before it exists so a launcher can
       // provision it. Persist that fact explicitly; nullable head_sha is only watcher data and is
       // not reliable lifecycle provenance.
-      draft && input.headFromNumber != null && headSha == null,
+      input.headFromNumber != null && headSha == null,
     );
-    // Carry the draft flag (#413) on the payload so event-driven consumers can tell a WIP PR
-    // (Workflow / openPr open drafts) from a reviewable one without a follow-up read.
     S.emitEvent(r.id, "pull_request.opened", actor, {
       number: row.number,
       linked_issue: linkedNumber ?? undefined,
-      draft,
     });
     return pullJSON(r, S.getIssue(r.id, row.number)!);
   },
@@ -720,26 +715,6 @@ export const pulls = {
     if (p.merged || row.state !== "open")
       throw new ServiceError(422, "Pull Request is not open");
     const actor = actorFor(sessionId);
-    // Two distinct "ready for review" transitions share this entry point, both ending in a
-    // `pull_request.ready_for_review` event:
-    //   (a) draft → ready (#413): a PR opened at the start of work is now done. No prior
-    //       review is required — flipping the WIP flag is the whole transition.
-    //   (b) re-review after change requests: an already-ready PR whose latest review is
-    //       REQUEST_CHANGES is being resubmitted ("I addressed your feedback").
-    // Draft takes precedence: a draft PR has no meaningful review history to re-request, so the
-    // REQUEST_CHANGES guard below must not block clearing the draft flag.
-    if (p.draft) {
-      const headSha = await revParse(r.local_path, p.head_ref);
-      assertMutationAllowed?.();
-      S.setPullDraft(row.id, false);
-      if (headSha) S.setHeadSha(row.id, headSha);
-      if (body) S.createComment(row.id, actor, body);
-      S.emitEvent(r.id, "pull_request.ready_for_review", actor, {
-        number: row.number,
-        draft: false,
-      });
-      return pullJSON(r, S.getIssue(r.id, row.number)!);
-    }
     const reviewStatus = S.computeReviewStatus(row.id);
     if (
       !reviewStatus.gate.topics.some(
@@ -757,7 +732,6 @@ export const pulls = {
     if (body) S.createComment(row.id, actor, body);
     S.emitEvent(r.id, "pull_request.ready_for_review", actor, {
       number: row.number,
-      draft: false,
     });
     return pullJSON(r, S.getIssue(r.id, row.number)!);
   },

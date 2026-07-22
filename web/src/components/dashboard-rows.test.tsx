@@ -179,7 +179,6 @@ function makePullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
     base: { ref: "main", sha: "base" },
     base_sha: "base",
     merged: false,
-    draft: false,
     mergeable: null,
     mergeable_state: "blocked",
     merge_commit_sha: null,

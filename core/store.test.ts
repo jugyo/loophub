@@ -122,7 +122,6 @@ test("recording the first non-null head SHA consumes pending branch creation", (
     null,
     null,
     null,
-    true,
     "base-sha",
     true,
   );

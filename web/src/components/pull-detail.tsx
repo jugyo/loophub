@@ -263,18 +263,9 @@ function PullHeader({
   // A PR with no commits has nothing to merge server-side either (#691), so the Merge control
   // must stay disabled the same way a conflict does.
   const hasNoCommits = pull.mergeable_state === "no_commits";
-  // A draft PR is WIP (#413), so the Merge control stays disabled even if it somehow carries a
-  // PASSED review — flip it to ready via "Mark ready for review" first.
   const canMerge =
-    canAct &&
-    !pull.draft &&
-    pull.review_state === "PASSED" &&
-    !hasConflict &&
-    !hasNoCommits;
-  // "Ready for review" covers two transitions (#413): a draft PR (opened WIP when work starts)
-  // becoming ready, or an already-ready PR resubmitting after change requests. Draft takes precedence.
-  const canReady =
-    canAct && (pull.draft || pull.review_state === "CHANGES_REQUESTED");
+    canAct && pull.review_state === "PASSED" && !hasConflict && !hasNoCommits;
+  const canReady = canAct && pull.review_state === "CHANGES_REQUESTED";
   const mergeBlockedReason = hasConflict
     ? "Cannot merge: this PR has conflicts with the base branch."
     : hasNoCommits
@@ -369,7 +360,7 @@ function PullHeader({
             {ready.isPending ? (
               <Loader2 className="size-4 animate-spin" />
             ) : null}
-            {pull.draft ? "Mark ready for review" : "Mark ready for re-review"}
+            Mark ready for re-review
           </Button>
         ) : null}
         {/* #406: the repo's effective merge mode picks exactly one write action — the internal Merge
@@ -471,7 +462,7 @@ function CritReviewAction({
 // exported (github_pull present) the button becomes a "View PR on GitHub" link — this is the
 // double-create guard: the Create action disappears so a second export can't be dispatched. Until
 // then, "Create PR on GitHub" dispatches the export skill into a terminal (same pattern as the
-// issue Build button), where the skill generates a branch/title/description and opens the draft PR.
+// issue Build button), where the skill generates a branch/title/description and opens the PR.
 // The skill itself ships separately (issue #406 part B); the workflow launch maps to
 // /lh-create-github-pr in core/terminal/terminal-launch.ts.
 function GithubPrAction({

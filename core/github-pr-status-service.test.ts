@@ -61,7 +61,6 @@ async function openGithubLinkedPull() {
 
 const SAMPLE: GhPrStatus = {
   state: "open",
-  isDraft: true,
   merged: false,
   mergeable: "conflicting",
   reviewDecision: "changes_requested",
@@ -92,7 +91,6 @@ test("githubStatus fetches via gh, maps to the wire shape, and caches it (#850)"
   );
   expect(wire).toMatchObject({
     state: "open",
-    is_draft: true,
     merged: false,
     mergeable: "conflicting",
     review_decision: "changes_requested",

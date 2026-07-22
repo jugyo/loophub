@@ -64,9 +64,6 @@ export async function run(): Promise<void> {
     out(items);
     if (!flags.json)
       items.forEach((p: any) => {
-        // draft (#413): an open WIP PR is shown as "draft". Gate on the open state so a draft
-        // closed before ready-for-review still reads as "closed", not "draft" (mirrors the web
-        // draftBadge guard).
         const status = prStatusLabel(p);
         console.log(
           `#${p.number}\t${status}\t${p.head.ref}->${p.base.ref}\t${p.title}`,
@@ -101,12 +98,11 @@ export async function run(): Promise<void> {
           head: flags.head ?? "",
           ...(flags.base ? { base: flags.base } : {}),
           ...(flags.issue ? { issue: Number(flags.issue) } : {}),
-          ...(flags.draft ? { draft: true } : {}),
         },
         await writeSession(),
       ),
     );
-    console.log(`created PR #${p.number}${p.draft ? " (draft)" : ""}`);
+    console.log(`created PR #${p.number}`);
   } else if (sub === "update") {
     const patch: { title?: string; body?: string } = {};
     if (flags.title !== undefined) patch.title = flags.title;

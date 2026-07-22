@@ -168,7 +168,6 @@ function UiCatalogPage() {
                 <Badge tone="working">working</Badge>
                 <Badge tone="review-passed">review passed</Badge>
                 <Badge tone="review-changes">changes requested</Badge>
-                <Badge tone="draft">draft</Badge>
                 <Badge tone="merged">merged</Badge>
               </div>
             </section>

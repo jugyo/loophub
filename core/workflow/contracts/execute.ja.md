@@ -71,7 +71,7 @@ Issue と PR に対して実装します。要求を記録するために Issue 
    - `lh pr update <pr> --repo '<repo>' --body ...` による PR body（summary、acceptance
      criteria、test plan、evidence）。PR body はあなたが管理します。
    - 必要に応じた `lh attachment add` と `lh pr comment`
-   - PR が draft で作業完了なら `lh pr ready-for-review <pr> --repo '<repo>'`
+   - 通常の PR は作成時からレビュー可能なので、初回完了時に ready 操作は不要。変更要求への対応が完了した場合のみ `lh pr ready-for-review <pr> --repo '<repo>'`
    必要な Issue 情報または人間の判断が欠ける場合、自分の pane に具体的な質問全文を示してから
    `lh workflow escalate --repo '<repo>' --run <run> --reason <short summary>` を実行します。
    reason は必須の inline text（最大 500 文字）なので、質問を短く要約します。これは parent が観測

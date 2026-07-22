@@ -19,7 +19,6 @@ export type Flags = {
   "claude-code"?: boolean;
   codex?: boolean;
   grok?: boolean;
-  draft?: boolean;
   full?: boolean;
   json?: boolean;
   allow?: string;
@@ -115,7 +114,6 @@ const { values, positionals } = parseArgs({
     "claude-code": { type: "boolean" },
     codex: { type: "boolean" },
     grok: { type: "boolean" },
-    draft: { type: "boolean" },
     full: { type: "boolean" },
     json: { type: "boolean" },
     allow: { type: "string" },

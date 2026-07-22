@@ -267,7 +267,6 @@ export interface PullSummaryWire {
   title: string;
   state: "open" | "closed";
   merged: boolean;
-  draft?: boolean;
   html_url: string;
   github_pull: GithubPullWire | null;
   // Agent cost for the issue-list PR sub-row (#783): total tokens across every linked session and
@@ -406,7 +405,6 @@ export function githubPullJSON(g: S.GithubPull | null): GithubPullWire | null {
 // mistaken for the other.
 export interface GithubPrStatusWire {
   state: "open" | "closed" | "merged";
-  is_draft: boolean;
   merged: boolean;
   mergeable: "mergeable" | "conflicting" | "unknown";
   review_decision: "approved" | "changes_requested" | "review_required" | null;
@@ -423,7 +421,6 @@ export function githubPrStatusJSON(
 ): GithubPrStatusWire {
   return {
     state: gh.state,
-    is_draft: gh.isDraft,
     merged: gh.merged,
     mergeable: gh.mergeable,
     review_decision: gh.reviewDecision,
@@ -1113,13 +1110,11 @@ function linkedPullSummaries(repo: S.Repo, issueRowId: number) {
 }
 
 function pullSummary(repo: S.Repo, pr: S.LinkedPullIssueRow): PullSummaryWire {
-  const pull = S.getPull(pr.id)!;
   return {
     number: pr.number,
     title: pr.title,
     state: pr.state,
     merged: !!pr.merged,
-    draft: !!pull.draft,
     html_url: linkedRef(repo, "pulls", pr.number).html_url,
     // #629: the exported GitHub PR (if any), so the issue-detail linked-PR row can show a GH badge.
     github_pull: githubPullJSON(S.getGithubPull(pr.id)),
@@ -1343,7 +1338,6 @@ async function linkedPullDetail(
     title: pr.title,
     state: pr.state,
     merged: !!pr.merged,
-    draft: !!status.pull.draft,
     html_url: linkedRef(repo, "pulls", pr.number).html_url,
     working: status.working,
     review_state: status.review_state,
@@ -1747,8 +1741,8 @@ export function workflowRunHistoryEventJSON(
 //     merging, rejected/abandoned).
 //   - "in_review": session start → now — the PR has reached its first ready_for_review event but
 //     hasn't merged or closed yet, so the clock is still running.
-//   - "in_progress": session start → now — no ready_for_review event yet (still draft, or ready
-//     with no recorded event), so the clock is still running.
+//   - "in_progress": session start → now — no ready_for_review event yet, so the clock is still
+//     running.
 export type PullWorkDurationBasis =
   | "merged"
   | "closed"
@@ -1768,7 +1762,7 @@ export interface PullWorkDuration {
   // PullWorkDurationBasis for what grounds each value.
   total: { seconds: number | null; basis: PullWorkDurationBasis | null };
   // Session start → the first ready_for_review event (or → the PR's own end signal, for a PR that
-  // was merged/closed without ever passing through a draft→ready transition — see below). Null only
+  // was merged/closed without ever passing through a ready_for_review transition — see below). Null only
   // when there is no dev session to anchor from (mirrors `total.basis === null`).
   implementation: PullWorkPhase | null;
   // The first ready_for_review event → merged_at/closed_at, or → now while still under review. Null
@@ -1782,7 +1776,7 @@ export interface PullWorkDuration {
 //   - total: start → the clearest completion signal (see PullWorkDurationBasis), or now.
 //   - implementation: start → the first ready_for_review event — the phase before a
 //     reviewer/human ever saw the PR. A PR that merges/closes without ever passing through
-//     draft→ready (e.g. a plain non-draft `pulls.create`) has no ready_for_review event to anchor
+//     ready_for_review has no event to anchor
 //     to; implementation then covers the PR's whole life and `review` stays null, since there is no
 //     signal marking a review phase ever began.
 //   - review: the first ready_for_review event → merged_at/closed_at/now — review + any fix-cycle
@@ -1882,9 +1876,6 @@ export interface PullWire {
   // Exact fork point captured at PR creation; legacy rows infer it from git merge-base.
   base_sha: string | null;
   merged: boolean;
-  // draft (#413): true while the PR is WIP (opened at the start of work by Workflow / openPr);
-  // cleared by `lh pr ready-for-review`. Lets list/view and consumers tell WIP from reviewable.
-  draft: boolean;
   mergeable: boolean | null;
   mergeable_state: MergeableState;
   merge_commit_sha: string | null;
@@ -1974,9 +1965,6 @@ export async function pullJSON(
     base: { ref: p.base_ref, sha: status.baseSha },
     base_sha: status.forkBaseSha,
     merged: !!p.merged,
-    // draft (#413): true while the PR is WIP (opened at the start of work by Workflow / openPr);
-    // cleared by `lh pr ready-for-review`. Lets list/view and consumers tell WIP from reviewable.
-    draft: !!p.draft,
     mergeable: status.mergeable,
     mergeable_state: status.mergeable_state,
     merge_commit_sha: p.merge_commit_sha,

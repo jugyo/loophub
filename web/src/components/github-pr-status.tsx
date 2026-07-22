@@ -1,5 +1,5 @@
 // GitHub PR status section for the PR-detail right sidebar (#850). Shown only when the loophub PR has
-// a linked GitHub PR (github_pull); the GitHub-side status (draft / review / checks / comment counts /
+// a linked GitHub PR (github_pull); the GitHub-side status (review / checks / comment counts /
 // merged) is fetched on demand via `pulls/githubStatus` and cached server-side. Compact by design so
 // it sits alongside the other sidebar sections (work duration, sessions, handoff) without crowding
 // them — a badge row plus a few small labeled rows and a freshness footnote.
@@ -95,12 +95,11 @@ export function GithubPrStatusSection({
             good panel. The error box shows only when there is no status to fall back to. */
       status ? (
         <div className="flex flex-col gap-2">
-          {/* Top line: overall state, plus a Draft chip when the GitHub PR is still a draft. */}
+          {/* Top line: overall GitHub PR state. */}
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge tone={STATE[status.state].tone}>
               {STATE[status.state].label}
             </Badge>
-            {status.is_draft ? <Badge tone="draft">Draft</Badge> : null}
           </div>
           <StatusRow
             label="Review"

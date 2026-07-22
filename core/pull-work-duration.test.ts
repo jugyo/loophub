@@ -150,6 +150,10 @@ test("ready for review but not merged: total is in_review and keeps growing, imp
     "sess-b",
   );
   backdateSession("sess-b", 300);
+  await svc.reviews.create("me/proj", number, {
+    event: "REQUEST_CHANGES",
+    body: "please review",
+  });
   await svc.pulls.readyForReview("me/proj", number, undefined, "sess-b");
 
   const pull = (await svc.pulls.get("me/proj", number)) as any;
@@ -185,6 +189,10 @@ test("merged PR: total/implementation/review split into distinguishable, frozen 
     "sess-c",
   );
   backdateSession("sess-c", 1000);
+  await svc.reviews.create("me/proj", number, {
+    event: "REQUEST_CHANGES",
+    body: "please review",
+  });
   await svc.pulls.readyForReview("me/proj", number, undefined, "sess-c");
   // Push the ready event back so implementation (start -> ready) and review (ready -> merge) land
   // in clearly separate windows instead of both collapsing near "now": implementation ~= 600s,
@@ -358,6 +366,15 @@ test("multiple ready_for_review events (re-review after changes requested): impl
     "sess-g",
   );
   backdateSession("sess-g", 1000);
+  await svc.reviews.create(
+    "me/proj",
+    number,
+    {
+      event: "REQUEST_CHANGES",
+      body: "please review",
+    },
+    "sess-g",
+  );
   await svc.pulls.readyForReview("me/proj", number, undefined, "sess-g");
   // Push the FIRST ready event back so implementation lands at a distinguishable ~600s, leaving
   // ~400s for the whole review phase (both rounds combined).

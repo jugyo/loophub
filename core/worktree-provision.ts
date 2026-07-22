@@ -36,7 +36,7 @@ export interface ProvisionInput {
   // itself just opened this PR this run (its branch genuinely never existed yet, #463); false
   // (default) for re-entering an already-established PR, where a missing convention branch means
   // it was deleted out-of-band and silently recreating it under the same name would discard
-  // history without warning. Callers may also allow a pre-created draft attempt whose branch has
+  // history without warning. Callers may also allow a pre-created attempt whose branch has
   // never existed (and therefore has no recorded head SHA). Ignored when headRef is null — that
   // path (a brand-new self-managed branch) has always been safe to create.
   allowCreatingConventionBranch?: boolean;

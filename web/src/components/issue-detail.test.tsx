@@ -427,7 +427,6 @@ describe("IssueDetail", () => {
           html_url: "/pulls/31",
           github_pull: null,
           cost_stopped: false,
-          draft: false,
           additions: 24,
           deletions: 7,
           changed_files: 3,

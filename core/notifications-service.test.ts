@@ -109,7 +109,6 @@ test("ready-for-review alone does not generate a notification", async () => {
   S.createPull(pr.id, "main", "main", null, null);
   S.emitEvent(repo.id, "pull_request.ready_for_review", "lh-build", {
     number: pr.number,
-    draft: false,
   });
 
   const notifications = await svc.notifications.list({ limit: 100 });

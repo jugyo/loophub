@@ -19,7 +19,6 @@ export function primaryLinkedPull(issue: Issue): LinkedPull | null {
 export type BadgeTone =
   | "open"
   | "closed"
-  | "draft"
   | "merged"
   | "review-passed"
   | "review-changes"
@@ -133,20 +132,6 @@ const REVIEW_LABEL: Record<NonNullable<PullRequest["review_state"]>, string> = {
 };
 
 /**
- * "draft" badge for an open, unmerged WIP PR (#413). The PR is opened at the start of work,
- * so it stays draft until `lh pr ready-for-review` flips it; surfacing it keeps a still-in-progress
- * PR from reading as reviewable. Null for merged/closed PRs and once the PR is ready.
- */
-export function draftBadge(pr: PullRequest): Badge | null {
-  if (pr.merged || pr.state !== "open" || !pr.draft) return null;
-  return {
-    tone: "draft",
-    label: "draft",
-    title: "Work in progress — not yet ready for review",
-  };
-}
-
-/**
  * "over budget" badge for a PR whose dev agent was force-stopped for exceeding its cost limit
  * (#863, driven by the `dev.cost_stopped` event surfaced as `cost_stopped`). The conceptual
  * escalation of the amber/red AgentCostBadge cost highlight: a stopped PR is stalled and needs a
@@ -158,7 +143,7 @@ export function costStoppedBadge(pull: {
   merged?: boolean;
   state?: "open" | "closed";
 }): Badge | null {
-  // Like draft/working, a transient "needs attention" cue for an open PR: once the PR is
+  // Like working, a transient "needs attention" cue for an open PR: once the PR is
   // merged/closed the stall is resolved, so the badge is suppressed rather than left as stale noise
   // next to a "merged"/"closed" badge.
   if (!pull.cost_stopped || pull.merged || pull.state === "closed") return null;
@@ -182,11 +167,9 @@ export function pullBadges(pr: PullRequest): Badge[] {
   const badges: Badge[] = [];
   const status = resolvePullStatus(pr);
   // #863: a stopped-for-cost PR is stalled and needs a human — flag it first, ahead of the
-  // routine draft/working/review badges. Suppressed on merged/closed PRs (costStoppedBadge).
+  // routine working/review badges. Suppressed on merged/closed PRs (costStoppedBadge).
   const costStopped = costStoppedBadge(pr);
   if (costStopped) badges.push(costStopped);
-  const draft = draftBadge(pr);
-  if (draft) badges.push(draft);
   const state = status.terminal;
   if (state) return [state];
   const review = status.review;
@@ -207,8 +190,6 @@ export function pullDetailBadges(pr: PullRequest): Badge[] {
   // #863: flag a stopped-for-cost PR first, ahead of the routine badges (see pullBadges).
   const costStopped = costStoppedBadge(pr);
   if (costStopped) badges.push(costStopped);
-  const draft = draftBadge(pr);
-  if (draft) badges.push(draft);
   const state = status.terminal;
   if (state) return [state];
   const review = status.review;

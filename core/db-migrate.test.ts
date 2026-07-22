@@ -39,7 +39,8 @@ beforeAll(async () => {
     );
     CREATE TABLE pulls (
       issue_id INTEGER PRIMARY KEY REFERENCES issues(id), head_ref TEXT NOT NULL,
-      base_ref TEXT NOT NULL, head_sha TEXT, merged INTEGER NOT NULL DEFAULT 0,
+      base_ref TEXT NOT NULL, head_sha TEXT, draft INTEGER NOT NULL DEFAULT 1,
+      merged INTEGER NOT NULL DEFAULT 0,
       merged_at TEXT, merge_commit_sha TEXT, merge_method TEXT,
       linked_issue_id INTEGER REFERENCES issues(id),
       session_id TEXT REFERENCES agent_sessions(id)
@@ -114,6 +115,7 @@ test("pulls.session_id is dropped after migration", () => {
     D.db.query("PRAGMA table_info(pulls)").all() as { name: string }[]
   ).map((c) => c.name);
   expect(cols).not.toContain("session_id");
+  expect(cols).not.toContain("draft");
   expect(cols).toContain("base_sha");
   expect(cols).toContain("head_pending_creation");
   expect(S.getPull(10)?.base_sha).toBeNull();

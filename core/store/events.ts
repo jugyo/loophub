@@ -184,10 +184,9 @@ export function latestWorkflowTurnDoneAt(
 }
 
 // The timestamp of the PR's earliest `pull_request.ready_for_review` event, or null if it never
-// fired. Both transitions that emit this event type (draft→ready, and re-review after change
-// requests — see service.ts `readyForReview`) carry the same `{ number, draft: false }` payload, so
-// the earliest one is always the original draft→ready flip — the moment the PR first became
-// reviewable. Used to anchor the "work duration" calculation (serialize.ts `pullWorkDuration`) for a
+// fired. The event is emitted when a PR is resubmitted after change requests (see service.ts
+// `readyForReview`), and the earliest one marks the moment the PR first entered review. Used to
+// anchor the "work duration" calculation (serialize.ts `pullWorkDuration`) for a
 // PR that reached review but hasn't merged yet.
 export function firstReadyForReviewAt(
   repoId: number,

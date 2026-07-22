@@ -721,6 +721,10 @@ test("sessions.costSummary limits token rate to in-progress dev sessions", async
   expect(activeSummary.tokens_per_second).toBe(5);
   expect(activeSummary.tokens_per_5m_history?.at(-1)).toBe(1500);
 
+  await svc.reviews.create("me/proj", opened.number, {
+    event: "REQUEST_CHANGES",
+    body: "please review",
+  });
   await svc.pulls.readyForReview(
     "me/proj",
     opened.number,
@@ -778,6 +782,10 @@ test("sessions.costSummary counts in-progress workflow-step sessions toward the 
   expect(activeSummary.tokens_per_second).toBe(5);
   expect(activeSummary.tokens_per_5m_history?.at(-1)).toBe(1500);
 
+  await svc.reviews.create("me/proj", opened.number, {
+    event: "REQUEST_CHANGES",
+    body: "please review",
+  });
   await svc.pulls.readyForReview(
     "me/proj",
     opened.number,

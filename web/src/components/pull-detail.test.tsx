@@ -55,7 +55,6 @@ const pull: PullRequest = {
   base: { ref: "main", sha: "bbb" },
   base_sha: "bbb",
   merged: false,
-  draft: false,
   mergeable: true,
   mergeable_state: "clean",
   review_state: "PASSED",
@@ -166,7 +165,6 @@ function mockFetch(
     "workflowRuns/stateForPull": () => null,
     "pulls/githubStatus": () => ({
       state: "open",
-      is_draft: false,
       merged: false,
       mergeable: "mergeable",
       review_decision: null,
@@ -1290,7 +1288,6 @@ function renderDetailWithPull(
       "comments/list": () => comments,
       "pulls/githubStatus": () => ({
         state: "open",
-        is_draft: false,
         merged: false,
         mergeable: "mergeable",
         review_decision: null,
