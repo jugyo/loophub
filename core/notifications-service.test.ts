@@ -242,6 +242,28 @@ test("send creates an agent-triggered notification", async () => {
   expect((await svc.notifications.unreadCount()).count).toBe(before + 1);
 });
 
+test("unread-only list returns more than the normal page limit", async () => {
+  const repoPath = initGitRepo("lh-notifications-unread-list-");
+  await svc.repos.create({ path: repoPath, name: "me/notify-unread-list" });
+  for (let id = 1; id <= 101; id += 1) {
+    svc.notifications.send("me/notify-unread-list", {
+      kind: "human_attention",
+      title: `Notification ${id}`,
+      body: "Needs attention.",
+      resourceKind: "repo",
+      sourceKey: `unread-list:${id}`,
+    });
+  }
+
+  const notifications = await svc.notifications.list({ unreadOnly: true });
+
+  expect(
+    notifications.filter(
+      (notification: any) => notification.repo.name === "me/notify-unread-list",
+    ),
+  ).toHaveLength(101);
+});
+
 test("backfill defers reversible hidden states but ignores merged PR signals", async () => {
   const repo = S.getRepo("me", "notify")!;
   const closed = S.createIssue(repo.id, "pull", "Closed PR", "", "me");

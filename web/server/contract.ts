@@ -243,9 +243,13 @@ export const methods: Record<string, MethodDef> = {
   "notifications/list": {
     description:
       "List topbar notification-center alerts, independent from lh inbox.",
-    params: params({ limit: positiveInt }),
+    params: params({ limit: positiveInt, unreadOnly: { type: "boolean" } }),
     result: anyArray,
-    handler: (p) => svc.notifications.list({ limit: p.limit }),
+    handler: (p) =>
+      svc.notifications.list({
+        limit: p.limit,
+        unreadOnly: p.unreadOnly,
+      }),
   },
   "notifications/unreadCount": {
     description: "Count unread notification-center alerts.",

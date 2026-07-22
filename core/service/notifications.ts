@@ -187,10 +187,16 @@ export const notifications = {
     return notificationJSON(row);
   },
 
-  async list(opts: { limit?: number } = {}): Promise<any[]> {
+  async list(
+    opts: { limit?: number; unreadOnly?: boolean } = {},
+  ): Promise<any[]> {
     await refreshGeneratedNotifications();
-    const limit = clampPerPage(opts.limit, 50, MAX_LIST_PER_PAGE);
-    return S.listNotifications({ limit }).map(notificationJSON);
+    const limit = opts.unreadOnly
+      ? undefined
+      : clampPerPage(opts.limit, 50, MAX_LIST_PER_PAGE);
+    return S.listNotifications({ limit, unreadOnly: opts.unreadOnly }).map(
+      notificationJSON,
+    );
   },
 
   async unreadCount(): Promise<{ count: number }> {

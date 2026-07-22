@@ -103,6 +103,7 @@ component conventions remain in the sections that follow.
 | **Application header** | Application-wide header shown above every route. It contains global navigation and controls that are not owned by one repository. Use this semantic term instead of the position-based “top bar.” | `AppTopbar` in [`src/components/app-topbar.tsx`](./src/components/app-topbar.tsx), composed by `AppLayout` |
 | **Repository navigation bar** | Repository-scoped section navigation shown below the application header on routes with `:owner` and `:repo`, such as `/r/:owner/:repo`. It is not an application-wide header. | `RepoTopbar` in [`src/components/repo-topbar.tsx`](./src/components/repo-topbar.tsx), composed by `AppLayout` |
 | **Application status bar** | Application-wide status region fixed below the main content on every route. It reports shared runtime and environment information. | `AppStatusbar` in [`src/components/app-statusbar.tsx`](./src/components/app-statusbar.tsx), composed by `AppLayout` |
+| **Notification stack** | Application-wide stack of unread notifications fixed above the status bar at the bottom-right of every route. Closing an item marks it read without replacing the application header's Notification Center. | `NotificationStack` in [`src/components/notification-stack.tsx`](./src/components/notification-stack.tsx), composed by `AppLayout` |
 | **Issue list** | Repository-scoped list and filtering page for issues. The canonical repository entry is `/r/:owner/:repo`; `/r/:owner/:repo/issues` is also supported. | `IssueList` in [`src/components/issue-list.tsx`](./src/components/issue-list.tsx), mounted by `routes/repo.tsx` and `routes/repo-issues.tsx` |
 | **Issue detail page** | Repository-scoped page for one issue at `/r/:owner/:repo/issues/:number`. | `IssueDetail` in [`src/components/issue-detail.tsx`](./src/components/issue-detail.tsx), mounted by `routes/issues.tsx` |
 | **Pull request detail page** | Repository-scoped page for one pull request at `/r/:owner/:repo/pulls/:number`. | `PullDetail` in [`src/components/pull-detail.tsx`](./src/components/pull-detail.tsx), mounted by `routes/pulls.tsx` |
@@ -133,7 +134,7 @@ tooltip so narrow controls stay identifiable. Markers live on:
   summary)
 - Purpose-named interactive controls and wrappers (for example
   `CreateIssueButton`, `NewWorkspaceButton`, `ThemeToggle`,
-  `ComponentDebugToggle`, `NotificationCenter`, `RepoSwitcher`,
+  `ComponentDebugToggle`, `NotificationCenter`, `NotificationStack`, `RepoSwitcher`,
   `RepositorySearch`, `HerdrAgentInput`, `AgentModelPicker`)
 - Dropdown content surfaces under `ui/` that own a root DOM node
   (`DropdownMenuContent`, `DropdownMenuSubContent`)
@@ -168,8 +169,9 @@ and keeps props, state, and performance data out of scope.
 ### App shell
 
 The shell places a scrolling main column between a fixed application header and
-application status bar. Repository routes also show a repository navigation
-bar ([`src/components/app-layout.tsx`](./src/components/app-layout.tsx),
+application status bar, with the notification stack floating above the status
+bar at the bottom-right. Repository routes also show a repository navigation bar
+([`src/components/app-layout.tsx`](./src/components/app-layout.tsx),
 [`src/components/repo-topbar.tsx`](./src/components/repo-topbar.tsx)).
 
 | Dimension | Value | Where |

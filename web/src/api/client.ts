@@ -510,7 +510,9 @@ export function deleteInboxMessage(
 }
 
 // --- notifications ---
-export function listNotifications(input: { limit?: number } = {}) {
+export function listNotifications(
+  input: { limit?: number; unreadOnly?: boolean } = {},
+) {
   return rpc<Notification[]>("notifications/list", clean(input));
 }
 

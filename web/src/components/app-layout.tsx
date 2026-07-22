@@ -6,6 +6,7 @@ import { useRef, useState } from "react";
 import { AppStatusbar } from "@/components/app-statusbar";
 import { AppTopbar } from "@/components/app-topbar";
 import { ComponentDebugOverlay } from "@/components/component-debug-overlay";
+import { NotificationStack } from "@/components/notification-stack";
 import { RepoHerdrWarning } from "@/components/repo-herdr-warning";
 import { RepoSwitcher } from "@/components/repo-switcher";
 import { RepoTopbar } from "@/components/repo-topbar";
@@ -52,6 +53,7 @@ export function AppLayout() {
           <AppStatusbar />
           <RepoSwitcher openRequest={repoSwitcherRequest} />
           <TerminalLaunchErrorDialog />
+          <NotificationStack />
           {/* Operation feedback (#574): a floating toast above the content, with an explicit
               lifetime independent of any one screen's components (mirrors the old ErrorBanner). */}
           <ToastViewport />

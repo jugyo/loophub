@@ -96,8 +96,11 @@ export function markAllNotificationsRead(): NotificationRow[] {
     .all(now()) as NotificationRow[];
 }
 
-export function listNotifications(opts: { limit?: number } = {}) {
-  const limit = opts.limit ?? 50;
+export function listNotifications(
+  opts: { limit?: number; unreadOnly?: boolean } = {},
+) {
+  const limit = opts.unreadOnly ? -1 : (opts.limit ?? 50);
+  const unreadFilter = opts.unreadOnly ? "AND n.read_at IS NULL" : "";
   return db
     .query(
       `SELECT n.* FROM notifications n
@@ -107,6 +110,7 @@ export function listNotifications(opts: { limit?: number } = {}) {
         AND i.kind = n.resource_kind
         AND n.resource_kind IN ('issue', 'pull')
        WHERE r.archived = 0
+         ${unreadFilter}
          AND (
            n.resource_kind = 'repo'
            OR i.id IS NULL

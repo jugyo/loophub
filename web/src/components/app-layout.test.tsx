@@ -32,6 +32,11 @@ vi.mock("@/components/app-statusbar", () => ({
 vi.mock("@/components/app-topbar", () => ({
   AppTopbar: () => <header>Topbar</header>,
 }));
+vi.mock("@/components/notification-stack", () => ({
+  NotificationStack: () => (
+    <aside data-testid="notification-stack">Notifications</aside>
+  ),
+}));
 vi.mock("@/components/repo-topbar", () => ({
   RepoTopbar: () => <nav>Repo topbar</nav>,
 }));
@@ -114,6 +119,25 @@ describe("AppLayout", () => {
     await screen.findByText("Settings route");
 
     expect(screen.getByTestId("app-statusbar")).toBe(statusbar);
+  });
+
+  it("keeps the notification stack mounted across all routes", async () => {
+    const { router } = renderLayout();
+    await screen.findByText("Dashboard route");
+    const stack = screen.getByTestId("notification-stack");
+
+    await act(() => router.navigate({ to: "/settings" }));
+    await screen.findByText("Settings route");
+    expect(screen.getByTestId("notification-stack")).toBe(stack);
+
+    await act(() =>
+      router.navigate({
+        to: "/r/$owner/$repo/issues/$number",
+        params: { owner: "me", repo: "proj", number: "12" },
+      }),
+    );
+    await screen.findByText("Issue route");
+    expect(screen.getByTestId("notification-stack")).toBe(stack);
   });
 
   it("shows the shared repo warning on repo top and issue detail routes", async () => {

@@ -13,7 +13,9 @@ function compareNotifications(a: Notification, b: Notification): number {
   return readOrder || b.created_at.localeCompare(a.created_at) || b.id - a.id;
 }
 
-export function useNotifications(input: { limit?: number } = {}) {
+export function useNotifications(
+  input: { limit?: number; unreadOnly?: boolean } = {},
+) {
   return useQuery({
     queryKey: [...queryKeys.notifications(), "list", input],
     queryFn: () => listNotifications(input),
