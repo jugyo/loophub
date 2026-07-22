@@ -238,7 +238,7 @@ function NotificationItem({
           </time>
         </div>
       </Link>
-      <div className="flex shrink-0 flex-col gap-2">
+      <div className="flex shrink-0 self-stretch flex-col justify-between gap-2">
         <button
           type="button"
           aria-label={`Close ${notification.title}`}

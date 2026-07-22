@@ -251,6 +251,34 @@ describe("NotificationStack", () => {
     expect(router.state.location.pathname).toBe("/");
   });
 
+  it("places the Herdr action at the bottom-right away from close", async () => {
+    notifications.value = [makeNotification(12)];
+    notifications.herdrRepos = [
+      {
+        repo: "me/proj",
+        session_name: "me/proj",
+        agents: [],
+        pull_workspaces: [
+          { pull: 12, pane_id: "pane_live_1234567890", status: "working" },
+        ],
+        issue_workspaces: [],
+      },
+    ];
+    renderStack();
+
+    const closeButton = await screen.findByRole("button", {
+      name: "Close Notification 12",
+    });
+    const openButton = screen.getByRole("button", {
+      name: "Open PR #12 in Herdr",
+    });
+    const actions = closeButton.parentElement;
+
+    expect(actions).toBe(openButton.parentElement);
+    expect(actions?.className).toContain("self-stretch");
+    expect(actions?.className).toContain("justify-between");
+  });
+
   it("hides the Herdr action when the stored pane is no longer live", async () => {
     notifications.value = [
       makeNotification(12, { herdr_pane_id: "pane_stale_1234567890" }),
