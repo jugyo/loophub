@@ -84,6 +84,7 @@ beforeAll(async () => {
       VALUES (1, 'me/proj', 'proj', 'me', '/tmp/proj', 't0');
     INSERT INTO issues (id, repo_id, number, kind, title, author, created_at, updated_at)
       VALUES (10, 1, 7, 'pull', 'impl', 'bot', 't1', 't1');
+    -- Preserve a session written by the retired pre-Workflow lh-dev launcher during migration.
     INSERT INTO agent_sessions (id, agent, external_session, name, created_at, updated_at)
       VALUES ('11111111-0000-0000-0000-000000000001', 'lh-dev',
               '11111111-0000-0000-0000-000000000001', 'dev', 't1', 't1');

@@ -93,9 +93,9 @@ test("isClaudeSessionId rejects flag-like, malformed, and empty ids", () => {
   expect(isClaudeSessionId(undefined)).toBe(false);
 });
 
-// sessionRuntime: explicit runtime wins; a runtime-less lh-build row is the modern fallback, and a
-// runtime-less lh-dev row is the backward-compat
-// claude-code case; any other runtime-less row is unknown provenance (null).
+// sessionRuntime: explicit runtime wins; runtime-less rows from the retired lh-build and lh-dev
+// launchers retain their backward-compatible claude-code fallback. Any other runtime-less row has
+// unknown provenance (null).
 test("sessionRuntime prefers the explicit runtime column", () => {
   expect(sessionRuntime({ runtime: "claude-code", agent: "lh-build" })).toBe(
     RUNTIME_CLAUDE_CODE,

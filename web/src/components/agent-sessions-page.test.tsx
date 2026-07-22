@@ -256,6 +256,39 @@ describe("AgentSessionsPage", () => {
     expect(screen.queryByText("s-old")).toBeNull();
   });
 
+  it("groups runtime-less legacy lh-dev sessions as Claude Code", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      new Date("2026-07-09T13:00:00Z").getTime(),
+    );
+    renderPage([
+      {
+        id: "legacy-lh-dev",
+        agent: "lh-dev",
+        session: "legacy-lh-dev",
+        created_at: "2026-07-09T08:00:00Z",
+        updated_at: "2026-07-09T09:00:00Z",
+        usage: [
+          {
+            session_id: "legacy-lh-dev",
+            model: "claude-sonnet",
+            input_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+            cost_usd: 0.01,
+            context_usage_percent: null,
+            updated_at: "2026-07-09T09:00:00Z",
+          },
+        ],
+      },
+    ]);
+
+    expect(await screen.findByText("legacy-lh-dev")).toBeTruthy();
+    expect(screen.getAllByText("Claude Code").length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByRole("button", { name: "By agent" }));
+    expect(screen.getByLabelText("Jul 9 Claude Code: $0.01")).toBeTruthy();
+  });
+
   it("filters by preset range and switches granularity and chart mode", async () => {
     vi.spyOn(Date, "now").mockReturnValue(
       new Date("2026-07-09T13:00:00Z").getTime(),

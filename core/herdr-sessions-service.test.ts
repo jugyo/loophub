@@ -28,6 +28,8 @@ let worktreeRoot: () => string;
 let worktreePath: (root: string, fullName: string, pr: number) => string;
 
 const ORIGINAL_PATH = process.env.PATH;
+// Persisted agent label used by sessions created before Workflow replaced the lh-dev launcher.
+const LEGACY_LH_DEV_SESSION_AGENT = "lh-dev";
 // Two PATH prefixes the tests switch between: one with a fake `herdr` on it, one empty
 // (so spawning `herdr` fails with ENOENT — the "herdr not installed" path).
 const FAKE_BIN = join(HOME, "fake-bin");
@@ -514,7 +516,11 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
     "me",
   );
   S.createPull(expiredMerged.id, "loophub/pr-1", "main", null);
-  S.registerAgentSession("session-expired-merged", "lh-dev", "external-1");
+  S.registerAgentSession(
+    "session-expired-merged",
+    LEGACY_LH_DEV_SESSION_AGENT,
+    "external-1",
+  );
   S.setPullSession(expiredMerged.id, "session-expired-merged");
   S.setMerged(expiredMerged.id, "expired-merge-sha", "merge");
   db.run(`UPDATE pulls SET merged_at = ? WHERE issue_id = ?`, [
@@ -526,7 +532,11 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
   // arithmetic itself is unit-tested in core/terminal/herdr-cleanup.test.ts.
   const freshMerged = S.createIssue(repo.id, "pull", "fresh merged", "", "me");
   S.createPull(freshMerged.id, "loophub/pr-2", "main", null);
-  S.registerAgentSession("session-fresh-merged", "lh-dev", "external-2");
+  S.registerAgentSession(
+    "session-fresh-merged",
+    LEGACY_LH_DEV_SESSION_AGENT,
+    "external-2",
+  );
   S.setPullSession(freshMerged.id, "session-fresh-merged");
   S.setMerged(freshMerged.id, "fresh-merge-sha", "merge");
   db.run(`UPDATE pulls SET merged_at = ? WHERE issue_id = ?`, [
@@ -542,7 +552,11 @@ test("terminal.cleanupClosedPullDevAgents closes workspaces for expired closed a
     "me",
   );
   S.createPull(expiredClosed.id, "loophub/pr-3", "main", null);
-  S.registerAgentSession("session-expired-closed", "lh-dev", "external-3");
+  S.registerAgentSession(
+    "session-expired-closed",
+    LEGACY_LH_DEV_SESSION_AGENT,
+    "external-3",
+  );
   S.setPullSession(expiredClosed.id, "session-expired-closed");
   S.updateIssue(expiredClosed.id, { state: "closed" });
   db.run(`UPDATE issues SET closed_at = ?, updated_at = ? WHERE id = ?`, [
@@ -681,7 +695,7 @@ test("terminal.cleanupClosedPullDevAgents continues after invalid workspace ids 
     const sessionId = `session-cleanup-${index + 1}`;
     S.registerAgentSession(
       sessionId,
-      "lh-dev",
+      LEGACY_LH_DEV_SESSION_AGENT,
       `failure-external-${index + 1}`,
     );
     S.setPullSession(prRow.id, sessionId);

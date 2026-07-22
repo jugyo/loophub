@@ -66,6 +66,10 @@ const GRANULARITIES: Array<{ id: Granularity; label: string }> = [
   { id: "month", label: "Monthly" },
 ];
 
+// Sessions created by the retired pre-Workflow launchers may predate the runtime column. Keep
+// their persisted agent labels recognizable so historical Claude Code usage is grouped correctly.
+const LEGACY_CLAUDE_SESSION_AGENTS = new Set(["lh-build", "lh-dev"]);
+
 const CHART_MODES: Array<{ id: ChartMode; label: string }> = [
   { id: "total", label: "Total" },
   { id: "agent", label: "By agent" },
@@ -140,7 +144,7 @@ function sessionCost(session: AgentSession): CostTotal {
 
 function effectiveRuntime(session: AgentSession): string | null {
   if (session.runtime) return session.runtime;
-  if (session.agent === "lh-build" || session.agent === "lh-dev")
+  if (session.agent && LEGACY_CLAUDE_SESSION_AGENTS.has(session.agent))
     return RUNTIME_CLAUDE_CODE;
   return null;
 }
