@@ -12,6 +12,23 @@ test("priceForModel prices gpt-5.3-codex-spark without breaking the gpt-5.4-mini
   expect(priceForModel("gpt-5.4")).toMatchObject({ input: 2.5 });
 });
 
+test("priceForModel calculates cost for the fable model", () => {
+  expect(priceForModel("claude-fable-5")).toMatchObject({
+    input: 10,
+    cacheCreation: 12.5,
+    cacheRead: 1,
+    output: 50,
+  });
+  expect(
+    calculateCostUsd("claude-fable-5", {
+      input_tokens: 1_000_000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 1_000_000,
+    }),
+  ).toBeCloseTo(60);
+});
+
 test("priceForModel prices gpt-5.6-sol from its confirmed OpenAI rate", () => {
   expect(priceForModel("gpt-5.6-sol")).toMatchObject({
     input: 5,

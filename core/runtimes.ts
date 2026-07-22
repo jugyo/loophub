@@ -76,6 +76,7 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
       "haiku",
       "claude-opus-4-8",
       "claude-sonnet-5",
+      "claude-fable-5",
       "claude-haiku-4-5-20251001",
     ],
     effortSuggestions: ["low", "medium", "high", "xhigh", "max"],
