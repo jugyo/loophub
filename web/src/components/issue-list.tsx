@@ -260,7 +260,7 @@ export function IssueList({
     >
       <div
         data-debug-component="IssueListFilters"
-        className="flex flex-wrap items-center gap-2"
+        className="flex flex-wrap items-start gap-2"
       >
         {showWorkspaceFilter ? (
           <DropdownMenu>

@@ -75,7 +75,7 @@ export function CreateIssueButton({
   return (
     <div
       data-debug-component="CreateIssueButton"
-      className="inline-flex min-w-0 flex-col items-start"
+      className="inline-flex min-w-0 flex-col items-end"
     >
       <div className="inline-flex max-w-full">
         <Button

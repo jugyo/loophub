@@ -104,6 +104,9 @@ describe("CreateIssueButton", () => {
     render(<CreateIssueButton repo="me/proj" targetBranch="workspace/alpha" />);
 
     expect(screen.getByText("in workspace/alpha")).toBeTruthy();
+    expect(
+      screen.getByText("in workspace/alpha").parentElement?.className,
+    ).toContain("items-end");
     expect(screen.getByRole("button", { name: /new issue/i }).textContent).toBe(
       "New issue",
     );

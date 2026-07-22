@@ -141,6 +141,7 @@ describe("IssueList", () => {
     const issueControls = screen.getByRole("tablist", {
       name: "Issue state",
     }).parentElement;
+    expect(issueControls?.className).toContain("items-start");
     expect(issueControls?.contains(newIssue)).toBe(true);
   });
 
