@@ -39,12 +39,12 @@ test("the English parent prompt remains byte-identical", () => {
       "",
       "## Instruction",
       "Orchestrate this run through Execute -> Verify as described in your contract.",
-      "Decide every transition by observing `lh workflow step status 42 --repo 'me/workflow-run' --json` after a background watch task returns an event; task completion, pane output, and PR body markers are never transition facts.",
+      "Decide every transition by observing `lh workflow step status 42 --repo 'me/workflow-run' --json` after the watcher exec session returns an event; command completion, pane output, and PR body markers are never transition facts.",
       "Start now:",
       "1. Seed <cursor> from the latest id returned by `lh events --repo 'me/workflow-run' --type workflow_run --run 42 --order desc --limit 1 --json`; use 0 when no event exists.",
       "2. Launch the Execute child: `lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute`.",
-      "3. Start `lh workflow watch --repo 'me/workflow-run' --run 42 --since <cursor> --json` as a runtime-managed background task and end the model turn while it blocks. Resume only from the task completion notification, then read its JSON result. Runtime-specific tool mechanics belong to the runtime adapter, not this prompt.",
-      "4. On task completion, process the single event in the returned `events` array and re-observe step status for every transition. After processing it, start the returned `next_command` verbatim as the next background watch; do not reconstruct or edit its cursor.",
+      "3. Start `lh workflow watch --repo 'me/workflow-run' --run 42 --since <cursor> --json` with `exec_command`. If it returns a `session_id` before completion, wait with `write_stdin` using the same session, empty input, and a long yield. Do not emit a final parent response while waiting.",
+      "4. On completion, process the single event in the returned `events` array and re-observe step status for every transition. After processing it, pass the returned `next_command` unchanged to the next `exec_command`; do not reconstruct or edit its cursor.",
       "If the parent restarts or loses its cursor, inspect `lh events --repo 'me/workflow-run' --type workflow_run --run 42 --order asc --json` and current step status instead of expecting automatic replay.",
       "Then follow your contract's transition table, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
       "",
@@ -71,13 +71,14 @@ test("the Japanese parent prompt translates prose without changing commands", ()
     "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute",
   );
   expect(prompt).toContain("--since <cursor>");
-  expect(prompt).toContain("runtime-managed background task");
-  expect(prompt).toContain("runtime adapter の責務");
+  expect(prompt).toContain("`exec_command`");
+  expect(prompt).toContain("`write_stdin`");
+  expect(prompt).toContain("parent の最終応答を出しません");
   expect(prompt).toContain("自動 replay を期待せず");
 });
 
 // The parent decides every transition by observing step status after a returned event.
-test("the parent prompt launches Execute and delegates the watcher to a background task", () => {
+test("the parent prompt launches Execute and waits through a unified exec session", () => {
   const prompt = parentUserPrompt(INPUT, "en");
   const launch =
     "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute";
@@ -85,8 +86,12 @@ test("the parent prompt launches Execute and delegates the watcher to a backgrou
     "lh workflow watch --repo 'me/workflow-run' --run 42 --since <cursor> --json";
   expect(prompt).toContain(launch);
   expect(prompt).toContain(watch);
-  expect(prompt).toContain("end the model turn while it blocks");
-  expect(prompt).toContain("start the returned `next_command` verbatim");
+  expect(prompt).toContain("with `exec_command`");
+  expect(prompt).toContain("wait with `write_stdin` using the same session");
+  expect(prompt).toContain("Do not emit a final parent response while waiting");
+  expect(prompt).toContain(
+    "pass the returned `next_command` unchanged to the next `exec_command`",
+  );
   expect(prompt).toContain("do not reconstruct or edit its cursor");
   expect(prompt).toContain("instead of expecting automatic replay");
   expect(prompt).toContain(
@@ -100,7 +105,6 @@ test("the parent prompt launches Execute and delegates the watcher to a backgrou
   expect(prompt).not.toContain("lh subscribe");
   expect(prompt).not.toContain("functions.exec");
   expect(prompt).not.toContain("functions.wait");
-  expect(prompt).not.toContain("tools.write_stdin");
 });
 
 test("a repo name is shell-quoted in commands and kept verbatim in prose", () => {

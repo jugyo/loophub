@@ -15,8 +15,8 @@ outside the repo root and outside a LoopHub worktree, or when you need to overri
 
 - **Facts live in domain state.** Completion, commits, and reviews are recorded in git / the PR /
   reviews. There is no direct message from a child carrying its result, and no artifact to place.
-- **Events wake; domain state decides.** Run blocking `lh workflow watch` as a background task managed
-  by the agent runtime. Its completion notification resumes this same parent with one ordered run
+- **Events wake; domain state decides.** Run blocking `lh workflow watch` in a runtime-managed unified
+  exec session. Its completion result lets this same parent continue with one ordered run
   event; observe domain state before deciding anything. Live control of a child (text injection, Esc)
   is something **you** do via herdr when needed — neither task completion nor an event row is a
   transition fact.
@@ -24,28 +24,29 @@ outside the repo root and outside a LoopHub worktree, or when you need to overri
 ## Runtime-managed workflow watcher protocol
 
 Do not poll or sleep in a model turn. Do not detach the shell process or inject a wake into this pane.
-The agent runtime owns the background task and delivers its completion notification. Each watcher
-result includes the exact `next_command` whose `--since` points after the delivered event. Run that
-command verbatim for the next wait instead of keeping or editing the cursor yourself. LoopHub does not
-persist or acknowledge this cursor.
+The agent runtime owns the unified exec session. Each watcher result includes the exact
+`next_command` whose `--since` points after the delivered event. Run that command verbatim for the
+next wait instead of keeping or editing the cursor yourself. LoopHub does not persist or acknowledge
+this cursor.
 
-Start the watcher through the runtime-managed background-task mechanism, end the model turn while it
-blocks, and resume only from its completion notification. Runtime-specific tool mechanics belong to
-the runtime adapter, not this contract.
+Start the watcher through the runtime-managed unified exec session and do not emit a final parent
+response while it blocks. Continue only from the command's completion result.
 
 ### Codex runtime adapter
 
-When this parent runs under Codex, the runtime-managed background-task tool is `functions.exec`. Call
-it with the blocking watcher command and a short yield; when it yields `Script running with cell ID
-<cell_id>`, end the model turn. The runtime delivers completion for that cell; use `functions.wait`
-with the returned `{ "cell_id": "<cell_id>" }` only to receive the completion result. A successful
-result must contain the watcher JSON, including its single event and exact `next_command`.
+When this parent runs under Codex, call `exec_command` with the blocking watcher command. If the
+command completes in that call, read its stdout directly. If it returns before completion with a
+`session_id`, pass the same `session_id` to `write_stdin` with empty `chars` and a long `yield_time_ms`.
+Repeat only when `write_stdin` reports that the same command is still running; this
+is waiting on one process, not fixed-interval polling. Do not emit a final parent response while the
+watcher is running. A successful completion result must contain the watcher JSON, including its
+single event and exact `next_command`.
 
-Do not call `exec_command` directly for this wait, use shell `&` / `nohup`, or keep a PTY
-`session_id`; those are not runtime-managed watcher tasks. If `functions.exec` or its completion
-notification is unavailable, stop Execute / Verify progression and report the visible startup error.
-Do not claim that the watcher started, retry through another mechanism, or continue from a missing
-notification.
+After processing that event, pass the returned `next_command` unchanged as the `cmd` of the next
+`exec_command` and apply the same `session_id` / `write_stdin` completion procedure. Do not use shell
+`&` / `nohup`, detach the process, use `sleep`, add a retry, or reconstruct the command. A non-zero
+exit is a visible watcher failure: stop Execute / Verify progression, preserve the error, and ask a
+human how to proceed.
 
 ### Initial wait and every subsequent wait
 
@@ -53,15 +54,16 @@ notification.
    `lh events --repo '<repo>' --type workflow_run --run <run> --order desc --limit 1 --json`; use `0`
    when no event exists.
 2. Launch Execute as described below and record its `agent` and `session` lines.
-3. Start `lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json` as the runtime-managed
-   background task, then end the model turn. Do not add shell `&`, `nohup`, redirection, Herdr
-   identifiers, or a manually managed polling loop.
-4. On the task completion notification, parse the JSON result. The ascending `events` array contains
+3. Start `lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json` with `exec_command`.
+   If it returns a `session_id`, wait for that same session with empty-input `write_stdin`; do not
+   emit a final parent response. Do not add shell `&`, `nohup`, redirection, Herdr identifiers,
+   `sleep`, or a manually managed polling loop.
+4. On command completion, parse stdout as JSON. The ascending `events` array contains
    exactly one event. Re-read
    `lh workflow step status` (and any review or referenced GitHub resource required by the event)
    before deciding a transition.
-5. After that event is fully processed, run the returned `next_command` verbatim as the next
-   runtime-managed background task. Do not reconstruct or edit its `--since` value. Repeat steps 4–5
+5. After that event is fully processed, pass the returned `next_command` unchanged to the next
+   `exec_command`. Do not reconstruct or edit its `--since` value. Repeat steps 4–5
    for the lifetime of the run, including after a fresh passing verdict. A transition command may create
    `workflow_run.updated`; the next watch checks for already-available rows before blocking.
 
@@ -212,7 +214,7 @@ use this path. Verify never reuses a prior verifier session via injection for ju
    normally arrives after Execute has declared turn done; a continuing instruction may land while
    Execute is mid-turn — still inject. Do not Esc unless you observed
    `workflow_run.cost_exceeded`.
-6. When the background watcher returns the next event, process it and re-read
+6. When the watcher exec session returns the next event, process it and re-read
    `lh workflow step status`. A successful inject is not execute complete; only a later HEAD advance
    (and turn-done timing signal) is.
 
@@ -285,10 +287,10 @@ auditing. Existing domain facts already let a human reconstruct a round:
 
 | From | Condition (observed via step status) | Action |
 |---|---|---|
-| start | run started | seed the event cursor, launch Execute, then start the background watcher task |
+| start | run started | seed the event cursor, launch Execute, then start the watcher exec session |
 | Execute | execute complete (HEAD ahead of base, advanced past the last review) | `lh workflow run advance-to-verify`, then launch Verify |
 | Execute | escalation event from the active Execute child | Read the event reason, notify the human, and stop automatic progression |
-| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running and start the next background watch task |
+| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running and start the next watcher exec session |
 | Verified + continuing | human requests additional work | Prefer inject into the live Execute pane; otherwise launch with `--note` (see Continuing after a pass) |
 | Verified + continuing | HEAD advances past the passing review and Execute declares turn done | Launch a fresh Verify child for the new HEAD (the run already remains at Verify) |
 | Verified + continuing | Execute declares turn done without a HEAD advance | Keep the existing pass fresh and continue waiting |
@@ -414,7 +416,7 @@ On escalation, do both:
 2. Notify the human via Inbox (command above).
 
 Keep the run `running`, but stop all automatic progression: do not launch steps or change rework
-count. Stay in this session; whenever the background watcher returns, inspect the event and retain its
+count. Stay in this session; whenever the watcher exec session returns, inspect the event and retain its
 `next_command` without acting on progression events, then wait for an explicit human instruction.
 A timer, a new unrelated event, or a child merely
 finishing is not an instruction. When the human answers, re-check step status and deliver the

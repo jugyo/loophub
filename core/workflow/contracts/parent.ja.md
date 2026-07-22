@@ -13,47 +13,46 @@ root / worktree 外、または上書き時は明示します。
 
 - **事実はドメイン状態にある。** 完了、commit、review は git / PR / reviews に記録されます。child
   から結果を運ぶ direct message や配置する artifact はありません。
-- **event は wake だけを担い、判断は domain state で行う。** blocking `lh workflow watch` を agent
-  runtime 管理の background task として実行します。完了通知で同じ parent が昇順の run event 1 件とともに
+- **event は wake だけを担い、判断は domain state で行う。** blocking `lh workflow watch` を runtime
+  管理の unified exec session で実行します。完了結果を受け取った同じ parent が昇順の run event 1 件とともに
   再開されたら、判断前に domain state を観測します。child への text injection や Esc は必要時に自分が
   herdr で行う live control であり、task completion も event row も遷移の事実ではありません。
 
 ## Runtime-managed workflow watcher protocol
 
 model turn 内で poll や sleep を行いません。shell process を detach せず、この pane への wake も注入しません。
-background task と完了通知は agent runtime が管理します。watcher result は、配信した event より後を
+unified exec session は agent runtime が管理します。watcher result は、配信した event より後を
 `--since` で指す正確な `next_command` を含みます。parent 自身で cursor を保持・編集せず、次の待機では
 その command をそのまま実行します。LoopHub はこの cursor を永続化も acknowledge もしません。
 
-watcher は runtime-managed background-task mechanism で開始し、block 中は model turn を終了します。
-完了通知だけを契機に再開します。runtime 固有の tool mechanism はこの contract ではなく runtime adapter
-の責務です。
+watcher は runtime-managed unified exec session で開始し、block 中は parent の最終応答を出しません。
+command の完了結果だけを契機に処理を続けます。
 
 ### Codex runtime adapter
 
-この parent を Codex で実行する場合、runtime-managed background-task tool は `functions.exec` です。
-blocking watcher command と短い yield を渡して呼び出し、`Script running with cell ID <cell_id>` が返ったら
-model turn を終了します。runtime がその cell の完了を通知するため、返された
-`{ "cell_id": "<cell_id>" }` を `functions.wait` に渡すのは完了結果を受け取る場合だけです。成功結果には
-単一 event と正確な `next_command` を含む watcher JSON が入ります。
+この parent を Codex で実行する場合、blocking watcher command を `exec_command` に渡します。その call 内で
+command が完了した場合は stdout を直接読みます。完了前に `session_id` が返った場合は、同じ
+`session_id` を、空の `chars` と長い `yield_time_ms` を指定した `write_stdin` に渡します。同じ command が
+まだ実行中と返された場合だけこの待機を続けます。これは 1 process の完了待ちであり、固定間隔 polling
+ではありません。watcher 実行中は parent の最終応答を出しません。成功した完了結果には、単一 event と
+正確な `next_command` を含む watcher JSON が入ります。
 
-この待機に `exec_command` を直接使ったり、shell の `&` / `nohup` を使ったり、PTY の `session_id` を
-保持したりしてはいけません。これらは runtime-managed watcher task の代替ではありません。
-`functions.exec` または完了通知が利用できない場合は、Execute / Verify の進行を止め、visible な startup
-error を報告します。watcher が起動したと主張したり、別機構で retry したり、通知がないまま継続したり
-してはいけません。
+event の処理後、返された `next_command` を編集せず、次の `exec_command` の `cmd` にそのまま渡し、同じ
+`session_id` / `write_stdin` の完了手順を適用します。shell の `&` / `nohup`、process detach、`sleep`、retry、
+command の再構築は行いません。non-zero exit は visible な watcher failure として、error を保持したまま
+Execute / Verify の進行を止め、人間へ判断を求めます。
 
 1. Execute launch 前に
    `lh events --repo '<repo>' --type workflow_run --run <run> --order desc --limit 1 --json` が返す最新 event id
    から `<cursor>` を seed します。event がなければ `0` を使います。
 2. 下記の手順で Execute を launch し、`agent` と `session` line を記録します。
-3. `lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json` を runtime-managed background
-   task として開始し、model turn を終了します。shell の `&`、`nohup`、redirection、Herdr identifier、
-   手動 poll loop を追加しません。
-4. task completion 通知後に JSON result を読みます。昇順の `events` array は正確に 1 event を含みます。遷移判断前に
+3. `lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json` を `exec_command` で開始します。
+   `session_id` が返った場合は同じ session を空入力の `write_stdin` で待ち、parent の最終応答を出しません。
+   shell の `&`、`nohup`、redirection、Herdr identifier、`sleep`、手動 poll loop を追加しません。
+4. command 完了後に stdout の JSON を読みます。昇順の `events` array は正確に 1 event を含みます。遷移判断前に
    `lh workflow step status` と、event が要求する review / GitHub resource を再観測します。
-5. event の処理後、返された `next_command` を編集せず、そのまま次の runtime-managed background task
-   として実行します。`--since` を組み立て直しません。fresh pass 後も含め run の全期間 4–5 を
+5. event の処理後、返された `next_command` を編集せず、そのまま次の `exec_command` に渡します。
+   `--since` を組み立て直しません。fresh pass 後も含め run の全期間 4–5 を
    繰り返します。parent の transition command が
    `workflow_run.updated` を生成した場合、次の watch は block 前に利用可能な row を確認するため取りこぼし
    ません。
@@ -233,7 +232,7 @@ audit 専用 command を追加しません。既存事実で round を復元で�
 
 | From | `step status` で観測する条件 | Action |
 |---|---|---|
-| start | run started | event cursor を seed、Execute を launch、background watcher task を開始 |
+| start | run started | event cursor を seed、Execute を launch、watcher exec session を開始 |
 | Execute | HEAD が base より先で last review より進んだ | `advance-to-verify` 後に Verify launch |
 | Execute | active Execute の escalation event | reason を読み人間へ通知し自動進行停止 |
 | Verify | latest review が `fresh` + `pass` | run を running のまま人間の次指示/event を待つ |
@@ -314,7 +313,7 @@ merge を block したい人間は明示的 `REQUEST_CHANGES` を提出できま
 1. `lh issue comment <issue> --repo '<repo>' --body <text>` で Issue に summary を記録します。
 2. 上記 `lh inbox send` で人間へ通知します。
 
-run は `running` のまま、自動進行を止めます。step launch / rework count change をせず、background watcher
+run は `running` のまま、自動進行を止めます。step launch / rework count change をせず、watcher exec session
 が返す各 event を確認して `next_command` を保持し、explicit human instruction を待ちます。timer、無関係 event、
 child finishing は instruction ではありません。
 回答後は step status を再確認し、Execute へ inject または fresh Execute / Verify を note 付き launch

@@ -1074,6 +1074,9 @@ test("workflow start launches the configured codingAgent (codex) without requiri
     expect(log).not.toContain("claude '");
     expect(log).toContain("'--model' 'gpt-5.6-sol'");
     expect(log).toContain("'workspace-write'");
+    expect(log).not.toContain("'--enable' 'code_mode'");
+    expect(log).not.toContain("'--enable' 'deferred_executor'");
+    expect(log).not.toContain("'suppress_unstable_features_warning=true'");
     expect(log).not.toContain("'--session-id'");
   } finally {
     clearConfig();

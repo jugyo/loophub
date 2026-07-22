@@ -225,23 +225,20 @@ test("parent uses a runtime-managed workflow watcher and reacts to cost limit fa
     "lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json",
   );
   expect(contract).not.toContain("--ack");
-  expect(contract).toContain("resume only from its completion notification");
-  expect(contract).toMatch(
-    /Runtime-specific tool mechanics belong to\s+the runtime adapter/,
-  );
-  expect(contract).toContain(
-    "the runtime-managed background-task tool is `functions.exec`",
-  );
-  expect(contract).toContain("Script running with cell ID");
-  expect(contract).toContain("`functions.wait`");
-  expect(contract).toContain(
-    "Do not call `exec_command` directly for this wait",
-  );
-  expect(contract).toContain("PTY\n`session_id`");
-  expect(contract).toContain(
-    "If `functions.exec` or its completion\nnotification is unavailable",
-  );
-  expect(contract).toMatch(/does\s+not\s+persist or acknowledge this cursor/);
+  expect(contract).toContain("runtime-managed unified exec session");
+  expect(contract).toContain("`exec_command`");
+  expect(contract).toContain("`session_id`");
+  expect(contract).toContain("`write_stdin`");
+  expect(contract).toContain("empty `chars`");
+  expect(contract).toContain("long `yield_time_ms`");
+  expect(contract).toContain("same `session_id`");
+  expect(contract).toMatch(/do not\s+emit a final parent response/i);
+  expect(contract).toContain("pass the returned `next_command` unchanged");
+  expect(contract).not.toContain("functions.exec");
+  expect(contract).not.toContain("functions.wait");
+  expect(contract).not.toContain("background cell");
+  expect(contract).not.toContain("cell completion bridge");
+  expect(contract).toMatch(/does\s+not\s+persist or acknowledge\s+this cursor/);
   expect(contract).toMatch(/contains\s+exactly one event/);
   expect(contract).toContain("exact `next_command`");
   expect(contract).toContain("Do not reconstruct or edit its `--since` value");
@@ -321,11 +318,12 @@ test("parent uses a runtime-managed workflow watcher and reacts to cost limit fa
 test("English and Japanese parent contracts document the Codex watcher protocol", () => {
   for (const language of ["en", "ja"] as const) {
     const contract = workflowContractText("parent", language);
-    expect(contract).toContain("functions.exec");
-    expect(contract).toContain("functions.wait");
+    expect(contract).not.toContain("functions.exec");
+    expect(contract).not.toContain("functions.wait");
+    expect(contract).toContain("exec_command");
+    expect(contract).toContain("write_stdin");
     expect(contract).toContain("lh workflow watch");
     expect(contract).toContain("next_command");
-    expect(contract).toContain("exec_command");
     expect(contract).toContain("session_id");
     expect(contract).toContain("completion");
     expect(contract).toContain("Execute / Verify");
@@ -428,11 +426,12 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain(
     "`lh workflow run increase-cost-limit --run <run> --expected-limit <limit_usd>`",
   );
-  expect(design).toContain("Runtime-managed watcher protocol");
+  expect(design).toContain("Unified exec watcher protocol");
   expect(design).toContain('--since "$cursor"');
   expect(design).toContain("`next_command` を編集せず");
   expect(design).not.toContain("event_ack_cursor");
-  expect(design).toMatch(/完了通知\s*だけを契機に同じ parent が再開/);
+  expect(design).toContain("同じ parent が stdout の JSON result を回収する");
+  expect(design).toContain("同じ `session_id` / `write_stdin` 手順で待つ");
   expect(design).toContain("自動 replay しない");
   expect(design).not.toContain("watcher_armed");
   // Execute-side interpretation of additional work (issue/PR extension, same completion path).
