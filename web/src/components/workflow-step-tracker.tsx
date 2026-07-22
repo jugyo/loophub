@@ -135,8 +135,8 @@ function OpenInHerdrButton({
     <Button
       type="button"
       variant="secondary"
-      size="icon"
-      className="size-7 shrink-0"
+      size="sm"
+      className="shrink-0"
       aria-label="Open in Herdr"
       title="Open in Herdr"
       disabled={focus.isPending}
@@ -159,6 +159,7 @@ function OpenInHerdrButton({
       ) : (
         <Terminal className="size-3.5" aria-hidden="true" />
       )}
+      Open in Herdr
     </Button>
   );
 }

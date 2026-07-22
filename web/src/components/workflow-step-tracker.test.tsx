@@ -170,6 +170,7 @@ describe("WorkflowStepTracker", () => {
     expect(dialog.textContent).toContain("workflow");
     expect(dialog.textContent).toContain("Run #1");
     expect(dialog.textContent).toContain("working");
+    expect(within(dialog).getByText("Open in Herdr")).toBeTruthy();
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Open in Herdr" }),
     );
