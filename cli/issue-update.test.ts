@@ -578,3 +578,47 @@ test("lh issue update without --title/--body errors", () => {
   expect(i.title).toBe("unchanged title");
   expect(i.body).toBe("unchanged body");
 });
+
+test("lh issue label requires --add", () => {
+  const n = createIssue("label required", "body");
+  const result = lh(["issue", "label", String(n), "--repo", REPO]);
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("--add is required");
+  expect(viewJSON(n).labels).toEqual([]);
+});
+
+test("lh issue label rejects a positional label name", () => {
+  const n = createIssue("positional label", "body");
+  const result = lh([
+    "issue",
+    "label",
+    String(n),
+    "some-label",
+    "--repo",
+    REPO,
+  ]);
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("--add is required");
+  expect(viewJSON(n).labels).toEqual([]);
+});
+
+test("lh issue label adds labels with --add", () => {
+  const n = createIssue("add label", "body");
+  const result = lh([
+    "issue",
+    "label",
+    String(n),
+    "--repo",
+    REPO,
+    "--add",
+    "some-label",
+  ]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stdout).toContain("labeled");
+  expect(
+    viewJSON(n).labels.map((label: { name: string }) => label.name),
+  ).toEqual(["some-label"]);
+});

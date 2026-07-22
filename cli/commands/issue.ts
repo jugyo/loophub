@@ -280,6 +280,7 @@ export async function run(): Promise<void> {
       .split(",")
       .map((x) => x.trim())
       .filter(Boolean);
+    if (labels.length === 0) fail("--add is required");
     await runOp(async () =>
       s.issues.addLabels(repo, Number(rest[0]), labels, await writeSession()),
     );
