@@ -20,9 +20,8 @@ import { mockRpcFetch } from "@/api/rpc-mock";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 
-const { focusHerdrAgent, sendHerdrAgentInput, showError } = vi.hoisted(() => ({
+const { focusHerdrAgent, showError } = vi.hoisted(() => ({
   focusHerdrAgent: vi.fn(),
-  sendHerdrAgentInput: vi.fn(),
   showError: vi.fn(),
 }));
 const herdrSessionsData = vi.hoisted(() => ({
@@ -35,10 +34,6 @@ vi.mock("@/queries/terminal", () => ({
     isError: herdrSessionsData.isError,
   }),
   useFocusHerdrAgent: () => ({ mutate: focusHerdrAgent, isPending: false }),
-  useSendHerdrAgentInput: () => ({
-    mutate: sendHerdrAgentInput,
-    isPending: false,
-  }),
 }));
 vi.mock("@/components/toast", () => ({
   useToast: () => ({ showError }),
@@ -51,7 +46,6 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   focusHerdrAgent.mockClear();
-  sendHerdrAgentInput.mockClear();
   showError.mockClear();
   herdrSessionsData.value = undefined;
   herdrSessionsData.isError = false;
@@ -444,9 +438,10 @@ describe("LinkedPullSummaryRow actions", () => {
   });
 });
 
-describe("LinkedPullSummaryRow popover Agents list (#1493)", () => {
-  function herdrWithPullAgent(): HerdrSessions {
-    return {
+describe("LinkedPullSummaryRow hover popover", () => {
+  it("identifies the popover and omits agents and follow-up input", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    herdrSessionsData.value = {
       repos: [
         {
           repo: "me/proj",
@@ -466,11 +461,6 @@ describe("LinkedPullSummaryRow popover Agents list (#1493)", () => {
         },
       ],
     };
-  }
-
-  it("shows the sidebar Agents list and opens a pane from its terminal icon", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    herdrSessionsData.value = herdrWithPullAgent();
     renderRow();
     await screen.findByRole("link", { name: "PR #10" });
 
@@ -479,34 +469,16 @@ describe("LinkedPullSummaryRow popover Agents list (#1493)", () => {
       vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS);
     });
     expect(popoverVisible()).toBe(true);
-
-    const list = screen.getByRole("list", { name: "Agent hierarchy" });
-    expect(within(list).getByText("dev #10")).toBeTruthy();
-    const agentRow = within(list).getByText("dev #10").closest("li")!;
-    const cost = within(agentRow).getByText("n/a");
-    const open = within(list).getByRole("button", { name: "Open in Herdr" });
-    expect(
-      cost.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      within(list).getByRole("listitem", { name: "Total cost" }),
-    ).toBeTruthy();
-    fireEvent.click(open);
-    expect(focusHerdrAgent).toHaveBeenCalledWith(
-      { repo: "me/proj", paneId: "w1:p2" },
-      expect.anything(),
+    const popover = document.querySelector(
+      '[data-debug-component="PullPopover"]',
     );
-  });
-
-  it("omits the Agents list when no live pane resolves to the PR", async () => {
-    herdrSessionsData.value = { repos: [] };
-    renderRow();
-    await screen.findByRole("link", { name: "PR #10" });
-
-    fireEvent.focus(row());
-    expect(popoverVisible()).toBe(true);
-    expect(screen.queryByRole("list", { name: "Agent hierarchy" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Open in Herdr" })).toBeNull();
+    expect(popover).toBeTruthy();
+    expect(within(popover as HTMLElement).queryByText("dev #10")).toBeNull();
+    expect(
+      within(popover as HTMLElement).queryByPlaceholderText(
+        "Send a follow-up instruction…",
+      ),
+    ).toBeNull();
   });
 });
 

@@ -1,15 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, TriangleAlert } from "lucide-react";
-import type { HerdrAgent, HerdrSessions, LinkedPull } from "@/api/types";
+import type { HerdrSessions, LinkedPull } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { DiffStat } from "@/components/diff-stat";
-import { HerdrAgentInput } from "@/components/herdr-agent-input";
 import {
   findPullHerdrWorkspace,
   isPullHerdrWorking,
 } from "@/components/herdr-badge";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
-import { AgentTree, pullHerdrAgents } from "@/components/pull-herdr-section";
 import { useToast } from "@/components/toast";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
@@ -183,16 +181,12 @@ function PullPopover({
   pull,
   statusLabel,
   herdrStatus,
-  workspacePaneId,
-  agents,
 }: {
   owner: string;
   repo: string;
   pull: LinkedPull;
   statusLabel: string;
   herdrStatus?: string;
-  workspacePaneId?: string;
-  agents: HerdrAgent[];
 }) {
   const details = [
     ["Status", statusLabel],
@@ -212,7 +206,10 @@ function PullPopover({
   ].filter((detail): detail is [string, string] => detail !== null);
   return (
     <div className="absolute left-7 top-full z-20 w-[380px] pt-1">
-      <div className="rounded-md border bg-background p-3 text-foreground shadow-lg">
+      <div
+        data-debug-component="PullPopover"
+        className="rounded-md border bg-background p-3 text-foreground shadow-lg"
+      >
         <div className="mb-3 border-b pb-2 text-sm font-semibold">
           <Link
             to="/r/$owner/$repo/pulls/$number"
@@ -232,19 +229,6 @@ function PullPopover({
             </div>
           ))}
         </dl>
-        {agents.length > 0 ? (
-          <div className="mt-3">
-            <AgentTree owner={owner} repo={repo} agents={agents} />
-          </div>
-        ) : null}
-        {workspacePaneId ? (
-          <HerdrAgentInput
-            repo={`${owner}/${repo}`}
-            pull={pull.number}
-            paneId={workspacePaneId}
-            className="mt-3 border-t pt-3"
-          />
-        ) : null}
       </div>
     </div>
   );
@@ -312,12 +296,6 @@ export function LinkedPullSummaryRow({
   const runtimeMetadata = agentRuntimeMetadataLabel(
     pull.agent_runtime,
     pull.agent_model,
-  );
-  const pullAgents = pullHerdrAgents(
-    herdrSessionsError ? undefined : herdrSessions,
-    owner,
-    repo,
-    pull.number,
   );
   const linkTriggersPopover = popoverTrigger === "pull-link";
 
@@ -491,8 +469,6 @@ export function LinkedPullSummaryRow({
           pull={pull}
           statusLabel={status.label}
           herdrStatus={workspace?.status}
-          workspacePaneId={workspace?.pane_id}
-          agents={pullAgents}
         />
       ) : null}
     </div>
