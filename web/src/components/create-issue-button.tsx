@@ -14,12 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useRepoAgentConfig } from "@/queries/repos";
 import { useSettings } from "@/queries/settings";
-
-const ISSUE_CREATE_PROMPT = `Create an AFK-ready LoopHub issue from the user's request, then stop.
-
-Gather only the missing context needed to file the issue: a concise title, whether it is a bug or enhancement when unclear, the goal, verifiable acceptance criteria, and any related resources explicitly mentioned by the user. If there is no request context yet, ask exactly one open question: "What's going on?" Ask small follow-up questions only for genuinely missing information.
-
-Check for likely duplicate issues before filing. Once enough information is available, create the issue in the current repository with \`lh issue create\`, including the title, body, acceptance criteria, and related resources. Report the created issue number and stop. Do not implement the issue, create a branch, open a PR, or merge anything.`;
+import { issueCreatePrompt } from "../../../core/workflow/issue-create-prompt.ts";
 
 // Unlike Issue/PR/Resume launches (#497), there is no issue number yet to make the herdr agent
 // name unique — the issue doesn't exist until the launched session files it. A random suffix
@@ -65,7 +60,7 @@ export function CreateIssueButton({
       repo,
       label: `New issue - ${launchSuffix()}`,
       workflow: "issue-create",
-      prompt: ISSUE_CREATE_PROMPT,
+      prompt: issueCreatePrompt(settings?.workflowContractLanguage),
       ...(targetBranch ? { targetBranch } : {}),
       ...(override
         ? {

@@ -8,6 +8,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
+let workflowContractLanguage: string | undefined = "en";
 vi.mock("@/components/terminal-controller", () => ({
   useTerminalLauncher: () => ({ launchTerminal }),
 }));
@@ -20,6 +21,7 @@ vi.mock("@/queries/settings", () => ({
         grok: { model: "grok-code-fast-1", effort: "medium" },
       },
       codingAgent: "claude-code",
+      workflowContractLanguage,
     },
   }),
 }));
@@ -47,6 +49,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   launchTerminal.mockClear();
+  workflowContractLanguage = "en";
 });
 
 describe("CreateIssueButton", () => {
@@ -66,6 +69,35 @@ describe("CreateIssueButton", () => {
       workflow: "issue-create",
       prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
     });
+  });
+
+  it("uses the selected workflow language for issue creation instructions", () => {
+    workflowContractLanguage = "ja";
+    render(<CreateIssueButton repo="me/proj" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
+
+    expect(launchTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining(
+          "ユーザーの依頼から AFK 対応の LoopHub issue",
+        ),
+      }),
+    );
+    expect(launchTerminal.mock.calls[0][0].prompt).not.toContain(
+      "Create an AFK-ready LoopHub issue",
+    );
+  });
+
+  it("falls back to English for an unsupported workflow language", () => {
+    workflowContractLanguage = "fr";
+    render(<CreateIssueButton repo="me/proj" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
+
+    expect(launchTerminal.mock.calls[0][0].prompt).toContain(
+      "Create an AFK-ready LoopHub issue",
+    );
   });
 
   it("forwards the workspace branch to issue creation", () => {
