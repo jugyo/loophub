@@ -196,6 +196,8 @@ test("search index failures roll back issue creation and updates", () => {
   expect(svc.search.query("me/search-atomic", "failure")).toEqual([]);
 
   D.db.exec("DROP TRIGGER fail_issue_search_insert");
+  const retried = S.createIssue(repo.id, "issue", "Successful retry", "", "me");
+  expect(retried.number).toBe(issue.number + 1);
 });
 
 test("search query plan uses the persistent gram index", () => {

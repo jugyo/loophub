@@ -97,6 +97,21 @@ export async function provisionWorktree(
     (w) => canonical(w.path) === canonical(path),
   );
 
+  // A launcher-managed PR with no recorded head is only a resumable partial provision while its
+  // conventional branch/worktree still points at the recorded fork point. A deleted PR may leave
+  // both behind; if its number were reused, accepting a different HEAD here would silently turn
+  // stale commits into the new attempt's implementation.
+  if (input.allowCreatingConventionBranch && input.baseSha) {
+    const existingHead = provisioned
+      ? await revParse(path, "HEAD")
+      : await revParse(repoPath, branch);
+    if (existingHead && existingHead !== input.baseSha) {
+      throw new Error(
+        `cannot reuse pending PR ${scheme} branch/worktree: HEAD ${existingHead} does not match recorded base ${input.baseSha}`,
+      );
+    }
+  }
+
   if (!provisioned) {
     // Path occupied but not a git worktree → refuse to silently overwrite.
     if (existsSync(path)) {

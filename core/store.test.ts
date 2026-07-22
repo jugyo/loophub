@@ -112,6 +112,27 @@ test("issues, labels, comments, and review state round-trip through the adapter"
   expect(S.getIssueById(issue.id)!.state).toBe("closed");
 });
 
+test("Issue and PR numbers remain monotonic after the highest row is hard-deleted", () => {
+  const repo = S.createRepo("me/monotonic-numbers", "/tmp/monotonic-numbers");
+  const issue = S.createIssue(repo.id, "issue", "first", "", "me");
+  S.emitEvent(repo.id, "issue.opened", "me", { number: issue.number });
+  const pr = S.createIssue(repo.id, "pull", "attempt", "", "me");
+  S.emitEvent(repo.id, "pull_request.opened", "me", { number: pr.number });
+
+  D.db.run("DELETE FROM issues WHERE id = ?", [pr.id]);
+  // A partial upgrade may leave the allocator behind rows/events written by an older process.
+  D.db.run(
+    "UPDATE repo_number_sequences SET last_number = 1 WHERE repo_id = ?",
+    [repo.id],
+  );
+
+  const nextIssue = S.createIssue(repo.id, "issue", "second", "", "me");
+  const nextPr = S.createIssue(repo.id, "pull", "next attempt", "", "me");
+  expect([issue.number, pr.number, nextIssue.number, nextPr.number]).toEqual([
+    1, 2, 3, 4,
+  ]);
+});
+
 test("recording the first non-null head SHA consumes pending branch creation", () => {
   const repo = S.createRepo("me/head-pending", "/tmp/head-pending");
   const pr = S.createIssue(repo.id, "pull", "pending", "", "bot");

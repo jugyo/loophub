@@ -45,6 +45,15 @@ beforeAll(async () => {
       linked_issue_id INTEGER REFERENCES issues(id),
       session_id TEXT REFERENCES agent_sessions(id)
     );
+    CREATE TABLE events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_id INTEGER REFERENCES repos(id), type TEXT NOT NULL,
+      actor TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE repo_number_sequences (
+      repo_id INTEGER PRIMARY KEY REFERENCES repos(id) ON DELETE CASCADE,
+      last_number INTEGER NOT NULL
+    );
     CREATE TABLE agent_sessions (
       id TEXT PRIMARY KEY, agent TEXT NOT NULL, external_session TEXT NOT NULL,
       name TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
@@ -91,6 +100,12 @@ beforeAll(async () => {
               '11111111-0000-0000-0000-000000000001', 'dev', 't1', 't1');
     INSERT INTO pulls (issue_id, head_ref, base_ref, linked_issue_id, session_id)
       VALUES (10, 'loophub/issue-7', 'main', NULL, '11111111-0000-0000-0000-000000000001');
+    INSERT INTO events (repo_id, type, actor, payload, created_at) VALUES
+      (1, 'issue.opened', 'bot', '{"number": 11}', 't2'),
+      (1, 'pull_request.opened', 'bot', '{"number": 13}', 't3'),
+      (1, 'issue.opened', 'bot', 'malformed', 't4');
+    -- Simulate a partial/rolling upgrade whose allocator was seeded before later opened events.
+    INSERT INTO repo_number_sequences (repo_id, last_number) VALUES (1, 5);
     INSERT INTO issue_groups (id, repo_id, name, created_at, updated_at)
       VALUES (20, 1, 'obsolete', 't1', 't1');
     INSERT INTO issue_group_members (group_id, issue_id, position, added_at)
@@ -120,6 +135,11 @@ test("pulls.session_id is dropped after migration", () => {
   expect(cols).toContain("head_pending_creation");
   expect(S.getPull(10)?.base_sha).toBeNull();
   expect(S.getPull(10)?.head_pending_creation).toBe(0);
+});
+
+test("migration seeds the next shared number above current rows and opened-event history", () => {
+  const created = S.createIssue(1, "issue", "after migration", "", "me");
+  expect(created.number).toBe(14);
 });
 
 test("workflow runs gain active child, watcher cursor, and cost limit columns", () => {

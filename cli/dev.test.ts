@@ -685,6 +685,106 @@ test("resumes a pre-created zero-commit draft attempt by creating its missing co
   rmSync(root, { recursive: true, force: true });
 });
 
+test("reuses a partial pending worktree while its HEAD still matches the recorded base", async () => {
+  const repo = await makeRepo();
+  const baseSha = (await git(repo, ["rev-parse", "main"])).stdout.trim();
+  const root = tmpRoot();
+  const path = await provision(
+    repo,
+    root,
+    1186,
+    "loophub/pr-1186",
+    undefined,
+    true,
+    "main",
+    baseSha,
+  );
+
+  await expect(
+    provision(
+      repo,
+      root,
+      1186,
+      "loophub/pr-1186",
+      undefined,
+      true,
+      "main",
+      baseSha,
+    ),
+  ).resolves.toBe(path);
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("rejects a stale pending worktree whose HEAD differs from the recorded base", async () => {
+  const repo = await makeRepo();
+  const baseSha = (await git(repo, ["rev-parse", "main"])).stdout.trim();
+  const root = tmpRoot();
+  const path = await provision(
+    repo,
+    root,
+    1187,
+    "loophub/pr-1187",
+    undefined,
+    true,
+    "main",
+    baseSha,
+  );
+  writeFileSync(join(path, "stale.txt"), "stale\n");
+  await git(path, ["add", "-A"]);
+  await git(path, ["commit", "-qm", "stale attempt"]);
+
+  await expect(
+    provision(
+      repo,
+      root,
+      1187,
+      "loophub/pr-1187",
+      undefined,
+      true,
+      "main",
+      baseSha,
+    ),
+  ).rejects.toThrow(/does not match recorded base/);
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("rejects a stale pending branch left behind after its worktree is removed", async () => {
+  const repo = await makeRepo();
+  const baseSha = (await git(repo, ["rev-parse", "main"])).stdout.trim();
+  const root = tmpRoot();
+  const path = await provision(
+    repo,
+    root,
+    1188,
+    "loophub/pr-1188",
+    undefined,
+    true,
+    "main",
+    baseSha,
+  );
+  writeFileSync(join(path, "stale.txt"), "stale\n");
+  await git(path, ["add", "-A"]);
+  await git(path, ["commit", "-qm", "stale attempt"]);
+  await git(repo, ["worktree", "remove", "--force", path]);
+
+  await expect(
+    provision(
+      repo,
+      root,
+      1188,
+      "loophub/pr-1188",
+      undefined,
+      true,
+      "main",
+      baseSha,
+    ),
+  ).rejects.toThrow(/does not match recorded base/);
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("does not recreate missing convention branches without durable pending state and a fork point", () => {
   expect(
     shouldCreateMissingConventionBranch({

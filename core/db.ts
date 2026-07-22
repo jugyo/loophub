@@ -163,6 +163,13 @@ CREATE TABLE IF NOT EXISTS issues (
   UNIQUE (repo_id, number)
 );
 
+-- Monotonic repository-wide allocator shared by Issues and PRs. Keeping the high-water mark
+-- outside issues means hard-deleting the highest-numbered row cannot make that number reusable.
+CREATE TABLE IF NOT EXISTS repo_number_sequences (
+  repo_id      INTEGER PRIMARY KEY REFERENCES repos(id) ON DELETE CASCADE,
+  last_number  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS pulls (
   issue_id        INTEGER PRIMARY KEY REFERENCES issues(id),
   head_ref        TEXT NOT NULL,
@@ -831,6 +838,38 @@ function tableExists(table: string): boolean {
       .get(table),
   );
 }
+
+// Seed the monotonic Issue/PR allocator for existing repositories. Opened events are durable after
+// an Issue or PR row is hard-deleted, so migration must consider both current rows and that history.
+// Never lower an existing high-water mark, but repair a lagging row as well. The latter matters
+// during a rolling/partial upgrade where an older process may create more Issues after the new
+// table was first seeded but before every writer starts using it.
+db.exec(`
+  INSERT INTO repo_number_sequences (repo_id, last_number)
+  SELECT r.id,
+         max(
+           COALESCE((
+             SELECT MAX(i.number)
+             FROM issues i
+             WHERE i.repo_id = r.id
+           ), 0),
+           COALESCE((
+             SELECT MAX(
+               CASE WHEN json_valid(e.payload)
+                 THEN CAST(json_extract(e.payload, '$.number') AS INTEGER)
+                 ELSE 0
+               END
+             )
+             FROM events e
+             WHERE e.repo_id = r.id
+               AND e.type IN ('issue.opened', 'pull_request.opened')
+           ), 0)
+         )
+  FROM repos r
+  WHERE true
+  ON CONFLICT(repo_id) DO UPDATE SET
+    last_number = max(repo_number_sequences.last_number, excluded.last_number);
+`);
 
 // Issue groups were retired in #911. Existing databases may still carry their bolt-on tables;
 // discard that obsolete data instead of preserving or converting it. Drop the membership table

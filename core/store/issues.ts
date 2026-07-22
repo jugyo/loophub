@@ -54,13 +54,38 @@ export function linkIssueFiledFromHerdrPane(input: {
 }
 
 // ---- issues / pulls ----
-export function nextNumber(repoId: number): number {
-  const row = db
-    .query(
-      `SELECT COALESCE(MAX(number), 0) + 1 AS n FROM issues WHERE repo_id = ?`,
-    )
-    .get(repoId) as { n: number };
-  return row.n;
+function reserveNumber(repoId: number): number {
+  // Fresh repositories do not need an eager sequence row. The caller holds BEGIN IMMEDIATE across
+  // this reservation and the Issue/PR insert. Rechecking surviving rows and opened-event history
+  // also repairs a lagging allocator left by a rolling/partial upgrade before incrementing it.
+  db.run(
+    `INSERT OR IGNORE INTO repo_number_sequences (repo_id, last_number)
+     VALUES (?, 0)`,
+    [repoId],
+  );
+  return (
+    db
+      .query(
+        `UPDATE repo_number_sequences
+         SET last_number = max(
+           last_number,
+           COALESCE((SELECT MAX(number) FROM issues WHERE repo_id = ?), 0),
+           COALESCE((
+             SELECT MAX(
+               CASE WHEN json_valid(payload)
+                 THEN CAST(json_extract(payload, '$.number') AS INTEGER)
+                 ELSE 0
+               END
+             )
+             FROM events
+             WHERE repo_id = ? AND type IN ('issue.opened', 'pull_request.opened')
+           ), 0)
+         ) + 1
+         WHERE repo_id = ?
+         RETURNING last_number`,
+      )
+      .get(repoId, repoId, repoId) as { last_number: number }
+  ).last_number;
 }
 
 export function createIssue(
@@ -71,10 +96,10 @@ export function createIssue(
   author: string,
   targetBranch?: string | null,
 ): IssueRow {
-  const number = nextNumber(repoId);
   const t = now();
   db.run("BEGIN IMMEDIATE");
   try {
+    const number = reserveNumber(repoId);
     const issue = db
       .query(
         `INSERT INTO issues (repo_id, number, kind, state, title, body, target_branch, author, created_at, updated_at)
