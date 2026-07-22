@@ -1038,6 +1038,7 @@ export interface NotificationWire {
   resource: {
     kind: S.NotificationResourceKind;
     number: number | null;
+    title: string | null;
     href: string;
   };
   herdr_pane_id: string | null;
@@ -1048,6 +1049,10 @@ export interface NotificationWire {
 export function notificationJSON(n: S.NotificationRow): NotificationWire {
   const repo = S.getRepoById(n.repo_id);
   const repoName = repo?.full_name ?? "";
+  const resourceTitle =
+    repo && n.resource_kind !== "repo" && n.resource_number != null
+      ? (S.getIssue(repo.id, n.resource_number)?.title ?? null)
+      : null;
   let href = repo ? `/r/${repo.full_name}` : "";
   if (repo) {
     if (n.resource_kind === "pull" && n.resource_number != null) {
@@ -1067,6 +1072,7 @@ export function notificationJSON(n: S.NotificationRow): NotificationWire {
     resource: {
       kind: n.resource_kind,
       number: n.resource_number,
+      title: resourceTitle,
       href,
     },
     herdr_pane_id: n.herdr_pane_id,

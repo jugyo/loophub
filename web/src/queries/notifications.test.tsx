@@ -27,7 +27,7 @@ function makeNotification(id: number): Notification {
     repo: { name: "me/proj" },
     title: `Notification ${id}`,
     body: "Ready for review.",
-    resource: { kind: "pull", number: id, href: `/pulls/${id}` },
+    resource: { kind: "pull", number: id, title: null, href: `/pulls/${id}` },
     herdr_pane_id: null,
     read_at: null,
     created_at: "2026-01-01T00:00:00Z",

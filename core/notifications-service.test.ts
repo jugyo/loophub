@@ -74,6 +74,7 @@ test("list generates merge-ready, over-budget, and human-attention notifications
         resource: {
           kind: "pull",
           number: done.number,
+          title: "Done PR",
           href: "/r/me/notify/pulls/1",
         },
       }),
@@ -83,6 +84,7 @@ test("list generates merge-ready, over-budget, and human-attention notifications
         resource: {
           kind: "pull",
           number: over.number,
+          title: "Cost PR",
           href: "/r/me/notify/pulls/2",
         },
       }),
@@ -92,6 +94,7 @@ test("list generates merge-ready, over-budget, and human-attention notifications
         resource: {
           kind: "pull",
           number: attention.number,
+          title: "Needs PR",
           href: "/r/me/notify/pulls/3",
         },
       }),

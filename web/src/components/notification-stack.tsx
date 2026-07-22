@@ -220,6 +220,12 @@ function NotificationItem({
         className="min-w-0 flex-1 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         <div className="truncate font-medium">{notification.title}</div>
+        {notification.resource.kind === "pull" &&
+        notification.resource.title ? (
+          <div className="truncate text-xs text-muted-foreground">
+            {notification.resource.title}
+          </div>
+        ) : null}
         <div className="mt-1 break-words text-xs leading-5 text-muted-foreground">
           {notification.body}
         </div>

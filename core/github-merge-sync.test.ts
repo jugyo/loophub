@@ -144,6 +144,7 @@ test("a detected GitHub merge creates one close-required notification without ch
       resource: {
         kind: "pull",
         number,
+        title: "feat",
         href: `/r/me/proj/pulls/${number}`,
       },
       read_at: null,

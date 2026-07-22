@@ -72,6 +72,7 @@ function makeNotification(
     resource: {
       kind: "pull",
       number: id,
+      title: null,
       href: `/r/me/proj/pulls/${id}`,
     },
     herdr_pane_id: null,
@@ -181,6 +182,44 @@ describe("NotificationStack", () => {
 
     expect(actions.read).toHaveBeenCalledWith(12, expect.any(Object));
     expect(router.state.location.pathname).toBe("/r/me/proj/pulls/12");
+  });
+
+  it("shows a pull title on one truncated line", async () => {
+    const title = "A very long pull request title that should stay on one line";
+    notifications.value = [
+      makeNotification(12, {
+        resource: {
+          kind: "pull",
+          number: 12,
+          title,
+          href: "/r/me/proj/pulls/12",
+        },
+      }),
+    ];
+
+    renderStack();
+
+    const titleElement = await screen.findByText(title);
+    expect(titleElement.className).toContain("truncate");
+    expect(titleElement.className).toContain("text-xs");
+  });
+
+  it("does not reserve space for a missing pull title", async () => {
+    notifications.value = [
+      makeNotification(12, {
+        resource: {
+          kind: "pull",
+          number: 12,
+          title: null,
+          href: "/r/me/proj/pulls/12",
+        },
+      }),
+    ];
+
+    renderStack();
+
+    expect(await screen.findByText("Notification 12")).toBeTruthy();
+    expect(screen.queryByText("A very long pull request title")).toBeNull();
   });
 
   it("shows and focuses a live Herdr pane for the notification PR", async () => {
