@@ -54,6 +54,30 @@ const herdrSessions: HerdrSessions = {
       session_name: "lh-me-proj",
       agents: [
         {
+          id: "w1:p-parent-9",
+          name: "orchestrator #9",
+          status: "working",
+          pull: 10,
+          pull_closed: false,
+          focusable: true,
+          workflow: {
+            kind: "parent",
+            runId: 9,
+          },
+        },
+        {
+          id: "w1:p0",
+          name: "orchestrator #1",
+          status: "working",
+          pull: 10,
+          pull_closed: false,
+          focusable: true,
+          workflow: {
+            kind: "parent",
+            runId: 1,
+          },
+        },
+        {
           id: "w1:p1",
           name: "executor #1-1",
           status: "done",
@@ -117,6 +141,73 @@ const herdrSessions: HerdrSessions = {
 };
 
 describe("WorkflowStepTracker", () => {
+  it("connects the optional workflow icon to Execute and opens parent details", () => {
+    vi.useFakeTimers();
+    render(
+      <WorkflowStepTracker
+        owner="me"
+        repo="proj"
+        state={state()}
+        herdrSessions={herdrSessions}
+        showWorkflowNode
+      />,
+    );
+
+    const workflow = screen.getByRole("button", { name: "Workflow" });
+    expect(workflow.tagName).toBe("BUTTON");
+    const node = workflow.parentElement!;
+    const connector = node.nextElementSibling;
+    expect(connector?.getAttribute("data-workflow-connector")).toBe(
+      "workflow-execute",
+    );
+    expect(
+      connector?.nextElementSibling?.getAttribute("data-workflow-stage"),
+    ).toBe("execute");
+
+    fireEvent.mouseEnter(node);
+    act(() => vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS));
+    const dialog = screen.getByRole("dialog", { name: "Workflow details" });
+    expect(dialog.textContent).toContain("workflow");
+    expect(dialog.textContent).toContain("Run #1");
+    expect(dialog.textContent).toContain("working");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Open in Herdr" }),
+    );
+    expect(focusHerdrAgent).toHaveBeenCalledWith(
+      { repo: "me/proj", paneId: "w1:p0" },
+      expect.anything(),
+    );
+  });
+
+  it("keeps shared tracker surfaces unchanged unless the workflow node is requested", () => {
+    render(<WorkflowStepTracker state={state()} />);
+
+    expect(screen.queryByLabelText("Workflow")).toBeNull();
+    expect(
+      document.querySelector('[data-workflow-connector="workflow-execute"]'),
+    ).toBeNull();
+  });
+
+  it("never offers a stale parent action when Herdr data is unavailable", () => {
+    render(
+      <WorkflowStepTracker
+        owner="me"
+        repo="proj"
+        state={state()}
+        herdrSessions={herdrSessions}
+        herdrUnavailable
+        showWorkflowNode
+      />,
+    );
+
+    fireEvent.focus(screen.getByLabelText("Workflow"));
+    const dialog = screen.getByRole("dialog", { name: "Workflow details" });
+    expect(dialog.textContent).toContain("Herdr pane data is unavailable.");
+    expect(
+      within(dialog).queryByRole("button", { name: "Open in Herdr" }),
+    ).toBeNull();
+  });
+
   it("opens an identifying popup for every stage on hover", () => {
     vi.useFakeTimers();
     render(<WorkflowStepTracker state={state()} />);

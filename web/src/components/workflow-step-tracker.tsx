@@ -1,14 +1,21 @@
 // Shared Execute → Verify → Done step tracker for a workflow run. Rendered both compact in a PR list
 // row (LinkedPullSummaryRow) and larger in the issue / PR detail Workflow run section
-// (workflow-run-status.tsx). The stages are pills joined by connector lines: the current stage is
-// colored, the rest are grey, and traversed connectors fill in to convey progression.
+// (workflow-run-status.tsx). An optional workflow root icon connects to the stage pills; hovering it
+// exposes the parent/orchestrator pane action. The current stage is colored, the rest are grey, and
+// traversed connectors fill in to convey progression.
 //
 // `execute` / `verify` are the run's real steps; "Done" is the terminal reached when Verify passes
 // (`verification_status: verified`) — NOT `status === completed`, which the automatic flow never sets
 // after Verify passes (#1401 / #1460). A stale verification annotates Verify with "reverify"; a
 // needs-human run (#1307, or a legacy `blocked` row) appends a warning marker.
 
-import { Check, Loader2, Terminal, TriangleAlert } from "lucide-react";
+import {
+  Check,
+  Loader2,
+  Terminal,
+  TriangleAlert,
+  Workflow,
+} from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import type { HerdrAgent, HerdrSessions, WorkflowRunState } from "@/api/types";
 import { useToast } from "@/components/toast";
@@ -57,6 +64,22 @@ function latestWorkflowStepAgent(
     latestSequence = agent.workflow.sequence;
   }
   return latest;
+}
+
+function workflowParentAgent(
+  sessions: HerdrSessions | undefined,
+  repo: string | undefined,
+  runId: number,
+): HerdrAgent | undefined {
+  if (!repo) return undefined;
+  const agents =
+    sessions?.repos?.find((candidate) => candidate.repo === repo)?.agents ?? [];
+  return agents.find(
+    (agent) =>
+      agent.focusable &&
+      agent.workflow?.kind === "parent" &&
+      agent.workflow.runId === runId,
+  );
 }
 
 export function workflowTrackerState(
@@ -137,6 +160,110 @@ function OpenInHerdrButton({
         <Terminal className="size-3.5" aria-hidden="true" />
       )}
     </Button>
+  );
+}
+
+function WorkflowNode({
+  state,
+  stateSummary,
+  repo,
+  agent,
+  herdrUnavailable,
+  onInteract,
+  size,
+}: {
+  state: WorkflowRunState;
+  stateSummary: string;
+  repo?: string;
+  agent?: HerdrAgent;
+  herdrUnavailable?: boolean;
+  onInteract?: () => void;
+  size: "sm" | "md";
+}) {
+  const popover = useHoverPopover();
+  const dialogId = `workflow-run-${state.id}-details`;
+
+  return (
+    <div
+      data-workflow-node
+      className="relative shrink-0"
+      onMouseEnter={(event) => {
+        event.stopPropagation();
+        onInteract?.();
+        popover.onMouseEnter();
+      }}
+      onMouseLeave={(event) => {
+        if (
+          event.relatedTarget instanceof Node &&
+          event.currentTarget.contains(event.relatedTarget)
+        ) {
+          return;
+        }
+        popover.onMouseLeave();
+      }}
+      onFocus={(event) => {
+        event.stopPropagation();
+        onInteract?.();
+        popover.onFocus();
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) popover.close();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") popover.close();
+      }}
+    >
+      <button
+        type="button"
+        aria-label="Workflow"
+        aria-haspopup="dialog"
+        aria-expanded={popover.open}
+        aria-controls={popover.open ? dialogId : undefined}
+        className={cn(
+          "flex items-center justify-center rounded-full border border-border bg-muted text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          size === "md" ? "size-6" : "size-[18px]",
+        )}
+      >
+        <Workflow
+          className={size === "md" ? "size-3.5" : "size-2.5"}
+          aria-hidden="true"
+        />
+      </button>
+      {popover.open ? (
+        <div className="absolute left-0 top-full z-30 w-56 pt-1">
+          <div
+            id={dialogId}
+            role="dialog"
+            aria-label="Workflow details"
+            className="rounded-md border bg-background p-3 text-foreground shadow-lg"
+          >
+            <div className="border-b pb-2">
+              <div className="truncate text-sm font-semibold">
+                {state.workflow_name ?? "Workflow"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Run #{state.id}
+              </div>
+            </div>
+            <dl className="mt-2 grid grid-cols-[3.5rem_1fr] gap-x-2 gap-y-1 text-xs">
+              <dt className="text-muted-foreground">Status</dt>
+              <dd className="font-medium">{agent?.status ?? state.status}</dd>
+            </dl>
+            <p className="mt-2 text-xs text-muted-foreground">{stateSummary}</p>
+            {herdrUnavailable ? (
+              <p className="mt-2 text-xs text-destructive">
+                Herdr pane data is unavailable.
+              </p>
+            ) : null}
+            {repo && agent ? (
+              <div className="mt-2 flex justify-end border-t pt-2">
+                <OpenInHerdrButton repo={repo} agent={agent} />
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -262,6 +389,7 @@ export function WorkflowStepTracker({
   herdrSessions,
   herdrUnavailable = false,
   onStageInteract,
+  showWorkflowNode = false,
   size = "sm",
   working = false,
   conflict = false,
@@ -275,6 +403,8 @@ export function WorkflowStepTracker({
   herdrUnavailable?: boolean;
   /** Lets a containing resource popover yield while a step popup is active. */
   onStageInteract?: () => void;
+  /** Show the workflow/orchestrator root before Execute in compact linked-PR rows. */
+  showWorkflowNode?: boolean;
   /** `sm` for the compact PR-row tracker, `md` for the detail Workflow run section. */
   size?: "sm" | "md";
   /**
@@ -298,6 +428,11 @@ export function WorkflowStepTracker({
   const connectorSize = size === "md" ? "w-4" : "w-2.5";
   const repoFullName = owner && repo ? `${owner}/${repo}` : undefined;
   const stateSummary = workflowTrackerTitle(state, tracker, conflict);
+  const parentAgent = workflowParentAgent(
+    herdrUnavailable ? undefined : herdrSessions,
+    repoFullName,
+    state.id,
+  );
   return (
     <div
       data-debug-component="WorkflowStepTracker"
@@ -305,6 +440,24 @@ export function WorkflowStepTracker({
       className="flex min-w-0 shrink-0 items-center gap-1"
       aria-label={stateSummary}
     >
+      {showWorkflowNode ? (
+        <>
+          <WorkflowNode
+            state={state}
+            stateSummary={stateSummary}
+            repo={repoFullName}
+            agent={parentAgent}
+            herdrUnavailable={herdrUnavailable}
+            onInteract={onStageInteract}
+            size={size}
+          />
+          <span
+            data-workflow-connector="workflow-execute"
+            aria-hidden="true"
+            className={cn("h-px rounded-full bg-primary-border", connectorSize)}
+          />
+        </>
+      ) : null}
       {STAGES.map((stage, index) => {
         const isCurrent = index === activeIndex;
         const isPast = index < activeIndex;

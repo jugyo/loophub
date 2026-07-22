@@ -20,20 +20,28 @@ import { mockRpcFetch } from "@/api/rpc-mock";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 
-const { focusHerdrAgent, sendHerdrAgentInput } = vi.hoisted(() => ({
+const { focusHerdrAgent, sendHerdrAgentInput, showError } = vi.hoisted(() => ({
   focusHerdrAgent: vi.fn(),
   sendHerdrAgentInput: vi.fn(),
+  showError: vi.fn(),
 }));
 const herdrSessionsData = vi.hoisted(() => ({
   value: undefined as HerdrSessions | undefined,
+  isError: false,
 }));
 vi.mock("@/queries/terminal", () => ({
-  useHerdrSessions: () => ({ data: herdrSessionsData.value }),
+  useHerdrSessions: () => ({
+    data: herdrSessionsData.value,
+    isError: herdrSessionsData.isError,
+  }),
   useFocusHerdrAgent: () => ({ mutate: focusHerdrAgent, isPending: false }),
   useSendHerdrAgentInput: () => ({
     mutate: sendHerdrAgentInput,
     isPending: false,
   }),
+}));
+vi.mock("@/components/toast", () => ({
+  useToast: () => ({ showError }),
 }));
 
 import { LinkedPullSummaryRow } from "./linked-pull-summary";
@@ -44,7 +52,9 @@ afterEach(() => {
   vi.useRealTimers();
   focusHerdrAgent.mockClear();
   sendHerdrAgentInput.mockClear();
+  showError.mockClear();
   herdrSessionsData.value = undefined;
+  herdrSessionsData.isError = false;
 });
 
 function makePull(overrides: Partial<LinkedPull> = {}): LinkedPull {
@@ -81,7 +91,7 @@ function renderRow(attemptComparison = false) {
   const pullRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/r/$owner/$repo/pulls/$number",
-    component: () => null,
+    component: () => <div>PR detail</div>,
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([indexRoute, pullRoute]),
@@ -100,6 +110,30 @@ function row() {
 
 function popoverVisible() {
   return screen.queryAllByRole("link", { name: "PR #10" }).length === 2;
+}
+
+function herdrWithOrchestrator(focusable = true): HerdrSessions {
+  return {
+    repos: [
+      {
+        repo: "me/proj",
+        session_name: "me-proj-abc",
+        agents: [
+          {
+            id: "w1:p1",
+            name: "orchestrator #1",
+            status: "working",
+            pull: 10,
+            pull_closed: false,
+            focusable,
+            workflow: { kind: "parent", runId: 1 },
+          },
+        ],
+        pull_workspaces: [],
+        issue_workspaces: [],
+      },
+    ],
+  };
 }
 
 function makeWorkflowRunState(
@@ -163,6 +197,79 @@ function renderRowWithRun(
 }
 
 describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
+  it("connects the workflow icon to Execute and opens its orchestrator pane", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    herdrSessionsData.value = herdrWithOrchestrator();
+    renderRowWithRun(makeWorkflowRunState());
+
+    const workflow = await screen.findByLabelText("Workflow");
+    const node = workflow.parentElement!;
+    expect(
+      node.nextElementSibling?.getAttribute("data-workflow-connector"),
+    ).toBe("workflow-execute");
+    expect(node.nextElementSibling?.nextElementSibling?.textContent).toContain(
+      "Execute",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Open orchestrator in Herdr" }),
+    ).toBeNull();
+
+    fireEvent.mouseEnter(row());
+    fireEvent.mouseEnter(node);
+    act(() => vi.advanceTimersByTime(HOVER_POPUP_DELAY_MS));
+
+    expect(popoverVisible()).toBe(false);
+    const dialog = screen.getByRole("dialog", { name: "Workflow details" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Open in Herdr" }),
+    );
+    expect(focusHerdrAgent).toHaveBeenCalledWith(
+      { repo: "me/proj", paneId: "w1:p1" },
+      expect.anything(),
+    );
+  });
+
+  it("keeps workflow details but hides stale pane actions after a snapshot failure", async () => {
+    herdrSessionsData.value = herdrWithOrchestrator();
+    herdrSessionsData.isError = true;
+    renderRowWithRun(makeWorkflowRunState());
+
+    fireEvent.focus(await screen.findByLabelText("Workflow"));
+    const dialog = screen.getByRole("dialog", { name: "Workflow details" });
+    expect(dialog.textContent).toContain("Herdr pane data is unavailable.");
+    expect(
+      within(dialog).queryByRole("button", { name: "Open in Herdr" }),
+    ).toBeNull();
+  });
+
+  it("hides workflow pane actions without a focusable parent pane", async () => {
+    herdrSessionsData.value = herdrWithOrchestrator(false);
+    renderRowWithRun(makeWorkflowRunState());
+
+    fireEvent.focus(await screen.findByLabelText("Workflow"));
+    const dialog = screen.getByRole("dialog", { name: "Workflow details" });
+    expect(
+      within(dialog).queryByRole("button", { name: "Open in Herdr" }),
+    ).toBeNull();
+  });
+
+  it("reports workflow orchestrator focus failures through the existing toast", async () => {
+    herdrSessionsData.value = herdrWithOrchestrator();
+    focusHerdrAgent.mockImplementationOnce((_input, options) =>
+      options.onError(new Error("pane vanished")),
+    );
+    renderRowWithRun(makeWorkflowRunState());
+
+    fireEvent.focus(await screen.findByLabelText("Workflow"));
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: "Workflow details" }),
+      ).getByRole("button", { name: "Open in Herdr" }),
+    );
+
+    expect(showError).toHaveBeenCalledWith("pane vanished");
+  });
+
   it("opens the matching Workflow step pane from the compact tracker", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     herdrSessionsData.value = {

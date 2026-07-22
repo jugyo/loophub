@@ -149,6 +149,7 @@ function WorkflowMiniProgress({
   herdrSessions,
   herdrUnavailable,
   onStageInteract,
+  showWorkflowNode = false,
   working,
   conflict,
 }: {
@@ -158,6 +159,7 @@ function WorkflowMiniProgress({
   herdrSessions?: HerdrSessions;
   herdrUnavailable?: boolean;
   onStageInteract?: () => void;
+  showWorkflowNode?: boolean;
   /** Whether the linked agent is actively working (glow the current stage pill). */
   working: boolean;
   /** PR is in merge conflict — flip the terminal Done pill to "Conflict!" (#1659). */
@@ -173,6 +175,7 @@ function WorkflowMiniProgress({
       herdrSessions={herdrSessions}
       herdrUnavailable={herdrUnavailable}
       onStageInteract={onStageInteract}
+      showWorkflowNode={showWorkflowNode}
       size="sm"
       working={working}
       conflict={conflict}
@@ -316,6 +319,12 @@ export function LinkedPullSummaryRow({
     pull.agent_runtime,
     pull.agent_model,
   );
+  const pullAgents = pullHerdrAgents(
+    herdrSessionsError ? undefined : herdrSessions,
+    owner,
+    repo,
+    pull.number,
+  );
   const linkTriggersPopover = popoverTrigger === "pull-link";
 
   return (
@@ -401,6 +410,7 @@ export function LinkedPullSummaryRow({
           herdrSessions={herdrSessionsError ? undefined : herdrSessions}
           herdrUnavailable={herdrSessionsError}
           onStageInteract={popover.close}
+          showWorkflowNode
           working={showWorkingEffect}
           conflict={operationalStatus.tone === "conflict"}
         />
@@ -488,7 +498,7 @@ export function LinkedPullSummaryRow({
           statusLabel={status.label}
           herdrStatus={workspace?.status}
           workspacePaneId={workspace?.pane_id}
-          agents={pullHerdrAgents(herdrSessions, owner, repo, pull.number)}
+          agents={pullAgents}
         />
       ) : null}
     </div>
