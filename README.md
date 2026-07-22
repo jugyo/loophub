@@ -54,7 +54,18 @@ response 超過は HTTP 200 / `-32001 Response too large` を返す。通常の 
 ```sh
 npm install                     # web の依存も postinstall で入る
 npm run lh-web                  # http://localhost:8730 — API + UI + HMR を 1 プロセスで提供
+npm run serve                   # lh-web と lh-worker を開発用に同時起動
 ```
+
+`serve` は開発時の web UI と resident worker をまとめて扱う名前として採用している。
+`lh-web` と `lh-worker` の個別スクリプトも引き続き利用できる。既存の `npm run up` は互換用に残しており、
+`npm run up -- --port 8731` のような引数も両プロセスへ転送する。出力には `[web]` / `[worker]` の
+プレフィックスが付き、`serve` のどちらか一方が終了すると、もう一方も停止して `serve` 全体が終了する。
+`Ctrl-C` でも両方を停止できる。
+
+起動と終了を確認するには、別のターミナルで `npm run serve` を実行し、ログに `lh-web listening` と
+`lh-worker started` が出た後、どちらかの子プロセスを終了する。両方のプロセスと `serve` が終了すれば、
+開発用プロセス群の終了動作を確認できる。
 
 `lh-web` は Vite を middleware mode で内蔵し、`/rpc` と `/attachments` route 以外を Vite に委譲する。
 単一コマンド・単一ポートで API も SPA も HMR も提供する（別プロセスの dev server は不要）。

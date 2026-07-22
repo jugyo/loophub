@@ -16,7 +16,8 @@
     "lh": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx cli/index.ts",
     "lh-web": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx web/server/index.ts",
     "lh-worker": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx worker/index.ts",
-    "up": "node --import tsx scripts/up.ts",
+    "serve": "concurrently --kill-others --names web,worker \"npm run lh-web\" \"npm run lh-worker\"",
+    "up": "concurrently --kill-others --names web,worker -P \"npm run lh-web -- {@}\" \"npm run lh-worker -- {@}\" --",
     "contract": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx scripts/emit-rpc-contract.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.0",
     "@types/node": "^22.10.0",
+    "concurrently": "^10.0.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
