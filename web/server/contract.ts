@@ -627,7 +627,7 @@ export const methods: Record<string, MethodDef> = {
       ),
   },
   "issues/update": {
-    description: "Edit an issue's title/body/state/labels.",
+    description: "Edit an issue's title/body/state/labels/target workspace.",
     params: params(
       {
         repo,
@@ -636,6 +636,8 @@ export const methods: Record<string, MethodDef> = {
         body: str,
         state: { enum: ["open", "closed"] },
         labels: stringArray,
+        workspace: strOrNull,
+        target_branch: strOrNull,
         session_id: sid,
       },
       ["repo", "number"],
@@ -645,7 +647,14 @@ export const methods: Record<string, MethodDef> = {
       svc.issues.update(
         p.repo,
         p.number,
-        { title: p.title, body: p.body, state: p.state, labels: p.labels },
+        {
+          title: p.title,
+          body: p.body,
+          state: p.state,
+          labels: p.labels,
+          workspace: p.workspace,
+          target_branch: p.target_branch,
+        },
         p.session_id,
       ),
   },

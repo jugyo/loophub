@@ -245,9 +245,26 @@ export async function run(): Promise<void> {
     if (!flags.json)
       console.log(`imported #${i.number} from ${i.github_issue!.url}`);
   } else if (sub === "update") {
-    const patch: { title?: string; body?: string } = {};
+    const patch: {
+      title?: string;
+      body?: string;
+      workspace?: string;
+      target_branch?: string | null;
+    } = {};
     if (flags.title !== undefined) patch.title = flags.title;
     if (flags.body !== undefined) patch.body = flags.body;
+    if (flags.workspace !== undefined && typeof flags.workspace !== "string")
+      fail("--workspace requires a value");
+    if (flags.workspace !== undefined && flags["clear-workspace"])
+      fail("--workspace cannot be combined with --clear-workspace");
+    if (flags.workspace !== undefined && flags["target-branch"] !== undefined)
+      fail("--workspace cannot be combined with --target-branch");
+    if (flags["clear-workspace"] && flags["target-branch"] !== undefined)
+      fail("--clear-workspace cannot be combined with --target-branch");
+    if (flags.workspace !== undefined) patch.workspace = flags.workspace;
+    if (flags["clear-workspace"]) patch.target_branch = null;
+    if (flags["target-branch"] !== undefined)
+      patch.target_branch = flags["target-branch"];
     if (Object.keys(patch).length === 0)
       fail("--title and/or --body is required");
     const i = await runOp(async () =>

@@ -192,6 +192,33 @@ test("workspace archive methods route to the workspace service", async () => {
   expect(unarchived.result.archived_at).toBeNull();
 });
 
+test("issues/update accepts a workspace and clear target branch", async () => {
+  const issue: any = await call("issues/create", {
+    repo: "me/proj",
+    title: "rpc movable",
+  });
+
+  const moved: any = await call("issues/update", {
+    repo: "me/proj",
+    number: issue.result.number,
+    workspace: "workspace/new",
+  });
+  expect(moved.result.target_branch).toBe("workspace/new");
+
+  const cleared: any = await call("issues/update", {
+    repo: "me/proj",
+    number: issue.result.number,
+    target_branch: null,
+  });
+  expect(cleared.result.target_branch).toBeNull();
+  const event = S.listEvents(0, 1, 100).find(
+    (row) =>
+      row.type === "issue.updated" &&
+      JSON.parse(row.payload).number === issue.result.number,
+  );
+  expect(event).toBeTruthy();
+});
+
 test("events/list preserves ascending cursor, repo filter, and limit semantics", async () => {
   const repo = S.getRepo("me", "proj");
   expect(repo).not.toBeNull();

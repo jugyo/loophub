@@ -89,6 +89,60 @@ test("issues.create stores an active registered workspace as the target branch",
   expect(issue.target_branch).toBe("workspace/active");
 });
 
+test("issues.update moves an issue between workspaces and emits an update event", () => {
+  svc.workspaces.create("me/proj", { branch: "workspace/update" });
+  const issue = svc.issues.create("me/proj", { title: "movable" }) as any;
+
+  const updated = svc.issues.update("me/proj", issue.number, {
+    workspace: "workspace/update",
+  }) as any;
+
+  expect(updated.target_branch).toBe("workspace/update");
+  const event = S.listEvents(0, S.getRepo("me", "proj")!.id, 100)
+    .filter((e) => e.type === "issue.updated")
+    .at(-1);
+  expect(event && JSON.parse(event.payload)).toEqual({ number: issue.number });
+});
+
+test("issues.update clears a workspace without changing an existing PR base", async () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "linked movable",
+    target_branch: "integration/stack",
+  }) as any;
+  git(["branch", "feature/linked-movable"]);
+  const pull = (await svc.pulls.create("me/proj", {
+    title: "linked pull",
+    head: "feature/linked-movable",
+    issue: issue.number,
+  })) as any;
+  const repo = S.getRepo("me", "proj")!;
+  const before = S.getPull(S.getIssue(repo.id, pull.number)!.id)!.base_ref;
+
+  const updated = svc.issues.update("me/proj", issue.number, {
+    target_branch: null,
+  }) as any;
+
+  expect(updated.target_branch).toBeNull();
+  expect(S.getPull(S.getIssue(repo.id, pull.number)!.id)!.base_ref).toBe(
+    before,
+  );
+});
+
+test("issues.update rejects target branch changes for pull rows", async () => {
+  git(["branch", "feature/pull-update"]);
+  const pull = (await svc.pulls.create("me/proj", {
+    title: "plain pull",
+    head: "feature/pull-update",
+    base: "main",
+  })) as any;
+
+  expect(() =>
+    svc.issues.update("me/proj", pull.number, {
+      target_branch: "integration/stack",
+    }),
+  ).toThrow(/cannot be changed for a pull/);
+});
+
 test("issues.create rejects a blank workspace", () => {
   expect(() =>
     svc.issues.create("me/proj", {

@@ -718,6 +718,8 @@ export function patchIssue(
     title?: string;
     body?: string;
     labels?: string[];
+    workspace?: string | null;
+    target_branch?: string | null;
   },
   sessionId: string = getSessionId(),
 ) {

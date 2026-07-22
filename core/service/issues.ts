@@ -34,6 +34,51 @@ export interface CurrentHerdrPaneContext {
   launchId?: string | null;
 }
 
+type TargetBranchInput = {
+  workspace?: string | null;
+  target_branch?: string | null;
+};
+
+function resolveTargetBranch(
+  repo: S.Repo,
+  input: TargetBranchInput,
+): string | null | undefined {
+  let workspace: string | null = null;
+  if (input.workspace !== undefined && input.workspace !== null) {
+    if (typeof input.workspace !== "string" || !input.workspace.trim()) {
+      throw new ServiceError(422, "workspace branch is required");
+    }
+    workspace = input.workspace.trim();
+  }
+  const explicitTargetBranch = input.target_branch?.trim() || null;
+  if (workspace && explicitTargetBranch) {
+    throw new ServiceError(
+      422,
+      "workspace cannot be combined with target_branch",
+    );
+  }
+  if (workspace) {
+    const registered = S.getWorkspace(repo.id, workspace);
+    if (!registered || registered.archived_at) {
+      throw new ServiceError(
+        422,
+        `workspace must name an active registered workspace: ${workspace}`,
+      );
+    }
+    if (!localBranchExists(repo.local_path, workspace)) {
+      throw new ServiceError(
+        422,
+        `workspace branch must exist locally: ${workspace}`,
+      );
+    }
+  }
+  const targetBranch = workspace ?? explicitTargetBranch;
+  if (targetBranch) assertExistingLocalBranch(repo.local_path, targetBranch);
+  return input.workspace !== undefined || input.target_branch !== undefined
+    ? targetBranch
+    : undefined;
+}
+
 function linkIssueToCurrentPane(
   repoId: number,
   issueId: number,
@@ -160,39 +205,7 @@ export const issues = {
     ensureWritable(r);
     if (!input.title) throw new ServiceError(422, "title is required");
     const actor = actorFor(sessionId);
-    let workspace: string | null = null;
-    if (input.workspace != null) {
-      if (typeof input.workspace !== "string" || !input.workspace.trim()) {
-        throw new ServiceError(422, "workspace branch is required");
-      }
-      workspace = input.workspace.trim();
-    }
-    const explicitTargetBranch = input.target_branch?.trim() || null;
-    if (workspace && explicitTargetBranch) {
-      throw new ServiceError(
-        422,
-        "workspace cannot be combined with target_branch",
-      );
-    }
-    if (workspace) {
-      const registered = S.getWorkspace(r.id, workspace);
-      if (!registered || registered.archived_at) {
-        throw new ServiceError(
-          422,
-          `workspace must name an active registered workspace: ${workspace}`,
-        );
-      }
-      if (!localBranchExists(r.local_path, workspace)) {
-        throw new ServiceError(
-          422,
-          `workspace branch must exist locally: ${workspace}`,
-        );
-      }
-    }
-    const targetBranch = workspace ?? explicitTargetBranch;
-    if (targetBranch) {
-      assertExistingLocalBranch(r.local_path, targetBranch);
-    }
+    const targetBranch = resolveTargetBranch(r, input) ?? null;
     const issue = S.createIssue(
       r.id,
       "issue",
@@ -261,16 +274,28 @@ export const issues = {
     return out;
   },
 
-  // Plain edits only (title/body/state/labels). Assignment has dedicated procedures.
+  // Plain edits only (title/body/state/labels/target branch). Assignment has dedicated procedures.
   update(
     name: string,
     number: number,
-    patch: { title?: string; body?: string; state?: string; labels?: string[] },
+    patch: {
+      title?: string;
+      body?: string;
+      state?: string;
+      labels?: string[];
+      workspace?: string | null;
+      target_branch?: string | null;
+    },
     sessionId?: string | null,
   ) {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number);
+    const targetBranchChanged =
+      patch.workspace !== undefined || patch.target_branch !== undefined;
+    if (targetBranchChanged && row.kind === "pull") {
+      throw new ServiceError(422, "target branch cannot be changed for a pull");
+    }
     if (
       patch.state !== undefined &&
       patch.state !== "open" &&
@@ -280,11 +305,13 @@ export const issues = {
     }
     const actor = actorFor(sessionId);
     const wasOpen = row.state === "open";
+    const targetBranch = resolveTargetBranch(r, patch);
 
     const fields: Parameters<typeof S.updateIssue>[1] = {};
     if (patch.title !== undefined) fields.title = patch.title;
     if (patch.body !== undefined) fields.body = patch.body;
     if (patch.state !== undefined) fields.state = patch.state;
+    if (targetBranch !== undefined) fields.target_branch = targetBranch;
     if (Object.keys(fields).length) S.updateIssue(row.id, fields);
     if (patch.labels !== undefined) {
       S.setLabels(r.id, row.id, patch.labels);
@@ -319,7 +346,11 @@ export const issues = {
         },
       );
     }
-    if (patch.title !== undefined || patch.body !== undefined) {
+    if (
+      patch.title !== undefined ||
+      patch.body !== undefined ||
+      targetBranchChanged
+    ) {
       S.emitEvent(
         r.id,
         row.kind === "pull" ? "pull_request.updated" : "issue.updated",

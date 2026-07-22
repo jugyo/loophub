@@ -129,6 +129,56 @@ test("lh issue update edits both title and body", () => {
   expect(i.body).toBe("new body");
 });
 
+test("lh issue update moves and clears an issue workspace", () => {
+  const workspace = lh([
+    "workspace",
+    "create",
+    "workspace/update",
+    "--repo",
+    REPO,
+  ]);
+  expect(workspace.exitCode, workspace.stderr).toBe(0);
+  const n = createIssue("workspace update", "body");
+
+  const moved = lh([
+    "issue",
+    "update",
+    String(n),
+    "--repo",
+    REPO,
+    "--workspace",
+    "workspace/update",
+  ]);
+  expect(moved.exitCode, moved.stderr).toBe(0);
+  expect(viewJSON(n).target_branch).toBe("workspace/update");
+
+  const cleared = lh([
+    "issue",
+    "update",
+    String(n),
+    "--repo",
+    REPO,
+    "--clear-workspace",
+  ]);
+  expect(cleared.exitCode, cleared.stderr).toBe(0);
+  expect(viewJSON(n).target_branch).toBeNull();
+});
+
+test("lh issue update rejects an unregistered workspace", () => {
+  const n = createIssue("invalid workspace update", "body");
+  const result = lh([
+    "issue",
+    "update",
+    String(n),
+    "--repo",
+    REPO,
+    "--workspace",
+    "workspace/missing",
+  ]);
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("active registered workspace");
+});
+
 test("lh issue create accepts a target branch", () => {
   const { stdout } = lh([
     "issue",

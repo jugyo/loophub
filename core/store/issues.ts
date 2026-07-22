@@ -178,11 +178,16 @@ export function listIssues(
 
 export function updateIssue(
   id: number,
-  fields: { title?: string; body?: string; state?: "open" | "closed" },
+  fields: {
+    title?: string;
+    body?: string;
+    state?: "open" | "closed";
+    target_branch?: string | null;
+  },
 ) {
   const sets: string[] = [];
   const params: unknown[] = [];
-  for (const k of ["title", "body", "state"] as const) {
+  for (const k of ["title", "body", "state", "target_branch"] as const) {
     if (fields[k] !== undefined) {
       sets.push(`${k} = ?`);
       params.push(fields[k]);
