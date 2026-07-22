@@ -397,7 +397,7 @@ describe("IssueList", () => {
     expect(chip.getAttribute("href")).toBe("/r/me/proj?labels=bug&state=all");
   });
 
-  it("shows the target branch chip on issue rows only when set", async () => {
+  it("shows the workspace chip on issue rows only when set", async () => {
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
@@ -414,10 +414,10 @@ describe("IssueList", () => {
 
     renderIssueList(<IssueList owner="me" repo="proj" />);
 
-    expect(await screen.findByText("branch:feature/foo-bar")).toBeTruthy();
+    expect(await screen.findByText("workspace:feature/foo-bar")).toBeTruthy();
     expect(screen.getByText("Branch issue")).toBeTruthy();
     expect(screen.getByText("Default branch issue")).toBeTruthy();
-    expect(screen.queryByText("branch:null")).toBeNull();
+    expect(screen.queryByText("workspace:null")).toBeNull();
   });
 
   it.each([

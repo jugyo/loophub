@@ -7,8 +7,8 @@ import { ChevronDown, Loader2, Workflow } from "lucide-react";
 import { useState } from "react";
 import type { Issue, Label, PullRequest } from "@/api/types";
 import { DiffStat } from "@/components/diff-stat";
-import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { OpenIssueHerdrButton } from "@/components/issue-herdr-section";
+import { IssueWorkspaceChip } from "@/components/issue-workspace-chip";
 import { LabelChip } from "@/components/label-chip";
 import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
 import { useTerminalLauncher } from "@/components/terminal-controller";
@@ -350,6 +350,11 @@ export function IssueRow({
       aria-label={`Issue #${issue.number}: ${issue.title}`}
       className="group flex flex-col gap-1 px-3 py-2 text-sm focus:bg-accent focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring"
     >
+      {issue.target_branch ? (
+        <div className="flex justify-start">
+          <IssueWorkspaceChip workspace={issue.target_branch} />
+        </div>
+      ) : null}
       <div className="flex items-center gap-2">
         <RepoChip label={repoLabel} owner={owner} repo={repo} />
         <Link
@@ -397,10 +402,6 @@ export function IssueRow({
             repo={repo}
             state={labelState}
             workspaceFilter={labelWorkspaceFilter}
-          />
-          <IssueBranchChip
-            branch={issue.target_branch}
-            className="max-w-56 shrink-0 truncate"
           />
         </div>
         {issue.state === "closed" ? <Badge tone="closed">closed</Badge> : null}

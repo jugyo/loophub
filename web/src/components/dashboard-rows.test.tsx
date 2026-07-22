@@ -236,6 +236,34 @@ describe("PullRow", () => {
 });
 
 describe("IssueRow", () => {
+  it("shows the workspace above the issue title", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ target_branch: "feature/foo" })}
+      />,
+    );
+    const row = await screen.findByLabelText("Issue #1: Example issue");
+    const workspace = screen.getByText("workspace:feature/foo");
+    const title = row.querySelector("[data-issue-row-link]");
+
+    expect(workspace.getAttribute("title")).toBe("Workspace: feature/foo");
+    expect(workspace.className).toContain("rounded-md");
+    expect(workspace.className).not.toContain("rounded-full");
+    expect(workspace.parentElement?.className).toContain("justify-start");
+    expect(
+      workspace.compareDocumentPosition(title!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("does not show a workspace when the issue is unassigned", async () => {
+    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />);
+    await screen.findByText("Example issue");
+    expect(screen.queryByText(/^workspace:/)).toBeNull();
+  });
+
   it("shows the issue labels", async () => {
     renderInRouter(
       <IssueRow
