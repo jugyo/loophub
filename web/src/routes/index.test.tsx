@@ -16,7 +16,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
-import type { Issue, Repo } from "@/api/types";
+import type { Repo } from "@/api/types";
 import { HomePage } from "./index";
 
 afterEach(() => {
@@ -39,23 +39,6 @@ function repo(full_name: string, id: number): Repo {
     created_at: "2026-01-01T00:00:00Z",
     merge_mode: null,
     herdr_session_name: "repo-abcd1234",
-  };
-}
-
-function issue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    number: 1304,
-    state: "open",
-    title: "Issue title popover",
-    body: "Issue preview body",
-    target_branch: null,
-    user: { login: "me" },
-    labels: [],
-    comments: 0,
-    created_at: "2026-07-13T23:53:38Z",
-    updated_at: "2026-07-13T23:53:38Z",
-    linked_pull_requests: [],
-    ...overrides,
   };
 }
 
@@ -91,39 +74,6 @@ function renderHome() {
 }
 
 describe("HomePage", () => {
-  it("shows recent issues through the shared IssueRow popover", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockRpcFetch({
-        "repos/list": () => [],
-        "dashboard/overview": () => ({
-          issues: [
-            {
-              repo: {
-                full_name: "me/proj",
-                owner: "me",
-                name: "proj",
-              },
-              issue: issue(),
-            },
-          ],
-          recentIssuesLimit: 100,
-        }),
-      }),
-    );
-
-    renderHome();
-
-    expect(
-      await screen.findByRole("heading", { name: "Recent issues" }),
-    ).toBeTruthy();
-    const title = screen.getByRole("link", { name: "Issue title popover" });
-    fireEvent.focus(title);
-    expect(
-      screen.getByRole("dialog", { name: "Issue #1304 details" }),
-    ).toBeTruthy();
-  });
-
   it("uses Home as the active repository list with archived and add entry points", async () => {
     vi.stubGlobal(
       "fetch",
@@ -137,6 +87,7 @@ describe("HomePage", () => {
     expect(
       await screen.findByRole("heading", { name: "Repositories" }),
     ).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Recent issues" })).toBeNull();
     expect(
       screen
         .getByRole("link", { name: "Archived repositories" })
