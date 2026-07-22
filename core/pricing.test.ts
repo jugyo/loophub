@@ -31,6 +31,23 @@ test("priceForModel prices gpt-5.6-sol from its confirmed OpenAI rate", () => {
   ).toBeCloseTo(35);
 });
 
+test("priceForModel prices gpt-5.6-luna for Codex agent cost reporting", () => {
+  expect(priceForModel("gpt-5.6-luna")).toMatchObject({
+    input: 1,
+    cacheCreation: 1.25,
+    cacheRead: 0.1,
+    output: 6,
+  });
+  expect(
+    calculateCostUsd("gpt-5.6-luna", {
+      input_tokens: 1_000_000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 1_000_000,
+    }),
+  ).toBeCloseTo(7);
+});
+
 test("adding gpt-5.6-sol leaves the other codex/claude rates unchanged", () => {
   expect(priceForModel("gpt-5.5")).toMatchObject({ input: 5, output: 30 });
   expect(priceForModel("gpt-5.4-mini")).toMatchObject({ input: 0.75 });

@@ -82,6 +82,12 @@ const GPT_56_SOL_PRICE: UsagePrice = {
   cacheRead: 0.5,
   output: 30,
 };
+const GPT_56_LUNA_PRICE: UsagePrice = {
+  input: 1,
+  cacheCreation: 1.25,
+  cacheRead: 0.1,
+  output: 6,
+};
 
 // xAI Grok rates (USD per 1M tokens). Source: https://docs.x.ai/developers/models
 // and https://docs.x.ai/developers/pricing (checked 2026-07-17). Models with
@@ -134,6 +140,7 @@ export function priceForModel(model: string): UsagePrice | null {
   if (m.includes("sonnet")) return PRICES.sonnet;
   if (m.includes("haiku")) return PRICES.haiku;
   if (m.includes("gpt-5.6-sol")) return GPT_56_SOL_PRICE;
+  if (m.includes("gpt-5.6-luna")) return GPT_56_LUNA_PRICE;
   if (m.includes("gpt-5.5")) return GPT_55_PRICE;
   if (m.includes("gpt-5.4-mini")) return GPT_54_MINI_PRICE;
   if (m.includes("gpt-5.4")) return GPT_54_PRICE;
