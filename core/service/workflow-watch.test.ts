@@ -28,6 +28,7 @@ function createDeps(events: LoopEvent[][]) {
     getRun: vi.fn(() => ({ id: 42, repo_id: 1 })),
     readEvents: vi.fn().mockImplementation(() => events.shift() ?? []),
     wait: vi.fn(),
+    log: vi.fn(),
   };
 }
 
@@ -74,6 +75,12 @@ test("blocks until an event exists and returns one ascending event", async () =>
     events: [EVENT],
     next_since: 8,
   });
+  expect(deps.log).toHaveBeenCalledWith(
+    expect.objectContaining({ event: "started", cursor: 0 }),
+  );
+  expect(deps.log).toHaveBeenCalledWith(
+    expect.objectContaining({ event: "poll", cursor: 0 }),
+  );
 });
 
 test("returns the next watch command with the delivered event id", async () => {
@@ -90,6 +97,26 @@ test("returns the next watch command with the delivered event id", async () => {
   expect(result.next_since).toBe(11);
 });
 
+test("advances the cursor across multiple events without skipping one", async () => {
+  const first = { ...EVENT, id: 12 };
+  const second = { ...EVENT, id: 13 };
+  const deps = createDeps([[first], [second]]);
+
+  const firstResult = await workflowWatch.watch(INPUT, deps);
+  const secondResult = await workflowWatch.watch(
+    { ...INPUT, since: firstResult.next_since },
+    deps,
+  );
+
+  expect(firstResult.events).toEqual([first]);
+  expect(secondResult.events).toEqual([second]);
+  expect(deps.readEvents).toHaveBeenNthCalledWith(
+    2,
+    expect.objectContaining({ since: 12 }),
+  );
+  expect(secondResult.next_since).toBe(13);
+});
+
 test.each([
   ["event read", "event read failed", "readEvents"],
   ["wait", "wait failed", "wait"],
@@ -98,4 +125,7 @@ test.each([
   deps[failingDep].mockRejectedValue(new Error("command failed"));
 
   await expect(workflowWatch.watch(INPUT, deps)).rejects.toThrow(message);
+  expect(deps.log).toHaveBeenCalledWith(
+    expect.objectContaining({ event: "failed", error: "command failed" }),
+  );
 });

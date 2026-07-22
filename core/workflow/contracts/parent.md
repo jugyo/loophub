@@ -65,6 +65,12 @@ notification.
    for the lifetime of the run, including after a fresh passing verdict. A transition command may create
    `workflow_run.updated`; the next watch checks for already-available rows before blocking.
 
+The watcher writes JSONL records under `$LOOPHUB_HOME/logs/workflow-watch/<owner>/<repo>/run-<run>.log`.
+Records include `started`, `poll`, `delivered` (including the exact `next_command`), and `failed`
+events with the cursor and error where applicable. After a delivered event, verify the next watcher
+has produced a new `started` record; a missing record means the watcher is not armed rather than
+quietly healthy. A watcher failure is visible in the log and must be surfaced to a human.
+
 If this parent stops or loses its in-memory cursor, do not expect automatic replay. Inspect the run's
 ordered history with `lh events --repo '<repo>' --type workflow_run --run <run> --order asc --json`,
 then re-read `lh workflow step status` and any referenced review or GitHub resource. Reconstruct the

@@ -12,6 +12,7 @@ import {
   type WorkflowPaneLayoutHerdr,
 } from "../../core/terminal/workflow-pane-layout.ts";
 import { workflowParentHerdrAgentName } from "../../core/workflow/herdr-agents.ts";
+import { logWorkflowWatcher } from "../../core/workflow-watcher-log.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   display,
@@ -704,14 +705,22 @@ async function watch(): Promise<void> {
       process.argv.slice(watchIndex + 1),
     );
     const result = await service.workflowWatch.watch(input);
+    const nextCommand = formatWorkflowWatchCommand({
+      repo: input.repo,
+      run: input.run,
+      since: result.next_since,
+    });
+    logWorkflowWatcher({
+      event: "delivered",
+      repo: input.repo,
+      run: input.run,
+      cursor: result.next_since,
+      next_command: nextCommand,
+    });
     out({
       run: result.run,
       events: result.events,
-      next_command: formatWorkflowWatchCommand({
-        repo: input.repo,
-        run: input.run,
-        since: result.next_since,
-      }),
+      next_command: nextCommand,
     });
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));

@@ -58,6 +58,11 @@ error を報告します。watcher が起動したと主張したり、別機構
    `workflow_run.updated` を生成した場合、次の watch は block 前に利用可能な row を確認するため取りこぼし
    ません。
 
+watcher は `$LOOPHUB_HOME/logs/workflow-watch/<owner>/<repo>/run-<run>.log` に JSONL を出力します。
+`started`、`poll`、正確な `next_command` を含む `delivered`、cursor と error を含む `failed` を記録します。
+event delivery 後は新しい `started` record が出力されたことを確認し、record がなければ正常な待機ではなく
+watcher 欠落として扱います。watcher failure は log で確認でき、人間へ可視化します。
+
 parent が停止して memory 上の cursor を失った場合、自動 replay を期待しません。
 `lh events --repo '<repo>' --type workflow_run --run <run> --order asc --json` で run の履歴を確認し、
 `lh workflow step status` と参照先 review / GitHub resource を再観測します。その domain fact から current

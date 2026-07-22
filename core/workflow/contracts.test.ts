@@ -246,6 +246,9 @@ test("parent uses a runtime-managed workflow watcher and reacts to cost limit fa
   expect(contract).toContain("exact `next_command`");
   expect(contract).toContain("Do not reconstruct or edit its `--since` value");
   expect(contract).toContain("do not expect automatic replay");
+  expect(contract).toContain("watcher writes JSONL records");
+  expect(contract).toContain("including the exact `next_command`");
+  expect(contract).toContain("missing record means the watcher is not armed");
   expect(contract).not.toContain("watcher_armed");
   expect(contract).not.toContain("HERDR_PANE_ID");
   expect(contract).not.toContain("nohup lh workflow watch");

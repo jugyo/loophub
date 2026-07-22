@@ -1,5 +1,9 @@
 import type { LoopEvent } from "../events.ts";
 import * as S from "../store.ts";
+import {
+  logWorkflowWatcher,
+  type WorkflowWatcherLogEntry,
+} from "../workflow-watcher-log.ts";
 import { events } from "./events.ts";
 
 export type WorkflowWatchInput = {
@@ -31,6 +35,7 @@ type WorkflowWatchDeps = {
     limit: 1;
   }): LoopEvent[] | Promise<LoopEvent[]>;
   wait(): void | Promise<void>;
+  log?(entry: WorkflowWatcherLogEntry): void;
 };
 
 const VALUE_OPTIONS = ["--repo", "--run", "--since"] as const;
@@ -132,6 +137,7 @@ const defaultDeps: WorkflowWatchDeps = {
   wait() {
     return new Promise((resolve) => setTimeout(resolve, 1_000));
   },
+  log: logWorkflowWatcher,
 };
 
 export const workflowWatch = {
@@ -198,6 +204,13 @@ export const workflowWatch = {
       inputError(`run #${input.run} not found in ${input.repo}`);
     }
 
+    deps.log?.({
+      event: "started",
+      repo: input.repo,
+      run: input.run,
+      cursor: input.since,
+    });
+
     while (true) {
       let found: LoopEvent[];
       try {
@@ -212,11 +225,24 @@ export const workflowWatch = {
           limit: 1,
         });
       } catch (error) {
+        deps.log?.({
+          event: "failed",
+          repo: input.repo,
+          run: input.run,
+          cursor: input.since,
+          error: errorMessage(error),
+        });
         throw new Error(
           `workflow watch: event read failed: ${errorMessage(error)}`,
           { cause: error },
         );
       }
+      deps.log?.({
+        event: "poll",
+        repo: input.repo,
+        run: input.run,
+        cursor: input.since,
+      });
       if (found.length > 0) {
         const nextSince = found[0].id;
         return {
@@ -228,6 +254,13 @@ export const workflowWatch = {
       try {
         await deps.wait();
       } catch (error) {
+        deps.log?.({
+          event: "failed",
+          repo: input.repo,
+          run: input.run,
+          cursor: input.since,
+          error: errorMessage(error),
+        });
         throw new Error(`workflow watch: wait failed: ${errorMessage(error)}`, {
           cause: error,
         });

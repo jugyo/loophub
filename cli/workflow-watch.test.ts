@@ -189,6 +189,21 @@ test("a blocking watch completes when another process records an event", async (
   ]);
 });
 
+test("a restarted watcher resumes from its cursor and receives the next event", () => {
+  const run = createRun();
+  S.emitEvent(repoId, "workflow_run.turn_done", "test", { id: run });
+  S.emitEvent(repoId, "workflow_run.review_submitted", "test", { id: run });
+
+  const first = JSON.parse(runWatch(run).stdout);
+  const restarted = JSON.parse(runWatch(run, first.events[0].id).stdout);
+
+  expect(first.events).toHaveLength(1);
+  expect(restarted.events).toEqual([
+    expect.objectContaining({ type: "workflow_run.review_submitted" }),
+  ]);
+  expect(restarted.events[0].id).toBeGreaterThan(first.events[0].id);
+});
+
 test.each([
   ["missing options", []],
   [
