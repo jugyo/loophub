@@ -229,8 +229,18 @@ test("parent uses a runtime-managed workflow watcher and reacts to cost limit fa
   expect(contract).toMatch(
     /Runtime-specific tool mechanics belong to\s+the runtime adapter/,
   );
-  expect(contract).not.toContain("yielded `functions.exec` cell");
-  expect(contract).not.toContain("functions.wait");
+  expect(contract).toContain(
+    "the runtime-managed background-task tool is `functions.exec`",
+  );
+  expect(contract).toContain("Script running with cell ID");
+  expect(contract).toContain("`functions.wait`");
+  expect(contract).toContain(
+    "Do not call `exec_command` directly for this wait",
+  );
+  expect(contract).toContain("PTY\n`session_id`");
+  expect(contract).toContain(
+    "If `functions.exec` or its completion\nnotification is unavailable",
+  );
   expect(contract).toMatch(/does\s+not\s+persist or acknowledge this cursor/);
   expect(contract).toMatch(/contains\s+exactly one event/);
   expect(contract).toContain("exact `next_command`");
@@ -303,6 +313,20 @@ test("parent uses a runtime-managed workflow watcher and reacts to cost limit fa
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
   expect(contract).not.toContain("lh workflow run stop");
   expect(contract).not.toContain("sleep briefly and poll again");
+});
+
+test("English and Japanese parent contracts document the Codex watcher protocol", () => {
+  for (const language of ["en", "ja"] as const) {
+    const contract = workflowContractText("parent", language);
+    expect(contract).toContain("functions.exec");
+    expect(contract).toContain("functions.wait");
+    expect(contract).toContain("lh workflow watch");
+    expect(contract).toContain("next_command");
+    expect(contract).toContain("exec_command");
+    expect(contract).toContain("session_id");
+    expect(contract).toContain("completion");
+    expect(contract).toContain("Execute / Verify");
+  }
 });
 
 test("documents recording the launch-step agent line as the injection target", () => {

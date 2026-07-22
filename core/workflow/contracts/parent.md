@@ -33,6 +33,20 @@ Start the watcher through the runtime-managed background-task mechanism, end the
 blocks, and resume only from its completion notification. Runtime-specific tool mechanics belong to
 the runtime adapter, not this contract.
 
+### Codex runtime adapter
+
+When this parent runs under Codex, the runtime-managed background-task tool is `functions.exec`. Call
+it with the blocking watcher command and a short yield; when it yields `Script running with cell ID
+<cell_id>`, end the model turn. The runtime delivers completion for that cell; use `functions.wait`
+with the returned `{ "cell_id": "<cell_id>" }` only to receive the completion result. A successful
+result must contain the watcher JSON, including its single event and exact `next_command`.
+
+Do not call `exec_command` directly for this wait, use shell `&` / `nohup`, or keep a PTY
+`session_id`; those are not runtime-managed watcher tasks. If `functions.exec` or its completion
+notification is unavailable, stop Execute / Verify progression and report the visible startup error.
+Do not claim that the watcher started, retry through another mechanism, or continue from a missing
+notification.
+
 ### Initial wait and every subsequent wait
 
 1. Before launching Execute, seed `<cursor>` from the latest existing event id returned by

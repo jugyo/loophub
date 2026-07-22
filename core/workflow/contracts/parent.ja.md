@@ -29,6 +29,20 @@ watcher は runtime-managed background-task mechanism で開始し、block 中�
 完了通知だけを契機に再開します。runtime 固有の tool mechanism はこの contract ではなく runtime adapter
 の責務です。
 
+### Codex runtime adapter
+
+この parent を Codex で実行する場合、runtime-managed background-task tool は `functions.exec` です。
+blocking watcher command と短い yield を渡して呼び出し、`Script running with cell ID <cell_id>` が返ったら
+model turn を終了します。runtime がその cell の完了を通知するため、返された
+`{ "cell_id": "<cell_id>" }` を `functions.wait` に渡すのは完了結果を受け取る場合だけです。成功結果には
+単一 event と正確な `next_command` を含む watcher JSON が入ります。
+
+この待機に `exec_command` を直接使ったり、shell の `&` / `nohup` を使ったり、PTY の `session_id` を
+保持したりしてはいけません。これらは runtime-managed watcher task の代替ではありません。
+`functions.exec` または完了通知が利用できない場合は、Execute / Verify の進行を止め、visible な startup
+error を報告します。watcher が起動したと主張したり、別機構で retry したり、通知がないまま継続したり
+してはいけません。
+
 1. Execute launch 前に
    `lh events --repo '<repo>' --type workflow_run --run <run> --order desc --limit 1 --json` が返す最新 event id
    から `<cursor>` を seed します。event がなければ `0` を使います。
