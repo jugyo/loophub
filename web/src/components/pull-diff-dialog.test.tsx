@@ -139,6 +139,36 @@ describe("DiffFileDialog", () => {
     expect(onNextFile).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the standard mode while navigating between files", () => {
+    const view = renderDialog({ hasNextFile: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+    expect(
+      screen.getByRole("button", { name: "Raw" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <DiffFileDialog
+          owner="me"
+          repo="proj"
+          number={30}
+          file={{ ...file, filename: "web/src/b.ts" }}
+          comments={[]}
+          hasPreviousFile
+          hasNextFile={false}
+          onPreviousFile={() => {}}
+          onNextFile={() => {}}
+          onClose={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Raw" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
   it("copies the displayed file path with visible feedback", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
@@ -268,6 +298,74 @@ describe("DiffFileDialog", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Diff" }));
     expect(await within(dialog).findByText("+# new")).toBeTruthy();
+  });
+
+  it("restores the Markdown mode after visiting a non-Markdown file", () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1 +1 @@\n-# old\n+# new",
+    };
+    const view = renderDialog({ file: mdFile, hasNextFile: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Head" }));
+    expect(
+      screen.getByRole("button", { name: "Head" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <DiffFileDialog
+          owner="me"
+          repo="proj"
+          number={30}
+          file={{ ...file, filename: "web/src/a.ts" }}
+          comments={[]}
+          hasPreviousFile
+          hasNextFile
+          onPreviousFile={() => {}}
+          onNextFile={() => {}}
+          onClose={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+    expect(
+      screen.getByRole("button", { name: "Diff" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(screen.queryByRole("button", { name: "Head" })).toBeNull();
+
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <DiffFileDialog
+          owner="me"
+          repo="proj"
+          number={30}
+          file={mdFile}
+          comments={[]}
+          hasPreviousFile
+          hasNextFile
+          onPreviousFile={() => {}}
+          onNextFile={() => {}}
+          onClose={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+    expect(
+      screen.getByRole("button", { name: "Head" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("starts in Diff mode when the dialog is reopened", () => {
+    const view = renderDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+    view.unmount();
+
+    renderDialog();
+    expect(
+      screen.getByRole("button", { name: "Diff" }).getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 
   it("hides Preview but copies the target path for a renamed Markdown file (mangled numstat path, #436)", async () => {

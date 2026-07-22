@@ -69,6 +69,7 @@ function visibleCopyPath(path: string) {
 }
 
 type DiffDialogMode = "diff" | "raw" | "base" | "head";
+type StandardDiffDialogMode = "diff" | "raw";
 
 export function DiffFileDialog({
   owner,
@@ -93,10 +94,23 @@ export function DiffFileDialog({
   onNextFile: () => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<DiffDialogMode>("diff");
+  const [standardMode, setStandardMode] =
+    useState<StandardDiffDialogMode>("diff");
+  const [markdownMode, setMarkdownMode] = useState<DiffDialogMode>("diff");
   const copyPath = visibleCopyPath(copyFilename(file));
   const isMarkdown =
     MARKDOWN_FILENAME.test(file.filename) && !isSyntheticRenameFilename(file);
+  const mode = isMarkdown ? markdownMode : standardMode;
+
+  function selectMode(nextMode: DiffDialogMode) {
+    if (nextMode === "base" || nextMode === "head") {
+      setMarkdownMode(nextMode);
+      return;
+    }
+    setStandardMode(nextMode);
+    if (isMarkdown) setMarkdownMode(nextMode);
+  }
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -104,10 +118,6 @@ export function DiffFileDialog({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
-
-  useEffect(() => {
-    setMode("diff");
-  }, [file.filename]);
 
   return (
     <div
@@ -145,13 +155,13 @@ export function DiffFileDialog({
             <div className="flex overflow-hidden rounded-md border text-xs">
               <ModeButton
                 active={mode === "diff"}
-                onClick={() => setMode("diff")}
+                onClick={() => selectMode("diff")}
               >
                 Diff
               </ModeButton>
               <ModeButton
                 active={mode === "raw"}
-                onClick={() => setMode("raw")}
+                onClick={() => selectMode("raw")}
               >
                 Raw
               </ModeButton>
@@ -159,13 +169,13 @@ export function DiffFileDialog({
                 <>
                   <ModeButton
                     active={mode === "base"}
-                    onClick={() => setMode("base")}
+                    onClick={() => selectMode("base")}
                   >
                     Base
                   </ModeButton>
                   <ModeButton
                     active={mode === "head"}
-                    onClick={() => setMode("head")}
+                    onClick={() => selectMode("head")}
                   >
                     Head
                   </ModeButton>
