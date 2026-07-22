@@ -9,6 +9,7 @@ process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
 let svc: typeof import("../service.ts");
+let S: typeof import("../store.ts");
 let repoPath: string;
 let commitFilesRepoPath: string;
 let commitFilesPullNumber: number;
@@ -34,6 +35,7 @@ function git(args: string[], env: Record<string, string> = {}): string {
 
 beforeAll(async () => {
   svc = await import("../service.ts");
+  S = await import("../store.ts");
   repoPath = mkdtempSync(join(tmpdir(), "lh-pull-commits-repo-"));
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@t.local"]);
@@ -141,6 +143,40 @@ test("pull detail returns an empty commit list before the head branch exists", a
   const detail = await svc.pulls.get("me/proj", pull.number);
 
   expect(detail.commits).toEqual([]);
+});
+
+test("delete removes the PR without changing its git branches", async () => {
+  const pull = await svc.pulls.create("me/proj", {
+    title: "delete me",
+    head: "feature",
+    base: "main",
+  });
+  const headBefore = git(["rev-parse", "feature"]);
+
+  expect(await svc.pulls.delete("me/proj", pull.number)).toEqual({ ok: true });
+  expect(() => svc.pulls.get("me/proj", pull.number)).toThrow(/not found/i);
+  expect(
+    (await svc.pulls.list("me/proj")).some((p) => p.number === pull.number),
+  ).toBe(false);
+  expect(git(["rev-parse", "feature"])).toBe(headBefore);
+});
+
+test("delete removes an imported GitHub issue link before the PR row", async () => {
+  const pull = await svc.pulls.create("me/proj", {
+    title: "delete imported link",
+    head: "feature",
+    base: "main",
+  });
+  const issue = S.getIssue((await svc.repos.get("me/proj")).id, pull.number)!;
+  S.recordGithubIssue({
+    issueId: issue.id,
+    owner: "octocat",
+    repo: "hello-world",
+    number: 1,
+    url: "https://github.com/octocat/hello-world/issues/1",
+  });
+
+  expect(svc.pulls.delete("me/proj", pull.number)).toEqual({ ok: true });
 });
 
 test("pull detail surfaces a git log failure", async () => {

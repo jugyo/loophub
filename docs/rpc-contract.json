@@ -346,7 +346,7 @@
     },
     {
       "name": "settings/update",
-      "description": "Update instance-level config.json settings, preserving unrelated fields. autoModeOnLaunch/model/effort require agent (#474, #593, #594, #682, #1027).",
+      "description": "Update instance-level config.json settings, preserving unrelated fields. autoModeOnLaunch/model/effort require agent (#474, #593, #682, #1027).",
       "params": {
         "type": "object",
         "properties": {
@@ -1800,6 +1800,35 @@
           },
           "body": {
             "type": "string"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pulls/delete",
+      "description": "Delete a pull request and its PR-scoped metadata.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
           },
           "session_id": {
             "type": "string",

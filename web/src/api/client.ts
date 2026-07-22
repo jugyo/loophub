@@ -764,6 +764,19 @@ export function patchPull(
   );
 }
 
+export function deletePull(
+  owner: string,
+  repo: string,
+  number: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{ ok: true }>("pulls/delete", {
+    repo: full(owner, repo),
+    number,
+    session_id: sessionId,
+  });
+}
+
 export function listPullFiles(owner: string, repo: string, number: number) {
   return rpc<PullFile[]>("pulls/files", { repo: full(owner, repo), number });
 }

@@ -6,7 +6,7 @@
 // Body, reviews, and comments are stored as plain Markdown and rendered as GFM
 // via <Markdown>.
 
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ExternalLink, Github, Loader2, UploadCloud } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
@@ -240,6 +240,7 @@ function PullHeader({
   repo: string;
   pull: PullRequest;
 }) {
+  const navigate = useNavigate();
   const merge = useMergePull(owner, repo, pull.number);
   const ready = useReadyForReview(owner, repo, pull.number);
   const setState = useSetPullState(owner, repo, pull.number);
@@ -276,7 +277,14 @@ function PullHeader({
     <div data-debug-component="PullHeader" className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
         <DetailHeaderTitle kind="PR" number={pull.number} title={pull.title} />
-        <PullDebugMenu owner={owner} repo={repo} number={pull.number} />
+        <PullDebugMenu
+          owner={owner}
+          repo={repo}
+          number={pull.number}
+          onDeleted={() =>
+            navigate({ to: "/r/$owner/$repo", params: { owner, repo } })
+          }
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

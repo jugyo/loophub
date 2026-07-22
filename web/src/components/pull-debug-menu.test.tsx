@@ -22,7 +22,13 @@ const debugDump = {
 };
 
 function renderMenu() {
-  vi.stubGlobal("fetch", mockRpcFetch({ "pulls/debug": () => debugDump }));
+  vi.stubGlobal(
+    "fetch",
+    mockRpcFetch({
+      "pulls/debug": () => debugDump,
+      "pulls/delete": () => ({ ok: true }),
+    }),
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -74,5 +80,35 @@ describe("PullDebugMenu", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Close debug data/i }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("confirms deletion and calls the PR delete RPC", async () => {
+    const onDeleted = vi.fn();
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <PullDebugMenu
+          owner="me"
+          repo="proj"
+          number={30}
+          onDeleted={onDeleted}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /PR actions/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Delete$/i }));
+    expect(screen.getByRole("dialog", { name: /Delete PR #30/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Delete$/i }));
+
+    await waitFor(() => expect(rpcCall("pulls/delete")).toBeTruthy());
+    expect(rpcCall("pulls/delete")!.params).toMatchObject({
+      repo: "me/proj",
+      number: 30,
+    });
+    expect(onDeleted).toHaveBeenCalledOnce();
   });
 });

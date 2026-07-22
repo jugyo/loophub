@@ -202,6 +202,45 @@ export function getPull(issueId: number): PullRow | null {
     .get(issueId) as PullRow | null;
 }
 
+/** Delete a PR and its PR-scoped metadata without touching any git worktree or ref. */
+export function deletePull(
+  issueId: number,
+  repoId: number,
+  number: number,
+): void {
+  db.run("BEGIN IMMEDIATE");
+  try {
+    // These tables reference issues without ON DELETE CASCADE. Remove only rows owned by this PR;
+    // session records, worktrees, and repository-level events remain untouched.
+    for (const table of [
+      "review_comments",
+      "reviews",
+      "comments",
+      "issue_labels",
+      "session_links",
+      "github_pull_feedback",
+      "github_pull_status",
+      "github_pulls",
+      "github_issues",
+      "issue_search_grams",
+    ]) {
+      db.run(`DELETE FROM ${table} WHERE issue_id = ?`, [issueId]);
+    }
+    db.run("DELETE FROM handoffs WHERE pr_id = ?", [issueId]);
+    db.run("DELETE FROM retros WHERE pr_id = ?", [issueId]);
+    db.run(
+      "DELETE FROM pull_conflict_states WHERE repo_id = ? AND pull_number = ?",
+      [repoId, number],
+    );
+    db.run("DELETE FROM pulls WHERE issue_id = ?", [issueId]);
+    db.run("DELETE FROM issues WHERE id = ?", [issueId]);
+    db.run("COMMIT");
+  } catch (error) {
+    db.run("ROLLBACK");
+    throw error;
+  }
+}
+
 export function setHeadSha(issueId: number, sha: string | null) {
   db.run(
     `UPDATE pulls

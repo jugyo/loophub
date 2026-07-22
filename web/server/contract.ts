@@ -846,6 +846,15 @@ export const methods: Record<string, MethodDef> = {
         p.session_id,
       ),
   },
+  "pulls/delete": {
+    description: "Delete a pull request and its PR-scoped metadata.",
+    params: params({ repo, number: positiveInt, session_id: sid }, [
+      "repo",
+      "number",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.pulls.delete(p.repo, p.number, p.session_id),
+  },
   "pulls/files": {
     description: "List a pull request's changed files (diff).",
     params: params({ repo, number: positiveInt }, ["repo", "number"]),

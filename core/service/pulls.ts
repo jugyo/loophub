@@ -309,6 +309,16 @@ export const pulls = {
     return pullJSON(r, S.getIssue(r.id, row.number)!);
   },
 
+  delete(name: string, number: number, sessionId?: string | null) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number, "pull");
+    const actor = actorFor(sessionId);
+    S.deletePull(row.id, r.id, row.number);
+    S.emitEvent(r.id, "pull_request.deleted", actor, { number });
+    return { ok: true } as const;
+  },
+
   async files(name: string, number: number) {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");

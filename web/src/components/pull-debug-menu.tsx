@@ -9,20 +9,27 @@ import { Loader2, MoreHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { DebugDataView } from "@/components/pull-debug-view";
+import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
-import { usePullDebug } from "@/queries/pulls";
+import { errorMessage } from "@/lib/error-message";
+import { useDeletePull, usePullDebug } from "@/queries/pulls";
 
 export function PullDebugMenu({
   owner,
   repo,
   number,
+  onDeleted = () => {},
 }: {
   owner: string;
   repo: string;
   number: number;
+  onDeleted?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const deletePull = useDeletePull(owner, repo, number);
+  const { showError } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Close the menu on outside click or Escape (native dropdown dismissal). The modal manages
@@ -77,6 +84,68 @@ export function PullDebugMenu({
           >
             View debug data
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-accent hover:text-accent-foreground"
+            onClick={() => {
+              setMenuOpen(false);
+              setConfirmingDelete(true);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      ) : null}
+
+      {confirmingDelete ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[12vh]"
+          onClick={() => {
+            if (!deletePull.isPending) setConfirmingDelete(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Delete PR #${number}?`}
+            className="w-full max-w-md rounded-lg border bg-background p-5 shadow-lg"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold">Delete PR #{number}?</h2>
+            <p className="mt-3 text-sm text-muted-foreground">
+              This removes the PR and its metadata. The related worktree will
+              not be changed.
+            </p>
+            {deletePull.error ? (
+              <p className="mt-3 text-sm text-destructive">
+                {deletePull.error instanceof Error
+                  ? deletePull.error.message
+                  : "Delete failed"}
+              </p>
+            ) : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                disabled={deletePull.isPending}
+                onClick={() => setConfirmingDelete(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={deletePull.isPending}
+                onClick={() =>
+                  deletePull.mutate(undefined, {
+                    onSuccess: onDeleted,
+                    onError: (error) =>
+                      showError(errorMessage(error, "Delete failed")),
+                  })
+                }
+              >
+                {deletePull.isPending ? "Deleting…" : "Delete"}
+              </Button>
+            </div>
+          </div>
         </div>
       ) : null}
 

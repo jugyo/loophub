@@ -4,6 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  deletePull,
   getGithubPrStatus,
   getPull,
   getPullDebug,
@@ -185,6 +186,14 @@ export function useSetPullState(owner: string, repo: string, number: number) {
   return useMutation({
     mutationFn: (state: "open" | "closed") =>
       patchPull(owner, repo, number, { state }),
+    onSuccess: () => invalidatePull(qc, owner, repo, number),
+  });
+}
+
+export function useDeletePull(owner: string, repo: string, number: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => deletePull(owner, repo, number),
     onSuccess: () => invalidatePull(qc, owner, repo, number),
   });
 }
