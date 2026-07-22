@@ -11,6 +11,7 @@ export type WorkflowWatchInput = {
 export type WorkflowWatchResult = {
   run: number;
   events: LoopEvent[];
+  next_since: number;
 };
 
 type WorkflowWatchRun = {
@@ -206,8 +207,8 @@ export const workflowWatch = {
           types: ["workflow_run"],
           runId: input.run,
           order: "asc",
-          // One event keeps each foreground wait and subsequent domain-state observation focused.
-          // The parent carries this event id into the next call as --since.
+          // One event keeps each wait and subsequent domain-state observation focused. The result
+          // carries the next cursor; presentation layers decide how to expose the next invocation.
           limit: 1,
         });
       } catch (error) {
@@ -217,9 +218,11 @@ export const workflowWatch = {
         );
       }
       if (found.length > 0) {
+        const nextSince = found[0].id;
         return {
           run: input.run,
           events: found,
+          next_since: nextSince,
         };
       }
       try {

@@ -34,7 +34,7 @@ export function usage(): void {
   lh workflow run resume --run <id> --step execute|verify [--repo owner/name]
   lh workflow turn done [--repo owner/name] [--run <id>]   # (Execute child) declare the turn done — payload-less; the parent observes HEAD/review state
   lh workflow escalate --reason <text> [--repo owner/name] [--run <id>]   # (Execute child) request human guidance; the parent applies await-human
-  lh workflow watch --repo owner/name --run <id> --since <event-id> --json   # block in the foreground until the next run event, then exit
+  lh workflow watch --repo owner/name --run <id> --since <event-id> --json   # block until the next run event, then return its next_command and exit
   lh workflow effect begin|complete --repo owner/name --run <id> --event <id> --effect <key> [--json]   # durable idempotency receipt for a non-transactional parent side effect
   lh workflow step input <run> <step> [--repo owner/name] [--note <text|->] [--review <id>]   # dry-run the composed contract + input pointers + prompt for a step (no launch)
   lh workflow step status <run> [--repo owner/name] [--json]   # observe run state: HEAD vs base, last turn-done, latest workflow review freshness

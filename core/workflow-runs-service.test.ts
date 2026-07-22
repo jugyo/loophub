@@ -301,7 +301,12 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   expect(row.runtime).toBe("codex");
   expect(row.model).toBe("gpt-5.5");
   expect(result.parent.user_prompt).toContain("--since <cursor>");
-  expect(result.parent.user_prompt).toContain("in the foreground");
+  expect(result.parent.user_prompt).toContain(
+    "runtime-managed background task",
+  );
+  expect(result.parent.user_prompt).toContain(
+    "Runtime-specific tool mechanics belong to the runtime adapter",
+  );
   expect(S.getAgentSession(result.session_id)?.runtime).toBe("codex");
 
   const launched = await svc.workflowRuns.launchStep(

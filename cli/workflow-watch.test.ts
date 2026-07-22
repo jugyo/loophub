@@ -108,7 +108,7 @@ afterAll(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-test("lh workflow watch returns the next event after the caller-provided cursor", () => {
+test("lh workflow watch returns the next event and the command for the following wait", () => {
   const run = createRun();
   S.emitEvent(repoId, "workflow_run.turn_done", "test", { id: run });
   S.emitEvent(repoId, "workflow_run.escalated", "test", { id: run });
@@ -121,10 +121,14 @@ test("lh workflow watch returns the next event after the caller-provided cursor"
   expect(firstResult.events).toEqual([
     expect.objectContaining({ type: "workflow_run.turn_done" }),
   ]);
+  expect(firstResult.next_command).toBe(
+    `lh workflow watch --repo 'me/workflow-watch' --run ${run} --since ${firstResult.events[0].id} --json`,
+  );
   const next = JSON.parse(runWatch(run, firstResult.events[0].id).stdout);
   expect(next.events).toEqual([
     expect.objectContaining({ type: "workflow_run.escalated" }),
   ]);
+  expect(next.next_command).toContain(`--since ${next.events[0].id} --json`);
 });
 
 test("workflow effect receipts remain idempotent without watcher acknowledgement", () => {

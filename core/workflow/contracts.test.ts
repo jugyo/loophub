@@ -217,17 +217,24 @@ test("parent documents inject-round audit without a new command", () => {
   );
 });
 
-test("parent uses a foreground workflow watcher and reacts to cost limit facts", () => {
+test("parent uses a runtime-managed workflow watcher and reacts to cost limit facts", () => {
   const contract = workflowContractText("parent");
 
-  expect(contract).toContain("## Foreground workflow watcher protocol");
+  expect(contract).toContain("## Runtime-managed workflow watcher protocol");
   expect(contract).toContain(
     "lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json",
   );
   expect(contract).not.toContain("--ack");
-  expect(contract).toContain("remain blocked until it exits");
-  expect(contract).toMatch(/does not persist\s+or acknowledge this cursor/);
-  expect(contract).toContain("contains exactly one event");
+  expect(contract).toContain("resume only from its completion notification");
+  expect(contract).toMatch(
+    /Runtime-specific tool mechanics belong to\s+the runtime adapter/,
+  );
+  expect(contract).not.toContain("yielded `functions.exec` cell");
+  expect(contract).not.toContain("functions.wait");
+  expect(contract).toMatch(/does\s+not\s+persist or acknowledge this cursor/);
+  expect(contract).toMatch(/contains\s+exactly one event/);
+  expect(contract).toContain("exact `next_command`");
+  expect(contract).toContain("Do not reconstruct or edit its `--since` value");
   expect(contract).toContain("do not expect automatic replay");
   expect(contract).not.toContain("watcher_armed");
   expect(contract).not.toContain("HERDR_PANE_ID");
@@ -394,10 +401,11 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain(
     "`lh workflow run increase-cost-limit --run <run> --expected-limit <limit_usd>`",
   );
-  expect(design).toContain("Foreground watcher protocol");
+  expect(design).toContain("Runtime-managed watcher protocol");
   expect(design).toContain('--since "$cursor"');
+  expect(design).toContain("`next_command` を編集せず");
   expect(design).not.toContain("event_ack_cursor");
-  expect(design).toContain("foreground で実行");
+  expect(design).toMatch(/完了通知\s*だけを契機に同じ parent が再開/);
   expect(design).toContain("自動 replay しない");
   expect(design).not.toContain("watcher_armed");
   // Execute-side interpretation of additional work (issue/PR extension, same completion path).

@@ -15,17 +15,23 @@ outside the repo root and outside a LoopHub worktree, or when you need to overri
 
 - **Facts live in domain state.** Completion, commits, and reviews are recorded in git / the PR /
   reviews. There is no direct message from a child carrying its result, and no artifact to place.
-- **Events wake; domain state decides.** Run blocking `lh workflow watch` in the foreground. When it
-  returns one ordered run event, observe domain state before deciding anything. Live control of a
-  child (text injection, Esc) is something **you** do via herdr when needed — neither command
-  completion nor an event row is a transition fact.
+- **Events wake; domain state decides.** Run blocking `lh workflow watch` as a background task managed
+  by the agent runtime. Its completion notification resumes this same parent with one ordered run
+  event; observe domain state before deciding anything. Live control of a child (text injection, Esc)
+  is something **you** do via herdr when needed — neither task completion nor an event row is a
+  transition fact.
 
-## Foreground workflow watcher protocol
+## Runtime-managed workflow watcher protocol
 
-Do not poll or sleep in a model turn. Do not detach the shell process, use a background-task option,
-yield the command into a deferred cell, or inject a wake into this pane. The parent keeps the latest
-processed event id in its live context and passes it explicitly as `--since`; LoopHub does not persist
-or acknowledge this cursor.
+Do not poll or sleep in a model turn. Do not detach the shell process or inject a wake into this pane.
+The agent runtime owns the background task and delivers its completion notification. Each watcher
+result includes the exact `next_command` whose `--since` points after the delivered event. Run that
+command verbatim for the next wait instead of keeping or editing the cursor yourself. LoopHub does not
+persist or acknowledge this cursor.
+
+Start the watcher through the runtime-managed background-task mechanism, end the model turn while it
+blocks, and resume only from its completion notification. Runtime-specific tool mechanics belong to
+the runtime adapter, not this contract.
 
 ### Initial wait and every subsequent wait
 
@@ -33,14 +39,16 @@ or acknowledge this cursor.
    `lh events --repo '<repo>' --type workflow_run --run <run> --order desc --limit 1 --json`; use `0`
    when no event exists.
 2. Launch Execute as described below and record its `agent` and `session` lines.
-3. Run `lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json` in the foreground and
-   remain blocked until it exits. Do not add shell `&`, `nohup`, redirection, a background-task
-   option, Herdr identifiers, or a manually managed polling loop.
-4. Parse the JSON result. The ascending `events` array contains exactly one event. Re-read
+3. Start `lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json` as the runtime-managed
+   background task, then end the model turn. Do not add shell `&`, `nohup`, redirection, Herdr
+   identifiers, or a manually managed polling loop.
+4. On the task completion notification, parse the JSON result. The ascending `events` array contains
+   exactly one event. Re-read
    `lh workflow step status` (and any review or referenced GitHub resource required by the event)
    before deciding a transition.
-5. After that event is fully processed, set `<cursor>` to `events[0].id` and repeat steps 3–5 for the
-   lifetime of the run, including after a fresh passing verdict. A transition command may create
+5. After that event is fully processed, run the returned `next_command` verbatim as the next
+   runtime-managed background task. Do not reconstruct or edit its `--since` value. Repeat steps 4–5
+   for the lifetime of the run, including after a fresh passing verdict. A transition command may create
    `workflow_run.updated`; the next watch checks for already-available rows before blocking.
 
 If this parent stops or loses its in-memory cursor, do not expect automatic replay. Inspect the run's
@@ -184,7 +192,7 @@ use this path. Verify never reuses a prior verifier session via injection for ju
    normally arrives after Execute has declared turn done; a continuing instruction may land while
    Execute is mid-turn — still inject. Do not Esc unless you observed
    `workflow_run.cost_exceeded`.
-6. When the foreground watcher returns the next event, process it and re-read
+6. When the background watcher returns the next event, process it and re-read
    `lh workflow step status`. A successful inject is not execute complete; only a later HEAD advance
    (and turn-done timing signal) is.
 
@@ -257,17 +265,17 @@ auditing. Existing domain facts already let a human reconstruct a round:
 
 | From | Condition (observed via step status) | Action |
 |---|---|---|
-| start | run started | seed the event cursor, launch Execute, then block in the foreground watcher |
+| start | run started | seed the event cursor, launch Execute, then start the background watcher task |
 | Execute | execute complete (HEAD ahead of base, advanced past the last review) | `lh workflow run advance-to-verify`, then launch Verify |
 | Execute | escalation event from the active Execute child | Read the event reason, notify the human, and stop automatic progression |
-| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running and block in the next foreground watch |
+| Verify | verify complete, latest review `fresh` + `pass` | Keep the run running and start the next background watch task |
 | Verified + continuing | human requests additional work | Prefer inject into the live Execute pane; otherwise launch with `--note` (see Continuing after a pass) |
 | Verified + continuing | HEAD advances past the passing review and Execute declares turn done | Launch a fresh Verify child for the new HEAD (the run already remains at Verify) |
 | Verified + continuing | Execute declares turn done without a HEAD advance | Keep the existing pass fresh and continue waiting |
 | Verify | verify complete, latest review `fresh` + `request_changes` | rework -> Execute (see Rework) |
 
 A fresh passing review verifies the current HEAD but does not complete or freeze the run. Keep the
-foreground watcher protocol available so a human can request more work in the same run.
+runtime-managed watcher protocol available so a human can request more work in the same run.
 PR body, comment, and attachment updates leave the pass fresh because HEAD did not change. A code
 commit makes it stale; after Execute declares turn done, launch a fresh Verify child directly. The
 run has no permanent-stop command: it stays `running` until a human ends it. Execute includes
@@ -386,8 +394,8 @@ On escalation, do both:
 2. Notify the human via Inbox (command above).
 
 Keep the run `running`, but stop all automatic progression: do not launch steps or change rework
-count. Stay in this session; whenever the foreground watcher returns, inspect the event and advance
-the in-memory cursor without acting on progression events, then wait for an explicit human instruction.
+count. Stay in this session; whenever the background watcher returns, inspect the event and retain its
+`next_command` without acting on progression events, then wait for an explicit human instruction.
 A timer, a new unrelated event, or a child merely
 finishing is not an instruction. When the human answers, re-check step status and deliver the
 instruction to Execute (inject when live, otherwise launch a fresh Execute or Verify child with the

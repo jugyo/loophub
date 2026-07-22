@@ -688,6 +688,14 @@ async function escalate(): Promise<void> {
     );
 }
 
+function formatWorkflowWatchCommand(input: {
+  repo: string;
+  run: number;
+  since: number;
+}): string {
+  return `lh workflow watch --repo ${shQuote(input.repo)} --run ${input.run} --since ${input.since} --json`;
+}
+
 async function watch(): Promise<void> {
   const watchIndex = process.argv.indexOf("watch", 2);
   const service = await svc();
@@ -695,7 +703,16 @@ async function watch(): Promise<void> {
     const input = service.parseWorkflowWatchArgs(
       process.argv.slice(watchIndex + 1),
     );
-    out(await service.workflowWatch.watch(input));
+    const result = await service.workflowWatch.watch(input);
+    out({
+      run: result.run,
+      events: result.events,
+      next_command: formatWorkflowWatchCommand({
+        repo: input.repo,
+        run: input.run,
+        since: result.next_since,
+      }),
+    });
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }

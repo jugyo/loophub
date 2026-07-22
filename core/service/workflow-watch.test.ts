@@ -72,10 +72,11 @@ test("blocks until an event exists and returns one ascending event", async () =>
   expect(result).toEqual({
     run: 42,
     events: [EVENT],
+    next_since: 8,
   });
 });
 
-test("the caller advances the next foreground wait with the processed event id", async () => {
+test("returns the next watch command with the delivered event id", async () => {
   const transition = { ...EVENT, id: 11, type: "workflow_run.updated" };
   const deps = createDeps([[transition]]);
 
@@ -86,6 +87,7 @@ test("the caller advances the next foreground wait with the processed event id",
     expect.objectContaining({ since: 8 }),
   );
   expect(result.events).toEqual([transition]);
+  expect(result.next_since).toBe(11);
 });
 
 test.each([
