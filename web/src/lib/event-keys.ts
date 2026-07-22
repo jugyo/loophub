@@ -241,8 +241,5 @@ function isNotificationSourceEvent(event: LoopEvent): boolean {
   ) {
     return true;
   }
-  return (
-    event.type === "pull_request.review_submitted" &&
-    event.payload?.state === "REQUEST_CHANGES"
-  );
+  return false;
 }

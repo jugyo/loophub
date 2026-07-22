@@ -150,7 +150,7 @@ export interface NotificationSignalRow {
   number: number;
   title: string;
   kind: NotificationKind;
-  reason: "cost_stopped" | "review_changes" | "github_merged";
+  reason: "cost_stopped" | "github_merged";
   source_key: string;
   created_at: string;
 }
@@ -264,27 +264,6 @@ export function listNotificationSignalRows(
            AND e.id > ?
            AND e.id <= ?
            AND p.merged = 0
-         UNION ALL
-         SELECT r.id AS repo_id, r.full_name AS repo_full_name, i.number, i.title,
-                'human_attention' AS kind,
-                'review_changes' AS reason,
-                'changes:' || r.id || ':' || i.number || ':' || rv.id AS source_key,
-                rv.created_at AS created_at
-         FROM reviews rv
-         JOIN issues i ON i.id = rv.issue_id AND i.kind = 'pull'
-         JOIN pulls p ON p.issue_id = i.id
-         JOIN repos r ON r.id = i.repo_id
-         JOIN (
-           SELECT issue_id, COALESCE(topic, char(0)) AS topic_key, MAX(id) AS latest_id
-           FROM reviews
-           WHERE event IN ('PASS', 'REQUEST_CHANGES')
-           GROUP BY issue_id, COALESCE(topic, char(0))
-         ) latest ON latest.latest_id = rv.id
-         WHERE rv.event = 'REQUEST_CHANGES'
-           AND rv.id > ?
-           AND rv.id <= ?
-           AND p.merged = 0
-           AND p.changes_addressed_at IS NULL
        ) signals
        ORDER BY signals.created_at ASC`,
     )
@@ -293,7 +272,5 @@ export function listNotificationSignalRows(
       highWatermarks.events,
       cursors.events,
       highWatermarks.events,
-      cursors.reviews,
-      highWatermarks.reviews,
     ) as NotificationSignalRow[];
 }

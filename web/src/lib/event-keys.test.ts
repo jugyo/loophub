@@ -250,6 +250,6 @@ describe("queryKeysForEvent", () => {
           payload: { number: 12, state: "REQUEST_CHANGES" },
         }),
       ),
-    ).toContainEqual(["notifications"]);
+    ).not.toContainEqual(["notifications"]);
   });
 });

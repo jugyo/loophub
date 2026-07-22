@@ -42,7 +42,7 @@ afterAll(() => {
   for (const dir of repoDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-test("list generates merge-ready, over-budget, and human-attention notifications", async () => {
+test("list generates merge-ready and over-budget notifications", async () => {
   const repo = S.getRepo("me", "notify")!;
   const done = S.createIssue(repo.id, "pull", "Done PR", "", "me");
   git(primaryRepoPath, ["checkout", "-qb", "done"]);
@@ -88,22 +88,12 @@ test("list generates merge-ready, over-budget, and human-attention notifications
           href: "/r/me/notify/pulls/2",
         },
       }),
-      expect.objectContaining({
-        kind: "human_attention",
-        title: "Human attention needed",
-        resource: {
-          kind: "pull",
-          number: attention.number,
-          title: "Needs PR",
-          href: "/r/me/notify/pulls/3",
-        },
-      }),
     ]),
   );
-  expect((await svc.notifications.unreadCount()).count).toBe(3);
+  expect((await svc.notifications.unreadCount()).count).toBe(2);
 
   await svc.notifications.list({ limit: 20 });
-  expect((await svc.notifications.unreadCount()).count).toBe(3);
+  expect((await svc.notifications.unreadCount()).count).toBe(2);
 });
 
 test("ready-for-review alone does not generate a notification", async () => {
@@ -340,7 +330,7 @@ test("backfill defers reversible hidden states but ignores merged PR signals", a
   ).toBe(false);
 });
 
-test("human-attention backfill follows the latest substantive review", async () => {
+test("request-changes reviews do not generate human-attention notifications", async () => {
   const repo = S.getRepo("me", "notify")!;
   const resolved = S.createIssue(repo.id, "pull", "Resolved PR", "", "me");
   S.createPull(resolved.id, "resolved", "main", "sha-resolved", null);
@@ -361,31 +351,27 @@ test("human-attention backfill follows the latest substantive review", async () 
   S.createPull(changed.id, "changed", "main", "sha-changed", null);
   S.createReview(changed.id, "reviewer", "REQUEST_CHANGES", "first");
   notifications = await svc.notifications.list({ limit: 100 });
-  expect(
-    notifications.filter(
-      (n: any) =>
-        n.kind === "human_attention" &&
-        n.resource.kind === "pull" &&
-        n.resource.number === changed.number,
-    ),
-  ).toHaveLength(1);
+  expect(notifications).not.toContainEqual(
+    expect.objectContaining({
+      kind: "human_attention",
+      resource: { kind: "pull", number: changed.number },
+    }),
+  );
 
   S.createReview(changed.id, "reviewer", "PASS", "fixed");
   await svc.notifications.unreadCount();
   S.createReview(changed.id, "reviewer", "REQUEST_CHANGES", "again");
 
   notifications = await svc.notifications.list({ limit: 100 });
-  expect(
-    notifications.filter(
-      (n: any) =>
-        n.kind === "human_attention" &&
-        n.resource.kind === "pull" &&
-        n.resource.number === changed.number,
-    ),
-  ).toHaveLength(2);
+  expect(notifications).not.toContainEqual(
+    expect.objectContaining({
+      kind: "human_attention",
+      resource: { kind: "pull", number: changed.number },
+    }),
+  );
 });
 
-test("human-attention backfill follows the latest substantive review per topic", async () => {
+test("request-changes reviews across topics do not generate notifications", async () => {
   const repo = S.getRepo("me", "notify")!;
   const pr = S.createIssue(repo.id, "pull", "Topic PR", "", "me");
   S.createPull(pr.id, "topic", "main", "sha-topic", null);
@@ -415,7 +401,7 @@ test("human-attention backfill follows the latest substantive review per topic",
         n.resource.kind === "pull" &&
         n.resource.number === pr.number,
     ),
-  ).toHaveLength(1);
+  ).toHaveLength(0);
 });
 
 test("backfill creates a notification for each repeated cost stop event", async () => {

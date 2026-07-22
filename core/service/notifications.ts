@@ -41,10 +41,7 @@ function contentForSignal(signal: S.NotificationSignalRow): {
       body: `GitHub reports ${signal.repo_full_name} PR #${signal.number} as merged. Close the LoopHub PR manually to close it in LoopHub.`,
     };
   }
-  return {
-    title: "Human attention needed",
-    body: `PR #${signal.number} needs human attention before work can continue.`,
-  };
+  throw new Error(`unsupported notification signal reason: ${signal.reason}`);
 }
 
 function assertKind(kind: unknown): S.NotificationKind {
