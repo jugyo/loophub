@@ -55,7 +55,7 @@ describe("CreateIssueButton", () => {
     expect(screen.getByRole("button", { name: /new issue/i })).toBeTruthy();
   });
 
-  it("dispatches the issue-create workflow through Herdr", () => {
+  it("dispatches the issue-create workflow with direct filing instructions", () => {
     render(<CreateIssueButton repo="me/proj" />);
 
     fireEvent.click(screen.getByRole("button", { name: /new issue/i }));
@@ -64,6 +64,7 @@ describe("CreateIssueButton", () => {
       repo: "me/proj",
       label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
       workflow: "issue-create",
+      prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
     });
   });
 
@@ -122,6 +123,7 @@ describe("CreateIssueButton", () => {
       agent: "codex",
       model: "gpt-5.6-sol",
       effort: "high",
+      prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
     });
   });
 
@@ -148,6 +150,7 @@ describe("CreateIssueButton", () => {
       agent: "claude-code",
       model: "vendor/custom-preview",
       effort: "medium",
+      prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
     });
   });
 

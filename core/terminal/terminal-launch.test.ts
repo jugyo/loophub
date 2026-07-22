@@ -163,6 +163,18 @@ describe("herdr terminal launch", () => {
     );
   });
 
+  test("passes a direct issue filing prompt to New Issue launches", () => {
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "issue-create",
+        prompt: "Create an issue; then stop.",
+      }),
+    ).toBe(
+      "lh issue new --repo 'jugyo/loophub' --prompt 'Create an issue; then stop.'",
+    );
+  });
+
   test("uses the configured coding agent for GitHub PR export launches (#660)", () => {
     expect(
       commandForHerdrLaunch({

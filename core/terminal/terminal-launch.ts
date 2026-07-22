@@ -112,6 +112,9 @@ export function commandForHerdrLaunch(input: {
   // One-shot reasoning effort for New issue launches (#1534). Maps to `lh issue new --effort`.
   effort?: string;
   targetBranch?: string;
+  // Optional direct filing instructions. When absent, `lh issue new` keeps invoking the
+  // compatibility `/lh-issue-create` skill.
+  prompt?: string;
   env?: Record<string, string>;
 }): string {
   const envPrefix = input.env
@@ -135,8 +138,11 @@ export function commandForHerdrLaunch(input: {
     const targetBranchFlag = input.targetBranch
       ? ` --target-branch ${shellArg(input.targetBranch)}`
       : "";
+    const promptFlag = input.prompt
+      ? ` --prompt ${shellArg(input.prompt)}`
+      : "";
     return withEnv(
-      `lh issue new --repo ${shellArg(input.repo)}${targetBranchFlag}${agentFlag}${modelFlag}${effortFlag}`,
+      `lh issue new --repo ${shellArg(input.repo)}${targetBranchFlag}${agentFlag}${modelFlag}${effortFlag}${promptFlag}`,
     );
   }
   if (input.workflow === "scheduled-task-create") {

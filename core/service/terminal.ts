@@ -89,6 +89,7 @@ export interface TerminalLaunchInput {
   session?: string;
   cwd?: string;
   targetBranch?: string;
+  prompt?: string;
   // One-shot agent/model/effort overrides from the issue-create (New issue) dropdown
   // (#1275/#1534). Plain buttons leave these unset so `lh issue new` resolves the repo's
   // effective Coding agent config. They map to the corresponding CLI flags and never touch
@@ -383,6 +384,7 @@ export const terminal = {
       effort: input.workflow === "issue-create" ? input.effort : undefined,
       targetBranch:
         input.workflow === "issue-create" ? input.targetBranch : undefined,
+      prompt: input.workflow === "issue-create" ? input.prompt : undefined,
       env:
         issueCreateLaunchId != null
           ? { [ENV_ISSUE_CREATE_HERDR_LAUNCH]: issueCreateLaunchId }

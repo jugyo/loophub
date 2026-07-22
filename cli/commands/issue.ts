@@ -47,6 +47,9 @@ export async function run(): Promise<void> {
     if (flags.effort !== undefined && typeof flags.effort !== "string") {
       fail(`--effort requires a value`);
     }
+    if (flags.prompt !== undefined && typeof flags.prompt !== "string") {
+      fail(`--prompt requires a value`);
+    }
   }
 
   const s = await svc();
@@ -92,8 +95,9 @@ export async function run(): Promise<void> {
     }
   } else if (sub === "new") {
     // `lh issue new` files an issue *with an AI session* (#299): it launches the configured
-    // coding-agent runtime (#658) running the `/lh-issue-create` skill, records the session as
-    // kind=issue-create, and later links it to the created issue. The New Issue button runs this.
+    // coding-agent runtime (#658), records the session as kind=issue-create, and later links it
+    // to the created issue. The New Issue button supplies direct instructions via --prompt; when
+    // omitted, the compatibility `/lh-issue-create` skill remains the default.
     // Same launch shape as a dev session: register the session, then spawn the resolved runtime —
     // here in the repo root (no worktree; filing an issue does not touch a branch).
     //
@@ -103,7 +107,10 @@ export async function run(): Promise<void> {
     const r = await runOp(() => s.repos.get(repo));
     const agentCfg = await runOp(() => s.repos.agentConfig(repo));
     const sessionId = randomUUID();
-    const slashCommand = "/lh-issue-create";
+    const slashCommand =
+      typeof flags.prompt === "string" && flags.prompt.trim()
+        ? flags.prompt
+        : "/lh-issue-create";
     const runtime = resolveDevRuntime({
       claudeCode: flags["claude-code"] === true,
       codex: flags.codex === true,

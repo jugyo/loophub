@@ -45,6 +45,8 @@ export interface OpenTerminalOptions {
   session?: string;
   cwd?: string;
   targetBranch?: string;
+  // Direct initial prompt for launches that should not invoke a slash-command skill.
+  prompt?: string;
   // One-shot agent/model/effort override for the issue-create (New issue) launch. Plain
   // buttons omit them so the CLI resolves the repo's effective config; dropdown selections
   // apply to this launch only (#1275/#1534).
@@ -122,6 +124,7 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
           session: opts.session,
           cwd: opts.cwd,
           targetBranch: opts.targetBranch,
+          prompt: opts.prompt,
           agent: opts.agent,
           model: opts.model,
           effort: opts.effort,

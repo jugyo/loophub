@@ -172,6 +172,16 @@ test("issue new uses the configured default runtime and model", () => {
   expect(sessions().at(-1)?.runtime).toBe("codex");
 });
 
+test("issue new forwards a direct prompt without invoking the compatibility skill", () => {
+  const prompt = "Create an issue from the user's request, then stop.";
+
+  const result = issueNew(["--prompt", prompt]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.runtimeLog).toContain(`arg=${prompt}`);
+  expect(result.runtimeLog).not.toContain("arg=/lh-issue-create");
+});
+
 test("issue new uses the repo Coding agent override over the app defaults (#1534)", () => {
   writeConfig({
     codingAgent: "claude-code",

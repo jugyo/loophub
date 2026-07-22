@@ -551,6 +551,7 @@ export function launchTerminalWorkflow(input: {
   session?: string;
   cwd?: string;
   targetBranch?: string;
+  prompt?: string;
   // One-shot runtime/model/effort overrides from the New issue dropdown (#1275/#1534).
   agent?: CodingAgent;
   model?: string;

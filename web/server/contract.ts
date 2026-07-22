@@ -380,6 +380,7 @@ export const methods: Record<string, MethodDef> = {
         session: str,
         cwd: str,
         targetBranch: str,
+        prompt: str,
         // One-shot New issue overrides (#1275/#1534): force the runtime / model / effort
         // for this launch only, without changing persisted settings.
         agent: { enum: ["claude-code", "codex", "grok"] },
@@ -400,6 +401,7 @@ export const methods: Record<string, MethodDef> = {
         session: p.session,
         cwd: p.cwd,
         targetBranch: p.targetBranch,
+        prompt: p.prompt,
         agent: p.agent,
         model: p.model,
         effort: p.effort,

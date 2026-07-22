@@ -155,6 +155,7 @@ describe("IssueList", () => {
       repo: "me/proj",
       label: expect.stringMatching(/^New issue - [a-z0-9]+$/i),
       workflow: "issue-create",
+      prompt: expect.stringContaining("Create an AFK-ready LoopHub issue"),
     });
   });
 

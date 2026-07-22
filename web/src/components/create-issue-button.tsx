@@ -1,7 +1,5 @@
-// "New issue" launcher. Issues are filed by an AI (Claude Code etc.) via the /lh-issue-create
-// skill, not by hand, so the button launches that skill as a Herdr session scoped to the repo
-// whose issue list is in view. The backend create API (useCreateIssue) stays for the skill/CLI
-// to use.
+// "New issue" launcher. The button gives the agent the filing instructions directly; the
+// /lh-issue-create skill remains available for compatibility when invoked separately.
 
 import { ChevronDown, Plus } from "lucide-react";
 import { useState } from "react";
@@ -16,6 +14,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useRepoAgentConfig } from "@/queries/repos";
 import { useSettings } from "@/queries/settings";
+
+const ISSUE_CREATE_PROMPT = `Create an AFK-ready LoopHub issue from the user's request, then stop.
+
+Gather only the missing context needed to file the issue: a concise title, whether it is a bug or enhancement when unclear, the goal, verifiable acceptance criteria, and any related resources explicitly mentioned by the user. If there is no request context yet, ask exactly one open question: "What's going on?" Ask small follow-up questions only for genuinely missing information.
+
+Check for likely duplicate issues before filing. Once enough information is available, create the issue in the current repository with \`lh issue create\`, including the title, body, acceptance criteria, and related resources. Report the created issue number and stop. Do not implement the issue, create a branch, open a PR, or merge anything.`;
 
 // Unlike Issue/PR/Resume launches (#497), there is no issue number yet to make the herdr agent
 // name unique — the issue doesn't exist until the launched session files it. A random suffix
@@ -61,6 +65,7 @@ export function CreateIssueButton({
       repo,
       label: `New issue - ${launchSuffix()}`,
       workflow: "issue-create",
+      prompt: ISSUE_CREATE_PROMPT,
       ...(targetBranch ? { targetBranch } : {}),
       ...(override
         ? {
