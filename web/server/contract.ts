@@ -241,8 +241,7 @@ export const methods: Record<string, MethodDef> = {
 
   // ---- notifications ----
   "notifications/list": {
-    description:
-      "List topbar notification-center alerts, independent from lh inbox.",
+    description: "List notification-stack alerts, independent from lh inbox.",
     params: params({ limit: positiveInt, unreadOnly: { type: "boolean" } }),
     result: anyArray,
     handler: (p) =>
@@ -252,19 +251,19 @@ export const methods: Record<string, MethodDef> = {
       }),
   },
   "notifications/unreadCount": {
-    description: "Count unread notification-center alerts.",
+    description: "Count unread notification-stack alerts.",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.notifications.unreadCount(),
   },
   "notifications/read": {
-    description: "Mark one notification-center alert as read.",
+    description: "Mark one notification-stack alert as read.",
     params: params({ id: positiveInt, session_id: sid }, ["id"]),
     result: anyObject,
     handler: (p) => svc.notifications.read(p.id, p.session_id),
   },
   "notifications/readAll": {
-    description: "Mark all visible notification-center alerts as read.",
+    description: "Mark all notification-stack alerts as read.",
     params: params({ session_id: sid }),
     result: anyObject,
     handler: (p) => svc.notifications.readAll(p.session_id),

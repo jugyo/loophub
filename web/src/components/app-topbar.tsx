@@ -10,7 +10,6 @@ import {
 import { useMemo } from "react";
 import { ComponentDebugToggle } from "@/components/component-debug-overlay";
 import { Logo } from "@/components/logo";
-import { NotificationCenter } from "@/components/notification-center";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { compareSidebarRepos } from "@/lib/repo-sort";
@@ -107,7 +106,6 @@ export function AppTopbar({
         <TopbarLink to="/settings" label="Settings">
           <Settings className="size-4" />
         </TopbarLink>
-        <NotificationCenter />
         <ThemeToggle />
         <ComponentDebugToggle />
       </div>

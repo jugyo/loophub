@@ -396,13 +396,16 @@
     },
     {
       "name": "notifications/list",
-      "description": "List topbar notification-center alerts, independent from lh inbox.",
+      "description": "List notification-stack alerts, independent from lh inbox.",
       "params": {
         "type": "object",
         "properties": {
           "limit": {
             "type": "integer",
             "minimum": 1
+          },
+          "unreadOnly": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -414,7 +417,7 @@
     },
     {
       "name": "notifications/unreadCount",
-      "description": "Count unread notification-center alerts.",
+      "description": "Count unread notification-stack alerts.",
       "params": {
         "type": "object",
         "properties": {},
@@ -427,7 +430,7 @@
     },
     {
       "name": "notifications/read",
-      "description": "Mark one notification-center alert as read.",
+      "description": "Mark one notification-stack alert as read.",
       "params": {
         "type": "object",
         "properties": {
@@ -451,7 +454,7 @@
     },
     {
       "name": "notifications/readAll",
-      "description": "Mark all visible notification-center alerts as read.",
+      "description": "Mark all notification-stack alerts as read.",
       "params": {
         "type": "object",
         "properties": {

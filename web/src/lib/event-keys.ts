@@ -3,7 +3,7 @@
 //   issue.*          -> issue / issues lists
 //   pull_request.*   -> pull / pulls lists
 //   inbox.message.*  -> inbox message list / detail
-//   notification.*   -> notification center list/count
+//   notification.*   -> notification stack list/count
 //   repo.*           -> repos list (+ old-name keys on repo.renamed)
 //   agent_session.*  -> agent-sessions
 //   terminal.*       -> terminal sessions (herdr snapshot, worker-owned #1665)
