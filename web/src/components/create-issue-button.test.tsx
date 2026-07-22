@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
@@ -85,6 +91,23 @@ describe("CreateIssueButton", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Codex" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Model" }));
+    const codexModelMenu = (
+      await screen.findByRole("menuitem", { name: "gpt-5.6-sol" })
+    ).closest('[role="menu"]')!;
+    expect(
+      within(codexModelMenu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent)
+        .filter((item) => item?.startsWith("gpt-")),
+    ).toEqual([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.3-codex-spark",
+    ]);
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "gpt-5.6-sol" }),
     );

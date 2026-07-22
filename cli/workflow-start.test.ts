@@ -1072,7 +1072,7 @@ test("workflow start launches the configured codingAgent (codex) without requiri
     // own quotes), so `claude '` never appears and `--session-id` is not passed to codex.
     expect(log).toContain("codex '");
     expect(log).not.toContain("claude '");
-    expect(log).toContain("'--model' 'gpt-5.5'");
+    expect(log).toContain("'--model' 'gpt-5.6-sol'");
     expect(log).toContain("'workspace-write'");
     expect(log).not.toContain("'--session-id'");
   } finally {

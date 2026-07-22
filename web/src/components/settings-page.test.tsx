@@ -318,6 +318,17 @@ describe("SettingsPage", () => {
     const codexOptions = within(menu)
       .getAllByRole("menuitem")
       .map((o) => o.textContent);
+    expect([
+      ...new Set(codexOptions.map((option) => option?.split(" — ")[0])),
+    ]).toEqual([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.3-codex-spark",
+    ]);
     expect(codexOptions).toEqual(
       expect.arrayContaining([
         "gpt-5.6-sol — minimal",

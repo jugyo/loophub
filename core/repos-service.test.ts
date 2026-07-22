@@ -288,7 +288,7 @@ test("agentConfig resolves the repo override while it is on (#1532)", async () =
   expect(runtimeOnly.setting.model).toBeNull();
   expect(runtimeOnly.effective).toEqual({
     runtime: "codex",
-    model: "gpt-5.5",
+    model: "gpt-5.6-sol",
     effort: "medium",
   });
 });

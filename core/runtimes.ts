@@ -88,10 +88,12 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
     bin: "codex",
     label: "Codex",
     buildFlag: "--codex",
-    defaultModel: "gpt-5.5",
+    defaultModel: "gpt-5.6-sol",
     defaultEffort: "medium",
     modelSuggestions: [
       "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
       "gpt-5.5",
       "gpt-5.4",
       "gpt-5.4-mini",
