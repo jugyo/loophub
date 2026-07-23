@@ -21,7 +21,12 @@ import {
   type WorkflowRunStateWire,
 } from "../serialize.ts";
 import {
+  NO_PANE_ID_PREFIX,
+  parseHerdrAgentList,
+} from "../terminal/herdr-status.ts";
+import {
   buildWorkflowStepHerdrLaunchPlan,
+  HERDR_ID,
   herdrSessionName,
 } from "../terminal/terminal-launch.ts";
 import { parsePreviousWorkflowVerifyPane } from "../terminal/workflow-pane-layout.ts";
@@ -39,6 +44,7 @@ import {
 import {
   nextWorkflowChildSequence,
   parseWorkflowHerdrAgentName,
+  type WorkflowHerdrAgent,
   workflowStepSessionIds,
 } from "../workflow/herdr-agents.ts";
 import { workflowMessages } from "../workflow/messages.ts";
@@ -186,6 +192,14 @@ export type WorkflowTurnDoneResult = {
 };
 
 export type WorkflowEscalateResult = WorkflowTurnDoneResult;
+
+export type WorkflowDeliverResult = {
+  run: number;
+  agent_name: string;
+  pane_id: string;
+  session_id: string;
+  text: string;
+};
 
 export type WorkflowStepInputResult = {
   run: WorkflowRunUpdateResult["run"];
@@ -959,6 +973,91 @@ export const workflowRuns = {
       "activate_step",
       sessionId,
     );
+  },
+
+  async deliver(
+    name: string,
+    input: { run: number; text: string },
+    sessionId?: string | null,
+  ): Promise<WorkflowDeliverResult> {
+    const { repo, run } = lifecycleRun(name, input.run, sessionId);
+    assertAutomaticProgressAllowed(run);
+    const text = inlineText(input.text);
+    if (!text) {
+      throw new ServiceError(422, "workflow deliver requires non-empty text");
+    }
+
+    const sessionName = herdrSessionName(repo);
+    const agentsOut = await runHerdr(
+      "herdr",
+      ["--session", sessionName, "agent", "list"],
+      repo.local_path,
+      { captureStdout: true, timeoutMs: 15_000 },
+    );
+    const latest = parseHerdrAgentList(agentsOut)
+      .map((agent) => ({
+        agent,
+        parsed: parseWorkflowHerdrAgentName(agent.name),
+      }))
+      .filter(
+        (
+          candidate,
+        ): candidate is {
+          agent: ReturnType<typeof parseHerdrAgentList>[number];
+          parsed: Extract<WorkflowHerdrAgent, { kind: "step" }>;
+        } =>
+          candidate.parsed?.kind === "step" &&
+          candidate.parsed.runId === run.id &&
+          candidate.parsed.step === "execute",
+      )
+      .sort((a, b) => b.parsed.sequence - a.parsed.sequence)[0];
+    if (!latest) {
+      throw new ServiceError(
+        404,
+        `No Execute agent found for Workflow run #${run.id}`,
+      );
+    }
+    if (
+      latest.agent.id.startsWith(NO_PANE_ID_PREFIX) ||
+      !HERDR_ID.test(latest.agent.id)
+    ) {
+      throw new ServiceError(
+        422,
+        `Execute agent "${latest.agent.name}" has no valid pane_id`,
+      );
+    }
+
+    const matchingSessions = workflowStepSessionIds(
+      run.step_sessions_json,
+      "execute",
+    ).filter(
+      (candidate) => S.getAgentSession(candidate)?.name === latest.agent.name,
+    );
+    if (matchingSessions.length !== 1) {
+      throw new ServiceError(
+        422,
+        `Cannot resolve the registered Execute session for agent "${latest.agent.name}"`,
+      );
+    }
+    const executeSessionId = matchingSessions[0];
+    workflowRuns.activateStep(
+      name,
+      { run: run.id, step: "execute", sessionId: executeSessionId },
+      sessionId,
+    );
+    await runHerdr(
+      "herdr",
+      ["--session", sessionName, "pane", "run", latest.agent.id, text],
+      repo.local_path,
+      { timeoutMs: 15_000 },
+    );
+    return {
+      run: run.id,
+      agent_name: latest.agent.name,
+      pane_id: latest.agent.id,
+      session_id: executeSessionId,
+      text,
+    };
   },
 
   detectCostExceeded(

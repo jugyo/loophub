@@ -91,6 +91,7 @@ export type Flags = {
   "no-launch"?: boolean;
   run?: string;
   note?: string;
+  text?: string;
   reason?: string;
   "expected-limit"?: string;
   review?: string;
@@ -184,6 +185,7 @@ const { values, positionals } = parseArgs({
     "no-launch": { type: "boolean" },
     run: { type: "string" },
     note: { type: "string" },
+    text: { type: "string" },
     reason: { type: "string" },
     "expected-limit": { type: "string" },
     review: { type: "string" },

@@ -31,16 +31,14 @@ test("Japanese contracts preserve the required commands and decision branches", 
   for (const command of [
     "lh workflow run advance-to-verify",
     "lh workflow run request-rework",
-    "lh workflow run activate-step",
     "lh workflow run await-human",
     "lh workflow run increase-cost-limit",
     "lh workflow run resume",
+    "lh workflow deliver",
     "lh workflow launch-step",
     "lh workflow step status",
     "lh workflow effect begin",
     "lh workflow effect complete",
-    "herdr agent get",
-    "herdr agent list",
     "herdr pane run",
     "herdr pane send-keys",
     "lh issue comment",
@@ -252,7 +250,7 @@ test("parent delivers rework as a review-id pointer without summarizing findings
 
   expect(parent).toContain("inject only the review id into Execute");
   expect(parent).toContain("orchestrator: address review #<id>");
-  expect(parent).toContain("do not summarize, quote, or\ninterpret findings");
+  expect(parent).toContain("do not summarize, quote, or interpret findings");
   expect(parent).toContain(
     "lh workflow launch-step --repo '<repo>' --run <run> --step execute --review <id>",
   );
@@ -261,9 +259,7 @@ test("parent delivers rework as a review-id pointer without summarizing findings
 test("parent injects into live children via herdr and falls back to launch-step", () => {
   const parent = workflowContractText("parent");
 
-  expect(parent).toContain("herdr pane run");
-  expect(parent).toContain("herdr agent get");
-  expect(parent).toContain("herdr agent list");
+  expect(parent).toContain("lh workflow deliver");
   expect(parent).toContain("record its printed `agent` and `session` lines");
   expect(parent).toContain("orchestrator:");
   expect(parent).toContain("lh workflow run resume");
@@ -277,7 +273,7 @@ test("parent prefers same-session Execute inject for rework, continuing, and mer
 
   expect(parent).toContain("shared Execute inject-or-launch path");
   expect(parent).toContain("same Execute session");
-  expect(parent).toContain("All injections use one shared path");
+  expect(parent).toMatch(/All injections use `lh workflow deliver/u);
   expect(parent).toContain(
     "prefer injection into the live Execute pane and same Execute session",
   );
@@ -309,40 +305,32 @@ test("parent preserves distinct gap actions for feedback and unchanged HEAD", ()
 test("parent inject text is single-line and inject is not a transition fact", () => {
   const parent = workflowContractText("parent");
 
-  expect(parent).toContain("send a single-line `orchestrator:` instruction");
-  expect(parent).toContain("Collapse newlines,\ntabs,");
+  expect(parent).toContain("--text '<single-line instruction>'");
+  expect(parent).toContain("sanitizes the instruction");
   expect(parent).toContain("Injection is delivery only");
   expect(parent).toContain("successful injection are not transition facts");
 });
 
-test("parent preserves exact Execute target selection in both languages", () => {
+test("parent delegates Execute target selection to deliver in both languages", () => {
   const english = workflowContractText("parent");
   const japanese = workflowContractText("parent", "ja");
 
-  expect(english).toMatch(
-    /highest-sequence `executor #<run>-\*` that still has a `pane_id`/u,
+  expect(english).toContain("latest recorded Execute agent and session");
+  expect(english).toContain(
+    "`agent_status: done` is still deliverable when the pane exists",
   );
-  expect(english).toMatch(
-    /A returned `pane_id`\s+remains usable when `agent_status: done`/u,
-  );
-  expect(english).toMatch(
-    /If the exact\s+registered Execute session cannot be established, do not guess/u,
-  );
-  expect(japanese).toMatch(
-    /`pane_id` のある最大 sequence の `executor #<run>-\*`/u,
-  );
-  expect(japanese).toMatch(/`agent_status: done` でも\s+`pane_id` は使用可能/u);
-  expect(japanese).toMatch(
-    /登録済みの正確な\s+Execute session を確定できなければ推測しない/u,
+  expect(japanese).toContain("最新 Execute agent と session の解決");
+  expect(japanese).toContain(
+    "pane が存在すれば `agent_status: done` でも delivery 可能",
   );
 });
 
-test("parent separates lifecycle transitions from live-control registration", () => {
-  expect(workflowContractText("parent")).toMatch(
-    /`activate-step`\s+registers the existing child as the live-control target without changing the lifecycle step/u,
+test("parent separates lifecycle transitions from live Execute delivery", () => {
+  expect(workflowContractText("parent")).toContain(
+    "`lh workflow deliver` for live Execute control",
   );
-  expect(workflowContractText("parent", "ja")).toMatch(
-    /`activate-step` は既存 child を lifecycle step を変更せず live-control target として登録する/u,
+  expect(workflowContractText("parent", "ja")).toContain(
+    "live Execute の\ncontrol は `lh workflow deliver`",
   );
 });
 
@@ -400,9 +388,7 @@ test("parent uses a runtime-managed workflow watcher and reacts to cost limit fa
   expect(contract).toContain("next_limit_usd");
   expect(contract).toContain("active_step");
   expect(contract).toContain("active_session_id");
-  expect(contract).toContain(
-    "lh workflow run activate-step --repo '<repo>' --run <run> --step execute --session <session_id>",
-  );
+  expect(contract).toContain("lh workflow deliver");
   expect(contract).toContain("Cost limit exceeded. Continue?");
   expect(contract).toContain("accept only **yes** or **no**");
   expect(contract).toContain("Handle each event id\nexactly once");
@@ -464,10 +450,7 @@ test("documents recording the launch-step agent line as the injection target", (
   const parent = workflowContractText("parent");
 
   expect(parent).toContain("record its printed `agent` and `session` lines");
-  expect(parent).toContain("pane_id");
-  expect(parent).toContain(
-    "Resolve the latest recorded Execute agent with `herdr agent get`",
-  );
+  expect(parent).toContain("lh workflow deliver");
   expect(parent).toContain("prefer injection into the live Execute pane");
 });
 
@@ -489,7 +472,7 @@ test("parent and execute contracts agree that the parent injects orchestrator me
   expect(execute).toContain("messages beginning with `orchestrator:`");
   expect(execute).toContain("orchestrator: address review #<id>");
   expect(parent).toContain("orchestrator:");
-  expect(parent).toContain("herdr pane run");
+  expect(parent).toContain("lh workflow deliver");
   expect(parent).not.toContain("Do not use herdr pane injection");
 });
 
@@ -534,13 +517,14 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain(
     "PR body・comment・attachment だけの更新は HEAD を変えない",
   );
-  expect(design).toContain("`agent_status: done` でも pane は再利用可能");
+  expect(design).toContain(
+    "`pane_id` があれば `agent_status: done` でも利用できる",
+  );
   expect(design).toMatch(/修正後の Verify は常に\s+fresh child/u);
   expect(design).toContain("`stopped`（#1525）は");
   expect(design).toContain("legacy status");
   expect(design).not.toContain("lh workflow run enforce-cost-limit");
-  expect(design).toContain("herdr pane run");
-  expect(design).toContain("herdr agent list");
+  expect(design).toContain("lh workflow deliver");
   expect(design).toContain(
     "rework / 継続作業は同じ Execute セッションを優先する",
   );
@@ -552,7 +536,7 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain("`active_step`");
   expect(design).toContain("`active_session_id`");
   expect(design).toContain(
-    "`lh workflow run activate-step --step execute --session <session_id>`",
+    "`deliver` は内部で `activate-step` と同じ live-control target 更新を行う",
   );
   expect(design).toContain("`herdr pane send-keys <pane_id> Escape`");
   expect(design).toContain("「続けますか？」という yes / no");

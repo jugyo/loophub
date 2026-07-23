@@ -9,15 +9,15 @@
 - **fact はドメイン状態に書く** — 完了・commits・review などの事実は event / git / DB に記録する。
   エージェント間の直接メッセージ（提出物・artifact）は存在しない。
 - **instruction は injection で配達する** — agent への入力は起動プロンプト、または生きている pane
-  への注入で届ける。**live な子への操作**は parent が Herdr を直接使い、テキスト注入は
-  `herdr pane run`、実 Esc 入力は `herdr pane send-keys <pane_id> Escape` で行う（lh CLI の
-  ラッパーを挟まない）。子の**起動**は `lh workflow launch-step`、**観測**は
+  への注入で届ける。**live Execute へのテキスト注入**は `lh workflow deliver`、コスト超過時の
+  実 Esc 入力だけは `herdr pane send-keys <pane_id> Escape` を使う。子の**起動**は
+  `lh workflow launch-step`、**観測**は
   `lh workflow step status` のまま。event 到着待ちは agent runtime 管理の background task として実行する
   blocking `lh workflow watch` が担い、完了通知後に同じ親が処理を続ける。子は親の pane・topology を知らない。
 - **rework / 継続作業は同じ Execute セッションを優先する**（#1556）— live な executor pane があれば
-  parent が `orchestrator:` を注入し、毎回 fresh Execute を起こさない。注入直前に
-  `activate-step` でその Execute session を live control 対象として記録する。pane が無い・解決できない・
-  session を特定できない・注入失敗のときだけ `launch-step` で fresh 起動する。**Verify は常に
+  parent が `lh workflow deliver` で `orchestrator:` を注入し、毎回 fresh Execute を起こさない。
+  deliver が pane / agent / session を解決できない、または注入に失敗したときだけ `launch-step` で
+  fresh 起動する。**Verify は常に
   fresh child**（注入で再利用しない）。注入するかどうかの判断は parent contract に置き、engine
   には持たせない。
 
@@ -85,25 +85,23 @@ prompt で設定する。workflow を起動する前提は次のとおり。
    などの domain state を再観測して遷移する。task completion と event は timing signal であり、完了や
    verdict そのものではない。
 2. `lh workflow launch-step` で Execute / Verify child を起動する（engine が input ポインタを解決）。
-   出力の `agent` 行（Herdr name、例: `executor #<run>-<seq>`）を記録し、`herdr agent get` で
-   `pane_id` を解決して注入先として使う。parent 再起動で agent name を失った場合は
-   `herdr agent list` から当該 run の最新 `executor #<run>-*` を引き直す。
+   出力の `agent` 行（Herdr name、例: `executor #<run>-<seq>`）と `session` 行は domain state に
+   記録され、`lh workflow deliver` が注入時に最新 Execute を解決する。
 3. **遷移は「turn done event の観測 → `lh workflow step status` で HEAD / review 状態を観測」で決める。**
    宣言はタイミングの合図であり真実を代替しない。宣言があっても HEAD が前進していなければ Verify を
    起動しない。pane 出力・子の自己申告・idle 検知・**注入の成功自体**は遷移判断に使わない。
 4. `lh workflow run advance-to-verify | request-rework | await-human | resume` の意図ベース command で
    通常の lifecycle を遷移する。`current_step` はこの lifecycle を表す。一方、
    `active_step` / `active_session_id` は実際に操作中の child を表し、fresh launch の確認時と
-   live Execute 注入直前の `activate-step` で更新する。live な子への注入 / Esc は herdr
-   直接操作であり、`activate-step` 自体は lifecycle を遷移しない。コスト超過後の継続許可時だけは、
+   live Execute 注入時に `deliver` が更新する。この更新自体は lifecycle を遷移しない。
+   コスト超過後の継続許可時だけは、
    lifecycle の resume より先に専用の `increase-cost-limit --expected-limit <usd>` を実行する。
-5. request_changes / 継続指示 / merge conflict は **同じ Execute 注入経路** を使う。最新 Execute
-   child とその登録済み session id を解決し、注入前に
-   `lh workflow run activate-step --step execute --session <session_id>` を成功させる。
-   `pane_id` が得られれば `agent_status: done` でも同じ pane へ **1 行の**
-   `orchestrator: ...` を `herdr pane run` で注入する（改行・制御文字は空白へ潰す）。rework は
-   `orchestrator: address review #<id>` のみ（findings の要約・解釈はしない）。agent を解決できない、
-   session を特定できない、`pane_id` がない、または注入に失敗した場合だけ `launch-step`
+5. request_changes / 継続指示 / merge conflict は **同じ Execute 注入経路** として
+   `lh workflow deliver --run <run> --text '<single-line instruction>'` を使う。コマンドが最新 Execute
+   child と登録済み session id を解決し、live control target を更新して、改行・制御文字を空白に
+   sanitize した指示を pane へ送る。`pane_id` があれば `agent_status: done` でも利用できる。rework は
+   `orchestrator: address review #<id>` のみ（findings の要約・解釈はしない）。deliver が non-zero の
+   場合だけ `launch-step`
    （`--review` / `--note`）で fresh relaunch する。fresh launch の確認は active step/session も
    自動記録する。修正後の Verify は常に fresh child とする。
 6. コスト上限超過では event payload の `usage_session_id` と `active_step` /
@@ -189,8 +187,8 @@ npm test -- core/workflow/prompts.test.ts core/workflow-runs-service.test.ts
 
 ### 注入 round の監査
 
-`activate-step` はコスト中断対象を正確にする live-control safety command であり、lifecycle を遷移せず、
-監査専用でもない。注入 round 自体は既存の domain fact だけで追え、監査専用の lh コマンドは追加しない。
+`deliver` は内部で `activate-step` と同じ live-control target 更新を行うが lifecycle を遷移しない。
+注入 round 自体は既存の domain fact だけで追え、監査専用の lh コマンドは追加しない。
 
 - `lh workflow run request-rework` が `rework_count` を増やす。
 - Execute の各ターンは `workflow_run.turn_done` event を残す。
@@ -283,7 +281,8 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 `usage_session_id` はコスト更新を検知した
 usage 集約であり、中断対象ではない。中断対象は別フィールドの `active_step` /
 `active_session_id` である。passing Verify 後の追加 Execute 中も `current_step` は Verify のままだが、
-注入直前の `activate-step` により active target は Execute になる。親はその step の最新 child pane を
+直前の `deliver` が行った live-control target 更新により active target は Execute になる。親はその
+step の最新 child pane を
 解決し、まず run を `await-human` で hold してから
 `herdr pane send-keys <pane_id> Escape` で実 Esc を送り、同じ pane に
 `orchestrator: Cost limit exceeded: current $<cost>, limit $<limit>. Wait for human instruction.`
@@ -321,24 +320,23 @@ hold を解除する。通常の resume 自体は上限を変更しない。Exec
 | Human wait | Execute の turn done 後、HEAD が最新 review より前進 | `resume --step execute` → 通常の Execute 完了遷移 → fresh Verify |
 | Human wait | Execute の turn done 後、HEAD が不変 | hold を維持し、追加作業または明示的 resume を待つ |
 | Verify | 最新 review が fresh + pass | run を `running` のまま維持し、返された `next_command` で追加指示・turn-done を待つ |
-| Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、既存 Execute pane へ `herdr pane run` で注入する。pane が閉じていれば `--note` 付きで Execute を launch |
+| Verified + continuing | 人間が追加作業を指示 | `run resume` は使わず、`lh workflow deliver` で既存 Execute pane へ注入する。deliver が失敗すれば `--note` 付きで Execute を launch |
 | Verified + continuing | Execute の turn done 後、HEAD が passing review より前進 | run は Verify のまま、現在の HEAD に対する Verify を fresh launch |
 | Verified + continuing | Execute の turn done 後、HEAD が不変 | 既存 pass は fresh のまま。Verify を起動せず待機を続ける |
 | Verify | 最新 review が fresh + request_changes | rework → Execute |
 
 fresh pass は現在の HEAD を検証するが、run を完了・凍結しない。親の background watcher と Execute pane を維持し、
 同じ run で追加作業を受け付ける。追加指示時に run は人間待ち hold ではないため `run resume` を使わない。
-生きている Execute pane へ parent が `herdr pane run` で `orchestrator: <instruction>` を注入し、
-pane が閉じている場合は `lh workflow launch-step --step execute --note <instruction>` で起動する。
+生きている Execute pane へ parent が `lh workflow deliver` で `orchestrator: <instruction>` を注入し、
+deliver が失敗した場合は `lh workflow launch-step --step execute --note <instruction>` で起動する。
 その後の turn done で HEAD が進んでいれば fresh Verify を起動し、PR body・comment・attachment だけが
 変わって HEAD が不変なら既存 pass を fresh のまま維持する。run を恒久終了する command は無く、
 終了させるのは人間である。
 
-rework 上限は 3。最新 Execute child に対する `herdr agent get`（必要なら `herdr agent list` で
-agent name を再発見）が成功して `pane_id` を返す場合は、`agent_status: done` でも pane は再利用可能
-と扱い、新規 launch より先に parent が **1 行の** `herdr pane run` で
-`orchestrator: address review #<id>` の注入を試す（同じ Execute セッションで対応する）。agent を
-解決できない、`pane_id` がない、または注入に失敗した場合に限り `--review <id>` で Execute child を
+rework 上限は 3。新規 launch より先に parent が **1 行の**
+`lh workflow deliver --text 'orchestrator: address review #<id>'` で同じ Execute session への注入を試す。
+コマンドは `pane_id` があれば `agent_status: done` の pane も再利用する。agent / session / pane を
+解決できない、または注入に失敗して non-zero になった場合に限り `--review <id>` で Execute child を
 再 launch する。修正後の Verify は常に fresh child とする。注入の成功自体を execute complete の根拠
 にしない — 次の遷移は `lh workflow step status` の HEAD / review 観測のみ。
 
@@ -367,17 +365,13 @@ lh workflow launch-step --run <id> --step execute|verify [--review <id>] [--note
 # lifecycle command
 lh workflow run advance-to-verify|request-rework|await-human|resume --run <id>
 lh workflow run increase-cost-limit --run <id> --expected-limit <usd>
-# live control target（lifecycle step は変更しない）
-lh workflow run activate-step --run <id> --step execute --session <session_id>
+lh workflow deliver --run <id> --text <single-line-instruction> # 最新 Execute を activate して指示を注入
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
 lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
 lh workflow watch --repo <repo> --run <id> --since <event-id> --json # runtime-managed blocking wait
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測
-# live child control（parent が herdr を直接叩く。lh ラッパーは無い）
-herdr agent get <agent name>                # launch-step の agent 行から pane_id を解決
-herdr agent list                            # parent 再起動後に executor #<run>-* を再発見
-herdr pane run <pane_id> 'orchestrator: ...'  # live な子へ 1 行の指示を注入（改行・制御文字は潰す）
+# cost interrupt の live child control
 herdr pane send-keys <pane_id> Escape       # コスト超過時に active child へ実 Esc を送る
 ```
 

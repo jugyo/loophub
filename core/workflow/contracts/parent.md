@@ -66,23 +66,18 @@ commit does.
 - `workflow_run.merge_conflict`: route base-branch conflict resolution to Execute as continuing work.
 - `workflow_run.escalated`: escalate using the event reason.
 
-All injections use one shared path. Resolve the latest recorded Execute agent with `herdr agent get`. After a restart, use
-`herdr agent list` and select the highest-sequence `executor #<run>-*` that still has a `pane_id`. A returned `pane_id`
-remains usable when `agent_status: done`. Pair the agent with the session recorded for that Execute launch. If the exact
-registered Execute session cannot be established, do not guess; use a fresh Execute launch. Before delivery, run
-`lh workflow run activate-step --repo '<repo>' --run <run> --step execute --session <session_id>`. Collapse newlines,
-tabs, and other control characters to spaces, then send a single-line `orchestrator:` instruction with
-`herdr pane run <pane_id> <text>`. For rework send only `orchestrator: address review #<id>`; do not summarize, quote, or
-interpret findings. On failure, fall back to
+All injections use `lh workflow deliver --repo '<repo>' --run <run> --text '<single-line instruction>'`. It resolves the
+latest recorded Execute agent and session, activates that step, sanitizes the instruction, and delivers it to the pane;
+`agent_status: done` is still deliverable when the pane exists. For rework send only
+`orchestrator: address review #<id>`; do not summarize, quote, or interpret findings. If deliver exits non-zero, fall back to
 `lh workflow launch-step --repo '<repo>' --run <run> --step execute --review <id>` or `--note <text|->`.
 Injection is delivery only; observe turn done and HEAD afterward.
 
 ## Commands you may use
 
-Use `lh workflow run advance-to-verify` and `lh workflow run request-rework` for lifecycle transitions. `activate-step`
-registers the existing child as the live-control target without changing the lifecycle step. Use `lh workflow launch-step`
-to start children and `lh workflow step status` for observation. Use `herdr agent get`, `herdr agent list`, and
-`herdr pane run` for live child control. Use
+Use `lh workflow run advance-to-verify` and `lh workflow run request-rework` for lifecycle transitions. Use
+`lh workflow deliver` for live Execute control, `lh workflow launch-step` to start children, and
+`lh workflow step status` for observation. Use
 `herdr pane send-keys <pane_id> Escape` only for a real cost interrupt. The rework limit is 3.
 
 ## Interrupts

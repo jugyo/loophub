@@ -702,6 +702,26 @@ async function escalate(): Promise<void> {
     );
 }
 
+async function deliver(): Promise<void> {
+  const runId = positiveInt(flags.run, "--run");
+  const text = flags.text;
+  if (text === undefined) fail("--text is required");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).workflowRuns.deliver(
+      repo,
+      { run: runId, text },
+      await writeSession(),
+    ),
+  );
+  if (flags.json) out(result);
+  else {
+    console.log(`delivered instruction to ${result.agent_name}`);
+    console.log(`pane\t${result.pane_id}`);
+    console.log(`session\t${result.session_id}`);
+  }
+}
+
 function formatWorkflowWatchCommand(input: {
   repo: string;
   run: number;
@@ -821,6 +841,8 @@ export async function run(): Promise<void> {
     await turnDone();
   } else if (sub === "escalate") {
     await escalate();
+  } else if (sub === "deliver") {
+    await deliver();
   } else if (sub === "watch") {
     await watch();
   } else if (sub === "next") {

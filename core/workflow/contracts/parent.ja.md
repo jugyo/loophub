@@ -66,23 +66,19 @@ review の pin された HEAD が current HEAD と一致するときだけ fresh
 - `workflow_run.merge_conflict`: base に対する conflict 解消を continuing work として Execute へ渡す。
 - `workflow_run.escalated`: event の reason で人間へ escalation する。
 
-注入は次の共通手順だけを使う。記録した最新 Execute agent を `herdr agent get` で解決する。restart 後は
-`herdr agent list` から `pane_id` のある最大 sequence の `executor #<run>-*` を選ぶ。`agent_status: done` でも
-`pane_id` は使用可能である。agent とその Execute launch で記録した session を対応付け、登録済みの正確な
-Execute session を確定できなければ推測しないで fresh Execute を launch する。delivery 前に
-`lh workflow run activate-step --repo '<repo>' --run <run> --step execute --session <session_id>` を成功させてから、
-newline / tab / control character を空白に潰した 1 行の
-`orchestrator:` 指示を `herdr pane run <pane_id> <text>` で送る。rework は
-`orchestrator: address review #<id>` だけを送り、finding を要約・引用・解釈しない。失敗時だけ
+注入は `lh workflow deliver --repo '<repo>' --run <run> --text '<single-line instruction>'` だけを使う。この
+コマンドが記録済みの最新 Execute agent と session の解決、step の activate、指示の sanitize、pane への
+delivery を行う。pane が存在すれば `agent_status: done` でも delivery 可能である。rework は
+`orchestrator: address review #<id>` だけを送り、finding を要約・引用・解釈しない。deliver が non-zero の
+場合だけ
 `lh workflow launch-step --repo '<repo>' --run <run> --step execute --review <id>` または `--note <text|->`
 へ fallback する。注入後は turn done と HEAD を再観測する。
 
 ## Commands you may use
 
-loop の遷移は `lh workflow run advance-to-verify` と `lh workflow run request-rework` で行う。
-`activate-step` は既存 child を lifecycle step を変更せず live-control target として登録する。子の起動は
-`lh workflow launch-step`、観測は `lh workflow step status` を使う。live child には `herdr agent get`、`herdr agent list`、
-`herdr pane run` を使い、cost interrupt の実 Esc だけ `herdr pane send-keys <pane_id> Escape` を使う。
+loop の遷移は `lh workflow run advance-to-verify` と `lh workflow run request-rework` で行う。live Execute の
+control は `lh workflow deliver`、子の起動は `lh workflow launch-step`、観測は `lh workflow step status` を
+使い、cost interrupt の実 Esc だけ `herdr pane send-keys <pane_id> Escape` を使う。
 rework 上限は 3。
 
 ## Interrupts
