@@ -783,16 +783,12 @@ async function escalateHuman(): Promise<void> {
     out(result);
   } else {
     console.log(`Workflow run #${result.run}\tIssue #${result.issue}`);
-    for (const [label, effect] of [
-      ["issue comment", result.effects.issue_comment],
-      ["inbox", result.effects.inbox],
-    ] as const) {
-      console.log(`${label}\t${effect.status.replaceAll("_", " ")}`);
-      if (effect.error) console.log(`${label} error\t${effect.error}`);
-    }
+    const effect = result.effects.issue_comment;
+    console.log(`issue comment\t${effect.status.replaceAll("_", " ")}`);
+    if (effect.error) console.log(`issue comment error\t${effect.error}`);
   }
   if (!result.ok) {
-    fail("escalate-human did not complete every notification");
+    fail("escalate-human did not record the Issue comment");
   }
 }
 

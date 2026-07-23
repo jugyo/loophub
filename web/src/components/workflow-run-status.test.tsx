@@ -39,7 +39,7 @@ afterEach(() => {
   mocks.focusHerdrAgent.mockClear();
 });
 
-// The section renders <Link> to the issue and inbox, which need a router context.
+// The section renders a <Link> to the issue, which needs a router context.
 function renderInRouter(ui: React.ReactNode) {
   const rootRoute = createRootRoute({ component: Outlet });
   const indexRoute = createRoute({
@@ -52,13 +52,8 @@ function renderInRouter(ui: React.ReactNode) {
     path: "/r/$owner/$repo/issues/$number",
     component: () => null,
   });
-  const inboxRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/inbox",
-    component: () => null,
-  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, issueRoute, inboxRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, issueRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
   return render(<RouterProvider router={router} />);
@@ -212,7 +207,7 @@ describe("WorkflowRunStatusSection", () => {
     expect(screen.getByText("Reverify required")).toBeTruthy();
   });
 
-  it("surfaces the wait reason, review summary, and issue / inbox links while waiting for a human", async () => {
+  it("surfaces the wait reason, review summary, and issue link while waiting for a human", async () => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
@@ -243,8 +238,7 @@ describe("WorkflowRunStatusSection", () => {
     expect(issueLink.closest("a")?.getAttribute("href")).toBe(
       "/r/me/loophub/issues/42",
     );
-    const inboxLink = screen.getByText("Open Inbox");
-    expect(inboxLink.closest("a")?.getAttribute("href")).toBe("/inbox");
+    expect(screen.queryByText("Open Inbox")).toBeNull();
   });
 
   it("renders a legacy blocked run as a terminal Needs human state", async () => {

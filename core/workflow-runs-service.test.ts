@@ -1937,10 +1937,11 @@ test("parent contract template executes workflow next actions", () => {
   expect(contract).not.toContain("rework limit");
   expect(contract).not.toContain("--step execute --review <id>");
   expect(contract).toContain("Verify is **always a fresh child**");
-  // Escalation delegates both notifications to one idempotent command while the parent waits.
+  // Escalation delegates the Issue comment to one idempotent command while the parent waits.
   expect(contract).toContain("lh workflow escalate-human");
   expect(contract).not.toContain("lh issue comment");
   expect(contract).not.toContain("lh inbox send");
+  expect(contract).not.toContain("Inbox");
   expect(contract).toContain("lh workflow cost-hold");
   expect(contract).toContain("The run stays `running` after reaching the goal");
   expect(contract).not.toContain("--status blocked");

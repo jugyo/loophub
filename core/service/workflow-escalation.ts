@@ -1,6 +1,5 @@
 import { inlineText } from "../workflow/prompts.ts";
 import { comments } from "./comments.ts";
-import { inbox } from "./inbox.ts";
 import {
   actorFor,
   ensureWritable,
@@ -22,12 +21,10 @@ type WorkflowEscalationDeps = {
     body: string,
     sessionId?: string | null,
   ): unknown;
-  sendInbox(name: string, input: Parameters<typeof inbox.send>[1]): unknown;
 };
 
 const defaultDeps: WorkflowEscalationDeps = {
   createComment: comments.create,
-  sendInbox: inbox.send,
 };
 
 function reasonText(value: string): string {
@@ -114,22 +111,9 @@ export const workflowEscalation = {
       "escalation.issue-comment",
       () => deps.createComment(name, issueNumber, body, sessionId),
     );
-    const inboxMessage = runEffect(run.id, event.id, "escalation.inbox", () =>
-      deps.sendInbox(name, {
-        from: {
-          kind: "workflow_run",
-          repo: name,
-          actor: "workflow-parent",
-        },
-        title: `Workflow run #${run.id} requires human guidance`,
-        body,
-      }),
-    );
     const ok =
-      (issueComment.status === "completed" ||
-        issueComment.status === "already_completed") &&
-      (inboxMessage.status === "completed" ||
-        inboxMessage.status === "already_completed");
+      issueComment.status === "completed" ||
+      issueComment.status === "already_completed";
     return {
       ok,
       run: run.id,
@@ -138,7 +122,6 @@ export const workflowEscalation = {
       reason,
       effects: {
         issue_comment: issueComment,
-        inbox: inboxMessage,
       },
     };
   },

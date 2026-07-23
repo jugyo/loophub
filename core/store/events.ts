@@ -150,7 +150,7 @@ export function emitWorkflowRunCostExceededOnce(
   );
 }
 
-// `escalate-human` owns both human notifications and therefore needs one stable event id even
+// `escalate-human` owns the human notification and therefore needs one stable event id even
 // when the escalation was decided by parent reconciliation rather than an incoming run event.
 // Keeping this internal receipt anchor outside the workflow_run namespace prevents the parent
 // watch loop from treating command replay as new orchestration input.

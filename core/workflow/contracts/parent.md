@@ -77,7 +77,7 @@ Keep a non-zero next or action error visible and ask for human judgement; do not
 - `wait`: do nothing.
 - `escalate`: run
   `lh workflow escalate-human --repo '<repo>' --run <run> --reason <reason> [--issue <issue>]`. The command establishes
-  the hold and owns the Issue comment, Inbox message, and replay receipts. Do not launch a step or change the rework count
+  the hold and owns the Issue comment and its replay receipt. Do not launch a step or change the rework count
   until an explicit human instruction arrives.
 - `ask_human`: for a cost question, follow **Interrupts**. Otherwise show the returned question and hold automatic
   progression until the human answers.

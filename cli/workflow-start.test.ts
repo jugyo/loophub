@@ -383,7 +383,7 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
   );
   expect(humanEscalation.exitCode, humanEscalation.stderr).toBe(0);
   expect(humanEscalation.stdout).toContain("issue comment\tcompleted");
-  expect(humanEscalation.stdout).toContain("inbox\tcompleted");
+  expect(humanEscalation.stdout).not.toContain("inbox");
 
   const replay = run(
     [
@@ -400,7 +400,7 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
   );
   expect(replay.exitCode, replay.stderr).toBe(0);
   expect(replay.stdout).toContain("issue comment\talready completed");
-  expect(replay.stdout).toContain("inbox\talready completed");
+  expect(replay.stdout).not.toContain("inbox");
 
   const issueView = run(["issue", "view", issue, "--repo", REPO, "--json"]);
   expect(JSON.parse(issueView.stdout).comment_list).toHaveLength(1);
@@ -410,13 +410,13 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
   ) as typeof import("node:sqlite");
   const db = new DatabaseSync(join(HOME, "loophub.db"));
   db.exec(`
-    CREATE TRIGGER fail_escalation_inbox
-    BEFORE INSERT ON inbox_messages
+    CREATE TRIGGER fail_escalation_comment
+    BEFORE INSERT ON comments
     BEGIN
-      SELECT RAISE(FAIL, 'inbox unavailable');
+      SELECT RAISE(FAIL, 'comments unavailable');
     END
   `);
-  const partial = run(
+  const failed = run(
     [
       "workflow",
       "escalate-human",
@@ -425,18 +425,17 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
       "--run",
       String(runResult.run.id),
       "--reason",
-      "Inbox failure must be visible",
+      "Comment failure must be visible",
     ],
     { LOOPHUB_SESSION_ID: parentSession },
   );
-  db.exec("DROP TRIGGER fail_escalation_inbox");
+  db.exec("DROP TRIGGER fail_escalation_comment");
   db.close();
-  expect(partial.exitCode).not.toBe(0);
-  expect(partial.stdout).toContain("issue comment\tcompleted");
-  expect(partial.stdout).toContain("inbox\tfailed");
-  expect(partial.stdout).toContain("inbox error\tinbox unavailable");
+  expect(failed.exitCode).not.toBe(0);
+  expect(failed.stdout).toContain("issue comment\tfailed");
+  expect(failed.stdout).toContain("issue comment error\tcomments unavailable");
 
-  const partialReplay = run(
+  const failedReplay = run(
     [
       "workflow",
       "escalate-human",
@@ -445,13 +444,12 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
       "--run",
       String(runResult.run.id),
       "--reason",
-      "Inbox failure must be visible",
+      "Comment failure must be visible",
     ],
     { LOOPHUB_SESSION_ID: parentSession },
   );
-  expect(partialReplay.exitCode).not.toBe(0);
-  expect(partialReplay.stdout).toContain("issue comment\talready completed");
-  expect(partialReplay.stdout).toContain("inbox\tpending");
+  expect(failedReplay.exitCode).not.toBe(0);
+  expect(failedReplay.stdout).toContain("issue comment\tpending");
   const issueAfterFailure = run([
     "issue",
     "view",
@@ -460,7 +458,7 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
     REPO,
     "--json",
   ]);
-  expect(JSON.parse(issueAfterFailure.stdout).comment_list).toHaveLength(2);
+  expect(JSON.parse(issueAfterFailure.stdout).comment_list).toHaveLength(1);
 });
 
 afterAll(() => {

@@ -107,7 +107,7 @@ prompt で設定する。workflow を起動する前提は次のとおり。
 6. コスト上限超過では event payload の `usage_session_id` と `active_step` /
    `active_session_id` を区別し、run を needs-human hold にしてから active child の pane だけに
    実 Esc と理由通知を送る。yes / no の続行確認は一度だけ表示する。解消不能状態も issue comment +
-   Inbox + needs-human 状態で人間へ渡す。
+   needs-human 状態で人間へ渡す。
 7. passing verdict 後も run と `next --watch` の exec session、および可能なら Execute pane を維持し、追加指示や
    turn-done を待つ。run を恒久終了する command は無く、終了させるのは人間である。merge はしない。
 
@@ -142,7 +142,7 @@ GitHub reference の event は親の変更要否判断を必要とするため�
 `lh workflow next <run> --repo <repo> --event <event.id> --requires-changes true|false --json` を実行する。
 人間からの直接指示は待たずに `--note <text|->` で渡す。
 
-Esc、pane 通知、Issue comment、Inbox のような DB transaction 外の side effect は、実行前に durable
+Esc、pane 通知、Issue comment のような DB transaction 外の side effect は、実行前に durable
 receipt を claim し、成功後に complete する。
 
 ```sh
@@ -299,7 +299,7 @@ hold を解除する。通常の resume 自体は上限を変更しない。Exec
 起動する。no の場合は hold を維持し、注入・step 遷移・子起動をせず次の明示的な人間指示を待つ。
 確認待ちと `Continuation decision: yes|no` は親 pane に表示する。pane 解決、hold、Esc、通知、確認
 表示のいずれかに失敗した場合は成功扱いせず、親 pane に command と error を表示し、
-`lh workflow escalate-human --repo <repo> --run <run> --reason <text>` で Issue comment と Inbox に通知して
+`lh workflow escalate-human --repo <repo> --run <run> --reason <text>` で Issue comment に通知して
 hold を維持する。
 同じ edge の再処理で暗黙 retry や通知・確認の重複を行わない。
 
@@ -369,7 +369,7 @@ lh workflow run increase-cost-limit --run <id> --expected-limit <usd>
 lh workflow deliver --run <id> --text <single-line-instruction> # 最新 Execute を activate して指示を注入
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
 lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
-lh workflow escalate-human --reason <text> [--run <id>] [--issue <n>] # Issue comment と Inbox を冪等に記録
+lh workflow escalate-human --reason <text> [--run <id>] [--issue <n>] # Issue comment を冪等に記録
 lh workflow next <run> [--watch | --event <id> [--requires-changes true|false] | --note <text|->] --json # 観測済み state から次の action を返す（--watch は次の run event まで block）
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測

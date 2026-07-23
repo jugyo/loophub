@@ -6,8 +6,8 @@
 //
 // - needs human (#1307): a running run with `needs_human_reason` set is waiting for an explicit
 //   human instruction. Surfaces that reason (plus the latest Verify review summary when present) and
-//   links to the issue (where the parent files its escalation comment) and the Inbox. Legacy
-//   terminal `blocked` rows get the same prominent display.
+//   links to the issue, where the parent files its escalation comment. Legacy terminal `blocked`
+//   rows get the same prominent display.
 // A running run can be verified for its current HEAD or need re-verification after HEAD advances.
 //
 // Renders nothing when the issue / PR has no run.
@@ -178,10 +178,10 @@ export function WorkflowRunStatusSection({
 }
 
 // Needs human means the parent escalated (workflow design: parent transitions): it filed an issue
-// comment summarizing the situation, sent an Inbox notification, and holds the run waiting for an
-// explicit human instruction to its session (#1307). Surface the stored wait reason, point the
-// human at the issue and Inbox, and add the latest Verify review summary when one exists. Legacy
-// terminal `blocked` rows render the same way, minus the resumability (their parent is gone).
+// comment summarizing the situation and holds the run waiting for an explicit human instruction to
+// its session (#1307). Surface the stored wait reason, point the human at the issue, and add the
+// latest Verify review summary when one exists. Legacy terminal `blocked` rows render the same way,
+// minus the resumability (their parent is gone).
 function NeedsHumanNotice({
   owner,
   repo,
@@ -220,9 +220,6 @@ function NeedsHumanNotice({
           className="text-link hover:underline"
         >
           Read issue #{state.issue_number}
-        </Link>
-        <Link to="/inbox" className="text-link hover:underline">
-          Open Inbox
         </Link>
       </div>
     </div>

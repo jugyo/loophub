@@ -48,7 +48,7 @@ function createRun(name: string) {
   return { repo, issue, run };
 }
 
-test("escalateHuman records one Issue comment and Inbox message across replays", () => {
+test("escalateHuman records one Issue comment across replays", () => {
   const { repo, issue, run } = createRun("me/escalation");
 
   const first = svc.workflowEscalation.escalateHuman(
@@ -69,26 +69,17 @@ test("escalateHuman records one Issue comment and Inbox message across replays",
     reason: "Rework limit reached.",
     effects: {
       issue_comment: { status: "completed" },
-      inbox: { status: "completed" },
     },
   });
   expect(replay).toMatchObject({
     ok: true,
     effects: {
       issue_comment: { status: "already_completed" },
-      inbox: { status: "already_completed" },
     },
   });
   expect(S.listComments(issue.id)).toHaveLength(1);
   expect(S.listComments(issue.id)[0].body).toContain("Rework limit reached.");
-  const messages = S.listInboxMessages(repo.id);
-  expect(messages).toHaveLength(1);
-  expect(JSON.parse(messages[0].from_json)).toEqual({
-    kind: "workflow_run",
-    repo: repo.full_name,
-    actor: "workflow-parent",
-  });
-  expect(messages[0].body).toContain("Rework limit reached.");
+  expect(S.listInboxMessages(repo.id)).toHaveLength(0);
 });
 
 test("escalateHuman can override the run Issue", () => {
@@ -128,7 +119,6 @@ test("escalateHuman can override the run Issue", () => {
     issue: other.number,
     effects: {
       issue_comment: { status: "already_completed" },
-      inbox: { status: "already_completed" },
     },
   });
 
@@ -152,39 +142,34 @@ test("escalateHuman can override the run Issue", () => {
   ).toThrowError(/already targets Issue/);
 });
 
-test("escalateHuman exposes partial failure and does not replay a pending effect", () => {
+test("escalateHuman exposes failure and does not replay a pending effect", () => {
   const { repo, issue, run } = createRun("me/escalation-partial");
 
   const failed = svc.workflowEscalation.escalateHuman(
     repo.full_name,
-    { run: run.id, reason: "Inbox is unavailable." },
+    { run: run.id, reason: "Comments are unavailable." },
     run.parent_session_id,
     {
-      sendInbox() {
-        throw new Error("inbox unavailable");
+      createComment() {
+        throw new Error("comment unavailable");
       },
     },
   );
   const replay = svc.workflowEscalation.escalateHuman(
     repo.full_name,
-    { run: run.id, reason: "Inbox is unavailable." },
+    { run: run.id, reason: "Comments are unavailable." },
     run.parent_session_id,
   );
 
   expect(failed).toMatchObject({
     ok: false,
     effects: {
-      issue_comment: { status: "completed" },
-      inbox: { status: "failed", error: "inbox unavailable" },
+      issue_comment: { status: "failed", error: "comment unavailable" },
     },
   });
   expect(replay).toMatchObject({
     ok: false,
-    effects: {
-      issue_comment: { status: "already_completed" },
-      inbox: { status: "pending" },
-    },
+    effects: { issue_comment: { status: "pending" } },
   });
-  expect(S.listComments(issue.id)).toHaveLength(1);
-  expect(S.listInboxMessages(repo.id)).toHaveLength(0);
+  expect(S.listComments(issue.id)).toHaveLength(0);
 });

@@ -454,7 +454,7 @@ test("English and Japanese parent contracts document the Codex watcher protocol"
   }
 });
 
-test("parent delegates both human notifications to escalate-human in both languages", () => {
+test("parent delegates the human notification to escalate-human in both languages", () => {
   for (const contract of [
     workflowContractText("parent"),
     workflowContractText("parent", "ja"),
@@ -464,6 +464,7 @@ test("parent delegates both human notifications to escalate-human in both langua
     );
     expect(contract).not.toContain("lh issue comment");
     expect(contract).not.toContain("lh inbox send");
+    expect(contract).not.toContain("Inbox");
   }
 });
 
