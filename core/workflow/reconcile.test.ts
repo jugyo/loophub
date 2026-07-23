@@ -12,7 +12,11 @@ function observed(
     currentStep: "execute",
     activeStep: null,
     needsHumanReason: null,
+    awaitingHuman: false,
     reworkCount: 0,
+    reworkLimit: 3,
+    pendingEffectReceipt: null,
+    unaddressedOutOfBandReviews: [],
     currentHead: HEAD,
     headAheadOfBase: false,
     mergeConflict: false,
@@ -245,10 +249,46 @@ describe("reconcileWorkflow", () => {
       reconcileWorkflow(
         observed({
           needsHumanReason: "Cost limit exceeded",
+          awaitingHuman: true,
           mergeConflict: true,
         }),
       ),
     ).toMatchObject({ action: "wait" });
+  });
+
+  test("waits while an effect receipt remains pending", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          pendingEffectReceipt: {
+            event_id: 41,
+            effect: "notify-parent",
+            status: "pending",
+            claimed_at: "2026-07-23T00:00:00.000Z",
+          },
+        }),
+      ),
+    ).toMatchObject({
+      action: "wait",
+    });
+  });
+
+  test("delivers the oldest unaddressed out-of-band review with its id", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          activeStep: "verify",
+          unaddressedOutOfBandReviews: [
+            { id: 21, verdict: "feedback" },
+            { id: 22, verdict: "request_changes" },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      action: "deliver",
+      delivery_reason: "out_of_band_review",
+      review_id: 21,
+    });
   });
 
   test("delivers merge conflict resolution through the Execute path", () => {

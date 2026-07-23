@@ -754,7 +754,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
 
   // A turn-done declaration before any commit is only a timing signal: HEAD has not advanced, so
   // Execute is not complete and advance-to-verify is refused.
-  const before = svc.workflowRuns.turnDone(
+  const before = await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
     exec.session_id,
@@ -808,7 +808,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   ).toMatchObject({ action: "wait" });
 
   // Execute declares the new turn done. Now HEAD is ahead of base.
-  svc.workflowRuns.turnDone(
+  await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
     exec.session_id,
@@ -891,6 +891,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     parent_session_id: parent,
     session_id: verify.session_id,
     review_id: passReview.id,
+    submission_head_sha: headA,
   });
 
   status = await svc.workflowRuns.status(repo.full_name, {
@@ -1006,7 +1007,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
 
   // A later commit advances HEAD past the reviewed SHA, so the passing review is now stale.
   const headB = commit(started.worktree, "more.txt", "extra\n");
-  svc.workflowRuns.turnDone(
+  await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
     additionalExecute.session_id,
@@ -1044,6 +1045,204 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     event: "pass",
     fresh: true,
     headSha: headB,
+  });
+}, 30_000);
+
+test("step status exposes hold, rework, pending effects, and unaddressed out-of-band reviews", async () => {
+  const { repo } = freshRepo("me/workflow-observed-state");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Observed state",
+    "## Acceptance criteria\n- [ ] State is complete\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "observed-state-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "71717171-7171-4171-8171-717171717171";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const prIssue = S.getIssue(repo.id, started.pr.number)!;
+  const exec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+
+  let status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status).toMatchObject({
+    awaiting_human: false,
+    needs_human_reason: null,
+    rework_count: 0,
+    rework_limit: 3,
+    pending_effect_receipt: null,
+    unaddressed_out_of_band_reviews: [],
+  });
+
+  const runEvent = S.eventsForWorkflowRun(repo.id, started.run.id).find(
+    (event) => event.type.startsWith("workflow_run."),
+  )!;
+  S.beginWorkflowEventEffect(started.run.id, runEvent.id, "notify-observer");
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.pending_effect_receipt).toMatchObject({
+    event_id: runEvent.id,
+    effect: "notify-observer",
+    status: "pending",
+  });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "wait" });
+
+  S.completeWorkflowEventEffect(started.run.id, runEvent.id, "notify-observer");
+  const reviewedHead = gitAt(started.worktree, ["rev-parse", "HEAD"]);
+  commit(started.worktree, "before-feedback.txt", "already advanced\n");
+  S.createReview(
+    prIssue.id,
+    "historical-human",
+    "FEEDBACK",
+    "This review predates the run-scoped submission boundary.",
+    reviewedHead,
+  );
+  const feedback = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "FEEDBACK",
+      topic: "workflow",
+      headSha: reviewedHead,
+      body: "Please account for this.",
+    },
+    "human-observer",
+  );
+  const requestedChanges = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "REQUEST_CHANGES",
+      topic: "security",
+      headSha: reviewedHead,
+      body: "Please fix this too.",
+    },
+    "human-observer",
+  );
+  createWorkflowReview({
+    prIssueId: prIssue.id,
+    runId: started.run.id,
+    sequence: 1,
+    event: "REQUEST_CHANGES",
+    headSha: reviewedHead,
+    body: "Run-owned review stays on the Verify path.",
+  });
+
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.pending_effect_receipt).toBeNull();
+  expect(status.unaddressed_out_of_band_reviews).toEqual([
+    { id: feedback.id, verdict: "feedback" },
+    { id: requestedChanges.id, verdict: "request_changes" },
+  ]);
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({
+    action: "deliver",
+    delivery_reason: "out_of_band_review",
+    review_id: feedback.id,
+  });
+
+  // A turn done with the same HEAD observed at review submission does not address feedback pinned
+  // to an older SHA: the progress must happen after the submission boundary.
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.unaddressed_out_of_band_reviews).toHaveLength(2);
+
+  commit(started.worktree, "feedback.txt", "addressed\n");
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.unaddressed_out_of_band_reviews).toHaveLength(2);
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.unaddressed_out_of_band_reviews).toEqual([]);
+
+  // Active runs created before submission/turn-done HEADs were added can still make progress:
+  // the pinned review SHA is the conservative submission boundary, and a new turn done records
+  // the addressed HEAD in the current format.
+  const legacyHead = gitAt(started.worktree, ["rev-parse", "HEAD"]);
+  const legacyFeedback = S.createReview(
+    prIssue.id,
+    "legacy-human",
+    "FEEDBACK",
+    "Legacy feedback",
+    legacyHead,
+  );
+  S.emitEvent(repo.id, "workflow_run.review_submitted", "legacy-human", {
+    id: started.run.id,
+    review_id: legacyFeedback.id,
+  });
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.unaddressed_out_of_band_reviews).toEqual([
+    { id: legacyFeedback.id, verdict: "feedback" },
+  ]);
+  commit(started.worktree, "legacy-feedback.txt", "addressed\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.unaddressed_out_of_band_reviews).toEqual([]);
+
+  S.updateWorkflowRun(started.run.id, {
+    needsHumanReason: "waiting for guidance",
+    reworkCount: 2,
+  });
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status).toMatchObject({
+    awaiting_human: true,
+    needs_human_reason: "waiting for guidance",
+    rework_count: 2,
+    rework_limit: 3,
   });
 }, 30_000);
 
@@ -1090,7 +1289,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
   );
 
   const headA = commit(started.worktree, "impl.txt", "v1\n");
-  svc.workflowRuns.turnDone(
+  await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
     exec.session_id,
@@ -1180,7 +1379,7 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
   // Execute pushes a fix (HEAD advances past the request_changes review), declares turn done, and
   // the run advances to a fresh Verify.
   const headB = commit(started.worktree, "fix.txt", "v2\n");
-  svc.workflowRuns.turnDone(
+  await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
     rexec.session_id,
@@ -1236,13 +1435,13 @@ test("turn done is rejected for a non-Execute session", async () => {
   );
   const stranger = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   S.registerAgentSession(stranger, "workflow-step", stranger);
-  expect(() =>
+  await expect(
     svc.workflowRuns.turnDone(
       repo.full_name,
       { run: started.run.id },
       stranger,
     ),
-  ).toThrowError(/launched Execute session/);
+  ).rejects.toThrowError(/launched Execute session/);
 }, 20_000);
 
 test("Execute escalation records a validated event without changing run lifecycle", async () => {

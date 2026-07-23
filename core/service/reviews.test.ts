@@ -106,6 +106,7 @@ test("a human REQUEST_CHANGES on a PR with a running run emits review_submitted 
     parent_session_id: "parent-session",
     session_id: "human-session",
     review_id: review.id,
+    submission_head_sha: review.head_sha,
   });
 });
 
@@ -146,6 +147,7 @@ test("a FEEDBACK review on a PR with a running run emits review_submitted with r
     parent_session_id: "parent-session",
     session_id: "human-session",
     review_id: review.id,
+    submission_head_sha: review.head_sha,
   });
 });
 

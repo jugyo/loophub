@@ -1,3 +1,8 @@
+import type {
+  WorkflowOutOfBandReviewWire,
+  WorkflowPendingEffectReceiptWire,
+  WorkflowStepStatusWire,
+} from "../serialize.ts";
 import type { WorkflowStep } from "./compose.ts";
 import type { WorkflowStepStatuses } from "./steps.ts";
 
@@ -5,8 +10,12 @@ export type WorkflowReconcileInput = {
   status: string;
   currentStep: WorkflowStep;
   activeStep: WorkflowStep | null;
-  needsHumanReason: string | null;
-  reworkCount: number;
+  needsHumanReason: WorkflowStepStatusWire["needs_human_reason"];
+  awaitingHuman: WorkflowStepStatusWire["awaiting_human"];
+  reworkCount: WorkflowStepStatusWire["rework_count"];
+  reworkLimit: WorkflowStepStatusWire["rework_limit"];
+  pendingEffectReceipt: WorkflowPendingEffectReceiptWire | null;
+  unaddressedOutOfBandReviews: WorkflowOutOfBandReviewWire[];
   currentHead: string | null;
   headAheadOfBase: boolean;
   mergeConflict: boolean;
@@ -29,7 +38,8 @@ export type WorkflowNextAction =
   | {
       action: "deliver";
       reason: string;
-      delivery_reason: "no_progress" | "merge_conflict";
+      delivery_reason: "no_progress" | "merge_conflict" | "out_of_band_review";
+      review_id?: number;
     }
   | { action: "wait"; reason: string }
   | {
@@ -44,7 +54,7 @@ export type WorkflowNextAction =
       question_reason: "head_unresolved";
     };
 
-const REWORK_LIMIT = 3;
+export const WORKFLOW_REWORK_LIMIT = 3;
 
 /**
  * Advise the Workflow parent about its next action from already-observed state.
@@ -55,10 +65,10 @@ const REWORK_LIMIT = 3;
 export function reconcileWorkflow(
   input: WorkflowReconcileInput,
 ): WorkflowNextAction {
-  if (input.needsHumanReason !== null) {
+  if (input.awaitingHuman) {
     return {
       action: "wait",
-      reason: `Workflow is held for a human: ${input.needsHumanReason}`,
+      reason: `Workflow is held for a human: ${input.needsHumanReason ?? "reason unavailable"}`,
     };
   }
 
@@ -69,11 +79,28 @@ export function reconcileWorkflow(
     };
   }
 
+  if (input.pendingEffectReceipt !== null) {
+    return {
+      action: "wait",
+      reason: `Effect "${input.pendingEffectReceipt.effect}" for event #${input.pendingEffectReceipt.event_id} has a pending receipt.`,
+    };
+  }
+
   if (input.currentHead === null) {
     return {
       action: "ask_human",
       reason: "Current HEAD could not be resolved.",
       question_reason: "head_unresolved",
+    };
+  }
+
+  const outOfBandReview = input.unaddressedOutOfBandReviews[0];
+  if (outOfBandReview) {
+    return {
+      action: "deliver",
+      reason: `Out-of-band review #${outOfBandReview.id} (${outOfBandReview.verdict}) has not been addressed.`,
+      delivery_reason: "out_of_band_review",
+      review_id: outOfBandReview.id,
     };
   }
 
@@ -91,10 +118,10 @@ export function reconcileWorkflow(
     review?.fresh &&
     review.event === "request_changes"
   ) {
-    if (input.reworkCount >= REWORK_LIMIT) {
+    if (input.reworkCount >= input.reworkLimit) {
       return {
         action: "escalate",
-        reason: `Fresh review #${review.id} requests changes, but the rework limit of ${REWORK_LIMIT} has been reached.`,
+        reason: `Fresh review #${review.id} requests changes, but the rework limit of ${input.reworkLimit} has been reached.`,
         escalation_reason: "rework_limit",
         review_id: review.id,
       };

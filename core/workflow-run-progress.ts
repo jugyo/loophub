@@ -65,7 +65,7 @@ async function conflictsWithBase(
   return (await mergePreview(worktree, baseBranch, head)).conflict;
 }
 
-async function isHeadAheadOfLatestReview(
+export async function isHeadAheadOfReview(
   worktree: string,
   review: WorkflowLatestReviewState | null,
   head: string | null,
@@ -94,11 +94,7 @@ export async function workflowRunProgress(input: {
   const [headAheadOfBase, headAheadOfLatestReview, mergeConflict] =
     await Promise.all([
       isHeadAheadOfBase(input.worktree, input.baseBranch, currentHead),
-      isHeadAheadOfLatestReview(
-        input.worktree,
-        input.latestReview,
-        currentHead,
-      ),
+      isHeadAheadOfReview(input.worktree, input.latestReview, currentHead),
       conflictsWithBase(input.worktree, input.baseBranch, currentHead),
     ]);
   return {

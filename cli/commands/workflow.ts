@@ -620,6 +620,16 @@ async function stepStatus(): Promise<void> {
   if (result.needs_human_reason !== null) {
     console.log(`needs_human\t${display(result.needs_human_reason)}`);
   }
+  console.log(`rework\t${result.rework_count}/${result.rework_limit}`);
+  if (result.pending_effect_receipt !== null) {
+    const receipt = result.pending_effect_receipt;
+    console.log(
+      `pending_effect\t#${receipt.event_id} ${display(receipt.effect)}`,
+    );
+  }
+  for (const review of result.unaddressed_out_of_band_reviews) {
+    console.log(`unaddressed_review\t#${review.id} ${display(review.verdict)}`);
+  }
   console.log(`cost_increment_usd\t${result.cost_increment_usd}`);
   console.log(`cost_limit_usd\t${result.cost_limit_usd}`);
   console.log(`head\t${display(result.head_sha ?? "(unresolved)")}`);

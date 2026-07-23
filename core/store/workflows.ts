@@ -217,6 +217,19 @@ export interface WorkflowEventEffectRow {
   updated_at: string;
 }
 
+export function pendingWorkflowEventEffect(
+  runId: number,
+): WorkflowEventEffectRow | null {
+  return db
+    .query(
+      `SELECT * FROM workflow_event_effects
+       WHERE run_id = ? AND status = 'pending'
+       ORDER BY created_at ASC, event_id ASC, effect ASC
+       LIMIT 1`,
+    )
+    .get(runId) as WorkflowEventEffectRow | null;
+}
+
 export function beginWorkflowEventEffect(
   runId: number,
   eventId: number,

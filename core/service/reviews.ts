@@ -77,11 +77,9 @@ export const reviews = {
     // when the ref cannot be resolved. Workflow placement may pass its pinned
     // SHA explicitly and must keep taking precedence.
     const pull = S.getPull(row.id)!;
-    const headSha =
-      input.headSha ??
-      (await revParse(r.local_path, pull.head_ref)) ??
-      pull.head_sha ??
-      null;
+    const submissionHeadSha =
+      (await revParse(r.local_path, pull.head_ref)) ?? pull.head_sha ?? null;
+    const headSha = input.headSha ?? submissionHeadSha;
     const v = S.createReview(
       row.id,
       actor,
@@ -124,6 +122,7 @@ export const reviews = {
         parent_session_id: workflowRun.parent_session_id,
         session_id: sessionId ?? null,
         review_id: v.id,
+        submission_head_sha: submissionHeadSha,
       });
     }
     return { ...reviewJSON(v), comments: lineComments.length };

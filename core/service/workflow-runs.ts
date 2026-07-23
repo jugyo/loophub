@@ -16,9 +16,12 @@ import {
 import { resolveWorktreeIdentity } from "../resume.ts";
 import {
   effectiveRepoAgentConfigFor,
+  type WorkflowOutOfBandReviewWire,
+  type WorkflowPendingEffectReceiptWire,
   type WorkflowRunHistoryEventWire,
   type WorkflowRunReviewSummaryWire,
   type WorkflowRunStateWire,
+  type WorkflowStepStatusWire,
 } from "../serialize.ts";
 import {
   NO_PANE_ID_PREFIX,
@@ -56,17 +59,16 @@ import {
 } from "../workflow/prompts.ts";
 import {
   reconcileWorkflow,
+  WORKFLOW_REWORK_LIMIT,
   type WorkflowNextAction,
 } from "../workflow/reconcile.ts";
 import {
   writeParentContract,
   writeStepContract,
 } from "../workflow/run-files.ts";
-import type {
-  WorkflowLatestReviewState,
-  WorkflowStepStatuses,
-} from "../workflow/steps.ts";
+import type { WorkflowLatestReviewState } from "../workflow/steps.ts";
 import {
+  isHeadAheadOfReview,
   workflowRunProgress as observeWorkflowRunProgress,
   pinnedBaseSha,
   type WorkflowRunProgress,
@@ -210,29 +212,7 @@ export type WorkflowStepInputResult = {
   pointers: WorkflowInputPointer[];
 };
 
-export type WorkflowStepStatusResult = {
-  run: number;
-  current_step: string;
-  status: string;
-  active_step: string | null;
-  rework_count: number;
-  // Non-null while the run is held for a human (#1307) — surfaced here so the parent's re-check
-  // and an operator's inspection see the hold instead of a plain running run.
-  needs_human_reason: string | null;
-  cost_increment_usd: number;
-  cost_limit_usd: number;
-  head_sha: string | null;
-  head_ahead_of_base: boolean;
-  head_ahead_of_latest_review: boolean;
-  merge_conflict: boolean;
-  // Timestamp of the latest turn-done declaration event, or null. A timing signal for the
-  // parent's observation — never part of step-completion truth.
-  last_turn_done_at: string | null;
-  // True when the latest turn-done declaration belongs to the active Execute round. An Execute
-  // launch or activate-step starts a new round, so an older declaration cannot leak into it.
-  turn_done_for_active_execute: boolean;
-  steps: WorkflowStepStatuses;
-};
+export type WorkflowStepStatusResult = WorkflowStepStatusWire;
 
 function workflowByInput(input: { workflow?: string; workflowId?: number }) {
   if (input.workflow && input.workflowId !== undefined) {
@@ -493,6 +473,92 @@ function turnDoneObservation(
     at: turnDone.created_at,
     forActiveExecute: turnDone.id > executeRound.id && afterReview,
   };
+}
+
+function outOfBandReviewVerdict(
+  review: S.ReviewRow,
+  runId: number,
+): WorkflowOutOfBandReviewWire["verdict"] | null {
+  const agent = parseWorkflowHerdrAgentName(review.author);
+  if (
+    agent?.kind === "step" &&
+    agent.step === "verify" &&
+    agent.runId === runId
+  ) {
+    return null;
+  }
+  if (review.event === "FEEDBACK") return "feedback";
+  if (review.event === "REQUEST_CHANGES") return "request_changes";
+  return null;
+}
+
+async function unaddressedOutOfBandReviews(input: {
+  repo: S.Repo;
+  run: S.WorkflowRunRow;
+  prIssueId: number;
+  worktree: string;
+  currentHead: string | null;
+}): Promise<WorkflowOutOfBandReviewWire[]> {
+  const events = S.eventsForWorkflowRun(input.repo.id, input.run.id);
+  const reviews = S.listReviews(input.prIssueId);
+  const unaddressed: WorkflowOutOfBandReviewWire[] = [];
+  for (const review of reviews) {
+    const verdict = outOfBandReviewVerdict(review, input.run.id);
+    if (!verdict) continue;
+    const submitted = events.find((event) => {
+      if (event.type !== "workflow_run.review_submitted") return false;
+      const payload = JSON.parse(event.payload) as { review_id?: unknown };
+      return payload.review_id === review.id;
+    });
+    // The run-scoped event is the submission boundary. Reviews that predate this run have no such
+    // event and must not be revived as new work for a later attempt on the same PR.
+    if (!submitted) continue;
+    const submittedPayload = JSON.parse(submitted.payload) as {
+      submission_head_sha?: unknown;
+    };
+    const submissionHeadSha =
+      typeof submittedPayload.submission_head_sha === "string"
+        ? submittedPayload.submission_head_sha
+        : review.head_sha;
+    let addressed = false;
+    for (const event of events) {
+      if (event.type !== "workflow_run.turn_done" || event.id <= submitted.id) {
+        continue;
+      }
+      const payload = JSON.parse(event.payload) as { head_sha?: unknown };
+      const turnDoneHead =
+        typeof payload.head_sha === "string" ? payload.head_sha : null;
+      if (!submissionHeadSha || !turnDoneHead || !input.currentHead) continue;
+      const advancedAtTurn = await isHeadAheadOfReview(
+        input.worktree,
+        {
+          id: review.id,
+          event: "request_changes",
+          headSha: submissionHeadSha,
+        },
+        turnDoneHead,
+      );
+      const turnDoneHeadStillPresent =
+        turnDoneHead === input.currentHead ||
+        (await isHeadAheadOfReview(
+          input.worktree,
+          {
+            id: review.id,
+            event: "request_changes",
+            headSha: turnDoneHead,
+          },
+          input.currentHead,
+        ));
+      if (advancedAtTurn && turnDoneHeadStillPresent) {
+        addressed = true;
+        break;
+      }
+    }
+    if (!addressed) {
+      unaddressed.push({ id: review.id, verdict });
+    }
+  }
+  return unaddressed;
 }
 
 function stepActorAllowed(
@@ -1504,11 +1570,11 @@ export const workflowRuns = {
   // engine records the fact as an event, and the parent then observes HEAD / review state (via
   // its event cursor and step status) before deciding any transition. The declaration never
   // carries content and never substitutes for domain truth.
-  turnDone(
+  async turnDone(
     name: string,
     input: { run: number },
     sessionId?: string | null,
-  ): WorkflowTurnDoneResult {
+  ): Promise<WorkflowTurnDoneResult> {
     const r = repoOr404(name);
     ensureWritable(r);
     const run = workflowRunOr404(input.run);
@@ -1522,6 +1588,17 @@ export const workflowRuns = {
         "Workflow turn done must be declared by a launched Execute session",
       );
     }
+    const prIssue = issueOr404(r, run.pr_number, "pull");
+    const pull = S.getPull(prIssue.id);
+    if (!pull)
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    const headSha = await worktreeHead(
+      workflowRunWorktree({
+        repo: r,
+        prNumber: run.pr_number,
+        headRef: pull.head_ref,
+      }),
+    );
     const event = S.emitEvent(
       r.id,
       "workflow_run.turn_done",
@@ -1537,6 +1614,7 @@ export const workflowRuns = {
         // pane by this session id (same pattern as workflow_run.github_event).
         parent_session_id: run.parent_session_id,
         session_id: sessionId ?? null,
+        head_sha: headSha,
       },
     );
     return { run: run.id, event_id: event.id };
@@ -1675,6 +1753,31 @@ export const workflowRuns = {
     const prIssue = issueOr404(r, run.pr_number, "pull");
     const latestReview = latestWorkflowRunReview(prIssue.id, run.id);
     const turnDone = turnDoneObservation(r.id, run.id, latestReview);
+    const pull = S.getPull(prIssue.id);
+    if (!pull)
+      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+    const worktree = workflowRunWorktree({
+      repo: r,
+      prNumber: run.pr_number,
+      headRef: pull.head_ref,
+    });
+    const pendingEffect = S.pendingWorkflowEventEffect(run.id);
+    const pendingEffectReceipt: WorkflowPendingEffectReceiptWire | null =
+      pendingEffect
+        ? {
+            event_id: pendingEffect.event_id,
+            effect: pendingEffect.effect,
+            status: "pending",
+            claimed_at: pendingEffect.created_at,
+          }
+        : null;
+    const unaddressedReviews = await unaddressedOutOfBandReviews({
+      repo: r,
+      run,
+      prIssueId: prIssue.id,
+      worktree,
+      currentHead: progress.currentHead,
+    });
     const costIncrementUsd = run.cost_increment_usd ?? devCostLimitUsd();
     return {
       run: run.id,
@@ -1682,7 +1785,11 @@ export const workflowRuns = {
       status: run.status,
       active_step: run.active_step,
       rework_count: run.rework_count,
+      rework_limit: WORKFLOW_REWORK_LIMIT,
       needs_human_reason: run.needs_human_reason,
+      awaiting_human: run.needs_human_reason !== null,
+      pending_effect_receipt: pendingEffectReceipt,
+      unaddressed_out_of_band_reviews: unaddressedReviews,
       cost_increment_usd: costIncrementUsd,
       cost_limit_usd: run.cost_limit_usd ?? costIncrementUsd,
       head_sha: progress.currentHead,
@@ -1709,7 +1816,11 @@ export const workflowRuns = {
           ? null
           : workflowStep(observed.active_step),
       needsHumanReason: observed.needs_human_reason,
+      awaitingHuman: observed.awaiting_human,
       reworkCount: observed.rework_count,
+      reworkLimit: observed.rework_limit,
+      pendingEffectReceipt: observed.pending_effect_receipt,
+      unaddressedOutOfBandReviews: observed.unaddressed_out_of_band_reviews,
       currentHead: observed.head_sha,
       headAheadOfBase: observed.head_ahead_of_base,
       mergeConflict: observed.merge_conflict,
