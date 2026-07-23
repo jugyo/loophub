@@ -641,6 +641,20 @@ async function stepStatus(): Promise<void> {
   }
 }
 
+async function nextAction(): Promise<void> {
+  const runId = positiveInt(rest[0], "<run>");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).workflowRuns.next(repo, { run: runId }),
+  );
+  if (flags.json) {
+    out(result);
+    return;
+  }
+  console.log(result.action);
+  console.log(result.reason);
+}
+
 // The Execute child's payload-less turn-done declaration (#1358). Target resolution mirrors the
 // launched-session environment (LOOPHUB_WORKFLOW_*), so the child needs no flags.
 async function turnDone(): Promise<void> {
@@ -809,6 +823,8 @@ export async function run(): Promise<void> {
     await escalate();
   } else if (sub === "watch") {
     await watch();
+  } else if (sub === "next") {
+    await nextAction();
   } else if (sub === "effect") {
     await effect();
   } else if (sub === "step") {

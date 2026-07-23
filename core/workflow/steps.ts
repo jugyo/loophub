@@ -22,6 +22,8 @@ export type WorkflowStepEvalInput = {
   currentHead: string | null;
   /** Whether HEAD is ahead of the run's base branch. */
   headAheadOfBase: boolean;
+  /** Whether the latest reviewed SHA is an ancestor of current HEAD. */
+  headAheadOfLatestReview: boolean;
   /** Latest review submitted by this run's Verify children, or null. */
   latestReview: WorkflowLatestReviewState | null;
 };
@@ -61,10 +63,8 @@ function reviewIsFresh(
  *   is a timing signal, never part of this truth.
  * - Verify is complete when the latest review is pinned to the current HEAD.
  *
- * Because both compare a pinned SHA to the current HEAD, moving the head
- * forward turns a previously complete step back to incomplete (stale) — after
- * a pass, new commits make the existing review stale and require a fresh
- * Verify.
+ * Review progress is an ancestry relation, not mere SHA inequality: rewinding
+ * or moving to a diverged HEAD makes a review stale without completing Execute.
  */
 export function evaluateWorkflowSteps(
   input: WorkflowStepEvalInput,
@@ -75,7 +75,7 @@ export function evaluateWorkflowSteps(
   if (!input.headAheadOfBase) {
     executeMissing.push("head equals base");
   }
-  if (input.latestReview && fresh) {
+  if (input.latestReview && !input.headAheadOfLatestReview) {
     executeMissing.push(
       `head has not advanced past review #${input.latestReview.id} (${input.latestReview.event})`,
     );

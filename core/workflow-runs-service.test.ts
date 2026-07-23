@@ -715,6 +715,25 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   );
   const prIssueId = S.getIssue(repo.id, started.pr.number)!.id;
 
+  const eventCountBeforeNext = S.eventsForWorkflowRun(
+    repo.id,
+    started.run.id,
+  ).length;
+  const initialNext = await svc.workflowRuns.next(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(initialNext.action).toBe("launch_execute");
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toEqual(initialNext);
+  expect(S.eventsForWorkflowRun(repo.id, started.run.id)).toHaveLength(
+    eventCountBeforeNext,
+  );
+  expect(S.getWorkflowRun(started.run.id)).toMatchObject({
+    current_step: "execute",
+    rework_count: 0,
+  });
+
   // Launch + confirm the Execute child.
   const exec = await svc.workflowRuns.launchStep(
     repo.full_name,
@@ -745,8 +764,15 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(status.last_turn_done_at).not.toBeNull();
+  expect(status.turn_done_for_active_execute).toBe(true);
   expect(status.head_ahead_of_base).toBe(false);
   expect(status.steps.execute.complete).toBe(false);
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({
+    action: "deliver",
+    delivery_reason: "no_progress",
+  });
   await expect(
     svc.workflowRuns.advanceToVerify(
       repo.full_name,
@@ -755,8 +781,33 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     ),
   ).rejects.toMatchObject({ status: 409 });
 
-  // Execute commits, then declares turn done again. Now HEAD is ahead of base.
+  // Delivering a recovery instruction starts a new Execute round. The previous turn-done must not
+  // carry into that round: neither activation nor a commit is enough until Execute declares the
+  // new turn done.
+  svc.workflowRuns.activateStep(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+    },
+    parent,
+  );
+  expect(
+    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ turn_done_for_active_execute: false });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "wait" });
   const headA = commit(started.worktree, "impl.txt", "done\n");
+  expect(
+    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ turn_done_for_active_execute: false });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "wait" });
+
+  // Execute declares the new turn done. Now HEAD is ahead of base.
   svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
@@ -767,6 +818,12 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   });
   expect(status.head_ahead_of_base).toBe(true);
   expect(status.steps.execute.complete).toBe(true);
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({
+    action: "advance_and_verify",
+    transition: "advance_to_verify",
+  });
 
   await svc.workflowRuns.advanceToVerify(
     repo.full_name,
@@ -796,6 +853,9 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(verify.base_sha).toBe(
     gitAt(started.worktree, ["merge-base", "main", headA]),
   );
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "wait" });
   // Verify pointers are the fixed triple plus the review target — never a task/diff file.
   expect(verify.pointers.map((p) => p.label)).toEqual([
     "repo",
@@ -843,6 +903,9 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     fresh: true,
     headSha: headA,
   });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "wait" });
 
   // A live Execute injection after a fresh pass keeps lifecycle at Verify, but records the actual
   // child that receives pane input. Cost detection must target that executor, not the last verifier.

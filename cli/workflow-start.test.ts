@@ -432,6 +432,32 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   expect(existsSync(body.worktree)).toBe(true);
   expect(existsSync(body.lock_path)).toBe(true);
   expect(body.parent.user_prompt).not.toMatch(/^\/lh-/m);
+
+  const nextJson = run([
+    "workflow",
+    "next",
+    String(body.run.id),
+    "--repo",
+    REPO,
+    "--json",
+  ]);
+  expect(nextJson.exitCode, nextJson.stderr).toBe(0);
+  expect(JSON.parse(nextJson.stdout)).toMatchObject({
+    action: "launch_execute",
+  });
+
+  const nextText = run([
+    "workflow",
+    "next",
+    String(body.run.id),
+    "--repo",
+    REPO,
+  ]);
+  expect(nextText.exitCode, nextText.stderr).toBe(0);
+  expect(nextText.stdout.trim().split("\n")).toEqual([
+    "launch_execute",
+    "Execute has not started.",
+  ]);
 });
 
 test("workflow launch-step rebuilds only its parent tab as a staged grid", () => {

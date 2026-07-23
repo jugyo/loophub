@@ -49,6 +49,10 @@ import {
   workflowStepPrompt,
 } from "../workflow/prompts.ts";
 import {
+  reconcileWorkflow,
+  type WorkflowNextAction,
+} from "../workflow/reconcile.ts";
+import {
   writeParentContract,
   writeStepContract,
 } from "../workflow/run-files.ts";
@@ -196,6 +200,8 @@ export type WorkflowStepStatusResult = {
   run: number;
   current_step: string;
   status: string;
+  active_step: string | null;
+  rework_count: number;
   // Non-null while the run is held for a human (#1307) — surfaced here so the parent's re-check
   // and an operator's inspection see the hold instead of a plain running run.
   needs_human_reason: string | null;
@@ -203,9 +209,14 @@ export type WorkflowStepStatusResult = {
   cost_limit_usd: number;
   head_sha: string | null;
   head_ahead_of_base: boolean;
+  head_ahead_of_latest_review: boolean;
+  merge_conflict: boolean;
   // Timestamp of the latest turn-done declaration event, or null. A timing signal for the
   // parent's observation — never part of step-completion truth.
   last_turn_done_at: string | null;
+  // True when the latest turn-done declaration belongs to the active Execute round. An Execute
+  // launch or activate-step starts a new round, so an older declaration cannot leak into it.
+  turn_done_for_active_execute: boolean;
   steps: WorkflowStepStatuses;
 };
 
@@ -421,6 +432,52 @@ function reviewObservation(
     id: review.id,
     event: review.event === "PASS" ? "pass" : "request_changes",
     headSha: review.head_sha,
+  };
+}
+
+function turnDoneObservation(
+  repoId: number,
+  runId: number,
+  review: S.ReviewRow | null,
+): { at: string | null; forActiveExecute: boolean } {
+  const events = S.eventsForWorkflowRun(repoId, runId);
+  const turnDone = events.findLast(
+    (event) => event.type === "workflow_run.turn_done",
+  );
+  if (!turnDone) return { at: null, forActiveExecute: false };
+  const executeRound = events.findLast((event) => {
+    if (
+      event.type !== "workflow_step.launched" &&
+      event.type !== "workflow_run.updated"
+    ) {
+      return false;
+    }
+    const payload = JSON.parse(event.payload) as Record<string, unknown>;
+    return event.type === "workflow_step.launched"
+      ? payload.step === "execute"
+      : payload.transition === "activate_step" &&
+          payload.active_step === "execute";
+  });
+  if (!executeRound) {
+    return { at: turnDone.created_at, forActiveExecute: false };
+  }
+  const reviewSubmitted = review
+    ? events.findLast((event) => {
+        if (event.type !== "workflow_run.review_submitted") return false;
+        return (
+          (JSON.parse(event.payload) as { review_id?: unknown }).review_id ===
+          review.id
+        );
+      })
+    : undefined;
+  const afterReview = !review
+    ? true
+    : reviewSubmitted
+      ? turnDone.id > reviewSubmitted.id
+      : turnDone.created_at > review.created_at;
+  return {
+    at: turnDone.created_at,
+    forActiveExecute: turnDone.id > executeRound.id && afterReview,
   };
 }
 
@@ -1516,19 +1573,50 @@ export const workflowRuns = {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
     const progress = await workflowRunProgress(r, run);
+    const prIssue = issueOr404(r, run.pr_number, "pull");
+    const latestReview = latestWorkflowRunReview(prIssue.id, run.id);
+    const turnDone = turnDoneObservation(r.id, run.id, latestReview);
     const costIncrementUsd = run.cost_increment_usd ?? devCostLimitUsd();
     return {
       run: run.id,
       current_step: run.current_step,
       status: run.status,
+      active_step: run.active_step,
+      rework_count: run.rework_count,
       needs_human_reason: run.needs_human_reason,
       cost_increment_usd: costIncrementUsd,
       cost_limit_usd: run.cost_limit_usd ?? costIncrementUsd,
       head_sha: progress.currentHead,
       head_ahead_of_base: progress.headAheadOfBase,
-      last_turn_done_at: S.latestWorkflowTurnDoneAt(r.id, run.id),
+      head_ahead_of_latest_review: progress.headAheadOfLatestReview,
+      merge_conflict: progress.mergeConflict,
+      last_turn_done_at: turnDone.at,
+      turn_done_for_active_execute: turnDone.forActiveExecute,
       steps: progress.steps,
     };
+  },
+
+  async next(
+    name: string,
+    input: { run: number },
+    sessionId?: string | null,
+  ): Promise<WorkflowNextAction> {
+    const observed = await workflowRuns.status(name, input, sessionId);
+    return reconcileWorkflow({
+      status: observed.status,
+      currentStep: workflowStep(observed.current_step),
+      activeStep:
+        observed.active_step === null
+          ? null
+          : workflowStep(observed.active_step),
+      needsHumanReason: observed.needs_human_reason,
+      reworkCount: observed.rework_count,
+      currentHead: observed.head_sha,
+      headAheadOfBase: observed.head_ahead_of_base,
+      mergeConflict: observed.merge_conflict,
+      turnDoneForActiveExecute: observed.turn_done_for_active_execute,
+      steps: observed.steps,
+    });
   },
 
   // Display state for issue / PR detail. Verification is derived from the same current HEAD versus

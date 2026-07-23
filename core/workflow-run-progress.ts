@@ -1,5 +1,5 @@
 import { ServiceError } from "./errors.ts";
-import { git } from "./git.ts";
+import { git, mergePreview } from "./git.ts";
 import {
   evaluateWorkflowSteps,
   type WorkflowLatestReviewState,
@@ -14,6 +14,8 @@ import {
 export type WorkflowRunProgress = {
   currentHead: string | null;
   headAheadOfBase: boolean;
+  headAheadOfLatestReview: boolean;
+  mergeConflict: boolean;
   steps: WorkflowStepStatuses;
 };
 
@@ -54,23 +56,60 @@ async function isHeadAheadOfBase(
   }
 }
 
+async function conflictsWithBase(
+  worktree: string,
+  baseBranch: string,
+  head: string | null,
+): Promise<boolean> {
+  if (!head) return false;
+  return (await mergePreview(worktree, baseBranch, head)).conflict;
+}
+
+async function isHeadAheadOfLatestReview(
+  worktree: string,
+  review: WorkflowLatestReviewState | null,
+  head: string | null,
+): Promise<boolean> {
+  if (!review?.headSha || !head || review.headSha === head) return false;
+  const result = await git(worktree, [
+    "merge-base",
+    "--is-ancestor",
+    review.headSha,
+    head,
+  ]);
+  if (result.code === 0) return true;
+  if (result.code === 1) return false;
+  throw new ServiceError(
+    422,
+    `could not compare Workflow HEAD to review #${review.id}: ${result.stderr.trim()}`,
+  );
+}
+
 export async function workflowRunProgress(input: {
   worktree: string;
   baseBranch: string;
   latestReview: WorkflowLatestReviewState | null;
 }): Promise<WorkflowRunProgress> {
   const currentHead = await worktreeHeadOptional(input.worktree);
-  const headAheadOfBase = await isHeadAheadOfBase(
-    input.worktree,
-    input.baseBranch,
-    currentHead,
-  );
+  const [headAheadOfBase, headAheadOfLatestReview, mergeConflict] =
+    await Promise.all([
+      isHeadAheadOfBase(input.worktree, input.baseBranch, currentHead),
+      isHeadAheadOfLatestReview(
+        input.worktree,
+        input.latestReview,
+        currentHead,
+      ),
+      conflictsWithBase(input.worktree, input.baseBranch, currentHead),
+    ]);
   return {
     currentHead,
     headAheadOfBase,
+    headAheadOfLatestReview,
+    mergeConflict,
     steps: evaluateWorkflowSteps({
       currentHead,
       headAheadOfBase,
+      headAheadOfLatestReview,
       latestReview: input.latestReview,
     }),
   };
