@@ -133,7 +133,7 @@ enrichする変更が起動やcleanupの実装にも隣接した。
   staging tabの作成/削除、1 paneのno-op、invalid/foreign paneの可視エラーをfake adapter経由で検証
 - `cli/workflow-start.test.ts`: agent起動成功のconfirmがlayoutより先であること、layout失敗がnon-zeroに
   なること、無関係focusが不変であることをinterface越しに検証
-- `npm test`、`npm run typecheck`、`npm run lint` を全体実行
+- `npm run test:full`、`npm run typecheck`、`npm run lint` を全体実行
 
 ### 候補2: PR詳細を振る舞い所有moduleへ分ける
 

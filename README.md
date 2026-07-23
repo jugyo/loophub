@@ -99,7 +99,7 @@ on:
     # Prefer fire-and-forget launchers; do not block the worker on long agent runs.
     - run: lh workflow start "$LH_ISSUE_NUMBER" --workflow default --herdr
   pull_request.opened:
-    - run: npm test
+    - run: npm run test:full
 ```
 
 ```sh
@@ -162,12 +162,17 @@ workspace で、ローカルブランチも存在する必要がある。`--work
 
 ```sh
 npm install
-npm test          # vitest（core テスト）
-npm run test:watch
-npm run typecheck # tsc --noEmit（型チェック）
-npm run lint      # biome check（lint + フォーマット検査・書き込みなし）
-npm run format    # biome format --write（フォーマット適用）
+npm test                 # 高速テスト（実 git 統合テストを除く）
+npm run test:integration # 実 git リポジトリ／worktree を使う統合テスト
+npm run test:full        # 高速テストと実 git 統合テストを含むフルテスト
+npm run test:watch       # 高速テストの watch
+npm run typecheck        # tsc --noEmit（型チェック）
+npm run lint             # biome check（lint + フォーマット検査・書き込みなし）
+npm run format           # biome format --write（フォーマット適用）
 ```
+
+テスト群の境界、計測結果、棚卸し判断は
+[テストスイート棚卸し](docs/test-suite-inventory.ja.md) を参照。
 
 lint / format は [Biome](https://biomejs.dev) を使用（設定は `biome.json`）。
 

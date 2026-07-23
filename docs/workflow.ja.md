@@ -188,7 +188,7 @@ unified exec session、最終応答を出さない待機、完了 result の回�
 ```sh
 LOOPHUB_LIVE_AGENT_RUNTIME=claude-code npm test -- cli/workflow-watch.runtime.test.ts
 LOOPHUB_LIVE_AGENT_RUNTIME=codex npm test -- cli/workflow-watch.runtime.test.ts
-npm test -- core/workflow/prompts.test.ts core/workflow-runs-service.test.ts
+npm run test:full -- core/workflow/prompts.test.ts core/workflow-runs-service.test.ts
 ```
 
 ### 注入 round の監査

@@ -106,11 +106,13 @@ hand-write a wire type in `web/` that duplicates one already produced by a core 
 
 ```sh
 npm install
-npm test            # vitest run (core tests)
-npm run test:watch
-npm run typecheck   # tsc --noEmit (uses the local typescript; avoids npx)
-npm run lint        # biome check (lint + format check; no writes)
-npm run format      # biome format --write (apply formatting)
+npm test                 # fast tests (excludes real-git integration tests)
+npm run test:integration # real-git repository/worktree integration tests
+npm run test:full        # full root test suite
+npm run test:watch       # watch fast tests
+npm run typecheck        # tsc --noEmit (uses the local typescript; avoids npx)
+npm run lint             # biome check (lint + format check; no writes)
+npm run format           # biome format --write (apply formatting)
 ```
 
 Lint/format use [Biome](https://biomejs.dev). Config is `biome.json`; the linter is a

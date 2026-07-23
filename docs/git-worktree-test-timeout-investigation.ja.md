@@ -47,7 +47,7 @@ npm install
 ```sh
 for i in {1..10}; do
   run_tmp=$(mktemp -d "/tmp/lh-timeout-target-${i}.XXXXXX")
-  TMPDIR="$run_tmp" npm test -- \
+  TMPDIR="$run_tmp" npm run test:integration -- \
     core/git.test.ts core/worktrees.test.ts \
     --maxWorkers=1 --minWorkers=1 --reporter=basic
   rm -rf "$run_tmp"
@@ -61,7 +61,7 @@ done
 for workers in 4 10 20; do
   for i in 1 2 3; do
     run_tmp=$(mktemp -d "/tmp/lh-timeout-${workers}w-${i}.XXXXXX")
-    TMPDIR="$run_tmp" npm test -- \
+    TMPDIR="$run_tmp" npm run test:integration -- \
       --maxWorkers="$workers" --minWorkers="$workers" --reporter=basic
     rm -rf "$run_tmp"
   done
@@ -72,9 +72,9 @@ done
 
 ```sh
 run_tmp=$(mktemp -d /tmp/lh-collision.XXXXXX)
-TMPDIR="$run_tmp" npm test -- core/worktrees.test.ts \
+TMPDIR="$run_tmp" npm run test:integration -- core/worktrees.test.ts \
   --maxWorkers=1 --minWorkers=1 &
-TMPDIR="$run_tmp" npm test -- core/worktrees.test.ts \
+TMPDIR="$run_tmp" npm run test:integration -- core/worktrees.test.ts \
   --maxWorkers=1 --minWorkers=1 &
 wait
 rm -rf "$run_tmp"
@@ -260,7 +260,7 @@ timeout は 3/3 で発生したため、path collision を除去しても主現�
 
 推奨案を維持・実装する際は、次を同じ commit で実行する。
 
-1. `npm test` を現行設定で 3 回実行し、全 run が成功することを確認する。
+1. `npm run test:integration` を現行設定で 3 回実行し、全 run が成功することを確認する。
 2. `core/git.test.ts core/worktrees.test.ts` を 1 worker で 10 回反復し、240/240 tests が成功し、
    個別 test timeout がないことを確認する。
 3. CI または同一 host で複数 test process を動かす運用では、run ごとに固有 `TMPDIR` を設定する。
