@@ -16,6 +16,7 @@ import { Link } from "@tanstack/react-router";
 import { History } from "lucide-react";
 import { useState } from "react";
 import type { WorkflowRunState } from "@/api/types";
+import { isPullHerdrWorking } from "@/components/herdr-badge";
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -90,6 +91,11 @@ export function WorkflowRunStatusSection({
     state.status === "running" &&
     state.needs_human_reason === null &&
     state.verification_status === "verified";
+  const working = isPullHerdrWorking(
+    herdrSessionsError ? undefined : herdrSessions,
+    `${owner}/${repo}`,
+    state.pr_number,
+  );
 
   return (
     <section
@@ -120,6 +126,7 @@ export function WorkflowRunStatusSection({
           herdrSessions={herdrSessionsError ? undefined : herdrSessions}
           herdrUnavailable={herdrSessionsError}
           size="md"
+          working={working}
           conflict={conflict}
         />
 

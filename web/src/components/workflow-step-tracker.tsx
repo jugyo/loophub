@@ -529,7 +529,7 @@ export function WorkflowStepTracker({
                 // Done is a terminal, not an active step — never glow it, even while working.
                 isCurrent &&
                   working &&
-                  !isDoneVerified &&
+                  stage.key !== "done" &&
                   "animate-[workflow-stage-glow_2.4s_ease-in-out_infinite]",
               )}
             >

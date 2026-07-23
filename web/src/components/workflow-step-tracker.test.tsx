@@ -415,6 +415,22 @@ describe("WorkflowStepTracker", () => {
     );
   });
 
+  it("does not glow the terminal Conflict pill while working", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({
+          current_step: "verify",
+          verification_status: "verified",
+        })}
+        working
+        conflict
+      />,
+    );
+    expect(screen.getByText("Conflict!").className).not.toContain(
+      "workflow-stage-glow",
+    );
+  });
+
   it("annotates Verify with reverify when verification is stale", () => {
     render(
       <WorkflowStepTracker
