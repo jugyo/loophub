@@ -31,16 +31,12 @@ test("Japanese contracts preserve the required commands and decision branches", 
   for (const command of [
     "lh workflow run advance-to-verify",
     "lh workflow run request-rework",
-    "lh workflow run await-human",
     "lh workflow run increase-cost-limit",
     "lh workflow run resume",
     "lh workflow deliver",
+    "lh workflow cost-hold",
     "lh workflow launch-step",
     "lh workflow step status",
-    "lh workflow effect begin",
-    "lh workflow effect complete",
-    "herdr pane run",
-    "herdr pane send-keys",
     "lh workflow escalate-human",
   ]) {
     expect(parent).toContain(command);
@@ -57,9 +53,7 @@ test("Japanese contracts preserve the required commands and decision branches", 
   ]) {
     expect(parent).toContain(branch);
   }
-  expect(parent).toContain("`increment_usd`");
-  expect(parent).toContain("`next_limit_usd`");
-  expect(parent).toContain("`status: pending`");
+  expect(parent).not.toContain("herdr pane send-keys <pane_id> Escape");
   expect(parent).toContain("cursor を seed");
   expect(parent).not.toContain("pull loop");
   expect(parent).toContain(
@@ -376,21 +370,24 @@ test("parent uses a runtime-managed workflow watcher and reacts to cost limit fa
   expect(contract).not.toContain("nohup lh workflow watch");
   expect(contract).toContain("workflow_run.cost_exceeded");
   expect(contract).toContain("current cumulative `limit_usd`");
-  expect(contract).toContain("fixed `increment_usd`");
   expect(contract).toContain(
     "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
   );
-  expect(contract).toContain("herdr pane send-keys <pane_id> Escape");
-  expect(contract).toContain("submits the literal text");
-  expect(contract).toContain("usage_session_id");
-  expect(contract).toContain("increment_usd");
-  expect(contract).toContain("next_limit_usd");
+  expect(contract).toContain(
+    "lh workflow cost-hold --repo '<repo>' --run <run> --event <event.id>",
+  );
+  expect(contract).not.toContain("herdr pane send-keys <pane_id> Escape");
+  expect(contract).not.toContain("submits the literal text");
+  expect(contract).not.toContain("usage_session_id");
+  expect(contract).not.toContain("increment_usd");
+  expect(contract).not.toContain("next_limit_usd");
   expect(contract).toContain("active_step");
-  expect(contract).toContain("active_session_id");
   expect(contract).toContain("lh workflow deliver");
   expect(contract).toContain("Cost limit exceeded. Continue?");
-  expect(contract).toContain("accept only **yes** or **no**");
-  expect(contract).toContain("Handle each event id\nexactly once");
+  expect(contract).toContain("including a `completed` replay");
+  expect(japanese).toContain("`completed` replay を含む");
+  expect(contract).toMatch(/accept only \*\*yes\*\* or\s+\*\*no\*\*/u);
+  expect(contract).toContain("does not fire the effects again");
   expect(contract).toContain(
     "first run `lh workflow step status <run> --repo '<repo>' --json`",
   );
@@ -401,25 +398,14 @@ test("parent uses a runtime-managed workflow watcher and reacts to cost limit fa
     "For Verify, launch a new child under the shared invariant",
   );
   expect(contract).toMatch(/leave the human hold in\s+place/u);
-  expect(contract).toContain("do not report success or retry\nside effects");
+  expect(contract).toContain("do not retry `cost-hold` automatically");
+  expect(contract).not.toContain("cost.escape");
+  expect(contract).not.toContain("cost.pane-notification");
+  expect(contract).not.toContain("cost.human-confirmation");
   expect(contract).toContain(
-    "lh workflow effect begin --repo '<repo>' --run <run> --event <event.id> --effect <key> --json",
+    "keep its completed-step and failed\ncommand output visible",
   );
-  expect(contract).toContain(
-    "lh workflow effect complete --repo '<repo>' --run <run> --event <event.id> --effect <key>",
-  );
-  for (const key of [
-    "cost.escape",
-    "cost.pane-notification",
-    "cost.human-confirmation",
-  ]) {
-    expect(contract).toContain(key);
-  }
-  expect(contract).not.toContain("escalation.issue-comment");
-  expect(contract).not.toContain("escalation.inbox");
-  expect(contract).toContain("print the failed command and error, run");
-  expect(contract).toContain("retain or establish the");
-  expect(contract).toContain("human hold");
+  expect(contract).toContain("retain the hold it established");
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
   expect(contract).not.toContain("lh workflow run stop");
   expect(contract).not.toContain("sleep briefly and poll again");

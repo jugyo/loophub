@@ -1662,7 +1662,7 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("lh workflow run request-rework");
   expect(contract).toContain("lh workflow launch-step");
   expect(contract).toContain("lh workflow step status");
-  expect(contract).toContain("herdr pane run");
+  expect(contract).toContain("lh workflow deliver");
   expect(contract).toContain("record its printed `agent` and `session` lines");
   // Transitions come from observation; watcher events only wake reconciliation.
   expect(contract).toContain(
@@ -1698,7 +1698,7 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("lh workflow escalate-human");
   expect(contract).not.toContain("lh issue comment");
   expect(contract).not.toContain("lh inbox send");
-  expect(contract).toContain("run await-human");
+  expect(contract).toContain("lh workflow cost-hold");
   expect(contract).toContain("The run stays `running` after reaching the goal");
   expect(contract).not.toContain("--status blocked");
   // The parent stays alive instead of resuming a child session.

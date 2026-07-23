@@ -77,33 +77,31 @@ Injection is delivery only; observe turn done and HEAD afterward.
 
 Use `lh workflow run advance-to-verify` and `lh workflow run request-rework` for lifecycle transitions. Use
 `lh workflow deliver` for live Execute control, `lh workflow launch-step` to start children, and
-`lh workflow step status` for observation. Use
-`herdr pane send-keys <pane_id> Escape` only for a real cost interrupt. The rework limit is 3.
+`lh workflow step status` for observation. Use `lh workflow cost-hold` for a real cost interrupt. The rework limit is 3.
 
 ## Interrupts
 
-`workflow_run.cost_exceeded` is a one-time interrupt outside the loop. Read `cost_usd`, current cumulative `limit_usd`,
-fixed `increment_usd`, `next_limit_usd`, `usage_session_id`, `active_step`, and `active_session_id`. Handle each event id
-exactly once. Do not treat `usage_session_id` as the interrupt target; resolve only the `active_step` child registered
-with `active_session_id`, then:
+`workflow_run.cost_exceeded` is a one-time interrupt outside the loop. Retain its current cumulative `limit_usd` and
+`active_step` for the continuation decision, then run:
 
-1. `lh workflow run await-human --repo '<repo>' --run <run> --reason 'Cost limit exceeded: current $<cost>, limit $<limit>; human decision required'`
-2. Send the real key with `herdr pane send-keys <pane_id> Escape`; `herdr pane run ... Escape` submits the literal text.
-3. Send exactly once to that pane: `orchestrator: Cost limit exceeded: current $<cost>, limit $<limit>. Wait for human instruction.`
-4. Show **Cost limit exceeded. Continue?** in the parent pane and accept only **yes** or **no**.
+`lh workflow cost-hold --repo '<repo>' --run <run> --event <event.id>`
+
+The command validates the event, resolves the active child pane, establishes the human hold, sends the real Escape key,
+and injects the one-line cost notification. Its event receipt guards the entire operation: a replay reports the receipt
+as `completed` or `pending` and does not fire the effects again. If it exits non-zero, keep its completed-step and failed
+command output visible, retain the hold it established, and do not retry `cost-hold` automatically.
+
+After any `completed` result, including a `completed` replay, show **Cost limit exceeded. Continue?** in the parent pane
+and accept only **yes** or **no**. The receipt proves the interrupt effects ran; it does not record the human continuation
+decision.
 
 For yes, first run `lh workflow step status <run> --repo '<repo>' --json`, then
 `lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>`. Only after the increase
 succeeds run `lh workflow run resume --repo '<repo>' --run <run> --step <active_step>`. Execute receives a re-check
 instruction in the same pane. For Verify, launch a new child under the shared invariant. For no, leave the human hold in
-place. If pane resolution, hold, Esc, notification, or confirmation fails, do not report success or retry
-side effects. Instead, print the failed command and error, run
-`lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]`, and retain or establish the
-human hold. Use stable keys `cost.escape`, `cost.pane-notification`, and `cost.human-confirmation`. Before each cost effect, run
-`lh workflow effect begin --repo '<repo>' --run <run> --event <event.id> --effect <key> --json`; only when it returns
-`execute: true` perform the side effect. Immediately record
-`lh workflow effect complete --repo '<repo>' --run <run> --event <event.id> --effect <key>` with the same event id and key.
-A `status: pending` receipt requires human confirmation rather than automatic replay.
+place. If `cost-hold` exits non-zero, do not report success or retry it. Instead, keep its completed-step and failed command
+output visible, run `lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]`, and retain
+the hold it established.
 
 ## Human escalation
 

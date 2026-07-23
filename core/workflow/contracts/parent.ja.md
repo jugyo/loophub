@@ -78,34 +78,32 @@ delivery を行う。pane が存在すれば `agent_status: done` でも deliver
 
 loop の遷移は `lh workflow run advance-to-verify` と `lh workflow run request-rework` で行う。live Execute の
 control は `lh workflow deliver`、子の起動は `lh workflow launch-step`、観測は `lh workflow step status` を
-使い、cost interrupt の実 Esc だけ `herdr pane send-keys <pane_id> Escape` を使う。
+使い、実際の cost interrupt には `lh workflow cost-hold` を使う。
 rework 上限は 3。
 
 ## Interrupts
 
-`workflow_run.cost_exceeded` は loop から分離された一回性の interrupt である。payload の `cost_usd`、現在累計
-`limit_usd`、固定増分 `increment_usd`、`next_limit_usd`、`usage_session_id`、`active_step`、
-`active_session_id` を読む。`usage_session_id` を中断対象にせず、`active_session_id` を登録した
-`active_step` の child だけを解決する。event id ごとに一度だけ処理し、次を順に行う。
+`workflow_run.cost_exceeded` は loop から分離された一回性の interrupt である。後続判断に使う現在累計
+`limit_usd` と `active_step` を保持し、次を実行する。
 
-1. `lh workflow run await-human --repo '<repo>' --run <run> --reason 'Cost limit exceeded: current $<cost>, limit $<limit>; human decision required'`
-2. `herdr pane send-keys <pane_id> Escape`。`herdr pane run ... Escape` は文字列を submit するので使わない。
-3. 同じ pane に `orchestrator: Cost limit exceeded: current $<cost>, limit $<limit>. Wait for human instruction.` を 1 回だけ送る。
-4. parent pane に **Cost limit exceeded. Continue?** と表示し、回答は **yes** / **no** のみ受ける。
+`lh workflow cost-hold --repo '<repo>' --run <run> --event <event.id>`
+
+この command が event の検証、active child pane の解決、human hold、実 Esc、1 行の cost 通知を行う。
+event receipt はこの処理全体を guard し、replay は receipt の `completed` / `pending` を表示して effect を
+再発火しない。non-zero の場合は、完了済み step と失敗 command の出力を見える状態に保ち、確立済みの hold を
+維持して `cost-hold` を自動 retry しない。
+
+初回実行だけでなく `completed` replay を含むすべての `completed` 結果の後、parent pane に
+**Cost limit exceeded. Continue?** と表示し、回答は **yes** / **no** のみ受ける。receipt は interrupt effect の
+実行済みを示すだけで、人間の継続判断は記録しない。
 
 yes なら最初に `lh workflow step status <run> --repo '<repo>' --json` を実行し、次に
 `lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>` を実行する。
 増額が成功した後だけ `lh workflow run resume --repo '<repo>' --run <run> --step <active_step>` で hold を解除する。
 Execute は同じ pane へ再確認を注入する。Verify は上記共通原則に従い新しい child を起動する。no は hold の
-ままにする。pane 解決 / hold / Esc / 通知 / 確認の失敗は成功扱いせず、retry や重複 side effect を行わない。
-失敗した command と error は parent pane に表示し、
-`lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]` で通知して human hold
-を維持または確立する。cost effect には stable key `cost.escape`、`cost.pane-notification`、
-`cost.human-confirmation` を使う。各 cost effect の前に
-`lh workflow effect begin --repo '<repo>' --run <run> --event <event.id> --effect <key> --json` を実行し、
-`execute: true` の場合だけ side effect を行う。直後に
-`lh workflow effect complete --repo '<repo>' --run <run> --event <event.id> --effect <key>` を同じ event id /
-key で記録する。`status: pending` は自動再実行せず人間へ確認する。
+ままにする。`cost-hold` が non-zero なら成功扱いせず、retry しない。完了済み step と失敗 command の出力を
+見える状態に保ち、`lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]`
+を実行して、`cost-hold` が確立した hold を維持する。
 
 ## Human escalation
 

@@ -230,6 +230,21 @@ export function pendingWorkflowEventEffect(
     .get(runId) as WorkflowEventEffectRow | null;
 }
 
+export function getWorkflowEventEffect(
+  runId: number,
+  eventId: number,
+  effect: string,
+): WorkflowEventEffectRow | null {
+  return (
+    (db
+      .query(
+        `SELECT * FROM workflow_event_effects
+         WHERE run_id = ? AND event_id = ? AND effect = ?`,
+      )
+      .get(runId, eventId, effect) as WorkflowEventEffectRow | null) ?? null
+  );
+}
+
 export function beginWorkflowEventEffect(
   runId: number,
   eventId: number,
@@ -263,12 +278,7 @@ export function beginWorkflowEventEffect(
       runId,
     ) as WorkflowEventEffectRow | null;
   if (inserted) return { row: inserted, acquired: true };
-  const existing = db
-    .query(
-      `SELECT * FROM workflow_event_effects
-       WHERE run_id = ? AND event_id = ? AND effect = ?`,
-    )
-    .get(runId, eventId, effect) as WorkflowEventEffectRow | null;
+  const existing = getWorkflowEventEffect(runId, eventId, effect);
   return existing ? { row: existing, acquired: false } : null;
 }
 

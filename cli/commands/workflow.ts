@@ -822,6 +822,49 @@ async function effect(): Promise<void> {
   }
 }
 
+async function costHold(): Promise<void> {
+  const run = positiveInt(flags.run, "--run");
+  const event = positiveInt(flags.event, "--event");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).workflowCostHold.run(
+      repo,
+      { run, event },
+      await writeSession(),
+    ),
+  );
+  if (flags.json) out(result);
+  if (result.status === "completed") {
+    if (!flags.json) {
+      console.log(`completed cost hold for event #${event}`);
+      console.log(`receipt\t${result.receipt}`);
+    }
+    return;
+  }
+  if (result.status === "already_completed") {
+    if (!flags.json) {
+      console.log(`cost hold for event #${event} is already complete`);
+      console.log(`receipt\t${result.receipt}`);
+    }
+    return;
+  }
+  if (result.status === "pending") {
+    fail(
+      `cost hold for event #${event} is pending; side effects will not be replayed automatically`,
+    );
+  }
+  const failure = result.failed!;
+  fail(
+    [
+      `cost hold failed at ${failure.step}`,
+      `command: ${failure.command}`,
+      `error: ${failure.error}`,
+      `completed: ${result.completed.join(", ") || "none"}`,
+      `receipt: ${result.receipt}`,
+    ].join("\n"),
+  );
+}
+
 export async function run(): Promise<void> {
   const s = await svc();
   if (sub === "list") {
@@ -895,6 +938,8 @@ export async function run(): Promise<void> {
     await nextAction();
   } else if (sub === "effect") {
     await effect();
+  } else if (sub === "cost-hold") {
+    await costHold();
   } else if (sub === "step") {
     if (rest[0] === "input") await stepInput();
     else if (rest[0] === "status") await stepStatus();
