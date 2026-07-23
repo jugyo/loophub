@@ -82,12 +82,8 @@ test("Japanese contracts preserve the required commands and decision branches", 
 test("Execute pulls domain state itself and declares turn done", () => {
   const execute = workflowContractText("execute");
 
-  // Repo may be inferred from a LoopHub worktree cwd (#1595); --repo is only required when
-  // not inferable from cwd, or when overriding inference.
   expect(execute).toContain("lh issue view <n> --json");
-  expect(execute).toContain(
-    "`resolveRepo()` also infers the registered repo without `--repo`",
-  );
+  expect(execute).toContain("Read its body and comments");
   expect(execute).toContain("lh pr update <pr>");
   expect(execute).toContain(
     "lh workflow turn done --repo '<repo>' --run <run>",
@@ -97,10 +93,13 @@ test("Execute pulls domain state itself and declares turn done", () => {
   );
   expect(execute).toContain("present the full concrete question");
   expect(execute).toContain("in the same pane");
-  // The contract retires the artifact / step-output path by name.
-  expect(execute).toContain(
-    "There is no execution-report artifact and no `lh workflow step output`",
-  );
+  expect(execute).not.toContain("task.md");
+  expect(execute).not.toContain("findings.md");
+  expect(execute).not.toContain("execution-report");
+  expect(execute).not.toContain("workflow step output");
+  expect(execute).not.toContain("resolveRepo()");
+  expect(execute).not.toContain("run lifecycle");
+  expect(execute.match(/lh workflow turn done/gu)).toHaveLength(1);
 });
 
 test("Verify reviews a fixed base..head diff it computes itself", () => {
@@ -328,8 +327,8 @@ test("parent and execute contracts agree that the parent injects orchestrator me
   const parent = workflowContractText("parent");
   const execute = workflowContractText("execute");
 
+  expect(execute).toContain("launch note");
   expect(execute).toContain("messages beginning with `orchestrator:`");
-  expect(execute).toContain("this same live session");
   expect(execute).toContain("orchestrator: address review #<id>");
   expect(parent).toContain("orchestrator:");
   expect(parent).toContain("herdr pane run");
@@ -339,26 +338,28 @@ test("parent and execute contracts agree that the parent injects orchestrator me
 test("Execute treats additional work notes as Issue/PR requests and completes via turn done", () => {
   const execute = workflowContractText("execute");
 
-  expect(execute).toContain("Follow-ups: rework vs additional work");
-  expect(execute).toContain("additional request against the\nIssue or PR");
-  expect(execute).toContain("human notes, continuing instructions");
-  expect(execute).toContain("--note");
-  expect(execute).toContain(
-    "Do not invent a special completion path for additional work",
-  );
+  expect(execute).toContain("Classify follow-ups");
+  expect(execute).toContain("Additional work");
+  expect(execute).toContain("ordinary product or engineering work");
   expect(execute).toContain(
     "lh workflow turn done --repo '<repo>' --run <run>",
   );
-  // Rework stays distinct from free-form extension, but both end the same way.
   expect(execute).toContain("review response");
-  expect(execute).toContain(
-    "same commit-then-turn-done rule applies\n   to rework and to additional work",
-  );
-  // Narrow non-implementation edges stay compatible with parent observation.
   expect(execute).toContain("Question-only or blocked on a human decision");
-  expect(execute).toContain("declare turn done **without** a commit");
-  expect(execute).toContain("unchanged HEAD leaves the existing pass\nfresh");
-  expect(execute).toContain("You do **not** have to rewrite the issue body");
+  expect(execute).toContain("Confirmation or no domain change required");
+  expect(execute).toContain("Ambiguous but in scope");
+  expect(execute).toContain("Running it without a commit is valid only");
+  expect(execute).toMatch(/You do not need\s+to rewrite the Issue body/u);
+  expect(execute.split("\n").length).toBeLessThanOrEqual(60);
+
+  const executeJa = workflowContractText("execute", "ja");
+  expect(executeJa).toContain("Rework（`orchestrator: address review #<id>`）");
+  expect(executeJa).toContain("追加作業");
+  expect(executeJa).toContain("質問だけ、または人間の判断待ち");
+  expect(executeJa).toContain("確認のみ、またはドメイン変更不要");
+  expect(executeJa).toContain("曖昧だが scope 内");
+  expect(executeJa.match(/lh workflow turn done/gu)).toHaveLength(1);
+  expect(executeJa.split("\n").length).toBeLessThanOrEqual(60);
 });
 
 test("Japanese workflow design documents the continuing lifecycle after a pass", () => {
