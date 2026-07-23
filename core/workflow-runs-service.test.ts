@@ -160,7 +160,7 @@ test("start prepares a run and hands the parent pointers, not synthesized inputs
     "utf8",
   );
   expect(parentSystemPrompt).toContain("step: parent");
-  expect(parentSystemPrompt).toContain("# workflow parent contract");
+  expect(parentSystemPrompt).toContain("# Parent workflow contract");
   // start wires this run's own identifiers into the parent prompt; its wording and the transition
   // commands it carries are covered by core/workflow/prompts.test.ts.
   expect(result.parent.user_prompt).toContain(`run: ${result.run.id}`);
@@ -1464,43 +1464,45 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("lh workflow launch-step");
   expect(contract).toContain("lh workflow step status");
   expect(contract).toContain("herdr pane run");
-  expect(contract).toContain("record the printed `agent` line");
-  // Transitions come from observation; watcher events are only timing signals.
+  expect(contract).toContain("record its printed `agent` and `session` lines");
+  // Transitions come from observation; watcher events only wake reconciliation.
   expect(contract).toContain(
     "lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json",
   );
+  expect(contract).toContain(
+    "start the exact returned `next_command` unchanged",
+  );
   expect(contract).not.toContain("--ack");
+  expect(contract).not.toContain("replay the event");
   expect(contract).not.toContain("lh subscribe --repo");
-  expect(contract).toContain("timing signals, never transition facts");
-  expect(contract).toContain("Transitions are driven only by observation");
+  expect(contract).toContain("## Goal");
+  expect(contract).toContain("## Reconcile loop");
+  expect(contract).toContain("## Gap table");
   expect(contract).toMatch(/never use pane output|PR body marker/i);
-  expect(contract).toContain("Do not use child-session resume");
+  expect(contract).toContain("Do not use child-session");
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
-  // The simplified observed transition table.
+  // The simplified observed gap table.
   expect(contract).toContain("launch Execute");
-  expect(contract).toContain("execute complete");
+  expect(contract).toContain("Execute HEAD is ahead of base");
   expect(contract).toContain("`pass`");
-  expect(contract).toContain("does not complete or freeze the run");
-  expect(contract).toContain("launch a fresh Verify child directly");
-  expect(contract).toContain("## Continuing after a pass");
-  expect(contract).toContain("--step execute --note <instruction>");
+  expect(contract).toContain("stays `running` after reaching the goal");
+  expect(contract).toContain("launch Verify for the current HEAD");
+  expect(contract).toContain("--note <text|->");
   expect(contract).toContain("lh workflow run resume");
   expect(contract).toContain("`request_changes`");
-  expect(contract).toContain("planning and reflection");
   // Rework increments the count, caps at 3, delivers a review-id pointer, and re-verifies fresh.
-  expect(contract).toContain("run request-rework");
-  expect(contract).toContain("would exceed 3");
+  expect(contract).toContain("lh workflow run request-rework");
+  expect(contract).toContain("The rework limit is 3");
   expect(contract).toContain("--step execute --review <id>");
-  expect(contract).toMatch(/Verify as a\s+fresh child/u);
+  expect(contract).toContain("Verify is **always a fresh child**");
   // Escalation uses issue comment + inbox while the parent waits for human input.
   expect(contract).toContain("lh issue comment");
   expect(contract).toContain("lh inbox send");
   expect(contract).toContain("run await-human");
-  expect(contract).toContain("Keep the run `running`");
+  expect(contract).toContain("The run stays `running` after reaching the goal");
   expect(contract).not.toContain("--status blocked");
-  // The parent stays alive instead of resuming a child session; skill independence.
-  expect(contract).toContain("no resume command is needed");
-  expect(contract).toContain("Do not call slash commands");
+  // The parent stays alive instead of resuming a child session.
+  expect(contract).toContain("Do not use child-session");
 });
 
 test("stateForIssue / stateForPull expose run display state, or null when absent (#1008)", async () => {
