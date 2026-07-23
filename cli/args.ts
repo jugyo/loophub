@@ -91,9 +91,12 @@ export type Flags = {
   "workflow-id"?: string;
   "no-launch"?: boolean;
   run?: string;
+  watch?: boolean;
   note?: string;
+  text?: string;
   reason?: string;
   "expected-limit"?: string;
+  "requires-changes"?: string;
   review?: string;
   "tab-id"?: string;
 };
@@ -185,9 +188,12 @@ const { values, positionals } = parseArgs({
     "workflow-id": { type: "string" },
     "no-launch": { type: "boolean" },
     run: { type: "string" },
+    watch: { type: "boolean" },
     note: { type: "string" },
+    text: { type: "string" },
     reason: { type: "string" },
     "expected-limit": { type: "string" },
+    "requires-changes": { type: "string" },
     review: { type: "string" },
     "tab-id": { type: "string" },
   },

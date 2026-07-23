@@ -14,7 +14,8 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 const CLI = join(import.meta.dirname, "index.ts");
-const TSX = createRequire(import.meta.url).resolve("tsx");
+const REQUIRE = createRequire(import.meta.url);
+const TSX = REQUIRE.resolve("tsx");
 const HOME = mkdtempSync(join(tmpdir(), "lh-workflow-start-home-"));
 const REPO_PATH = realpathSync(
   mkdtempSync(join(tmpdir(), "lh-workflow-start-repo-")),
@@ -366,6 +367,100 @@ test("workflow turn done resolves explicit, launched, and cwd repo contexts", ()
   expect(escalated.stdout).toContain(
     `declared escalation for Workflow run #${runResult.run.id}`,
   );
+
+  const humanEscalation = run(
+    [
+      "workflow",
+      "escalate-human",
+      "--repo",
+      REPO,
+      "--run",
+      String(runResult.run.id),
+      "--reason",
+      "Rework limit reached",
+    ],
+    { LOOPHUB_SESSION_ID: parentSession },
+  );
+  expect(humanEscalation.exitCode, humanEscalation.stderr).toBe(0);
+  expect(humanEscalation.stdout).toContain("issue comment\tcompleted");
+  expect(humanEscalation.stdout).toContain("inbox\tcompleted");
+
+  const replay = run(
+    [
+      "workflow",
+      "escalate-human",
+      "--repo",
+      REPO,
+      "--run",
+      String(runResult.run.id),
+      "--reason",
+      "Rework limit reached",
+    ],
+    { LOOPHUB_SESSION_ID: parentSession },
+  );
+  expect(replay.exitCode, replay.stderr).toBe(0);
+  expect(replay.stdout).toContain("issue comment\talready completed");
+  expect(replay.stdout).toContain("inbox\talready completed");
+
+  const issueView = run(["issue", "view", issue, "--repo", REPO, "--json"]);
+  expect(JSON.parse(issueView.stdout).comment_list).toHaveLength(1);
+
+  const { DatabaseSync } = REQUIRE(
+    "node:sqlite",
+  ) as typeof import("node:sqlite");
+  const db = new DatabaseSync(join(HOME, "loophub.db"));
+  db.exec(`
+    CREATE TRIGGER fail_escalation_inbox
+    BEFORE INSERT ON inbox_messages
+    BEGIN
+      SELECT RAISE(FAIL, 'inbox unavailable');
+    END
+  `);
+  const partial = run(
+    [
+      "workflow",
+      "escalate-human",
+      "--repo",
+      REPO,
+      "--run",
+      String(runResult.run.id),
+      "--reason",
+      "Inbox failure must be visible",
+    ],
+    { LOOPHUB_SESSION_ID: parentSession },
+  );
+  db.exec("DROP TRIGGER fail_escalation_inbox");
+  db.close();
+  expect(partial.exitCode).not.toBe(0);
+  expect(partial.stdout).toContain("issue comment\tcompleted");
+  expect(partial.stdout).toContain("inbox\tfailed");
+  expect(partial.stdout).toContain("inbox error\tinbox unavailable");
+
+  const partialReplay = run(
+    [
+      "workflow",
+      "escalate-human",
+      "--repo",
+      REPO,
+      "--run",
+      String(runResult.run.id),
+      "--reason",
+      "Inbox failure must be visible",
+    ],
+    { LOOPHUB_SESSION_ID: parentSession },
+  );
+  expect(partialReplay.exitCode).not.toBe(0);
+  expect(partialReplay.stdout).toContain("issue comment\talready completed");
+  expect(partialReplay.stdout).toContain("inbox\tpending");
+  const issueAfterFailure = run([
+    "issue",
+    "view",
+    issue,
+    "--repo",
+    REPO,
+    "--json",
+  ]);
+  expect(JSON.parse(issueAfterFailure.stdout).comment_list).toHaveLength(2);
 });
 
 afterAll(() => {
@@ -432,6 +527,32 @@ test("workflow start --no-launch creates a run and skips herdr launch", () => {
   expect(existsSync(body.worktree)).toBe(true);
   expect(existsSync(body.lock_path)).toBe(true);
   expect(body.parent.user_prompt).not.toMatch(/^\/lh-/m);
+
+  const nextJson = run([
+    "workflow",
+    "next",
+    String(body.run.id),
+    "--repo",
+    REPO,
+    "--json",
+  ]);
+  expect(nextJson.exitCode, nextJson.stderr).toBe(0);
+  expect(JSON.parse(nextJson.stdout)).toMatchObject({
+    action: "launch_execute",
+  });
+
+  const nextText = run([
+    "workflow",
+    "next",
+    String(body.run.id),
+    "--repo",
+    REPO,
+  ]);
+  expect(nextText.exitCode, nextText.stderr).toBe(0);
+  expect(nextText.stdout.trim().split("\n")).toEqual([
+    "launch_execute",
+    "Execute has not started.",
+  ]);
 });
 
 test("workflow launch-step rebuilds only its parent tab as a staged grid", () => {

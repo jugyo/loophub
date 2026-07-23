@@ -7,7 +7,6 @@ export type WorkflowWatcherLogEntry = {
   repo: string;
   run: number;
   cursor?: number;
-  next_command?: string;
   error?: string;
 };
 

@@ -21,7 +21,8 @@ export const WORKFLOW_EXAMPLE_PROMPTS: WorkflowExamplePrompts = {
     "tests, and style, commit with a concise outcome message, update the PR body, and declare the " +
     "turn done when the work is committed.",
   verify_prompt:
-    "Compute the base..head diff and review only that. Run the repository's standard test and lint " +
-    "commands. Walk each acceptance criterion and confirm it is met. Record findings in the review " +
-    "with the exact command and its output rather than a summary.",
+    "Compute the merge-base-to-head diff with git diff base...head and review only that. Run the " +
+    "repository's standard test and lint commands. Walk each acceptance criterion and confirm it " +
+    "is met. Record findings in the review with the exact command and its output rather than a " +
+    "summary.",
 };

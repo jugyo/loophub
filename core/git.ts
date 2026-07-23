@@ -479,7 +479,14 @@ export async function mergePreview(
 ): Promise<MergePreview> {
   const r = await git(repoPath, ["merge-tree", "--write-tree", base, head]);
   const tree = r.stdout.split("\n")[0]?.trim() || null;
-  return { conflict: r.code !== 0, tree };
+  const conflictTree = tree && /^[0-9a-f]{40,64}$/u.test(tree);
+  if (r.code !== 0 && (r.code !== 1 || !conflictTree)) {
+    const detail = r.stderr.trim();
+    throw new Error(
+      detail ? `git merge-tree failed: ${detail}` : "git merge-tree failed",
+    );
+  }
+  return { conflict: r.code === 1, tree };
 }
 
 export interface MergeResult {

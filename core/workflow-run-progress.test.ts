@@ -101,3 +101,59 @@ test("workflowRunProgress: head ahead of base completes Execute; a review pinned
 
   gitAt(["checkout", "-q", "main"]);
 });
+
+test("workflowRunProgress reports a conflict between the current head and base", async () => {
+  gitAt(["checkout", "-q", "-b", "conflicting"]);
+  commit("conflict.txt", "feature\n");
+  gitAt(["checkout", "-q", "main"]);
+  commit("conflict.txt", "base\n");
+  gitAt(["checkout", "-q", "conflicting"]);
+
+  const progress = await workflowRunProgress({
+    worktree: REPO,
+    baseBranch: "main",
+    latestReview: null,
+  });
+
+  expect(progress.headAheadOfBase).toBe(true);
+  expect(progress.mergeConflict).toBe(true);
+});
+
+test("workflowRunProgress does not treat rewound or diverged HEAD as ahead of a review", async () => {
+  gitAt(["checkout", "-q", "main"]);
+  gitAt(["checkout", "-q", "-b", "review-line"]);
+  const first = commit("review-first.txt", "first\n");
+  const reviewed = commit("review-second.txt", "second\n");
+  gitAt(["reset", "--hard", first]);
+
+  const rewound = await workflowRunProgress({
+    worktree: REPO,
+    baseBranch: "main",
+    latestReview: { id: 2, event: "request_changes", headSha: reviewed },
+  });
+  expect(rewound.headAheadOfBase).toBe(true);
+  expect(rewound.headAheadOfLatestReview).toBe(false);
+  expect(rewound.steps.execute.complete).toBe(false);
+
+  gitAt(["checkout", "-q", "main"]);
+  gitAt(["checkout", "-q", "-b", "diverged"]);
+  commit("diverged.txt", "other work\n");
+  const diverged = await workflowRunProgress({
+    worktree: REPO,
+    baseBranch: "main",
+    latestReview: { id: 2, event: "request_changes", headSha: reviewed },
+  });
+  expect(diverged.headAheadOfBase).toBe(true);
+  expect(diverged.headAheadOfLatestReview).toBe(false);
+  expect(diverged.steps.execute.complete).toBe(false);
+});
+
+test("workflowRunProgress keeps a merge-tree failure visible", async () => {
+  await expect(
+    workflowRunProgress({
+      worktree: REPO,
+      baseBranch: "missing-base",
+      latestReview: null,
+    }),
+  ).rejects.toThrow("git merge-tree failed");
+});

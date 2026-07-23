@@ -12,7 +12,6 @@ import {
   type WorkflowPaneLayoutHerdr,
 } from "../../core/terminal/workflow-pane-layout.ts";
 import { workflowParentHerdrAgentName } from "../../core/workflow/herdr-agents.ts";
-import { logWorkflowWatcher } from "../../core/workflow-watcher-log.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   display,
@@ -621,6 +620,16 @@ async function stepStatus(): Promise<void> {
   if (result.needs_human_reason !== null) {
     console.log(`needs_human\t${display(result.needs_human_reason)}`);
   }
+  console.log(`rework\t${result.rework_count}/${result.rework_limit}`);
+  if (result.pending_effect_receipt !== null) {
+    const receipt = result.pending_effect_receipt;
+    console.log(
+      `pending_effect\t#${receipt.event_id} ${display(receipt.effect)}`,
+    );
+  }
+  for (const review of result.unaddressed_out_of_band_reviews) {
+    console.log(`unaddressed_review\t#${review.id} ${display(review.verdict)}`);
+  }
   console.log(`cost_increment_usd\t${result.cost_increment_usd}`);
   console.log(`cost_limit_usd\t${result.cost_limit_usd}`);
   console.log(`head\t${display(result.head_sha ?? "(unresolved)")}`);
@@ -640,6 +649,50 @@ async function stepStatus(): Promise<void> {
       );
     }
   }
+}
+
+async function nextAction(): Promise<void> {
+  const runId = positiveInt(rest[0], "<run>");
+  const event =
+    flags.event === undefined ? undefined : positiveInt(flags.event, "--event");
+  const note =
+    flags.note === "-"
+      ? await readStdin()
+      : typeof flags.note === "string"
+        ? flags.note
+        : undefined;
+  const watch = flags.watch === true;
+  if (
+    [event !== undefined, note !== undefined, watch].filter(Boolean).length > 1
+  ) {
+    fail("workflow next accepts either --watch, --event, or --note");
+  }
+  const requiresChanges =
+    flags["requires-changes"] === undefined
+      ? undefined
+      : flags["requires-changes"] === "true"
+        ? true
+        : flags["requires-changes"] === "false"
+          ? false
+          : fail("--requires-changes must be true or false");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).workflowRuns.next(repo, {
+      run: runId,
+      event,
+      note,
+      requiresChanges,
+      watch,
+    }),
+  );
+  if (flags.json) {
+    out(result);
+    return;
+  }
+  console.log(result.action);
+  console.log(result.reason);
+  if (result.event)
+    console.log(`event\t#${result.event.id} ${result.event.type}`);
 }
 
 // The Execute child's payload-less turn-done declaration (#1358). Target resolution mirrors the
@@ -689,41 +742,57 @@ async function escalate(): Promise<void> {
     );
 }
 
-function formatWorkflowWatchCommand(input: {
-  repo: string;
-  run: number;
-  since: number;
-}): string {
-  return `lh workflow watch --repo ${shQuote(input.repo)} --run ${input.run} --since ${input.since} --json`;
+async function deliver(): Promise<void> {
+  const runId = positiveInt(flags.run, "--run");
+  const text = flags.text;
+  if (text === undefined) fail("--text is required");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).workflowRuns.deliver(
+      repo,
+      { run: runId, text },
+      await writeSession(),
+    ),
+  );
+  if (flags.json) out(result);
+  else {
+    console.log(`delivered instruction to ${result.agent_name}`);
+    console.log(`pane\t${result.pane_id}`);
+    console.log(`session\t${result.session_id}`);
+  }
 }
 
-async function watch(): Promise<void> {
-  const watchIndex = process.argv.indexOf("watch", 2);
-  const service = await svc();
-  try {
-    const input = service.parseWorkflowWatchArgs(
-      process.argv.slice(watchIndex + 1),
-    );
-    const result = await service.workflowWatch.watch(input);
-    const nextCommand = formatWorkflowWatchCommand({
-      repo: input.repo,
-      run: input.run,
-      since: result.next_since,
-    });
-    logWorkflowWatcher({
-      event: "delivered",
-      repo: input.repo,
-      run: input.run,
-      cursor: result.next_since,
-      next_command: nextCommand,
-    });
-    out({
-      run: result.run,
-      events: result.events,
-      next_command: nextCommand,
-    });
-  } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+async function escalateHuman(): Promise<void> {
+  if (!flags.reason) fail("--reason is required");
+  const runId = positiveInt(
+    flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
+    "--run or LOOPHUB_WORKFLOW_RUN",
+  );
+  const repo =
+    flags.repo ?? process.env.LOOPHUB_WORKFLOW_REPO ?? (await resolveRepo());
+  const issue =
+    flags.issue === undefined ? undefined : positiveInt(flags.issue, "--issue");
+  const result = await runOp(async () =>
+    (await svc()).workflowEscalation.escalateHuman(
+      repo,
+      { run: runId, reason: flags.reason!, issue },
+      await writeSession(),
+    ),
+  );
+  if (flags.json) {
+    out(result);
+  } else {
+    console.log(`Workflow run #${result.run}\tIssue #${result.issue}`);
+    for (const [label, effect] of [
+      ["issue comment", result.effects.issue_comment],
+      ["inbox", result.effects.inbox],
+    ] as const) {
+      console.log(`${label}\t${effect.status.replaceAll("_", " ")}`);
+      if (effect.error) console.log(`${label} error\t${effect.error}`);
+    }
+  }
+  if (!result.ok) {
+    fail("escalate-human did not complete every notification");
   }
 }
 
@@ -751,6 +820,49 @@ async function effect(): Promise<void> {
   } else {
     console.log(`completed effect ${result.effect} for event #${result.event}`);
   }
+}
+
+async function costHold(): Promise<void> {
+  const run = positiveInt(flags.run, "--run");
+  const event = positiveInt(flags.event, "--event");
+  const repo = await resolveRepo();
+  const result = await runOp(async () =>
+    (await svc()).workflowCostHold.run(
+      repo,
+      { run, event },
+      await writeSession(),
+    ),
+  );
+  if (flags.json) out(result);
+  if (result.status === "completed") {
+    if (!flags.json) {
+      console.log(`completed cost hold for event #${event}`);
+      console.log(`receipt\t${result.receipt}`);
+    }
+    return;
+  }
+  if (result.status === "already_completed") {
+    if (!flags.json) {
+      console.log(`cost hold for event #${event} is already complete`);
+      console.log(`receipt\t${result.receipt}`);
+    }
+    return;
+  }
+  if (result.status === "pending") {
+    fail(
+      `cost hold for event #${event} is pending; side effects will not be replayed automatically`,
+    );
+  }
+  const failure = result.failed!;
+  fail(
+    [
+      `cost hold failed at ${failure.step}`,
+      `command: ${failure.command}`,
+      `error: ${failure.error}`,
+      `completed: ${result.completed.join(", ") || "none"}`,
+      `receipt: ${result.receipt}`,
+    ].join("\n"),
+  );
 }
 
 export async function run(): Promise<void> {
@@ -816,10 +928,16 @@ export async function run(): Promise<void> {
     await turnDone();
   } else if (sub === "escalate") {
     await escalate();
-  } else if (sub === "watch") {
-    await watch();
+  } else if (sub === "deliver") {
+    await deliver();
+  } else if (sub === "escalate-human") {
+    await escalateHuman();
+  } else if (sub === "next") {
+    await nextAction();
   } else if (sub === "effect") {
     await effect();
+  } else if (sub === "cost-hold") {
+    await costHold();
   } else if (sub === "step") {
     if (rest[0] === "input") await stepInput();
     else if (rest[0] === "status") await stepStatus();

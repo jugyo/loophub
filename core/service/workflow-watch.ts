@@ -6,26 +6,13 @@ import {
 } from "../workflow-watcher-log.ts";
 import { events } from "./events.ts";
 
-export type WorkflowWatchInput = {
+export type WorkflowEventWaitInput = {
   repo: string;
   run: number;
   since: number;
 };
 
-export type WorkflowWatchResult = {
-  run: number;
-  events: LoopEvent[];
-  next_since: number;
-};
-
-type WorkflowWatchRun = {
-  id: number;
-  repo_id: number;
-};
-
 type WorkflowWatchDeps = {
-  getRepo(repo: string): { id: number } | null;
-  getRun(run: number): WorkflowWatchRun | null;
   readEvents(input: {
     since: number;
     repo: string;
@@ -38,20 +25,8 @@ type WorkflowWatchDeps = {
   log?(entry: WorkflowWatcherLogEntry): void;
 };
 
-const VALUE_OPTIONS = ["--repo", "--run", "--since"] as const;
-type ValueOption = (typeof VALUE_OPTIONS)[number];
-
 function inputError(message: string): never {
-  throw new Error(`workflow watch: ${message}`);
-}
-
-function decimal(value: string, name: ValueOption, positive: boolean): number {
-  if (!/^[0-9]+$/.test(value)) inputError(`invalid ${name}: ${value}`);
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || (positive ? parsed <= 0 : parsed < 0)) {
-    inputError(`invalid ${name}: ${value}`);
-  }
-  return parsed;
+  throw new Error(`workflow event: ${message}`);
 }
 
 function validateRepo(repo: string): void {
@@ -81,7 +56,7 @@ function validateEffect(effect: string): void {
   }
 }
 
-function runInRepo(input: { repo: string; run: number }): WorkflowWatchRun {
+function runInRepo(input: { repo: string; run: number }): S.WorkflowRunRow {
   const [owner, name] = input.repo.split("/");
   const repo = S.getRepo(owner, name);
   if (!repo) inputError(`repository not found: ${input.repo}`);
@@ -92,45 +67,7 @@ function runInRepo(input: { repo: string; run: number }): WorkflowWatchRun {
   return run;
 }
 
-export function parseWorkflowWatchArgs(args: string[]): WorkflowWatchInput {
-  const values = new Map<ValueOption, string>();
-  for (let index = 0; index < args.length; index += 1) {
-    const raw = args[index];
-    if (raw === "--json") continue;
-    const option = raw as ValueOption | undefined;
-    if (!option || !VALUE_OPTIONS.includes(option)) {
-      inputError(`unknown option: ${option ?? ""}`);
-    }
-    if (values.has(option)) inputError(`duplicate option: ${option}`);
-    const value = args[index + 1];
-    if (value === undefined || value.startsWith("--")) {
-      inputError(`${option} requires a value`);
-    }
-    values.set(option, value);
-    index += 1;
-  }
-
-  for (const option of VALUE_OPTIONS) {
-    if (!values.has(option)) inputError(`missing required option: ${option}`);
-  }
-
-  const repo = values.get("--repo")!;
-  validateRepo(repo);
-  return {
-    repo,
-    run: decimal(values.get("--run")!, "--run", true),
-    since: decimal(values.get("--since")!, "--since", false),
-  };
-}
-
 const defaultDeps: WorkflowWatchDeps = {
-  getRepo(repo) {
-    const [owner, name] = repo.split("/");
-    return S.getRepo(owner, name);
-  },
-  getRun(run) {
-    return S.getWorkflowRun(run);
-  },
   readEvents(input) {
     return events.list(input);
   },
@@ -193,24 +130,19 @@ export const workflowWatch = {
     };
   },
 
-  async watch(
-    input: WorkflowWatchInput,
+  // Block until the run has an event after `since`, then return that single event. `lh workflow
+  // next --watch` owns the cursor around this wait; callers of this helper have already resolved
+  // the repo and run.
+  async waitForEvent(
+    input: WorkflowEventWaitInput,
     deps: WorkflowWatchDeps = defaultDeps,
-  ): Promise<WorkflowWatchResult> {
-    const repo = deps.getRepo(input.repo);
-    if (!repo) inputError(`repository not found: ${input.repo}`);
-    const run = deps.getRun(input.run);
-    if (!run || run.repo_id !== repo.id) {
-      inputError(`run #${input.run} not found in ${input.repo}`);
-    }
-
+  ): Promise<LoopEvent> {
     deps.log?.({
       event: "started",
       repo: input.repo,
       run: input.run,
       cursor: input.since,
     });
-
     while (true) {
       let found: LoopEvent[];
       try {
@@ -220,8 +152,8 @@ export const workflowWatch = {
           types: ["workflow_run"],
           runId: input.run,
           order: "asc",
-          // One event keeps each wait and subsequent domain-state observation focused. The result
-          // carries the next cursor; presentation layers decide how to expose the next invocation.
+          // One event keeps each wait and the subsequent domain-state observation focused: the
+          // caller reconciles from the state that event produced before waking on the next one.
           limit: 1,
         });
       } catch (error) {
@@ -232,10 +164,9 @@ export const workflowWatch = {
           cursor: input.since,
           error: errorMessage(error),
         });
-        throw new Error(
-          `workflow watch: event read failed: ${errorMessage(error)}`,
-          { cause: error },
-        );
+        throw new Error(`workflow event: read failed: ${errorMessage(error)}`, {
+          cause: error,
+        });
       }
       deps.log?.({
         event: "poll",
@@ -244,12 +175,13 @@ export const workflowWatch = {
         cursor: input.since,
       });
       if (found.length > 0) {
-        const nextSince = found[0].id;
-        return {
+        deps.log?.({
+          event: "delivered",
+          repo: input.repo,
           run: input.run,
-          events: found,
-          next_since: nextSince,
-        };
+          cursor: found[0].id,
+        });
+        return found[0];
       }
       try {
         await deps.wait();
@@ -261,7 +193,7 @@ export const workflowWatch = {
           cursor: input.since,
           error: errorMessage(error),
         });
-        throw new Error(`workflow watch: wait failed: ${errorMessage(error)}`, {
+        throw new Error(`workflow event: wait failed: ${errorMessage(error)}`, {
           cause: error,
         });
       }

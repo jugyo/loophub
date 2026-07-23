@@ -45,6 +45,7 @@ import type {
 } from "./terminal/herdr-status.ts";
 import { herdrSessionName } from "./terminal/terminal-launch.ts";
 import type { WorkflowHerdrAgent } from "./workflow/herdr-agents.ts";
+import type { WorkflowStepStatuses } from "./workflow/steps.ts";
 import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
 
 // Wire-type SSOT (AGENTS.md): the coding-runtime id is part of several wire shapes below (agent cost
@@ -1593,6 +1594,43 @@ export interface WorkflowRunStateWire {
   updated_at: string;
   latest_review: WorkflowRunReviewSummaryWire | null;
   verification_status: "unverified" | "verified" | "stale";
+}
+
+export interface WorkflowPendingEffectReceiptWire {
+  event_id: number;
+  effect: string;
+  status: "pending";
+  claimed_at: string;
+}
+
+export interface WorkflowOutOfBandReviewWire {
+  id: number;
+  verdict: "feedback" | "request_changes";
+}
+
+// Complete observed state used by the Workflow parent and `lh workflow next`. This wire shape
+// remains in core even though its current presentation is CLI-only, so future web consumers share
+// the same source of truth instead of re-declaring it.
+export interface WorkflowStepStatusWire {
+  run: number;
+  current_step: string;
+  status: string;
+  active_step: string | null;
+  rework_count: number;
+  rework_limit: number;
+  needs_human_reason: string | null;
+  awaiting_human: boolean;
+  pending_effect_receipt: WorkflowPendingEffectReceiptWire | null;
+  unaddressed_out_of_band_reviews: WorkflowOutOfBandReviewWire[];
+  cost_increment_usd: number;
+  cost_limit_usd: number;
+  head_sha: string | null;
+  head_ahead_of_base: boolean;
+  head_ahead_of_latest_review: boolean;
+  merge_conflict: boolean;
+  last_turn_done_at: string | null;
+  turn_done_for_active_execute: boolean;
+  steps: WorkflowStepStatuses;
 }
 
 export function workflowRunStateJSON(input: {

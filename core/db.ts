@@ -780,6 +780,11 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   active_step        TEXT,
   active_session_id  TEXT,
   child_sequence     INTEGER NOT NULL DEFAULT 0,
+  -- Wake bookmark for "lh workflow next --watch". It exists so a restarted parent resumes after the
+  -- events it already woke on; it is an internal implementation detail of that command, never an
+  -- acknowledgement the caller manages. Reconciliation decides from observed state, so a wake lost
+  -- to a stopped caller only delays the same decision until the next event.
+  event_cursor       INTEGER NOT NULL DEFAULT 0,
   -- Snapshot the configured per-interval allowance when the run starts. The current cumulative
   -- limit advances only through the explicit cost-limit increase operation.
   cost_increment_usd REAL NOT NULL,
@@ -1032,6 +1037,12 @@ tryExec(
 );
 tryExec(
   "ALTER TABLE workflow_runs ADD COLUMN child_sequence INTEGER NOT NULL DEFAULT 0",
+);
+// Internal wake bookmark for `lh workflow next --watch` (#1744). Existing rows start at 0, so the
+// first watch replays the run's history one event at a time; each replay reconciles from current
+// state, so the only cost is extra loop turns.
+tryExec(
+  "ALTER TABLE workflow_runs ADD COLUMN event_cursor INTEGER NOT NULL DEFAULT 0",
 );
 // Human-wait marker (#1307): non-NULL means the run is waiting for an explicit human instruction
 // while staying `running` (resumable); the text is the reason shown to the human. Legacy terminal

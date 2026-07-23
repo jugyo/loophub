@@ -8,6 +8,7 @@ test("no review, head at base: both steps incomplete with their missing reason",
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: false,
+    headAheadOfLatestReview: false,
     latestReview: null,
   });
   expect(status.execute).toEqual({
@@ -25,6 +26,7 @@ test("execute complete when head ahead of base and no review yet", () => {
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    headAheadOfLatestReview: false,
     latestReview: null,
   });
   expect(status.execute).toEqual({ complete: true, missing: [] });
@@ -34,6 +36,7 @@ test("execute incomplete while the fresh review is still pinned to current head"
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    headAheadOfLatestReview: false,
     latestReview: { id: 7, event: "request_changes", headSha: HEAD },
   });
   expect(status.execute.complete).toBe(false);
@@ -46,15 +49,31 @@ test("execute complete again once head advances past the reviewed SHA", () => {
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    headAheadOfLatestReview: true,
     latestReview: { id: 7, event: "request_changes", headSha: OLD },
   });
   expect(status.execute).toEqual({ complete: true, missing: [] });
+});
+
+test("execute remains incomplete when a stale review is not an ancestor of HEAD", () => {
+  const status = evaluateWorkflowSteps({
+    currentHead: HEAD,
+    headAheadOfBase: true,
+    headAheadOfLatestReview: false,
+    latestReview: { id: 7, event: "request_changes", headSha: OLD },
+  });
+
+  expect(status.execute).toEqual({
+    complete: false,
+    missing: ["head has not advanced past review #7 (request_changes)"],
+  });
 });
 
 test("verify complete only when the latest review is pinned to current head", () => {
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    headAheadOfLatestReview: false,
     latestReview: { id: 9, event: "pass", headSha: HEAD },
   });
   expect(status.verify.complete).toBe(true);
@@ -70,6 +89,7 @@ test("verify goes stale when head advances, but latest_review still reported", (
   const status = evaluateWorkflowSteps({
     currentHead: HEAD,
     headAheadOfBase: true,
+    headAheadOfLatestReview: true,
     latestReview: { id: 4, event: "request_changes", headSha: OLD },
   });
   expect(status.verify.complete).toBe(false);
@@ -88,6 +108,7 @@ test("null current head keeps head-dependent steps incomplete", () => {
   const status = evaluateWorkflowSteps({
     currentHead: null,
     headAheadOfBase: false,
+    headAheadOfLatestReview: false,
     latestReview: { id: 1, event: "pass", headSha: HEAD },
   });
   expect(status.execute.complete).toBe(false);

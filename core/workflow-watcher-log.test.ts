@@ -28,8 +28,6 @@ test("writes JSON lines under the workflow watcher log directory", () => {
     repo: "jugyo/loophub",
     run: 42,
     cursor: 8,
-    next_command:
-      "lh workflow watch --repo 'jugyo/loophub' --run 42 --since 8 --json",
   });
 
   const lines = readFileSync(

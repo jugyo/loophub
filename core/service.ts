@@ -24,11 +24,10 @@ export { stats } from "./service/stats.ts";
 export { sync } from "./service/sync.ts";
 export type { HerdrRepoSessions } from "./service/terminal.ts";
 export { terminal } from "./service/terminal.ts";
+export { workflowCostHold } from "./service/workflow-cost-hold.ts";
+export { workflowEscalation } from "./service/workflow-escalation.ts";
 export { workflowRuns } from "./service/workflow-runs.ts";
-export {
-  parseWorkflowWatchArgs,
-  workflowWatch,
-} from "./service/workflow-watch.ts";
+export { workflowWatch } from "./service/workflow-watch.ts";
 export { workflows } from "./service/workflows.ts";
 export { workspaces } from "./service/workspaces.ts";
 export { worktrees } from "./service/worktrees.ts";

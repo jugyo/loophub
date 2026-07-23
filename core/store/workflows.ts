@@ -138,6 +138,8 @@ export interface WorkflowRunRow {
   active_step: string | null;
   active_session_id: string | null;
   child_sequence: number;
+  // Internal wake bookmark of `lh workflow next --watch`; not part of any caller-facing contract.
+  event_cursor: number;
   cost_increment_usd: number | null;
   cost_limit_usd: number | null;
   created_at: string;
@@ -208,6 +210,23 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
     .get(id) as WorkflowRunRow | null;
 }
 
+// Move the wake bookmark forward to the event `lh workflow next --watch` just consumed. The guard
+// keeps the cursor monotonic when two watches race on the same run; neither loses an event, because
+// both decide from the state observed after the cursor moved.
+export function advanceWorkflowRunEventCursor(
+  id: number,
+  cursor: number,
+): WorkflowRunRow | null {
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET event_cursor = ?, updated_at = ?
+       WHERE id = ? AND event_cursor < ?
+       RETURNING *`,
+    )
+    .get(cursor, now(), id, cursor) as WorkflowRunRow | null;
+}
+
 export interface WorkflowEventEffectRow {
   run_id: number;
   event_id: number;
@@ -215,6 +234,34 @@ export interface WorkflowEventEffectRow {
   status: "pending" | "completed";
   created_at: string;
   updated_at: string;
+}
+
+export function pendingWorkflowEventEffect(
+  runId: number,
+): WorkflowEventEffectRow | null {
+  return db
+    .query(
+      `SELECT * FROM workflow_event_effects
+       WHERE run_id = ? AND status = 'pending'
+       ORDER BY created_at ASC, event_id ASC, effect ASC
+       LIMIT 1`,
+    )
+    .get(runId) as WorkflowEventEffectRow | null;
+}
+
+export function getWorkflowEventEffect(
+  runId: number,
+  eventId: number,
+  effect: string,
+): WorkflowEventEffectRow | null {
+  return (
+    (db
+      .query(
+        `SELECT * FROM workflow_event_effects
+         WHERE run_id = ? AND event_id = ? AND effect = ?`,
+      )
+      .get(runId, eventId, effect) as WorkflowEventEffectRow | null) ?? null
+  );
 }
 
 export function beginWorkflowEventEffect(
@@ -233,7 +280,8 @@ export function beginWorkflowEventEffect(
          JOIN events event ON event.id = ?
          WHERE run.id = ?
            AND event.repo_id = run.repo_id
-           AND event.type GLOB 'workflow_run.*'
+           AND (event.type GLOB 'workflow_run.*'
+             OR event.type = 'workflow_effect.human_escalation')
            AND json_extract(event.payload, '$.id') = run.id
        )
        ON CONFLICT(run_id, event_id, effect) DO NOTHING
@@ -249,12 +297,7 @@ export function beginWorkflowEventEffect(
       runId,
     ) as WorkflowEventEffectRow | null;
   if (inserted) return { row: inserted, acquired: true };
-  const existing = db
-    .query(
-      `SELECT * FROM workflow_event_effects
-       WHERE run_id = ? AND event_id = ? AND effect = ?`,
-    )
-    .get(runId, eventId, effect) as WorkflowEventEffectRow | null;
+  const existing = getWorkflowEventEffect(runId, eventId, effect);
   return existing ? { row: existing, acquired: false } : null;
 }
 

@@ -43,11 +43,20 @@ beforeAll(async () => {
     executePrompt: "",
     verifyPrompt: "",
   });
+  const issue = S.createIssue(repo.id, "issue", "runtime", "", "me");
+  const prIssue = S.createIssue(repo.id, "pull", "runtime pr", "", "me");
+  S.createPull(
+    prIssue.id,
+    `loophub/pr-${prIssue.number}`,
+    "main",
+    null,
+    issue.id,
+  );
   runId = S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
-    issueNumber: 1,
-    prNumber: 1,
+    issueNumber: issue.number,
+    prNumber: prIssue.number,
     status: "running",
     currentStep: "execute",
     costIncrementUsd: 1,
@@ -122,13 +131,11 @@ liveTest(
       JSON.stringify(process.execPath),
       ...NODE_ARGS.map((arg) => JSON.stringify(arg)),
       "workflow",
-      "watch",
+      "next",
+      String(runId),
       "--repo",
       "me/workflow-runtime",
-      "--run",
-      String(runId),
-      "--since",
-      "0",
+      "--watch",
       "--json",
     ].join(" ");
     const prompt = [
@@ -136,7 +143,7 @@ liveTest(
       "Use the Bash tool once with run_in_background=true to run this exact blocking command:",
       command,
       "Do not use shell backgrounding, a pane, or another agent.",
-      `After that background task completes, inspect its JSON and reply exactly: PARENT_RESUMED ${nonce} <event type>`,
+      `After that background task completes, inspect its JSON and reply exactly: PARENT_RESUMED ${nonce} <event.type>`,
     ].join("\n");
     const child = spawn(
       "claude",
@@ -193,20 +200,18 @@ liveTest(
 );
 
 codexLiveTest(
-  "the Codex parent waits over 30 seconds and runs the exact next command",
+  "the Codex parent waits over 30 seconds and repeats the same next --watch command",
   async () => {
     const nonce = `codex-parent-${crypto.randomUUID()}`;
     const command = [
       JSON.stringify(process.execPath),
       ...NODE_ARGS.map((arg) => JSON.stringify(arg)),
       "workflow",
-      "watch",
+      "next",
+      String(runId),
       "--repo",
       "me/workflow-runtime",
-      "--run",
-      String(runId),
-      "--since",
-      "0",
+      "--watch",
       "--json",
     ].join(" ");
     const prompt = [
@@ -215,8 +220,8 @@ codexLiveTest(
       command,
       "If exec_command returns a session_id before completion, pass that same session_id to write_stdin with empty chars and yield_time_ms=30000 until the command completes.",
       "Do not produce a final response while either watcher is running.",
-      "After the first completion, parse its stdout JSON. Pass its next_command unchanged as the cmd of a second exec_command, using the same session_id/write_stdin completion procedure if needed.",
-      `Only after the second completion, reply exactly: PARENT_RESUMED ${nonce} workflow_run.turn_done NEXT_COMMAND_RAN workflow_run.escalated`,
+      "After the first completion, parse its stdout JSON. Then run the same command again as a second exec_command, using the same session_id/write_stdin completion procedure if needed.",
+      `Only after the second completion, reply exactly: PARENT_RESUMED ${nonce} workflow_run.turn_done NEXT_WATCH_RAN workflow_run.escalated`,
       "Do not use shell backgrounding, detach the process, sleep, panes, another agent, retries, or fixed-interval polling.",
     ].join("\n");
     const child = spawn(
@@ -242,7 +247,7 @@ codexLiveTest(
     let firstStartedAt = 0;
     let firstWaitDurationMs = 0;
     let nextStarted = false;
-    let expectedNextCommand = "";
+    let firstStartedCommand = "";
     let observedNextCommand = "";
     let firstEventTimer: ReturnType<typeof setTimeout> | undefined;
     let secondEventTimer: ReturnType<typeof setTimeout> | undefined;
@@ -255,13 +260,13 @@ codexLiveTest(
       pending = lines.pop() ?? "";
       for (const line of lines) {
         const startedCommand = startedCodexCommand(line);
-        if (
-          !firstStarted &&
-          startedCommand.includes("workflow watch") &&
-          startedCommand.includes("--since 0")
-        ) {
+        const startedWatch =
+          startedCommand.includes("workflow next") &&
+          startedCommand.includes("--watch");
+        if (!firstStarted && startedWatch) {
           firstStarted = true;
           firstStartedAt = Date.now();
+          firstStartedCommand = startedCommand;
           firstEventTimer = setTimeout(() => {
             const result = emitRunEvent([
               "workflow",
@@ -273,22 +278,12 @@ codexLiveTest(
               String(runId),
               "--json",
             ]);
-            if (result.status !== 0) {
-              stderr += result.stderr;
-              return;
-            }
-            const eventId = JSON.parse(result.stdout).event_id;
-            expectedNextCommand = `lh workflow watch --repo 'me/workflow-runtime' --run ${runId} --since ${eventId} --json`;
+            if (result.status !== 0) stderr += result.stderr;
           }, CODEX_LONG_WATCH_MS);
           continue;
         }
-        if (
-          firstStarted &&
-          !nextStarted &&
-          expectedNextCommand &&
-          startedCommand ===
-            `/bin/zsh -lc ${JSON.stringify(expectedNextCommand)}`
-        ) {
+        // `next --watch` carries no cursor, so the second wait is the same command verbatim.
+        if (firstStarted && !nextStarted && startedWatch) {
           nextStarted = true;
           firstWaitDurationMs = Date.now() - firstStartedAt;
           observedNextCommand = startedCommand;
@@ -318,12 +313,10 @@ codexLiveTest(
       expect(firstStarted, stdout).toBe(true);
       expect(nextStarted, stdout).toBe(true);
       expect(firstWaitDurationMs).toBeGreaterThanOrEqual(30_000);
-      expect(observedNextCommand).toBe(
-        `/bin/zsh -lc ${JSON.stringify(expectedNextCommand)}`,
-      );
+      expect(observedNextCommand).toBe(firstStartedCommand);
       expect(status, stderr).toBe(0);
       expect(stdout).toContain(
-        `PARENT_RESUMED ${nonce} workflow_run.turn_done NEXT_COMMAND_RAN workflow_run.escalated`,
+        `PARENT_RESUMED ${nonce} workflow_run.turn_done NEXT_WATCH_RAN workflow_run.escalated`,
       );
     } finally {
       if (firstEventTimer) clearTimeout(firstEventTimer);

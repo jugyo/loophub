@@ -170,6 +170,18 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Declare that an Execute child needs human guidance.",
   },
   {
+    path: ["workflow", "deliver"],
+    description: "Deliver an instruction to the latest Execute child.",
+  },
+  {
+    path: ["workflow", "escalate-human"],
+    description: "Notify a human about a workflow escalation.",
+  },
+  {
+    path: ["workflow", "next"],
+    description: "Advise the next Workflow parent action.",
+  },
+  {
     path: ["workflow", "step"],
     description: "Preview a workflow step input or observe step status.",
   },

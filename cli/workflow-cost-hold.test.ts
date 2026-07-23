@@ -1,0 +1,292 @@
+import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, expect, test } from "vitest";
+
+const home = mkdtempSync(join(tmpdir(), "lh-workflow-cost-hold-"));
+const bin = join(home, "bin");
+process.env.LOOPHUB_HOME = home;
+process.env.LOOPHUB_DB = join(home, "loophub.db");
+
+const NODE_ARGS = [
+  "--experimental-sqlite",
+  "--disable-warning=ExperimentalWarning",
+  "--import",
+  "tsx",
+  "cli/index.ts",
+];
+const PARENT_SESSION_ID = "00000000-0000-4000-8000-000000000001";
+
+let S: typeof import("../core/store.ts");
+let repoId: number;
+let workflowId: number;
+let nextNumber = 1;
+
+function runCli(args: string[], extraEnv: NodeJS.ProcessEnv = {}) {
+  return spawnSync(process.execPath, [...NODE_ARGS, ...args], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      LOOPHUB_SESSION_ID: PARENT_SESSION_ID,
+      ...extraEnv,
+    },
+    timeout: 20_000,
+  });
+}
+
+function createCostEvent(options: { activeChild?: boolean } = {}): {
+  run: number;
+  event: number;
+  log: string;
+} {
+  const number = nextNumber++;
+  const run = S.createWorkflowRun({
+    workflowId,
+    repoId,
+    issueNumber: number,
+    prNumber: number,
+    status: "running",
+    currentStep: "execute",
+    parentSessionId: PARENT_SESSION_ID,
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+  });
+  const activeChild = options.activeChild !== false;
+  const childSessionId = activeChild
+    ? `10000000-0000-4000-8000-${String(number).padStart(12, "0")}`
+    : null;
+  const agentName = `executor #${run.id}-1`;
+  if (childSessionId) {
+    S.registerAgentSession(
+      childSessionId,
+      "workflow-step",
+      childSessionId,
+      agentName,
+      "codex",
+      "workflow-step",
+    );
+    S.appendWorkflowRunStepSession(run.id, "execute", childSessionId);
+    S.updateWorkflowRun(run.id, {
+      activeStep: "execute",
+      activeSessionId: childSessionId,
+    });
+  }
+  const event = S.emitWorkflowRunCostExceededOnce(repoId, "test", {
+    id: run.id,
+    number,
+    pr_number: number,
+    parent_session_id: PARENT_SESSION_ID,
+    session_id: PARENT_SESSION_ID,
+    usage_session_id: PARENT_SESSION_ID,
+    active_step: activeChild ? "execute" : null,
+    active_session_id: childSessionId,
+    cost_usd: 12.5,
+    limit_usd: 10,
+    increment_usd: 10,
+    next_limit_usd: 20,
+  });
+  if (!event) throw new Error("cost event was not created");
+  const log = join(home, `herdr-${run.id}.log`);
+  writeFileSync(
+    join(home, `agents-${run.id}.json`),
+    JSON.stringify({
+      result: {
+        agents: [
+          {
+            name: agentName,
+            agent_status: "working",
+            pane_id: "w1:p2",
+          },
+        ],
+      },
+    }),
+  );
+  return { run: run.id, event: event.id, log };
+}
+
+function costHoldArgs(input: { run: number; event: number }): string[] {
+  return [
+    "workflow",
+    "cost-hold",
+    "--repo",
+    "me/workflow-cost-hold",
+    "--run",
+    String(input.run),
+    "--event",
+    String(input.event),
+  ];
+}
+
+beforeAll(async () => {
+  S = await import("../core/store.ts");
+  const repo = S.createRepo("me/workflow-cost-hold", process.cwd());
+  repoId = repo.id;
+  workflowId = S.createWorkflow({
+    name: "cost-hold-test",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  }).id;
+  S.registerAgentSession(
+    PARENT_SESSION_ID,
+    "workflow-parent",
+    PARENT_SESSION_ID,
+    "workflow parent",
+    "codex",
+    "workflow-parent",
+  );
+
+  mkdirSync(bin);
+  const herdr = join(bin, "herdr");
+  writeFileSync(
+    herdr,
+    `#!/bin/sh
+printf '%s\\n' "$*" >> "$HERDR_LOG"
+if [ "$HERDR_FAIL" = "send-keys" ] && printf '%s' "$*" | grep -q 'pane send-keys'; then
+  exit 7
+fi
+if printf '%s' "$*" | grep -q 'agent list'; then
+  cat "$HERDR_AGENTS"
+fi
+`,
+  );
+  chmodSync(herdr, 0o755);
+});
+
+afterAll(() => {
+  rmSync(home, { recursive: true, force: true });
+});
+
+test("lh workflow cost-hold holds the run, sends Escape, and notifies the active pane", () => {
+  const input = createCostEvent();
+  const result = runCli(costHoldArgs(input), {
+    HERDR_LOG: input.log,
+    HERDR_AGENTS: join(home, `agents-${input.run}.json`),
+  });
+
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout).toContain(
+    `completed cost hold for event #${input.event}`,
+  );
+  expect(result.stdout).toContain("receipt\tcompleted");
+  expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBe(
+    "Cost limit exceeded: current $12.5, limit $10; human decision required",
+  );
+  const log = readFileSync(input.log, "utf8");
+  expect(log).toContain("agent list");
+  expect(log).toContain("pane send-keys w1:p2 Escape");
+  expect(log).toContain(
+    "pane run w1:p2 orchestrator: Cost limit exceeded: current $12.5, limit $10. Wait for human instruction.",
+  );
+});
+
+test("lh workflow cost-hold does not fire effects twice for the same event", () => {
+  const input = createCostEvent();
+  const env = {
+    HERDR_LOG: input.log,
+    HERDR_AGENTS: join(home, `agents-${input.run}.json`),
+  };
+  expect(runCli(costHoldArgs(input), env).status).toBe(0);
+  const firstLog = readFileSync(input.log, "utf8");
+  S.updateWorkflowRun(input.run, { status: "completed" });
+
+  const replay = runCli(costHoldArgs(input), env);
+
+  expect(replay.status, replay.stderr).toBe(0);
+  expect(replay.stdout).toContain(
+    `cost hold for event #${input.event} is already complete`,
+  );
+  expect(replay.stdout).toContain("receipt\tcompleted");
+  expect(readFileSync(input.log, "utf8")).toBe(firstLog);
+});
+
+test("a partial cost-hold failure is visible and leaves the run held", () => {
+  const input = createCostEvent();
+  const env = {
+    HERDR_LOG: input.log,
+    HERDR_AGENTS: join(home, `agents-${input.run}.json`),
+    HERDR_FAIL: "send-keys",
+  };
+  const failed = runCli(costHoldArgs(input), env);
+
+  expect(failed.status).not.toBe(0);
+  expect(failed.stderr).toContain("cost hold failed at Escape");
+  expect(failed.stderr).toContain("completed: await-human");
+  expect(S.getWorkflowRun(input.run)?.needs_human_reason).not.toBeNull();
+  expect(readFileSync(input.log, "utf8")).not.toContain("pane run");
+
+  const logAfterFailure = readFileSync(input.log, "utf8");
+  const replay = runCli(costHoldArgs(input), {
+    ...env,
+    HERDR_FAIL: "",
+  });
+  expect(replay.status).not.toBe(0);
+  expect(replay.stderr).toContain(
+    `cost hold for event #${input.event} is pending`,
+  );
+  expect(readFileSync(input.log, "utf8")).toBe(logAfterFailure);
+});
+
+test("a missing active child is visible and still establishes the hold", () => {
+  const input = createCostEvent({ activeChild: false });
+  const result = runCli(costHoldArgs(input), {
+    HERDR_LOG: input.log,
+    HERDR_AGENTS: join(home, `agents-${input.run}.json`),
+  });
+
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("cost hold failed at pane resolution");
+  expect(result.stderr).toContain("completed: await-human");
+  expect(S.getWorkflowRun(input.run)?.needs_human_reason).not.toBeNull();
+});
+
+test("an unrelated existing human hold is not reported as a completed cost hold", () => {
+  const input = createCostEvent();
+  S.updateWorkflowRun(input.run, {
+    needsHumanReason: "Waiting for a product decision",
+  });
+
+  const result = runCli(costHoldArgs(input), {
+    HERDR_LOG: input.log,
+    HERDR_AGENTS: join(home, `agents-${input.run}.json`),
+  });
+
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("cost hold failed at await-human");
+  expect(result.stderr).toContain("completed: none");
+  expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBe(
+    "Waiting for a product decision",
+  );
+  expect(readFileSync(input.log, "utf8")).not.toContain("pane send-keys");
+});
+
+test("an existing cost hold remains a visible error instead of recovering automatically", () => {
+  const input = createCostEvent();
+  S.updateWorkflowRun(input.run, {
+    needsHumanReason:
+      "Cost limit exceeded: current $12.5, limit $10; human decision required",
+  });
+
+  const result = runCli(costHoldArgs(input), {
+    HERDR_LOG: input.log,
+    HERDR_AGENTS: join(home, `agents-${input.run}.json`),
+  });
+
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("cost hold failed at await-human");
+  expect(result.stderr).toContain(
+    "Workflow run is already waiting for a human",
+  );
+  expect(result.stderr).toContain("completed: none");
+  expect(readFileSync(input.log, "utf8")).not.toContain("pane send-keys");
+});
