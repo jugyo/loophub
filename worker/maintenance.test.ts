@@ -67,6 +67,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
       scheduledTaskSweepMs: Number.NaN,
       conflictSweepMs: Number.NaN,
       herdrSweepMs: Number.NaN,
+      worktreePruneSweepMs: Number.NaN,
     }),
   ).toEqual({
     sweepMs: 0,
@@ -77,6 +78,7 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
     conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
     herdrSweepMs: M.DEFAULT_HERDR_SWEEP_MS,
+    worktreePruneSweepMs: M.DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
   });
 
   expect(M.normalizeMaintenanceLoopOptions()).toEqual({
@@ -88,11 +90,16 @@ test("maintenance loop options keep 0 as disabled and default invalid values", (
     scheduledTaskSweepMs: M.DEFAULT_SCHEDULED_TASK_SWEEP_MS,
     conflictSweepMs: M.DEFAULT_CONFLICT_SWEEP_MS,
     herdrSweepMs: M.DEFAULT_HERDR_SWEEP_MS,
+    worktreePruneSweepMs: M.DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
   });
 });
 
 test("closed PR cleanup defaults to a coarse interval", () => {
   expect(M.DEFAULT_CLOSED_PULL_CLEANUP_SWEEP_MS).toBe(600000);
+});
+
+test("worktree prune defaults to a coarse interval below the 24h grace period", () => {
+  expect(M.DEFAULT_WORKTREE_PRUNE_SWEEP_MS).toBe(1800000);
 });
 
 test("maintenance summary reports disabled loops as off", () => {
@@ -106,6 +113,7 @@ test("maintenance summary reports disabled loops as off", () => {
       scheduledTaskSweepMs: 0,
       conflictSweepMs: 0,
       herdrSweepMs: 0,
+      worktreePruneSweepMs: 0,
     }),
   ).toEqual({
     pullSweep: "off",
@@ -116,6 +124,7 @@ test("maintenance summary reports disabled loops as off", () => {
     scheduledTaskSweep: "off",
     conflictSweep: "off",
     herdrSweep: "off",
+    worktreePruneSweep: "off",
   });
 });
 
@@ -195,6 +204,123 @@ test("closed pull cleanup sweep kills closed-PR agents", async () => {
   } finally {
     stop();
     cleanupSpy.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+test("worktree prune sweep logs removals and per-worktree failures", async () => {
+  vi.useFakeTimers();
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
+  const err = vi.spyOn(console, "error").mockImplementation(() => {});
+  const prune = vi.fn(async () => ({
+    scanned: 3,
+    candidates: 2,
+    removed: 1,
+    failed: [
+      {
+        repo: "me/prune",
+        path: "/tmp/wt-2",
+        reason: "git worktree remove failed\nlocked",
+      },
+    ],
+  }));
+  const stop = M.startWorktreePruneSweep(25, prune);
+  try {
+    await vi.advanceTimersByTimeAsync(24);
+    expect(prune).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(prune).toHaveBeenCalledTimes(1);
+    expect(err).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "worktree prune sweep removal failed repo=me/prune path=/tmp/wt-2 error=git worktree remove failed locked",
+      ),
+    );
+    expect(out).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "worktree prune sweep completed duration_ms=0 scanned=3 candidates=2 removed=1 failures=1",
+      ),
+    );
+  } finally {
+    stop();
+    out.mockRestore();
+    err.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+test("worktree prune sweep failure is logged and the loop keeps ticking", async () => {
+  vi.useFakeTimers();
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
+  const err = vi.spyOn(console, "error").mockImplementation(() => {});
+  const prune = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("git worktree list failed"))
+    .mockResolvedValue({ scanned: 0, candidates: 0, removed: 0, failed: [] });
+  const stop = M.startWorktreePruneSweep(10, prune);
+  try {
+    await vi.advanceTimersByTimeAsync(10);
+    expect(err).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "worktree prune sweep failed duration_ms=0 error=git worktree list failed",
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(10);
+    expect(prune).toHaveBeenCalledTimes(2);
+    expect(out).toHaveBeenCalledWith(
+      expect.stringContaining("worktree prune sweep completed"),
+    );
+  } finally {
+    stop();
+    out.mockRestore();
+    err.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+// A prune outliving its own interval must not stall the rest of the worker: the git subprocesses
+// are awaited, not blocking, so sibling loops keep completing — and the in-flight guard means the
+// slow prune is never started a second time meanwhile.
+test("a slow worktree prune blocks neither other sweeps nor its own next tick", async () => {
+  vi.useFakeTimers();
+  const out = vi.spyOn(console, "log").mockImplementation(() => {});
+  let releasePrune: () => void = () => {};
+  const prune = vi.fn(
+    () =>
+      new Promise<Awaited<ReturnType<typeof svc.worktrees.autoPrune>>>(
+        (resolve) => {
+          releasePrune = () =>
+            resolve({ scanned: 1, candidates: 1, removed: 1, failed: [] });
+        },
+      ),
+  );
+  const cleanupSpy = vi
+    .spyOn(svc.terminal, "cleanupClosedPullDevAgents")
+    .mockResolvedValue({ killed: 0, skipped: 0, failed: 0 });
+  const stopPrune = M.startWorktreePruneSweep(10, prune);
+  const stopCleanup = M.startClosedPullCleanupSweep(10);
+  try {
+    await vi.advanceTimersByTimeAsync(35);
+    // The prune is still running; the sibling sweep ticked and completed regardless.
+    expect(prune).toHaveBeenCalledTimes(1);
+    expect(cleanupSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(out).toHaveBeenCalledWith(
+      expect.stringContaining("closed pull cleanup sweep completed"),
+    );
+    expect(out).not.toHaveBeenCalledWith(
+      expect.stringContaining("worktree prune sweep completed"),
+    );
+
+    releasePrune();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(out).toHaveBeenCalledWith(
+      expect.stringContaining("worktree prune sweep completed"),
+    );
+    expect(prune).toHaveBeenCalledTimes(2);
+  } finally {
+    stopPrune();
+    stopCleanup();
+    cleanupSpy.mockRestore();
+    out.mockRestore();
     vi.useRealTimers();
   }
 });

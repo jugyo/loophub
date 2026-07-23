@@ -79,3 +79,37 @@ export function classifyWorktree(input: ClassifyInput): Classification {
     return { action: "keep", reason: "issue not found in LoopHub" };
   return { action: "keep", reason: "issue open, PR not merged" };
 }
+
+// #1837: the worker only auto-prunes a finished worktree once this long after the merge/close, so
+// a human still has a full day to inspect or resume from the checkout. `lh worktree prune` stays
+// available for removing it sooner.
+export const WORKTREE_AUTO_PRUNE_GRACE_MS = 24 * 60 * 60 * 1000;
+
+export interface DoneAtInput {
+  prMerged: boolean; // a linked PR exists and is merged
+  prMergedAt: string | null; // that PR's merge timestamp
+  issueState: "open" | "closed" | null; // null = issue not found in LoopHub for this branch
+  issueClosedAt: string | null; // the row's close timestamp
+}
+
+// The completion timestamp behind classifyWorktree's "remove" verdict, or null when the worktree
+// is not finished. Precedence mirrors classifyWorktree: a merged PR wins over a closed issue.
+export function worktreeDoneAt(input: DoneAtInput): string | null {
+  if (input.prMerged) return input.prMergedAt;
+  if (input.issueState === "closed") return input.issueClosedAt;
+  return null;
+}
+
+// True when `doneAt` is a real timestamp at least `graceMs` in the past. A missing or unparsable
+// timestamp is never eligible: an unattended sweep must not remove a worktree whose completion
+// time it cannot confirm, even though classifyWorktree already called it done.
+export function autoPruneGraceElapsed(
+  doneAt: string | null,
+  nowMs: number,
+  graceMs: number = WORKTREE_AUTO_PRUNE_GRACE_MS,
+): boolean {
+  if (!doneAt) return false;
+  const parsed = Date.parse(doneAt);
+  if (!Number.isFinite(parsed)) return false;
+  return nowMs - parsed >= graceMs;
+}

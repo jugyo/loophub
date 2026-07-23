@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, test as vitestTest } from "vitest";
 import { git, worktreeAdd } from "./git.ts";
 import { traceGitCommands } from "./git-trace-test-helper.ts";
+import { WORKTREE_AUTO_PRUNE_GRACE_MS } from "./worktree-prune.ts";
 
 // Isolate the DB and sibling worktree fixtures before db.ts runs its import-time setup.
 const TEST_ROOT = mkdtempSync(join(tmpdir(), "lh-worktrees-"));
@@ -345,4 +346,55 @@ test("plan and remove recognize the current loophub/pr-<n> convention", async ()
   });
   expect(res.removed).toBe(true);
   expect(existsSync(wtPath)).toBe(false);
+});
+
+// #1837: the worker's unattended sweep. It scans every registered repository and removes only the
+// worktrees whose work finished at least a full day ago — dirty ones included, since the day of
+// grace has already passed.
+test("autoPrune removes finished worktrees past the grace period and keeps the rest", async () => {
+  const repo = await makeRepo("me/auto-prune");
+  const merged = S.createIssue(repo.id, "pull", "merged", "", "me") as any;
+  S.createPull(merged.id, `loophub/pr-${merged.number}`, "main", null);
+  S.setMerged(merged.id, "deadbeef", "squash");
+  const open = S.createIssue(repo.id, "pull", "in progress", "", "me") as any;
+  S.createPull(open.id, `loophub/pr-${open.number}`, "main", null);
+
+  const mergedPath = worktreePath(`wt-auto-${repo.id}-${merged.number}`);
+  const openPath = worktreePath(`wt-auto-${repo.id}-${open.number}`);
+  const adhocPath = worktreePath(`wt-auto-${repo.id}-adhoc`);
+  await worktreeAdd(
+    repo.path,
+    mergedPath,
+    `loophub/pr-${merged.number}`,
+    "main",
+  );
+  await worktreeAdd(repo.path, openPath, `loophub/pr-${open.number}`, "main");
+  await worktreeAdd(repo.path, adhocPath, "scratch", "main");
+  // Uncommitted work in the finished attempt: force removal must not be blocked by it.
+  writeFileSync(join(mergedPath, "wip.txt"), "unfinished\n");
+
+  const mergedAt = Date.parse(S.getPull(merged.id)!.merged_at!);
+
+  // One millisecond short of 24h after the merge: nothing is a candidate yet.
+  const held = await svc.worktrees.autoPrune({
+    cwd: "/nowhere",
+    nowMs: mergedAt + WORKTREE_AUTO_PRUNE_GRACE_MS - 1,
+  });
+  // Only the two loophub/pr-<n> worktrees are scanned; the ad-hoc branch is not ours.
+  expect(held).toEqual({ scanned: 2, candidates: 0, removed: 0, failed: [] });
+  expect(existsSync(mergedPath)).toBe(true);
+
+  // At the boundary the merged attempt goes; open work and the ad-hoc worktree stay.
+  const swept = await svc.worktrees.autoPrune({
+    cwd: "/nowhere",
+    nowMs: mergedAt + WORKTREE_AUTO_PRUNE_GRACE_MS,
+  });
+  expect(swept).toEqual({ scanned: 2, candidates: 1, removed: 1, failed: [] });
+  expect(existsSync(mergedPath)).toBe(false);
+  expect(existsSync(openPath)).toBe(true);
+  expect(existsSync(adhocPath)).toBe(true);
+
+  for (const path of [openPath, adhocPath]) {
+    await git(repo.path, ["worktree", "remove", "--force", path]);
+  }
 });

@@ -4,6 +4,7 @@ import {
 } from "../core/github-feedback-sync.ts";
 import { syncGithubMergeStatus } from "../core/github-merge-sync.ts";
 import { sweepPullConflicts } from "../core/pull-conflict-events.ts";
+import type { WorktreeAutoPruneResult } from "../core/service/worktrees.ts";
 import {
   events,
   notifications,
@@ -11,6 +12,7 @@ import {
   sessions,
   terminal,
   workflowRuns,
+  worktrees,
 } from "../core/service.ts";
 import { sweepPullUpdates } from "../core/watcher.ts";
 import { workerLog } from "./logger.ts";
@@ -42,6 +44,10 @@ export const DEFAULT_CONFLICT_SWEEP_MS = 15000;
 // read of the snapshot this sweep persists. 3s matches the old per-tab poll's freshness, and the
 // whole herdr load is now ~1 capture/tick regardless of how many tabs are open.
 export const DEFAULT_HERDR_SWEEP_MS = 3000;
+// #1837: worktrees of finished work are only removed a full day after the merge/close, so checking
+// twice an hour is already far finer than the grace period. A tick that finds nothing due costs one
+// `git worktree list` per repo.
+export const DEFAULT_WORKTREE_PRUNE_SWEEP_MS = 1800000;
 
 export interface MaintenanceLoopOptions {
   sweepMs?: number;
@@ -52,6 +58,7 @@ export interface MaintenanceLoopOptions {
   scheduledTaskSweepMs?: number;
   conflictSweepMs?: number;
   herdrSweepMs?: number;
+  worktreePruneSweepMs?: number;
 }
 
 export interface NormalizedMaintenanceLoopOptions {
@@ -63,6 +70,7 @@ export interface NormalizedMaintenanceLoopOptions {
   scheduledTaskSweepMs: number;
   conflictSweepMs: number;
   herdrSweepMs: number;
+  worktreePruneSweepMs: number;
 }
 
 export interface MaintenanceHandle {
@@ -96,6 +104,10 @@ export function normalizeMaintenanceLoopOptions(
       DEFAULT_CONFLICT_SWEEP_MS,
     ),
     herdrSweepMs: finiteOrDefault(opts.herdrSweepMs, DEFAULT_HERDR_SWEEP_MS),
+    worktreePruneSweepMs: finiteOrDefault(
+      opts.worktreePruneSweepMs,
+      DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
+    ),
   };
 }
 
@@ -152,6 +164,8 @@ export function maintenanceSummary(opts: NormalizedMaintenanceLoopOptions) {
     conflictSweep:
       opts.conflictSweepMs > 0 ? `${opts.conflictSweepMs}ms` : "off",
     herdrSweep: opts.herdrSweepMs > 0 ? `${opts.herdrSweepMs}ms` : "off",
+    worktreePruneSweep:
+      opts.worktreePruneSweepMs > 0 ? `${opts.worktreePruneSweepMs}ms` : "off",
   };
 }
 
@@ -181,6 +195,9 @@ export function startMaintenanceLoops(
       : () => {},
     normalized.herdrSweepMs > 0
       ? startHerdrSnapshotSweep(normalized.herdrSweepMs)
+      : () => {},
+    normalized.worktreePruneSweepMs > 0
+      ? startWorktreePruneSweep(normalized.worktreePruneSweepMs)
       : () => {},
   ];
 
@@ -502,6 +519,52 @@ export function startHerdrSnapshotSweep(
       });
     } catch (err) {
       logLoopFailed("herdr snapshot sweep", startedAt, err);
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+// Remove LoopHub worktrees whose PR merged or issue closed at least a day ago (#1837), so a
+// finished attempt's checkout does not linger forever. The candidate rules, the grace period and
+// the destructive removal all live in core (worktrees.autoPrune); this loop owns cadence and
+// visible operational logging only. Like every sweep here the tick awaits its git subprocesses
+// rather than blocking, and the `running` guard means a prune that outlives its interval is never
+// started twice — the other loops and the event runner keep going meanwhile. A failed removal is
+// logged per worktree and simply retried on a later tick.
+export function startWorktreePruneSweep(
+  intervalMs = DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
+  prune: () => Promise<WorktreeAutoPruneResult> = () => worktrees.autoPrune(),
+): () => void {
+  let stopped = false;
+  let running = false;
+
+  const tick = async () => {
+    if (stopped || running) return;
+    running = true;
+    const startedAt = logLoopStarted("worktree prune sweep");
+    try {
+      const result = await prune();
+      for (const failure of result.failed) {
+        workerLog.error(
+          `lh-worker: worktree prune sweep removal failed repo=${failure.repo} path=${failure.path} error=${failure.reason}`,
+        );
+      }
+      logLoopCompleted("worktree prune sweep", startedAt, {
+        scanned: result.scanned,
+        candidates: result.candidates,
+        removed: result.removed,
+        failures: result.failed.length,
+      });
+    } catch (err) {
+      logLoopFailed("worktree prune sweep", startedAt, err);
     } finally {
       running = false;
     }

@@ -199,10 +199,13 @@ import {
 export { workflowJSON, workflowRunHistoryEventJSON, workflowRunStateJSON };
 
 import {
+  autoPruneGraceElapsed,
   classifyWorktree,
   issueNumberFromBranch,
   porcelainIsDirty,
   prNumberFromBranch,
+  WORKTREE_AUTO_PRUNE_GRACE_MS,
+  worktreeDoneAt,
 } from "../worktree-prune.ts";
 
 export * as S from "../store.ts";
@@ -232,6 +235,7 @@ export {
   agentSessionJSON,
   aggregateUsage,
   autoModeOnLaunch,
+  autoPruneGraceElapsed,
   branchExists,
   buildHerdrLaunchPlan,
   buildScheduledTaskCommand,
@@ -377,7 +381,9 @@ export {
   updateDevCostLimitUsd,
   validateFindings,
   validateRubric,
+  WORKTREE_AUTO_PRUNE_GRACE_MS,
   worktreeBranch,
+  worktreeDoneAt,
   worktreeList,
   worktreeListChecked,
   worktreePath,

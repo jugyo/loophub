@@ -94,6 +94,12 @@ lh worktree prune [--repo owner/name] [--dry-run] [--yes]
 - **手動削除された場合**: `git worktree list` と deterministic path から状態を見直し、
   `lh worktree prune` で不要情報を掃除する。
 
+`lh-worker` は上の削除候補のうち **merge / close から24時間以上経過したもの** だけを
+自動削除する（`--worktree-prune-sweep-ms` / `LOOPHUB_WORKTREE_PRUNE_SWEEP_MS`、既定30分間隔）。
+猶予期間中に人間が checkout を確認・再開できるようにするための待ち時間であり、経過後は
+`--force` 相当で削除するので dirty な worktree も残らない。すぐ消したい場合は
+`lh worktree prune` を手動で実行する。
+
 ---
 
 ## auto / sandbox / herdr

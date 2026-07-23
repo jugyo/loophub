@@ -1,9 +1,12 @@
 import { expect, test } from "vitest";
 import {
+  autoPruneGraceElapsed,
   classifyWorktree,
   issueNumberFromBranch,
   porcelainIsDirty,
   prNumberFromBranch,
+  WORKTREE_AUTO_PRUNE_GRACE_MS,
+  worktreeDoneAt,
 } from "./worktree-prune.ts";
 
 test("issueNumberFromBranch matches only the legacy loophub/issue-<n> convention", () => {
@@ -130,4 +133,77 @@ test("classifyWorktree: keep open work and unknown issues", () => {
       prState: null,
     }),
   ).toEqual({ action: "keep", reason: "issue not found in LoopHub" });
+});
+
+test("worktreeDoneAt reads the merge timestamp first, then the close timestamp", () => {
+  // A merged PR wins over the issue's own close timestamp, matching classifyWorktree.
+  expect(
+    worktreeDoneAt({
+      prMerged: true,
+      prMergedAt: "2026-07-20T00:00:00.000Z",
+      issueState: "closed",
+      issueClosedAt: "2026-07-21T00:00:00.000Z",
+    }),
+  ).toBe("2026-07-20T00:00:00.000Z");
+
+  expect(
+    worktreeDoneAt({
+      prMerged: false,
+      prMergedAt: null,
+      issueState: "closed",
+      issueClosedAt: "2026-07-21T00:00:00.000Z",
+    }),
+  ).toBe("2026-07-21T00:00:00.000Z");
+
+  // Unfinished work, and a done row whose timestamp predates the closed_at column, have none.
+  expect(
+    worktreeDoneAt({
+      prMerged: false,
+      prMergedAt: null,
+      issueState: "open",
+      issueClosedAt: null,
+    }),
+  ).toBeNull();
+  expect(
+    worktreeDoneAt({
+      prMerged: false,
+      prMergedAt: null,
+      issueState: null,
+      issueClosedAt: null,
+    }),
+  ).toBeNull();
+  expect(
+    worktreeDoneAt({
+      prMerged: true,
+      prMergedAt: null,
+      issueState: "closed",
+      issueClosedAt: "2026-07-21T00:00:00.000Z",
+    }),
+  ).toBeNull();
+});
+
+test("autoPruneGraceElapsed holds a finished worktree for the full grace period", () => {
+  expect(WORKTREE_AUTO_PRUNE_GRACE_MS).toBe(24 * 60 * 60 * 1000);
+  const doneAt = "2026-07-21T00:00:00.000Z";
+  const doneMs = Date.parse(doneAt);
+
+  // The boundary itself is eligible; one millisecond earlier is not.
+  expect(
+    autoPruneGraceElapsed(doneAt, doneMs + WORKTREE_AUTO_PRUNE_GRACE_MS),
+  ).toBe(true);
+  expect(
+    autoPruneGraceElapsed(doneAt, doneMs + WORKTREE_AUTO_PRUNE_GRACE_MS - 1),
+  ).toBe(false);
+  expect(autoPruneGraceElapsed(doneAt, doneMs)).toBe(false);
+
+  // A completion time we cannot confirm never expires, however old the worktree looks.
+  expect(autoPruneGraceElapsed(null, doneMs + 10 * 24 * 60 * 60 * 1000)).toBe(
+    false,
+  );
+  expect(
+    autoPruneGraceElapsed("not-a-date", doneMs + 10 * 24 * 60 * 60 * 1000),
+  ).toBe(false);
+
+  // Callers may shorten the grace period (tests, future configuration).
+  expect(autoPruneGraceElapsed(doneAt, doneMs + 1000, 1000)).toBe(true);
 });

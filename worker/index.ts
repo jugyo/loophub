@@ -5,6 +5,7 @@
 //             [--github-merge-sweep-ms <ms>] [--github-feedback-sweep-ms <ms>]
 //             [--closed-pull-cleanup-sweep-ms <ms>] [--scheduled-task-sweep-ms <ms>]
 //             [--conflict-sweep-ms <ms>] [--herdr-sweep-ms <ms>]
+//             [--worktree-prune-sweep-ms <ms>]
 // Like lh-web, it touches the DB through core, so it must carry the --experimental-sqlite flag
 // (the `lh-worker` npm script does). v1 is started via `npm run lh-worker`; an `lh worker`
 // subcommand is intentionally out of scope.
@@ -19,6 +20,7 @@ import {
   DEFAULT_SCHEDULED_TASK_SWEEP_MS,
   DEFAULT_SWEEP_MS,
   DEFAULT_USAGE_SWEEP_MS,
+  DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
   maintenanceSummary,
   normalizeMaintenanceLoopOptions,
   startMaintenanceLoops,
@@ -52,6 +54,10 @@ let conflictSweepMs = Number(
 let herdrSweepMs = Number(
   process.env.LOOPHUB_HERDR_SWEEP_MS ?? DEFAULT_HERDR_SWEEP_MS,
 );
+let worktreePruneSweepMs = Number(
+  process.env.LOOPHUB_WORKTREE_PRUNE_SWEEP_MS ??
+    DEFAULT_WORKTREE_PRUNE_SWEEP_MS,
+);
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--poll-ms") pollMs = Number(argv[++i]);
   else if (argv[i] === "--sweep-ms") sweepMs = Number(argv[++i]);
@@ -67,6 +73,8 @@ for (let i = 0; i < argv.length; i++) {
   else if (argv[i] === "--conflict-sweep-ms")
     conflictSweepMs = Number(argv[++i]);
   else if (argv[i] === "--herdr-sweep-ms") herdrSweepMs = Number(argv[++i]);
+  else if (argv[i] === "--worktree-prune-sweep-ms")
+    worktreePruneSweepMs = Number(argv[++i]);
 }
 // Guard against a missing/non-numeric value (NaN), which setInterval treats as 0ms — a busy loop.
 if (!Number.isFinite(pollMs) || pollMs <= 0) pollMs = 1000;
@@ -80,12 +88,13 @@ const maintenanceOptions = normalizeMaintenanceLoopOptions({
   scheduledTaskSweepMs,
   conflictSweepMs,
   herdrSweepMs,
+  worktreePruneSweepMs,
 });
 const worker = startWorker({ pollMs });
 const maintenance = startMaintenanceLoops(maintenanceOptions);
 const summary = maintenanceSummary(maintenanceOptions);
 workerLog.info(
-  `lh-worker started (events poll ${pollMs}ms; PR sweep ${summary.pullSweep}; usage sweep ${summary.usageSweep}; github merge sweep ${summary.githubMergeSweep}; github feedback sweep ${summary.githubFeedbackSweep}; closed pull cleanup sweep ${summary.closedPullCleanupSweep}; scheduled task sweep ${summary.scheduledTaskSweep}; conflict sweep ${summary.conflictSweep}; herdr sweep ${summary.herdrSweep})`,
+  `lh-worker started (events poll ${pollMs}ms; PR sweep ${summary.pullSweep}; usage sweep ${summary.usageSweep}; github merge sweep ${summary.githubMergeSweep}; github feedback sweep ${summary.githubFeedbackSweep}; closed pull cleanup sweep ${summary.closedPullCleanupSweep}; scheduled task sweep ${summary.scheduledTaskSweep}; conflict sweep ${summary.conflictSweep}; herdr sweep ${summary.herdrSweep}; worktree prune sweep ${summary.worktreePruneSweep})`,
 );
 
 let isShuttingDown = false;
