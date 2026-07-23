@@ -66,9 +66,7 @@ test("keeps a Verify review-skill recommendation additive to the contract", () =
     "en",
   );
 
-  expect(composed.systemPrompt).toContain(
-    "authoritative and complete review subject",
-  );
+  expect(composed.systemPrompt).toContain("acceptance criteria only against");
   expect(composed.systemPrompt).toContain(
     "If the step prompt conflicts with this contract, this contract wins.",
   );
@@ -134,17 +132,16 @@ test("renders the fixed-diff and worktree-context boundary for Verify", () => {
     "en",
   );
 
-  expect(contract).toContain("authoritative and complete review subject");
+  expect(contract).toContain("acceptance criteria only against");
   expect(contract).toContain(
-    "surrounding source code in the worktree as review context",
+    "read surrounding source as context and run tests",
   );
-  expect(contract).toContain("does not expand the review subject");
-  expect(contract).toMatch(
-    /unrelated pre-existing\s+source issue as grounds for `request_changes`/u,
+  expect(contract).toContain(
+    "unrelated pre-existing problems are out of scope",
   );
 });
 
-test("Verify contract documents the deliberate pull/fixed asymmetry", () => {
+test("Verify contract does not use PR metadata as evidence", () => {
   const contract = renderWorkflowContract(
     {
       template: readFileSync(join(CONTRACT_DIR, "verify.md"), "utf8"),
@@ -154,10 +151,8 @@ test("Verify contract documents the deliberate pull/fixed asymmetry", () => {
     },
     "en",
   );
-  expect(contract).toContain("Why the asymmetry");
-  expect(contract).toContain("intentional design choice");
   expect(contract).toContain(
-    "Do not read the PR body, the PR comments, or the implementer's description",
+    "Do not read PR\nbody, PR comments, or the implementer's description",
   );
 });
 

@@ -106,31 +106,43 @@ test("Verify reviews a fixed base..head diff it computes itself", () => {
   const verify = workflowContractText("verify");
 
   expect(verify).toContain("git diff <base sha>..<head sha>");
-  expect(verify).toContain("authoritative and complete review subject");
-  expect(verify).toMatch(/do not\s+substitute/u);
-  expect(verify).toContain("optional aid");
-  expect(verify).toMatch(/Standards\s+and Spec/u);
-  // Output is a pinned PR review, not an artifact.
+  expect(verify).toContain("acceptance criteria only against");
+  expect(verify).toContain("other ranges");
+  expect(verify).toMatch(/uncommitted worktree\s+changes/u);
+  expect(verify).toContain("unrelated pre-existing problems");
+  expect(verify).toContain("review skill or auxiliary agent as an aid");
+  expect(verify).toContain("Validate its observations yourself");
   expect(verify).toContain("lh pr review <pr>");
   expect(verify).toContain("--commit <head sha>");
-  expect(verify).toContain(
-    "There is no verdict artifact and no `lh workflow step output`",
-  );
+  expect(verify).toContain("Submit exactly one review");
+  expect(verify).toContain("with at least one line comment");
 });
 
-test("Verify is PR-metadata-blind and documents the deliberate asymmetry", () => {
+test("Verify is PR-metadata-blind while allowing source context", () => {
   const verify = workflowContractText("verify");
 
-  expect(verify).toContain("Why the asymmetry");
-  expect(verify).toContain("intentional design choice");
   expect(verify).toContain(
-    "Do not read the PR body, PR comments, or the implementer's description",
+    "Do not read PR\nbody, PR comments, or the implementer's description",
   );
-  expect(verify).toContain(
-    "surrounding source code in the worktree as review context",
+  expect(verify).toContain("read surrounding source as context and run tests");
+  expect(verify).toContain("Do not edit source");
+});
+
+test("Verify contract omits legacy mechanics while the design rationale remains documented", () => {
+  const verify = workflowContractText("verify");
+  const design = readFileSync(
+    join(import.meta.dirname, "..", "..", "docs", "workflow.ja.md"),
+    "utf8",
   );
-  expect(verify).toContain("does not expand the review subject");
-  expect(verify).toContain("Do not edit source files");
+
+  expect(verify).not.toMatch(
+    /task\.md|changes\.diff|report\.md|prior-verdicts|verdict artifact|step output/u,
+  );
+  expect(verify).not.toMatch(/freshness|stale|current HEAD|Why the asymmetry/u);
+  expect(design).toContain("### 3.4 非対称性は意図的な設計判断");
+  expect(design).toContain(
+    "検証の独立性を、変更がどう説明・フレーミングされたかから切り離す",
+  );
 });
 
 test("parent decides transitions by observation, never idle detection", () => {
@@ -317,8 +329,8 @@ test("identifies orchestrator-prefixed messages in every child contract", () => 
   const contracts = workflowStepContracts();
 
   for (const contract of Object.values(contracts)) {
-    expect(contract).toContain(
-      "messages beginning with `orchestrator:` are instructions from the workflow",
+    expect(contract).toMatch(
+      /messages beginning with `orchestrator:` are instructions from the workflow/u,
     );
   }
 });
