@@ -61,6 +61,7 @@ import {
   reconcileWorkflow,
   WORKFLOW_REWORK_LIMIT,
   type WorkflowNextAction,
+  type WorkflowWakeInput,
 } from "../workflow/reconcile.ts";
 import {
   writeParentContract,
@@ -394,10 +395,20 @@ function resolveReworkReview(
   return reviewId;
 }
 
-// The latest substantive review submitted by this run's own Verify children. Scoped by parsing
-// the review author back to a `verifier #<run>-<seq>` agent name, so reviews from other runs on
-// the same PR (or from humans) never drive this run's transitions — old runs' data cannot gate a
-// new run.
+// Scope a review to this run by parsing its author back to a `verifier #<run>-<seq>` agent name.
+function isWorkflowRunVerifyReview(
+  review: S.ReviewRow,
+  runId: number,
+): boolean {
+  const agent = parseWorkflowHerdrAgentName(review.author);
+  return (
+    agent?.kind === "step" && agent.step === "verify" && agent.runId === runId
+  );
+}
+
+// The latest substantive review submitted by this run's own Verify children. Reviews from other
+// runs on the same PR (or from humans) never drive this run's transitions — old runs' data cannot
+// gate a new run.
 function latestWorkflowRunReview(
   prIssueId: number,
   runId: number,
@@ -406,14 +417,7 @@ function latestWorkflowRunReview(
   for (let i = reviews.length - 1; i >= 0; i--) {
     const review = reviews[i];
     if (review.event !== "PASS" && review.event !== "REQUEST_CHANGES") continue;
-    const agent = parseWorkflowHerdrAgentName(review.author);
-    if (
-      agent?.kind === "step" &&
-      agent.step === "verify" &&
-      agent.runId === runId
-    ) {
-      return review;
-    }
+    if (isWorkflowRunVerifyReview(review, runId)) return review;
   }
   return null;
 }
@@ -475,18 +479,79 @@ function turnDoneObservation(
   };
 }
 
+function workflowWakeObservation(
+  repoId: number,
+  run: S.WorkflowRunRow,
+  prIssueId: number,
+  eventId: number | undefined,
+  requiresChanges: boolean | undefined,
+): WorkflowWakeInput | null {
+  if (eventId === undefined) {
+    if (requiresChanges !== undefined) {
+      throw new ServiceError(422, "requiresChanges requires a workflow event");
+    }
+    return null;
+  }
+  const event = S.eventsForWorkflowRun(repoId, run.id).find(
+    (candidate) => candidate.id === eventId,
+  );
+  if (!event) {
+    throw new ServiceError(
+      404,
+      `workflow event #${eventId} not found for run #${run.id}`,
+    );
+  }
+  const payload = JSON.parse(event.payload) as Record<string, unknown>;
+  if (event.type === "workflow_run.escalated") {
+    if (typeof payload.reason !== "string") {
+      throw new ServiceError(
+        422,
+        `workflow event #${eventId} has no escalation reason`,
+      );
+    }
+    return { kind: "execute_escalation", reason: payload.reason };
+  }
+  if (event.type === "workflow_run.github_event") {
+    if (requiresChanges === undefined) {
+      throw new ServiceError(
+        422,
+        "GitHub feedback requires a parent changes decision",
+      );
+    }
+    return requiresChanges ? { kind: "github_feedback" } : null;
+  }
+  if (requiresChanges !== undefined) {
+    throw new ServiceError(
+      422,
+      "requiresChanges is only valid for GitHub feedback",
+    );
+  }
+  if (event.type === "workflow_run.review_submitted") {
+    const reviewId = payload.review_id;
+    if (typeof reviewId !== "number") {
+      throw new ServiceError(
+        422,
+        `workflow event #${eventId} has no review id`,
+      );
+    }
+    if (!S.listReviews(prIssueId).some((review) => review.id === reviewId)) {
+      throw new ServiceError(
+        404,
+        `review #${reviewId} not found on workflow run PR`,
+      );
+    }
+    // Review ownership and whether it remains unaddressed are observed by status. The event only
+    // wakes reconciliation, so both run-owned and out-of-band reviews use the current status.
+    return null;
+  }
+  return null;
+}
+
 function outOfBandReviewVerdict(
   review: S.ReviewRow,
   runId: number,
 ): WorkflowOutOfBandReviewWire["verdict"] | null {
-  const agent = parseWorkflowHerdrAgentName(review.author);
-  if (
-    agent?.kind === "step" &&
-    agent.step === "verify" &&
-    agent.runId === runId
-  ) {
-    return null;
-  }
+  if (isWorkflowRunVerifyReview(review, runId)) return null;
   if (review.event === "FEEDBACK") return "feedback";
   if (review.event === "REQUEST_CHANGES") return "request_changes";
   return null;
@@ -981,6 +1046,15 @@ export const workflowRuns = {
     assertRunningLifecycle(run);
     if (run.needs_human_reason === null) {
       throw new ServiceError(409, "Workflow run is not waiting for a human");
+    }
+    if (
+      run.cost_limit_usd !== null &&
+      S.hasWorkflowRunCostExceededEvent(repo.id, run.id, run.cost_limit_usd)
+    ) {
+      throw new ServiceError(
+        409,
+        "Workflow cost limit must be increased before resuming",
+      );
     }
     const step = workflowStep(input.step);
     if (step === "verify") {
@@ -1804,10 +1878,24 @@ export const workflowRuns = {
 
   async next(
     name: string,
-    input: { run: number },
+    input: {
+      run: number;
+      event?: number;
+      note?: string;
+      requiresChanges?: boolean;
+    },
     sessionId?: string | null,
   ): Promise<WorkflowNextAction> {
+    if (input.event !== undefined && input.note !== undefined) {
+      throw new ServiceError(422, "workflow next accepts either event or note");
+    }
     const observed = await workflowRuns.status(name, input, sessionId);
+    const r = repoOr404(name);
+    const run = workflowRunOr404(input.run);
+    if (run.repo_id !== r.id) {
+      throw new ServiceError(404, "Workflow run not found for repo");
+    }
+    const prIssue = issueOr404(r, run.pr_number, "pull");
     return reconcileWorkflow({
       status: observed.status,
       currentStep: workflowStep(observed.current_step),
@@ -1817,6 +1905,13 @@ export const workflowRuns = {
           : workflowStep(observed.active_step),
       needsHumanReason: observed.needs_human_reason,
       awaitingHuman: observed.awaiting_human,
+      costLimitIncreaseRequired:
+        observed.needs_human_reason !== null &&
+        S.hasWorkflowRunCostExceededEvent(
+          r.id,
+          run.id,
+          observed.cost_limit_usd,
+        ),
       reworkCount: observed.rework_count,
       reworkLimit: observed.rework_limit,
       pendingEffectReceipt: observed.pending_effect_receipt,
@@ -1826,6 +1921,16 @@ export const workflowRuns = {
       mergeConflict: observed.merge_conflict,
       turnDoneForActiveExecute: observed.turn_done_for_active_execute,
       steps: observed.steps,
+      wake:
+        input.note !== undefined
+          ? { kind: "human_instruction" }
+          : workflowWakeObservation(
+              r.id,
+              run,
+              prIssue.id,
+              input.event,
+              input.requiresChanges,
+            ),
     });
   },
 

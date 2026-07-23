@@ -23,7 +23,7 @@ test("loads Japanese translations for every fixed contract", () => {
   expect(contracts.verify).toContain("# Verify ステップ contract");
 });
 
-test("Japanese contracts preserve the required commands and decision branches", () => {
+test("Japanese contracts preserve the required commands and action procedures", () => {
   const parent = workflowContractText("parent", "ja");
   const execute = workflowContractText("execute", "ja");
   const verify = workflowContractText("verify", "ja");
@@ -37,24 +37,26 @@ test("Japanese contracts preserve the required commands and decision branches", 
     "lh workflow cost-hold",
     "lh workflow launch-step",
     "lh workflow step status",
+    "lh workflow next",
     "lh workflow escalate-human",
   ]) {
     expect(parent).toContain(command);
   }
-  for (const branch of [
-    "workflow_run.turn_done",
-    "workflow_run.review_submitted",
-    "workflow_run.escalated",
-    "workflow_run.github_event",
-    "workflow_run.merge_conflict",
-    "workflow_run.cost_exceeded",
-    "request_changes",
-    "FEEDBACK",
+  for (const action of [
+    "launch_execute",
+    "launch_verify",
+    "advance_and_verify",
+    "request_rework",
+    "deliver",
+    "wait",
+    "escalate",
+    "ask_human",
   ]) {
-    expect(parent).toContain(branch);
+    expect(parent).toContain(action);
   }
+  expect(parent).toContain("workflow_run.cost_exceeded");
+  expect(parent).toContain("cursor にし");
   expect(parent).not.toContain("herdr pane send-keys <pane_id> Escape");
-  expect(parent).toContain("cursor を seed");
   expect(parent).not.toContain("pull loop");
   expect(parent).toContain(
     "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
@@ -200,14 +202,14 @@ test("parent is organized around the goal and reconcile loop", () => {
 
   expect(parent).toContain("## Goal");
   expect(parent).toContain("## Reconcile loop");
-  expect(parent).toContain("## Gap table");
+  expect(parent).toContain("## Actions");
   expect(parent).toContain("fresh `pass` review pinned to that HEAD");
   expect(parent).toContain("The run stays `running` after reaching the goal");
   expect(parent.indexOf("## Goal")).toBeLessThan(
     parent.indexOf("## Reconcile loop"),
   );
   expect(parent.indexOf("## Reconcile loop")).toBeLessThan(
-    parent.indexOf("## Gap table"),
+    parent.indexOf("## Actions"),
   );
 });
 
@@ -234,26 +236,23 @@ test("parent states shared lifecycle invariants once in both languages", () => {
     expect(contract).toContain(freshChildRule);
   }
   expect(japanese).toMatch(
-    /watch の non-zero\s+error は retry せず、人間へ判断を求める/u,
+    /watch の non-zero error は retry せず、人間へ判断を求める/u,
   );
 });
 
 test("parent delivers rework as a review-id pointer without summarizing findings", () => {
   const parent = workflowContractText("parent");
 
-  expect(parent).toContain("inject only the review id into Execute");
-  expect(parent).toContain("orchestrator: address review #<id>");
-  expect(parent).toContain("do not summarize, quote, or interpret findings");
-  expect(parent).toContain(
-    "lh workflow launch-step --repo '<repo>' --run <run> --step execute --review <id>",
-  );
+  expect(parent).toContain("orchestrator: address review #<review_id>");
+  expect(parent).toContain("Do not summarize, quote, or interpret findings");
+  expect(parent).not.toContain("--step execute --review <id>");
 });
 
-test("parent injects into live children via herdr and falls back to launch-step", () => {
+test("parent delivers to live children and leaves delivery errors visible", () => {
   const parent = workflowContractText("parent");
 
   expect(parent).toContain("lh workflow deliver");
-  expect(parent).toContain("record its printed `agent` and `session` lines");
+  expect(parent).toMatch(/Record the printed `agent` and `session`\s+lines/u);
   expect(parent).toContain("orchestrator:");
   expect(parent).toContain("lh workflow run resume");
   expect(parent).not.toContain("lh workflow run enforce-cost-limit");
@@ -261,38 +260,44 @@ test("parent injects into live children via herdr and falls back to launch-step"
   expect(parent).toContain("Do not use child-session");
 });
 
-test("parent prefers same-session Execute inject for rework, continuing, and merge conflict", () => {
+test("parent uses one same-session Execute delivery path", () => {
   const parent = workflowContractText("parent");
 
-  expect(parent).toContain("shared Execute inject-or-launch path");
-  expect(parent).toContain("same Execute session");
-  expect(parent).toMatch(/All injections use `lh workflow deliver/u);
   expect(parent).toContain(
-    "prefer injection into the live Execute pane and same Execute session",
+    "lh workflow deliver --repo '<repo>' --run <run> --text '<single-line instruction>'",
   );
+  expect(parent).toContain("latest recorded Execute agent and session");
   expect(parent).toContain("never reuse a verifier session");
 });
 
-test("parent preserves distinct gap actions for feedback and unchanged HEAD", () => {
+test("parent delegates transition decisions to workflow next", () => {
   const parent = workflowContractText("parent");
   const japanese = workflowContractText("parent", "ja");
 
+  expect(parent).toContain(
+    "lh workflow next <run> --repo '<repo>' [--event <event.id> [--requires-changes true|false] | --note <text|->] --json",
+  );
   expect(parent).toMatch(
-    /`workflow_run\.github_event`[\s\S]*required changes use `request-rework`/u,
+    /The `next` result is the only source for\s+selecting an action/u,
+  );
+  expect(parent).toContain("Execute the returned action exactly");
+  expect(parent).not.toContain("instead of the returned action");
+  expect(parent).toContain("- `launch_verify`: run");
+  expect(parent).toContain("- `advance_and_verify`: first run");
+  expect(parent).not.toContain("When `transition` is `advance_to_verify`");
+  expect(parent).not.toContain("When\n  `transition` is `null`");
+  expect(parent).toContain("- `wait`: do nothing.");
+  expect(parent).toContain("When `transition` is `resume_execute`, first run");
+  expect(parent).toContain(
+    "lh workflow run resume --repo '<repo>' --run <run> --step execute",
   );
   expect(parent).toContain(
-    "turn done without a HEAD advance and no fresh pass",
+    "lh workflow escalate-human --repo '<repo>' --run <run> --reason <reason> [--issue <issue>]",
   );
-  expect(parent).toContain(
-    "inject a concrete follow-up, launch Execute with `--note`, or escalate",
-  );
-  expect(parent).toContain("turn done without a HEAD advance and a fresh pass");
-  expect(parent).toContain(
-    "HEAD advances after a pass and Execute declares turn done",
-  );
-  expect(japanese).toContain(
-    "pass 後に HEAD が進み Execute が turn done を宣言した",
-  );
+  expect(parent).not.toContain("## Gap table");
+  expect(parent).not.toContain("Translate events into gaps");
+  expect(japanese).not.toContain("## gap 表");
+  expect(japanese).not.toContain("event を gap へ翻訳する");
 });
 
 test("parent inject text is single-line and inject is not a transition fact", () => {
@@ -318,24 +323,23 @@ test("parent delegates Execute target selection to deliver in both languages", (
   );
 });
 
-test("parent separates lifecycle transitions from live Execute delivery", () => {
-  expect(workflowContractText("parent")).toContain(
-    "`lh workflow deliver` for live Execute control",
+test("parent separates lifecycle actions from live Execute delivery", () => {
+  const parent = workflowContractText("parent");
+
+  expect(parent).toContain(
+    "lh workflow run advance-to-verify --repo '<repo>' --run <run>",
   );
-  expect(workflowContractText("parent", "ja")).toContain(
-    "live Execute の\ncontrol は `lh workflow deliver`",
+  expect(parent).toContain(
+    "lh workflow run request-rework --repo '<repo>' --run <run> --review <review_id>",
+  );
+  expect(parent).toContain(
+    "lh workflow deliver --repo '<repo>' --run <run> --text '<single-line instruction>'",
   );
 });
 
-test("parent defines the numeric rework limit once per language", () => {
-  expect(
-    workflowContractText("parent").match(/rework limit is 3/gu),
-  ).toHaveLength(1);
-  expect(workflowContractText("parent")).not.toContain("rework limit of 3");
-  expect(
-    workflowContractText("parent", "ja").match(/rework 上限は 3/gu),
-  ).toHaveLength(1);
-  expect(workflowContractText("parent", "ja")).not.toContain("rework 上限 3");
+test("parent delegates the rework limit decision to workflow next", () => {
+  expect(workflowContractText("parent")).not.toContain("rework limit");
+  expect(workflowContractText("parent", "ja")).not.toContain("rework 上限");
 });
 
 test("parent keeps inject-round audit details out of the contract", () => {
@@ -357,8 +361,8 @@ test("parent uses a runtime-managed workflow watcher and reacts to cost limit fa
   expect(contract).not.toContain("functions.wait");
   expect(contract).toContain("exactly one ascending event");
   expect(contract).toContain("exact `next_command`");
-  expect(contract).toContain(
-    "start the exact returned `next_command` unchanged",
+  expect(contract).toMatch(
+    /exact `next_command` returned by the\s+previous watcher, unchanged/u,
   );
   expect(contract).not.toContain("--ack");
   expect(contract).not.toContain("replay the event");
@@ -424,20 +428,12 @@ test("parent delegates both human notifications to escalate-human in both langua
   }
 });
 
-test("Japanese parent applies repetition to both human escalation conditions", () => {
-  const contract = workflowContractText("parent", "ja");
-
-  expect(contract).toContain(
-    "HEAD advance なしの turn done の反復、child launch の反復失敗",
-  );
-});
-
 test("documents recording the launch-step agent line as the injection target", () => {
   const parent = workflowContractText("parent");
 
-  expect(parent).toContain("record its printed `agent` and `session` lines");
+  expect(parent).toMatch(/Record the printed `agent` and `session`\s+lines/u);
   expect(parent).toContain("lh workflow deliver");
-  expect(parent).toContain("prefer injection into the live Execute pane");
+  expect(parent).toContain("latest recorded Execute agent and session");
 });
 
 test("identifies orchestrator-prefixed messages in every child contract", () => {

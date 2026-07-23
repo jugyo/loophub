@@ -13,6 +13,7 @@ function observed(
     activeStep: null,
     needsHumanReason: null,
     awaitingHuman: false,
+    costLimitIncreaseRequired: false,
     reworkCount: 0,
     reworkLimit: 3,
     pendingEffectReceipt: null,
@@ -21,6 +22,7 @@ function observed(
     headAheadOfBase: false,
     mergeConflict: false,
     turnDoneForActiveExecute: false,
+    wake: null,
     steps: {
       execute: { complete: false, missing: ["head equals base"] },
       verify: {
@@ -65,7 +67,6 @@ describe("reconcileWorkflow", () => {
       ),
     ).toMatchObject({
       action: "advance_and_verify",
-      transition: "advance_to_verify",
     });
   });
 
@@ -93,8 +94,7 @@ describe("reconcileWorkflow", () => {
         }),
       ),
     ).toMatchObject({
-      action: "advance_and_verify",
-      transition: null,
+      action: "launch_verify",
     });
   });
 
@@ -145,6 +145,20 @@ describe("reconcileWorkflow", () => {
   });
 
   test("delivers a no-progress diagnosis after turn done without a new HEAD", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          activeStep: "execute",
+          turnDoneForActiveExecute: true,
+        }),
+      ),
+    ).toMatchObject({
+      action: "deliver",
+      delivery_reason: "no_progress",
+    });
+  });
+
+  test("keeps repeated no-progress turns visible for operator judgement", () => {
     expect(
       reconcileWorkflow(
         observed({
@@ -302,6 +316,70 @@ describe("reconcileWorkflow", () => {
     expect(reconcileWorkflow(observed({ currentHead: null }))).toMatchObject({
       action: "ask_human",
       question_reason: "head_unresolved",
+    });
+  });
+
+  test.each([
+    [
+      { kind: "execute_escalation", reason: "Need product guidance" },
+      {
+        action: "escalate",
+        escalation_reason: "execute_request",
+        reason: "Need product guidance",
+      },
+    ],
+    [
+      { kind: "github_feedback" },
+      { action: "deliver", delivery_reason: "github_feedback" },
+    ],
+    [
+      { kind: "out_of_band_review", reviewId: 42 },
+      {
+        action: "deliver",
+        delivery_reason: "out_of_band_review",
+        review_id: 42,
+      },
+    ],
+    [
+      { kind: "human_instruction" },
+      {
+        action: "deliver",
+        delivery_reason: "human_instruction",
+        transition: null,
+      },
+    ],
+  ] as const)("returns the action represented by wake input", (wake, action) => {
+    expect(reconcileWorkflow(observed({ wake }))).toMatchObject(action);
+  });
+
+  test("resumes a human hold before delivering a human instruction", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          needsHumanReason: "Waiting for product guidance",
+          awaitingHuman: true,
+          wake: { kind: "human_instruction" },
+        }),
+      ),
+    ).toMatchObject({
+      action: "deliver",
+      delivery_reason: "human_instruction",
+      transition: "resume_execute",
+    });
+  });
+
+  test("does not resume a cost hold before its limit is increased", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          needsHumanReason: "Cost limit exceeded",
+          awaitingHuman: true,
+          costLimitIncreaseRequired: true,
+          wake: { kind: "human_instruction" },
+        }),
+      ),
+    ).toMatchObject({
+      action: "wait",
     });
   });
 });

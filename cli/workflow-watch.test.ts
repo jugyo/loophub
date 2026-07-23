@@ -173,19 +173,20 @@ test("a blocking watch completes when another process records an event", async (
   await new Promise((resolve) => setTimeout(resolve, 150));
   const emitted = runCli([
     "workflow",
-    "turn",
-    "done",
+    "escalate",
     "--repo",
     "me/workflow-watch",
     "--run",
     String(run),
+    "--reason",
+    "Need human guidance",
   ]);
   expect(emitted.status).toBe(0);
   const result = await waiting;
 
   expect(result.status, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout).events).toEqual([
-    expect.objectContaining({ type: "workflow_run.turn_done" }),
+    expect.objectContaining({ type: "workflow_run.escalated" }),
   ]);
 });
 

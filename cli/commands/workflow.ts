@@ -653,9 +653,33 @@ async function stepStatus(): Promise<void> {
 
 async function nextAction(): Promise<void> {
   const runId = positiveInt(rest[0], "<run>");
+  const event =
+    flags.event === undefined ? undefined : positiveInt(flags.event, "--event");
+  const note =
+    flags.note === "-"
+      ? await readStdin()
+      : typeof flags.note === "string"
+        ? flags.note
+        : undefined;
+  if (event !== undefined && note !== undefined) {
+    fail("workflow next accepts either --event or --note");
+  }
+  const requiresChanges =
+    flags["requires-changes"] === undefined
+      ? undefined
+      : flags["requires-changes"] === "true"
+        ? true
+        : flags["requires-changes"] === "false"
+          ? false
+          : fail("--requires-changes must be true or false");
   const repo = await resolveRepo();
   const result = await runOp(async () =>
-    (await svc()).workflowRuns.next(repo, { run: runId }),
+    (await svc()).workflowRuns.next(repo, {
+      run: runId,
+      event,
+      note,
+      requiresChanges,
+    }),
   );
   if (flags.json) {
     out(result);

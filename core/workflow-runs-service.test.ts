@@ -491,6 +491,19 @@ test("cost limit increases are explicit, guarded, and repeatable", async () => {
     { run: run.id, reason: "Cost limit exceeded" },
     parentSessionId,
   );
+  await expect(
+    svc.workflowRuns.resumeAfterHuman(
+      repo.full_name,
+      { run: run.id, step: "execute" },
+      parentSessionId,
+    ),
+  ).rejects.toThrow("cost limit must be increased");
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: run.id,
+      note: "Continue without changing the limit.",
+    }),
+  ).toMatchObject({ action: "wait" });
   expect(() =>
     svc.workflowRuns.increaseCostLimit(
       repo.full_name,
@@ -729,6 +742,76 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(S.eventsForWorkflowRun(repo.id, started.run.id)).toHaveLength(
     eventCountBeforeNext,
   );
+  const escalated = S.emitEvent(repo.id, "workflow_run.escalated", "executor", {
+    id: started.run.id,
+    reason: "Need product guidance",
+  });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: escalated.id,
+    }),
+  ).toMatchObject({
+    action: "escalate",
+    escalation_reason: "execute_request",
+    reason: "Need product guidance",
+  });
+  const githubFeedback = S.emitEvent(
+    repo.id,
+    "workflow_run.github_event",
+    "lh-worker",
+    { id: started.run.id },
+  );
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: githubFeedback.id,
+      requiresChanges: true,
+    }),
+  ).toMatchObject({
+    action: "deliver",
+    delivery_reason: "github_feedback",
+  });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: githubFeedback.id,
+      requiresChanges: false,
+    }),
+  ).toMatchObject({ action: "launch_execute" });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      note: "Please handle this follow-up.",
+    }),
+  ).toMatchObject({
+    action: "deliver",
+    delivery_reason: "human_instruction",
+    transition: null,
+  });
+  svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: started.run.id, reason: "Waiting for product guidance" },
+    parent,
+  );
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      note: "Please handle this follow-up.",
+    }),
+  ).toMatchObject({
+    action: "deliver",
+    delivery_reason: "human_instruction",
+    transition: "resume_execute",
+  });
+  await svc.workflowRuns.resumeAfterHuman(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  expect(
+    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ needs_human_reason: null });
   expect(S.getWorkflowRun(started.run.id)).toMatchObject({
     current_step: "execute",
     rework_count: 0,
@@ -799,6 +882,29 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(
     await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
   ).toMatchObject({ action: "wait" });
+  svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({
+    action: "deliver",
+    delivery_reason: "no_progress",
+  });
+
+  // The operator can deliver another follow-up without an automatic hold. Progress in that round
+  // allows the normal Execute-to-Verify transition.
+  svc.workflowRuns.activateStep(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+    },
+    parent,
+  );
   const headA = commit(started.worktree, "impl.txt", "done\n");
   expect(
     await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
@@ -822,7 +928,6 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
   ).toMatchObject({
     action: "advance_and_verify",
-    transition: "advance_to_verify",
   });
 
   await svc.workflowRuns.advanceToVerify(
@@ -879,7 +984,7 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   // Regression for run 82: registering the fresh review itself emits a parent observation trigger.
   // Verify does not need a later turn-done declaration, and the event carries only run pointers —
   // the persisted review remains the verdict source.
-  const reviewEvent = S.listEvents(0, repo.id, 100).find(
+  const reviewEvent = S.listEvents(0, repo.id, 100).findLast(
     (event) => event.type === "workflow_run.review_submitted",
   );
   expect(reviewEvent).toBeDefined();
@@ -904,6 +1009,39 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     fresh: true,
     headSha: headA,
   });
+
+  // Multiple unprocessed events from this run's verifier may be queued. The older event still
+  // belongs to the workflow even though its review is no longer latest, so it must reconcile the
+  // current status instead of becoming out-of-band Execute work.
+  const newerPassReview = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "PASS",
+      topic: "workflow",
+      headSha: headA,
+      body: "The same head still passes.",
+    },
+    verify.session_id,
+  );
+  const newerReviewEvent = S.listEvents(0, repo.id, 100).findLast(
+    (event) =>
+      event.type === "workflow_run.review_submitted" &&
+      JSON.parse(event.payload).review_id === newerPassReview.id,
+  );
+  expect(newerReviewEvent).toBeDefined();
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: reviewEvent!.id,
+    }),
+  ).toMatchObject({ action: "wait" });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: newerReviewEvent!.id,
+    }),
+  ).toMatchObject({ action: "wait" });
   expect(
     await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
   ).toMatchObject({ action: "wait" });
@@ -1020,6 +1158,9 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(staleStatus.steps.verify.latest_review).toMatchObject({
     fresh: false,
   });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "launch_verify" });
 
   // The run is already at Verify, so the parent launches a fresh verifier directly. Its pass is
   // pinned to headB, and the run continues waiting for another event.
@@ -1164,8 +1305,18 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     { id: feedback.id, verdict: "feedback" },
     { id: requestedChanges.id, verdict: "request_changes" },
   ]);
+  const feedbackEvent = S.eventsForWorkflowRun(repo.id, started.run.id).find(
+    (event) =>
+      event.type === "workflow_run.review_submitted" &&
+      (JSON.parse(event.payload) as { review_id?: unknown }).review_id ===
+        feedback.id,
+  );
+  expect(feedbackEvent).toBeDefined();
   expect(
-    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: feedbackEvent!.id,
+    }),
   ).toMatchObject({
     action: "deliver",
     delivery_reason: "out_of_band_review",
@@ -1652,7 +1803,7 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
   ]);
 }, 40_000);
 
-test("parent contract template drives transitions by observation, rework, and escalation", () => {
+test("parent contract template executes workflow next actions", () => {
   const contract = readFileSync(
     join(import.meta.dirname, "workflow", "contracts", "parent.md"),
     "utf8",
@@ -1662,37 +1813,38 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("lh workflow run request-rework");
   expect(contract).toContain("lh workflow launch-step");
   expect(contract).toContain("lh workflow step status");
+  expect(contract).toContain("lh workflow next");
   expect(contract).toContain("lh workflow deliver");
-  expect(contract).toContain("record its printed `agent` and `session` lines");
+  expect(contract).toMatch(/Record the printed `agent` and `session`\s+lines/u);
   // Transitions come from observation; watcher events only wake reconciliation.
   expect(contract).toContain(
     "lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json",
   );
-  expect(contract).toContain(
-    "start the exact returned `next_command` unchanged",
+  expect(contract).toMatch(
+    /exact `next_command` returned by the\s+previous watcher, unchanged/u,
   );
   expect(contract).not.toContain("--ack");
   expect(contract).not.toContain("replay the event");
   expect(contract).not.toContain("lh subscribe --repo");
   expect(contract).toContain("## Goal");
   expect(contract).toContain("## Reconcile loop");
-  expect(contract).toContain("## Gap table");
+  expect(contract).toContain("## Actions");
+  expect(contract).not.toContain("## Gap table");
   expect(contract).toMatch(/never use pane output|PR body marker/i);
   expect(contract).toContain("Do not use child-session");
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
-  // The simplified observed gap table.
-  expect(contract).toContain("launch Execute");
-  expect(contract).toContain("Execute HEAD is ahead of base");
+  // Action execution remains in the contract; action selection belongs to workflow next.
+  expect(contract).toContain("`launch_execute`");
   expect(contract).toContain("`pass`");
   expect(contract).toContain("stays `running` after reaching the goal");
-  expect(contract).toContain("launch Verify for the current HEAD");
+  expect(contract).toContain("launch a fresh Verify");
   expect(contract).toContain("--note <text|->");
   expect(contract).toContain("lh workflow run resume");
-  expect(contract).toContain("`request_changes`");
-  // Rework increments the count, caps at 3, delivers a review-id pointer, and re-verifies fresh.
+  expect(contract).toContain("`request_rework`");
+  // Rework delivers a review-id pointer; workflow next owns the limit decision.
   expect(contract).toContain("lh workflow run request-rework");
-  expect(contract).toContain("The rework limit is 3");
-  expect(contract).toContain("--step execute --review <id>");
+  expect(contract).not.toContain("rework limit");
+  expect(contract).not.toContain("--step execute --review <id>");
   expect(contract).toContain("Verify is **always a fresh child**");
   // Escalation delegates both notifications to one idempotent command while the parent waits.
   expect(contract).toContain("lh workflow escalate-human");

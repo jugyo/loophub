@@ -12,6 +12,7 @@ export type WorkflowReconcileInput = {
   activeStep: WorkflowStep | null;
   needsHumanReason: WorkflowStepStatusWire["needs_human_reason"];
   awaitingHuman: WorkflowStepStatusWire["awaiting_human"];
+  costLimitIncreaseRequired: boolean;
   reworkCount: WorkflowStepStatusWire["rework_count"];
   reworkLimit: WorkflowStepStatusWire["rework_limit"];
   pendingEffectReceipt: WorkflowPendingEffectReceiptWire | null;
@@ -21,15 +22,19 @@ export type WorkflowReconcileInput = {
   mergeConflict: boolean;
   turnDoneForActiveExecute: boolean;
   steps: WorkflowStepStatuses;
+  wake: WorkflowWakeInput | null;
 };
+
+export type WorkflowWakeInput =
+  | { kind: "execute_escalation"; reason: string }
+  | { kind: "github_feedback" }
+  | { kind: "out_of_band_review"; reviewId: number }
+  | { kind: "human_instruction" };
 
 export type WorkflowNextAction =
   | { action: "launch_execute"; reason: string }
-  | {
-      action: "advance_and_verify";
-      reason: string;
-      transition: "advance_to_verify" | null;
-    }
+  | { action: "launch_verify"; reason: string }
+  | { action: "advance_and_verify"; reason: string }
   | {
       action: "request_rework";
       reason: string;
@@ -38,8 +43,19 @@ export type WorkflowNextAction =
   | {
       action: "deliver";
       reason: string;
-      delivery_reason: "no_progress" | "merge_conflict" | "out_of_band_review";
-      review_id?: number;
+      delivery_reason: "no_progress" | "merge_conflict" | "github_feedback";
+    }
+  | {
+      action: "deliver";
+      reason: string;
+      delivery_reason: "out_of_band_review";
+      review_id: number;
+    }
+  | {
+      action: "deliver";
+      reason: string;
+      delivery_reason: "human_instruction";
+      transition: "resume_execute" | null;
     }
   | { action: "wait"; reason: string }
   | {
@@ -47,6 +63,11 @@ export type WorkflowNextAction =
       reason: string;
       escalation_reason: "rework_limit";
       review_id: number;
+    }
+  | {
+      action: "escalate";
+      reason: string;
+      escalation_reason: "execute_request";
     }
   | {
       action: "ask_human";
@@ -65,7 +86,29 @@ export const WORKFLOW_REWORK_LIMIT = 3;
 export function reconcileWorkflow(
   input: WorkflowReconcileInput,
 ): WorkflowNextAction {
+  if (input.pendingEffectReceipt !== null) {
+    return {
+      action: "wait",
+      reason: `Effect "${input.pendingEffectReceipt.effect}" for event #${input.pendingEffectReceipt.event_id} has a pending receipt.`,
+    };
+  }
+
   if (input.awaitingHuman) {
+    if (input.wake?.kind === "human_instruction") {
+      if (input.costLimitIncreaseRequired) {
+        return {
+          action: "wait",
+          reason:
+            "Workflow is held because its cost limit must be increased before resuming.",
+        };
+      }
+      return {
+        action: "deliver",
+        reason: "A human supplied additional work for Execute.",
+        delivery_reason: "human_instruction",
+        transition: "resume_execute",
+      };
+    }
     return {
       action: "wait",
       reason: `Workflow is held for a human: ${input.needsHumanReason ?? "reason unavailable"}`,
@@ -79,10 +122,38 @@ export function reconcileWorkflow(
     };
   }
 
-  if (input.pendingEffectReceipt !== null) {
+  if (input.wake?.kind === "execute_escalation") {
     return {
-      action: "wait",
-      reason: `Effect "${input.pendingEffectReceipt.effect}" for event #${input.pendingEffectReceipt.event_id} has a pending receipt.`,
+      action: "escalate",
+      reason: input.wake.reason,
+      escalation_reason: "execute_request",
+    };
+  }
+
+  if (input.wake?.kind === "github_feedback") {
+    return {
+      action: "deliver",
+      reason:
+        "Parent evaluation found GitHub feedback that requires Execute work.",
+      delivery_reason: "github_feedback",
+    };
+  }
+
+  if (input.wake?.kind === "out_of_band_review") {
+    return {
+      action: "deliver",
+      reason: `Out-of-band review #${input.wake.reviewId} requires Execute work.`,
+      delivery_reason: "out_of_band_review",
+      review_id: input.wake.reviewId,
+    };
+  }
+
+  if (input.wake?.kind === "human_instruction") {
+    return {
+      action: "deliver",
+      reason: "A human supplied additional work for Execute.",
+      delivery_reason: "human_instruction",
+      transition: null,
     };
   }
 
@@ -153,16 +224,17 @@ export function reconcileWorkflow(
 
   if (input.turnDoneForActiveExecute) {
     if (input.steps.execute.complete) {
-      const transition =
-        input.currentStep === "execute" ? "advance_to_verify" : null;
-      return {
-        action: "advance_and_verify",
-        reason:
-          input.currentStep === "execute"
-            ? "Execute declared turn done and HEAD has advanced beyond the base and latest review."
-            : "Execute declared turn done and HEAD has advanced beyond the latest review; launch a fresh Verify.",
-        transition,
-      };
+      return input.currentStep === "execute"
+        ? {
+            action: "advance_and_verify",
+            reason:
+              "Execute declared turn done and HEAD has advanced beyond the base and latest review.",
+          }
+        : {
+            action: "launch_verify",
+            reason:
+              "Execute declared turn done and HEAD has advanced beyond the latest review; launch a fresh Verify.",
+          };
     }
     return {
       action: "deliver",
@@ -196,9 +268,8 @@ export function reconcileWorkflow(
 
   if (input.activeStep !== "verify") {
     return {
-      action: "advance_and_verify",
+      action: "launch_verify",
       reason: "Verify has not started for the current HEAD.",
-      transition: null,
     };
   }
 
