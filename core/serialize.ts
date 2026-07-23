@@ -345,6 +345,7 @@ export interface IssueWire {
   linked_pull_requests?: PullSummaryWire[];
   linked_pull_request?: PullSummaryWire | null;
   linked_pull_requests_truncated?: boolean;
+  has_open_pull_request?: boolean;
   github_issue?: GithubIssueWire | null;
 }
 
@@ -1397,6 +1398,7 @@ export function issueJSON(row: S.IssueRow, repo?: S.Repo): IssueWire {
     const pulls = linkedPullSummaries(repo, row.id);
     out.linked_pull_requests = pulls;
     out.linked_pull_request = pulls[0] ?? null;
+    out.has_open_pull_request = pulls.some((pull) => pull.state === "open");
   }
   return out;
 }

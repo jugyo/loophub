@@ -17,7 +17,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
-import type { Issue } from "@/api/types";
+import type { Issue, LinkedPull } from "@/api/types";
 
 const { launchTerminal } = vi.hoisted(() => ({ launchTerminal: vi.fn() }));
 vi.mock("@/components/terminal-controller", () => ({
@@ -59,7 +59,20 @@ function renderIssueList(ui: React.ReactNode, initialPath = "/r/me/proj") {
   return { ...rendered, router };
 }
 
+function linkedPull(state: "open" | "closed" = "open"): LinkedPull {
+  return {
+    number: 10,
+    title: "PR",
+    state,
+    merged: false,
+    html_url: "/pulls/10",
+    github_pull: null,
+    cost_stopped: false,
+  };
+}
+
 function issue(overrides: Partial<Issue> = {}): Issue {
+  const pull = linkedPull();
   return {
     number: 1,
     state: "open",
@@ -71,26 +84,9 @@ function issue(overrides: Partial<Issue> = {}): Issue {
     comments: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-02T00:00:00Z",
-    linked_pull_request: {
-      number: 10,
-      title: "PR",
-      state: "open",
-      merged: false,
-      html_url: "/pulls/10",
-      github_pull: null,
-      cost_stopped: false,
-    },
-    linked_pull_requests: [
-      {
-        number: 10,
-        title: "PR",
-        state: "open",
-        merged: false,
-        html_url: "/pulls/10",
-        github_pull: null,
-        cost_stopped: false,
-      },
-    ],
+    linked_pull_request: pull,
+    linked_pull_requests: [pull],
+    has_open_pull_request: true,
     ...overrides,
   };
 }
@@ -110,6 +106,73 @@ function rpcCalls(method: string): { method: string; params: any }[] {
 }
 
 describe("IssueList", () => {
+  describe.each([
+    {
+      surface: "the repo top workspace-filter branch",
+      path: "/r/me/proj",
+      showWorkspaceFilter: true,
+    },
+    {
+      surface: "the dedicated issues branch",
+      path: "/r/me/proj/issues",
+      showWorkspaceFilter: false,
+    },
+  ])("Start workflow on $surface", ({ path, showWorkspaceFilter }) => {
+    it.each([
+      {
+        state: "no linked PR",
+        linkedPulls: [] as LinkedPull[],
+        hasOpenPullRequest: false,
+        showsButton: true,
+      },
+      {
+        state: "all linked PRs closed",
+        linkedPulls: [linkedPull("closed")],
+        hasOpenPullRequest: false,
+        showsButton: true,
+      },
+      {
+        state: "an open linked PR",
+        linkedPulls: [linkedPull("open")],
+        hasOpenPullRequest: true,
+        showsButton: false,
+      },
+    ])("$state: Start workflow visible=$showsButton", async ({
+      linkedPulls,
+      hasOpenPullRequest,
+      showsButton,
+    }) => {
+      vi.stubGlobal(
+        "fetch",
+        mockRpcFetch({
+          "issues/list": () => [
+            issue({
+              linked_pull_request: linkedPulls[0],
+              linked_pull_requests: linkedPulls,
+              has_open_pull_request: hasOpenPullRequest,
+            }),
+          ],
+          "workflows/list": () => [],
+        }),
+      );
+
+      renderIssueList(
+        <IssueList
+          owner="me"
+          repo="proj"
+          showWorkspaceFilter={showWorkspaceFilter}
+        />,
+        path,
+      );
+
+      expect(await screen.findByText("Fix the thing")).toBeTruthy();
+      const button = screen.queryByRole("button", {
+        name: /Start workflow/,
+      });
+      expect(!!button).toBe(showsButton);
+    });
+  });
+
   it("renders open and closed issue tabs on the repo top route", async () => {
     vi.stubGlobal("fetch", mockRpcFetch({ "issues/list": () => [] }));
 

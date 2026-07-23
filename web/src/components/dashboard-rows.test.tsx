@@ -91,6 +91,9 @@ afterEach(() => {
 });
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
+  const linkedPulls =
+    overrides.linked_pull_requests ??
+    (overrides.linked_pull_request ? [overrides.linked_pull_request] : []);
   return {
     number: 1,
     state: "open",
@@ -102,6 +105,7 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     comments: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
+    has_open_pull_request: linkedPulls.some((pull) => pull.state === "open"),
     ...overrides,
   };
 }
@@ -433,16 +437,41 @@ describe("IssueRow Start workflow button (#1622)", () => {
     ).toBeTruthy();
   });
 
-  it("does not show the button when the issue has a linked PR", async () => {
+  it("shows the button when every linked PR is closed", async () => {
     renderInRouter(
       <IssueRow
         owner="me"
         repo="proj"
-        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ number: 10, state: "closed" }),
+            makePull({ number: 9, state: "closed", merged: true }),
+          ],
+        })}
       />,
       { "workflows/list": () => [] },
     );
     expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "PR #9" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Start workflow/ })).toBeTruthy();
+  });
+
+  it("does not show the button when any linked PR is open", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [
+            makePull({ number: 10, state: "closed" }),
+            makePull({ number: 9, state: "open" }),
+          ],
+        })}
+      />,
+      { "workflows/list": () => [] },
+    );
+    expect(await screen.findByRole("link", { name: "PR #10" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "PR #9" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Start workflow/ })).toBeNull();
   });
 
@@ -459,12 +488,21 @@ describe("IssueRow Start workflow button (#1622)", () => {
     expect(screen.queryByRole("button", { name: /Start workflow/ })).toBeNull();
   });
 
-  it("launches the chosen workflow for the issue", async () => {
-    renderInRouter(<IssueRow owner="me" repo="proj" issue={makeIssue()} />, {
-      "workflows/list": () => [
-        { id: 7, name: "Dev loop", description: "Build then review" },
-      ],
-    });
+  it("launches the chosen workflow when every linked PR is closed", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({
+          linked_pull_requests: [makePull({ state: "closed" })],
+        })}
+      />,
+      {
+        "workflows/list": () => [
+          { id: 7, name: "Dev loop", description: "Build then review" },
+        ],
+      },
+    );
     const button = await screen.findByRole("button", {
       name: /Start workflow/,
     });

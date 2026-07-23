@@ -52,8 +52,23 @@ describe("dashboard.overview", () => {
       },
       "sess-1",
     );
+    const withClosedPr = svc.issues.create("me/proj", {
+      title: "has a closed PR",
+    });
+    const closedPr = await svc.dev.openPr(
+      "me/proj",
+      {
+        issue: withClosedPr.number,
+        head: `loophub/issue-${withClosedPr.number}`,
+        base: "main",
+      },
+      "sess-1",
+    );
     const noPr = svc.issues.create("me/proj", { title: "no PR" });
     const repo = S.getRepo("me", "proj")!;
+    S.updateIssue(S.getIssue(repo.id, closedPr.number)!.id, {
+      state: "closed",
+    });
     const noPrRow = S.getIssue(repo.id, noPr.number)!;
     S.upsertIssueHerdrPane({
       launchId: "dashboard-launch",
@@ -78,11 +93,17 @@ describe("dashboard.overview", () => {
     expect(enriched.linked_pull_request?.number).toBe(
       enriched.linked_pull_requests![0].number,
     );
+    expect(enriched.has_open_pull_request).toBe(true);
+
+    const closed = item(withClosedPr.number)!;
+    expect(closed.linked_pull_requests).toHaveLength(1);
+    expect(closed.has_open_pull_request).toBe(false);
 
     // An issue with no linked PR stays a one-row item: empty array, null singular.
     const plain = item(noPr.number)!;
     expect(plain.linked_pull_requests).toEqual([]);
     expect(plain.linked_pull_request).toBeNull();
+    expect(plain.has_open_pull_request).toBe(false);
     expect(plain.herdr_pane).toMatchObject({
       pane_id: "w3:p1",
       session_name: "me-proj-dashboard",

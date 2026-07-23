@@ -211,13 +211,12 @@ function IssuePopover({
   );
 }
 
-// Compact "Start workflow" launcher shown in place of the linked-PR sub-rows
-// when an issue has no linked PR yet (#1622). It mirrors issue-detail's
-// StartWorkflowControls (#1007) — same `terminal/launch` with the "workflow-run"
-// workflow — but is sized down (h-6, text-xs, size-3 icons) to sit quietly at
-// the linked-PR sub-row scale (text-xs) instead of reading as a primary action.
-// With no saved workflows the menu links to Settings > Workflows, matching the
-// detail control.
+// Compact "Start workflow" launcher shown when an issue has no active linked
+// PR. It mirrors issue-detail's StartWorkflowControls (#1007) — same
+// `terminal/launch` with the "workflow-run" workflow — but is sized down (h-6,
+// text-xs, size-3 icons) to sit quietly at the linked-PR sub-row scale (text-xs)
+// instead of reading as a primary action. With no saved workflows the menu
+// links to Settings > Workflows, matching the detail control.
 function StartWorkflowButton({
   owner,
   repo,
@@ -339,6 +338,8 @@ export function IssueRow({
   const pulls =
     issue.linked_pull_requests ??
     (issue.linked_pull_request ? [issue.linked_pull_request] : []);
+  const canStartWorkflow =
+    issue.state === "open" && issue.has_open_pull_request === false;
   return (
     <div
       data-debug-component="IssueRow"
@@ -427,10 +428,11 @@ export function IssueRow({
             />
           ))}
         </div>
-      ) : issue.state === "open" ? (
-        // No linked PR yet: offer to start a workflow from the row, indented to
-        // sit where the linked-PR sub-rows would render (pl-7). Closed issues
-        // get nothing — there is no work to start (#1622).
+      ) : null}
+      {canStartWorkflow ? (
+        // No active attempt: offer to start a workflow from the row, indented
+        // to sit where the linked-PR sub-rows render (pl-7). This includes
+        // issues whose previous attempts are all closed.
         <div className="pl-7">
           <StartWorkflowButton owner={owner} repo={repo} issue={issue} />
         </div>
