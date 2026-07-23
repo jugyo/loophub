@@ -349,6 +349,46 @@ test("issues.list advances lookahead pages by the visible issue-list size (#906)
   expect(page3).toHaveLength(1);
 });
 
+test("issues.list applies the workspace filter before pagination", async () => {
+  const repo = S.createRepo("me/list-workspace", "/tmp/list-workspace");
+  S.createIssue(repo.id, "issue", "feature 1", "", "me", "feature/a");
+  S.createIssue(repo.id, "issue", "other 1", "", "me", "feature/b");
+  S.createIssue(repo.id, "issue", "feature 2", "", "me", "feature/a");
+  S.createIssue(repo.id, "issue", "default explicit", "", "me", "main");
+  S.createIssue(repo.id, "issue", "feature 3", "", "me", "feature/a");
+  S.createIssue(repo.id, "issue", "default implicit", "", "me");
+
+  const firstPage = (await svc.issues.list("me/list-workspace", {
+    kind: "issue",
+    workspace: "feature/a",
+    lookahead: true,
+    perPage: 3,
+    page: 1,
+  })) as any[];
+  const secondPage = (await svc.issues.list("me/list-workspace", {
+    kind: "issue",
+    workspace: "feature/a",
+    lookahead: true,
+    perPage: 3,
+    page: 2,
+  })) as any[];
+  const defaultWorkspace = (await svc.issues.list("me/list-workspace", {
+    kind: "issue",
+    workspace: "main",
+  })) as any[];
+
+  expect(firstPage.map((issue) => issue.title)).toEqual([
+    "feature 3",
+    "feature 2",
+    "feature 1",
+  ]);
+  expect(secondPage.map((issue) => issue.title)).toEqual(["feature 1"]);
+  expect(defaultWorkspace.map((issue) => issue.title)).toEqual([
+    "default implicit",
+    "default explicit",
+  ]);
+});
+
 test("issues.create links and claims the explicit current Herdr pane before emitting issue.opened", async () => {
   const repo = S.getRepo("me", "proj");
   if (!repo) throw new Error("repo missing");

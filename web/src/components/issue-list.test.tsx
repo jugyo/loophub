@@ -679,20 +679,24 @@ describe("IssueList", () => {
             branch_exists: true,
           },
         ],
-        "issues/list": () => [
-          issue({ number: 1, title: "Default issue" }),
-          issue({
-            number: 2,
-            title: "Selected workspace issue",
-            target_branch: "feature/a",
-            labels: [{ name: "ui", color: null }],
-          }),
-          issue({
-            number: 3,
-            title: "Archived workspace issue",
-            target_branch: "feature/archived",
-          }),
-        ],
+        "issues/list": (params) =>
+          [
+            issue({ number: 1, title: "Default issue" }),
+            issue({
+              number: 2,
+              title: "Selected workspace issue",
+              target_branch: "feature/a",
+              labels: [{ name: "ui", color: null }],
+            }),
+            issue({
+              number: 3,
+              title: "Archived workspace issue",
+              target_branch: "feature/archived",
+            }),
+          ].filter(
+            (item) =>
+              !params.workspace || item.target_branch === params.workspace,
+          ),
         "labels/list": () => [{ name: "bug", color: null }],
       }),
     );
@@ -784,11 +788,6 @@ describe("IssueList", () => {
             number: 2,
             title: "Explicit default issue",
             target_branch: "main",
-          }),
-          issue({
-            number: 3,
-            title: "Other workspace issue",
-            target_branch: "feature/a",
           }),
         ],
       }),
@@ -1012,6 +1011,51 @@ describe("IssueList", () => {
         kind: "issue",
         state: "all",
         labels: ["bug"],
+        perPage: 21,
+        page: 2,
+      }),
+    );
+  });
+
+  it("loads workspace pages with the workspace filter applied by the server", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockRpcFetch({
+        "issues/list": (params) =>
+          params.page === 1
+            ? issues(21).map((item) => ({
+                ...item,
+                target_branch: "feature/a",
+              }))
+            : issues(2, 21).map((item) => ({
+                ...item,
+                target_branch: "feature/a",
+              })),
+      }),
+    );
+
+    renderIssueList(
+      <IssueList
+        owner="me"
+        repo="proj"
+        showWorkspaceFilter
+        workspaceParam="feature/a"
+      />,
+      "/r/me/proj?workspace=feature%2Fa",
+    );
+
+    expect(await screen.findByText("Issue 20")).toBeTruthy();
+    expect(screen.queryByText("Issue 21")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+    expect(await screen.findByText("Issue 21")).toBeTruthy();
+    expect(await screen.findByText("Issue 22")).toBeTruthy();
+    expect(screen.getAllByText("Issue 21")).toHaveLength(1);
+    await waitFor(() =>
+      expect(rpcCalls("issues/list").at(-1)?.params).toMatchObject({
+        repo: "me/proj",
+        workspace: "feature/a",
+        lookahead: true,
         perPage: 21,
         page: 2,
       }),

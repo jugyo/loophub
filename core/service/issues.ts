@@ -132,6 +132,8 @@ export const issues = {
       state?: string;
       kind?: "issue" | "pull" | "any";
       labels?: string[];
+      workspace?: string;
+      lookahead?: boolean;
       page?: number;
       perPage?: number;
       sort?: "updated" | "created";
@@ -154,16 +156,26 @@ export const issues = {
         return labelsFilter.every((l) => names.includes(l));
       });
     }
+    if (opts.workspace) {
+      rows = rows.filter((row) => {
+        const targetBranch = row.target_branch?.trim();
+        return opts.workspace === r.default_branch
+          ? !targetBranch || targetBranch === r.default_branch
+          : targetBranch === opts.workspace;
+      });
+    }
     // Enrich each issue's linked PR with status (working / review / mergeable /
     // diff totals) for the issue-list sub-row. Async git fan-out, bounded by the
     // pagination slice above; other surfaces keep the sync issueJSON summary.
-    // The repo issue list asks for 101 rows to render 100 and use one as
-    // lookahead, so those pages advance by the visible page size.
+    // A lookahead page returns one extra row so the caller can decide whether
+    // to offer another page. Advance by the visible size so that extra row
+    // becomes the first visible row on the next page. Keep the legacy 101-row
+    // request compatible with the original 100-row issue list.
     const pageRows =
-      perPage === ISSUE_LIST_LOOKAHEAD_MAX
+      (opts.lookahead && perPage > 1) || perPage === ISSUE_LIST_LOOKAHEAD_MAX
         ? rows.slice(
-            (page - 1) * MAX_LIST_PER_PAGE,
-            (page - 1) * MAX_LIST_PER_PAGE + perPage,
+            (page - 1) * (perPage - 1),
+            (page - 1) * (perPage - 1) + perPage,
           )
         : paginate(rows, perPage, page);
     return Promise.all(pageRows.map((row) => issueListItemJSON(row, r)));

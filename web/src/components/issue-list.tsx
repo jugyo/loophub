@@ -158,8 +158,9 @@ export function IssueList({
       ...DEFAULT_ISSUE_FILTERS,
       state,
       labels,
+      workspace: showWorkspaceFilter ? workspaceParam : undefined,
     }),
-    [state, labels],
+    [state, labels, showWorkspaceFilter, workspaceParam],
   );
   const [draftLabels, setDraftLabels] = useState(labelsParam ?? "");
   const query = useIssuesList(owner, repo, filters);
@@ -178,17 +179,7 @@ export function IssueList({
   const activeWorkspaces = workspaces.filter(
     (workspace) => workspace.archived_at === null,
   );
-  const visibleIssues = useMemo(() => {
-    // All (no param) shows every workspace's issues; the default branch also
-    // covers unassigned issues, treated as the implicit default workspace.
-    if (!showWorkspaceFilter || !workspaceParam) return allVisibleIssues;
-    return allVisibleIssues.filter((issue) => {
-      const branch = issue.target_branch?.trim();
-      return workspaceParam === defaultBranch
-        ? !branch || branch === defaultBranch
-        : branch === workspaceParam;
-    });
-  }, [allVisibleIssues, defaultBranch, showWorkspaceFilter, workspaceParam]);
+  const visibleIssues = allVisibleIssues;
   const issueSections = useMemo(
     () => composeIssueSections(visibleIssues, defaultBranch, workspaces),
     [visibleIssues, defaultBranch, workspaces],

@@ -25,6 +25,7 @@ const full = (owner: string, repo: string) => `${owner}/${repo}`;
 export interface IssueListFilters {
   state: "open" | "closed" | "all";
   labels: string;
+  workspace?: string;
 }
 
 export const DEFAULT_ISSUE_FILTERS: IssueListFilters = {
@@ -54,10 +55,12 @@ export function useIssuesList(
         kind: "issue",
         state: filters.state,
         per_page: String(ISSUE_LIST_FETCH_SIZE),
+        lookahead: "true",
         page: String(pageParam),
       });
       const labels = filters.labels.trim();
       if (labels) params.set("labels", labels);
+      if (filters.workspace) params.set("workspace", filters.workspace);
       return listIssues(owner, repo, params.toString());
     },
     getNextPageParam: (_lastPage, allPages) =>

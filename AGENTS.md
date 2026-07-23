@@ -23,6 +23,8 @@ convention changes.
 - Keep Web-to-CLI RPC calls fire-and-forget. A handler must not wait for long-running
   subprocess work such as agent boot; expose progress asynchronously through the database
   and events instead.
+- Keep data-selection semantics in `core`; Web should request the desired result set rather
+  than reconstruct it from partial responses.
 - Before answering review feedback with another defensive mechanism, apply these principles.
   For plausible but human-recoverable failures, explicitly accepting the risk can be correct.
 

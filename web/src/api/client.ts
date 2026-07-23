@@ -605,6 +605,8 @@ export function listIssues(owner: string, repo: string, query = "") {
       state: sp.get("state") ?? undefined,
       kind: sp.get("kind") ?? undefined,
       labels: labels ? labels.split(",").filter(Boolean) : undefined,
+      workspace: sp.get("workspace") ?? undefined,
+      lookahead: sp.get("lookahead") === "true" || undefined,
       perPage: sp.get("per_page") ? Number(sp.get("per_page")) : undefined,
       page: sp.get("page") ? Number(sp.get("page")) : undefined,
       sort: sp.get("sort") ?? undefined,
