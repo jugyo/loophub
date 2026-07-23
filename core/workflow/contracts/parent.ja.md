@@ -98,9 +98,10 @@ yes なら最初に `lh workflow step status <run> --repo '<repo>' --json` を�
 増額が成功した後だけ `lh workflow run resume --repo '<repo>' --run <run> --step <active_step>` で hold を解除する。
 Execute は同じ pane へ再確認を注入する。Verify は上記共通原則に従い新しい child を起動する。no は hold の
 ままにする。pane 解決 / hold / Esc / 通知 / 確認の失敗は成功扱いせず、retry や重複 side effect を行わない。
-失敗した command と error は parent pane に表示し、Issue comment と Inbox に記録して human hold を維持または
-確立する。transaction 外の effect には stable key `cost.escape`、`cost.pane-notification`、
-`cost.human-confirmation`、`escalation.issue-comment`、`escalation.inbox` を使う。各 effect の前に
+失敗した command と error は parent pane に表示し、
+`lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]` で通知して human hold
+を維持または確立する。cost effect には stable key `cost.escape`、`cost.pane-notification`、
+`cost.human-confirmation` を使う。各 cost effect の前に
 `lh workflow effect begin --repo '<repo>' --run <run> --event <event.id> --effect <key> --json` を実行し、
 `execute: true` の場合だけ side effect を行う。直後に
 `lh workflow effect complete --repo '<repo>' --run <run> --event <event.id> --effect <key>` を同じ event id /
@@ -110,7 +111,7 @@ key で記録する。`status: pending` は自動再実行せず人間へ確認�
 
 上記の rework 上限、HEAD advance なしの turn done の反復、child launch の反復失敗、child が解決不能な conflict では
 自動進行を止める。Execute の `workflow_run.escalated` も event の reason を使って同じ経路へ入る。
-`lh issue comment <issue> --repo '<repo>' --body <text>` と
-`lh inbox send --repo '<repo>' --from '{"kind":"workflow_run","repo":"<repo>","actor":"workflow-parent"}' --title <text> --body <text>`
-で人間へ通知する。step launch / rework count change をせず明示的な人間の指示を待つ。回答後は status を
+`lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]` で人間へ通知する。
+この command が Issue comment、Inbox、replay receipt を管理する。non-zero は未完了の escalation として見える
+状態に保つ。step launch / rework count change をせず明示的な人間の指示を待つ。回答後は status を
 再観測して共通注入 path または fresh launch へ進む。自動 retry や poll loop は追加しない。

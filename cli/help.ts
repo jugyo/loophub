@@ -174,6 +174,10 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Deliver an instruction to the latest Execute child.",
   },
   {
+    path: ["workflow", "escalate-human"],
+    description: "Notify a human about a workflow escalation.",
+  },
+  {
     path: ["workflow", "next"],
     description: "Advise the next Workflow parent action.",
   },

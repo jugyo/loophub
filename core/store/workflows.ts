@@ -246,7 +246,8 @@ export function beginWorkflowEventEffect(
          JOIN events event ON event.id = ?
          WHERE run.id = ?
            AND event.repo_id = run.repo_id
-           AND event.type GLOB 'workflow_run.*'
+           AND (event.type GLOB 'workflow_run.*'
+             OR event.type = 'workflow_effect.human_escalation')
            AND json_extract(event.payload, '$.id') = run.id
        )
        ON CONFLICT(run_id, event_id, effect) DO NOTHING

@@ -732,6 +732,40 @@ async function deliver(): Promise<void> {
   }
 }
 
+async function escalateHuman(): Promise<void> {
+  if (!flags.reason) fail("--reason is required");
+  const runId = positiveInt(
+    flags.run ?? process.env.LOOPHUB_WORKFLOW_RUN,
+    "--run or LOOPHUB_WORKFLOW_RUN",
+  );
+  const repo =
+    flags.repo ?? process.env.LOOPHUB_WORKFLOW_REPO ?? (await resolveRepo());
+  const issue =
+    flags.issue === undefined ? undefined : positiveInt(flags.issue, "--issue");
+  const result = await runOp(async () =>
+    (await svc()).workflowEscalation.escalateHuman(
+      repo,
+      { run: runId, reason: flags.reason!, issue },
+      await writeSession(),
+    ),
+  );
+  if (flags.json) {
+    out(result);
+  } else {
+    console.log(`Workflow run #${result.run}\tIssue #${result.issue}`);
+    for (const [label, effect] of [
+      ["issue comment", result.effects.issue_comment],
+      ["inbox", result.effects.inbox],
+    ] as const) {
+      console.log(`${label}\t${effect.status.replaceAll("_", " ")}`);
+      if (effect.error) console.log(`${label} error\t${effect.error}`);
+    }
+  }
+  if (!result.ok) {
+    fail("escalate-human did not complete every notification");
+  }
+}
+
 function formatWorkflowWatchCommand(input: {
   repo: string;
   run: number;
@@ -853,6 +887,8 @@ export async function run(): Promise<void> {
     await escalate();
   } else if (sub === "deliver") {
     await deliver();
+  } else if (sub === "escalate-human") {
+    await escalateHuman();
   } else if (sub === "watch") {
     await watch();
   } else if (sub === "next") {

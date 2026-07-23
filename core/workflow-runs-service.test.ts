@@ -1694,9 +1694,10 @@ test("parent contract template drives transitions by observation, rework, and es
   expect(contract).toContain("The rework limit is 3");
   expect(contract).toContain("--step execute --review <id>");
   expect(contract).toContain("Verify is **always a fresh child**");
-  // Escalation uses issue comment + inbox while the parent waits for human input.
-  expect(contract).toContain("lh issue comment");
-  expect(contract).toContain("lh inbox send");
+  // Escalation delegates both notifications to one idempotent command while the parent waits.
+  expect(contract).toContain("lh workflow escalate-human");
+  expect(contract).not.toContain("lh issue comment");
+  expect(contract).not.toContain("lh inbox send");
   expect(contract).toContain("run await-human");
   expect(contract).toContain("The run stays `running` after reaching the goal");
   expect(contract).not.toContain("--status blocked");

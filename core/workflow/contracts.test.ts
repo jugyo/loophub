@@ -41,8 +41,7 @@ test("Japanese contracts preserve the required commands and decision branches", 
     "lh workflow effect complete",
     "herdr pane run",
     "herdr pane send-keys",
-    "lh issue comment",
-    "lh inbox send",
+    "lh workflow escalate-human",
   ]) {
     expect(parent).toContain(command);
   }
@@ -413,28 +412,29 @@ test("parent uses a runtime-managed workflow watcher and reacts to cost limit fa
     "cost.escape",
     "cost.pane-notification",
     "cost.human-confirmation",
-    "escalation.issue-comment",
-    "escalation.inbox",
   ]) {
     expect(contract).toContain(key);
   }
-  expect(contract).toContain(
-    "print the failed command and error, record both in an Issue comment and Inbox",
-  );
-  expect(contract).toMatch(/retain or\s+establish the human hold/u);
+  expect(contract).not.toContain("escalation.issue-comment");
+  expect(contract).not.toContain("escalation.inbox");
+  expect(contract).toContain("print the failed command and error, run");
+  expect(contract).toContain("retain or establish the");
+  expect(contract).toContain("human hold");
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
   expect(contract).not.toContain("lh workflow run stop");
   expect(contract).not.toContain("sleep briefly and poll again");
 });
 
-test("parent documents executable human notification commands in both languages", () => {
+test("parent delegates both human notifications to escalate-human in both languages", () => {
   for (const contract of [
     workflowContractText("parent"),
     workflowContractText("parent", "ja"),
   ]) {
     expect(contract).toContain(
-      'lh inbox send --repo \'<repo>\' --from \'{"kind":"workflow_run","repo":"<repo>","actor":"workflow-parent"}\' --title <text> --body <text>',
+      "lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]",
     );
+    expect(contract).not.toContain("lh issue comment");
+    expect(contract).not.toContain("lh inbox send");
   }
 });
 

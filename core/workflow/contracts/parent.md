@@ -97,9 +97,9 @@ For yes, first run `lh workflow step status <run> --repo '<repo>' --json`, then
 succeeds run `lh workflow run resume --repo '<repo>' --run <run> --step <active_step>`. Execute receives a re-check
 instruction in the same pane. For Verify, launch a new child under the shared invariant. For no, leave the human hold in
 place. If pane resolution, hold, Esc, notification, or confirmation fails, do not report success or retry
-side effects. Instead, print the failed command and error, record both in an Issue comment and Inbox, and retain or
-establish the human hold. Use stable keys `cost.escape`, `cost.pane-notification`, `cost.human-confirmation`,
-`escalation.issue-comment`, and `escalation.inbox`. Before each effect, run
+side effects. Instead, print the failed command and error, run
+`lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]`, and retain or establish the
+human hold. Use stable keys `cost.escape`, `cost.pane-notification`, and `cost.human-confirmation`. Before each cost effect, run
 `lh workflow effect begin --repo '<repo>' --run <run> --event <event.id> --effect <key> --json`; only when it returns
 `execute: true` perform the side effect. Immediately record
 `lh workflow effect complete --repo '<repo>' --run <run> --event <event.id> --effect <key>` with the same event id and key.
@@ -109,7 +109,8 @@ A `status: pending` receipt requires human confirmation rather than automatic re
 
 Stop automatic progression after the defined rework limit, repeated turn done without HEAD advancement, repeated child-launch
 failure, or a conflict the child cannot resolve. An Execute `workflow_run.escalated` event follows the same path using its
-reason. Notify with `lh issue comment <issue> --repo '<repo>' --body <text>` and
-`lh inbox send --repo '<repo>' --from '{"kind":"workflow_run","repo":"<repo>","actor":"workflow-parent"}' --title <text> --body <text>`.
+reason. Notify with
+`lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]`; the command owns the Issue
+comment, Inbox message, and replay receipts. Treat a non-zero result as an incomplete escalation and keep it visible.
 Do not launch a step or change rework count until an explicit human instruction arrives. Then re-observe status and use the
 shared injection path or a fresh launch. Do not add automatic retry or polling loops.

@@ -299,8 +299,10 @@ hold を解除する。通常の resume 自体は上限を変更しない。Exec
 1 行指示を注入して続行し、Verify は中断した子を再利用せず current HEAD に対する fresh child を
 起動する。no の場合は hold を維持し、注入・step 遷移・子起動をせず次の明示的な人間指示を待つ。
 確認待ちと `Continuation decision: yes|no` は親 pane に表示する。pane 解決、hold、Esc、通知、確認
-表示のいずれかに失敗した場合は成功扱いせず、親 pane・issue comment・Inbox に command と error を
-残して hold を維持する。同じ edge の再処理で暗黙 retry や通知・確認の重複を行わない。
+表示のいずれかに失敗した場合は成功扱いせず、親 pane に command と error を表示し、
+`lh workflow escalate-human --repo <repo> --run <run> --reason <text>` で Issue comment と Inbox に通知して
+hold を維持する。
+同じ edge の再処理で暗黙 retry や通知・確認の重複を行わない。
 
 5 種類の通知はいずれも真実を代替しない timing signal である。親は通知後に
 `lh workflow step status`、PR review、または参照された GitHub API resource から domain state を再観測して
@@ -368,6 +370,7 @@ lh workflow run increase-cost-limit --run <id> --expected-limit <usd>
 lh workflow deliver --run <id> --text <single-line-instruction> # 最新 Execute を activate して指示を注入
 lh workflow turn done [--run <id>]          # Execute child がターン完了を宣言（payload なし）
 lh workflow escalate --reason <text> [--run <id>] # Execute child が人間の判断の必要性を宣言
+lh workflow escalate-human --reason <text> [--run <id>] [--issue <n>] # Issue comment と Inbox を冪等に記録
 lh workflow watch --repo <repo> --run <id> --since <event-id> --json # runtime-managed blocking wait
 lh workflow step input <run> <step>         # 合成した contract + input ポインタ + prompt を dry-run
 lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最新 workflow review の freshness を観測

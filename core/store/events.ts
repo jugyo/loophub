@@ -150,6 +150,52 @@ export function emitWorkflowRunCostExceededOnce(
   );
 }
 
+// `escalate-human` owns both human notifications and therefore needs one stable event id even
+// when the escalation was decided by parent reconciliation rather than an incoming run event.
+// Keeping this internal receipt anchor outside the workflow_run namespace prevents the parent
+// watch loop from treating command replay as new orchestration input.
+export function getOrCreateWorkflowHumanEscalationEvent(
+  repoId: number,
+  actor: string,
+  payload: {
+    id: number;
+    issue_number: number;
+    reason: string;
+  },
+): EventRow {
+  const inserted = db
+    .query(
+      `INSERT INTO events (repo_id, type, actor, payload, created_at)
+       SELECT ?, 'workflow_effect.human_escalation', ?, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM events
+         WHERE repo_id = ? AND type = 'workflow_effect.human_escalation'
+           AND json_extract(payload, '$.id') = ?
+           AND json_extract(payload, '$.reason') = ?
+       )
+       RETURNING *`,
+    )
+    .get(
+      repoId,
+      actor,
+      JSON.stringify(payload),
+      now(),
+      repoId,
+      payload.id,
+      payload.reason,
+    ) as EventRow | null;
+  if (inserted) return inserted;
+  return db
+    .query(
+      `SELECT * FROM events
+       WHERE repo_id = ? AND type = 'workflow_effect.human_escalation'
+         AND json_extract(payload, '$.id') = ?
+         AND json_extract(payload, '$.reason') = ?
+       ORDER BY id ASC LIMIT 1`,
+    )
+    .get(repoId, payload.id, payload.reason) as EventRow;
+}
+
 export function hasWorkflowRunCostExceededEvent(
   repoId: number,
   runId: number,
