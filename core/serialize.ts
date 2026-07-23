@@ -345,7 +345,7 @@ export interface IssueWire {
   linked_pull_requests?: PullSummaryWire[];
   linked_pull_request?: PullSummaryWire | null;
   linked_pull_requests_truncated?: boolean;
-  has_open_pull_request?: boolean;
+  has_open_pull_request: boolean;
   github_issue?: GithubIssueWire | null;
 }
 
@@ -1392,6 +1392,7 @@ export function issueJSON(row: S.IssueRow, repo?: S.Repo): IssueWire {
     comments: S.countComments(row.id),
     created_at: row.created_at,
     updated_at: row.updated_at,
+    has_open_pull_request: false,
   };
   if (row.kind === "pull") out.pull_request = { url: `/pulls/${row.number}` };
   else if (repo) {
@@ -1419,6 +1420,7 @@ export async function issueDetailJSON(
     );
     out.linked_pull_requests = pulls;
     out.linked_pull_request = pulls[0] ?? null;
+    out.has_open_pull_request = pulls.some((pull) => pull.state === "open");
     out.linked_pull_requests_truncated =
       linked.length > S.MAX_ISSUE_DETAIL_PULLS;
   }

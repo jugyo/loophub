@@ -67,6 +67,29 @@ test("issues.get returns an empty comment_list when there are no comments", asyn
   expect(detail.comment_list).toEqual([]);
 });
 
+test("issues.get reports no open pull request for a PR-less issue", async () => {
+  const issue = svc.issues.create("me/proj", { title: "no pull request" });
+  const detail = await svc.issues.get("me/proj", issue.number);
+
+  expect(detail.linked_pull_requests).toEqual([]);
+  expect(detail.has_open_pull_request).toBe(false);
+});
+
+test("issues.get reports an open linked pull request", async () => {
+  const issue = svc.issues.create("me/proj", { title: "open pull request" });
+  git(["branch", "feature/open-pull-request"]);
+  await svc.pulls.create("me/proj", {
+    title: "open pull request",
+    head: "feature/open-pull-request",
+    issue: issue.number,
+  });
+
+  const detail = await svc.issues.get("me/proj", issue.number);
+
+  expect(detail.linked_pull_requests).toHaveLength(1);
+  expect(detail.has_open_pull_request).toBe(true);
+});
+
 test("issues.create stores and exposes a target branch", async () => {
   const issue = svc.issues.create("me/proj", {
     title: "branch-targeted",
