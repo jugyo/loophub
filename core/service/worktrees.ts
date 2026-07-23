@@ -41,6 +41,72 @@ export interface WorktreePlanEntry {
   reason: string;
 }
 
+export interface WorktreeRemoveInput {
+  repoPath: string;
+  path: string;
+  issue: number;
+  force?: boolean;
+}
+
+export interface WorktreeRemoveResult {
+  removed: boolean;
+  reason?: string;
+}
+
+async function removeVerifiedWorktree(
+  entry: WorktreeRemoveInput,
+  fresh: Awaited<ReturnType<typeof worktreeList>>,
+): Promise<WorktreeRemoveResult> {
+  const match = fresh.find(
+    (w) => canonicalPath(w.path) === canonicalPath(entry.path),
+  );
+  if (!match || worktreeNumberFromBranch(match.branch) !== entry.issue) {
+    return {
+      removed: false,
+      reason: `no longer a loophub-managed worktree for #${entry.issue}`,
+    };
+  }
+  const claudeDir = join(entry.path, ".claude");
+  const claudeStat = existsSync(claudeDir) ? lstatSync(claudeDir) : null;
+  if (claudeStat?.isDirectory() && !claudeStat.isSymbolicLink()) {
+    rmSync(claudeDir, { recursive: true, force: true });
+  }
+  try {
+    await worktreeRemove(entry.repoPath, entry.path, {
+      force: entry.force,
+    });
+  } catch (e: any) {
+    return {
+      removed: false,
+      reason: e?.message ?? "git worktree remove failed",
+    };
+  }
+  return { removed: true };
+}
+
+async function removeMany(
+  entries: WorktreeRemoveInput[],
+): Promise<WorktreeRemoveResult[]> {
+  const byRepo = new Map<
+    string,
+    Array<{ entry: WorktreeRemoveInput; index: number }>
+  >();
+  entries.forEach((entry, index) => {
+    const group = byRepo.get(entry.repoPath) ?? [];
+    group.push({ entry, index });
+    byRepo.set(entry.repoPath, group);
+  });
+
+  const results = new Array<WorktreeRemoveResult>(entries.length);
+  for (const [repoPath, group] of byRepo) {
+    const fresh = await worktreeList(repoPath);
+    for (const { entry, index } of group) {
+      results[index] = await removeVerifiedWorktree(entry, fresh);
+    }
+  }
+  return results;
+}
+
 export const worktrees = {
   // Scan LoopHub worktrees across one repo (`repo`) or every registered repo, resolve each
   // worktree's issue/PR state from the DB, and classify. `cwd` is the caller's working dir (the
@@ -82,10 +148,14 @@ export const worktrees = {
           }
         }
 
-        const st = await worktreeStatus(wt.path);
-        const dirty = st.code !== 0 || porcelainIsDirty(st.stdout);
+        const isCwd = canonicalPath(wt.path) === cwd;
+        let dirty = false;
+        if (!opts.force && !isCwd) {
+          const st = await worktreeStatus(wt.path);
+          dirty = st.code !== 0 || porcelainIsDirty(st.stdout);
+        }
         const { action, reason } = classifyWorktree({
-          isCwd: canonicalPath(wt.path) === cwd,
+          isCwd,
           dirty,
           force: opts.force,
           issueState,
@@ -106,44 +176,15 @@ export const worktrees = {
     return entries;
   },
 
-  // Remove one worktree after re-asserting the safety invariants right before the destructive
-  // call: it must still be a registered worktree on its `loophub/pr-<n>` (or legacy
-  // `loophub/issue-<n>`) branch (state may have changed since plan()). The LoopHub-injected,
-  // un-gitignored `.claude/` is dropped first (regenerated on the next provision) so the
-  // no-`--force` `git worktree remove` stays a real guard for any other change — but only when it
-  // is a real directory, never a symlink.
-  async remove(entry: {
-    repoPath: string;
-    path: string;
-    issue: number;
-    force?: boolean;
-  }): Promise<{ removed: boolean; reason?: string }> {
-    const fresh = await worktreeList(entry.repoPath);
-    const match = fresh.find(
-      (w) => canonicalPath(w.path) === canonicalPath(entry.path),
-    );
-    if (!match || worktreeNumberFromBranch(match.branch) !== entry.issue) {
-      return {
-        removed: false,
-        reason: `no longer a loophub-managed worktree for #${entry.issue}`,
-      };
-    }
-    const claudeDir = join(entry.path, ".claude");
-    const claudeStat = existsSync(claudeDir) ? lstatSync(claudeDir) : null;
-    if (claudeStat?.isDirectory() && !claudeStat.isSymbolicLink()) {
-      rmSync(claudeDir, { recursive: true, force: true });
-    }
-    try {
-      await worktreeRemove(entry.repoPath, entry.path, {
-        force: entry.force,
-      });
-    } catch (e: any) {
-      return {
-        removed: false,
-        reason: e?.message ?? "git worktree remove failed",
-      };
-    }
-    return { removed: true };
+  // Re-assert the managed-worktree invariant from one fresh list per repository immediately
+  // before a batch removal. This preserves the safety check without repeating the same expensive
+  // `git worktree list` for every candidate. The LoopHub-injected, un-gitignored `.claude/` is
+  // dropped first (regenerated on the next provision) so no-force removal remains a guard for any
+  // other change; symlinks are never followed.
+  removeMany,
+
+  async remove(entry: WorktreeRemoveInput): Promise<WorktreeRemoveResult> {
+    return (await removeMany([entry]))[0];
   },
 
   // Run `git worktree prune` (tidy stale admin entries) for one repo or every registered repo.

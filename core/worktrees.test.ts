@@ -1,11 +1,13 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test as vitestTest } from "vitest";
 import { git, worktreeAdd } from "./git.ts";
+import { traceGitCommands } from "./git-trace-test-helper.ts";
 
 // Isolate the DB and sibling worktree fixtures before db.ts runs its import-time setup.
 const TEST_ROOT = mkdtempSync(join(tmpdir(), "lh-worktrees-"));
+const REAL_GIT_TIMEOUT_MS = 30_000;
 process.env.LOOPHUB_HOME = TEST_ROOT;
 process.env.LOOPHUB_DB = join(TEST_ROOT, "test.db");
 
@@ -29,10 +31,14 @@ function worktreePath(name: string): string {
   return join(TEST_ROOT, name);
 }
 
+function test(name: string, run: () => Promise<void>): void {
+  vitestTest(name, run, REAL_GIT_TIMEOUT_MS);
+}
+
 beforeAll(async () => {
   S = await import("./store.ts");
   svc = await import("./service.ts");
-});
+}, REAL_GIT_TIMEOUT_MS);
 
 afterAll(() => {
   rmSync(TEST_ROOT, { recursive: true, force: true });
@@ -74,7 +80,9 @@ test("plan classifies done/open/dirty/missing/cwd worktrees", async () => {
   writeFileSync(join(worktreePath(`wt-${repo.id}-3`), "wip.txt"), "x\n");
 
   const cwd = worktreePath(`wt-${repo.id}-4`);
-  const entries = await svc.worktrees.plan({ repo: "me/plan", cwd });
+  const { result: entries, commands } = await traceGitCommands(() =>
+    svc.worktrees.plan({ repo: "me/plan", cwd }),
+  );
   const byIssue = new Map(entries.map((e) => [e.issue, e]));
 
   expect(byIssue.get(1)?.action).toBe("remove");
@@ -87,6 +95,10 @@ test("plan classifies done/open/dirty/missing/cwd worktrees", async () => {
   expect(byIssue.get(999)?.reason).toBe("issue not found in LoopHub");
   // the primary checkout (branch main) is never an entry
   expect(entries.some((e) => e.branch === "main")).toBe(false);
+  // no-force still checks every managed worktree except cwd for uncommitted changes
+  expect(
+    commands.filter((command) => command.startsWith("status ")),
+  ).toHaveLength(4);
 
   // cleanup worktrees
   for (const n of [1, 2, 3, 4, 999]) {
@@ -182,20 +194,27 @@ test("remove deletes a clean worktree; tidy prunes admin entries", async () => {
   const wtPath = worktreePath(`wt-rm-${repo.id}-1`);
   await worktreeAdd(repo.path, wtPath, "loophub/issue-1", "main");
 
-  const res = await svc.worktrees.remove({
-    repoPath: repo.path,
-    path: wtPath,
-    issue: 1,
-  });
+  const { result: res, commands } = await traceGitCommands(() =>
+    svc.worktrees.remove({
+      repoPath: repo.path,
+      path: wtPath,
+      issue: 1,
+    }),
+  );
   expect(res.removed).toBe(true);
   expect(existsSync(wtPath)).toBe(false);
+  expect(
+    commands.filter((command) =>
+      command.startsWith("worktree list --porcelain"),
+    ),
+  ).toHaveLength(1);
 
   await svc.worktrees.tidy("me/remove"); // no throw; stale entries pruned
   const after = await svc.worktrees.plan({
     repo: "me/remove",
     cwd: "/nowhere",
   });
-  expect(after.some((e) => e.issue === 1)).toBe(false);
+  expect(after).toEqual([]);
 });
 
 test("force plans and removes modified, untracked, and clean done worktrees", async () => {
@@ -211,13 +230,19 @@ test("force plans and removes modified, untracked, and clean done worktrees", as
   writeFileSync(join(fixtures[0].path, "f.txt"), "modified\n");
   writeFileSync(join(fixtures[1].path, "scratch.txt"), "untracked\n");
 
-  const entries = await svc.worktrees.plan({
-    repo: "me/force-remove",
-    cwd: "/nowhere",
-    force: true,
-  });
+  const { result: entries, commands } = await traceGitCommands(() =>
+    svc.worktrees.plan({
+      repo: "me/force-remove",
+      cwd: "/nowhere",
+      force: true,
+    }),
+  );
   expect(entries).toHaveLength(3);
   expect(entries.every((entry) => entry.action === "remove")).toBe(true);
+  // Baseline: one status per managed worktree (3). Force makes dirtiness irrelevant: 3 -> 0.
+  expect(commands.filter((command) => command.startsWith("status "))).toEqual(
+    [],
+  );
 
   for (const fixture of fixtures) {
     const res = await svc.worktrees.remove({
@@ -229,6 +254,55 @@ test("force plans and removes modified, untracked, and clean done worktrees", as
     expect(res.removed, fixture.kind).toBe(true);
     expect(existsSync(fixture.path), fixture.kind).toBe(false);
   }
+});
+
+test("removeMany verifies worktrees once per repository before removing multiple candidates", async () => {
+  const repos = [await makeRepo("me/batch-a"), await makeRepo("me/batch-b")];
+  const fixtures = [];
+  for (const [repoIndex, repo] of repos.entries()) {
+    const candidateCount = repoIndex === 0 ? 2 : 1;
+    for (let index = 0; index < candidateCount; index++) {
+      const issue = S.createIssue(
+        repo.id,
+        "issue",
+        `candidate-${index}`,
+        "",
+        "me",
+      ) as any;
+      S.updateIssue(issue.id, { state: "closed" });
+      const path = worktreePath(`wt-batch-${repo.id}-${issue.number}`);
+      await worktreeAdd(
+        repo.path,
+        path,
+        `loophub/issue-${issue.number}`,
+        "main",
+      );
+      fixtures.push({ repo, issue, path });
+    }
+  }
+
+  const entries = await svc.worktrees.plan({
+    cwd: "/nowhere",
+    force: true,
+  });
+  expect(entries).toHaveLength(3);
+  const { result: results, commands } = await traceGitCommands(() =>
+    svc.worktrees.removeMany(
+      entries.map((entry) => ({ ...entry, force: true })),
+    ),
+  );
+
+  expect(results.every((result) => result.removed)).toBe(true);
+  // Baseline remove() refreshed once per candidate (3). Batch refreshes once per repo: 3 -> 2.
+  expect(
+    commands.filter((command) =>
+      command.startsWith("worktree list --porcelain"),
+    ),
+  ).toHaveLength(2);
+  expect(
+    commands.filter((command) => command.startsWith("worktree remove ")),
+  ).toHaveLength(3);
+  expect(fixtures.every((fixture) => !existsSync(fixture.path))).toBe(true);
 });
 
 // remove() re-asserts the branch invariant: a path that is no longer a loophub/issue-<n>

@@ -64,8 +64,11 @@ export async function run(): Promise<void> {
   }
 
   let removed = 0;
-  for (const e of candidates) {
-    const res = await s.worktrees.remove({ ...e, force });
+  const results = await s.worktrees.removeMany(
+    candidates.map((entry) => ({ ...entry, force })),
+  );
+  for (const [index, e] of candidates.entries()) {
+    const res = results[index];
     if (res.removed) {
       removed++;
       if (!flags.json) console.log(`removed ${e.path}`);
