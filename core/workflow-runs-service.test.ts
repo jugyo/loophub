@@ -300,7 +300,7 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   const row = S.getWorkflowRun(result.run.id)!;
   expect(row.runtime).toBe("codex");
   expect(row.model).toBe("gpt-5.5");
-  expect(result.parent.user_prompt).toContain("--since <cursor>");
+  expect(result.parent.user_prompt).toContain("--watch --json");
   expect(result.parent.user_prompt).toContain(
     "runtime-managed background task",
   );
@@ -1189,6 +1189,100 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   });
 }, 30_000);
 
+test("next --watch waits for one run event, owns its cursor, and keeps deciding from state", async () => {
+  const { repo } = freshRepo("me/workflow-watch-next");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Watch",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "watch-next-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "81818181-8181-4181-8181-818181818181";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const run = started.run.id;
+  const watch = () =>
+    svc.workflowRuns.next(repo.full_name, { run, watch: true });
+
+  await expect(
+    svc.workflowRuns.next(repo.full_name, { run, watch: true, note: "hi" }),
+  ).rejects.toThrow("either watch, event, or note");
+
+  // The events `start` already recorded are undigested, so each wake returns immediately, oldest
+  // first, and moves the durable cursor without the caller passing one.
+  const queued = S.eventsForWorkflowRun(repo.id, run).filter((event) =>
+    event.type.startsWith("workflow_run."),
+  );
+  expect(queued.length).toBeGreaterThan(0);
+  for (const event of queued) {
+    expect((await watch()).event?.id).toBe(event.id);
+  }
+  expect(S.getWorkflowRun(run)?.event_cursor).toBe(queued.at(-1)!.id);
+
+  const wake = S.emitEvent(repo.id, "workflow_run.updated", "test", {
+    id: run,
+  });
+  const first = await watch();
+  expect(first).toMatchObject({ action: "launch_execute" });
+  expect(first.event?.id).toBe(wake.id);
+  expect(first.observed.run).toBe(run);
+  expect(first.observed.steps.execute.complete).toBe(false);
+  expect(S.getWorkflowRun(run)?.event_cursor).toBe(wake.id);
+
+  // The parent stopped before executing that action. Reconciliation reads state, not the spent
+  // event, so the next wake decides the same action again.
+  S.emitEvent(repo.id, "workflow_run.updated", "test", { id: run });
+  const afterLostAction = await watch();
+  expect(afterLostAction.action).toBe(first.action);
+  expect(afterLostAction.reason).toBe(first.reason);
+
+  // A GitHub reference cannot carry the parent's changes decision into a wake; the watch reconciles
+  // from state and hands the event back so the parent can evaluate it with `--event`.
+  const github = S.emitEvent(
+    repo.id,
+    "workflow_run.github_event",
+    "lh-worker",
+    {
+      id: run,
+    },
+  );
+  const watchedGithub = await watch();
+  expect(watchedGithub.event?.id).toBe(github.id);
+  expect(watchedGithub.action).toBe("launch_execute");
+  expect(
+    await svc.workflowRuns.next(repo.full_name, {
+      run,
+      event: github.id,
+      requiresChanges: true,
+    }),
+  ).toMatchObject({ action: "deliver", delivery_reason: "github_feedback" });
+
+  // With nothing undigested the call blocks until the run records its next event.
+  const pending = watch();
+  const late = await new Promise<ReturnType<typeof S.emitEvent>>((resolve) =>
+    setTimeout(
+      () =>
+        resolve(
+          S.emitEvent(repo.id, "workflow_run.turn_done", "executor", {
+            id: run,
+          }),
+        ),
+      50,
+    ),
+  );
+  expect((await pending).event?.id).toBe(late.id);
+}, 20_000);
+
 test("step status exposes hold, rework, pending effects, and unaddressed out-of-band reviews", async () => {
   const { repo } = freshRepo("me/workflow-observed-state");
   const issue = S.createIssue(
@@ -1816,13 +1910,12 @@ test("parent contract template executes workflow next actions", () => {
   expect(contract).toContain("lh workflow next");
   expect(contract).toContain("lh workflow deliver");
   expect(contract).toMatch(/Record the printed `agent` and `session`\s+lines/u);
-  // Transitions come from observation; watcher events only wake reconciliation.
+  // Transitions come from observation; events only wake reconciliation inside `next --watch`.
   expect(contract).toContain(
-    "lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json",
+    "Start `lh workflow next <run> --repo '<repo>' --watch --json` as a runtime-managed background task",
   );
-  expect(contract).toMatch(
-    /exact `next_command` returned by the\s+previous watcher, unchanged/u,
-  );
+  expect(contract).not.toContain("lh workflow watch");
+  expect(contract).not.toContain("next_command");
   expect(contract).not.toContain("--ack");
   expect(contract).not.toContain("replay the event");
   expect(contract).not.toContain("lh subscribe --repo");

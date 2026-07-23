@@ -39,14 +39,12 @@ test("the English parent prompt remains byte-identical", () => {
       "",
       "## Instruction",
       "Orchestrate this run through Execute -> Verify as described in your contract.",
-      "Decide every transition by observing `lh workflow step status 42 --repo 'me/workflow-run' --json` after a background watch task returns an event; task completion, pane output, and PR body markers are never transition facts.",
+      "Decide every transition from the `action` and `observed` state returned by `lh workflow next`; task completion, pane output, and PR body markers are never transition facts.",
       "Start now:",
-      "1. Seed <cursor> from the latest id returned by `lh events --repo 'me/workflow-run' --type workflow_run --run 42 --order desc --limit 1 --json`; use 0 when no event exists.",
-      "2. Launch the Execute child: `lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute`.",
-      "3. Start `lh workflow watch --repo 'me/workflow-run' --run 42 --since <cursor> --json` as a runtime-managed background task and end the model turn while it blocks. Resume only from the task completion notification, then read its JSON result. Runtime-specific tool mechanics belong to the runtime adapter, not this prompt.",
-      "4. On task completion, process the single event in the returned `events` array and re-observe step status for every transition. After processing it, start the returned `next_command` verbatim as the next background watch; do not reconstruct or edit its cursor.",
-      "If the parent restarts or loses its cursor, inspect `lh events --repo 'me/workflow-run' --type workflow_run --run 42 --order asc --json` and current step status instead of expecting automatic replay.",
-      "Then follow your contract's transition table, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
+      "1. Launch the Execute child: `lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute`.",
+      "2. Start `lh workflow next 42 --repo 'me/workflow-run' --watch --json` as a runtime-managed background task and end the model turn while it blocks. Resume only from the task completion notification, then read its JSON result. Runtime-specific tool mechanics belong to the runtime adapter, not this prompt.",
+      "3. On task completion, execute the returned action as your contract describes, then start the same `next --watch` command again. The command owns event delivery and where to resume, so never seed or acknowledge a cursor.",
+      "Then follow your contract's actions, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
       "",
     ].join("\n"),
   );
@@ -65,33 +63,29 @@ test("the Japanese parent prompt translates prose without changing commands", ()
     "contract の記述に従い、この run を Execute -> Verify の順に orchestrate してください。",
   );
   expect(prompt).toContain(
-    "lh workflow step status 42 --repo 'me/workflow-run' --json",
+    "lh workflow next 42 --repo 'me/workflow-run' --watch --json",
   );
   expect(prompt).toContain(
     "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute",
   );
-  expect(prompt).toContain("--since <cursor>");
   expect(prompt).toContain("runtime-managed background task");
   expect(prompt).toContain("runtime adapter の責務");
-  expect(prompt).toContain("自動 replay を期待せず");
+  expect(prompt).toContain("cursor を seed・acknowledge しません");
 });
 
-// The parent decides every transition by observing step status after a returned event.
-test("the parent prompt launches Execute and delegates the watcher to a background task", () => {
+// The parent decides every transition from the action and observed state `next` returns.
+test("the parent prompt launches Execute and delegates the wait to a background task", () => {
   const prompt = parentUserPrompt(INPUT, "en");
   const launch =
     "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute";
-  const watch =
-    "lh workflow watch --repo 'me/workflow-run' --run 42 --since <cursor> --json";
+  const watch = "lh workflow next 42 --repo 'me/workflow-run' --watch --json";
   expect(prompt).toContain(launch);
   expect(prompt).toContain(watch);
   expect(prompt).toContain("end the model turn while it blocks");
-  expect(prompt).toContain("start the returned `next_command` verbatim");
-  expect(prompt).toContain("do not reconstruct or edit its cursor");
-  expect(prompt).toContain("instead of expecting automatic replay");
-  expect(prompt).toContain(
-    "lh workflow step status 42 --repo 'me/workflow-run' --json",
-  );
+  expect(prompt).toContain("start the same `next --watch` command again");
+  expect(prompt).toContain("never seed or acknowledge a cursor");
+  expect(prompt).not.toContain("lh workflow watch");
+  expect(prompt).not.toContain("--since");
   expect(prompt.indexOf(launch)).toBeLessThan(prompt.indexOf(watch));
   expect(prompt).not.toContain("watcher_armed");
   expect(prompt).not.toContain("HERDR_PANE_ID");

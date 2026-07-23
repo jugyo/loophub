@@ -55,7 +55,10 @@ test("Japanese contracts preserve the required commands and action procedures", 
     expect(parent).toContain(action);
   }
   expect(parent).toContain("workflow_run.cost_exceeded");
-  expect(parent).toContain("cursor にし");
+  expect(parent).toContain(
+    "lh workflow next <run> --repo '<repo>' --watch --json",
+  );
+  expect(parent).not.toContain("cursor を seed");
   expect(parent).not.toContain("herdr pane send-keys <pane_id> Escape");
   expect(parent).not.toContain("pull loop");
   expect(parent).toContain(
@@ -236,7 +239,7 @@ test("parent states shared lifecycle invariants once in both languages", () => {
     expect(contract).toContain(freshChildRule);
   }
   expect(japanese).toMatch(
-    /watch の non-zero error は retry せず、人間へ判断を求める/u,
+    /next \/ action の non-zero error は retry せず、人間へ判断を求める/u,
   );
 });
 
@@ -275,7 +278,13 @@ test("parent delegates transition decisions to workflow next", () => {
   const japanese = workflowContractText("parent", "ja");
 
   expect(parent).toContain(
-    "lh workflow next <run> --repo '<repo>' [--event <event.id> [--requires-changes true|false] | --note <text|->] --json",
+    "lh workflow next <run> --repo '<repo>' --watch --json",
+  );
+  expect(parent).toContain(
+    "lh workflow next <run> --repo '<repo>' --note <text|-> --json",
+  );
+  expect(parent).toContain(
+    "lh workflow next <run> --repo '<repo>' --event <event.id> --requires-changes true|false --json",
   );
   expect(parent).toMatch(
     /The `next` result is the only source for\s+selecting an action/u,
@@ -350,28 +359,36 @@ test("parent keeps inject-round audit details out of the contract", () => {
   expect(parent).not.toContain("step_sessions_json.execute");
 });
 
-test("parent uses a runtime-managed workflow watcher and reacts to cost limit facts", () => {
+test("parent waits with next --watch and reacts to cost limit facts", () => {
   const contract = workflowContractText("parent");
 
   expect(contract).toContain("## Reconcile loop");
   expect(contract).toContain(
-    "lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json",
+    "Start `lh workflow next <run> --repo '<repo>' --watch --json` as a runtime-managed background task",
   );
   expect(contract).not.toContain("yielded `functions.exec` cell");
   expect(contract).not.toContain("functions.wait");
-  expect(contract).toContain("exactly one ascending event");
-  expect(contract).toContain("exact `next_command`");
-  expect(contract).toMatch(
-    /exact `next_command` returned by the\s+previous watcher, unchanged/u,
+  // Event delivery, ordering, and resume position moved inside `next --watch` (#1744): the parent
+  // no longer owns a cursor, an acknowledgement, or a replay procedure.
+  expect(contract).toContain(
+    "owns event delivery, its order, and where to resume",
   );
+  expect(contract).toContain(
+    "Do not seed, persist, edit, or acknowledge a cursor",
+  );
+  expect(contract).not.toContain("lh workflow watch");
+  expect(contract).not.toContain("next_command");
+  expect(contract).not.toContain("--since");
   expect(contract).not.toContain("--ack");
   expect(contract).not.toContain("replay the event");
   const japanese = workflowContractText("parent", "ja");
+  expect(japanese).not.toContain("lh workflow watch");
+  expect(japanese).not.toContain("next_command");
+  expect(japanese).not.toContain("--since");
   expect(japanese).not.toContain("--ack");
   expect(japanese).not.toContain("event を replay");
   expect(contract).not.toContain("watcher_armed");
   expect(contract).not.toContain("HERDR_PANE_ID");
-  expect(contract).not.toContain("nohup lh workflow watch");
   expect(contract).toContain("workflow_run.cost_exceeded");
   expect(contract).toContain("current cumulative `limit_usd`");
   expect(contract).toContain(
@@ -526,12 +543,16 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
   expect(design).toContain(
     "`lh workflow run increase-cost-limit --run <run> --expected-limit <limit_usd>`",
   );
-  expect(design).toContain("Runtime-managed watcher protocol");
-  expect(design).toContain('--since "$cursor"');
-  expect(design).toContain("`next_command` を編集せず");
+  expect(design).toContain("Runtime-managed reconcile loop");
+  expect(design).toContain(
+    'lh workflow next "$run" --repo "$repo" --watch --json',
+  );
+  expect(design).toContain(
+    "cursor は wake 専用の\n内部実装であり、親は seed も acknowledge もしない",
+  );
   expect(design).not.toContain("event_ack_cursor");
-  expect(design).toMatch(/完了通知\s*だけを契機に同じ parent が再開/);
-  expect(design).toContain("自動 replay しない");
+  expect(design).not.toContain("next_command");
+  expect(design).toMatch(/完了通知だけを契機に同じ parent が再開/);
   expect(design).not.toContain("watcher_armed");
   // Execute-side interpretation of additional work (issue/PR extension, same completion path).
   expect(design).toContain("追加作業指示");

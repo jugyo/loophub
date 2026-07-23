@@ -661,8 +661,11 @@ async function nextAction(): Promise<void> {
       : typeof flags.note === "string"
         ? flags.note
         : undefined;
-  if (event !== undefined && note !== undefined) {
-    fail("workflow next accepts either --event or --note");
+  const watch = flags.watch === true;
+  if (
+    [event !== undefined, note !== undefined, watch].filter(Boolean).length > 1
+  ) {
+    fail("workflow next accepts either --watch, --event, or --note");
   }
   const requiresChanges =
     flags["requires-changes"] === undefined
@@ -679,6 +682,7 @@ async function nextAction(): Promise<void> {
       event,
       note,
       requiresChanges,
+      watch,
     }),
   );
   if (flags.json) {
@@ -687,6 +691,8 @@ async function nextAction(): Promise<void> {
   }
   console.log(result.action);
   console.log(result.reason);
+  if (result.event)
+    console.log(`event\t#${result.event.id} ${result.event.type}`);
 }
 
 // The Execute child's payload-less turn-done declaration (#1358). Target resolution mirrors the
@@ -787,36 +793,6 @@ async function escalateHuman(): Promise<void> {
   }
   if (!result.ok) {
     fail("escalate-human did not complete every notification");
-  }
-}
-
-function formatWorkflowWatchCommand(input: {
-  repo: string;
-  run: number;
-  since: number;
-}): string {
-  return `lh workflow watch --repo ${shQuote(input.repo)} --run ${input.run} --since ${input.since} --json`;
-}
-
-async function watch(): Promise<void> {
-  const watchIndex = process.argv.indexOf("watch", 2);
-  const service = await svc();
-  try {
-    const input = service.parseWorkflowWatchArgs(
-      process.argv.slice(watchIndex + 1),
-    );
-    const result = await service.workflowWatch.watch(input);
-    out({
-      run: result.run,
-      events: result.events,
-      next_command: formatWorkflowWatchCommand({
-        repo: input.repo,
-        run: input.run,
-        since: result.next_since,
-      }),
-    });
-  } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -956,8 +932,6 @@ export async function run(): Promise<void> {
     await deliver();
   } else if (sub === "escalate-human") {
     await escalateHuman();
-  } else if (sub === "watch") {
-    await watch();
   } else if (sub === "next") {
     await nextAction();
   } else if (sub === "effect") {

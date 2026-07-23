@@ -19,41 +19,50 @@ const NODE_ARGS = [
 let S: typeof import("../core/store.ts");
 let repoId: number;
 let workflowId: number;
-let nextNumber = 1;
 
 function runCli(args: string[]) {
   return spawnSync(process.execPath, [...NODE_ARGS, ...args], {
     cwd: process.cwd(),
     encoding: "utf8",
     env: process.env,
-    timeout: 3_000,
+    timeout: 10_000,
   });
 }
 
-function watchArgs(run: number, since = 0, extra: string[] = []) {
+function watchArgs(run: number) {
   return [
+    "workflow",
+    "next",
+    String(run),
     "--repo",
     "me/workflow-watch",
-    "--run",
-    String(run),
-    "--since",
-    String(since),
+    "--watch",
     "--json",
-    ...extra,
   ];
 }
 
-function runWatch(run: number, since = 0, extra: string[] = []) {
-  return runCli(["workflow", "watch", ...watchArgs(run, since, extra)]);
+function runWatch(run: number) {
+  return runCli(watchArgs(run));
 }
 
+// A run needs the Issue/PR rows `workflow next` observes. The PR's worktree is never provisioned,
+// so HEAD stays unresolved and the state-derived decision here is always the same — what these
+// tests assert is event delivery, not the reconcile rules (core/workflow-runs-service.test.ts).
 function createRun(): number {
-  const number = nextNumber++;
+  const issue = S.createIssue(repoId, "issue", "watch", "", "me");
+  const prIssue = S.createIssue(repoId, "pull", "watch pr", "", "me");
+  S.createPull(
+    prIssue.id,
+    `loophub/pr-${prIssue.number}`,
+    "main",
+    null,
+    issue.id,
+  );
   return S.createWorkflowRun({
     workflowId,
     repoId,
-    issueNumber: number,
-    prNumber: number,
+    issueNumber: issue.number,
+    prNumber: prIssue.number,
     status: "running",
     currentStep: "execute",
     costIncrementUsd: 1,
@@ -68,15 +77,11 @@ type BackgroundResult = {
 };
 
 function startWatch(run: number): Promise<BackgroundResult> {
-  const child = spawn(
-    process.execPath,
-    [...NODE_ARGS, "workflow", "watch", ...watchArgs(run)],
-    {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  const child = spawn(process.execPath, [...NODE_ARGS, ...watchArgs(run)], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   let stdout = "";
   let stderr = "";
   child.stdout.setEncoding("utf8");
@@ -108,34 +113,36 @@ afterAll(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-test("lh workflow watch returns the next event and the command for the following wait", () => {
+test("lh workflow next --watch returns one event per call and resumes after it", () => {
   const run = createRun();
   S.emitEvent(repoId, "workflow_run.turn_done", "test", { id: run });
-  S.emitEvent(repoId, "workflow_run.escalated", "test", { id: run });
+  S.emitEvent(repoId, "workflow_run.escalated", "test", {
+    id: run,
+    reason: "Need human guidance",
+  });
 
   const first = runWatch(run);
   const firstResult = JSON.parse(first.stdout);
 
   expect(first.error).toBeUndefined();
   expect(first.status).toBe(0);
-  expect(firstResult.events).toEqual([
-    expect.objectContaining({ type: "workflow_run.turn_done" }),
-  ]);
-  expect(firstResult.next_command).toBe(
-    `lh workflow watch --repo 'me/workflow-watch' --run ${run} --since ${firstResult.events[0].id} --json`,
-  );
-  const next = JSON.parse(runWatch(run, firstResult.events[0].id).stdout);
-  expect(next.events).toEqual([
-    expect.objectContaining({ type: "workflow_run.escalated" }),
-  ]);
-  expect(next.next_command).toContain(`--since ${next.events[0].id} --json`);
+  expect(firstResult.event).toMatchObject({ type: "workflow_run.turn_done" });
+  expect(firstResult.observed.run).toBe(run);
+  expect(typeof firstResult.action).toBe("string");
+
+  // The cursor lives with the run, so the next call continues after the event already delivered.
+  const next = JSON.parse(runWatch(run).stdout);
+  expect(next.event).toMatchObject({ type: "workflow_run.escalated" });
+  expect(next).toMatchObject({
+    action: "escalate",
+    escalation_reason: "execute_request",
+  });
 });
 
 test("workflow effect receipts remain idempotent without watcher acknowledgement", () => {
   const run = createRun();
   S.emitEvent(repoId, "workflow_run.turn_done", "test", { id: run });
-  const firstResult = JSON.parse(runWatch(run).stdout);
-  const eventId = firstResult.events[0].id;
+  const eventId = JSON.parse(runWatch(run).stdout).event.id;
   const effectArgs = [
     "--repo",
     "me/workflow-watch",
@@ -185,29 +192,33 @@ test("a blocking watch completes when another process records an event", async (
   const result = await waiting;
 
   expect(result.status, result.stderr).toBe(0);
-  expect(JSON.parse(result.stdout).events).toEqual([
-    expect.objectContaining({ type: "workflow_run.escalated" }),
-  ]);
+  expect(JSON.parse(result.stdout).event).toMatchObject({
+    type: "workflow_run.escalated",
+  });
 });
 
 test.each([
-  ["missing options", []],
+  ["a missing run", ["workflow", "next", "--repo", "me/workflow-watch"]],
   [
-    "duplicate option",
-    ["--repo", "me/workflow-watch", "--run", "999", "--run", "2"],
+    "an unknown run",
+    ["workflow", "next", "999999", "--repo", "me/workflow-watch", "--watch"],
   ],
   [
-    "unknown option",
-    ["--repo", "me/workflow-watch", "--run", "999", "--runtime", "codex"],
+    "watch combined with note",
+    [
+      "workflow",
+      "next",
+      "1",
+      "--repo",
+      "me/workflow-watch",
+      "--watch",
+      "--note",
+      "do this",
+    ],
   ],
-  ["invalid run", ["--repo", "me/workflow-watch", "--run", "0"]],
-  [
-    "invalid since",
-    ["--repo", "me/workflow-watch", "--run", "999", "--since", "-1"],
-  ],
-])("lh workflow watch rejects %s with a visible non-zero exit", (_name, args) => {
-  const result = runCli(["workflow", "watch", ...args]);
+])("lh workflow next rejects %s with a visible non-zero exit", (_name, args) => {
+  const result = runCli(args);
 
   expect(result.status).not.toBe(0);
-  expect(result.stderr).toContain("workflow watch:");
+  expect(result.stderr).not.toBe("");
 });

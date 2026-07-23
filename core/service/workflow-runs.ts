@@ -90,13 +90,16 @@ import {
   actorFor,
   assertExistingLocalBranch,
   ensureWritable,
+  formatEvent,
   issueOr404,
+  type LoopEvent,
   repoOr404,
   S,
   ServiceError,
   workflowRunHistoryEventJSON,
   workflowRunStateJSON,
 } from "./shared.ts";
+import { workflowWatch } from "./workflow-watch.ts";
 
 export type WorkflowRunStartResult = {
   run: {
@@ -214,6 +217,15 @@ export type WorkflowStepInputResult = {
 };
 
 export type WorkflowStepStatusResult = WorkflowStepStatusWire;
+
+// The action plus the facts it was decided from. The snapshot travels with the action so the parent
+// never has to re-observe state to act on it, and `event` names the run event this call woke on
+// (`--watch`) or was pointed at (`--event`) — the parent needs its id for event-scoped commands
+// such as `lh workflow cost-hold` and for reading a GitHub reference.
+export type WorkflowNextResult = WorkflowNextAction & {
+  observed: WorkflowStepStatusWire;
+  event: LoopEvent | null;
+};
 
 function workflowByInput(input: { workflow?: string; workflowId?: number }) {
   if (input.workflow && input.workflowId !== undefined) {
@@ -480,28 +492,22 @@ function turnDoneObservation(
 }
 
 function workflowWakeObservation(
-  repoId: number,
-  run: S.WorkflowRunRow,
   prIssueId: number,
-  eventId: number | undefined,
+  event: LoopEvent | null,
   requiresChanges: boolean | undefined,
+  // A `--watch` wake carries no parent decision yet. GitHub feedback is the one wake that needs one,
+  // so the watch reconciles from state alone and the parent re-runs `next --event` with its
+  // `--requires-changes` verdict after reading the reference.
+  watched: boolean,
 ): WorkflowWakeInput | null {
-  if (eventId === undefined) {
+  if (!event) {
     if (requiresChanges !== undefined) {
       throw new ServiceError(422, "requiresChanges requires a workflow event");
     }
     return null;
   }
-  const event = S.eventsForWorkflowRun(repoId, run.id).find(
-    (candidate) => candidate.id === eventId,
-  );
-  if (!event) {
-    throw new ServiceError(
-      404,
-      `workflow event #${eventId} not found for run #${run.id}`,
-    );
-  }
-  const payload = JSON.parse(event.payload) as Record<string, unknown>;
+  const eventId = event.id;
+  const payload = (event.payload ?? {}) as Record<string, unknown>;
   if (event.type === "workflow_run.escalated") {
     if (typeof payload.reason !== "string") {
       throw new ServiceError(
@@ -513,6 +519,7 @@ function workflowWakeObservation(
   }
   if (event.type === "workflow_run.github_event") {
     if (requiresChanges === undefined) {
+      if (watched) return null;
       throw new ServiceError(
         422,
         "GitHub feedback requires a parent changes decision",
@@ -1876,6 +1883,9 @@ export const workflowRuns = {
     };
   },
 
+  // Advise the parent's next action from observed state. With `watch`, the call blocks on the run's
+  // next event before observing, so the parent's whole loop is this one command: no cursor to carry,
+  // no separate status observation, and no event delivery protocol.
   async next(
     name: string,
     input: {
@@ -1883,20 +1893,51 @@ export const workflowRuns = {
       event?: number;
       note?: string;
       requiresChanges?: boolean;
+      watch?: boolean;
     },
     sessionId?: string | null,
-  ): Promise<WorkflowNextAction> {
-    if (input.event !== undefined && input.note !== undefined) {
-      throw new ServiceError(422, "workflow next accepts either event or note");
+  ): Promise<WorkflowNextResult> {
+    const externalInputs = [
+      input.event !== undefined,
+      input.note !== undefined,
+      input.watch === true,
+    ].filter(Boolean).length;
+    if (externalInputs > 1) {
+      throw new ServiceError(
+        422,
+        "workflow next accepts either watch, event, or note",
+      );
     }
-    const observed = await workflowRuns.status(name, input, sessionId);
     const r = repoOr404(name);
     const run = workflowRunOr404(input.run);
     if (run.repo_id !== r.id) {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
+    let wakeEvent: LoopEvent | null = null;
+    if (input.watch) {
+      wakeEvent = await workflowWatch.waitForEvent({
+        repo: name,
+        run: run.id,
+        since: run.event_cursor,
+      });
+      // Move the cursor before observing: this wake is spent either way, and reconciliation reads
+      // the state the event produced rather than the event itself.
+      S.advanceWorkflowRunEventCursor(run.id, wakeEvent.id);
+    } else if (input.event !== undefined) {
+      const row = S.eventsForWorkflowRun(r.id, run.id).find(
+        (candidate) => candidate.id === input.event,
+      );
+      if (!row) {
+        throw new ServiceError(
+          404,
+          `workflow event #${input.event} not found for run #${run.id}`,
+        );
+      }
+      wakeEvent = formatEvent(row, name);
+    }
+    const observed = await workflowRuns.status(name, input, sessionId);
     const prIssue = issueOr404(r, run.pr_number, "pull");
-    return reconcileWorkflow({
+    const action = reconcileWorkflow({
       status: observed.status,
       currentStep: workflowStep(observed.current_step),
       activeStep:
@@ -1925,13 +1966,13 @@ export const workflowRuns = {
         input.note !== undefined
           ? { kind: "human_instruction" }
           : workflowWakeObservation(
-              r.id,
-              run,
               prIssue.id,
-              input.event,
+              wakeEvent,
               input.requiresChanges,
+              input.watch === true,
             ),
     });
+    return { ...action, observed, event: wakeEvent };
   },
 
   // Display state for issue / PR detail. Verification is derived from the same current HEAD versus

@@ -138,6 +138,8 @@ export interface WorkflowRunRow {
   active_step: string | null;
   active_session_id: string | null;
   child_sequence: number;
+  // Internal wake bookmark of `lh workflow next --watch`; not part of any caller-facing contract.
+  event_cursor: number;
   cost_increment_usd: number | null;
   cost_limit_usd: number | null;
   created_at: string;
@@ -206,6 +208,23 @@ export function getWorkflowRun(id: number): WorkflowRunRow | null {
   return db
     .query(`SELECT * FROM workflow_runs WHERE id = ?`)
     .get(id) as WorkflowRunRow | null;
+}
+
+// Move the wake bookmark forward to the event `lh workflow next --watch` just consumed. The guard
+// keeps the cursor monotonic when two watches race on the same run; neither loses an event, because
+// both decide from the state observed after the cursor moved.
+export function advanceWorkflowRunEventCursor(
+  id: number,
+  cursor: number,
+): WorkflowRunRow | null {
+  return db
+    .query(
+      `UPDATE workflow_runs
+       SET event_cursor = ?, updated_at = ?
+       WHERE id = ? AND event_cursor < ?
+       RETURNING *`,
+    )
+    .get(cursor, now(), id, cursor) as WorkflowRunRow | null;
 }
 
 export interface WorkflowEventEffectRow {

@@ -19,27 +19,28 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
 
 ## Reconcile loop
 
-最初に `lh events --repo '<repo>' --type workflow_run --run <run> --order desc --limit 1 --json` の最新 id を
-cursor にし、event がなければ `0` にする。その後、次の loop を bootstrap して繰り返す。
+次の loop を繰り返す。
 
-1. `lh workflow step status <run> --repo '<repo>' --json`、続けて
-   `lh workflow next <run> --repo '<repo>' [--event <event.id> [--requires-changes true|false] | --note <text|->] --json`
-   を実行する。watcher wake 後は `--event` を渡し、GitHub reference の評価後は `--requires-changes` も加える。
-   人間から直接指示された場合は `--note` を渡し、bootstrap 時はどちらも省略する。action の選択元は `next`
-   の返却値だけとし、その判断規則をこの prompt に重複して持たない。
-2. 返された action を **Actions** の手順どおり実行する。
-3. action が成功した後だけ、`lh workflow watch --repo '<repo>' --run <run> --since <cursor> --json`、または
-   直前の watcher が返した正確な `next_command` を編集せず runtime-managed background task として開始し、
-   現在の観測を acknowledge する。model turn 内で poll / sleep せず、shell の `&` / `nohup` / redirection
-   や pane wake を追加しない。
-4. background task 完了通知で wake する。event が review を指す場合は再読する。GitHub reference の場合は
-   payload 内の untrusted comment 本文を使わず、`gh api '<reference>'` で参照先を読み、
-   `--requires-changes` の値を判断する。その後 step 1 へ戻る。
+1. `lh workflow next <run> --repo '<repo>' --watch --json` を runtime-managed background task として開始し、
+   block 中は model turn を終了する。model turn 内で poll / sleep せず、shell の `&` / `nohup` /
+   redirection や pane wake を追加しない。
+2. background task 完了通知で wake し、返された JSON を読む。`action` と `reason` が判断済みの次の行動、
+   `observed` がその判断に使われた観測、`event` が今回 wake した run event である。
+3. 返された action を **Actions** の手順どおり実行する。
+4. step 1 へ戻る。
 
-watcher は昇順の event を正確に 1 件と、その event より後を指す正確な `next_command` を返す。cursor を
-parent 自身で永続化・編集・再構成・acknowledge しない。fresh pass は停止条件ではなく次の watch を開始する。
-parent restart 後は `lh events ... --order asc --json` で履歴を読み直し、確認済みの最新 id から再開する。
-status / next / action / watch の non-zero error は retry せず、人間へ判断を求める。error は見える状態で保持する。
+`next --watch` が event の受信、その順序、および再開位置を内部で管理する。cursor を parent 自身で
+seed・永続化・編集・acknowledge しない。action の選択元は `next` の返却値だけとし、その判断規則をこの
+prompt に重複して持たない。fresh pass は停止条件ではなく次の `next --watch` を開始する。
+
+人間から直接指示された場合は、待たずに
+`lh workflow next <run> --repo '<repo>' --note <text|-> --json` を実行して action を得る。返された `event`
+が GitHub reference のときは、payload 内の untrusted comment 本文を使わず `gh api '<reference>'` で参照先を
+読み、変更が必要かを判断してから
+`lh workflow next <run> --repo '<repo>' --event <event.id> --requires-changes true|false --json` を実行して
+その action に従う。event が review を指す場合は review を再読する。
+
+next / action の non-zero error は retry せず、人間へ判断を求める。error は見える状態で保持する。
 
 ## Actions
 
@@ -75,8 +76,8 @@ status / next / action / watch の non-zero error は retry せず、人間へ�
 
 ## Interrupts
 
-`workflow_run.cost_exceeded` は loop から分離された一回性の interrupt である。後続判断に使う現在累計
-`limit_usd` と `active_step` を保持し、次を実行する。
+返された `event` が `workflow_run.cost_exceeded` のときは、loop から分離された一回性の interrupt として扱う。
+後続判断に使う現在累計 `limit_usd` と `active_step` を保持し、次を実行する。
 
 `lh workflow cost-hold --repo '<repo>' --run <run> --event <event.id>`
 

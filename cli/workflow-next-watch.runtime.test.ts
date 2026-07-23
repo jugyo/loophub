@@ -28,11 +28,20 @@ beforeAll(async () => {
     executePrompt: "",
     verifyPrompt: "",
   });
+  const issue = S.createIssue(repo.id, "issue", "runtime", "", "me");
+  const prIssue = S.createIssue(repo.id, "pull", "runtime pr", "", "me");
+  S.createPull(
+    prIssue.id,
+    `loophub/pr-${prIssue.number}`,
+    "main",
+    null,
+    issue.id,
+  );
   runId = S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
-    issueNumber: 1,
-    prNumber: 1,
+    issueNumber: issue.number,
+    prNumber: prIssue.number,
     status: "running",
     currentStep: "execute",
     costIncrementUsd: 1,
@@ -55,13 +64,11 @@ liveTest(
       JSON.stringify(process.execPath),
       ...NODE_ARGS.map((arg) => JSON.stringify(arg)),
       "workflow",
-      "watch",
+      "next",
+      String(runId),
       "--repo",
       "me/workflow-runtime",
-      "--run",
-      String(runId),
-      "--since",
-      "0",
+      "--watch",
       "--json",
     ].join(" ");
     const prompt = [
@@ -69,7 +76,7 @@ liveTest(
       "Use the Bash tool once with run_in_background=true to run this exact blocking command:",
       command,
       "Do not use shell backgrounding, a pane, or another agent.",
-      `After that background task completes, inspect its JSON and reply exactly: PARENT_RESUMED ${nonce} <event type>`,
+      `After that background task completes, inspect its JSON and reply exactly: PARENT_RESUMED ${nonce} <event.type>`,
     ].join("\n");
     const child = spawn(
       "claude",

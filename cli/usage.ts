@@ -36,8 +36,7 @@ export function usage(): void {
   lh workflow escalate --reason <text> [--repo owner/name] [--run <id>]   # (Execute child) request human guidance; the parent applies await-human
   lh workflow deliver --run <id> --text <single-line-instruction> [--repo owner/name] [--json]   # activate and deliver to the latest Execute child pane
   lh workflow escalate-human --reason <text> [--repo owner/name] [--run <id>] [--issue <n>]   # record an idempotent Issue comment and Inbox notification
-  lh workflow next <run> [--repo owner/name] [--event <id> [--requires-changes true|false] | --note <text|->] [--json]      # advise the parent's next action, including an optional external input, without changing run state
-  lh workflow watch --repo owner/name --run <id> --since <event-id> --json   # block until the next run event, then return its next_command and exit
+  lh workflow next <run> [--repo owner/name] [--watch | --event <id> [--requires-changes true|false] | --note <text|->] [--json]      # advise the parent's next action with the observed state it came from, without changing run state; --watch blocks until the run's next event
   lh workflow effect begin|complete --repo owner/name --run <id> --event <id> --effect <key> [--json]   # durable idempotency receipt for a non-transactional parent side effect
   lh workflow cost-hold --repo owner/name --run <id> --event <id> [--json]   # hold a cost-exceeded run, interrupt its active pane, and notify the child exactly once
   lh workflow step input <run> <step> [--repo owner/name] [--note <text|->] [--review <id>]   # dry-run the composed contract + input pointers + prompt for a step (no launch)

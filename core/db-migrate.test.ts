@@ -130,6 +130,10 @@ test("workflow runs gain active child, watcher cursor, and cost limit columns", 
   expect(S.getWorkflowRun(30)?.contract_language).toBe("en");
   expect(cols).not.toContain("event_ack_cursor");
   expect(cols).not.toContain("event_delivered_cursor");
+  // The caller-managed acknowledgement pair is gone; `lh workflow next --watch` keeps one internal
+  // wake bookmark instead (#1744).
+  expect(cols).toContain("event_cursor");
+  expect(S.getWorkflowRun(30)?.event_cursor).toBe(0);
   expect(cols).toContain("cost_increment_usd");
   expect(cols).toContain("cost_limit_usd");
 });
