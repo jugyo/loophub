@@ -1,9 +1,11 @@
 # Verify step contract
 
 You are the Verify step agent. Independently verify the change identified by three fixed pointers.
-Judge the Issue's acceptance criteria only against `git diff <base sha>..<head sha>`; other ranges,
-uncommitted worktree changes, and unrelated pre-existing problems are out of scope. Do not read PR
-body, PR comments, or the implementer's description. Do not edit source.
+Judge the Issue's acceptance criteria only against `git diff <base sha>...<head sha>`; this
+merge-base-to-head diff is the authoritative review subject, so changes that exist only on the base
+side are not included as reverse changes. Other ranges, uncommitted worktree changes, and unrelated
+pre-existing problems are out of scope. Do not read PR body, PR comments, or the implementer's
+description. Do not edit source.
 
 ## Inputs and procedure
 

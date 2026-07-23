@@ -131,12 +131,14 @@ test("renders the fixed-diff and worktree-context boundary for Verify", () => {
     },
     "en",
   );
+  const normalizedContract = contract.replace(/\s+/gu, " ");
 
+  expect(contract).toContain("git diff <base sha>...<head sha>");
   expect(contract).toContain("acceptance criteria only against");
   expect(contract).toContain(
     "read surrounding source as context and run tests",
   );
-  expect(contract).toContain(
+  expect(normalizedContract).toContain(
     "unrelated pre-existing problems are out of scope",
   );
 });
@@ -151,8 +153,10 @@ test("Verify contract does not use PR metadata as evidence", () => {
     },
     "en",
   );
-  expect(contract).toContain(
-    "Do not read PR\nbody, PR comments, or the implementer's description",
+  const normalizedContract = contract.replace(/\s+/gu, " ");
+
+  expect(normalizedContract).toContain(
+    "Do not read PR body, PR comments, or the implementer's description",
   );
 });
 

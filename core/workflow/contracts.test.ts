@@ -1,7 +1,10 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { workflowContractText, workflowStepContracts } from "./contracts.ts";
+import { WORKFLOW_EXAMPLE_PROMPTS } from "./example-prompts.ts";
 
 test("loads every step contract from the canonical Markdown sources", () => {
   const contracts = workflowStepContracts();
@@ -72,7 +75,7 @@ test("Japanese contracts preserve the required commands and decision branches", 
   expect(execute).toContain("lh pr update <pr>");
   expect(execute).toContain("lh workflow escalate");
   expect(execute).toContain("lh workflow turn done");
-  expect(verify).toContain("git diff <base sha>..<head sha>");
+  expect(verify).toContain("git diff <base sha>...<head sha>");
   expect(verify).toContain("lh pr review <pr>");
   expect(verify).toContain("--event pass|request_changes");
   expect(verify).toContain("--topic workflow");
@@ -102,14 +105,17 @@ test("Execute pulls domain state itself and declares turn done", () => {
   expect(execute.match(/lh workflow turn done/gu)).toHaveLength(1);
 });
 
-test("Verify reviews a fixed base..head diff it computes itself", () => {
+test("Verify reviews a fixed merge-base-to-head diff it computes itself", () => {
   const verify = workflowContractText("verify");
+  const normalizedVerify = verify.replace(/\s+/gu, " ");
 
-  expect(verify).toContain("git diff <base sha>..<head sha>");
+  expect(verify).toContain("git diff <base sha>...<head sha>");
+  expect(verify).toContain("merge-base-to-head diff");
+  expect(verify).toContain("changes that exist only on the base");
   expect(verify).toContain("acceptance criteria only against");
-  expect(verify).toContain("other ranges");
+  expect(verify).toMatch(/other ranges/iu);
   expect(verify).toMatch(/uncommitted worktree\s+changes/u);
-  expect(verify).toContain("unrelated pre-existing problems");
+  expect(normalizedVerify).toContain("unrelated pre-existing problems");
   expect(verify).toContain("review skill or auxiliary agent as an aid");
   expect(verify).toContain("Validate its observations yourself");
   expect(verify).toContain("lh pr review <pr>");
@@ -118,11 +124,64 @@ test("Verify reviews a fixed base..head diff it computes itself", () => {
   expect(verify).toContain("with at least one line comment");
 });
 
+test("Verify three-dot review subject excludes base-only changes after divergence", () => {
+  const repo = mkdtempSync(join(tmpdir(), "lh-verify-contract-"));
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+
+  try {
+    git("init", "--quiet");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "Test User");
+    writeFileSync(join(repo, "common.txt"), "common\n");
+    git("add", "common.txt");
+    git("commit", "--quiet", "-m", "common");
+    git("branch", "review-head");
+
+    writeFileSync(join(repo, "base-only.txt"), "base\n");
+    git("add", "base-only.txt");
+    git("commit", "--quiet", "-m", "base-only");
+    const baseSha = git("rev-parse", "HEAD");
+
+    git("checkout", "--quiet", "review-head");
+    writeFileSync(join(repo, "head-only.txt"), "head\n");
+    git("add", "head-only.txt");
+    git("commit", "--quiet", "-m", "head-only");
+    const headSha = git("rev-parse", "HEAD");
+
+    const reviewSubject = git(
+      "diff",
+      "--name-status",
+      `${baseSha}...${headSha}`,
+    ).split("\n");
+    const twoDotDiff = git(
+      "diff",
+      "--name-status",
+      `${baseSha}..${headSha}`,
+    ).split("\n");
+
+    expect(reviewSubject).toEqual(["A\thead-only.txt"]);
+    expect(twoDotDiff).toContain("D\tbase-only.txt");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("Verify example prompt uses the same three-dot review subject", () => {
+  expect(WORKFLOW_EXAMPLE_PROMPTS.verify_prompt).toContain(
+    "git diff base...head",
+  );
+  expect(WORKFLOW_EXAMPLE_PROMPTS.verify_prompt).toContain(
+    "merge-base-to-head diff",
+  );
+});
+
 test("Verify is PR-metadata-blind while allowing source context", () => {
   const verify = workflowContractText("verify");
+  const normalizedVerify = verify.replace(/\s+/gu, " ");
 
-  expect(verify).toContain(
-    "Do not read PR\nbody, PR comments, or the implementer's description",
+  expect(normalizedVerify).toContain(
+    "Do not read PR body, PR comments, or the implementer's description",
   );
   expect(verify).toContain("read surrounding source as context and run tests");
   expect(verify).toContain("Do not edit source");
