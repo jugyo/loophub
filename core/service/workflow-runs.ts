@@ -1281,8 +1281,13 @@ export const workflowRuns = {
         currentStep: step,
         reworkCount: 0,
         needsHumanReason: null,
-        activeStep: null,
-        activeSessionId: null,
+        // Verify must review the current HEAD with a fresh child, so drop the interrupted session.
+        // Execute continues in the same pane, so its active session is preserved (omitted from the
+        // patch): clearing it made `next` see no active Execute and launch a duplicate executor
+        // after a cost-hold resume (#1872).
+        ...(step === "verify"
+          ? { activeStep: null, activeSessionId: null }
+          : {}),
       },
       "resume_after_human",
       sessionId,

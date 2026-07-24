@@ -535,6 +535,12 @@ test("cost limit increases are explicit, guarded, and repeatable", async () => {
     parentSessionId,
   );
   expect(resumed.run.needs_human_reason).toBeNull();
+  // Resuming Execute continues the interrupted executor in the same pane rather than launching a
+  // duplicate (#1872): its active step and session survive the resume.
+  expect(resumed.run).toMatchObject({
+    active_step: "execute",
+    active_session_id: childSessionId,
+  });
   expect(S.getWorkflowRun(run.id)?.cost_limit_usd).toBe(5);
   S.upsertSessionUsage(childSessionId, {
     model: "test",
@@ -818,6 +824,117 @@ test("a Web budget increase wakes the parent to resume the held step (#1828)", a
     transition: "resume_execute",
   });
 });
+
+// #1872: a cost hold's resume must continue the interrupted executor in the same pane. Clearing the
+// active session made `next` return `launch_execute`, spawning a duplicate executor. Verify keeps the
+// opposite rule — a fresh child reviews the current HEAD — so resuming Verify still clears it.
+test("resume continues a held Execute but relaunches Verify (#1872)", async () => {
+  const { repo } = freshRepo("me/workflow-resume-active");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Resume active",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "resume-active-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "e5e5e5e5-e5e5-4e5e-8e5e-e5e5e5e5e5e5";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const exec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+
+  // A cost hold interrupts the executor mid-work (no turn done yet). Resuming preserves it.
+  svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: started.run.id, reason: "Cost limit exceeded" },
+    parent,
+  );
+  const resumedExecute = await svc.workflowRuns.resumeAfterHuman(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  expect(resumedExecute.run).toMatchObject({
+    needs_human_reason: null,
+    active_step: "execute",
+    active_session_id: exec.session_id,
+  });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "wait" });
+
+  // Take the run to Verify with HEAD ahead of base, hold again, then resume at Verify: the
+  // interrupted verifier is dropped and the parent launches a fresh one for the current HEAD.
+  commit(started.worktree, "impl.txt", "v1\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  const verify = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verify.session_id,
+      agentName: verify.agent_name,
+      pointers: verify.pointers,
+      headSha: verify.head_sha,
+    },
+    parent,
+  );
+  svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: started.run.id, reason: "Cost limit exceeded on Verify" },
+    parent,
+  );
+  const resumedVerify = await svc.workflowRuns.resumeAfterHuman(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  expect(resumedVerify.run).toMatchObject({
+    needs_human_reason: null,
+    active_step: null,
+    active_session_id: null,
+  });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "launch_verify" });
+}, 30_000);
 
 test("a grok run's steps launch grok, not claude (#1521)", async () => {
   const repo = S.getRepo("me", "workflow-run")!;
