@@ -58,7 +58,7 @@ describe("Workflow run history dialog", () => {
           type: "workflow_run.started",
           label: "Run started",
           description: "Workflow run #7 started.",
-          routine: false,
+          significance: "default",
           input: null,
           step: null,
           actor: "parent-agent",
@@ -69,7 +69,7 @@ describe("Workflow run history dialog", () => {
           type: "workflow_step.launched",
           label: "Execute step started",
           description: "Execute step execution started.",
-          routine: false,
+          significance: "default",
           input:
             "Launch Workflow execute step for run #7.\n\n## Inputs\n- repo: me/loophub\n- issue: #42\n- pr: #99",
           step: "execute",
@@ -81,7 +81,7 @@ describe("Workflow run history dialog", () => {
           type: "workflow_step.launched",
           label: "Execute step started",
           description: "Execute step execution started.",
-          routine: false,
+          significance: "default",
           input:
             "Launch Workflow execute step for run #7.\n\n## Inputs\n- repo: me/loophub\n- issue: #42\n- pr: #99\n\n## Note from parent\nAddress review #12.",
           step: "execute",
@@ -151,7 +151,7 @@ describe("Workflow run history dialog", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("plays routine bookkeeping down to one line and leaves other events intact", async () => {
+  it("ranks entries by significance: notable stands out, routine plays down", async () => {
     renderSection(
       mockRpcFetch({
         "workflowRuns/history": () => [
@@ -161,7 +161,7 @@ describe("Workflow run history dialog", () => {
             label: "Turn done declared",
             description:
               "Execute declared its turn done. The parent observes HEAD and review state before any transition.",
-            routine: true,
+            significance: "routine",
             input: null,
             step: "execute",
             actor: "execute-agent",
@@ -172,11 +172,22 @@ describe("Workflow run history dialog", () => {
             type: "workflow_run.escalated",
             label: "Human guidance requested",
             description: "Execute requested human guidance: criteria conflict.",
-            routine: false,
+            significance: "notable",
             input: null,
             step: "execute",
             actor: "escalating-agent",
             created_at: "2026-07-10T00:10:00Z",
+          },
+          {
+            id: 3,
+            type: "workflow_run.started",
+            label: "Run started",
+            description: "Workflow run #7 started.",
+            significance: "default",
+            input: null,
+            step: null,
+            actor: "parent-agent",
+            created_at: "2026-07-10T00:20:00Z",
           },
         ],
       }),
@@ -186,7 +197,7 @@ describe("Workflow run history dialog", () => {
     const escalated = (
       await screen.findByText("Human guidance requested")
     ).closest("li");
-    expect(escalated?.getAttribute("data-routine")).toBe("false");
+    expect(escalated?.getAttribute("data-significance")).toBe("notable");
     expect(
       within(escalated as HTMLElement).getByText(/criteria conflict/),
     ).toBeTruthy();
@@ -194,10 +205,23 @@ describe("Workflow run history dialog", () => {
       within(escalated as HTMLElement).getByText("Actor: escalating-agent"),
     ).toBeTruthy();
 
+    // A notable entry outweighs a default one by weight and size, not by color alone.
+    const notableTitle = screen.getByText("Human guidance requested");
+    const defaultTitle = screen.getByText("Run started");
+    expect(notableTitle.className).toContain("text-base");
+    expect(notableTitle.className).toContain("font-semibold");
+    expect(defaultTitle.className).toContain("text-sm");
+    expect(defaultTitle.className).toContain("font-medium");
+    expect(
+      (defaultTitle.closest("li") as HTMLElement).getAttribute(
+        "data-significance",
+      ),
+    ).toBe("default");
+
     // A routine event keeps only its label and timestamp: its description restates the label and
     // its type / step / actor repeat on every turn's copy of the same row.
     const turnDone = screen.getByText("Turn done declared").closest("li");
-    expect(turnDone?.getAttribute("data-routine")).toBe("true");
+    expect(turnDone?.getAttribute("data-significance")).toBe("routine");
     expect(
       within(turnDone as HTMLElement).queryByText(/observes HEAD/),
     ).toBeNull();

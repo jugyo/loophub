@@ -2139,12 +2139,25 @@ export const workflowRuns = {
     if (run.repo_id !== r.id) {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
+    // Review verdicts live on the review rows, not on the run-scoped submission events, which only
+    // carry `review_id` (#1867). Resolve them once so each submission can be told apart from the
+    // rest of the timeline. A PR row that has since gone missing just leaves the verdicts unknown.
+    const prIssue = S.getIssue(r.id, run.pr_number);
+    const reviewVerdicts = new Map(
+      (prIssue ? S.listReviews(prIssue.id) : []).map((review) => [
+        review.id,
+        review.event,
+      ]),
+    );
     return S.eventsForWorkflowRun(r.id, run.id).map((event) => {
       let handoffId: number | null = null;
+      let reviewId: number | null = null;
       try {
         const payload = JSON.parse(event.payload) as Record<string, unknown>;
         handoffId =
           typeof payload.handoff_id === "number" ? payload.handoff_id : null;
+        reviewId =
+          typeof payload.review_id === "number" ? payload.review_id : null;
       } catch {
         // Malformed legacy payloads remain visible without launch input.
       }
@@ -2153,7 +2166,11 @@ export const workflowRuns = {
         handoff?.repo_id === r.id && handoff.body !== null
           ? handoff.body
           : null;
-      return workflowRunHistoryEventJSON(event, input);
+      return workflowRunHistoryEventJSON(
+        event,
+        input,
+        reviewId === null ? null : (reviewVerdicts.get(reviewId) ?? null),
+      );
     });
   },
 };

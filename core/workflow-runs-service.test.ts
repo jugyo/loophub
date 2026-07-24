@@ -2889,7 +2889,7 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
     "Run started",
     "Execute step started",
     "Turn done declared",
-    "Run advanced to Verify",
+    "Execute completed",
     "Execute step started",
   ]);
   expect(history[2].description).toContain("declared its turn done");
@@ -2898,7 +2898,7 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
   expect(history[0].input).toBeNull();
 });
 
-test("history marks per-turn loop mechanics as routine bookkeeping (#1851)", () => {
+test("history ranks lifecycle events by what a human judges the run by (#1867)", () => {
   const repo = S.createRepo("me/workflow-routine", REPO_PATH);
   const workflow = S.createWorkflow({
     name: "routine-wf",
@@ -2906,26 +2906,51 @@ test("history marks per-turn loop mechanics as routine bookkeeping (#1851)", () 
     executePrompt: "",
     verifyPrompt: "",
   });
+  const prIssue = S.createIssue(repo.id, "pull", "Do the thing", "", "me");
   const run = S.createWorkflowRun({
     workflowId: workflow.id,
     repoId: repo.id,
     issueNumber: 11,
-    prNumber: 21,
+    prNumber: prIssue.number,
     status: "running",
     currentStep: "execute",
     costIncrementUsd: 10,
     costLimitUsd: 10,
     parentSessionId: "55555555-5555-4555-8555-555555555555",
   });
-  const base = { id: run.id, issue_number: 11, pr_number: 21 };
+  const base = { id: run.id, issue_number: 11, pr_number: prIssue.number };
+  const changesRequested = S.createReview(
+    prIssue.id,
+    `verifier #${run.id}-1`,
+    "REQUEST_CHANGES",
+    "one finding",
+    "abc123",
+    "workflow",
+  );
+  const passed = S.createReview(
+    prIssue.id,
+    `verifier #${run.id}-2`,
+    "PASS",
+    "looks right",
+    "def456",
+    "workflow",
+  );
 
-  // The event sequence a run actually produces today: a turn ends, Verify reports, the parent
-  // reworks and re-activates Execute, and a cost hold interrupts it until a human raises the limit.
+  // The event sequence a run actually produces today: Execute ends a turn and completes, Verify
+  // reports twice, the parent reworks and re-activates Execute, and a cost hold interrupts it
+  // until a human raises the limit.
   S.emitEvent(repo.id, "workflow_run.started", "parent", base);
   S.emitEvent(repo.id, "workflow_run.turn_done", "execute-agent", base);
+  S.emitEvent(repo.id, "workflow_run.updated", "parent", {
+    ...base,
+    status: "running",
+    current_step: "verify",
+    transition: "advance_to_verify",
+    rework_count: 0,
+  });
   S.emitEvent(repo.id, "workflow_run.review_submitted", "verify-agent", {
     ...base,
-    review_id: 77,
+    review_id: changesRequested.id,
   });
   S.emitEvent(repo.id, "workflow_run.updated", "parent", {
     ...base,
@@ -2956,44 +2981,95 @@ test("history marks per-turn loop mechanics as routine bookkeeping (#1851)", () 
     previous_limit_usd: 40,
     current_limit_usd: 60,
   });
+  S.emitEvent(repo.id, "workflow_run.updated", "me", {
+    ...base,
+    status: "running",
+    needs_human_reason: null,
+  });
   S.emitEvent(repo.id, "workflow_run.github_event", "worker", {
     ...base,
     github_number: 512,
   });
   S.emitEvent(repo.id, "workflow_run.merge_conflict", "worker", base);
+  S.emitEvent(repo.id, "workflow_run.review_submitted", "verify-agent", {
+    ...base,
+    review_id: passed.id,
+  });
   // Legacy pings: nothing emits this since #1506, but older runs still carry thousands of them.
   S.emitEvent(repo.id, "workflow_run.usage_updated", "worker", base);
+  // A type this serializer has never seen keeps the default look instead of throwing.
+  S.emitEvent(repo.id, "workflow_run.teleported", "worker", base);
   S.emitEvent(repo.id, "workflow_run.merged", "me", base);
 
   const history = svc.workflowRuns.history(repo.full_name, { run: run.id });
-  expect(
+  const ranked = (significance: string) =>
     history
-      .filter((event) => event.routine)
-      .map((event) => `${event.type}:${event.label}`),
-  ).toEqual([
+      .filter((event) => event.significance === significance)
+      .map((event) => `${event.type}:${event.label}`);
+
+  // Cost holds, human waits, the two Execute/Verify completion points and the run's end are what
+  // the dialog is opened for.
+  expect(ranked("notable")).toEqual([
+    "workflow_run.updated:Execute completed",
+    "workflow_run.updated:Run rework requested",
+    "workflow_run.cost_exceeded:Cost limit exceeded",
+    "workflow_run.updated:Run needs human",
+    "workflow_run.review_submitted:Review passed",
+    "workflow_run.merged:Linked PR merged",
+  ]);
+  expect(ranked("routine")).toEqual([
     "workflow_run.turn_done:Turn done declared",
+    "workflow_run.review_submitted:Review requested changes",
     "workflow_run.updated:Step agent activated",
+    "workflow_run.updated:Run resumed",
+    "workflow_run.merge_conflict:Merge conflict detected",
     "workflow_run.usage_updated:Usage updated",
   ]);
-  // Events that previously fell back to the generic "Workflow lifecycle event recorded." now say
-  // what happened, so the timeline reads without cross-checking the raw event type.
-  expect(history.map((event) => event.label)).toEqual([
-    "Run started",
-    "Turn done declared",
-    "Review submitted",
-    "Run rework requested",
-    "Step agent activated",
-    "Cost limit exceeded",
-    "Run needs human",
-    "Cost limit raised",
-    "GitHub feedback received",
-    "Merge conflict detected",
-    "Usage updated",
-    "Linked PR merged",
+  expect(ranked("default")).toEqual([
+    "workflow_run.started:Run started",
+    "workflow_run.cost_limit_increased:Cost limit raised",
+    "workflow_run.github_event:GitHub feedback received",
+    "workflow_run.teleported:Run teleported",
   ]);
-  expect(history[2].description).toContain("Review #77");
-  expect(history[5].description).toContain("$40.07 passed the $40.00 limit");
-  expect(history[7].description).toContain("from $40.00 to $60.00");
-  expect(history[8].description).toContain("GitHub PR #512");
-  expect(history[11].description).toContain("PR #21 merged");
+  expect(history[2].description).toContain("Execute finished implementing");
+  expect(history[3].description).toContain(`Review #${changesRequested.id}`);
+  expect(history[6].description).toContain("$40.07 passed the $40.00 limit");
+  expect(history[8].description).toContain("from $40.00 to $60.00");
+  expect(history[10].description).toContain("GitHub PR #512");
+  expect(history[12].description).toContain("Verify cleared this");
+  expect(history[15].description).toContain(`PR #${prIssue.number} merged`);
+});
+
+test("history falls back to an unknown verdict when the review row is gone (#1867)", () => {
+  const repo = S.createRepo("me/workflow-review-verdict", REPO_PATH);
+  const workflow = S.createWorkflow({
+    name: "verdict-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 12,
+    // No PR issue row exists for this number, so no review can be resolved.
+    prNumber: 22,
+    status: "running",
+    currentStep: "verify",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+    parentSessionId: "66666666-6666-4666-8666-666666666666",
+  });
+  S.emitEvent(repo.id, "workflow_run.review_submitted", "verify-agent", {
+    id: run.id,
+    issue_number: 12,
+    pr_number: 22,
+    review_id: 77,
+  });
+
+  const history = svc.workflowRuns.history(repo.full_name, { run: run.id });
+  expect(history).toHaveLength(1);
+  expect(history[0].label).toBe("Review submitted");
+  expect(history[0].significance).toBe("routine");
+  expect(history[0].description).toContain("Review #77");
 });

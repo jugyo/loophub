@@ -183,15 +183,32 @@ function Metadata({
   );
 }
 
+// Each significance the wire can carry (#1867) gets one look. The notable and default rows differ
+// by dot size and by title size/weight, not by color alone, so the ranking survives a monochrome
+// or color-blind read.
+const ENTRY_STYLES: Record<
+  Exclude<WorkflowRunHistoryEvent["significance"], "routine">,
+  { dot: string; title: string }
+> = {
+  notable: {
+    dot: "-left-[1.675rem] size-3 bg-primary",
+    title: "text-base font-semibold",
+  },
+  default: {
+    dot: "-left-[1.55rem] size-2 bg-muted-foreground/60",
+    title: "text-sm font-medium",
+  },
+};
+
 function HistoryEntry({ event }: { event: WorkflowRunHistoryEvent }) {
   // Routine loop mechanics (#1851) recede to one dim line — the timeline stays complete, but the
   // per-turn bookkeeping stops crowding out the lifecycle events between them. Their description
   // only restates the label, and their type / step / actor repeat on every row.
-  if (event.routine) {
+  if (event.significance === "routine") {
     return (
       <li
         data-debug-component="WorkflowRunHistoryEntry"
-        data-routine="true"
+        data-significance="routine"
         className="relative pb-3 last:pb-0"
       >
         <span className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-muted-foreground/30 ring-4 ring-background" />
@@ -202,15 +219,18 @@ function HistoryEntry({ event }: { event: WorkflowRunHistoryEvent }) {
       </li>
     );
   }
+  const style = ENTRY_STYLES[event.significance];
   return (
     <li
       data-debug-component="WorkflowRunHistoryEntry"
-      data-routine="false"
+      data-significance={event.significance}
       className="relative pb-5 last:pb-0"
     >
-      <span className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-primary ring-4 ring-background" />
+      <span
+        className={`absolute top-1.5 rounded-full ring-4 ring-background ${style.dot}`}
+      />
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h4 className="text-sm font-medium">{event.label}</h4>
+        <h4 className={style.title}>{event.label}</h4>
         <time
           dateTime={event.created_at}
           className="text-xs text-muted-foreground"

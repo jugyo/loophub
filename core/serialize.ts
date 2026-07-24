@@ -1668,19 +1668,27 @@ export function workflowRunStateJSON(input: {
   };
 }
 
+/**
+ * How loudly one history event should read in a run's timeline (#1867). The classification lives
+ * here, with the rest of the wire shape, so the dialog only owns three looks and never
+ * reconstructs importance from label text.
+ *
+ * - `notable` — what a human opens the dialog for: the run's cost hold, its calls for human
+ *   attention, the two points where Execute and Verify finished their work, and its end.
+ * - `default` — context that helps read the run but decides nothing on its own. Unknown and
+ *   legacy event types land here, so a type this function has never seen still renders.
+ * - `routine` — per-turn loop mechanics (#1851). They repeat every turn and read the same each
+ *   time; the dialog keeps them but plays them down.
+ */
+export type WorkflowRunHistorySignificance = "notable" | "default" | "routine";
+
 /** One persisted lifecycle event shown in a Workflow run's history dialog. */
 export interface WorkflowRunHistoryEventWire {
   id: number;
   type: string;
   label: string;
   description: string;
-  // Loop mechanics that carry no decision (#1851): the turn-done ping and the `activate_step`
-  // update repeat on every turn and read the same each time, crowding the events a human is
-  // actually scanning for. (`usage_updated` joins them in runs old enough to still carry those
-  // pings; nothing has emitted it since #1506.) A step launch stays off this list even though it
-  // repeats just as often — it carries the parent's handoff prompt, which is worth reading.
-  // The dialog plays these down rather than dressing up the rest.
-  routine: boolean;
+  significance: WorkflowRunHistorySignificance;
   input: string | null;
   step: string | null;
   actor: string;
@@ -1703,10 +1711,18 @@ function workflowEventPayload(row: S.EventRow): Record<string, unknown> {
   }
 }
 
-/** Normalize stored event payloads into stable, reader-facing timeline entries. */
+/**
+ * Normalize stored event payloads into stable, reader-facing timeline entries.
+ *
+ * `reviewVerdict` is the `event` column of the review a `workflow_run.review_submitted` row points
+ * at ("PASS" / "REQUEST_CHANGES" / …). The event payload only carries `review_id` — the review row
+ * stays the sole verdict source — so the caller resolves it, the same way it resolves `input` from
+ * the handoff. Null when unresolvable, which reads as an unknown verdict.
+ */
 export function workflowRunHistoryEventJSON(
   row: S.EventRow,
   input: string | null = null,
+  reviewVerdict: string | null = null,
 ): WorkflowRunHistoryEventWire {
   const payload = workflowEventPayload(row);
   const step =
@@ -1721,7 +1737,7 @@ export function workflowRunHistoryEventJSON(
     .replace(/[._-]+/gu, " ")
     .replace(/^./u, (value) => value.toUpperCase());
   let description = "Workflow lifecycle event recorded.";
-  let routine = false;
+  let significance: WorkflowRunHistorySignificance = "default";
 
   if (row.type === "workflow_run.started") {
     label = "Run started";
@@ -1754,13 +1770,20 @@ export function workflowRunHistoryEventJSON(
                 ? "Run needs human"
                 : "Run resumed"
               : transition === "advance_to_verify"
-                ? "Run advanced to Verify"
+                ? // The parent only reaches this transition after `advanceToVerify` has confirmed
+                  // Execute complete (HEAD moved, turn declared), so it is the run's record of
+                  // "Execute finished implementing" — named for that rather than for the
+                  // bookkeeping move it performs (#1867).
+                  "Execute completed"
                 : transition === "request_rework"
                   ? "Run rework requested"
                   : transition === "activate_step"
                     ? "Step agent activated"
                     : "Run state updated";
     const details = [
+      transition === "advance_to_verify"
+        ? "Execute finished implementing; the run moved on to Verify."
+        : null,
       `Status: ${workflowStepLabel(status) ?? status}.`,
       touchedNeedsHuman
         ? needsHumanReason !== null
@@ -1773,12 +1796,22 @@ export function workflowRunHistoryEventJSON(
         : null,
     ].filter((value): value is string => value !== null);
     description = details.join(" ");
-    // The activation that pairs with every step launch is pure loop mechanics. The terminal and
-    // needs-human branches above are excluded so an update that also carries one stays readable.
-    routine =
-      transition === "activate_step" &&
-      status === "running" &&
-      !touchedNeedsHuman;
+    // A run that left `running` ended, one way or another; an escalation into a human wait and the
+    // two step-completion transitions are the rest of what a human judges the run by. Everything
+    // else this event carries — the activation paired with every step launch, the resume that
+    // follows a human's instruction, an unrecognized transition — is the parent narrating its own
+    // bookkeeping.
+    significance =
+      status !== "running"
+        ? "notable"
+        : touchedNeedsHuman
+          ? needsHumanReason !== null
+            ? "notable"
+            : "routine"
+          : transition === "advance_to_verify" ||
+              transition === "request_rework"
+            ? "notable"
+            : "routine";
   } else if (row.type === "workflow_step.launched") {
     label = `${stepLabel ?? "Workflow"} step started`;
     description = `${stepLabel ?? "Workflow"} step execution started.`;
@@ -1786,7 +1819,7 @@ export function workflowRunHistoryEventJSON(
     label = "Turn done declared";
     description =
       "Execute declared its turn done. The parent observes HEAD and review state before any transition.";
-    routine = true;
+    significance = "routine";
   } else if (row.type === "workflow_run.escalated") {
     label = "Human guidance requested";
     const reason =
@@ -1794,6 +1827,7 @@ export function workflowRunHistoryEventJSON(
         ? payload.reason
         : "No reason recorded.";
     description = `Execute requested human guidance: ${reason}`;
+    significance = "notable";
   } else if (row.type === "workflow_run.cost_exceeded") {
     label = "Cost limit exceeded";
     const cost = typeof payload.cost_usd === "number" ? payload.cost_usd : null;
@@ -1803,6 +1837,7 @@ export function workflowRunHistoryEventJSON(
       cost !== null && limit !== null
         ? `Run cost $${cost.toFixed(2)} passed the $${limit.toFixed(2)} limit. The run holds until the limit is raised.`
         : "Run cost passed its limit. The run holds until the limit is raised.";
+    significance = "notable";
   } else if (row.type === "workflow_run.cost_limit_increased") {
     label = "Cost limit raised";
     const previous =
@@ -1821,14 +1856,28 @@ export function workflowRunHistoryEventJSON(
     label = "Merge conflict detected";
     description =
       "The linked PR conflicts with its base. The run cannot progress until the conflict is resolved.";
+    significance = "routine";
   } else if (row.type === "workflow_run.review_submitted") {
-    label = "Review submitted";
     const reviewId =
       typeof payload.review_id === "number" ? payload.review_id : null;
-    description =
-      reviewId !== null
-        ? `Review #${reviewId} was submitted on the linked PR. Its verdict decides whether the run advances or reworks.`
-        : "A review was submitted on the linked PR. Its verdict decides whether the run advances or reworks.";
+    const subject = reviewId !== null ? `Review #${reviewId}` : "A review";
+    // A passing review is where Verify finished with nothing left to fix: the run stops moving on
+    // its own and waits for a human to merge, so it is the one submission worth surfacing. A
+    // change-requesting one is read through the rework transition it triggers, and the event
+    // itself is just the parent's wake ping.
+    if (reviewVerdict === "PASS") {
+      label = "Review passed";
+      description = `${subject} passed on the linked PR — Verify cleared this implementation.`;
+      significance = "notable";
+    } else if (reviewVerdict === "REQUEST_CHANGES") {
+      label = "Review requested changes";
+      description = `${subject} requested changes on the linked PR. The run reworks unless a human steps in.`;
+      significance = "routine";
+    } else {
+      label = "Review submitted";
+      description = `${subject} was submitted on the linked PR. Its verdict decides whether the run advances or reworks.`;
+      significance = "routine";
+    }
   } else if (row.type === "workflow_run.github_event") {
     label = "GitHub feedback received";
     const githubNumber =
@@ -1845,10 +1894,11 @@ export function workflowRunHistoryEventJSON(
       prNumber !== null
         ? `PR #${prNumber} merged — the run's terminal condition.`
         : "The linked PR merged — the run's terminal condition.";
+    significance = "notable";
   } else if (row.type === "workflow_run.usage_updated") {
     label = "Usage updated";
     description = "Agent usage totals for this run were refreshed.";
-    routine = true;
+    significance = "routine";
   }
 
   return {
@@ -1856,7 +1906,7 @@ export function workflowRunHistoryEventJSON(
     type: row.type,
     label,
     description,
-    routine,
+    significance,
     input,
     step,
     actor: row.actor,
