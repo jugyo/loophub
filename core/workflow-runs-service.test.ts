@@ -2058,6 +2058,122 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
   });
 }, 30_000);
 
+// Run 340: a human injected follow-up work straight into the Execute pane, so `active_step` was
+// never moved off `verify`. The idle verifier that already reviewed the old HEAD must not make the
+// run wait forever (#1857).
+test("a turn done after the active Verify reviewed launches a fresh Verify", async () => {
+  const { repo } = freshRepo("me/workflow-stale-verify");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Stale Verify",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "stale-verify-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "d4d4d4d4-d4d4-4d4d-8d4d-d4d4d4d4d4d4";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const exec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+  const headA = commit(started.worktree, "impl.txt", "v1\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  const verify = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verify.session_id,
+      agentName: verify.agent_name,
+      pointers: verify.pointers,
+      headSha: verify.head_sha,
+    },
+    parent,
+  );
+
+  // The verifier launched for this turn done has not reported yet, so waiting is still right.
+  expect(
+    await svc.workflowRuns.status(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({
+    turn_done_for_active_execute: true,
+    verify_launched_after_turn_done: true,
+  });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "wait" });
+
+  await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "PASS",
+      topic: "workflow",
+      headSha: headA,
+      body: "All criteria pass.",
+    },
+    verify.session_id,
+  );
+
+  // The Execute child keeps working from pane input and declares another turn done. `active_step`
+  // still reads `verify`, but that verifier is idle behind the new HEAD.
+  const headB = commit(started.worktree, "more.txt", "v2\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  const status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status).toMatchObject({
+    current_step: "verify",
+    active_step: "verify",
+    head_sha: headB,
+    turn_done_for_active_execute: true,
+    verify_launched_after_turn_done: false,
+  });
+  expect(status.steps.verify.latest_review).toMatchObject({ fresh: false });
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "launch_verify" });
+}, 30_000);
+
 test("turn done is rejected for a non-Execute session", async () => {
   const { repo } = freshRepo("me/workflow-turn");
   const issue = S.createIssue(repo.id, "issue", "Turn", "body", "me");

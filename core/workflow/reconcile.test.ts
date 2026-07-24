@@ -22,6 +22,7 @@ function observed(
     currentHead: HEAD,
     mergeConflict: false,
     turnDoneForActiveExecute: false,
+    verifyLaunchedAfterTurnDone: true,
     wake: null,
     steps: {
       execute: { complete: false, missing: ["head equals base"] },
@@ -133,6 +134,60 @@ describe("reconcileWorkflow", () => {
               complete: false,
               missing: ["no workflow review pinned to current head"],
               latest_review: null,
+            },
+          },
+        }),
+      ),
+    ).toMatchObject({ action: "wait" });
+  });
+
+  test("launches a fresh Verify when Execute committed again after the active Verify reviewed", () => {
+    // The Verify child submitted its review and went idle, then Execute pushed a new HEAD and
+    // declared turn done. `active_step` still reads "verify", but nobody is reviewing the new
+    // HEAD, so waiting would wedge the run (#1857).
+    expect(
+      reconcileWorkflow(
+        observed({
+          currentStep: "verify",
+          activeStep: "verify",
+          turnDoneForActiveExecute: true,
+          verifyLaunchedAfterTurnDone: false,
+          steps: {
+            execute: { complete: true, missing: [] },
+            verify: {
+              complete: false,
+              missing: ["no workflow review pinned to current head"],
+              latest_review: {
+                id: 12,
+                event: "pass",
+                headSha: OLD,
+                fresh: false,
+              },
+            },
+          },
+        }),
+      ),
+    ).toMatchObject({ action: "launch_verify" });
+  });
+
+  test("waits while the Verify launched for the latest turn done has not reviewed yet", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          currentStep: "verify",
+          activeStep: "verify",
+          turnDoneForActiveExecute: true,
+          steps: {
+            execute: { complete: true, missing: [] },
+            verify: {
+              complete: false,
+              missing: ["no workflow review pinned to current head"],
+              latest_review: {
+                id: 12,
+                event: "request_changes",
+                headSha: OLD,
+                fresh: false,
+              },
             },
           },
         }),

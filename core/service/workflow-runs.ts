@@ -505,12 +505,26 @@ function turnDoneObservation(
   repoId: number,
   runId: number,
   review: S.ReviewRow | null,
-): { at: string | null; forActiveExecute: boolean } {
+): {
+  at: string | null;
+  forActiveExecute: boolean;
+  verifyLaunchedAfter: boolean;
+} {
   const events = S.eventsForWorkflowRun(repoId, runId);
   const turnDone = events.findLast(
     (event) => event.type === "workflow_run.turn_done",
   );
-  if (!turnDone) return { at: null, forActiveExecute: false };
+  if (!turnDone) {
+    return { at: null, forActiveExecute: false, verifyLaunchedAfter: true };
+  }
+  // Whether the Verify child now marked active was launched for this turn done. A Verify launched
+  // before it reviewed older work and cannot report on the HEAD the turn done announced (#1857).
+  const verifyLaunched = events.findLast((event) => {
+    if (event.type !== "workflow_step.launched") return false;
+    return (JSON.parse(event.payload) as { step?: unknown }).step === "verify";
+  });
+  const verifyLaunchedAfter =
+    verifyLaunched !== undefined && verifyLaunched.id > turnDone.id;
   const executeRound = events.findLast((event) => {
     if (
       event.type !== "workflow_step.launched" &&
@@ -525,7 +539,11 @@ function turnDoneObservation(
           payload.active_step === "execute";
   });
   if (!executeRound) {
-    return { at: turnDone.created_at, forActiveExecute: false };
+    return {
+      at: turnDone.created_at,
+      forActiveExecute: false,
+      verifyLaunchedAfter,
+    };
   }
   const reviewSubmitted = review
     ? events.findLast((event) => {
@@ -544,6 +562,7 @@ function turnDoneObservation(
   return {
     at: turnDone.created_at,
     forActiveExecute: turnDone.id > executeRound.id && afterReview,
+    verifyLaunchedAfter,
   };
 }
 
@@ -1951,6 +1970,7 @@ export const workflowRuns = {
       pr_merged: pull.merged === 1,
       last_turn_done_at: turnDone.at,
       turn_done_for_active_execute: turnDone.forActiveExecute,
+      verify_launched_after_turn_done: turnDone.verifyLaunchedAfter,
       steps: progress.steps,
     };
   },
@@ -2055,6 +2075,7 @@ export const workflowRuns = {
       currentHead: observed.head_sha,
       mergeConflict: observed.merge_conflict,
       turnDoneForActiveExecute: observed.turn_done_for_active_execute,
+      verifyLaunchedAfterTurnDone: observed.verify_launched_after_turn_done,
       steps: observed.steps,
       wake:
         input.note !== undefined

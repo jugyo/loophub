@@ -22,6 +22,12 @@ export type WorkflowReconcileInput = {
   currentHead: string | null;
   mergeConflict: boolean;
   turnDoneForActiveExecute: boolean;
+  /**
+   * Whether a Verify child was launched after the latest Execute turn done. `activeStep` only
+   * records the step activated last, so a Verify that already submitted its review stays "active"
+   * while Execute keeps committing; this tells the two apart (#1857).
+   */
+  verifyLaunchedAfterTurnDone: boolean;
   steps: WorkflowStepStatuses;
   wake: WorkflowWakeInput | null;
 };
@@ -228,7 +234,14 @@ export function reconcileWorkflow(
     };
   }
 
-  if (input.currentStep === "verify" && input.activeStep === "verify") {
+  // Waiting is only right while the active Verify was launched for the latest turn done. When
+  // Execute has committed again since that launch, no child is reviewing the current HEAD, so
+  // waiting here would wedge the run forever (#1857) — fall through to the turn done branch.
+  if (
+    input.currentStep === "verify" &&
+    input.activeStep === "verify" &&
+    input.verifyLaunchedAfterTurnDone
+  ) {
     return {
       action: "wait",
       reason: "Verify is active and no fresh review is available.",

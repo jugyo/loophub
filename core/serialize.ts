@@ -1638,6 +1638,9 @@ export interface WorkflowStepStatusWire {
   pr_merged: boolean;
   last_turn_done_at: string | null;
   turn_done_for_active_execute: boolean;
+  // Whether a Verify child was launched after the latest turn done. False means the Verify marked
+  // active was launched for older work, so waiting on it would never produce a review (#1857).
+  verify_launched_after_turn_done: boolean;
   steps: WorkflowStepStatuses;
 }
 
