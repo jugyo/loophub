@@ -88,9 +88,10 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
+        prompt: "Create GitHub PR.",
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '/lh-create-github-pr 451'");
+    ).toBe("claude 'Create GitHub PR.'");
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -181,11 +182,24 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
+        prompt: "Create GitHub PR.",
         codingAgent: "codex",
       }),
     ).toBe(
-      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/lh-create-github-pr 451'`,
+      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' 'Create GitHub PR.'`,
     );
+    expect(
+      commandForHerdrLaunch({
+        repo: "jugyo/loophub",
+        workflow: "github-pr-export",
+        prNumber: 451,
+        prompt: "Create GitHub PR.",
+        codingAgent: "claude-code",
+      }),
+    ).toBe("claude 'Create GitHub PR.'");
+  });
+
+  test("yields no command for a GitHub PR export launch without a prompt", () => {
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
@@ -193,7 +207,7 @@ describe("herdr terminal launch", () => {
         prNumber: 451,
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '/lh-create-github-pr 451'");
+    ).toBe("");
   });
 
   test("does not apply build auto-mode to scheduled task creation launches", () => {
@@ -225,9 +239,10 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
+        prompt: "Create GitHub PR.",
       }),
     ).toBe(
-      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' '/lh-create-github-pr 451'`,
+      `codex '--sandbox' 'workspace-write' '-c' 'sandbox_workspace_write.writable_roots=[${JSON.stringify(home)}]' 'Create GitHub PR.'`,
     );
 
     updateConfig({ codingAgent: "claude-code" });
@@ -236,8 +251,9 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
+        prompt: "Create GitHub PR.",
       }),
-    ).toBe("claude '/lh-create-github-pr 451'");
+    ).toBe("claude 'Create GitHub PR.'");
   });
 
   test("applies the agent's autoModeOnLaunch setting to GitHub PR export launches (#809)", () => {
@@ -248,9 +264,10 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
+        prompt: "Create GitHub PR.",
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '/lh-create-github-pr 451'");
+    ).toBe("claude 'Create GitHub PR.'");
 
     updateAgentAutoModeOnLaunch("claude-code", true);
     expect(
@@ -258,9 +275,10 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
+        prompt: "Create GitHub PR.",
         codingAgent: "claude-code",
       }),
-    ).toBe("claude '--permission-mode' 'auto' '/lh-create-github-pr 451'");
+    ).toBe("claude '--permission-mode' 'auto' 'Create GitHub PR.'");
 
     // codex: auto mode swaps the sandboxed --sandbox args for the same unsandboxed bypass
     // flag launch --auto uses (buildCodexArgs), rather than adding a flag on top.
@@ -270,10 +288,11 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
+        prompt: "Create GitHub PR.",
         codingAgent: "codex",
       }),
     ).toBe(
-      "codex '--dangerously-bypass-approvals-and-sandbox' '/lh-create-github-pr 451'",
+      "codex '--dangerously-bypass-approvals-and-sandbox' 'Create GitHub PR.'",
     );
 
     // claude-code's setting must not leak into codex's launch, and vice versa (#593 parity).
@@ -283,10 +302,11 @@ describe("herdr terminal launch", () => {
         repo: "jugyo/loophub",
         workflow: "github-pr-export",
         prNumber: 451,
+        prompt: "Create GitHub PR.",
         codingAgent: "codex",
       }),
     ).toBe(
-      "codex '--dangerously-bypass-approvals-and-sandbox' '/lh-create-github-pr 451'",
+      "codex '--dangerously-bypass-approvals-and-sandbox' 'Create GitHub PR.'",
     );
   });
 

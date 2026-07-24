@@ -406,9 +406,10 @@ export const pulls = {
 
   // #411: orchestrate submitting a loophub PR to GitHub as a Draft PR in one place — push the head
   // branch under a content-based name, open (or recover) a GitHub Draft PR, and record it back.
-  // The lh-create-github-pr skill only generates branch/title/body (LLM work) and calls this,
-  // instead of chaining cd → git push → gh pr create → record itself (AGENTS.md: git+DB+destructive
-  // orchestration belongs in core). Atomicity: if recording fails after `gh` creates the PR, a
+  // The "Create PR on GitHub" export prompt (github-pr-export-prompt.ts) only generates
+  // branch/title/body (LLM work) and calls this, instead of chaining cd → git push → gh pr create →
+  // record itself (AGENTS.md: git+DB+destructive orchestration belongs in core). Atomicity: if
+  // recording fails after `gh` creates the PR, a
   // re-run finds the existing PR for the branch via `deps.view` and records it rather than opening a
   // duplicate (#406's worst state — created on GitHub but unrecorded). `deps` is an injectable seam
   // (push/gh) so this is unit-testable without a GitHub remote; callers leave it at the default.

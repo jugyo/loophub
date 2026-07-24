@@ -1420,7 +1420,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
     ).toBeNull();
   });
 
-  it("offers Create PR on GitHub (not Merge) in 'github_pr' mode, dispatching the skill", async () => {
+  it("offers Create PR on GitHub (not Merge) in 'github_pr' mode, injecting the export prompt", async () => {
     renderDetailWithPull({ merge_mode: "github_pr", github_pull: null });
     const button = await screen.findByRole("button", {
       name: /Create PR on GitHub/i,
@@ -1433,6 +1433,10 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(opts.repo).toBe("me/proj");
     expect(opts.workflow).toBe("github-pr-export");
     expect(opts.prNumber).toBe(30);
+    // #1892: no slash-command skill — the full export instructions are injected as the prompt,
+    // interpolated with this PR's repo/number.
+    expect(opts.prompt).toContain("lh pr create-github-pr 30 --repo me/proj");
+    expect(opts.prompt).not.toContain("/lh-create-github-pr");
   });
 
   it("swaps to a View PR on GitHub link once exported (double-create guard)", async () => {

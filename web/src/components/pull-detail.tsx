@@ -54,7 +54,9 @@ import {
   useReadyForReview,
   useSetPullState,
 } from "@/queries/pulls";
+import { useSettings } from "@/queries/settings";
 import { useWorkflowRunForPull } from "@/queries/workflow-runs";
+import { githubPrExportPrompt } from "../../../core/workflow/github-pr-export-prompt.ts";
 
 const MERGE_METHODS = ["squash", "merge", "rebase"] as const;
 type MergeMethod = (typeof MERGE_METHODS)[number];
@@ -481,10 +483,9 @@ function CritReviewAction({
 // #406: GitHub-export write action for a PR whose repo is in 'github_pr' mode. Once the PR has been
 // exported (github_pull present) the button becomes a "View PR on GitHub" link — this is the
 // double-create guard: the Create action disappears so a second export can't be dispatched. Until
-// then, "Create PR on GitHub" dispatches the export skill into a terminal (same pattern as the
-// issue Build button), where the skill generates a branch/title/description and opens the PR.
-// The skill itself ships separately (issue #406 part B); the workflow launch maps to
-// /lh-create-github-pr in core/terminal/terminal-launch.ts.
+// then, "Create PR on GitHub" injects the full export instructions into a launched agent (#1892,
+// same prompt-injection approach as New issue), which generates a branch/title/description in the
+// target PR's language and opens the GitHub Draft PR via `lh pr create-github-pr`.
 function GithubPrAction({
   owner,
   repo,
@@ -496,6 +497,7 @@ function GithubPrAction({
 }) {
   const { launchTerminal } = useTerminalLauncher();
   const { showError } = useToast();
+  const { data: settings } = useSettings();
 
   // #848: push local changes to the linked GitHub PR's branch. isPending drives the disabled +
   // spinner state so the click can't fire twice (AC4). #1861: the same mutation force-pushes when
@@ -587,13 +589,18 @@ function GithubPrAction({
   if (pull.state !== "open" || pull.merged) return null;
   return (
     <Button
-      title="Create a PR on GitHub from this branch via the export skill"
+      title="Create a PR on GitHub from this branch by launching an agent with the export instructions"
       onClick={() =>
         launchTerminal({
           repo: `${owner}/${repo}`,
           label: `PR #${pull.number} - ${pull.title}`,
           workflow: "github-pr-export",
           prNumber: pull.number,
+          prompt: githubPrExportPrompt({
+            repo: `${owner}/${repo}`,
+            prNumber: pull.number,
+            language: settings?.workflowContractLanguage,
+          }),
         })
       }
     >

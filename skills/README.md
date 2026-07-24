@@ -15,13 +15,8 @@ context-isolated reviewer sessions (install them with `npx skills add`).
 | `lh-scheduled-task-create` | `skills/lh-scheduled-task-create/` | `/lh-scheduled-task-create` (create a scheduled task → verify → stop) |
 | `lh-rebase-conflict` | `skills/lh-rebase-conflict/` | `/lh-rebase-conflict {pr id}` (resolve conflicts → re-review) |
 | `lh-retro` | `skills/lh-retro/` | `/lh-retro [{pr id}]` (retrospect a merged PR / backfill → save to retros DB) |
-| `lh-create-github-pr` | `skills/lh-create-github-pr/` | `/lh-create-github-pr {pr id}` (export a LoopHub PR to a GitHub Draft PR → record back) |
 
 Do not use the `loop-` prefix — it collides with Cursor's built-in `/loop` (scheduled runs).
-
-`lh-create-github-pr` is part of the selectable `lh-*` LoopHub workflow-skill set. The PR detail's
-**Create PR on GitHub** button dispatches `/lh-create-github-pr <pr>` through the configured coding
-agent.
 
 ## Authoring
 
@@ -60,13 +55,14 @@ implements and the Verify step reviews. These skills cover registration, issue a
 scheduled-task registration, and conflict resolution; implementation and review are the Workflow
 run's job (Execute and Verify steps), not standalone skills.
 
-`lh-create-github-pr` is **outside** this chain: it is a separate, UI-triggered export action (the PR
-detail's **Create PR on GitHub** button for repos in `github_pr` merge mode). It pushes the PR's branch
-under a content-based name, opens a GitHub **Draft** PR, and records it back with
-`lh pr record-github-pr` so the button switches to **View PR on GitHub**. It does not merge or review.
-`lh pr record-github-pr <pr-id> --url <github-pr-url>` can also be run directly to attach a GitHub
-PR that was created outside LoopHub (e.g. via `gh pr create`) back onto its LoopHub PR (#487) — the
-GitHub PR number is derived from the URL when `--number` is omitted.
+**Create PR on GitHub** is **outside** this chain and is no longer a skill: the PR detail's button
+(for repos in `github_pr` merge mode) injects its full export instructions directly into a launched
+agent (`core/workflow/github-pr-export-prompt.ts`, #1892), the same prompt-injection approach as the
+New issue button. The agent pushes the PR's branch under a content-based name, opens a GitHub **Draft**
+PR, and records it back via `lh pr create-github-pr` so the button switches to **View PR on GitHub**.
+It does not merge or review. `lh pr record-github-pr <pr-id> --url <github-pr-url>` can also be run
+directly to attach a GitHub PR that was created outside LoopHub (e.g. via `gh pr create`) back onto its
+LoopHub PR (#487) — the GitHub PR number is derived from the URL when `--number` is omitted.
 
 ## Install
 

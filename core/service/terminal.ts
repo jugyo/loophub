@@ -384,7 +384,13 @@ export const terminal = {
       effort: input.workflow === "issue-create" ? input.effort : undefined,
       targetBranch:
         input.workflow === "issue-create" ? input.targetBranch : undefined,
-      prompt: input.workflow === "issue-create" ? input.prompt : undefined,
+      // New issue and github-pr-export (#1892) both inject their full instructions directly as the
+      // agent prompt rather than dispatching a slash-command skill.
+      prompt:
+        input.workflow === "issue-create" ||
+        input.workflow === "github-pr-export"
+          ? input.prompt
+          : undefined,
       env:
         issueCreateLaunchId != null
           ? { [ENV_ISSUE_CREATE_HERDR_LAUNCH]: issueCreateLaunchId }

@@ -935,7 +935,7 @@ export const methods: Record<string, MethodDef> = {
   },
   "pulls/createGithubPull": {
     description:
-      "External agent/skill surface (not used by the SPA). Submit a loophub PR to GitHub as a Draft PR (#411): push the head branch under `branch`, open (or recover) a Draft PR, and record it. Atomic — a retry recovers a created-but-unrecorded PR instead of duplicating. Same core orchestration as `lh pr create-github-pr` / skill `lh-create-github-pr`.",
+      "External agent surface (not used by the SPA). Submit a loophub PR to GitHub as a Draft PR (#411): push the head branch under `branch`, open (or recover) a Draft PR, and record it. Atomic — a retry recovers a created-but-unrecorded PR instead of duplicating. Same core orchestration as `lh pr create-github-pr`.",
     params: params(
       {
         repo,

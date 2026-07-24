@@ -156,15 +156,18 @@ export function commandForHerdrLaunch(input: {
     });
     return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }
-  if (input.workflow === "github-pr-export" && input.prNumber) {
+  if (input.workflow === "github-pr-export" && input.prNumber && input.prompt) {
     const agent = input.codingAgent ?? codingAgent();
-    // Auto mode follows the agent's autoModeOnLaunch setting so `git push` / `gh pr create` inside
-    // /lh-create-github-pr don't hit permission prompts when it is enabled (#809). The per-runtime
-    // posture (auto-bypass, or codex's sandbox when off) comes from buildRuntimeArgs.
+    // The full filing instructions are injected directly as the agent's initial prompt (#1892),
+    // the same prompt-injection approach as New issue, instead of dispatching the retired
+    // /lh-create-github-pr skill. Auto mode follows the agent's autoModeOnLaunch setting so the
+    // `git push` / `gh pr create` the prompt drives don't hit permission prompts when it is enabled
+    // (#809). The per-runtime posture (auto-bypass, or codex's sandbox when off) comes from
+    // buildRuntimeArgs.
     const argv = buildRuntimeArgs({
       runtime: agent,
       auto: autoModeOnLaunch(agent),
-      prompt: `/lh-create-github-pr ${input.prNumber}`,
+      prompt: input.prompt,
     });
     return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }
