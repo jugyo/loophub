@@ -1,5 +1,5 @@
-import type { WorkflowStepContractsWire } from "../serialize.ts";
-import { workflowStepContracts } from "../workflow/contracts.ts";
+import type { WorkflowContractsWire } from "../serialize.ts";
+import { workflowContracts } from "../workflow/contracts.ts";
 import { workflowContractLanguage } from "./settings.ts";
 import { actorFor, S, ServiceError, workflowJSON } from "./shared.ts";
 
@@ -35,8 +35,8 @@ function workflowOr404(name: string) {
 }
 
 export const workflows = {
-  contracts(): WorkflowStepContractsWire {
-    return workflowStepContracts(workflowContractLanguage());
+  contracts(): WorkflowContractsWire {
+    return workflowContracts(workflowContractLanguage());
   },
 
   list() {

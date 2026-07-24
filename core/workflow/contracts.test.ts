@@ -3,22 +3,22 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { workflowContractText, workflowStepContracts } from "./contracts.ts";
+import { WORKFLOW_STEPS } from "./compose.ts";
+import { workflowContracts, workflowContractText } from "./contracts.ts";
 import { WORKFLOW_EXAMPLE_PROMPTS } from "./example-prompts.ts";
 
-test("loads every step contract from the canonical Markdown sources", () => {
-  const contracts = workflowStepContracts();
+test("loads every fixed contract from the canonical Markdown sources", () => {
+  const contracts = workflowContracts();
 
+  expect(contracts.parent).toContain("# Parent workflow contract");
   expect(contracts.execute).toContain("# Execute step contract");
   expect(contracts.verify).toContain("# Verify step contract");
 });
 
 test("loads Japanese translations for every fixed contract", () => {
-  const contracts = workflowStepContracts("ja");
+  const contracts = workflowContracts("ja");
 
-  expect(workflowContractText("parent", "ja")).toContain(
-    "# Parent workflow contract",
-  );
+  expect(contracts.parent).toContain("# Parent workflow contract");
   expect(contracts.execute).toContain("# Execute ステップ contract");
   expect(contracts.verify).toContain("# Verify ステップ contract");
 });
@@ -534,10 +534,10 @@ test("documents recording the launch-step agent line as the injection target", (
 });
 
 test("identifies orchestrator-prefixed messages in every child contract", () => {
-  const contracts = workflowStepContracts();
+  const contracts = workflowContracts();
 
-  for (const contract of Object.values(contracts)) {
-    expect(contract).toMatch(
+  for (const step of WORKFLOW_STEPS) {
+    expect(contracts[step]).toMatch(
       /messages beginning with `orchestrator:` are instructions from the workflow/u,
     );
   }

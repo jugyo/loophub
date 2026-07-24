@@ -21,7 +21,8 @@ import type { Workflow } from "@/api/types";
 import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts.ts";
 import { WorkflowsPage } from "./workflows-page";
 
-const STEP_CONTRACTS = {
+const CONTRACTS = {
+  parent: "# Parent workflow contract\nParent contract body",
   execute: "# Execute step contract\nExecute contract body",
   verify: "# Verify step contract\nVerify contract body",
 };
@@ -47,7 +48,7 @@ function renderPage(
     "fetch",
     mockRpcFetch({
       "workflows/list": () => workflows,
-      "workflows/contracts": () => STEP_CONTRACTS,
+      "workflows/contracts": () => CONTRACTS,
       "settings/get": () => ({ workflowContractLanguage: "en" }),
       ...handlers,
     }),
@@ -248,8 +249,8 @@ describe("WorkflowsPage", () => {
     );
 
     const links = screen.getAllByRole("button", { name: "System prompt" });
-    expect(links).toHaveLength(2);
-    fireEvent.click(links[0]);
+    expect(links).toHaveLength(3);
+    fireEvent.click(links[1]);
 
     const dialog = screen.getByRole("dialog", {
       name: "Execute system prompt",
@@ -266,6 +267,28 @@ describe("WorkflowsPage", () => {
     expect(screen.getByRole("dialog", { name: "New workflow" })).toBeTruthy();
   });
 
+  it("shows the parent contract read-only, without a prompt field of its own", async () => {
+    renderPage({});
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New workflow" }),
+    );
+
+    const form = screen.getByRole("dialog", { name: "New workflow" });
+    // name + description + the two step prompts; the parent contract adds no editable field.
+    expect(within(form).getAllByRole("textbox")).toHaveLength(4);
+    fireEvent.click(
+      within(form).getAllByRole("button", { name: "System prompt" })[0],
+    );
+
+    const dialog = screen.getByRole("dialog", {
+      name: "Parent system prompt",
+    });
+    expect(
+      await within(dialog).findByText(/Parent contract body/),
+    ).toBeTruthy();
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
+  });
+
   it("keeps the workflow dialog and its input open when closing a nested dialog from its backdrop", async () => {
     renderPage({});
     fireEvent.click(
@@ -279,7 +302,7 @@ describe("WorkflowsPage", () => {
     fireEvent.click(
       within(workflowDialog).getAllByRole("button", {
         name: "System prompt",
-      })[0],
+      })[1],
     );
 
     const systemPromptDialog = screen.getByRole("dialog", {
@@ -316,6 +339,7 @@ describe("WorkflowsPage", () => {
     renderPage({
       "settings/get": () => ({ workflowContractLanguage: "ja" }),
       "workflows/contracts": () => ({
+        parent: "# Parent workflow contract\n日本語の parent contract 本文",
         execute: "# Execute ステップ contract\n日本語の contract 本文",
         verify: "# Verify ステップ contract\n日本語の contract 本文",
       }),
@@ -324,13 +348,27 @@ describe("WorkflowsPage", () => {
       await screen.findByRole("button", { name: "New workflow" }),
     );
     fireEvent.click(
-      screen.getAllByRole("button", { name: "System prompt" })[0],
+      screen.getAllByRole("button", { name: "System prompt" })[1],
     );
 
     expect(
       await within(
         screen.getByRole("dialog", { name: "Execute system prompt" }),
       ).findByText(/日本語の contract 本文/),
+    ).toBeTruthy();
+
+    fireEvent.keyDown(
+      screen.getByRole("dialog", { name: "Execute system prompt" }),
+      { key: "Escape" },
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "System prompt" })[0],
+    );
+
+    expect(
+      await within(
+        screen.getByRole("dialog", { name: "Parent system prompt" }),
+      ).findByText(/日本語の parent contract 本文/),
     ).toBeTruthy();
   });
 
@@ -340,9 +378,9 @@ describe("WorkflowsPage", () => {
 
     expect(
       screen.getAllByRole("button", { name: "System prompt" }),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
     fireEvent.click(
-      screen.getAllByRole("button", { name: "System prompt" })[1],
+      screen.getAllByRole("button", { name: "System prompt" })[2],
     );
     const dialog = screen.getByRole("dialog", {
       name: "Verify system prompt",

@@ -8,7 +8,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Check, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
-import type { Workflow, WorkflowStepContracts } from "@/api/types";
+import type { Workflow, WorkflowContracts } from "@/api/types";
 import { SettingsHeader } from "@/components/settings-header";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
@@ -30,12 +30,24 @@ import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts
 // per step in the form.
 const STEP_FIELDS: {
   key: "execute_prompt" | "verify_prompt";
-  contractKey: keyof WorkflowStepContracts;
+  contractKey: keyof WorkflowContracts;
   label: string;
 }[] = [
   { key: "execute_prompt", contractKey: "execute", label: "Execute prompt" },
   { key: "verify_prompt", contractKey: "verify", label: "Verify prompt" },
 ];
+
+// The parent contract orchestrates the run around those steps (#1855). It has no configurable
+// prompt, so the form shows it read-only through the same system prompt dialog.
+const PARENT_CONTRACT: OpenContract = {
+  contractKey: "parent",
+  label: "Parent",
+};
+
+type OpenContract = { contractKey: keyof WorkflowContracts; label: string };
+
+const contractLinkClasses =
+  "text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 export function WorkflowsPage() {
   const navigate = useNavigate();
@@ -308,9 +320,7 @@ function WorkflowForm({
     settings.data?.workflowContractLanguage,
   );
   const mutation = mode === "create" ? create : update;
-  const [openContract, setOpenContract] = useState<
-    (typeof STEP_FIELDS)[number] | null
-  >(null);
+  const [openContract, setOpenContract] = useState<OpenContract | null>(null);
 
   const [name, setName] = useState(
     mode === "edit" ? (workflow?.name ?? "") : "",
@@ -390,6 +400,23 @@ function WorkflowForm({
         />
       </label>
 
+      <div className="flex flex-col gap-1 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-medium">{PARENT_CONTRACT.label}</span>
+          <button
+            type="button"
+            className={contractLinkClasses}
+            onClick={() => setOpenContract(PARENT_CONTRACT)}
+          >
+            System prompt
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Orchestrates the run around the two steps. Fixed by LoopHub, with no
+          prompt to configure.
+        </p>
+      </div>
+
       {STEP_FIELDS.map((step) => (
         <div key={step.key} className="flex flex-col gap-1 text-sm">
           <div className="flex items-center justify-between gap-3">
@@ -401,8 +428,13 @@ function WorkflowForm({
             </label>
             <button
               type="button"
-              className="text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              onClick={() => setOpenContract(step)}
+              className={contractLinkClasses}
+              onClick={() =>
+                setOpenContract({
+                  contractKey: step.contractKey,
+                  label: step.label.replace(" prompt", ""),
+                })
+              }
             >
               System prompt
             </button>
@@ -420,7 +452,7 @@ function WorkflowForm({
 
       {openContract ? (
         <SystemPromptDialog
-          stepLabel={openContract.label.replace(" prompt", "")}
+          contractLabel={openContract.label}
           content={contracts.data?.[openContract.contractKey]}
           loading={contracts.isLoading}
           error={contracts.isError}
@@ -451,19 +483,19 @@ function WorkflowForm({
 }
 
 function SystemPromptDialog({
-  stepLabel,
+  contractLabel,
   content,
   loading,
   error,
   onClose,
 }: {
-  stepLabel: string;
+  contractLabel: string;
   content?: string;
   loading: boolean;
   error: boolean;
   onClose: () => void;
 }) {
-  const title = `${stepLabel} system prompt`;
+  const title = `${contractLabel} system prompt`;
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 p-4"

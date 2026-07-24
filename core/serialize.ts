@@ -1560,8 +1560,12 @@ export function workflowJSON(row: S.WorkflowRow): WorkflowWire {
   };
 }
 
-/** Fixed system prompts for the workflow steps, sourced from their launch-time contracts. */
-export interface WorkflowStepContractsWire {
+/**
+ * Fixed system prompts of a workflow run, sourced from their launch-time contracts. `parent` is the
+ * orchestration contract; only the two step prompts pair with a configurable prompt.
+ */
+export interface WorkflowContractsWire {
+  parent: string;
   execute: string;
   verify: string;
 }

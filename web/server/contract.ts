@@ -272,7 +272,7 @@ export const methods: Record<string, MethodDef> = {
   // ---- workflows ----
   "workflows/contracts": {
     description:
-      "Get the fixed system prompts used to launch the Execute/Verify steps.",
+      "Get a run's fixed system prompts: the parent contract plus the Execute/Verify step contracts.",
     params: EMPTY_PARAMS,
     result: anyObject,
     handler: () => svc.workflows.contracts(),

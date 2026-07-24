@@ -48,10 +48,10 @@ import type {
   UserWire,
   WebConfigWire,
   WorkflowContractLanguageWire,
+  WorkflowContractsWire,
   WorkflowRunHistoryEventWire,
   WorkflowRunReviewSummaryWire,
   WorkflowRunStateWire,
-  WorkflowStepContractsWire,
   WorkflowStepStatusWire,
   WorkflowWire,
   WorkspaceResolutionWire,
@@ -259,7 +259,7 @@ export type ScheduledTask = ScheduledTaskWire;
 
 /** A global workflow definition (#997): Execute/Verify prompt bundle. */
 export type Workflow = WorkflowWire;
-export type WorkflowStepContracts = WorkflowStepContractsWire;
+export type WorkflowContracts = WorkflowContractsWire;
 
 /** Display state of a Workflow run linked to an issue / PR (#1008). */
 export type WorkflowRunState = WorkflowRunStateWire;

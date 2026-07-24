@@ -39,9 +39,9 @@ import type {
   TerminalLaunchResult,
   WebConfig,
   Workflow,
+  WorkflowContracts,
   WorkflowRunHistoryEvent,
   WorkflowRunState,
-  WorkflowStepContracts,
   Workspace,
 } from "./types";
 
@@ -366,7 +366,7 @@ export function listWorkflows() {
 }
 
 export function getWorkflowContracts() {
-  return rpc<WorkflowStepContracts>("workflows/contracts", {});
+  return rpc<WorkflowContracts>("workflows/contracts", {});
 }
 
 export function createWorkflow(
