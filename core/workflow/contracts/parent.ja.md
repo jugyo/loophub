@@ -80,8 +80,9 @@ next / action の non-zero error は retry せず、人間へ判断を求める�
 - `wait`: 何もしない。
 - `escalate`:
   `lh workflow escalate-human --repo '<repo>' --run <run> --reason <reason> [--issue <issue>]` を実行する。この
-  command が hold、Issue comment、replay receipt を管理する。明示的な人間の指示が届くまで
-  step launch や rework count の変更を行わない。
+  command が Issue comment と replay receipt を管理し、run state は変更しない。明示的な人間の指示が
+  届くまで step launch や rework count の変更を行わない。その指示は `next --note` から loop に戻り、
+  返された action に従う。rework count は値を保つため、以降の `request_changes` は再び escalate になる。
 - `ask_human`: cost の質問は **Interrupts** に従う。それ以外は返された質問を表示し、人間の回答まで
   自動進行を hold する。
 

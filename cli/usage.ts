@@ -33,7 +33,7 @@ export function usage(): void {
   lh workflow run increase-cost-limit --run <id> --expected-limit <usd> [--repo owner/name]
   lh workflow run resume --run <id> --step execute|verify [--repo owner/name]
   lh workflow turn done [--repo owner/name] [--run <id>]   # (Execute child) declare the turn done — payload-less; the parent observes HEAD/review state
-  lh workflow escalate --reason <text> [--repo owner/name] [--run <id>]   # (Execute child) request human guidance; the parent applies await-human
+  lh workflow escalate --reason <text> [--repo owner/name] [--run <id>]   # (Execute child) request human guidance; the parent notifies the human and waits for an instruction
   lh workflow deliver --run <id> --text <single-line-instruction> [--repo owner/name] [--json]   # activate and deliver to the latest Execute child pane
   lh workflow escalate-human --reason <text> [--repo owner/name] [--run <id>] [--issue <n>]   # record an idempotent Issue comment
   lh workflow next <run> [--repo owner/name] [--watch | --event <id> [--requires-changes true|false] | --note <text|->] [--json]      # advise the parent's next action with the observed state it came from, without changing run state; --watch blocks until the run's next event

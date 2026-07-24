@@ -76,9 +76,10 @@ Keep a non-zero next or action error visible and ask for human judgement; do not
   HEAD afterward.
 - `wait`: do nothing.
 - `escalate`: run
-  `lh workflow escalate-human --repo '<repo>' --run <run> --reason <reason> [--issue <issue>]`. The command establishes
-  the hold and owns the Issue comment and its replay receipt. Do not launch a step or change the rework count
-  until an explicit human instruction arrives.
+  `lh workflow escalate-human --repo '<repo>' --run <run> --reason <reason> [--issue <issue>]`. The command owns the
+  Issue comment and its replay receipt; it does not change run state. Do not launch a step or change the rework count
+  until an explicit human instruction arrives. That instruction re-enters the loop through `next --note`, which returns
+  the action to follow. The rework count keeps its value, so every later `request_changes` escalates again.
 - `ask_human`: for a cost question, follow **Interrupts**. Otherwise show the returned question and hold automatic
   progression until the human answers.
 

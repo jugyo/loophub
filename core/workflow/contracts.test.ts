@@ -477,6 +477,22 @@ test("parent delegates the human notification to escalate-human in both language
   }
 });
 
+test("parent escalation notifies the human without holding the run", () => {
+  const parent = workflowContractText("parent");
+  const japanese = workflowContractText("parent", "ja");
+
+  expect(parent).toMatch(
+    /The command owns the\s+Issue comment and its replay receipt; it does not change run state/u,
+  );
+  expect(parent).toContain("re-enters the loop through `next --note`");
+  expect(parent).not.toMatch(/The command establishes\s+the hold/u);
+  expect(japanese).toMatch(
+    /command が Issue comment と replay receipt を管理し、run state は変更しない/u,
+  );
+  expect(japanese).toContain("その指示は `next --note` から loop に戻り");
+  expect(japanese).not.toMatch(/command が hold、Issue comment/u);
+});
+
 test("documents recording the launch-step agent line as the injection target", () => {
   const parent = workflowContractText("parent");
 

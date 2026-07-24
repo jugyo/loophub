@@ -314,7 +314,7 @@ hold を維持する。
 |---|---|---|
 | start | run started | Execute を launch → background の `next --watch` task を開始 |
 | Execute | HEAD が base より先行し、最新 review より前進 | `advance-to-verify` → Verify を fresh launch |
-| Execute | `workflow_run.escalated` を受領 | event の reason を再取得し、`await-human` で hold |
+| Execute | `workflow_run.escalated` を受領 | event の reason で `escalate-human` → Issue comment に通知。run state は変えず、人間の指示まで step launch も rework もしない |
 | Execute / Verify | `workflow_run.cost_exceeded` を受領 | active child を解決 → `await-human` → 実 Esc + 1 行通知 → yes / no を一度だけ確認 |
 | Cost confirmation | yes | `step status` を再確認 → 期待上限付き専用操作で `B` 増額 → hold を解除。Execute は同じ pane で続行、Verify は current HEAD に fresh launch |
 | Cost confirmation | no | hold を維持し、子起動・注入・自動遷移を行わず次の明示的指示を待つ |
@@ -340,6 +340,13 @@ rework 上限は 3。新規 launch より先に parent が **1 行の**
 解決できない、または注入に失敗して non-zero になった場合に限り `--review <id>` で Execute child を
 再 launch する。修正後の Verify は常に fresh child とする。注入の成功自体を execute complete の根拠
 にしない — 次の遷移は `lh workflow step status` の HEAD / review 観測のみ。
+
+上限到達後に fresh な request_changes を観測したときは rework せず、`escalate-human` で Issue comment に
+通知する。この escalation は run を DB で hold しない（`needs_human_reason` は null のまま）ため、復帰は
+人間の指示を `lh workflow next <run> --note <text>` に渡すことで行い、返る action は既存 Execute pane への
+`deliver` である。`run resume` を経由しないので rework count は上限のまま残り、以降の request_changes は
+毎回 escalation として人間に戻る。`run resume` は cost hold のような `await-human` による明示的 hold を
+解除する経路として残る。
 
 宣言がないまま run 活動が停止しても、worker が時間経過だけで run を自動ホールドすることはない。進捗の
 有無は turn done と HEAD / review を観測する parent が扱い、本当に死んだ run は人間が気づいて stop /

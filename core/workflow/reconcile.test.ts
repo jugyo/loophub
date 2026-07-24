@@ -229,6 +229,69 @@ describe("reconcileWorkflow", () => {
     });
   });
 
+  test("recovers from a rework-limit escalation through a human instruction", () => {
+    // `escalate-human` records the notification without holding the run, so the human
+    // instruction reaches Execute by delivery alone — no resume, no rework count reset.
+    expect(
+      reconcileWorkflow(
+        observed({
+          currentStep: "verify",
+          activeStep: "verify",
+          reworkCount: 3,
+          headAheadOfBase: true,
+          wake: { kind: "human_instruction" },
+          steps: {
+            execute: {
+              complete: false,
+              missing: [
+                "head has not advanced past review #10 (request_changes)",
+              ],
+            },
+            verify: {
+              complete: true,
+              missing: [],
+              latest_review: {
+                id: 10,
+                event: "request_changes",
+                headSha: HEAD,
+                fresh: true,
+              },
+            },
+          },
+        }),
+      ),
+    ).toMatchObject({
+      action: "deliver",
+      delivery_reason: "human_instruction",
+      transition: null,
+    });
+
+    expect(
+      reconcileWorkflow(
+        observed({
+          currentStep: "verify",
+          activeStep: "execute",
+          reworkCount: 3,
+          headAheadOfBase: true,
+          turnDoneForActiveExecute: true,
+          steps: {
+            execute: { complete: true, missing: [] },
+            verify: {
+              complete: false,
+              missing: ["no workflow review pinned to current head"],
+              latest_review: {
+                id: 10,
+                event: "request_changes",
+                headSha: OLD,
+                fresh: false,
+              },
+            },
+          },
+        }),
+      ),
+    ).toMatchObject({ action: "launch_verify" });
+  });
+
   test("waits on a fresh pass and while the run is held for a human", () => {
     const freshPass = observed({
       currentStep: "verify",
