@@ -938,13 +938,24 @@ export const methods: Record<string, MethodDef> = {
   },
   "pulls/pushGithubPull": {
     description:
-      "Push the loophub PR's current head to the branch of its already-recorded GitHub PR (#848), so commits added locally after the export reach GitHub without re-creating the PR. Records the pushed head SHA.",
-    params: params({ repo, number: positiveInt, session_id: sid }, [
-      "repo",
-      "number",
-    ]),
+      "Push the loophub PR's current head to the branch of its already-recorded GitHub PR (#848), so commits added locally after the export reach GitHub without re-creating the PR. Records the pushed head SHA. `force` (#1861) pushes with `--force-with-lease` for a head rewritten by rebase/amend.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        force: { type: "boolean" },
+        session_id: sid,
+      },
+      ["repo", "number"],
+    ),
     result: anyObject,
-    handler: (p) => svc.pulls.pushGithubPull(p.repo, p.number, p.session_id),
+    handler: (p) =>
+      svc.pulls.pushGithubPull(
+        p.repo,
+        p.number,
+        { force: p.force },
+        p.session_id,
+      ),
   },
   "pulls/githubStatus": {
     description:

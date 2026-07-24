@@ -1516,6 +1516,7 @@ describe("PullDetail — GitHub export action (#406)", () => {
       expect(rpcCall("pulls/pushGithubPull")?.params).toMatchObject({
         repo: "me/proj",
         number: 30,
+        force: false,
       });
       expect(resolveRefresh).toBeTypeOf("function");
     });
@@ -1523,5 +1524,33 @@ describe("PullDetail — GitHub export action (#406)", () => {
 
     resolveRefresh?.();
     await waitFor(() => expect(button.disabled).toBe(true));
+  });
+
+  it("force-pushes when Force push is chosen from the push dropdown (#1861)", async () => {
+    renderDetailWithPull(
+      {
+        merge_mode: "github_pr",
+        github_pull: linkedGithubPull("previous-head"),
+      },
+      {
+        "pulls/pushGithubPull": () => linkedGithubPull(pull.head.sha),
+      },
+    );
+
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: /Push options/i }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /Force push to GitHub/i }),
+    );
+
+    await waitFor(() => {
+      expect(rpcCall("pulls/pushGithubPull")?.params).toMatchObject({
+        repo: "me/proj",
+        number: 30,
+        force: true,
+      });
+    });
   });
 });

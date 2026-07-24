@@ -164,11 +164,14 @@ export function useReadyForReview(owner: string, repo: string, number: number) {
   });
 }
 
-/** Push local changes to the linked GitHub PR's branch, then invalidate the PR + lists (#848). */
+/**
+ * Push local changes to the linked GitHub PR's branch, then invalidate the PR + lists (#848).
+ * `mutate(true)` force-pushes (#1861) for a head rewritten by rebase/amend.
+ */
 export function usePushGithubPull(owner: string, repo: string, number: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => pushGithubPull(owner, repo, number),
+    mutationFn: (force?: boolean) => pushGithubPull(owner, repo, number, force),
     onSuccess: (githubPull) => {
       qc.setQueryData<PullRequest>(
         queryKeys.pull(full(owner, repo), number),

@@ -14,13 +14,18 @@ export interface GhPr {
 // would rewrite the local head's tracking to the GitHub branch and disturb the loophub-managed
 // branch (a later bare `git push` in the worktree could then target GitHub). Idempotent — pushing
 // the same commits again is a no-op, so a retry after a partial run is safe.
+// `force` (#1861) uses `--force-with-lease` rather than `--force` so a rebased/amended head can
+// overwrite the GitHub branch only while our remote-tracking ref still matches it; a branch someone
+// else moved fails loudly instead of being clobbered.
 export async function pushBranch(
   repoPath: string,
   headRef: string,
   branch: string,
+  opts: { force?: boolean } = {},
 ): Promise<void> {
   const r = await git(repoPath, [
     "push",
+    ...(opts.force ? ["--force-with-lease"] : []),
     "origin",
     `${headRef}:refs/heads/${branch}`,
   ]);

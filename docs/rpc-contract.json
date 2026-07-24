@@ -333,7 +333,7 @@
     },
     {
       "name": "settings/get",
-      "description": "Instance-level config.json settings (per-agent autoModeOnLaunch/model/effort, codingAgent, devCostLimitUsd) (#474, #499, #516, #593, #594, #682, #1027).",
+      "description": "Instance-level settings (per-agent autoModeOnLaunch/model/effort, codingAgent, devCostLimitUsd, workflowContractLanguage).",
       "params": {
         "type": "object",
         "properties": {},
@@ -346,7 +346,7 @@
     },
     {
       "name": "settings/update",
-      "description": "Update instance-level config.json settings, preserving unrelated fields. autoModeOnLaunch/model/effort require agent (#474, #593, #682, #1027).",
+      "description": "Update instance-level settings. autoModeOnLaunch/model/effort require agent; workflowContractLanguage is DB-backed.",
       "params": {
         "type": "object",
         "properties": {
@@ -381,6 +381,12 @@
             "maximum": 1000,
             "default": 10,
             "description": "Per-task USD over-budget stop threshold for implementation agents. Omit to use the $10 default. JSON Schema enforces the positive and $1,000 maximum bounds; the service additionally rejects values with more than two decimal places."
+          },
+          "workflowContractLanguage": {
+            "enum": [
+              "en",
+              "ja"
+            ]
           },
           "session_id": {
             "type": "string",
@@ -472,7 +478,7 @@
     },
     {
       "name": "workflows/contracts",
-      "description": "Get the fixed system prompts used to launch the Execute/Verify steps.",
+      "description": "Get a run's fixed system prompts: the parent contract plus the Execute/Verify step contracts.",
       "params": {
         "type": "object",
         "properties": {},
@@ -707,6 +713,9 @@
             "type": "string"
           },
           "targetBranch": {
+            "type": "string"
+          },
+          "prompt": {
             "type": "string"
           },
           "agent": {
@@ -1078,6 +1087,12 @@
               "type": "string"
             }
           },
+          "workspace": {
+            "type": "string"
+          },
+          "lookahead": {
+            "type": "boolean"
+          },
           "page": {
             "type": "integer",
             "minimum": 1
@@ -1325,7 +1340,7 @@
     },
     {
       "name": "issues/update",
-      "description": "Edit an issue's title/body/state/labels.",
+      "description": "Edit an issue's title/body/state/labels/target workspace.",
       "params": {
         "type": "object",
         "properties": {
@@ -1354,6 +1369,18 @@
             "items": {
               "type": "string"
             }
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "session_id": {
             "type": "string",
@@ -2019,7 +2046,7 @@
     },
     {
       "name": "pulls/pushGithubPull",
-      "description": "Push the loophub PR's current head to the branch of its already-recorded GitHub PR (#848), so commits added locally after the export reach GitHub without re-creating the PR. Records the pushed head SHA.",
+      "description": "Push the loophub PR's current head to the branch of its already-recorded GitHub PR (#848), so commits added locally after the export reach GitHub without re-creating the PR. Records the pushed head SHA. `force` (#1861) pushes with `--force-with-lease` for a head rewritten by rebase/amend.",
       "params": {
         "type": "object",
         "properties": {
@@ -2030,6 +2057,9 @@
           "number": {
             "type": "integer",
             "minimum": 1
+          },
+          "force": {
+            "type": "boolean"
           },
           "session_id": {
             "type": "string",

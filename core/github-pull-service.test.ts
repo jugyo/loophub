@@ -159,7 +159,12 @@ test("recordGithubPull rejects a url with no derivable PR number and no github_n
 // #411: createGithubPull orchestration. push + gh are injected fakes so the test runs without a
 // GitHub remote/network; the DB record, double-create guard, and validation are exercised for real.
 type GhCalls = {
-  push: Array<{ repoPath: string; head: string; branch: string }>;
+  push: Array<{
+    repoPath: string;
+    head: string;
+    branch: string;
+    force?: boolean;
+  }>;
   view: Array<{ repoPath: string; branch: string }>;
   create: Array<{
     repoPath: string;
@@ -173,8 +178,13 @@ function fakeDeps(opts: {
 }) {
   const calls: GhCalls = { push: [], view: [], create: [] };
   const deps = {
-    async push(repoPath: string, head: string, branch: string) {
-      calls.push.push({ repoPath, head, branch });
+    async push(
+      repoPath: string,
+      head: string,
+      branch: string,
+      pushOpts: { force?: boolean } = {},
+    ) {
+      calls.push.push({ repoPath, head, branch, force: pushOpts.force });
     },
     async view(repoPath: string, branch: string) {
       calls.view.push({ repoPath, branch });
@@ -484,6 +494,7 @@ test("pushGithubPull pushes the head to the recorded branch and updates pushed_s
   const rec = await svc.pulls.pushGithubPull(
     "me/proj",
     number,
+    {},
     null,
     deps as any,
   );
@@ -492,10 +503,12 @@ test("pushGithubPull pushes the head to the recorded branch and updates pushed_s
     branch: "feature/repush",
     pushed_sha: moved.head.sha,
   });
-  // Pushed the internal head ref under the recorded content-based branch (no new gh create).
+  // Pushed the internal head ref under the recorded content-based branch (no new gh create), and
+  // without force — the plain action never rewrites the GitHub branch (#1861).
   expect(calls.push.at(-1)).toMatchObject({
     head: "feature",
     branch: "feature/repush",
+    force: false,
   });
   expect(calls.create).toHaveLength(1); // only the original create, none from the push
 
@@ -520,11 +533,69 @@ test("pushGithubPull pushes the head to the recorded branch and updates pushed_s
   git(["branch", "-f", "feature", afterPush.head.sha]);
 });
 
+test("pushGithubPull force-pushes a rewritten head and updates pushed_sha (#1861)", async () => {
+  const number = await openPull();
+  const { deps, calls } = fakeDeps({
+    createResult: { number: 304, url: "https://github.com/me/proj/pull/304" },
+  });
+  await svc.pulls.createGithubPull(
+    "me/proj",
+    number,
+    { branch: "feature/force", title: "t", body: "b" },
+    null,
+    deps as any,
+  );
+  const created = (await svc.pulls.get("me/proj", number)) as any;
+
+  // Amend the head: the GitHub branch no longer descends from it, so a plain push would be rejected.
+  git(["checkout", "-q", "feature"]);
+  git(["commit", "-q", "--amend", "-m", "amended work"]);
+  git(["checkout", "-q", "main"]);
+  const amended = (await svc.pulls.get("me/proj", number)) as any;
+  expect(amended.head.sha).not.toBe(created.head.sha);
+
+  const rec = await svc.pulls.pushGithubPull(
+    "me/proj",
+    number,
+    { force: true },
+    null,
+    deps as any,
+  );
+  expect(rec).toMatchObject({
+    number: 304,
+    branch: "feature/force",
+    pushed_sha: amended.head.sha,
+  });
+  expect(calls.push.at(-1)).toMatchObject({
+    head: "feature",
+    branch: "feature/force",
+    force: true,
+  });
+  expect(calls.create).toHaveLength(1); // still no re-create
+
+  // A rejected force push surfaces as an error instead of recording a new pushed_sha.
+  const failing = {
+    ...deps,
+    push: async () => {
+      throw new Error("stale info");
+    },
+  };
+  await expect(
+    svc.pulls.pushGithubPull(
+      "me/proj",
+      number,
+      { force: true },
+      null,
+      failing as any,
+    ),
+  ).rejects.toThrow(/failed to force-push branch: stale info/);
+});
+
 test("pushGithubPull refuses a PR with no recorded GitHub PR (#848)", async () => {
   const number = await openPull();
   const { deps, calls } = fakeDeps({});
   await expect(
-    svc.pulls.pushGithubPull("me/proj", number, null, deps as any),
+    svc.pulls.pushGithubPull("me/proj", number, {}, null, deps as any),
   ).rejects.toThrow(/no GitHub PR to push to/);
   expect(calls.push).toHaveLength(0);
 });
@@ -537,7 +608,7 @@ test("pushGithubPull refuses a recorded PR that has no branch to push to (#848)"
   });
   const { deps, calls } = fakeDeps({});
   await expect(
-    svc.pulls.pushGithubPull("me/proj", number, null, deps as any),
+    svc.pulls.pushGithubPull("me/proj", number, {}, null, deps as any),
   ).rejects.toThrow(/no branch to push to/);
   expect(calls.push).toHaveLength(0);
 });
@@ -551,7 +622,7 @@ test("pushGithubPull rejects a recorded branch with injection-prone characters (
   });
   const { deps, calls } = fakeDeps({});
   await expect(
-    svc.pulls.pushGithubPull("me/proj", number, null, deps as any),
+    svc.pulls.pushGithubPull("me/proj", number, {}, null, deps as any),
   ).rejects.toThrow(/invalid characters/);
   expect(calls.push).toHaveLength(0);
 });

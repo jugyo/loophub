@@ -536,9 +536,12 @@ export const pulls = {
   // an existing link and reuses its stored branch instead of taking a new one. Records the pushed head
   // SHA (pushed_sha) so the button that offers this action hides once GitHub is up to date. git push +
   // the DB update live here in core (AGENTS.md); `deps` is injectable so this is unit-testable.
+  // `input.force` (#1861) force-pushes (`--force-with-lease`) for a head rewritten by rebase/amend,
+  // which a plain push rejects. It only changes the push itself — every guard below still applies.
   async pushGithubPull(
     name: string,
     number: number,
+    input: { force?: boolean } = {},
     sessionId?: string | null,
     deps: GithubDeps = realGithubDeps,
   ) {
@@ -584,13 +587,14 @@ export const pulls = {
     // pruned) — the same location resolution createGithubPull uses.
     const repoPath = r.local_path;
     const head = p.head_ref;
+    const force = input.force === true;
 
     try {
-      await deps.push(repoPath, head, gh.branch);
+      await deps.push(repoPath, head, gh.branch, { force });
     } catch (e) {
       throw new ServiceError(
         502,
-        `failed to push branch: ${(e as Error).message}`,
+        `failed to ${force ? "force-push" : "push"} branch: ${(e as Error).message}`,
       );
     }
 
@@ -601,6 +605,7 @@ export const pulls = {
       number: row.number,
       github_number: gh.number,
       sha: pushedSha,
+      force,
     });
     return githubPullJSON(rec);
   },

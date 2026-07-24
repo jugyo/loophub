@@ -862,15 +862,18 @@ export function getGithubPrStatus(owner: string, repo: string, number: number) {
   });
 }
 
+/** Push the PR's head to its linked GitHub PR branch; `force` uses `--force-with-lease` (#1861). */
 export function pushGithubPull(
   owner: string,
   repo: string,
   number: number,
+  force = false,
   sessionId: string = getSessionId(),
 ) {
   return rpc<GithubPull>("pulls/pushGithubPull", {
     repo: full(owner, repo),
     number,
+    force,
     session_id: sessionId,
   });
 }

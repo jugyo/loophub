@@ -7,7 +7,13 @@
 // via <Markdown>.
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ExternalLink, Github, Loader2, UploadCloud } from "lucide-react";
+import {
+  ChevronDown,
+  ExternalLink,
+  Github,
+  Loader2,
+  UploadCloud,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
@@ -23,6 +29,12 @@ import { useTerminalLauncher } from "@/components/terminal-controller";
 import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { WorkDuration } from "@/components/work-duration";
 import { WorkflowRunStatusSection } from "@/components/workflow-run-status";
 import { pullDetailBadges } from "@/lib/badges";
@@ -486,8 +498,19 @@ function GithubPrAction({
   const { showError } = useToast();
 
   // #848: push local changes to the linked GitHub PR's branch. isPending drives the disabled +
-  // spinner state so the click can't fire twice (AC4).
+  // spinner state so the click can't fire twice (AC4). #1861: the same mutation force-pushes when
+  // the dropdown's Force push is chosen — the button itself always stays a plain push.
   const pushChanges = usePushGithubPull(owner, repo, pull.number);
+  const push = (force: boolean) =>
+    pushChanges.mutate(force, {
+      onError: (e) =>
+        showError(
+          errorMessage(
+            e,
+            force ? "Force push to GitHub failed" : "Push to GitHub failed",
+          ),
+        ),
+    });
 
   const gh = pull.github_pull;
   if (gh) {
@@ -515,28 +538,48 @@ function GithubPrAction({
           View PR on GitHub
           <ExternalLink className="size-3.5 text-muted-foreground" />
         </a>
-        <Button
-          variant="secondary"
-          disabled={!hasUnpushedChanges || pushChanges.isPending}
-          title={
-            hasUnpushedChanges
-              ? `Push local changes to the GitHub PR branch (${gh.branch})`
-              : "No local changes to push to GitHub"
-          }
-          onClick={() =>
-            pushChanges.mutate(undefined, {
-              onError: (e) =>
-                showError(errorMessage(e, "Push to GitHub failed")),
-            })
-          }
-        >
-          {pushChanges.isPending ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <UploadCloud className="size-4" />
-          )}
-          {pushChanges.isPending ? "Pushing…" : "Push to GitHub"}
-        </Button>
+        <div className="inline-flex">
+          <Button
+            variant="secondary"
+            className="rounded-r-none"
+            disabled={!hasUnpushedChanges || pushChanges.isPending}
+            title={
+              hasUnpushedChanges
+                ? `Push local changes to the GitHub PR branch (${gh.branch})`
+                : "No local changes to push to GitHub"
+            }
+            onClick={() => push(false)}
+          >
+            {pushChanges.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <UploadCloud className="size-4" />
+            )}
+            {pushChanges.isPending ? "Pushing…" : "Push to GitHub"}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="secondary"
+                aria-label="Push options"
+                title="Push options"
+                className="rounded-l-none border-l px-2"
+                disabled={!hasUnpushedChanges || pushChanges.isPending}
+              >
+                <ChevronDown className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                title={`Force-push the head to the GitHub PR branch (${gh.branch}) with --force-with-lease, for a head rewritten by rebase or amend`}
+                onSelect={() => push(true)}
+              >
+                <UploadCloud className="size-4" />
+                Force push to GitHub
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </>
     );
   }
