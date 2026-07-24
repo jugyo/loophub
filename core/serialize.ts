@@ -1674,6 +1674,13 @@ export interface WorkflowRunHistoryEventWire {
   type: string;
   label: string;
   description: string;
+  // Loop mechanics that carry no decision (#1851): the turn-done ping and the `activate_step`
+  // update repeat on every turn and read the same each time, crowding the events a human is
+  // actually scanning for. (`usage_updated` joins them in runs old enough to still carry those
+  // pings; nothing has emitted it since #1506.) A step launch stays off this list even though it
+  // repeats just as often — it carries the parent's handoff prompt, which is worth reading.
+  // The dialog plays these down rather than dressing up the rest.
+  routine: boolean;
   input: string | null;
   step: string | null;
   actor: string;
@@ -1714,6 +1721,7 @@ export function workflowRunHistoryEventJSON(
     .replace(/[._-]+/gu, " ")
     .replace(/^./u, (value) => value.toUpperCase());
   let description = "Workflow lifecycle event recorded.";
+  let routine = false;
 
   if (row.type === "workflow_run.started") {
     label = "Run started";
@@ -1749,7 +1757,9 @@ export function workflowRunHistoryEventJSON(
                 ? "Run advanced to Verify"
                 : transition === "request_rework"
                   ? "Run rework requested"
-                  : "Run state updated";
+                  : transition === "activate_step"
+                    ? "Step agent activated"
+                    : "Run state updated";
     const details = [
       `Status: ${workflowStepLabel(status) ?? status}.`,
       touchedNeedsHuman
@@ -1763,6 +1773,12 @@ export function workflowRunHistoryEventJSON(
         : null,
     ].filter((value): value is string => value !== null);
     description = details.join(" ");
+    // The activation that pairs with every step launch is pure loop mechanics. The terminal and
+    // needs-human branches above are excluded so an update that also carries one stays readable.
+    routine =
+      transition === "activate_step" &&
+      status === "running" &&
+      !touchedNeedsHuman;
   } else if (row.type === "workflow_step.launched") {
     label = `${stepLabel ?? "Workflow"} step started`;
     description = `${stepLabel ?? "Workflow"} step execution started.`;
@@ -1770,6 +1786,7 @@ export function workflowRunHistoryEventJSON(
     label = "Turn done declared";
     description =
       "Execute declared its turn done. The parent observes HEAD and review state before any transition.";
+    routine = true;
   } else if (row.type === "workflow_run.escalated") {
     label = "Human guidance requested";
     const reason =
@@ -1777,6 +1794,61 @@ export function workflowRunHistoryEventJSON(
         ? payload.reason
         : "No reason recorded.";
     description = `Execute requested human guidance: ${reason}`;
+  } else if (row.type === "workflow_run.cost_exceeded") {
+    label = "Cost limit exceeded";
+    const cost = typeof payload.cost_usd === "number" ? payload.cost_usd : null;
+    const limit =
+      typeof payload.limit_usd === "number" ? payload.limit_usd : null;
+    description =
+      cost !== null && limit !== null
+        ? `Run cost $${cost.toFixed(2)} passed the $${limit.toFixed(2)} limit. The run holds until the limit is raised.`
+        : "Run cost passed its limit. The run holds until the limit is raised.";
+  } else if (row.type === "workflow_run.cost_limit_increased") {
+    label = "Cost limit raised";
+    const previous =
+      typeof payload.previous_limit_usd === "number"
+        ? payload.previous_limit_usd
+        : null;
+    const current =
+      typeof payload.current_limit_usd === "number"
+        ? payload.current_limit_usd
+        : null;
+    description =
+      previous !== null && current !== null
+        ? `A human raised the run's cost limit from $${previous.toFixed(2)} to $${current.toFixed(2)}.`
+        : "A human raised the run's cost limit so it may continue.";
+  } else if (row.type === "workflow_run.merge_conflict") {
+    label = "Merge conflict detected";
+    description =
+      "The linked PR conflicts with its base. The run cannot progress until the conflict is resolved.";
+  } else if (row.type === "workflow_run.review_submitted") {
+    label = "Review submitted";
+    const reviewId =
+      typeof payload.review_id === "number" ? payload.review_id : null;
+    description =
+      reviewId !== null
+        ? `Review #${reviewId} was submitted on the linked PR. Its verdict decides whether the run advances or reworks.`
+        : "A review was submitted on the linked PR. Its verdict decides whether the run advances or reworks.";
+  } else if (row.type === "workflow_run.github_event") {
+    label = "GitHub feedback received";
+    const githubNumber =
+      typeof payload.github_number === "number" ? payload.github_number : null;
+    description =
+      githubNumber !== null
+        ? `New review feedback landed on GitHub PR #${githubNumber}.`
+        : "New review feedback landed on the linked GitHub pull request.";
+  } else if (row.type === "workflow_run.merged") {
+    label = "Linked PR merged";
+    const prNumber =
+      typeof payload.pr_number === "number" ? payload.pr_number : null;
+    description =
+      prNumber !== null
+        ? `PR #${prNumber} merged — the run's terminal condition.`
+        : "The linked PR merged — the run's terminal condition.";
+  } else if (row.type === "workflow_run.usage_updated") {
+    label = "Usage updated";
+    description = "Agent usage totals for this run were refreshed.";
+    routine = true;
   }
 
   return {
@@ -1784,6 +1856,7 @@ export function workflowRunHistoryEventJSON(
     type: row.type,
     label,
     description,
+    routine,
     input,
     step,
     actor: row.actor,

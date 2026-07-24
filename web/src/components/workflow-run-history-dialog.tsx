@@ -184,9 +184,28 @@ function Metadata({
 }
 
 function HistoryEntry({ event }: { event: WorkflowRunHistoryEvent }) {
+  // Routine loop mechanics (#1851) recede to one dim line — the timeline stays complete, but the
+  // per-turn bookkeeping stops crowding out the lifecycle events between them. Their description
+  // only restates the label, and their type / step / actor repeat on every row.
+  if (event.routine) {
+    return (
+      <li
+        data-debug-component="WorkflowRunHistoryEntry"
+        data-routine="true"
+        className="relative pb-3 last:pb-0"
+      >
+        <span className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-muted-foreground/30 ring-4 ring-background" />
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>{event.label}</span>
+          <time dateTime={event.created_at}>{timestamp(event.created_at)}</time>
+        </div>
+      </li>
+    );
+  }
   return (
     <li
       data-debug-component="WorkflowRunHistoryEntry"
+      data-routine="false"
       className="relative pb-5 last:pb-0"
     >
       <span className="absolute -left-[1.55rem] top-1.5 size-2 rounded-full bg-primary ring-4 ring-background" />

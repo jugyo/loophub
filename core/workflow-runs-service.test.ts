@@ -2740,3 +2740,103 @@ test("history returns readable lifecycle events scoped to one Workflow run (#129
   expect(history[4].input).toContain("Second launch");
   expect(history[0].input).toBeNull();
 });
+
+test("history marks per-turn loop mechanics as routine bookkeeping (#1851)", () => {
+  const repo = S.createRepo("me/workflow-routine", REPO_PATH);
+  const workflow = S.createWorkflow({
+    name: "routine-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: 11,
+    prNumber: 21,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+    parentSessionId: "55555555-5555-4555-8555-555555555555",
+  });
+  const base = { id: run.id, issue_number: 11, pr_number: 21 };
+
+  // The event sequence a run actually produces today: a turn ends, Verify reports, the parent
+  // reworks and re-activates Execute, and a cost hold interrupts it until a human raises the limit.
+  S.emitEvent(repo.id, "workflow_run.started", "parent", base);
+  S.emitEvent(repo.id, "workflow_run.turn_done", "execute-agent", base);
+  S.emitEvent(repo.id, "workflow_run.review_submitted", "verify-agent", {
+    ...base,
+    review_id: 77,
+  });
+  S.emitEvent(repo.id, "workflow_run.updated", "parent", {
+    ...base,
+    status: "running",
+    current_step: "execute",
+    transition: "request_rework",
+    rework_count: 1,
+  });
+  S.emitEvent(repo.id, "workflow_run.updated", "parent", {
+    ...base,
+    status: "running",
+    current_step: "execute",
+    transition: "activate_step",
+    rework_count: 1,
+  });
+  S.emitEvent(repo.id, "workflow_run.cost_exceeded", "worker", {
+    ...base,
+    cost_usd: 40.0686945,
+    limit_usd: 40,
+  });
+  S.emitEvent(repo.id, "workflow_run.updated", "parent", {
+    ...base,
+    status: "running",
+    needs_human_reason: "Cost limit exceeded.",
+  });
+  S.emitEvent(repo.id, "workflow_run.cost_limit_increased", "me", {
+    ...base,
+    previous_limit_usd: 40,
+    current_limit_usd: 60,
+  });
+  S.emitEvent(repo.id, "workflow_run.github_event", "worker", {
+    ...base,
+    github_number: 512,
+  });
+  S.emitEvent(repo.id, "workflow_run.merge_conflict", "worker", base);
+  // Legacy pings: nothing emits this since #1506, but older runs still carry thousands of them.
+  S.emitEvent(repo.id, "workflow_run.usage_updated", "worker", base);
+  S.emitEvent(repo.id, "workflow_run.merged", "me", base);
+
+  const history = svc.workflowRuns.history(repo.full_name, { run: run.id });
+  expect(
+    history
+      .filter((event) => event.routine)
+      .map((event) => `${event.type}:${event.label}`),
+  ).toEqual([
+    "workflow_run.turn_done:Turn done declared",
+    "workflow_run.updated:Step agent activated",
+    "workflow_run.usage_updated:Usage updated",
+  ]);
+  // Events that previously fell back to the generic "Workflow lifecycle event recorded." now say
+  // what happened, so the timeline reads without cross-checking the raw event type.
+  expect(history.map((event) => event.label)).toEqual([
+    "Run started",
+    "Turn done declared",
+    "Review submitted",
+    "Run rework requested",
+    "Step agent activated",
+    "Cost limit exceeded",
+    "Run needs human",
+    "Cost limit raised",
+    "GitHub feedback received",
+    "Merge conflict detected",
+    "Usage updated",
+    "Linked PR merged",
+  ]);
+  expect(history[2].description).toContain("Review #77");
+  expect(history[5].description).toContain("$40.07 passed the $40.00 limit");
+  expect(history[7].description).toContain("from $40.00 to $60.00");
+  expect(history[8].description).toContain("GitHub PR #512");
+  expect(history[11].description).toContain("PR #21 merged");
+});

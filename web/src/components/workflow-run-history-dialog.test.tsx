@@ -58,6 +58,7 @@ describe("Workflow run history dialog", () => {
           type: "workflow_run.started",
           label: "Run started",
           description: "Workflow run #7 started.",
+          routine: false,
           input: null,
           step: null,
           actor: "parent-agent",
@@ -68,6 +69,7 @@ describe("Workflow run history dialog", () => {
           type: "workflow_step.launched",
           label: "Execute step started",
           description: "Execute step execution started.",
+          routine: false,
           input:
             "Launch Workflow execute step for run #7.\n\n## Inputs\n- repo: me/loophub\n- issue: #42\n- pr: #99",
           step: "execute",
@@ -79,6 +81,7 @@ describe("Workflow run history dialog", () => {
           type: "workflow_step.launched",
           label: "Execute step started",
           description: "Execute step execution started.",
+          routine: false,
           input:
             "Launch Workflow execute step for run #7.\n\n## Inputs\n- repo: me/loophub\n- issue: #42\n- pr: #99\n\n## Note from parent\nAddress review #12.",
           step: "execute",
@@ -146,6 +149,61 @@ describe("Workflow run history dialog", () => {
       screen.getByRole("button", { name: "Close Workflow run history" }),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("plays routine bookkeeping down to one line and leaves other events intact", async () => {
+    renderSection(
+      mockRpcFetch({
+        "workflowRuns/history": () => [
+          {
+            id: 1,
+            type: "workflow_run.turn_done",
+            label: "Turn done declared",
+            description:
+              "Execute declared its turn done. The parent observes HEAD and review state before any transition.",
+            routine: true,
+            input: null,
+            step: "execute",
+            actor: "execute-agent",
+            created_at: "2026-07-10T00:00:00Z",
+          },
+          {
+            id: 2,
+            type: "workflow_run.escalated",
+            label: "Human guidance requested",
+            description: "Execute requested human guidance: criteria conflict.",
+            routine: false,
+            input: null,
+            step: "execute",
+            actor: "escalating-agent",
+            created_at: "2026-07-10T00:10:00Z",
+          },
+        ],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "View history" }));
+
+    const escalated = (
+      await screen.findByText("Human guidance requested")
+    ).closest("li");
+    expect(escalated?.getAttribute("data-routine")).toBe("false");
+    expect(
+      within(escalated as HTMLElement).getByText(/criteria conflict/),
+    ).toBeTruthy();
+    expect(
+      within(escalated as HTMLElement).getByText("Actor: escalating-agent"),
+    ).toBeTruthy();
+
+    // A routine event keeps only its label and timestamp: its description restates the label and
+    // its type / step / actor repeat on every turn's copy of the same row.
+    const turnDone = screen.getByText("Turn done declared").closest("li");
+    expect(turnDone?.getAttribute("data-routine")).toBe("true");
+    expect(
+      within(turnDone as HTMLElement).queryByText(/observes HEAD/),
+    ).toBeNull();
+    expect(
+      within(turnDone as HTMLElement).queryByText("Actor: execute-agent"),
+    ).toBeNull();
   });
 
   it("shows an empty state when the run has no persisted lifecycle events", async () => {
