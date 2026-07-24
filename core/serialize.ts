@@ -1582,7 +1582,7 @@ export interface WorkflowRunStateWire {
   id: number;
   workflow_id: number | null;
   workflow_name: string | null;
-  status: string; // running (legacy terminal rows may still read 'stopped', 'completed', or 'blocked')
+  status: string; // running | completed (merged PR, #1808); legacy rows may read 'stopped' or 'blocked'
   current_step: string; // execute | verify
   rework_count: number;
   // Non-null while the run waits for an explicit human instruction (#1307). The run stays
@@ -1628,6 +1628,10 @@ export interface WorkflowStepStatusWire {
   head_ahead_of_base: boolean;
   head_ahead_of_latest_review: boolean;
   merge_conflict: boolean;
+  // The linked PR's own domain state, whatever route merged it (#1808). The run's terminal
+  // condition is read from here rather than from a merge event, so every merge path lands on the
+  // same reconciliation.
+  pr_merged: boolean;
   last_turn_done_at: string | null;
   turn_done_for_active_execute: boolean;
   steps: WorkflowStepStatuses;
@@ -1719,10 +1723,10 @@ export function workflowRunHistoryEventJSON(
       typeof payload.needs_human_reason === "string"
         ? payload.needs_human_reason
         : null;
-    // `completed` (#1513) and `stopped` (#1525) are legacy terminal statuses: no write path reaches
-    // them anymore — a passing Verify keeps the run `running` + `verification_status: verified`, and
-    // a cost stop interrupts only the child. Old event rows can still carry them, so keep the
-    // read-only labels like the legacy `blocked` case.
+    // `completed` marks the run's one terminal condition: its linked PR merged (#1808). A passing
+    // Verify does not reach it — that keeps the run `running` + `verification_status: verified`
+    // (#1513). `stopped` (#1525) stays a legacy status with no write path (a cost stop interrupts
+    // only the child); old event rows can still carry it, like the legacy `blocked` case.
     label =
       status === "completed"
         ? "Run completed"

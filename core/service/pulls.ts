@@ -650,10 +650,26 @@ export const pulls = {
     }
     if (!res.merged) throw new ServiceError(422, "Merge failed");
     const closedIssue = S.setMerged(row.id, res.sha!, method);
-    S.emitEvent(r.id, "pull_request.merged", actor, {
+    const mergedEvent = S.emitEvent(r.id, "pull_request.merged", actor, {
       number: row.number,
       sha: res.sha,
     });
+    // The merge is a running Workflow run's terminal condition (#1808), so project it into a
+    // run-scoped event — mirroring the conflict projection in core/pull-conflict-events.ts (#1516).
+    // Without it a parent blocked in `lh workflow next --watch` would keep waiting on a run that is
+    // already finished. The decision still comes from the PR's own merged state; this event only
+    // wakes the watcher.
+    const run = S.runningWorkflowRunForPull(r.id, row.number);
+    if (run) {
+      S.emitEvent(r.id, "workflow_run.merged", actor, {
+        id: run.id,
+        number: row.number,
+        pr_number: row.number,
+        parent_session_id: run.parent_session_id,
+        source_event_id: mergedEvent.id,
+        source_event_type: mergedEvent.type,
+      });
+    }
     if (closedIssue != null) {
       S.emitEvent(r.id, "issue.closed", actor, {
         number: closedIssue,

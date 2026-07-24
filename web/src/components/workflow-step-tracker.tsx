@@ -5,8 +5,8 @@
 // traversed connectors fill in to convey progression.
 //
 // `execute` / `verify` are the run's real steps; "Done" is the terminal reached when Verify passes
-// (`verification_status: verified`) — NOT `status === completed`, which the automatic flow never sets
-// after Verify passes (#1401 / #1460). A stale verification annotates Verify with "reverify"; a
+// (`verification_status: verified`) — NOT `status === completed`, which a passing Verify never sets
+// (#1401 / #1460); that status means the linked PR merged (#1808). A stale verification annotates Verify with "reverify"; a
 // needs-human run (#1307, or a legacy `blocked` row) appends a warning marker.
 
 import {

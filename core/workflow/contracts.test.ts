@@ -43,6 +43,7 @@ test("Japanese contracts preserve the required commands and action procedures", 
     expect(parent).toContain(command);
   }
   for (const action of [
+    "complete",
     "launch_execute",
     "launch_verify",
     "advance_and_verify",
@@ -213,6 +214,34 @@ test("parent is organized around the goal and reconcile loop", () => {
   );
   expect(parent.indexOf("## Reconcile loop")).toBeLessThan(
     parent.indexOf("## Actions"),
+  );
+});
+
+// #1808: a merged PR ends the run. Both languages must name it as the only terminal condition and
+// stop the watcher loop there, so a parent never keeps watching a finished run.
+test("parent ends the loop on the merge terminal condition in both languages", () => {
+  const parent = workflowContractText("parent");
+  const japanese = workflowContractText("parent", "ja");
+
+  expect(parent).toContain(
+    "The linked PR being merged is the run's only terminal condition",
+  );
+  expect(parent).toContain("Only `complete` stops the loop.");
+  expect(parent).toContain(
+    "Return to step 1, unless the action was `complete` — that action ends the loop.",
+  );
+  expect(parent).toContain(
+    "- `complete`: the linked PR is merged and the run is finished. Do not start another `next --watch`",
+  );
+  expect(japanese).toContain(
+    "run の terminal condition は linked PR が merge されたことだけ",
+  );
+  expect(japanese).toContain("loop を止めるのは\n`complete` だけである");
+  expect(japanese).toContain(
+    "step 1 へ戻る。ただし action が `complete` のときは loop を終了する。",
+  );
+  expect(japanese).toContain(
+    "- `complete`: linked PR が merge され run は終了である。次の `next --watch` を開始せず",
   );
 });
 

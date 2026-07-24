@@ -151,24 +151,17 @@ describe("WorkflowRunStatusSection", () => {
     expect(current.getAttribute("aria-current")).toBe("step");
   });
 
-  it("shows the completed message when the run passed Verify", async () => {
+  // A completed run means its PR merged (#1808), which can happen from any step and without a fresh
+  // pass, so the message never claims Verify passed.
+  it.each([
+    "verify",
+    "execute",
+  ])("shows the completed message for a completed run at %s", async (current_step) => {
     renderInRouter(
       <WorkflowRunStatusSection
         owner="me"
         repo="loophub"
-        state={state({ status: "completed", current_step: "verify" })}
-      />,
-    );
-    expect(await screen.findByText("Completed")).toBeTruthy();
-    expect(screen.getByText(/Verify passed/)).toBeTruthy();
-  });
-
-  it("does not claim Verify passed when a completed run's step is not verify", async () => {
-    renderInRouter(
-      <WorkflowRunStatusSection
-        owner="me"
-        repo="loophub"
-        state={state({ status: "completed", current_step: "execute" })}
+        state={state({ status: "completed", current_step })}
       />,
     );
     expect(await screen.findByText("Completed")).toBeTruthy();

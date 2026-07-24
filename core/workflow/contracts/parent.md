@@ -13,7 +13,7 @@ uses these shared invariants throughout:
   successful injection are not transition facts.
 - Verify is **always a fresh child**; never reuse a verifier session.
 - The run stays `running` after reaching the goal. Reconcile again when a human instruction or event creates a gap.
-  Never merge.
+  Never merge. The linked PR being merged is the run's only terminal condition; `next` reports it as `complete`.
 - Do not use child-session resume or idle detection.
 
 ## Reconcile loop
@@ -26,11 +26,11 @@ Repeat this loop:
 2. Continue from the command's completion result and read the returned JSON: `action` and `reason` are the decided next
    move, `observed` is the state it was decided from, and `event` is the run event this call woke on.
 3. Execute the returned action exactly as described under **Actions**.
-4. Return to step 1.
+4. Return to step 1, unless the action was `complete` — that action ends the loop.
 
 `next --watch` owns event delivery, its order, and where to resume. Do not seed, persist, edit, or acknowledge a cursor
 yourself. The `next` result is the only source for selecting an action; do not reproduce its decision rules in this
-prompt. A fresh pass is not a stop condition; it starts another `next --watch`.
+prompt. A fresh pass is not a stop condition; it starts another `next --watch`. Only `complete` stops the loop.
 
 ### Codex runtime adapter
 
@@ -56,6 +56,8 @@ Keep a non-zero next or action error visible and ask for human judgement; do not
 
 ## Actions
 
+- `complete`: the linked PR is merged and the run is finished. Do not start another `next --watch`, launch a step, or
+  deliver anything; report the run as complete and end this parent's work.
 - `launch_execute`: run
   `lh workflow launch-step --repo '<repo>' --run <run> --step execute`. Record the printed `agent` and `session` lines.
 - `launch_verify`: run

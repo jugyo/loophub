@@ -9,6 +9,7 @@ function observed(
 ): WorkflowReconcileInput {
   return {
     status: "running",
+    prMerged: false,
     currentStep: "execute",
     activeStep: null,
     needsHumanReason: null,
@@ -363,6 +364,43 @@ describe("reconcileWorkflow", () => {
       action: "deliver",
       delivery_reason: "merge_conflict",
     });
+  });
+
+  test("completes the run once the linked PR is merged", () => {
+    expect(reconcileWorkflow(observed({ prMerged: true }))).toMatchObject({
+      action: "complete",
+    });
+  });
+
+  // Nothing observable can still change what shipped, so merge outranks every other state — a
+  // pending receipt, a human hold, a merge conflict, or an unaddressed review.
+  test.each<[string, Partial<WorkflowReconcileInput>]>([
+    [
+      "a pending effect receipt",
+      {
+        pendingEffectReceipt: {
+          event_id: 41,
+          effect: "notify-parent",
+          status: "pending",
+          claimed_at: "2026-07-23T00:00:00.000Z",
+        },
+      },
+    ],
+    [
+      "a human hold",
+      { needsHumanReason: "Cost limit exceeded", awaitingHuman: true },
+    ],
+    ["a merge conflict", { mergeConflict: true }],
+    [
+      "an unaddressed out-of-band review",
+      { unaddressedOutOfBandReviews: [{ id: 21, verdict: "feedback" }] },
+    ],
+    ["an unresolved HEAD", { currentHead: null }],
+    ["a human instruction", { wake: { kind: "human_instruction" } }],
+  ])("completes a merged run despite %s", (_label, patch) => {
+    expect(
+      reconcileWorkflow(observed({ ...patch, prMerged: true })),
+    ).toMatchObject({ action: "complete" });
   });
 
   test("asks a human when the current HEAD cannot be observed", () => {

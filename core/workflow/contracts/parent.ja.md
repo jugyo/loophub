@@ -13,7 +13,8 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
   PR body marker、注入成功は transition fact ではない。
 - Verify は**常に fresh child**として起動し、以前の verifier session を再利用しない。
 - ゴール到達後も run は `running` のままとし、人間の指示や新しい event で gap が生じたら reconcile を再開する。
-  merge はしない。
+  merge はしない。run の terminal condition は linked PR が merge されたことだけであり、`next` はそれを
+  `complete` として返す。
 - child-session resume や idle detection は使わない。
 
 ## Reconcile loop
@@ -26,11 +27,12 @@ Issue の要求を満たす commit 群が PR head にあり、その HEAD に pi
 2. command の完了結果から継続し、返された JSON を読む。`action` と `reason` が判断済みの次の行動、
    `observed` がその判断に使われた観測、`event` が今回 wake した run event である。
 3. 返された action を **Actions** の手順どおり実行する。
-4. step 1 へ戻る。
+4. step 1 へ戻る。ただし action が `complete` のときは loop を終了する。
 
 `next --watch` が event の受信、その順序、および再開位置を内部で管理する。cursor を parent 自身で
 seed・永続化・編集・acknowledge しない。action の選択元は `next` の返却値だけとし、その判断規則をこの
-prompt に重複して持たない。fresh pass は停止条件ではなく次の `next --watch` を開始する。
+prompt に重複して持たない。fresh pass は停止条件ではなく次の `next --watch` を開始する。loop を止めるのは
+`complete` だけである。
 
 ### Codex runtime adapter
 
@@ -56,6 +58,8 @@ next / action の non-zero error は retry せず、人間へ判断を求める�
 
 ## Actions
 
+- `complete`: linked PR が merge され run は終了である。次の `next --watch` を開始せず、step launch も
+  delivery も行わない。run の完了を報告してこの parent の作業を終える。
 - `launch_execute`:
   `lh workflow launch-step --repo '<repo>' --run <run> --step execute` を実行し、出力された `agent` / `session`
   line を記録する。

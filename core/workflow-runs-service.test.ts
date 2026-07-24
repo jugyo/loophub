@@ -1377,6 +1377,147 @@ test("next --watch waits for one run event, owns its cursor, and keeps deciding 
   expect((await pending).event?.id).toBe(late.id);
 }, 20_000);
 
+// #1808: the merged PR is the run's terminal condition. Before this, a parent kept watching a run
+// whose PR had shipped and only stopped once its cost limit was exceeded (run #306).
+test("a merged PR completes the run, unblocks the watcher, and ends cost detection", async () => {
+  const { repo } = freshRepo("me/workflow-merge-terminal");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Merge terminal",
+    "## Acceptance criteria\n- [ ] Ships\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "merge-terminal-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "d1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const run = started.run.id;
+  const child = "d2d2d2d2-d2d2-4d2d-8d2d-d2d2d2d2d2d2";
+  S.registerAgentSession(child, "workflow-step", child);
+  S.appendWorkflowRunStepSession(run, "execute", child);
+  commit(started.worktree, "impl.txt", "shipped\n");
+
+  // An open PR still reconciles toward the goal, so a fresh pass alone leaves the run running.
+  await svc.workflowRuns.advanceToVerify(repo.full_name, { run }, parent);
+  createWorkflowReview({
+    prIssueId: S.getIssue(repo.id, started.pr.number)!.id,
+    runId: run,
+    sequence: 1,
+    event: "PASS",
+    headSha: gitAt(started.worktree, ["rev-parse", "HEAD"]),
+    body: "Looks good",
+  });
+  expect(await svc.workflowRuns.next(repo.full_name, { run })).toMatchObject({
+    action: "wait",
+  });
+  expect(S.getWorkflowRun(run)?.status).toBe("running");
+
+  // Digest the events the run already recorded so the watch below genuinely blocks instead of
+  // returning a queued wake.
+  for (const queued of S.eventsForWorkflowRun(repo.id, run).filter((event) =>
+    event.type.startsWith("workflow_run."),
+  )) {
+    expect(
+      (await svc.workflowRuns.next(repo.full_name, { run, watch: true })).event
+        ?.id,
+    ).toBe(queued.id);
+  }
+
+  // The reported failure (#1806 / run #306): the parent is already blocked in `--watch` when the
+  // merge lands, so completion has to be recorded on the wake that follows — not only on a call
+  // that starts with an already-merged PR.
+  const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await svc.pulls.merge(repo.full_name, started.pr.number, "merge");
+  const completed = await blocked;
+  expect(completed).toMatchObject({ action: "complete" });
+  // The merge is projected onto the run, which is what wakes the blocked watcher.
+  const projected = S.eventsForWorkflowRun(repo.id, run).filter(
+    (event) => event.type === "workflow_run.merged",
+  );
+  expect(projected).toHaveLength(1);
+  expect(JSON.parse(projected[0].payload)).toMatchObject({
+    id: run,
+    pr_number: started.pr.number,
+    parent_session_id: parent,
+  });
+  expect(completed.event?.id).toBe(projected[0].id);
+  expect(completed.observed.pr_merged).toBe(true);
+  expect(completed.observed.status).toBe("completed");
+  expect(S.getWorkflowRun(run)?.status).toBe("completed");
+
+  // A terminal run never blocks the caller again: the watch returns the same action without an
+  // event to wake on, so the parent can exit instead of starting another watcher.
+  const replayed = await svc.workflowRuns.next(repo.full_name, {
+    run,
+    watch: true,
+  });
+  expect(replayed).toMatchObject({ action: "complete", event: null });
+
+  // No further cost-exceeded edge can fire for a run that is no longer running.
+  S.upsertSessionUsage(child, {
+    model: "test",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 999,
+  });
+  expect(
+    svc.workflowRuns.detectCostExceeded(repo.full_name, {
+      run,
+      usageSession: child,
+    }).emitted,
+  ).toBe(false);
+  expect(
+    S.eventsForWorkflowRun(repo.id, run).filter(
+      (event) => event.type === "workflow_run.cost_exceeded",
+    ),
+  ).toHaveLength(0);
+}, 20_000);
+
+// The terminal condition is the PR's own domain state, so a merge recorded by any route — not just
+// `pulls.merge` — reconciles to the same completion.
+test("any merge route that leaves the PR merged completes the run", async () => {
+  const { repo } = freshRepo("me/workflow-merge-route");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Merge route",
+    "## Acceptance criteria\n- [ ] Ships\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "merge-route-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "d3d3d3d3-d3d3-4d3d-8d3d-d3d3d3d3d3d3";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const run = started.run.id;
+  commit(started.worktree, "impl.txt", "shipped\n");
+  S.setMerged(S.getIssue(repo.id, started.pr.number)!.id, "deadbeef", "squash");
+
+  expect(await svc.workflowRuns.next(repo.full_name, { run })).toMatchObject({
+    action: "complete",
+  });
+  expect(S.getWorkflowRun(run)?.status).toBe("completed");
+}, 20_000);
+
 test("step status exposes hold, rework, pending effects, and unaddressed out-of-band reviews", async () => {
   const { repo } = freshRepo("me/workflow-observed-state");
   const issue = S.createIssue(

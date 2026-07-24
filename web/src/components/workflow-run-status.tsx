@@ -31,9 +31,8 @@ const STATUS_META: Record<
   running: { label: "Running", tone: "working" },
   // Legacy terminal status (#1307): pre-needs-human escalations; shown like a needs-human run.
   blocked: { label: "Needs human", tone: "cost-stopped" },
-  // Legacy terminal status (#1513): the run-complete write path was removed — a passing Verify now
-  // keeps the run `running` + `verification_status: verified`. Old rows may still be `completed`, so
-  // keep the read-only rendering for them.
+  // Terminal status: the run's linked PR merged (#1808). A passing Verify does not reach it — that
+  // keeps the run `running` + `verification_status: verified` (#1513).
   completed: { label: "Completed", tone: "review-passed" },
   // Legacy terminal status (#1525): the run-stop write path was removed — a cost stop now interrupts
   // only the child (Esc) and leaves the run `running`. Old rows may still be `stopped`, so keep the
@@ -132,9 +131,7 @@ export function WorkflowRunStatusSection({
 
         {completed ? (
           <p className="text-sm text-muted-foreground">
-            {state.current_step === "verify"
-              ? "Verify passed — the Workflow run finished all steps."
-              : "The Workflow run is completed."}
+            The Workflow run is completed.
           </p>
         ) : null}
 
