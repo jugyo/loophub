@@ -427,6 +427,68 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
   });
 });
 
+// #1877: the bot icon's working pulse must stop once the linked workflow run reaches Done, even
+// while the PR stays open and a live herdr agent still reads "working".
+describe("LinkedPullSummaryRow working pulse vs workflow Done (#1877)", () => {
+  function herdrWorkingOnPull(): HerdrSessions {
+    return {
+      repos: [
+        {
+          repo: "me/proj",
+          session_name: "me-proj-abc",
+          agents: [
+            {
+              id: "w1:p2",
+              name: "dev #10",
+              status: "working",
+              pull: 10,
+              pull_closed: false,
+              focusable: true,
+            },
+          ],
+          pull_workspaces: [{ pull: 10, pane_id: "w1:p2", status: "working" }],
+          issue_workspaces: [],
+        },
+      ],
+    };
+  }
+
+  function botIcon() {
+    return document.querySelector("[data-agent-bot-icon]") as HTMLElement;
+  }
+
+  it("pulses while the run is running and a live agent is working", async () => {
+    herdrSessionsData.value = herdrWorkingOnPull();
+    renderRowWithRun(
+      makeWorkflowRunState({
+        current_step: "execute",
+        verification_status: "unverified",
+      }),
+    );
+    await screen.findByRole("link", { name: "PR #10" });
+    expect(botIcon().className).toContain("linked-pull-pulse");
+  });
+
+  it("stops pulsing once the run reaches Done, even on an open PR with a working agent", async () => {
+    herdrSessionsData.value = herdrWorkingOnPull();
+    renderRowWithRun(
+      makeWorkflowRunState({
+        current_step: "verify",
+        verification_status: "verified",
+      }),
+    );
+    await screen.findByRole("link", { name: "PR #10" });
+    expect(botIcon().className).not.toContain("linked-pull-pulse");
+  });
+
+  it("keeps pulsing for a working agent when no workflow run is linked", async () => {
+    herdrSessionsData.value = herdrWorkingOnPull();
+    renderRowWithRun(null);
+    await screen.findByRole("link", { name: "PR #10" });
+    expect(botIcon().className).toContain("linked-pull-pulse");
+  });
+});
+
 // #1828: the budget action lives in the shared mini progress, so the Issue list row and the Issue
 // page attempt row both offer it.
 describe("LinkedPullSummaryRow workflow budget (#1828)", () => {

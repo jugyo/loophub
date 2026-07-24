@@ -11,7 +11,10 @@ import {
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useToast } from "@/components/toast";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
+import {
+  WorkflowStepTracker,
+  workflowTrackerState,
+} from "@/components/workflow-step-tracker";
 import { YesNoPrompt } from "@/components/yes-no-prompt";
 import {
   costStoppedBadge,
@@ -330,10 +333,18 @@ export function LinkedPullSummaryRow({
     operationalStatus.tone === "review-changes" ||
     workspace?.status === "blocked";
   const isDone = pull.merged || pull.state === "closed";
+  // A linked workflow run that reached Done (Verify passed — the tracker's
+  // terminal, `workflowTrackerState().verified`) means the run is effectively
+  // finished, so the pulse stops even while the PR stays open and a live herdr
+  // agent still reads "working" (#1877). No run linked → false → unchanged.
+  const { data: workflowRun } = useWorkflowRunForPull(owner, repo, pull.number);
+  const workflowDone = workflowRun
+    ? workflowTrackerState(workflowRun).verified
+    : false;
   // The indigo pulse/ring means a live herdr agent is actively working (signal
   // B). A dirty worktree alone no longer triggers it (#1125), so a session that
   // ended with uncommitted changes stops reading "working" forever.
-  const showWorkingEffect = !isDone && agentWorking;
+  const showWorkingEffect = !isDone && !workflowDone && agentWorking;
   // Idle: an open PR with no live agent and nothing needing attention. Its bot
   // icon dims to the same inactive tone as done rows (isDone opacity-45 below),
   // rather than looking active. conflict/changes keep a bright icon + red dot,
