@@ -150,6 +150,40 @@ describe("NotificationStack", () => {
     );
   });
 
+  it("renders each kind with its own icon and tone", async () => {
+    notifications.value = [
+      makeNotification(1, { kind: "merge_ready" }),
+      makeNotification(2, { kind: "over_budget" }),
+      makeNotification(3, { kind: "human_attention" }),
+    ];
+
+    renderStack();
+    await screen.findByRole("link", { name: /Notification 1/ });
+
+    function iconFor(id: number): SVGSVGElement {
+      const link = screen.getByRole("link", {
+        name: new RegExp(`Notification ${id}`),
+      });
+      const icon = link.parentElement?.querySelector("svg");
+      if (!icon) throw new Error(`no icon for Notification ${id}`);
+      return icon as SVGSVGElement;
+    }
+
+    const mergeReady = iconFor(1);
+    expect(mergeReady.classList).toContain("lucide-circle-check");
+    expect(mergeReady.getAttribute("class")).toContain("text-emerald-700");
+
+    const overBudget = iconFor(2);
+    expect(overBudget.classList).toContain("lucide-circle-dollar-sign");
+    expect(overBudget.getAttribute("class")).toContain("text-amber-700");
+
+    const humanAttention = iconFor(3);
+    expect(humanAttention.classList).toContain("lucide-info");
+    expect(humanAttention.getAttribute("class")).toContain("text-sky-700");
+    expect(humanAttention.classList).not.toContain("lucide-triangle-alert");
+    expect(humanAttention.getAttribute("class")).not.toContain("text-rose-700");
+  });
+
   it("reveals the next older unread notification after closing a newer one", async () => {
     notifications.value = [1, 2, 3, 4, 5, 6].map((id) => makeNotification(id));
     renderStack();
