@@ -193,8 +193,13 @@ export function pullDetailBadges(pr: PullRequest): Badge[] {
   const state = status.terminal;
   if (state) return [state];
   const review = status.review;
-  if (review) badges.push(review);
   const mergeable = status.mergeable;
+  // #1852: a conflicting PR cannot be merged, so "passed" beside "conflict" reads
+  // as "ready to merge". Show only the conflict. Other review states (changes /
+  // re-review / commented) already say the PR is not done, so they stay.
+  const passedDespiteConflict =
+    mergeable?.tone === "conflict" && review?.tone === "review-passed";
+  if (review && !passedDespiteConflict) badges.push(review);
   if (mergeable) badges.push(mergeable);
   return badges;
 }

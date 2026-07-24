@@ -520,4 +520,26 @@ describe("pullDetailBadges", () => {
       pullDetailBadges(pull({ state: "closed" })).map((b) => b.tone),
     ).toEqual(["closed"]);
   });
+
+  it("hides passed on a conflicting PR (#1852)", () => {
+    // "passed" next to "conflict" reads as mergeable; show only the conflict.
+    const badges = pullDetailBadges(
+      pull({ review_state: "PASSED", mergeable_state: "conflict" }),
+    );
+    expect(badges.map((b) => b.tone)).toEqual(["conflict"]);
+  });
+
+  it("keeps non-passed review states on a conflicting PR (#1852)", () => {
+    for (const [review_state, tone] of [
+      ["CHANGES_REQUESTED", "review-changes"],
+      ["READY_FOR_RE_REVIEW", "review-rereview"],
+      ["COMMENTED", "review-commented"],
+      ["STALE", "review-rereview"],
+    ] as const) {
+      const badges = pullDetailBadges(
+        pull({ review_state, mergeable_state: "conflict" }),
+      );
+      expect(badges.map((b) => b.tone)).toEqual([tone, "conflict"]);
+    }
+  });
 });
