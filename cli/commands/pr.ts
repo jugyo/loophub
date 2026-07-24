@@ -102,7 +102,8 @@ export async function run(): Promise<void> {
         await writeSession(),
       ),
     );
-    console.log(`created PR #${p.number}`);
+    out(p);
+    if (!flags.json) console.log(`created PR #${p.number}`);
   } else if (sub === "update") {
     const patch: { title?: string; body?: string } = {};
     if (flags.title !== undefined) patch.title = flags.title;
@@ -115,15 +116,22 @@ export async function run(): Promise<void> {
     out(p);
     if (!flags.json) console.log(`updated PR #${p.number}`);
   } else if (sub === "comment") {
-    await runOp(async () =>
+    // Write commands return the resource they created/updated so an agent can verify from the
+    // output what actually happened, instead of trusting a fixed success word (#1863).
+    const number = Number(rest[0]);
+    const c = await runOp(async () =>
       s.comments.createForPull(
         repo,
-        Number(rest[0]),
+        number,
         flags.body ?? "",
         await writeSession(),
       ),
     );
-    console.log("commented");
+    out(c);
+    if (!flags.json)
+      console.log(
+        `commented on PR #${number} (comment ${c.id} by @${c.user.login})`,
+      );
   } else if (sub === "merge") {
     const r = await runOp(async () =>
       s.pulls.merge(
@@ -133,7 +141,8 @@ export async function run(): Promise<void> {
         await writeSession(),
       ),
     );
-    console.log(`merged: ${r.sha}`);
+    out(r);
+    if (!flags.json) console.log(`merged: ${r.sha}`);
   } else if (sub === "record-github-pr") {
     // #406: record the GitHub PR this loophub PR was exported to (used by the create-PR skill).
     // Also the general-purpose way to attach a GitHub PR created outside LoopHub back onto its
@@ -216,7 +225,11 @@ export async function run(): Promise<void> {
         await writeSession(),
       ),
     );
-    console.log(`review submitted (${res.comments} line comment(s))`);
+    out(res);
+    if (!flags.json)
+      console.log(
+        `review ${res.id} submitted: ${res.state} (${res.comments} line comment(s))`,
+      );
   } else if (sub === "ready-for-review") {
     const p = await runOp(async () =>
       s.pulls.readyForReview(
@@ -226,7 +239,11 @@ export async function run(): Promise<void> {
         await writeSession(),
       ),
     );
-    console.log(`PR #${p.number} marked ready for review (${p.review_state})`);
+    out(p);
+    if (!flags.json)
+      console.log(
+        `PR #${p.number} marked ready for review (${p.review_state})`,
+      );
   } else if (sub === "crit") {
     // Launch the external `crit` browser UI against this PR's attempt worktree.
     // Resolution (worktree path + range base) lives in core; the CLI only spawns with stdio
@@ -259,25 +276,19 @@ export async function run(): Promise<void> {
       await ingestCritReview(s, repo, plan);
     }
     process.exit(proc.status ?? 1);
-  } else if (sub === "close") {
-    await runOp(async () =>
-      s.pulls.update(
-        repo,
-        Number(rest[0]),
-        { state: "closed" },
-        await writeSession(),
-      ),
+  } else if (sub === "close" || sub === "reopen") {
+    const number = Number(rest[0]);
+    const state = sub === "close" ? "closed" : "open";
+    const before = await runOp(() => s.pulls.get(repo, number));
+    const p = await runOp(async () =>
+      s.pulls.update(repo, number, { state }, await writeSession()),
     );
-    console.log("closed");
-  } else if (sub === "reopen") {
-    await runOp(async () =>
-      s.pulls.update(
-        repo,
-        Number(rest[0]),
-        { state: "open" },
-        await writeSession(),
-      ),
-    );
-    console.log("reopened");
+    out(p);
+    if (!flags.json)
+      console.log(
+        before.state === state
+          ? `PR #${p.number} was already ${state} (no change)`
+          : `${sub === "close" ? "closed" : "reopened"} PR #${p.number} (${before.state} -> ${p.state})`,
+      );
   } else usage();
 }

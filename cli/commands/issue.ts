@@ -222,7 +222,8 @@ export async function run(): Promise<void> {
         currentHerdrPaneContext(),
       ),
     );
-    console.log(`created #${i.number}`);
+    out(i);
+    if (!flags.json) console.log(`created #${i.number}`);
     // When this create runs inside a `lh issue new` AI session, link that session to the issue
     // it just filed (#299) so it appears in the issue's related-sessions list and is resumable.
     // Best-effort: a link failure must not fail the create the user asked for.
@@ -280,34 +281,51 @@ export async function run(): Promise<void> {
     out(i);
     if (!flags.json) console.log(`updated #${i.number}`);
   } else if (sub === "comment") {
-    await runOp(async () =>
-      s.comments.create(
-        repo,
-        Number(rest[0]),
-        flags.body ?? "",
-        await writeSession(),
-      ),
+    // Write commands return the resource they created/updated so an agent can verify from the
+    // output what actually happened, instead of trusting a fixed success word (#1863).
+    const number = Number(rest[0]);
+    const c = await runOp(async () =>
+      s.comments.create(repo, number, flags.body ?? "", await writeSession()),
     );
-    console.log("commented");
+    out(c);
+    if (!flags.json)
+      console.log(
+        `commented on #${number} (comment ${c.id} by @${c.user.login})`,
+      );
   } else if (sub === "close") {
-    await runOp(async () =>
-      s.issues.update(
-        repo,
-        Number(rest[0]),
-        { state: "closed" },
-        await writeSession(),
-      ),
+    const number = Number(rest[0]);
+    const before = await runOp(() => s.issues.get(repo, number));
+    const i = await runOp(async () =>
+      s.issues.update(repo, number, { state: "closed" }, await writeSession()),
     );
-    console.log("closed");
+    out(i);
+    if (!flags.json)
+      console.log(
+        before.state === "closed"
+          ? `#${i.number} was already closed (no change)`
+          : `closed #${i.number} (${before.state} -> ${i.state})`,
+      );
   } else if (sub === "label") {
+    const number = Number(rest[0]);
     const labels = (flags.add || "")
       .split(",")
       .map((x) => x.trim())
       .filter(Boolean);
     if (labels.length === 0) fail("--add is required");
-    await runOp(async () =>
-      s.issues.addLabels(repo, Number(rest[0]), labels, await writeSession()),
+    const before = await runOp(() => s.issues.get(repo, number));
+    const applied = await runOp(async () =>
+      s.issues.addLabels(repo, number, labels, await writeSession()),
     );
-    console.log("labeled");
+    out(applied);
+    if (!flags.json) {
+      const had = new Set((before.labels || []).map((l: any) => l.name));
+      const added = labels.filter((l) => !had.has(l));
+      const names = applied.map((l: any) => l.name).join(", ");
+      console.log(
+        added.length === 0
+          ? `#${number} already had ${labels.join(", ")} (no change) — labels: ${names}`
+          : `labeled #${number} (added: ${added.join(", ")}) — labels: ${names}`,
+      );
+    }
   } else usage();
 }
