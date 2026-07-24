@@ -1680,16 +1680,31 @@ export function workflowRunStateJSON(input: {
 }
 
 /**
- * How loudly one history event should read in a run's timeline (#1867). The classification lives
- * here, with the rest of the wire shape, so the dialog only owns three looks and never
+ * How loudly one history event should read in a run's timeline (#1867, #1869). The classification
+ * lives here, with the rest of the wire shape, so the dialog only owns three looks and never
  * reconstructs importance from label text.
  *
- * - `notable` — what a human opens the dialog for: the run's cost hold, its calls for human
- *   attention, the two points where Execute and Verify finished their work, and its end.
- * - `default` — context that helps read the run but decides nothing on its own. Unknown and
- *   legacy event types land here, so a type this function has never seen still renders.
- * - `routine` — per-turn loop mechanics (#1851). They repeat every turn and read the same each
- *   time; the dialog keeps them but plays them down.
+ * The history answers one question: is the normal flow (Execute → Verify → done) turning over as it
+ * should? So each event is placed by whether it describes the *state of the work flow* (the "what" a
+ * human watches) or the *agent-to-agent communication that drives the flow* (the "how" a human does
+ * not care about) — and, for flow-state events, whether a phase/run is *starting* or *finishing*:
+ *
+ * - `notable` — the flow skeleton advancing or deviating. A phase/run finished and produced a result
+ *   (Execute done, Verify passed or requested rework, run completed/merged), or the flow did not turn
+ *   over normally (cost hold, needs-human, escalation, merge conflict). The direct answer to "is it
+ *   turning over?".
+ * - `default` — neither skeleton nor driving communication: a phase *starting*, or external input
+ *   (GitHub feedback, a raised cost limit). Context markers that decide nothing on their own. Unknown
+ *   and legacy event types land here too, so a type this function has never seen still renders.
+ * - `routine` — communication that *drives* the flow and its internal rotation (turn done, step
+ *   activation, handoff, resume, generic state updates, usage). The "how"; outside a human's concern.
+ *
+ * Supporting rule: when one real-world event emits several rows (e.g. Verify's change request shows up
+ * as both `review_submitted REQUEST_CHANGES` and `updated: request_rework`), the row that carries the
+ * substance keeps its natural significance and the duplicate ledger row drops to `routine`.
+ *
+ * Unknown/legacy types fall through to the `default` initial value, matching the principle: an
+ * unclassified event is a context marker, not a skeleton or driving-communication signal.
  */
 export type WorkflowRunHistorySignificance = "notable" | "default" | "routine";
 
@@ -1807,11 +1822,12 @@ export function workflowRunHistoryEventJSON(
         : null,
     ].filter((value): value is string => value !== null);
     description = details.join(" ");
-    // A run that left `running` ended, one way or another; an escalation into a human wait and the
-    // two step-completion transitions are the rest of what a human judges the run by. Everything
-    // else this event carries — the activation paired with every step launch, the resume that
-    // follows a human's instruction, an unrecognized transition — is the parent narrating its own
-    // bookkeeping.
+    // Placed by the principle above. A run that left `running` finished or deviated — a flow-state
+    // result, so notable. An escalation into a human wait is a deviation (notable); `advance_to_verify`
+    // and `request_rework` are the flow skeleton reaching a decision, i.e. Execute finishing and Verify
+    // sending the run back (notable). Everything else this event carries — the activation paired with
+    // every step launch, the resume that follows a human's instruction, an unrecognized transition — is
+    // driving communication, the parent narrating its own bookkeeping (routine).
     significance =
       status !== "running"
         ? "notable"
@@ -1867,15 +1883,19 @@ export function workflowRunHistoryEventJSON(
     label = "Merge conflict detected";
     description =
       "The linked PR conflicts with its base. The run cannot progress until the conflict is resolved.";
-    significance = "routine";
+    // The done stage failing to turn over is a flow deviation, not driving communication (#1869):
+    // it is the direct answer to "is the flow proceeding?" — no. #1868 read it as routine on the
+    // assumption the run resolves it unattended, but by the principle a stall of the skeleton is
+    // notable regardless of who clears it.
+    significance = "notable";
   } else if (row.type === "workflow_run.review_submitted") {
     const reviewId =
       typeof payload.review_id === "number" ? payload.review_id : null;
     const subject = reviewId !== null ? `Review #${reviewId}` : "A review";
-    // A passing review is where Verify finished with nothing left to fix: the run stops moving on
-    // its own and waits for a human to merge, so it is the one submission worth surfacing. A
-    // change-requesting one is read through the rework transition it triggers, and the event
-    // itself is just the parent's wake ping.
+    // A passing review is Verify finishing with nothing left to fix — a flow-skeleton completion, so
+    // notable. A change-requesting one is the duplicate ledger row for the same real event: the
+    // substance rides the `updated: request_rework` transition (notable), so by the supporting rule
+    // this row drops to routine. An unresolved verdict is likewise just the parent's wake ping.
     if (reviewVerdict === "PASS") {
       label = "Review passed";
       description = `${subject} passed on the linked PR — Verify cleared this implementation.`;
