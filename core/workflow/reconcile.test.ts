@@ -238,7 +238,6 @@ describe("reconcileWorkflow", () => {
           currentStep: "verify",
           activeStep: "verify",
           reworkCount: 3,
-          headAheadOfBase: true,
           wake: { kind: "human_instruction" },
           steps: {
             execute: {
@@ -272,7 +271,6 @@ describe("reconcileWorkflow", () => {
           currentStep: "verify",
           activeStep: "execute",
           reworkCount: 3,
-          headAheadOfBase: true,
           turnDoneForActiveExecute: true,
           steps: {
             execute: { complete: true, missing: [] },

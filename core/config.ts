@@ -50,6 +50,9 @@ export const DEFAULT_AGENT_EFFORT: Record<CodingAgent, string> =
 // Default top-level cumulative cost (USD) at which a development agent is stopped.
 export const DEFAULT_DEV_COST_LIMIT_USD = 10;
 
+// Default interval between `workflow_run.cost_exceeded` re-emissions for the same run and limit.
+export const DEFAULT_COST_REEMIT_MS = 300_000;
+
 // Known config.json fields (#474). Fields are optional — any subset may be present, and
 // unrecognized fields written by a future version must round-trip through updateConfig
 // untouched (it merges into the raw parsed object, not this typed shape).
@@ -201,6 +204,19 @@ export function devCostLimitUsd(): number {
     }
   } catch {}
   return DEFAULT_DEV_COST_LIMIT_USD;
+}
+
+// How long a `workflow_run.cost_exceeded` event suppresses the next one for the same run and
+// limit (#1844). Detection re-emits while the run stays over its limit without a hold, so a parent
+// that stopped between wake and `cost-hold` still receives the interrupt on a later wake. Longer
+// than the time a live parent needs to reach `cost-hold` (~1 min), short enough to bound the spend
+// a stopped parent lets through. Override via LOOPHUB_COST_REEMIT_MS; 0 re-emits on every sweep.
+export function costReemitMs(): number {
+  const raw = process.env.LOOPHUB_COST_REEMIT_MS;
+  if (raw === undefined || raw === "") return DEFAULT_COST_REEMIT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_COST_REEMIT_MS;
+  return parsed;
 }
 
 // The default coding agent when neither --claude-code nor --codex is passed (#516).

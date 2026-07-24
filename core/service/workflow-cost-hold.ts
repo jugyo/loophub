@@ -180,7 +180,16 @@ export const workflowCostHold = {
       );
     }
     const payload = costExceededPayload(event, run.id);
-    const existingReceipt = S.getWorkflowEventEffect(run.id, event.id, EFFECT);
+    // Scoped to the run's cumulative limit rather than this event id (#1844): detection re-emits
+    // `workflow_run.cost_exceeded` while a stopped parent is away, so the parent drains several
+    // events that all ask for the one interrupt this limit warrants. A per-event receipt would let
+    // each of them re-send Esc and the pane notification — and re-hold a run the human already
+    // released. A raised limit produces events at a new `limit_usd`, which correctly holds again.
+    const existingReceipt = S.getWorkflowEventEffectForCostLimit(
+      run.id,
+      EFFECT,
+      payload.limit_usd,
+    );
     if (existingReceipt) {
       return {
         ...input,

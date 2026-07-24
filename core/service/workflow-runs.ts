@@ -3,6 +3,7 @@ import {
   agentModel,
   type CodingAgent,
   configDir,
+  costReemitMs,
   devCostLimitUsd,
   normalizeCodingAgent,
   worktreeRoot,
@@ -1233,6 +1234,16 @@ export const workflowRuns = {
         limit_usd: limitUsd,
       };
     }
+    // A hold is the outcome this event asks for, so stop re-emitting once one exists (#1844) —
+    // whether `cost-hold` established it or a human is still deciding. Without this the parent
+    // would replay Esc and the pane notification against a run it already interrupted.
+    if (run.needs_human_reason !== null) {
+      return {
+        emitted: false,
+        cost_usd: summary.cost_usd,
+        limit_usd: limitUsd,
+      };
+    }
     if (
       input.usageSession !== run.parent_session_id &&
       !workflowStepSessionIds(run.step_sessions_json, "execute").includes(
@@ -1255,20 +1266,25 @@ export const workflowRuns = {
         limit_usd: limitUsd,
       };
     }
-    const event = S.emitWorkflowRunCostExceededOnce(repo.id, "lh-worker", {
-      id: run.id,
-      number: run.pr_number,
-      pr_number: run.pr_number,
-      parent_session_id: parentSessionId,
-      session_id: input.usageSession,
-      usage_session_id: input.usageSession,
-      active_step: run.active_step,
-      active_session_id: run.active_session_id,
-      cost_usd: summary.cost_usd,
-      limit_usd: limitUsd,
-      increment_usd: incrementUsd,
-      next_limit_usd: limitUsd + incrementUsd,
-    });
+    const event = S.emitWorkflowRunCostExceeded(
+      repo.id,
+      "lh-worker",
+      {
+        id: run.id,
+        number: run.pr_number,
+        pr_number: run.pr_number,
+        parent_session_id: parentSessionId,
+        session_id: input.usageSession,
+        usage_session_id: input.usageSession,
+        active_step: run.active_step,
+        active_session_id: run.active_session_id,
+        cost_usd: summary.cost_usd,
+        limit_usd: limitUsd,
+        increment_usd: incrementUsd,
+        next_limit_usd: limitUsd + incrementUsd,
+      },
+      costReemitMs(),
+    );
     return {
       emitted: event !== null,
       cost_usd: summary.cost_usd,

@@ -611,6 +611,102 @@ test("cost limit increases are explicit, guarded, and repeatable", async () => {
   });
 });
 
+test("cost exceeded is re-emitted until the run is held or its limit is raised (#1844)", async () => {
+  const repo = S.createRepo("me/workflow-cost-reemit", REPO_PATH);
+  const pull = S.createIssue(repo.id, "pull", "Re-emitting PR", "", "me");
+  S.createPull(pull.id, "cost-reemit", "main", null);
+  const workflow = S.createWorkflow({
+    name: "cost-reemit-workflow",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parentSessionId = "18441844-1844-4184-8184-184418441844";
+  const childSessionId = "18450000-1845-4184-8184-184518451845";
+  S.registerAgentSession(parentSessionId, "lh-workflow", parentSessionId);
+  S.registerAgentSession(childSessionId, "workflow-step", childSessionId);
+  const run = S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId: repo.id,
+    issueNumber: pull.number,
+    prNumber: pull.number,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 2.5,
+    costLimitUsd: 2.5,
+    parentSessionId,
+  });
+  S.appendWorkflowRunStepSession(run.id, "execute", childSessionId);
+  S.updateWorkflowRun(run.id, {
+    activeStep: "execute",
+    activeSessionId: childSessionId,
+  });
+  S.upsertSessionUsage(childSessionId, {
+    model: "test",
+    input_tokens: 1,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    output_tokens: 0,
+    cost_usd: 3,
+  });
+  const detect = () =>
+    svc.workflowRuns.detectCostExceeded(repo.full_name, {
+      run: run.id,
+      usageSession: childSessionId,
+    });
+  const costEvents = () =>
+    S.eventsForWorkflowRun(repo.id, run.id).filter(
+      (event) => event.type === "workflow_run.cost_exceeded",
+    );
+
+  // A live parent reaches cost-hold well inside the interval, so the sweeps in between stay quiet.
+  expect(detect()).toEqual({ emitted: true, cost_usd: 3, limit_usd: 2.5 });
+  expect(detect()).toEqual({ emitted: false, cost_usd: 3, limit_usd: 2.5 });
+  expect(costEvents()).toHaveLength(1);
+
+  // A parent that stopped between wake and cost-hold leaves the run unheld, so the next sweep past
+  // the interval re-sends the interrupt.
+  process.env.LOOPHUB_COST_REEMIT_MS = "0";
+  try {
+    expect(detect()).toEqual({ emitted: true, cost_usd: 3, limit_usd: 2.5 });
+    expect(costEvents()).toHaveLength(2);
+    expect(JSON.parse(costEvents()[1].payload)).toMatchObject({
+      cost_usd: 3,
+      limit_usd: 2.5,
+      next_limit_usd: 5,
+    });
+
+    // Once a hold exists the event has been acted on. This only stops new emissions — the ones
+    // already queued behind the parent's cursor are still delivered, and it is `cost.hold`'s
+    // per-limit receipt that keeps them from replaying Esc and the pane notification (covered
+    // end-to-end in cli/workflow-cost-hold.test.ts). A human answering "no" keeps the hold, so
+    // this also covers that case.
+    svc.workflowRuns.awaitHuman(
+      repo.full_name,
+      { run: run.id, reason: "Cost limit exceeded" },
+      parentSessionId,
+    );
+    expect(detect()).toEqual({ emitted: false, cost_usd: 3, limit_usd: 2.5 });
+    expect(costEvents()).toHaveLength(2);
+
+    // After the increase the run is back under its limit, so detection stops on the cost condition.
+    svc.workflowRuns.increaseCostLimit(
+      repo.full_name,
+      { run: run.id, expectedLimitUsd: 2.5 },
+      parentSessionId,
+    );
+    await svc.workflowRuns.resumeAfterHuman(
+      repo.full_name,
+      { run: run.id, step: "execute" },
+      parentSessionId,
+    );
+    expect(detect()).toEqual({ emitted: false, cost_usd: 3, limit_usd: 5 });
+    expect(costEvents()).toHaveLength(2);
+  } finally {
+    delete process.env.LOOPHUB_COST_REEMIT_MS;
+  }
+});
+
 test("a grok run's steps launch grok, not claude (#1521)", async () => {
   const repo = S.getRepo("me", "workflow-run")!;
   const issue = S.createIssue(
@@ -1928,7 +2024,7 @@ test("parent contract template executes workflow next actions", () => {
   expect(contract).toContain("`launch_execute`");
   expect(contract).toContain("`pass`");
   expect(contract).toContain("stays `running` after reaching the goal");
-  expect(contract).toContain("launch a fresh Verify");
+  expect(contract).toContain("launch a new child under the shared invariant");
   expect(contract).toContain("--note <text|->");
   expect(contract).toContain("lh workflow run resume");
   expect(contract).toContain("`request_rework`");

@@ -104,7 +104,12 @@ export function eventsForWorkflowRun(
     .all(repoId, runId) as EventRow[];
 }
 
-export function emitWorkflowRunCostExceededOnce(
+// Cost detection runs on every usage sweep, so this INSERT collapses a run's repeated over-limit
+// observations into at most one event per `reemitAfterMs` for the same cumulative limit (#1844).
+// It re-emits rather than emitting once: a parent that stopped between wake and `cost-hold` would
+// otherwise never see the interrupt again, because `next --watch` advances its cursor before
+// observing. The caller stops asking once the run is held or its limit is raised.
+export function emitWorkflowRunCostExceeded(
   repoId: number,
   actor: string,
   payload: {
@@ -124,7 +129,13 @@ export function emitWorkflowRunCostExceededOnce(
     increment_usd: number;
     next_limit_usd: number;
   },
+  reemitAfterMs: number,
 ): EventRow | null {
+  // Same second-precision shape as `now()`, so the cutoff compares lexicographically against
+  // stored `created_at` values.
+  const reemitAfter = new Date(Date.now() - reemitAfterMs)
+    .toISOString()
+    .replace(/\.\d+Z$/, "Z");
   return (
     (db
       .query(
@@ -135,6 +146,7 @@ export function emitWorkflowRunCostExceededOnce(
            WHERE repo_id = ? AND type = 'workflow_run.cost_exceeded'
              AND json_extract(payload, '$.id') = ?
              AND json_extract(payload, '$.limit_usd') = ?
+             AND created_at > ?
          )
          RETURNING *`,
       )
@@ -146,6 +158,7 @@ export function emitWorkflowRunCostExceededOnce(
         repoId,
         payload.id,
         payload.limit_usd,
+        reemitAfter,
       ) as EventRow | null) ?? null
   );
 }

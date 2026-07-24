@@ -98,9 +98,12 @@ event receipt はこの処理全体を guard し、replay は receipt の `compl
 再発火しない。non-zero の場合は、完了済み step と失敗 command の出力を見える状態に保ち、確立済みの hold を
 維持して `cost-hold` を自動 retry しない。
 
-初回実行だけでなく `completed` replay を含むすべての `completed` 結果の後、parent pane に
+初回の `completed` 結果の後にだけ表示する。`already_completed` の replay では表示しない。parent pane に
 **Cost limit exceeded. Continue?** と表示し、回答は **yes** / **no** のみ受ける。receipt は interrupt effect の
-実行済みを示すだけで、人間の継続判断は記録しない。
+実行済みを示すだけで、人間の継続判断は記録しない。`already_completed` は、その `limit_usd` で既に中断済みで
+人間へも問い済みであることを示す。停止中も detection は event を再送するため、初回 hold の後に drain する
+残りの event はすべてこれを返し、その `limit_usd` は古い。再度問えば決定済みの質問を繰り返し、誤った上限で
+増額することになるので、skip して loop を続ける。
 
 yes なら最初に `lh workflow step status <run> --repo '<repo>' --json` を実行して現在の `limit_usd` と
 `active_step` を観測し、次に

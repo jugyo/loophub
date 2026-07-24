@@ -416,8 +416,11 @@ test("parent waits with next --watch and reacts to cost limit facts", () => {
   expect(contract).toContain("active_step");
   expect(contract).toContain("lh workflow deliver");
   expect(contract).toContain("Cost limit exceeded. Continue?");
-  expect(contract).toContain("including a `completed` replay");
-  expect(japanese).toContain("`completed` replay を含む");
+  // The prompt is once per (run, limit), not once per event: re-emitted events (#1844) drain as
+  // `already_completed` and must not re-ask a decided question.
+  expect(contract).toContain("never after an `already_completed` replay");
+  expect(contract).toContain("their `limit_usd` is stale");
+  expect(japanese).toContain("`already_completed` の replay では表示しない");
   expect(contract).toMatch(/accept only \*\*yes\*\* or\s+\*\*no\*\*/u);
   expect(contract).toContain("does not fire the effects again");
   expect(contract).toContain(

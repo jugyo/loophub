@@ -94,9 +94,12 @@ and injects the one-line cost notification. Its event receipt guards the entire 
 as `completed` or `pending` and does not fire the effects again. If it exits non-zero, keep its completed-step and failed
 command output visible, retain the hold it established, and do not retry `cost-hold` automatically.
 
-After any `completed` result, including a `completed` replay, show **Cost limit exceeded. Continue?** in the parent pane
-and accept only **yes** or **no**. The receipt proves the interrupt effects ran; it does not record the human continuation
-decision.
+After an initial `completed` result, and never after an `already_completed` replay, show **Cost limit exceeded. Continue?**
+in the parent pane and accept only **yes** or **no**. The receipt proves the interrupt effects ran; it does not record the
+human continuation decision. `already_completed` means this run was already interrupted at that `limit_usd` and the
+question already put to a human: detection re-emits the event while you are stopped, so the leftovers you drain after the
+first hold all report it, and their `limit_usd` is stale. Re-asking would repeat a decided question and increase against
+the wrong limit, so skip them and continue the loop.
 
 For yes, first run `lh workflow step status <run> --repo '<repo>' --json` to observe the current `limit_usd` and
 `active_step`, then

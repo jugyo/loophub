@@ -264,6 +264,30 @@ export function getWorkflowEventEffect(
   );
 }
 
+// The receipt for one run's interrupt at one cumulative cost limit, whichever
+// `workflow_run.cost_exceeded` event claimed it (#1844). Re-emitted events carry new ids but the
+// same `limit_usd` and ask for the same single interrupt, so the per-event lookup above would let
+// the ones a stopped parent drains after the first hold replay Esc and the pane notification.
+export function getWorkflowEventEffectForCostLimit(
+  runId: number,
+  effect: string,
+  limitUsd: number,
+): WorkflowEventEffectRow | null {
+  return (
+    (db
+      .query(
+        `SELECT receipt.* FROM workflow_event_effects receipt
+         JOIN events event ON event.id = receipt.event_id
+         WHERE receipt.run_id = ? AND receipt.effect = ?
+           AND event.type = 'workflow_run.cost_exceeded'
+           AND json_extract(event.payload, '$.limit_usd') = ?
+         ORDER BY receipt.event_id ASC
+         LIMIT 1`,
+      )
+      .get(runId, effect, limitUsd) as WorkflowEventEffectRow | null) ?? null
+  );
+}
+
 export function beginWorkflowEventEffect(
   runId: number,
   eventId: number,

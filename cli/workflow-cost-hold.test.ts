@@ -48,6 +48,7 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
   run: number;
   event: number;
   log: string;
+  reemit: (limitUsd?: number) => number;
 } {
   const number = nextNumber++;
   const run = S.createWorkflowRun({
@@ -81,21 +82,33 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
       activeSessionId: childSessionId,
     });
   }
-  const event = S.emitWorkflowRunCostExceededOnce(repoId, "test", {
-    id: run.id,
-    number,
-    pr_number: number,
-    parent_session_id: PARENT_SESSION_ID,
-    session_id: PARENT_SESSION_ID,
-    usage_session_id: PARENT_SESSION_ID,
-    active_step: activeChild ? "execute" : null,
-    active_session_id: childSessionId,
-    cost_usd: 12.5,
-    limit_usd: 10,
-    increment_usd: 10,
-    next_limit_usd: 20,
-  });
-  if (!event) throw new Error("cost event was not created");
+  // A 0 ms re-emit interval stands in for "the interval has elapsed", so `reemit` deterministically
+  // produces the further events a stopped parent leaves queued. `limitUsd` models the event a raised
+  // limit produces once the run burns through it again.
+  const emit = (limitUsd = 10): number => {
+    const event = S.emitWorkflowRunCostExceeded(
+      repoId,
+      "test",
+      {
+        id: run.id,
+        number,
+        pr_number: number,
+        parent_session_id: PARENT_SESSION_ID,
+        session_id: PARENT_SESSION_ID,
+        usage_session_id: PARENT_SESSION_ID,
+        active_step: activeChild ? "execute" : null,
+        active_session_id: childSessionId,
+        cost_usd: limitUsd + 2.5,
+        limit_usd: limitUsd,
+        increment_usd: 10,
+        next_limit_usd: limitUsd + 10,
+      },
+      0,
+    );
+    if (!event) throw new Error("cost event was not created");
+    return event.id;
+  };
+  const event = emit();
   const log = join(home, `herdr-${run.id}.log`);
   writeFileSync(
     join(home, `agents-${run.id}.json`),
@@ -111,7 +124,7 @@ function createCostEvent(options: { activeChild?: boolean } = {}): {
       },
     }),
   );
-  return { run: run.id, event: event.id, log };
+  return { run: run.id, event, log, reemit: emit };
 }
 
 function costHoldArgs(input: { run: number; event: number }): string[] {
@@ -188,6 +201,114 @@ test("lh workflow cost-hold holds the run, sends Escape, and notifies the active
   expect(log).toContain(
     "pane run w1:p2 orchestrator: Cost limit exceeded: current $12.5, limit $10. Wait for human instruction.",
   );
+});
+
+test("a re-emitted cost event interrupts a run whose parent stopped before cost-hold (#1844)", () => {
+  const input = createCostEvent();
+  const env = {
+    HERDR_LOG: input.log,
+    HERDR_AGENTS: join(home, `agents-${input.run}.json`),
+  };
+  // The parent woke on the first event and stopped before running cost-hold. `next --watch` had
+  // already advanced its cursor past that event, so only a re-emission can interrupt the run.
+  const reemitted = input.reemit();
+  expect(reemitted).not.toBe(input.event);
+
+  const result = runCli(
+    costHoldArgs({ run: input.run, event: reemitted }),
+    env,
+  );
+
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout).toContain(
+    `completed cost hold for event #${reemitted}`,
+  );
+  expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBe(
+    "Cost limit exceeded: current $12.5, limit $10; human decision required",
+  );
+  const log = readFileSync(input.log, "utf8");
+  expect(log).toContain("pane send-keys w1:p2 Escape");
+});
+
+test("queued re-emissions the parent drains after a hold do not replay the interrupt (#1844)", () => {
+  const input = createCostEvent();
+  const env = {
+    HERDR_LOG: input.log,
+    HERDR_AGENTS: join(home, `agents-${input.run}.json`),
+  };
+  // Detection kept re-emitting while the parent was away, so `next --watch` still has these queued
+  // after its cursor and wakes the parent on each one in turn.
+  const queued = [input.reemit(), input.reemit()];
+  expect(runCli(costHoldArgs(input), env).status).toBe(0);
+  const heldLog = readFileSync(input.log, "utf8");
+  const heldReason = S.getWorkflowRun(input.run)?.needs_human_reason;
+  expect(heldReason).not.toBeNull();
+
+  // The human said "no", so the hold stands. Draining the leftovers must not send Esc again, and
+  // must not leave a pending receipt behind — that would pin the parent's reconcile to `wait`.
+  for (const event of queued) {
+    const drained = runCli(costHoldArgs({ run: input.run, event }), env);
+    expect(drained.status, drained.stderr).toBe(0);
+    expect(drained.stdout).toContain("receipt\tcompleted");
+    expect(readFileSync(input.log, "utf8")).toBe(heldLog);
+    expect(S.getWorkflowEventEffect(input.run, event, "cost.hold")).toBeNull();
+  }
+  expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBe(heldReason);
+});
+
+test("a raised limit still holds again while the old limit's leftovers stay inert (#1844)", () => {
+  const input = createCostEvent();
+  const env = {
+    HERDR_LOG: input.log,
+    HERDR_AGENTS: join(home, `agents-${input.run}.json`),
+  };
+  const stale = input.reemit();
+  expect(runCli(costHoldArgs(input), env).status).toBe(0);
+
+  const increased = runCli([
+    "workflow",
+    "run",
+    "increase-cost-limit",
+    "--repo",
+    "me/workflow-cost-hold",
+    "--run",
+    String(input.run),
+    "--expected-limit",
+    "10",
+  ]);
+  expect(increased.status, increased.stderr).toBe(0);
+  const resumed = runCli([
+    "workflow",
+    "run",
+    "resume",
+    "--repo",
+    "me/workflow-cost-hold",
+    "--run",
+    String(input.run),
+    "--step",
+    "execute",
+  ]);
+  expect(resumed.status, resumed.stderr).toBe(0);
+  expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBeNull();
+  const resumedLog = readFileSync(input.log, "utf8");
+
+  // A leftover event names the old limit the human already answered for; re-holding here would
+  // interrupt a child that is running under the raised limit.
+  const drained = runCli(costHoldArgs({ run: input.run, event: stale }), env);
+  expect(drained.status, drained.stderr).toBe(0);
+  expect(drained.stdout).toContain("receipt\tcompleted");
+  expect(readFileSync(input.log, "utf8")).toBe(resumedLog);
+  expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBeNull();
+
+  // Burning through the raised limit is a new interrupt, not a replay.
+  const raised = input.reemit(20);
+  const held = runCli(costHoldArgs({ run: input.run, event: raised }), env);
+  expect(held.status, held.stderr).toBe(0);
+  expect(held.stdout).toContain(`completed cost hold for event #${raised}`);
+  expect(S.getWorkflowRun(input.run)?.needs_human_reason).toBe(
+    "Cost limit exceeded: current $22.5, limit $20; human decision required",
+  );
+  expect(readFileSync(input.log, "utf8")).not.toBe(resumedLog);
 });
 
 test("lh workflow cost-hold does not fire effects twice for the same event", () => {
