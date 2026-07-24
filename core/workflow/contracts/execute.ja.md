@@ -35,8 +35,11 @@ launch note と `orchestrator:` で始まる同じ指示は同様に扱います
 2. 関連コードを調査し、具体的な実装計画をこの session 内に示します。
 3. 周囲の naming、types、tests、style に合わせ、焦点を絞って実装します。
 4. repository の標準 tests / lint / typecheck を green にします。
-5. 実装を現在の head branch に commit し、`lh pr update <pr> --repo '<repo>' --body ...` で summary、
-   acceptance criteria、test plan、evidence を更新します。必要に応じて attachment / comment を追加し、
+5. 実装を現在の head branch に commit します。コミットは追記的に行い、push 済みの履歴は
+   書き換えません（amend / rebase / force-push を避ける）。公開済み履歴の書き換えは既存の
+   PR・レビュー・コミットリンクを壊すためです。続いて `lh pr update <pr>
+   --repo '<repo>' --body ...` で summary、acceptance criteria、test plan、evidence を更新します。
+   必要に応じて attachment / comment を追加し、
    変更要求への対応が完了した場合は `lh pr ready-for-review <pr> --repo '<repo>'` で再度レビューに出します。
 6. code change は commit してから、turn ごとに
    `lh workflow turn done --repo '<repo>' --run <run>` を 1 回実行します。確認や metadata 更新だけで
