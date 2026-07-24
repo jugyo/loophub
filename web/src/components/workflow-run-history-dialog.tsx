@@ -1,4 +1,4 @@
-import { Loader2, X } from "lucide-react";
+import { ChevronRight, Loader2, X } from "lucide-react";
 import { useEffect } from "react";
 import type { WorkflowRunHistoryEvent, WorkflowRunState } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
@@ -240,14 +240,20 @@ function HistoryEntry({ event }: { event: WorkflowRunHistoryEvent }) {
       </div>
       <p className="mt-1 text-sm text-muted-foreground">{event.description}</p>
       {event.input ? (
-        <div className="mt-2 max-h-40 overflow-auto rounded-md border bg-muted/30 px-3 py-2">
-          <p className="text-xs font-medium text-muted-foreground">
+        // Agent input can be a long launch prompt; keep it collapsed by default so it does not
+        // crowd out the surrounding lifecycle events, and let a reader expand it on demand.
+        <details
+          data-debug-component="WorkflowRunHistoryEntryInput"
+          className="group mt-2 overflow-hidden rounded-md border bg-muted/30"
+        >
+          <summary className="flex cursor-pointer list-none items-center gap-1 px-3 py-2 text-xs font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" />
             Agent input
-          </p>
-          <pre className="mt-1 whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-muted-foreground">
+          </summary>
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words border-t px-3 py-2 font-sans text-xs leading-relaxed text-muted-foreground">
             {event.input}
           </pre>
-        </div>
+        </details>
       ) : null}
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <code>{event.type}</code>

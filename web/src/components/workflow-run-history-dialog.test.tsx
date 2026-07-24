@@ -111,8 +111,19 @@ describe("Workflow run history dialog", () => {
     ).toHaveLength(2);
     expect(within(dialog).getByText("Actor: execute-agent-1")).toBeTruthy();
     expect(within(dialog).getByText("Actor: execute-agent-2")).toBeTruthy();
-    expect(within(dialog).getAllByText("Agent input")).toHaveLength(2);
+    const inputSummaries = within(dialog).getAllByText("Agent input");
+    expect(inputSummaries).toHaveLength(2);
+    // Agent input is collapsed by default and expands on demand.
+    const inputDetails = inputSummaries.map((summary) =>
+      summary.closest("details"),
+    );
+    for (const details of inputDetails) {
+      expect(details).not.toBeNull();
+      expect((details as HTMLDetailsElement).open).toBe(false);
+    }
     expect(within(dialog).getByText(/Address review #12/)).toBeTruthy();
+    fireEvent.click(inputSummaries[1] as HTMLElement);
+    expect((inputDetails[1] as HTMLDetailsElement).open).toBe(true);
     const runStarted = within(dialog).getByText("Run started").closest("li");
     expect(runStarted).not.toBeNull();
     expect(
