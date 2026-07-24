@@ -566,14 +566,25 @@ function turnDoneObservation(
   };
 }
 
+// The canonical `gh api` paths github-feedback-sync recorded for the changed items. Only the
+// reference is projected: the parent must read the resource itself rather than trust a copy of
+// untrusted comment text travelling through LoopHub.
+function githubFeedbackReferences(payload: Record<string, unknown>): string[] {
+  const feedback = payload.feedback;
+  if (!Array.isArray(feedback)) return [];
+  return feedback
+    .map((item) =>
+      item && typeof item === "object"
+        ? (item as { reference?: unknown }).reference
+        : undefined,
+    )
+    .filter((reference): reference is string => typeof reference === "string");
+}
+
 function workflowWakeObservation(
   prIssueId: number,
   event: LoopEvent | null,
   requiresChanges: boolean | undefined,
-  // A `--watch` wake carries no parent decision yet. GitHub feedback is the one wake that needs one,
-  // so the watch reconciles from state alone and the parent re-runs `next --event` with its
-  // `--requires-changes` verdict after reading the reference.
-  watched: boolean,
 ): WorkflowWakeInput | null {
   if (!event) {
     if (requiresChanges !== undefined) {
@@ -593,12 +604,14 @@ function workflowWakeObservation(
     return { kind: "execute_escalation", reason: payload.reason };
   }
   if (event.type === "workflow_run.github_event") {
+    // Without a parent verdict the wake is the first half of the two-call protocol: hand back the
+    // references so the parent reads them and re-enters `next` with `--requires-changes`.
     if (requiresChanges === undefined) {
-      if (watched) return null;
-      throw new ServiceError(
-        422,
-        "GitHub feedback requires a parent changes decision",
-      );
+      return {
+        kind: "github_reference",
+        eventId,
+        references: githubFeedbackReferences(payload),
+      };
     }
     return requiresChanges ? { kind: "github_feedback" } : null;
   }
@@ -607,6 +620,9 @@ function workflowWakeObservation(
       422,
       "requiresChanges is only valid for GitHub feedback",
     );
+  }
+  if (event.type === "workflow_run.cost_exceeded") {
+    return { kind: "cost_exceeded", eventId };
   }
   if (event.type === "workflow_run.review_submitted") {
     const reviewId = payload.review_id;
@@ -2084,7 +2100,6 @@ export const workflowRuns = {
               prIssue.id,
               wakeEvent,
               input.requiresChanges,
-              input.watch === true,
             ),
     });
     return { ...action, observed, event: wakeEvent };

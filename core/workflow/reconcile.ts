@@ -34,9 +34,11 @@ export type WorkflowReconcileInput = {
 
 export type WorkflowWakeInput =
   | { kind: "execute_escalation"; reason: string }
+  | { kind: "github_reference"; eventId: number; references: readonly string[] }
   | { kind: "github_feedback" }
   | { kind: "out_of_band_review"; reviewId: number }
-  | { kind: "human_instruction" };
+  | { kind: "human_instruction" }
+  | { kind: "cost_exceeded"; eventId: number };
 
 export type WorkflowNextAction =
   | { action: "complete"; reason: string }
@@ -65,6 +67,16 @@ export type WorkflowNextAction =
       delivery_reason: "human_instruction";
       transition: "resume_execute" | null;
     }
+  | {
+      // The parent reads the named GitHub resources and re-enters `next` with its verdict. The
+      // action carries the canonical references only; the untrusted body stays out of the result so
+      // the trust boundary — reading and judging that content — remains the parent's alone.
+      action: "read_github_reference";
+      reason: string;
+      event_id: number;
+      references: readonly string[];
+    }
+  | { action: "cost_hold"; reason: string; event_id: number }
   | { action: "wait"; reason: string }
   | {
       action: "escalate";
@@ -102,6 +114,17 @@ export function reconcileWorkflow(
     return {
       action: "complete",
       reason: "The linked pull request is merged; the run is complete.",
+    };
+  }
+
+  // A cost interrupt outranks every non-terminal observation, including an established hold: the
+  // detection re-emits while the parent is away (#1844), so a drained replay must still reach
+  // `cost-hold`. Its (run, limit) receipt — not this decision — is what keeps the effects one-time.
+  if (input.wake?.kind === "cost_exceeded") {
+    return {
+      action: "cost_hold",
+      reason: "The run exceeded its cost limit and must be held for a human.",
+      event_id: input.wake.eventId,
     };
   }
 
@@ -146,6 +169,16 @@ export function reconcileWorkflow(
       action: "escalate",
       reason: input.wake.reason,
       escalation_reason: "execute_request",
+    };
+  }
+
+  if (input.wake?.kind === "github_reference") {
+    return {
+      action: "read_github_reference",
+      reason:
+        "GitHub feedback arrived; read the references and decide whether they require Execute work.",
+      event_id: input.wake.eventId,
+      references: input.wake.references,
     };
   }
 

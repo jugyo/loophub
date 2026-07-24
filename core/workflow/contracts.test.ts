@@ -31,12 +31,10 @@ test("Japanese contracts preserve the required commands and action procedures", 
   for (const command of [
     "lh workflow run advance-to-verify",
     "lh workflow run request-rework",
-    "lh workflow run increase-cost-limit",
     "lh workflow run resume",
     "lh workflow deliver",
     "lh workflow cost-hold",
     "lh workflow launch-step",
-    "lh workflow step status",
     "lh workflow next",
     "lh workflow escalate-human",
   ]) {
@@ -49,25 +47,24 @@ test("Japanese contracts preserve the required commands and action procedures", 
     "advance_and_verify",
     "request_rework",
     "deliver",
+    "read_github_reference",
+    "cost_hold",
     "wait",
     "escalate",
     "ask_human",
   ]) {
     expect(parent).toContain(action);
   }
-  expect(parent).toContain("workflow_run.cost_exceeded");
   expect(parent).toContain(
     "lh workflow next <run> --repo '<repo>' --watch --json",
   );
   expect(parent).not.toContain("cursor を seed");
   expect(parent).not.toContain("herdr pane send-keys <pane_id> Escape");
   expect(parent).not.toContain("pull loop");
-  expect(parent).toContain(
-    "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
-  );
-  expect(parent).toMatch(
-    /最初に `lh workflow step status <run> --repo '<repo>' --json`[\s\S]*`lh workflow run increase-cost-limit[\s\S]*増額が成功した後だけ[\s\S]*`lh workflow run resume/u,
-  );
+  // The budget increase and the resume after a cost hold are the human's operation (#1859).
+  expect(parent).not.toContain("lh workflow run increase-cost-limit");
+  expect(parent).not.toContain("lh workflow step status");
+  expect(parent).not.toContain("## Interrupts");
   expect(execute).toContain("lh issue view <n> --json");
   expect(execute).toContain("lh pr update <pr>");
   expect(execute).toContain("lh workflow escalate");
@@ -248,7 +245,6 @@ test("parent ends the loop on the merge terminal condition in both languages", (
 test("parent decides transitions by observation, never idle detection", () => {
   const parent = workflowContractText("parent");
 
-  expect(parent).toContain("lh workflow step status");
   expect(parent).toContain("not transition facts");
   expect(parent).toContain("Do not use child-session resume or idle detection");
   expect(parent.match(/idle detection/gu)).toHaveLength(1);
@@ -315,9 +311,14 @@ test("parent delegates transition decisions to workflow next", () => {
   expect(parent).toContain(
     "lh workflow next <run> --repo '<repo>' --note <text|-> --json",
   );
-  expect(parent).toContain(
-    "lh workflow next <run> --repo '<repo>' --event <event.id> --requires-changes true|false --json",
-  );
+  // The second call is what the `read_github_reference` action asks for, not a rule the parent
+  // applies to an event on its own (#1859).
+  for (const contract of [parent, japanese]) {
+    expect(contract).toContain(
+      "lh workflow next <run> --repo '<repo>' --event <event_id> --requires-changes true|false --json",
+    );
+    expect(contract).not.toContain("--event <event.id>");
+  }
   expect(parent).toMatch(
     /The `next` result is the only source for\s+selecting an action/u,
   );
@@ -402,8 +403,15 @@ test("parent waits with next --watch and reacts to cost limit facts", () => {
   expect(contract).not.toContain("functions.exec");
   expect(contract).not.toContain("functions.wait");
   expect(contract).not.toContain("background cell");
-  expect(contract).toContain("watcher writes JSONL records");
-  expect(contract).toContain("missing record means the watcher is not armed");
+  // #1859: the JSONL log stays an operator diagnostic. A best-effort write is not evidence about
+  // the watcher, so the only health signal the parent acts on is a non-zero `next --watch` exit.
+  expect(contract).not.toContain("watcher writes JSONL records");
+  expect(contract).not.toContain("logs/workflow-watch");
+  expect(contract).not.toContain("not armed");
+  expect(contract).toContain(
+    "A non-zero exit from `next --watch` is a visible watcher failure",
+  );
+  expect(contract).toContain("the only watcher health signal you act on");
   // Event delivery, ordering, and resume position moved inside `next --watch` (#1744): the parent
   // no longer owns a cursor, an acknowledgement, or a replay procedure.
   expect(contract).toContain(
@@ -423,54 +431,39 @@ test("parent waits with next --watch and reacts to cost limit facts", () => {
   expect(japanese).not.toContain("--since");
   expect(japanese).not.toContain("--ack");
   expect(japanese).not.toContain("event を replay");
-  expect(japanese).toContain("watcher は");
+  expect(japanese).toContain("watcher");
   expect(contract).not.toContain("watcher_armed");
   expect(contract).not.toContain("HERDR_PANE_ID");
-  expect(contract).toContain("workflow_run.cost_exceeded");
-  // #1845: `limit_usd` / `active_step` have a single source — the re-observed `step status`,
-  // which the `increase-cost-limit` CAS needs the current value from.
+  // #1859: the cost procedure collapsed into one action. The parent runs the receipt-guarded
+  // command and returns to the loop; the budget decision, its limit, and the resume are the
+  // human's, so no yes/no question, `step status`, `increase-cost-limit`, or resume remains here.
   expect(contract).not.toContain("current cumulative `limit_usd`");
   expect(japanese).not.toContain("現在累計 `limit_usd`");
+  expect(contract).not.toContain("lh workflow run increase-cost-limit");
+  expect(contract).not.toContain("lh workflow step status");
+  expect(contract).not.toContain("Cost limit exceeded. Continue?");
+  expect(contract).not.toContain("already_completed");
+  expect(contract).not.toContain("limit_usd");
+  expect(japanese).not.toContain("limit_usd");
   expect(contract).toContain(
-    "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
+    "lh workflow cost-hold --repo '<repo>' --run <run> --event <event_id>",
   );
   expect(contract).toContain(
-    "lh workflow cost-hold --repo '<repo>' --run <run> --event <event.id>",
+    "A human raises the budget and resumes the run; do not ask for that decision or raise the limit yourself.",
   );
+  expect(japanese).toContain("予算の増額と再開は人間が行う");
   expect(contract).not.toContain("herdr pane send-keys <pane_id> Escape");
   expect(contract).not.toContain("submits the literal text");
   expect(contract).not.toContain("usage_session_id");
   expect(contract).not.toContain("increment_usd");
   expect(contract).not.toContain("next_limit_usd");
-  expect(contract).toContain("active_step");
   expect(contract).toContain("lh workflow deliver");
-  expect(contract).toContain("Cost limit exceeded. Continue?");
-  // The prompt is once per (run, limit), not once per event: re-emitted events (#1844) drain as
-  // `already_completed` and must not re-ask a decided question.
-  expect(contract).toContain("never after an `already_completed` replay");
-  expect(contract).toContain("their `limit_usd` is stale");
-  expect(japanese).toContain("`already_completed` の replay では表示しない");
-  expect(contract).toMatch(/accept only \*\*yes\*\* or\s+\*\*no\*\*/u);
-  expect(contract).toContain("does not fire the effects again");
-  expect(contract).toContain(
-    "first run `lh workflow step status <run> --repo '<repo>' --json` to observe the current `limit_usd` and\n`active_step`",
-  );
-  expect(japanese).toContain(
-    "`lh workflow step status <run> --repo '<repo>' --json` を実行して現在の `limit_usd` と\n`active_step` を観測",
-  );
-  expect(contract).toContain(
-    "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
-  );
-  expect(contract).toContain(
-    "For Verify, launch a new child under the shared invariant",
-  );
-  expect(contract).toMatch(/leave the human hold in\s+place/u);
-  expect(contract).toContain("do not retry `cost-hold` automatically");
+  expect(contract).toContain("without firing the\n  effects again");
   expect(contract).not.toContain("cost.escape");
   expect(contract).not.toContain("cost.pane-notification");
   expect(contract).not.toContain("cost.human-confirmation");
   expect(contract).toContain(
-    "keep its completed-step and failed\ncommand output visible",
+    "keep its completed-step and failed command output visible",
   );
   expect(contract).toContain("retain the hold it established");
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
@@ -618,8 +611,12 @@ test("Japanese workflow design documents the continuing lifecycle after a pass",
     "`deliver` は内部で `activate-step` と同じ live-control target 更新を行う",
   );
   expect(design).toContain("`herdr pane send-keys <pane_id> Escape`");
-  expect(design).toContain("「続けますか？」という yes / no");
-  expect(design).toContain("人間の yes なしには増額も再開もしない");
+  // #1859: the parent runs the `cost_hold` action and returns to the loop; the continuation
+  // decision, the increase, and the resume are the human's.
+  expect(design).not.toContain("「続けますか？」という yes / no");
+  expect(design).toContain("人間の判断なしには増額も再開もしない");
+  expect(design).toContain("`cost_hold` action");
+  expect(design).toContain("`read_github_reference`");
   expect(design).toContain(
     "`lh workflow run increase-cost-limit --run <run> --expected-limit <limit_usd>`",
   );

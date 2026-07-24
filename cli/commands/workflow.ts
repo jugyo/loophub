@@ -691,6 +691,10 @@ async function nextAction(): Promise<void> {
   }
   console.log(result.action);
   console.log(result.reason);
+  if (result.action === "read_github_reference") {
+    for (const reference of result.references)
+      console.log(`reference\t${reference}`);
+  }
   if (result.event)
     console.log(`event\t#${result.event.id} ${result.event.type}`);
 }

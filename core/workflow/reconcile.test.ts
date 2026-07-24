@@ -475,8 +475,24 @@ describe("reconcileWorkflow", () => {
       },
     ],
     [
+      {
+        kind: "github_reference",
+        eventId: 77,
+        references: ["repos/me/repo/issues/comments/9"],
+      },
+      {
+        action: "read_github_reference",
+        event_id: 77,
+        references: ["repos/me/repo/issues/comments/9"],
+      },
+    ],
+    [
       { kind: "github_feedback" },
       { action: "deliver", delivery_reason: "github_feedback" },
+    ],
+    [
+      { kind: "cost_exceeded", eventId: 91 },
+      { action: "cost_hold", event_id: 91 },
     ],
     [
       { kind: "out_of_band_review", reviewId: 42 },
@@ -512,6 +528,33 @@ describe("reconcileWorkflow", () => {
       delivery_reason: "human_instruction",
       transition: "resume_execute",
     });
+  });
+
+  // Detection re-emits `workflow_run.cost_exceeded` while the parent is away (#1844), so a drained
+  // replay must still reach `cost-hold` even though the hold it asks for is already established.
+  // The command's (run, limit) receipt is what keeps the effects one-time, not this decision.
+  test("holds for cost on every cost-exceeded wake, including after the hold", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          needsHumanReason: "Cost limit exceeded",
+          awaitingHuman: true,
+          costLimitIncreaseRequired: true,
+          wake: { kind: "cost_exceeded", eventId: 92 },
+        }),
+      ),
+    ).toMatchObject({ action: "cost_hold", event_id: 92 });
+  });
+
+  test("completes a merged run instead of holding for cost", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          prMerged: true,
+          wake: { kind: "cost_exceeded", eventId: 93 },
+        }),
+      ),
+    ).toMatchObject({ action: "complete" });
   });
 
   test("does not resume a cost hold before its limit is increased", () => {
