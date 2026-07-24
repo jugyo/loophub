@@ -109,6 +109,27 @@ describe("herdr terminal launch", () => {
     ).toBe("cd '/tmp/work tree' && claude --resume 'session-1'");
   });
 
+  test("launches the coding agent with the workflow-create prompt as its initial input", () => {
+    expect(
+      commandForHerdrLaunch({
+        repo: "loophub",
+        workflow: "workflow-create",
+        codingAgent: "claude-code",
+        prompt: "Create a workflow, then stop.",
+      }),
+    ).toBe("claude 'Create a workflow, then stop.'");
+  });
+
+  test("workflow-create without a prompt yields no command", () => {
+    expect(
+      commandForHerdrLaunch({
+        repo: "loophub",
+        workflow: "workflow-create",
+        codingAgent: "claude-code",
+      }),
+    ).toBe("");
+  });
+
   test("shell-quotes repo names for pr-crit launches", () => {
     expect(
       commandForHerdrLaunch({

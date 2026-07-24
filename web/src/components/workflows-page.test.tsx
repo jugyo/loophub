@@ -18,7 +18,6 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { Workflow } from "@/api/types";
-import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts.ts";
 import { WorkflowsPage } from "./workflows-page";
 
 const CONTRACTS = {
@@ -50,6 +49,7 @@ function renderPage(
       "workflows/list": () => workflows,
       "workflows/contracts": () => CONTRACTS,
       "settings/get": () => ({ workflowContractLanguage: "en" }),
+      "terminal/launch": () => ({ backend: "herdr", session_name: "loophub" }),
       ...handlers,
     }),
   );
@@ -77,6 +77,12 @@ function renderPage(
     </QueryClientProvider>,
   );
   return { ...result, router };
+}
+
+// Open a workflow's edit dialog: the only remaining create/edit form path is edit (#1889).
+async function openEditDialog() {
+  fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+  return screen.getByRole("dialog", { name: 'Edit "standard"' });
 }
 
 afterEach(() => {
@@ -154,62 +160,37 @@ describe("WorkflowsPage", () => {
     expect(await screen.findByText("No workflows yet.")).toBeTruthy();
   });
 
-  it("prefills the create form with the core example prompts (no DB seed)", async () => {
+  it("launches an AI-driven workflow-create session instead of opening a create form", async () => {
     renderPage({});
     fireEvent.click(
       await screen.findByRole("button", { name: "New workflow" }),
     );
-    const dialog = await screen.findByRole("dialog", { name: "New workflow" });
-    const executeField = within(dialog).getByRole("textbox", {
-      name: "Execute prompt",
-    }) as HTMLTextAreaElement;
-    expect(executeField.value).toBe(WORKFLOW_EXAMPLE_PROMPTS.execute_prompt);
-  });
 
-  it("shows both prompt fields at a comfortable multiline height", async () => {
-    renderPage({});
-    fireEvent.click(
-      await screen.findByRole("button", { name: "New workflow" }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: "New workflow" });
-
-    for (const name of ["Execute prompt", "Verify prompt"]) {
-      expect(within(dialog).getByRole("textbox", { name }).classList).toContain(
-        "min-h-48",
-      );
-    }
-  });
-
-  it("creates a workflow in a dialog and refreshes the list", async () => {
-    let workflows: Workflow[] = [];
-    renderPage({
-      "workflows/list": () => workflows,
-      "workflows/create": (params) => {
-        const created = workflow({
-          id: 2,
-          name: params.name,
-          description: params.description,
-          execute_prompt: params.execute_prompt,
-          verify_prompt: params.verify_prompt,
-        });
-        workflows = [created];
-        return created;
-      },
-    });
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "New workflow" }),
-    );
-    const dialog = screen.getByRole("dialog", { name: "New workflow" });
-    fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), {
-      target: { value: "fast-loop" },
-    });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Create workflow" }),
-    );
-
-    expect(await screen.findByText("fast-loop")).toBeTruthy();
+    await waitFor(() => expect(rpcCall("terminal/launch")).toBeTruthy());
+    const params = rpcCall("terminal/launch")?.params as {
+      workflow?: string;
+      prompt?: string;
+      repo?: string;
+    };
+    expect(params.workflow).toBe("workflow-create");
+    expect(params.prompt).toContain("lh workflow create");
+    // The global New workflow launch carries no repo (#1889).
+    expect(params.repo).toBeUndefined();
+    // No create form dialog opens anymore.
     expect(screen.queryByRole("dialog", { name: "New workflow" })).toBeNull();
+  });
+
+  it("passes the configured contract language into the workflow-create prompt", async () => {
+    renderPage({
+      "settings/get": () => ({ workflowContractLanguage: "ja" }),
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New workflow" }),
+    );
+
+    await waitFor(() => expect(rpcCall("terminal/launch")).toBeTruthy());
+    const params = rpcCall("terminal/launch")?.params as { prompt?: string };
+    expect(params.prompt).toContain("LoopHub workflow を作成");
   });
 
   it("edits a workflow in a dialog and refreshes the list", async () => {
@@ -227,8 +208,7 @@ describe("WorkflowsPage", () => {
       },
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
-    const dialog = screen.getByRole("dialog", { name: 'Edit "standard"' });
+    const dialog = await openEditDialog();
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), {
       target: { value: "standard-v2" },
     });
@@ -242,67 +222,51 @@ describe("WorkflowsPage", () => {
     ).toBeNull();
   });
 
-  it("shows every system prompt in a read-only dialog on the create form", async () => {
-    renderPage({});
-    fireEvent.click(
-      await screen.findByRole("button", { name: "New workflow" }),
-    );
-
-    const links = screen.getAllByRole("button", { name: "System prompt" });
-    expect(links).toHaveLength(3);
-    fireEvent.click(links[1]);
-
-    const dialog = screen.getByRole("dialog", {
-      name: "Execute system prompt",
-    });
-    expect(
-      await within(dialog).findByText(/Execute contract body/),
-    ).toBeTruthy();
-    expect(within(dialog).queryByRole("textbox")).toBeNull();
-
-    fireEvent.keyDown(dialog, { key: "Escape" });
-    expect(
-      screen.queryByRole("dialog", { name: "Execute system prompt" }),
-    ).toBeNull();
-    expect(screen.getByRole("dialog", { name: "New workflow" })).toBeTruthy();
+  it("prefills the edit form with the workflow's saved prompts", async () => {
+    renderPage({}, [workflow()]);
+    const dialog = await openEditDialog();
+    const executeField = within(dialog).getByRole("textbox", {
+      name: "Execute prompt",
+    }) as HTMLTextAreaElement;
+    expect(executeField.value).toBe("execute here");
   });
 
-  it("shows the parent contract read-only, without a prompt field of its own", async () => {
-    renderPage({});
-    fireEvent.click(
-      await screen.findByRole("button", { name: "New workflow" }),
-    );
+  it("shows both prompt fields at a comfortable multiline height", async () => {
+    renderPage({}, [workflow()]);
+    const dialog = await openEditDialog();
 
-    const form = screen.getByRole("dialog", { name: "New workflow" });
+    for (const name of ["Execute prompt", "Verify prompt"]) {
+      expect(within(dialog).getByRole("textbox", { name }).classList).toContain(
+        "min-h-48",
+      );
+    }
+  });
+
+  it("shows the parent contract read-only on the edit form, without a prompt field of its own", async () => {
+    renderPage({}, [workflow()]);
+    const dialog = await openEditDialog();
     // name + description + the two step prompts; the parent contract adds no editable field.
-    expect(within(form).getAllByRole("textbox")).toHaveLength(4);
+    expect(within(dialog).getAllByRole("textbox")).toHaveLength(4);
     fireEvent.click(
-      within(form).getAllByRole("button", { name: "System prompt" })[0],
+      within(dialog).getAllByRole("button", { name: "System prompt" })[0],
     );
 
-    const dialog = screen.getByRole("dialog", {
+    const parent = screen.getByRole("dialog", {
       name: "Parent system prompt",
     });
     expect(
-      await within(dialog).findByText(/Parent contract body/),
+      await within(parent).findByText(/Parent contract body/),
     ).toBeTruthy();
-    expect(within(dialog).queryByRole("textbox")).toBeNull();
+    expect(within(parent).queryByRole("textbox")).toBeNull();
   });
 
-  it("keeps the workflow dialog and its input open when closing a nested dialog from its backdrop", async () => {
-    renderPage({});
-    fireEvent.click(
-      await screen.findByRole("button", { name: "New workflow" }),
-    );
-    const workflowDialog = screen.getByRole("dialog", {
-      name: "New workflow",
-    });
-    const name = within(workflowDialog).getByRole("textbox", { name: "Name" });
+  it("keeps the edit dialog and its input open when closing a nested dialog from its backdrop", async () => {
+    renderPage({}, [workflow()]);
+    const dialog = await openEditDialog();
+    const name = within(dialog).getByRole("textbox", { name: "Name" });
     fireEvent.change(name, { target: { value: "unsaved workflow" } });
     fireEvent.click(
-      within(workflowDialog).getAllByRole("button", {
-        name: "System prompt",
-      })[1],
+      within(dialog).getAllByRole("button", { name: "System prompt" })[1],
     );
 
     const systemPromptDialog = screen.getByRole("dialog", {
@@ -314,7 +278,7 @@ describe("WorkflowsPage", () => {
       screen.queryByRole("dialog", { name: "Execute system prompt" }),
     ).toBeNull();
     expect(
-      within(screen.getByRole("dialog", { name: "New workflow" })).getByRole(
+      within(screen.getByRole("dialog", { name: 'Edit "standard"' })).getByRole(
         "textbox",
         { name: "Name" },
       ),
@@ -322,33 +286,32 @@ describe("WorkflowsPage", () => {
   });
 
   it("focuses the workflow form so Escape closes the dialog immediately", async () => {
-    renderPage({});
-    fireEvent.click(
-      await screen.findByRole("button", { name: "New workflow" }),
-    );
-
-    const dialog = screen.getByRole("dialog", { name: "New workflow" });
+    renderPage({}, [workflow()]);
+    const dialog = await openEditDialog();
     const name = within(dialog).getByRole("textbox", { name: "Name" });
     expect(document.activeElement).toBe(name);
     fireEvent.keyDown(name, { key: "Escape" });
 
-    expect(screen.queryByRole("dialog", { name: "New workflow" })).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: 'Edit "standard"' }),
+    ).toBeNull();
   });
 
   it("shows the fixed system prompt in the configured language", async () => {
-    renderPage({
-      "settings/get": () => ({ workflowContractLanguage: "ja" }),
-      "workflows/contracts": () => ({
-        parent: "# Parent workflow contract\n日本語の parent contract 本文",
-        execute: "# Execute ステップ contract\n日本語の contract 本文",
-        verify: "# Verify ステップ contract\n日本語の contract 本文",
-      }),
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: "New workflow" }),
+    renderPage(
+      {
+        "settings/get": () => ({ workflowContractLanguage: "ja" }),
+        "workflows/contracts": () => ({
+          parent: "# Parent workflow contract\n日本語の parent contract 本文",
+          execute: "# Execute ステップ contract\n日本語の contract 本文",
+          verify: "# Verify ステップ contract\n日本語の contract 本文",
+        }),
+      },
+      [workflow()],
     );
+    const dialog = await openEditDialog();
     fireEvent.click(
-      screen.getAllByRole("button", { name: "System prompt" })[1],
+      within(dialog).getAllByRole("button", { name: "System prompt" })[1],
     );
 
     expect(
@@ -362,7 +325,7 @@ describe("WorkflowsPage", () => {
       { key: "Escape" },
     );
     fireEvent.click(
-      screen.getAllByRole("button", { name: "System prompt" })[0],
+      within(dialog).getAllByRole("button", { name: "System prompt" })[0],
     );
 
     expect(
@@ -374,22 +337,22 @@ describe("WorkflowsPage", () => {
 
   it("shows system prompt links on the edit form and closes the dialog with its button", async () => {
     renderPage({}, [workflow()]);
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const dialog = await openEditDialog();
 
     expect(
-      screen.getAllByRole("button", { name: "System prompt" }),
+      within(dialog).getAllByRole("button", { name: "System prompt" }),
     ).toHaveLength(3);
     fireEvent.click(
-      screen.getAllByRole("button", { name: "System prompt" })[2],
+      within(dialog).getAllByRole("button", { name: "System prompt" })[2],
     );
-    const dialog = screen.getByRole("dialog", {
+    const promptDialog = screen.getByRole("dialog", {
       name: "Verify system prompt",
     });
     expect(
-      await within(dialog).findByText(/Verify contract body/),
+      await within(promptDialog).findByText(/Verify contract body/),
     ).toBeTruthy();
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Close system prompt" }),
+      within(promptDialog).getByRole("button", { name: "Close system prompt" }),
     );
     expect(
       screen.queryByRole("dialog", { name: "Verify system prompt" }),
@@ -399,19 +362,22 @@ describe("WorkflowsPage", () => {
     ).toBeTruthy();
   });
 
-  it("surfaces a 422 validation error as a form error on create", async () => {
-    renderPage({
-      "workflows/create": () => {
-        throw new RpcFault(422, "workflow name must be unique");
+  it("surfaces a 422 validation error as a form error on save", async () => {
+    renderPage(
+      {
+        "workflows/update": () => {
+          throw new RpcFault(422, "workflow name must be unique");
+        },
       },
+      [workflow()],
+    );
+    const dialog = await openEditDialog();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), {
+      target: { value: "other" },
     });
     fireEvent.click(
-      await screen.findByRole("button", { name: "New workflow" }),
+      within(dialog).getByRole("button", { name: "Save changes" }),
     );
-    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
-      target: { value: "standard" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Create workflow" }));
     expect(
       await screen.findByText(/workflow name must be unique/),
     ).toBeTruthy();

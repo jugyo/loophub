@@ -100,6 +100,7 @@ export function commandForHerdrLaunch(input: {
   repo: string;
   workflow?:
     | "issue-create"
+    | "workflow-create"
     | "scheduled-task-create"
     | "resume"
     | "github-pr-export"
@@ -144,6 +145,16 @@ export function commandForHerdrLaunch(input: {
     return withEnv(
       `lh issue new --repo ${shellArg(input.repo)}${targetBranchFlag}${agentFlag}${modelFlag}${effortFlag}${promptFlag}`,
     );
+  }
+  if (input.workflow === "workflow-create" && input.prompt) {
+    // New workflow (Settings > Workflows): launch the coding agent interactively with the
+    // workflow-create instructions as its initial prompt, mirroring the New issue flow's `--prompt`.
+    // `lh workflow create` is global (no repo), so this runs from the LoopHub-home cwd the service
+    // pins for it, not a repo worktree. The agent/model come from the global effective config
+    // (`codingAgent()`), same non-repo default as scheduled-task-create.
+    const agent = input.codingAgent ?? codingAgent();
+    const argv = buildRuntimeArgs({ runtime: agent, prompt: input.prompt });
+    return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }
   if (input.workflow === "scheduled-task-create") {
     const agent = input.codingAgent ?? codingAgent();

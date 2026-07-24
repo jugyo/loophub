@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { WORKFLOW_STEPS } from "./compose.ts";
 import { workflowContracts, workflowContractText } from "./contracts.ts";
-import { WORKFLOW_EXAMPLE_PROMPTS } from "./example-prompts.ts";
 
 test("loads every fixed contract from the canonical Markdown sources", () => {
   const contracts = workflowContracts();
@@ -159,15 +158,6 @@ test("Verify three-dot review subject excludes base-only changes after divergenc
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
-});
-
-test("Verify example prompt uses the same three-dot review subject", () => {
-  expect(WORKFLOW_EXAMPLE_PROMPTS.verify_prompt).toContain(
-    "git diff base...head",
-  );
-  expect(WORKFLOW_EXAMPLE_PROMPTS.verify_prompt).toContain(
-    "merge-base-to-head diff",
-  );
 });
 
 test("Verify is PR-metadata-blind while allowing source context", () => {

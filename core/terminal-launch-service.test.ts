@@ -368,6 +368,46 @@ describe("terminal.launch workflow-run spawns `lh workflow start --herdr`", () =
   });
 });
 
+describe("terminal.launch workflow-create (global New workflow, #1889)", () => {
+  test("opens a fresh workspace at the LoopHub-home cwd and starts the workflow-create agent, without a repo", async () => {
+    herdr.script.push(
+      exitWith(0, WORKSPACE_JSON_WITH_ROOT_PANE), // workspace create
+      exitWith(0, '{"result":{"agent":{"pane_id":"w4:p2"}}}'), // agent start
+      exitWith(0), // workspace focus
+      exitWith(0), // seed pane close
+    );
+
+    const result = await svc.terminal.launch({
+      workflow: "workflow-create",
+      label: "New workflow",
+      prompt: "Create a workflow, then stop.",
+    });
+
+    // No workspace list/probe: workflow-create goes straight to a fresh workspace.
+    expect(herdr.calls[0]).toContain("workspace");
+    expect(herdr.calls[0]).toContain("create");
+    const agentStart = herdr.calls[1];
+    expect(agentStart).toContain("start");
+    expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w4:t1");
+    // The agent runs from LoopHub home (the isolated LOOPHUB_HOME), not a repo checkout.
+    expect(agentStart[agentStart.indexOf("--cwd") + 1]).toBe(HOME);
+    // The launched inner command is the coding agent seeded with the workflow-create prompt.
+    expect(agentStart[agentStart.length - 1]).toContain(
+      "claude 'Create a workflow, then stop.'",
+    );
+    expect(result).toMatchObject({ backend: "herdr" });
+  });
+
+  test("requires a prompt", async () => {
+    await expect(
+      svc.terminal.launch({
+        workflow: "workflow-create",
+        label: "New workflow",
+      }),
+    ).rejects.toThrow(/prompt is required/u);
+  });
+});
+
 describe("terminal.launch dedicated workspace orchestration for New Issue", () => {
   test("creates the dedicated workspace when its repo session is not running yet", async () => {
     herdr.script.push(

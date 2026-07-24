@@ -32,6 +32,7 @@ export interface OpenTerminalOptions {
   // Semantic workflow the Herdr session runs — it does not replay a literal shell command.
   workflow?:
     | "issue-create"
+    | "workflow-create"
     | "scheduled-task-create"
     | "resume"
     | "github-pr-export"
@@ -105,11 +106,13 @@ export function useTerminalLauncher(): { launchTerminal: OpenTerminal } {
   const { showError } = useToast();
   const launchTerminal = useCallback<OpenTerminal>(
     (opts) => {
-      if (!opts?.repo) {
+      // The global "workflow-create" (New workflow) launch has no repo (#1889); every other
+      // workflow requires one.
+      if (!opts?.repo && opts?.workflow !== "workflow-create") {
         showError("Herdr launch failed: repo is required.");
         return;
       }
-      if (!opts.workflow) {
+      if (!opts?.workflow) {
         showError("Herdr launch failed: workflow is required.");
         return;
       }

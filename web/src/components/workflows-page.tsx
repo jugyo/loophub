@@ -10,21 +10,18 @@ import { useEffect, useState } from "react";
 import type { WorkflowInput } from "@/api/client";
 import type { Workflow, WorkflowContracts } from "@/api/types";
 import { SettingsHeader } from "@/components/settings-header";
+import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import { errorMessage } from "@/lib/error-message";
 import { cn } from "@/lib/utils";
 import { useSettings, useUpdateSettings } from "@/queries/settings";
 import {
-  useCreateWorkflow,
   useDeleteWorkflow,
   useUpdateWorkflow,
   useWorkflowContracts,
   useWorkflows,
 } from "@/queries/workflows";
-// core/workflow/example-prompts.ts is a pure, node-free constant (single source of truth for the
-// create-form prefill (workflow design: workflow definitions — prefill from a constant, do not
-// seed a DB row).
-import { WORKFLOW_EXAMPLE_PROMPTS } from "../../../core/workflow/example-prompts.ts";
+import { workflowCreatePrompt } from "../../../core/workflow/workflow-create-prompt.ts";
 
 // The fixed Workflow steps, in order, with the wire field each maps to. Rendered as one textarea
 // per step in the form.
@@ -52,7 +49,6 @@ const contractLinkClasses =
 export function WorkflowsPage() {
   const navigate = useNavigate();
   const { data: workflows, isLoading, isError } = useWorkflows();
-  const [creating, setCreating] = useState(false);
 
   return (
     <div data-debug-component="WorkflowsPage" className="mx-auto max-w-content">
@@ -81,28 +77,8 @@ export function WorkflowsPage() {
           </p>
 
           <div className="mt-4">
-            <Button
-              aria-label="New workflow"
-              title="New workflow"
-              onClick={() => setCreating(true)}
-            >
-              <Plus className="size-4" />
-              New workflow
-            </Button>
+            <NewWorkflowButton />
           </div>
-
-          {creating ? (
-            <WorkflowDialog
-              title="New workflow"
-              onClose={() => setCreating(false)}
-            >
-              <WorkflowForm
-                mode="create"
-                onDone={() => setCreating(false)}
-                onCancel={() => setCreating(false)}
-              />
-            </WorkflowDialog>
-          ) : null}
 
           <div className="mt-6 flex flex-col gap-3">
             {isLoading ? (
@@ -122,6 +98,38 @@ export function WorkflowsPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+// New workflow is AI-driven, mirroring New issue (#1889): instead of prefilling a create form, it
+// launches a herdr agent seeded with the workflow-create instructions, and that agent runs
+// `lh workflow create`. A workflow is global, so this launch carries no repo — the terminal service
+// pins it to the LoopHub-home cwd.
+function launchSuffix(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
+}
+
+function NewWorkflowButton() {
+  const { launchTerminal } = useTerminalLauncher();
+  const { data: settings } = useSettings();
+
+  return (
+    <Button
+      aria-label="New workflow"
+      title="New workflow"
+      onClick={() =>
+        launchTerminal({
+          workflow: "workflow-create",
+          label: `New workflow - ${launchSuffix()}`,
+          prompt: workflowCreatePrompt(settings?.workflowContractLanguage),
+        })
+      }
+    >
+      <Plus className="size-4" />
+      New workflow
+    </Button>
   );
 }
 
@@ -219,7 +227,6 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
           onClose={() => setEditing(false)}
         >
           <WorkflowForm
-            mode="edit"
             workflow={workflow}
             onDone={() => setEditing(false)}
             onCancel={() => setEditing(false)}
@@ -300,49 +307,32 @@ function WorkflowDialog({
   );
 }
 
-// Shared create/edit form. In create mode the fields prefill from the example-prompts constant; in
-// edit mode they load from the existing workflow.
+// Edit-only workflow form. New workflow creation is now AI-driven (NewWorkflowButton, #1889); this
+// form loads an existing workflow and saves changes to it.
 function WorkflowForm({
-  mode,
   workflow,
   onDone,
   onCancel,
 }: {
-  mode: "create" | "edit";
-  workflow?: Workflow;
+  workflow: Workflow;
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const create = useCreateWorkflow();
   const update = useUpdateWorkflow();
   const settings = useSettings();
   const contracts = useWorkflowContracts(
     settings.data?.workflowContractLanguage,
   );
-  const mutation = mode === "create" ? create : update;
+  const mutation = update;
   const [openContract, setOpenContract] = useState<OpenContract | null>(null);
 
-  const [name, setName] = useState(
-    mode === "edit" ? (workflow?.name ?? "") : "",
-  );
-  const [description, setDescription] = useState(
-    mode === "edit"
-      ? (workflow?.description ?? "")
-      : WORKFLOW_EXAMPLE_PROMPTS.description,
-  );
+  const [name, setName] = useState(workflow.name);
+  const [description, setDescription] = useState(workflow.description ?? "");
   const [prompts, setPrompts] = useState<
     Record<(typeof STEP_FIELDS)[number]["key"], string>
-  >(() => {
-    if (mode === "edit" && workflow) {
-      return {
-        execute_prompt: workflow.execute_prompt,
-        verify_prompt: workflow.verify_prompt,
-      };
-    }
-    return {
-      execute_prompt: WORKFLOW_EXAMPLE_PROMPTS.execute_prompt,
-      verify_prompt: WORKFLOW_EXAMPLE_PROMPTS.verify_prompt,
-    };
+  >({
+    execute_prompt: workflow.execute_prompt,
+    verify_prompt: workflow.verify_prompt,
   });
 
   async function onSubmit() {
@@ -353,16 +343,12 @@ function WorkflowForm({
       verify_prompt: prompts.verify_prompt,
     };
     try {
-      if (mode === "create") {
-        await create.mutateAsync(fields);
-      } else if (workflow) {
-        const { name: nextName, ...rest } = fields;
-        await update.mutateAsync({
-          name: workflow.name,
-          // new_name renames; unchanged name is a harmless no-op patch.
-          patch: { ...rest, new_name: nextName },
-        });
-      }
+      const { name: nextName, ...rest } = fields;
+      await update.mutateAsync({
+        name: workflow.name,
+        // new_name renames; unchanged name is a harmless no-op patch.
+        patch: { ...rest, new_name: nextName },
+      });
     } catch {
       return; // surfaced via mutation.error below
     }
@@ -422,7 +408,7 @@ function WorkflowForm({
           <div className="flex items-center justify-between gap-3">
             <label
               className="font-medium"
-              htmlFor={`workflow-${mode}-${step.key}`}
+              htmlFor={`workflow-edit-${step.key}`}
             >
               {step.label}
             </label>
@@ -440,7 +426,7 @@ function WorkflowForm({
             </button>
           </div>
           <textarea
-            id={`workflow-${mode}-${step.key}`}
+            id={`workflow-edit-${step.key}`}
             className="min-h-48 rounded-md border bg-background px-3 py-1.5 text-sm"
             value={prompts[step.key]}
             onChange={(e) =>
@@ -468,11 +454,7 @@ function WorkflowForm({
 
       <div className="flex gap-2">
         <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : mode === "create"
-              ? "Create workflow"
-              : "Save changes"}
+          {mutation.isPending ? "Saving…" : "Save changes"}
         </Button>
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel

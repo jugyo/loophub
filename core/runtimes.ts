@@ -5,7 +5,7 @@
 // a runtime is (close to) adding one entry below.
 //
 // This module is a leaf: it imports nothing from node or the rest of core, so the web bundle can
-// import its *values* directly — the same pattern core/workflow/example-prompts.ts established. The
+// import its *values* directly — the same pattern core/workflow/workflow-create-prompt.ts uses. The
 // argv builders (buildClaudeArgs/buildCodexArgs/buildGrokArgs) deliberately stay in cli/dev.ts, which
 // is node-dependent (node:util, core/terminal/codex-launch.ts): the registry keys their dispatch by
 // runtime id rather than owning the functions, keeping this module node-free.

@@ -1,6 +1,6 @@
 // Shared coding-agent presentation constants (#637). The labels and the model/effort picklists are
 // derived from the single runtime registry (core/runtimes.ts) — a node-free core module the web can
-// import directly, the same pattern as core/workflow/example-prompts.ts — so the Settings screen
+// import directly, the same pattern as core/workflow/workflow-create-prompt.ts — so the Settings screen
 // (#610), the issue-detail Build dropdown (#637), and the per-agent defaults all read one source
 // instead of duplicating the lists here.
 

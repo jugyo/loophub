@@ -28,6 +28,7 @@ import {
   acquireHerdrWorktreeTabCore,
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
+  configDir,
   displayArg,
   ENV_ISSUE_CREATE_HERDR_LAUNCH,
   HERDR_ID,
@@ -72,10 +73,13 @@ import {
 } from "./shared.ts";
 
 export interface TerminalLaunchInput {
-  repo: string;
+  // Optional: the global "workflow-create" (New workflow) launch has no repo (#1889). Every other
+  // workflow requires it — `launch` enforces that below before touching the repo.
+  repo?: string;
   label?: string;
   workflow?:
     | "issue-create"
+    | "workflow-create"
     | "scheduled-task-create"
     | "resume"
     | "github-pr-export"
@@ -270,6 +274,120 @@ async function launchWorkflowRunHerdr(
   };
 }
 
+// The synthetic "repo" the global New workflow launch uses to name its herdr session and pick a cwd
+// (#1889). A workflow is global — `lh workflow create` takes no repo — so there is no real repo row
+// to pin to; the agent runs from LoopHub home so `lh workflow create` resolves the same DB every
+// launch shares. full_name only feeds the session name (herdrSessionName hashes it with local_path),
+// so a fixed label keeps every New workflow launch in one dedicated session.
+function workflowCreateLaunchRepo(): TerminalLaunchRepo {
+  return { full_name: "loophub", local_path: configDir() };
+}
+
+// New workflow (Settings > Workflows, #1889): launch a coding agent that gathers the workflow
+// fields and runs `lh workflow create`, mirroring the New issue AI-driven flow. Global, so it has no
+// repo/worktree — it opens a fresh herdr workspace at the LoopHub-home cwd and starts the agent
+// there. Same best-effort placement + failure cleanup as the non-issue-create launches above:
+// workspace-create is best-effort (fall back to a split), and any agent-start failure closes the
+// tab/workspace it created.
+async function launchWorkflowCreateHerdr(
+  input: TerminalLaunchInput,
+): Promise<TerminalLaunchResultWire> {
+  const repo = workflowCreateLaunchRepo();
+  const command = commandForHerdrLaunch({
+    repo: repo.full_name,
+    workflow: "workflow-create",
+    codingAgent: input.agent,
+    model: input.model,
+    prompt: input.prompt,
+  });
+  if (!command.trim()) throw new ServiceError(422, "prompt is required");
+
+  // Give the agent its own fresh workspace instead of piling onto whatever pane is focused (#544).
+  let tabId: string | null = null;
+  let rootPaneId: string | null = null;
+  let workspaceId: string | null = null;
+  try {
+    const create = herdrWorkspaceCreateArgv(repo);
+    const out = await runHerdr(create[0], create.slice(1), repo.local_path, {
+      captureStdout: true,
+      timeoutMs: 10_000,
+    });
+    tabId = parseHerdrTabId(out);
+    rootPaneId = parseHerdrRootPaneId(out);
+    workspaceId = parseHerdrWorkspaceId(out);
+  } catch {
+    // Best-effort: fall back to the tab-less split placement below.
+    tabId = null;
+    rootPaneId = null;
+    workspaceId = null;
+  }
+  // A workspace whose seed tab id failed to parse can never be targeted via --tab, so close it now
+  // rather than leaving it orphaned regardless of whether the agent start succeeds.
+  if (workspaceId && !tabId) {
+    const cleanup = herdrWorkspaceCloseArgv(repo, workspaceId);
+    runHerdrLaunch(cleanup[0], cleanup.slice(1), repo.local_path).catch(
+      () => {},
+    );
+    workspaceId = null;
+    rootPaneId = null;
+  }
+
+  const plan = buildHerdrLaunchPlan({
+    repo,
+    command,
+    label: input.label,
+    tabId,
+  });
+  try {
+    await runHerdrLaunch(plan.argv[0], plan.argv.slice(1), plan.cwd);
+  } catch (e) {
+    if (workspaceId) {
+      const cleanupArgv = herdrWorkspaceCloseArgv(repo, workspaceId);
+      runHerdrLaunch(
+        cleanupArgv[0],
+        cleanupArgv.slice(1),
+        repo.local_path,
+      ).catch(() => {});
+    } else if (tabId) {
+      const cleanupArgv = herdrTabCloseArgv(repo, tabId);
+      runHerdrLaunch(
+        cleanupArgv[0],
+        cleanupArgv.slice(1),
+        repo.local_path,
+      ).catch(() => {});
+    }
+    if (isServiceError(e))
+      throw new ServiceError(e.status, e.message, {
+        command: herdrCommandLine(
+          buildHerdrLaunchPlan({ repo, command, label: input.label }),
+        ),
+        session: isHerdrExitError(e) ? plan.sessionName : undefined,
+      });
+    throw e;
+  }
+  // Bring the new agent's workspace to the front, then close the seed empty pane it split off.
+  if (workspaceId) {
+    const focus = herdrWorkspaceFocusArgv(repo, workspaceId);
+    runHerdrLaunch(focus[0], focus.slice(1), repo.local_path).catch(() => {});
+  } else if (tabId) {
+    const focus = herdrTabFocusArgv(repo, tabId);
+    runHerdrLaunch(focus[0], focus.slice(1), repo.local_path).catch(() => {});
+  }
+  if (tabId && rootPaneId) {
+    const paneClose = herdrPaneCloseArgv(repo, rootPaneId);
+    runHerdrLaunch(paneClose[0], paneClose.slice(1), repo.local_path).catch(
+      () => {},
+    );
+  }
+  return {
+    backend: "herdr" as const,
+    session_name: plan.sessionName,
+    command: plan.command,
+    cwd: plan.cwd,
+    attach: `herdr session attach ${plan.sessionName}`,
+  };
+}
+
 // A terminal-aware agent row: the parsed herdr agent plus what the DB knows about the PR its
 // worktree cwd resolves to (#611). `pull_closed` is true when that PR is merged or closed —
 // clients can mute those rows so no-longer-needed agents stand out at a glance. An
@@ -356,6 +474,11 @@ function acquireHerdrWorktreeTab(
 // ===== terminal launch =====
 export const terminal = {
   async launch(input: TerminalLaunchInput): Promise<TerminalLaunchResultWire> {
+    // New workflow (Settings > Workflows) is global: `lh workflow create` takes no repo, so this
+    // launch has none to pin to. It runs from the LoopHub-home cwd instead and skips all the
+    // repo/worktree machinery below (#1889).
+    if (input.workflow === "workflow-create")
+      return launchWorkflowCreateHerdr(input);
     if (!input.repo) throw new ServiceError(422, "repo is required");
     const r = repoOr404(input.repo);
 

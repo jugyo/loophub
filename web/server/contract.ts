@@ -385,6 +385,7 @@ export const methods: Record<string, MethodDef> = {
         workflow: {
           enum: [
             "issue-create",
+            "workflow-create",
             "scheduled-task-create",
             "resume",
             "github-pr-export",
@@ -407,7 +408,9 @@ export const methods: Record<string, MethodDef> = {
         model: str,
         effort: str,
       },
-      ["repo"],
+      // `repo` is required for every workflow except the global "workflow-create" (New workflow),
+      // which has no repo to pin to (#1889); the service enforces the requirement per-workflow.
+      [],
     ),
     result: anyObject,
     handler: (p) =>

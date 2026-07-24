@@ -555,10 +555,13 @@ export function readAllNotifications(sessionId: string = getSessionId()) {
 
 // --- terminal launch ---
 export function launchTerminalWorkflow(input: {
-  repo: string;
+  // Optional: the global "workflow-create" (New workflow) launch has no repo (#1889). Every other
+  // workflow requires it, enforced by the terminal service.
+  repo?: string;
   label?: string;
   workflow?:
     | "issue-create"
+    | "workflow-create"
     | "scheduled-task-create"
     | "resume"
     | "github-pr-export"
