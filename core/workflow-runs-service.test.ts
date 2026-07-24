@@ -2267,6 +2267,140 @@ test("an unattributed review counts as Verify's only while the run is verifying 
   ]);
 }, 30_000);
 
+test("a verifying run keeps attributing its own Verify pass across cost-hold resumes and Execute reactivation (#1873)", async () => {
+  const { repo } = freshRepo("me/workflow-verify-frozen");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Verify freeze",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "verify-frozen-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "d5d5d5d5-d5d5-4d5d-8d5d-d5d5d5d5d5d5";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+
+  const exec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+
+  const headA = commit(started.worktree, "impl.txt", "v1\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+
+  // The Verify child submits from a session LoopHub never registered (a child resumed in-pane after a
+  // cost hold never re-runs launch-step / confirm), so its author is `unknown`. The run must still take
+  // it as its own verdict because it was submitted in the Verify phase.
+  const passA = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    { event: "PASS", topic: "workflow", headSha: headA, body: "v1 passes." },
+    "unregistered-verify-a",
+  );
+  let status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.steps.verify.complete).toBe(true);
+  expect(status.steps.verify.latest_review).toMatchObject({
+    id: passA.id,
+    event: "pass",
+    fresh: true,
+    headSha: headA,
+  });
+
+  // Cost-hold resume path A: the parent reactivates the Execute pane for live input while the run stays
+  // in its Verify phase (active_step=execute, current_step=verify). Execute then commits again. Before
+  // #1873 the active_step reading mis-classified the run as executing and froze latest_review at passA.
+  svc.workflowRuns.activateStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute", sessionId: exec.session_id },
+    parent,
+  );
+  const headB = commit(started.worktree, "impl.txt", "v2\n");
+  const passB = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    { event: "PASS", topic: "workflow", headSha: headB, body: "v2 passes." },
+    "unregistered-verify-b",
+  );
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.steps.verify.complete).toBe(true);
+  expect(status.steps.verify.latest_review).toMatchObject({
+    id: passB.id,
+    event: "pass",
+    fresh: true,
+    headSha: headB,
+  });
+
+  // Cost-hold resume path B: await-human, resume back into Execute, commit, then re-advance to Verify.
+  // Before #1873 the advance_to_verify transition was not read as entering the Verify phase, so a pass
+  // submitted right after it was dropped as out-of-band.
+  await svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: started.run.id, reason: "cost limit exceeded" },
+    parent,
+  );
+  await svc.workflowRuns.resumeAfterHuman(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  const headC = commit(started.worktree, "impl.txt", "v3\n");
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  const passC = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    { event: "PASS", topic: "workflow", headSha: headC, body: "v3 passes." },
+    "unregistered-verify-c",
+  );
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.steps.verify.complete).toBe(true);
+  expect(status.steps.verify.latest_review).toMatchObject({
+    id: passC.id,
+    event: "pass",
+    fresh: true,
+    headSha: headC,
+  });
+}, 30_000);
+
 test("rework: request_changes -> address review -> turn done -> fresh Verify pass", async () => {
   const { repo } = freshRepo("me/workflow-rework");
   const issue = S.createIssue(

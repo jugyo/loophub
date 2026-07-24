@@ -429,39 +429,35 @@ function reviewSubmittedEvent(
   });
 }
 
-// The step this run had launched / activated last at the time `eventId` was recorded, from the
-// run's own event trail (`eventsForWorkflowRun` returns it in id order).
-function activeStepAtEvent(
-  events: S.EventRow[],
-  eventId: number,
-): WorkflowStep | null {
-  let active: WorkflowStep | null = null;
+// The run's current step (phase) at the time `eventId` was recorded, from the run's own event
+// trail (`eventsForWorkflowRun` returns it in id order). Every `workflow_run.updated` event carries
+// the resolved `current_step`, so the phase follows that. It deliberately ignores `active_step`:
+// `activate_step` reactivates an Execute pane for live input (e.g. a cost-hold resume) without
+// leaving the Verify phase, so keying off `active_step` mis-reads a verifying run as executing and
+// drops its own Verify verdict as out-of-band (#1873). A run starts in Execute before any
+// transition.
+function stepPhaseAtEvent(events: S.EventRow[], eventId: number): WorkflowStep {
+  let phase: WorkflowStep = "execute";
   for (const event of events) {
     if (event.id > eventId) break;
+    if (event.type !== "workflow_run.updated") continue;
+    const payload = JSON.parse(event.payload) as { current_step?: unknown };
     if (
-      event.type !== "workflow_step.launched" &&
-      event.type !== "workflow_run.updated"
+      payload.current_step === "execute" ||
+      payload.current_step === "verify"
     ) {
-      continue;
+      phase = payload.current_step;
     }
-    const payload = JSON.parse(event.payload) as Record<string, unknown>;
-    const step =
-      event.type === "workflow_step.launched"
-        ? payload.step
-        : payload.transition === "activate_step"
-          ? payload.active_step
-          : null;
-    if (step === "execute" || step === "verify") active = step;
   }
-  return active;
+  return phase;
 }
 
 // Scope a review to this run by parsing its author back to a `verifier #<run>-<seq>` agent name.
 // A Verify child that posts without a LoopHub-registered session id is recorded as `unknown` (the
 // `actorFor()` fallback), so its author carries no run information (#1849). Those reviews are owned
 // by the run whose run-scoped `workflow_run.review_submitted` event carries them, and only when
-// that submission happened while the run was on Verify — an unattributed review posted while
-// Execute is running is somebody else's and stays out-of-band.
+// that submission happened while the run was in its Verify phase — an unattributed review posted
+// while the run is in Execute is somebody else's and stays out-of-band.
 function isWorkflowRunVerifyReview(
   review: S.ReviewRow,
   runId: number,
@@ -477,7 +473,7 @@ function isWorkflowRunVerifyReview(
   const submitted = reviewSubmittedEvent(runEvents, review.id);
   return (
     submitted !== undefined &&
-    activeStepAtEvent(runEvents, submitted.id) === "verify"
+    stepPhaseAtEvent(runEvents, submitted.id) === "verify"
   );
 }
 
