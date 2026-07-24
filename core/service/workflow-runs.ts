@@ -97,6 +97,7 @@ import {
   repoOr404,
   S,
   ServiceError,
+  UNKNOWN_ACTOR,
   workflowRunHistoryEventJSON,
   workflowRunStateJSON,
 } from "./shared.ts";
@@ -408,14 +409,66 @@ function resolveReworkReview(
   return reviewId;
 }
 
+function reviewSubmittedEvent(
+  events: S.EventRow[],
+  reviewId: number,
+): S.EventRow | undefined {
+  return events.find((event) => {
+    if (event.type !== "workflow_run.review_submitted") return false;
+    const payload = JSON.parse(event.payload) as { review_id?: unknown };
+    return payload.review_id === reviewId;
+  });
+}
+
+// The step this run had launched / activated last at the time `eventId` was recorded, from the
+// run's own event trail (`eventsForWorkflowRun` returns it in id order).
+function activeStepAtEvent(
+  events: S.EventRow[],
+  eventId: number,
+): WorkflowStep | null {
+  let active: WorkflowStep | null = null;
+  for (const event of events) {
+    if (event.id > eventId) break;
+    if (
+      event.type !== "workflow_step.launched" &&
+      event.type !== "workflow_run.updated"
+    ) {
+      continue;
+    }
+    const payload = JSON.parse(event.payload) as Record<string, unknown>;
+    const step =
+      event.type === "workflow_step.launched"
+        ? payload.step
+        : payload.transition === "activate_step"
+          ? payload.active_step
+          : null;
+    if (step === "execute" || step === "verify") active = step;
+  }
+  return active;
+}
+
 // Scope a review to this run by parsing its author back to a `verifier #<run>-<seq>` agent name.
+// A Verify child that posts without a LoopHub-registered session id is recorded as `unknown` (the
+// `actorFor()` fallback), so its author carries no run information (#1849). Those reviews are owned
+// by the run whose run-scoped `workflow_run.review_submitted` event carries them, and only when
+// that submission happened while the run was on Verify — an unattributed review posted while
+// Execute is running is somebody else's and stays out-of-band.
 function isWorkflowRunVerifyReview(
   review: S.ReviewRow,
   runId: number,
+  runEvents: S.EventRow[],
 ): boolean {
   const agent = parseWorkflowHerdrAgentName(review.author);
+  if (agent) {
+    return (
+      agent.kind === "step" && agent.step === "verify" && agent.runId === runId
+    );
+  }
+  if (review.author !== UNKNOWN_ACTOR) return false;
+  const submitted = reviewSubmittedEvent(runEvents, review.id);
   return (
-    agent?.kind === "step" && agent.step === "verify" && agent.runId === runId
+    submitted !== undefined &&
+    activeStepAtEvent(runEvents, submitted.id) === "verify"
   );
 }
 
@@ -423,14 +476,16 @@ function isWorkflowRunVerifyReview(
 // runs on the same PR (or from humans) never drive this run's transitions — old runs' data cannot
 // gate a new run.
 function latestWorkflowRunReview(
+  repoId: number,
   prIssueId: number,
   runId: number,
 ): S.ReviewRow | null {
   const reviews = S.listReviews(prIssueId);
+  const runEvents = S.eventsForWorkflowRun(repoId, runId);
   for (let i = reviews.length - 1; i >= 0; i--) {
     const review = reviews[i];
     if (review.event !== "PASS" && review.event !== "REQUEST_CHANGES") continue;
-    if (isWorkflowRunVerifyReview(review, runId)) return review;
+    if (isWorkflowRunVerifyReview(review, runId, runEvents)) return review;
   }
   return null;
 }
@@ -558,8 +613,9 @@ function workflowWakeObservation(
 function outOfBandReviewVerdict(
   review: S.ReviewRow,
   runId: number,
+  runEvents: S.EventRow[],
 ): WorkflowOutOfBandReviewWire["verdict"] | null {
-  if (isWorkflowRunVerifyReview(review, runId)) return null;
+  if (isWorkflowRunVerifyReview(review, runId, runEvents)) return null;
   if (review.event === "FEEDBACK") return "feedback";
   if (review.event === "REQUEST_CHANGES") return "request_changes";
   return null;
@@ -576,13 +632,9 @@ async function unaddressedOutOfBandReviews(input: {
   const reviews = S.listReviews(input.prIssueId);
   const unaddressed: WorkflowOutOfBandReviewWire[] = [];
   for (const review of reviews) {
-    const verdict = outOfBandReviewVerdict(review, input.run.id);
+    const verdict = outOfBandReviewVerdict(review, input.run.id, events);
     if (!verdict) continue;
-    const submitted = events.find((event) => {
-      if (event.type !== "workflow_run.review_submitted") return false;
-      const payload = JSON.parse(event.payload) as { review_id?: unknown };
-      return payload.review_id === review.id;
-    });
+    const submitted = reviewSubmittedEvent(events, review.id);
     // The run-scoped event is the submission boundary. Reviews that predate this run have no such
     // event and must not be revived as new work for a later attempt on the same PR.
     if (!submitted) continue;
@@ -672,7 +724,7 @@ async function workflowRunProgress(
     }),
     baseBranch: pull.base_ref,
     latestReview: reviewObservation(
-      latestWorkflowRunReview(prIssue.id, run.id),
+      latestWorkflowRunReview(repo.id, prIssue.id, run.id),
     ),
   });
 }
@@ -689,7 +741,9 @@ function workflowRunState(
     ? (S.getWorkflowById(run.workflow_id)?.name ?? null)
     : null;
   const prIssue = S.getIssue(repo.id, run.pr_number);
-  const review = prIssue ? latestWorkflowRunReview(prIssue.id, run.id) : null;
+  const review = prIssue
+    ? latestWorkflowRunReview(repo.id, prIssue.id, run.id)
+    : null;
   const latestReview: WorkflowRunReviewSummaryWire | null = review
     ? {
         id: review.id,
@@ -1849,7 +1903,7 @@ export const workflowRuns = {
     }
     const progress = await workflowRunProgress(r, run);
     const prIssue = issueOr404(r, run.pr_number, "pull");
-    const latestReview = latestWorkflowRunReview(prIssue.id, run.id);
+    const latestReview = latestWorkflowRunReview(r.id, prIssue.id, run.id);
     const turnDone = turnDoneObservation(r.id, run.id, latestReview);
     const pull = S.getPull(prIssue.id);
     if (!pull)

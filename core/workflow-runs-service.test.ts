@@ -1726,6 +1726,169 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
   });
 }, 30_000);
 
+test("an unattributed review counts as Verify's only while the run is verifying (#1849)", async () => {
+  const { repo } = freshRepo("me/workflow-unknown-author");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Unknown author",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "unknown-author-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const prIssueId = S.getIssue(repo.id, started.pr.number)!.id;
+  const exec = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "execute",
+      sessionId: exec.session_id,
+      agentName: exec.agent_name,
+      pointers: exec.pointers,
+    },
+    parent,
+  );
+
+  // An unregistered session posts as `unknown`. While Execute is running it is somebody else's
+  // review, so it stays out-of-band work rather than becoming this run's Verify verdict.
+  const baseHead = gitAt(started.worktree, ["rev-parse", "HEAD"]);
+  const duringExecute = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "REQUEST_CHANGES",
+      topic: "workflow",
+      headSha: baseHead,
+      body: "Drive-by review while Execute runs.",
+    },
+    "unregistered-observer",
+  );
+  expect(S.listReviews(prIssueId).at(-1)?.author).toBe("unknown");
+  let status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.steps.verify.latest_review).toBeNull();
+  expect(status.unaddressed_out_of_band_reviews).toEqual([
+    { id: duringExecute.id, verdict: "request_changes" },
+  ]);
+
+  const headA = commit(started.worktree, "impl.txt", "done\n");
+  await svc.workflowRuns.turnDone(
+    repo.full_name,
+    { run: started.run.id },
+    exec.session_id,
+  );
+  await svc.workflowRuns.advanceToVerify(
+    repo.full_name,
+    { run: started.run.id },
+    parent,
+  );
+  const verify = await svc.workflowRuns.launchStep(
+    repo.full_name,
+    { run: started.run.id, step: "verify" },
+    parent,
+  );
+  svc.workflowRuns.confirmStepLaunch(
+    repo.full_name,
+    {
+      run: started.run.id,
+      step: "verify",
+      sessionId: verify.session_id,
+      agentName: verify.agent_name,
+      pointers: verify.pointers,
+      headSha: verify.head_sha,
+    },
+    parent,
+  );
+
+  // The Verify child submits without a registered session id, so its author is `unknown` too. The
+  // run-scoped submission event recorded while Verify is running makes it this run's verdict.
+  const pass = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "PASS",
+      topic: "workflow",
+      headSha: headA,
+      body: "All criteria pass.",
+    },
+    "unregistered-verifier",
+  );
+  expect(S.listReviews(prIssueId).at(-1)?.author).toBe("unknown");
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.steps.verify.complete).toBe(true);
+  expect(status.steps.verify.latest_review).toMatchObject({
+    id: pass.id,
+    event: "pass",
+    fresh: true,
+    headSha: headA,
+  });
+  // The same review must not also be counted as work Execute still owes.
+  expect(status.unaddressed_out_of_band_reviews).toEqual([]);
+  expect(
+    await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
+  ).toMatchObject({ action: "wait" });
+
+  // Another run's verifier keeps being ignored, and a registered human reviewer keeps being
+  // out-of-band: neither replaces this run's pass.
+  createWorkflowReview({
+    prIssueId,
+    runId: started.run.id + 1000,
+    sequence: 1,
+    event: "REQUEST_CHANGES",
+    headSha: headA,
+    body: "Another run's verifier.",
+  });
+  S.registerAgentSession(
+    "human-reviewer-session",
+    "me",
+    "human-reviewer-session",
+    "human-reviewer",
+    "claude-code",
+    "dev",
+  );
+  const humanReview = await svc.reviews.create(
+    repo.full_name,
+    started.pr.number,
+    {
+      event: "REQUEST_CHANGES",
+      topic: "security",
+      headSha: headA,
+      body: "Please fix this too.",
+    },
+    "human-reviewer-session",
+  );
+  status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.steps.verify.complete).toBe(true);
+  expect(status.steps.verify.latest_review).toMatchObject({
+    id: pass.id,
+    event: "pass",
+  });
+  expect(status.unaddressed_out_of_band_reviews).toEqual([
+    { id: humanReview.id, verdict: "request_changes" },
+  ]);
+}, 30_000);
+
 test("rework: request_changes -> address review -> turn done -> fresh Verify pass", async () => {
   const { repo } = freshRepo("me/workflow-rework");
   const issue = S.createIssue(

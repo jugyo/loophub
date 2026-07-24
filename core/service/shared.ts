@@ -502,8 +502,12 @@ export function localBranchExists(repoPath: string, branch: string): boolean {
   return result.status === 0;
 }
 
+// Author recorded when the acting session has no `agent_sessions` row. It names no one, so callers
+// that scope rows by author must treat it as unattributed rather than as a distinct actor.
+export const UNKNOWN_ACTOR = "unknown";
+
 export function actorFor(sessionId: string | null | undefined): string {
-  return S.authorFromSession(sessionId) ?? "unknown";
+  return S.authorFromSession(sessionId) ?? UNKNOWN_ACTOR;
 }
 
 // Resolve symlinks so worktree paths from `git worktree list` (which canonicalizes, e.g.
