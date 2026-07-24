@@ -1958,7 +1958,6 @@ export const workflowRuns = {
       pendingEffectReceipt: observed.pending_effect_receipt,
       unaddressedOutOfBandReviews: observed.unaddressed_out_of_band_reviews,
       currentHead: observed.head_sha,
-      headAheadOfBase: observed.head_ahead_of_base,
       mergeConflict: observed.merge_conflict,
       turnDoneForActiveExecute: observed.turn_done_for_active_execute,
       steps: observed.steps,

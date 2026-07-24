@@ -237,6 +237,9 @@ test("parent states shared lifecycle invariants once in both languages", () => {
     expect(contract.match(/fresh child/gu)).toHaveLength(1);
     expect(contract.match(/idle detection/gu)).toHaveLength(1);
     expect(contract).toContain(freshChildRule);
+    // Actions / Interrupts point back at the invariant above instead of restating it.
+    expect(contract).not.toMatch(/fresh (launch|Verify)/u);
+    expect(contract).not.toContain("resolveRepo()");
   }
   expect(japanese).toMatch(
     /next \/ action の non-zero error は retry せず、人間へ判断を求める/u,
@@ -395,7 +398,10 @@ test("parent waits with next --watch and reacts to cost limit facts", () => {
   expect(contract).not.toContain("watcher_armed");
   expect(contract).not.toContain("HERDR_PANE_ID");
   expect(contract).toContain("workflow_run.cost_exceeded");
-  expect(contract).toContain("current cumulative `limit_usd`");
+  // #1845: `limit_usd` / `active_step` have a single source — the re-observed `step status`,
+  // which the `increase-cost-limit` CAS needs the current value from.
+  expect(contract).not.toContain("current cumulative `limit_usd`");
+  expect(japanese).not.toContain("現在累計 `limit_usd`");
   expect(contract).toContain(
     "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",
   );
@@ -415,7 +421,10 @@ test("parent waits with next --watch and reacts to cost limit facts", () => {
   expect(contract).toMatch(/accept only \*\*yes\*\* or\s+\*\*no\*\*/u);
   expect(contract).toContain("does not fire the effects again");
   expect(contract).toContain(
-    "first run `lh workflow step status <run> --repo '<repo>' --json`",
+    "first run `lh workflow step status <run> --repo '<repo>' --json` to observe the current `limit_usd` and\n`active_step`",
+  );
+  expect(japanese).toContain(
+    "`lh workflow step status <run> --repo '<repo>' --json` を実行して現在の `limit_usd` と\n`active_step` を観測",
   );
   expect(contract).toContain(
     "lh workflow run increase-cost-limit --repo '<repo>' --run <run> --expected-limit <limit_usd>",

@@ -18,7 +18,6 @@ export type WorkflowReconcileInput = {
   pendingEffectReceipt: WorkflowPendingEffectReceiptWire | null;
   unaddressedOutOfBandReviews: WorkflowOutOfBandReviewWire[];
   currentHead: string | null;
-  headAheadOfBase: boolean;
   mergeConflict: boolean;
   turnDoneForActiveExecute: boolean;
   steps: WorkflowStepStatuses;

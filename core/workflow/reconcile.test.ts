@@ -19,7 +19,6 @@ function observed(
     pendingEffectReceipt: null,
     unaddressedOutOfBandReviews: [],
     currentHead: HEAD,
-    headAheadOfBase: false,
     mergeConflict: false,
     turnDoneForActiveExecute: false,
     wake: null,
@@ -53,7 +52,6 @@ describe("reconcileWorkflow", () => {
       reconcileWorkflow(
         observed({
           activeStep: "execute",
-          headAheadOfBase: true,
           turnDoneForActiveExecute: true,
           steps: {
             execute: { complete: true, missing: [] },
@@ -76,7 +74,6 @@ describe("reconcileWorkflow", () => {
         observed({
           currentStep: "verify",
           activeStep: "execute",
-          headAheadOfBase: true,
           turnDoneForActiveExecute: true,
           steps: {
             execute: { complete: true, missing: [] },
@@ -104,7 +101,6 @@ describe("reconcileWorkflow", () => {
         observed({
           currentStep: "verify",
           activeStep: "execute",
-          headAheadOfBase: true,
           steps: {
             execute: { complete: true, missing: [] },
             verify: {
@@ -129,7 +125,6 @@ describe("reconcileWorkflow", () => {
         observed({
           currentStep: "verify",
           activeStep: "verify",
-          headAheadOfBase: true,
           turnDoneForActiveExecute: true,
           steps: {
             execute: { complete: true, missing: [] },
@@ -178,7 +173,6 @@ describe("reconcileWorkflow", () => {
         observed({
           currentStep: "verify",
           activeStep: "verify",
-          headAheadOfBase: true,
           steps: {
             execute: {
               complete: false,
@@ -210,7 +204,6 @@ describe("reconcileWorkflow", () => {
       currentStep: "verify",
       activeStep: "verify",
       reworkCount: 3,
-      headAheadOfBase: true,
       steps: {
         execute: {
           complete: false,
@@ -240,7 +233,6 @@ describe("reconcileWorkflow", () => {
     const freshPass = observed({
       currentStep: "verify",
       activeStep: "verify",
-      headAheadOfBase: true,
       steps: {
         execute: {
           complete: false,
