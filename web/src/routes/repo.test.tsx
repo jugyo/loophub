@@ -8,7 +8,6 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch } from "@/api/rpc-mock";
 import { repoRoute, validateIssueListSearch } from "./repo";
-import { repoIssuesRoute } from "./repo-issues";
 import { rootRoute } from "./root";
 
 vi.mock("@/components/app-layout", async () => {
@@ -28,7 +27,7 @@ afterEach(() => {
 function renderRoute(path: string) {
   vi.stubGlobal("fetch", mockRpcFetch({}));
   const router = createRouter({
-    routeTree: rootRoute.addChildren([repoRoute, repoIssuesRoute]),
+    routeTree: rootRoute.addChildren([repoRoute]),
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   const queryClient = new QueryClient({
@@ -65,15 +64,5 @@ describe("repository search route placement", () => {
     // The standalone workspace picker was removed (#1511); New workspace now
     // lives inside the IssueList workspace filter dropdown.
     expect(screen.queryByRole("button", { name: "Workspaces" })).toBeNull();
-  });
-
-  it("does not show the search row on the separate issue list route", async () => {
-    renderRoute("/r/me/proj/issues");
-    expect(await screen.findByText("Issue list")).toBeTruthy();
-    expect(
-      screen.queryByRole("button", {
-        name: "Search issues and pull requests",
-      }),
-    ).toBeNull();
   });
 });

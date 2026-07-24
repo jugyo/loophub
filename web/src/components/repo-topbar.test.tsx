@@ -28,11 +28,6 @@ function renderRepoTopbar(initialPath: string, experimental = true) {
     path: "/r/$owner/$repo",
     component: () => null,
   });
-  const repoIssuesRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/r/$owner/$repo/issues",
-    component: () => null,
-  });
   const issueDetailRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/r/$owner/$repo/issues/$number",
@@ -57,7 +52,6 @@ function renderRepoTopbar(initialPath: string, experimental = true) {
     routeTree: rootRoute.addChildren([
       indexRoute,
       repoRoute,
-      repoIssuesRoute,
       issueDetailRoute,
       repoScheduledTasksRoute,
       repoSettingsRoute,

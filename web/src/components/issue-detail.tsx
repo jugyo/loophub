@@ -65,7 +65,7 @@ export function IssueDetail({
         return;
       }
       event.preventDefault();
-      navigate({ to: "/r/$owner/$repo/issues", params: { owner, repo } });
+      navigate({ to: "/r/$owner/$repo", params: { owner, repo } });
     }
 
     window.addEventListener("keydown", onKeyDown);

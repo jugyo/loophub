@@ -42,13 +42,8 @@ function renderIssueList(ui: React.ReactNode, initialPath = "/r/me/proj") {
     path: "/r/$owner/$repo",
     component: () => <>{ui}</>,
   });
-  const repoIssuesRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/r/$owner/$repo/issues",
-    component: () => <>{ui}</>,
-  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([repoRoute, repoIssuesRoute]),
+    routeTree: rootRoute.addChildren([repoRoute]),
     history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
   const rendered = render(
@@ -113,8 +108,8 @@ describe("IssueList", () => {
       showWorkspaceFilter: true,
     },
     {
-      surface: "the dedicated issues branch",
-      path: "/r/me/proj/issues",
+      surface: "the repo top without the workspace filter",
+      path: "/r/me/proj",
       showWorkspaceFilter: false,
     },
   ])("Start workflow on $surface", ({ path, showWorkspaceFilter }) => {
@@ -483,10 +478,7 @@ describe("IssueList", () => {
     expect(screen.queryByText("workspace:null")).toBeNull();
   });
 
-  it.each([
-    "/r/me/proj",
-    "/r/me/proj/issues",
-  ])("shows the live PR agent input through the shared IssueList at %s", async (path) => {
+  it("shows the live PR agent input through the IssueList at the repo top", async () => {
     vi.stubGlobal(
       "fetch",
       mockRpcFetch({
@@ -506,7 +498,7 @@ describe("IssueList", () => {
       }),
     );
 
-    renderIssueList(<IssueList owner="me" repo="proj" />, path);
+    renderIssueList(<IssueList owner="me" repo="proj" />);
     fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
     expect(
       await screen.findByRole("textbox", {
@@ -627,7 +619,7 @@ describe("IssueList", () => {
       }),
     );
 
-    renderIssueList(<IssueList owner="me" repo="proj" />, "/r/me/proj/issues");
+    renderIssueList(<IssueList owner="me" repo="proj" />);
     fireEvent.mouseEnter(await screen.findByRole("link", { name: "PR #10" }));
     const input = (await screen.findByRole("textbox", {
       name: "Message agent for PR #10",

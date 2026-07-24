@@ -129,9 +129,9 @@ function renderDetail(
     path: "/r/$owner/$repo/issues/$number",
     component: () => null,
   });
-  const issueListRoute = createRoute({
+  const repoRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: "/r/$owner/$repo/issues",
+    path: "/r/$owner/$repo",
     component: () => null,
   });
   const router = createRouter({
@@ -139,7 +139,7 @@ function renderDetail(
       indexRoute,
       pullsRoute,
       issuesRoute,
-      issueListRoute,
+      repoRoute,
     ]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
@@ -266,7 +266,7 @@ describe("IssueDetail", () => {
     expect(commentsSection?.textContent).toContain("Looks good.");
   });
 
-  it("returns to the issue list with u unless a modal dialog is open", async () => {
+  it("returns to the repo top with u unless a modal dialog is open", async () => {
     const { router } = renderDetail();
 
     expect(await screen.findByText("ui2: issue detail")).toBeTruthy();
@@ -282,7 +282,7 @@ describe("IssueDetail", () => {
     fireEvent.keyDown(window, { key: "u" });
 
     await waitFor(() =>
-      expect(router.state.location.pathname).toBe("/r/me/proj/issues"),
+      expect(router.state.location.pathname).toBe("/r/me/proj"),
     );
   });
 
