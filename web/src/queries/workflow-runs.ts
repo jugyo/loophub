@@ -3,10 +3,11 @@
 // workflow_step.* in lib/event-keys.ts) keeps the state fresh as the run advances.
 // The query resolves to null when the issue / PR has no run.
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getWorkflowRunHistory,
   getWorkflowRunStateForPull,
+  increaseWorkflowRunCostLimit,
 } from "@/api/client";
 import { queryKeys } from "./keys";
 
@@ -20,6 +21,32 @@ export function useWorkflowRunForPull(
   return useQuery({
     queryKey: queryKeys.workflowRunForPull(full, number),
     queryFn: () => getWorkflowRunStateForPull(full, number),
+  });
+}
+
+/**
+ * Increase the budget of the cost-held run linked to a PR. The run state is refetched on success so
+ * the new limit is visible without waiting for the event poll.
+ */
+export function useIncreaseWorkflowRunCostLimit(
+  owner: string,
+  repo: string,
+  pull: number,
+) {
+  const full = `${owner}/${repo}`;
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      run,
+      expectedLimitUsd,
+    }: {
+      run: number;
+      expectedLimitUsd: number;
+    }) => increaseWorkflowRunCostLimit(full, run, expectedLimitUsd),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workflowRunForPull(full, pull),
+      }),
   });
 }
 

@@ -37,13 +37,18 @@ export type WorkflowWakeInput =
   | { kind: "github_reference"; eventId: number; references: readonly string[] }
   | { kind: "github_feedback" }
   | { kind: "out_of_band_review"; reviewId: number }
+  | { kind: "cost_limit_increased" }
   | { kind: "human_instruction" }
   | { kind: "cost_exceeded"; eventId: number };
 
 export type WorkflowNextAction =
   | { action: "complete"; reason: string }
   | { action: "launch_execute"; reason: string }
-  | { action: "launch_verify"; reason: string }
+  | {
+      action: "launch_verify";
+      reason: string;
+      transition: "resume_verify" | null;
+    }
   | { action: "advance_and_verify"; reason: string }
   | {
       action: "request_rework";
@@ -64,7 +69,7 @@ export type WorkflowNextAction =
   | {
       action: "deliver";
       reason: string;
-      delivery_reason: "human_instruction";
+      delivery_reason: "human_instruction" | "cost_limit_increased";
       transition: "resume_execute" | null;
     }
   | {
@@ -136,6 +141,41 @@ export function reconcileWorkflow(
   }
 
   if (input.awaitingHuman) {
+    // A run still held when its increase lands was raised by someone other than this parent — the
+    // Issue Web UI (#1828). The increase is that human's continuation decision, so resume the step
+    // the cost hold interrupted. A parent that increased the limit itself already resumed, so its
+    // own wake falls through to the state rules below instead of resuming twice.
+    if (input.wake?.kind === "cost_limit_increased") {
+      if (input.costLimitIncreaseRequired) {
+        return {
+          action: "wait",
+          reason:
+            "The cost limit increased, but the new limit is already exceeded.",
+        };
+      }
+      if (input.activeStep === "execute") {
+        return {
+          action: "deliver",
+          reason:
+            "A human increased the cost limit; Execute must re-check domain state and continue.",
+          delivery_reason: "cost_limit_increased",
+          transition: "resume_execute",
+        };
+      }
+      if (input.activeStep === "verify") {
+        return {
+          action: "launch_verify",
+          reason:
+            "A human increased the cost limit; launch a fresh Verify for the interrupted step.",
+          transition: "resume_verify",
+        };
+      }
+      return {
+        action: "wait",
+        reason:
+          "The cost limit increased, but the run has no interrupted step to resume.",
+      };
+    }
     if (input.wake?.kind === "human_instruction") {
       if (input.costLimitIncreaseRequired) {
         return {
@@ -293,6 +333,7 @@ export function reconcileWorkflow(
             action: "launch_verify",
             reason:
               "Execute declared turn done and HEAD has advanced beyond the latest review; launch a fresh Verify.",
+            transition: null,
           };
     }
     return {
@@ -329,6 +370,7 @@ export function reconcileWorkflow(
     return {
       action: "launch_verify",
       reason: "Verify has not started for the current HEAD.",
+      transition: null,
     };
   }
 

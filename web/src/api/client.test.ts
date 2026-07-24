@@ -5,6 +5,7 @@ import {
   createWorkflow,
   deleteWorkflow,
   getWorkflowContracts,
+  increaseWorkflowRunCostLimit,
   listIssues,
   listLabels,
   listRepos,
@@ -217,6 +218,25 @@ describe("typed methods translate to contract params", () => {
       state: "open",
       labels: ["bug", "ui"],
       perPage: 20,
+    });
+  });
+
+  it("increaseWorkflowRunCostLimit sends the run and the expected current limit", async () => {
+    const fetchMock = mockRpc({
+      run: 5,
+      increment_usd: 10,
+      previous_limit_usd: 10,
+      current_limit_usd: 20,
+    });
+    await increaseWorkflowRunCostLimit("me/proj", 5, 10, "session-1");
+    expect(lastRequest(fetchMock).body).toMatchObject({
+      method: "workflowRuns/increaseCostLimit",
+      params: {
+        repo: "me/proj",
+        run: 5,
+        expected_limit_usd: 10,
+        session_id: "session-1",
+      },
     });
   });
 

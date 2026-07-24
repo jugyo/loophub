@@ -185,6 +185,9 @@ describe("IssueDetail", () => {
         status: "running",
         current_step: "execute",
         rework_count: 0,
+        cost_increment_usd: 10,
+        cost_limit_usd: 10,
+        cost_limit_increase_available: false,
         needs_human_reason: null,
         issue_number: 12,
         pr_number: 30,
@@ -241,6 +244,50 @@ describe("IssueDetail", () => {
         repo: "me/proj",
         paneId: "w1:p2",
       });
+    });
+  });
+
+  // #1828: the same budget action is reachable from the issue page's linked-PR row.
+  it("increases a cost-held linked run's budget from the issue page", async () => {
+    renderDetail(undefined, false, {
+      "workflowRuns/stateForPull": () => ({
+        id: 41,
+        workflow_id: 7,
+        workflow_name: "Build",
+        status: "running",
+        current_step: "execute",
+        rework_count: 0,
+        cost_increment_usd: 10,
+        cost_limit_usd: 20,
+        cost_limit_increase_available: true,
+        needs_human_reason: "Cost limit exceeded",
+        issue_number: 12,
+        pr_number: 30,
+        created_at: "2026-07-20T00:00:00Z",
+        updated_at: "2026-07-20T00:00:00Z",
+        latest_review: null,
+        verification_status: "unverified",
+      }),
+      "workflowRuns/increaseCostLimit": () => ({
+        run: 41,
+        increment_usd: 10,
+        previous_limit_usd: 20,
+        current_limit_usd: 30,
+      }),
+    });
+
+    const prompt = await screen.findByRole("group", {
+      name: "Over budget. Increase to $30.00?",
+    });
+    const action = within(prompt).getByRole("button", { name: "Yes" });
+    await act(async () => {
+      fireEvent.click(action);
+    });
+
+    expect(rpcCall("workflowRuns/increaseCostLimit")?.params).toMatchObject({
+      repo: "me/proj",
+      run: 41,
+      expected_limit_usd: 20,
     });
   });
 

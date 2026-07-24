@@ -176,6 +176,16 @@ export type WorkflowLaunchStepResult = {
   };
 };
 
+// Effective budget of a run whose row predates persisted cost columns: fall back to the configured
+// per-run limit the same way for every reader.
+function workflowRunCostBudget(run: S.WorkflowRunRow) {
+  const incrementUsd = run.cost_increment_usd ?? devCostLimitUsd();
+  return {
+    incrementUsd,
+    limitUsd: run.cost_limit_usd ?? incrementUsd,
+  };
+}
+
 function workflowRunCost(run: S.WorkflowRunRow) {
   const sessionIds = [
     ...(run.parent_session_id ? [run.parent_session_id] : []),
@@ -183,8 +193,7 @@ function workflowRunCost(run: S.WorkflowRunRow) {
     ...workflowStepSessionIds(run.step_sessions_json, "verify"),
   ];
   return {
-    incrementUsd: run.cost_increment_usd ?? devCostLimitUsd(),
-    limitUsd: run.cost_limit_usd ?? run.cost_increment_usd ?? devCostLimitUsd(),
+    ...workflowRunCostBudget(run),
     summary: S.sessionUsageCostSummaryForSessions(sessionIds),
   };
 }
@@ -621,6 +630,9 @@ function workflowWakeObservation(
       "requiresChanges is only valid for GitHub feedback",
     );
   }
+  if (event.type === "workflow_run.cost_limit_increased") {
+    return { kind: "cost_limit_increased" };
+  }
   if (event.type === "workflow_run.cost_exceeded") {
     return { kind: "cost_exceeded", eventId };
   }
@@ -804,12 +816,32 @@ function workflowRunState(
       : observedReview?.event === "pass"
         ? "stale"
         : "unverified";
+  const { incrementUsd, limitUsd } = workflowRunCostBudget(run);
   return workflowRunStateJSON({
     run,
     workflowName,
     latestReview,
     verificationStatus,
+    costIncrementUsd: incrementUsd,
+    costLimitUsd: limitUsd,
+    costLimitIncreaseAvailable: costLimitIncreaseAvailable(repo, run),
   });
+}
+
+// A Web surface may increase the limit only where `increaseCostLimitForHuman` would succeed: the run
+// is held on the current limit's cost-exceeded event and still has an interrupted step to resume.
+function costLimitIncreaseAvailable(
+  repo: S.Repo,
+  run: S.WorkflowRunRow,
+): boolean {
+  return (
+    run.status === "running" &&
+    run.needs_human_reason !== null &&
+    run.cost_increment_usd !== null &&
+    run.cost_limit_usd !== null &&
+    (run.active_step === "execute" || run.active_step === "verify") &&
+    S.hasWorkflowRunCostExceededEvent(repo.id, run.id, run.cost_limit_usd)
+  );
 }
 
 function assertParentActor(
@@ -844,10 +876,9 @@ type WorkflowRunTransition =
   | "resume_after_human"
   | "request_rework";
 
-function lifecycleRun(
+function runInRepo(
   name: string,
   runId: number,
-  sessionId: string | null | undefined,
 ): { repo: S.Repo; run: S.WorkflowRunRow } {
   const repo = repoOr404(name);
   ensureWritable(repo);
@@ -855,8 +886,17 @@ function lifecycleRun(
   if (run.repo_id !== repo.id) {
     throw new ServiceError(404, "Workflow run not found for repo");
   }
-  assertRunUpdateActor(run, sessionId);
   return { repo, run };
+}
+
+function lifecycleRun(
+  name: string,
+  runId: number,
+  sessionId: string | null | undefined,
+): { repo: S.Repo; run: S.WorkflowRunRow } {
+  const resolved = runInRepo(name, runId);
+  assertRunUpdateActor(resolved.run, sessionId);
+  return resolved;
 }
 
 function assertRunningLifecycle(run: S.WorkflowRunRow): void {
@@ -909,6 +949,74 @@ function updateRunLifecycle(
     pr_number: updated.pr_number,
   });
   return { run: runJSON(updated) };
+}
+
+// Explicit, human-decided budget increase by the run's persisted fixed increment. The guards keep
+// the operation an acknowledgement of one observed cost-exceeded event rather than a blanket raise.
+function increaseRunCostLimit(
+  repo: S.Repo,
+  run: S.WorkflowRunRow,
+  input: { expectedLimitUsd: number },
+  sessionId: string | null | undefined,
+): WorkflowRunCostLimitIncreaseResult {
+  assertRunningLifecycle(run);
+  if (!Number.isFinite(input.expectedLimitUsd) || input.expectedLimitUsd <= 0) {
+    throw new ServiceError(
+      422,
+      "expected cost limit must be a positive number",
+    );
+  }
+  if (run.needs_human_reason === null) {
+    throw new ServiceError(409, "Workflow run is not waiting for a human");
+  }
+  if (run.cost_increment_usd === null || run.cost_limit_usd === null) {
+    throw new ServiceError(409, "Workflow run has no persisted cost limit");
+  }
+  if (run.cost_limit_usd !== input.expectedLimitUsd) {
+    throw new ServiceError(
+      409,
+      `expected cost limit $${input.expectedLimitUsd} does not match current limit $${run.cost_limit_usd}`,
+    );
+  }
+  if (
+    !S.hasWorkflowRunCostExceededEvent(repo.id, run.id, input.expectedLimitUsd)
+  ) {
+    throw new ServiceError(
+      409,
+      `no cost exceeded event exists for limit $${input.expectedLimitUsd}`,
+    );
+  }
+  const increased = S.increaseWorkflowRunCostLimit(
+    run.id,
+    input.expectedLimitUsd,
+  );
+  if (!increased) {
+    throw new ServiceError(
+      409,
+      "Workflow cost limit was not increased because its state changed",
+    );
+  }
+  // The parent waits on this event in `lh workflow next --watch`; it carries the interrupted step so
+  // the wake is legible in run history even though reconciliation re-observes the run row.
+  S.emitEvent(
+    repo.id,
+    "workflow_run.cost_limit_increased",
+    actorFor(sessionId),
+    {
+      id: run.id,
+      issue_number: run.issue_number,
+      pr_number: run.pr_number,
+      active_step: run.active_step,
+      increment_usd: run.cost_increment_usd,
+      previous_limit_usd: increased.previous_limit_usd,
+      current_limit_usd: increased.current_limit_usd,
+    },
+  );
+  return {
+    run: run.id,
+    increment_usd: run.cost_increment_usd,
+    ...increased,
+  };
 }
 
 export const workflowRuns = {
@@ -1388,68 +1496,27 @@ export const workflowRuns = {
     sessionId?: string | null,
   ): WorkflowRunCostLimitIncreaseResult {
     const { repo, run } = lifecycleRun(name, input.run, sessionId);
-    assertRunningLifecycle(run);
-    if (
-      !Number.isFinite(input.expectedLimitUsd) ||
-      input.expectedLimitUsd <= 0
-    ) {
-      throw new ServiceError(
-        422,
-        "expected cost limit must be a positive number",
-      );
+    return increaseRunCostLimit(repo, run, input, sessionId);
+  },
+
+  // Web entry point for the same explicit increase (#1828). The parent session cannot be the actor
+  // here, so this path authorizes the human web session instead; every state guard is shared.
+  increaseCostLimitForHuman(
+    name: string,
+    input: { run: number; expectedLimitUsd: number },
+    sessionId: string,
+  ): WorkflowRunCostLimitIncreaseResult {
+    if (!sessionId) {
+      throw new ServiceError(403, "Human Workflow action requires a session");
     }
-    if (run.needs_human_reason === null) {
-      throw new ServiceError(409, "Workflow run is not waiting for a human");
-    }
-    if (run.cost_increment_usd === null || run.cost_limit_usd === null) {
-      throw new ServiceError(409, "Workflow run has no persisted cost limit");
-    }
-    if (run.cost_limit_usd !== input.expectedLimitUsd) {
+    const { repo, run } = runInRepo(name, input.run);
+    if (run.active_step !== "execute" && run.active_step !== "verify") {
       throw new ServiceError(
         409,
-        `expected cost limit $${input.expectedLimitUsd} does not match current limit $${run.cost_limit_usd}`,
+        "Workflow run has no interrupted step to resume after a cost limit increase",
       );
     }
-    if (
-      !S.hasWorkflowRunCostExceededEvent(
-        repo.id,
-        run.id,
-        input.expectedLimitUsd,
-      )
-    ) {
-      throw new ServiceError(
-        409,
-        `no cost exceeded event exists for limit $${input.expectedLimitUsd}`,
-      );
-    }
-    const increased = S.increaseWorkflowRunCostLimit(
-      run.id,
-      input.expectedLimitUsd,
-    );
-    if (!increased) {
-      throw new ServiceError(
-        409,
-        "Workflow cost limit was not increased because its state changed",
-      );
-    }
-    S.emitEvent(
-      repo.id,
-      "workflow_run.cost_limit_increased",
-      actorFor(sessionId),
-      {
-        id: run.id,
-        issue_number: run.issue_number,
-        pr_number: run.pr_number,
-        increment_usd: run.cost_increment_usd,
-        previous_limit_usd: increased.previous_limit_usd,
-        current_limit_usd: increased.current_limit_usd,
-      },
-    );
-    return {
-      run: run.id,
-      increment_usd: run.cost_increment_usd,
-      ...increased,
-    };
+    return increaseRunCostLimit(repo, run, input, sessionId);
   },
 
   async requestRework(

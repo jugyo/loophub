@@ -58,14 +58,16 @@ Keep a non-zero next or action error visible and ask for human judgement; do not
   `lh workflow launch-step --repo '<repo>' --run <run> --step execute`. Record the printed `agent` and `session` lines.
 - `launch_verify`: run
   `lh workflow launch-step --repo '<repo>' --run <run> --step verify` under the shared invariant.
+  When `transition` is `resume_verify`, first run
+  `lh workflow run resume --repo '<repo>' --run <run> --step verify`.
 - `advance_and_verify`: first run
   `lh workflow run advance-to-verify --repo '<repo>' --run <run>`, then launch Verify with `launch-step`.
 - `request_rework`: run
   `lh workflow run request-rework --repo '<repo>' --run <run> --review <review_id>`, then use `lh workflow deliver` to
   send only `orchestrator: address review #<review_id>`. Do not summarize, quote, or interpret findings.
 - `deliver`: write one concrete, single-line instruction from the returned reason and the observed source: a no-progress
-  follow-up, a human's additional instruction, merge-conflict resolution, a GitHub reference read with `gh api`, or an
-  out-of-band review id. When `transition` is `resume_execute`, first run
+  follow-up, a human's additional instruction, a cost limit a human increased, merge-conflict resolution, a GitHub
+  reference read with `gh api`, or an out-of-band review id. When `transition` is `resume_execute`, first run
   `lh workflow run resume --repo '<repo>' --run <run> --step execute`. Then run
   `lh workflow deliver --repo '<repo>' --run <run> --text '<single-line instruction>'`. The parent, not
   `lh workflow next`, writes the instruction and decides whether GitHub feedback requires changes. The command resolves
@@ -80,6 +82,8 @@ Keep a non-zero next or action error visible and ask for human judgement; do not
   command validates the event, resolves the active child pane, establishes the human hold, sends the real Escape key, and
   injects the one-line cost notification; its receipt reports a replay as `completed` or `pending` without firing the
   effects again. A human raises the budget and resumes the run; do not ask for that decision or raise the limit yourself.
+  The human raises it from the Issue page or Issue list while `next --watch` is running, and that increase wakes the loop
+  with the action that resumes the interrupted step.
   If it exits non-zero, keep its completed-step and failed command output visible, retain the hold it established, do not
   retry it, and run `lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]`.
 - `wait`: do nothing.

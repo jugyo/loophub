@@ -13,6 +13,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch, rpcCall } from "@/api/rpc-mock";
@@ -422,6 +423,59 @@ describe("IssueRow", () => {
     expect(row.className).not.toContain("hover:bg-");
     expect(row.className).toContain("focus:bg-accent");
     expect(row.className).toContain("focus:ring-ring");
+  });
+});
+
+// #1828: a cost-held run can be given more budget straight from the issue list.
+describe("IssueRow workflow budget (#1828)", () => {
+  it("increases a held run's budget without leaving the list", async () => {
+    renderInRouter(
+      <IssueRow
+        owner="me"
+        repo="proj"
+        issue={makeIssue({ linked_pull_requests: [makePull({ number: 10 })] })}
+      />,
+      {
+        "workflowRuns/stateForPull": () => ({
+          id: 4,
+          workflow_id: 1,
+          workflow_name: "standard",
+          status: "running",
+          current_step: "execute",
+          rework_count: 0,
+          cost_increment_usd: 10,
+          cost_limit_usd: 20,
+          cost_limit_increase_available: true,
+          needs_human_reason: "Cost limit exceeded",
+          issue_number: 1,
+          pr_number: 10,
+          created_at: "2026-07-17T00:00:00Z",
+          updated_at: "2026-07-17T00:00:00Z",
+          latest_review: null,
+          verification_status: "unverified",
+        }),
+        "workflowRuns/increaseCostLimit": () => ({
+          run: 4,
+          increment_usd: 10,
+          previous_limit_usd: 20,
+          current_limit_usd: 30,
+        }),
+      },
+    );
+
+    const prompt = await screen.findByRole("group", {
+      name: "Over budget. Increase to $30.00?",
+    });
+    const action = within(prompt).getByRole("button", { name: "Yes" });
+    await act(async () => {
+      fireEvent.click(action);
+    });
+
+    expect(rpcCall("workflowRuns/increaseCostLimit")?.params).toMatchObject({
+      repo: "me/proj",
+      run: 4,
+      expected_limit_usd: 20,
+    });
   });
 });
 

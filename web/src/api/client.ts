@@ -423,6 +423,26 @@ export function getWorkflowRunHistory(repo: string, run: number) {
   return rpc<WorkflowRunHistoryEvent[]>("workflowRuns/history", { repo, run });
 }
 
+/** Raise a cost-held run's budget by its persisted increment (#1828). */
+export function increaseWorkflowRunCostLimit(
+  repo: string,
+  run: number,
+  expectedLimitUsd: number,
+  sessionId: string = getSessionId(),
+) {
+  return rpc<{
+    run: number;
+    increment_usd: number;
+    previous_limit_usd: number;
+    current_limit_usd: number;
+  }>("workflowRuns/increaseCostLimit", {
+    repo,
+    run,
+    expected_limit_usd: expectedLimitUsd,
+    session_id: sessionId,
+  });
+}
+
 // --- global settings ---
 // Instance-level settings (#474), as opposed to the per-repo settings above.
 export function getSettings() {

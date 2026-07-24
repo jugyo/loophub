@@ -296,6 +296,43 @@ test("workflowRuns/history exposes only the requested run's lifecycle events", a
   });
 });
 
+test("workflowRuns/increaseCostLimit raises a cost-held run from a Web session", async () => {
+  const increase = vi
+    .spyOn(svc.workflowRuns, "increaseCostLimitForHuman")
+    .mockReturnValue({
+      run: 9,
+      increment_usd: 10,
+      previous_limit_usd: 10,
+      current_limit_usd: 20,
+    });
+
+  const response: any = await call("workflowRuns/increaseCostLimit", {
+    repo: "me/proj",
+    run: 9,
+    expected_limit_usd: 10,
+    session_id: "77777777-7777-4777-8777-777777777777",
+  });
+  expect(response.result).toMatchObject({ current_limit_usd: 20 });
+  expect(increase).toHaveBeenCalledWith(
+    "me/proj",
+    { run: 9, expectedLimitUsd: 10 },
+    "77777777-7777-4777-8777-777777777777",
+  );
+
+  // A run that cannot be increased keeps its visible RPC error instead of recovering.
+  increase.mockImplementation(() => {
+    throw new ServiceError(409, "Workflow run is not waiting for a human");
+  });
+  const rejected: any = await call("workflowRuns/increaseCostLimit", {
+    repo: "me/proj",
+    run: 9,
+    expected_limit_usd: 10,
+    session_id: "77777777-7777-4777-8777-777777777777",
+  });
+  expect(rejected.error.message).toContain("not waiting for a human");
+  increase.mockRestore();
+});
+
 test("issues/create accepts an explicit null target_branch", async () => {
   const created: any = await call("issues/create", {
     repo: "me/proj",

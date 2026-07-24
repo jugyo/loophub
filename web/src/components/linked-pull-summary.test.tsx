@@ -16,7 +16,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockRpcFetch } from "@/api/rpc-mock";
+import { mockRpcFetch, RpcFault, rpcCall } from "@/api/rpc-mock";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import { HOVER_POPUP_DELAY_MS } from "@/lib/use-hover-popover";
 
@@ -140,6 +140,9 @@ function makeWorkflowRunState(
     status: "running",
     current_step: "execute",
     rework_count: 0,
+    cost_increment_usd: 10,
+    cost_limit_usd: 10,
+    cost_limit_increase_available: false,
     needs_human_reason: null,
     issue_number: 5,
     pr_number: 10,
@@ -154,10 +157,11 @@ function makeWorkflowRunState(
 function renderRowWithRun(
   run: WorkflowRunState | null,
   pullOverrides: Partial<LinkedPull> = {},
+  handlers: Parameters<typeof mockRpcFetch>[0] = {},
 ) {
   vi.stubGlobal(
     "fetch",
-    mockRpcFetch({ "workflowRuns/stateForPull": () => run }),
+    mockRpcFetch({ "workflowRuns/stateForPull": () => run, ...handlers }),
   );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -420,6 +424,98 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
       "step",
     );
     expect(within_.getByText("Done").getAttribute("aria-current")).toBeNull();
+  });
+});
+
+// #1828: the budget action lives in the shared mini progress, so the Issue list row and the Issue
+// page attempt row both offer it.
+describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
+  const held = makeWorkflowRunState({
+    cost_limit_usd: 20,
+    cost_increment_usd: 10,
+    cost_limit_increase_available: true,
+    needs_human_reason: "Cost limit exceeded",
+  });
+
+  it("shows the current budget and no action while the run cannot be increased", async () => {
+    renderRowWithRun(makeWorkflowRunState());
+
+    expect(await screen.findByText("Budget $10.00")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Increase budget/ }),
+    ).toBeNull();
+  });
+
+  it("increases the budget by the run's persisted increment", async () => {
+    renderRowWithRun(
+      held,
+      {},
+      {
+        "workflowRuns/increaseCostLimit": () => ({
+          run: 1,
+          increment_usd: 10,
+          previous_limit_usd: 20,
+          current_limit_usd: 30,
+        }),
+      },
+    );
+
+    const prompt = await screen.findByRole("group", {
+      name: "Over budget. Increase to $30.00?",
+    });
+    const action = within(prompt).getByRole("button", { name: "Yes" });
+    await act(async () => {
+      fireEvent.click(action);
+    });
+
+    expect(screen.getByText("Budget $20.00")).toBeTruthy();
+    expect(rpcCall("workflowRuns/increaseCostLimit")?.params).toMatchObject({
+      repo: "me/proj",
+      run: 1,
+      expected_limit_usd: 20,
+    });
+  });
+
+  it("surfaces a refused increase through the existing toast", async () => {
+    renderRowWithRun(
+      held,
+      {},
+      {
+        "workflowRuns/increaseCostLimit": () => {
+          throw new RpcFault(409, "Workflow run is not waiting for a human");
+        },
+      },
+    );
+
+    const prompt = await screen.findByRole("group", {
+      name: "Over budget. Increase to $30.00?",
+    });
+    const action = within(prompt).getByRole("button", { name: "Yes" });
+    await act(async () => {
+      fireEvent.click(action);
+    });
+
+    expect(showError).toHaveBeenCalledWith(
+      "Workflow run is not waiting for a human",
+    );
+  });
+
+  it("dismisses the question on No and leaves the run held", async () => {
+    renderRowWithRun(held);
+
+    const prompt = await screen.findByRole("group", {
+      name: "Over budget. Increase to $30.00?",
+    });
+    fireEvent.click(within(prompt).getByRole("button", { name: "No" }));
+
+    expect(
+      screen.queryByRole("group", {
+        name: "Over budget. Increase to $30.00?",
+      }),
+    ).toBeNull();
+    // Declining changes nothing on the server: the budget and the hold stay as they were.
+    expect(screen.getByText("Budget $20.00")).toBeTruthy();
+    expect(rpcCall("workflowRuns/increaseCostLimit")).toBeUndefined();
   });
 });
 

@@ -571,4 +571,66 @@ describe("reconcileWorkflow", () => {
       action: "wait",
     });
   });
+
+  // #1828: the increase itself is the human's continuation decision, so a run still held when it
+  // lands must resume the step the cost hold interrupted.
+  function costIncreaseWake(patch: Partial<WorkflowReconcileInput> = {}) {
+    return observed({
+      needsHumanReason: "Cost limit exceeded",
+      awaitingHuman: true,
+      wake: { kind: "cost_limit_increased" },
+      ...patch,
+    });
+  }
+
+  test("resumes an interrupted Execute after a human increased the cost limit", () => {
+    expect(
+      reconcileWorkflow(costIncreaseWake({ activeStep: "execute" })),
+    ).toMatchObject({
+      action: "deliver",
+      delivery_reason: "cost_limit_increased",
+      transition: "resume_execute",
+    });
+  });
+
+  test("launches a fresh Verify after a human increased the cost limit", () => {
+    expect(
+      reconcileWorkflow(
+        costIncreaseWake({ currentStep: "verify", activeStep: "verify" }),
+      ),
+    ).toMatchObject({
+      action: "launch_verify",
+      transition: "resume_verify",
+    });
+  });
+
+  test("keeps waiting when the increased cost limit is already exceeded", () => {
+    expect(
+      reconcileWorkflow(
+        costIncreaseWake({
+          activeStep: "execute",
+          costLimitIncreaseRequired: true,
+        }),
+      ),
+    ).toMatchObject({ action: "wait" });
+  });
+
+  test("keeps waiting when a cost limit increase has no interrupted step", () => {
+    expect(reconcileWorkflow(costIncreaseWake())).toMatchObject({
+      action: "wait",
+    });
+  });
+
+  // A parent that increased the limit itself resumes the run in the same turn, so its own wake sees
+  // an unheld run and must not deliver a second re-check instruction.
+  test("does not resume twice when the parent already cleared the hold", () => {
+    expect(
+      reconcileWorkflow(
+        observed({
+          activeStep: "execute",
+          wake: { kind: "cost_limit_increased" },
+        }),
+      ),
+    ).toMatchObject({ action: "wait" });
+  });
 });

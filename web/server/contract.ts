@@ -353,6 +353,26 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.workflowRuns.history(p.repo, { run: p.run }),
   },
+  "workflowRuns/increaseCostLimit": {
+    description:
+      "Increase a cost-held Workflow run's limit by its persisted fixed increment. The emitted event is the human continuation decision the parent resumes from (#1828).",
+    params: params(
+      {
+        repo,
+        run: positiveInt,
+        expected_limit_usd: positiveNumber,
+        session_id: sid,
+      },
+      ["repo", "run", "expected_limit_usd", "session_id"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.workflowRuns.increaseCostLimitForHuman(
+        p.repo,
+        { run: p.run, expectedLimitUsd: p.expected_limit_usd },
+        p.session_id,
+      ),
+  },
 
   // ---- terminal launch ----
   "terminal/launch": {

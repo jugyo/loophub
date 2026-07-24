@@ -1589,6 +1589,11 @@ export interface WorkflowRunStateWire {
   status: string; // running | completed (merged PR, #1808); legacy rows may read 'stopped' or 'blocked'
   current_step: string; // execute | verify
   rework_count: number;
+  cost_increment_usd: number;
+  cost_limit_usd: number;
+  // True only while the run is held on the current limit's cost-exceeded event and still has an
+  // interrupted step to resume. Web surfaces may call the explicit increase operation only then.
+  cost_limit_increase_available: boolean;
   // Non-null while the run waits for an explicit human instruction (#1307). The run stays
   // `running` (active + resumable); the UI renders this as a Needs human state.
   needs_human_reason: string | null;
@@ -1649,6 +1654,9 @@ export function workflowRunStateJSON(input: {
   workflowName: string | null;
   latestReview: WorkflowRunReviewSummaryWire | null;
   verificationStatus: WorkflowRunStateWire["verification_status"];
+  costIncrementUsd: number;
+  costLimitUsd: number;
+  costLimitIncreaseAvailable: boolean;
 }): WorkflowRunStateWire {
   const { run } = input;
   return {
@@ -1658,6 +1666,9 @@ export function workflowRunStateJSON(input: {
     status: run.status,
     current_step: run.current_step,
     rework_count: run.rework_count,
+    cost_increment_usd: input.costIncrementUsd,
+    cost_limit_usd: input.costLimitUsd,
+    cost_limit_increase_available: input.costLimitIncreaseAvailable,
     needs_human_reason: run.needs_human_reason,
     issue_number: run.issue_number,
     pr_number: run.pr_number,

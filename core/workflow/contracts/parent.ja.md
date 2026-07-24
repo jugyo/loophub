@@ -60,6 +60,8 @@ next / action の non-zero error は retry せず、人間へ判断を求める�
   line を記録する。
 - `launch_verify`: 共通原則に従い
   `lh workflow launch-step --repo '<repo>' --run <run> --step verify` を実行する。
+  `transition` が `resume_verify` なら最初に
+  `lh workflow run resume --repo '<repo>' --run <run> --step verify` を実行する。
 - `advance_and_verify`: 最初に
   `lh workflow run advance-to-verify --repo '<repo>' --run <run>` を実行し、続けて `launch-step` で Verify を
   起動する。
@@ -67,9 +69,9 @@ next / action の non-zero error は retry せず、人間へ判断を求める�
   `lh workflow run request-rework --repo '<repo>' --run <run> --review <review_id>` を実行し、続けて
   `lh workflow deliver` で `orchestrator: address review #<review_id>` だけを送る。finding を要約・引用・
   解釈しない。
-- `deliver`: 返された reason と観測元から、無進捗 follow-up、人間の追加指示、merge conflict 解消、
-  `gh api` で読んだ GitHub reference、または out-of-band review id のいずれかを示す具体的な 1 行の指示文を
-  parent が書く。`transition` が `resume_execute` なら最初に
+- `deliver`: 返された reason と観測元から、無進捗 follow-up、人間の追加指示、人間が増額した cost limit、
+  merge conflict 解消、`gh api` で読んだ GitHub reference、または out-of-band review id のいずれかを示す
+  具体的な 1 行の指示文を parent が書く。`transition` が `resume_execute` なら最初に
   `lh workflow run resume --repo '<repo>' --run <run> --step execute` を実行する。その後
   `lh workflow deliver --repo '<repo>' --run <run> --text '<single-line instruction>'` を実行する。指示文は
   `lh workflow next` ではなく parent が作成し、GitHub feedback に変更が必要かも parent が判断する。この
@@ -83,8 +85,9 @@ next / action の non-zero error は retry せず、人間へ判断を求める�
 - `cost_hold`: `lh workflow cost-hold --repo '<repo>' --run <run> --event <event_id>` を実行し、loop に戻る。この
   command が event の検証、active child pane の解決、human hold、実 Esc、1 行の cost 通知を行う。receipt は
   replay を `completed` / `pending` として報告し、effect を再発火しない。予算の増額と再開は人間が行う。parent
-  はその判断を問わず、上限も自分で増やさない。non-zero の場合は、完了済み step と失敗 command の出力を
-  見える状態に保ち、確立済みの hold を維持し、自動 retry せず
+  はその判断を問わず、上限も自分で増やさない。人間は `next --watch` が動いている間に Issue ページや Issue 一覧
+  から増額し、その増額は中断 step を再開する action として loop を起こす。non-zero の場合は、完了済み step と
+  失敗 command の出力を見える状態に保ち、確立済みの hold を維持し、自動 retry せず
   `lh workflow escalate-human --repo '<repo>' --run <run> --reason <text> [--issue <issue>]` を実行する。
 - `wait`: 何もしない。
 - `escalate`:

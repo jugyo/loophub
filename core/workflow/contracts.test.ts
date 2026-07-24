@@ -459,6 +459,18 @@ test("parent waits with next --watch and reacts to cost limit facts", () => {
   expect(contract).not.toContain("next_limit_usd");
   expect(contract).toContain("lh workflow deliver");
   expect(contract).toContain("without firing the\n  effects again");
+  // #1828: the human raises the budget from the Issue Web UI, and that increase wakes the loop with
+  // the action that resumes the interrupted step. The parent never asks or raises the limit itself.
+  expect(contract).toContain(
+    "raises it from the Issue page or Issue list while `next --watch` is running",
+  );
+  expect(japanese).toContain("Issue ページや Issue 一覧\n  から増額し");
+  // The resume transition the increase produces: Execute re-checks via deliver, Verify via a fresh
+  // launch. The launch_verify action documents the Verify half.
+  expect(contract).toContain(
+    "When `transition` is `resume_verify`, first run\n  `lh workflow run resume --repo '<repo>' --run <run> --step verify`",
+  );
+  expect(japanese).toContain("`transition` が `resume_verify` なら");
   expect(contract).not.toContain("cost.escape");
   expect(contract).not.toContain("cost.pane-notification");
   expect(contract).not.toContain("cost.human-confirmation");

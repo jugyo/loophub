@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, TriangleAlert } from "lucide-react";
+import { useState } from "react";
 import type { HerdrSessions, LinkedPull } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { DiffStat } from "@/components/diff-stat";
@@ -11,6 +12,7 @@ import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useToast } from "@/components/toast";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WorkflowStepTracker } from "@/components/workflow-step-tracker";
+import { YesNoPrompt } from "@/components/yes-no-prompt";
 import {
   costStoppedBadge,
   linkedPullStateBadge,
@@ -28,7 +30,10 @@ import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
 import { useSetPullState } from "@/queries/pulls";
 import { useHerdrSessions } from "@/queries/terminal";
-import { useWorkflowRunForPull } from "@/queries/workflow-runs";
+import {
+  useIncreaseWorkflowRunCostLimit,
+  useWorkflowRunForPull,
+} from "@/queries/workflow-runs";
 import { codingAgentLabel } from "../../../core/runtimes.ts";
 
 const STATUS_TEXT: Record<StatusWordTone, string> = {
@@ -158,20 +163,62 @@ function WorkflowMiniProgress({
   conflict: boolean;
 }) {
   const { data: state } = useWorkflowRunForPull(owner, repo, pull.number);
+  const increaseCostLimit = useIncreaseWorkflowRunCostLimit(
+    owner,
+    repo,
+    pull.number,
+  );
+  const { showError } = useToast();
+  // Declining leaves the run held — there is no "the human said no" domain fact to record — so the
+  // answer only dismisses the question here. Keyed by the limit that was refused, a later crossing
+  // at the increased limit asks again.
+  const [declinedLimitUsd, setDeclinedLimitUsd] = useState<number | null>(null);
   if (!state) return null;
+  const nextLimit = state.cost_limit_usd + state.cost_increment_usd;
   return (
-    <WorkflowStepTracker
-      state={state}
-      owner={owner}
-      repo={repo}
-      herdrSessions={herdrSessions}
-      herdrUnavailable={herdrUnavailable}
-      onStageInteract={onStageInteract}
-      showWorkflowNode={showWorkflowNode}
-      size="sm"
-      working={working}
-      conflict={conflict}
-    />
+    <>
+      <WorkflowStepTracker
+        state={state}
+        owner={owner}
+        repo={repo}
+        herdrSessions={herdrSessions}
+        herdrUnavailable={herdrUnavailable}
+        onStageInteract={onStageInteract}
+        showWorkflowNode={showWorkflowNode}
+        size="sm"
+        working={working}
+        conflict={conflict}
+      />
+      {/* The current limit stays visible so a successful increase is legible after the action
+          itself disappears with the hold. */}
+      <span
+        className="shrink-0 whitespace-nowrap text-muted-foreground/70 tabular-nums"
+        title="Current workflow budget"
+      >
+        Budget {formatCost(state.cost_limit_usd)}
+      </span>
+      {state.cost_limit_increase_available &&
+      declinedLimitUsd !== state.cost_limit_usd ? (
+        <YesNoPrompt
+          question={`Over budget. Increase to ${formatCost(nextLimit)}?`}
+          pending={increaseCostLimit.isPending}
+          onYes={() =>
+            increaseCostLimit.mutate(
+              { run: state.id, expectedLimitUsd: state.cost_limit_usd },
+              {
+                onError: (error) =>
+                  showError(
+                    error instanceof Error
+                      ? error.message
+                      : "Failed to increase the workflow budget.",
+                  ),
+              },
+            )
+          }
+          onNo={() => setDeclinedLimitUsd(state.cost_limit_usd)}
+        />
+      ) : null}
+    </>
   );
 }
 
