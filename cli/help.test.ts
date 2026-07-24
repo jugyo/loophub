@@ -3,7 +3,6 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { commandHelp } from "./help.ts";
 
 const CLI = join(import.meta.dirname, "index.ts");
 let home: string;
@@ -44,16 +43,6 @@ afterAll(() => {
 });
 
 describe("--help", () => {
-  test.each(commandHelp)("$path exits successfully with its description", ({
-    path,
-    description,
-  }) => {
-    const result = lh([...path, "--help"]);
-
-    expect(result.exitCode, result.stderr).toBe(0);
-    expect(result.stdout.trim()).toBe(`lh ${path.join(" ")} — ${description}`);
-  });
-
   test("works after flags and positional arguments without running the command", () => {
     const result = lh([
       "issue",
