@@ -323,9 +323,16 @@ function PullHeader({
           />
         </span>{" "}
         →{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-xs">
-          {pull.base.ref}
-        </code>
+        <span className="inline-flex items-center gap-1 align-middle">
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">
+            {pull.base.ref}
+          </code>
+          <CopyButton
+            value={pull.base.ref}
+            label={`Copy branch name: ${pull.base.ref}`}
+            className="size-6"
+          />
+        </span>
       </div>
 
       {linked ? (

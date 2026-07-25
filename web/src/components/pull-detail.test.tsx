@@ -337,6 +337,23 @@ describe("PullDetail", () => {
     );
   });
 
+  // #1908: the base branch is copyable too, symmetrically with the head branch.
+  it("copies the base branch from the PR header with visible feedback", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    renderDetail();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Copy branch name: main" }),
+    );
+
+    expect(writeText).toHaveBeenCalledWith("main");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy(),
+    );
+  });
+
   it("shows the PR worktree path in the sidebar with a copy button", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
