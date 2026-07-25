@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import {
   aggregateUsage,
   calculateCostUsd,
+  claudeContextWindowForModel,
   findCodexRollouts,
   parseClaudeSubagentJsonl,
   parseClaudeUsageJsonl,
@@ -331,6 +332,10 @@ test("parseClaudeUsageJsonl derives context usage for older Claude 4 windows", (
   expect(entries[5]).toMatchObject({
     context_usage_percent: 0.42,
   });
+});
+
+test("claudeContextWindowForModel returns the 1M window for claude-opus-5", () => {
+  expect(claudeContextWindowForModel("claude-opus-5")).toBe(1_000_000);
 });
 
 test("parseClaudeUsageJsonl leaves context usage unavailable for unknown model windows", () => {

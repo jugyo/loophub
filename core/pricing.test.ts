@@ -77,6 +77,15 @@ test("adding gpt-5.6-sol leaves the other codex/claude rates unchanged", () => {
   expect(priceForModel("gpt-5.6-terra")).toBeNull();
 });
 
+test("priceForModel prices claude-opus-5 at the standard opus rate via the opus fallback", () => {
+  expect(priceForModel("claude-opus-5")).toMatchObject({
+    input: 5,
+    cacheCreation: 6.25,
+    cacheRead: 0.5,
+    output: 25,
+  });
+});
+
 test("priceForModel prices known Grok models and leaves unknown Grok models null", () => {
   expect(priceForModel("grok-4.5")).toMatchObject({
     input: 2,

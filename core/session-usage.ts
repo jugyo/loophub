@@ -128,9 +128,10 @@ interface CodexTokenObservation {
 
 export function claudeContextWindowForModel(model: string): number | null {
   const m = model.toLowerCase();
-  // Claude Code model configuration docs: Fable 5, Sonnet 5, Opus 4.6+,
+  // Claude Code model configuration docs: Opus 5, Fable 5, Sonnet 5, Opus 4.6+,
   // and Sonnet 4.6 support 1M-token long sessions; Claude 3.x and older
   // Claude 4 releases use 200k. Unknown/future model names stay null.
+  if (m.includes("opus-5")) return 1_000_000;
   if (m.includes("fable-5")) return 1_000_000;
   if (m.includes("sonnet-5")) return 1_000_000;
   if (m.includes("sonnet-4-6")) return 1_000_000;

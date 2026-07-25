@@ -74,6 +74,7 @@ const RUNTIME_LIST: readonly RuntimeDefinition[] = [
       "opus",
       "sonnet",
       "haiku",
+      "claude-opus-5",
       "claude-opus-4-8",
       "claude-sonnet-5",
       "claude-fable-5",
