@@ -10,6 +10,7 @@ import type {
 } from "../../../core/git.ts";
 import type { MergeMode } from "../../../core/merge-mode.ts";
 import type {
+  AcceptanceCriterionWire,
   AgentCostSummaryWire,
   AgentSessionWire,
   CodingAgent as CodingAgentWire,
@@ -253,6 +254,9 @@ export type GithubPull = GithubPullWire;
 export type GithubPrStatus = GithubPrStatusWire;
 
 export type Issue = IssueWire;
+
+/** A structured acceptance criterion (#1894) carried on issue detail; the Verify rubric source. */
+export type AcceptanceCriterion = AcceptanceCriterionWire;
 
 /** A scheduled task (#880): a saved prompt an agent runs at one or more times of day. */
 export type ScheduledTask = ScheduledTaskWire;

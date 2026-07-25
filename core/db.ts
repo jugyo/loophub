@@ -163,6 +163,20 @@ CREATE TABLE IF NOT EXISTS issues (
   UNIQUE (repo_id, number)
 );
 
+-- Structured acceptance criteria (#1894). identity is the stable id (grade FK target in a later
+-- slice), never the position: reordering rewrites ordinal and text edits keep id, so past grades
+-- stay attached. Criteria are never deleted — an unwanted one is disabled (enabled = 0), leaving
+-- the row and its future grades intact. The markdown "## Acceptance criteria" section is not
+-- parsed; this table is the only source.
+CREATE TABLE IF NOT EXISTS acceptance_criteria (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue_id    INTEGER NOT NULL REFERENCES issues(id),
+  ordinal     INTEGER NOT NULL,
+  text        TEXT NOT NULL,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL
+);
+
 -- Monotonic repository-wide allocator shared by Issues and PRs. Keeping the high-water mark
 -- outside issues means hard-deleting the highest-numbered row cannot make that number reusable.
 CREATE TABLE IF NOT EXISTS repo_number_sequences (

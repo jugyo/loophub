@@ -203,6 +203,12 @@ export function deleteRepo(owner: string, name: string): boolean {
     // #614: same FK-with-no-cascade situation as github_pulls — sweep the import links before the
     // issues delete, or `lh repo remove` fails once any issue in the repo was imported from GitHub.
     db.run(`DELETE FROM github_issues WHERE issue_id IN (${ph})`, issueIds);
+    // #1894: acceptance_criteria.issue_id likewise has an FK to issues(id) with no cascade — sweep
+    // the criteria before the issues delete, or `lh repo remove` fails once any issue has one.
+    db.run(
+      `DELETE FROM acceptance_criteria WHERE issue_id IN (${ph})`,
+      issueIds,
+    );
   }
   // Herdr panes are repo-owned; their polymorphic resource links cascade from this delete.
   db.run(`DELETE FROM herdr_panes WHERE repo_id = ?`, [repo.id]);

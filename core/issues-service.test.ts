@@ -525,6 +525,115 @@ test("New Issue launch lookup is scoped to its repository", () => {
   );
 });
 
+test("issues.create seeds structured acceptance criteria and issues.get returns enabled ones (#1894)", async () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "with criteria",
+    acceptance_criteria: ["first", "  ", "second"],
+  }) as any;
+
+  const detail = (await svc.issues.get("me/proj", issue.number)) as any;
+  // Blank entries are dropped; the wire carries only { id, ordinal, text } in order.
+  expect(detail.acceptance_criteria).toHaveLength(2);
+  expect(detail.acceptance_criteria.map((c: any) => c.text)).toEqual([
+    "first",
+    "second",
+  ]);
+  const [c0] = detail.acceptance_criteria;
+  expect(Object.keys(c0).sort()).toEqual(["id", "ordinal", "text"]);
+  expect(c0.id).toBeGreaterThan(0);
+});
+
+test("issues.get omits disabled acceptance criteria from the rubric (#1894)", async () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "disable one",
+    acceptance_criteria: ["keep", "drop"],
+  }) as any;
+  const list = svc.issues.acList("me/proj", issue.number) as any[];
+  const toDisable = list.find((c) => c.text === "drop")!;
+
+  const disabled = svc.issues.acSetEnabled(
+    "me/proj",
+    toDisable.id,
+    false,
+  ) as any;
+  expect(disabled.enabled).toBe(false);
+
+  const detail = (await svc.issues.get("me/proj", issue.number)) as any;
+  expect(detail.acceptance_criteria.map((c: any) => c.text)).toEqual(["keep"]);
+  // The disabled row still exists in the authoring list — it is not deleted.
+  const after = svc.issues.acList("me/proj", issue.number) as any[];
+  expect(after).toHaveLength(2);
+  expect(after.find((c) => c.text === "drop")!.enabled).toBe(false);
+});
+
+test("issues.ac add appends with a fresh id at the end and can be re-enabled (#1894)", () => {
+  const issue = svc.issues.create("me/proj", { title: "ac add" }) as any;
+  const a = svc.issues.acAdd("me/proj", issue.number, "alpha") as any;
+  const b = svc.issues.acAdd("me/proj", issue.number, "  beta  ") as any;
+
+  expect(b.text).toBe("beta");
+  expect(b.id).not.toBe(a.id);
+  expect(b.ordinal).toBeGreaterThan(a.ordinal);
+
+  svc.issues.acSetEnabled("me/proj", a.id, false);
+  const reenabled = svc.issues.acSetEnabled("me/proj", a.id, true) as any;
+  expect(reenabled.id).toBe(a.id);
+  expect(reenabled.enabled).toBe(true);
+});
+
+test("issues.acAdd rejects blank text", () => {
+  const issue = svc.issues.create("me/proj", { title: "blank ac" }) as any;
+  expect(() => svc.issues.acAdd("me/proj", issue.number, "   ")).toThrow(
+    /text is required/,
+  );
+});
+
+test("issues.acReorder rewrites ordinal but keeps criterion ids stable (#1894)", () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "reorder",
+    acceptance_criteria: ["one", "two", "three"],
+  }) as any;
+  const before = svc.issues.acList("me/proj", issue.number) as any[];
+  const [one, two, three] = before;
+
+  const after = svc.issues.acReorder("me/proj", issue.number, [
+    three.id,
+    one.id,
+    two.id,
+  ]) as any[];
+
+  // Identity is unchanged; only position (ordinal) moved.
+  expect(after.map((c) => c.text)).toEqual(["three", "one", "two"]);
+  expect(after.map((c) => c.id)).toEqual([three.id, one.id, two.id]);
+  expect(after.map((c) => c.ordinal)).toEqual([1, 2, 3]);
+});
+
+test("issues.acReorder rejects an order that is not a full permutation", () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "bad reorder",
+    acceptance_criteria: ["x", "y"],
+  }) as any;
+  const [x] = svc.issues.acList("me/proj", issue.number) as any[];
+  expect(() => svc.issues.acReorder("me/proj", issue.number, [x.id])).toThrow(
+    /every acceptance criterion id/,
+  );
+});
+
+test("issues.acSetEnabled 404s for a criterion outside the repo (#1894)", () => {
+  const other = S.createRepo("me/ac-scope", "/tmp/ac-scope");
+  const foreign = S.createIssue(other.id, "issue", "foreign", "", "me") as any;
+  const criterion = S.addAcceptanceCriterion(foreign.id, "foreign ac");
+  expect(() => svc.issues.acSetEnabled("me/proj", criterion.id, false)).toThrow(
+    /not found/,
+  );
+});
+
+test("issues service exposes no acceptance-criterion delete (#1894)", () => {
+  // disable is the only retirement path; a delete method would let a grade FK dangle.
+  expect((svc.issues as any).acDelete).toBeUndefined();
+  expect((svc.issues as any).acRemove).toBeUndefined();
+});
+
 test("repos.remove removes Herdr pane links even when issue_id is not assigned yet", () => {
   const repo = S.getRepo("me", "proj");
   if (!repo) throw new Error("repo missing");

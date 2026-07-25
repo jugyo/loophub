@@ -348,6 +348,42 @@ export interface IssueWire {
   linked_pull_requests_truncated?: boolean;
   has_open_pull_request: boolean;
   github_issue?: GithubIssueWire | null;
+  // Structured acceptance criteria (enabled only), display order (#1894). Detail response only.
+  // This is the rubric source for Verify — the markdown `## Acceptance criteria` section is never
+  // parsed. Absent on issues that have no structured criteria (they fall back to holistic Verify).
+  acceptance_criteria?: AcceptanceCriterionWire[];
+}
+
+// The rubric-delivery shape carried on issue view: identity (`id`), display position (`ordinal`),
+// and text. Only enabled criteria reach the wire here, so no `enabled` field is needed.
+export interface AcceptanceCriterionWire {
+  id: number;
+  ordinal: number;
+  text: string;
+}
+
+// The authoring shape returned by the CLI `lh issue ac` commands, which must show disabled criteria
+// (so an operator can re-enable them) — hence the extra `enabled`. CLI-only; the Web surface is
+// read-only and consumes AcceptanceCriterionWire.
+export interface AcceptanceCriterionDetailWire extends AcceptanceCriterionWire {
+  enabled: boolean;
+}
+
+export function acceptanceCriterionJSON(
+  row: S.AcceptanceCriterionRow,
+): AcceptanceCriterionWire {
+  return { id: row.id, ordinal: row.ordinal, text: row.text };
+}
+
+export function acceptanceCriterionDetailJSON(
+  row: S.AcceptanceCriterionRow,
+): AcceptanceCriterionDetailWire {
+  return {
+    id: row.id,
+    ordinal: row.ordinal,
+    text: row.text,
+    enabled: row.enabled === 1,
+  };
 }
 
 interface RetroRubricWire {
