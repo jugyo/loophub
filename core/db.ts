@@ -163,6 +163,20 @@ CREATE TABLE IF NOT EXISTS issues (
   UNIQUE (repo_id, number)
 );
 
+-- Structured acceptance criteria (#1894). identity is the stable id (grade FK target in a later
+-- slice), never the position: reordering rewrites ordinal and text edits keep id, so past grades
+-- stay attached. Criteria are never deleted — an unwanted one is disabled (enabled = 0), leaving
+-- the row and its future grades intact. The markdown "## Acceptance criteria" section is not
+-- parsed; this table is the only source.
+CREATE TABLE IF NOT EXISTS acceptance_criteria (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue_id    INTEGER NOT NULL REFERENCES issues(id),
+  ordinal     INTEGER NOT NULL,
+  text        TEXT NOT NULL,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL
+);
+
 -- Monotonic repository-wide allocator shared by Issues and PRs. Keeping the high-water mark
 -- outside issues means hard-deleting the highest-numbered row cannot make that number reusable.
 CREATE TABLE IF NOT EXISTS repo_number_sequences (
@@ -214,6 +228,20 @@ CREATE TABLE IF NOT EXISTS review_comments (
   line        INTEGER,
   side        TEXT,
   created_at  TEXT NOT NULL
+);
+
+-- Per-criterion grade of an acceptance criterion by a review (#1895). A child fact of the review
+-- row, mirroring review_comments: it inherits the review's head_sha pin and staleness with no extra
+-- machinery (a grade goes stale when its review does). criterion_id targets the stable id, so the
+-- correspondence survives AC edits and reordering; criteria are never deleted (disabled instead), so
+-- this FK can never dangle.
+CREATE TABLE IF NOT EXISTS review_ac_results (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  review_id    INTEGER NOT NULL REFERENCES reviews(id),
+  criterion_id INTEGER NOT NULL REFERENCES acceptance_criteria(id),
+  verdict      TEXT NOT NULL,              -- 'pass' | 'fail'
+  note         TEXT NOT NULL DEFAULT '',
+  created_at   TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS labels (

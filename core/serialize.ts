@@ -348,6 +348,42 @@ export interface IssueWire {
   linked_pull_requests_truncated?: boolean;
   has_open_pull_request: boolean;
   github_issue?: GithubIssueWire | null;
+  // Structured acceptance criteria (enabled only), display order (#1894). Detail response only.
+  // This is the rubric source for Verify — the markdown `## Acceptance criteria` section is never
+  // parsed. Absent on issues that have no structured criteria (they fall back to holistic Verify).
+  acceptance_criteria?: AcceptanceCriterionWire[];
+}
+
+// The rubric-delivery shape carried on issue view: identity (`id`), display position (`ordinal`),
+// and text. Only enabled criteria reach the wire here, so no `enabled` field is needed.
+export interface AcceptanceCriterionWire {
+  id: number;
+  ordinal: number;
+  text: string;
+}
+
+// The authoring shape returned by the CLI `lh issue ac` commands, which must show disabled criteria
+// (so an operator can re-enable them) — hence the extra `enabled`. CLI-only; the Web surface is
+// read-only and consumes AcceptanceCriterionWire.
+export interface AcceptanceCriterionDetailWire extends AcceptanceCriterionWire {
+  enabled: boolean;
+}
+
+export function acceptanceCriterionJSON(
+  row: S.AcceptanceCriterionRow,
+): AcceptanceCriterionWire {
+  return { id: row.id, ordinal: row.ordinal, text: row.text };
+}
+
+export function acceptanceCriterionDetailJSON(
+  row: S.AcceptanceCriterionRow,
+): AcceptanceCriterionDetailWire {
+  return {
+    id: row.id,
+    ordinal: row.ordinal,
+    text: row.text,
+    enabled: row.enabled === 1,
+  };
 }
 
 interface RetroRubricWire {
@@ -854,6 +890,15 @@ export function commentJSON(m: S.CommentRow): CommentWire {
   };
 }
 
+// One per-criterion grade attached to a review (#1895), derived from `review_ac_results` joined to
+// `acceptance_criteria` for the rubric text. Empty for a holistic review (no structured grading).
+export interface ReviewAcResultWire {
+  criterion_id: number;
+  text: string;
+  verdict: "pass" | "fail";
+  note: string;
+}
+
 export interface ReviewWire {
   id: number;
   user: UserWire;
@@ -870,9 +915,15 @@ export interface ReviewWire {
   // The agent/model that produced the review (#1107); null when unattributed.
   model: string | null;
   submitted_at: string;
+  // Per-criterion rubric grades this review recorded (#1897); empty when it graded no structured
+  // criteria (holistic fallback). The caller joins them — this stays a pure row mapper.
+  ac_results: ReviewAcResultWire[];
 }
 
-export function reviewJSON(v: S.ReviewRow): ReviewWire {
+export function reviewJSON(
+  v: S.ReviewRow,
+  acResults: ReviewAcResultWire[],
+): ReviewWire {
   return {
     id: v.id,
     user: { login: v.author },
@@ -882,6 +933,7 @@ export function reviewJSON(v: S.ReviewRow): ReviewWire {
     topic: v.topic ?? null,
     model: v.model ?? null,
     submitted_at: v.created_at,
+    ac_results: acResults,
   };
 }
 
@@ -1580,6 +1632,9 @@ export interface WorkflowRunReviewSummaryWire {
   event: "pass" | "request_changes";
   summary: string;
   findings_count: number;
+  // Per-criterion rubric grades for this review (#1895); empty when the review graded no structured
+  // criteria (holistic fallback).
+  ac_results: ReviewAcResultWire[];
 }
 
 export interface WorkflowRunStateWire {

@@ -577,6 +577,47 @@ describe("IssueDetail", () => {
     expect(screen.queryByRole("button", { name: /Focus terminal/ })).toBeNull();
   });
 
+  // Structured AC (#1897): a read-only checklist, divided from the body inside the same box and
+  // above the issue actions. Authoring stays in the CLI, so it must not grow an add / remove /
+  // reorder control.
+  it("shows structured acceptance criteria as a read-only checklist under the body", async () => {
+    const withCriteria: Issue = {
+      ...issue,
+      acceptance_criteria: [
+        { id: 11, ordinal: 1, text: "AC is shown read-only" },
+        { id: 12, ordinal: 2, text: "grades join to the AC text" },
+      ],
+    };
+    renderDetail(() => withCriteria);
+
+    const block = (await screen.findByText("Acceptance criteria")).closest(
+      "[data-debug-component='IssueAcceptanceCriteria']",
+    ) as HTMLElement;
+    const items = within(block).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual([
+      "AC is shown read-only",
+      "grades join to the AC text",
+    ]);
+    expect(within(block).queryByRole("button")).toBeNull();
+    expect(within(block).queryByRole("checkbox")).toBeNull();
+    expect(within(block).queryByRole("textbox")).toBeNull();
+    // Same box as the issue body, and ahead of the Close action.
+    const box = block.parentElement as HTMLElement;
+    expect(box.textContent).toContain("Render title, body, labels.");
+    expect(
+      block.compareDocumentPosition(
+        screen.getByRole("button", { name: "Close" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("renders no acceptance criteria block when the issue has none", async () => {
+    renderDetail();
+
+    expect(await screen.findByText("ui2: issue detail")).toBeTruthy();
+    expect(screen.queryByText("Acceptance criteria")).toBeNull();
+  });
+
   it("posts a comment and clears the textarea on success", async () => {
     renderDetail();
 

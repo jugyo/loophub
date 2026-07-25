@@ -10,6 +10,7 @@ import type {
 } from "../../../core/git.ts";
 import type { MergeMode } from "../../../core/merge-mode.ts";
 import type {
+  AcceptanceCriterionWire,
   AgentCostSummaryWire,
   AgentSessionWire,
   CodingAgent as CodingAgentWire,
@@ -35,6 +36,7 @@ import type {
   RepoAgentConfigWire,
   RepoMergeModeWire,
   RepoWire,
+  ReviewAcResultWire,
   ReviewCommentWire,
   ReviewWire,
   ScheduledTaskRunWire,
@@ -254,6 +256,9 @@ export type GithubPrStatus = GithubPrStatusWire;
 
 export type Issue = IssueWire;
 
+/** A structured acceptance criterion (#1894) carried on issue detail; the Verify rubric source. */
+export type AcceptanceCriterion = AcceptanceCriterionWire;
+
 /** A scheduled task (#880): a saved prompt an agent runs at one or more times of day. */
 export type ScheduledTask = ScheduledTaskWire;
 
@@ -265,6 +270,8 @@ export type WorkflowContracts = WorkflowContractsWire;
 export type WorkflowRunState = WorkflowRunStateWire;
 export type WorkflowRunHistoryEvent = WorkflowRunHistoryEventWire;
 export type WorkflowRunReviewSummary = WorkflowRunReviewSummaryWire;
+/** One per-criterion rubric grade attached to a review (#1895). */
+export type ReviewAcResult = ReviewAcResultWire;
 
 /** One fire of a scheduled task (#880) — meta only; the output stays on the herdr side. */
 export type ScheduledTaskRun = ScheduledTaskRunWire;

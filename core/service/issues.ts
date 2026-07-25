@@ -1,6 +1,8 @@
 import { closeOpenAttemptsForIssue } from "./attempts.ts";
 import type { GithubIssueDeps } from "./shared.ts";
 import {
+  acceptanceCriterionDetailJSON,
+  acceptanceCriterionJSON,
   actorFor,
   assertExistingLocalBranch,
   clampPerPage,
@@ -124,6 +126,23 @@ function linkIssueToCurrentPane(
   });
 }
 
+// Resolve a criterion by its stable id and confirm it belongs to an issue in this repo. Authoring
+// addresses a criterion by id (its identity), so the repo scope is enforced here, not by the caller.
+function acceptanceCriterionInRepoOr404(
+  repo: S.Repo,
+  criterionId: number,
+): S.AcceptanceCriterionRow {
+  const criterion = S.getAcceptanceCriterion(criterionId);
+  const issue = criterion ? S.getIssueById(criterion.issue_id) : null;
+  if (!criterion || !issue || issue.repo_id !== repo.id) {
+    throw new ServiceError(
+      404,
+      `acceptance criterion #${criterionId} not found`,
+    );
+  }
+  return criterion;
+}
+
 // ===== issues =====
 export const issues = {
   async list(
@@ -198,6 +217,11 @@ export const issues = {
     // surfaces github_pull; kept off the cheap list serializer.
     out.github_issue = githubIssueJSON(S.getGithubIssue(row.id));
     out.herdr_pane = herdrPaneJSON(S.getIssueHerdrPane(row.id));
+    // Structured acceptance criteria (#1894), enabled only — the rubric a later Verify slice grades.
+    // Detail-only, like comment_list. Omitted from the cheap list/summary serializer.
+    out.acceptance_criteria = S.listAcceptanceCriteria(row.id)
+      .filter((c) => c.enabled === 1)
+      .map(acceptanceCriterionJSON);
     return out;
   },
 
@@ -209,6 +233,7 @@ export const issues = {
       labels?: string[];
       workspace?: string | null;
       target_branch?: string | null;
+      acceptance_criteria?: string[];
     },
     sessionId?: string | null,
     currentPane?: CurrentHerdrPaneContext | null,
@@ -227,6 +252,12 @@ export const issues = {
       targetBranch,
     );
     if (input.labels?.length) S.setLabels(r.id, issue.id, input.labels);
+    // Structured acceptance criteria (#1894): appended in given order, blanks dropped. Each gets a
+    // stable id at insert; the markdown `## Acceptance criteria` section is never parsed.
+    for (const text of input.acceptance_criteria ?? []) {
+      const trimmed = text.trim();
+      if (trimmed) S.addAcceptanceCriterion(issue.id, trimmed);
+    }
     if (currentPane) linkIssueToCurrentPane(r.id, issue.id, currentPane);
     S.emitEvent(r.id, "issue.opened", actor, { number: issue.number });
     return issueJSON(S.getIssue(r.id, issue.number)!, r);
@@ -391,5 +422,63 @@ export const issues = {
       labels: names,
     });
     return S.issueLabels(row.id).map(labelJSON);
+  },
+
+  // Structured acceptance criteria authoring (#1894), CLI-only (the Web surface is read-only). The
+  // list returns disabled criteria too — `acListJSON` carries `enabled` so an operator can see and
+  // re-enable them. There is deliberately no delete: an unwanted criterion is disabled.
+  acList(name: string, number: number) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number);
+    return S.listAcceptanceCriteria(row.id).map(acceptanceCriterionDetailJSON);
+  },
+
+  acAdd(name: string, number: number, text: string) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number);
+    const trimmed = text?.trim();
+    if (!trimmed) {
+      throw new ServiceError(422, "acceptance criterion text is required");
+    }
+    const created = S.addAcceptanceCriterion(row.id, trimmed);
+    S.touchIssue(row.id);
+    return acceptanceCriterionDetailJSON(created);
+  },
+
+  acSetEnabled(name: string, criterionId: number, enabled: boolean) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const criterion = acceptanceCriterionInRepoOr404(r, criterionId);
+    S.setAcceptanceCriterionEnabled(criterion.id, enabled);
+    S.touchIssue(criterion.issue_id);
+    return acceptanceCriterionDetailJSON(
+      S.getAcceptanceCriterion(criterion.id)!,
+    );
+  },
+
+  // Reorder rewrites `ordinal`; ids stay fixed so future grades stay attached. `orderedIds` must be
+  // a permutation of this issue's criterion ids (all of them, once each) — a partial or unknown id
+  // is a visible error rather than a silent ordinal gap.
+  acReorder(name: string, number: number, orderedIds: number[]) {
+    const r = repoOr404(name);
+    ensureWritable(r);
+    const row = issueOr404(r, number);
+    const existingIds = S.listAcceptanceCriteria(row.id).map((c) => c.id);
+    const existingSet = new Set(existingIds);
+    const orderedSet = new Set(orderedIds);
+    const isPermutation =
+      orderedIds.length === existingIds.length &&
+      orderedSet.size === orderedIds.length &&
+      orderedIds.every((id) => existingSet.has(id));
+    if (!isPermutation) {
+      throw new ServiceError(
+        422,
+        "order must list every acceptance criterion id of this issue exactly once",
+      );
+    }
+    S.reorderAcceptanceCriteria(row.id, orderedIds);
+    S.touchIssue(row.id);
+    return S.listAcceptanceCriteria(row.id).map(acceptanceCriterionDetailJSON);
   },
 };

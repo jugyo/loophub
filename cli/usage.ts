@@ -67,7 +67,8 @@ export function usage(): void {
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     lh pr review 3 --topic security --event pass --body "no issues found"
-    echo '[{"path":"a.txt","line":2,"body":"typo"}]' | lh pr review 3 --comments -
+    lh pr review 3 --comments '[{"path":"a.txt","line":2,"body":"typo"}]'   # inline JSON or a file path
+    lh pr review 3 --event pass --body "all criteria met" --ac-results '[{"criterion_id":12,"verdict":"pass","note":""}]'
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)
     lh attachment add --file report.html     # prints [report.html](/attachments/<sha256>)
     lh events --since 0

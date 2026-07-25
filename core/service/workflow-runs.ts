@@ -86,6 +86,7 @@ import {
 } from "../worktree-provision.ts";
 import { dev } from "./dev.ts";
 import { runHerdr } from "./herdr-runner.ts";
+import { reviewAcResultsJSON } from "./reviews.ts";
 import { workflowContractLanguage } from "./settings.ts";
 import {
   actorFor,
@@ -797,6 +798,8 @@ function workflowRunState(
               (comment) => comment.review_id === review.id,
             ).length
           : 0,
+        // Per-criterion grades of this review (#1895), joined to the rubric text via criterion_id.
+        ac_results: reviewAcResultsJSON(review.id),
       }
     : null;
   const pull = prIssue ? S.getPull(prIssue.id) : null;

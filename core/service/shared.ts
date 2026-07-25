@@ -88,6 +88,8 @@ import {
 } from "../retro.ts";
 import { CODING_AGENTS, isCodingAgent, RUNTIMES } from "../runtimes.ts";
 import {
+  acceptanceCriterionDetailJSON,
+  acceptanceCriterionJSON,
   agentSessionJSON,
   commentJSON,
   githubIssueJSON,
@@ -229,6 +231,8 @@ export type {
   UsageEntry,
 };
 export {
+  acceptanceCriterionDetailJSON,
+  acceptanceCriterionJSON,
   acquireHerdrWorktreeTabCore,
   agentEffort,
   agentModel,

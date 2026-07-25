@@ -15,6 +15,16 @@ import {
 import { buildCritReview, parseCritComments } from "../crit-comments.ts";
 import { usage } from "../usage.ts";
 
+// A `--comments` / `--ac-results` argument is inline JSON or a file path (#1895). stdin support was
+// dropped so the two review channels never both need stdin at once: an argument that starts with a
+// JSON opener is used verbatim, anything else is read as a file.
+function readJsonArg(value: string): string {
+  const trimmed = value.trimStart();
+  return trimmed.startsWith("[") || trimmed.startsWith("{")
+    ? value
+    : readFileSync(value, "utf8");
+}
+
 // After crit's "Finish Review", fold its unresolved comments into a single FEEDBACK review via the
 // existing `reviews.create` path (#1654, #1674). FEEDBACK is non-blocking (gate-neutral) yet still
 // routes to a running run's Execute as out-of-band feedback to address. Zero unresolved comments →
@@ -200,14 +210,15 @@ export async function run(): Promise<void> {
     if (!flags.json)
       console.log(`pushed to GitHub PR #${g.number} branch ${g.branch}`);
   } else if (sub === "review") {
-    let comments: any;
-    if (flags.comments) {
-      const raw =
-        flags.comments === "-"
-          ? await readStdin()
-          : readFileSync(flags.comments, "utf8");
-      comments = JSON.parse(raw); // [{ path, line, side?, body }, ...]
-    }
+    // Two-channel review inputs (#1895): `--comments` (line comments) and `--ac-results` (per-
+    // criterion grades). Each is inline JSON or a file path — stdin (`-`) is gone, so the two
+    // channels never contend for it.
+    const comments = flags.comments
+      ? JSON.parse(readJsonArg(flags.comments)) // [{ path, line, side?, body }, ...]
+      : undefined;
+    const acResults = flags["ac-results"]
+      ? JSON.parse(readJsonArg(flags["ac-results"])) // [{ criterion_id, verdict, note? }, ...]
+      : undefined;
     const res = await runOp(async () =>
       s.reviews.create(
         repo,
@@ -221,11 +232,15 @@ export async function run(): Promise<void> {
           // Verify child passes the head SHA it was launched against (#1358).
           ...(flags.commit ? { headSha: flags.commit } : {}),
           comments,
+          acResults,
         },
         await writeSession(),
       ),
     );
     out(res);
+    // A verdict that contradicts its own grades is soft-warned, never rejected (#1896): the review
+    // is stored as submitted and the inconsistency stays visible to the submitter and the human.
+    for (const warning of res.warnings) console.error(`warning: ${warning}`);
     if (!flags.json)
       console.log(
         `review ${res.id} submitted: ${res.state} (${res.comments} line comment(s))`,

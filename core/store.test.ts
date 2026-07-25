@@ -266,6 +266,48 @@ test("one commit can carry several reviews distinguished by topic (#209)", () =>
   expect(reviews.every((r: any) => r.head_sha === "sha-1")).toBe(true);
 });
 
+test("review AC grades are written atomically with the review and scoped to it (#1895)", () => {
+  const repo = S.createRepo("me/ac-grade", "/tmp/ac-grade");
+  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
+  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
+  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
+  const a = S.addAcceptanceCriterion(issue.id, "alpha");
+  const b = S.addAcceptanceCriterion(issue.id, "beta");
+
+  const review = S.createReviewWithAcResults(
+    pr.id,
+    "rev",
+    "REQUEST_CHANGES",
+    "one failed",
+    "sha-1",
+    "workflow",
+    null,
+    [
+      { criterionId: a.id, verdict: "pass", note: "" },
+      { criterionId: b.id, verdict: "fail", note: "missing X" },
+    ],
+  );
+
+  const grades = S.listReviewAcResults(review.id);
+  expect(grades.map((g: any) => [g.criterion_id, g.verdict, g.note])).toEqual([
+    [a.id, "pass", ""],
+    [b.id, "fail", "missing X"],
+  ]);
+  // A second, holistic review (no grades) leaves the first review's grades untouched.
+  const holistic = S.createReviewWithAcResults(
+    pr.id,
+    "rev",
+    "PASS",
+    "lgtm",
+    "sha-1",
+    "workflow",
+    null,
+    [],
+  );
+  expect(S.listReviewAcResults(holistic.id)).toEqual([]);
+  expect(S.listReviewAcResults(review.id)).toHaveLength(2);
+});
+
 test("a review records the model that produced it (#1107)", () => {
   const repo = S.createRepo("me/model", "/tmp/model");
   const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;

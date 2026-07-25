@@ -44,6 +44,7 @@ export type Flags = {
   issue?: string;
   method?: string;
   comments?: string;
+  "ac-results"?: string;
   commit?: string;
   event?: string;
   effect?: string;
@@ -99,6 +100,8 @@ export type Flags = {
   "requires-changes"?: string;
   review?: string;
   "tab-id"?: string;
+  // Repeatable structured acceptance criterion text for `lh issue create` (#1894).
+  ac?: string[];
 };
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
@@ -141,6 +144,7 @@ const { values, positionals } = parseArgs({
     issue: { type: "string" },
     method: { type: "string" },
     comments: { type: "string" },
+    "ac-results": { type: "string" },
     commit: { type: "string" },
     event: { type: "string" },
     effect: { type: "string" },
@@ -196,6 +200,7 @@ const { values, positionals } = parseArgs({
     "requires-changes": { type: "string" },
     review: { type: "string" },
     "tab-id": { type: "string" },
+    ac: { type: "string", multiple: true },
   },
 });
 export const flags = values as Flags;

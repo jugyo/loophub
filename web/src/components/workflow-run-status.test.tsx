@@ -218,6 +218,7 @@ describe("WorkflowRunStatusSection", () => {
             event: "request_changes",
             summary: "Two criteria unmet.",
             findings_count: 2,
+            ac_results: [],
           },
         })}
       />,
@@ -251,6 +252,7 @@ describe("WorkflowRunStatusSection", () => {
             event: "request_changes",
             summary: "Two criteria unmet.",
             findings_count: 2,
+            ac_results: [],
           },
         })}
       />,

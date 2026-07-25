@@ -1,8 +1,13 @@
 // PR-detail commit/review timeline: commits stay newest first, and each row owns the reviews made
 // against that exact SHA. Reviews without a listed commit remain visible in fallback groups.
 // Commit selection, per-commit diff loading, and the GitHub push badge stay inside this component.
+//
+// Rubric grades (#1897) ride along with the reviews they belong to: the row summarizes them as
+// pass / fail counts next to "Reviewed", and the review dialog lists each graded criterion with its
+// note. Grades therefore inherit the commit grouping — a grade is only ever read against the SHA it
+// was made on — and need no freshness state of their own.
 
-import { Loader2, UploadCloud, X } from "lucide-react";
+import { Check, Loader2, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { PullLineComment, PullRequest, PullReview } from "@/api/types";
 import { DiffLines } from "@/components/diff-lines";
@@ -256,12 +261,36 @@ function CommitReviewStatus({
     >
       <span className="font-medium text-link">Reviewed</span>
       <ReviewVerdictSummary reviews={reviews} />
+      <AcGradeCounts reviews={reviews} />
       {commentCount > 0 ? (
         <span className="text-muted-foreground">
           {commentCount} comment{commentCount === 1 ? "" : "s"}
         </span>
       ) : null}
     </button>
+  );
+}
+
+// How the rubric graded at this SHA, at a glance (#1897): passed / failed criterion counts over the
+// group's reviews. Silent when nothing here graded structured criteria — a holistic review has no
+// rubric to count, and the dialog says so per review.
+function AcGradeCounts({ reviews }: { reviews: PullReview[] }) {
+  const grades = reviews.flatMap((review) => review.ac_results);
+  if (grades.length === 0) return null;
+  const passed = grades.filter((grade) => grade.verdict === "pass").length;
+  const failed = grades.length - passed;
+  return (
+    <span
+      className="flex items-center gap-1.5"
+      aria-label={`${passed} criteria passed, ${failed} failed`}
+    >
+      <span className="flex items-center gap-0.5 text-green-600 dark:text-green-400">
+        <Check className="size-3.5" aria-hidden /> {passed}
+      </span>
+      <span className="flex items-center gap-0.5 text-destructive">
+        <X className="size-3.5" aria-hidden /> {failed}
+      </span>
+    </span>
   );
 }
 
@@ -421,6 +450,7 @@ function ReviewItem({
           {review.body}
         </Markdown>
       ) : null}
+      <ReviewAcGrades review={review} />
       {comments.length > 0 ? (
         <ul className="mt-2 flex flex-col gap-2">
           {comments.map((comment) => (
@@ -439,6 +469,48 @@ function ReviewItem({
         </ul>
       ) : null}
     </article>
+  );
+}
+
+// The rubric grades this review recorded (#1897): each graded criterion with its pass / fail
+// verdict and the grader's note. The wire already joins the criterion text via `criterion_id`
+// (#1895), so this only renders. A review that graded no structured criteria — the holistic
+// fallback taken when the linked issue has no structured AC — says so instead of showing an empty
+// checklist.
+function ReviewAcGrades({ review }: { review: PullReview }) {
+  if (review.ac_results.length === 0) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        No AC grading — this review graded no structured acceptance criteria.
+      </p>
+    );
+  }
+  return (
+    <ul className="mt-2 flex flex-col gap-2 text-sm">
+      {review.ac_results.map((result) => (
+        <li key={result.criterion_id} className="flex items-start gap-2">
+          {result.verdict === "pass" ? (
+            <Check
+              aria-label="pass"
+              className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-400"
+            />
+          ) : (
+            <X
+              aria-label="fail"
+              className="mt-0.5 size-4 shrink-0 text-destructive"
+            />
+          )}
+          <span className="flex min-w-0 flex-col gap-0.5 break-words">
+            <span>{result.text}</span>
+            {result.note ? (
+              <span className="text-xs text-muted-foreground">
+                {result.note}
+              </span>
+            ) : null}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

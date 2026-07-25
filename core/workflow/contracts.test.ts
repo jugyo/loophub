@@ -114,7 +114,50 @@ test("Verify reviews a fixed merge-base-to-head diff it computes itself", () => 
   expect(verify).toContain("lh pr review <pr>");
   expect(verify).toContain("--commit <head sha>");
   expect(verify).toContain("Submit exactly one review");
-  expect(verify).toContain("with at least one line comment");
+});
+
+// #1896: the rubric is the issue's structured criteria, graded one by one, and the single verdict
+// still decides the run transition. Both languages must carry the procedure and its aggregation.
+test("Verify grades the structured acceptance criteria as a rubric in both languages", () => {
+  const verify = workflowContractText("verify");
+  const japanese = workflowContractText("verify", "ja");
+
+  expect(verify).toContain("--ac-results <json|file>");
+  expect(verify).toContain("structured `acceptance_criteria`");
+  expect(verify).toContain(
+    "Ignore the body's `## Acceptance criteria` markdown",
+  );
+  expect(verify).toContain(
+    "Grade every enabled criterion independently against the fixed diff",
+  );
+  expect(verify).toContain("necessary but not sufficient");
+  expect(verify).toContain(
+    "A single\nfailing criterion makes it `request_changes`",
+  );
+  expect(verify).toContain("holistic fallback is normal, not an error");
+  expect(verify).toContain("recorded with a visible warning");
+
+  expect(japanese).toContain("--ac-results <json|file>");
+  expect(japanese).toContain("構造化 `acceptance_criteria`");
+  expect(japanese).toContain(
+    "body の `## Acceptance criteria` markdown は存在しても参照しません",
+  );
+  expect(japanese).toContain("1 項目でも fail なら `request_changes`");
+  expect(japanese).toContain("必要条件ですが単独では十分条件ではなく");
+  expect(japanese).toContain("エラーではありません");
+  expect(japanese).toContain("可視 warning とともに記録されます");
+});
+
+// #1896: the pre-rubric contract required at least one line comment on `request_changes`. A failing
+// grade's `note` now carries the actionable detail, so the requirement is gone in both languages.
+test("Verify no longer requires a line comment on request_changes", () => {
+  const verify = workflowContractText("verify");
+  const japanese = workflowContractText("verify", "ja");
+
+  expect(verify).toContain("Line comments are optional");
+  expect(verify).not.toContain("at least one line comment");
+  expect(japanese).toContain("line comment は任意です");
+  expect(japanese).not.toContain("line comment が 1 件以上必要");
 });
 
 test("Verify three-dot review subject excludes base-only changes after divergence", () => {

@@ -205,6 +205,11 @@ export async function run(): Promise<void> {
       .split(",")
       .map((x) => x.trim())
       .filter(Boolean);
+    // Repeatable --ac supplies structured acceptance criteria (#1894), in order; blanks are dropped
+    // by the service. This is the concrete AC input path an agent (skill or --prompt) drives.
+    const acceptanceCriteria = (flags.ac ?? [])
+      .map((x) => x.trim())
+      .filter(Boolean);
     const i = await runOp(async () =>
       s.issues.create(
         repo,
@@ -212,6 +217,7 @@ export async function run(): Promise<void> {
           title: flags.title ?? "",
           body: flags.body || "",
           labels,
+          acceptance_criteria: acceptanceCriteria,
           workspace: flags.workspace,
           target_branch:
             flags.workspace === undefined
@@ -325,6 +331,56 @@ export async function run(): Promise<void> {
         added.length === 0
           ? `#${number} already had ${labels.join(", ")} (no change) — labels: ${names}`
           : `labeled #${number} (added: ${added.join(", ")}) — labels: ${names}`,
+      );
+    }
+  } else if (sub === "ac") {
+    // Structured acceptance criteria authoring (#1894). No delete command — an unwanted criterion is
+    // disabled (its row and future grades survive). add/list/reorder address the issue by number;
+    // disable/enable address a criterion by its stable id.
+    const action = rest[0];
+    if (action === "list") {
+      const number = Number(rest[1]);
+      const items = await runOp(() => s.issues.acList(repo, number));
+      out(items);
+      if (!flags.json)
+        items.forEach((c: any) => {
+          console.log(
+            `#${c.id}\t${c.ordinal}\t${c.enabled ? "enabled" : "disabled"}\t${c.text}`,
+          );
+        });
+    } else if (action === "add") {
+      const number = Number(rest[1]);
+      const c = await runOp(() =>
+        s.issues.acAdd(repo, number, flags.text ?? ""),
+      );
+      out(c);
+      if (!flags.json)
+        console.log(`added acceptance criterion #${c.id} to issue #${number}`);
+    } else if (action === "disable" || action === "enable") {
+      const criterionId = Number(rest[1]);
+      const c = await runOp(() =>
+        s.issues.acSetEnabled(repo, criterionId, action === "enable"),
+      );
+      out(c);
+      if (!flags.json)
+        console.log(
+          `${action}d acceptance criterion #${c.id} (${c.enabled ? "enabled" : "disabled"})`,
+        );
+    } else if (action === "reorder") {
+      const number = Number(rest[1]);
+      const orderedIds = (flags.order ?? "")
+        .split(",")
+        .map((x) => Number(x.trim()))
+        .filter((n) => Number.isInteger(n));
+      const items = await runOp(() =>
+        s.issues.acReorder(repo, number, orderedIds),
+      );
+      out(items);
+      if (!flags.json)
+        console.log(`reordered acceptance criteria for issue #${number}`);
+    } else {
+      fail(
+        "usage: lh issue ac add <issue> --text <text> | list <issue> | disable|enable <criterion-id> | reorder <issue> --order <id,id,...>",
       );
     }
   } else usage();
