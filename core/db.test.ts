@@ -54,10 +54,8 @@ test("journal_size_limit caps the WAL after a checkpoint", () => {
   );
 });
 
-test("the issue group migration is safe on a table-less database and on re-run", () => {
-  D.dropRetiredIssueGroupSchema();
-  D.dropRetiredIssueGroupSchema();
-
+test("the retired issue group schema is absent on a fresh database", () => {
+  // Its removal is migration 002; re-running the whole list is covered in migrations.test.ts.
   const names = (
     D.db
       .query(
