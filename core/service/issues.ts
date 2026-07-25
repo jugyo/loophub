@@ -1,31 +1,35 @@
-import { closeOpenAttemptsForIssue } from "./attempts.ts";
-import type { GithubIssueDeps } from "./shared.ts";
+import { randomUUID } from "node:crypto";
+import { ServiceError } from "../errors.ts";
+import {
+  type GithubIssueDeps,
+  parseGithubIssueUrl,
+  realGithubIssueDeps,
+} from "../github.ts";
 import {
   acceptanceCriterionDetailJSON,
   acceptanceCriterionJSON,
-  actorFor,
-  assertExistingLocalBranch,
-  clampPerPage,
   commentJSON,
-  DEFAULT_LIST_PER_PAGE,
-  ensureWritable,
   githubIssueJSON,
   herdrPaneJSON,
   issueDetailJSON,
   issueJSON,
   issueListItemJSON,
-  issueOr404,
   labelJSON,
+  relatedSessionsJSON,
+} from "../serialize.ts";
+import * as S from "../store.ts";
+import { closeOpenAttemptsForIssue } from "./attempts.ts";
+import {
+  actorFor,
+  assertExistingLocalBranch,
+  clampPerPage,
+  DEFAULT_LIST_PER_PAGE,
+  ensureWritable,
+  issueOr404,
   localBranchExists,
   MAX_LIST_PER_PAGE,
   paginate,
-  parseGithubIssueUrl,
-  randomUUID,
-  realGithubIssueDeps,
-  relatedSessionsJSON,
   repoOr404,
-  S,
-  ServiceError,
 } from "./shared.ts";
 
 const ISSUE_LIST_LOOKAHEAD_MAX = MAX_LIST_PER_PAGE + 1;

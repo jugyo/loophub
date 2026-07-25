@@ -1,12 +1,12 @@
+import { ServiceError } from "../errors.ts";
+import { inboxMessageJSON } from "../serialize.ts";
+import * as S from "../store.ts";
 import {
   actorFor,
   clampPerPage,
   ensureWritable,
-  inboxMessageJSON,
   MAX_LIST_PER_PAGE,
   repoOr404,
-  S,
-  ServiceError,
 } from "./shared.ts";
 
 type JsonPrimitive = string | number | boolean | null;

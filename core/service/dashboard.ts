@@ -1,4 +1,5 @@
-import { issueListItemJSON, S } from "./shared.ts";
+import { issueListItemJSON } from "../serialize.ts";
+import * as S from "../store.ts";
 
 // ===== dashboard =====
 // Cross-repo overview for the web top page: the most recently created open

@@ -1,3 +1,6 @@
+import { ServiceError } from "../errors.ts";
+import * as S from "../store.ts";
+import { worktreeBranch } from "../worktree-path.ts";
 import { pulls } from "./pulls.ts";
 import {
   actorFor,
@@ -5,9 +8,6 @@ import {
   ensureWritable,
   issueOr404,
   repoOr404,
-  S,
-  ServiceError,
-  worktreeBranch,
 } from "./shared.ts";
 
 function defaultPrBody(issue: number): string {

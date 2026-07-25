@@ -1,23 +1,22 @@
+import { existsSync, lstatSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import {
-  autoPruneGraceElapsed,
-  canonicalPath,
-  classifyWorktree,
-  existsSync,
-  issueNumberFromBranch,
-  join,
-  lstatSync,
-  porcelainIsDirty,
-  prNumberFromBranch,
-  repoOr404,
-  rmSync,
-  S,
-  WORKTREE_AUTO_PRUNE_GRACE_MS,
-  worktreeDoneAt,
   worktreeList,
   worktreePrune,
   worktreeRemove,
   worktreeStatus,
-} from "./shared.ts";
+} from "../git.ts";
+import * as S from "../store.ts";
+import {
+  autoPruneGraceElapsed,
+  classifyWorktree,
+  issueNumberFromBranch,
+  porcelainIsDirty,
+  prNumberFromBranch,
+  WORKTREE_AUTO_PRUNE_GRACE_MS,
+  worktreeDoneAt,
+} from "../worktree-prune.ts";
+import { canonicalPath, repoOr404 } from "./shared.ts";
 
 // ===== worktree housekeeping =====
 // Batch GC of stale LoopHub worktrees: the current `loophub/pr-<n>` convention (#463) and the

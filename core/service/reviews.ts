@@ -1,15 +1,12 @@
-import type { ReviewAcResultWire } from "../serialize.ts";
+import { ServiceError } from "../errors.ts";
+import { revParse } from "../git.ts";
 import {
-  actorFor,
-  ensureWritable,
-  issueOr404,
-  repoOr404,
+  type ReviewAcResultWire,
   reviewCommentJSON,
   reviewJSON,
-  revParse,
-  S,
-  ServiceError,
-} from "./shared.ts";
+} from "../serialize.ts";
+import * as S from "../store.ts";
+import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 
 // The per-criterion grades of one review (#1895), joined to the rubric text via `criterion_id`.
 // A criterion disabled after grading still resolves here (grade rows are never deleted). Shared by

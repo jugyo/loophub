@@ -1,8 +1,10 @@
+import { ServiceError } from "../errors.ts";
 import {
   repoJSON,
   type WorkspaceResolutionWire,
   workspaceJSON,
 } from "../serialize.ts";
+import * as S from "../store.ts";
 import {
   actorFor,
   assertCreatableLocalBranchName,
@@ -10,8 +12,6 @@ import {
   ensureWritable,
   localBranchExists,
   repoOr404,
-  S,
-  ServiceError,
 } from "./shared.ts";
 
 function workspaceOr404(repoId: number, branch: string): S.Workspace {

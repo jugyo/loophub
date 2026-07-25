@@ -1,8 +1,17 @@
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { type CodingAgent, configDir, worktreeRoot } from "../config.ts";
+import { isServiceError, ServiceError } from "../errors.ts";
+import {
+  ENV_ISSUE_CREATE_HERDR_LAUNCH,
+  resolveWorktreeIdentity,
+} from "../resume.ts";
 import type {
   HerdrRepoSessionsWire,
   HerdrSessionsWire,
   TerminalLaunchResultWire,
 } from "../serialize.ts";
+import * as S from "../store.ts";
 import {
   cleanupClosedIssuePanesImpl,
   cleanupClosedPullDevAgentsImpl,
@@ -12,32 +21,28 @@ import {
   snapshotHerdrSessionsImpl,
 } from "../terminal/herdr-cleanup.ts";
 import {
-  isHerdrExitError,
-  runHerdr,
-  runHerdrCapture,
-  runHerdrLaunch,
-  runHerdrLaunchCapture,
-  startHerdrSession,
-} from "./herdr-runner.ts";
-import type {
-  CodingAgent,
-  HerdrCmdRunner,
-  TerminalLaunchRepo,
-} from "./shared.ts";
+  herdrPullWorkspacesFromAgentList,
+  NO_PANE_ID_PREFIX,
+  paneRunsClaudeResume,
+  parseHerdrAgentList,
+  parseHerdrAgentRead,
+  parseHerdrPaneLayout,
+  parseHerdrPaneProcessInfo,
+  parseHerdrSessionListIfValid,
+  parseHerdrWorkspaceListIfValid,
+} from "../terminal/herdr-status.ts";
 import {
-  acquireHerdrWorktreeTabCore,
+  acquireHerdrWorktreeTab as acquireHerdrWorktreeTabCore,
   buildHerdrLaunchPlan,
   commandForHerdrLaunch,
-  configDir,
   displayArg,
-  ENV_ISSUE_CREATE_HERDR_LAUNCH,
   HERDR_ID,
+  type HerdrCmdRunner,
   herdrAgentFocusArgv,
   herdrCommandLine,
   herdrPaneCloseArgv,
   herdrPaneSendKeysArgv,
   herdrPaneSendTextArgv,
-  herdrPullWorkspacesFromAgentList,
   herdrSessionName,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
@@ -47,30 +52,22 @@ import {
   herdrWorkspaceCreateArgv,
   herdrWorkspaceFocusArgv,
   herdrWorkspaceListArgv,
-  isServiceError,
-  issueOr404,
-  legacyWorktreePath,
-  NO_PANE_ID_PREFIX,
-  paneRunsClaudeResume,
-  parseHerdrAgentList,
   parseHerdrAgentPaneId,
-  parseHerdrAgentRead,
-  parseHerdrPaneLayout,
-  parseHerdrPaneProcessInfo,
   parseHerdrRootPaneId,
-  parseHerdrSessionListIfValid,
   parseHerdrTabId,
   parseHerdrWorkspaceId,
-  parseHerdrWorkspaceListIfValid,
-  randomUUID,
-  repoOr404,
-  resolveWorktreeIdentity,
-  S,
-  ServiceError,
-  spawn,
-  worktreePath,
-  worktreeRoot,
-} from "./shared.ts";
+  type TerminalLaunchRepo,
+} from "../terminal/terminal-launch.ts";
+import { legacyWorktreePath, worktreePath } from "../worktree-path.ts";
+import {
+  isHerdrExitError,
+  runHerdr,
+  runHerdrCapture,
+  runHerdrLaunch,
+  runHerdrLaunchCapture,
+  startHerdrSession,
+} from "./herdr-runner.ts";
+import { issueOr404, repoOr404 } from "./shared.ts";
 
 export interface TerminalLaunchInput {
   // Optional: the global "workflow-create" (New workflow) launch has no repo (#1889). Every other

@@ -1,13 +1,8 @@
+import { ServiceError } from "../errors.ts";
+import * as S from "../store.ts";
 import { inlineText } from "../workflow/prompts.ts";
 import { comments } from "./comments.ts";
-import {
-  actorFor,
-  ensureWritable,
-  issueOr404,
-  repoOr404,
-  S,
-  ServiceError,
-} from "./shared.ts";
+import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 
 type EffectStatus = {
   status: "completed" | "already_completed" | "pending" | "failed";

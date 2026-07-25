@@ -1,4 +1,4 @@
-import { sweepPullUpdates } from "./shared.ts";
+import { sweepPullUpdates } from "../watcher.ts";
 
 // ===== sync =====
 export const sync = {

@@ -1,16 +1,18 @@
-import { runHerdr, runHerdrCapture } from "./herdr-runner.ts";
+import { worktreeRoot } from "../config.ts";
+import { ServiceError } from "../errors.ts";
 import {
-  herdrAgentFocusArgv,
   herdrPullWorkspacesFromAgentList,
-  herdrSessionName,
   parseHerdrAgentPlacements,
   parseHerdrSessionList,
   parseHerdrTabList,
   parseHerdrWorkspaceList,
-  repoOr404,
-  ServiceError,
-  worktreeRoot,
-} from "./shared.ts";
+} from "../terminal/herdr-status.ts";
+import {
+  herdrAgentFocusArgv,
+  herdrSessionName,
+} from "../terminal/terminal-launch.ts";
+import { runHerdr, runHerdrCapture } from "./herdr-runner.ts";
+import { repoOr404 } from "./shared.ts";
 
 export interface HerdrTreeAgent {
   id: string;

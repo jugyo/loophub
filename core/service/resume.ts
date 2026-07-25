@@ -1,19 +1,15 @@
+import { worktreeRoot } from "../config.ts";
+import { branchExists, worktreeList } from "../git.ts";
 import {
-  branchExists,
-  canonicalPath,
   decideResume,
-  issueOr404,
-  legacyWorktreePath,
   RUNTIME_CLAUDE_CODE,
-  repoOr404,
   resolveRuntimeResume,
   resolveWorktreeIdentity,
-  S,
   sessionRuntime,
-  worktreeList,
-  worktreePath,
-  worktreeRoot,
-} from "./shared.ts";
+} from "../resume.ts";
+import * as S from "../store.ts";
+import { legacyWorktreePath, worktreePath } from "../worktree-path.ts";
+import { canonicalPath, issueOr404, repoOr404 } from "./shared.ts";
 
 // ===== resume (re-enter a PR's dev session) =====
 //

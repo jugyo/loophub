@@ -1,12 +1,7 @@
-import {
-  actorFor,
-  commentJSON,
-  ensureWritable,
-  issueOr404,
-  repoOr404,
-  S,
-  ServiceError,
-} from "./shared.ts";
+import { ServiceError } from "../errors.ts";
+import { commentJSON } from "../serialize.ts";
+import * as S from "../store.ts";
+import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 
 // ===== comments =====
 export const comments = {

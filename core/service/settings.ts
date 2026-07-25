@@ -1,25 +1,24 @@
 import {
-  WORKFLOW_CONTRACT_LANGUAGES,
-  type WorkflowContractLanguage,
-} from "../workflow/contracts.ts";
-import type { CodingAgent } from "./shared.ts";
-import {
-  actorFor,
   agentEffort,
   agentModel,
   autoModeOnLaunch,
-  CODING_AGENTS,
+  type CodingAgent,
   codingAgent,
   devCostLimitUsd,
-  isCodingAgent,
-  S,
-  ServiceError,
   updateAgentAutoModeOnLaunch,
   updateAgentDefaultEffort,
   updateAgentDefaultModel,
   updateConfig,
   updateDevCostLimitUsd,
-} from "./shared.ts";
+} from "../config.ts";
+import { ServiceError } from "../errors.ts";
+import { CODING_AGENTS, isCodingAgent } from "../runtimes.ts";
+import * as S from "../store.ts";
+import {
+  WORKFLOW_CONTRACT_LANGUAGES,
+  type WorkflowContractLanguage,
+} from "../workflow/contracts.ts";
+import { actorFor } from "./shared.ts";
 
 // The accepted coding-agent ids, for validation error messages ("claude-code, codex, grok").
 const CODING_AGENTS_SENTENCE = CODING_AGENTS.join(", ");

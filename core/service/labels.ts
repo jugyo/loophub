@@ -1,4 +1,6 @@
-import { labelJSON, repoOr404, S } from "./shared.ts";
+import { labelJSON } from "../serialize.ts";
+import * as S from "../store.ts";
+import { repoOr404 } from "./shared.ts";
 
 // ===== labels =====
 export const labels = {

@@ -1,4 +1,5 @@
-import { ServiceError, spawn } from "./shared.ts";
+import { spawn } from "node:child_process";
+import { ServiceError } from "../errors.ts";
 
 // The expected `herdr tab create` output is one small JSON object; anything past this cap is
 // discarded so a misbehaving herdr streaming output can't grow lh-web memory unbounded.

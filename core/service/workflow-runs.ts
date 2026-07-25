@@ -14,6 +14,8 @@ import {
   pidAlive,
   removeDevLock,
 } from "../dev-lock.ts";
+import { ServiceError } from "../errors.ts";
+import { formatEvent, type LoopEvent } from "../events.ts";
 import { resolveWorktreeIdentity } from "../resume.ts";
 import {
   effectiveRepoAgentConfigFor,
@@ -23,7 +25,10 @@ import {
   type WorkflowRunReviewSummaryWire,
   type WorkflowRunStateWire,
   type WorkflowStepStatusWire,
+  workflowRunHistoryEventJSON,
+  workflowRunStateJSON,
 } from "../serialize.ts";
+import * as S from "../store.ts";
 import {
   NO_PANE_ID_PREFIX,
   parseHerdrAgentList,
@@ -92,15 +97,9 @@ import {
   actorFor,
   assertExistingLocalBranch,
   ensureWritable,
-  formatEvent,
   issueOr404,
-  type LoopEvent,
   repoOr404,
-  S,
-  ServiceError,
   UNKNOWN_ACTOR,
-  workflowRunHistoryEventJSON,
-  workflowRunStateJSON,
 } from "./shared.ts";
 import { workflowWatch } from "./workflow-watch.ts";
 

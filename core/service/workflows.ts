@@ -1,7 +1,9 @@
-import type { WorkflowContractsWire } from "../serialize.ts";
+import { ServiceError } from "../errors.ts";
+import { type WorkflowContractsWire, workflowJSON } from "../serialize.ts";
+import * as S from "../store.ts";
 import { workflowContracts } from "../workflow/contracts.ts";
 import { workflowContractLanguage } from "./settings.ts";
-import { actorFor, S, ServiceError, workflowJSON } from "./shared.ts";
+import { actorFor } from "./shared.ts";
 
 const MAX_NAME_LENGTH = 64;
 

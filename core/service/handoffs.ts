@@ -1,13 +1,8 @@
-import {
-  actorFor,
-  createHash,
-  ensureWritable,
-  handoffJSON,
-  issueOr404,
-  repoOr404,
-  S,
-  ServiceError,
-} from "./shared.ts";
+import { createHash } from "node:crypto";
+import { ServiceError } from "../errors.ts";
+import { handoffJSON } from "../serialize.ts";
+import * as S from "../store.ts";
+import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 
 // ===== handoffs (#352) =====
 //

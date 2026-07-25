@@ -1,3 +1,5 @@
+import { ServiceError } from "../errors.ts";
+import * as S from "../store.ts";
 import {
   NO_PANE_ID_PREFIX,
   parseHerdrAgentList,
@@ -8,7 +10,7 @@ import {
   workflowStepSessionIds,
 } from "../workflow/herdr-agents.ts";
 import { runHerdr } from "./herdr-runner.ts";
-import { ensureWritable, repoOr404, S, ServiceError } from "./shared.ts";
+import { ensureWritable, repoOr404 } from "./shared.ts";
 import { workflowRuns } from "./workflow-runs.ts";
 
 const EFFECT = "cost.hold";

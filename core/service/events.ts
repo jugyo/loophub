@@ -1,5 +1,6 @@
-import type { LoopEvent } from "./shared.ts";
-import { clampPerPage, formatEvent, MAX_EVENTS_PER_PAGE, S } from "./shared.ts";
+import { formatEvent, type LoopEvent } from "../events.ts";
+import * as S from "../store.ts";
+import { clampPerPage, MAX_EVENTS_PER_PAGE } from "./shared.ts";
 
 // ===== events =====
 export const events = {

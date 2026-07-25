@@ -1,5 +1,6 @@
 import { searchResultJSON } from "../serialize.ts";
-import { repoOr404, S } from "./shared.ts";
+import * as S from "../store.ts";
+import { repoOr404 } from "./shared.ts";
 
 export const search = {
   query(name: string, query: string) {

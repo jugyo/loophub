@@ -1,34 +1,27 @@
+import { agentEffort, agentModel, type CodingAgent } from "../config.ts";
+import { isServiceError, ServiceError } from "../errors.ts";
+import { CODING_AGENTS, isCodingAgent } from "../runtimes.ts";
 import {
   SCHEDULED_TASK_INBOX_LABEL,
   scheduledTaskInboxSource,
 } from "../scheduled-task-inbox.ts";
-import { runHerdrLaunch, runHerdrLaunchCapture } from "./herdr-runner.ts";
-import { inbox } from "./inbox.ts";
+import { scheduledTaskJSON, scheduledTaskRunJSON } from "../serialize.ts";
+import * as S from "../store.ts";
 import {
-  actorFor,
-  agentEffort,
-  agentModel,
   buildHerdrLaunchPlan,
   buildScheduledTaskCommand,
-  CODING_AGENTS,
-  type CodingAgent,
-  ensureWritable,
   herdrPaneCloseArgv,
   herdrTabCloseArgv,
   herdrTabCreateArgv,
   herdrTabFocusArgv,
-  isCodingAgent,
-  isServiceError,
   parseHerdrAgentPaneId,
   parseHerdrRootPaneId,
   parseHerdrTabId,
-  repoOr404,
-  S,
-  ServiceError,
-  scheduledTaskJSON,
-  scheduledTaskRunJSON,
   type TerminalLaunchRepo,
-} from "./shared.ts";
+} from "../terminal/terminal-launch.ts";
+import { runHerdrLaunch, runHerdrLaunchCapture } from "./herdr-runner.ts";
+import { inbox } from "./inbox.ts";
+import { actorFor, ensureWritable, repoOr404 } from "./shared.ts";
 
 // ===== scheduled tasks (#880) =====
 //

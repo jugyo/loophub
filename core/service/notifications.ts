@@ -1,12 +1,13 @@
+import { ServiceError } from "../errors.ts";
 import { sweepMergeReadyNotifications } from "../merge-ready-notifications.ts";
+import { notificationJSON } from "../serialize.ts";
+import * as S from "../store.ts";
 import {
   actorFor,
   clampPerPage,
   ensureWritable,
   MAX_LIST_PER_PAGE,
-  notificationJSON,
-  S,
-  ServiceError,
+  repoOr404,
 } from "./shared.ts";
 
 const MAX_NOTIFICATION_TITLE_LENGTH = 200;
@@ -16,13 +17,6 @@ function notificationOr404(id: number): S.NotificationRow {
   const row = S.getNotificationById(id);
   if (!row) throw new ServiceError(404, "notification not found");
   return row;
-}
-
-function repoOr404(repoName: string): S.Repo {
-  const [owner, name] = S.splitName(repoName);
-  const repo = S.getRepo(owner, name);
-  if (!repo) throw new ServiceError(404, "repo not found");
-  return repo;
 }
 
 function contentForSignal(signal: S.NotificationSignalRow): {

@@ -1,23 +1,24 @@
+import { worktreeRoot } from "../config.ts";
+import { isServiceError, ServiceError } from "../errors.ts";
 import type { HerdrSessionsWire } from "../serialize.ts";
 import { runHerdr, runHerdrCapture } from "../service/herdr-runner.ts";
-import type { TerminalLaunchRepo } from "../service/shared.ts";
+import { repoOr404 } from "../service/shared.ts";
+import * as S from "../store.ts";
+import { herdrSnapshotSignature } from "./herdr-snapshot-signature.ts";
 import {
-  HERDR_ID,
-  herdrSessionName,
-  herdrWorkspaceCloseArgv,
-  isServiceError,
   parseHerdrAgentPlacements,
   parseHerdrPaneKillTarget,
   parseHerdrSessionList,
   parseHerdrSessionListIfValid,
-  repoOr404,
   reposWithRunningSession,
-  S,
-  ServiceError,
-  worktreeRoot,
-} from "../service/shared.ts";
-import { herdrSnapshotSignature } from "./herdr-snapshot-signature.ts";
+} from "./herdr-status.ts";
 import { projectHerdrRepoSessions } from "./session-projection.ts";
+import {
+  HERDR_ID,
+  herdrSessionName,
+  herdrWorkspaceCloseArgv,
+  type TerminalLaunchRepo,
+} from "./terminal-launch.ts";
 
 const CLOSED_PULL_AGENT_GRACE_MS = 60 * 60 * 1000;
 const CLOSED_PULL_AGENT_KILLED_EVENT = "agent_session.killed";

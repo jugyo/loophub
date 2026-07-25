@@ -1,48 +1,52 @@
-import { mergeBase } from "../git.ts";
-import { closeOpenAttemptsForIssue } from "./attempts.ts";
-import type { GithubDeps, GithubPrStatusDeps } from "./shared.ts";
+import { existsSync, lstatSync } from "node:fs";
+import { worktreeRoot } from "../config.ts";
+import { ServiceError } from "../errors.ts";
+import { formatEvent } from "../events.ts";
 import {
-  actorFor,
-  agentSessionJSON,
-  assertExistingLocalBranch,
-  clampPerPage,
   commitDiffFiles,
   commitInRange,
   commitLog,
   commitsAhead,
-  DEFAULT_LIST_PER_PAGE,
   diffFiles,
   diffStat,
-  ensureWritable,
-  existsSync,
   fileAtRef,
-  formatEvent,
-  githubPrStatusJSON,
-  githubPullJSON,
-  gitMergePull,
+  mergePull as gitMergePull,
   hasEffectiveDiff,
-  isGithubRemoteUrl,
-  issueOr404,
-  legacyWorktreePath,
-  lstatSync,
-  MAX_LIST_PER_PAGE,
-  paginate,
-  parseClosingIssueNumber,
-  parseGithubPullNumber,
+  mergeBase,
   pathInDiff,
-  pullJSON,
+  remoteUrl,
+  revParse,
+} from "../git.ts";
+import {
+  type GithubDeps,
+  type GithubPrStatusDeps,
   realGithubDeps,
   realGithubPrStatusDeps,
-  remoteUrl,
+} from "../github.ts";
+import { parseClosingIssueNumber } from "../links.ts";
+import { isGithubRemoteUrl, parseGithubPullNumber } from "../merge-mode.ts";
+import { resolvePullBaseSha } from "../pull-base.ts";
+import { resolveWorktreeIdentity } from "../resume.ts";
+import {
+  agentSessionJSON,
+  githubPrStatusJSON,
+  githubPullJSON,
+  pullJSON,
   repoJSON,
+} from "../serialize.ts";
+import * as S from "../store.ts";
+import { legacyWorktreePath, worktreePath } from "../worktree-path.ts";
+import { closeOpenAttemptsForIssue } from "./attempts.ts";
+import {
+  actorFor,
+  assertExistingLocalBranch,
+  clampPerPage,
+  DEFAULT_LIST_PER_PAGE,
+  ensureWritable,
+  issueOr404,
+  MAX_LIST_PER_PAGE,
+  paginate,
   repoOr404,
-  resolvePullBaseSha,
-  resolveWorktreeIdentity,
-  revParse,
-  S,
-  ServiceError,
-  worktreePath,
-  worktreeRoot,
 } from "./shared.ts";
 
 /** Resolved launch plan for `lh pr crit`: worktree cwd + crit --range base..HEAD. */

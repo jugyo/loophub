@@ -1,4 +1,4 @@
-import { databaseSize, repoCounts, tableRowCounts } from "./shared.ts";
+import { databaseSize, repoCounts, tableRowCounts } from "../stats.ts";
 
 // ===== stats (#587) =====
 export const stats = {
