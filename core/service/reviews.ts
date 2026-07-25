@@ -1,3 +1,4 @@
+import type { ReviewAcResultWire } from "../serialize.ts";
 import {
   actorFor,
   ensureWritable,
@@ -9,6 +10,19 @@ import {
   S,
   ServiceError,
 } from "./shared.ts";
+
+// The per-criterion grades of one review (#1895), joined to the rubric text via `criterion_id`.
+// A criterion disabled after grading still resolves here (grade rows are never deleted). Shared by
+// every surface that shows grades — the review wire and the workflow run summary — so the join
+// lives in one place.
+export function reviewAcResultsJSON(reviewId: number): ReviewAcResultWire[] {
+  return S.listReviewAcResults(reviewId).map((r) => ({
+    criterion_id: r.criterion_id,
+    text: S.getAcceptanceCriterion(r.criterion_id)?.text ?? "",
+    verdict: r.verdict === "pass" ? "pass" : "fail",
+    note: r.note,
+  }));
+}
 
 // The running workflow run for this PR, if any. Unlike `latestWorkflowRunReview` (which stays
 // scoped to this run's verifier children for transition decisions), the run-scoped observation
@@ -103,7 +117,9 @@ export const reviews = {
   list(name: string, number: number) {
     const r = repoOr404(name);
     const row = issueOr404(r, number, "pull");
-    return S.listReviews(row.id).map(reviewJSON);
+    return S.listReviews(row.id).map((v) =>
+      reviewJSON(v, reviewAcResultsJSON(v.id)),
+    );
   },
 
   listComments(name: string, number: number) {
@@ -207,7 +223,7 @@ export const reviews = {
       });
     }
     return {
-      ...reviewJSON(v),
+      ...reviewJSON(v, reviewAcResultsJSON(v.id)),
       comments: lineComments.length,
       warnings: verdictWarnings(event, acResults),
     };

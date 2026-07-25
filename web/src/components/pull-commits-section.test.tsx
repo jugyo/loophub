@@ -102,6 +102,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![0].sha,
         model: "claude-opus-4-8",
         submitted_at: "2026-06-18T12:30:00Z",
+        ac_results: [],
       },
     ];
     const lineComments: PullLineComment[] = [
@@ -182,6 +183,101 @@ describe("PullCommitsSection", () => {
     expect(within(unreviewedCommit).queryByText("Looks good.")).toBeNull();
   });
 
+  // Rubric grades (#1897) belong to the review that recorded them: counted on the commit row,
+  // listed criterion by criterion in the review dialog.
+  it("counts rubric grades on the commit row and lists them in the review dialog", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 6,
+        user: { login: "verifier #7-1" },
+        state: "REQUEST_CHANGES",
+        body: "One criterion unmet.",
+        topic: null,
+        head_sha: commits![0].sha,
+        model: "claude-opus-5",
+        submitted_at: "2026-06-18T12:30:00Z",
+        ac_results: [
+          {
+            criterion_id: 11,
+            text: "AC is shown read-only",
+            verdict: "pass",
+            note: "checklist renders without controls",
+          },
+          {
+            criterion_id: 12,
+            text: "grades join to the AC text",
+            verdict: "fail",
+            note: "note is missing on one grade",
+          },
+          {
+            criterion_id: 13,
+            text: "no own freshness",
+            verdict: "pass",
+            note: "",
+          },
+        ],
+      },
+    ];
+
+    renderSection({ reviews });
+
+    const reviewStatus = screen.getByRole("button", {
+      name: "View 1 review for aaaaaaa: Latest change",
+    });
+    expect(
+      within(reviewStatus)
+        .getByLabelText("2 criteria passed, 1 failed")
+        .textContent?.trim(),
+    ).toBe("2 1");
+
+    fireEvent.click(reviewStatus);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    expect(within(dialog).getByText("AC is shown read-only")).toBeTruthy();
+    expect(
+      within(dialog).getByText("checklist renders without controls"),
+    ).toBeTruthy();
+    expect(within(dialog).getByText("grades join to the AC text")).toBeTruthy();
+    expect(
+      within(dialog).getByText("note is missing on one grade"),
+    ).toBeTruthy();
+    expect(within(dialog).getAllByLabelText("pass")).toHaveLength(2);
+    expect(within(dialog).getByLabelText("fail")).toBeTruthy();
+    expect(within(dialog).queryByText(/No AC grading/)).toBeNull();
+  });
+
+  // The holistic fallback (design §7): the linked issue has no structured AC, so the review graded
+  // none. Say so instead of showing an empty checklist, and leave the row uncounted.
+  it("says there is no AC grading for a review that graded no criteria", async () => {
+    const reviews: PullReview[] = [
+      {
+        id: 7,
+        user: { login: "verifier #7-1" },
+        state: "PASS",
+        body: "Looks good.",
+        topic: null,
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T12:30:00Z",
+        ac_results: [],
+      },
+    ];
+
+    renderSection({ reviews });
+
+    const reviewStatus = screen.getByRole("button", {
+      name: "View 1 review for aaaaaaa: Latest change",
+    });
+    expect(within(reviewStatus).queryByLabelText(/criteria passed/)).toBeNull();
+
+    fireEvent.click(reviewStatus);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    expect(within(dialog).getByText(/No AC grading/)).toBeTruthy();
+  });
+
   it("keeps null and out-of-range reviews in compact unknown commit groups", async () => {
     const reviews: PullReview[] = [
       {
@@ -193,6 +289,7 @@ describe("PullCommitsSection", () => {
         head_sha: null,
         model: null,
         submitted_at: "2026-06-16T10:00:00Z",
+        ac_results: [],
       },
       {
         id: 3,
@@ -203,6 +300,7 @@ describe("PullCommitsSection", () => {
         head_sha: "cccccccccccccccccccccccccccccccccccccccc",
         model: null,
         submitted_at: "2026-06-17T10:00:00Z",
+        ac_results: [],
       },
     ];
 
@@ -256,6 +354,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![0].sha,
         model: null,
         submitted_at: "2026-06-18T10:00:00Z",
+        ac_results: [],
       },
       {
         id: 5,
@@ -266,6 +365,7 @@ describe("PullCommitsSection", () => {
         head_sha: commits![0].sha,
         model: null,
         submitted_at: "2026-06-18T11:00:00Z",
+        ac_results: [],
       },
     ];
 

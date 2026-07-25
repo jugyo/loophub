@@ -890,6 +890,15 @@ export function commentJSON(m: S.CommentRow): CommentWire {
   };
 }
 
+// One per-criterion grade attached to a review (#1895), derived from `review_ac_results` joined to
+// `acceptance_criteria` for the rubric text. Empty for a holistic review (no structured grading).
+export interface ReviewAcResultWire {
+  criterion_id: number;
+  text: string;
+  verdict: "pass" | "fail";
+  note: string;
+}
+
 export interface ReviewWire {
   id: number;
   user: UserWire;
@@ -906,9 +915,15 @@ export interface ReviewWire {
   // The agent/model that produced the review (#1107); null when unattributed.
   model: string | null;
   submitted_at: string;
+  // Per-criterion rubric grades this review recorded (#1897); empty when it graded no structured
+  // criteria (holistic fallback). The caller joins them — this stays a pure row mapper.
+  ac_results: ReviewAcResultWire[];
 }
 
-export function reviewJSON(v: S.ReviewRow): ReviewWire {
+export function reviewJSON(
+  v: S.ReviewRow,
+  acResults: ReviewAcResultWire[],
+): ReviewWire {
   return {
     id: v.id,
     user: { login: v.author },
@@ -918,6 +933,7 @@ export function reviewJSON(v: S.ReviewRow): ReviewWire {
     topic: v.topic ?? null,
     model: v.model ?? null,
     submitted_at: v.created_at,
+    ac_results: acResults,
   };
 }
 
@@ -1611,15 +1627,6 @@ export interface WorkflowContractsWire {
 // derived from the PR current HEAD and the pinned review rather than persisted on the run.
 // `latest_review` surfaces the human-readable reason behind a rework / block; the web derives the
 // issue-comment / inbox links from `issue_number`.
-// One per-criterion grade attached to a review (#1895), derived from `review_ac_results` joined to
-// `acceptance_criteria` for the rubric text. Empty for a holistic review (no structured grading).
-export interface ReviewAcResultWire {
-  criterion_id: number;
-  text: string;
-  verdict: "pass" | "fail";
-  note: string;
-}
-
 export interface WorkflowRunReviewSummaryWire {
   id: number;
   event: "pass" | "request_changes";

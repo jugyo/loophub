@@ -4,7 +4,7 @@
 // Markdown and rendered as GFM via <Markdown>.
 
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Loader2, Workflow } from "lucide-react";
+import { ChevronDown, Loader2, Square, Workflow } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
 import { DetailHeaderTitle } from "@/components/detail-title";
@@ -166,6 +166,7 @@ function IssueHeader({
         ) : (
           <p className="p-4 text-sm text-muted-foreground">No description.</p>
         )}
+        <AcceptanceCriteria issue={issue} />
       </div>
 
       <div className="flex flex-wrap justify-end gap-2">
@@ -274,6 +275,42 @@ function StartWorkflowControls({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+// Structured acceptance criteria (#1894) as a read-only checklist (#1897). This is the rubric
+// Verify grades the PR against; the grades themselves live on the review and are shown by the
+// workflow run section, not here. Kept inside the issue-body box, divided from the body, because
+// the criteria are part of what the issue asks for — not a related entity like the linked PR.
+// Authoring stays with the CLI (`lh issue ac`), so this offers no add / remove / reorder / enable
+// control — the boxes are indicators, not inputs. Renders nothing on an issue with no structured
+// criteria (Verify falls back to a holistic review there).
+function AcceptanceCriteria({ issue }: { issue: Issue }) {
+  const criteria = issue.acceptance_criteria ?? [];
+  if (criteria.length === 0) return null;
+  return (
+    <div
+      data-debug-component="IssueAcceptanceCriteria"
+      className="flex flex-col gap-2 border-t p-4"
+    >
+      <h2 className="text-sm font-medium text-muted-foreground">
+        Acceptance criteria
+      </h2>
+      <ul className="flex flex-col gap-2 text-sm">
+        {criteria.map((criterion) => (
+          <li key={criterion.id} className="flex items-start gap-2">
+            <Square
+              aria-hidden
+              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+            />
+            <span className="min-w-0 break-words">{criterion.text}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        Read-only — edit these with <code>lh issue ac</code>.
+      </p>
+    </div>
   );
 }
 

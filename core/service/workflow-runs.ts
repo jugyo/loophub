@@ -86,6 +86,7 @@ import {
 } from "../worktree-provision.ts";
 import { dev } from "./dev.ts";
 import { runHerdr } from "./herdr-runner.ts";
+import { reviewAcResultsJSON } from "./reviews.ts";
 import { workflowContractLanguage } from "./settings.ts";
 import {
   actorFor,
@@ -798,13 +799,7 @@ function workflowRunState(
             ).length
           : 0,
         // Per-criterion grades of this review (#1895), joined to the rubric text via criterion_id.
-        // A criterion disabled after grading still resolves here (rows are never deleted).
-        ac_results: S.listReviewAcResults(review.id).map((r) => ({
-          criterion_id: r.criterion_id,
-          text: S.getAcceptanceCriterion(r.criterion_id)?.text ?? "",
-          verdict: r.verdict === "pass" ? "pass" : "fail",
-          note: r.note,
-        })),
+        ac_results: reviewAcResultsJSON(review.id),
       }
     : null;
   const pull = prIssue ? S.getPull(prIssue.id) : null;

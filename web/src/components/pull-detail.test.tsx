@@ -127,6 +127,7 @@ const reviews: PullReview[] = [
     head_sha: pull.commits![0].sha,
     model: "claude-opus-4-8",
     submitted_at: "2026-06-18T11:30:00Z",
+    ac_results: [],
   },
 ];
 
@@ -786,6 +787,7 @@ describe("PullDetail", () => {
         head_sha: "old1234deadbeef",
         topic: "quality",
         submitted_at: "2026-06-18T10:00:00Z",
+        ac_results: [],
       },
       {
         id: 1,
@@ -795,6 +797,7 @@ describe("PullDetail", () => {
         head_sha: pull.commits![0].sha,
         topic: null,
         submitted_at: "2026-06-18T11:30:00Z",
+        ac_results: [],
       },
     ];
     vi.stubGlobal(
@@ -878,6 +881,7 @@ describe("PullDetail", () => {
         head_sha: "older12",
         topic: null,
         submitted_at: "2026-06-18T09:00:00Z",
+        ac_results: [],
       },
       {
         id: 2,
@@ -887,6 +891,7 @@ describe("PullDetail", () => {
         head_sha: "newer34",
         topic: null,
         submitted_at: "2026-06-18T10:00:00Z",
+        ac_results: [],
       },
     ];
     vi.stubGlobal(
@@ -962,6 +967,7 @@ describe("PullDetail", () => {
         body: "round 1: needs work",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:00:00Z",
+        ac_results: [],
       },
       {
         id: 2,
@@ -971,6 +977,7 @@ describe("PullDetail", () => {
         body: "security ok",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:05:00Z",
+        ac_results: [],
       },
       {
         id: 3,
@@ -980,6 +987,7 @@ describe("PullDetail", () => {
         body: "round 2: looks good now",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T11:00:00Z",
+        ac_results: [],
       },
     ];
     vi.stubGlobal(
@@ -1039,6 +1047,7 @@ describe("PullDetail", () => {
         body: "security ok",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:00:00Z",
+        ac_results: [],
       },
       {
         id: 2,
@@ -1048,6 +1057,7 @@ describe("PullDetail", () => {
         body: "still needs work",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:05:00Z",
+        ac_results: [],
       },
     ];
     vi.stubGlobal(
