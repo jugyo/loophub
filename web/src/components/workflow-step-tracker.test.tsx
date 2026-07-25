@@ -434,13 +434,21 @@ describe("WorkflowStepTracker", () => {
     );
   });
 
-  it("annotates Verify with reverify when verification is stale", () => {
+  it("keeps the Verify label plain when verification is stale (#1906)", () => {
     render(
       <WorkflowStepTracker
         state={state({ current_step: "verify", verification_status: "stale" })}
       />,
     );
-    expect(screen.getByText(/reverify/)).toBeTruthy();
+    const verify = screen.getByText("Verify");
+    // The label spends no width on the reason; the amber tone and the popover status carry it.
+    expect(verify.textContent).toBe("Verify");
+    expect(verify.className).toContain("amber");
+    fireEvent.focus(verify);
+    expect(
+      screen.getByRole("dialog", { name: "Verify workflow step details" })
+        .textContent,
+    ).toContain("Reverify required");
     // Done is not reached: it stays grey, not green.
     expect(screen.getByText("Done").className).not.toContain("text-green");
   });

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, TriangleAlert } from "lucide-react";
 import { useState } from "react";
-import type { HerdrSessions, LinkedPull } from "@/api/types";
+import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { DiffStat } from "@/components/diff-stat";
 import {
@@ -47,6 +47,11 @@ const STATUS_TEXT: Record<StatusWordTone, string> = {
 };
 
 const COST_STOPPED_TEXT = "text-amber-700 dark:text-amber-300";
+
+// Shared shape of the row's "over budget" marker, worn by both the PR-level cost-stop badge and the
+// workflow run's budget action so the two read as the same cue.
+const OVER_BUDGET_BADGE =
+  "flex shrink-0 items-center gap-1 whitespace-nowrap font-medium";
 
 function linkedPullAttemptStatus(pull: LinkedPull) {
   return pull.merged
@@ -138,6 +143,109 @@ function Metrics({
   );
 }
 
+// The row's marker for a run held on its cost limit (#1828). Only the badge sits in the row; the
+// increase question opens from it on hover or focus, so the row spends no width on a budget it is
+// still inside (#1906). Once the question has been answered "No" for this limit the badge stays —
+// the run is still held — but stops offering the action until a later crossing at the higher limit.
+function OverBudgetBadge({
+  state,
+  askable,
+  pending,
+  onYes,
+  onNo,
+  onInteract,
+}: {
+  state: WorkflowRunState;
+  askable: boolean;
+  pending: boolean;
+  onYes: () => void;
+  onNo: () => void;
+  onInteract?: () => void;
+}) {
+  const popover = useHoverPopover();
+  const dialogId = `workflow-run-${state.id}-budget`;
+  const nextLimit = state.cost_limit_usd + state.cost_increment_usd;
+  const badge = (
+    <>
+      <TriangleAlert className="size-3" aria-hidden="true" />
+      over budget
+    </>
+  );
+  if (!askable) {
+    return (
+      <span
+        data-workflow-budget
+        className={cn(OVER_BUDGET_BADGE, COST_STOPPED_TEXT)}
+        title={`Over budget — the run stays held at ${formatCost(state.cost_limit_usd)}`}
+      >
+        {badge}
+      </span>
+    );
+  }
+  return (
+    <div
+      data-workflow-budget
+      className="relative shrink-0"
+      onMouseEnter={(event) => {
+        event.stopPropagation();
+        onInteract?.();
+        popover.onMouseEnter();
+      }}
+      onMouseLeave={(event) => {
+        if (
+          event.relatedTarget instanceof Node &&
+          event.currentTarget.contains(event.relatedTarget)
+        ) {
+          return;
+        }
+        popover.onMouseLeave();
+      }}
+      onFocus={(event) => {
+        event.stopPropagation();
+        onInteract?.();
+        popover.onFocus();
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) popover.close();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") popover.close();
+      }}
+    >
+      <span
+        tabIndex={0}
+        aria-haspopup="dialog"
+        aria-expanded={popover.open}
+        aria-controls={popover.open ? dialogId : undefined}
+        className={cn(
+          OVER_BUDGET_BADGE,
+          COST_STOPPED_TEXT,
+          "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        )}
+      >
+        {badge}
+      </span>
+      {popover.open ? (
+        <div className="absolute right-0 top-full z-30 pt-1">
+          <div
+            id={dialogId}
+            role="dialog"
+            aria-label="Workflow budget"
+            className="rounded-md border bg-background p-2 text-foreground shadow-lg"
+          >
+            <YesNoPrompt
+              question={`Increase to ${formatCost(nextLimit)}?`}
+              pending={pending}
+              onYes={onYes}
+              onNo={onNo}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // Compact workflow-run step tracker for a PR list row. Renders nothing when the PR has no linked
 // workflow run. Uses `useWorkflowRunForPull`, which is event-poll-invalidated (lib/event-keys.ts),
 // so the tracker stays fresh as the run advances. The tracker itself is the shared
@@ -177,7 +285,6 @@ function WorkflowMiniProgress({
   // at the increased limit asks again.
   const [declinedLimitUsd, setDeclinedLimitUsd] = useState<number | null>(null);
   if (!state) return null;
-  const nextLimit = state.cost_limit_usd + state.cost_increment_usd;
   return (
     <>
       <WorkflowStepTracker
@@ -192,19 +299,14 @@ function WorkflowMiniProgress({
         working={working}
         conflict={conflict}
       />
-      {/* The current limit stays visible so a successful increase is legible after the action
-          itself disappears with the hold. */}
-      <span
-        className="shrink-0 whitespace-nowrap text-muted-foreground/70 tabular-nums"
-        title="Current workflow budget"
-      >
-        Budget {formatCost(state.cost_limit_usd)}
-      </span>
-      {state.cost_limit_increase_available &&
-      declinedLimitUsd !== state.cost_limit_usd ? (
-        <YesNoPrompt
-          question={`Over budget. Increase to ${formatCost(nextLimit)}?`}
+      {/* Nothing is shown while the run is inside its budget; a successful increase is legible from
+          the badge disappearing with the hold. */}
+      {state.cost_limit_increase_available ? (
+        <OverBudgetBadge
+          state={state}
+          askable={declinedLimitUsd !== state.cost_limit_usd}
           pending={increaseCostLimit.isPending}
+          onInteract={onStageInteract}
           onYes={() =>
             increaseCostLimit.mutate(
               { run: state.id, expectedLimitUsd: state.cost_limit_usd },
@@ -423,10 +525,7 @@ export function LinkedPullSummaryRow({
         ) : null}
         {costStopped ? (
           <span
-            className={cn(
-              "flex shrink-0 items-center gap-1 font-medium",
-              COST_STOPPED_TEXT,
-            )}
+            className={cn(OVER_BUDGET_BADGE, COST_STOPPED_TEXT)}
             title={costStopped.title}
           >
             <TriangleAlert className="size-3" aria-hidden="true" />

@@ -6,7 +6,8 @@
 //
 // `execute` / `verify` are the run's real steps; "Done" is the terminal reached when Verify passes
 // (`verification_status: verified`) — NOT `status === completed`, which a passing Verify never sets
-// (#1401 / #1460); that status means the linked PR merged (#1808). A stale verification annotates Verify with "reverify"; a
+// (#1401 / #1460); that status means the linked PR merged (#1808). A stale verification keeps the
+// Verify label as-is and is conveyed by the pill's amber tone plus its popover status (#1906); a
 // needs-human run (#1307, or a legacy `blocked` row) appends a warning marker.
 
 import {
@@ -539,9 +540,6 @@ export function WorkflowStepTracker({
                 <Check className="size-3" aria-hidden="true" />
               ) : null}
               {isDoneConflict ? "Conflict!" : stage.label}
-              {isStaleVerify ? (
-                <span className="font-normal">· reverify</span>
-              ) : null}
             </WorkflowStagePill>
           </Fragment>
         );

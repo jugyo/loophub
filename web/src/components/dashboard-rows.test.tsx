@@ -463,9 +463,9 @@ describe("IssueRow workflow budget (#1828)", () => {
       },
     );
 
-    const prompt = await screen.findByRole("group", {
-      name: "Over budget. Increase to $30.00?",
-    });
+    // #1906: the row carries only the badge; the question opens from it.
+    fireEvent.focus(await screen.findByText("over budget"));
+    const prompt = screen.getByRole("group", { name: "Increase to $30.00?" });
     const action = within(prompt).getByRole("button", { name: "Yes" });
     await act(async () => {
       fireEvent.click(action);

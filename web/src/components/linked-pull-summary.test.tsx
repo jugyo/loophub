@@ -362,7 +362,7 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
     expect(within_.getByText("Done").getAttribute("aria-current")).toBe("step");
   });
 
-  it("annotates the Verify stage with reverify when verification is stale", async () => {
+  it("keeps the Verify stage label plain when verification is stale (#1906)", async () => {
     renderRowWithRun(
       makeWorkflowRunState({
         current_step: "verify",
@@ -372,7 +372,9 @@ describe("LinkedPullSummaryRow workflow mini progress (#1510)", () => {
     const tracker = (await screen.findByText("Done")).closest(
       "[data-workflow-step-tracker]",
     );
-    expect(within(tracker as HTMLElement).getByText(/reverify/)).toBeTruthy();
+    const verify = within(tracker as HTMLElement).getByText("Verify");
+    expect(verify.textContent).toBe("Verify");
+    expect(verify.className).toContain("amber");
   });
 
   it("surfaces a needs-human run alongside the tracker", async () => {
@@ -499,13 +501,18 @@ describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
     needs_human_reason: "Cost limit exceeded",
   });
 
-  it("shows the current budget and no action while the run cannot be increased", async () => {
+  // #1906: the row shows only the badge, and the question opens from it.
+  async function openBudgetPrompt() {
+    fireEvent.focus(await screen.findByText("over budget"));
+    return screen.getByRole("group", { name: "Increase to $30.00?" });
+  }
+
+  it("shows nothing while the run is inside its budget (#1906)", async () => {
     renderRowWithRun(makeWorkflowRunState());
 
-    expect(await screen.findByText("Budget $10.00")).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /Increase budget/ }),
-    ).toBeNull();
+    await screen.findByText("Execute");
+    expect(screen.queryByText("over budget")).toBeNull();
+    expect(screen.queryByText(/^Budget /)).toBeNull();
   });
 
   it("increases the budget by the run's persisted increment", async () => {
@@ -522,15 +529,12 @@ describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
       },
     );
 
-    const prompt = await screen.findByRole("group", {
-      name: "Over budget. Increase to $30.00?",
-    });
+    const prompt = await openBudgetPrompt();
     const action = within(prompt).getByRole("button", { name: "Yes" });
     await act(async () => {
       fireEvent.click(action);
     });
 
-    expect(screen.getByText("Budget $20.00")).toBeTruthy();
     expect(rpcCall("workflowRuns/increaseCostLimit")?.params).toMatchObject({
       repo: "me/proj",
       run: 1,
@@ -549,9 +553,7 @@ describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
       },
     );
 
-    const prompt = await screen.findByRole("group", {
-      name: "Over budget. Increase to $30.00?",
-    });
+    const prompt = await openBudgetPrompt();
     const action = within(prompt).getByRole("button", { name: "Yes" });
     await act(async () => {
       fireEvent.click(action);
@@ -565,18 +567,19 @@ describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
   it("dismisses the question on No and leaves the run held", async () => {
     renderRowWithRun(held);
 
-    const prompt = await screen.findByRole("group", {
-      name: "Over budget. Increase to $30.00?",
-    });
+    const prompt = await openBudgetPrompt();
     fireEvent.click(within(prompt).getByRole("button", { name: "No" }));
 
     expect(
-      screen.queryByRole("group", {
-        name: "Over budget. Increase to $30.00?",
-      }),
+      screen.queryByRole("group", { name: "Increase to $30.00?" }),
     ).toBeNull();
-    // Declining changes nothing on the server: the budget and the hold stay as they were.
-    expect(screen.getByText("Budget $20.00")).toBeTruthy();
+    // Declining changes nothing on the server: the hold stays, so the badge stays — it just stops
+    // asking again for this limit.
+    expect(screen.getByText("over budget")).toBeTruthy();
+    fireEvent.focus(screen.getByText("over budget"));
+    expect(
+      screen.queryByRole("group", { name: "Increase to $30.00?" }),
+    ).toBeNull();
     expect(rpcCall("workflowRuns/increaseCostLimit")).toBeUndefined();
   });
 });
