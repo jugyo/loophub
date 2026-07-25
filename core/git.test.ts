@@ -243,6 +243,122 @@ test("merge rolls back when index.lock never clears", async () => {
   rmSync(p, { recursive: true, force: true });
 });
 
+// A repo whose base moved after the branch point, so the three merge methods produce
+// visibly different histories: main has 2 commits, feat has 2 commits of its own.
+async function makeDivergedRepo(): Promise<{
+  p: string;
+  baseSha: string;
+  headSha: string;
+}> {
+  const p = mkdtempSync(join(tmpdir(), "lh-merge-method-"));
+  await git(p, ["init", "-q", "-b", "main"]);
+  await git(p, ["config", "user.email", "t@t.local"]);
+  await git(p, ["config", "user.name", "tester"]);
+  writeFileSync(join(p, "f.txt"), "base\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base"]);
+
+  await git(p, ["checkout", "-q", "-b", "feat"]);
+  writeFileSync(join(p, "a.txt"), "a\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "feat 1"]);
+  writeFileSync(join(p, "b.txt"), "b\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "feat 2"]);
+
+  // Move base forward after the branch point so base and head genuinely diverge.
+  await git(p, ["checkout", "-q", "main"]);
+  writeFileSync(join(p, "c.txt"), "c\n");
+  await git(p, ["add", "-A"]);
+  await git(p, ["commit", "-qm", "base 2"]);
+
+  const baseSha = (await git(p, ["rev-parse", "main"])).stdout.trim();
+  const headSha = (await git(p, ["rev-parse", "feat"])).stdout.trim();
+  return { p, baseSha, headSha };
+}
+
+// Parents of a commit, in order, as full shas.
+async function parentsOf(repoPath: string, ref: string): Promise<string[]> {
+  const r = await git(repoPath, ["rev-list", "--parents", "-n", "1", ref]);
+  return r.stdout.trim().split(" ").slice(1);
+}
+
+async function commitCount(repoPath: string, ref: string): Promise<number> {
+  return Number((await git(repoPath, ["rev-list", "--count", ref])).stdout);
+}
+
+// #1904: squash must compress head into exactly one commit whose only parent is base —
+// not a merge commit, and not head's individual commits replayed onto base.
+test("squash merge adds one commit whose only parent is base", async () => {
+  const { p, baseSha, headSha } = await makeDivergedRepo();
+  const baseCount = await commitCount(p, "main");
+
+  const r = await mergePull(p, "main", "feat", "squash", "feat (#1)", "tester");
+  expect(r.merged).toBe(true);
+
+  // Single parent, and that parent is the pre-merge base tip: not a merge commit.
+  expect(await parentsOf(p, "main")).toEqual([baseSha]);
+  // head's 2 commits became exactly 1 commit on base.
+  expect(await commitCount(p, "main")).toBe(baseCount + 1);
+  // head's own commits are not part of base's history.
+  expect(
+    (await git(p, ["merge-base", "--is-ancestor", headSha, "main"])).code,
+  ).not.toBe(0);
+  // Every change head introduced is in that one commit, and base's own commit survives.
+  const changed = (
+    await git(p, ["diff", "--name-only", baseSha, "main"])
+  ).stdout.trim();
+  expect(changed.split("\n")).toEqual(["a.txt", "b.txt"]);
+  expect((await git(p, ["show", "main:a.txt"])).stdout).toBe("a\n");
+  expect((await git(p, ["show", "main:b.txt"])).stdout).toBe("b\n");
+  expect((await git(p, ["show", "main:c.txt"])).stdout).toBe("c\n");
+
+  rmSync(p, { recursive: true, force: true });
+});
+
+// The contrast that makes the squash assertions meaningful: merge keeps both parents,
+// rebase keeps head's commits as a linear history.
+test("merge keeps two parents and rebase stays linear", async () => {
+  const merged = await makeDivergedRepo();
+  const mergedCount = await commitCount(merged.p, "main");
+  const rm = await mergePull(
+    merged.p,
+    "main",
+    "feat",
+    "merge",
+    "feat (#1)",
+    "tester",
+  );
+  expect(rm.merged).toBe(true);
+  expect(await parentsOf(merged.p, "main")).toEqual([
+    merged.baseSha,
+    merged.headSha,
+  ]);
+  // base 2 + head 2 + the merge commit itself.
+  expect(await commitCount(merged.p, "main")).toBe(mergedCount + 3);
+  rmSync(merged.p, { recursive: true, force: true });
+
+  const rebased = await makeDivergedRepo();
+  const rebasedCount = await commitCount(rebased.p, "main");
+  const rr = await mergePull(
+    rebased.p,
+    "main",
+    "feat",
+    "rebase",
+    "feat (#1)",
+    "tester",
+  );
+  expect(rr.merged).toBe(true);
+  // Linear: no commit in base's history has two parents, and head's commits are kept
+  // as separate (replayed, hence rewritten) commits rather than compressed into one.
+  expect((await git(rebased.p, ["rev-list", "--merges", "main"])).stdout).toBe(
+    "",
+  );
+  expect(await commitCount(rebased.p, "main")).toBe(rebasedCount + 2);
+  expect(await parentsOf(rebased.p, "main")).not.toContain(rebased.headSha);
+  rmSync(rebased.p, { recursive: true, force: true });
+});
+
 // diffStat sums numstat over base...head: +/- line totals plus the changed-file
 // count, and counts binary files (numstat "-") as a changed file with 0 lines.
 test("diffStat aggregates additions, deletions and changed files", async () => {
