@@ -82,6 +82,22 @@ function validateAcResults(
   return results;
 }
 
+// The verdict and its grades can contradict each other: `PASS` means every criterion passed (#1896
+// aggregation rule), so a failing grade alongside it is an internal inconsistency. This is a
+// soft-warn by design — we record the submission as made and return a visible warning so a human
+// notices, rather than hard-rejecting a review the agent already reasoned about.
+function verdictWarnings(
+  event: string,
+  acResults: { verdict: string }[],
+): string[] {
+  const failed = acResults.filter((r) => r.verdict === "fail").length;
+  return event === "PASS" && failed > 0
+    ? [
+        `event=PASS was submitted with ${failed} failing acceptance criterion grade(s); a pass requires every criterion to pass`,
+      ]
+    : [];
+}
+
 // ===== reviews =====
 export const reviews = {
   list(name: string, number: number) {
@@ -190,6 +206,10 @@ export const reviews = {
         submission_head_sha: submissionHeadSha,
       });
     }
-    return { ...reviewJSON(v), comments: lineComments.length };
+    return {
+      ...reviewJSON(v),
+      comments: lineComments.length,
+      warnings: verdictWarnings(event, acResults),
+    };
   },
 };

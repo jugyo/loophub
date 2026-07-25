@@ -258,6 +258,58 @@ test("--ac-results records a grade per enabled criterion on the review row (#189
   ]);
 });
 
+test("a PASS contradicted by a failing grade is soft-warned, not rejected (#1896)", async () => {
+  const { prNumber, acIds } = await newPullForRubric("grade-contradiction", [
+    "alpha",
+    "beta",
+  ]);
+  const review = await svc.reviews.create("me/reviews", prNumber, {
+    event: "PASS",
+    topic: "workflow",
+    body: "lgtm",
+    acResults: [
+      { criterion_id: acIds[0], verdict: "pass" },
+      { criterion_id: acIds[1], verdict: "fail", note: "missing X" },
+    ],
+  });
+  expect(review.warnings).toEqual([
+    "event=PASS was submitted with 1 failing acceptance criterion grade(s); a pass requires every criterion to pass",
+  ]);
+  // The review and its grades are recorded as submitted — the warning is visible, not corrective.
+  expect(review.state).toBe("PASS");
+  expect(S.listReviewAcResults(review.id).map((g) => g.verdict)).toEqual([
+    "pass",
+    "fail",
+  ]);
+});
+
+test("a consistent verdict carries no warning (#1896)", async () => {
+  const { prNumber, acIds } = await newPullForRubric("grade-consistent", [
+    "alpha",
+    "beta",
+  ]);
+  const passed = await svc.reviews.create("me/reviews", prNumber, {
+    event: "PASS",
+    topic: "workflow",
+    body: "lgtm",
+    acResults: [
+      { criterion_id: acIds[0], verdict: "pass" },
+      { criterion_id: acIds[1], verdict: "pass" },
+    ],
+  });
+  expect(passed.warnings).toEqual([]);
+  const changes = await svc.reviews.create("me/reviews", prNumber, {
+    event: "REQUEST_CHANGES",
+    topic: "workflow",
+    body: "beta not met",
+    acResults: [
+      { criterion_id: acIds[0], verdict: "pass" },
+      { criterion_id: acIds[1], verdict: "fail", note: "missing X" },
+    ],
+  });
+  expect(changes.warnings).toEqual([]);
+});
+
 test("omitting --ac-results is the holistic fallback: no grade rows (#1895)", async () => {
   const { prNumber } = await newPullForRubric("grade-holistic", ["only"]);
   const review = await svc.reviews.create("me/reviews", prNumber, {

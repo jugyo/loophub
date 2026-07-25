@@ -238,6 +238,9 @@ export async function run(): Promise<void> {
       ),
     );
     out(res);
+    // A verdict that contradicts its own grades is soft-warned, never rejected (#1896): the review
+    // is stored as submitted and the inconsistency stays visible to the submitter and the human.
+    for (const warning of res.warnings) console.error(`warning: ${warning}`);
     if (!flags.json)
       console.log(
         `review ${res.id} submitted: ${res.state} (${res.comments} line comment(s))`,

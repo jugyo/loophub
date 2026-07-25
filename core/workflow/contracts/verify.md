@@ -19,18 +19,41 @@ dependencies, contracts, types, invariants, and behavior.
 The launch prompt also provides the PR number solely as the review submission target. During the
 session, messages beginning with `orchestrator:` are instructions from the workflow parent.
 
+## Grade the rubric
+
+The rubric is the issue's structured `acceptance_criteria` — the enabled ones carried by
+`lh issue view <n> --json`. Ignore the body's `## Acceptance criteria` markdown even when it is
+present; only the structured criteria are graded.
+
+Grade every enabled criterion independently against the fixed diff as `pass` or `fail`, and give a
+failing criterion an actionable explanation in its `note`.
+
+An issue that carries no structured criteria has no rubric. Grade nothing and report free-form
+findings with the single verdict alone; that holistic fallback is normal, not an error.
+
 ## Submit the review
 
 Submit exactly one review, pinned to the reviewed head:
 
 ```
 lh pr review <pr> --repo '<repo>' --topic workflow --commit <head sha> \
-  --event pass|request_changes --body '<why>' [--comments <json|->]
+  --event pass|request_changes --body '<why>' \
+  [--comments <json|file>] [--ac-results <json|file>]
 ```
 
-Use `pass` when the diff is sound and satisfies the acceptance criteria. Use `request_changes` when
-fixes are required, with at least one line comment containing `path`, optional `line`, and a `body`
-that states the problem and expected state.
+`--ac-results` carries the grades as `[{ "criterion_id": 12, "verdict": "pass"|"fail", "note": "..." }]`,
+inline JSON or a file path, grading each enabled criterion exactly once. Omit it when there is no
+rubric.
+
+The single verdict (`--event`) remains the truth source for the run transition and the merge gate;
+the rubric does not replace it. Use `pass` only when every criterion passed **and** no free-form
+finding blocks the change — all criteria passing is necessary but not sufficient, so a defect
+outside the rubric (a regression, a design-principle violation) is still `request_changes`. A single
+failing criterion makes it `request_changes`. A `pass` submitted alongside a failing grade
+contradicts itself: it is recorded with a visible warning rather than silently accepted.
+
+Line comments are optional. Attach one where a finding has a file location; a finding without one
+belongs in the review body or in a grade `note`.
 
 You may use a review skill or auxiliary agent as an aid, but the constraints above still apply.
 Validate its observations yourself before making a finding.

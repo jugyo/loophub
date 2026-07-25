@@ -133,3 +133,75 @@ test("lh pr close / reopen report the transition and the no-op", () => {
   expect(reopened.exitCode, reopened.stderr).toBe(0);
   expect(JSON.parse(reopened.stdout)).toMatchObject({ number, state: "open" });
 });
+
+// #1896: `pass` means every criterion passed, so a failing grade beside it contradicts the verdict.
+// The submission is still recorded — the inconsistency surfaces as a warning a human can act on.
+test("lh pr review soft-warns a pass contradicted by a failing grade", () => {
+  const issue = lh([
+    "issue",
+    "create",
+    "--repo",
+    "me/proj",
+    "--title",
+    "graded issue",
+    "--ac",
+    "alpha",
+    "--json",
+  ]);
+  expect(issue.exitCode, issue.stderr).toBe(0);
+  const issueNumber = JSON.parse(issue.stdout).number;
+  git(["checkout", "-q", "-b", "feature-rubric", "main"]);
+  writeFileSync(join(repoPath, "feature-rubric.txt"), "change\n");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "work on feature-rubric"]);
+  git(["checkout", "-q", "main"]);
+  const created = lh([
+    "pr",
+    "create",
+    "--repo",
+    "me/proj",
+    "--title",
+    "PR for feature-rubric",
+    "--head",
+    "feature-rubric",
+    "--issue",
+    String(issueNumber),
+    "--json",
+  ]);
+  expect(created.exitCode, created.stderr).toBe(0);
+  const number = JSON.parse(created.stdout).number;
+  const criterionId = JSON.parse(
+    lh([
+      "issue",
+      "ac",
+      "list",
+      String(issueNumber),
+      "--repo",
+      "me/proj",
+      "--json",
+    ]).stdout,
+  )[0].id;
+
+  const review = lh([
+    "pr",
+    "review",
+    String(number),
+    "--repo",
+    "me/proj",
+    "--topic",
+    "workflow",
+    "--event",
+    "pass",
+    "--body",
+    "lgtm",
+    "--ac-results",
+    JSON.stringify([
+      { criterion_id: criterionId, verdict: "fail", note: "missing alpha" },
+    ]),
+  ]);
+  expect(review.exitCode, review.stderr).toBe(0);
+  expect(review.stderr).toContain(
+    "warning: event=PASS was submitted with 1 failing acceptance criterion grade(s)",
+  );
+  expect(review.stdout).toContain("submitted: PASS");
+});
