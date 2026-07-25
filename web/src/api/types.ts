@@ -36,6 +36,7 @@ import type {
   RepoAgentConfigWire,
   RepoMergeModeWire,
   RepoWire,
+  ReviewAcResultWire,
   ReviewCommentWire,
   ReviewWire,
   ScheduledTaskRunWire,
@@ -269,6 +270,8 @@ export type WorkflowContracts = WorkflowContractsWire;
 export type WorkflowRunState = WorkflowRunStateWire;
 export type WorkflowRunHistoryEvent = WorkflowRunHistoryEventWire;
 export type WorkflowRunReviewSummary = WorkflowRunReviewSummaryWire;
+/** One per-criterion rubric grade attached to a review (#1895). */
+export type ReviewAcResult = ReviewAcResultWire;
 
 /** One fire of a scheduled task (#880) — meta only; the output stays on the herdr side. */
 export type ScheduledTaskRun = ScheduledTaskRunWire;

@@ -44,6 +44,7 @@ export type Flags = {
   issue?: string;
   method?: string;
   comments?: string;
+  "ac-results"?: string;
   commit?: string;
   event?: string;
   effect?: string;
@@ -143,6 +144,7 @@ const { values, positionals } = parseArgs({
     issue: { type: "string" },
     method: { type: "string" },
     comments: { type: "string" },
+    "ac-results": { type: "string" },
     commit: { type: "string" },
     event: { type: "string" },
     effect: { type: "string" },

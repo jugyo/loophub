@@ -26,6 +26,62 @@ function runningWorkflowRunForPull(
   return null;
 }
 
+// Validate submitted per-criterion grades against the PR's linked issue rubric (#1895). The rubric
+// is the enabled `acceptance_criteria` of the issue the PR closes (grades hang off criterion ids,
+// which live on the issue, not the PR row). We reject — never silently correct — a grade for an
+// unknown/disabled criterion, a duplicate, an invalid verdict, or a partial/oversized set that does
+// not cover exactly the enabled criteria. `undefined` means no structured grading (holistic).
+function validateAcResults(
+  prRow: S.IssueRow,
+  input: { criterion_id: number; verdict: string; note?: string }[] | undefined,
+): { criterionId: number; verdict: string; note: string }[] {
+  if (input === undefined) return [];
+  if (!Array.isArray(input))
+    throw new ServiceError(422, "ac-results must be an array");
+  const pull = S.getPull(prRow.id);
+  const enabledIds = new Set(
+    pull?.linked_issue_id != null
+      ? S.listAcceptanceCriteria(pull.linked_issue_id)
+          .filter((c) => c.enabled === 1)
+          .map((c) => c.id)
+      : [],
+  );
+  const seen = new Set<number>();
+  const results = input.map((r) => {
+    const criterionId = r?.criterion_id;
+    if (!Number.isInteger(criterionId))
+      throw new ServiceError(
+        422,
+        "each ac-result requires an integer criterion_id",
+      );
+    if (r.verdict !== "pass" && r.verdict !== "fail")
+      throw new ServiceError(
+        422,
+        `ac-result verdict must be 'pass' or 'fail' (criterion ${criterionId})`,
+      );
+    if (!enabledIds.has(criterionId))
+      throw new ServiceError(
+        422,
+        `criterion ${criterionId} is not an enabled acceptance criterion of the linked issue`,
+      );
+    if (seen.has(criterionId))
+      throw new ServiceError(
+        422,
+        `duplicate ac-result for criterion ${criterionId}`,
+      );
+    seen.add(criterionId);
+    return { criterionId, verdict: r.verdict, note: r.note ?? "" };
+  });
+  // Reject a set that does not cover exactly the enabled criteria (件数過不足). Membership + no-dup
+  // above already bound the set within the rubric, so an equal count means an exact 1:1 grading.
+  if (results.length !== enabledIds.size)
+    throw new ServiceError(
+      422,
+      `ac-results must grade every enabled acceptance criterion exactly once (expected ${enabledIds.size}, got ${results.length})`,
+    );
+  return results;
+}
+
 // ===== reviews =====
 export const reviews = {
   list(name: string, number: number) {
@@ -50,6 +106,7 @@ export const reviews = {
       model?: string;
       headSha?: string;
       comments?: { path: string; line?: number; side?: string; body: string }[];
+      acResults?: { criterion_id: number; verdict: string; note?: string }[];
     },
     sessionId?: string | null,
   ) {
@@ -71,6 +128,11 @@ export const reviews = {
       if (!cm?.path || !cm?.body)
         throw new ServiceError(422, "each comment requires path and body");
     }
+    // Per-criterion grades (#1895). Omitting `acResults` is the holistic fallback (no structured
+    // grading, zero grade rows); providing it means grading the linked issue's enabled rubric. We
+    // validate ownership and coverage here and reject with a visible error rather than silently
+    // correcting (CLAUDE.md「可視エラーを優先」).
+    const acResults = validateAcResults(row, input.acResults);
     const actor = actorFor(sessionId);
     // Bind the review to the live head it was made against. The watcher-backed
     // stored SHA can lag immediately after a rebase, so it is only a fallback
@@ -80,7 +142,9 @@ export const reviews = {
     const submissionHeadSha =
       (await revParse(r.local_path, pull.head_ref)) ?? pull.head_sha ?? null;
     const headSha = input.headSha ?? submissionHeadSha;
-    const v = S.createReview(
+    // The review row and its per-criterion grades are written in one transaction so a review never
+    // exists without the grades it carries (#1895). Line comments stay separate, as before.
+    const v = S.createReviewWithAcResults(
       row.id,
       actor,
       event,
@@ -88,6 +152,7 @@ export const reviews = {
       headSha,
       topic,
       model,
+      acResults,
     );
     for (const cm of lineComments) {
       S.createReviewComment(row.id, v.id, actor, {

@@ -230,6 +230,20 @@ CREATE TABLE IF NOT EXISTS review_comments (
   created_at  TEXT NOT NULL
 );
 
+-- Per-criterion grade of an acceptance criterion by a review (#1895). A child fact of the review
+-- row, mirroring review_comments: it inherits the review's head_sha pin and staleness with no extra
+-- machinery (a grade goes stale when its review does). criterion_id targets the stable id, so the
+-- correspondence survives AC edits and reordering; criteria are never deleted (disabled instead), so
+-- this FK can never dangle.
+CREATE TABLE IF NOT EXISTS review_ac_results (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  review_id    INTEGER NOT NULL REFERENCES reviews(id),
+  criterion_id INTEGER NOT NULL REFERENCES acceptance_criteria(id),
+  verdict      TEXT NOT NULL,              -- 'pass' | 'fail'
+  note         TEXT NOT NULL DEFAULT '',
+  created_at   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS labels (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id   INTEGER NOT NULL REFERENCES repos(id),

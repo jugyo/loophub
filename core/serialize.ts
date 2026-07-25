@@ -1611,11 +1611,23 @@ export interface WorkflowContractsWire {
 // derived from the PR current HEAD and the pinned review rather than persisted on the run.
 // `latest_review` surfaces the human-readable reason behind a rework / block; the web derives the
 // issue-comment / inbox links from `issue_number`.
+// One per-criterion grade attached to a review (#1895), derived from `review_ac_results` joined to
+// `acceptance_criteria` for the rubric text. Empty for a holistic review (no structured grading).
+export interface ReviewAcResultWire {
+  criterion_id: number;
+  text: string;
+  verdict: "pass" | "fail";
+  note: string;
+}
+
 export interface WorkflowRunReviewSummaryWire {
   id: number;
   event: "pass" | "request_changes";
   summary: string;
   findings_count: number;
+  // Per-criterion rubric grades for this review (#1895); empty when the review graded no structured
+  // criteria (holistic fallback).
+  ac_results: ReviewAcResultWire[];
 }
 
 export interface WorkflowRunStateWire {

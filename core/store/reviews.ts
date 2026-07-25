@@ -26,6 +26,15 @@ export interface ReviewCommentRow {
   created_at: string;
 }
 
+export interface ReviewAcResultRow {
+  id: number;
+  review_id: number;
+  criterion_id: number;
+  verdict: string; // 'pass' | 'fail'
+  note: string;
+  created_at: string;
+}
+
 // ---- reviews ----
 export function listReviews(issueId: number): ReviewRow[] {
   return (
@@ -64,6 +73,42 @@ export function createReview(
       model,
       now(),
     ) as ReviewRow;
+}
+
+// Create a review row and its per-criterion grades atomically (#1895). The grades are children of
+// the review row (staleness follows the review), so they must not survive without it — a single
+// transaction guarantees a review either carries all its grades or none. The caller validates
+// criterion ownership before this runs; here we only persist. `acResults` is empty for a holistic
+// review (no structured grading), which degenerates to a plain review insert.
+export function createReviewWithAcResults(
+  issueId: number,
+  author: string,
+  event: string,
+  body: string,
+  headSha: string | null,
+  topic: string | null,
+  model: string | null,
+  acResults: { criterionId: number; verdict: string; note: string }[],
+): ReviewRow {
+  db.run("BEGIN IMMEDIATE");
+  try {
+    const review = createReview(
+      issueId,
+      author,
+      event,
+      body,
+      headSha,
+      topic,
+      model,
+    );
+    for (const r of acResults)
+      createReviewAcResult(review.id, r.criterionId, r.verdict, r.note);
+    db.run("COMMIT");
+    return review;
+  } catch (error) {
+    db.run("ROLLBACK");
+    throw error;
+  }
 }
 
 export type ReviewState =
@@ -241,4 +286,27 @@ export function listReviewComments(issueId: number): ReviewCommentRow[] {
       `SELECT * FROM review_comments WHERE issue_id = ? ORDER BY created_at ASC`,
     )
     .all(issueId) as ReviewCommentRow[];
+}
+
+// ---- review AC results (per-criterion grade。review に束ねる子ファクト) ----
+export function createReviewAcResult(
+  reviewId: number,
+  criterionId: number,
+  verdict: string,
+  note: string,
+): ReviewAcResultRow {
+  return db
+    .query(
+      `INSERT INTO review_ac_results (review_id, criterion_id, verdict, note, created_at)
+       VALUES (?, ?, ?, ?, ?) RETURNING *`,
+    )
+    .get(reviewId, criterionId, verdict, note, now()) as ReviewAcResultRow;
+}
+
+export function listReviewAcResults(reviewId: number): ReviewAcResultRow[] {
+  return db
+    .query(
+      `SELECT * FROM review_ac_results WHERE review_id = ? ORDER BY id ASC`,
+    )
+    .all(reviewId) as ReviewAcResultRow[];
 }
