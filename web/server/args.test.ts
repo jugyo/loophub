@@ -6,6 +6,7 @@ describe("parseLhWebArgs", () => {
     expect(parseLhWebArgs([], {})).toEqual({
       port: 8730,
       experimental: false,
+      debug: false,
       help: false,
     });
   });
@@ -19,11 +20,19 @@ describe("parseLhWebArgs", () => {
     });
   });
 
+  it("enables Web UI debugging controls without changing other options", () => {
+    expect(parseLhWebArgs(["--debug", "--port", "9000"], {})).toMatchObject({
+      port: 9000,
+      debug: true,
+    });
+  });
+
   it("documents the experimental flag in help", () => {
     expect(parseLhWebArgs(["--help"], {}).help).toBe(true);
     expect(LH_WEB_HELP).toContain("--experimental");
     expect(LH_WEB_HELP).toContain("Inbox");
     expect(LH_WEB_HELP).toContain("scheduled tasks");
+    expect(LH_WEB_HELP).toContain("--debug");
   });
 
   it("rejects unknown and invalid options", () => {

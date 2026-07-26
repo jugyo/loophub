@@ -3,6 +3,7 @@ import type { WebConfig } from "@/api/types";
 
 const WebConfigContext = createContext<WebConfig>({
   experimental: false,
+  debug: false,
 });
 
 export function WebConfigProvider({

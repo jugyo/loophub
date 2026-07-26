@@ -60,20 +60,20 @@ afterAll(() => {
 });
 
 test("initialize returns capabilities with the method list", async () => {
-  setWebRuntimeConfig({ experimental: false });
+  setWebRuntimeConfig({ experimental: false, debug: false });
   const r: any = await call("initialize", {});
   expect(r.result.protocolVersion).toBeTypeOf("string");
   expect(r.result.serverInfo.name).toBe("loophub");
   expect(r.result.capabilities.methods).toContain("issues/create");
   expect(r.result.capabilities.notifications).toEqual([]);
-  expect(r.result.webConfig).toEqual({ experimental: false });
+  expect(r.result.webConfig).toEqual({ experimental: false, debug: false });
 });
 
 test("initialize exposes enabled experimental Web UI", async () => {
-  setWebRuntimeConfig({ experimental: true });
+  setWebRuntimeConfig({ experimental: true, debug: true });
   const r: any = await call("initialize", {});
-  expect(r.result.webConfig).toEqual({ experimental: true });
-  setWebRuntimeConfig({ experimental: false });
+  expect(r.result.webConfig).toEqual({ experimental: true, debug: true });
+  setWebRuntimeConfig({ experimental: false, debug: false });
 });
 
 test("a known method routes to the service and returns a result", async () => {

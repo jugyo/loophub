@@ -34,7 +34,7 @@ function renderPage(messages: InboxMessage[], experimental = true) {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <WebConfigProvider config={{ experimental }}>
+      <WebConfigProvider config={{ experimental, debug: false }}>
         <InboxPage />
       </WebConfigProvider>
     </QueryClientProvider>,

@@ -15,6 +15,7 @@ const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("#root not found");
 const webConfig = await getWebConfig().catch(() => ({
   experimental: false,
+  debug: false,
 }));
 
 createRoot(rootEl).render(

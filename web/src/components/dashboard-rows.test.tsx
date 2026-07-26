@@ -134,7 +134,7 @@ function renderInRouter(
     getParentRoute: () => rootRoute,
     path: "/",
     component: () => (
-      <WebConfigProvider config={{ experimental: false }}>
+      <WebConfigProvider config={{ experimental: false, debug: false }}>
         {ui}
       </WebConfigProvider>
     ),

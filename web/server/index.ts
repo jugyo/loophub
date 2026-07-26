@@ -1,5 +1,5 @@
 // `lh-web` entry point: start the lh-web HTTP process. Runs only while in use (no daemon).
-//   lh-web [--port <n>] [--experimental]
+//   lh-web [--port <n>] [--experimental] [--debug]
 //   (port: default 8730 or LOOPHUB_PORT)
 // One command, one port: this process serves the JSON-RPC API and the SPA
 // (with HMR) by embedding Vite in middleware mode — no separate dev server. Resident
@@ -27,6 +27,7 @@ if (args.help) {
 const { port } = args;
 setWebRuntimeConfig({
   experimental: args.experimental,
+  debug: args.debug,
 });
 
 // Embed Vite so this single process serves the SPA with HMR alongside /rpc.

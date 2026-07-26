@@ -69,6 +69,7 @@ function renderTopbar(
   initialPath = "/",
   onOpenRepoSwitcher = vi.fn(),
   experimental = false,
+  debug = false,
 ) {
   const rootRoute = createRootRoute({
     component: () => (
@@ -124,7 +125,7 @@ function renderTopbar(
     router,
     onOpenRepoSwitcher,
     ...render(
-      <WebConfigProvider config={{ experimental }}>
+      <WebConfigProvider config={{ experimental, debug }}>
         <RouterProvider router={router} />
       </WebConfigProvider>,
     ),
@@ -133,7 +134,7 @@ function renderTopbar(
 
 describe("AppTopbar", () => {
   it("renders the required top-level links without Archived in the topbar", async () => {
-    const { container } = renderTopbar();
+    const { container } = renderTopbar("/", vi.fn(), false, true);
     await screen.findByRole("link", { name: /LoopHub/ });
 
     expect(
@@ -179,6 +180,20 @@ describe("AppTopbar", () => {
     expect(themeIndex).toBeGreaterThan(repoPickerIndex);
     expect(componentDebugIndex).toBe(themeIndex + 1);
     expect(componentDebugIndex).toBe(primaryItems.length - 1);
+  });
+
+  it("shows component debugging controls only in debug mode", async () => {
+    renderTopbar();
+    await screen.findByRole("link", { name: /LoopHub/ });
+    expect(
+      screen.queryByRole("button", { name: "Component debug mode" }),
+    ).toBeNull();
+
+    cleanup();
+    renderTopbar("/", vi.fn(), false, true);
+    expect(
+      await screen.findByRole("button", { name: "Component debug mode" }),
+    ).toBeTruthy();
   });
 
   it("shows Inbox only when experimental UI is enabled", async () => {

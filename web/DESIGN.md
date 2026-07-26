@@ -120,8 +120,9 @@ together, following this document's Source of Truth policy.
 
 ### Component debug mode
 
-The application header exposes a component debug mode beside the theme picker.
-When enabled, `ComponentDebugOverlay` outlines every visible element carrying a
+When `lh-web` runs with `--debug`, the application header exposes a component
+debug mode beside the theme picker. When enabled, `ComponentDebugOverlay`
+outlines every visible element carrying a
 `data-debug-component` attribute and provides its React component name plus a
 copy action. Hovering a truncated label shows the full component name in a
 tooltip so narrow controls stay identifiable. Markers live on:

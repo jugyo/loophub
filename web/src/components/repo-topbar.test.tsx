@@ -61,7 +61,7 @@ function renderRepoTopbar(initialPath: string, experimental = true) {
   });
 
   return render(
-    <WebConfigProvider config={{ experimental }}>
+    <WebConfigProvider config={{ experimental, debug: false }}>
       <RouterProvider router={router} />
     </WebConfigProvider>,
   );

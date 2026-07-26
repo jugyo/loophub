@@ -24,7 +24,7 @@ export function AppTopbar({
   onOpenRepoSwitcher?: () => void;
 }) {
   const currentRepo = useCurrentRepo();
-  const { experimental } = useWebConfig();
+  const { experimental, debug } = useWebConfig();
   const { data, isLoading, isError } = useRepos();
   const repos = useMemo(
     () => [...(data ?? [])].sort(compareSidebarRepos),
@@ -107,7 +107,7 @@ export function AppTopbar({
           <Settings className="size-4" />
         </TopbarLink>
         <ThemeToggle />
-        <ComponentDebugToggle />
+        {debug ? <ComponentDebugToggle /> : null}
       </div>
     </header>
   );
