@@ -5,6 +5,7 @@ import {
   parseHerdrAgentList,
 } from "../terminal/herdr-status.ts";
 import { HERDR_ID, herdrSessionName } from "../terminal/terminal-launch.ts";
+import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
 import {
   parseWorkflowHerdrAgentName,
   workflowStepSessionIds,
@@ -47,35 +48,44 @@ function costExceededPayload(
       `event #${event.id} is not a workflow_run.cost_exceeded event`,
     );
   }
-  let payload: unknown;
-  try {
-    payload = JSON.parse(event.payload);
-  } catch {
-    throw new ServiceError(422, `event #${event.id} has invalid payload JSON`);
-  }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+  const value = parseWorkflowEventPayload(event.payload);
+  if (!value) {
     throw new ServiceError(422, `event #${event.id} has an invalid payload`);
   }
-  const value = payload as Record<string, unknown>;
+  const incomplete = new ServiceError(
+    422,
+    `event #${event.id} is missing its active child or cost data`,
+  );
+  if (value.id !== runId) throw incomplete;
+  const activeStep = value.active_step;
   if (
-    value.id !== runId ||
-    (value.active_step !== null &&
-      value.active_step !== "execute" &&
-      value.active_step !== "verify") ||
-    (value.active_session_id !== null &&
-      (typeof value.active_session_id !== "string" ||
-        value.active_session_id === "")) ||
-    typeof value.cost_usd !== "number" ||
-    !Number.isFinite(value.cost_usd) ||
-    typeof value.limit_usd !== "number" ||
-    !Number.isFinite(value.limit_usd)
+    activeStep !== null &&
+    activeStep !== "execute" &&
+    activeStep !== "verify"
   ) {
-    throw new ServiceError(
-      422,
-      `event #${event.id} is missing its active child or cost data`,
-    );
+    throw incomplete;
   }
-  return value as CostExceededPayload;
+  const activeSessionId = value.active_session_id;
+  if (
+    activeSessionId !== null &&
+    (typeof activeSessionId !== "string" || activeSessionId === "")
+  ) {
+    throw incomplete;
+  }
+  const costUsd = value.cost_usd;
+  if (typeof costUsd !== "number" || !Number.isFinite(costUsd))
+    throw incomplete;
+  const limitUsd = value.limit_usd;
+  if (typeof limitUsd !== "number" || !Number.isFinite(limitUsd)) {
+    throw incomplete;
+  }
+  return {
+    id: runId,
+    active_step: activeStep,
+    active_session_id: activeSessionId,
+    cost_usd: costUsd,
+    limit_usd: limitUsd,
+  };
 }
 
 function message(error: unknown): string {

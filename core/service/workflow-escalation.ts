@@ -1,5 +1,6 @@
 import { ServiceError } from "../errors.ts";
 import * as S from "../store.ts";
+import { parseWorkflowEventPayload } from "../workflow/event-payloads.ts";
 import { inlineText } from "../workflow/prompts.ts";
 import { comments } from "./comments.ts";
 import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
@@ -91,8 +92,12 @@ export const workflowEscalation = {
         reason,
       },
     );
-    const issueNumber = (JSON.parse(event.payload) as { issue_number: number })
-      .issue_number;
+    // The stored row is the first escalation recorded for this run and reason, so its issue number
+    // is what a later replay must agree with. A row that predates the field falls back to the
+    // requested issue instead of reporting a conflict against `undefined`.
+    const issueNumber =
+      parseWorkflowEventPayload(event.payload)?.issue_number ??
+      requestedIssueNumber;
     if (input.issue !== undefined && input.issue !== issueNumber) {
       throw new ServiceError(
         409,

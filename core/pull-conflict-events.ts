@@ -74,14 +74,19 @@ export async function sweepPullConflicts(
     // resolution to a fresh Execute child.
     const run = S.runningWorkflowRunForPull(pull.repo_id, pull.number);
     if (run?.parent_session_id) {
-      S.emitEvent(pull.repo_id, "workflow_run.merge_conflict", "lh-worker", {
-        id: run.id,
-        number: pull.number,
-        pr_number: pull.number,
-        parent_session_id: run.parent_session_id,
-        source_event_id: source.id,
-        source_event_type: source.type,
-      });
+      S.emitWorkflowEvent(
+        pull.repo_id,
+        "workflow_run.merge_conflict",
+        "lh-worker",
+        {
+          id: run.id,
+          number: pull.number,
+          pr_number: pull.number,
+          parent_session_id: run.parent_session_id,
+          source_event_id: source.id,
+          source_event_type: source.type,
+        },
+      );
     }
   }
   return { checked: pulls.length, emitted };

@@ -113,7 +113,7 @@ export async function syncGithubFeedback(
             feedback: changed,
           },
         );
-        const projection = S.emitEvent(
+        const projection = S.emitWorkflowEvent(
           link.repo_id,
           "workflow_run.github_event",
           "lh-worker",

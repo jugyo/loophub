@@ -444,6 +444,15 @@ export const realGithubFeedbackDeps: GithubFeedbackDeps = {
 // gh's raw shape. `merged` is redundant with state==="merged" but kept explicit for the UI. `comments`
 // counts conversation (issue) comments only; `reviews` counts submitted reviews — kept as two distinct
 // figures so the UI can label each and never conflate the two counts (#850 AC).
+/**
+ * Read back a cached `github_pull_status` payload. The column holds exactly what `fetchPrStatus`
+ * produced (`JSON.stringify(GhPrStatus)`), so this is the single place that re-asserts that shape
+ * instead of every reader restating it at its own `JSON.parse`.
+ */
+export function parseGhPrStatus(payload: string): GhPrStatus {
+  return JSON.parse(payload) as GhPrStatus;
+}
+
 export interface GhPrStatus {
   state: "open" | "closed" | "merged";
   merged: boolean;

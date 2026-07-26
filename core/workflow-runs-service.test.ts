@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 const HOME = mkdtempSync(join(tmpdir(), "lh-workflow-runs-"));
 const REPO_PATH = mkdtempSync(join(tmpdir(), "lh-workflow-runs-repo-"));
@@ -1205,7 +1205,9 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
   expect(
     await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
   ).toMatchObject({ action: "wait" });
-  svc.workflowRuns.turnDone(
+  // `turnDone` reads the worktree HEAD before it records the declaration, so the event only exists
+  // once the call settles. Observing without awaiting it left the assertion below racing the emit.
+  await svc.workflowRuns.turnDone(
     repo.full_name,
     { run: started.run.id },
     exec.session_id,
@@ -3436,3 +3438,151 @@ test("history falls back to an unknown verdict when the review row is gone (#186
   expect(history[0].significance).toBe("routine");
   expect(history[0].description).toContain("Review #77");
 });
+
+test("status and next observe the run's event trail with a single load (#1912)", async () => {
+  const { repo } = freshRepo("me/workflow-one-load");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "One load",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "one-load-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const startedEvent = S.eventsForWorkflowRun(repo.id, started.run.id).find(
+    (event) => event.type === "workflow_run.started",
+  );
+
+  const loads = vi.spyOn(S, "eventsForWorkflowRun");
+  try {
+    await svc.workflowRuns.status(repo.full_name, { run: started.run.id });
+    expect(loads).toHaveBeenCalledTimes(1);
+    loads.mockClear();
+    // The wake lookup and the observation that follows it share the one trail `next` loaded.
+    await svc.workflowRuns.next(repo.full_name, {
+      run: started.run.id,
+      event: startedEvent!.id,
+    });
+    expect(loads).toHaveBeenCalledTimes(1);
+  } finally {
+    loads.mockRestore();
+  }
+}, 20_000);
+
+test("event rows written before the typed payloads still reconcile (#1912)", async () => {
+  const { repo } = freshRepo("me/workflow-legacy-payloads");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Legacy payloads",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "legacy-payload-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  // Shapes that predate the typed payload map: a launch with no `step`, an update with no
+  // `current_step`, and a turn done with no `head_sha`. Each must land on the same fallback the
+  // ad-hoc casts produced, not throw.
+  S.emitEvent(repo.id, "workflow_step.launched", "parent", {
+    id: started.run.id,
+  });
+  S.emitEvent(repo.id, "workflow_run.updated", "parent", {
+    id: started.run.id,
+    status: "running",
+  });
+  S.emitEvent(repo.id, "workflow_run.turn_done", "executor", {
+    id: started.run.id,
+  });
+
+  const status = await svc.workflowRuns.status(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(status.last_turn_done_at).not.toBeNull();
+  // No identifiable Execute round and no identifiable Verify launch, so neither is credited.
+  expect(status.turn_done_for_active_execute).toBe(false);
+  expect(status.verify_launched_after_turn_done).toBe(false);
+  expect(status.unaddressed_out_of_band_reviews).toEqual([]);
+
+  const next = await svc.workflowRuns.next(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(next.action).toBe("launch_execute");
+  // The malformed-but-visible timeline still renders, with the missing keys simply absent.
+  const history = svc.workflowRuns.history(repo.full_name, {
+    run: started.run.id,
+  });
+  expect(history.map((event) => event.type)).toContain(
+    "workflow_step.launched",
+  );
+}, 20_000);
+
+test("next --watch reconciles the run state its wake announced, not the pre-wait one (#1912)", async () => {
+  const { repo } = freshRepo("me/workflow-watch-reread");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Watch reread",
+    "## Acceptance criteria\n- [ ] Works\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "watch-reread-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "d6d6d6d6-d6d6-4d6d-8d6d-d6d6d6d6d6d6";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  svc.workflowRuns.awaitHuman(
+    repo.full_name,
+    { run: started.run.id, reason: "human decision required" },
+    parent,
+  );
+  // Park the cursor on the current tail so the watch below blocks on the human's answer rather
+  // than replaying the events the setup already produced.
+  const trail = S.eventsForWorkflowRun(repo.id, started.run.id);
+  S.advanceWorkflowRunEventCursor(started.run.id, trail[trail.length - 1].id);
+
+  const watching = svc.workflowRuns.next(repo.full_name, {
+    run: started.run.id,
+    watch: true,
+  });
+  // The human clears the hold while the parent is blocked. Its `workflow_run.updated` event is
+  // both the wake and the only record that the hold is gone.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await svc.workflowRuns.resumeAfterHuman(
+    repo.full_name,
+    { run: started.run.id, step: "execute" },
+    parent,
+  );
+
+  const woken = await watching;
+  expect(woken.observed.awaiting_human).toBe(false);
+  expect(woken.observed.needs_human_reason).toBeNull();
+  expect(woken.action).toBe("launch_execute");
+}, 30_000);

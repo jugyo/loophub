@@ -44,6 +44,10 @@ import type {
   HerdrPullWorkspace,
 } from "./terminal/herdr-status.ts";
 import { herdrSessionName } from "./terminal/terminal-launch.ts";
+import {
+  parseWorkflowEventPayload,
+  type StoredWorkflowEventPayload,
+} from "./workflow/event-payloads.ts";
 import type { WorkflowHerdrAgent } from "./workflow/herdr-agents.ts";
 import type { WorkflowStepStatuses } from "./workflow/steps.ts";
 import { legacyWorktreePath, worktreePath } from "./worktree-path.ts";
@@ -1781,15 +1785,8 @@ function workflowStepLabel(value: unknown): string | null {
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 }
 
-function workflowEventPayload(row: S.EventRow): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(row.payload);
-    return value && typeof value === "object"
-      ? (value as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
+function workflowEventPayload(row: S.EventRow): StoredWorkflowEventPayload {
+  return parseWorkflowEventPayload(row.payload) ?? {};
 }
 
 /**

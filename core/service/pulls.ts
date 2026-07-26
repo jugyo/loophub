@@ -20,6 +20,7 @@ import {
 import {
   type GithubDeps,
   type GithubPrStatusDeps,
+  parseGhPrStatus,
   realGithubDeps,
   realGithubPrStatusDeps,
 } from "../github.ts";
@@ -671,7 +672,7 @@ export const pulls = {
     // wakes the watcher.
     const run = S.runningWorkflowRunForPull(r.id, row.number);
     if (run) {
-      S.emitEvent(r.id, "workflow_run.merged", actor, {
+      S.emitWorkflowEvent(r.id, "workflow_run.merged", actor, {
         id: run.id,
         number: row.number,
         pr_number: row.number,
@@ -719,7 +720,10 @@ export const pulls = {
       cached &&
       Date.now() - Date.parse(cached.synced_at) < GITHUB_PR_STATUS_TTL_MS
     ) {
-      return githubPrStatusJSON(JSON.parse(cached.payload), cached.synced_at);
+      return githubPrStatusJSON(
+        parseGhPrStatus(cached.payload),
+        cached.synced_at,
+      );
     }
 
     let status: Awaited<ReturnType<GithubPrStatusDeps["fetchStatus"]>>;
@@ -727,7 +731,10 @@ export const pulls = {
       status = await deps.fetchStatus(r.local_path, link.url);
     } catch (e) {
       if (cached)
-        return githubPrStatusJSON(JSON.parse(cached.payload), cached.synced_at);
+        return githubPrStatusJSON(
+          parseGhPrStatus(cached.payload),
+          cached.synced_at,
+        );
       throw new ServiceError(
         502,
         `failed to fetch GitHub PR status: ${(e as Error).message}`,

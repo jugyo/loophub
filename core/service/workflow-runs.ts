@@ -51,6 +51,12 @@ import {
   workflowContractText,
 } from "../workflow/contracts.ts";
 import {
+  parseWorkflowEventPayload,
+  type WorkflowRunTransition,
+  workflowEventPayloadOf,
+  workflowGithubFeedbackReferences,
+} from "../workflow/event-payloads.ts";
+import {
   nextWorkflowChildSequence,
   parseWorkflowHerdrAgentName,
   type WorkflowHerdrAgent,
@@ -73,6 +79,11 @@ import {
   writeParentContract,
   writeStepContract,
 } from "../workflow/run-files.ts";
+import {
+  projectWorkflowRunEvents,
+  type WorkflowRunProjection,
+  workflowStepPhaseAt,
+} from "../workflow/run-projection.ts";
 import type { WorkflowLatestReviewState } from "../workflow/steps.ts";
 import {
   isHeadAheadOfReview,
@@ -418,38 +429,14 @@ function resolveReworkReview(
   return reviewId;
 }
 
-function reviewSubmittedEvent(
-  events: S.EventRow[],
-  reviewId: number,
-): S.EventRow | undefined {
-  return events.find((event) => {
-    if (event.type !== "workflow_run.review_submitted") return false;
-    const payload = JSON.parse(event.payload) as { review_id?: unknown };
-    return payload.review_id === reviewId;
-  });
-}
-
-// The run's current step (phase) at the time `eventId` was recorded, from the run's own event
-// trail (`eventsForWorkflowRun` returns it in id order). Every `workflow_run.updated` event carries
-// the resolved `current_step`, so the phase follows that. It deliberately ignores `active_step`:
-// `activate_step` reactivates an Execute pane for live input (e.g. a cost-hold resume) without
-// leaving the Verify phase, so keying off `active_step` mis-reads a verifying run as executing and
-// drops its own Verify verdict as out-of-band (#1873). A run starts in Execute before any
-// transition.
-function stepPhaseAtEvent(events: S.EventRow[], eventId: number): WorkflowStep {
-  let phase: WorkflowStep = "execute";
-  for (const event of events) {
-    if (event.id > eventId) break;
-    if (event.type !== "workflow_run.updated") continue;
-    const payload = JSON.parse(event.payload) as { current_step?: unknown };
-    if (
-      payload.current_step === "execute" ||
-      payload.current_step === "verify"
-    ) {
-      phase = payload.current_step;
-    }
-  }
-  return phase;
+// One pass over the run's event trail, shared by every observation below. Loading it is the
+// expensive part (`eventsForWorkflowRun` scans `json_extract(payload, '$.id')`), so a single call
+// path resolves it once and hands the projection down.
+function workflowRunEventProjection(
+  repoId: number,
+  runId: number,
+): WorkflowRunProjection {
+  return projectWorkflowRunEvents(S.eventsForWorkflowRun(repoId, runId));
 }
 
 // Scope a review to this run by parsing its author back to a `verifier #<run>-<seq>` agent name.
@@ -461,7 +448,7 @@ function stepPhaseAtEvent(events: S.EventRow[], eventId: number): WorkflowStep {
 function isWorkflowRunVerifyReview(
   review: S.ReviewRow,
   runId: number,
-  runEvents: S.EventRow[],
+  projection: WorkflowRunProjection,
 ): boolean {
   const agent = parseWorkflowHerdrAgentName(review.author);
   if (agent) {
@@ -470,10 +457,10 @@ function isWorkflowRunVerifyReview(
     );
   }
   if (review.author !== UNKNOWN_ACTOR) return false;
-  const submitted = reviewSubmittedEvent(runEvents, review.id);
+  const submitted = projection.reviewSubmissions.get(review.id)?.first;
   return (
     submitted !== undefined &&
-    stepPhaseAtEvent(runEvents, submitted.id) === "verify"
+    workflowStepPhaseAt(projection, submitted.id) === "verify"
   );
 }
 
@@ -481,16 +468,15 @@ function isWorkflowRunVerifyReview(
 // runs on the same PR (or from humans) never drive this run's transitions — old runs' data cannot
 // gate a new run.
 function latestWorkflowRunReview(
-  repoId: number,
   prIssueId: number,
   runId: number,
+  projection: WorkflowRunProjection,
 ): S.ReviewRow | null {
   const reviews = S.listReviews(prIssueId);
-  const runEvents = S.eventsForWorkflowRun(repoId, runId);
   for (let i = reviews.length - 1; i >= 0; i--) {
     const review = reviews[i];
     if (review.event !== "PASS" && review.event !== "REQUEST_CHANGES") continue;
-    if (isWorkflowRunVerifyReview(review, runId, runEvents)) return review;
+    if (isWorkflowRunVerifyReview(review, runId, projection)) return review;
   }
   return null;
 }
@@ -507,42 +493,23 @@ function reviewObservation(
 }
 
 function turnDoneObservation(
-  repoId: number,
-  runId: number,
+  projection: WorkflowRunProjection,
   review: S.ReviewRow | null,
 ): {
   at: string | null;
   forActiveExecute: boolean;
   verifyLaunchedAfter: boolean;
 } {
-  const events = S.eventsForWorkflowRun(repoId, runId);
-  const turnDone = events.findLast(
-    (event) => event.type === "workflow_run.turn_done",
-  );
+  const turnDone = projection.latestTurnDone;
   if (!turnDone) {
     return { at: null, forActiveExecute: false, verifyLaunchedAfter: true };
   }
   // Whether the Verify child now marked active was launched for this turn done. A Verify launched
   // before it reviewed older work and cannot report on the HEAD the turn done announced (#1857).
-  const verifyLaunched = events.findLast((event) => {
-    if (event.type !== "workflow_step.launched") return false;
-    return (JSON.parse(event.payload) as { step?: unknown }).step === "verify";
-  });
+  const verifyLaunched = projection.latestVerifyLaunch;
   const verifyLaunchedAfter =
-    verifyLaunched !== undefined && verifyLaunched.id > turnDone.id;
-  const executeRound = events.findLast((event) => {
-    if (
-      event.type !== "workflow_step.launched" &&
-      event.type !== "workflow_run.updated"
-    ) {
-      return false;
-    }
-    const payload = JSON.parse(event.payload) as Record<string, unknown>;
-    return event.type === "workflow_step.launched"
-      ? payload.step === "execute"
-      : payload.transition === "activate_step" &&
-          payload.active_step === "execute";
-  });
+    verifyLaunched !== null && verifyLaunched.id > turnDone.id;
+  const executeRound = projection.latestExecuteRound;
   if (!executeRound) {
     return {
       at: turnDone.created_at,
@@ -551,13 +518,7 @@ function turnDoneObservation(
     };
   }
   const reviewSubmitted = review
-    ? events.findLast((event) => {
-        if (event.type !== "workflow_run.review_submitted") return false;
-        return (
-          (JSON.parse(event.payload) as { review_id?: unknown }).review_id ===
-          review.id
-        );
-      })
+    ? projection.reviewSubmissions.get(review.id)?.latest
     : undefined;
   const afterReview = !review
     ? true
@@ -569,21 +530,6 @@ function turnDoneObservation(
     forActiveExecute: turnDone.id > executeRound.id && afterReview,
     verifyLaunchedAfter,
   };
-}
-
-// The canonical `gh api` paths github-feedback-sync recorded for the changed items. Only the
-// reference is projected: the parent must read the resource itself rather than trust a copy of
-// untrusted comment text travelling through LoopHub.
-function githubFeedbackReferences(payload: Record<string, unknown>): string[] {
-  const feedback = payload.feedback;
-  if (!Array.isArray(feedback)) return [];
-  return feedback
-    .map((item) =>
-      item && typeof item === "object"
-        ? (item as { reference?: unknown }).reference
-        : undefined,
-    )
-    .filter((reference): reference is string => typeof reference === "string");
 }
 
 function workflowWakeObservation(
@@ -598,7 +544,7 @@ function workflowWakeObservation(
     return null;
   }
   const eventId = event.id;
-  const payload = (event.payload ?? {}) as Record<string, unknown>;
+  const payload = workflowEventPayloadOf(event.payload);
   if (event.type === "workflow_run.escalated") {
     if (typeof payload.reason !== "string") {
       throw new ServiceError(
@@ -615,7 +561,7 @@ function workflowWakeObservation(
       return {
         kind: "github_reference",
         eventId,
-        references: githubFeedbackReferences(payload),
+        references: workflowGithubFeedbackReferences(payload),
       };
     }
     return requiresChanges ? { kind: "github_feedback" } : null;
@@ -656,46 +602,42 @@ function workflowWakeObservation(
 function outOfBandReviewVerdict(
   review: S.ReviewRow,
   runId: number,
-  runEvents: S.EventRow[],
+  projection: WorkflowRunProjection,
 ): WorkflowOutOfBandReviewWire["verdict"] | null {
-  if (isWorkflowRunVerifyReview(review, runId, runEvents)) return null;
+  if (isWorkflowRunVerifyReview(review, runId, projection)) return null;
   if (review.event === "FEEDBACK") return "feedback";
   if (review.event === "REQUEST_CHANGES") return "request_changes";
   return null;
 }
 
 async function unaddressedOutOfBandReviews(input: {
-  repo: S.Repo;
-  run: S.WorkflowRunRow;
+  runId: number;
   prIssueId: number;
   worktree: string;
   currentHead: string | null;
+  projection: WorkflowRunProjection;
 }): Promise<WorkflowOutOfBandReviewWire[]> {
-  const events = S.eventsForWorkflowRun(input.repo.id, input.run.id);
+  const projection = input.projection;
   const reviews = S.listReviews(input.prIssueId);
   const unaddressed: WorkflowOutOfBandReviewWire[] = [];
   for (const review of reviews) {
-    const verdict = outOfBandReviewVerdict(review, input.run.id, events);
+    const verdict = outOfBandReviewVerdict(review, input.runId, projection);
     if (!verdict) continue;
-    const submitted = reviewSubmittedEvent(events, review.id);
+    const submitted = projection.reviewSubmissions.get(review.id)?.first;
     // The run-scoped event is the submission boundary. Reviews that predate this run have no such
     // event and must not be revived as new work for a later attempt on the same PR.
     if (!submitted) continue;
-    const submittedPayload = JSON.parse(submitted.payload) as {
-      submission_head_sha?: unknown;
-    };
     const submissionHeadSha =
-      typeof submittedPayload.submission_head_sha === "string"
-        ? submittedPayload.submission_head_sha
+      typeof submitted.payload.submission_head_sha === "string"
+        ? submitted.payload.submission_head_sha
         : review.head_sha;
     let addressed = false;
-    for (const event of events) {
-      if (event.type !== "workflow_run.turn_done" || event.id <= submitted.id) {
-        continue;
-      }
-      const payload = JSON.parse(event.payload) as { head_sha?: unknown };
+    for (const event of projection.turnDones) {
+      if (event.id <= submitted.id) continue;
       const turnDoneHead =
-        typeof payload.head_sha === "string" ? payload.head_sha : null;
+        typeof event.payload.head_sha === "string"
+          ? event.payload.head_sha
+          : null;
       if (!submissionHeadSha || !turnDoneHead || !input.currentHead) continue;
       const advancedAtTurn = await isHeadAheadOfReview(
         input.worktree,
@@ -754,6 +696,7 @@ function stepActorAllowed(
 async function workflowRunProgress(
   repo: S.Repo,
   run: S.WorkflowRunRow,
+  projection: WorkflowRunProjection,
 ): Promise<WorkflowRunProgress> {
   const prIssue = issueOr404(repo, run.pr_number, "pull");
   const pull = S.getPull(prIssue.id);
@@ -767,9 +710,72 @@ async function workflowRunProgress(
     }),
     baseBranch: pull.base_ref,
     latestReview: reviewObservation(
-      latestWorkflowRunReview(repo.id, prIssue.id, run.id),
+      latestWorkflowRunReview(prIssue.id, run.id, projection),
     ),
   });
+}
+
+// Observe everything `workflow step status` reports, from one already-loaded event projection. It
+// is a module function rather than a procedure body so `next` can observe on the same projection it
+// used to resolve its wake event, instead of re-loading the run's trail.
+async function observeWorkflowRunStatus(
+  r: S.Repo,
+  run: S.WorkflowRunRow,
+  projection: WorkflowRunProjection,
+): Promise<WorkflowStepStatusResult> {
+  const progress = await workflowRunProgress(r, run, projection);
+  const prIssue = issueOr404(r, run.pr_number, "pull");
+  const latestReview = latestWorkflowRunReview(prIssue.id, run.id, projection);
+  const turnDone = turnDoneObservation(projection, latestReview);
+  const pull = S.getPull(prIssue.id);
+  if (!pull)
+    throw new ServiceError(404, `pull request #${run.pr_number} not found`);
+  const worktree = workflowRunWorktree({
+    repo: r,
+    prNumber: run.pr_number,
+    headRef: pull.head_ref,
+  });
+  const pendingEffect = S.pendingWorkflowEventEffect(run.id);
+  const pendingEffectReceipt: WorkflowPendingEffectReceiptWire | null =
+    pendingEffect
+      ? {
+          event_id: pendingEffect.event_id,
+          effect: pendingEffect.effect,
+          status: "pending",
+          claimed_at: pendingEffect.created_at,
+        }
+      : null;
+  const unaddressedReviews = await unaddressedOutOfBandReviews({
+    runId: run.id,
+    prIssueId: prIssue.id,
+    worktree,
+    currentHead: progress.currentHead,
+    projection,
+  });
+  const costIncrementUsd = run.cost_increment_usd ?? devCostLimitUsd();
+  return {
+    run: run.id,
+    current_step: run.current_step,
+    status: run.status,
+    active_step: run.active_step,
+    rework_count: run.rework_count,
+    rework_limit: WORKFLOW_REWORK_LIMIT,
+    needs_human_reason: run.needs_human_reason,
+    awaiting_human: run.needs_human_reason !== null,
+    pending_effect_receipt: pendingEffectReceipt,
+    unaddressed_out_of_band_reviews: unaddressedReviews,
+    cost_increment_usd: costIncrementUsd,
+    cost_limit_usd: run.cost_limit_usd ?? costIncrementUsd,
+    head_sha: progress.currentHead,
+    head_ahead_of_base: progress.headAheadOfBase,
+    head_ahead_of_latest_review: progress.headAheadOfLatestReview,
+    merge_conflict: progress.mergeConflict,
+    pr_merged: pull.merged === 1,
+    last_turn_done_at: turnDone.at,
+    turn_done_for_active_execute: turnDone.forActiveExecute,
+    verify_launched_after_turn_done: turnDone.verifyLaunchedAfter,
+    steps: progress.steps,
+  };
 }
 
 // Build the issue / PR detail display state (#1008) from a run row. The row is the display-state
@@ -785,7 +791,11 @@ function workflowRunState(
     : null;
   const prIssue = S.getIssue(repo.id, run.pr_number);
   const review = prIssue
-    ? latestWorkflowRunReview(repo.id, prIssue.id, run.id)
+    ? latestWorkflowRunReview(
+        prIssue.id,
+        run.id,
+        workflowRunEventProjection(repo.id, run.id),
+      )
     : null;
   const latestReview: WorkflowRunReviewSummaryWire | null = review
     ? {
@@ -866,14 +876,6 @@ function assertRunUpdateActor(
   assertParentActor(run, sessionId);
 }
 
-type WorkflowRunTransition =
-  | "complete"
-  | "advance_to_verify"
-  | "activate_step"
-  | "await_human"
-  | "resume_after_human"
-  | "request_rework";
-
 function runInRepo(
   name: string,
   runId: number,
@@ -928,24 +930,29 @@ function updateRunLifecycle(
 ): WorkflowRunUpdateResult {
   const updated = S.updateWorkflowRun(run.id, patch);
   if (!updated) throw new ServiceError(404, "Workflow run not found");
-  S.emitEvent(updated.repo_id, "workflow_run.updated", actorFor(sessionId), {
-    id: updated.id,
-    transition,
-    status: updated.status,
-    current_step: updated.current_step,
-    rework_count: updated.rework_count,
-    ...(transition === "await_human" || transition === "resume_after_human"
-      ? { needs_human_reason: updated.needs_human_reason }
-      : {}),
-    ...(transition === "activate_step"
-      ? {
-          active_step: updated.active_step,
-          active_session_id: updated.active_session_id,
-        }
-      : {}),
-    issue_number: updated.issue_number,
-    pr_number: updated.pr_number,
-  });
+  S.emitWorkflowEvent(
+    updated.repo_id,
+    "workflow_run.updated",
+    actorFor(sessionId),
+    {
+      id: updated.id,
+      transition,
+      status: updated.status,
+      current_step: updated.current_step,
+      rework_count: updated.rework_count,
+      ...(transition === "await_human" || transition === "resume_after_human"
+        ? { needs_human_reason: updated.needs_human_reason }
+        : {}),
+      ...(transition === "activate_step"
+        ? {
+            active_step: updated.active_step,
+            active_session_id: updated.active_session_id,
+          }
+        : {}),
+      issue_number: updated.issue_number,
+      pr_number: updated.pr_number,
+    },
+  );
   return { run: runJSON(updated) };
 }
 
@@ -996,7 +1003,7 @@ function increaseRunCostLimit(
   }
   // The parent waits on this event in `lh workflow next --watch`; it carries the interrupted step so
   // the wake is legible in run history even though reconciliation re-observes the run row.
-  S.emitEvent(
+  S.emitWorkflowEvent(
     repo.id,
     "workflow_run.cost_limit_increased",
     actorFor(sessionId),
@@ -1141,7 +1148,7 @@ export const workflowRuns = {
         ),
       );
 
-      S.emitEvent(r.id, "workflow_run.started", actorFor(sessionId), {
+      S.emitWorkflowEvent(r.id, "workflow_run.started", actorFor(sessionId), {
         id: run.id,
         workflow_id: workflow.id,
         issue_number: issue.number,
@@ -1200,7 +1207,11 @@ export const workflowRuns = {
         `Workflow run cannot advance to Verify from ${run.current_step}`,
       );
     }
-    const progress = await workflowRunProgress(repo, run);
+    const progress = await workflowRunProgress(
+      repo,
+      run,
+      workflowRunEventProjection(repo.id, run.id),
+    );
     if (!progress.steps.execute.complete) {
       throw new ServiceError(
         409,
@@ -1265,7 +1276,11 @@ export const workflowRuns = {
       // Resuming at Verify only needs something to review (head ahead of base) — a human may
       // deliberately re-verify the same head, so the execute "advanced past review" condition
       // does not apply here.
-      const progress = await workflowRunProgress(repo, run);
+      const progress = await workflowRunProgress(
+        repo,
+        run,
+        workflowRunEventProjection(repo.id, run.id),
+      );
       if (!progress.headAheadOfBase) {
         throw new ServiceError(
           409,
@@ -1535,7 +1550,11 @@ export const workflowRuns = {
         `Workflow run cannot request rework from ${run.current_step}`,
       );
     }
-    const progress = await workflowRunProgress(repo, run);
+    const progress = await workflowRunProgress(
+      repo,
+      run,
+      workflowRunEventProjection(repo.id, run.id),
+    );
     if (!progress.steps.verify.complete) {
       throw new ServiceError(
         409,
@@ -1806,7 +1825,7 @@ export const workflowRuns = {
       phase: step,
       direction: "down",
     });
-    S.emitEvent(
+    S.emitWorkflowEvent(
       r.id,
       "workflow_step.launched",
       actorFor(run.parent_session_id),
@@ -1856,7 +1875,7 @@ export const workflowRuns = {
         headRef: pull.head_ref,
       }),
     );
-    const event = S.emitEvent(
+    const event = S.emitWorkflowEvent(
       r.id,
       "workflow_run.turn_done",
       actorFor(sessionId),
@@ -1899,7 +1918,7 @@ export const workflowRuns = {
       );
     }
     const reason = workflowHumanReason(input.reason, "escalate");
-    const event = S.emitEvent(
+    const event = S.emitWorkflowEvent(
       r.id,
       "workflow_run.escalated",
       actorFor(sessionId),
@@ -2006,59 +2025,11 @@ export const workflowRuns = {
     if (run.repo_id !== r.id) {
       throw new ServiceError(404, "Workflow run not found for repo");
     }
-    const progress = await workflowRunProgress(r, run);
-    const prIssue = issueOr404(r, run.pr_number, "pull");
-    const latestReview = latestWorkflowRunReview(r.id, prIssue.id, run.id);
-    const turnDone = turnDoneObservation(r.id, run.id, latestReview);
-    const pull = S.getPull(prIssue.id);
-    if (!pull)
-      throw new ServiceError(404, `pull request #${run.pr_number} not found`);
-    const worktree = workflowRunWorktree({
-      repo: r,
-      prNumber: run.pr_number,
-      headRef: pull.head_ref,
-    });
-    const pendingEffect = S.pendingWorkflowEventEffect(run.id);
-    const pendingEffectReceipt: WorkflowPendingEffectReceiptWire | null =
-      pendingEffect
-        ? {
-            event_id: pendingEffect.event_id,
-            effect: pendingEffect.effect,
-            status: "pending",
-            claimed_at: pendingEffect.created_at,
-          }
-        : null;
-    const unaddressedReviews = await unaddressedOutOfBandReviews({
-      repo: r,
+    return observeWorkflowRunStatus(
+      r,
       run,
-      prIssueId: prIssue.id,
-      worktree,
-      currentHead: progress.currentHead,
-    });
-    const costIncrementUsd = run.cost_increment_usd ?? devCostLimitUsd();
-    return {
-      run: run.id,
-      current_step: run.current_step,
-      status: run.status,
-      active_step: run.active_step,
-      rework_count: run.rework_count,
-      rework_limit: WORKFLOW_REWORK_LIMIT,
-      needs_human_reason: run.needs_human_reason,
-      awaiting_human: run.needs_human_reason !== null,
-      pending_effect_receipt: pendingEffectReceipt,
-      unaddressed_out_of_band_reviews: unaddressedReviews,
-      cost_increment_usd: costIncrementUsd,
-      cost_limit_usd: run.cost_limit_usd ?? costIncrementUsd,
-      head_sha: progress.currentHead,
-      head_ahead_of_base: progress.headAheadOfBase,
-      head_ahead_of_latest_review: progress.headAheadOfLatestReview,
-      merge_conflict: progress.mergeConflict,
-      pr_merged: pull.merged === 1,
-      last_turn_done_at: turnDone.at,
-      turn_done_for_active_execute: turnDone.forActiveExecute,
-      verify_launched_after_turn_done: turnDone.verifyLaunchedAfter,
-      steps: progress.steps,
-    };
+      workflowRunEventProjection(r.id, run.id),
+    );
   },
 
   // Advise the parent's next action from observed state. With `watch`, the call blocks on the run's
@@ -2087,10 +2058,15 @@ export const workflowRuns = {
       );
     }
     const r = repoOr404(name);
-    const run = workflowRunOr404(input.run);
-    if (run.repo_id !== r.id) {
-      throw new ServiceError(404, "Workflow run not found for repo");
-    }
+    // Reading the row is a lookup, not a snapshot: the watch below re-reads it after its wake.
+    const readRun = (): S.WorkflowRunRow => {
+      const row = workflowRunOr404(input.run);
+      if (row.repo_id !== r.id) {
+        throw new ServiceError(404, "Workflow run not found for repo");
+      }
+      return row;
+    };
+    let run = readRun();
     let wakeEvent: LoopEvent | null = null;
     // A run that already reached a terminal status has no further event worth waiting for; blocking
     // would leave the caller parked forever instead of returning the terminal action once.
@@ -2103,10 +2079,17 @@ export const workflowRuns = {
       // Move the cursor before observing: this wake is spent either way, and reconciliation reads
       // the state the event produced rather than the event itself.
       S.advanceWorkflowRunEventCursor(run.id, wakeEvent.id);
-    } else if (input.event !== undefined) {
-      const row = S.eventsForWorkflowRun(r.id, run.id).find(
-        (candidate) => candidate.id === input.event,
-      );
+      // That state usually lives on the run row: the events worth waking for are records of writes
+      // to the run itself (a human resuming it, a raised cost limit). Re-read the row so
+      // reconciliation observes what the wake announced instead of what was true when the wait
+      // began — otherwise the wake is spent on a stale hold that never clears.
+      run = readRun();
+    }
+    // Load the run's trail once, after any wake has landed, and reuse it for both the wake lookup
+    // and the observation below.
+    const rows = S.eventsForWorkflowRun(r.id, run.id);
+    if (wakeEvent === null && input.event !== undefined) {
+      const row = rows.find((candidate) => candidate.id === input.event);
       if (!row) {
         throw new ServiceError(
           404,
@@ -2115,7 +2098,11 @@ export const workflowRuns = {
       }
       wakeEvent = formatEvent(row, name);
     }
-    const observedState = await workflowRuns.status(name, input, sessionId);
+    const observedState = await observeWorkflowRunStatus(
+      r,
+      run,
+      projectWorkflowRunEvents(rows),
+    );
     const prIssue = issueOr404(r, run.pr_number, "pull");
     // Terminal condition (#1808): once the linked PR is merged there is nothing left to reconcile.
     // Record it from the observation rather than from the merge itself — that keeps the run
@@ -2220,17 +2207,12 @@ export const workflowRuns = {
       ]),
     );
     return S.eventsForWorkflowRun(r.id, run.id).map((event) => {
-      let handoffId: number | null = null;
-      let reviewId: number | null = null;
-      try {
-        const payload = JSON.parse(event.payload) as Record<string, unknown>;
-        handoffId =
-          typeof payload.handoff_id === "number" ? payload.handoff_id : null;
-        reviewId =
-          typeof payload.review_id === "number" ? payload.review_id : null;
-      } catch {
-        // Malformed legacy payloads remain visible without launch input.
-      }
+      // Malformed legacy payloads remain visible without launch input.
+      const payload = parseWorkflowEventPayload(event.payload) ?? {};
+      const handoffId =
+        typeof payload.handoff_id === "number" ? payload.handoff_id : null;
+      const reviewId =
+        typeof payload.review_id === "number" ? payload.review_id : null;
       const handoff = handoffId === null ? null : S.getHandoffById(handoffId);
       const input =
         handoff?.repo_id === r.id && handoff.body !== null

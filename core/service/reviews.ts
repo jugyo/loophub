@@ -208,7 +208,7 @@ export const reviews = {
       // observation trigger for the parent, independent of whether the Verify child later manages
       // to declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human/crit
       // FEEDBACK) review straight to Execute, since it will not appear in the run's own step status.
-      S.emitEvent(r.id, "workflow_run.review_submitted", actor, {
+      S.emitWorkflowEvent(r.id, "workflow_run.review_submitted", actor, {
         id: workflowRun.id,
         number: workflowRun.pr_number,
         issue_number: workflowRun.issue_number,

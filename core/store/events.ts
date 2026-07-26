@@ -1,4 +1,8 @@
 import { db, now } from "../db.ts";
+import type {
+  WorkflowEventPayloadMap,
+  WorkflowEventType,
+} from "../workflow/event-payloads.ts";
 
 export interface EventRow {
   id: number;
@@ -28,6 +32,17 @@ export function emitEvent(
        VALUES (?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(repoId, type, actor, JSON.stringify(payload), now()) as EventRow;
+}
+
+// Emit a workflow event with its payload checked against the shared payload map, so the keys the
+// run's projection reads back cannot drift from the keys written here.
+export function emitWorkflowEvent<T extends WorkflowEventType>(
+  repoId: number,
+  type: T,
+  actor: string,
+  payload: WorkflowEventPayloadMap[T],
+): EventRow {
+  return emitEvent(repoId, type, actor, payload);
 }
 // labels: when set, keep only events whose issue/PR (payload.number, same repo) currently
 // carries one of the given label names (OR match). Events without a payload.number are dropped.
@@ -112,23 +127,7 @@ export function eventsForWorkflowRun(
 export function emitWorkflowRunCostExceeded(
   repoId: number,
   actor: string,
-  payload: {
-    id: number;
-    number: number;
-    pr_number: number;
-    parent_session_id: string;
-    // Legacy alias retained for existing event readers. New orchestration must use the explicit
-    // usage/active fields below so the session whose aggregate changed is never treated as the pane
-    // that should be interrupted.
-    session_id: string;
-    usage_session_id: string;
-    active_step: string | null;
-    active_session_id: string | null;
-    cost_usd: number;
-    limit_usd: number;
-    increment_usd: number;
-    next_limit_usd: number;
-  },
+  payload: WorkflowEventPayloadMap["workflow_run.cost_exceeded"],
   reemitAfterMs: number,
 ): EventRow | null {
   // Same second-precision shape as `now()`, so the cutoff compares lexicographically against
@@ -170,11 +169,7 @@ export function emitWorkflowRunCostExceeded(
 export function getOrCreateWorkflowHumanEscalationEvent(
   repoId: number,
   actor: string,
-  payload: {
-    id: number;
-    issue_number: number;
-    reason: string;
-  },
+  payload: WorkflowEventPayloadMap["workflow_effect.human_escalation"],
 ): EventRow {
   const inserted = db
     .query(
