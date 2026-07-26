@@ -1790,54 +1790,112 @@ function workflowEventPayload(row: S.EventRow): StoredWorkflowEventPayload {
 }
 
 /**
- * Normalize stored event payloads into stable, reader-facing timeline entries.
+ * Read one payload field, narrowed to the type the entry wants and null otherwise.
  *
- * `reviewVerdict` is the `event` column of the review a `workflow_run.review_submitted` row points
- * at ("PASS" / "REQUEST_CHANGES" / …). The event payload only carries `review_id` — the review row
- * stays the sole verdict source — so the caller resolves it, the same way it resolves `input` from
- * the handoff. Null when unresolvable, which reads as an unknown verdict.
+ * Stored payloads keep every key optional (see core/workflow/event-payloads.ts): a row emitted
+ * before a key existed simply lacks it, so every read needs the same fallback. These two accessors
+ * are that narrowing, written once instead of per entry.
  */
-export function workflowRunHistoryEventJSON(
-  row: S.EventRow,
-  input: string | null = null,
-  reviewVerdict: string | null = null,
-): WorkflowRunHistoryEventWire {
-  const payload = workflowEventPayload(row);
-  const step =
-    typeof payload.step === "string"
-      ? payload.step
-      : typeof payload.current_step === "string"
-        ? payload.current_step
-        : null;
-  const stepLabel = workflowStepLabel(step);
-  let label = row.type
-    .replace(/^workflow_/u, "")
-    .replace(/[._-]+/gu, " ")
-    .replace(/^./u, (value) => value.toUpperCase());
-  let description = "Workflow lifecycle event recorded.";
-  let significance: WorkflowRunHistorySignificance = "default";
+function payloadString(
+  payload: StoredWorkflowEventPayload,
+  key: keyof StoredWorkflowEventPayload,
+): string | null {
+  const value: unknown = payload[key];
+  return typeof value === "string" ? value : null;
+}
 
-  if (row.type === "workflow_run.started") {
-    label = "Run started";
-    description = `Workflow run #${String(payload.id ?? "")} started.`;
-  } else if (row.type === "workflow_run.updated") {
-    const status =
-      typeof payload.status === "string" ? payload.status : "updated";
-    const transition =
-      typeof payload.transition === "string" ? payload.transition : null;
-    // `needs_human_reason` is present in the payload only when the update touched the human wait
-    // (#1307): a string marks the escalation, an explicit null marks the human-instructed resume.
-    const touchedNeedsHuman = "needs_human_reason" in payload;
-    const needsHumanReason =
-      typeof payload.needs_human_reason === "string"
-        ? payload.needs_human_reason
-        : null;
+function payloadNumber(
+  payload: StoredWorkflowEventPayload,
+  key: keyof StoredWorkflowEventPayload,
+): number | null {
+  const value: unknown = payload[key];
+  return typeof value === "number" ? value : null;
+}
+
+/** What an entry below may read to phrase a row. */
+interface WorkflowRunHistoryEventContext {
+  type: string;
+  payload: StoredWorkflowEventPayload;
+  /** The step the payload names, raw and in display form; null when it names none. */
+  step: string | null;
+  stepLabel: string | null;
+  /** The verdict the caller resolved from the review a `review_submitted` row points at. */
+  reviewVerdict: string | null;
+}
+
+/** A constant, or a function of the row's context when the value depends on the payload. */
+type WorkflowRunHistoryField<T> =
+  | T
+  | ((context: WorkflowRunHistoryEventContext) => T);
+
+/**
+ * How one event type reads in the history dialog. All three fields are required so a new entry
+ * cannot silently inherit a significance it never considered.
+ */
+interface WorkflowRunHistoryEventEntry {
+  label: WorkflowRunHistoryField<string>;
+  description: WorkflowRunHistoryField<string>;
+  significance: WorkflowRunHistoryField<WorkflowRunHistorySignificance>;
+}
+
+function workflowRunHistoryField<T>(
+  field: WorkflowRunHistoryField<T>,
+  context: WorkflowRunHistoryEventContext,
+): T {
+  return typeof field === "function"
+    ? (field as (context: WorkflowRunHistoryEventContext) => T)(context)
+    : field;
+}
+
+/**
+ * The facts a `workflow_run.updated` row's label, description and significance all read. Derived
+ * once so the three entry fields below cannot drift apart in how they interpret the same payload.
+ */
+interface WorkflowRunUpdatedFacts {
+  status: string;
+  transition: string | null;
+  /**
+   * `needs_human_reason` is present in the payload only when the update touched the human wait
+   * (#1307): a string marks the escalation, an explicit null marks the human-instructed resume.
+   */
+  touchedNeedsHuman: boolean;
+  needsHumanReason: string | null;
+}
+
+function workflowRunUpdatedFacts({
+  payload,
+}: WorkflowRunHistoryEventContext): WorkflowRunUpdatedFacts {
+  return {
+    status: payloadString(payload, "status") ?? "updated",
+    transition: payloadString(payload, "transition"),
+    touchedNeedsHuman: "needs_human_reason" in payload,
+    needsHumanReason: payloadString(payload, "needs_human_reason"),
+  };
+}
+
+/**
+ * Event type → how the history dialog reads it. One entry per type: adding an event type means
+ * adding an entry here, not threading a branch through a chain.
+ */
+const WORKFLOW_RUN_HISTORY_EVENTS: Record<
+  string,
+  WorkflowRunHistoryEventEntry
+> = {
+  "workflow_run.started": {
+    label: "Run started",
+    description: ({ payload }) =>
+      `Workflow run #${String(payload.id ?? "")} started.`,
+    significance: "default",
+  },
+  "workflow_run.updated": {
     // `completed` marks the run's one terminal condition: its linked PR merged (#1808). A passing
     // Verify does not reach it — that keeps the run `running` + `verification_status: verified`
     // (#1513). `stopped` (#1525) stays a legacy status with no write path (a cost stop interrupts
     // only the child); old event rows can still carry it, like the legacy `blocked` case.
-    label =
-      status === "completed"
+    label: (context) => {
+      const { status, transition, touchedNeedsHuman, needsHumanReason } =
+        workflowRunUpdatedFacts(context);
+      return status === "completed"
         ? "Run completed"
         : status === "stopped"
           ? "Run stopped"
@@ -1858,30 +1916,37 @@ export function workflowRunHistoryEventJSON(
                   : transition === "activate_step"
                     ? "Step agent activated"
                     : "Run state updated";
-    const details = [
-      transition === "advance_to_verify"
-        ? "Execute finished implementing; the run moved on to Verify."
-        : null,
-      `Status: ${workflowStepLabel(status) ?? status}.`,
-      touchedNeedsHuman
-        ? needsHumanReason !== null
-          ? `Waiting for a human: ${needsHumanReason}`
-          : "Human wait cleared; the run may progress again."
-        : null,
-      stepLabel ? `Current step: ${stepLabel}.` : null,
-      typeof payload.rework_count === "number"
-        ? `Rework count: ${payload.rework_count}.`
-        : null,
-    ].filter((value): value is string => value !== null);
-    description = details.join(" ");
+    },
+    description: (context) => {
+      const { status, transition, touchedNeedsHuman, needsHumanReason } =
+        workflowRunUpdatedFacts(context);
+      const reworkCount = payloadNumber(context.payload, "rework_count");
+      return [
+        transition === "advance_to_verify"
+          ? "Execute finished implementing; the run moved on to Verify."
+          : null,
+        `Status: ${workflowStepLabel(status) ?? status}.`,
+        touchedNeedsHuman
+          ? needsHumanReason !== null
+            ? `Waiting for a human: ${needsHumanReason}`
+            : "Human wait cleared; the run may progress again."
+          : null,
+        context.stepLabel ? `Current step: ${context.stepLabel}.` : null,
+        reworkCount !== null ? `Rework count: ${reworkCount}.` : null,
+      ]
+        .filter((value): value is string => value !== null)
+        .join(" ");
+    },
     // Placed by the principle above. A run that left `running` finished or deviated — a flow-state
     // result, so notable. An escalation into a human wait is a deviation (notable); `advance_to_verify`
     // and `request_rework` are the flow skeleton reaching a decision, i.e. Execute finishing and Verify
     // sending the run back (notable). Everything else this event carries — the activation paired with
     // every step launch, the resume that follows a human's instruction, an unrecognized transition — is
     // driving communication, the parent narrating its own bookkeeping (routine).
-    significance =
-      status !== "running"
+    significance: (context) => {
+      const { status, transition, touchedNeedsHuman, needsHumanReason } =
+        workflowRunUpdatedFacts(context);
+      return status !== "running"
         ? "notable"
         : touchedNeedsHuman
           ? needsHumanReason !== null
@@ -1891,105 +1956,154 @@ export function workflowRunHistoryEventJSON(
               transition === "request_rework"
             ? "notable"
             : "routine";
-  } else if (row.type === "workflow_step.launched") {
-    label = `${stepLabel ?? "Workflow"} step started`;
-    description = `${stepLabel ?? "Workflow"} step execution started.`;
-  } else if (row.type === "workflow_run.turn_done") {
-    label = "Turn done declared";
-    description =
-      "Execute declared its turn done. The parent observes HEAD and review state before any transition.";
-    significance = "routine";
-  } else if (row.type === "workflow_run.escalated") {
-    label = "Human guidance requested";
-    const reason =
-      typeof payload.reason === "string"
-        ? payload.reason
-        : "No reason recorded.";
-    description = `Execute requested human guidance: ${reason}`;
-    significance = "notable";
-  } else if (row.type === "workflow_run.cost_exceeded") {
-    label = "Cost limit exceeded";
-    const cost = typeof payload.cost_usd === "number" ? payload.cost_usd : null;
-    const limit =
-      typeof payload.limit_usd === "number" ? payload.limit_usd : null;
-    description =
-      cost !== null && limit !== null
+    },
+  },
+  "workflow_step.launched": {
+    label: ({ stepLabel }) => `${stepLabel ?? "Workflow"} step started`,
+    description: ({ stepLabel }) =>
+      `${stepLabel ?? "Workflow"} step execution started.`,
+    significance: "default",
+  },
+  "workflow_run.turn_done": {
+    label: "Turn done declared",
+    description:
+      "Execute declared its turn done. The parent observes HEAD and review state before any transition.",
+    significance: "routine",
+  },
+  "workflow_run.escalated": {
+    label: "Human guidance requested",
+    description: ({ payload }) =>
+      `Execute requested human guidance: ${payloadString(payload, "reason") ?? "No reason recorded."}`,
+    significance: "notable",
+  },
+  "workflow_run.cost_exceeded": {
+    label: "Cost limit exceeded",
+    description: ({ payload }) => {
+      const cost = payloadNumber(payload, "cost_usd");
+      const limit = payloadNumber(payload, "limit_usd");
+      return cost !== null && limit !== null
         ? `Run cost $${cost.toFixed(2)} passed the $${limit.toFixed(2)} limit. The run holds until the limit is raised.`
         : "Run cost passed its limit. The run holds until the limit is raised.";
-    significance = "notable";
-  } else if (row.type === "workflow_run.cost_limit_increased") {
-    label = "Cost limit raised";
-    const previous =
-      typeof payload.previous_limit_usd === "number"
-        ? payload.previous_limit_usd
-        : null;
-    const current =
-      typeof payload.current_limit_usd === "number"
-        ? payload.current_limit_usd
-        : null;
-    description =
-      previous !== null && current !== null
+    },
+    significance: "notable",
+  },
+  "workflow_run.cost_limit_increased": {
+    label: "Cost limit raised",
+    description: ({ payload }) => {
+      const previous = payloadNumber(payload, "previous_limit_usd");
+      const current = payloadNumber(payload, "current_limit_usd");
+      return previous !== null && current !== null
         ? `A human raised the run's cost limit from $${previous.toFixed(2)} to $${current.toFixed(2)}.`
         : "A human raised the run's cost limit so it may continue.";
-  } else if (row.type === "workflow_run.merge_conflict") {
-    label = "Merge conflict detected";
-    description =
-      "The linked PR conflicts with its base. The run cannot progress until the conflict is resolved.";
+    },
+    significance: "default",
+  },
+  "workflow_run.merge_conflict": {
+    label: "Merge conflict detected",
+    description:
+      "The linked PR conflicts with its base. The run cannot progress until the conflict is resolved.",
     // The done stage failing to turn over is a flow deviation, not driving communication (#1869):
     // it is the direct answer to "is the flow proceeding?" — no. #1868 read it as routine on the
     // assumption the run resolves it unattended, but by the principle a stall of the skeleton is
     // notable regardless of who clears it.
-    significance = "notable";
-  } else if (row.type === "workflow_run.review_submitted") {
-    const reviewId =
-      typeof payload.review_id === "number" ? payload.review_id : null;
-    const subject = reviewId !== null ? `Review #${reviewId}` : "A review";
-    // A passing review is Verify finishing with nothing left to fix — a flow-skeleton completion, so
-    // notable. A change-requesting one is the duplicate ledger row for the same real event: the
-    // substance rides the `updated: request_rework` transition (notable), so by the supporting rule
-    // this row drops to routine. An unresolved verdict is likewise just the parent's wake ping.
-    if (reviewVerdict === "PASS") {
-      label = "Review passed";
-      description = `${subject} passed on the linked PR — Verify cleared this implementation.`;
-      significance = "notable";
-    } else if (reviewVerdict === "REQUEST_CHANGES") {
-      label = "Review requested changes";
-      description = `${subject} requested changes on the linked PR. The run reworks unless a human steps in.`;
-      significance = "routine";
-    } else {
-      label = "Review submitted";
-      description = `${subject} was submitted on the linked PR. Its verdict decides whether the run advances or reworks.`;
-      significance = "routine";
-    }
-  } else if (row.type === "workflow_run.github_event") {
-    label = "GitHub feedback received";
-    const githubNumber =
-      typeof payload.github_number === "number" ? payload.github_number : null;
-    description =
-      githubNumber !== null
+    significance: "notable",
+  },
+  // A passing review is Verify finishing with nothing left to fix — a flow-skeleton completion, so
+  // notable. A change-requesting one is the duplicate ledger row for the same real event: the
+  // substance rides the `updated: request_rework` transition (notable), so by the supporting rule
+  // this row drops to routine. An unresolved verdict is likewise just the parent's wake ping.
+  "workflow_run.review_submitted": {
+    label: ({ reviewVerdict }) =>
+      reviewVerdict === "PASS"
+        ? "Review passed"
+        : reviewVerdict === "REQUEST_CHANGES"
+          ? "Review requested changes"
+          : "Review submitted",
+    description: ({ payload, reviewVerdict }) => {
+      const reviewId = payloadNumber(payload, "review_id");
+      const subject = reviewId !== null ? `Review #${reviewId}` : "A review";
+      return reviewVerdict === "PASS"
+        ? `${subject} passed on the linked PR — Verify cleared this implementation.`
+        : reviewVerdict === "REQUEST_CHANGES"
+          ? `${subject} requested changes on the linked PR. The run reworks unless a human steps in.`
+          : `${subject} was submitted on the linked PR. Its verdict decides whether the run advances or reworks.`;
+    },
+    significance: ({ reviewVerdict }) =>
+      reviewVerdict === "PASS" ? "notable" : "routine",
+  },
+  "workflow_run.github_event": {
+    label: "GitHub feedback received",
+    description: ({ payload }) => {
+      const githubNumber = payloadNumber(payload, "github_number");
+      return githubNumber !== null
         ? `New review feedback landed on GitHub PR #${githubNumber}.`
         : "New review feedback landed on the linked GitHub pull request.";
-  } else if (row.type === "workflow_run.merged") {
-    label = "Linked PR merged";
-    const prNumber =
-      typeof payload.pr_number === "number" ? payload.pr_number : null;
-    description =
-      prNumber !== null
+    },
+    significance: "default",
+  },
+  "workflow_run.merged": {
+    label: "Linked PR merged",
+    description: ({ payload }) => {
+      const prNumber = payloadNumber(payload, "pr_number");
+      return prNumber !== null
         ? `PR #${prNumber} merged — the run's terminal condition.`
         : "The linked PR merged — the run's terminal condition.";
-    significance = "notable";
-  } else if (row.type === "workflow_run.usage_updated") {
-    label = "Usage updated";
-    description = "Agent usage totals for this run were refreshed.";
-    significance = "routine";
-  }
+    },
+    significance: "notable",
+  },
+  "workflow_run.usage_updated": {
+    label: "Usage updated",
+    description: "Agent usage totals for this run were refreshed.",
+    significance: "routine",
+  },
+};
+
+/**
+ * How an unrecognized type reads: the event name spelled out, no claim about what happened, and the
+ * `default` significance the principle above assigns an unclassified event.
+ */
+const WORKFLOW_RUN_HISTORY_FALLBACK: WorkflowRunHistoryEventEntry = {
+  label: ({ type }) =>
+    type
+      .replace(/^workflow_/u, "")
+      .replace(/[._-]+/gu, " ")
+      .replace(/^./u, (value) => value.toUpperCase()),
+  description: "Workflow lifecycle event recorded.",
+  significance: "default",
+};
+
+/**
+ * Normalize stored event payloads into stable, reader-facing timeline entries.
+ *
+ * `reviewVerdict` is the `event` column of the review a `workflow_run.review_submitted` row points
+ * at ("PASS" / "REQUEST_CHANGES" / …). The event payload only carries `review_id` — the review row
+ * stays the sole verdict source — so the caller resolves it, the same way it resolves `input` from
+ * the handoff. Null when unresolvable, which reads as an unknown verdict.
+ */
+export function workflowRunHistoryEventJSON(
+  row: S.EventRow,
+  input: string | null = null,
+  reviewVerdict: string | null = null,
+): WorkflowRunHistoryEventWire {
+  const payload = workflowEventPayload(row);
+  const step =
+    payloadString(payload, "step") ?? payloadString(payload, "current_step");
+  const context: WorkflowRunHistoryEventContext = {
+    type: row.type,
+    payload,
+    step,
+    stepLabel: workflowStepLabel(step),
+    reviewVerdict,
+  };
+  const entry =
+    WORKFLOW_RUN_HISTORY_EVENTS[row.type] ?? WORKFLOW_RUN_HISTORY_FALLBACK;
 
   return {
     id: row.id,
     type: row.type,
-    label,
-    description,
-    significance,
+    label: workflowRunHistoryField(entry.label, context),
+    description: workflowRunHistoryField(entry.description, context),
+    significance: workflowRunHistoryField(entry.significance, context),
     input,
     step,
     actor: row.actor,
