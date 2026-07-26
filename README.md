@@ -325,3 +325,12 @@ lint / format は [Biome](https://biomejs.dev) を使用（設定は `biome.json
 [テストスイート棚卸し](docs/test-suite-inventory.ja.md) を参照。
 
 コードに手を入れる際の規約は [`CLAUDE.md`](./CLAUDE.md) にまとまっている。
+
+## ライセンス
+
+[MIT License](./LICENSE)（SPDX: `MIT`）。`package.json` と `web/package.json` の `license` も
+同じ `MIT` に揃えている。
+
+`package.json` の `private: true` は維持している。本リポジトリは npm パッケージとして配布する
+予定が無く、`private` は誤って `npm publish` することを防ぐためのフラグである。ライセンスの
+明示とは独立しており、MIT である以上ソースの使用・改変・fork は妨げられない。

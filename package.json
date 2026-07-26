@@ -2,6 +2,13 @@
   "name": "loophub",
   "version": "0.0.0",
   "private": true,
+  "description": "GitHub-style issue/PR hub over local git repositories, built for AI agents to run development loops while a human supervises.",
+  "license": "MIT",
+  "author": "Kazuyuki Kohno",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jugyo/loophub.git"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
