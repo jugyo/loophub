@@ -671,26 +671,16 @@ describe("dev.attachSession", () => {
 });
 
 describe("pull ready-for-review", () => {
-  test("readyForReview accepts a pending change request from any review topic", async () => {
+  test("readyForReview accepts a pending change request", async () => {
     const pr = await svc.pulls.create(
       "me/proj",
-      { title: "topic re-review", head: "main", base: "main" },
+      { title: "re-review", head: "main", base: "main" },
       "sess-1",
     );
     await svc.reviews.create(
       "me/proj",
       pr.number,
-      {
-        topic: "security",
-        event: "REQUEST_CHANGES",
-        body: "needs security changes",
-      },
-      "sess-1",
-    );
-    await svc.reviews.create(
-      "me/proj",
-      pr.number,
-      { topic: "acceptance", event: "PASS", body: "acceptance passed" },
+      { event: "REQUEST_CHANGES", body: "needs changes" },
       "sess-1",
     );
 
@@ -704,5 +694,29 @@ describe("pull ready-for-review", () => {
       "sess-1",
     );
     expect(ready.review_state).toBe("READY_FOR_RE_REVIEW");
+  });
+
+  test("readyForReview rejects once a later PASS supersedes the change request", async () => {
+    const pr = await svc.pulls.create(
+      "me/proj",
+      { title: "superseded re-review", head: "main", base: "main" },
+      "sess-1",
+    );
+    await svc.reviews.create(
+      "me/proj",
+      pr.number,
+      { event: "REQUEST_CHANGES", body: "needs changes" },
+      "sess-1",
+    );
+    await svc.reviews.create(
+      "me/proj",
+      pr.number,
+      { event: "PASS", body: "fixed" },
+      "sess-1",
+    );
+
+    await expect(
+      svc.pulls.readyForReview("me/proj", pr.number, undefined, "sess-1"),
+    ).rejects.toThrow(/No pending change requests/);
   });
 });

@@ -90,8 +90,8 @@ async function pullStatusFields(
   ]);
   // Prefer the live Git head for both display state and merge gate. The stored
   // watcher SHA is only a fallback when the ref cannot currently be resolved.
-  // computeReviewStatus aggregates once per topic so these two signals cannot
-  // disagree about a stale or changes-requested topic.
+  // computeReviewStatus resolves the gate once so these two signals cannot
+  // disagree about a stale or changes-requested review.
   const reviewStatus = S.computeReviewStatus(row.id, headSha ?? p.head_sha);
   let mergeable: boolean | null = null;
   let mergeable_state: MergeableState = "unknown";
@@ -143,7 +143,7 @@ async function pullStatusFields(
       hasEffectiveDiff: status.hasEffectiveDiff,
       conflict: status.conflict,
       reviewed: reviewStatus.gate.reviewed,
-      allTopicsPassed: reviewStatus.gate.allTopicsPassed,
+      reviewPassed: reviewStatus.gate.passed,
     }));
   }
   // "working" badge: real uncommitted changes in this PR's worktree. Guarded so the

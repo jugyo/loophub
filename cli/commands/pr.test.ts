@@ -188,8 +188,6 @@ test("lh pr review soft-warns a pass contradicted by a failing grade", () => {
     String(number),
     "--repo",
     "me/proj",
-    "--topic",
-    "workflow",
     "--event",
     "pass",
     "--body",

@@ -9,7 +9,6 @@ export interface ReviewRow {
   event: string;
   body: string;
   head_sha: string | null;
-  topic: string | null;
   model: string | null;
   created_at: string;
 }
@@ -40,9 +39,9 @@ export function listReviews(issueId: number): ReviewRow[] {
   return (
     db
       // id ASC is a deterministic tiebreaker: now() has 1-second resolution, so
-      // two reviews on the same topic in the same second would otherwise have an
-      // undefined order — and computeReviewStatus relies on last-write-per-topic
-      // to gate merges (#427).
+      // two reviews in the same second would otherwise have an undefined order —
+      // and computeReviewStatus relies on the last substantive write to gate
+      // merges (#1934).
       .query(
         `SELECT * FROM reviews WHERE issue_id = ? ORDER BY created_at ASC, id ASC`,
       )
@@ -55,24 +54,14 @@ export function createReview(
   event: string,
   body: string,
   headSha: string | null = null,
-  topic: string | null = null,
   model: string | null = null,
 ): ReviewRow {
   return db
     .query(
-      `INSERT INTO reviews (issue_id, author, event, body, head_sha, topic, model, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+      `INSERT INTO reviews (issue_id, author, event, body, head_sha, model, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
-    .get(
-      issueId,
-      author,
-      event,
-      body,
-      headSha,
-      topic,
-      model,
-      now(),
-    ) as ReviewRow;
+    .get(issueId, author, event, body, headSha, model, now()) as ReviewRow;
 }
 
 // Create a review row and its per-criterion grades atomically (#1895). The grades are children of
@@ -86,21 +75,12 @@ export function createReviewWithAcResults(
   event: string,
   body: string,
   headSha: string | null,
-  topic: string | null,
   model: string | null,
   acResults: { criterionId: number; verdict: string; note: string }[],
 ): ReviewRow {
   db.run("BEGIN IMMEDIATE");
   try {
-    const review = createReview(
-      issueId,
-      author,
-      event,
-      body,
-      headSha,
-      topic,
-      model,
-    );
+    const review = createReview(issueId, author, event, body, headSha, model);
     for (const r of acResults)
       createReviewAcResult(review.id, r.criterionId, r.verdict, r.note);
     db.run("COMMIT");
@@ -119,32 +99,25 @@ export type ReviewState =
   | "STALE"
   | null;
 
-// Per-topic merge gate (#427). The merge gate is no longer a single PASS:
-// every review topic must pass independently. A topic "passes" when its latest
-// substantive review (PASS / REQUEST_CHANGES) is a fresh PASS — i.e. not a
-// REQUEST_CHANGES (no unresolved change request) and not a pass made stale by
-// the head advancing past the reviewed commit (the same STALE rule computeReviewStatus
-// applies, so a passed-then-changed PR is not silently mergeable again). Topics are
-// aggregated separately so a REQUEST_CHANGES on any one aspect blocks merge even
-// when other aspects passed. The untagged (NULL) topic is one bucket of its own.
+// The merge gate is flat (#1934): the PR's single latest substantive review
+// (PASS / REQUEST_CHANGES) decides it. It passes when that review is a fresh
+// PASS — i.e. not a REQUEST_CHANGES (no unresolved change request) and not a
+// pass made stale by the head advancing past the reviewed commit (the same STALE
+// rule computeReviewStatus applies, so a passed-then-changed PR is not silently
+// mergeable again). The retired per-topic gate (#427) bucketed reviews by
+// `reviews.topic`, which let a bucket nobody could reach block merge forever.
 export interface ReviewGate {
-  /** At least one topic has a substantive review (PASS / REQUEST_CHANGES). */
+  /** The PR has a substantive review (PASS / REQUEST_CHANGES). */
   reviewed: boolean;
-  /** Every reviewed topic's latest substantive review passes (fresh PASS). */
-  allTopicsPassed: boolean;
-  /** Latest substantive review status for every topic, in first-seen order. */
-  topics: ReviewTopicGate[];
-}
-
-export type ReviewTopicState = "passed" | "stale" | "changes_requested";
-export type ReviewBlockingReason = "stale" | "request_changes";
-
-export interface ReviewTopicGate {
-  topic: string | null;
+  /** The latest substantive review is a fresh PASS — the gate is open. */
+  passed: boolean;
+  /** Head SHA the latest substantive review was pinned to; null when unreviewed or untracked. */
   headSha: string | null;
-  state: ReviewTopicState;
+  /** Why a reviewed PR is still blocked; null when the gate is open or unreviewed. */
   blockingReason: ReviewBlockingReason | null;
 }
+
+export type ReviewBlockingReason = "stale" | "request_changes";
 
 export interface ReviewStatus {
   state: ReviewState;
@@ -155,54 +128,49 @@ function reviewGate(
   reviews: ReviewRow[],
   currentHeadSha: string | null,
 ): ReviewGate {
-  // ASC order (listReviews) → the last write per topic wins = latest substantive
-  // review for that topic. FEEDBACK (non-blocking human/crit feedback, #1674) is
-  // deliberately excluded here so it never forms a topic bucket: a FEEDBACK-only PR
-  // stays gate-neutral (unreviewed, not blocked, not mergeable-by-itself).
-  const latestByTopic = new Map<string | null, ReviewRow>();
+  // ASC order (listReviews) → the last substantive write wins. FEEDBACK
+  // (non-blocking human/crit feedback, #1674) is deliberately excluded here so it
+  // never moves the gate: a FEEDBACK-only PR stays gate-neutral (unreviewed, not
+  // blocked, not mergeable-by-itself).
+  let latest: ReviewRow | null = null;
   for (const r of reviews) {
-    if (r.event === "PASS" || r.event === "REQUEST_CHANGES")
-      latestByTopic.set(r.topic ?? null, r);
+    if (r.event === "PASS" || r.event === "REQUEST_CHANGES") latest = r;
   }
-  const topics = Array.from(latestByTopic.entries()).map(([topic, r]) => {
-    if (r.event === "REQUEST_CHANGES") {
-      return {
-        topic,
-        headSha: r.head_sha,
-        state: "changes_requested",
-        blockingReason: "request_changes",
-      } satisfies ReviewTopicGate;
-    }
-    // A PASS that went stale needs a re-review. Passes with no recorded
-    // head_sha (pre-tracking) cannot be determined stale, so they still pass.
-    if (r.head_sha && currentHeadSha && r.head_sha !== currentHeadSha) {
-      return {
-        topic,
-        headSha: r.head_sha,
-        state: "stale",
-        blockingReason: "stale",
-      } satisfies ReviewTopicGate;
-    }
+  if (!latest)
     return {
-      topic,
-      headSha: r.head_sha,
-      state: "passed",
+      reviewed: false,
+      passed: false,
+      headSha: null,
       blockingReason: null,
-    } satisfies ReviewTopicGate;
-  });
+    };
+  if (latest.event === "REQUEST_CHANGES")
+    return {
+      reviewed: true,
+      passed: false,
+      headSha: latest.head_sha,
+      blockingReason: "request_changes",
+    };
+  // A PASS that went stale needs a re-review. Passes with no recorded
+  // head_sha (pre-tracking) cannot be determined stale, so they still pass.
+  if (latest.head_sha && currentHeadSha && latest.head_sha !== currentHeadSha)
+    return {
+      reviewed: true,
+      passed: false,
+      headSha: latest.head_sha,
+      blockingReason: "stale",
+    };
   return {
-    reviewed: topics.length > 0,
-    allTopicsPassed:
-      topics.length > 0 && topics.every((topic) => topic.state === "passed"),
-    topics,
+    reviewed: true,
+    passed: true,
+    headSha: latest.head_sha,
+    blockingReason: null,
   };
 }
 
 /**
- * Compute the display state and per-topic merge gate from the same review
- * snapshot. This keeps the user-facing state consistent with merge blocking:
- * any unresolved change request wins, then any stale topic, and only a fresh
- * PASS for every reviewed topic produces PASSED.
+ * Compute the display state and merge gate from the same review snapshot. This
+ * keeps the user-facing state consistent with merge blocking: an unresolved
+ * change request wins, then a stale pass, and only a fresh PASS produces PASSED.
  */
 export function computeReviewStatus(
   issueId: number,
@@ -220,7 +188,7 @@ export function computeReviewStatus(
       gate,
     };
   }
-  if (gate.topics.some((topic) => topic.state === "changes_requested")) {
+  if (gate.blockingReason === "request_changes") {
     return {
       state: p.changes_addressed_at
         ? "READY_FOR_RE_REVIEW"
@@ -228,7 +196,7 @@ export function computeReviewStatus(
       gate,
     };
   }
-  if (gate.topics.some((topic) => topic.state === "stale")) {
+  if (gate.blockingReason === "stale") {
     return { state: "STALE", gate };
   }
   return { state: "PASSED", gate };

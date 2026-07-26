@@ -25,6 +25,6 @@ export async function currentMergeableState(
     hasEffectiveDiff: effectiveDiff,
     conflict: preview.conflict,
     reviewed: reviewGate.reviewed,
-    allTopicsPassed: reviewGate.allTopicsPassed,
+    reviewPassed: reviewGate.passed,
   }).mergeable_state;
 }

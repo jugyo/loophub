@@ -897,9 +897,8 @@ export interface ReviewWire {
   state: string;
   body: string;
   // The commit this review was made against (lets clients group reviews by
-  // commit, e.g. #208) and its aspect/topic (#209). Both may be null.
+  // commit, e.g. #208); may be null.
   head_sha: string | null;
-  topic: string | null;
   // The agent/model that produced the review (#1107); null when unattributed.
   model: string | null;
   submitted_at: string;
@@ -918,7 +917,6 @@ export function reviewJSON(
     state: v.event,
     body: v.body,
     head_sha: v.head_sha ?? null,
-    topic: v.topic ?? null,
     model: v.model ?? null,
     submitted_at: v.created_at,
     ac_results: acResults,
@@ -927,25 +925,17 @@ export function reviewJSON(
 
 export interface ReviewGateWire {
   reviewed: boolean;
-  all_topics_passed: boolean;
-  topics: Array<{
-    topic: string | null;
-    head_sha: string | null;
-    state: S.ReviewTopicState;
-    blocking_reason: S.ReviewBlockingReason | null;
-  }>;
+  passed: boolean;
+  head_sha: string | null;
+  blocking_reason: S.ReviewBlockingReason | null;
 }
 
 export function reviewGateJSON(gate: S.ReviewGate): ReviewGateWire {
   return {
     reviewed: gate.reviewed,
-    all_topics_passed: gate.allTopicsPassed,
-    topics: gate.topics.map((topic) => ({
-      topic: topic.topic,
-      head_sha: topic.headSha,
-      state: topic.state,
-      blocking_reason: topic.blockingReason,
-    })),
+    passed: gate.passed,
+    head_sha: gate.headSha,
+    blocking_reason: gate.blockingReason,
   };
 }
 

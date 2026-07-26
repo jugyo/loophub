@@ -731,7 +731,7 @@ test("fresh Verify closes the previous Verify pane before launching after rework
     spawnSync("git", ["-C", body.worktree, "rev-parse", "HEAD"], {
       encoding: "utf8",
     }).stdout.trim();
-  // Post the domain fact a Verify child would produce: a `workflow`-topic PR review authored by the
+  // Post the domain fact a Verify child would produce: a PR review authored by the
   // run's verifier child, pinned to the reviewed head. A dedicated registered session gives the
   // review the exact `verifier #<run>-<seq>` author the run reads its verdict from.
   const postWorkflowReview = (
@@ -760,8 +760,6 @@ test("fresh Verify closes the previous Verify pane before launching after rework
         String(body.pr.number),
         "--repo",
         REPO,
-        "--topic",
-        "workflow",
         "--commit",
         sha,
         "--event",

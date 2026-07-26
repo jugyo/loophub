@@ -2,7 +2,7 @@ import type { WorkflowStep } from "./compose.ts";
 
 /**
  * The latest Verify review observed for a run: the run's own verifier child's
- * PR review (topic `workflow`), pinned to the head SHA it reviewed. This is a
+ * PR review, pinned to the head SHA it reviewed. This is a
  * plain domain fact — there is no Workflow-specific completion state behind it.
  */
 export type WorkflowLatestReviewState = {

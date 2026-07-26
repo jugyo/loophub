@@ -61,7 +61,7 @@ function commit(worktree: string, name: string, content: string): string {
 }
 
 // Create the domain fact a Verify child would produce: a PR review authored by the run's verifier
-// child, topic `workflow`, pinned to the reviewed head SHA. The engine reads the run's verdict from
+// child, pinned to the reviewed head SHA. The engine reads the run's verdict from
 // this review, not from any artifact.
 function createWorkflowReview(input: {
   prIssueId: number;
@@ -1299,7 +1299,6 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     started.pr.number,
     {
       event: "PASS",
-      topic: "workflow",
       headSha: headA,
       body: "All criteria pass.",
     },
@@ -1343,7 +1342,6 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     started.pr.number,
     {
       event: "PASS",
-      topic: "workflow",
       headSha: headA,
       body: "The same head still passes.",
     },
@@ -1980,7 +1978,6 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     started.pr.number,
     {
       event: "FEEDBACK",
-      topic: "workflow",
       headSha: reviewedHead,
       body: "Please account for this.",
     },
@@ -1991,7 +1988,6 @@ test("step status exposes hold, rework, pending effects, and unaddressed out-of-
     started.pr.number,
     {
       event: "REQUEST_CHANGES",
-      topic: "security",
       headSha: reviewedHead,
       body: "Please fix this too.",
     },
@@ -2153,7 +2149,6 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     started.pr.number,
     {
       event: "REQUEST_CHANGES",
-      topic: "workflow",
       headSha: baseHead,
       body: "Drive-by review while Execute runs.",
     },
@@ -2204,7 +2199,6 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     started.pr.number,
     {
       event: "PASS",
-      topic: "workflow",
       headSha: headA,
       body: "All criteria pass.",
     },
@@ -2250,7 +2244,6 @@ test("an unattributed review counts as Verify's only while the run is verifying 
     started.pr.number,
     {
       event: "REQUEST_CHANGES",
-      topic: "security",
       headSha: headA,
       body: "Please fix this too.",
     },
@@ -2326,7 +2319,7 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
   const passA = await svc.reviews.create(
     repo.full_name,
     started.pr.number,
-    { event: "PASS", topic: "workflow", headSha: headA, body: "v1 passes." },
+    { event: "PASS", headSha: headA, body: "v1 passes." },
     "unregistered-verify-a",
   );
   let status = await svc.workflowRuns.status(repo.full_name, {
@@ -2352,7 +2345,7 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
   const passB = await svc.reviews.create(
     repo.full_name,
     started.pr.number,
-    { event: "PASS", topic: "workflow", headSha: headB, body: "v2 passes." },
+    { event: "PASS", headSha: headB, body: "v2 passes." },
     "unregistered-verify-b",
   );
   status = await svc.workflowRuns.status(repo.full_name, {
@@ -2388,7 +2381,7 @@ test("a verifying run keeps attributing its own Verify pass across cost-hold res
   const passC = await svc.reviews.create(
     repo.full_name,
     started.pr.number,
-    { event: "PASS", topic: "workflow", headSha: headC, body: "v3 passes." },
+    { event: "PASS", headSha: headC, body: "v3 passes." },
     "unregistered-verify-c",
   );
   status = await svc.workflowRuns.status(repo.full_name, {
@@ -2480,7 +2473,6 @@ test("rework: request_changes -> address review -> turn done -> fresh Verify pas
     started.pr.number,
     {
       event: "REQUEST_CHANGES",
-      topic: "workflow",
       headSha: headA,
       body: "One change required.",
       comments: [{ path: "file-0.ts", line: 1, body: "needs a fix" }],
@@ -2657,7 +2649,6 @@ test("a turn done after the active Verify reviewed launches a fresh Verify", asy
     started.pr.number,
     {
       event: "PASS",
-      topic: "workflow",
       headSha: headA,
       body: "All criteria pass.",
     },

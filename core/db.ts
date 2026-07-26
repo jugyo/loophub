@@ -208,7 +208,6 @@ CREATE TABLE IF NOT EXISTS reviews (
   event       TEXT NOT NULL,
   body        TEXT NOT NULL DEFAULT '',
   head_sha    TEXT,
-  topic       TEXT,
   model       TEXT,
   created_at  TEXT NOT NULL
 );

@@ -231,7 +231,7 @@ commit せず turn done してよい（親は HEAD 不変なら既存 pass を�
 launch 時に (issue 参照, base SHA, head SHA) を受け取り、`git diff <base>..<head>` を自分で計算して
 その固定 diff だけをレビューする。レビュー範囲をその diff から拡張せず、PR body・実装者の説明は
 読まない（PR 番号は review の提出先としてのみ与えられる）。source は編集せず、必要なテストは実行できる。
-出力は `lh pr review --topic workflow --commit <head sha>` による、head SHA に pin された PR review
+出力は `lh pr review --commit <head sha>` による、head SHA に pin された PR review
 （pass / request_changes）のみ。毎回 fresh session で起動される。
 
 ### 3.4 非対称性は意図的な設計判断
@@ -263,7 +263,7 @@ run の current step は `execute | verify` のみで、新しい run は `curre
 | step | 出力 | 完了の観測 |
 |---|---|---|
 | Execute | commits + 通常の PR body / attachment / comment 操作 | HEAD が base より先行し、最新 review が指す SHA より前進している |
-| Verify | head SHA に pin された PR review（topic `workflow`） | 最新 review が current HEAD に pin されている（fresh） |
+| Verify | head SHA に pin された PR review | 最新 review が current HEAD に pin されている（fresh） |
 
 `lh workflow step status <run> --json` は観測結果を返す: current HEAD、HEAD が base より先行しているか、
 最新 turn-done 宣言の時刻、各 step の状態（Verify は最新 workflow review の id / event / **fresh**）。
@@ -401,7 +401,7 @@ lh workflow step status <run> --json        # HEAD/base・最新 turn-done・最
 herdr pane send-keys <pane_id> Escape       # コスト超過時に active child へ実 Esc を送る
 ```
 
-`lh workflow step output` は廃止した。Verify の出力は `lh pr review --topic workflow --commit <sha>`
+`lh workflow step output` は廃止した。Verify の出力は `lh pr review --commit <sha>`
 を用いる。
 
 ## 9. 廃止と移行

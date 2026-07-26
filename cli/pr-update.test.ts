@@ -85,19 +85,17 @@ function viewJSON(n: number) {
   return JSON.parse(stdout);
 }
 
-function review(n: number, topic: string, event = "pass") {
+function review(n: number, event = "pass") {
   const result = lh([
     "pr",
     "review",
     String(n),
     "--repo",
     REPO,
-    "--topic",
-    topic,
     "--event",
     event,
     "--body",
-    `${topic}: ${event}`,
+    `review: ${event}`,
   ]);
   if (result.exitCode !== 0) throw new Error(result.stderr);
 }
@@ -188,11 +186,21 @@ test("lh pr view --json exposes the recorded base_sha", () => {
   expect(viewJSON(n).base_sha).toBe(expected);
 });
 
-test("lh pr view --json identifies each topic blocking the current head", () => {
+test("lh pr view --json reports the gate from the latest review and the current head", () => {
   const n = createPull("review gate", "body");
   const reviewedHead = gitOutput(["rev-parse", "feature"]);
-  for (const topic of ["workflow", "quality", "security", "acceptance"])
-    review(n, topic);
+  review(n);
+
+  expect(viewJSON(n)).toMatchObject({
+    review_state: "PASSED",
+    mergeable_state: "clean",
+    review_gate: {
+      reviewed: true,
+      passed: true,
+      head_sha: reviewedHead,
+      blocking_reason: null,
+    },
+  });
 
   writeFileSync(join(repoPath, "rebase-base.txt"), "new base\n");
   git(["add", "-A"]);
@@ -203,72 +211,49 @@ test("lh pr view --json identifies each topic blocking the current head", () => 
 
   const currentHead = gitOutput(["rev-parse", "feature"]);
   expect(currentHead).not.toBe(reviewedHead);
-  for (const topic of ["quality", "security", "acceptance"]) review(n, topic);
 
-  const stale = viewJSON(n);
-  expect(stale.review_state).toBe("STALE");
-  expect(stale.mergeable_state).toBe("blocked");
-  expect(stale.review_gate).toMatchObject({
-    reviewed: true,
-    all_topics_passed: false,
-    topics: [
-      {
-        topic: "workflow",
-        head_sha: reviewedHead,
-        state: "stale",
-        blocking_reason: "stale",
-      },
-      {
-        topic: "quality",
-        head_sha: currentHead,
-        state: "passed",
-        blocking_reason: null,
-      },
-      {
-        topic: "security",
-        head_sha: currentHead,
-        state: "passed",
-        blocking_reason: null,
-      },
-      {
-        topic: "acceptance",
-        head_sha: currentHead,
-        state: "passed",
-        blocking_reason: null,
-      },
-    ],
+  // The pass was pinned to the pre-rebase head, so it is stale rather than passing.
+  expect(viewJSON(n)).toMatchObject({
+    review_state: "STALE",
+    mergeable_state: "blocked",
+    review_gate: {
+      reviewed: true,
+      passed: false,
+      head_sha: reviewedHead,
+      blocking_reason: "stale",
+    },
   });
 
-  review(n, "workflow");
+  review(n);
   expect(viewJSON(n)).toMatchObject({
     review_state: "PASSED",
     mergeable_state: "clean",
-    review_gate: { reviewed: true, all_topics_passed: true },
+    review_gate: {
+      reviewed: true,
+      passed: true,
+      head_sha: currentHead,
+      blocking_reason: null,
+    },
   });
 
-  review(n, "security", "request_changes");
+  review(n, "request_changes");
   expect(viewJSON(n)).toMatchObject({
     review_state: "CHANGES_REQUESTED",
     mergeable_state: "blocked",
     review_gate: {
       reviewed: true,
-      all_topics_passed: false,
-      topics: expect.arrayContaining([
-        {
-          topic: "security",
-          head_sha: currentHead,
-          state: "changes_requested",
-          blocking_reason: "request_changes",
-        },
-      ]),
+      passed: false,
+      head_sha: currentHead,
+      blocking_reason: "request_changes",
     },
   });
 
-  review(n, "security");
+  // A later PASS supersedes it — no matching label required (#1934).
+  review(n);
   expect(viewJSON(n)).toMatchObject({
     review_state: "PASSED",
     mergeable_state: "clean",
-    review_gate: { reviewed: true, all_topics_passed: true },
+    review_gate: { reviewed: true, passed: true, blocking_reason: null },
   });
 });
 

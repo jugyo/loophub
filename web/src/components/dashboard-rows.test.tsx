@@ -192,7 +192,12 @@ function makePullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
     changed_files: 0,
     working: false,
     review_state: null,
-    review_gate: { reviewed: false, all_topics_passed: false, topics: [] },
+    review_gate: {
+      reviewed: false,
+      passed: false,
+      head_sha: null,
+      blocking_reason: null,
+    },
     changes_addressed_at: null,
     changes_addressed_by: null,
     labels: [],

@@ -14,7 +14,7 @@ import * as S from "./store.ts";
 // worker knows no skill names and launches nothing (that dispatch coupling is what #1232 removes).
 
 // Whether this sweep should fire the conflict event for a state change. Only a clean -> conflict
-// edge qualifies: `clean` already requires reviewed && all-topics-passed (see resolveMergeable),
+// edge qualifies: `clean` already requires reviewed && review-passed (see resolveMergeable),
 // so this naturally excludes drafts, unreviewed (`blocked`), and diff-free (`no_commits`) PRs — a
 // PR still being worked is never `clean` — and avoids re-firing while a PR simply stays
 // conflicted.

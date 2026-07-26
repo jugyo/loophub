@@ -212,19 +212,17 @@ function reviewGroupVerdict(reviews: PullReview[]): {
   tone: BadgeTone;
   label: string;
 } {
-  // reviews/list returns submitted_at ascending, matching computeReviewGate's latest-topic-wins
-  // rule: later blocking reviews overwrite earlier reviews for the same topic.
-  const latestByTopic = new Map<string | null, PullReview>();
+  // reviews/list returns submitted_at ascending, matching computeReviewGate's latest-wins rule:
+  // the last substantive review decides the verdict, and earlier ones no longer speak (#1934).
+  let latest: PullReview | null = null;
   for (const review of reviews) {
-    if (review.state === "PASS" || review.state === "REQUEST_CHANGES") {
-      latestByTopic.set(review.topic ?? null, review);
-    }
+    if (review.state === "PASS" || review.state === "REQUEST_CHANGES")
+      latest = review;
   }
-  const latest = [...latestByTopic.values()];
-  if (latest.some((review) => review.state === "REQUEST_CHANGES")) {
+  if (latest?.state === "REQUEST_CHANGES") {
     return { tone: "review-changes", label: "changes requested" };
   }
-  if (latest.some((review) => review.state === "PASS")) {
+  if (latest?.state === "PASS") {
     return { tone: "review-passed", label: "passed" };
   }
   return { tone: "review-commented", label: "commented" };
@@ -430,11 +428,6 @@ function ReviewItem({
         >
           ● {review.state}
         </span>{" "}
-        {review.topic ? (
-          <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-            {review.topic}
-          </span>
-        ) : null}
         <span className="font-medium">@{review.user.login}</span>{" "}
         {review.model ? (
           <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">

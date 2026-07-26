@@ -71,7 +71,6 @@ test("Japanese contracts preserve the required commands and action procedures", 
   expect(verify).toContain("git diff <base sha>...<head sha>");
   expect(verify).toContain("lh pr review <pr>");
   expect(verify).toContain("--event pass|request_changes");
-  expect(verify).toContain("--topic workflow");
   expect(verify).toContain("--commit <head sha>");
 });
 

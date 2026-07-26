@@ -423,16 +423,17 @@ export const MIGRATIONS: Migration[] = [
   // reviews.head_sha records the PR head a review was made against, so a PASS
   // can be marked stale once the branch advances past that commit.
   addColumn("032-reviews-head-sha", "reviews", "head_sha", "TEXT"),
-  // reviews.topic labels the review's aspect (e.g. design/bug/style/security) so a
-  // single commit can carry several reviews distinguished by topic (#209). NULL =
-  // untagged (all pre-existing rows, and reviews submitted without a topic).
+  // reviews.topic labelled the review's aspect (e.g. design/bug/style/security) so a
+  // single commit could carry several reviews distinguished by topic (#209). The
+  // per-topic merge gate it fed was retired in #1934; migration 047 drops the column
+  // again. Kept here because MIGRATIONS is append-only.
   addColumn("033-reviews-topic", "reviews", "topic", "TEXT"),
   // reviews.model records the agent/model that produced the review (#1107), so a
   // stored review can be attributed to its author's model. NULL for reviews
   // submitted without a model (all pre-existing rows, and human/untagged reviews).
   addColumn("034-reviews-model", "reviews", "model", "TEXT"),
   // #428: unify the review-verdict vocabulary from "approve" to "pass" (AI
-  // reviewers pass/fail a topic rather than "approve" it). One-time rewrite of
+  // reviewers pass/fail a change rather than "approve" it). One-time rewrite of
   // historical rows; new rows are written as PASS directly (core/service.ts still
   // accepts the old "approve" input as a back-compat alias).
   sql(
@@ -635,6 +636,11 @@ export const MIGRATIONS: Migration[] = [
     SELECT 'reviews', COALESCE(MAX(id), 0) FROM reviews;
   `,
   ),
+
+  // #1934: the merge gate no longer buckets reviews by topic, and topic had no other reader — a
+  // label with no defined criteria could block merge forever when no PASS reproduced its exact
+  // string. Existing topic values are dropped with the column; they were display-only.
+  dropColumn("047-drop-reviews-topic", "reviews", "topic"),
 ];
 
 const LEDGER_SCHEMA = `

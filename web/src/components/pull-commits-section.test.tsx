@@ -98,7 +98,6 @@ describe("PullCommitsSection", () => {
         user: { login: "quality-bot" },
         state: "PASS",
         body: "**Looks good.** [Details](https://example.com)",
-        topic: "quality",
         head_sha: commits![0].sha,
         model: "claude-opus-4-8",
         submitted_at: "2026-06-18T12:30:00Z",
@@ -192,7 +191,6 @@ describe("PullCommitsSection", () => {
         user: { login: "verifier #7-1" },
         state: "REQUEST_CHANGES",
         body: "One criterion unmet.",
-        topic: null,
         head_sha: commits![0].sha,
         model: "claude-opus-5",
         submitted_at: "2026-06-18T12:30:00Z",
@@ -256,7 +254,6 @@ describe("PullCommitsSection", () => {
         user: { login: "verifier #7-1" },
         state: "PASS",
         body: "Looks good.",
-        topic: null,
         head_sha: commits![0].sha,
         model: null,
         submitted_at: "2026-06-18T12:30:00Z",
@@ -285,7 +282,6 @@ describe("PullCommitsSection", () => {
         user: { login: "legacy-bot" },
         state: "COMMENT",
         body: "Legacy review",
-        topic: null,
         head_sha: null,
         model: null,
         submitted_at: "2026-06-16T10:00:00Z",
@@ -296,7 +292,6 @@ describe("PullCommitsSection", () => {
         user: { login: "security-bot" },
         state: "REQUEST_CHANGES",
         body: "Review for a commit outside this diff",
-        topic: "security",
         head_sha: "cccccccccccccccccccccccccccccccccccccccc",
         model: null,
         submitted_at: "2026-06-17T10:00:00Z",
@@ -343,14 +338,13 @@ describe("PullCommitsSection", () => {
     ).toBeTruthy();
   });
 
-  it("computes each commit verdict from the latest blocking review per topic", async () => {
+  it("computes each commit verdict from the latest substantive review", async () => {
     const reviews: PullReview[] = [
       {
         id: 4,
         user: { login: "quality-bot" },
         state: "REQUEST_CHANGES",
         body: "Round 1",
-        topic: "quality",
         head_sha: commits![0].sha,
         model: null,
         submitted_at: "2026-06-18T10:00:00Z",
@@ -361,7 +355,6 @@ describe("PullCommitsSection", () => {
         user: { login: "quality-bot" },
         state: "PASS",
         body: "Round 2",
-        topic: "quality",
         head_sha: commits![0].sha,
         model: null,
         submitted_at: "2026-06-18T11:00:00Z",

@@ -245,22 +245,21 @@ test("listIssues keeps filters when using the default created sort (#751)", () =
   expect(titles).toEqual(["newest open", "old open"]);
 });
 
-test("one commit can carry several reviews distinguished by topic (#209)", () => {
-  const repo = S.createRepo("me/topics", "/tmp/topics");
+test("one commit can carry several reviews (#208)", () => {
+  const repo = S.createRepo("me/reviews", "/tmp/reviews");
   const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
   const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
   S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
 
-  // Two topic-tagged reviews plus one untagged, all against the same head.
-  S.createReview(pr.id, "rev", "PASS", "design lgtm", "sha-1", "design");
-  S.createReview(pr.id, "rev", "REQUEST_CHANGES", "sqli", "sha-1", "security");
+  S.createReview(pr.id, "rev", "PASS", "design lgtm", "sha-1");
+  S.createReview(pr.id, "rev", "REQUEST_CHANGES", "sqli", "sha-1");
   S.createReview(pr.id, "rev", "COMMENT", "nit", "sha-1");
 
   const reviews = S.listReviews(pr.id);
-  expect(reviews.map((r: any) => r.topic)).toEqual([
-    "design",
-    "security",
-    null,
+  expect(reviews.map((r: any) => r.event)).toEqual([
+    "PASS",
+    "REQUEST_CHANGES",
+    "COMMENT",
   ]);
   // All bound to the same commit -> they coexist, not overwrite.
   expect(reviews.every((r: any) => r.head_sha === "sha-1")).toBe(true);
@@ -280,7 +279,6 @@ test("review AC grades are written atomically with the review and scoped to it (
     "REQUEST_CHANGES",
     "one failed",
     "sha-1",
-    "workflow",
     null,
     [
       { criterionId: a.id, verdict: "pass", note: "" },
@@ -300,7 +298,6 @@ test("review AC grades are written atomically with the review and scoped to it (
     "PASS",
     "lgtm",
     "sha-1",
-    "workflow",
     null,
     [],
   );
@@ -315,15 +312,7 @@ test("a review records the model that produced it (#1107)", () => {
   S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
 
   // One review with a model, one without (the model arg defaults to null).
-  S.createReview(
-    pr.id,
-    "rev",
-    "PASS",
-    "lgtm",
-    "sha-1",
-    "bug",
-    "claude-opus-4-8",
-  );
+  S.createReview(pr.id, "rev", "PASS", "lgtm", "sha-1", "claude-opus-4-8");
   S.createReview(pr.id, "rev", "COMMENT", "nit", "sha-1");
 
   const reviews = S.listReviews(pr.id);
@@ -340,158 +329,77 @@ test("computeReviewGate: no reviews yet is not gathered and never clean (#427)",
   S.createReview(pr.id, "rev", "COMMENT", "nit", "sha-1");
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: false,
-    allTopicsPassed: false,
-    topics: [],
+    passed: false,
+    headSha: null,
+    blockingReason: null,
   });
 });
 
-test("computeReviewGate: every topic must pass independently (#427)", () => {
-  const repo = S.createRepo("me/gate-topics", "/tmp/gate-topics");
+test("computeReviewGate: the latest substantive review decides the gate (#1934)", () => {
+  const repo = S.createRepo("me/gate-latest", "/tmp/gate-latest");
   const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
   const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
   S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
 
-  // One topic passed, another with an unresolved REQUEST_CHANGES -> blocked.
-  S.createReview(pr.id, "rev", "PASS", "design lgtm", "sha-1", "design");
-  S.createReview(pr.id, "rev", "REQUEST_CHANGES", "sqli", "sha-1", "security");
+  // An unresolved REQUEST_CHANGES blocks, even though an earlier review passed.
+  S.createReview(pr.id, "rev", "PASS", "design lgtm", "sha-1");
+  S.createReview(pr.id, "rev", "REQUEST_CHANGES", "sqli", "sha-1");
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
-    allTopicsPassed: false,
-    topics: [
-      {
-        topic: "design",
-        headSha: "sha-1",
-        state: "passed",
-        blockingReason: null,
-      },
-      {
-        topic: "security",
-        headSha: "sha-1",
-        state: "changes_requested",
-        blockingReason: "request_changes",
-      },
-    ],
+    passed: false,
+    headSha: "sha-1",
+    blockingReason: "request_changes",
   });
 
-  // Resolve the security topic with a fresh PASS -> all topics pass.
-  S.createReview(pr.id, "rev", "PASS", "fixed", "sha-1", "security");
+  // A later PASS resolves it — no matching label required, unlike the retired per-topic gate.
+  S.createReview(pr.id, "rev", "PASS", "fixed", "sha-1");
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
-    allTopicsPassed: true,
-    topics: [
-      {
-        topic: "design",
-        headSha: "sha-1",
-        state: "passed",
-        blockingReason: null,
-      },
-      {
-        topic: "security",
-        headSha: "sha-1",
-        state: "passed",
-        blockingReason: null,
-      },
-    ],
+    passed: true,
+    headSha: "sha-1",
+    blockingReason: null,
   });
+
+  // A COMMENT after the pass is not substantive and leaves the gate open.
+  S.createReview(pr.id, "rev", "COMMENT", "nit", "sha-1");
+  expect(S.computeReviewGate(pr.id)).toMatchObject({ passed: true });
 });
 
-test("computeReviewGate: a stale PASS on a topic does not pass (#427)", () => {
+test("computeReviewGate: a stale PASS does not pass (#427)", () => {
   const repo = S.createRepo("me/gate-stale", "/tmp/gate-stale");
   const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
   const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
   S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
 
-  S.createReview(pr.id, "rev", "PASS", "lgtm", "sha-1", "quality");
+  S.createReview(pr.id, "rev", "PASS", "lgtm", "sha-1");
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
-    allTopicsPassed: true,
-    topics: [
-      {
-        topic: "quality",
-        headSha: "sha-1",
-        state: "passed",
-        blockingReason: null,
-      },
-    ],
+    passed: true,
+    headSha: "sha-1",
+    blockingReason: null,
   });
 
   // Head advances past the reviewed commit -> the pass is stale, not passing.
   S.setHeadSha(pr.id, "sha-2");
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
-    allTopicsPassed: false,
-    topics: [
-      {
-        topic: "quality",
-        headSha: "sha-1",
-        state: "stale",
-        blockingReason: "stale",
-      },
-    ],
+    passed: false,
+    headSha: "sha-1",
+    blockingReason: "stale",
   });
 
   // Re-pass against the new head -> passes again.
-  S.createReview(pr.id, "rev", "PASS", "lgtm again", "sha-2", "quality");
+  S.createReview(pr.id, "rev", "PASS", "lgtm again", "sha-2");
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
-    allTopicsPassed: true,
-    topics: [
-      {
-        topic: "quality",
-        headSha: "sha-2",
-        state: "passed",
-        blockingReason: null,
-      },
-    ],
+    passed: true,
+    headSha: "sha-2",
+    blockingReason: null,
   });
 });
 
-test("review state stays stale while any topic only passed an older head", () => {
-  const repo = S.createRepo("me/gate-mixed-heads", "/tmp/gate-mixed-heads");
-  const issue = S.createIssue(repo.id, "issue", "issue", "body", "me");
-  const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot");
-  S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
-
-  S.createReview(pr.id, "rev", "PASS", "workflow ok", "sha-1", "workflow");
-  S.setHeadSha(pr.id, "sha-2");
-  S.createReview(pr.id, "rev", "PASS", "quality ok", "sha-2", "quality");
-  S.createReview(pr.id, "rev", "PASS", "security ok", "sha-2", "security");
-  S.createReview(pr.id, "rev", "PASS", "acceptance ok", "sha-2", "acceptance");
-
-  expect(S.computeReviewGate(pr.id)).toEqual({
-    reviewed: true,
-    allTopicsPassed: false,
-    topics: [
-      {
-        topic: "workflow",
-        headSha: "sha-1",
-        state: "stale",
-        blockingReason: "stale",
-      },
-      {
-        topic: "quality",
-        headSha: "sha-2",
-        state: "passed",
-        blockingReason: null,
-      },
-      {
-        topic: "security",
-        headSha: "sha-2",
-        state: "passed",
-        blockingReason: null,
-      },
-      {
-        topic: "acceptance",
-        headSha: "sha-2",
-        state: "passed",
-        blockingReason: null,
-      },
-    ],
-  });
-});
-
-test("computeReviewGate: a single untagged PASS passes (legacy single-topic)", () => {
-  const repo = S.createRepo("me/gate-untagged", "/tmp/gate-untagged");
+test("computeReviewGate: a PASS with no recorded head passes (pre-tracking)", () => {
+  const repo = S.createRepo("me/gate-untracked", "/tmp/gate-untracked");
   const issue = S.createIssue(repo.id, "issue", "issue", "body", "me") as any;
   const pr = S.createIssue(repo.id, "pull", "feat", "Closes #1", "bot") as any;
   S.createPull(pr.id, "feat", "main", "sha-1", issue.id);
@@ -500,15 +408,9 @@ test("computeReviewGate: a single untagged PASS passes (legacy single-topic)", (
   S.createReview(pr.id, "rev", "PASS", "lgtm");
   expect(S.computeReviewGate(pr.id)).toEqual({
     reviewed: true,
-    allTopicsPassed: true,
-    topics: [
-      {
-        topic: null,
-        headSha: null,
-        state: "passed",
-        blockingReason: null,
-      },
-    ],
+    passed: true,
+    headSha: null,
+    blockingReason: null,
   });
 });
 

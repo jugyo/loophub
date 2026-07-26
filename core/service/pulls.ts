@@ -759,11 +759,7 @@ export const pulls = {
       throw new ServiceError(422, "Pull Request is not open");
     const actor = actorFor(sessionId);
     const reviewStatus = S.computeReviewStatus(row.id);
-    if (
-      !reviewStatus.gate.topics.some(
-        (topic) => topic.state === "changes_requested",
-      )
-    ) {
+    if (reviewStatus.gate.blockingReason !== "request_changes") {
       throw new ServiceError(422, "No pending change requests to address");
     }
     if (p.changes_addressed_at)

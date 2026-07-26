@@ -131,7 +131,6 @@ export const reviews = {
     input: {
       event?: string;
       body?: string;
-      topic?: string;
       model?: string;
       headSha?: string;
       comments?: { path: string; line?: number; side?: string; body: string }[];
@@ -145,10 +144,6 @@ export const reviews = {
     let event = (input.event ?? "COMMENT").toUpperCase();
     // Back-compat: pre-#428 callers still pass "approve" (the old vocabulary).
     if (event === "APPROVE") event = "PASS";
-    // Aspect/topic of the review (e.g. design/bug/style/security), so a single
-    // commit can carry several reviews distinguished by topic (#209). Free-form;
-    // a blank topic is stored as NULL (untagged).
-    const topic = input.topic?.trim() || null;
     // The agent/model that produced the review (#1107). Free-form; a blank model
     // is stored as NULL (unattributed), preserving pre-#1107 behavior.
     const model = input.model?.trim() || null;
@@ -179,7 +174,6 @@ export const reviews = {
       event,
       input.body ?? "",
       headSha,
-      topic,
       model,
       acResults,
     );
@@ -196,7 +190,6 @@ export const reviews = {
     S.emitEvent(r.id, "pull_request.review_submitted", actor, {
       number: row.number,
       state: event,
-      topic,
       comments: lineComments.length,
     });
     const workflowRun =

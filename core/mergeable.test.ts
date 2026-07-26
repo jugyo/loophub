@@ -9,7 +9,7 @@ describe("resolveMergeable", () => {
         hasEffectiveDiff: false,
         conflict: false,
         reviewed: true,
-        allTopicsPassed: true,
+        reviewPassed: true,
       }),
     ).toEqual({ mergeable: false, mergeable_state: "no_commits" });
   });
@@ -20,7 +20,7 @@ describe("resolveMergeable", () => {
         hasEffectiveDiff: false,
         conflict: true,
         reviewed: false,
-        allTopicsPassed: false,
+        reviewPassed: false,
       }),
     ).toEqual({ mergeable: false, mergeable_state: "no_commits" });
   });
@@ -31,7 +31,7 @@ describe("resolveMergeable", () => {
         hasEffectiveDiff: true,
         conflict: true,
         reviewed: true,
-        allTopicsPassed: true,
+        reviewPassed: true,
       }),
     ).toEqual({ mergeable: false, mergeable_state: "conflict" });
   });
@@ -44,29 +44,29 @@ describe("resolveMergeable", () => {
         hasEffectiveDiff: true,
         conflict: false,
         reviewed: false,
-        allTopicsPassed: false,
+        reviewPassed: false,
       }),
     ).toEqual({ mergeable: false, mergeable_state: "blocked" });
   });
 
-  it("blocks a PR with an unresolved REQUEST_CHANGES on a topic", () => {
+  it("blocks a PR with an unresolved REQUEST_CHANGES", () => {
     expect(
       resolveMergeable({
         hasEffectiveDiff: true,
         conflict: false,
         reviewed: true,
-        allTopicsPassed: false,
+        reviewPassed: false,
       }),
     ).toEqual({ mergeable: false, mergeable_state: "blocked" });
   });
 
-  it("marks a PR with commits, no conflict, and all topics passed as clean/mergeable", () => {
+  it("marks a PR with commits, no conflict, and a passing review as clean/mergeable", () => {
     expect(
       resolveMergeable({
         hasEffectiveDiff: true,
         conflict: false,
         reviewed: true,
-        allTopicsPassed: true,
+        reviewPassed: true,
       }),
     ).toEqual({ mergeable: true, mergeable_state: "clean" });
   });

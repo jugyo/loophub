@@ -122,7 +122,7 @@ test("a human REQUEST_CHANGES on a PR with a running run emits review_submitted 
   const review = await svc.reviews.create(
     "me/reviews",
     pr,
-    { event: "REQUEST_CHANGES", topic: "workflow", body: "please fix" },
+    { event: "REQUEST_CHANGES", body: "please fix" },
     "human-session",
   );
 
@@ -147,7 +147,7 @@ test("a substantive review on a PR with no running run does not emit review_subm
   await svc.reviews.create(
     "me/reviews",
     pr,
-    { event: "REQUEST_CHANGES", topic: "workflow", body: "please fix" },
+    { event: "REQUEST_CHANGES", body: "please fix" },
     "human-session",
   );
 
@@ -163,7 +163,7 @@ test("a FEEDBACK review on a PR with a running run emits review_submitted with r
   const review = await svc.reviews.create(
     "me/reviews",
     pr,
-    { event: "FEEDBACK", topic: "workflow", body: "consider this" },
+    { event: "FEEDBACK", body: "consider this" },
     "human-session",
   );
 
@@ -187,15 +187,18 @@ test("a FEEDBACK review is gate-neutral: it does not block merge and does not pa
   await svc.reviews.create(
     "me/reviews",
     pr,
-    { event: "FEEDBACK", topic: "workflow", body: "consider this" },
+    { event: "FEEDBACK", body: "consider this" },
     "human-session",
   );
 
   const detail = await svc.pulls.get("me/reviews", pr);
-  // No topic bucket is formed → unreviewed (not mergeable-by-itself), but not blocked either.
-  expect(detail.review_gate.reviewed).toBe(false);
-  expect(detail.review_gate.all_topics_passed).toBe(false);
-  expect(detail.review_gate.topics).toEqual([]);
+  // The gate ignores FEEDBACK → unreviewed (not mergeable-by-itself), but not blocked either.
+  expect(detail.review_gate).toEqual({
+    reviewed: false,
+    passed: false,
+    head_sha: null,
+    blocking_reason: null,
+  });
 });
 
 test("a non-substantive COMMENT review never emits review_submitted even with a running run", async () => {
@@ -206,35 +209,37 @@ test("a non-substantive COMMENT review never emits review_submitted even with a 
   await svc.reviews.create(
     "me/reviews",
     pr,
-    { event: "COMMENT", topic: "workflow", body: "fyi" },
+    { event: "COMMENT", body: "fyi" },
     "human-session",
   );
 
   expect(reviewEvents().length).toBe(before);
 });
 
-test("gate goes blocked on REQUEST_CHANGES(workflow) and clean when a later PASS(workflow) supersedes it", async () => {
+test("gate goes blocked on REQUEST_CHANGES and open when a later PASS supersedes it", async () => {
   const pr = await newPull("gate");
 
   await svc.reviews.create(
     "me/reviews",
     pr,
-    { event: "REQUEST_CHANGES", topic: "workflow", body: "please fix" },
+    { event: "REQUEST_CHANGES", body: "please fix" },
     "human-session",
   );
   let detail = await svc.pulls.get("me/reviews", pr);
   expect(detail.review_gate.reviewed).toBe(true);
-  expect(detail.review_gate.all_topics_passed).toBe(false);
+  expect(detail.review_gate.passed).toBe(false);
+  expect(detail.review_gate.blocking_reason).toBe("request_changes");
 
-  // A Verify PASS on the same `workflow` topic supersedes the human request_changes.
+  // A Verify PASS supersedes the human request_changes (#1934).
   await svc.reviews.create(
     "me/reviews",
     pr,
-    { event: "PASS", topic: "workflow", body: "all good" },
+    { event: "PASS", body: "all good" },
     "verify-session",
   );
   detail = await svc.pulls.get("me/reviews", pr);
-  expect(detail.review_gate.all_topics_passed).toBe(true);
+  expect(detail.review_gate.passed).toBe(true);
+  expect(detail.review_gate.blocking_reason).toBeNull();
 });
 
 test("--ac-results records a grade per enabled criterion on the review row (#1895)", async () => {
@@ -244,7 +249,6 @@ test("--ac-results records a grade per enabled criterion on the review row (#189
   ]);
   const review = await svc.reviews.create("me/reviews", prNumber, {
     event: "REQUEST_CHANGES",
-    topic: "workflow",
     body: "beta not met",
     acResults: [
       { criterion_id: acIds[0], verdict: "pass" },
@@ -265,7 +269,6 @@ test("a PASS contradicted by a failing grade is soft-warned, not rejected (#1896
   ]);
   const review = await svc.reviews.create("me/reviews", prNumber, {
     event: "PASS",
-    topic: "workflow",
     body: "lgtm",
     acResults: [
       { criterion_id: acIds[0], verdict: "pass" },
@@ -290,7 +293,6 @@ test("a consistent verdict carries no warning (#1896)", async () => {
   ]);
   const passed = await svc.reviews.create("me/reviews", prNumber, {
     event: "PASS",
-    topic: "workflow",
     body: "lgtm",
     acResults: [
       { criterion_id: acIds[0], verdict: "pass" },
@@ -300,7 +302,6 @@ test("a consistent verdict carries no warning (#1896)", async () => {
   expect(passed.warnings).toEqual([]);
   const changes = await svc.reviews.create("me/reviews", prNumber, {
     event: "REQUEST_CHANGES",
-    topic: "workflow",
     body: "beta not met",
     acResults: [
       { criterion_id: acIds[0], verdict: "pass" },
@@ -314,7 +315,6 @@ test("omitting --ac-results is the holistic fallback: no grade rows (#1895)", as
   const { prNumber } = await newPullForRubric("grade-holistic", ["only"]);
   const review = await svc.reviews.create("me/reviews", prNumber, {
     event: "PASS",
-    topic: "workflow",
     body: "lgtm",
   });
   expect(S.listReviewAcResults(review.id)).toEqual([]);
@@ -326,7 +326,6 @@ test("a criterion outside the linked issue's enabled rubric is rejected, not cor
   await expect(
     svc.reviews.create("me/reviews", prNumber, {
       event: "PASS",
-      topic: "workflow",
       body: "x",
       acResults: [
         { criterion_id: acIds[0], verdict: "pass" },
@@ -347,7 +346,6 @@ test("a disabled criterion is not gradable; grading only the enabled set succeed
   await expect(
     svc.reviews.create("me/reviews", prNumber, {
       event: "PASS",
-      topic: "workflow",
       body: "x",
       acResults: [
         { criterion_id: acIds[0], verdict: "pass" },
@@ -357,7 +355,6 @@ test("a disabled criterion is not gradable; grading only the enabled set succeed
   ).rejects.toThrow(/not an enabled acceptance criterion/);
   const review = await svc.reviews.create("me/reviews", prNumber, {
     event: "PASS",
-    topic: "workflow",
     body: "ok",
     acResults: [{ criterion_id: acIds[0], verdict: "pass" }],
   });
@@ -374,7 +371,6 @@ test("a partial (undersized) grade set is rejected — every enabled criterion m
   await expect(
     svc.reviews.create("me/reviews", prNumber, {
       event: "PASS",
-      topic: "workflow",
       body: "x",
       acResults: [{ criterion_id: acIds[0], verdict: "pass" }],
     }),
@@ -386,7 +382,6 @@ test("a duplicate grade for one criterion is rejected (#1895)", async () => {
   await expect(
     svc.reviews.create("me/reviews", prNumber, {
       event: "PASS",
-      topic: "workflow",
       body: "x",
       acResults: [
         { criterion_id: acIds[0], verdict: "pass" },
@@ -401,7 +396,6 @@ test("an invalid verdict is rejected (#1895)", async () => {
   await expect(
     svc.reviews.create("me/reviews", prNumber, {
       event: "PASS",
-      topic: "workflow",
       body: "x",
       acResults: [{ criterion_id: acIds[0], verdict: "maybe" }],
     }),

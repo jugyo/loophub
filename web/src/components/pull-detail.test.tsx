@@ -60,15 +60,9 @@ const pull: PullRequest = {
   review_state: "PASSED",
   review_gate: {
     reviewed: true,
-    all_topics_passed: true,
-    topics: [
-      {
-        topic: "quality",
-        head_sha: "aaa",
-        state: "passed",
-        blocking_reason: null,
-      },
-    ],
+    passed: true,
+    head_sha: "aaa",
+    blocking_reason: null,
   },
   changes_addressed_at: null,
   changes_addressed_by: null,
@@ -123,7 +117,6 @@ const reviews: PullReview[] = [
     user: { login: "design-bot" },
     state: "PASS",
     body: "LGTM",
-    topic: "design",
     head_sha: pull.commits![0].sha,
     model: "claude-opus-4-8",
     submitted_at: "2026-06-18T11:30:00Z",
@@ -245,8 +238,6 @@ describe("PullDetail", () => {
       name: "Reviews for aaaaaaa: Latest change",
     });
     expect(within(reviewDialog).getByText("LGTM")).toBeTruthy();
-    // Review topic tag (#209).
-    expect(within(reviewDialog).getByText("design")).toBeTruthy();
     // Review model tag (#1107).
     expect(within(reviewDialog).getByText("claude-opus-4-8")).toBeTruthy();
     // Line comment.
@@ -802,7 +793,6 @@ describe("PullDetail", () => {
         state: "REQUEST_CHANGES",
         body: "needs work",
         head_sha: "old1234deadbeef",
-        topic: "quality",
         submitted_at: "2026-06-18T10:00:00Z",
         ac_results: [],
       },
@@ -812,7 +802,6 @@ describe("PullDetail", () => {
         state: "PASS",
         body: "LGTM now",
         head_sha: pull.commits![0].sha,
-        topic: null,
         submitted_at: "2026-06-18T11:30:00Z",
         ac_results: [],
       },
@@ -896,7 +885,6 @@ describe("PullDetail", () => {
         state: "REQUEST_CHANGES",
         body: "older feedback",
         head_sha: "older12",
-        topic: null,
         submitted_at: "2026-06-18T09:00:00Z",
         ac_results: [],
       },
@@ -906,7 +894,6 @@ describe("PullDetail", () => {
         state: "REQUEST_CHANGES",
         body: "newest feedback",
         head_sha: "newer34",
-        topic: null,
         submitted_at: "2026-06-18T10:00:00Z",
         ac_results: [],
       },
@@ -972,15 +959,14 @@ describe("PullDetail", () => {
     expect(within(olderDialog).getByText("older feedback")).toBeTruthy();
   });
 
-  it("resolves a group's verdict per-topic, so a later PASS clears an earlier REQUEST_CHANGES on the same topic (#533)", async () => {
-    // Round 1: quality REQUEST_CHANGES against the current head. Round 2:
-    // quality PASS against the same head resolves it, while security also passes.
+  it("resolves a group's verdict from the latest review, so a later PASS clears an earlier REQUEST_CHANGES (#533)", async () => {
+    // Round 1: REQUEST_CHANGES against the current head. Round 2: a later PASS
+    // against the same head resolves it.
     const grouped: PullReview[] = [
       {
         id: 1,
         user: { login: "quality-bot" },
         state: "REQUEST_CHANGES",
-        topic: "quality",
         body: "round 1: needs work",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:00:00Z",
@@ -990,7 +976,6 @@ describe("PullDetail", () => {
         id: 2,
         user: { login: "security-bot" },
         state: "PASS",
-        topic: "security",
         body: "security ok",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:05:00Z",
@@ -1000,7 +985,6 @@ describe("PullDetail", () => {
         id: 3,
         user: { login: "quality-bot" },
         state: "PASS",
-        topic: "quality",
         body: "round 2: looks good now",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T11:00:00Z",
@@ -1046,21 +1030,20 @@ describe("PullDetail", () => {
         name: "View changes in aaaaaaa: Latest change",
       })
     ).closest("li")!;
-    // The quality topic's REQUEST_CHANGES is superseded by its own later PASS,
-    // so the group reads "passed" rather than "changes requested".
+    // The REQUEST_CHANGES is superseded by the later PASS, so the group reads
+    // "passed" rather than "changes requested".
     expect(within(summary).getByText("passed")).toBeTruthy();
     expect(within(summary).queryByText("changes requested")).toBeNull();
   });
 
-  it("keeps a group's verdict as changes requested when an unresolved REQUEST_CHANGES sits alongside a passed topic (#533)", async () => {
-    // quality is REQUEST_CHANGES with no later PASS on that topic; security
-    // passed. The unresolved topic must still dominate the group verdict.
+  it("keeps a group's verdict as changes requested when the latest review requests changes (#533)", async () => {
+    // An earlier PASS followed by an unresolved REQUEST_CHANGES: the latest
+    // review dominates the group verdict.
     const grouped: PullReview[] = [
       {
         id: 1,
         user: { login: "security-bot" },
         state: "PASS",
-        topic: "security",
         body: "security ok",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:00:00Z",
@@ -1070,7 +1053,6 @@ describe("PullDetail", () => {
         id: 2,
         user: { login: "quality-bot" },
         state: "REQUEST_CHANGES",
-        topic: "quality",
         body: "still needs work",
         head_sha: pull.commits![0].sha,
         submitted_at: "2026-06-18T10:05:00Z",

@@ -36,7 +36,7 @@ findings with the single verdict alone; that holistic fallback is normal, not an
 Submit exactly one review, pinned to the reviewed head:
 
 ```
-lh pr review <pr> --repo '<repo>' --topic workflow --commit <head sha> \
+lh pr review <pr> --repo '<repo>' --commit <head sha> \
   --event pass|request_changes --body '<why>' \
   [--comments <json|file>] [--ac-results <json|file>]
 ```

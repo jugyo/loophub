@@ -10,7 +10,7 @@
 //
 // Deliberately NOT cached here: `working` (worktree dirty) and review state.
 // Neither is a function of the SHA pair — the worktree can go dirty/clean and
-// review topics can change without either ref moving — so pullStatusFields
+// a review can be submitted without either ref moving — so pullStatusFields
 // recomputes them every call. revParse of the refs also stays uncached: it is
 // exactly the probe that detects a moved ref, i.e. a cache miss.
 

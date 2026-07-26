@@ -371,39 +371,6 @@ test("request-changes reviews do not generate human-attention notifications", as
   );
 });
 
-test("request-changes reviews across topics do not generate notifications", async () => {
-  const repo = S.getRepo("me", "notify")!;
-  const pr = S.createIssue(repo.id, "pull", "Topic PR", "", "me");
-  S.createPull(pr.id, "topic", "main", "sha-topic", null);
-  S.createReview(
-    pr.id,
-    "reviewer",
-    "REQUEST_CHANGES",
-    "quality changes",
-    null,
-    "quality",
-  );
-  S.createReview(
-    pr.id,
-    "reviewer",
-    "PASS",
-    "security passed",
-    null,
-    "security",
-  );
-
-  const notifications = await svc.notifications.list({ limit: 100 });
-
-  expect(
-    notifications.filter(
-      (n: any) =>
-        n.kind === "human_attention" &&
-        n.resource.kind === "pull" &&
-        n.resource.number === pr.number,
-    ),
-  ).toHaveLength(0);
-});
-
 test("backfill creates a notification for each repeated cost stop event", async () => {
   const repo = S.getRepo("me", "notify")!;
   const pr = S.createIssue(repo.id, "pull", "Repeated cost PR", "", "me");

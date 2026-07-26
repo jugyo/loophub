@@ -52,7 +52,6 @@ async function ingestCritReview(
       plan.number,
       {
         event: "FEEDBACK",
-        topic: "workflow",
         body: review.body,
         comments: review.comments,
       },
@@ -226,7 +225,6 @@ export async function run(): Promise<void> {
         {
           event: (flags.event || "comment").toUpperCase(),
           body: flags.body || "",
-          ...(flags.topic ? { topic: flags.topic } : {}),
           ...(flags.model ? { model: flags.model } : {}),
           // Pin the review to an explicit commit (defaults to the PR's current head). A Workflow
           // Verify child passes the head SHA it was launched against (#1358).

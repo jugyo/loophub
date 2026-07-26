@@ -35,7 +35,7 @@ criterion には actionable な説明を `note` に残します。
 review した head に pin した review を正確に 1 件提出します。
 
 ```
-lh pr review <pr> --repo '<repo>' --topic workflow --commit <head sha> \
+lh pr review <pr> --repo '<repo>' --commit <head sha> \
   --event pass|request_changes --body '<why>' \
   [--comments <json|file>] [--ac-results <json|file>]
 ```
