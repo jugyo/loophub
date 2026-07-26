@@ -39,12 +39,7 @@ test("the English parent prompt remains byte-identical", () => {
       "",
       "## Instruction",
       "Orchestrate this run through Execute -> Verify as described in your contract.",
-      "Decide every transition from the `action` and `observed` state returned by `lh workflow next`; command completion, pane output, and PR body markers are never transition facts.",
-      "Start now:",
-      "1. Launch the Execute child: `lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute`.",
-      "2. Start `lh workflow next 42 --repo 'me/workflow-run' --watch --json` with `exec_command`. If it returns a `session_id` before completion, wait with `write_stdin` using the same session, empty input, and a long yield. Do not emit a final parent response while waiting.",
-      "3. On completion, execute the returned action as your contract describes, then start the same `next --watch` command again with `exec_command`. The command owns event delivery and where to resume, so never seed or acknowledge a cursor.",
-      "Then follow your contract's actions, rework, and escalation for the remaining steps. Do not invoke slash-style commands.",
+      "Start with `lh workflow next 42 --repo 'me/workflow-run' --json`, execute its structured `instructions`, then follow the contract's watch loop. Do not invoke slash-style commands.",
       "",
     ].join("\n"),
   );
@@ -63,33 +58,22 @@ test("the Japanese parent prompt translates prose without changing commands", ()
     "contract の記述に従い、この run を Execute -> Verify の順に orchestrate してください。",
   );
   expect(prompt).toContain(
-    "lh workflow next 42 --repo 'me/workflow-run' --watch --json",
+    "lh workflow next 42 --repo 'me/workflow-run' --json",
   );
-  expect(prompt).toContain(
-    "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute",
-  );
-  expect(prompt).toContain("`exec_command`");
-  expect(prompt).toContain("`write_stdin`");
-  expect(prompt).toContain("parent の最終応答を出しません");
-  expect(prompt).toContain("cursor を seed・acknowledge しません");
+  expect(prompt).toContain("構造化 `instructions`");
+  expect(prompt).not.toContain("launch-step");
 });
 
 // The parent decides every transition from the action and observed state `next` returns.
-test("the parent prompt launches Execute and waits through a unified exec session", () => {
+test("the parent prompt has one next-driven start path", () => {
   const prompt = parentUserPrompt(INPUT, "en");
-  const launch =
-    "lh workflow launch-step --repo 'me/workflow-run' --run 42 --step execute";
-  const watch = "lh workflow next 42 --repo 'me/workflow-run' --watch --json";
-  expect(prompt).toContain(launch);
-  expect(prompt).toContain(watch);
-  expect(prompt).toContain("with `exec_command`");
-  expect(prompt).toContain("wait with `write_stdin` using the same session");
-  expect(prompt).toContain("Do not emit a final parent response while waiting");
-  expect(prompt).toContain("start the same `next --watch` command again");
-  expect(prompt).toContain("never seed or acknowledge a cursor");
+  const initial = "lh workflow next 42 --repo 'me/workflow-run' --json";
+  expect(prompt).toContain(initial);
+  expect(prompt).toContain("structured `instructions`");
+  expect(prompt).not.toContain("launch-step");
+  expect(prompt).not.toContain("--watch");
   expect(prompt).not.toContain("lh workflow watch");
   expect(prompt).not.toContain("--since");
-  expect(prompt.indexOf(launch)).toBeLessThan(prompt.indexOf(watch));
   expect(prompt).not.toContain("watcher_armed");
   expect(prompt).not.toContain("HERDR_PANE_ID");
   expect(prompt).not.toContain("nohup");

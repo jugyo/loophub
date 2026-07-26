@@ -74,6 +74,7 @@ import {
   WORKFLOW_REWORK_LIMIT,
   type WorkflowNextAction,
   type WorkflowWakeInput,
+  workflowActionPlan,
 } from "../workflow/reconcile.ts";
 import {
   writeParentContract,
@@ -245,6 +246,7 @@ export type WorkflowStepStatusResult = WorkflowStepStatusWire;
 // (`--watch`) or was pointed at (`--event`) — the parent needs its id for event-scoped commands
 // such as `lh workflow cost-hold` and for reading a GitHub reference.
 export type WorkflowNextResult = WorkflowNextAction & {
+  instructions: ReturnType<typeof workflowActionPlan>;
   observed: WorkflowStepStatusWire;
   event: LoopEvent | null;
 };
@@ -2159,7 +2161,16 @@ export const workflowRuns = {
               input.requiresChanges,
             ),
     });
-    return { ...action, observed, event: wakeEvent };
+    return {
+      ...action,
+      instructions: workflowActionPlan(action, {
+        repo: name,
+        run: run.id,
+        issue: run.issue_number,
+      }),
+      observed,
+      event: wakeEvent,
+    };
   },
 
   // Display state for issue / PR detail. Verification is derived from the same current HEAD versus

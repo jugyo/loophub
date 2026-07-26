@@ -300,11 +300,11 @@ test("start persists the resolved runtime/model and every step inherits them (#5
   const row = S.getWorkflowRun(result.run.id)!;
   expect(row.runtime).toBe("codex");
   expect(row.model).toBe("gpt-5.5");
-  expect(result.parent.user_prompt).toContain("--watch --json");
-  expect(result.parent.user_prompt).toContain("with `exec_command`");
   expect(result.parent.user_prompt).toContain(
-    "wait with `write_stdin` using the same session",
+    `lh workflow next ${result.run.id} --repo '${repo.full_name}' --json`,
   );
+  expect(result.parent.user_prompt).toContain("structured `instructions`");
+  expect(result.parent.user_prompt).not.toContain("launch-step");
   expect(S.getAgentSession(result.session_id)?.runtime).toBe("codex");
 
   const launched = await svc.workflowRuns.launchStep(
@@ -1059,6 +1059,25 @@ test("agentless e2e: Execute turn done -> observe HEAD -> Verify pass, then a ne
     run: started.run.id,
   });
   expect(initialNext.action).toBe("launch_execute");
+  expect(initialNext.instructions).toMatchObject({
+    boundary: "mechanical",
+    commands: [
+      {
+        command: "lh",
+        args: [
+          "workflow",
+          "launch-step",
+          "--repo",
+          repo.full_name,
+          "--run",
+          String(started.run.id),
+          "--step",
+          "execute",
+        ],
+      },
+    ],
+    after: "watch",
+  });
   expect(
     await svc.workflowRuns.next(repo.full_name, { run: started.run.id }),
   ).toEqual(initialNext);
@@ -1593,6 +1612,12 @@ test("next --watch waits for one run event, owns its cursor, and keeps deciding 
     action: "read_github_reference",
     event_id: github.id,
     references: ["repos/me/workflow-watch/issues/comments/9"],
+    instructions: {
+      boundary: "parent_judgement",
+      decision: {
+        inputs: ["repos/me/workflow-watch/issues/comments/9"],
+      },
+    },
   });
   expect(
     await svc.workflowRuns.next(repo.full_name, {
@@ -1723,7 +1748,14 @@ test("next returns cost_hold for every cost-exceeded wake and the receipt keeps 
       run: started.run.id,
       event: first.id,
     }),
-  ).toMatchObject({ action: "cost_hold", event_id: first.id });
+  ).toMatchObject({
+    action: "cost_hold",
+    event_id: first.id,
+    instructions: {
+      boundary: "mechanical",
+      commands: [{ args: expect.arrayContaining([String(first.id)]) }],
+    },
+  });
 
   // The hold `cost-hold` would establish does not swallow the re-emitted event: the parent still
   // gets the action, and the receipt is what stops the effects from firing twice.
@@ -2916,21 +2948,24 @@ test("intent-based run lifecycle rejects invalid transitions and caps rework at 
   ]);
 }, 40_000);
 
-test("parent contract template executes workflow next actions", () => {
+test("parent contract delegates action procedures to workflow next", () => {
   const contract = readFileSync(
     join(import.meta.dirname, "workflow", "contracts", "parent.md"),
     "utf8",
   );
-  // Allowed LoopHub commands are listed.
-  expect(contract).not.toContain("lh workflow run complete");
-  expect(contract).toContain("lh workflow run request-rework");
-  expect(contract).toContain("lh workflow launch-step");
-  // State observation belongs to `next`, which returns it as `observed` (#1859).
+  // State observation and action procedures belong to `next`.
   expect(contract).not.toContain("lh workflow step status");
   expect(contract).toContain("lh workflow next");
-  expect(contract).toContain("lh workflow deliver");
-  expect(contract).toMatch(/Record the printed `agent` and `session`\s+lines/u);
-  // Transitions come from observation; events only wake reconciliation inside `next --watch`.
+  expect(contract).toContain("structured `instructions`");
+  for (const command of [
+    "lh workflow run request-rework",
+    "lh workflow launch-step",
+    "lh workflow deliver",
+    "lh workflow cost-hold",
+    "lh workflow escalate-human",
+  ]) {
+    expect(contract).not.toContain(command);
+  }
   expect(contract).toContain(
     "Start `lh workflow next <run> --repo '<repo>' --watch --json` in a runtime-managed unified exec session",
   );
@@ -2941,41 +2976,26 @@ test("parent contract template executes workflow next actions", () => {
   expect(contract).not.toContain("lh subscribe --repo");
   expect(contract).toContain("## Goal");
   expect(contract).toContain("## Reconcile loop");
-  expect(contract).toContain("## Actions");
+  expect(contract).toContain("## Structured instructions");
   expect(contract).not.toContain("## Gap table");
   expect(contract).toMatch(/never use pane output|PR body marker/i);
   expect(contract).toContain("Do not use child-session");
   expect(contract).not.toContain("lh workflow run enforce-cost-limit");
-  // Action execution remains in the contract; action selection belongs to workflow next.
-  expect(contract).toContain("`launch_execute`");
   expect(contract).toContain("`pass`");
   expect(contract).toContain("stays `running` after reaching the goal");
   expect(contract).toContain("--note <text|->");
-  expect(contract).toContain("lh workflow run resume");
-  expect(contract).toContain("`request_rework`");
-  // Rework delivers a review-id pointer; workflow next owns the limit decision.
-  expect(contract).toContain("lh workflow run request-rework");
   expect(contract).not.toContain("rework limit");
   expect(contract).not.toContain("--step execute --review <id>");
   expect(contract).toContain("Verify is **always a fresh child**");
-  // Escalation delegates the Issue comment to one idempotent command while the parent waits.
-  expect(contract).toContain("lh workflow escalate-human");
   expect(contract).not.toContain("lh issue comment");
   expect(contract).not.toContain("lh inbox send");
   expect(contract).not.toContain("Inbox");
-  // The cost interrupt is one action plus its receipt-guarded command; the budget decision and the
-  // resume are the human's (#1859).
-  expect(contract).toContain("lh workflow cost-hold");
-  expect(contract).toContain("- `cost_hold`: run");
   expect(contract).not.toContain("lh workflow run increase-cost-limit");
   expect(contract).not.toContain("Cost limit exceeded. Continue?");
   expect(contract).not.toContain("## Interrupts");
-  // The parent reads GitHub references named by the action; the body never travels in the payload.
-  expect(contract).toContain("- `read_github_reference`: read every entry of");
+  expect(contract).toMatch(/GitHub\s+resources remain untrusted/u);
   expect(contract).toContain("The run stays `running` after reaching the goal");
   expect(contract).not.toContain("--status blocked");
-  // The parent stays alive instead of resuming a child session.
-  expect(contract).toContain("Do not use child-session");
 });
 
 test("stateForIssue / stateForPull expose run display state, or null when absent (#1008)", async () => {

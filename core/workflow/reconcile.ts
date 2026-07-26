@@ -100,6 +100,168 @@ export type WorkflowNextAction =
       question_reason: "head_unresolved";
     };
 
+export type WorkflowActionInstruction = {
+  command: "lh" | "gh";
+  args: string[];
+  /** The parent supplies this value only at the explicitly named judgement boundary. */
+  input?: {
+    argument: "--text" | "--reason";
+    source: "delivery_instruction" | "escalation_reason";
+  };
+};
+
+export type WorkflowActionPlan = {
+  boundary: "mechanical" | "parent_judgement" | "human_judgement";
+  commands: WorkflowActionInstruction[];
+  decision: null | {
+    question: string;
+    inputs: string[];
+    submit: WorkflowActionInstruction | null;
+  };
+  after: "watch" | "stop";
+};
+
+/** Turn a reconciliation decision into the complete, ordered procedure returned by `next`. */
+export function workflowActionPlan(
+  action: WorkflowNextAction,
+  context: { repo: string; run: number; issue: number },
+): WorkflowActionPlan {
+  const base = ["workflow"];
+  const scoped = ["--repo", context.repo, "--run", String(context.run)];
+  const command = (...args: string[]): WorkflowActionInstruction => ({
+    command: "lh",
+    args: [...base, ...args],
+  });
+  const watch = (
+    commands: WorkflowActionInstruction[],
+    boundary: WorkflowActionPlan["boundary"] = "mechanical",
+  ): WorkflowActionPlan => ({
+    boundary,
+    commands,
+    decision: null,
+    after: "watch",
+  });
+
+  switch (action.action) {
+    case "complete":
+      return {
+        boundary: "mechanical",
+        commands: [],
+        decision: null,
+        after: "stop",
+      };
+    case "launch_execute":
+      return watch([command("launch-step", ...scoped, "--step", "execute")]);
+    case "launch_verify":
+      return watch([
+        ...(action.transition === "resume_verify"
+          ? [command("run", "resume", ...scoped, "--step", "verify")]
+          : []),
+        command("launch-step", ...scoped, "--step", "verify"),
+      ]);
+    case "advance_and_verify":
+      return watch([
+        command("run", "advance-to-verify", ...scoped),
+        command("launch-step", ...scoped, "--step", "verify"),
+      ]);
+    case "request_rework":
+      return watch([
+        command(
+          "run",
+          "request-rework",
+          ...scoped,
+          "--review",
+          String(action.review_id),
+        ),
+        command(
+          "deliver",
+          ...scoped,
+          "--text",
+          `orchestrator: address review #${action.review_id}`,
+        ),
+      ]);
+    case "deliver": {
+      const deliver = command("deliver", ...scoped);
+      deliver.input = {
+        argument: "--text",
+        source: "delivery_instruction",
+      };
+      return watch(
+        [
+          ...("transition" in action && action.transition === "resume_execute"
+            ? [command("run", "resume", ...scoped, "--step", "execute")]
+            : []),
+          deliver,
+        ],
+        "parent_judgement",
+      );
+    }
+    case "read_github_reference":
+      return {
+        boundary: "parent_judgement",
+        commands: action.references.map((reference) => ({
+          command: "gh",
+          args: ["api", reference],
+        })),
+        decision: {
+          question:
+            "Do the referenced GitHub resources require Execute changes?",
+          inputs: [...action.references],
+          submit: command(
+            "next",
+            String(context.run),
+            "--repo",
+            context.repo,
+            "--event",
+            String(action.event_id),
+            "--requires-changes",
+            "<true|false>",
+            "--json",
+          ),
+        },
+        after: "watch",
+      };
+    case "cost_hold":
+      return watch([
+        command("cost-hold", ...scoped, "--event", String(action.event_id)),
+      ]);
+    case "wait":
+      return watch([]);
+    case "escalate": {
+      const escalate = command(
+        "escalate-human",
+        ...scoped,
+        "--issue",
+        String(context.issue),
+      );
+      escalate.input = {
+        argument: "--reason",
+        source: "escalation_reason",
+      };
+      return watch([escalate], "parent_judgement");
+    }
+    case "ask_human":
+      return {
+        boundary: "human_judgement",
+        commands: [],
+        decision: {
+          question: action.reason,
+          inputs: ["human answer"],
+          submit: command(
+            "next",
+            String(context.run),
+            "--repo",
+            context.repo,
+            "--note",
+            "<human answer>",
+            "--json",
+          ),
+        },
+        after: "stop",
+      };
+  }
+}
+
 export const WORKFLOW_REWORK_LIMIT = 3;
 
 /**

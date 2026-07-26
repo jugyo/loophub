@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { reconcileWorkflow, type WorkflowReconcileInput } from "./reconcile.ts";
+import {
+  reconcileWorkflow,
+  type WorkflowNextAction,
+  type WorkflowReconcileInput,
+  workflowActionPlan,
+} from "./reconcile.ts";
 
 const HEAD = "a".repeat(40);
 const OLD = "b".repeat(40);
@@ -632,5 +637,105 @@ describe("reconcileWorkflow", () => {
         }),
       ),
     ).toMatchObject({ action: "wait" });
+  });
+});
+
+describe("workflowActionPlan", () => {
+  const context = { repo: "me/repo", run: 42, issue: 7 };
+  const plan = (action: WorkflowNextAction) =>
+    workflowActionPlan(action, context);
+
+  test("returns ordered mechanical commands for launch, advance, rework, and cost hold", () => {
+    expect(
+      plan({ action: "launch_execute", reason: "start" }).commands,
+    ).toEqual([
+      {
+        command: "lh",
+        args: [
+          "workflow",
+          "launch-step",
+          "--repo",
+          "me/repo",
+          "--run",
+          "42",
+          "--step",
+          "execute",
+        ],
+      },
+    ]);
+    expect(
+      plan({ action: "advance_and_verify", reason: "done" }).commands.map(
+        ({ args }) => args[1],
+      ),
+    ).toEqual(["run", "launch-step"]);
+    expect(
+      plan({
+        action: "request_rework",
+        reason: "changes",
+        review_id: 9,
+      }).commands.at(-1)?.args,
+    ).toContain("orchestrator: address review #9");
+    expect(
+      plan({ action: "cost_hold", reason: "cost", event_id: 11 }).commands[0]
+        ?.args,
+    ).toContain("11");
+  });
+
+  test("makes parent and human judgement boundaries explicit", () => {
+    const github = plan({
+      action: "read_github_reference",
+      reason: "feedback",
+      event_id: 12,
+      references: ["repos/me/repo/issues/comments/3"],
+    });
+    expect(github).toMatchObject({
+      boundary: "parent_judgement",
+      decision: {
+        inputs: ["repos/me/repo/issues/comments/3"],
+      },
+    });
+    expect(github.decision?.submit?.args).toContain("<true|false>");
+
+    expect(
+      plan({
+        action: "ask_human",
+        reason: "Current HEAD could not be resolved.",
+        question_reason: "head_unresolved",
+      }),
+    ).toMatchObject({
+      boundary: "human_judgement",
+      after: "stop",
+      decision: { question: "Current HEAD could not be resolved." },
+    });
+  });
+
+  test("encodes delivery, escalation, wait, and completion without hidden procedures", () => {
+    expect(
+      plan({
+        action: "deliver",
+        reason: "continue",
+        delivery_reason: "human_instruction",
+        transition: "resume_execute",
+      }),
+    ).toMatchObject({
+      boundary: "parent_judgement",
+      commands: [{}, { input: { argument: "--text" } }],
+      after: "watch",
+    });
+    expect(
+      plan({
+        action: "escalate",
+        reason: "limit",
+        escalation_reason: "execute_request",
+      }).commands[0],
+    ).toMatchObject({ input: { argument: "--reason" } });
+    expect(plan({ action: "wait", reason: "waiting" })).toMatchObject({
+      commands: [],
+      after: "watch",
+    });
+    expect(plan({ action: "complete", reason: "merged" })).toMatchObject({
+      commands: [],
+      after: "stop",
+    });
   });
 });
