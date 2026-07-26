@@ -27,6 +27,9 @@ convention changes.
   than reconstruct it from partial responses.
 - Before answering review feedback with another defensive mechanism, apply these principles.
   For plausible but human-recoverable failures, explicitly accepting the risk can be correct.
+- Background reading that informs how we design agent loops lives in
+  [`docs/canon/`](docs/canon/README.md) — summaries of external sources, treated as design
+  north stars rather than specs.
 
 ## What this project is
 

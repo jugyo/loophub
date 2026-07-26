@@ -6,11 +6,11 @@ import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 
 // ===== handoffs (#352) =====
 //
-// The orchestrator<->subagent handoff bus, made durable (lh-build-design.ja.md §6.5). A handoff is
+// The orchestrator<->subagent handoff bus, made durable. A handoff is
 // one explicit document — a parent's instruction (direction="down") or a child's return ("up") —
 // recorded out of the volatile conversation so a run's trajectory can be replayed and evaluated.
-// Generic by design: any orchestration records through this same procedure (lh-build is the first
-// real user); no lh-build-specific field is required.
+// Generic by design: any orchestration records through this same procedure; no
+// orchestration-specific field is required.
 //
 // Linkage: a handoff binds to a PR (`pr`) and/or a generic issue (`issue`) — at least one — plus
 // the recording session (the attribution sessionId), so it naturally hangs off "PR + session". The

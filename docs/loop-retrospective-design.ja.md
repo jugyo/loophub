@@ -5,7 +5,6 @@
 > `lh build ...` を現在形の手順として読まないこと。
 
 > Status: Design (Phase 1 — retro / decision log の取得・保存) · Issue: #82 · 関連: #74(canon docs)
-> 前提となる要求・方針(What/Why)は [`loop-retrospective-prd.ja.md`](./loop-retrospective-prd.ja.md)。
 > 本書の対象は **Phase 1 = 振り返りと decision log を生成し「保存」する所まで**。
 > 保存した知見の**活用**(lessons 昇格・集約 digest・改善 PR/issue・ルーブリック拡張)は
 > **Phase 2** で、本書 §6 に方針のみ・詳細は後続の別設計。

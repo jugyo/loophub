@@ -1,8 +1,8 @@
 import { db, now } from "../db.ts";
 
 // ---- handoffs (#352) ----
-// A handoff is one explicit document passed between a parent orchestrator and a child subagent
-// (lh-build-design.ja.md §6.5). Linked to a PR (prId) and/or a generic issue (issueId), plus the
+// A handoff is one explicit document passed between a parent orchestrator and a child subagent,
+// recorded durably. Linked to a PR (prId) and/or a generic issue (issueId), plus the
 // session that recorded it (sessionId); `seq` orders handoffs per ref. Body is hybrid: inline
 // `body` for content with no other home, or `src`+`hash` referencing a canonical copy (PR/commit).
 // These functions are pure store access — validation, ref resolution and the body/src XOR live in

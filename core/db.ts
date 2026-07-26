@@ -438,13 +438,12 @@ CREATE INDEX IF NOT EXISTS idx_retros_pr   ON retros(pr_id);
 -- Handoffs (#352). The orchestrator<->subagent handoff bus, made durable: each row is one
 -- explicit document passed between a parent orchestrator and a child subagent — the parent's
 -- instruction (direction='down') or the child's return (direction='up') — recorded out of the
--- volatile conversation so a run's trajectory can be replayed, audited, and evaluated later
--- (lh-build-design.ja.md §6.5; the harness "Observability" layer). Generic on purpose: any
--- orchestration (lh-build today, lh-build the first real user, future skills) records through the
--- same protocol; no lh-build-specific column is required.
+-- volatile conversation so a run's trajectory can be replayed, audited, and evaluated later —
+-- the harness's "observability" layer. Generic on purpose: any orchestration records through the
+-- same protocol; no orchestration-specific column is required.
 --
 -- Linkage (the "ref"): a handoff binds to a PR (pr_id, the kind='pull' issues row) and/or its
--- session (session_id), the two anchors lh-build handoffs accumulate on; issue_id is the optional
+-- session (session_id), the two anchors handoffs accumulate on; issue_id is the optional
 -- generic linkage (a future issue-stage orchestration) so the mechanism is not PR-only. At least
 -- one of pr_id/issue_id is required (enforced in service.ts, not as a DB constraint, so the schema
 -- stays generic). seq is a per-ref monotonic counter (1,2,3…) giving handoffs a stable order
@@ -459,7 +458,7 @@ CREATE INDEX IF NOT EXISTS idx_retros_pr   ON retros(pr_id);
 -- Security: rows are stored UNENCRYPTED and never GC'd (durable by design), so
 -- secrets (credentials/tokens) must never be written here; the redaction rule lives with the
 -- caller (service validates shape, not secrecy). model/cost are optional observability fields for
--- model-routing/economics analysis (p.42); cost is free-form JSON text (tokens/latency) the
+-- model-routing/economics analysis; cost is free-form JSON text (tokens/latency) the
 -- consumer parses. from_role/to_role label the agents (parent / 'code' sub / …).
 CREATE TABLE IF NOT EXISTS handoffs (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

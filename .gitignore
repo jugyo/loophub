@@ -3,3 +3,4 @@ dist/
 *.log
 logs/
 .DS_Store
+.docs/
