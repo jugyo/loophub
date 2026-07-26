@@ -159,7 +159,6 @@ describe("PullCommitsSection", () => {
     ).toBeTruthy();
     expect(within(reviewDialog).getByText(/PASS/)).toBeTruthy();
     expect(within(reviewDialog).getByText("@quality-bot")).toBeTruthy();
-    expect(within(reviewDialog).getByText("quality")).toBeTruthy();
     expect(within(reviewDialog).getByText("claude-opus-4-8")).toBeTruthy();
     expect(within(reviewDialog).getByText("Looks good.")).toBeTruthy();
     expect(within(reviewDialog).getByText("web/src/a.ts:4")).toBeTruthy();

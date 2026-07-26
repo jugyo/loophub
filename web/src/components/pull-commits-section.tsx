@@ -399,7 +399,9 @@ function ReviewVerdictSummary({ reviews }: { reviews: PullReview[] }) {
   return (
     <>
       <Badge tone={verdict.tone}>{verdict.label}</Badge>
-      <span className="text-xs font-normal text-muted-foreground">
+      {/* nowrap like the badge beside it: as a flex item this span otherwise shrinks to
+          min-content and breaks between the count and "review(s)" (#1936). */}
+      <span className="whitespace-nowrap text-xs font-normal text-muted-foreground">
         {reviews.length} review{reviews.length === 1 ? "" : "s"}
       </span>
     </>
