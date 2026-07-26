@@ -1,7 +1,38 @@
 export type CommandHelp = {
   path: readonly string[];
   description: string;
+  details?: string;
 };
+
+const ISSUE_CREATE_DETAILS = `
+
+Usage:
+  lh issue create --title <text> [options]
+
+Options:
+  --title <text>          Issue title (required, non-empty).
+  --body <text>           Markdown issue body.
+  --label <name,...>      Comma-separated labels.
+  --ac <text>             Structured acceptance criterion (repeatable, non-blank).
+  --workspace <name>      Active registered workspace whose branch becomes the target.
+  --target-branch <ref>   Existing branch or revision expression used as the target.
+  --repo <owner/name>     Repository (defaults to the repository at the current path).
+  --session-id <uuid>     Attribute the creation to a registered agent session.
+  --json                  Print the created issue as JSON.
+  --help                  Show this help without creating or changing the database.
+
+Acceptance criteria:
+  Each --ac value is saved as one structured acceptance_criteria entry, in command-line order.
+  Blank --ac values are ignored. A "## Acceptance criteria" section in --body remains ordinary
+  Markdown and is not parsed into structured acceptance_criteria.
+
+Constraints:
+  --workspace and --target-branch cannot be combined. The workspace must be active and registered.
+  The target branch must resolve to an existing revision; this command does not create branches.
+
+Example:
+  lh issue create --title "Keep exports deterministic" --body "Preserve input order."
+    --ac "Exports retain input order" --ac "Repeated exports are byte-identical"`;
 
 export const commandHelp: readonly CommandHelp[] = [
   { path: ["info"], description: "Show the resolved LoopHub environment." },
@@ -36,7 +67,11 @@ export const commandHelp: readonly CommandHelp[] = [
   { path: ["issue", "list"], description: "List issues." },
   { path: ["issue", "view"], description: "Show an issue." },
   { path: ["issue", "new"], description: "Create an issue interactively." },
-  { path: ["issue", "create"], description: "Create an issue." },
+  {
+    path: ["issue", "create"],
+    description: "Create an issue.",
+    details: ISSUE_CREATE_DETAILS,
+  },
   { path: ["issue", "import"], description: "Import a GitHub issue." },
   { path: ["issue", "update"], description: "Update an issue." },
   { path: ["issue", "comment"], description: "Comment on an issue." },
@@ -209,6 +244,8 @@ export function printCommandHelp(positionals: readonly string[]): boolean {
       .find((entry) => isPrefix(entry) && !hasChildren(entry));
   if (!match) return false;
 
-  console.log(`lh ${match.path.join(" ")} — ${match.description}`);
+  console.log(
+    `lh ${match.path.join(" ")} — ${match.description}${match.details ?? ""}`,
+  );
   return true;
 }

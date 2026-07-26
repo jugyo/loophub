@@ -58,6 +58,32 @@ describe("--help", () => {
     expect(existsSync(join(home, "loophub.db"))).toBe(false);
   });
 
+  test("documents issue creation options and structured acceptance criteria without touching the DB", () => {
+    const result = lh(["issue", "create", "--help"]);
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain("--title <text>");
+    expect(result.stdout).toContain("--body <text>");
+    expect(result.stdout).toContain("--label <name,...>");
+    expect(result.stdout).toContain("--ac <text>");
+    expect(result.stdout).toContain("--workspace <name>");
+    expect(result.stdout).toContain("--target-branch <ref>");
+    expect(result.stdout).toContain("--repo <owner/name>");
+    expect(result.stdout).toContain("--session-id <uuid>");
+    expect(result.stdout).toContain("--json");
+    expect(result.stdout).toContain("--help");
+    expect(result.stdout).toContain(
+      "saved as one structured acceptance_criteria entry, in command-line order",
+    );
+    expect(result.stdout).toContain(
+      'A "## Acceptance criteria" section in --body remains ordinary',
+    );
+    expect(result.stdout).toContain(
+      '--ac "Exports retain input order" --ac "Repeated exports are byte-identical"',
+    );
+    expect(existsSync(join(home, "loophub.db"))).toBe(false);
+  });
+
   test("shows general usage at the root", () => {
     const result = lh(["--help"]);
 

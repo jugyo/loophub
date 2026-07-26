@@ -19,6 +19,20 @@ test("both prompts state the responsibility boundary before the filing instructi
   }
 });
 
+test("both prompts defer CLI operation details to issue create help", () => {
+  for (const language of ["en", "ja"]) {
+    const prompt = issueCreatePrompt(language);
+    const help = "lh issue create --help";
+    const create = "lh issue create`";
+
+    expect(prompt).toContain(help);
+    expect(prompt.indexOf(help)).toBeLessThan(prompt.lastIndexOf(create));
+    expect(prompt).not.toContain("--ac");
+    expect(prompt).not.toContain("--workspace");
+    expect(prompt).not.toContain("--target-branch");
+  }
+});
+
 test("both prompts keep the existing filing instructions", () => {
   for (const [language, phrases] of [
     [
