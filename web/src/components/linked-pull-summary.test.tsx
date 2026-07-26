@@ -515,6 +515,23 @@ describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
     expect(screen.queryByText(/^Budget /)).toBeNull();
   });
 
+  // #1932: a held run is always needs-human, so the tracker's marker only repeats the badge.
+  it("shows only the over-budget badge, not the tracker's needs human (#1932)", async () => {
+    renderRowWithRun(held);
+
+    expect(await screen.findByText("over budget")).toBeTruthy();
+    expect(screen.queryByText("needs human")).toBeNull();
+  });
+
+  it("keeps the needs-human marker when the run is held for another reason", async () => {
+    renderRowWithRun(
+      makeWorkflowRunState({ needs_human_reason: "waiting for a decision" }),
+    );
+
+    expect(await screen.findByText("needs human")).toBeTruthy();
+    expect(screen.queryByText("over budget")).toBeNull();
+  });
+
   it("increases the budget by the run's persisted increment", async () => {
     renderRowWithRun(
       held,

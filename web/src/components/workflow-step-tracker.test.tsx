@@ -532,6 +532,23 @@ describe("WorkflowStepTracker", () => {
     expect(screen.getByText("Done")).toBeTruthy();
   });
 
+  it("drops the needs-human marker when the caller marks the run over budget (#1932)", () => {
+    render(
+      <WorkflowStepTracker
+        state={state({
+          current_step: "verify",
+          needs_human_reason: "Cost limit exceeded",
+        })}
+        overBudget
+      />,
+    );
+    expect(screen.queryByText("needs human")).toBeNull();
+    // Only the marker goes: the pipeline and the step's needs-human status stay.
+    expect(screen.getByText("Verify")).toBeTruthy();
+    fireEvent.focus(screen.getByText("Verify"));
+    expect(screen.getByText("Needs human")).toBeTruthy();
+  });
+
   it("glows only the current stage pill while the agent is working", () => {
     render(
       <WorkflowStepTracker state={state({ current_step: "verify" })} working />,

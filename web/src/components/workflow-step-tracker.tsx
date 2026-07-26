@@ -8,7 +8,8 @@
 // (`verification_status: verified`) — NOT `status === completed`, which a passing Verify never sets
 // (#1401 / #1460); that status means the linked PR merged (#1808). A stale verification keeps the
 // Verify label as-is and is conveyed by the pill's amber tone plus its popover status (#1906); a
-// needs-human run (#1307, or a legacy `blocked` row) appends a warning marker.
+// needs-human run (#1307, or a legacy `blocked` row) appends a warning marker unless the caller
+// already says why with its own "over budget" marker (#1932).
 
 import {
   Check,
@@ -395,6 +396,7 @@ export function WorkflowStepTracker({
   size = "sm",
   working = false,
   conflict = false,
+  overBudget = false,
 }: {
   owner?: string;
   repo?: string;
@@ -422,6 +424,13 @@ export function WorkflowStepTracker({
    * Defaults to `false`, keeping the plain Execute → Verify → Done pipeline.
    */
   conflict?: boolean;
+  /**
+   * The run is held on its cost limit and the caller renders its own "over budget" marker. Such a
+   * run is always needs-human, so the trailing "needs human" marker would repeat the same warning
+   * in less specific words — drop it and let the budget marker speak (#1932). The stage popovers
+   * still report the needs-human status. Defaults to `false`, keeping the marker.
+   */
+  overBudget?: boolean;
 }) {
   const tracker = workflowTrackerState(state);
   const { activeIndex, verified, stale, needsHuman } = tracker;
@@ -544,7 +553,7 @@ export function WorkflowStepTracker({
           </Fragment>
         );
       })}
-      {needsHuman ? (
+      {needsHuman && !overBudget ? (
         <span className="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-amber-700 dark:text-amber-300">
           <TriangleAlert className="size-3" aria-hidden="true" />
           needs human

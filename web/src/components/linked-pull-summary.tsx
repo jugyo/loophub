@@ -298,6 +298,8 @@ function WorkflowMiniProgress({
         size="sm"
         working={working}
         conflict={conflict}
+        // The badge below already marks the hold, so the tracker drops its "needs human" (#1932).
+        overBudget={state.cost_limit_increase_available}
       />
       {/* Nothing is shown while the run is inside its budget; a successful increase is legible from
           the badge disappearing with the hold. */}
