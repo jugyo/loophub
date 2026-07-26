@@ -85,9 +85,8 @@ Web UI の **Start workflow** も同じ経路なので失敗する。issue や P
 | ツール | これが無いと使えない機能 | 入手方法 |
 |---|---|---|
 | **gh**（GitHub CLI） | GitHub への PR 作成・GitHub 側の merge / レビューの取り込み・`lh issue import` | `brew install gh` — [cli.github.com](https://cli.github.com) |
-| **crit** | `lh pr crit`（ブラウザで diff に行コメントを付け、その内容を PR レビューとして取り込む） | `brew install crit` — [crit.md](https://crit.md) |
 
-どちらも無くても LoopHub 単体のループ（issue → 実装 → 検証 → merge）は完結する。
+無くても LoopHub 単体のループ（issue → 実装 → 検証 → merge）は完結する。
 
 ## クイックスタート
 

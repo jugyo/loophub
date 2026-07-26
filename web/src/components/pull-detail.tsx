@@ -456,37 +456,6 @@ function WorktreeSection({ value }: { value: string | null }) {
   );
 }
 
-// Review with Crit (#1578 / #1594): fire-and-forget herdr pane running `lh pr crit <n>`.
-// Lives on the Files changed header row (right-aligned). Worktree absence and a missing crit
-// binary surface as visible errors inside that pane — no defensive pre-checks here.
-function CritReviewAction({
-  owner,
-  repo,
-  number,
-}: {
-  owner: string;
-  repo: string;
-  number: number;
-}) {
-  const { launchTerminal } = useTerminalLauncher();
-  return (
-    <Button
-      variant="secondary"
-      title="Open crit against this PR's worktree in a new Herdr pane"
-      onClick={() =>
-        launchTerminal({
-          repo: `${owner}/${repo}`,
-          label: `crit PR #${number}`,
-          workflow: "pr-crit",
-          prNumber: number,
-        })
-      }
-    >
-      Review with Crit
-    </Button>
-  );
-}
-
 // #406: GitHub-export write action for a PR whose repo is in 'github_pr' mode. Once the PR has been
 // exported (github_pull present) the button becomes a "View PR on GitHub" link — this is the
 // double-create guard: the Create action disappears so a second export can't be dispatched. Until
@@ -664,19 +633,16 @@ function FilesChanged({
       data-debug-component="FilesChanged"
       className="flex flex-col gap-3"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
-          Files changed{files ? ` (${files.length})` : ""}
-          {files && files.length > 0 ? (
-            <DiffStat
-              additions={totalAdditions}
-              deletions={totalDeletions}
-              className="text-sm font-normal"
-            />
-          ) : null}
-        </h2>
-        <CritReviewAction owner={owner} repo={repo} number={number} />
-      </div>
+      <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
+        Files changed{files ? ` (${files.length})` : ""}
+        {files && files.length > 0 ? (
+          <DiffStat
+            additions={totalAdditions}
+            deletions={totalDeletions}
+            className="text-sm font-normal"
+          />
+        ) : null}
+      </h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading diff…

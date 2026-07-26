@@ -24,7 +24,7 @@ export function reviewAcResultsJSON(reviewId: number): ReviewAcResultWire[] {
 // The running workflow run for this PR, if any. Unlike `latestWorkflowRunReview` (which stays
 // scoped to this run's verifier children for transition decisions), the run-scoped observation
 // event fires for any review the parent must route — the substantive PASS / REQUEST_CHANGES and
-// the non-blocking-but-must-handle FEEDBACK (human/crit out-of-band, #1674) — so the parent always
+// the non-blocking-but-must-handle FEEDBACK (human out-of-band, #1674) — so the parent always
 // re-observes step status. It carries no verdict; the persisted review row remains the sole
 // verdict source.
 function runningWorkflowRunForPull(
@@ -199,7 +199,7 @@ export const reviews = {
     if (workflowRun) {
       // The review row remains the sole verdict source. This run-scoped event is only the reliable
       // observation trigger for the parent, independent of whether the Verify child later manages
-      // to declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human/crit
+      // to declare its turn done. `review_id` lets the parent hand an out-of-band (e.g. human
       // FEEDBACK) review straight to Execute, since it will not appear in the run's own step status.
       S.emitWorkflowEvent(r.id, "workflow_run.review_submitted", actor, {
         id: workflowRun.id,

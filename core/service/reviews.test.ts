@@ -118,7 +118,7 @@ test("a human REQUEST_CHANGES on a PR with a running run emits review_submitted 
   const runId = startRun(pr, "execute");
   const before = reviewEvents().length;
 
-  // No verify session — a plain human session (as an ingested crit review would be).
+  // No verify session — a plain human session.
   const review = await svc.reviews.create(
     "me/reviews",
     pr,
@@ -159,7 +159,7 @@ test("a FEEDBACK review on a PR with a running run emits review_submitted with r
   const runId = startRun(pr, "execute");
   const before = reviewEvents().length;
 
-  // Non-blocking human/crit feedback (as `lh pr crit` now ingests it): must still route to Execute.
+  // Non-blocking out-of-band human feedback: must still route to Execute.
   const review = await svc.reviews.create(
     "me/reviews",
     pr,

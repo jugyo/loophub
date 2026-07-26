@@ -672,6 +672,41 @@
       }
     },
     {
+      "name": "workflowRuns/increaseCostLimit",
+      "description": "Increase a cost-held Workflow run's limit by its persisted fixed increment. The emitted event is the human continuation decision the parent resumes from (#1828).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_limit_usd": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "repo",
+          "run",
+          "expected_limit_usd",
+          "session_id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object"
+      }
+    },
+    {
       "name": "terminal/launch",
       "description": "Launch a terminal workflow as a named Herdr session. workflow-run (Start workflow) spawns `lh workflow start --herdr` and lets it provision the worktree/PR and the herdr pane itself (#1007); the other workflows are orchestrated by this RPC directly.",
       "params": {
@@ -687,10 +722,10 @@
           "workflow": {
             "enum": [
               "issue-create",
+              "workflow-create",
               "scheduled-task-create",
               "resume",
               "github-pr-export",
-              "pr-crit",
               "workflow-run"
             ]
           },
@@ -732,9 +767,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "repo"
-        ],
+        "required": [],
         "additionalProperties": false
       },
       "result": {

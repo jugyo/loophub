@@ -95,13 +95,6 @@ describe("herdr terminal launch", () => {
     expect(
       commandForHerdrLaunch({
         repo: "jugyo/loophub",
-        workflow: "pr-crit",
-        prNumber: 1580,
-      }),
-    ).toBe("lh pr crit 1580 --repo 'jugyo/loophub'");
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
         workflow: "resume",
         session: "session-1",
         cwd: "/tmp/work tree",
@@ -126,25 +119,6 @@ describe("herdr terminal launch", () => {
         repo: "loophub",
         workflow: "workflow-create",
         codingAgent: "claude-code",
-      }),
-    ).toBe("");
-  });
-
-  test("shell-quotes repo names for pr-crit launches", () => {
-    expect(
-      commandForHerdrLaunch({
-        repo: "me/proj with spaces",
-        workflow: "pr-crit",
-        prNumber: 42,
-      }),
-    ).toBe("lh pr crit 42 --repo 'me/proj with spaces'");
-  });
-
-  test("pr-crit without a PR number yields no command", () => {
-    expect(
-      commandForHerdrLaunch({
-        repo: "jugyo/loophub",
-        workflow: "pr-crit",
       }),
     ).toBe("");
   });

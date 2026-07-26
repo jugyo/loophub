@@ -1399,27 +1399,6 @@ function linkedGithubPull(pushedSha: string | null) {
   } satisfies NonNullable<PullRequest["github_pull"]>;
 }
 
-describe("PullDetail — Review with Crit action (#1578 / #1594)", () => {
-  it("offers Review with Crit on the Files changed header and launches pr-crit in Herdr", async () => {
-    renderDetailWithPull({ merge_mode: "merge" });
-    const filesHeading = await screen.findByRole("heading", {
-      name: /Files changed/,
-    });
-    const headerRow = filesHeading.parentElement!;
-    const button = within(headerRow).getByRole("button", {
-      name: /Review with Crit/i,
-    });
-    expect(screen.queryByRole("button", { name: /^Crit review$/i })).toBeNull();
-    fireEvent.click(button);
-    expect(launchTerminal).toHaveBeenCalledTimes(1);
-    const opts = launchTerminal.mock.calls[0][0];
-    expect(opts.repo).toBe("me/proj");
-    expect(opts.workflow).toBe("pr-crit");
-    expect(opts.prNumber).toBe(30);
-    expect(opts.label).toBe("crit PR #30");
-  });
-});
-
 describe("PullDetail — GitHub export action (#406)", () => {
   it("offers Merge (not Create PR) in 'merge' mode", async () => {
     renderDetailWithPull({ merge_mode: "merge" });

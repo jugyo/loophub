@@ -1,5 +1,3 @@
-import { existsSync, lstatSync } from "node:fs";
-import { worktreeRoot } from "../config.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent } from "../events.ts";
 import {
@@ -12,7 +10,6 @@ import {
   fileAtRef,
   mergePull as gitMergePull,
   hasEffectiveDiff,
-  mergeBase,
   pathInDiff,
   remoteUrl,
   revParse,
@@ -27,7 +24,6 @@ import {
 import { parseClosingIssueNumber } from "../links.ts";
 import { isGithubRemoteUrl, parseGithubPullNumber } from "../merge-mode.ts";
 import { resolvePullBaseSha } from "../pull-base.ts";
-import { resolveWorktreeIdentity } from "../resume.ts";
 import {
   agentSessionJSON,
   githubPrStatusJSON,
@@ -36,7 +32,6 @@ import {
 } from "../serialize.ts";
 import { pullJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
-import { legacyWorktreePath, worktreePath } from "../worktree-path.ts";
 import { closeOpenAttemptsForIssue } from "./attempts.ts";
 import {
   actorFor,
@@ -49,18 +44,6 @@ import {
   paginate,
   repoOr404,
 } from "./shared.ts";
-
-/** Resolved launch plan for `lh pr crit`: worktree cwd + crit --range base..HEAD. */
-export interface CritLaunchPlan {
-  number: number;
-  worktreePath: string;
-  /** Left side of the crit range (merge-base of base ref and HEAD, or stored base_sha). */
-  rangeBase: string;
-  /** Full range string passed to `crit --range` (`<rangeBase>..HEAD`). */
-  range: string;
-  headRef: string;
-  baseRef: string;
-}
 
 // #850: how long a cached GitHub PR status is served before hitting `gh` again. On-demand from the
 // PR-detail sidebar, so a short TTL keeps the panel roughly live without spawning a `gh` per render.
@@ -143,63 +126,6 @@ export const pulls = {
       withCommits: true,
       withRelatedSessions: true,
     });
-  },
-
-  // Resolve the PR's attempt worktree and the git range for `crit --range <base>..HEAD`.
-  // Pure resolution only: does not provision a worktree and does not spawn crit (CLI does that).
-  // Fails clearly when the worktree is missing or the merge-base cannot be computed.
-  async critLaunch(name: string, number: number): Promise<CritLaunchPlan> {
-    const r = repoOr404(name);
-    const row = issueOr404(r, number, "pull");
-    const p = S.getPull(row.id)!;
-
-    let candidate: string;
-    try {
-      const identity = resolveWorktreeIdentity(p.head_ref, row.number);
-      candidate =
-        identity.scheme === "legacy-issue"
-          ? legacyWorktreePath(worktreeRoot(), r.full_name, identity.number)
-          : worktreePath(worktreeRoot(), r.full_name, identity.number);
-    } catch {
-      throw new ServiceError(
-        422,
-        `PR #${number}: cannot derive a worktree path for repository ${r.full_name}`,
-      );
-    }
-
-    // No auto-provision: a prior start (workflow / openPr + provision) must have created the worktree.
-    if (!existsSync(candidate) || !lstatSync(candidate).isDirectory()) {
-      throw new ServiceError(
-        404,
-        `PR #${number}: no worktree at ${candidate}. ` +
-          "Start work via Workflow (or otherwise provision the PR worktree) first; this command does not provision worktrees.",
-      );
-    }
-
-    // Prefer the live merge-base of base_ref and HEAD inside the worktree (matches crit's range).
-    // Fall back to the stored fork point / merge-base against head_ref when HEAD is unreadable.
-    let rangeBase = await mergeBase(candidate, p.base_ref, "HEAD");
-    if (!rangeBase) {
-      rangeBase = await resolvePullBaseSha(candidate, p);
-    }
-    if (!rangeBase) {
-      rangeBase = await resolvePullBaseSha(r.local_path, p);
-    }
-    if (!rangeBase) {
-      throw new ServiceError(
-        422,
-        `PR #${number}: could not resolve merge-base of ${p.base_ref} and HEAD`,
-      );
-    }
-
-    return {
-      number: row.number,
-      worktreePath: candidate,
-      rangeBase,
-      range: `${rangeBase}..HEAD`,
-      headRef: p.head_ref,
-      baseRef: p.base_ref,
-    };
   },
 
   async create(

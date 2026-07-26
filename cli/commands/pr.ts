@@ -1,6 +1,4 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import type { CritLaunchPlan } from "../../core/service/pulls.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   fail,
@@ -12,7 +10,6 @@ import {
   svc,
   writeSession,
 } from "../context.ts";
-import { buildCritReview, parseCritComments } from "../crit-comments.ts";
 import { usage } from "../usage.ts";
 
 // A `--comments` / `--ac-results` argument is inline JSON or a file path (#1895). stdin support was
@@ -23,44 +20,6 @@ function readJsonArg(value: string): string {
   return trimmed.startsWith("[") || trimmed.startsWith("{")
     ? value
     : readFileSync(value, "utf8");
-}
-
-// After crit's "Finish Review", fold its unresolved comments into a single FEEDBACK review via the
-// existing `reviews.create` path (#1654, #1674). FEEDBACK is non-blocking (gate-neutral) yet still
-// routes to a running run's Execute as out-of-band feedback to address. Zero unresolved comments →
-// nothing is submitted. To submit an explicit merge-blocking review instead, use
-// `lh pr review --event REQUEST_CHANGES`.
-async function ingestCritReview(
-  s: Awaited<ReturnType<typeof svc>>,
-  repo: string,
-  plan: CritLaunchPlan,
-): Promise<void> {
-  const res = spawnSync("crit", ["comments", "--json"], {
-    cwd: plan.worktreePath,
-    encoding: "utf8",
-  });
-  // A non-zero exit means crit could not read the review (e.g. no review file) — nothing to ingest.
-  if (res.status !== 0) return;
-  const review = buildCritReview(parseCritComments(res.stdout));
-  if (!review) {
-    console.error("crit: no unresolved comments; no review submitted");
-    return;
-  }
-  await runOp(async () =>
-    s.reviews.create(
-      repo,
-      plan.number,
-      {
-        event: "FEEDBACK",
-        body: review.body,
-        comments: review.comments,
-      },
-      await writeSession(),
-    ),
-  );
-  console.error(
-    `crit: submitted FEEDBACK review (${review.comments.length} line comment(s))`,
-  );
 }
 
 export async function run(): Promise<void> {
@@ -257,38 +216,6 @@ export async function run(): Promise<void> {
       console.log(
         `PR #${p.number} marked ready for review (${p.review_state})`,
       );
-  } else if (sub === "crit") {
-    // Launch the external `crit` browser UI against this PR's attempt worktree.
-    // Resolution (worktree path + range base) lives in core; the CLI only spawns with stdio
-    // inherited. crit is optional — missing binary is a clear error, not an auto-install.
-    if (rest[0] == null || rest[0] === "")
-      fail("usage: lh pr crit <pr> [--repo owner/name]");
-    const plan = await runOp(() => s.pulls.critLaunch(repo, Number(rest[0])));
-    console.error(`crit PR #${plan.number}`);
-    console.error(`  worktree: ${plan.worktreePath}`);
-    console.error(`  range:    ${plan.range}`);
-    const proc = spawnSync("crit", ["--range", plan.range], {
-      stdio: "inherit",
-      cwd: plan.worktreePath,
-    });
-    if (proc.error) {
-      const err = proc.error as NodeJS.ErrnoException;
-      if (err.code === "ENOENT") {
-        fail(
-          "crit not found on PATH. Install it first (this command does not install crit):\n" +
-            "  brew install crit\n" +
-            "  # or: go install github.com/tomasz-tomczyk/crit@latest\n" +
-            "  # see https://crit.md for other install options",
-        );
-      }
-      fail(`failed to launch crit: ${err.message}`);
-    }
-    // crit blocks until the human clicks "Finish Review"; a clean exit is that submit signal.
-    // A pane kill (no exit status) or a non-zero exit is not a submission — do not ingest.
-    if (proc.status === 0) {
-      await ingestCritReview(s, repo, plan);
-    }
-    process.exit(proc.status ?? 1);
   } else if (sub === "close" || sub === "reopen") {
     const number = Number(rest[0]);
     const state = sub === "close" ? "closed" : "open";

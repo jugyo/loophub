@@ -80,7 +80,6 @@ export interface TerminalLaunchInput {
     | "scheduled-task-create"
     | "resume"
     | "github-pr-export"
-    | "pr-crit"
     | "workflow-run";
   issueNumber?: number;
   prNumber?: number;
@@ -413,10 +412,7 @@ async function resolveHerdrWorktreeTarget(
       // instead, which is exactly what the repo-root tab-create fallback gives it.
       return input.cwd ?? null;
     }
-    if (
-      (input.workflow === "github-pr-export" || input.workflow === "pr-crit") &&
-      input.prNumber
-    ) {
+    if (input.workflow === "github-pr-export" && input.prNumber) {
       const prRow = issueOr404(r, input.prNumber, "pull");
       const headRef = S.getPull(prRow.id)!.head_ref;
       const identity = resolveWorktreeIdentity(headRef, input.prNumber);
@@ -664,7 +660,7 @@ export const terminal = {
         workspaceId = existingWorkspaceId ? null : parseHerdrWorkspaceId(out);
         createdWorkspace = existingWorkspaceId === null;
       } else {
-        // Worktree-backed workflows (resume/github-pr-export/pr-crit, #551) open the herdr
+        // Worktree-backed workflows (resume/github-pr-export, #551) open the herdr
         // workspace directly at the PR's real worktree path, so herdr's own workspace/worktree
         // metadata reflects it — instead of a plain repo-root tab the launched command cd's
         // into. Falls back to that plain tab below when there is no resolvable worktree path

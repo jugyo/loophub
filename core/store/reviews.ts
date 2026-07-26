@@ -129,7 +129,7 @@ function reviewGate(
   currentHeadSha: string | null,
 ): ReviewGate {
   // ASC order (listReviews) → the last substantive write wins. FEEDBACK
-  // (non-blocking human/crit feedback, #1674) is deliberately excluded here so it
+  // (non-blocking human feedback, #1674) is deliberately excluded here so it
   // never moves the gate: a FEEDBACK-only PR stays gate-neutral (unreviewed, not
   // blocked, not mergeable-by-itself).
   let latest: ReviewRow | null = null;
