@@ -11,12 +11,11 @@ import {
   commentJSON,
   githubIssueJSON,
   herdrPaneJSON,
-  issueDetailJSON,
   issueJSON,
-  issueListItemJSON,
   labelJSON,
   relatedSessionsJSON,
 } from "../serialize.ts";
+import { issueDetailJSON, issueListItemJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 import { closeOpenAttemptsForIssue } from "./attempts.ts";
 import {

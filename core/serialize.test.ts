@@ -2,7 +2,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, test } from "vitest";
-import type { EventRow } from "./store.ts";
+import type {
+  CommentRow,
+  EventRow,
+  GithubPull,
+  Repo,
+  ReviewCommentRow,
+} from "./store.ts";
 
 // Isolate the DB before serialize.ts -> store.ts -> db.ts runs its import-time setup (see AGENTS.md).
 const HOME = mkdtempSync(join(tmpdir(), "lh-serialize-"));
@@ -465,5 +471,114 @@ describe("workflowRunHistoryEventJSON rendering", () => {
       description,
       significance,
     });
+  });
+});
+
+// The row -> wire converters are synchronous and derive their output from the row they are given,
+// so they can be pinned here without a git repo — no worktree, no `git` subprocess, no fixture
+// repository (#1914). Serializers whose values come from live git state live in
+// serialize-status.ts instead.
+describe("pure row -> wire serializers", () => {
+  test("repoJSON maps a repo row, normalizing its integer flags", () => {
+    const repo: Repo = {
+      id: 1,
+      full_name: "acme/app",
+      name: "app",
+      owner: "acme",
+      local_path: "/repos/app",
+      default_branch: "main",
+      created_at: "2026-07-01T00:00:00Z",
+      archived: 1,
+      archived_at: "2026-07-02T00:00:00Z",
+      merge_mode: "github_pr",
+      favorite: 0,
+      favorited_at: null,
+      agent_override: 0,
+      agent_runtime: null,
+      agent_model: null,
+      agent_effort: null,
+    };
+    expect(serialize.repoJSON(repo)).toEqual({
+      id: 1,
+      name: "app",
+      full_name: "acme/app",
+      owner: { login: "acme" },
+      default_branch: "main",
+      local_path: "/repos/app",
+      created_at: "2026-07-01T00:00:00Z",
+      archived: true,
+      archived_at: "2026-07-02T00:00:00Z",
+      favorite: false,
+      favorited_at: null,
+      merge_mode: "github_pr",
+      // Derived from full_name + local_path (terminal-launch.ts), so pin its shape, not the digest.
+      herdr_session_name: expect.stringMatching(/^acme-app-[0-9a-f]{8}$/),
+    });
+  });
+
+  test("commentJSON lifts the author into a user object", () => {
+    const row: CommentRow = {
+      id: 7,
+      issue_id: 3,
+      author: "reviewer",
+      body: "looks good",
+      created_at: "2026-07-03T00:00:00Z",
+      updated_at: "2026-07-04T00:00:00Z",
+    };
+    expect(serialize.commentJSON(row)).toEqual({
+      id: 7,
+      user: { login: "reviewer" },
+      body: "looks good",
+      created_at: "2026-07-03T00:00:00Z",
+    });
+  });
+
+  test("reviewCommentJSON renames review_id to the wire field and keeps anchors", () => {
+    const row: ReviewCommentRow = {
+      id: 11,
+      issue_id: 3,
+      review_id: 5,
+      author: "reviewer",
+      body: "off by one",
+      path: "core/serialize.ts",
+      line: 42,
+      side: "RIGHT",
+      created_at: "2026-07-05T00:00:00Z",
+    };
+    expect(serialize.reviewCommentJSON(row)).toEqual({
+      id: 11,
+      pull_request_review_id: 5,
+      user: { login: "reviewer" },
+      path: "core/serialize.ts",
+      line: 42,
+      side: "RIGHT",
+      body: "off by one",
+      created_at: "2026-07-05T00:00:00Z",
+    });
+  });
+
+  test("githubPullJSON maps a linked GitHub PR and passes null through", () => {
+    const row: GithubPull = {
+      issue_id: 3,
+      number: 99,
+      url: "https://github.com/acme/app/pull/99",
+      branch: "loophub/pr-3",
+      created_by: "agent",
+      created_at: "2026-07-06T00:00:00Z",
+      github_merged: 1,
+      github_merged_at: "2026-07-07T00:00:00Z",
+      pushed_sha: "abc123",
+    };
+    expect(serialize.githubPullJSON(row)).toEqual({
+      number: 99,
+      url: "https://github.com/acme/app/pull/99",
+      branch: "loophub/pr-3",
+      created_by: "agent",
+      created_at: "2026-07-06T00:00:00Z",
+      github_merged: true,
+      github_merged_at: "2026-07-07T00:00:00Z",
+      pushed_sha: "abc123",
+    });
+    expect(serialize.githubPullJSON(null)).toBeNull();
   });
 });

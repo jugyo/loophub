@@ -1,4 +1,4 @@
-import { issueListItemJSON } from "../serialize.ts";
+import { issueListItemJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 
 // ===== dashboard =====

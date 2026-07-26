@@ -95,6 +95,11 @@ it should move into a `service/*.ts` procedure (see `worktrees.plan` / `worktree
 its types from `core/serialize.ts` via type-only imports instead of re-declaring them — do not
 hand-write a wire type in `web/` that duplicates one already produced by a core serializer.
 
+Keep `core/serialize.ts` synchronous and free of `node:fs` / `core/git.ts`: every function there
+converts rows to wire objects, so it is unit-testable without a git repo. Serializers whose values
+come from live git or worktree state (`pullJSON`, `issueListItemJSON`, `issueDetailJSON`) live in
+`core/serialize-status.ts` and import their wire types back from `core/serialize.ts`.
+
 ## Runtime requirements
 
 - **Node.js >= 22.12.0.**

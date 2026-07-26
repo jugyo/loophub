@@ -32,9 +32,9 @@ import {
   agentSessionJSON,
   githubPrStatusJSON,
   githubPullJSON,
-  pullJSON,
   repoJSON,
 } from "../serialize.ts";
+import { pullJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
 import { legacyWorktreePath, worktreePath } from "../worktree-path.ts";
 import { closeOpenAttemptsForIssue } from "./attempts.ts";
