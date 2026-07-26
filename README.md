@@ -5,6 +5,8 @@
   </picture>
 </h1>
 
+[![CI](https://github.com/jugyo/loophub/actions/workflows/ci.yml/badge.svg)](https://github.com/jugyo/loophub/actions/workflows/ci.yml)
+
 **LoopHub は、自分のマシンにある git リポジトリのための、GitHub 風の issue / PR ハブです。**
 issue を書いて「開始」を押すと、コーディングエージェント（Claude Code など）が専用の git worktree
 の中で実装し、別のエージェントがその結果を独立にレビューします。人間は issue を書くことと、
@@ -335,7 +337,12 @@ lint / format は [Biome](https://biomejs.dev) を使用（設定は `biome.json
 テスト群の境界、計測結果、棚卸し判断は
 [テストスイート棚卸し](docs/test-suite-inventory.ja.md) を参照。
 
-コードに手を入れる際の規約は [`CLAUDE.md`](./CLAUDE.md) にまとまっている。
+PR と main への push では [CI](.github/workflows/ci.yml) が `typecheck` / `lint` / `test` /
+`test:integration` を回す。
+
+コードに手を入れる際の規約は [`AGENTS.md`](./AGENTS.md)（`CLAUDE.md` はそのシンボリック
+リンク）にまとまっている。AI エージェント向けの指示という体裁だが、レイヤの責務分担や設計
+原則の一次情報なので、人間が読んでも同じ内容が参照できる。
 
 ## ライセンス
 

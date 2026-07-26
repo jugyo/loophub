@@ -3379,6 +3379,8 @@ test("history ranks lifecycle events by what a human judges the run by (#1867)",
     "workflow_run.updated:Run rework requested",
     "workflow_run.cost_exceeded:Cost limit exceeded",
     "workflow_run.updated:Run needs human",
+    // A merge conflict stalls the flow skeleton, so #1874 promoted it to notable.
+    "workflow_run.merge_conflict:Merge conflict detected",
     "workflow_run.review_submitted:Review passed",
     "workflow_run.merged:Linked PR merged",
   ]);
@@ -3387,7 +3389,6 @@ test("history ranks lifecycle events by what a human judges the run by (#1867)",
     "workflow_run.review_submitted:Review requested changes",
     "workflow_run.updated:Step agent activated",
     "workflow_run.updated:Run resumed",
-    "workflow_run.merge_conflict:Merge conflict detected",
     "workflow_run.usage_updated:Usage updated",
   ]);
   expect(ranked("default")).toEqual([
