@@ -135,8 +135,8 @@ lh repo add <path> [--name owner/repo]
 
 Rules:
 
-- Use **`owner/name`** with exactly one slash (e.g. `jugyo/local-github`, `bringout/recall-ai-cli`)
-- Prefer a stable owner prefix the team recognizes (`jugyo/`, `bringout/`, `me/` for personal sandboxes)
+- Use **`owner/name`** with exactly one slash (e.g. `acme/local-github`, `acme/api-server`)
+- Prefer a stable owner prefix the team recognizes (`acme/`, `me/` for personal sandboxes)
 - Name is the LoopHub identity — it need not match the GitHub remote URL
 
 ### 4. Register

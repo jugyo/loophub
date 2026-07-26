@@ -4,3 +4,17 @@ dist/
 logs/
 .DS_Store
 .docs/
+
+# LoopHub state written into the repo (only workflow.yml is VCS-managed)
+/.loophub/*
+!/.loophub/workflow.yml
+/.loophub-issue-draft/
+/.worktrees/
+
+# Playwright MCP output
+/.playwright-mcp/
+
+# Screenshots and scratch scripts dropped at the repo root / in scripts/
+/*.png
+/scripts/*.sh
+!/scripts/install-lh-wrapper.sh
