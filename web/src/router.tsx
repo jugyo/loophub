@@ -13,7 +13,7 @@ import { rootRoute } from "./routes/root";
 import { sessionsRoute } from "./routes/sessions";
 import { settingsRoute } from "./routes/settings";
 import { settingsWorkflowsRoute } from "./routes/settings-workflows";
-import { statsDbRoute, statsRoute, statsSessionsRoute } from "./routes/stats";
+import { statsDbRoute, statsRoute } from "./routes/stats";
 import { uiCatalogRoute } from "./routes/ui-catalog";
 
 // App-shell route tree. Leaf components are placeholders; later UI issues
@@ -34,7 +34,6 @@ const routeTree = rootRoute.addChildren([
   sessionsRoute,
   statsRoute,
   statsDbRoute,
-  statsSessionsRoute,
   uiCatalogRoute,
 ]);
 

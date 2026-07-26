@@ -3,10 +3,10 @@
 // (WAL included), and per-repo issue/PR tallies. All aggregation happens in core;
 // this page only renders the numbers.
 
-import { Link } from "@tanstack/react-router";
-import { Bot, Database, Loader2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { Loader2 } from "lucide-react";
 import type { Stats } from "@/api/types";
+import { StatsHeader } from "@/components/stats-header";
 import { useStats } from "@/queries/stats";
 
 /** 1234 -> "1.2 KB". Binary units, one decimal below 100, none at/above. */
@@ -29,68 +29,8 @@ export function formatBytes(n: number): string {
   return `${v >= 99.95 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
 }
 
-export function StatsPage() {
-  return (
-    <div
-      data-debug-component="StatsPage"
-      className="mx-auto flex max-w-content flex-col"
-    >
-      <h1 className="text-2xl font-semibold">Stats</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Server statistics and agent session activity.
-      </p>
-
-      <div className="mt-6 grid gap-3 sm:grid-cols-2">
-        <StatsLink
-          to="/stats/db"
-          icon={<Database className="size-5" />}
-          title="DB Stats"
-          description="Database file size, table row counts, and per-repository issue and PR totals."
-        />
-        <StatsLink
-          to="/stats/sessions"
-          icon={<Bot className="size-5" />}
-          title="Agent sessions"
-          description="Registered sessions, token usage, API-equivalent cost, and linked work."
-        />
-      </div>
-    </div>
-  );
-}
-
-function StatsLink({
-  to,
-  icon,
-  title,
-  description,
-}: {
-  to: string;
-  icon: ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link
-      data-debug-component="StatsLink"
-      to={to}
-      className="group rounded-md border p-4 transition-colors hover:bg-accent hover:text-accent-foreground"
-    >
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 text-muted-foreground transition-colors group-hover:text-accent-foreground">
-          {icon}
-        </div>
-        <div>
-          <h2 className="text-sm font-medium">{title}</h2>
-          <p className="mt-1 text-sm text-muted-foreground transition-colors group-hover:text-accent-foreground">
-            {description}
-          </p>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
 export function DatabaseStatsPage() {
+  const navigate = useNavigate();
   const { data, isLoading, isError } = useStats();
 
   return (
@@ -98,29 +38,38 @@ export function DatabaseStatsPage() {
       data-debug-component="DatabaseStatsPage"
       className="flex w-full flex-col"
     >
-      <h1 className="text-2xl font-semibold">DB Stats</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Database statistics for this LoopHub server.
-      </p>
+      <StatsHeader
+        activeTab="db"
+        onTabChange={(tab) => {
+          if (tab === "cost") void navigate({ to: "/stats" });
+        }}
+        panelIds={{ db: "stats-db-panel" }}
+      />
 
-      {isLoading && (
-        <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading…
-        </div>
-      )}
-      {isError && (
-        <div className="mt-6 text-sm text-destructive">
-          Failed to load stats.
-        </div>
-      )}
+      <div id="stats-db-panel" role="tabpanel" aria-labelledby="stats-db-tab">
+        <p className="mt-6 text-sm text-muted-foreground">
+          Database statistics for this LoopHub server.
+        </p>
 
-      {data && (
-        <>
-          <DatabaseSection database={data.database} />
-          <TablesSection tables={data.tables} />
-          <ReposSection repos={data.repos} />
-        </>
-      )}
+        {isLoading && (
+          <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading…
+          </div>
+        )}
+        {isError && (
+          <div className="mt-6 text-sm text-destructive">
+            Failed to load stats.
+          </div>
+        )}
+
+        {data && (
+          <>
+            <DatabaseSection database={data.database} />
+            <TablesSection tables={data.tables} />
+            <ReposSection repos={data.repos} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

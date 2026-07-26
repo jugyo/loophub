@@ -7,7 +7,7 @@ function SessionsRedirect() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    navigate({ to: "/stats/sessions", replace: true });
+    navigate({ to: "/stats", replace: true });
   }, [navigate]);
 
   return (

@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { scaleBand, scaleLinear } from "d3-scale";
 import { BarChart3, CalendarRange, Loader2, Rows3 } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
@@ -8,6 +8,7 @@ import type {
   SessionLinkedTarget,
   SessionUsage,
 } from "@/api/types";
+import { StatsHeader } from "@/components/stats-header";
 import { Badge } from "@/components/ui/badge";
 import {
   formatCost,
@@ -284,6 +285,7 @@ function sortedByCost(sessions: AgentSession[]): AgentSession[] {
 }
 
 export function AgentSessionsPage() {
+  const navigate = useNavigate();
   const { data, isLoading, isError } = useAgentSessions();
   const [rangeId, setRangeId] = useState<RangePreset["id"]>("month");
   const [granularity, setGranularity] = useState<Granularity>("day");
@@ -316,54 +318,66 @@ export function AgentSessionsPage() {
       data-debug-component="AgentSessionsPage"
       className="flex w-full flex-col"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Agent sessions</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Coding agent cost over time and session-level usage for the selected
-            period.
-          </p>
-        </div>
-      </div>
+      <StatsHeader
+        activeTab="cost"
+        onTabChange={(tab) => {
+          if (tab === "db") void navigate({ to: "/stats/db" });
+        }}
+        panelIds={{ cost: "stats-cost-panel" }}
+      />
 
-      {isLoading && (
-        <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading…
-        </div>
-      )}
-      {isError && (
-        <div className="mt-6 text-sm text-destructive">
-          Failed to load agent sessions.
-        </div>
-      )}
-      {data && data.length === 0 && (
-        <p className="mt-6 text-sm text-muted-foreground">No agent sessions.</p>
-      )}
-      {data && data.length > 0 && (
-        <>
-          <Controls
-            rangeId={rangeId}
-            granularity={granularity}
-            chartMode={chartMode}
-            onRangeChange={setRangeId}
-            onGranularityChange={setGranularity}
-            onChartModeChange={setChartMode}
-          />
-          <Overview
-            preset={preset}
-            sessions={filteredSessions}
-            totalCost={totalCost}
-            agentCosts={agentCosts}
-          />
-          <CostChart
-            buckets={buckets}
-            agentCosts={agentCosts}
-            mode={chartMode}
-          />
-          <AgentComparison agents={agentCosts} />
-          <SessionsTable sessions={filteredSessions} />
-        </>
-      )}
+      <div
+        id="stats-cost-panel"
+        role="tabpanel"
+        aria-labelledby="stats-cost-tab"
+        className="flex flex-col"
+      >
+        <p className="mt-6 text-sm text-muted-foreground">
+          Coding agent cost over time and session-level usage for the selected
+          period.
+        </p>
+
+        {isLoading && (
+          <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading…
+          </div>
+        )}
+        {isError && (
+          <div className="mt-6 text-sm text-destructive">
+            Failed to load agent sessions.
+          </div>
+        )}
+        {data && data.length === 0 && (
+          <p className="mt-6 text-sm text-muted-foreground">
+            No agent sessions.
+          </p>
+        )}
+        {data && data.length > 0 && (
+          <>
+            <Controls
+              rangeId={rangeId}
+              granularity={granularity}
+              chartMode={chartMode}
+              onRangeChange={setRangeId}
+              onGranularityChange={setGranularity}
+              onChartModeChange={setChartMode}
+            />
+            <Overview
+              preset={preset}
+              sessions={filteredSessions}
+              totalCost={totalCost}
+              agentCosts={agentCosts}
+            />
+            <CostChart
+              buckets={buckets}
+              agentCosts={agentCosts}
+              mode={chartMode}
+            />
+            <AgentComparison agents={agentCosts} />
+            <SessionsTable sessions={filteredSessions} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

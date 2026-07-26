@@ -7,11 +7,18 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch } from "@/api/rpc-mock";
 import type { Stats } from "@/api/types";
-import { DatabaseStatsPage, formatBytes, StatsPage } from "./stats-page";
+import { DatabaseStatsPage, formatBytes } from "./stats-page";
 
 afterEach(() => {
   cleanup();
@@ -38,44 +45,40 @@ const STATS: Stats = {
   ],
 };
 
-function renderStatsHub() {
+function renderDatabaseStats(stats: Stats = STATS) {
+  vi.stubGlobal("fetch", mockRpcFetch({ "stats/get": () => stats }));
+  return renderDatabaseStatsPage();
+}
+
+// The DB Stats tab renders the shared StatsHeader, so it needs a router with the
+// sibling Agent cost route to navigate to.
+function renderDatabaseStatsPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const rootRoute = createRootRoute({ component: Outlet });
   const statsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/stats",
-    component: StatsPage,
+    component: () => <div data-testid="agent-cost-page" />,
   });
   const statsDbRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/stats/db",
-    component: () => null,
-  });
-  const statsSessionsRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/stats/sessions",
-    component: () => null,
+    component: DatabaseStatsPage,
   });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([
-      statsRoute,
-      statsDbRoute,
-      statsSessionsRoute,
-    ]),
-    history: createMemoryHistory({ initialEntries: ["/stats"] }),
+    routeTree: rootRoute.addChildren([statsRoute, statsDbRoute]),
+    history: createMemoryHistory({ initialEntries: ["/stats/db"] }),
   });
-  return render(<RouterProvider router={router} />);
-}
-
-function renderDatabaseStats(stats: Stats = STATS) {
-  vi.stubGlobal("fetch", mockRpcFetch({ "stats/get": () => stats }));
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <DatabaseStatsPage />
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    ),
+    router,
+  };
 }
 
 describe("formatBytes", () => {
@@ -96,38 +99,41 @@ describe("formatBytes", () => {
   });
 });
 
-describe("StatsPage", () => {
-  it("links to DB stats and agent sessions from the Stats root", async () => {
-    renderStatsHub();
-
-    const dbStats = await screen.findByRole("link", { name: /db stats/i });
-    expect(dbStats.getAttribute("href")).toBe("/stats/db");
-    const sessions = screen.getByRole("link", { name: /agent sessions/i });
-    expect(sessions.getAttribute("href")).toBe("/stats/sessions");
-  });
-
-  it("uses the shared content cap for page width", async () => {
-    renderStatsHub();
-
-    const root = (
-      await screen.findByRole("heading", { name: "Stats" })
-    ).closest("div");
-    expect(root?.className).toContain("max-w-content");
-    expect(root?.className).toContain("mx-auto");
-    expect(root?.className).not.toContain("w-full");
-  });
-});
-
 describe("DatabaseStatsPage", () => {
   it("uses the full available page width", async () => {
     renderDatabaseStats();
 
     const root = (
-      await screen.findByRole("heading", { name: "DB Stats" })
-    ).closest("div");
+      await screen.findByRole("heading", { name: "Stats" })
+    ).closest("[class*='w-full']");
     expect(root?.className).toContain("w-full");
     expect(root?.className).not.toContain("max-w-content");
     expect(root?.className).not.toContain("mx-auto");
+  });
+
+  it("shows Agent cost and DB Stats tabs with DB Stats selected", async () => {
+    renderDatabaseStats();
+
+    const tablist = await screen.findByRole("tablist", {
+      name: "Stats categories",
+    });
+    const costTab = within(tablist).getByRole("tab", { name: "Agent cost" });
+    const dbTab = within(tablist).getByRole("tab", { name: "DB Stats" });
+
+    expect(dbTab.getAttribute("aria-selected")).toBe("true");
+    expect(costTab.getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByRole("tabpanel", { name: "DB Stats" })).toBeTruthy();
+    expect(costTab.getAttribute("tabindex")).toBeNull();
+    expect(dbTab.getAttribute("tabindex")).toBeNull();
+  });
+
+  it("opens the Agent cost tab at /stats", async () => {
+    const { router } = renderDatabaseStats();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Agent cost" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/stats"));
+    expect(await screen.findByTestId("agent-cost-page")).toBeTruthy();
   });
 
   it("shows the DB file size, WAL included, in human-readable units", async () => {
@@ -171,14 +177,7 @@ describe("DatabaseStatsPage", () => {
       "fetch",
       vi.fn(async () => new Response("boom", { status: 500 })),
     );
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <DatabaseStatsPage />
-      </QueryClientProvider>,
-    );
+    renderDatabaseStatsPage();
     expect(await screen.findByText(/failed to load stats/i)).toBeTruthy();
   });
 });

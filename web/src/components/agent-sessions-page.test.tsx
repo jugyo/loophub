@@ -12,6 +12,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -133,8 +134,13 @@ function renderPage(sessions: AgentSession[] = SESSIONS) {
   const rootRoute = createRootRoute({ component: Outlet });
   const sessionsRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: "/stats/sessions",
+    path: "/stats",
     component: AgentSessionsPage,
+  });
+  const dbRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/stats/db",
+    component: () => <div data-testid="db-stats-page" />,
   });
   const issueRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -147,14 +153,22 @@ function renderPage(sessions: AgentSession[] = SESSIONS) {
     component: () => null,
   });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([sessionsRoute, issueRoute, pullRoute]),
-    history: createMemoryHistory({ initialEntries: ["/stats/sessions"] }),
+    routeTree: rootRoute.addChildren([
+      sessionsRoute,
+      dbRoute,
+      issueRoute,
+      pullRoute,
+    ]),
+    history: createMemoryHistory({ initialEntries: ["/stats"] }),
   });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    ),
+    router,
+  };
 }
 
 function costedSession(
@@ -212,11 +226,40 @@ describe("AgentSessionsPage", () => {
     renderPage();
 
     const root = (
-      await screen.findByRole("heading", { name: "Agent sessions" })
+      await screen.findByRole("heading", { name: "Stats" })
     ).closest("[class*='w-full']");
     expect(root?.className).toContain("w-full");
     expect(root?.className).not.toContain("max-w-content");
     expect(root?.className).not.toContain("mx-auto");
+  });
+
+  it("shows Agent cost and DB Stats tabs with Agent cost selected", async () => {
+    renderPage();
+
+    const tablist = await screen.findByRole("tablist", {
+      name: "Stats categories",
+    });
+    const costTab = within(tablist).getByRole("tab", { name: "Agent cost" });
+    const dbTab = within(tablist).getByRole("tab", { name: "DB Stats" });
+
+    expect(costTab.getAttribute("aria-selected")).toBe("true");
+    expect(dbTab.getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByRole("tabpanel", { name: "Agent cost" })).toBeTruthy();
+    // Each tab navigates to its own route, so both stay Tab-reachable instead of
+    // relying on a roving tabindex the navigation would unmount.
+    expect(costTab.getAttribute("tabindex")).toBeNull();
+    expect(dbTab.getAttribute("tabindex")).toBeNull();
+  });
+
+  it("opens the DB Stats tab at /stats/db", async () => {
+    const { router } = renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "DB Stats" }));
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/stats/db"),
+    );
+    expect(await screen.findByTestId("db-stats-page")).toBeTruthy();
   });
 
   it("shows sessions in the selected period by cost with usage totals and linked work", async () => {
@@ -225,9 +268,7 @@ describe("AgentSessionsPage", () => {
     );
     renderPage();
 
-    expect(
-      await screen.findByRole("heading", { name: "Agent sessions" }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Stats" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "last 1 month" })).toBeTruthy();
     expect(screen.getByLabelText("Total cost trend")).toBeTruthy();
     expect(screen.getByText("Sorted by cost desc")).toBeTruthy();
