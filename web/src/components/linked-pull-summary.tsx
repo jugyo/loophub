@@ -147,24 +147,26 @@ function Metrics({
 // increase question opens from it on hover or focus, so the row spends no width on a budget it is
 // still inside (#1906). Once the question has been answered "No" for this limit the badge stays —
 // the run is still held — but stops offering the action until a later crossing at the higher limit.
-function OverBudgetBadge({
+export function WorkflowBudgetControl({
+  owner,
+  repo,
+  pull,
   state,
-  askable,
-  pending,
-  onYes,
-  onNo,
   onInteract,
 }: {
+  owner: string;
+  repo: string;
+  pull: number;
   state: WorkflowRunState;
-  askable: boolean;
-  pending: boolean;
-  onYes: () => void;
-  onNo: () => void;
   onInteract?: () => void;
 }) {
+  const increaseCostLimit = useIncreaseWorkflowRunCostLimit(owner, repo, pull);
+  const { showError } = useToast();
+  const [declinedLimitUsd, setDeclinedLimitUsd] = useState<number | null>(null);
   const popover = useHoverPopover();
   const dialogId = `workflow-run-${state.id}-budget`;
   const nextLimit = state.cost_limit_usd + state.cost_increment_usd;
+  const askable = declinedLimitUsd !== state.cost_limit_usd;
   const badge = (
     <>
       <TriangleAlert className="size-3" aria-hidden="true" />
@@ -235,9 +237,21 @@ function OverBudgetBadge({
           >
             <YesNoPrompt
               question={`Increase to ${formatCost(nextLimit)}?`}
-              pending={pending}
-              onYes={onYes}
-              onNo={onNo}
+              pending={increaseCostLimit.isPending}
+              onYes={() =>
+                increaseCostLimit.mutate(
+                  { run: state.id, expectedLimitUsd: state.cost_limit_usd },
+                  {
+                    onError: (error) =>
+                      showError(
+                        error instanceof Error
+                          ? error.message
+                          : "Failed to increase the workflow budget.",
+                      ),
+                  },
+                )
+              }
+              onNo={() => setDeclinedLimitUsd(state.cost_limit_usd)}
             />
           </div>
         </div>
@@ -274,16 +288,6 @@ function WorkflowMiniProgress({
   conflict: boolean;
 }) {
   const { data: state } = useWorkflowRunForPull(owner, repo, pull.number);
-  const increaseCostLimit = useIncreaseWorkflowRunCostLimit(
-    owner,
-    repo,
-    pull.number,
-  );
-  const { showError } = useToast();
-  // Declining leaves the run held — there is no "the human said no" domain fact to record — so the
-  // answer only dismisses the question here. Keyed by the limit that was refused, a later crossing
-  // at the increased limit asks again.
-  const [declinedLimitUsd, setDeclinedLimitUsd] = useState<number | null>(null);
   if (!state) return null;
   return (
     <>
@@ -304,25 +308,12 @@ function WorkflowMiniProgress({
       {/* Nothing is shown while the run is inside its budget; a successful increase is legible from
           the badge disappearing with the hold. */}
       {state.cost_limit_increase_available ? (
-        <OverBudgetBadge
+        <WorkflowBudgetControl
+          owner={owner}
+          repo={repo}
+          pull={pull.number}
           state={state}
-          askable={declinedLimitUsd !== state.cost_limit_usd}
-          pending={increaseCostLimit.isPending}
           onInteract={onStageInteract}
-          onYes={() =>
-            increaseCostLimit.mutate(
-              { run: state.id, expectedLimitUsd: state.cost_limit_usd },
-              {
-                onError: (error) =>
-                  showError(
-                    error instanceof Error
-                      ? error.message
-                      : "Failed to increase the workflow budget.",
-                  ),
-              },
-            )
-          }
-          onNo={() => setDeclinedLimitUsd(state.cost_limit_usd)}
         />
       ) : null}
     </>

@@ -1232,6 +1232,76 @@ describe("PullDetail", () => {
     expect(screen.getByRole("button", { name: "View history" })).toBeTruthy();
   });
 
+  it("increases an over-budget Workflow run from the PR page", async () => {
+    const held = {
+      id: 12,
+      workflow_id: 3,
+      workflow_name: "Implementation loop",
+      status: "running",
+      current_step: "execute",
+      rework_count: 0,
+      needs_human_reason: "Cost limit exceeded",
+      issue_number: 153,
+      pr_number: 30,
+      created_at: "2026-06-18T11:00:00Z",
+      updated_at: "2026-06-18T12:00:00Z",
+      latest_review: null,
+      verification_status: "unverified",
+      cost_limit_usd: 20,
+      cost_increment_usd: 10,
+      cost_limit_increase_available: true,
+    };
+    renderDetail({
+      "workflowRuns/stateForPull": () => held,
+      "workflowRuns/increaseCostLimit": () => ({
+        run: 12,
+        increment_usd: 10,
+        previous_limit_usd: 20,
+        current_limit_usd: 30,
+      }),
+    });
+
+    fireEvent.focus(await screen.findByText("over budget"));
+    const prompt = screen.getByRole("group", { name: "Increase to $30.00?" });
+    await act(async () => {
+      fireEvent.click(within(prompt).getByRole("button", { name: "Yes" }));
+    });
+
+    expect(rpcCall("workflowRuns/increaseCostLimit")?.params).toMatchObject({
+      repo: "me/proj",
+      run: 12,
+      expected_limit_usd: 20,
+    });
+    expect(screen.queryByText("Needs human")).toBeNull();
+    expect(screen.queryByText("needs human")).toBeNull();
+  });
+
+  it("shows no budget action for a Workflow run that is within budget", async () => {
+    renderDetail({
+      "workflowRuns/stateForPull": () => ({
+        id: 12,
+        workflow_id: 3,
+        workflow_name: "Implementation loop",
+        status: "running",
+        current_step: "execute",
+        rework_count: 0,
+        needs_human_reason: null,
+        issue_number: 153,
+        pr_number: 30,
+        created_at: "2026-06-18T11:00:00Z",
+        updated_at: "2026-06-18T12:00:00Z",
+        latest_review: null,
+        verification_status: "unverified",
+        cost_limit_usd: 20,
+        cost_increment_usd: 10,
+        cost_limit_increase_available: false,
+      }),
+    });
+
+    await screen.findByText("Implementation loop");
+    expect(screen.queryByText("over budget")).toBeNull();
+  });
+
   it.each([
     { currentStep: "execute", label: "Execute" },
     { currentStep: "verify", label: "Verify" },

@@ -17,6 +17,7 @@ import { History } from "lucide-react";
 import { useState } from "react";
 import type { WorkflowRunState } from "@/api/types";
 import { isPullHerdrWorking } from "@/components/herdr-badge";
+import { WorkflowBudgetControl } from "@/components/linked-pull-summary";
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -95,6 +96,7 @@ export function WorkflowRunStatusSection({
     `${owner}/${repo}`,
     state.pr_number,
   );
+  const overBudget = state.cost_limit_increase_available;
 
   return (
     <section
@@ -106,7 +108,9 @@ export function WorkflowRunStatusSection({
       </h2>
       <div className="flex flex-col gap-3 rounded-md border bg-muted/30 p-4">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Badge tone={status.tone}>{status.label}</Badge>
+          {!overBudget ? (
+            <Badge tone={status.tone}>{status.label}</Badge>
+          ) : null}
           <span className="font-medium">
             {state.workflow_name ?? "workflow"}
           </span>
@@ -127,7 +131,17 @@ export function WorkflowRunStatusSection({
           size="md"
           working={working}
           conflict={conflict}
+          overBudget={overBudget}
         />
+
+        {overBudget ? (
+          <WorkflowBudgetControl
+            owner={owner}
+            repo={repo}
+            pull={state.pr_number}
+            state={state}
+          />
+        ) : null}
 
         {completed ? (
           <p className="text-sm text-muted-foreground">
@@ -145,7 +159,7 @@ export function WorkflowRunStatusSection({
           </p>
         ) : null}
 
-        {needsHuman(state) ? (
+        {needsHuman(state) && !overBudget ? (
           <NeedsHumanNotice owner={owner} repo={repo} state={state} />
         ) : null}
 
