@@ -380,7 +380,7 @@ function MarkdownPreviewPane({
   return (
     <div
       data-debug-component="MarkdownPreviewPane"
-      className="markdown-diff-preview bg-[#f6f8fa] p-3 dark:bg-[#0d1117]"
+      className="markdown-diff-preview p-3"
     >
       {file.isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

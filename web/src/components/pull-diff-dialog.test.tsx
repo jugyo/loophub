@@ -319,8 +319,8 @@ describe("DiffFileDialog", () => {
       '[data-debug-component="MarkdownPreviewPane"]',
     );
     expect(headPane?.classList).toContain("markdown-diff-preview");
-    expect(headPane?.classList).toContain("bg-[#f6f8fa]");
-    expect(headPane?.classList).toContain("dark:bg-[#0d1117]");
+    expect(headPane?.className).not.toContain("bg-");
+    expect(headPane?.className).not.toContain("text-");
     const preview = dialog.querySelector(".typeset-diff-preview");
     expect(preview).not.toBeNull();
     expect(preview?.classList.contains("typeset")).toBe(true);
@@ -332,8 +332,8 @@ describe("DiffFileDialog", () => {
       '[data-debug-component="MarkdownPreviewPane"]',
     );
     expect(basePane?.classList).toContain("markdown-diff-preview");
-    expect(basePane?.classList).toContain("bg-[#f6f8fa]");
-    expect(basePane?.classList).toContain("dark:bg-[#0d1117]");
+    expect(basePane?.className).not.toContain("bg-");
+    expect(basePane?.className).not.toContain("text-");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Diff" }));
     expect(await within(dialog).findByText("+# new")).toBeTruthy();

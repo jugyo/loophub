@@ -171,6 +171,39 @@
   }
 }
 
+/* Diff Markdown previews use a stable LoopHub palette instead of inheriting
+   the selected application theme. Only the light/dark mode chooses between
+   these two palettes. */
+.markdown-diff-preview {
+  --markdown-diff-background: #f6f8fa;
+  --markdown-diff-foreground: #1f2328;
+  --markdown-diff-muted: #59636e;
+  --markdown-diff-border: #d1d9e0;
+  --markdown-diff-link: #0969da;
+  --markdown-diff-link-decoration: rgb(9 105 218 / 35%);
+  --markdown-diff-surface: #eaeef2;
+  --markdown-diff-table-heading: rgb(234 238 242 / 50%);
+  --scrollbar-track: #eaeef2;
+  --scrollbar-thumb: rgb(89 99 110 / 38%);
+  --scrollbar-thumb-hover: rgb(89 99 110 / 58%);
+
+  background-color: var(--markdown-diff-background);
+}
+
+.dark .markdown-diff-preview {
+  --markdown-diff-background: #0d1117;
+  --markdown-diff-foreground: #f0f6fc;
+  --markdown-diff-muted: #9198a1;
+  --markdown-diff-border: #3d444d;
+  --markdown-diff-link: #4493f8;
+  --markdown-diff-link-decoration: rgb(68 147 248 / 35%);
+  --markdown-diff-surface: #151b23;
+  --markdown-diff-table-heading: rgb(21 27 35 / 50%);
+  --scrollbar-track: #151b23;
+  --scrollbar-thumb: rgb(145 152 161 / 38%);
+  --scrollbar-thumb-hover: rgb(145 152 161 / 58%);
+}
+
 /* Rendered Markdown (issue / PR / comment bodies). Tailwind's preflight strips
    default element styles, so GFM output needs explicit rules. Scoped to
    .markdown-body so it never leaks into the rest of the UI. */

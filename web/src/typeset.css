@@ -14,10 +14,15 @@
   --typeset-size: 1em;
   --typeset-leading: 1.75;
   --typeset-flow: 1.25em;
+  --typeset-foreground: hsl(var(--foreground));
+  --typeset-link: hsl(var(--link));
+  --typeset-link-decoration: hsl(var(--link) / 0.35);
   --typeset-muted: hsl(var(--muted-foreground));
   --typeset-rule: hsl(var(--border));
+  --typeset-surface: hsl(var(--muted));
+  --typeset-table-heading: hsl(var(--muted) / 0.5);
 
-  color: hsl(var(--foreground));
+  color: var(--typeset-foreground);
   font-family: var(--typeset-font-body);
   font-size: var(--typeset-size);
   line-height: var(--typeset-leading);
@@ -30,7 +35,7 @@
 }
 
 .typeset :where(h1, h2, h3, h4, h5, h6) {
-  color: hsl(var(--foreground));
+  color: var(--typeset-foreground);
   font-family: var(--typeset-font-heading);
   font-weight: 650;
   margin-block-end: 0;
@@ -80,10 +85,10 @@
 }
 
 .typeset :where(a) {
-  color: hsl(var(--link));
+  color: var(--typeset-link);
   font-weight: 500;
   text-decoration-line: underline;
-  text-decoration-color: hsl(var(--link) / 0.35);
+  text-decoration-color: var(--typeset-link-decoration);
   text-underline-offset: 0.15em;
 }
 
@@ -135,7 +140,7 @@
 }
 
 .typeset :where(:not(pre) > code) {
-  background-color: hsl(var(--muted));
+  background-color: var(--typeset-surface);
   border-radius: calc(var(--radius) - 4px);
   font-family: var(--typeset-font-mono);
   font-size: 0.85em;
@@ -143,7 +148,7 @@
 }
 
 .typeset :where(pre) {
-  background-color: hsl(var(--muted));
+  background-color: var(--typeset-surface);
   border-radius: var(--radius);
   font-family: var(--typeset-font-mono);
   font-size: 0.875em;
@@ -190,7 +195,7 @@
 }
 
 .typeset :where(thead th) {
-  background-color: hsl(var(--muted) / 0.5);
+  background-color: var(--typeset-table-heading);
   font-weight: 600;
 }
 
@@ -213,8 +218,7 @@
 
 /* Diff previews own a context preset independent of the shared Markdown
    styles. Keep it after the unlayered base defaults so the equal-specificity
-   custom properties win by source order. Layout owns the reading measure;
-   colors remain connected to the application theme above.
+   custom properties win by source order. Layout owns the reading measure.
 
    The preview spans its pane so wide code and tables can use the available
    space. Other direct children retain the narrower reading measure. The pane
@@ -226,6 +230,13 @@
   --typeset-size: 1rem;
   --typeset-leading: 1.8;
   --typeset-flow: 1.4em;
+  --typeset-foreground: var(--markdown-diff-foreground);
+  --typeset-link: var(--markdown-diff-link);
+  --typeset-link-decoration: var(--markdown-diff-link-decoration);
+  --typeset-muted: var(--markdown-diff-muted);
+  --typeset-rule: var(--markdown-diff-border);
+  --typeset-surface: var(--markdown-diff-surface);
+  --typeset-table-heading: var(--markdown-diff-table-heading);
 
   width: 100%;
 }
