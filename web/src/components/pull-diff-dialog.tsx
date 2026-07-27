@@ -378,7 +378,10 @@ function MarkdownPreviewPane({
 }) {
   const file = usePullFileAtRef(owner, repo, number, path, side, true);
   return (
-    <div data-debug-component="MarkdownPreviewPane" className="p-3">
+    <div
+      data-debug-component="MarkdownPreviewPane"
+      className="markdown-diff-preview bg-[#f6f8fa] p-3 dark:bg-[#0d1117]"
+    >
       {file.isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading preview…
