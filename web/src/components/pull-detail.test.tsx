@@ -448,10 +448,12 @@ describe("PullDetail", () => {
       screen.getByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
     ).toBeTruthy();
 
-    fireEvent.click(
-      screen.getByRole("dialog", { name: /Diff for web\/src\/a\.ts/i })
-        .parentElement as HTMLElement,
-    );
+    const backdrop = screen.getByRole("dialog", {
+      name: /Diff for web\/src\/a\.ts/i,
+    }).parentElement as HTMLElement;
+    fireEvent.mouseDown(backdrop);
+    fireEvent.mouseUp(backdrop);
+    fireEvent.click(backdrop);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));

@@ -109,8 +109,26 @@ describe("DiffFileDialog", () => {
     const dialog = screen.getByRole("dialog", {
       name: /Diff for web\/src\/a\.ts/i,
     });
-    fireEvent.click(dialog.parentElement as HTMLElement);
+    const backdrop = dialog.parentElement as HTMLElement;
+    fireEvent.mouseDown(backdrop);
+    fireEvent.mouseUp(backdrop);
+    fireEvent.click(backdrop);
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("stays open when a mouse action starts in the panel and ends on the backdrop", () => {
+    const onClose = vi.fn();
+    renderDialog({ onClose });
+
+    const dialog = screen.getByRole("dialog", {
+      name: /Diff for web\/src\/a\.ts/i,
+    });
+    const backdrop = dialog.parentElement as HTMLElement;
+    fireEvent.mouseDown(dialog);
+    fireEvent.mouseUp(backdrop);
+    fireEvent.click(backdrop);
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("keeps the dialog open when the panel itself is clicked", () => {

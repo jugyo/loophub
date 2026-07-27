@@ -5,7 +5,7 @@
 // drives prev/next navigation through props.
 
 import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { PullFile, PullLineComment } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
 import { DiffLines } from "@/components/diff-lines";
@@ -97,6 +97,7 @@ export function DiffFileDialog({
   const [standardMode, setStandardMode] =
     useState<StandardDiffDialogMode>("diff");
   const [markdownMode, setMarkdownMode] = useState<DiffDialogMode>("diff");
+  const mouseDownStartedOnBackdrop = useRef(false);
   const copyPath = visibleCopyPath(copyFilename(file));
   const isMarkdown =
     MARKDOWN_FILENAME.test(file.filename) && !isSyntheticRenameFilename(file);
@@ -122,8 +123,14 @@ export function DiffFileDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4"
+      onMouseDown={(event) => {
+        mouseDownStartedOnBackdrop.current =
+          event.target === event.currentTarget;
+      }}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        const endsOnBackdrop = event.target === event.currentTarget;
+        if (mouseDownStartedOnBackdrop.current && endsOnBackdrop) onClose();
+        mouseDownStartedOnBackdrop.current = false;
       }}
     >
       <div
