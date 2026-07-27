@@ -292,12 +292,48 @@ describe("DiffFileDialog", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Head" }));
     expect(await screen.findByRole("heading", { name: "new" })).toBeTruthy();
+    const preview = dialog.querySelector(".typeset-diff-preview");
+    expect(preview).not.toBeNull();
+    expect(preview?.classList.contains("typeset")).toBe(true);
+    expect(preview?.classList.contains("markdown-body")).toBe(false);
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Base" }));
     expect(await screen.findByRole("heading", { name: "old" })).toBeTruthy();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Diff" }));
     expect(await within(dialog).findByText("+# new")).toBeTruthy();
+  });
+
+  it("renders GFM elements inside the diff preview typeset", async () => {
+    const mdFile: PullFile = {
+      filename: "README.md",
+      status: "added",
+      additions: 12,
+      deletions: 0,
+      patch: "@@ -0,0 +1,12 @@",
+    };
+    renderDialog({
+      file: mdFile,
+      handlers: {
+        "pulls/fileAtRef": () => ({
+          status: "ok",
+          content:
+            "# Title\n\nParagraph with [link](https://example.com) and `code`.\n\n> Quote\n\n- Item\n\n| Column |\n| --- |\n| Cell |\n\n```ts\nconst value = 1;\n```\n",
+        }),
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Head" }));
+
+    const preview = await screen.findByRole("heading", { name: "Title" });
+    const typeset = preview.closest(".typeset-diff-preview");
+    expect(typeset?.querySelector("p")).not.toBeNull();
+    expect(typeset?.querySelector("a")).not.toBeNull();
+    expect(typeset?.querySelector("blockquote")).not.toBeNull();
+    expect(typeset?.querySelector("ul")).not.toBeNull();
+    expect(typeset?.querySelector("table")).not.toBeNull();
+    expect(typeset?.querySelector("code")).not.toBeNull();
+    expect(typeset?.querySelector("pre")).not.toBeNull();
   });
 
   it("restores the Markdown mode after visiting a non-Markdown file", () => {

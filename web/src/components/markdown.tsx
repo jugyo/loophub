@@ -99,11 +99,13 @@ export function Markdown({
   className,
   owner,
   repo,
+  typeset = false,
 }: {
   children: string;
   className?: string;
   owner?: string;
   repo?: string;
+  typeset?: boolean;
 }) {
   // Clicking an embedded image opens it full-size in <ImageLightbox> (#471).
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(
@@ -137,7 +139,7 @@ export function Markdown({
     },
   };
   return (
-    <div className={cn("markdown-body", className)}>
+    <div className={cn(typeset ? "typeset" : "markdown-body", className)}>
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         components={componentsWithImg}

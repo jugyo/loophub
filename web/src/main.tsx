@@ -7,6 +7,7 @@ import { applyTheme, resolveInitialTheme } from "./lib/theme";
 import { WebConfigProvider } from "./lib/web-config";
 import { router } from "./router";
 import "./index.css";
+import "./typeset.css";
 
 const queryClient = new QueryClient();
 applyTheme(resolveInitialTheme());

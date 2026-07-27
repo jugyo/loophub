@@ -1,0 +1,227 @@
+/*
+ * Adapted from shadcn/typeset for the HTML emitted by react-markdown.
+ * https://ui.shadcn.com/docs/typeset
+ *
+ * Keep the element selectors low-specificity so a context preset can tune the
+ * rhythm without affecting rendered Markdown elsewhere in the application.
+ */
+.typeset {
+  --typeset-font-body: inherit;
+  --typeset-font-heading: inherit;
+  --typeset-font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  --typeset-size: 1em;
+  --typeset-leading: 1.75;
+  --typeset-flow: 1.25em;
+  --typeset-muted: hsl(var(--muted-foreground));
+  --typeset-rule: hsl(var(--border));
+
+  color: hsl(var(--foreground));
+  font-family: var(--typeset-font-body);
+  font-size: var(--typeset-size);
+  line-height: var(--typeset-leading);
+  overflow-wrap: break-word;
+}
+
+.typeset :where(p, ul, ol, blockquote, pre, table, hr) {
+  margin-block-end: 0;
+  margin-block-start: var(--typeset-flow);
+}
+
+.typeset :where(h1, h2, h3, h4, h5, h6) {
+  color: hsl(var(--foreground));
+  font-family: var(--typeset-font-heading);
+  font-weight: 650;
+  margin-block-end: 0;
+}
+
+.typeset :where(h1) {
+  font-size: 2.25em;
+  line-height: 1.2;
+  margin-block-start: var(--typeset-flow);
+}
+
+.typeset :where(h2) {
+  font-size: 1.75em;
+  line-height: 1.3;
+  margin-block-start: calc(var(--typeset-flow) * 1.5);
+}
+
+.typeset :where(h3) {
+  font-size: 1.5em;
+  line-height: 1.4;
+  margin-block-start: calc(var(--typeset-flow) * 1.25);
+}
+
+.typeset :where(h4) {
+  font-size: 1.375em;
+  line-height: 1.45;
+  margin-block-start: var(--typeset-flow);
+}
+
+.typeset :where(h5) {
+  font-size: 1.25em;
+  line-height: 1.5;
+  margin-block-start: var(--typeset-flow);
+}
+
+.typeset :where(h6) {
+  color: var(--typeset-muted);
+  font-size: 1.125em;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  margin-block-start: calc(var(--typeset-flow) / 1.125);
+  text-transform: uppercase;
+}
+
+.typeset :where(h1 + *, h2 + *, h3 + *, h4 + *, h5 + *, h6 + *) {
+  margin-block-start: 0.75em;
+}
+
+.typeset :where(a) {
+  color: hsl(var(--link));
+  font-weight: 500;
+  text-decoration-line: underline;
+  text-decoration-color: hsl(var(--link) / 0.35);
+  text-underline-offset: 0.15em;
+}
+
+.typeset :where(a:hover) {
+  text-decoration-color: currentColor;
+}
+
+.typeset :where(strong, b) {
+  font-weight: 650;
+}
+
+.typeset :where(del, s) {
+  color: var(--typeset-muted);
+  text-decoration-line: line-through;
+}
+
+.typeset :where(ul) {
+  list-style-type: disc;
+}
+
+.typeset :where(ol) {
+  list-style-type: decimal;
+}
+
+.typeset :where(ul, ol) {
+  padding-inline-start: 1.5em;
+}
+
+.typeset :where(li) {
+  margin-block-start: 0.4em;
+  padding-inline-start: 0.3em;
+}
+
+.typeset :where(li > p, li > ul, li > ol) {
+  margin-block-start: 0.4em;
+}
+
+.typeset :where(ul > li, ol > li)::marker {
+  color: var(--typeset-muted);
+}
+
+.typeset :where(li.task-list-item) {
+  list-style-type: none;
+}
+
+.typeset :where(li.task-list-item > input[type="checkbox"]) {
+  margin-inline-end: 0.5em;
+  vertical-align: -0.1em;
+}
+
+.typeset :where(:not(pre) > code) {
+  background-color: hsl(var(--muted));
+  border-radius: calc(var(--radius) - 4px);
+  font-family: var(--typeset-font-mono);
+  font-size: 0.85em;
+  padding: 0.125em 0.3em;
+}
+
+.typeset :where(pre) {
+  background-color: hsl(var(--muted));
+  border-radius: var(--radius);
+  font-family: var(--typeset-font-mono);
+  font-size: 0.875em;
+  line-height: 1.6;
+  overflow-x: auto;
+  padding: 1em 1.25em;
+}
+
+.typeset :where(pre code) {
+  background-color: transparent;
+  border-radius: 0;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0;
+}
+
+.typeset :where(blockquote) {
+  border-inline-start: 3px solid var(--typeset-rule);
+  color: var(--typeset-muted);
+  margin-inline: 0;
+  padding-inline-start: 1em;
+}
+
+.typeset :where(hr) {
+  border: 0;
+  border-block-start: 1px solid var(--typeset-rule);
+  margin-block-start: calc(var(--typeset-flow) * 2);
+}
+
+.typeset :where(table) {
+  border-collapse: collapse;
+  display: block;
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow-x: auto;
+  width: max-content;
+}
+
+.typeset :where(th, td) {
+  border: 1px solid var(--typeset-rule);
+  padding: 0.65em 0.9em;
+  text-align: start;
+  vertical-align: top;
+}
+
+.typeset :where(thead th) {
+  background-color: hsl(var(--muted) / 0.5);
+  font-weight: 600;
+}
+
+.typeset :where(img, video) {
+  border-radius: var(--radius);
+  height: auto;
+  max-width: 100%;
+}
+
+.typeset > :where(:first-child),
+.typeset
+  :where(
+    li > :first-child,
+    blockquote > :first-child,
+    td > :first-child,
+    th > :first-child
+) {
+  margin-block-start: 0;
+}
+
+/* Diff previews own a context preset independent of the shared Markdown
+   styles. Keep it after the unlayered base defaults so the equal-specificity
+   custom properties win by source order. Layout owns the reading measure;
+   colors remain connected to the application theme above. */
+.typeset-diff-preview {
+  --typeset-font-body: ui-serif, Georgia, Cambria, "Times New Roman", Times,
+    serif;
+  --typeset-font-heading: ui-sans-serif, system-ui, sans-serif;
+  --typeset-size: 1rem;
+  --typeset-leading: 1.8;
+  --typeset-flow: 1.4em;
+
+  max-width: 46rem;
+}

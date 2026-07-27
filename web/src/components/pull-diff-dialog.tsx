@@ -390,7 +390,12 @@ function MarkdownPreviewPane({
           N/A — binary file, cannot render as Markdown.
         </p>
       ) : (
-        <Markdown owner={owner} repo={repo} className="markdown-preview">
+        <Markdown
+          owner={owner}
+          repo={repo}
+          typeset
+          className="typeset-diff-preview mx-auto"
+        >
           {file.data?.content ?? ""}
         </Markdown>
       )}
