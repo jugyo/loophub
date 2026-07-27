@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -8,11 +10,14 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import postcss from "postcss";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockRpcFetch } from "@/api/rpc-mock";
 import type { PullFile, PullLineComment } from "@/api/types";
 
 import { DiffFileDialog } from "./pull-diff-dialog";
+
+const typesetCss = readFileSync(resolve("src/typeset.css"), "utf8");
 
 afterEach(() => {
   cleanup();
@@ -348,7 +353,7 @@ describe("DiffFileDialog", () => {
         "pulls/fileAtRef": () => ({
           status: "ok",
           content:
-            "# Title\n\nParagraph with [link](https://example.com) and `code`.\n\n> Quote\n\n- Item\n\n| Column |\n| --- |\n| Cell |\n\n```ts\nconst value = 1;\n```\n",
+            "# Title\n\nParagraph with [link](https://example.com) and `code`.\n\n> Quote sharing a block with a wide table.\n>\n> | Nested column |\n> | --- |\n> | Nested cell |\n\n- Item sharing a list with wide code\n\n  ```ts\n  const nested = 1;\n  ```\n\n- Regular sibling item\n\n| Column |\n| --- |\n| Cell |\n\n```ts\nconst value = 1;\n```\n",
         }),
       },
     });
@@ -357,13 +362,65 @@ describe("DiffFileDialog", () => {
 
     const preview = await screen.findByRole("heading", { name: "Title" });
     const typeset = preview.closest(".typeset-diff-preview");
-    expect(typeset?.querySelector("p")).not.toBeNull();
+    const paragraph = typeset?.querySelector("p");
+    const directChildren = Array.from(typeset?.children ?? []);
+    const table = directChildren.find((child) => child.tagName === "TABLE");
+    const pre = directChildren.find((child) => child.tagName === "PRE");
+    expect(paragraph).not.toBeNull();
     expect(typeset?.querySelector("a")).not.toBeNull();
     expect(typeset?.querySelector("blockquote")).not.toBeNull();
     expect(typeset?.querySelector("ul")).not.toBeNull();
-    expect(typeset?.querySelector("table")).not.toBeNull();
+    expect(table).not.toBeNull();
     expect(typeset?.querySelector("code")).not.toBeNull();
-    expect(typeset?.querySelector("pre")).not.toBeNull();
+    expect(pre).not.toBeNull();
+    expect(paragraph?.parentElement).toBe(typeset);
+    expect(table?.parentElement).toBe(typeset);
+    expect(pre?.parentElement).toBe(typeset);
+    const nestedTable = typeset?.querySelector("blockquote table");
+    const nestedPre = typeset?.querySelector("li pre");
+    const mixedBlockquoteParagraph = typeset?.querySelector("blockquote p");
+    const regularListItem = Array.from(
+      typeset?.querySelectorAll("li") ?? [],
+    ).find((item) => item.textContent?.includes("Regular sibling item"));
+    expect(nestedTable).not.toBeNull();
+    expect(nestedPre).not.toBeNull();
+    expect(mixedBlockquoteParagraph).not.toBeNull();
+    expect(regularListItem).not.toBeUndefined();
+    expect(nestedTable?.closest("blockquote")?.parentElement).toBe(typeset);
+    expect(nestedPre?.closest("ul")?.parentElement).toBe(typeset);
+    expect(
+      mixedBlockquoteParagraph
+        ?.closest("blockquote")
+        ?.contains(nestedTable ?? null),
+    ).toBe(true);
+    expect(regularListItem?.parentElement?.contains(nestedPre ?? null)).toBe(
+      true,
+    );
+    const rules: { selector: string; maxWidth?: string }[] = [];
+    postcss.parse(typesetCss).walkRules((rule) => {
+      let maxWidth: string | undefined;
+      rule.walkDecls("max-width", (declaration) => {
+        maxWidth = declaration.value;
+      });
+      rules.push({
+        selector: rule.selector,
+        maxWidth,
+      });
+    });
+    const wideRule = rules.find(
+      (rule) =>
+        rule.selector.includes(":has(pre, table)") && rule.maxWidth === "100%",
+    );
+    const mixedContentRule = rules.find(
+      (rule) =>
+        rule.selector.includes("li:not(:has(pre, table))") &&
+        rule.maxWidth === "46rem",
+    );
+    expect(wideRule).not.toBeUndefined();
+    expect(mixedContentRule).not.toBeUndefined();
+    expect(mixedContentRule?.selector).toContain(
+      ":where(p, h1, h2, h3, h4, h5, h6)",
+    );
   });
 
   it("restores the Markdown mode after visiting a non-Markdown file", () => {

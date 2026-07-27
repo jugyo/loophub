@@ -214,7 +214,11 @@
 /* Diff previews own a context preset independent of the shared Markdown
    styles. Keep it after the unlayered base defaults so the equal-specificity
    custom properties win by source order. Layout owns the reading measure;
-   colors remain connected to the application theme above. */
+   colors remain connected to the application theme above.
+
+   The preview spans its pane so wide code and tables can use the available
+   space. Other direct children retain the narrower reading measure. The pane
+   padding in MarkdownPreviewPane remains the outer gutter for both widths. */
 .typeset-diff-preview {
   --typeset-font-body: ui-serif, Georgia, Cambria, "Times New Roman", Times,
     serif;
@@ -223,5 +227,27 @@
   --typeset-leading: 1.8;
   --typeset-flow: 1.4em;
 
+  width: 100%;
+}
+
+.typeset-diff-preview > :where(:not(pre, table)) {
+  margin-inline: auto;
+  max-width: 46rem;
+}
+
+.typeset-diff-preview > :where(pre, table, :has(pre, table)) {
+  margin-inline: auto;
+  max-width: 100%;
+}
+
+/* A composite block expands so its nested pre/table can use the wide track,
+   but prose sharing that block keeps the normal reading measure. */
+.typeset-diff-preview
+  > :where(:has(pre, table))
+  :where(p, h1, h2, h3, h4, h5, h6),
+.typeset-diff-preview
+  > :where(ul, ol):has(pre, table)
+  > li:not(:has(pre, table)) {
+  margin-inline: auto;
   max-width: 46rem;
 }
