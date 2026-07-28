@@ -72,6 +72,16 @@ test("the retired issue group schema is absent on a fresh database", () => {
   expect(names).toEqual([]);
 });
 
+test("the retired Inbox schema is absent on a fresh database", () => {
+  const names = D.db
+    .query(
+      `SELECT name FROM sqlite_schema
+       WHERE name IN ('inbox_messages', 'idx_inbox_messages_repo_state')`,
+    )
+    .all() as { name: string }[];
+  expect(names).toEqual([]);
+});
+
 function explain(sql: string, params: unknown[]): string {
   const rows = D.db.query(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as {
     detail: string;

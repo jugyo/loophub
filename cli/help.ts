@@ -128,16 +128,6 @@ export const commandHelp: readonly CommandHelp[] = [
   { path: ["handoff"], description: "Manage agent handoffs." },
   { path: ["handoff", "record"], description: "Record an agent handoff." },
   { path: ["handoff", "list"], description: "List agent handoffs." },
-  { path: ["inbox"], description: "Manage Inbox messages." },
-  { path: ["inbox", "send"], description: "Send an Inbox message." },
-  { path: ["inbox", "read"], description: "Mark an Inbox message as read." },
-  {
-    path: ["inbox", "unread"],
-    description: "Mark an Inbox message as unread.",
-  },
-  { path: ["inbox", "archive"], description: "Archive an Inbox message." },
-  { path: ["inbox", "unarchive"], description: "Unarchive an Inbox message." },
-  { path: ["inbox", "delete"], description: "Delete an Inbox message." },
   { path: ["notification"], description: "Manage topbar notifications." },
   {
     path: ["notification", "send"],

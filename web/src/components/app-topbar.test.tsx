@@ -196,18 +196,6 @@ describe("AppTopbar", () => {
     ).toBeTruthy();
   });
 
-  it("shows Inbox only when experimental UI is enabled", async () => {
-    renderTopbar();
-    await screen.findByRole("link", { name: /LoopHub/ });
-    expect(screen.queryByRole("link", { name: "Inbox" })).toBeNull();
-
-    cleanup();
-    renderTopbar("/", vi.fn(), true);
-    expect(
-      (await screen.findByRole("link", { name: "Inbox" })).getAttribute("href"),
-    ).toBe("/inbox");
-  });
-
   it("opens the Cmd+K repository picker from the repository control", async () => {
     reposData.value = [
       makeRepo("me/zulu", 1),

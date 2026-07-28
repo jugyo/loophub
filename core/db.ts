@@ -696,29 +696,8 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task ON scheduled_task_runs(t
 CREATE UNIQUE INDEX IF NOT EXISTS idx_scheduled_task_runs_fire_key
   ON scheduled_task_runs(task_id, fire_key) WHERE fire_key IS NOT NULL;
 
--- Inbox messages (#958). Repo-scoped human-facing notifications that agents can create from the
--- CLI/API. Source and target are structured JSON so later producers (scheduled tasks, dev loops,
--- external agents) can keep their own provenance fields without schema churn; service validation
--- owns the initial contract. State is a single lifecycle value so later read/archive/delete issues
--- can build on the same row instead of introducing parallel flags.
-CREATE TABLE IF NOT EXISTS inbox_messages (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  repo_id     INTEGER NOT NULL REFERENCES repos(id),
-  from_json   TEXT NOT NULL,
-  to_json     TEXT,
-  label       TEXT,
-  title       TEXT NOT NULL,
-  body        TEXT NOT NULL,
-  state       TEXT NOT NULL DEFAULT 'unread'
-                CHECK (state IN ('unread', 'read', 'archived', 'deleted')),
-  created_at  TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_inbox_messages_repo_state
-  ON inbox_messages(repo_id, state, id);
-
--- Notification center (#1062). Separate from inbox_messages: notifications are topbar alerts
--- about LoopHub state transitions, with a typed resource target and optional Herdr pane action.
+-- Notification center (#1062). Notifications are topbar alerts about LoopHub state transitions,
+-- with a typed resource target and optional Herdr pane action.
 CREATE TABLE IF NOT EXISTS notifications (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id        INTEGER NOT NULL REFERENCES repos(id),

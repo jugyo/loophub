@@ -1,10 +1,6 @@
 import { agentEffort, agentModel, type CodingAgent } from "../config.ts";
 import { isServiceError, ServiceError } from "../errors.ts";
 import { CODING_AGENTS, isCodingAgent } from "../runtimes.ts";
-import {
-  SCHEDULED_TASK_INBOX_LABEL,
-  scheduledTaskInboxSource,
-} from "../scheduled-task-inbox.ts";
 import { scheduledTaskJSON, scheduledTaskRunJSON } from "../serialize.ts";
 import * as S from "../store.ts";
 import {
@@ -20,7 +16,7 @@ import {
   type TerminalLaunchRepo,
 } from "../terminal/terminal-launch.ts";
 import { runHerdrLaunch, runHerdrLaunchCapture } from "./herdr-runner.ts";
-import { inbox } from "./inbox.ts";
+import { notifications } from "./notifications.ts";
 import { actorFor, ensureWritable, repoOr404 } from "./shared.ts";
 
 // ===== scheduled tasks (#880) =====
@@ -216,13 +212,8 @@ async function fireScheduledTask(
       status: "failure",
       error,
     })!;
-    inbox.send(repo.full_name, {
-      from: scheduledTaskInboxSource({
-        repo: repo.full_name,
-        taskId: task.id,
-        runId: run.id,
-      }),
-      label: SCHEDULED_TASK_INBOX_LABEL,
+    notifications.send(repo.full_name, {
+      kind: "human_attention",
       title: `Scheduled task launch failed: ${task.title}`,
       body: [
         `Scheduled task "${task.title}" failed to launch.`,
@@ -237,6 +228,8 @@ async function fireScheduledTask(
       ]
         .filter((line): line is string => line != null)
         .join("\n"),
+      resourceKind: "repo",
+      sourceKey: `scheduled-task:${task.id}:run:${run.id}:launch-failed`,
     });
     return scheduledTaskRunJSON(failed);
   }

@@ -36,10 +36,6 @@ const workflowFields = {
   execute_prompt: str,
   verify_prompt: str,
 } as const;
-const inboxMessageState = {
-  type: "string",
-  enum: ["unread", "read", "archived", "deleted"],
-} as const;
 const repo = strNonEmpty; // "owner/name" or bare "name"
 
 // A params schema: object, listed properties, given required keys, no extras.
@@ -241,7 +237,7 @@ export const methods: Record<string, MethodDef> = {
 
   // ---- notifications ----
   "notifications/list": {
-    description: "List notification-stack alerts, independent from lh inbox.",
+    description: "List notification-stack alerts.",
     params: params({ limit: positiveInt, unreadOnly: { type: "boolean" } }),
     result: anyArray,
     handler: (p) =>
@@ -497,53 +493,6 @@ export const methods: Record<string, MethodDef> = {
     params: EMPTY_PARAMS,
     result: anyArray,
     handler: () => svc.sessions.costSummary(),
-  },
-
-  // ---- inbox ----
-  "inbox/list": {
-    description:
-      "List Inbox messages across repositories, unread first by default.",
-    params: params({ state: inboxMessageState, limit: positiveInt }),
-    result: anyArray,
-    handler: (p) => svc.inbox.listAll({ state: p.state, limit: p.limit }),
-  },
-  "inbox/get": {
-    description: "Get one Inbox message by id.",
-    params: params({ id: positiveInt }, ["id"]),
-    result: anyObject,
-    handler: (p) => svc.inbox.get(p.id),
-  },
-  "inbox/read": {
-    description: "Mark one Inbox message as read.",
-    params: params({ id: positiveInt, session_id: sid }, ["id"]),
-    result: anyObject,
-    handler: (p) => svc.inbox.read(p.id, p.session_id),
-  },
-  "inbox/unread": {
-    description: "Mark one Inbox message as unread.",
-    params: params({ id: positiveInt, session_id: sid }, ["id"]),
-    result: anyObject,
-    handler: (p) => svc.inbox.unread(p.id, p.session_id),
-  },
-  "inbox/archive": {
-    description: "Archive one Inbox message.",
-    params: params({ id: positiveInt, session_id: sid }, ["id"]),
-    result: anyObject,
-    handler: (p) => svc.inbox.archive(p.id, p.session_id),
-  },
-  "inbox/unarchive": {
-    description:
-      "Move one archived Inbox message back to the active Inbox as read.",
-    params: params({ id: positiveInt, session_id: sid }, ["id"]),
-    result: anyObject,
-    handler: (p) => svc.inbox.unarchive(p.id, p.session_id),
-  },
-  "inbox/delete": {
-    description:
-      "Soft-delete one Inbox message by moving it to the deleted state.",
-    params: params({ id: positiveInt, session_id: sid }, ["id"]),
-    result: anyObject,
-    handler: (p) => svc.inbox.delete(p.id, p.session_id),
   },
 
   // ---- issues ----

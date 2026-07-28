@@ -587,62 +587,6 @@ test("dashboard/overview lists recent open issues newest-created first, tagged w
   ).toBe(false);
 });
 
-test("inbox/list, inbox/get, and state mutations expose Inbox messages through JSON-RPC", async () => {
-  const first = svc.inbox.send("me/proj", {
-    from: { kind: "agent", repo: "me/proj", actor: "impl-bot" },
-    title: "Ready for review",
-    body: "PR #12 is ready.\nPlease check the evidence.",
-    label: "review",
-  });
-  const second = svc.inbox.send("me/proj", {
-    from: { kind: "agent", repo: "me/proj", actor: "verifier" },
-    to: { kind: "human" },
-    title: "Follow-up",
-    body: "One more thing",
-  });
-  const third = svc.inbox.send("me/proj", {
-    from: { kind: "agent", repo: "me/proj", actor: "cleaner" },
-    title: "Can be removed",
-    body: "Remove from active view",
-  });
-
-  const read: any = await call("inbox/read", { id: first.id });
-  expect(read.result.state).toBe("read");
-  const archived: any = await call("inbox/archive", { id: second.id });
-  expect(archived.result.state).toBe("archived");
-  const deleted: any = await call("inbox/delete", { id: third.id });
-  expect(deleted.result.state).toBe("deleted");
-
-  const listed: any = await call("inbox/list", {});
-  expect(listed.result.map((m: any) => m.id)).toContain(first.id);
-  expect(listed.result.map((m: any) => m.id)).not.toContain(second.id);
-  expect(listed.result.map((m: any) => m.id)).not.toContain(third.id);
-  const listFirst = listed.result.find((m: any) => m.id === first.id);
-  expect(listFirst).toMatchObject({
-    repo: { name: "me/proj" },
-    to: null,
-    label: "review",
-    title: "Ready for review",
-    body: "PR #12 is ready.\nPlease check the evidence.",
-    state: "read",
-  });
-
-  const archivedList: any = await call("inbox/list", { state: "archived" });
-  expect(archivedList.result.map((m: any) => m.id)).toContain(second.id);
-
-  const got: any = await call("inbox/get", { id: second.id });
-  expect(got.result).toMatchObject({
-    id: second.id,
-    repo: { name: "me/proj" },
-    from: { kind: "agent", repo: "me/proj", actor: "verifier" },
-    to: { kind: "human" },
-    state: "archived",
-  });
-
-  const unarchived: any = await call("inbox/unarchive", { id: second.id });
-  expect(unarchived.result.state).toBe("read");
-});
-
 test("workflow CRUD is exposed through JSON-RPC", async () => {
   const created: any = await call("workflows/create", {
     name: " standard ",

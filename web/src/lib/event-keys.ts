@@ -2,7 +2,6 @@
 // event polling hook stays dumb. event.type prefixes:
 //   issue.*          -> issue / issues lists
 //   pull_request.*   -> pull / pulls lists
-//   inbox.message.*  -> inbox message list / detail
 //   notification.*   -> notification stack list/count
 //   repo.*           -> repos list (+ old-name keys on repo.renamed)
 //   agent_session.*  -> agent-sessions
@@ -21,8 +20,6 @@ export const queryKeys = {
   workspaces: (full: string) => ["workspaces", full] as const,
   pulls: (full: string) => ["pulls", full] as const,
   pull: (full: string, number: number) => ["pull", full, number] as const,
-  inbox: () => ["inbox"] as const,
-  inboxMessage: (id: number) => ["inbox-message", id] as const,
   notifications: () => ["notifications"] as const,
   agentSessions: () => ["agent-sessions"] as const,
   terminalSessions: () => ["terminal", "sessions"] as const,
@@ -171,10 +168,6 @@ export function queryKeysForEvent(event: LoopEvent): readonly unknown[][] {
     } else {
       keys.push(["workflow-run"]);
     }
-  } else if (type.startsWith("inbox.message.")) {
-    keys.push([...queryKeys.inbox()]);
-    const id = payload?.id;
-    if (typeof id === "number") keys.push([...queryKeys.inboxMessage(id)]);
   } else if (type.startsWith("notification.")) {
     keys.push([...queryKeys.notifications()]);
   } else if (type === "settings.updated") {

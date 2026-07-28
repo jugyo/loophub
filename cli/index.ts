@@ -3,7 +3,6 @@ import * as attachmentCmd from "./commands/attachment.ts";
 import * as eventsCmd from "./commands/events.ts";
 import * as handoffCmd from "./commands/handoff.ts";
 import * as herdrCmd from "./commands/herdr.ts";
-import * as inboxCmd from "./commands/inbox.ts";
 import * as infoCmd from "./commands/info.ts";
 import * as issueCmd from "./commands/issue.ts";
 import * as notificationCmd from "./commands/notification.ts";
@@ -33,7 +32,6 @@ async function main() {
   if (group === "attachment") return attachmentCmd.run();
   if (group === "pr") return prCmd.run();
   if (group === "handoff") return handoffCmd.run();
-  if (group === "inbox") return inboxCmd.run();
   if (group === "notification") return notificationCmd.run();
   if (group === "workspace") return workspaceCmd.run();
   if (group === "worktree") return worktreeCmd.run();

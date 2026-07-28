@@ -21,8 +21,6 @@ export function usage(): void {
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
   lh pr feedback list|create <pr> | view|reply|resolve|reopen <thread> --pr <pr> [--repo owner/repo]
-  lh inbox send --from '<json>' --title <text> --body <text|-> [--to '<json>'] [--label <name>] [--repo owner/repo]   # send a human-facing Inbox message
-  lh inbox read|unread|archive|unarchive|delete <message-id> [--json]   # update an Inbox message state (delete is a soft state)
   lh notification send --kind merge_ready|over_budget|human_attention --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout
   lh workflow list|view|create|update|delete <name> [--description <text>] [--execute-prompt <text>] [--verify-prompt <text>] [--step execute|verify --file <path|->]   # manage global workflow prompt bundles
@@ -61,9 +59,7 @@ export function usage(): void {
     lh workflow start 1 --workflow default --herdr
   lh pr create --head feature-x --base main --title "impl" --issue 5
     lh pr comment 3 --body "starting work"
-    lh inbox send --from '{"kind":"agent","repo":"me/proj","actor":"impl-bot"}' --title "Needs review" --body "PR is ready" --repo me/proj
     lh notification send --repo me/proj --kind human_attention --title "Needs review" --body "PR is ready" --resource pull:3
-    lh inbox archive 12
     lh pr merge 3 --method squash
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     lh pr review 3 --event pass --body "no issues found" --commit <head sha>

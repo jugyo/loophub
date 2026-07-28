@@ -1,7 +1,6 @@
 import { createRouter } from "@tanstack/react-router";
 import { agentsRoute } from "./routes/agents";
 import { archivedRoute } from "./routes/archived";
-import { inboxRoute } from "./routes/inbox";
 import { indexRoute } from "./routes/index";
 import { issueDetailRoute } from "./routes/issues";
 import { pullDetailRoute } from "./routes/pulls";
@@ -22,7 +21,6 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   agentsRoute,
   archivedRoute,
-  inboxRoute,
   repoRoute,
   repoScheduledTasksRoute,
   repoSettingsRoute,

@@ -3,10 +3,10 @@ import { autoModeOnLaunch, type CodingAgent, codingAgent } from "../config.ts";
 import { buildRuntimeArgs, runtimeApprovalArgs } from "../runtime-args.ts";
 import { RUNTIMES } from "../runtimes.ts";
 import {
-  type ScheduledTaskInboxContext,
-  scheduledTaskInboxEnv,
-  scheduledTaskInboxPromptSuffix,
-} from "../scheduled-task-inbox.ts";
+  type ScheduledTaskNotificationContext,
+  scheduledTaskNotificationEnv,
+  scheduledTaskNotificationPromptSuffix,
+} from "../scheduled-task-notification.ts";
 import type { WorkflowStep } from "../workflow/compose.ts";
 import { workflowStepHerdrAgentName } from "../workflow/herdr-agents.ts";
 
@@ -204,14 +204,14 @@ export function buildScheduledTaskCommand(input: {
   prompt: string;
   model?: string | null;
   effort?: string | null;
-  context?: ScheduledTaskInboxContext;
+  context?: ScheduledTaskNotificationContext;
 }): string {
   const promptText = input.context
-    ? `${input.prompt.trimEnd()}${scheduledTaskInboxPromptSuffix(input.context)}`
+    ? `${input.prompt.trimEnd()}${scheduledTaskNotificationPromptSuffix(input.context)}`
     : input.prompt;
   const prompt = shellArg(promptText);
   const envPrefix = input.context
-    ? `${Object.entries(scheduledTaskInboxEnv(input.context))
+    ? `${Object.entries(scheduledTaskNotificationEnv(input.context))
         .map(([key, value]) => `${key}=${shellArg(value)}`)
         .join(" ")} `
     : "";

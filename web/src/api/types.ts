@@ -23,8 +23,6 @@ import type {
   HerdrRepoSessionsWire,
   HerdrSessionAgentWire,
   HerdrSessionsWire,
-  InboxJsonObject,
-  InboxMessageWire,
   IssueListPullSummaryWire,
   IssueWire,
   LabelWire,
@@ -129,10 +127,6 @@ export type FileAtRef = FileAtRefWire;
 // is inline content (instruction / Verify report) when present; otherwise `src` references a
 // canonical copy (plan=PR, diff=commit) and `hash` is its content hash.
 export type Handoff = HandoffWire;
-
-export type InboxMessage = InboxMessageWire;
-
-export type { InboxJsonObject };
 
 export type Notification = NotificationWire;
 

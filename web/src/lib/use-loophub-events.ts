@@ -36,8 +36,6 @@ function invalidateReconnectQueries(
     ["issue"],
     ["pulls"],
     ["pull"],
-    queryKeys.inbox(),
-    ["inbox-message"],
     queryKeys.agentSessions(),
     queryKeys.terminalSessions(),
     queryKeys.events(),

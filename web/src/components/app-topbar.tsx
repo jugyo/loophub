@@ -1,12 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import {
-  BarChart3,
-  Bot,
-  Command,
-  Inbox,
-  Loader2,
-  Settings,
-} from "lucide-react";
+import { BarChart3, Bot, Command, Loader2, Settings } from "lucide-react";
 import { useMemo } from "react";
 import { ComponentDebugToggle } from "@/components/component-debug-overlay";
 import { Logo } from "@/components/logo";
@@ -24,7 +17,7 @@ export function AppTopbar({
   onOpenRepoSwitcher?: () => void;
 }) {
   const currentRepo = useCurrentRepo();
-  const { experimental, debug } = useWebConfig();
+  const { debug } = useWebConfig();
   const { data, isLoading, isError } = useRepos();
   const repos = useMemo(
     () => [...(data ?? [])].sort(compareSidebarRepos),
@@ -92,11 +85,6 @@ export function AppTopbar({
 
         <div className="hidden min-w-4 flex-1 md:block" aria-hidden="true" />
 
-        {experimental ? (
-          <TopbarLink to="/inbox" label="Inbox">
-            <Inbox className="size-4" />
-          </TopbarLink>
-        ) : null}
         <TopbarLink to="/agents" label="Agents">
           <Bot className="size-4" />
         </TopbarLink>

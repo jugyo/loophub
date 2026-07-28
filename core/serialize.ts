@@ -1092,51 +1092,6 @@ export function handoffJSON(h: S.HandoffRow): HandoffWire {
   };
 }
 
-export type InboxJsonPrimitive = string | number | boolean | null;
-export type InboxJsonValue =
-  | InboxJsonPrimitive
-  | InboxJsonValue[]
-  | { [key: string]: InboxJsonValue };
-export type InboxJsonObject = { [key: string]: InboxJsonValue };
-
-export interface InboxMessageWire {
-  id: number;
-  repo: { name: string };
-  from: InboxJsonObject;
-  to: InboxJsonObject | null;
-  label: string | null;
-  title: string;
-  body: string;
-  state: S.InboxMessageState;
-  created_at: string;
-}
-
-function safeParseObject(raw: string | null): InboxJsonObject | null {
-  if (raw == null) return null;
-  try {
-    const value = JSON.parse(raw);
-    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      return value as InboxJsonObject;
-    }
-  } catch {}
-  return {};
-}
-
-export function inboxMessageJSON(m: S.InboxMessageRow): InboxMessageWire {
-  const repo = S.getRepoById(m.repo_id);
-  return {
-    id: m.id,
-    repo: { name: repo?.full_name ?? "" },
-    from: safeParseObject(m.from_json) ?? {},
-    to: safeParseObject(m.to_json),
-    label: m.label ?? null,
-    title: m.title,
-    body: m.body,
-    state: m.state,
-    created_at: m.created_at,
-  };
-}
-
 export interface NotificationWire {
   id: number;
   kind: S.NotificationKind;
@@ -1411,7 +1366,7 @@ export interface WorkflowContractsWire {
 // issue or PR, for issue / PR detail. Lifecycle comes from the run row; verification freshness is
 // derived from the PR current HEAD and the pinned review rather than persisted on the run.
 // `latest_review` surfaces the human-readable reason behind a rework / block; the web derives the
-// issue-comment / inbox links from `issue_number`.
+// issue-comment links from `issue_number`.
 export interface WorkflowRunReviewSummaryWire {
   id: number;
   event: "pass" | "request_changes";

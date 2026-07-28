@@ -7,7 +7,6 @@ export { diffFeedback } from "./service/diff-feedback.ts";
 export { events } from "./service/events.ts";
 export { handoffs } from "./service/handoffs.ts";
 export { herdr } from "./service/herdr.ts";
-export { inbox } from "./service/inbox.ts";
 export { issues } from "./service/issues.ts";
 export { labels } from "./service/labels.ts";
 export { notifications } from "./service/notifications.ts";

@@ -244,7 +244,7 @@ test("sweep skips tasks whose repo is archived (matches the Run now guard)", asy
   }
 });
 
-test("launch failure creates a scheduled-task Inbox message", async () => {
+test("launch failure creates a scheduled-task notification", async () => {
   clearTasks("me/sched");
   const bin = mkdtempSync(join(tmpdir(), "lh-sched-bin-"));
   const prevPath = process.env.PATH;
@@ -265,21 +265,20 @@ test("launch failure creates a scheduled-task Inbox message", async () => {
 
     expect(run?.status).toBe("failure");
     expect(run?.error).toBe("Herdr exited with status 9");
-    const messages = svc.inbox.list("me/sched");
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
-      label: "scheduled_task",
+    const messages = await svc.notifications.list();
+    const message = messages.find(
+      (candidate) =>
+        candidate.title === "Scheduled task launch failed: Launch failure",
+    );
+    expect(message).toMatchObject({
+      kind: "human_attention",
       title: "Scheduled task launch failed: Launch failure",
-      from: {
-        kind: "scheduled_task",
-        repo: "me/sched",
-        task_id: task.id,
-        run_id: run?.id,
-      },
+      repo: { name: "me/sched" },
+      resource: { kind: "repo", number: null },
     });
-    expect(messages[0].body).toContain(`Task ID: ${task.id}`);
-    expect(messages[0].body).toContain(`Run ID: ${run?.id}`);
-    expect(messages[0].body).toContain("Error: Herdr exited with status 9");
+    expect(message.body).toContain(`Task ID: ${task.id}`);
+    expect(message.body).toContain(`Run ID: ${run?.id}`);
+    expect(message.body).toContain("Error: Herdr exited with status 9");
   } finally {
     process.env.PATH = prevPath;
     rmSync(bin, { recursive: true, force: true });

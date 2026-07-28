@@ -28,7 +28,7 @@ test("codex command runs sandboxed (workspace-write), not a full bypass, with mo
   expect(cmd).toContain("model_reasoning_effort=high");
 });
 
-test("scheduled task command exposes run context and Inbox send instructions", () => {
+test("scheduled task command exposes run context and Notification center instructions", () => {
   const cmd = buildScheduledTaskCommand({
     agent: "codex",
     prompt: "produce the report",
@@ -38,17 +38,16 @@ test("scheduled task command exposes run context and Inbox send instructions", (
       runId: 34,
     },
   });
-  expect(cmd).toContain("LOOPHUB_SCHEDULED_TASK_KIND='scheduled_task'");
   expect(cmd).toContain("LOOPHUB_SCHEDULED_TASK_REPO='me/sched'");
   expect(cmd).toContain("LOOPHUB_SCHEDULED_TASK_ID='12'");
   expect(cmd).toContain("LOOPHUB_SCHEDULED_TASK_RUN_ID='34'");
-  expect(cmd).toContain(
-    `LOOPHUB_SCHEDULED_TASK_FROM='{"kind":"scheduled_task","repo":"me/sched","task_id":12,"run_id":34}'`,
-  );
   expect(cmd).toContain("LoopHub scheduled task context:");
-  expect(cmd).toContain("lh inbox send");
-  expect(cmd).toContain(`--from "$LOOPHUB_SCHEDULED_TASK_FROM"`);
-  expect(cmd).toContain("The label is display text only");
+  expect(cmd).toContain("lh notification send");
+  expect(cmd).toContain("--kind human_attention");
+  expect(cmd).toContain(
+    `--source-key "scheduled-task:$LOOPHUB_SCHEDULED_TASK_ID:run:$LOOPHUB_SCHEDULED_TASK_RUN_ID:completed"`,
+  );
+  expect(cmd).not.toContain("inbox");
 });
 
 test("a crafted prompt cannot break out of the single-quoted argument", () => {

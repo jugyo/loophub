@@ -128,7 +128,7 @@ copy action. Hovering a truncated label shows the full component name in a
 tooltip so narrow controls stay identifiable. Markers live on:
 
 - Shell regions and major route/page components (home, repo, issues, pulls,
-  agents, inbox, stats, settings, workflows, scheduled tasks, and similar
+  agents, stats, settings, workflows, scheduled tasks, and similar
   screens)
 - Mid-size detail/sidebar sections (for example Sessions, Work duration,
   GitHub PR status, Handoffs, Agents, Workflow run, Worktree, Linked pull
