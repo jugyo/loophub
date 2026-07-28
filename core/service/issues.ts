@@ -17,7 +17,7 @@ import {
 } from "../serialize.ts";
 import { issueDetailJSON, issueListItemJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
-import { closeOpenAttemptsForIssue } from "./attempts.ts";
+import { closeOpenPullsForIssue } from "./linked-pulls.ts";
 import {
   actorFor,
   assertExistingLocalBranch,
@@ -403,7 +403,7 @@ export const issues = {
       if (row.kind === "pull") {
         projectWorkflowRunClosed(r.id, row.number, actor, closedEvent);
       } else {
-        closeOpenAttemptsForIssue({
+        closeOpenPullsForIssue({
           repoId: r.id,
           linkedIssueId: row.id,
           actor,

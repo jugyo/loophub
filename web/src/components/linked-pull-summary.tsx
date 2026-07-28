@@ -1,16 +1,14 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
-import { DiffStat } from "@/components/diff-stat";
 import {
   findPullHerdrWorkspace,
   isPullHerdrWorking,
 } from "@/components/herdr-badge";
 import { LinkedGithubPrBadge } from "@/components/linked-github-pr-badge";
 import { useToast } from "@/components/toast";
-import { Button, buttonVariants } from "@/components/ui/button";
 import {
   WorkflowStepTracker,
   workflowTrackerState,
@@ -20,8 +18,6 @@ import {
   costStoppedBadge,
   linkedPullStateBadge,
   linkedPullStatus,
-  linkedPullWordTone,
-  type StatusWordTone,
 } from "@/lib/badges";
 import {
   formatCost,
@@ -31,20 +27,12 @@ import {
 import { formatDuration } from "@/lib/time";
 import { useHoverPopover } from "@/lib/use-hover-popover";
 import { cn } from "@/lib/utils";
-import { useSetPullState } from "@/queries/pulls";
 import { useHerdrSessions } from "@/queries/terminal";
 import {
   useIncreaseWorkflowRunCostLimit,
   useWorkflowRunForPull,
 } from "@/queries/workflow-runs";
 import { codingAgentLabel } from "../../../core/runtimes.ts";
-
-const STATUS_TEXT: Record<StatusWordTone, string> = {
-  danger: "text-destructive",
-  ready: "text-green-600 dark:text-green-400",
-  done: "text-violet-500 dark:text-violet-400",
-  muted: "text-muted-foreground",
-};
 
 const COST_STOPPED_TEXT = "text-amber-700 dark:text-amber-300";
 
@@ -57,14 +45,6 @@ export type AcknowledgedCostHold = {
   limitUsd: number;
   reason: string;
 };
-
-function linkedPullAttemptStatus(pull: LinkedPull) {
-  return pull.merged
-    ? { tone: "merged" as const, label: "merged", title: "Merged" }
-    : pull.state === "closed"
-      ? { tone: "closed" as const, label: "closed", title: "Closed" }
-      : { tone: "open" as const, label: "open", title: "Open" };
-}
 
 const WORK_BASIS_LABEL: Record<
   NonNullable<LinkedPull["work_duration_total"]>["basis"],
@@ -421,7 +401,6 @@ export function LinkedPullSummaryRow({
   className,
   showTitle = false,
   dimInactive = false,
-  attemptComparison = false,
   popoverTrigger = "row",
 }: {
   owner: string;
@@ -431,16 +410,12 @@ export function LinkedPullSummaryRow({
   showTitle?: boolean;
   /** Dim merged and closed PRs when this row is rendered in an issue list. */
   dimInactive?: boolean;
-  /** Show issue-detail comparison metrics and review/close actions. */
-  attemptComparison?: boolean;
   /** Limit hover activation to the PR link while keeping the row as the popover boundary. */
   popoverTrigger?: "row" | "pull-link";
 }) {
   const popover = useHoverPopover();
-  const { showError } = useToast();
   const { data: herdrSessions, isError: herdrSessionsError } =
     useHerdrSessions();
-  const setState = useSetPullState(owner, repo, pull.number);
   const repoFullName = `${owner}/${repo}`;
   const workspace = findPullHerdrWorkspace(
     herdrSessions,
@@ -454,9 +429,7 @@ export function LinkedPullSummaryRow({
   );
   const operationalStatus =
     linkedPullStatus(pull) ?? linkedPullStateBadge(pull);
-  const status = attemptComparison
-    ? linkedPullAttemptStatus(pull)
-    : operationalStatus;
+  const status = operationalStatus;
   const costStopped = costStoppedBadge(pull);
   const needsAttention =
     operationalStatus.tone === "conflict" ||
@@ -495,7 +468,6 @@ export function LinkedPullSummaryRow({
       className={cn(
         "group/linked-pull relative min-w-0 rounded-sm px-2 py-1 text-xs text-muted-foreground",
         !linkTriggersPopover && "hover:bg-muted/60",
-        attemptComparison && "rounded-md border bg-muted/20 p-3",
         className,
       )}
       onMouseEnter={linkTriggersPopover ? undefined : popover.onMouseEnter}
@@ -573,80 +545,6 @@ export function LinkedPullSummaryRow({
         />
         <Metrics pull={pull} overBudget={costStopped !== null} />
       </div>
-      {attemptComparison ? (
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 pl-[26px]">
-          {/* A PR with no commits yet has a meaningless `+0 −0` diff and "not
-              reviewed" state (#1240) — hide both until work lands. */}
-          {(pull.commits_ahead ?? 0) > 0 ? (
-            <>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="text-muted-foreground/70">Diff</span>
-                <DiffStat
-                  additions={pull.additions ?? 0}
-                  deletions={pull.deletions ?? 0}
-                />
-              </span>
-              <span>
-                <span className="text-muted-foreground/70">Review</span>{" "}
-                <span className="font-medium text-foreground">
-                  {pull.review_state === "PASSED"
-                    ? "pass"
-                    : pull.review_state === "CHANGES_REQUESTED"
-                      ? "request changes"
-                      : pull.review_state === "READY_FOR_RE_REVIEW" ||
-                          pull.review_state === "STALE"
-                        ? "re-review"
-                        : pull.review_state === "COMMENTED"
-                          ? "commented"
-                          : "not reviewed"}
-                </span>
-              </span>
-            </>
-          ) : null}
-          {(pull.base_commits_behind ?? 0) > 0 ? (
-            <span className="font-medium text-amber-700 dark:text-amber-300">
-              base is {pull.base_commits_behind} commit
-              {pull.base_commits_behind === 1 ? "" : "s"} behind
-            </span>
-          ) : null}
-          <span className="ml-auto inline-flex items-center gap-2">
-            <Link
-              to="/r/$owner/$repo/pulls/$number"
-              params={{ owner, repo, number: String(pull.number) }}
-              className={cn(
-                buttonVariants({ variant: "secondary", size: "sm" }),
-                "h-7",
-              )}
-            >
-              <ArrowRight className="size-3.5" />
-              {pull.state === "open" && !pull.merged
-                ? "Review & merge"
-                : "View PR"}
-            </Link>
-            {pull.state === "open" && !pull.merged ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-7"
-                disabled={setState.isPending}
-                onClick={() =>
-                  setState.mutate("closed", {
-                    onError: (error) =>
-                      showError(
-                        error instanceof Error
-                          ? error.message
-                          : "Failed to close PR.",
-                      ),
-                  })
-                }
-              >
-                Close
-              </Button>
-            ) : null}
-          </span>
-        </div>
-      ) : null}
       {popover.open ? (
         <PullPopover
           owner={owner}
@@ -656,67 +554,6 @@ export function LinkedPullSummaryRow({
           herdrStatus={workspace?.status}
         />
       ) : null}
-    </div>
-  );
-}
-
-export function LinkedPullAttemptSummaryRow({
-  owner,
-  repo,
-  pull,
-}: {
-  owner: string;
-  repo: string;
-  pull: LinkedPull;
-}) {
-  const status = linkedPullAttemptStatus(pull);
-  const { data: herdrSessions, isError: herdrSessionsError } =
-    useHerdrSessions();
-  const working = isPullHerdrWorking(
-    herdrSessions,
-    `${owner}/${repo}`,
-    pull.number,
-  );
-
-  return (
-    <div
-      data-debug-component="LinkedPullAttemptSummaryRow"
-      aria-label={`Linked PR #${pull.number}: ${pull.title}`}
-      className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm"
-    >
-      <Link
-        to="/r/$owner/$repo/pulls/$number"
-        params={{ owner, repo, number: String(pull.number) }}
-        className="shrink-0 font-medium text-primary hover:underline"
-      >
-        PR #{pull.number}
-      </Link>
-      <Link
-        to="/r/$owner/$repo/pulls/$number"
-        params={{ owner, repo, number: String(pull.number) }}
-        className="min-w-0 flex-1 truncate text-foreground hover:underline"
-        title={pull.title}
-      >
-        {pull.title}
-      </Link>
-      <WorkflowMiniProgress
-        owner={owner}
-        repo={repo}
-        pull={pull}
-        herdrSessions={herdrSessionsError ? undefined : herdrSessions}
-        herdrUnavailable={herdrSessionsError}
-        working={working}
-        conflict={pull.mergeable_state === "conflict"}
-      />
-      <span
-        className={cn(
-          "shrink-0 font-semibold",
-          STATUS_TEXT[linkedPullWordTone(status.tone)],
-        )}
-        title={status.title}
-      >
-        {status.label}
-      </span>
     </div>
   );
 }

@@ -15,7 +15,6 @@ export type Flags = {
   verbose?: boolean;
   herdr?: boolean;
   force?: boolean;
-  "new-attempt"?: boolean;
   "claude-code"?: boolean;
   codex?: boolean;
   grok?: boolean;
@@ -122,7 +121,6 @@ const { values, positionals } = parseArgs({
     verbose: { type: "boolean" },
     herdr: { type: "boolean" },
     force: { type: "boolean" },
-    "new-attempt": { type: "boolean" },
     "claude-code": { type: "boolean" },
     codex: { type: "boolean" },
     grok: { type: "boolean" },

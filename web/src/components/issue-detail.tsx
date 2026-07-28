@@ -11,7 +11,7 @@ import { DetailHeaderTitle } from "@/components/detail-title";
 import { IssueBranchChip } from "@/components/issue-branch-chip";
 import { IssueHerdrSection } from "@/components/issue-herdr-section";
 import { LabelChip } from "@/components/label-chip";
-import { LinkedPullAttemptSummaryRow } from "@/components/linked-pull-summary";
+import { LinkedPullSummaryRow } from "@/components/linked-pull-summary";
 import { Markdown } from "@/components/markdown";
 import { useTerminalLauncher } from "@/components/terminal-controller";
 import { Badge } from "@/components/ui/badge";
@@ -348,17 +348,18 @@ function LinkedPullSummary({
         {pulls.length > 1 ? "Linked pull requests" : "Linked pull request"}
       </h2>
       {pulls.map((pull) => (
-        <LinkedPullAttemptSummaryRow
+        <LinkedPullSummaryRow
           key={pull.number}
           owner={owner}
           repo={repo}
           pull={pull}
+          showTitle
         />
       ))}
       {issue.linked_pull_requests_truncated ? (
         <p className="px-2 text-xs text-muted-foreground">
-          Showing the {pulls.length} most relevant attempts to keep this page
-          responsive.
+          Showing the {pulls.length} most relevant pull requests to keep this
+          page responsive.
         </p>
       ) : null}
     </section>

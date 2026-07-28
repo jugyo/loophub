@@ -64,7 +64,7 @@ function makePull(overrides: Partial<LinkedPull> = {}): LinkedPull {
   };
 }
 
-function renderRow(attemptComparison = false) {
+function renderRow() {
   vi.stubGlobal("fetch", mockRpcFetch({}));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -74,12 +74,7 @@ function renderRow(attemptComparison = false) {
     getParentRoute: () => rootRoute,
     path: "/",
     component: () => (
-      <LinkedPullSummaryRow
-        owner="me"
-        repo="proj"
-        pull={makePull()}
-        attemptComparison={attemptComparison}
-      />
+      <LinkedPullSummaryRow owner="me" repo="proj" pull={makePull()} />
     ),
   });
   const pullRoute = createRoute({
@@ -667,21 +662,6 @@ describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
       screen.queryByRole("group", { name: "Increase to $30.00?" }),
     ).toBeNull();
     expect(rpcCall("workflowRuns/increaseCostLimit")).toBeUndefined();
-  });
-});
-
-describe("LinkedPullSummaryRow actions", () => {
-  it("uses the standard secondary button colors for Close", async () => {
-    renderRow(true);
-
-    const closeButton = await screen.findByRole("button", { name: "Close" });
-    expect(closeButton.classList.contains("text-secondary-foreground")).toBe(
-      true,
-    );
-    expect(closeButton.classList.contains("text-destructive")).toBe(false);
-    expect(closeButton.classList.contains("hover:text-destructive")).toBe(
-      false,
-    );
   });
 });
 

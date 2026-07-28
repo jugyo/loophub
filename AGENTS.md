@@ -38,12 +38,10 @@ run development loops while a human supervises with minimal attention.
 
 ## Glossary
 
-- **Issue**: the problem or desired outcome, including its acceptance criteria. An issue can
-  have multiple linked PRs when parallel or successive attempts are made.
+- **Issue**: the problem or desired outcome, including its acceptance criteria. An issue has at
+  most one open linked PR; after that PR is closed, a later PR may be linked for another try.
 - **Pull request (PR)**: a reviewable implementation proposal linked to an issue. It owns the
   head/base refs, draft and review state, and merge outcome; it is the unit that is delivered.
-- **Attempt**: one proposed solution to an issue, represented by a linked PR plus that PR's
-  branch and dedicated worktree. It is not a separate stored entity, and it is not a session.
 - **Session**: one recorded agent-runtime invocation. Sessions can be linked to issues or PRs;
   multiple sessions may contribute to one PR, while its primary development session is the
   resume and retrospective anchor.
@@ -53,17 +51,17 @@ run development loops while a human supervises with minimal attention.
 - **Workflow / workflow run**: a workflow is a reusable Execute/Verify definition. Execute owns
   implementation planning and reflection; Verify independently evaluates the result. A workflow
   run is one persisted execution for a specific issue and PR, tracking step state, sessions, and
-  artifacts. A run may prepare or reuse an attempt, but is not itself an attempt or session.
+  artifacts. A run may prepare or reuse a PR, but is not itself a PR or session.
   Starting work on an issue uses `lh workflow start` (Web: **Start workflow**). The
   event-triggered `.loophub/workflow.yml` worker configuration is separate repository automation.
   (`lh build` was removed; do not present it as a current procedure.)
-- **Worktree**: a Git linked checkout dedicated to a PR/attempt. Convention: branch
+- **Worktree**: a Git linked checkout dedicated to a PR. Convention: branch
   `loophub/pr-<m>` at `$LOOPHUB_HOME/worktrees/<owner>/<repo>/pr-<m>`, keyed by PR number.
   Provisioned by shared helpers (`cli/dev.ts` / `dev.openPr` / worktree provision) when a
   Workflow (or other launcher) starts work.
 
 See [worktree lifecycle](docs/worktree.ja.md),
-[parallel attempts](docs/parallel-issue-attempts-design.ja.md), and
+[historical parallel-attempt design](docs/parallel-issue-attempts-design.ja.md), and
 [workflow design](docs/workflow.ja.md) for details.
 
 ## Layout

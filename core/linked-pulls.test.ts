@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-const HOME = mkdtempSync(join(tmpdir(), "lh-attempt-supersede-"));
+const HOME = mkdtempSync(join(tmpdir(), "lh-linked-pulls-"));
 process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
@@ -20,7 +20,7 @@ function git(repoPath: string, args: string[]) {
 }
 
 async function makeRepo(name: string) {
-  const path = mkdtempSync(join(tmpdir(), "lh-attempt-repo-"));
+  const path = mkdtempSync(join(tmpdir(), "lh-linked-pulls-repo-"));
   repoPaths.push(path);
   git(path, ["init", "-q", "-b", "main"]);
   git(path, ["config", "user.email", "t@t.local"]);
@@ -42,23 +42,19 @@ function branch(repoPath: string, name: string, withCommit = false) {
   git(repoPath, ["checkout", "-q", "main"]);
 }
 
-async function createAttempt(
+async function createHistoricalLinkedPull(
   repo: string,
   issue: number,
   head: string,
   sessionId?: string,
 ) {
-  return svc.pulls.create(
-    repo,
-    {
-      title: head,
-      head,
-      base: "main",
-      issue,
-      parallel: true,
-    },
-    sessionId,
-  );
+  const [owner, name] = repo.split("/") as [string, string];
+  const repoRow = S.getRepo(owner, name)!;
+  const linkedIssue = S.getIssue(repoRow.id, issue)!;
+  const row = S.createIssue(repoRow.id, "pull", head, "", sessionId ?? "test");
+  S.createPull(row.id, head, "main", null, linkedIssue.id);
+  if (sessionId) S.setPullSession(row.id, sessionId);
+  return svc.pulls.get(repo, row.number);
 }
 
 function attachWorkflowRun(
@@ -68,7 +64,7 @@ function attachWorkflowRun(
   parentSessionId: string,
 ) {
   const workflow = S.createWorkflow({
-    name: `attempt-close-${prNumber}`,
+    name: `linked-pull-close-${prNumber}`,
     description: "",
     executePrompt: "",
     verifyPrompt: "",
@@ -96,9 +92,11 @@ afterAll(() => {
   for (const path of repoPaths) rmSync(path, { recursive: true, force: true });
 });
 
-test("merging an attempt closes open siblings with comments and traceable events without changing their sessions", async () => {
-  const repo = await makeRepo("me/merge-attempts");
-  const issue = svc.issues.create("me/merge-attempts", { title: "choose one" });
+test("merging a historical linked PR leaves other open linked PRs unchanged", async () => {
+  const repo = await makeRepo("me/merge-linked-pulls");
+  const issue = svc.issues.create("me/merge-linked-pulls", {
+    title: "choose one",
+  });
   branch(repo.path, "adopted", true);
   branch(repo.path, "sibling-a");
   branch(repo.path, "sibling-b");
@@ -108,19 +106,19 @@ test("merging an attempt closes open siblings with comments and traceable events
     session: "running-sibling",
   });
 
-  const adopted = await createAttempt(
-    "me/merge-attempts",
+  const adopted = await createHistoricalLinkedPull(
+    "me/merge-linked-pulls",
     issue.number,
     "adopted",
   );
-  const siblingA = await createAttempt(
-    "me/merge-attempts",
+  const siblingA = await createHistoricalLinkedPull(
+    "me/merge-linked-pulls",
     issue.number,
     "sibling-a",
     "running-sibling",
   );
-  const siblingB = await createAttempt(
-    "me/merge-attempts",
+  const siblingB = await createHistoricalLinkedPull(
+    "me/merge-linked-pulls",
     issue.number,
     "sibling-b",
   );
@@ -133,68 +131,47 @@ test("merging an attempt closes open siblings with comments and traceable events
   const sessionBefore = S.getAgentSession("running-sibling");
 
   await svc.pulls.merge(
-    "me/merge-attempts",
+    "me/merge-linked-pulls",
     adopted.number,
     "merge",
     "merge-session",
   );
 
-  expect((await svc.issues.get("me/merge-attempts", issue.number)).state).toBe(
-    "closed",
-  );
+  expect(
+    (await svc.issues.get("me/merge-linked-pulls", issue.number)).state,
+  ).toBe("closed");
   for (const sibling of [siblingA, siblingB]) {
     expect(
-      (await svc.pulls.get("me/merge-attempts", sibling.number)).state,
-    ).toBe("closed");
+      (await svc.pulls.get("me/merge-linked-pulls", sibling.number)).state,
+    ).toBe("open");
     const row = S.getIssue(repo.id, sibling.number)!;
-    expect(S.listComments(row.id).map((comment) => comment.body)).toEqual([
-      `Superseded by #${adopted.number}.`,
-    ]);
+    expect(S.listComments(row.id)).toEqual([]);
   }
   expect(S.getAgentSession("running-sibling")).toEqual(sessionBefore);
 
   const closeEvents = S.listEvents(0, repo.id, 100).filter(
     (event) => event.type === "pull_request.closed",
   );
-  expect(closeEvents).toHaveLength(2);
-  expect(closeEvents.map((event) => JSON.parse(event.payload))).toEqual(
-    expect.arrayContaining([
-      {
-        number: siblingA.number,
-        linked_issue: issue.number,
-        superseded_by: adopted.number,
-      },
-      {
-        number: siblingB.number,
-        linked_issue: issue.number,
-        superseded_by: adopted.number,
-      },
-    ]),
-  );
+  expect(closeEvents).toHaveLength(0);
   const workflowClose = S.eventsForWorkflowRun(repo.id, siblingRun.id).find(
     (event) => event.type === "workflow_run.closed",
   );
-  expect(JSON.parse(workflowClose!.payload)).toMatchObject({
-    id: siblingRun.id,
-    pr_number: siblingA.number,
-    parent_session_id: "sibling-parent",
-    source_event_type: "pull_request.closed",
-  });
+  expect(workflowClose).toBeUndefined();
 });
 
-test("closing an issue directly closes every open attempt and is idempotent", async () => {
+test("closing an issue directly closes every open linked PR and is idempotent", async () => {
   const repo = await makeRepo("me/direct-close");
   const issue = svc.issues.create("me/direct-close", { title: "stop all" });
   branch(repo.path, "direct-a");
   branch(repo.path, "direct-b");
-  const attempts = await Promise.all([
-    createAttempt("me/direct-close", issue.number, "direct-a"),
-    createAttempt("me/direct-close", issue.number, "direct-b"),
+  const pulls = await Promise.all([
+    createHistoricalLinkedPull("me/direct-close", issue.number, "direct-a"),
+    createHistoricalLinkedPull("me/direct-close", issue.number, "direct-b"),
   ]);
-  const attemptRun = attachWorkflowRun(
+  const pullRun = attachWorkflowRun(
     repo.id,
     issue.number,
-    attempts[0].number,
+    pulls[0].number,
     "direct-close-parent",
   );
 
@@ -211,11 +188,11 @@ test("closing an issue directly closes every open attempt and is idempotent", as
     "closer",
   );
 
-  for (const attempt of attempts) {
-    expect((await svc.pulls.get("me/direct-close", attempt.number)).state).toBe(
+  for (const pull of pulls) {
+    expect((await svc.pulls.get("me/direct-close", pull.number)).state).toBe(
       "closed",
     );
-    const row = S.getIssue(repo.id, attempt.number)!;
+    const row = S.getIssue(repo.id, pull.number)!;
     expect(S.listComments(row.id).map((comment) => comment.body)).toEqual([
       `Closed because linked issue #${issue.number} was closed.`,
     ]);
@@ -224,16 +201,25 @@ test("closing an issue directly closes every open attempt and is idempotent", as
     (event) => event.type === "pull_request.closed",
   );
   expect(closeEvents).toHaveLength(2);
-  expect(
-    closeEvents.map((event) => JSON.parse(event.payload).superseded_by),
-  ).toEqual([undefined, undefined]);
-  const workflowClose = S.eventsForWorkflowRun(repo.id, attemptRun.id).filter(
+  expect(closeEvents.map((event) => JSON.parse(event.payload))).toEqual(
+    expect.arrayContaining([
+      {
+        number: pulls[0].number,
+        linked_issue: issue.number,
+      },
+      {
+        number: pulls[1].number,
+        linked_issue: issue.number,
+      },
+    ]),
+  );
+  const workflowClose = S.eventsForWorkflowRun(repo.id, pullRun.id).filter(
     (event) => event.type === "workflow_run.closed",
   );
   expect(workflowClose).toHaveLength(1);
   expect(JSON.parse(workflowClose[0].payload)).toMatchObject({
-    id: attemptRun.id,
-    pr_number: attempts[0].number,
+    id: pullRun.id,
+    pr_number: pulls[0].number,
     parent_session_id: "direct-close-parent",
     source_event_type: "pull_request.closed",
   });

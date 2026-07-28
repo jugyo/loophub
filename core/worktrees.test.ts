@@ -135,7 +135,7 @@ test("plan marks a worktree as remove when its linked PR is merged", async () =>
   await git(repo.path, ["worktree", "remove", "--force", wtPath]);
 });
 
-test("plan removes clean superseded attempt worktrees but keeps dirty and cwd safety guards", async () => {
+test("plan removes clean finished PR worktrees but keeps dirty and cwd safety guards", async () => {
   const repo = await makeRepo("me/superseded");
   const issue = S.createIssue(
     repo.id,

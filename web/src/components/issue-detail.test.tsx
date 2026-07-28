@@ -171,7 +171,6 @@ describe("IssueDetail", () => {
         .getByRole("link", { name: "ui2: issue detail PR" })
         .getAttribute("href"),
     ).toBe("/r/me/proj/pulls/30");
-    expect(prLink.closest("div")?.textContent).toContain("open");
     expect(screen.queryByText("Workflow run")).toBeNull();
   });
 
@@ -361,7 +360,6 @@ describe("IssueDetail", () => {
     const statusCell = summary.closest("div");
     const ctx = within(statusCell as HTMLElement);
     expect(ctx.queryByText("working")).toBeNull();
-    expect(ctx.getByText("open")).toBeTruthy();
   });
 
   it("hides the linked-PR summary when no PR is linked", async () => {
@@ -513,7 +511,6 @@ describe("IssueDetail", () => {
     expect(screen.getByLabelText("Linked PR #30: merged attempt")).toBeTruthy();
     expect(screen.getByText("PR #29")).toBeTruthy();
     expect(screen.getByLabelText("Linked PR #29: closed attempt")).toBeTruthy();
-    expect(screen.getByText("ready")).toBeTruthy();
     expect(screen.queryByText("Diff")).toBeNull();
     expect(screen.queryByText("Review")).toBeNull();
     expect(screen.queryByText("base is 2 commits behind")).toBeNull();
@@ -531,7 +528,7 @@ describe("IssueDetail", () => {
     expect(screen.queryByText(/Discard/)).toBeNull();
   });
 
-  it("explains when old attempt rows are omitted by the detail limit", async () => {
+  it("explains when old linked PR rows are omitted by the detail limit", async () => {
     renderDetail(() => ({
       ...issue,
       linked_pull_requests: [issue.linked_pull_request!],
@@ -540,7 +537,7 @@ describe("IssueDetail", () => {
 
     expect(
       await screen.findByText(
-        "Showing the 1 most relevant attempts to keep this page responsive.",
+        "Showing the 1 most relevant pull requests to keep this page responsive.",
       ),
     ).toBeTruthy();
   });

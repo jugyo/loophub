@@ -533,7 +533,7 @@ export function startHerdrSnapshotSweep(
 }
 
 // Remove LoopHub worktrees whose PR merged or issue closed at least a day ago (#1837), so a
-// finished attempt's checkout does not linger forever. The candidate rules, the grace period and
+// finished PR's checkout does not linger forever. The candidate rules, the grace period and
 // the destructive removal all live in core (worktrees.autoPrune); this loop owns cadence and
 // visible operational logging only. Like every sweep here the tick awaits its git subprocesses
 // rather than blocking, and the `running` guard means a prune that outlives its interval is never

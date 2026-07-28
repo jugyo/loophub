@@ -152,7 +152,7 @@ describe("dashboard.overview", () => {
     ).toMatchObject({ number: 99 });
   });
 
-  test("issue detail enriches every linked PR for attempt comparison", async () => {
+  test("issue detail enriches every linked PR", async () => {
     const issue = svc.issues.create("me/proj", { title: "many linked PRs" });
     const repo = S.getRepo("me", "proj")!;
     const issueRow = S.getIssue(repo.id, issue.number)!;
@@ -183,7 +183,7 @@ describe("dashboard.overview", () => {
     );
   });
 
-  test("issue detail reports commits added to the base after an attempt forked", async () => {
+  test("issue detail reports commits added to the base after a PR forked", async () => {
     const issue = svc.issues.create("me/proj", { title: "old attempt base" });
     await svc.dev.openPr(
       "me/proj",

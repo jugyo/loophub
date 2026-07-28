@@ -36,17 +36,17 @@ export interface ProvisionInput {
   // itself just opened this PR this run (its branch genuinely never existed yet, #463); false
   // (default) for re-entering an already-established PR, where a missing convention branch means
   // it was deleted out-of-band and silently recreating it under the same name would discard
-  // history without warning. Callers may also allow a pre-created attempt whose branch has
+  // history without warning. Callers may also allow a pre-created PR whose branch has
   // never existed (and therefore has no recorded head SHA). Ignored when headRef is null — that
   // path (a brand-new self-managed branch) has always been safe to create.
   allowCreatingConventionBranch?: boolean;
-  // Optional immutable fork point for a newly created convention branch. Parallel attempts use
-  // the first attempt's recorded base SHA so an advanced default branch cannot skew comparison.
+  // Optional immutable fork point for a newly created convention branch. Workflow resumes use the
+  // PR's recorded base SHA so an advanced default branch cannot change its starting point.
   baseSha?: string;
 }
 
 // A conventional PR branch may be absent because Workflow (or another launcher) pre-created the
-// attempt before its first worktree. That intent is durable on the pull row and is cleared together
+// PR before its first worktree. That intent is durable on the pull row and is cleared together
 // with the first provisioned SHA. Legacy/established rows stay strict; nullable watcher metadata is
 // deliberately not used as lifecycle provenance.
 export function shouldCreateMissingConventionBranch(input: {
@@ -106,7 +106,7 @@ export async function provisionWorktree(
   // A launcher-managed PR with no recorded head is only a resumable partial provision while its
   // conventional branch/worktree still points at the recorded fork point. A deleted PR may leave
   // both behind; if its number were reused, accepting a different HEAD here would silently turn
-  // stale commits into the new attempt's implementation.
+  // stale commits into the new PR's implementation.
   if (input.allowCreatingConventionBranch && input.baseSha) {
     const existingHead = provisioned
       ? await revParse(path, "HEAD")

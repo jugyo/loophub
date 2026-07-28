@@ -304,8 +304,8 @@ export async function issueDetailJSON(
   const out = issueJSON(row, row.kind === "pull" ? repo : undefined);
   if (row.kind !== "pull") {
     const linked = S.allLinkedPullsForIssue(row.id);
-    // Detail is the attempt-comparison surface, so every linked PR needs the
-    // same comparison fields. List/dashboard paths remain capped separately.
+    // Detail shows every historical linked PR, so each row needs the same status fields.
+    // List/dashboard paths remain capped separately.
     const pulls = await Promise.all(
       linked
         .slice(0, S.MAX_ISSUE_DETAIL_PULLS)

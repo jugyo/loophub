@@ -28,7 +28,7 @@ export const gitIntegrationTestFiles = [
   "cli/pr-update.test.ts",
   "cli/workflow-start.test.ts",
   "cli/worktree-prune.test.ts",
-  "core/attempt-supersede.test.ts",
+  "core/linked-pulls.test.ts",
   "core/dashboard.test.ts",
   "core/dev.test.ts",
   "core/git.test.ts",

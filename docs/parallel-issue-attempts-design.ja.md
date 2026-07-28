@@ -1,8 +1,9 @@
-# 同じ issue の並行作業比較フロー(ラフ設計)
+# 同じ issue の並行作業比較フロー（歴史的記録）
 
-> **Note: 歴史的記録.** 本書中の `lh build`（`lh build --new-attempt` を含む）は #1517 / #1518 で
-> 廃止済みのコマンドで、現行の正規着手経路は Workflow（`lh workflow start` / Web の Start workflow）。
-> 本書は設計経緯の参照用として残す。`lh build ...` を現在形の手順として読まないこと。
+> **Note: 廃止済み設計の歴史的記録.** 並行 attempt 機能は #1995 で削除された。
+> 現在は同一 issue に open な linked PR を 1 件だけ許可し、その PR を閉じた後に限り
+> Workflow（`lh workflow start` / Web の Start workflow）を再実行できる。
+> 本書中の `lh build` と `--new-attempt` も廃止済みであり、以下は現行仕様ではない。
 
 作業中の PR がある issue に対して、別のエージェントにも同じ issue を並行で作業させ、
 最終的に複数の結果(PR)を見比べて 1 つを選べるようにするためのプロダクト設計メモ。

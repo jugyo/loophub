@@ -34,7 +34,6 @@ import {
 } from "../serialize.ts";
 import { pullJSON } from "../serialize-status.ts";
 import * as S from "../store.ts";
-import { closeOpenAttemptsForIssue } from "./attempts.ts";
 import {
   actorFor,
   assertExistingLocalBranch,
@@ -57,7 +56,6 @@ function resolveLinkedIssueId(
   r: S.Repo,
   body: string,
   explicit?: number,
-  parallel = false,
 ): number | null {
   const linkedNumber = explicit ?? parseClosingIssueNumber(body);
   if (linkedNumber == null) return null;
@@ -65,7 +63,7 @@ function resolveLinkedIssueId(
   if (!row) throw new ServiceError(422, `issue #${linkedNumber} not found`);
   if (row.kind !== "issue")
     throw new ServiceError(422, `#${linkedNumber} is not an issue`);
-  if (!parallel && S.openPullLinkedToIssue(row.id)) {
+  if (S.openPullLinkedToIssue(row.id)) {
     throw new ServiceError(
       422,
       `issue #${linkedNumber} already has an open pull request`,
@@ -143,12 +141,6 @@ export const pulls = {
       headFromNumber?: (prNumber: number) => string;
       base?: string;
       issue?: number;
-      // Explicit opt-in for proposal/attempt flows that intentionally link another open PR to
-      // the same issue. Ordinary PR creation keeps the one-open-PR soft guard above.
-      parallel?: boolean;
-      // Preserve a previously resolved fork point (parallel attempts inherit their first
-      // sibling's recorded or merge-base-inferred SHA instead of resolving the live base ref).
-      baseSha?: string | null;
     },
     sessionId?: string | null,
   ) {
@@ -158,15 +150,9 @@ export const pulls = {
     if (!title || (!input.head && !input.headFromNumber))
       throw new ServiceError(422, "title, head, base are required");
     const actor = actorFor(sessionId);
-    // Soft "one open PR per linked issue" guard: refuse a second open PR for an issue that already
-    // has one. This is the double-start guard for issue-targeted launches (not a DB constraint —
-    // see #186), so it can be relaxed later to allow multiple proposal PRs per issue.
-    const linkedIssueId = resolveLinkedIssueId(
-      r,
-      body,
-      issue,
-      input.parallel === true,
-    );
+    // Refuse a second open PR for an issue that already has one. This is the double-start guard for
+    // every issue-targeted creation path; historical rows may still contain multiple linked PRs.
+    const linkedIssueId = resolveLinkedIssueId(r, body, issue);
     const linkedNumber = issue ?? parseClosingIssueNumber(body);
     const linkedIssue =
       linkedIssueId != null ? S.getIssueById(linkedIssueId) : null;
@@ -188,9 +174,7 @@ export const pulls = {
     const head = input.head ?? input.headFromNumber!(row.number);
     const [headSha, resolvedBaseSha] = await Promise.all([
       revParse(r.local_path, head),
-      input.baseSha == null
-        ? revParse(r.local_path, base)
-        : Promise.resolve(input.baseSha),
+      revParse(r.local_path, base),
     ]);
     S.createPull(
       row.id,
@@ -637,14 +621,6 @@ export const pulls = {
       S.emitEvent(r.id, "issue.closed", actor, {
         number: closedIssue,
         closed_by_pull: row.number,
-      });
-    }
-    if (p.linked_issue_id != null) {
-      closeOpenAttemptsForIssue({
-        repoId: r.id,
-        linkedIssueId: p.linked_issue_id,
-        actor,
-        supersededByPull: row.number,
       });
     }
     return { merged: true, sha: res.sha };
