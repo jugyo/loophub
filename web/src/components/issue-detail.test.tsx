@@ -595,8 +595,8 @@ describe("IssueDetail", () => {
     ) as HTMLElement;
     const items = within(block).getAllByRole("listitem");
     expect(items.map((li) => li.textContent)).toEqual([
-      "AC 1AC is shown read-only",
-      "AC 2grades join to the AC text",
+      "AC is shown read-onlyAC 1",
+      "grades join to the AC textAC 2",
     ]);
     expect(within(block).queryByRole("button")).toBeNull();
     expect(within(block).queryByRole("checkbox")).toBeNull();

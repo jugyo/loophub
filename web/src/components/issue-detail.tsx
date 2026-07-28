@@ -303,10 +303,10 @@ function AcceptanceCriteria({ issue }: { issue: Issue }) {
               aria-hidden
               className="mt-0.5 size-4 shrink-0 text-muted-foreground"
             />
+            <span className="min-w-0 break-words">{criterion.text}</span>
             <span className="shrink-0 font-mono text-xs text-muted-foreground">
               AC {criterion.number}
             </span>
-            <span className="min-w-0 break-words">{criterion.text}</span>
           </li>
         ))}
       </ul>
