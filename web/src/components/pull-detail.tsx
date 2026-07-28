@@ -676,6 +676,7 @@ function FilesChanged({
               owner={owner}
               repo={repo}
               number={number}
+              files={files}
               file={openFile}
               comments={byFile.get(openFile.filename) ?? []}
               hasPreviousFile={hasPreviousFile}
@@ -690,6 +691,7 @@ function FilesChanged({
                   setOpenFilename(files[openFileIndex + 1].filename);
                 }
               }}
+              onSelectFile={setOpenFilename}
               onClose={() => setOpenFilename(null)}
             />
           ) : null}

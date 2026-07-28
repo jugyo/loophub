@@ -48,20 +48,24 @@ const lineComments: PullLineComment[] = [
 
 function renderDialog({
   file: dialogFile = file,
+  files,
   comments = [],
   hasPreviousFile = false,
   hasNextFile = false,
   onPreviousFile = () => {},
   onNextFile = () => {},
+  onSelectFile = () => {},
   onClose = () => {},
   handlers = {},
 }: {
   file?: PullFile;
+  files?: PullFile[];
   comments?: PullLineComment[];
   hasPreviousFile?: boolean;
   hasNextFile?: boolean;
   onPreviousFile?: () => void;
   onNextFile?: () => void;
+  onSelectFile?: (filename: string) => void;
   onClose?: () => void;
   handlers?: Record<string, (params: any) => unknown>;
 } = {}) {
@@ -75,12 +79,14 @@ function renderDialog({
         owner="me"
         repo="proj"
         number={30}
+        files={files ?? [dialogFile]}
         file={dialogFile}
         comments={comments}
         hasPreviousFile={hasPreviousFile}
         hasNextFile={hasNextFile}
         onPreviousFile={onPreviousFile}
         onNextFile={onNextFile}
+        onSelectFile={onSelectFile}
         onClose={onClose}
       />
     </QueryClientProvider>,
@@ -158,6 +164,25 @@ describe("DiffFileDialog", () => {
         .getAttribute("aria-pressed"),
     ).toBe("true");
     expect(container.querySelector("colgroup")).toBeNull();
+  });
+
+  it("lets a long diff shrink inside the dialog and scroll vertically", () => {
+    const longPatch = [
+      "@@ -1,100 +1,100 @@",
+      ...Array.from({ length: 100 }, (_, index) => ` line ${index + 1}`),
+    ].join("\n");
+    const { container } = renderDialog({
+      file: { ...file, additions: 0, deletions: 0, patch: longPatch },
+    });
+
+    const content = container.querySelector(
+      '[data-debug-component="FileDiffContent"]',
+    );
+    const scroller = content?.parentElement;
+    const rightPane = scroller?.parentElement;
+    expect(screen.getAllByText("line 100")).toHaveLength(2);
+    expect(scroller?.classList).toContain("overflow-auto");
+    expect(rightPane?.classList).toContain("min-h-0");
   });
 
   it("keeps replacements paired when no-newline markers separate them", () => {
@@ -240,6 +265,50 @@ describe("DiffFileDialog", () => {
     expect(onNextFile).toHaveBeenCalledTimes(1);
   });
 
+  it("lists changed file paths flat and selects a file from the sidebar", () => {
+    const onSelectFile = vi.fn();
+    const secondFile = { ...file, filename: "core/nested/b.ts" };
+    renderDialog({ files: [file, secondFile], onSelectFile });
+
+    const sidebar = screen.getByRole("complementary", {
+      name: "Changed files",
+    });
+    const dialog = screen.getByRole("dialog");
+    expect(sidebar.parentElement).toBe(dialog);
+    expect(dialog.firstElementChild).toBe(sidebar);
+    expect(within(sidebar).getByText("Files changed (2)")).toBeTruthy();
+    expect(
+      within(sidebar)
+        .getByRole("button", { name: "web/src/a.ts" })
+        .getAttribute("aria-current"),
+    ).toBe("true");
+
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: "core/nested/b.ts" }),
+    );
+    expect(onSelectFile).toHaveBeenCalledWith("core/nested/b.ts");
+    expect(within(sidebar).queryByText("core")).toBeNull();
+    expect(within(sidebar).queryByText("nested")).toBeNull();
+  });
+
+  it("resizes the changed files sidebar by dragging its boundary", () => {
+    renderDialog();
+
+    const sidebar = screen.getByRole("complementary", {
+      name: "Changed files",
+    });
+    const separator = screen.getByRole("separator", {
+      name: "Resize changed files sidebar",
+    });
+    expect((sidebar as HTMLElement).style.width).toBe("256px");
+
+    fireEvent.pointerDown(separator, { button: 0, clientX: 256 });
+    fireEvent.pointerMove(document, { clientX: 360 });
+    expect((sidebar as HTMLElement).style.width).toBe("360px");
+    expect(separator.getAttribute("aria-valuenow")).toBe("360");
+    fireEvent.pointerUp(document);
+  });
+
   it("keeps the standard mode while navigating between files", () => {
     const view = renderDialog({ hasNextFile: true });
 
@@ -254,12 +323,14 @@ describe("DiffFileDialog", () => {
           owner="me"
           repo="proj"
           number={30}
+          files={[{ ...file, filename: "web/src/b.ts" }]}
           file={{ ...file, filename: "web/src/b.ts" }}
           comments={[]}
           hasPreviousFile
           hasNextFile={false}
           onPreviousFile={() => {}}
           onNextFile={() => {}}
+          onSelectFile={() => {}}
           onClose={() => {}}
         />
       </QueryClientProvider>,
@@ -381,6 +452,7 @@ describe("DiffFileDialog", () => {
             button.getAttribute("aria-label") ?? button.textContent?.trim(),
         ),
     ).toEqual([
+      "README.md",
       "Copy file path: README.md",
       "Diff",
       "Raw",
@@ -524,12 +596,14 @@ describe("DiffFileDialog", () => {
           owner="me"
           repo="proj"
           number={30}
+          files={[{ ...file, filename: "web/src/a.ts" }]}
           file={{ ...file, filename: "web/src/a.ts" }}
           comments={[]}
           hasPreviousFile
           hasNextFile
           onPreviousFile={() => {}}
           onNextFile={() => {}}
+          onSelectFile={() => {}}
           onClose={() => {}}
         />
       </QueryClientProvider>,
@@ -545,12 +619,14 @@ describe("DiffFileDialog", () => {
           owner="me"
           repo="proj"
           number={30}
+          files={[mdFile]}
           file={mdFile}
           comments={[]}
           hasPreviousFile
           hasNextFile
           onPreviousFile={() => {}}
           onNextFile={() => {}}
+          onSelectFile={() => {}}
           onClose={() => {}}
         />
       </QueryClientProvider>,

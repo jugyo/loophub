@@ -101,33 +101,48 @@ const DIFF_LINE_MARKER: Record<DiffLineKind, string> = {
   context: " ",
 };
 
+const INITIAL_FILE_SIDEBAR_WIDTH = 256;
+const MIN_FILE_SIDEBAR_WIDTH = 160;
+const MAX_FILE_SIDEBAR_WIDTH = 480;
+
 export function DiffFileDialog({
   owner,
   repo,
   number,
+  files,
   file,
   comments,
   hasPreviousFile,
   hasNextFile,
   onPreviousFile,
   onNextFile,
+  onSelectFile,
   onClose,
 }: {
   owner: string;
   repo: string;
   number: number;
+  files: PullFile[];
   file: PullFile;
   comments: PullLineComment[];
   hasPreviousFile: boolean;
   hasNextFile: boolean;
   onPreviousFile: () => void;
   onNextFile: () => void;
+  onSelectFile: (filename: string) => void;
   onClose: () => void;
 }) {
   const [standardMode, setStandardMode] =
     useState<StandardDiffDialogMode>("diff");
   const [markdownMode, setMarkdownMode] = useState<DiffDialogMode>("diff");
   const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("split");
+  const [fileSidebarWidth, setFileSidebarWidth] = useState(
+    INITIAL_FILE_SIDEBAR_WIDTH,
+  );
+  const [sidebarDrag, setSidebarDrag] = useState<{
+    startX: number;
+    startWidth: number;
+  } | null>(null);
   const mouseDownStartedOnBackdrop = useRef(false);
   const copyPath = visibleCopyPath(copyFilename(file));
   const isMarkdown =
@@ -151,6 +166,31 @@ export function DiffFileDialog({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
+  useEffect(() => {
+    if (!sidebarDrag) return;
+    const drag = sidebarDrag;
+    function onPointerMove(event: PointerEvent) {
+      setFileSidebarWidth(
+        Math.min(
+          MAX_FILE_SIDEBAR_WIDTH,
+          Math.max(
+            MIN_FILE_SIDEBAR_WIDTH,
+            drag.startWidth + event.clientX - drag.startX,
+          ),
+        ),
+      );
+    }
+    function onPointerUp() {
+      setSidebarDrag(null);
+    }
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+    return () => {
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [sidebarDrag]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-background/80 p-2 backdrop-blur-sm sm:p-4"
@@ -169,107 +209,165 @@ export function DiffFileDialog({
         role="dialog"
         aria-modal="true"
         aria-label={`Diff for ${file.filename}`}
-        className="flex max-h-full w-full flex-col overflow-hidden rounded-md border bg-background shadow-lg"
+        className="flex max-h-full w-full overflow-hidden rounded-md border bg-background shadow-lg"
       >
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-1">
-              <h3 className="min-w-0 truncate text-sm font-semibold">
-                {file.filename}
-              </h3>
-              <CopyButton
-                key={copyPath}
-                value={copyPath}
-                label={`Copy file path: ${copyPath}`}
-                className="size-6"
-              />
-            </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-              <span>{file.status}</span>
-              <DiffStat additions={file.additions} deletions={file.deletions} />
-            </div>
+        <aside
+          aria-label="Changed files"
+          className="shrink-0 overflow-y-auto bg-muted/20"
+          style={{ width: fileSidebarWidth }}
+        >
+          <div className="sticky top-0 border-b bg-background/95 px-3 py-2 text-xs font-semibold backdrop-blur">
+            Files changed ({files.length})
           </div>
-          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-            <div className="flex overflow-hidden rounded-md border text-xs">
-              <ModeButton
-                active={mode === "diff"}
-                onClick={() => selectMode("diff")}
-              >
-                Diff
-              </ModeButton>
-              <ModeButton
-                active={mode === "raw"}
-                onClick={() => selectMode("raw")}
-              >
-                Raw
-              </ModeButton>
-              {isMarkdown ? (
-                <>
-                  <ModeButton
-                    active={mode === "base"}
-                    onClick={() => selectMode("base")}
+          <ul className="py-1">
+            {files.map((sidebarFile) => {
+              const selected = sidebarFile.filename === file.filename;
+              return (
+                <li key={sidebarFile.filename}>
+                  <button
+                    type="button"
+                    aria-current={selected ? "true" : undefined}
+                    className={cn(
+                      "block w-full break-all px-3 py-1.5 text-left font-mono text-xs hover:bg-muted",
+                      selected &&
+                        "bg-accent font-medium text-accent-foreground",
+                    )}
+                    onClick={() => onSelectFile(sidebarFile.filename)}
                   >
-                    Base
-                  </ModeButton>
-                  <ModeButton
-                    active={mode === "head"}
-                    onClick={() => selectMode("head")}
-                  >
-                    Head
-                  </ModeButton>
-                </>
-              ) : null}
+                    {sidebarFile.filename}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </aside>
+        <div
+          role="separator"
+          aria-label="Resize changed files sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={MIN_FILE_SIDEBAR_WIDTH}
+          aria-valuemax={MAX_FILE_SIDEBAR_WIDTH}
+          aria-valuenow={fileSidebarWidth}
+          className={cn(
+            "relative w-1 shrink-0 cursor-col-resize touch-none border-x bg-border/40",
+            sidebarDrag && "bg-primary/30",
+          )}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            setSidebarDrag({
+              startX: event.clientX,
+              startWidth: fileSidebarWidth,
+            });
+          }}
+        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-1">
+                <h3 className="min-w-0 truncate text-sm font-semibold">
+                  {file.filename}
+                </h3>
+                <CopyButton
+                  key={copyPath}
+                  value={copyPath}
+                  label={`Copy file path: ${copyPath}`}
+                  className="size-6"
+                />
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                <span>{file.status}</span>
+                <DiffStat
+                  additions={file.additions}
+                  deletions={file.deletions}
+                />
+              </div>
             </div>
-            {mode === "diff" ? (
-              <div
-                className="flex overflow-hidden rounded-md border text-xs"
-                aria-label="Diff view"
-              >
+            <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+              <div className="flex overflow-hidden rounded-md border text-xs">
                 <ModeButton
-                  active={diffViewMode === "unified"}
-                  onClick={() => setDiffViewMode("unified")}
+                  active={mode === "diff"}
+                  onClick={() => selectMode("diff")}
                 >
-                  Unified
+                  Diff
                 </ModeButton>
                 <ModeButton
-                  active={diffViewMode === "split"}
-                  onClick={() => setDiffViewMode("split")}
+                  active={mode === "raw"}
+                  onClick={() => selectMode("raw")}
                 >
-                  Split
+                  Raw
+                </ModeButton>
+                {isMarkdown ? (
+                  <>
+                    <ModeButton
+                      active={mode === "base"}
+                      onClick={() => selectMode("base")}
+                    >
+                      Base
+                    </ModeButton>
+                    <ModeButton
+                      active={mode === "head"}
+                      onClick={() => selectMode("head")}
+                    >
+                      Head
+                    </ModeButton>
+                  </>
+                ) : null}
+              </div>
+              {mode === "diff" ? (
+                <div
+                  className="flex overflow-hidden rounded-md border text-xs"
+                  aria-label="Diff view"
+                >
+                  <ModeButton
+                    active={diffViewMode === "unified"}
+                    onClick={() => setDiffViewMode("unified")}
+                  >
+                    Unified
+                  </ModeButton>
+                  <ModeButton
+                    active={diffViewMode === "split"}
+                    onClick={() => setDiffViewMode("split")}
+                  >
+                    Split
+                  </ModeButton>
+                </div>
+              ) : null}
+              <div className="flex overflow-hidden rounded-md border text-xs">
+                <ModeButton
+                  disabled={!hasPreviousFile}
+                  onClick={onPreviousFile}
+                >
+                  <ChevronLeft className="size-3" />
+                  Prev
+                </ModeButton>
+                <ModeButton disabled={!hasNextFile} onClick={onNextFile}>
+                  Next
+                  <ChevronRight className="size-3" />
                 </ModeButton>
               </div>
-            ) : null}
-            <div className="flex overflow-hidden rounded-md border text-xs">
-              <ModeButton disabled={!hasPreviousFile} onClick={onPreviousFile}>
-                <ChevronLeft className="size-3" />
-                Prev
-              </ModeButton>
-              <ModeButton disabled={!hasNextFile} onClick={onNextFile}>
-                Next
-                <ChevronRight className="size-3" />
-              </ModeButton>
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label="Close diff"
+                className="h-7 w-7 shrink-0 p-0"
+                onClick={onClose}
+              >
+                <X className="size-4" />
+              </Button>
             </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              aria-label="Close diff"
-              className="h-7 w-7 shrink-0 p-0"
-              onClick={onClose}
-            >
-              <X className="size-4" />
-            </Button>
+          </header>
+          <div className="min-w-0 flex-1 overflow-auto">
+            <FileDiffContent
+              owner={owner}
+              repo={repo}
+              number={number}
+              file={file}
+              comments={comments}
+              mode={mode}
+              diffViewMode={diffViewMode}
+            />
           </div>
-        </header>
-        <div className="min-h-0 flex-1 overflow-auto">
-          <FileDiffContent
-            owner={owner}
-            repo={repo}
-            number={number}
-            file={file}
-            comments={comments}
-            mode={mode}
-            diffViewMode={diffViewMode}
-          />
         </div>
       </div>
     </div>
