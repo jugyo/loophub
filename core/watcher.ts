@@ -15,7 +15,6 @@ export async function sweepPullUpdates(): Promise<any[]> {
     }
     if (cur !== p.head_sha) {
       S.setHeadSha(p.issue_id, cur);
-      S.clearChangesAddressed(p.issue_id);
       S.touchIssue(p.issue_id);
       emitted.push(
         S.emitEvent(p.repo_id, "pull_request.updated", p.author, {

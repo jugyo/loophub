@@ -206,6 +206,23 @@ function renderDetail(
 }
 
 describe("PullDetail", () => {
+  it("does not offer a ready action after changes are requested", async () => {
+    renderDetailWithPull({
+      review_state: "CHANGES_REQUESTED",
+      review_gate: {
+        reviewed: true,
+        passed: false,
+        head_sha: "aaa",
+        blocking_reason: "request_changes",
+      },
+    });
+
+    expect(await screen.findByText("changes")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Mark ready for re-review" }),
+    ).toBeNull();
+  });
+
   it("renders title, head→base, file summary, reviews, comments, and the linked issue", async () => {
     renderDetail();
 

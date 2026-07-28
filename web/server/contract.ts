@@ -1068,17 +1068,6 @@ export const methods: Record<string, MethodDef> = {
     result: anyObject,
     handler: (p) => svc.pulls.githubStatus(p.repo, p.number),
   },
-  "pulls/readyForReview": {
-    description:
-      "Mark a pull request ready for re-review after addressing changes.",
-    params: params({ repo, number: positiveInt, body: str, session_id: sid }, [
-      "repo",
-      "number",
-    ]),
-    result: anyObject,
-    handler: (p) =>
-      svc.pulls.readyForReview(p.repo, p.number, p.body, p.session_id),
-  },
   "pulls/debug": {
     description:
       "Read-only debug dump for a PR: raw DB rows (issue/pull/linked issue/labels), git facts (refs, SHAs, diffstat, commits, files), reviews, comments, related events, and the dev session.",

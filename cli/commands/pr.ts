@@ -289,20 +289,6 @@ export async function run(): Promise<void> {
       console.log(
         `review ${res.id} submitted: ${res.state} (${res.comments} line comment(s))`,
       );
-  } else if (sub === "ready-for-review") {
-    const p = await runOp(async () =>
-      s.pulls.readyForReview(
-        repo,
-        Number(rest[0]),
-        flags.body || "",
-        await writeSession(),
-      ),
-    );
-    out(p);
-    if (!flags.json)
-      console.log(
-        `PR #${p.number} marked ready for review (${p.review_state})`,
-      );
   } else if (sub === "close" || sub === "reopen") {
     const number = Number(rest[0]);
     const state = sub === "close" ? "closed" : "open";

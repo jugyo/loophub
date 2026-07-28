@@ -1,5 +1,4 @@
 import { db, now } from "../db.ts";
-import { touchIssue } from "./issues.ts";
 import { getPull } from "./pulls.ts";
 
 export interface ReviewRow {
@@ -94,7 +93,6 @@ export function createReviewWithAcResults(
 export type ReviewState =
   | "PASSED"
   | "CHANGES_REQUESTED"
-  | "READY_FOR_RE_REVIEW"
   | "COMMENTED"
   | "STALE"
   | null;
@@ -189,12 +187,7 @@ export function computeReviewStatus(
     };
   }
   if (gate.blockingReason === "request_changes") {
-    return {
-      state: p.changes_addressed_at
-        ? "READY_FOR_RE_REVIEW"
-        : "CHANGES_REQUESTED",
-      gate,
-    };
+    return { state: "CHANGES_REQUESTED", gate };
   }
   if (gate.blockingReason === "stale") {
     return { state: "STALE", gate };
@@ -207,21 +200,6 @@ export function computeReviewGate(
   currentHeadSha?: string | null,
 ): ReviewGate {
   return computeReviewStatus(issueId, currentHeadSha).gate;
-}
-
-export function markChangesAddressed(issueId: number, actor: string) {
-  db.run(
-    `UPDATE pulls SET changes_addressed_at = ?, changes_addressed_by = ? WHERE issue_id = ?`,
-    [now(), actor, issueId],
-  );
-  touchIssue(issueId);
-}
-
-export function clearChangesAddressed(issueId: number) {
-  db.run(
-    `UPDATE pulls SET changes_addressed_at = NULL, changes_addressed_by = NULL WHERE issue_id = ?`,
-    [issueId],
-  );
 }
 
 // ---- review comments (行コメント。投稿は review に束ねる) ----

@@ -244,7 +244,7 @@ chosen ad hoc at the call site.
 | `merged` | Merged PR | Purple outline |
 | `review-passed` | PR review `PASSED` | Green outline |
 | `review-changes` | PR review `CHANGES_REQUESTED` | Destructive outline |
-| `review-rereview` | PR review `READY_FOR_RE_REVIEW` | Amber outline |
+| `review-rereview` | Stale PR review | Amber outline |
 | `review-commented` | PR review `COMMENTED` | Muted outline |
 | `conflict` | Open PR with `mergeable_state: conflict` | Destructive outline |
 | `mergeable` | Open PR with `mergeable_state: clean` | Primary themed outline + tint |

@@ -672,37 +672,6 @@ export const pulls = {
     return githubPrStatusJSON(status, saved.synced_at);
   },
 
-  async readyForReview(
-    name: string,
-    number: number,
-    body: string | undefined,
-    sessionId?: string | null,
-    assertMutationAllowed?: () => void,
-  ) {
-    const r = repoOr404(name);
-    ensureWritable(r);
-    const row = issueOr404(r, number, "pull");
-    const p = S.getPull(row.id)!;
-    if (p.merged || row.state !== "open")
-      throw new ServiceError(422, "Pull Request is not open");
-    const actor = actorFor(sessionId);
-    const reviewStatus = S.computeReviewStatus(row.id);
-    if (reviewStatus.gate.blockingReason !== "request_changes") {
-      throw new ServiceError(422, "No pending change requests to address");
-    }
-    if (p.changes_addressed_at)
-      throw new ServiceError(422, "Already marked ready for re-review");
-    const headSha = await revParse(r.local_path, p.head_ref);
-    assertMutationAllowed?.();
-    S.markChangesAddressed(row.id, actor);
-    if (headSha) S.setHeadSha(row.id, headSha);
-    if (body) S.createComment(row.id, actor, body);
-    S.emitEvent(r.id, "pull_request.ready_for_review", actor, {
-      number: row.number,
-    });
-    return pullJSON(r, S.getIssue(r.id, row.number)!);
-  },
-
   // Read-only debug dump: every piece of data a PR can be reached from, gathered into one
   // object so a maintainer can inspect raw DB rows + git facts on a single screen (#248).
   // Intentionally returns near-raw rows (not the trimmed wire serializers) — this is a debug

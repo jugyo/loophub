@@ -16,7 +16,6 @@ import {
   mergePull,
   patchPull,
   pushGithubPull,
-  readyForReview,
 } from "@/api/client";
 import type { PullRequest } from "@/api/types";
 import { queryKeys } from "./keys";
@@ -151,15 +150,6 @@ export function useMergePull(owner: string, repo: string, number: number) {
   return useMutation({
     mutationFn: (mergeMethod: "squash" | "merge" | "rebase") =>
       mergePull(owner, repo, number, mergeMethod),
-    onSuccess: () => invalidatePull(qc, owner, repo, number),
-  });
-}
-
-/** Mark a PR ready for re-review, then invalidate the PR + lists. */
-export function useReadyForReview(owner: string, repo: string, number: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => readyForReview(owner, repo, number),
     onSuccess: () => invalidatePull(qc, owner, repo, number),
   });
 }

@@ -139,6 +139,7 @@ describe("--help", () => {
 
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stdout).toContain("lh — LoopHub CLI");
+    expect(result.stdout).not.toContain("ready-for-review");
   });
 
   test("rejects an unknown nested command instead of showing parent help", () => {

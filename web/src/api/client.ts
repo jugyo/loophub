@@ -853,19 +853,6 @@ export function pushGithubPull(
   });
 }
 
-export function readyForReview(
-  owner: string,
-  repo: string,
-  number: number,
-  body?: string,
-  sessionId: string = getSessionId(),
-) {
-  return rpc<PullRequest>(
-    "pulls/readyForReview",
-    clean({ repo: full(owner, repo), number, body, session_id: sessionId }),
-  );
-}
-
 // --- dashboard ---
 export function getDashboardOverview() {
   return rpc<DashboardOverview>("dashboard/overview");

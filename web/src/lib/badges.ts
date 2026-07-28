@@ -116,7 +116,6 @@ const REVIEW_TONE: Record<
 > = {
   PASSED: "review-passed",
   CHANGES_REQUESTED: "review-changes",
-  READY_FOR_RE_REVIEW: "review-rereview",
   COMMENTED: "review-commented",
   // A previously-passed PR whose head advanced past the passed commit: the
   // pass is dismissed and the PR needs another look before merging.
@@ -126,7 +125,6 @@ const REVIEW_TONE: Record<
 const REVIEW_LABEL: Record<NonNullable<PullRequest["review_state"]>, string> = {
   PASSED: "passed",
   CHANGES_REQUESTED: "changes",
-  READY_FOR_RE_REVIEW: "re-review",
   COMMENTED: "commented",
   STALE: "re-review",
 };

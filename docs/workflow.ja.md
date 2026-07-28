@@ -213,7 +213,7 @@ npm test -- core/workflow/prompts.test.ts
 2. 関連コードを見て最小の実装計画を session 内に持つ（独立 artifact として提出しない）。
 3. 実装し、repo 標準の test / lint / typecheck を green にする。
 4. 結果を **ドメイン状態** に書く: commits、`lh pr update` による PR body、`lh attachment add`、
-   `lh pr comment`、draft の場合は `lh pr ready-for-review`。
+   `lh pr comment`。
 5. ターン完了を `lh workflow turn done`（payload なし）で宣言する。**commit 前に宣言しても run は
    進まない**（親が HEAD 前進を観測しないため）。
 

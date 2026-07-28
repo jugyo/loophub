@@ -19,7 +19,7 @@ export function usage(): void {
   lh issue search|list|view|create|import|update|comment|close|label  [--repo owner/repo]
   lh issue search <query> [--repo owner/name] [--json]       # search issues and pull requests in one repository
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
-  lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh pr list|view|diff|create|update|comment|merge|review|close|reopen  [--repo owner/repo]
   lh pr feedback list|create <pr> | view|reply|resolve|reopen <thread> --pr <pr> [--repo owner/repo]
   lh notification send --kind merge_ready|over_budget|human_attention --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
   lh workspace create|list|archive [<branch>] [--repo owner/name]   # workspace = integration branch; worktree = PR checkout

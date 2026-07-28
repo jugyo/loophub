@@ -1,8 +1,8 @@
 // PR detail view (/r/:owner/:repo/pulls/:number). v1 parity: title, body,
 // state + review badges, head→base, the linked issue (bidirectional with the
 // issue's linked PR), the commit/review timeline, the file diff with line comments,
-// issue comments, plus the write operations — merge (when PASSED), "mark ready
-// for re-review" (when CHANGES_REQUESTED), and close/reopen (when not merged).
+// issue comments, plus the write operations — merge (when PASSED) and close/reopen
+// (when not merged).
 // Body, reviews, and comments are stored as plain Markdown and rendered as GFM
 // via <Markdown>.
 
@@ -52,7 +52,6 @@ import {
   usePullFiles,
   usePullReviews,
   usePushGithubPull,
-  useReadyForReview,
   useSetPullState,
 } from "@/queries/pulls";
 import { useSettings } from "@/queries/settings";
@@ -257,7 +256,6 @@ function PullHeader({
 }) {
   const navigate = useNavigate();
   const merge = useMergePull(owner, repo, pull.number);
-  const ready = useReadyForReview(owner, repo, pull.number);
   const setState = useSetPullState(owner, repo, pull.number);
   const { showError } = useToast();
   usePageTitle([`${owner}/${repo}`, `PR #${pull.number}`, pull.title]);
@@ -281,7 +279,6 @@ function PullHeader({
   const hasNoCommits = pull.mergeable_state === "no_commits";
   const canMerge =
     canAct && pull.review_state === "PASSED" && !hasConflict && !hasNoCommits;
-  const canReady = canAct && pull.review_state === "CHANGES_REQUESTED";
   const mergeBlockedReason = hasConflict
     ? "Cannot merge: this PR has conflicts with the base branch."
     : hasNoCommits
@@ -375,22 +372,6 @@ function PullHeader({
               <Loader2 className="size-4 animate-spin" />
             ) : null}
             {pull.state === "open" ? "Close" : "Reopen"}
-          </Button>
-        ) : null}
-        {canReady ? (
-          <Button
-            variant="secondary"
-            disabled={ready.isPending}
-            onClick={() =>
-              ready.mutate(undefined, {
-                onError: (e) => showError(errorMessage(e, "Update failed")),
-              })
-            }
-          >
-            {ready.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : null}
-            Mark ready for re-review
           </Button>
         ) : null}
         {/* #406: the repo's effective merge mode picks exactly one write action — the internal Merge

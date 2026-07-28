@@ -548,11 +548,11 @@ describe("dev.attachSession", () => {
   });
 });
 
-describe("pull ready-for-review", () => {
-  test("readyForReview accepts a pending change request", async () => {
+describe("pull review state", () => {
+  test("stays CHANGES_REQUESTED until a later review verdict", async () => {
     const pr = await svc.pulls.create(
       "me/proj",
-      { title: "re-review", head: "main", base: "main" },
+      { title: "review state", head: "main", base: "main" },
       "sess-1",
     );
     await svc.reviews.create(
@@ -565,26 +565,14 @@ describe("pull ready-for-review", () => {
     expect((await svc.pulls.get("me/proj", pr.number)).review_state).toBe(
       "CHANGES_REQUESTED",
     );
-    const ready = await svc.pulls.readyForReview(
-      "me/proj",
-      pr.number,
-      undefined,
-      "sess-1",
+    const repo = S.getRepo("me", "proj")!;
+    const row = S.getIssue(repo.id, pr.number)!;
+    D.db.run(
+      "UPDATE pulls SET changes_addressed_at = ?, changes_addressed_by = ? WHERE issue_id = ?",
+      ["2026-07-29T00:00:00Z", "legacy-agent", row.id],
     );
-    expect(ready.review_state).toBe("READY_FOR_RE_REVIEW");
-  });
-
-  test("readyForReview rejects once a later PASS supersedes the change request", async () => {
-    const pr = await svc.pulls.create(
-      "me/proj",
-      { title: "superseded re-review", head: "main", base: "main" },
-      "sess-1",
-    );
-    await svc.reviews.create(
-      "me/proj",
-      pr.number,
-      { event: "REQUEST_CHANGES", body: "needs changes" },
-      "sess-1",
+    expect((await svc.pulls.get("me/proj", pr.number)).review_state).toBe(
+      "CHANGES_REQUESTED",
     );
     await svc.reviews.create(
       "me/proj",
@@ -592,9 +580,8 @@ describe("pull ready-for-review", () => {
       { event: "PASS", body: "fixed" },
       "sess-1",
     );
-
-    await expect(
-      svc.pulls.readyForReview("me/proj", pr.number, undefined, "sess-1"),
-    ).rejects.toThrow(/No pending change requests/);
+    expect((await svc.pulls.get("me/proj", pr.number)).review_state).toBe(
+      "PASSED",
+    );
   });
 });

@@ -74,6 +74,15 @@ function backdateReadyEvent(prNumber: number, seconds: number) {
   D.db.run(`UPDATE events SET created_at = ? WHERE id = ?`, [past, row.id]);
 }
 
+// Historical ready_for_review events remain valid duration anchors even though the mutation that
+// created them is gone. Emit the legacy fact directly to exercise that compatibility path.
+function emitReadyEvent(prNumber: number, actor: string) {
+  const repoId = (S.getRepo("me", "proj") as { id: number }).id;
+  S.emitEvent(repoId, "pull_request.ready_for_review", actor, {
+    number: prNumber,
+  });
+}
+
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
@@ -154,7 +163,7 @@ test("ready for review but not merged: total is in_review and keeps growing, imp
     event: "REQUEST_CHANGES",
     body: "please review",
   });
-  await svc.pulls.readyForReview("me/proj", number, undefined, "sess-b");
+  emitReadyEvent(number, "sess-b");
 
   const pull = (await svc.pulls.get("me/proj", number)) as any;
   expect(pull.work_duration.total.basis).toBe("in_review");
@@ -193,7 +202,7 @@ test("merged PR: total/implementation/review split into distinguishable, frozen 
     event: "REQUEST_CHANGES",
     body: "please review",
   });
-  await svc.pulls.readyForReview("me/proj", number, undefined, "sess-c");
+  emitReadyEvent(number, "sess-c");
   // Push the ready event back so implementation (start -> ready) and review (ready -> merge) land
   // in clearly separate windows instead of both collapsing near "now": implementation ~= 600s,
   // review ~= 400s, total ~= 1000s.
@@ -375,7 +384,7 @@ test("multiple ready_for_review events (re-review after changes requested): impl
     },
     "sess-g",
   );
-  await svc.pulls.readyForReview("me/proj", number, undefined, "sess-g");
+  emitReadyEvent(number, "sess-g");
   // Push the FIRST ready event back so implementation lands at a distinguishable ~600s, leaving
   // ~400s for the whole review phase (both rounds combined).
   backdateReadyEvent(number, 400);
@@ -388,7 +397,7 @@ test("multiple ready_for_review events (re-review after changes requested): impl
   );
   // Second ready_for_review event (re-review after change requests) — firstReadyForReviewAt must
   // keep resolving to the first one, not this later one.
-  await svc.pulls.readyForReview("me/proj", number, undefined, "sess-g");
+  emitReadyEvent(number, "sess-g");
   await svc.pulls.merge("me/proj", number, "merge", "sess-g");
 
   const pull = (await svc.pulls.get("me/proj", number)) as any;

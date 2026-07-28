@@ -725,11 +725,11 @@ test("sessions.costSummary limits token rate to in-progress dev sessions", async
     event: "REQUEST_CHANGES",
     body: "please review",
   });
-  await svc.pulls.readyForReview(
-    "me/proj",
-    opened.number,
-    undefined,
+  ST.emitEvent(
+    ST.getRepo("me", "proj")!.id,
+    "pull_request.ready_for_review",
     sessionId,
+    { number: opened.number },
   );
 
   expect(
@@ -741,8 +741,8 @@ test("sessions.costSummary limits token rate to in-progress dev sessions", async
 
 test("sessions.costSummary counts in-progress workflow-step sessions toward the live rate", async () => {
   // Under workflow-first the token-consuming session is kind='workflow-step', not 'dev'. Its samples
-  // must still feed the live TPS as long as the linked pull is open, unmerged, and not yet marked
-  // ready-for-review (#1662).
+  // must still feed the live TPS as long as the linked pull is open, unmerged, and has no historical
+  // ready_for_review event (#1662).
   const sessionId = "99999999-0000-0000-0000-0000000000af";
   svc.sessions.register({
     id: sessionId,
@@ -786,11 +786,11 @@ test("sessions.costSummary counts in-progress workflow-step sessions toward the 
     event: "REQUEST_CHANGES",
     body: "please review",
   });
-  await svc.pulls.readyForReview(
-    "me/proj",
-    opened.number,
-    undefined,
+  ST.emitEvent(
+    ST.getRepo("me", "proj")!.id,
+    "pull_request.ready_for_review",
     sessionId,
+    { number: opened.number },
   );
 
   expect(

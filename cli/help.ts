@@ -174,10 +174,6 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Submit a pull request review.",
     details: PR_REVIEW_DETAILS,
   },
-  {
-    path: ["pr", "ready-for-review"],
-    description: "Mark a pull request ready for review.",
-  },
   { path: ["pr", "close"], description: "Close a pull request." },
   { path: ["pr", "reopen"], description: "Reopen a pull request." },
   { path: ["handoff"], description: "Manage agent handoffs." },

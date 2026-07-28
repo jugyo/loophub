@@ -239,7 +239,8 @@ export function latestWorkflowTurnDoneAt(
 
 // The timestamp of the PR's earliest `pull_request.ready_for_review` event, or null if it never
 // fired. The event is emitted when a PR is resubmitted after change requests (see service.ts
-// `readyForReview`), and the earliest one marks the moment the PR first entered review. Used to
+// Historical data can contain several such events, and the earliest one marks when the PR first
+// entered review. Used to
 // anchor the "work duration" calculation (serialize.ts `pullWorkDuration`) for a
 // PR that reached review but hasn't merged yet.
 export function firstReadyForReviewAt(

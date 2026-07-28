@@ -537,7 +537,6 @@ describe("pullDetailBadges", () => {
   it("keeps non-passed review states on a conflicting PR (#1852)", () => {
     for (const [review_state, tone] of [
       ["CHANGES_REQUESTED", "review-changes"],
-      ["READY_FOR_RE_REVIEW", "review-rereview"],
       ["COMMENTED", "review-commented"],
       ["STALE", "review-rereview"],
     ] as const) {

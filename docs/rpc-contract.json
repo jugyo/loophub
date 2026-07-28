@@ -2240,38 +2240,6 @@
       }
     },
     {
-      "name": "pulls/readyForReview",
-      "description": "Mark a pull request ready for re-review after addressing changes.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "repo": {
-            "type": "string",
-            "minLength": 1
-          },
-          "number": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "body": {
-            "type": "string"
-          },
-          "session_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "repo",
-          "number"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object"
-      }
-    },
-    {
       "name": "pulls/debug",
       "description": "Read-only debug dump for a PR: raw DB rows (issue/pull/linked issue/labels), git facts (refs, SHAs, diffstat, commits, files), reviews, comments, related events, and the dev session.",
       "params": {

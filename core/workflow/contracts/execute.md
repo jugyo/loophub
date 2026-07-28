@@ -43,8 +43,7 @@ parent; treat an identical launch note the same way.
 4. Get the repository's standard tests, lint, and typecheck green.
 5. Commit the implementation on the current head branch. Update the summary, acceptance criteria,
    test plan, and evidence with `lh pr update <pr> --repo '<repo>' --body ...`. Add attachments or
-   comments as needed. After addressing change requests, resubmit the PR for review with
-   `lh pr ready-for-review <pr> --repo '<repo>'`.
+   comments as needed.
 6. Commit any code change, then run `lh workflow turn done --repo '<repo>' --run <run>` exactly once
    per turn. Running it without a commit is valid only for a confirmation or metadata-only turn that
    requires no HEAD advance.

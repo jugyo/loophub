@@ -229,8 +229,6 @@ export const reviews = {
         body: cm.body,
       });
     }
-    if (event === "PASS" || event === "REQUEST_CHANGES")
-      S.clearChangesAddressed(row.id);
     S.emitEvent(r.id, "pull_request.review_submitted", actor, {
       number: row.number,
       state: event,
