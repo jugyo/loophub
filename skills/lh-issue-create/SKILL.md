@@ -246,15 +246,13 @@ existing / abort.
 
 ### 3. Body template
 
+Acceptance criteria do not belong in the issue body. Keep the body focused on context that is not
+represented by a dedicated field:
+
 ```markdown
 ## Goal
 
 <1–3 sentences describing done>
-
-## Acceptance criteria
-
-- [ ] Criterion 1
-- [ ] Criterion 2
 
 ## Out of scope
 
@@ -314,7 +312,9 @@ lh issue create --repo <repo> --title "<title>" --target-branch 'feature/topic' 
   --body "$(cat <<'EOF'
 <filled template>
 EOF
-)"
+)" \
+  --ac "<criterion 1>" \
+  --ac "<criterion 2>"
 ```
 
 This makes issue creation verify the local branch before filing the issue. If the branch name is
@@ -357,8 +357,16 @@ lh issue create --repo <repo> --title "<title>" \
   --body "$(cat <<'EOF'
 <filled template>
 EOF
-)" --actor triage-bot
+)" \
+  --ac "<criterion 1>" \
+  --ac "<criterion 2>" \
+  --actor triage-bot
 ```
+
+Pass every acceptance criterion as a separate repeatable `--ac` value, in display order. Do not add
+an acceptance-criteria heading or duplicate checklist to `--body`; body Markdown is not converted
+into structured acceptance criteria. Run `lh issue create --help` immediately before creating the
+issue and follow its current instructions.
 
 Append `--label <name>` for an explicitly requested grouping/theme, for `ready-to-build`, or — on
 **related multi-issue creation** — for the required common grouping label applied to every issue in

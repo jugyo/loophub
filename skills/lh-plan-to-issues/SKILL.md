@@ -114,8 +114,17 @@ lh issue create --repo <repo> --title "<slice title>" \
   --body "$(cat <<'EOF'
 <body from template>
 EOF
-)" --actor triage-bot
+)" \
+  --ac "<criterion 1>" \
+  --ac "<criterion 2>" \
+  --ac "<criterion 3>" \
+  --actor triage-bot
 ```
+
+Pass every acceptance criterion as a separate repeatable `--ac` value, in display order. Do not add
+an acceptance-criteria heading or duplicate checklist to `--body`; body Markdown is not converted
+into structured acceptance criteria. Run `lh issue create --help` immediately before publishing each
+issue and follow its current instructions.
 
 When a parent issue exists, link `#<parent>` in the parent section (conversation-language heading) on
 each child body.
@@ -139,12 +148,6 @@ not start any slice unless the user asked to implement.
 End-to-end behavior for this vertical slice. Describe done behavior, not layer-by-layer steps.
 
 Avoid file paths. Exception: inline types, schemas, or state machines confirmed in a prototype.
-
-## Acceptance criteria
-
-- [ ] Criterion 1
-- [ ] Criterion 2
-- [ ] Criterion 3
 
 ## Blocked by
 

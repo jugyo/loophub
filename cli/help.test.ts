@@ -75,12 +75,14 @@ describe("--help", () => {
     expect(result.stdout).toContain(
       "saved as one structured acceptance_criteria entry, in command-line order",
     );
+    expect(result.stdout).toContain("Keep acceptance criteria out of --body");
     expect(result.stdout).toContain(
-      'A "## Acceptance criteria" section in --body remains ordinary',
+      'do not add an\n  "Acceptance criteria" heading or duplicate checklist there',
     );
     expect(result.stdout).toContain(
       '--ac "Exports retain input order" --ac "Repeated exports are byte-identical"',
     );
+    expect(result.stdout).not.toContain("## Acceptance criteria");
     expect(existsSync(join(home, "loophub.db"))).toBe(false);
   });
 

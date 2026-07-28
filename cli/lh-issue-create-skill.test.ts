@@ -24,6 +24,33 @@ test("lh-issue-create allows natural title word order in the conversation langua
   expect(skill).not.toMatch(/(?:verb|動詞)\s*:\s*(?:body|本文)/i);
 });
 
+test("lh-issue-create stores acceptance criteria separately from the issue body", () => {
+  const bodyTemplate = skill.slice(
+    skill.indexOf("### 3. Body template"),
+    skill.indexOf("### Example with related resources"),
+  );
+
+  expect(bodyTemplate).not.toContain("## Acceptance criteria");
+  expect(skill).toContain(
+    "Pass every acceptance criterion as a separate repeatable `--ac` value",
+  );
+  expect(skill).toContain(
+    "Do not add\nan acceptance-criteria heading or duplicate checklist to `--body`",
+  );
+  expect(skill).toContain("lh issue create --help");
+});
+
+test("every lh-issue-create shell example stores structured acceptance criteria", () => {
+  const createExamples = [...skill.matchAll(/```sh\n([\s\S]*?)```/g)]
+    .map((match) => match[1])
+    .filter((example) => example.includes("lh issue create"));
+
+  expect(createExamples.length).toBeGreaterThan(0);
+  for (const example of createExamples) {
+    expect(example).toContain("--ac");
+  }
+});
+
 test("lh-issue-create target branch guidance is explicit and metadata-only", () => {
   expect(skill).toContain("creates implementation branches");
   expect(skill).toContain("it must already exist locally");

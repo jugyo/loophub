@@ -23,15 +23,18 @@ Options:
 
 Acceptance criteria:
   Each --ac value is saved as one structured acceptance_criteria entry, in command-line order.
-  Blank --ac values are ignored. A "## Acceptance criteria" section in --body remains ordinary
-  Markdown and is not parsed into structured acceptance_criteria.
+  Blank --ac values are ignored. Keep acceptance criteria out of --body: do not add an
+  "Acceptance criteria" heading or duplicate checklist there. Acceptance criteria written in
+  --body remain ordinary Markdown and are not parsed into structured acceptance_criteria.
 
 Constraints:
   --workspace and --target-branch cannot be combined. The workspace must be active and registered.
   The target branch must resolve to an existing revision; this command does not create branches.
 
 Example:
-  lh issue create --title "Keep exports deterministic" --body "Preserve input order."
+  lh issue create --title "Keep exports deterministic" --body "## Goal
+
+Preserve input order."
     --ac "Exports retain input order" --ac "Repeated exports are byte-identical"`;
 
 export const commandHelp: readonly CommandHelp[] = [
