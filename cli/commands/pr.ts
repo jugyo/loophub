@@ -25,7 +25,94 @@ function readJsonArg(value: string): string {
 export async function run(): Promise<void> {
   const s = await svc();
   const repo = await resolveRepo();
-  if (sub === "list") {
+  if (sub === "feedback") {
+    const [action, target] = rest;
+    const number = Number(
+      flags.pr ?? (action === "create" || action === "list" ? target : 0),
+    );
+    if (action === "list") {
+      const result = await runOp(() =>
+        s.diffFeedback.list(
+          repo,
+          number,
+          (flags.status ?? "open") as "open" | "resolved" | "all",
+        ),
+      );
+      out(result);
+      if (!flags.json)
+        result.threads.forEach((thread) => {
+          console.log(
+            `#${thread.id}\t${thread.status}\t${thread.freshness}\t${thread.anchor.path}:${thread.anchor.start_line}-${thread.anchor.end_line}`,
+          );
+        });
+    } else if (action === "view") {
+      if (!flags.pr) fail("--pr is required");
+      const thread = await runOp(() =>
+        s.diffFeedback.get(repo, Number(flags.pr), Number(target)),
+      );
+      out(thread);
+      if (!flags.json)
+        console.log(
+          `#${thread.id} ${thread.status} ${thread.freshness}\n${thread.anchor.path}:${thread.anchor.start_line}-${thread.anchor.end_line} ${thread.anchor.side}\n\n${thread.messages.map((message) => `@${message.author} [${message.kind}]: ${message.body}`).join("\n")}`,
+        );
+    } else if (action === "create") {
+      const result = await runOp(async () =>
+        s.diffFeedback.create(
+          repo,
+          number,
+          {
+            baseSha: flags["base-sha"] ?? "",
+            headSha: flags["head-sha"] ?? "",
+            path: flags.path ?? "",
+            side: flags.side?.toUpperCase() ?? "",
+            startLine: Number(flags["start-line"]),
+            endLine: Number(flags["end-line"]),
+            kind: flags.kind ?? "feedback",
+            body: flags.body ?? "",
+          },
+          await writeSession(),
+        ),
+      );
+      out(result);
+      if (!flags.json)
+        console.log(
+          `created feedback thread #${result.thread.id} (request ${result.request.id})`,
+        );
+    } else if (action === "reply") {
+      if (!flags.pr) fail("--pr is required");
+      const result = await runOp(async () =>
+        s.diffFeedback.reply(
+          repo,
+          Number(flags.pr),
+          Number(target),
+          Number(flags["request-message"]),
+          flags.body ?? "",
+          await writeSession(),
+        ),
+      );
+      out(result);
+      if (!flags.json)
+        console.log(
+          `replied to feedback thread #${result.thread.id} (message ${result.reply.id})`,
+        );
+    } else if (action === "resolve" || action === "reopen") {
+      if (!flags.pr) fail("--pr is required");
+      const thread = await runOp(async () =>
+        s.diffFeedback.setStatus(
+          repo,
+          Number(flags.pr),
+          Number(target),
+          action === "resolve" ? "resolved" : "open",
+          await writeSession(),
+        ),
+      );
+      out(thread);
+      if (!flags.json)
+        console.log(
+          `${action === "resolve" ? "resolved" : "reopened"} feedback thread #${thread.id}`,
+        );
+    } else usage();
+  } else if (sub === "list") {
     const items = await runOp(() =>
       s.pulls.list(repo, { state: flags.state || "open" }),
     );
@@ -48,12 +135,12 @@ export async function run(): Promise<void> {
       console.log(`${line}\n\n${p.body}`);
     }
   } else if (sub === "diff") {
-    const files = await runOp(() => s.pulls.files(repo, Number(rest[0])));
-    if (flags.json) out(files);
+    const diff = await runOp(() => s.pulls.diff(repo, Number(rest[0])));
+    if (flags.json) out(diff);
     else
-      files.forEach((f: any) => {
+      diff.files.forEach((f) => {
         console.log(
-          `--- ${f.filename} (+${f.additions} -${f.deletions})\n${f.patch}`,
+          `--- ${f.path} (+${f.additions} -${f.deletions})\n${f.patch}`,
         );
       });
   } else if (sub === "create") {

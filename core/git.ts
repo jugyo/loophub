@@ -154,6 +154,15 @@ export async function diffFiles(
   return diffFilesForRevisions(repoPath, [`${base}...${head}`]);
 }
 
+/** Files changed between an exact, persisted base/head commit pair. */
+export async function diffFilesBetween(
+  repoPath: string,
+  baseSha: string,
+  headSha: string,
+): Promise<DiffFile[]> {
+  return diffFilesForRevisions(repoPath, [baseSha, headSha]);
+}
+
 /** Files changed by one commit compared with its first parent. */
 export async function commitDiffFiles(
   repoPath: string,

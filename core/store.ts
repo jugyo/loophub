@@ -1,5 +1,6 @@
 export * from "./store/acceptance-criteria.ts";
 export * from "./store/comments.ts";
+export * from "./store/diff-feedback.ts";
 export * from "./store/events.ts";
 export * from "./store/github-links.ts";
 export * from "./store/handoffs.ts";

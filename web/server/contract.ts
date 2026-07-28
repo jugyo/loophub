@@ -889,6 +889,139 @@ export const methods: Record<string, MethodDef> = {
     result: anyArray,
     handler: (p) => svc.pulls.files(p.repo, p.number),
   },
+  "pulls/diff": {
+    description:
+      "Get a stable PR diff with its exact commit pair and line coordinates.",
+    params: params({ repo, number: positiveInt }, ["repo", "number"]),
+    result: anyObject,
+    handler: (p) => svc.pulls.diff(p.repo, p.number),
+  },
+  "diffFeedback/list": {
+    description: "List diff feedback threads for a pull request.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        status: { enum: ["open", "resolved", "all"] },
+      },
+      ["repo", "number"],
+    ),
+    result: anyObject,
+    handler: (p) => svc.diffFeedback.list(p.repo, p.number, p.status ?? "open"),
+  },
+  "diffFeedback/get": {
+    description: "Get one diff feedback thread.",
+    params: params({ repo, number: positiveInt, thread_id: positiveInt }, [
+      "repo",
+      "number",
+      "thread_id",
+    ]),
+    result: anyObject,
+    handler: (p) => svc.diffFeedback.get(p.repo, p.number, p.thread_id),
+  },
+  "diffFeedback/create": {
+    description: "Create a diff-anchored feedback thread.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        base_sha: strNonEmpty,
+        head_sha: strNonEmpty,
+        path: strNonEmpty,
+        side: { enum: ["LEFT", "RIGHT"] },
+        start_line: positiveInt,
+        end_line: positiveInt,
+        kind: { enum: ["feedback", "question"] },
+        body: strNonEmpty,
+        session_id: sid,
+      },
+      [
+        "repo",
+        "number",
+        "base_sha",
+        "head_sha",
+        "path",
+        "side",
+        "start_line",
+        "end_line",
+        "kind",
+        "body",
+      ],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.diffFeedback.create(
+        p.repo,
+        p.number,
+        {
+          baseSha: p.base_sha,
+          headSha: p.head_sha,
+          path: p.path,
+          side: p.side,
+          startLine: p.start_line,
+          endLine: p.end_line,
+          kind: p.kind,
+          body: p.body,
+        },
+        p.session_id,
+      ),
+  },
+  "diffFeedback/reply": {
+    description: "Reply to a request in a diff feedback thread.",
+    params: params(
+      {
+        repo,
+        number: positiveInt,
+        thread_id: positiveInt,
+        request_message_id: positiveInt,
+        body: strNonEmpty,
+        session_id: sid,
+      },
+      ["repo", "number", "thread_id", "request_message_id", "body"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.diffFeedback.reply(
+        p.repo,
+        p.number,
+        p.thread_id,
+        p.request_message_id,
+        p.body,
+        p.session_id,
+      ),
+  },
+  "diffFeedback/resolve": {
+    description: "Resolve a diff feedback thread.",
+    params: params(
+      { repo, number: positiveInt, thread_id: positiveInt, session_id: sid },
+      ["repo", "number", "thread_id"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.diffFeedback.setStatus(
+        p.repo,
+        p.number,
+        p.thread_id,
+        "resolved",
+        p.session_id,
+      ),
+  },
+  "diffFeedback/reopen": {
+    description: "Reopen a resolved diff feedback thread.",
+    params: params(
+      { repo, number: positiveInt, thread_id: positiveInt, session_id: sid },
+      ["repo", "number", "thread_id"],
+    ),
+    result: anyObject,
+    handler: (p) =>
+      svc.diffFeedback.setStatus(
+        p.repo,
+        p.number,
+        p.thread_id,
+        "open",
+        p.session_id,
+      ),
+  },
   "pulls/commitFiles": {
     description:
       "List files changed by one commit in a pull request, compared with its first parent.",

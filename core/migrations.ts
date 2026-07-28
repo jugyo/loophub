@@ -641,6 +641,42 @@ export const MIGRATIONS: Migration[] = [
   // label with no defined criteria could block merge forever when no PASS reproduced its exact
   // string. Existing topic values are dropped with the column; they were display-only.
   dropColumn("047-drop-reviews-topic", "reviews", "topic"),
+
+  sql(
+    "048-create-diff-feedback",
+    `
+    CREATE TABLE IF NOT EXISTS diff_feedback_threads (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id       INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      pr_number      INTEGER NOT NULL,
+      base_sha       TEXT NOT NULL,
+      head_sha       TEXT NOT NULL,
+      path           TEXT NOT NULL,
+      original_path  TEXT,
+      side           TEXT NOT NULL CHECK (side IN ('LEFT', 'RIGHT')),
+      start_line     INTEGER NOT NULL CHECK (start_line > 0),
+      end_line       INTEGER NOT NULL CHECK (end_line >= start_line),
+      status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+      created_by     TEXT NOT NULL,
+      created_at     TEXT NOT NULL,
+      resolved_by    TEXT,
+      resolved_at    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_diff_feedback_threads_issue_status
+      ON diff_feedback_threads(issue_id, status);
+    CREATE TABLE IF NOT EXISTS diff_feedback_messages (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id   INTEGER NOT NULL REFERENCES diff_feedback_threads(id) ON DELETE CASCADE,
+      author      TEXT NOT NULL,
+      kind        TEXT NOT NULL CHECK (kind IN ('feedback', 'question', 'reply')),
+      body        TEXT NOT NULL,
+      reply_to_id INTEGER REFERENCES diff_feedback_messages(id),
+      created_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_diff_feedback_messages_thread
+      ON diff_feedback_messages(thread_id, created_at, id);
+  `,
+  ),
 ];
 
 const LEDGER_SCHEMA = `

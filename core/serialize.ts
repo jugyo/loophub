@@ -357,6 +357,73 @@ export interface AcceptanceCriterionDetailWire extends AcceptanceCriterionWire {
   enabled: boolean;
 }
 
+export type DiffFeedbackFreshness = "current" | "outdated" | "unavailable";
+export type DiffFeedbackSide = "LEFT" | "RIGHT";
+
+export interface PullDiffWire {
+  base_sha: string;
+  head_sha: string;
+  files: {
+    path: string;
+    original_path: string | null;
+    status: string;
+    additions: number;
+    deletions: number;
+    patch: string;
+    lines: {
+      kind: "hunk" | "context" | "addition" | "deletion" | "meta";
+      text: string;
+      left_line: number | null;
+      right_line: number | null;
+    }[];
+  }[];
+}
+
+export interface DiffFeedbackMessageWire {
+  id: number;
+  thread_id: number;
+  author: string;
+  kind: "feedback" | "question" | "reply";
+  body: string;
+  reply_to_id: number | null;
+  created_at: string;
+}
+
+export interface DiffFeedbackThreadWire {
+  id: number;
+  pr_number: number;
+  anchor: {
+    base_sha: string;
+    head_sha: string;
+    path: string;
+    original_path: string | null;
+    side: DiffFeedbackSide;
+    start_line: number;
+    end_line: number;
+  };
+  freshness: DiffFeedbackFreshness;
+  status: "open" | "resolved";
+  created_by: string;
+  created_at: string;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  messages: DiffFeedbackMessageWire[];
+}
+
+export function diffFeedbackMessageJSON(
+  row: S.DiffFeedbackMessageRow,
+): DiffFeedbackMessageWire {
+  return {
+    id: row.id,
+    thread_id: row.thread_id,
+    author: row.author,
+    kind: row.kind as DiffFeedbackMessageWire["kind"],
+    body: row.body,
+    reply_to_id: row.reply_to_id,
+    created_at: row.created_at,
+  };
+}
+
 export function acceptanceCriterionJSON(
   row: S.AcceptanceCriterionRow,
 ): AcceptanceCriterionWire {

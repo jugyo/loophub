@@ -224,6 +224,40 @@ CREATE TABLE IF NOT EXISTS review_comments (
   created_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS diff_feedback_threads (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  issue_id       INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  pr_number      INTEGER NOT NULL,
+  base_sha       TEXT NOT NULL,
+  head_sha       TEXT NOT NULL,
+  path           TEXT NOT NULL,
+  original_path  TEXT,
+  side           TEXT NOT NULL CHECK (side IN ('LEFT', 'RIGHT')),
+  start_line     INTEGER NOT NULL CHECK (start_line > 0),
+  end_line       INTEGER NOT NULL CHECK (end_line >= start_line),
+  status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+  created_by     TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  resolved_by    TEXT,
+  resolved_at    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_diff_feedback_threads_issue_status
+  ON diff_feedback_threads(issue_id, status);
+
+CREATE TABLE IF NOT EXISTS diff_feedback_messages (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id   INTEGER NOT NULL REFERENCES diff_feedback_threads(id) ON DELETE CASCADE,
+  author      TEXT NOT NULL,
+  kind        TEXT NOT NULL CHECK (kind IN ('feedback', 'question', 'reply')),
+  body        TEXT NOT NULL,
+  reply_to_id INTEGER REFERENCES diff_feedback_messages(id),
+  created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_diff_feedback_messages_thread
+  ON diff_feedback_messages(thread_id, created_at, id);
+
 -- Per-criterion grade of an acceptance criterion by a review (#1895). A child fact of the review
 -- row, mirroring review_comments: it inherits the review's head_sha pin and staleness with no extra
 -- machinery (a grade goes stale when its review does). criterion_id targets the stable id, so the

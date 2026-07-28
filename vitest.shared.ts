@@ -23,6 +23,7 @@ export const gitIntegrationTestFiles = [
   "cli/issue-update.test.ts",
   "cli/notification-send.test.ts",
   "cli/pr-comment.test.ts",
+  "cli/pr-feedback.test.ts",
   "cli/pr-record-github-pr.test.ts",
   "cli/pr-update.test.ts",
   "cli/workflow-start.test.ts",

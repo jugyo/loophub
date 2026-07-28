@@ -3,6 +3,7 @@
 export { comments } from "./service/comments.ts";
 export { dashboard } from "./service/dashboard.ts";
 export { dev } from "./service/dev.ts";
+export { diffFeedback } from "./service/diff-feedback.ts";
 export { events } from "./service/events.ts";
 export { handoffs } from "./service/handoffs.ts";
 export { herdr } from "./service/herdr.ts";

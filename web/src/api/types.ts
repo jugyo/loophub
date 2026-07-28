@@ -15,6 +15,8 @@ import type {
   AgentSessionWire,
   CodingAgent as CodingAgentWire,
   CommentWire,
+  DiffFeedbackMessageWire,
+  DiffFeedbackThreadWire,
   GithubPrStatusWire,
   GithubPullWire,
   HandoffWire,
@@ -28,6 +30,7 @@ import type {
   LabelWire,
   LinkedIssueWire,
   NotificationWire,
+  PullDiffWire,
   PullSummaryWire,
   PullWire,
   RelatedSessionsUsageByKindWire,
@@ -111,6 +114,9 @@ export type PullLineComment = ReviewCommentWire;
 
 /** A changed file with its unified-diff patch (GET .../pulls/{number}/files). */
 export type PullFile = DiffFile;
+export type PullDiff = PullDiffWire;
+export type DiffFeedbackThread = DiffFeedbackThreadWire;
+export type DiffFeedbackMessage = DiffFeedbackMessageWire;
 
 /**
  * Whole-file content of a changed file at one side (base/head) of a PR (#435), for the Markdown

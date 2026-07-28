@@ -1,3 +1,4 @@
+import { parsePatchWithCoordinates } from "../diff-anchor.ts";
 import { ServiceError } from "../errors.ts";
 import { formatEvent } from "../events.ts";
 import {
@@ -6,6 +7,7 @@ import {
   commitLog,
   commitsAhead,
   diffFiles,
+  diffFilesBetween,
   diffStat,
   fileAtRef,
   mergePull as gitMergePull,
@@ -255,6 +257,37 @@ export const pulls = {
     const row = issueOr404(r, number, "pull");
     const p = S.getPull(row.id)!;
     return diffFiles(r.local_path, p.base_ref, p.head_ref);
+  },
+
+  async diff(name: string, number: number) {
+    const r = repoOr404(name);
+    const row = issueOr404(r, number, "pull");
+    const p = S.getPull(row.id)!;
+    const [baseSha, headSha] = await Promise.all([
+      resolvePullBaseSha(r.local_path, p),
+      revParse(r.local_path, p.head_ref),
+    ]);
+    if (!baseSha || !headSha)
+      throw new ServiceError(422, "pull request diff is unavailable");
+    const files = await diffFilesBetween(r.local_path, baseSha, headSha);
+    return {
+      base_sha: baseSha,
+      head_sha: headSha,
+      files: files.map((file) => ({
+        path: file.headFilename ?? file.filename,
+        original_path: file.previousFilename ?? null,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        patch: file.patch,
+        lines: parsePatchWithCoordinates(file.patch).map((line) => ({
+          kind: line.kind,
+          text: line.text,
+          left_line: line.leftLine,
+          right_line: line.rightLine,
+        })),
+      })),
+    };
   },
 
   async commitFiles(name: string, number: number, sha: string) {

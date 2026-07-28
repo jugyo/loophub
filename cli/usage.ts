@@ -20,6 +20,7 @@ export function usage(): void {
   lh issue search <query> [--repo owner/name] [--json]       # search issues and pull requests in one repository
   lh issue import <github-issue-url> [--repo owner/repo]   # copy a GitHub issue's title/body into a new loophub issue and link it (requires gh)
   lh pr list|view|diff|create|update|comment|merge|review|ready-for-review|close|reopen  [--repo owner/repo]
+  lh pr feedback list|create <pr> | view|reply|resolve|reopen <thread> --pr <pr> [--repo owner/repo]
   lh inbox send --from '<json>' --title <text> --body <text|-> [--to '<json>'] [--label <name>] [--repo owner/repo]   # send a human-facing Inbox message
   lh inbox read|unread|archive|unarchive|delete <message-id> [--json]   # update an Inbox message state (delete is a soft state)
   lh notification send --kind merge_ready|over_budget|human_attention --title <text> --body <text|-> [--resource repo|issue:<n>|pull:<n>] [--herdr-pane-id <id>] [--source-key <key>] [--repo owner/repo]   # send a topbar notification
@@ -68,6 +69,9 @@ export function usage(): void {
     lh pr review 3 --event pass --body "no issues found" --commit <head sha>
     lh pr review 3 --comments '[{"path":"a.txt","line":2,"body":"typo"}]'   # inline JSON or a file path
     lh pr review 3 --event pass --body "all criteria met" --ac-results '[{"criterion_id":12,"verdict":"pass","note":""}]'
+    lh pr feedback create 3 --base-sha <sha> --head-sha <sha> --path a.txt --side RIGHT --start-line 2 --end-line 2 --kind question --body "why?"
+    lh pr feedback list 3 --status all --json
+    lh pr feedback reply 12 --pr 3 --request-message 20 --body "fixed"
     lh attachment add --file shot.png        # prints ![shot.png](/attachments/<sha256>)
     lh attachment add --file report.html     # prints [report.html](/attachments/<sha256>)
     lh events --since 0

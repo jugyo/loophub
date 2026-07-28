@@ -46,6 +46,12 @@ export type Flags = {
   comments?: string;
   "ac-results"?: string;
   commit?: string;
+  "base-sha"?: string;
+  "head-sha"?: string;
+  side?: string;
+  "start-line"?: string;
+  "end-line"?: string;
+  "request-message"?: string;
   event?: string;
   effect?: string;
   type?: string;
@@ -145,6 +151,12 @@ const { values, positionals } = parseArgs({
     comments: { type: "string" },
     "ac-results": { type: "string" },
     commit: { type: "string" },
+    "base-sha": { type: "string" },
+    "head-sha": { type: "string" },
+    side: { type: "string" },
+    "start-line": { type: "string" },
+    "end-line": { type: "string" },
+    "request-message": { type: "string" },
     event: { type: "string" },
     effect: { type: "string" },
     type: { type: "string" },
