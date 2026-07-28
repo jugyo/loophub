@@ -55,7 +55,7 @@ export const LEGACY_LH_DEV_SESSION_AGENT = "lh-dev";
 // The agent label and session kind for the New Issue AI flow (#299). `lh issue new` registers the
 // issue-create session under this agent with kind=SESSION_KIND_ISSUE_CREATE so it surfaces in the
 // created issue's related-sessions list and is resumable via `claude --resume`.
-export const LH_ISSUE_CREATE_SESSION_AGENT = "lh-issue-create";
+export const LH_ISSUE_CREATE_SESSION_AGENT = "issue-create";
 export const SESSION_KIND_ISSUE_CREATE = "issue-create";
 
 // Env var carrying the issue-create session id from `lh issue new` into the spawned Claude session.

@@ -50,12 +50,15 @@ PRD §4 の各観点を**どう観測するか**。各観点に「LoopHub デー
 
 ### 3.1 トリガ
 
-**Phase 1 が実装するトリガは手動 skill `/lh-retro` のみ**。マージ時に自動で retro を起動する
+> この文書の Phase 1 にある手動起動案は設計時点の履歴であり、対応する project skill は廃止済み。
+> 現行機能は `lh retro` のデータ操作 API であり、自動起動や専用の対話フローは提供しない。
+
+**Phase 1 が実装するトリガは手動の retro 生成処理のみ**。マージ時に自動で retro を起動する
 「受け側」(`pull_request.merged` を購読する dispatch/cron)は **Phase 1 では実装しない**。
 
 | Phase 1 で実装 | 契機 | 備考 |
 |----------------|------|------|
-| 手動 skill `/lh-retro <pr>` | 人がコマンド実行 | 一次手段。単一 PR 指定 + 直近 merged PR のバックフィル(§5.1) |
+| 手動の retro 生成処理 | 人が実行 | 一次手段。単一 PR 指定 + 直近 merged PR のバックフィル(§5.1) |
 
 **イベント定義(将来の自動トリガが購読する契約)**: マージ時自動起動スライス(§5.2-3 / Phase 2)は
 **既存イベント `pull_request.merged`**(LoopHub が merge 時に emit。`core/service.ts`)を購読して
@@ -64,18 +67,18 @@ retro を起動する。Phase 1 はこのイベントを **前提・契約とし
 (`session.retro.created` 等)は §4.2。
 
 **未マージ PR クローズはトリガに採用しない**(コスト対効果が低い)。中止/失敗ループの学びが
-要るときは手動 `/lh-retro <pr>` で個別にカバーすれば足り、専用イベント(`pull_request.closed`
+要るときは手動の retro 生成処理で個別にカバーすれば足り、専用イベント(`pull_request.closed`
 新設)や常時監視を入れる価値は薄い。
 
-**手動 skill の位置づけ**: 日常的に毎 PR を人手で振り返ることは想定しない。だが skill として
+**手動処理の位置づけ**: 日常的に毎 PR を人手で振り返ることは想定しない。だが手動処理として
 存在する価値がある — 自動トリガの実装が先になる前提で、それまでの間を手動で繋ぐ。とくに
 **「まだ振り返っていない直近 N 件の PR をまとめて後追い振り返りする」バックフィル用途**を
-一級のユースケースとする(`/lh-retro` を retro 未実施の merged PR 群へ順に適用)。自動化が
+一級のユースケースとする（retro 未実施の merged PR 群へ順に適用）。自動化が
 入った後は、取りこぼし救済・任意 PR の再振り返りとして残す。
 
 非同期前提: マージは人間が行うため、(自動化後の)振り返りは**イベント駆動で別プロセス
 (dispatch/cron)が拾う**のが自然。元の dev セッション継続には依存しない(セッションは
-終了済みでよい)。当面はこの非同期実行を手動 skill が担う。
+終了済みでよい)。当面はこの非同期実行を手動処理が担う。
 
 ### 3.2 入力
 
@@ -178,7 +181,7 @@ transcript を抱え込まない方針とする。decision log は次の三層:
 cc-session-finder が無い環境(別ホスト、索引未導入、ローテートで消失)向けの **任意の保険**。
 一次手段ではないので、必要になったときだけ実装する。
 
-- `SessionEnd` hook(または skill 末尾の 1 回コマンド)で、終了セッションの transcript を
+- `SessionEnd` hook(または生成処理末尾の 1 回コマンド)で、終了セッションの transcript を
   PR 紐付けで保存する。ホットパス(`issues`/`events`)を汚さないよう専用テーブル + 圧縮 blob:
 
 ```sql
@@ -262,11 +265,11 @@ transcript は tool 出力にファイル内容・トークン・絶対パスを
 
 ### 5.1 MVP(最小で「振り返り → 保存」を一周させる)
 
-- **`/lh-retro <pr>` skill(手動起動)** 1 本のみ。
+- **retro 生成処理（手動起動）** 1 本のみ。
 - 入力: `lh events` + `lh pr diff` + `lh pr view`(reviews) + `lh issue view`。transcript は使わない。
 - ルーブリック: R1/R3/R5/R8 の小セット + 自由記述 findings。
 - 出力: `docs/retros/` に **Markdown 1 ファイル**を生成し、git で蓄積(DB を立てる前の暫定保存)。
-- **バックフィル対応**: 単一 PR 指定に加え、`/lh-retro`(引数なし or 範囲指定)で
+- **バックフィル対応**: 単一 PR 指定に加え、引数なしまたは範囲指定で
   **retro 未実施の直近 merged PR 群を順に振り返る**モードを持たせる(自動トリガが入るまでの
   当面の運用手段。§3.1)。retro 済みかは出力 Markdown(または後の `retros` 行)の有無で判定。
 - 集約・自動提案・lessons 昇格・自動トリガは含めない(Phase 2 / 後続)。
@@ -276,7 +279,7 @@ transcript は tool 出力にファイル内容・トークン・絶対パスを
 
 ### 5.2 Phase 1 内の後続スライス
 
-1. **retro skill + Markdown 蓄積(MVP)** — §5.1。最初に実装。
+1. **retro 生成処理 + Markdown 蓄積(MVP)** — §5.1。最初に実装。
 2. **retros DB テーブル + events + `lh retro` CLI + Web UI 表示** — §4.2。構造化・集計の保存基盤。
 3. **マージ時自動トリガ(受け側の実装)** — §3.1 のイベント契約 `pull_request.merged` を
    dispatch/cron で購読し retro を自動生成。優先度は低め(コスト/運用負荷の都合で後回し)。
@@ -301,7 +304,7 @@ doc/issue とし、ここでは Phase 1 が用意しておくべき接続点だ�
 
 - **lessons 昇格**: findings をクラスタ正規化し、再発カテゴリ(例: 3 セッション以上)を
   `docs/lessons/`(人間可読 playbook)へ昇格。`retro.finding.promoted` を emit。
-- **集約 digest**: `/lh-retro-digest`(cron か N 件蓄積で起動)が status=`reviewed` の retros を
+- **集約 digest**: cron か N 件蓄積で起動する処理が status=`reviewed` の retros を
   読み、上位摩擦に「改善提案ドラフト」を生成 → `improvement.proposed`。
 - **改善の還元**: skill/プロンプト改善 PR・改善 issue 自動起票・canon 追記(PRD §6 b–d)。
 - **ルーブリック自己拡張**: 昇格 finding を新観点 R(n+1) として追加。

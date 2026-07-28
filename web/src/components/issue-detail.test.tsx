@@ -437,7 +437,7 @@ describe("IssueDetail", () => {
       related_sessions: [
         {
           id: "session-1",
-          agent: "lh-issue-create",
+          agent: "issue-create",
           session: "session-1",
           created_at: "2026-06-17T10:00:00Z",
           updated_at: "2026-06-17T10:00:00Z",
@@ -450,7 +450,7 @@ describe("IssueDetail", () => {
 
     await screen.findByText("ui2: issue detail");
     expect(screen.queryByRole("heading", { name: "Sessions" })).toBeNull();
-    expect(screen.queryByText("lh-issue-create")).toBeNull();
+    expect(screen.queryByText("issue-create")).toBeNull();
   });
 
   it("renders every linked PR from the detail response array", async () => {

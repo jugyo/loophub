@@ -500,10 +500,11 @@ export const terminal = {
       effort: input.workflow === "issue-create" ? input.effort : undefined,
       targetBranch:
         input.workflow === "issue-create" ? input.targetBranch : undefined,
-      // New issue and github-pr-export (#1892) both inject their full instructions directly as the
-      // agent prompt rather than dispatching a slash-command skill.
+      // Interactive creation and github-pr-export (#1892) inject their full instructions directly
+      // as the agent prompt.
       prompt:
         input.workflow === "issue-create" ||
+        input.workflow === "scheduled-task-create" ||
         input.workflow === "github-pr-export"
           ? input.prompt
           : undefined,

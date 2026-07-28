@@ -9,7 +9,7 @@ import {
 } from "./retro.ts";
 
 // Isolate the DB before db.ts runs its import-time setup (see store.test.ts).
-const HOME = mkdtempSync(join(tmpdir(), "lh-retro-"));
+const HOME = mkdtempSync(join(tmpdir(), "retro-"));
 process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 

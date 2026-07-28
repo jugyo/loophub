@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-const HOME = mkdtempSync(join(tmpdir(), "lh-inbox-"));
+const HOME = mkdtempSync(join(tmpdir(), "inbox-"));
 process.env.LOOPHUB_HOME = HOME;
 process.env.LOOPHUB_DB = join(HOME, "test.db");
 
@@ -29,7 +29,7 @@ function initGitRepo(prefix: string): string {
 beforeAll(async () => {
   svc = await import("./service.ts");
   S = await import("./store.ts");
-  const repoPath = initGitRepo("lh-inbox-repo-");
+  const repoPath = initGitRepo("inbox-repo-");
 
   await svc.repos.create({ path: repoPath, name: "me/inbox" });
 });
@@ -111,7 +111,7 @@ test("send rejects missing or malformed source", () => {
 });
 
 test("list endpoints clamp large limits", async () => {
-  const dir = initGitRepo("lh-inbox-cap-");
+  const dir = initGitRepo("inbox-cap-");
   await svc.repos.create({ path: dir, name: "me/inbox-cap" });
 
   for (let i = 0; i < 105; i++) {
@@ -127,7 +127,7 @@ test("list endpoints clamp large limits", async () => {
 });
 
 test("state operations update messages, filter default lists, and emit update events", async () => {
-  const dir = initGitRepo("lh-inbox-state-");
+  const dir = initGitRepo("inbox-state-");
   await svc.repos.create({ path: dir, name: "me/inbox-state" });
 
   const readMessage = svc.inbox.send("me/inbox-state", {
@@ -187,7 +187,7 @@ test("state operations update messages, filter default lists, and emit update ev
 });
 
 test("removeRepo sweeps inbox messages so repo removal does not fail the FK", async () => {
-  const dir = initGitRepo("lh-inbox-rm-");
+  const dir = initGitRepo("inbox-rm-");
   await svc.repos.create({ path: dir, name: "me/inbox-rm" });
   svc.inbox.send("me/inbox-rm", {
     from: { kind: "agent", repo: "me/inbox-rm", actor: "impl-bot" },

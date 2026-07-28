@@ -1,5 +1,4 @@
-// "New issue" launcher. The button gives the agent the filing instructions directly; the
-// /lh-issue-create skill remains available for compatibility when invoked separately.
+// "New issue" launcher. The button gives the agent the filing instructions directly.
 
 import { ChevronDown, Plus } from "lucide-react";
 import { useState } from "react";

@@ -7,6 +7,7 @@ import {
   LH_ISSUE_CREATE_SESSION_AGENT,
   SESSION_KIND_ISSUE_CREATE,
 } from "../../core/resume.ts";
+import { issueCreatePrompt } from "../../core/workflow/issue-create-prompt.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   display,
@@ -96,8 +97,8 @@ export async function run(): Promise<void> {
   } else if (sub === "new") {
     // `lh issue new` files an issue *with an AI session* (#299): it launches the configured
     // coding-agent runtime (#658), records the session as kind=issue-create, and later links it
-    // to the created issue. The New Issue button supplies direct instructions via --prompt; when
-    // omitted, the compatibility `/lh-issue-create` skill remains the default.
+    // to the created issue. The New Issue button supplies localized instructions via --prompt;
+    // direct CLI launches fall back to the shared English filing prompt.
     // Same launch shape as a dev session: register the session, then spawn the resolved runtime —
     // here in the repo root (no worktree; filing an issue does not touch a branch).
     //
@@ -110,7 +111,7 @@ export async function run(): Promise<void> {
     const slashCommand =
       typeof flags.prompt === "string" && flags.prompt.trim()
         ? flags.prompt
-        : "/lh-issue-create";
+        : issueCreatePrompt("en");
     const runtime = resolveDevRuntime({
       claudeCode: flags["claude-code"] === true,
       codex: flags.codex === true,

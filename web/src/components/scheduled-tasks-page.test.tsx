@@ -85,6 +85,7 @@ describe("ScheduledTasksPage", () => {
       repo: "me/proj",
       label: expect.stringMatching(/^New scheduled task - [a-z0-9]+$/i),
       workflow: "scheduled-task-create",
+      prompt: expect.stringContaining("Create a LoopHub scheduled task"),
     });
     expect(screen.queryByRole("textbox", { name: "Title" })).toBeNull();
     expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();

@@ -491,7 +491,7 @@ test("an issue-create session linked to an issue is listed and resumable from th
   const createUuid = "dddddddd-0000-0000-0000-000000000004";
   svc.sessions.register({
     id: createUuid,
-    agent: "lh-issue-create",
+    agent: "issue-create",
     session: createUuid,
     runtime: "claude-code",
     kind: "issue-create",
@@ -511,7 +511,7 @@ test("resume.resolveSession resolves an issue-create session and reports failure
   const createUuid = "eeeeeeee-0000-0000-0000-000000000005";
   svc.sessions.register({
     id: createUuid,
-    agent: "lh-issue-create",
+    agent: "issue-create",
     session: createUuid,
     runtime: "claude-code",
     kind: "issue-create",
@@ -531,7 +531,7 @@ test("resume.resolveSession resolves an issue-create session and reports failure
   const codexUuid = "ffffffff-0000-0000-0000-000000000006";
   svc.sessions.register({
     id: codexUuid,
-    agent: "lh-issue-create",
+    agent: "issue-create",
     session: codexUuid,
     runtime: "codex",
     kind: "issue-create",

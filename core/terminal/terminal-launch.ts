@@ -112,8 +112,7 @@ export function commandForHerdrLaunch(input: {
   // One-shot reasoning effort for New issue launches (#1534). Maps to `lh issue new --effort`.
   effort?: string;
   targetBranch?: string;
-  // Optional direct filing instructions. When absent, `lh issue new` keeps invoking the
-  // compatibility `/lh-issue-create` skill.
+  // Optional direct instructions for interactive creation flows.
   prompt?: string;
   env?: Record<string, string>;
 }): string {
@@ -125,7 +124,7 @@ export function commandForHerdrLaunch(input: {
   const withEnv = (command: string) =>
     envPrefix ? `${envPrefix} ${command}` : command;
   if (input.workflow === "issue-create") {
-    // `lh issue new` is the recorded LoopHub entrypoint for the /lh-issue-create workflow.
+    // `lh issue new` is the recorded LoopHub entrypoint for the issue-create workflow.
     // When agent/model/effort are omitted, `lh issue new` resolves them from the repo's
     // effective Coding agent config (#1532/#1534) — same path as `lh workflow start`.
     const agentFlag = input.codingAgent
@@ -155,14 +154,14 @@ export function commandForHerdrLaunch(input: {
     const argv = buildRuntimeArgs({ runtime: agent, prompt: input.prompt });
     return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }
-  if (input.workflow === "scheduled-task-create") {
+  if (input.workflow === "scheduled-task-create" && input.prompt) {
     const agent = input.codingAgent ?? codingAgent();
     // Scheduled-task creation always launches in the runtime's non-auto posture (Build's auto-mode
     // setting deliberately does not apply here). buildRuntimeArgs supplies the per-runtime posture
     // (codex sandboxes; claude/grok add nothing) keyed by the registry, not a runtime-id branch.
     const argv = buildRuntimeArgs({
       runtime: agent,
-      prompt: "/lh-scheduled-task-create",
+      prompt: input.prompt,
     });
     return `${RUNTIMES[agent].bin} ${argv.map(shellArg).join(" ")}`;
   }

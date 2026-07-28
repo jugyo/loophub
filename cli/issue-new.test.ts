@@ -168,18 +168,22 @@ test("issue new uses the configured default runtime and model", () => {
   expect(result.runtimeLog).toContain("bin=codex");
   expect(result.runtimeLog).toContain("arg=configured-codex-model");
   expect(result.runtimeLog).toContain("arg=model_reasoning_effort=high");
-  expect(result.runtimeLog).toContain("arg=/lh-issue-create");
+  expect(result.runtimeLog).toContain(
+    "arg=Create an AFK-ready LoopHub issue from the user's request, then stop.",
+  );
   expect(sessions().at(-1)?.runtime).toBe("codex");
 });
 
-test("issue new forwards a direct prompt without invoking the compatibility skill", () => {
+test("issue new forwards a direct prompt instead of the default filing prompt", () => {
   const prompt = "Create an issue from the user's request, then stop.";
 
   const result = issueNew(["--prompt", prompt]);
 
   expect(result.exitCode, result.stderr).toBe(0);
   expect(result.runtimeLog).toContain(`arg=${prompt}`);
-  expect(result.runtimeLog).not.toContain("arg=/lh-issue-create");
+  expect(result.runtimeLog).not.toContain(
+    "arg=Create an AFK-ready LoopHub issue from the user's request, then stop.",
+  );
 });
 
 test("issue new uses the repo Coding agent override over the app defaults (#1534)", () => {
@@ -270,7 +274,9 @@ test.each([
   } else if (expectedBin === "codex") {
     expect(result.runtimeLog).toContain("arg=model_reasoning_effort=high");
   }
-  expect(result.runtimeLog).toContain("arg=/lh-issue-create");
+  expect(result.runtimeLog).toContain(
+    "arg=Create an AFK-ready LoopHub issue from the user's request, then stop.",
+  );
   expect(sessions().at(-1)?.runtime).toBe(expectedRuntime);
 });
 

@@ -12,8 +12,8 @@ import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 // ===== retros (loop retrospectives) =====
 //
 // Persist a generated retro (rubric scores + free-form findings) for a PR and emit
-// `session.retro.created` (loop-retrospective-design.ja.md §4). The skill (`/lh-retro`)
-// gathers LoopHub data and produces the rubric/findings; this procedure validates the
+// `session.retro.created` (loop-retrospective-design.ja.md §4). The caller gathers LoopHub data
+// and produces the rubric/findings; this procedure validates the
 // shapes, resolves the PR -> linked issue -> implementation session chain, writes the
 // row, and emits the event. Keeping the orchestration here (CLI stays thin) follows the
 // core/cli responsibility split.

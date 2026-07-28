@@ -937,13 +937,14 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     );
   });
 
-  test("scheduled task creation also starts in a new workspace with the creation skill context", async () => {
+  test("scheduled task creation also starts in a new workspace with the creation prompt", async () => {
     herdr.script.push(exitWith(0, WORKSPACE_JSON), exitWith(0), exitWith(0));
 
     const result = await svc.terminal.launch({
       repo: "me/proj",
       workflow: "scheduled-task-create",
       label: "New scheduled task",
+      prompt: "Create a scheduled task.",
     });
 
     expect(herdr.calls[0]).toContain("workspace");
@@ -952,7 +953,7 @@ describe("terminal.launch dedicated workspace orchestration for New Issue", () =
     const agentStart = herdr.calls[1];
     expect(agentStart).toContain("start");
     expect(agentStart[agentStart.indexOf("--tab") + 1]).toBe("w4:t1");
-    expect(agentStart).toContain("claude '/lh-scheduled-task-create'");
+    expect(agentStart).toContain("claude 'Create a scheduled task.'");
     expect(result).toMatchObject({ backend: "herdr" });
   });
 

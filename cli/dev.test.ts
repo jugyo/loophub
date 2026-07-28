@@ -335,24 +335,24 @@ test("buildCodexArgs passes --model through verbatim and keeps the slash command
 
 test("buildCodexArgs passes effort as model_reasoning_effort (#1534)", () => {
   const args = buildCodexArgs({
-    slashCommand: "/lh-issue-create",
+    slashCommand: "Create an issue.",
     model: "gpt-5.5",
     effort: "high",
     loopHubHome: "/tmp/lh-home",
   });
   expect(args).toContain("model_reasoning_effort=high");
-  expect(args[args.length - 1]).toBe("/lh-issue-create");
+  expect(args[args.length - 1]).toBe("Create an issue.");
 });
 
 test("buildClaudeArgs passes --effort through (#1534)", () => {
   const args = buildClaudeArgs({
     sessionId: "sid-1",
-    slashCommand: "/lh-issue-create",
+    slashCommand: "Create an issue.",
     model: "opus",
     effort: "xhigh",
   });
   expect(args[args.indexOf("--effort") + 1]).toBe("xhigh");
-  expect(args[args.length - 1]).toBe("/lh-issue-create");
+  expect(args[args.length - 1]).toBe("Create an issue.");
 });
 
 test("buildCodexArgs omits --model when not provided (backend default model) (#594)", () => {
@@ -376,7 +376,7 @@ test("buildRuntimeLaunch returns claude and Claude argv for claude-code", () => 
   const launch = buildRuntimeLaunch({
     runtime: "claude-code",
     sessionId: "sid-1",
-    slashCommand: "/lh-issue-create",
+    slashCommand: "Create an issue.",
     sessionName: "New issue (jugyo/loophub)",
   });
 
@@ -384,7 +384,7 @@ test("buildRuntimeLaunch returns claude and Claude argv for claude-code", () => 
   expect(launch.args).toEqual(
     buildClaudeArgs({
       sessionId: "sid-1",
-      slashCommand: "/lh-issue-create",
+      slashCommand: "Create an issue.",
       sessionName: "New issue (jugyo/loophub)",
     }),
   );
@@ -397,13 +397,13 @@ test("buildRuntimeLaunch returns codex and Codex argv for codex", () => {
   const launch = buildRuntimeLaunch({
     runtime: "codex",
     sessionId: "sid-1",
-    slashCommand: "/lh-issue-create",
+    slashCommand: "Create an issue.",
     sessionName: "New issue (jugyo/loophub)",
   });
 
   expect(launch.bin).toBe("codex");
   expect(launch.args).toEqual(
-    buildCodexArgs({ slashCommand: "/lh-issue-create" }),
+    buildCodexArgs({ slashCommand: "Create an issue." }),
   );
   expect(formatSpawnCommand(launch.args, { bin: launch.bin })).toContain(
     "'sandbox_workspace_write.writable_roots=",

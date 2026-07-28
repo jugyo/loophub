@@ -204,7 +204,7 @@ first-class な `issue_attempts` テーブル(案 B、§5)は、比較メタデ�
 
 | 論点 | 整理 |
 |---|---|
-| **git 上の競合** | attempt 同士は独立 branch / worktree / dev lock なので作業中の競合はない。競合が起きるのは merge 時のみ: 採用 attempt が(開始後に進んだ)base branch と conflict する可能性は従来の単独 PR と同じで、既存の `lh-rebase-conflict` フローで解決する。 |
+| **git 上の競合** | attempt 同士は独立 branch / worktree / dev lock なので作業中の競合はない。競合が起きるのは merge 時のみ: 採用 attempt が(開始後に進んだ)base branch と conflict する可能性は従来の単独 PR と同じで、PR の rework として解決する。 |
 | **レビュー** | reviews は per-PR なので変更不要。各 attempt が独立に `lh-pr-review` を通る。Acceptance reviewer は同じ issue AC を参照するため、attempt 間で自然に同一基準になる。 |
 | **マージ** | 人間が 1 つを選んで merge。sibling 自動 close(§3.5)が新規部分。同時に 2 つ merge する操作は「2 つ目の merge が普通に conflict / no-op になる」以上の保護は置かない。 |
 | **クローズ** | issue close 時に open attempt を残さない(§3.5)。現状の「closed issue に open PR が残る」ギャップの解消を兼ねる。 |

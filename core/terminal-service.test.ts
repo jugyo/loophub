@@ -40,6 +40,7 @@ test("terminal.launch attaches a specific reason and the retryable herdr command
     await svc.terminal.launch({
       repo: "me/herdr-launch-svc",
       workflow: "scheduled-task-create",
+      prompt: "Create a scheduled task.",
     });
   } catch (e) {
     err = e as ServiceError;

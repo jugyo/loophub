@@ -17,6 +17,8 @@ import {
   useScheduledTasks,
   useUpdateScheduledTask,
 } from "@/queries/scheduled-tasks";
+import { useSettings } from "@/queries/settings";
+import { scheduledTaskCreatePrompt } from "../../../core/workflow/scheduled-task-create-prompt.ts";
 
 // Parse a free-text times field ("09:00, 18:00" / newline / space separated) into a string array.
 // Validation of the HH:MM shape happens server-side; this only splits.
@@ -84,6 +86,7 @@ function CreateScheduledTaskButton({
   repo: string;
 }) {
   const { launchTerminal } = useTerminalLauncher();
+  const { data: settings } = useSettings();
   const fullRepo = `${owner}/${repo}`;
 
   return (
@@ -95,6 +98,7 @@ function CreateScheduledTaskButton({
           repo: fullRepo,
           label: `New scheduled task - ${launchSuffix()}`,
           workflow: "scheduled-task-create",
+          prompt: scheduledTaskCreatePrompt(settings?.workflowContractLanguage),
         })
       }
     >
