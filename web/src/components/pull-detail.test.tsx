@@ -1108,6 +1108,7 @@ describe("PullDetail", () => {
   });
 
   it("increases an over-budget Workflow run from the PR page", async () => {
+    let increased = false;
     const held = {
       id: 12,
       workflow_id: 3,
@@ -1127,13 +1128,23 @@ describe("PullDetail", () => {
       cost_limit_increase_available: true,
     };
     renderDetail({
-      "workflowRuns/stateForPull": () => held,
-      "workflowRuns/increaseCostLimit": () => ({
-        run: 12,
-        increment_usd: 10,
-        previous_limit_usd: 20,
-        current_limit_usd: 30,
-      }),
+      "workflowRuns/stateForPull": () =>
+        increased
+          ? {
+              ...held,
+              cost_limit_usd: 30,
+              cost_limit_increase_available: false,
+            }
+          : held,
+      "workflowRuns/increaseCostLimit": () => {
+        increased = true;
+        return {
+          run: 12,
+          increment_usd: 10,
+          previous_limit_usd: 20,
+          current_limit_usd: 30,
+        };
+      },
     });
 
     fireEvent.focus(await screen.findByText("over budget"));
@@ -1149,6 +1160,57 @@ describe("PullDetail", () => {
     });
     expect(screen.queryByText("Needs human")).toBeNull();
     expect(screen.queryByText("needs human")).toBeNull();
+  });
+
+  it("shows a new human wait reason after increasing the budget", async () => {
+    let increased = false;
+    const held = {
+      id: 12,
+      workflow_id: 3,
+      workflow_name: "Implementation loop",
+      status: "running",
+      current_step: "execute",
+      rework_count: 0,
+      needs_human_reason: "Cost limit exceeded",
+      issue_number: 153,
+      pr_number: 30,
+      created_at: "2026-06-18T11:00:00Z",
+      updated_at: "2026-06-18T12:00:00Z",
+      latest_review: null,
+      verification_status: "unverified",
+      cost_limit_usd: 20,
+      cost_increment_usd: 10,
+      cost_limit_increase_available: true,
+    };
+    renderDetail({
+      "workflowRuns/stateForPull": () =>
+        increased
+          ? {
+              ...held,
+              cost_limit_usd: 30,
+              cost_limit_increase_available: false,
+              needs_human_reason: "waiting for a decision",
+            }
+          : held,
+      "workflowRuns/increaseCostLimit": () => {
+        increased = true;
+        return {
+          run: 12,
+          increment_usd: 10,
+          previous_limit_usd: 20,
+          current_limit_usd: 30,
+        };
+      },
+    });
+
+    fireEvent.focus(await screen.findByText("over budget"));
+    const prompt = screen.getByRole("group", { name: "Increase to $30.00?" });
+    await act(async () => {
+      fireEvent.click(within(prompt).getByRole("button", { name: "Yes" }));
+    });
+
+    expect(await screen.findByText("Needs human")).toBeTruthy();
+    expect(screen.getByText("waiting for a decision")).toBeTruthy();
   });
 
   it("shows no budget action for a Workflow run that is within budget", async () => {

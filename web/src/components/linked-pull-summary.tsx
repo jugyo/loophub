@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { HerdrSessions, LinkedPull, WorkflowRunState } from "@/api/types";
 import { AgentBotIcon } from "@/components/agent-bot-icon";
 import { DiffStat } from "@/components/diff-stat";
@@ -52,6 +52,11 @@ const COST_STOPPED_TEXT = "text-amber-700 dark:text-amber-300";
 // workflow run's budget action so the two read as the same cue.
 const OVER_BUDGET_BADGE =
   "flex shrink-0 items-center gap-1 whitespace-nowrap font-medium";
+
+export type AcknowledgedCostHold = {
+  limitUsd: number;
+  reason: string;
+};
 
 function linkedPullAttemptStatus(pull: LinkedPull) {
   return pull.merged
@@ -153,12 +158,14 @@ export function WorkflowBudgetControl({
   pull,
   state,
   onInteract,
+  onIncreased,
 }: {
   owner: string;
   repo: string;
   pull: number;
   state: WorkflowRunState;
   onInteract?: () => void;
+  onIncreased?: (hold: AcknowledgedCostHold) => void;
 }) {
   const increaseCostLimit = useIncreaseWorkflowRunCostLimit(owner, repo, pull);
   const { showError } = useToast();
@@ -242,6 +249,14 @@ export function WorkflowBudgetControl({
                 increaseCostLimit.mutate(
                   { run: state.id, expectedLimitUsd: state.cost_limit_usd },
                   {
+                    onSuccess: (result) => {
+                      if (state.needs_human_reason !== null) {
+                        onIncreased?.({
+                          limitUsd: result.current_limit_usd,
+                          reason: state.needs_human_reason,
+                        });
+                      }
+                    },
                     onError: (error) =>
                       showError(
                         error instanceof Error
@@ -288,11 +303,30 @@ function WorkflowMiniProgress({
   conflict: boolean;
 }) {
   const { data: state } = useWorkflowRunForPull(owner, repo, pull.number);
+  const [acknowledgedCostHold, setAcknowledgedCostHold] =
+    useState<AcknowledgedCostHold | null>(null);
+  useEffect(() => {
+    if (
+      state?.needs_human_reason === null ||
+      (acknowledgedCostHold !== null &&
+        state?.needs_human_reason !== acknowledgedCostHold.reason)
+    ) {
+      setAcknowledgedCostHold(null);
+    }
+  }, [state?.needs_human_reason, acknowledgedCostHold]);
   if (!state) return null;
+  const budgetResumePending =
+    acknowledgedCostHold !== null &&
+    acknowledgedCostHold.limitUsd === state.cost_limit_usd &&
+    acknowledgedCostHold.reason === state.needs_human_reason &&
+    !state.cost_limit_increase_available;
+  const displayState = budgetResumePending
+    ? { ...state, needs_human_reason: null }
+    : state;
   return (
     <>
       <WorkflowStepTracker
-        state={state}
+        state={displayState}
         owner={owner}
         repo={repo}
         herdrSessions={herdrSessions}
@@ -314,6 +348,7 @@ function WorkflowMiniProgress({
           pull={pull.number}
           state={state}
           onInteract={onStageInteract}
+          onIncreased={setAcknowledgedCostHold}
         />
       ) : null}
     </>

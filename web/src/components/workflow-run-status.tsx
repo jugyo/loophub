@@ -14,10 +14,13 @@
 
 import { Link } from "@tanstack/react-router";
 import { History } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { WorkflowRunState } from "@/api/types";
 import { isPullHerdrWorking } from "@/components/herdr-badge";
-import { WorkflowBudgetControl } from "@/components/linked-pull-summary";
+import {
+  type AcknowledgedCostHold,
+  WorkflowBudgetControl,
+} from "@/components/linked-pull-summary";
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,14 +68,33 @@ export function WorkflowRunStatusSection({
   conflict?: boolean;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [acknowledgedCostHold, setAcknowledgedCostHold] =
+    useState<AcknowledgedCostHold | null>(null);
   // Pull detail already loads this shared query for its Agents section. Observe that cache
   // without starting a second, otherwise-unrelated request when this section is rendered alone.
   const { data: herdrSessions, isError: herdrSessionsError } = useHerdrSessions(
     { enabled: false },
   );
+  useEffect(() => {
+    if (
+      state?.needs_human_reason === null ||
+      (acknowledgedCostHold !== null &&
+        state?.needs_human_reason !== acknowledgedCostHold.reason)
+    ) {
+      setAcknowledgedCostHold(null);
+    }
+  }, [state?.needs_human_reason, acknowledgedCostHold]);
   if (!state) return null;
 
-  const status = needsHuman(state)
+  const budgetResumePending =
+    acknowledgedCostHold !== null &&
+    acknowledgedCostHold.limitUsd === state.cost_limit_usd &&
+    acknowledgedCostHold.reason === state.needs_human_reason &&
+    !state.cost_limit_increase_available;
+  const displayState = budgetResumePending
+    ? { ...state, needs_human_reason: null }
+    : state;
+  const status = needsHuman(displayState)
     ? { label: "Needs human", tone: "cost-stopped" as const }
     : state.status === "running" && state.verification_status === "verified"
       ? { label: "Verified", tone: "review-passed" as const }
@@ -125,7 +147,7 @@ export function WorkflowRunStatusSection({
         <WorkflowStepTracker
           owner={owner}
           repo={repo}
-          state={state}
+          state={displayState}
           herdrSessions={herdrSessionsError ? undefined : herdrSessions}
           herdrUnavailable={herdrSessionsError}
           size="md"
@@ -140,6 +162,7 @@ export function WorkflowRunStatusSection({
             repo={repo}
             pull={state.pr_number}
             state={state}
+            onIncreased={setAcknowledgedCostHold}
           />
         ) : null}
 
@@ -159,8 +182,8 @@ export function WorkflowRunStatusSection({
           </p>
         ) : null}
 
-        {needsHuman(state) && !overBudget ? (
-          <NeedsHumanNotice owner={owner} repo={repo} state={state} />
+        {needsHuman(displayState) && !overBudget ? (
+          <NeedsHumanNotice owner={owner} repo={repo} state={displayState} />
         ) : null}
 
         {showHistory ? (

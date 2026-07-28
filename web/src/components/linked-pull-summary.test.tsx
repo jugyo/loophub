@@ -559,6 +559,75 @@ describe("LinkedPullSummaryRow workflow budget (#1828)", () => {
     });
   });
 
+  it("does not flash needs human while the parent resumes after an increase", async () => {
+    let increased = false;
+    renderRowWithRun(
+      held,
+      {},
+      {
+        "workflowRuns/stateForPull": () =>
+          increased
+            ? {
+                ...held,
+                cost_limit_usd: 30,
+                cost_limit_increase_available: false,
+              }
+            : held,
+        "workflowRuns/increaseCostLimit": () => {
+          increased = true;
+          return {
+            run: 1,
+            increment_usd: 10,
+            previous_limit_usd: 20,
+            current_limit_usd: 30,
+          };
+        },
+      },
+    );
+
+    const prompt = await openBudgetPrompt();
+    await act(async () => {
+      fireEvent.click(within(prompt).getByRole("button", { name: "Yes" }));
+    });
+
+    expect(screen.queryByText("needs human")).toBeNull();
+  });
+
+  it("restores needs human when the reason changes after an increase", async () => {
+    let increased = false;
+    renderRowWithRun(
+      held,
+      {},
+      {
+        "workflowRuns/stateForPull": () =>
+          increased
+            ? {
+                ...held,
+                cost_limit_usd: 30,
+                cost_limit_increase_available: false,
+                needs_human_reason: "waiting for a decision",
+              }
+            : held,
+        "workflowRuns/increaseCostLimit": () => {
+          increased = true;
+          return {
+            run: 1,
+            increment_usd: 10,
+            previous_limit_usd: 20,
+            current_limit_usd: 30,
+          };
+        },
+      },
+    );
+
+    const prompt = await openBudgetPrompt();
+    await act(async () => {
+      fireEvent.click(within(prompt).getByRole("button", { name: "Yes" }));
+    });
+
+    expect(await screen.findByText("needs human")).toBeTruthy();
+  });
+
   it("surfaces a refused increase through the existing toast", async () => {
     renderRowWithRun(
       held,
