@@ -27,8 +27,8 @@ export function prNumberFromBranch(branch: string | null): number | null {
   return m ? Number(m[1]) : null;
 }
 
-// `.claude/` is mirrored into every worktree by provisionWorktree (syncClaudeDir) and is
-// not gitignored, so `git status --porcelain --untracked-files=normal` always reports it as an
+// Claude settings copied into worktrees by provisionWorktree (syncClaudeDir) may not be
+// gitignored, so `git status --porcelain --untracked-files=normal` reports `.claude/` as an
 // untracked entry. It is LoopHub-injected, never user work, so it must not count toward the
 // clean-tree guard — otherwise every worktree would look dirty and prune would skip them all.
 function isInjectedArtifact(path: string): boolean {

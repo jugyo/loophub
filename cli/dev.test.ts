@@ -892,17 +892,27 @@ test("provisions at the legacy issue-<n> path/branch under scheme legacy-issue",
   rmSync(root, { recursive: true, force: true });
 });
 
-test("copies the primary checkout's untracked .claude/ into a fresh worktree", async () => {
+test("copies only the primary checkout's Claude settings into a fresh worktree", async () => {
   const repo = await makeRepo();
   mkdirSync(join(repo, ".claude"), { recursive: true });
   writeFileSync(join(repo, ".claude/settings.json"), `{"permissions":{}}`);
   writeFileSync(join(repo, ".claude/settings.local.json"), `{"local":true}`);
+  writeFileSync(join(repo, ".claude/commands.md"), "not copied");
+  mkdirSync(join(repo, ".claude/worktrees/large/nested"), { recursive: true });
+  writeFileSync(
+    join(repo, ".claude/worktrees/large/nested/content.txt"),
+    "not copied",
+  );
   const root = tmpRoot();
   const path = await provision(repo, root, 7);
-  // .claude/ is untracked, absent from the committed tree the worktree is built from,
-  // so its presence here proves the post-provision copy ran.
-  expect(existsSync(join(path, ".claude/settings.json"))).toBe(true);
-  expect(existsSync(join(path, ".claude/settings.local.json"))).toBe(true);
+  expect(readFileSync(join(path, ".claude/settings.json"), "utf8")).toBe(
+    `{"permissions":{}}`,
+  );
+  expect(readFileSync(join(path, ".claude/settings.local.json"), "utf8")).toBe(
+    `{"local":true}`,
+  );
+  expect(existsSync(join(path, ".claude/commands.md"))).toBe(false);
+  expect(existsSync(join(path, ".claude/worktrees"))).toBe(false);
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
@@ -911,24 +921,43 @@ test("re-syncs .claude/ on worktree reuse, picking up the latest content", async
   const repo = await makeRepo();
   mkdirSync(join(repo, ".claude"), { recursive: true });
   writeFileSync(join(repo, ".claude/settings.json"), `{"v":1}`);
+  writeFileSync(join(repo, ".claude/settings.local.json"), `{"local":1}`);
   const root = tmpRoot();
   const a = await provision(repo, root, 7);
   expect(readFileSync(join(a, ".claude/settings.json"), "utf8")).toBe(
     `{"v":1}`,
   );
+  expect(readFileSync(join(a, ".claude/settings.local.json"), "utf8")).toBe(
+    `{"local":1}`,
+  );
   // Mutate the primary, re-provision (idempotent reuse path), expect the copy refreshed.
   writeFileSync(join(repo, ".claude/settings.json"), `{"v":2}`);
+  writeFileSync(join(repo, ".claude/settings.local.json"), `{"local":2}`);
   const b = await provision(repo, root, 7);
   expect(b).toBe(a);
   expect(readFileSync(join(b, ".claude/settings.json"), "utf8")).toBe(
     `{"v":2}`,
   );
+  expect(readFileSync(join(b, ".claude/settings.local.json"), "utf8")).toBe(
+    `{"local":2}`,
+  );
   rmSync(repo, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
 
-test("skips the .claude/ copy without error when the primary has none", async () => {
+test("skips the Claude settings copy when the primary has no .claude directory", async () => {
   const repo = await makeRepo();
+  const root = tmpRoot();
+  const path = await provision(repo, root, 7);
+  expect(existsSync(join(path, ".claude"))).toBe(false);
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("skips absent Claude settings without copying other .claude content", async () => {
+  const repo = await makeRepo();
+  mkdirSync(join(repo, ".claude"), { recursive: true });
+  writeFileSync(join(repo, ".claude/commands.md"), "not copied");
   const root = tmpRoot();
   const path = await provision(repo, root, 7);
   expect(existsSync(join(path, ".claude"))).toBe(false);

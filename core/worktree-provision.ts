@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, realpathSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { branchExists, revParse, worktreeAdd, worktreeList } from "./git.ts";
 import type { WorktreeScheme } from "./resume.ts";
@@ -61,15 +61,21 @@ export function shouldCreateMissingConventionBranch(input: {
   );
 }
 
-// `.claude/` (settings.json / settings.local.json) is usually untracked / gitignored, so a
-// worktree built from the committed tree lacks it — project/local permission rules go missing
-// in the Claude session a launcher starts. Mirror it from the primary checkout. Idempotent and
-// run on every provision (including worktree reuse) so the copy stays current; skipped silently
-// when the primary has no `.claude/`. Untracked at the destination too, so nothing leaks into PRs.
+const CLAUDE_SETTINGS_FILES = ["settings.json", "settings.local.json"] as const;
+
+// Claude project/local settings are usually untracked / gitignored, so a worktree built from the
+// committed tree lacks them. Copy only the settings files a launched Claude session needs; other
+// `.claude/` content can include large nested worktrees and must not be traversed. Run on every
+// provision (including reuse) so existing source files stay current, and skip absent files.
 function syncClaudeDir(repoPath: string, worktreePath: string): void {
-  const src = join(repoPath, ".claude");
-  if (!existsSync(src)) return;
-  cpSync(src, join(worktreePath, ".claude"), { recursive: true });
+  const sourceDir = join(repoPath, ".claude");
+  const destinationDir = join(worktreePath, ".claude");
+  for (const filename of CLAUDE_SETTINGS_FILES) {
+    const source = join(sourceDir, filename);
+    if (!existsSync(source)) continue;
+    mkdirSync(destinationDir, { recursive: true });
+    copyFileSync(source, join(destinationDir, filename));
+  }
 }
 
 // Ensure a worktree for the PR (or, under scheme "legacy-issue", the issue) exists and return its
