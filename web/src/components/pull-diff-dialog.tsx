@@ -8,10 +8,14 @@ import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { PullFile, PullLineComment } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
-import { DiffLines } from "@/components/diff-lines";
 import { DiffStat } from "@/components/diff-stat";
 import { Markdown } from "@/components/markdown";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
+import {
+  type DiffLineKind,
+  type PositionedDiffLine,
+  parsePositionedPatch,
+} from "@/lib/diff";
 import { cn } from "@/lib/utils";
 import { usePullFileAtRef } from "@/queries/pulls";
 
@@ -70,6 +74,32 @@ function visibleCopyPath(path: string) {
 
 type DiffDialogMode = "diff" | "raw" | "base" | "head";
 type StandardDiffDialogMode = "diff" | "raw";
+type DiffViewMode = "unified" | "split";
+type SplitRow =
+  | {
+      kind: "line";
+      left: PositionedDiffLine | null;
+      right: PositionedDiffLine | null;
+      leftMarkers?: PositionedDiffLine[];
+      rightMarkers?: PositionedDiffLine[];
+    }
+  | { kind: "separator"; line: PositionedDiffLine };
+
+const DIFF_LINE_CLASS: Record<DiffLineKind, string> = {
+  add: "bg-green-500/10 text-green-700 dark:text-green-300",
+  del: "bg-red-500/10 text-red-700 dark:text-red-300",
+  hunk: "bg-muted text-muted-foreground",
+  meta: "text-muted-foreground",
+  context: "",
+};
+
+const DIFF_LINE_MARKER: Record<DiffLineKind, string> = {
+  add: "+",
+  del: "-",
+  hunk: "",
+  meta: "",
+  context: " ",
+};
 
 export function DiffFileDialog({
   owner,
@@ -97,6 +127,7 @@ export function DiffFileDialog({
   const [standardMode, setStandardMode] =
     useState<StandardDiffDialogMode>("diff");
   const [markdownMode, setMarkdownMode] = useState<DiffDialogMode>("diff");
+  const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("split");
   const mouseDownStartedOnBackdrop = useRef(false);
   const copyPath = visibleCopyPath(copyFilename(file));
   const isMarkdown =
@@ -138,7 +169,7 @@ export function DiffFileDialog({
         role="dialog"
         aria-modal="true"
         aria-label={`Diff for ${file.filename}`}
-        className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-md border bg-background shadow-lg"
+        className="flex max-h-full w-full flex-col overflow-hidden rounded-md border bg-background shadow-lg"
       >
         <header className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-2">
           <div className="min-w-0 flex-1">
@@ -189,6 +220,25 @@ export function DiffFileDialog({
                 </>
               ) : null}
             </div>
+            {mode === "diff" ? (
+              <div
+                className="flex overflow-hidden rounded-md border text-xs"
+                aria-label="Diff view"
+              >
+                <ModeButton
+                  active={diffViewMode === "unified"}
+                  onClick={() => setDiffViewMode("unified")}
+                >
+                  Unified
+                </ModeButton>
+                <ModeButton
+                  active={diffViewMode === "split"}
+                  onClick={() => setDiffViewMode("split")}
+                >
+                  Split
+                </ModeButton>
+              </div>
+            ) : null}
             <div className="flex overflow-hidden rounded-md border text-xs">
               <ModeButton disabled={!hasPreviousFile} onClick={onPreviousFile}>
                 <ChevronLeft className="size-3" />
@@ -218,6 +268,7 @@ export function DiffFileDialog({
             file={file}
             comments={comments}
             mode={mode}
+            diffViewMode={diffViewMode}
           />
         </div>
       </div>
@@ -262,6 +313,7 @@ function FileDiffContent({
   file,
   comments,
   mode,
+  diffViewMode,
 }: {
   owner: string;
   repo: string;
@@ -269,6 +321,7 @@ function FileDiffContent({
   file: PullFile;
   comments: PullLineComment[];
   mode: DiffDialogMode;
+  diffViewMode: DiffViewMode;
 }) {
   if (mode === "raw") {
     return (
@@ -295,7 +348,7 @@ function FileDiffContent({
 
   return (
     <div data-debug-component="FileDiffContent">
-      <DiffLines patch={file.patch} />
+      <DialogDiff patch={file.patch} viewMode={diffViewMode} />
       {comments.map((c) => (
         <div key={c.id} className="m-2 rounded-md border bg-muted/20 p-2">
           <div className="mb-1 text-xs">
@@ -311,6 +364,248 @@ function FileDiffContent({
       ))}
     </div>
   );
+}
+
+function DialogDiff({
+  patch,
+  viewMode,
+}: {
+  patch: string | undefined | null;
+  viewMode: DiffViewMode;
+}) {
+  const lines = parsePositionedPatch(patch);
+  if (lines.length === 0) {
+    return (
+      <p className="px-3 py-2 text-xs text-muted-foreground">
+        No textual diff.
+      </p>
+    );
+  }
+  return viewMode === "unified" ? (
+    <UnifiedDiff lines={lines} />
+  ) : (
+    <SplitDiff lines={lines} />
+  );
+}
+
+function UnifiedDiff({ lines }: { lines: PositionedDiffLine[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse font-mono text-xs leading-5">
+        <tbody>
+          {lines.map((line, index) => (
+            <tr
+              key={`${line.oldLine}:${line.newLine}:${index}`}
+              className={DIFF_LINE_CLASS[line.kind]}
+              data-line-kind={line.kind}
+            >
+              <LineNumber line={line.oldLine} label="Old" />
+              <LineNumber line={line.newLine} label="New" />
+              <td className="whitespace-pre pr-4">
+                <span
+                  aria-hidden="true"
+                  className="inline-block w-5 select-none text-center"
+                >
+                  {DIFF_LINE_MARKER[line.kind]}
+                </span>
+                {lineContent(line) || " "}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SplitDiff({ lines }: { lines: PositionedDiffLine[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full table-fixed border-collapse font-mono text-xs leading-5">
+        <colgroup>
+          <col className="w-12" />
+          <col style={{ width: "calc(50% - 3rem)" }} />
+          <col className="w-12" />
+          <col style={{ width: "calc(50% - 3rem)" }} />
+        </colgroup>
+        <tbody>
+          {splitRows(lines).map((row, index) =>
+            row.kind === "separator" ? (
+              <tr
+                key={`separator:${index}`}
+                className={DIFF_LINE_CLASS[row.line.kind]}
+                data-line-kind={row.line.kind}
+              >
+                <td colSpan={4} className="whitespace-pre px-3">
+                  {row.line.text || " "}
+                </td>
+              </tr>
+            ) : (
+              <tr key={`line:${index}`}>
+                <SplitLine
+                  line={row.left}
+                  markers={row.leftMarkers}
+                  side="old"
+                />
+                <SplitLine
+                  line={row.right}
+                  markers={row.rightMarkers}
+                  side="new"
+                />
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function LineNumber({
+  line,
+  label,
+}: {
+  line: number | null;
+  label: "Old" | "New";
+}) {
+  return (
+    <td
+      aria-label={line === null ? undefined : `${label} line ${line}`}
+      className="w-12 select-none border-r px-2 text-right text-muted-foreground/70"
+    >
+      {line}
+    </td>
+  );
+}
+
+function SplitLine({
+  line,
+  markers = [],
+  side,
+}: {
+  line: PositionedDiffLine | null;
+  markers?: PositionedDiffLine[];
+  side: "old" | "new";
+}) {
+  const lineNumber = line
+    ? side === "old"
+      ? line.oldLine
+      : line.newLine
+    : null;
+  return (
+    <>
+      <td
+        aria-label={
+          lineNumber === null
+            ? undefined
+            : `${side === "old" ? "Old" : "New"} line ${lineNumber}`
+        }
+        className={cn(
+          "w-12 select-none border-r px-2 text-right text-muted-foreground/70",
+          line && DIFF_LINE_CLASS[line.kind],
+          side === "new" && "border-l",
+        )}
+      >
+        {lineNumber}
+      </td>
+      <td
+        className={cn("min-w-0", line && DIFF_LINE_CLASS[line.kind])}
+        data-line-kind={line?.kind}
+      >
+        {line ? (
+          <div className="whitespace-pre-wrap break-words pr-4">
+            <span
+              aria-hidden="true"
+              className="inline-block w-5 select-none text-center"
+            >
+              {DIFF_LINE_MARKER[line.kind]}
+            </span>
+            {lineContent(line) || " "}
+            {markers.map((marker, index) => (
+              <span
+                key={`${marker.text}:${index}`}
+                className="block pl-5 text-muted-foreground"
+              >
+                {marker.text}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </td>
+    </>
+  );
+}
+
+function splitRows(lines: PositionedDiffLine[]): SplitRow[] {
+  const rows: SplitRow[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (line.kind === "hunk" || line.kind === "meta") {
+      rows.push({ kind: "separator", line });
+      index += 1;
+      continue;
+    }
+    if (line.kind === "context") {
+      rows.push({ kind: "line", left: line, right: line });
+      index += 1;
+      continue;
+    }
+
+    const deletions: PositionedDiffLine[] = [];
+    const additions: PositionedDiffLine[] = [];
+    const deletionMarkers = new Map<number, PositionedDiffLine[]>();
+    const additionMarkers = new Map<number, PositionedDiffLine[]>();
+    let activeSide: "deletion" | "addition" | null = null;
+    while (index < lines.length) {
+      const changedLine = lines[index];
+      if (changedLine.kind === "del") {
+        deletions.push(changedLine);
+        activeSide = "deletion";
+      } else if (changedLine.kind === "add") {
+        additions.push(changedLine);
+        activeSide = "addition";
+      } else if (isNoNewlineMarker(changedLine) && activeSide !== null) {
+        const markers =
+          activeSide === "deletion" ? deletionMarkers : additionMarkers;
+        const lineIndex =
+          activeSide === "deletion"
+            ? deletions.length - 1
+            : additions.length - 1;
+        markers.set(lineIndex, [
+          ...(markers.get(lineIndex) ?? []),
+          changedLine,
+        ]);
+      } else {
+        break;
+      }
+      index += 1;
+    }
+
+    const rowCount = Math.max(deletions.length, additions.length);
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      rows.push({
+        kind: "line",
+        left: deletions[rowIndex] ?? null,
+        right: additions[rowIndex] ?? null,
+        leftMarkers: deletionMarkers.get(rowIndex),
+        rightMarkers: additionMarkers.get(rowIndex),
+      });
+    }
+  }
+
+  return rows;
+}
+
+function isNoNewlineMarker(line: PositionedDiffLine) {
+  return line.kind === "meta" && line.text === "\\ No newline at end of file";
+}
+
+function lineContent(line: PositionedDiffLine) {
+  return line.kind === "add" || line.kind === "del" || line.kind === "context"
+    ? line.text.slice(1)
+    : line.text;
 }
 
 function RawFilePane({

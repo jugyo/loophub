@@ -95,13 +95,91 @@ describe("DiffFileDialog", () => {
       name: /Diff for web\/src\/a\.ts/i,
     });
     expect(dialog.getAttribute("data-debug-component")).toBe("DiffFileDialog");
+    expect(dialog.classList).toContain("w-full");
+    expect(dialog.className).not.toContain("max-w-");
     expect(dialog.parentElement?.hasAttribute("data-debug-component")).toBe(
       false,
     );
-    expect(within(dialog).getByText("+const x = 1;")).toBeTruthy();
+    expect(within(dialog).getByText("const x = 1;")).toBeTruthy();
+    expect(within(dialog).getByLabelText("Old line 1")).toBeTruthy();
+    expect(within(dialog).getByLabelText("New line 1")).toBeTruthy();
+    expect(
+      within(dialog)
+        .getByRole("button", { name: "Split" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(within(dialog).getAllByText("nice constant").length).toBeGreaterThan(
       0,
     );
+  });
+
+  it("starts in split view and switches to unified view", () => {
+    const splitFile: PullFile = {
+      ...file,
+      additions: 2,
+      patch:
+        "@@ -1,2 +1,3 @@\n-const x = 0;\n+const x = 1;\n+const y = 2;\n keep",
+    };
+    const { container } = renderDialog({ file: splitFile });
+
+    expect(
+      screen
+        .getByRole("button", { name: "Split" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    const before = screen.getByText("const x = 0;").closest("td");
+    const after = screen.getByText("const x = 1;").closest("td");
+    expect(before?.parentElement).toBe(after?.parentElement);
+    expect(
+      within(before?.parentElement as HTMLElement).getByLabelText("Old line 1"),
+    ).toBeTruthy();
+    expect(
+      within(after?.parentElement as HTMLElement).getByLabelText("New line 1"),
+    ).toBeTruthy();
+    expect(screen.getByText("const y = 2;")).toBeTruthy();
+    const contentColumns = container.querySelectorAll("colgroup col[style]");
+    expect(contentColumns).toHaveLength(2);
+    expect((contentColumns[0] as HTMLElement).style.width).toBe(
+      "calc(50% - 3rem)",
+    );
+    const splitLine = screen.getByText("const x = 1;").closest("div");
+    expect(splitLine?.classList).toContain("whitespace-pre-wrap");
+    expect(splitLine?.classList).toContain("break-words");
+    expect(splitLine?.classList).not.toContain("overflow-x-auto");
+    expect(
+      container.querySelectorAll('[data-line-kind="context"]'),
+    ).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+
+    expect(
+      screen
+        .getByRole("button", { name: "Unified" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(container.querySelector("colgroup")).toBeNull();
+  });
+
+  it("keeps replacements paired when no-newline markers separate them", () => {
+    renderDialog({
+      file: {
+        ...file,
+        patch:
+          "@@ -1 +1 @@\n-const value = 'before';\n\\ No newline at end of file\n+const value = 'after';\n\\ No newline at end of file",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Split" }));
+
+    const before = screen.getByText("const value = 'before';").closest("td");
+    const after = screen.getByText("const value = 'after';").closest("td");
+    expect(before?.parentElement).toBe(after?.parentElement);
+    expect(
+      within(before as HTMLElement).getByText("\\ No newline at end of file"),
+    ).toBeTruthy();
+    expect(
+      within(after as HTMLElement).getByText("\\ No newline at end of file"),
+    ).toBeTruthy();
   });
 
   it("closes on Escape and on a backdrop click", async () => {
@@ -226,7 +304,7 @@ describe("DiffFileDialog", () => {
     const dialog = screen.getByRole("dialog", {
       name: /Diff for web\/src\/a\.ts/i,
     });
-    expect(within(dialog).getByText("+const x = 1;")).toBeTruthy();
+    expect(within(dialog).getByText("const x = 1;")).toBeTruthy();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Raw" }));
 
@@ -308,6 +386,8 @@ describe("DiffFileDialog", () => {
       "Raw",
       "Base",
       "Head",
+      "Unified",
+      "Split",
       "Prev",
       "Next",
       "Close diff",
@@ -336,7 +416,7 @@ describe("DiffFileDialog", () => {
     expect(basePane?.className).not.toContain("text-");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Diff" }));
-    expect(await within(dialog).findByText("+# new")).toBeTruthy();
+    expect(await within(dialog).findByText("# new")).toBeTruthy();
   });
 
   it("renders GFM elements inside the diff preview typeset", async () => {

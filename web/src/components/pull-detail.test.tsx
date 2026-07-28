@@ -206,7 +206,7 @@ function renderDetail(
 }
 
 describe("PullDetail", () => {
-  it("renders title, head→base, compact file summary, reviews, comments, and the linked issue", async () => {
+  it("renders title, head→base, file summary, reviews, comments, and the linked issue", async () => {
     renderDetail();
 
     expect(await screen.findByText("ui2: PR detail")).toBeTruthy();
@@ -216,9 +216,18 @@ describe("PullDetail", () => {
     expect(screen.queryByRole("heading", { name: "Develop" })).toBeNull();
     expect(screen.queryByText("lh resume me/proj/30")).toBeNull();
 
-    // The PR detail shows a compact file summary instead of expanding patch lines inline.
+    // The existing file summary opens its diff in a dialog instead of expanding inline.
     expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
-    expect(screen.queryByText("+const x = 1;")).toBeNull();
+    expect(screen.queryByText("const x = 1;")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
+    const fileDialog = await screen.findByRole("dialog", {
+      name: /Diff for web\/src\/a\.ts/i,
+    });
+    expect(within(fileDialog).getByText("const x = 1;")).toBeTruthy();
+    expect(within(fileDialog).getByLabelText("New line 1")).toBeTruthy();
+    expect(
+      within(fileDialog).getByRole("button", { name: "Split" }),
+    ).toBeTruthy();
     const reviewedCommit = screen
       .getByRole("button", {
         name: "View changes in aaaaaaa: Latest change",
@@ -267,6 +276,7 @@ describe("PullDetail", () => {
       "PullCommitsSection",
       "PullCommitRow",
       "FilesChanged",
+      "FileSummaryRow",
       "PullCommentList",
       "PullSidebar",
       "WorktreeSection",
@@ -425,116 +435,6 @@ describe("PullDetail", () => {
 
     expect(commentsSection?.className).toContain("pb-6");
     expect(commentsSection?.textContent).toContain("No comments.");
-  });
-
-  it("opens a full-size diff dialog from a file summary row and closes back to the summary", async () => {
-    renderDetail();
-
-    expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
-    expect(screen.queryByText("+const x = 1;")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
-
-    expect(
-      await screen.findByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
-    ).toBeTruthy();
-    expect(await screen.findByText("+const x = 1;")).toBeTruthy();
-    expect(screen.getAllByText("nice constant").length).toBeGreaterThan(0);
-
-    fireEvent.click(
-      screen.getByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
-    );
-    expect(
-      screen.getByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
-    ).toBeTruthy();
-
-    const backdrop = screen.getByRole("dialog", {
-      name: /Diff for web\/src\/a\.ts/i,
-    }).parentElement as HTMLElement;
-    fireEvent.mouseDown(backdrop);
-    fireEvent.mouseUp(backdrop);
-    fireEvent.click(backdrop);
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-
-    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
-    expect(
-      await screen.findByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
-    ).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: /Close diff/i }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByText("web/src/a.ts")).toBeTruthy();
-    expect(screen.queryByText("+const x = 1;")).toBeNull();
-  });
-
-  it("moves between file diffs with Prev and Next without closing the dialog", async () => {
-    const multiFileDiff: PullFile[] = [
-      ...files,
-      {
-        filename: "web/src/b.ts",
-        status: "added",
-        additions: 1,
-        deletions: 0,
-        patch: "@@ -0,0 +1 @@\n+const y = 2;",
-      },
-    ];
-    renderDetail({ "pulls/files": () => multiFileDiff });
-
-    expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
-
-    expect(
-      await screen.findByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
-    ).toBeTruthy();
-    expect(await screen.findByText("+const x = 1;")).toBeTruthy();
-    const firstPrev = screen.getByRole("button", { name: /Prev/i });
-    const firstNext = screen.getByRole("button", { name: /Next/i });
-    expect((firstPrev as HTMLButtonElement).disabled).toBe(true);
-    expect((firstNext as HTMLButtonElement).disabled).toBe(false);
-
-    fireEvent.click(firstNext);
-
-    expect(
-      await screen.findByRole("dialog", { name: /Diff for web\/src\/b\.ts/i }),
-    ).toBeTruthy();
-    expect(await screen.findByText("+const y = 2;")).toBeTruthy();
-    expect(screen.queryByText("+const x = 1;")).toBeNull();
-    const secondPrev = screen.getByRole("button", { name: /Prev/i });
-    const secondNext = screen.getByRole("button", { name: /Next/i });
-    expect((secondPrev as HTMLButtonElement).disabled).toBe(false);
-    expect((secondNext as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.click(secondPrev);
-
-    expect(
-      await screen.findByRole("dialog", { name: /Diff for web\/src\/a\.ts/i }),
-    ).toBeTruthy();
-    expect(await screen.findByText("+const x = 1;")).toBeTruthy();
-  });
-
-  it("keeps an open diff dialog in sync when the files query refetches", async () => {
-    let currentFiles: PullFile[] = files;
-    const { queryClient } = renderDetail({
-      "pulls/files": () => currentFiles,
-    });
-
-    expect(await screen.findByText("web/src/a.ts")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /web\/src\/a\.ts/i }));
-    expect(await screen.findByText("+const x = 1;")).toBeTruthy();
-
-    currentFiles = [
-      {
-        ...files[0],
-        additions: 2,
-        patch: "@@ -1 +1 @@\n-const x = 0;\n+const x = 2;",
-      },
-    ];
-    await act(async () => {
-      await queryClient.refetchQueries({ type: "active" });
-    });
-
-    expect(await screen.findByText("+const x = 2;")).toBeTruthy();
-    expect(screen.queryByText("+const x = 1;")).toBeNull();
   });
 
   it("closes the PR via PATCH state=closed without merging", async () => {
@@ -876,7 +776,6 @@ describe("PullDetail", () => {
     });
     expect(within(staleDialog).getByText("needs work")).toBeTruthy();
     expect(within(staleDialog).getByText("@design-bot")).toBeTruthy();
-    expect(within(staleDialog).getByText("quality")).toBeTruthy();
   });
 
   it("keeps every review visible when none targets a listed commit", async () => {

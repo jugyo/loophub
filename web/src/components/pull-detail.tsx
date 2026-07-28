@@ -618,15 +618,16 @@ function FilesChanged({
   }, [files, openFile, openFilename]);
 
   const byFile = new Map<string, PullLineComment[]>();
-  for (const c of lineComments ?? []) {
-    const list = byFile.get(c.path) ?? [];
-    list.push(c);
-    byFile.set(c.path, list);
+  for (const comment of lineComments ?? []) {
+    const list = byFile.get(comment.path) ?? [];
+    list.push(comment);
+    byFile.set(comment.path, list);
   }
 
-  // Whole-diff totals, summed from the per-file numstat already loaded here.
-  const totalAdditions = files?.reduce((s, f) => s + f.additions, 0) ?? 0;
-  const totalDeletions = files?.reduce((s, f) => s + f.deletions, 0) ?? 0;
+  const totalAdditions =
+    files?.reduce((sum, file) => sum + file.additions, 0) ?? 0;
+  const totalDeletions =
+    files?.reduce((sum, file) => sum + file.deletions, 0) ?? 0;
 
   return (
     <section
@@ -661,11 +662,11 @@ function FilesChanged({
               <span>Changes</span>
             </div>
             <ul className="divide-y">
-              {files.map((f) => (
+              {files.map((file) => (
                 <FileSummaryRow
-                  key={f.filename}
-                  file={f}
-                  onOpen={() => setOpenFilename(f.filename)}
+                  key={file.filename}
+                  file={file}
+                  onOpen={() => setOpenFilename(file.filename)}
                 />
               ))}
             </ul>

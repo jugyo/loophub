@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyDiffLine, parsePatch } from "./diff";
+import { classifyDiffLine, parsePatch, parsePositionedPatch } from "./diff";
 
 describe("classifyDiffLine", () => {
   it("classifies hunk headers", () => {
@@ -16,11 +16,34 @@ describe("classifyDiffLine", () => {
     expect(classifyDiffLine("--- a/src/a.ts")).toBe("meta");
     expect(classifyDiffLine("diff --git a/x b/x")).toBe("meta");
     expect(classifyDiffLine("index abc..def 100644")).toBe("meta");
+    expect(classifyDiffLine("\\ No newline at end of file")).toBe("meta");
   });
 
   it("classifies everything else as context", () => {
     expect(classifyDiffLine(" unchanged")).toBe("context");
     expect(classifyDiffLine("")).toBe("context");
+  });
+});
+
+describe("parsePositionedPatch", () => {
+  it("tracks old and new line numbers across context and changes", () => {
+    expect(
+      parsePositionedPatch(
+        "@@ -4,3 +7,4 @@\n keep\n-before\n+after\n+extra\n tail",
+      ),
+    ).toEqual([
+      {
+        kind: "hunk",
+        text: "@@ -4,3 +7,4 @@",
+        oldLine: null,
+        newLine: null,
+      },
+      { kind: "context", text: " keep", oldLine: 4, newLine: 7 },
+      { kind: "del", text: "-before", oldLine: 5, newLine: null },
+      { kind: "add", text: "+after", oldLine: null, newLine: 8 },
+      { kind: "add", text: "+extra", oldLine: null, newLine: 9 },
+      { kind: "context", text: " tail", oldLine: 6, newLine: 10 },
+    ]);
   });
 });
 
