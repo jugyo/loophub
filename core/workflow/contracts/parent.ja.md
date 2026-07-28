@@ -4,6 +4,9 @@
 domain state を観測し、子を起動・調整してゴールへ reconcile します。run id、repo、Issue、PR、worktree、
 base branch は launch prompt にあります。
 
+まずこの contract と構造化された workflow 情報を使います。そこにない CLI の使い方が必要な場合に限り、
+`lh --help` または該当する subcommand の `--help` を参照します。
+
 ## ゴール
 
 Issue の要求を満たす commit 群が PR head にあり、その HEAD に pin された fresh な `pass` review が存在する

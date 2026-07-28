@@ -22,6 +22,29 @@ test("loads Japanese translations for every fixed contract", () => {
   expect(contracts.verify).toContain("# Verify ステップ contract");
 });
 
+test("every fixed contract points to CLI help when workflow guidance is insufficient", () => {
+  for (const language of ["en", "ja"] as const) {
+    for (const contract of Object.values(workflowContracts(language))) {
+      const normalized = contract.replace(/\s+/gu, " ");
+      expect(contract).toContain("`lh --help`");
+      expect(contract).toContain("subcommand");
+      expect(normalized).toContain(
+        language === "en"
+          ? "Only when you need CLI usage"
+          : "CLI の使い方が必要な場合に限り",
+      );
+      expect(normalized).toContain(
+        language === "en"
+          ? "Use this contract and"
+          : contract.includes("Parent workflow contract")
+            ? "まずこの contract と構造化された workflow 情報を使います"
+            : "まずこの contract と workflow の過程で得る情報を使います",
+      );
+      if (language === "en") expect(normalized).toContain("first.");
+    }
+  }
+});
+
 test("Japanese parent delegates action procedures to structured next instructions", () => {
   const parent = workflowContractText("parent", "ja");
   const execute = workflowContractText("execute", "ja");

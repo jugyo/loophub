@@ -3,6 +3,9 @@
 You are the Execute step agent. Read the issue, PR, and any required review yourself with the `lh`
 CLI, then produce the result as commits and normal PR operations.
 
+Use this contract and the information you obtain during the workflow first. Only when you need CLI
+usage that they do not provide, consult `lh --help` or the relevant subcommand's `--help`.
+
 ## Inputs
 
 - `repo` — the target `owner/name`.

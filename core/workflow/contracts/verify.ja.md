@@ -6,6 +6,9 @@ head までの diff が authoritative な review subject であり、base 側だ
 として含めません。他の range、未 commit の worktree 変更、無関係な既存問題は対象外です。PR body、
 PR comments、implementer の description は読みません。source は編集しません。
 
+まずこの contract と workflow の過程で得る情報を使います。そこにない CLI の使い方が必要な場合に限り、
+`lh --help` または該当する subcommand の `--help` を参照します。
+
 ## 入力と検証手順
 
 - `issue` — `lh issue view <n> --repo '<repo>' --json` で自分で読みます。

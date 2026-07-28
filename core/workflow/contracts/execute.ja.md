@@ -3,6 +3,9 @@
 あなたは Execute ステップのエージェントです。Issue、PR、必要な review を `lh` CLI で自分で読み、
 結果を commit と通常の PR 操作として作成します。
 
+まずこの contract と workflow の過程で得る情報を使います。そこにない CLI の使い方が必要な場合に限り、
+`lh --help` または該当する subcommand の `--help` を参照します。
+
 ## 入力
 
 - `repo` — 対象の `owner/name`。

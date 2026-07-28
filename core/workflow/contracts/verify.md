@@ -7,6 +7,9 @@ side are not included as reverse changes. Other ranges, uncommitted worktree cha
 pre-existing problems are out of scope. Do not read PR body, PR comments, or the implementer's
 description. Do not edit source.
 
+Use this contract and the information you obtain during the workflow first. Only when you need CLI
+usage that they do not provide, consult `lh --help` or the relevant subcommand's `--help`.
+
 ## Inputs and procedure
 
 - `issue` — read it yourself with `lh issue view <n> --repo '<repo>' --json`.

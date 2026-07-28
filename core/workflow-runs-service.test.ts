@@ -361,6 +361,9 @@ test("start snapshots the contract language for parent and every later step", as
   expect(readFileSync(started.parent.system_prompt_path, "utf8")).toContain(
     "## 言語",
   );
+  expect(readFileSync(started.parent.system_prompt_path, "utf8")).toContain(
+    "`lh --help`",
+  );
   const execute = await svc.workflowRuns.launchStep(
     repo.full_name,
     { run: started.run.id, step: "execute" },
@@ -368,6 +371,9 @@ test("start snapshots the contract language for parent and every later step", as
   );
   expect(readFileSync(execute.system_prompt_path, "utf8")).toContain(
     "# Execute ステップ contract",
+  );
+  expect(readFileSync(execute.system_prompt_path, "utf8")).toContain(
+    "`lh --help`",
   );
   expect(execute.user_prompt).toContain("## Step prompt（ユーザー設定）");
   expect(execute.user_prompt).toContain("(none - contract に従ってください)");
@@ -378,6 +384,9 @@ test("start snapshots the contract language for parent and every later step", as
   );
   expect(readFileSync(verify.system_prompt_path, "utf8")).toContain(
     "# Verify ステップ contract",
+  );
+  expect(readFileSync(verify.system_prompt_path, "utf8")).toContain(
+    "`lh --help`",
   );
   expect(verify.pointers.at(-1)?.label).toBe(
     "review submission target (do not read the PR)",

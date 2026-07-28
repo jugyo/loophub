@@ -37,6 +37,53 @@ Example:
 Preserve input order."
     --ac "Exports retain input order" --ac "Repeated exports are byte-identical"`;
 
+const ISSUE_VIEW_DETAILS = `
+
+Usage:
+  lh issue view <number> [options]
+
+Options:
+  --repo <owner/name>   Repository (defaults to the repository at the current path).
+  --json                Print the issue, comments, acceptance criteria, and linked PR as JSON.
+  --help                Show this help without reading the database.`;
+
+const PR_REVIEW_DETAILS = `
+
+Usage:
+  lh pr review <number> [options]
+
+Options:
+  --event <verdict>       Review verdict: comment (default), pass, or request_changes.
+  --body <text>           Review summary.
+  --commit <sha>          Pin the review to this head commit (defaults to the current PR head).
+  --comments <json|file>  Line comments as [{ "path", "line", "side"?, "body" }].
+  --ac-results <json|file>
+                          Acceptance-criterion grades as
+                          [{ "criterion_id", "verdict", "note"? }].
+  --model <name>          Record the model that produced the review.
+  --repo <owner/name>     Repository (defaults to the repository at the current path).
+  --session-id <uuid>     Attribute the review to a registered agent session.
+  --json                  Print the submitted review as JSON.
+  --help                  Show this help without changing the database.`;
+
+const WORKFLOW_NEXT_DETAILS = `
+
+Usage:
+  lh workflow next <run> [--repo <owner/name>]
+    [--watch | --event <id> [--requires-changes true|false] | --note <text|->] [--json]
+
+Options:
+  --watch                   Wait for the run's next event, then return one advised action.
+  --event <id>              Advise from a specific observed event.
+  --requires-changes <bool> Supply the parent decision requested by the event.
+  --note <text|->           Process a direct human instruction; - reads the instruction from stdin.
+  --repo <owner/name>       Repository (defaults to the repository at the current path).
+  --json                    Print the action, observations, and structured instructions as JSON.
+  --help                    Show this help without reading or changing the database.
+
+Constraints:
+  --watch, --event, and --note are mutually exclusive.`;
+
 export const commandHelp: readonly CommandHelp[] = [
   { path: ["info"], description: "Show the resolved LoopHub environment." },
   {
@@ -68,7 +115,11 @@ export const commandHelp: readonly CommandHelp[] = [
     description: "Search issues and pull requests in a repository.",
   },
   { path: ["issue", "list"], description: "List issues." },
-  { path: ["issue", "view"], description: "Show an issue." },
+  {
+    path: ["issue", "view"],
+    description: "Show an issue.",
+    details: ISSUE_VIEW_DETAILS,
+  },
   { path: ["issue", "new"], description: "Create an issue interactively." },
   {
     path: ["issue", "create"],
@@ -118,7 +169,11 @@ export const commandHelp: readonly CommandHelp[] = [
     path: ["pr", "push-github-pr"],
     description: "Push a pull request branch to GitHub.",
   },
-  { path: ["pr", "review"], description: "Submit a pull request review." },
+  {
+    path: ["pr", "review"],
+    description: "Submit a pull request review.",
+    details: PR_REVIEW_DETAILS,
+  },
   {
     path: ["pr", "ready-for-review"],
     description: "Mark a pull request ready for review.",
@@ -204,6 +259,7 @@ export const commandHelp: readonly CommandHelp[] = [
   {
     path: ["workflow", "next"],
     description: "Advise the next Workflow parent action.",
+    details: WORKFLOW_NEXT_DETAILS,
   },
   {
     path: ["workflow", "step"],

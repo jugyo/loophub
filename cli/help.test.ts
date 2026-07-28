@@ -86,6 +86,54 @@ describe("--help", () => {
     expect(existsSync(join(home, "loophub.db"))).toBe(false);
   });
 
+  test.each([
+    {
+      args: ["issue", "view", "--help"],
+      usage: "lh issue view <number> [options]",
+      options: ["--repo <owner/name>", "--json", "--help"],
+    },
+    {
+      args: ["pr", "review", "--help"],
+      usage: "lh pr review <number> [options]",
+      options: [
+        "--event <verdict>",
+        "--body <text>",
+        "--commit <sha>",
+        "--comments <json|file>",
+        "--ac-results <json|file>",
+        "--repo <owner/name>",
+        "--json",
+        "--help",
+      ],
+    },
+    {
+      args: ["workflow", "next", "--help"],
+      usage: "lh workflow next <run>",
+      options: [
+        "--watch",
+        "--event <id>",
+        "--requires-changes <bool>",
+        "--note <text|->",
+        "--repo <owner/name>",
+        "--json",
+        "--help",
+      ],
+    },
+  ])("documents usage and options for $usage without touching the DB", ({
+    args,
+    usage,
+    options,
+  }) => {
+    const result = lh(args);
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Usage:");
+    expect(result.stdout).toContain(usage);
+    expect(result.stdout).toContain("Options:");
+    for (const option of options) expect(result.stdout).toContain(option);
+    expect(existsSync(join(home, "loophub.db"))).toBe(false);
+  });
+
   test("shows general usage at the root", () => {
     const result = lh(["--help"]);
 
