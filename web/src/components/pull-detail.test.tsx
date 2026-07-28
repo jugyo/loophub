@@ -686,7 +686,7 @@ describe("PullDetail", () => {
     expect(rpcCall("pulls/merge")).toBeFalsy();
   });
 
-  it("groups reviews under matching commits and keeps superseded commits visible", async () => {
+  it("groups reviews under matching commits and omits superseded commit reviews", async () => {
     // One review matches a listed commit; the other targets a commit outside base..head.
     const grouped: PullReview[] = [
       {
@@ -763,22 +763,11 @@ describe("PullDetail", () => {
       within(currentDialog).getByRole("button", { name: "Close reviews" }),
     );
 
-    const staleReviewStatus = screen.getByRole("button", {
-      name: "View 1 review for old1234",
-    });
-    expect(
-      within(staleReviewStatus).getByText("changes requested"),
-    ).toBeTruthy();
+    expect(screen.queryByText("old1234")).toBeNull();
     expect(screen.queryByText("needs work")).toBeNull();
-    fireEvent.click(staleReviewStatus);
-    const staleDialog = await screen.findByRole("dialog", {
-      name: "Reviews for old1234",
-    });
-    expect(within(staleDialog).getByText("needs work")).toBeTruthy();
-    expect(within(staleDialog).getByText("@design-bot")).toBeTruthy();
   });
 
-  it("keeps every review visible when none targets a listed commit", async () => {
+  it("omits every review when none targets a listed commit", async () => {
     const grouped: PullReview[] = [
       {
         id: 1,
@@ -833,31 +822,16 @@ describe("PullDetail", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("newer34")).toBeTruthy();
-    expect(screen.getByText("older12")).toBeTruthy();
+    await screen.findByRole("button", {
+      name: "View changes in aaaaaaa: Latest change",
+    });
+    expect(screen.queryByText("Reviews for unknown commits")).toBeNull();
+    expect(screen.queryByText("newer34")).toBeNull();
+    expect(screen.queryByText("older12")).toBeNull();
     expect(screen.queryByText("newest feedback")).toBeNull();
     expect(screen.queryByText("older feedback")).toBeNull();
     expect(screen.queryByText("current")).toBeNull();
-    expect(screen.getAllByText("changes requested").length).toBe(2);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "View 1 review for newer34" }),
-    );
-    const newestDialog = await screen.findByRole("dialog", {
-      name: "Reviews for newer34",
-    });
-    expect(within(newestDialog).getByText("newest feedback")).toBeTruthy();
-    fireEvent.click(
-      within(newestDialog).getByRole("button", { name: "Close reviews" }),
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "View 1 review for older12" }),
-    );
-    const olderDialog = await screen.findByRole("dialog", {
-      name: "Reviews for older12",
-    });
-    expect(within(olderDialog).getByText("older feedback")).toBeTruthy();
+    expect(screen.queryByText("changes requested")).toBeNull();
   });
 
   it("resolves a group's verdict from the latest review, so a later PASS clears an earlier REQUEST_CHANGES (#533)", async () => {

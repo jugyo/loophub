@@ -1,5 +1,5 @@
 // PR-detail commit/review timeline: commits stay newest first, and each row owns the reviews made
-// against that exact SHA. Reviews without a listed commit remain visible in fallback groups.
+// against that exact SHA. Reviews without a listed commit are omitted from the PR page.
 // Commit selection, per-commit diff loading, and the GitHub push badge stay inside this component.
 //
 // Rubric grades (#1897) ride along with the reviews they belong to: the row summarizes them as
@@ -55,14 +55,6 @@ export function PullCommitsSection({
     const list = commentsByReview.get(comment.pull_request_review_id) ?? [];
     list.push(comment);
     commentsByReview.set(comment.pull_request_review_id, list);
-  }
-  const commitShas = new Set(commits.map((commit) => commit.sha));
-  const unknownReviewGroups = new Map<string | null, PullReview[]>();
-  for (const review of reviews) {
-    if (review.head_sha && commitShas.has(review.head_sha)) continue;
-    const list = unknownReviewGroups.get(review.head_sha) ?? [];
-    list.push(review);
-    unknownReviewGroups.set(review.head_sha, list);
   }
   return (
     <section
@@ -141,44 +133,6 @@ export function PullCommitsSection({
           })}
         </ul>
       )}
-      {!isReviewsLoading && !isReviewsError && unknownReviewGroups.size > 0 ? (
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Reviews for unknown commits
-          </h3>
-          {[...unknownReviewGroups].map(([headSha, groupedReviews]) => {
-            const reviewLabel = headSha?.slice(0, 7) ?? "unknown commit";
-            return (
-              <div
-                key={headSha ?? "unknown"}
-                data-debug-component="UnknownCommitReviewGroup"
-                className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
-              >
-                <div className="text-sm font-medium">
-                  {headSha ? (
-                    <code className="rounded bg-muted px-1 py-0.5 text-xs">
-                      {reviewLabel}
-                    </code>
-                  ) : (
-                    reviewLabel
-                  )}
-                </div>
-                <CommitReviewStatus
-                  reviews={groupedReviews}
-                  commentsByReview={commentsByReview}
-                  label={reviewLabel}
-                  onOpen={() =>
-                    setSelectedReviewGroup({
-                      label: reviewLabel,
-                      reviews: groupedReviews,
-                    })
-                  }
-                />
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
       {selectedCommit ? (
         <CommitDiffDialog
           owner={owner}

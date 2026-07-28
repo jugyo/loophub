@@ -280,8 +280,18 @@ describe("PullCommitsSection", () => {
     expect(within(dialog).getByText(/No AC grading/)).toBeTruthy();
   });
 
-  it("keeps null and out-of-range reviews in compact unknown commit groups", async () => {
+  it("omits null and out-of-range reviews while keeping known commit reviews", async () => {
     const reviews: PullReview[] = [
+      {
+        id: 1,
+        user: { login: "quality-bot" },
+        state: "PASS",
+        body: "Known review",
+        head_sha: commits![0].sha,
+        model: null,
+        submitted_at: "2026-06-18T12:30:00Z",
+        ac_results: [],
+      },
       {
         id: 2,
         user: { login: "legacy-bot" },
@@ -304,43 +314,24 @@ describe("PullCommitsSection", () => {
       },
     ];
 
-    renderSection({ commits: [], reviews });
+    renderSection({ reviews });
 
-    const unknownReviews = screen
-      .getByRole("heading", { name: "Reviews for unknown commits" })
-      .closest("div")!;
-    expect(within(unknownReviews).queryByText("Legacy review")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View 1 review for aaaaaaa: Latest change",
+      }),
+    );
+    const knownDialog = await screen.findByRole("dialog", {
+      name: "Reviews for aaaaaaa: Latest change",
+    });
+    expect(within(knownDialog).getByText("Known review")).toBeTruthy();
+    expect(screen.queryByText("Reviews for unknown commits")).toBeNull();
+    expect(screen.queryByText("unknown commit")).toBeNull();
+    expect(screen.queryByText("ccccccc")).toBeNull();
+    expect(screen.queryByText("Legacy review")).toBeNull();
     expect(
-      within(unknownReviews).queryByText(
-        "Review for a commit outside this diff",
-      ),
+      screen.queryByText("Review for a commit outside this diff"),
     ).toBeNull();
-
-    fireEvent.click(
-      within(unknownReviews).getByRole("button", {
-        name: "View 1 review for unknown commit",
-      }),
-    );
-    const legacyDialog = await screen.findByRole("dialog", {
-      name: "Reviews for unknown commit",
-    });
-    expect(within(legacyDialog).getByText("Legacy review")).toBeTruthy();
-    fireEvent.click(
-      within(legacyDialog).getByRole("button", { name: "Close reviews" }),
-    );
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-
-    fireEvent.click(
-      within(unknownReviews).getByRole("button", {
-        name: "View 1 review for ccccccc",
-      }),
-    );
-    const staleDialog = await screen.findByRole("dialog", {
-      name: "Reviews for ccccccc",
-    });
-    expect(
-      within(staleDialog).getByText("Review for a commit outside this diff"),
-    ).toBeTruthy();
   });
 
   it("computes each commit verdict from the latest substantive review", async () => {
