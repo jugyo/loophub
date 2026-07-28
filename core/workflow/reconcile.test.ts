@@ -14,7 +14,7 @@ function observed(
 ): WorkflowReconcileInput {
   return {
     status: "running",
-    prMerged: false,
+    prClosed: false,
     currentStep: "execute",
     activeStep: null,
     needsHumanReason: null,
@@ -427,13 +427,19 @@ describe("reconcileWorkflow", () => {
   });
 
   test("completes the run once the linked PR is merged", () => {
-    expect(reconcileWorkflow(observed({ prMerged: true }))).toMatchObject({
+    expect(reconcileWorkflow(observed({ prClosed: true }))).toMatchObject({
       action: "complete",
     });
   });
 
-  // Nothing observable can still change what shipped, so merge outranks every other state — a
-  // pending receipt, a human hold, a merge conflict, or an unaddressed review.
+  test("completes the run once the linked PR is closed", () => {
+    expect(reconcileWorkflow(observed({ prClosed: true }))).toMatchObject({
+      action: "complete",
+    });
+  });
+
+  // Nothing observable can still change a terminal run, so PR completion outranks every other
+  // state — a pending receipt, a human hold, a merge conflict, or an unaddressed review.
   test.each<[string, Partial<WorkflowReconcileInput>]>([
     [
       "a pending effect receipt",
@@ -459,7 +465,7 @@ describe("reconcileWorkflow", () => {
     ["a human instruction", { wake: { kind: "human_instruction" } }],
   ])("completes a merged run despite %s", (_label, patch) => {
     expect(
-      reconcileWorkflow(observed({ ...patch, prMerged: true })),
+      reconcileWorkflow(observed({ ...patch, prClosed: true })),
     ).toMatchObject({ action: "complete" });
   });
 
@@ -555,7 +561,7 @@ describe("reconcileWorkflow", () => {
     expect(
       reconcileWorkflow(
         observed({
-          prMerged: true,
+          prClosed: true,
           wake: { kind: "cost_exceeded", eventId: 93 },
         }),
       ),

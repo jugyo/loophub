@@ -46,6 +46,7 @@ import {
   paginate,
   repoOr404,
 } from "./shared.ts";
+import { projectWorkflowRunClosed } from "./workflow-run-events.ts";
 
 // #850: how long a cached GitHub PR status is served before hitting `gh` again. On-demand from the
 // PR-detail sidebar, so a short TTL keeps the panel roughly live without spawning a `gh` per render.
@@ -232,13 +233,19 @@ export const pulls = {
       throw new ServiceError(405, "Pull Request is already merged");
     }
     const actor = actorFor(sessionId);
+    const closesPull = row.state === "open" && patch.state === "closed";
     const issuePatch: Parameters<typeof S.updateIssue>[1] = {
       title: patch.title,
       body: patch.body,
       state: patch.state as "open" | "closed" | undefined,
     };
     S.updateIssue(row.id, issuePatch);
-    S.emitEvent(r.id, "pull_request.updated", actor, { number: row.number });
+    const updatedEvent = S.emitEvent(r.id, "pull_request.updated", actor, {
+      number: row.number,
+    });
+    if (closesPull) {
+      projectWorkflowRunClosed(r.id, row.number, actor, updatedEvent);
+    }
     return pullJSON(r, S.getIssue(r.id, row.number)!);
   },
 
@@ -624,22 +631,8 @@ export const pulls = {
       number: row.number,
       sha: res.sha,
     });
-    // The merge is a running Workflow run's terminal condition (#1808), so project it into a
-    // run-scoped event — mirroring the conflict projection in core/pull-conflict-events.ts (#1516).
-    // Without it a parent blocked in `lh workflow next --watch` would keep waiting on a run that is
-    // already finished. The decision still comes from the PR's own merged state; this event only
-    // wakes the watcher.
-    const run = S.runningWorkflowRunForPull(r.id, row.number);
-    if (run) {
-      S.emitWorkflowEvent(r.id, "workflow_run.merged", actor, {
-        id: run.id,
-        number: row.number,
-        pr_number: row.number,
-        parent_session_id: run.parent_session_id,
-        source_event_id: mergedEvent.id,
-        source_event_type: mergedEvent.type,
-      });
-    }
+    // Merge closes the PR, so use the same run-scoped close trigger as every other close route.
+    projectWorkflowRunClosed(r.id, row.number, actor, mergedEvent);
     if (closedIssue != null) {
       S.emitEvent(r.id, "issue.closed", actor, {
         number: closedIssue,

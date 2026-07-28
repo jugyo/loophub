@@ -101,6 +101,9 @@ describe("workflowRunHistoryEventJSON significance", () => {
     expect(
       significanceOf("workflow_run.review_submitted", { review_id: 5 }, "PASS"),
     ).toBe("notable");
+    expect(significanceOf("workflow_run.closed", { pr_number: 7 })).toBe(
+      "notable",
+    );
     expect(significanceOf("workflow_run.merged", { pr_number: 7 })).toBe(
       "notable",
     );
@@ -416,7 +419,23 @@ const RENDERED_EVENT_CASES: Array<{
     significance: "default",
   },
   {
-    name: "merged",
+    name: "closed",
+    type: "workflow_run.closed",
+    payload: { pr_number: 7 },
+    label: "Linked PR closed",
+    description: "PR #7 closed — the run's terminal condition.",
+    significance: "notable",
+  },
+  {
+    name: "closed/no-number",
+    type: "workflow_run.closed",
+    payload: {},
+    label: "Linked PR closed",
+    description: "The linked PR closed — the run's terminal condition.",
+    significance: "notable",
+  },
+  {
+    name: "legacy-merged",
     type: "workflow_run.merged",
     payload: { pr_number: 7 },
     label: "Linked PR merged",
@@ -424,7 +443,7 @@ const RENDERED_EVENT_CASES: Array<{
     significance: "notable",
   },
   {
-    name: "merged/no-number",
+    name: "legacy-merged/no-number",
     type: "workflow_run.merged",
     payload: {},
     label: "Linked PR merged",

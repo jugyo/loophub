@@ -61,6 +61,31 @@ async function createAttempt(
   );
 }
 
+function attachWorkflowRun(
+  repoId: number,
+  issueNumber: number,
+  prNumber: number,
+  parentSessionId: string,
+) {
+  const workflow = S.createWorkflow({
+    name: `attempt-close-${prNumber}`,
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  return S.createWorkflowRun({
+    workflowId: workflow.id,
+    repoId,
+    issueNumber,
+    prNumber,
+    status: "running",
+    currentStep: "execute",
+    costIncrementUsd: 10,
+    costLimitUsd: 10,
+    parentSessionId,
+  });
+}
+
 beforeAll(async () => {
   S = await import("./store.ts");
   svc = await import("./service.ts");
@@ -98,6 +123,12 @@ test("merging an attempt closes open siblings with comments and traceable events
     "me/merge-attempts",
     issue.number,
     "sibling-b",
+  );
+  const siblingRun = attachWorkflowRun(
+    repo.id,
+    issue.number,
+    siblingA.number,
+    "sibling-parent",
   );
   const sessionBefore = S.getAgentSession("running-sibling");
 
@@ -140,6 +171,15 @@ test("merging an attempt closes open siblings with comments and traceable events
       },
     ]),
   );
+  const workflowClose = S.eventsForWorkflowRun(repo.id, siblingRun.id).find(
+    (event) => event.type === "workflow_run.closed",
+  );
+  expect(JSON.parse(workflowClose!.payload)).toMatchObject({
+    id: siblingRun.id,
+    pr_number: siblingA.number,
+    parent_session_id: "sibling-parent",
+    source_event_type: "pull_request.closed",
+  });
 });
 
 test("closing an issue directly closes every open attempt and is idempotent", async () => {
@@ -151,6 +191,12 @@ test("closing an issue directly closes every open attempt and is idempotent", as
     createAttempt("me/direct-close", issue.number, "direct-a"),
     createAttempt("me/direct-close", issue.number, "direct-b"),
   ]);
+  const attemptRun = attachWorkflowRun(
+    repo.id,
+    issue.number,
+    attempts[0].number,
+    "direct-close-parent",
+  );
 
   svc.issues.update(
     "me/direct-close",
@@ -181,4 +227,14 @@ test("closing an issue directly closes every open attempt and is idempotent", as
   expect(
     closeEvents.map((event) => JSON.parse(event.payload).superseded_by),
   ).toEqual([undefined, undefined]);
+  const workflowClose = S.eventsForWorkflowRun(repo.id, attemptRun.id).filter(
+    (event) => event.type === "workflow_run.closed",
+  );
+  expect(workflowClose).toHaveLength(1);
+  expect(JSON.parse(workflowClose[0].payload)).toMatchObject({
+    id: attemptRun.id,
+    pr_number: attempts[0].number,
+    parent_session_id: "direct-close-parent",
+    source_event_type: "pull_request.closed",
+  });
 });

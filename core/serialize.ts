@@ -1426,7 +1426,7 @@ export interface WorkflowRunStateWire {
   id: number;
   workflow_id: number | null;
   workflow_name: string | null;
-  status: string; // running | completed (merged PR, #1808); legacy rows may read 'stopped' or 'blocked'
+  status: string; // running | completed (closed PR); legacy rows may read 'stopped' or 'blocked'
   current_step: string; // execute | verify
   rework_count: number;
   cost_increment_usd: number;
@@ -1477,10 +1477,10 @@ export interface WorkflowStepStatusWire {
   head_ahead_of_base: boolean;
   head_ahead_of_latest_review: boolean;
   merge_conflict: boolean;
-  // The linked PR's own domain state, whatever route merged it (#1808). The run's terminal
-  // condition is read from here rather than from a merge event, so every merge path lands on the
-  // same reconciliation.
+  // The linked PR's own domain state. The run's terminal condition is read from these fields
+  // rather than from a close / merge event, so every route lands on the same reconciliation.
   pr_merged: boolean;
+  pr_closed: boolean;
   last_turn_done_at: string | null;
   turn_done_for_active_execute: boolean;
   // Whether a Verify child was launched after the latest turn done. False means the Verify marked
@@ -1669,7 +1669,7 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     significance: "default",
   },
   "workflow_run.updated": {
-    // `completed` marks the run's one terminal condition: its linked PR merged (#1808). A passing
+    // `completed` marks the run's terminal condition: its linked PR closed. A passing
     // Verify does not reach it — that keeps the run `running` + `verification_status: verified`
     // (#1513). `stopped` (#1525) stays a legacy status with no write path (a cost stop interrupts
     // only the child); old event rows can still carry it, like the legacy `blocked` case.
@@ -1822,6 +1822,8 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     },
     significance: "default",
   },
+  // Legacy history entry: merge now emits workflow_run.closed, but existing databases retain
+  // workflow_run.merged rows that must keep their original presentation.
   "workflow_run.merged": {
     label: "Linked PR merged",
     description: ({ payload }) => {
@@ -1829,6 +1831,16 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
       return prNumber !== null
         ? `PR #${prNumber} merged — the run's terminal condition.`
         : "The linked PR merged — the run's terminal condition.";
+    },
+    significance: "notable",
+  },
+  "workflow_run.closed": {
+    label: "Linked PR closed",
+    description: ({ payload }) => {
+      const prNumber = payloadNumber(payload, "pr_number");
+      return prNumber !== null
+        ? `PR #${prNumber} closed — the run's terminal condition.`
+        : "The linked PR closed — the run's terminal condition.";
     },
     significance: "notable",
   },

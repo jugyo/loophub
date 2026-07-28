@@ -1850,15 +1850,16 @@ test("a merged PR completes the run, unblocks the watcher, and ends cost detecti
   await svc.pulls.merge(repo.full_name, started.pr.number, "merge");
   const completed = await blocked;
   expect(completed).toMatchObject({ action: "complete" });
-  // The merge is projected onto the run, which is what wakes the blocked watcher.
+  // Merge closes the PR and uses the same close trigger as an unmerged close.
   const projected = S.eventsForWorkflowRun(repo.id, run).filter(
-    (event) => event.type === "workflow_run.merged",
+    (event) => event.type === "workflow_run.closed",
   );
   expect(projected).toHaveLength(1);
   expect(JSON.parse(projected[0].payload)).toMatchObject({
     id: run,
     pr_number: started.pr.number,
     parent_session_id: parent,
+    source_event_type: "pull_request.merged",
   });
   expect(completed.event?.id).toBe(projected[0].id);
   expect(completed.observed.pr_merged).toBe(true);
@@ -1924,6 +1925,106 @@ test("any merge route that leaves the PR merged completes the run", async () => 
 
   expect(await svc.workflowRuns.next(repo.full_name, { run })).toMatchObject({
     action: "complete",
+  });
+  expect(S.getWorkflowRun(run)?.status).toBe("completed");
+}, 20_000);
+
+test("closing an unmerged PR wakes its watcher and completes the run", async () => {
+  const { repo } = freshRepo("me/workflow-close-route");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Close route",
+    "## Acceptance criteria\n- [ ] Stops when closed\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "close-route-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const parent = "e4e4e4e4-e4e4-4e4e-8e4e-e4e4e4e4e4e4";
+  const started = await svc.workflowRuns.start(
+    repo.full_name,
+    { issue: issue.number, workflowId: workflow.id },
+    parent,
+  );
+  const run = started.run.id;
+
+  for (const queued of S.eventsForWorkflowRun(repo.id, run).filter((event) =>
+    event.type.startsWith("workflow_run."),
+  )) {
+    expect(
+      (await svc.workflowRuns.next(repo.full_name, { run, watch: true })).event
+        ?.id,
+    ).toBe(queued.id);
+  }
+
+  const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  svc.pulls.update(repo.full_name, started.pr.number, { state: "closed" });
+
+  const completed = await blocked;
+  expect(completed).toMatchObject({ action: "complete" });
+  expect(completed.observed).toMatchObject({
+    pr_merged: false,
+    pr_closed: true,
+    status: "completed",
+  });
+  expect(S.getWorkflowRun(run)?.status).toBe("completed");
+
+  const projected = S.eventsForWorkflowRun(repo.id, run).filter(
+    (event) => event.type === "workflow_run.closed",
+  );
+  expect(projected).toHaveLength(1);
+  expect(JSON.parse(projected[0].payload)).toMatchObject({
+    id: run,
+    pr_number: started.pr.number,
+    parent_session_id: parent,
+  });
+  expect(completed.event?.id).toBe(projected[0].id);
+}, 20_000);
+
+test("closing a PR through issues.update wakes its watcher and completes the run", async () => {
+  const { repo } = freshRepo("me/workflow-issue-update-close");
+  const issue = S.createIssue(
+    repo.id,
+    "issue",
+    "Issue update close",
+    "## Acceptance criteria\n- [ ] Stops when closed\n",
+    "me",
+  );
+  const workflow = S.createWorkflow({
+    name: "issue-update-close-wf",
+    description: "",
+    executePrompt: "",
+    verifyPrompt: "",
+  });
+  const started = await svc.workflowRuns.start(repo.full_name, {
+    issue: issue.number,
+    workflowId: workflow.id,
+  });
+  const run = started.run.id;
+
+  for (const queued of S.eventsForWorkflowRun(repo.id, run).filter((event) =>
+    event.type.startsWith("workflow_run."),
+  )) {
+    expect(
+      (await svc.workflowRuns.next(repo.full_name, { run, watch: true })).event
+        ?.id,
+    ).toBe(queued.id);
+  }
+
+  const blocked = svc.workflowRuns.next(repo.full_name, { run, watch: true });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  svc.issues.update(repo.full_name, started.pr.number, { state: "closed" });
+
+  const completed = await blocked;
+  expect(completed).toMatchObject({
+    action: "complete",
+    observed: { pr_closed: true, status: "completed" },
+    event: { type: "workflow_run.closed" },
   });
   expect(S.getWorkflowRun(run)?.status).toBe("completed");
 }, 20_000);
@@ -3375,7 +3476,7 @@ test("history ranks lifecycle events by what a human judges the run by (#1867)",
   S.emitEvent(repo.id, "workflow_run.usage_updated", "worker", base);
   // A type this serializer has never seen keeps the default look instead of throwing.
   S.emitEvent(repo.id, "workflow_run.teleported", "worker", base);
-  S.emitEvent(repo.id, "workflow_run.merged", "me", base);
+  S.emitEvent(repo.id, "workflow_run.closed", "me", base);
 
   const history = svc.workflowRuns.history(repo.full_name, { run: run.id });
   const ranked = (significance: string) =>
@@ -3393,7 +3494,7 @@ test("history ranks lifecycle events by what a human judges the run by (#1867)",
     // A merge conflict stalls the flow skeleton, so #1874 promoted it to notable.
     "workflow_run.merge_conflict:Merge conflict detected",
     "workflow_run.review_submitted:Review passed",
-    "workflow_run.merged:Linked PR merged",
+    "workflow_run.closed:Linked PR closed",
   ]);
   expect(ranked("routine")).toEqual([
     "workflow_run.turn_done:Turn done declared",
@@ -3414,7 +3515,7 @@ test("history ranks lifecycle events by what a human judges the run by (#1867)",
   expect(history[8].description).toContain("from $40.00 to $60.00");
   expect(history[10].description).toContain("GitHub PR #512");
   expect(history[12].description).toContain("Verify cleared this");
-  expect(history[15].description).toContain(`PR #${prIssue.number} merged`);
+  expect(history[15].description).toContain(`PR #${prIssue.number} closed`);
 });
 
 test("history falls back to an unknown verdict when the review row is gone (#1867)", () => {

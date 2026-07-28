@@ -1,4 +1,5 @@
 import * as S from "../store.ts";
+import { projectWorkflowRunClosed } from "./workflow-run-events.ts";
 
 interface CloseOpenAttemptsInput {
   repoId: number;
@@ -29,13 +30,24 @@ export function closeOpenAttemptsForIssue(
         ? `Superseded by #${input.supersededByPull}.`
         : `Closed because linked issue #${linkedIssue.number} was closed.`,
     );
-    S.emitEvent(input.repoId, "pull_request.closed", input.actor, {
-      number: pull.number,
-      linked_issue: linkedIssue.number,
-      ...(input.supersededByPull !== undefined
-        ? { superseded_by: input.supersededByPull }
-        : {}),
-    });
+    const closedEvent = S.emitEvent(
+      input.repoId,
+      "pull_request.closed",
+      input.actor,
+      {
+        number: pull.number,
+        linked_issue: linkedIssue.number,
+        ...(input.supersededByPull !== undefined
+          ? { superseded_by: input.supersededByPull }
+          : {}),
+      },
+    );
+    projectWorkflowRunClosed(
+      input.repoId,
+      pull.number,
+      input.actor,
+      closedEvent,
+    );
     closed.push(pull.number);
   }
   return closed;

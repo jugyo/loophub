@@ -773,6 +773,7 @@ async function observeWorkflowRunStatus(
     head_ahead_of_latest_review: progress.headAheadOfLatestReview,
     merge_conflict: progress.mergeConflict,
     pr_merged: pull.merged === 1,
+    pr_closed: prIssue.state === "closed",
     last_turn_done_at: turnDone.at,
     turn_done_for_active_execute: turnDone.forActiveExecute,
     verify_launched_after_turn_done: turnDone.verifyLaunchedAfter,
@@ -2106,15 +2107,16 @@ export const workflowRuns = {
       projectWorkflowRunEvents(rows),
     );
     const prIssue = issueOr404(r, run.pr_number, "pull");
-    // Terminal condition (#1808): once the linked PR is merged there is nothing left to reconcile.
-    // Record it from the observation rather than from the merge itself — that keeps the run
-    // lifecycle owned by this service, makes every merge route land on the same result (the PR's
-    // own `merged` column is the fact), and covers the wake path too: a watcher that was already
-    // blocked when the merge landed records the completion on the wake that follows. A completed
-    // run is no longer a `running` target for cost detection, so no further cost-exceeded edge can
-    // fire for it.
+    // Terminal condition: once the linked PR is closed there is nothing left to reconcile. Merge
+    // closes the PR and reaches this same path.
+    // Record it from the observation rather than from the PR operation itself — that keeps the run
+    // lifecycle owned by this service, makes every close / merge route land on the same result
+    // (the PR's own state is the fact), and covers the wake path too: a watcher that was already
+    // blocked when the operation landed records the completion on the wake that follows. A
+    // completed run is no longer a `running` target for cost detection, so no further cost-exceeded
+    // edge can fire for it.
     const completedNow =
-      observedState.pr_merged && S.getWorkflowRun(run.id)?.status === "running"
+      observedState.pr_closed && S.getWorkflowRun(run.id)?.status === "running"
         ? updateRunLifecycle(
             run,
             { status: "completed" },
@@ -2128,7 +2130,7 @@ export const workflowRuns = {
         : { ...observedState, status: completedNow };
     const action = reconcileWorkflow({
       status: observed.status,
-      prMerged: observed.pr_merged,
+      prClosed: observed.pr_closed,
       currentStep: workflowStep(observed.current_step),
       activeStep:
         observed.active_step === null

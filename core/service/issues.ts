@@ -30,6 +30,7 @@ import {
   paginate,
   repoOr404,
 } from "./shared.ts";
+import { projectWorkflowRunClosed } from "./workflow-run-events.ts";
 
 const ISSUE_LIST_LOOKAHEAD_MAX = MAX_LIST_PER_PAGE + 1;
 
@@ -391,7 +392,7 @@ export const issues = {
       });
     }
     if (patch.state === "closed" && wasOpen) {
-      S.emitEvent(
+      const closedEvent = S.emitEvent(
         r.id,
         row.kind === "pull" ? "pull_request.updated" : "issue.closed",
         actor,
@@ -399,7 +400,9 @@ export const issues = {
           number: row.number,
         },
       );
-      if (row.kind === "issue") {
+      if (row.kind === "pull") {
+        projectWorkflowRunClosed(r.id, row.number, actor, closedEvent);
+      } else {
         closeOpenAttemptsForIssue({
           repoId: r.id,
           linkedIssueId: row.id,

@@ -8,8 +8,8 @@ import type { WorkflowStepStatuses } from "./steps.ts";
 
 export type WorkflowReconcileInput = {
   status: string;
-  /** The linked PR's domain state is merged — the run's terminal condition (#1808). */
-  prMerged: boolean;
+  /** The linked PR is closed, whether by merge or an unmerged close. */
+  prClosed: boolean;
   currentStep: WorkflowStep;
   activeStep: WorkflowStep | null;
   needsHumanReason: WorkflowStepStatusWire["needs_human_reason"];
@@ -273,14 +273,13 @@ export const WORKFLOW_REWORK_LIMIT = 3;
 export function reconcileWorkflow(
   input: WorkflowReconcileInput,
 ): WorkflowNextAction {
-  // A merged PR is the only terminal condition (#1808), so it outranks every other observation: a
-  // pending receipt, a human hold, or an unaddressed review can no longer change what shipped. A
-  // fresh pass alone is deliberately not terminal — the run keeps accepting work while the PR is
-  // open.
-  if (input.prMerged) {
+  // A merged or closed PR is terminal, so it outranks every other observation: a pending receipt,
+  // a human hold, or an unaddressed review can no longer change the run. A fresh pass alone is
+  // deliberately not terminal — the run keeps accepting work while the PR is open.
+  if (input.prClosed) {
     return {
       action: "complete",
-      reason: "The linked pull request is merged; the run is complete.",
+      reason: "The linked pull request is closed; the run is complete.",
     };
   }
 

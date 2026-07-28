@@ -141,7 +141,11 @@ export interface WorkflowEventPayloadMap {
   "workflow_run.merge_conflict": WorkflowRunScoped &
     WorkflowRunDelivery &
     WorkflowRunProjectionSource & { pr_number: number };
+  /** Legacy merge trigger retained for typed reads of persisted events; new writers emit closed. */
   "workflow_run.merged": WorkflowRunScoped &
+    WorkflowRunDelivery &
+    WorkflowRunProjectionSource & { pr_number: number };
+  "workflow_run.closed": WorkflowRunScoped &
     WorkflowRunDelivery &
     WorkflowRunProjectionSource & { pr_number: number };
   "workflow_run.github_event": WorkflowRunScoped &
