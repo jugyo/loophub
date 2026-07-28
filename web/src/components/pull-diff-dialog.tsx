@@ -4,11 +4,12 @@
 // renamed / invisible-character filenames. The Files changed section only picks the open file and
 // drives prev/next navigation through props.
 
-import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Filter, Loader2, X } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { PullFile, PullLineComment } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
 import { DiffStat } from "@/components/diff-stat";
+import { FileStatusBadge } from "@/components/file-status-badge";
 import { Markdown } from "@/components/markdown";
 import { Button, disabledButtonStateClasses } from "@/components/ui/button";
 import {
@@ -101,9 +102,44 @@ const DIFF_LINE_MARKER: Record<DiffLineKind, string> = {
   context: " ",
 };
 
-const INITIAL_FILE_SIDEBAR_WIDTH = 256;
+const INITIAL_FILE_SIDEBAR_WIDTH = 336;
 const MIN_FILE_SIDEBAR_WIDTH = 160;
 const MAX_FILE_SIDEBAR_WIDTH = 480;
+
+function globPatternToRegExp(pattern: string) {
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "*") {
+      if (pattern[index + 1] === "*") {
+        if (pattern[index + 2] === "/") {
+          source += "(?:.*/)?";
+          index += 2;
+        } else {
+          source += ".*";
+          index += 1;
+        }
+      } else {
+        source += "[^/]*";
+      }
+    } else if (char === "?") {
+      source += "[^/]";
+    } else {
+      source += char.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+    }
+  }
+  return new RegExp(`^${source}$`);
+}
+
+function matchesGlobList(filename: string, value: string) {
+  const patterns = value
+    .split(",")
+    .map((pattern) => pattern.trim())
+    .filter(Boolean);
+  return patterns.some((pattern) =>
+    globPatternToRegExp(pattern).test(filename),
+  );
+}
 
 export function DiffFileDialog({
   owner,
@@ -136,6 +172,9 @@ export function DiffFileDialog({
     useState<StandardDiffDialogMode>("diff");
   const [markdownMode, setMarkdownMode] = useState<DiffDialogMode>("diff");
   const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("split");
+  const [showFileFilters, setShowFileFilters] = useState(false);
+  const [includePattern, setIncludePattern] = useState("");
+  const [excludePattern, setExcludePattern] = useState("");
   const [fileSidebarWidth, setFileSidebarWidth] = useState(
     INITIAL_FILE_SIDEBAR_WIDTH,
   );
@@ -148,6 +187,17 @@ export function DiffFileDialog({
   const isMarkdown =
     MARKDOWN_FILENAME.test(file.filename) && !isSyntheticRenameFilename(file);
   const mode = isMarkdown ? markdownMode : standardMode;
+  const filteredFiles = useMemo(
+    () =>
+      files.filter(
+        (candidate) =>
+          (!includePattern.trim() ||
+            matchesGlobList(candidate.filename, includePattern)) &&
+          (!excludePattern.trim() ||
+            !matchesGlobList(candidate.filename, excludePattern)),
+      ),
+    [excludePattern, files, includePattern],
+  );
 
   function selectMode(nextMode: DiffDialogMode) {
     if (nextMode === "base" || nextMode === "head") {
@@ -216,25 +266,84 @@ export function DiffFileDialog({
           className="shrink-0 overflow-y-auto bg-muted/20"
           style={{ width: fileSidebarWidth }}
         >
-          <div className="sticky top-0 border-b bg-background/95 px-3 py-2 text-xs font-semibold backdrop-blur">
-            Files changed ({files.length})
+          <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
+            <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold">
+              <span>
+                Files changed ({filteredFiles.length}
+                {filteredFiles.length !== files.length
+                  ? ` of ${files.length}`
+                  : ""}
+                )
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Toggle file filters"
+                aria-expanded={showFileFilters}
+                className={cn(
+                  "size-6",
+                  (includePattern || excludePattern) && "text-primary",
+                )}
+                onClick={() => setShowFileFilters((visible) => !visible)}
+              >
+                <Filter className="size-3.5" />
+              </Button>
+            </div>
+            {showFileFilters ? (
+              <div className="grid gap-2 border-t px-3 py-2">
+                <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
+                  Include
+                  <input
+                    type="text"
+                    aria-label="Include files"
+                    placeholder="e.g. web/**, *.md"
+                    value={includePattern}
+                    onChange={(event) => setIncludePattern(event.target.value)}
+                    className="h-7 rounded-md border bg-background px-2 font-mono text-xs font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </label>
+                <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
+                  Exclude
+                  <input
+                    type="text"
+                    aria-label="Exclude files"
+                    placeholder="e.g. **/*.test.ts"
+                    value={excludePattern}
+                    onChange={(event) => setExcludePattern(event.target.value)}
+                    className="h-7 rounded-md border bg-background px-2 font-mono text-xs font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </label>
+              </div>
+            ) : null}
           </div>
           <ul className="py-1">
-            {files.map((sidebarFile) => {
+            {filteredFiles.map((sidebarFile) => {
               const selected = sidebarFile.filename === file.filename;
               return (
                 <li key={sidebarFile.filename}>
                   <button
                     type="button"
+                    aria-label={sidebarFile.filename}
                     aria-current={selected ? "true" : undefined}
                     className={cn(
-                      "block w-full break-all px-3 py-1.5 text-left font-mono text-xs hover:bg-muted",
+                      "grid w-full gap-1 px-3 py-1.5 text-left hover:bg-muted",
                       selected &&
                         "bg-accent font-medium text-accent-foreground",
                     )}
                     onClick={() => onSelectFile(sidebarFile.filename)}
                   >
-                    {sidebarFile.filename}
+                    <span className="break-all font-mono text-xs">
+                      {sidebarFile.filename}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <FileStatusBadge status={sidebarFile.status} />
+                      <DiffStat
+                        additions={sidebarFile.additions}
+                        deletions={sidebarFile.deletions}
+                        className="text-[11px]"
+                      />
+                    </span>
                   </button>
                 </li>
               );
@@ -276,7 +385,7 @@ export function DiffFileDialog({
                 />
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                <span>{file.status}</span>
+                <FileStatusBadge status={file.status} />
                 <DiffStat
                   additions={file.additions}
                   deletions={file.deletions}

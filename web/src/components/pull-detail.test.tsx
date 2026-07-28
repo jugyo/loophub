@@ -395,6 +395,7 @@ describe("PullDetail", () => {
     await screen.findByRole("heading", {
       name: /Files changed \(1\)/,
     });
+    expect(screen.getByLabelText("File status: modified")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Reviews" })).toBeNull();
   });
 

@@ -265,9 +265,15 @@ describe("DiffFileDialog", () => {
     expect(onNextFile).toHaveBeenCalledTimes(1);
   });
 
-  it("lists changed file paths flat and selects a file from the sidebar", () => {
+  it("lists changed file details flat and selects a file from the sidebar", () => {
     const onSelectFile = vi.fn();
-    const secondFile = { ...file, filename: "core/nested/b.ts" };
+    const secondFile = {
+      ...file,
+      filename: "core/nested/b.ts",
+      status: "added",
+      additions: 4,
+      deletions: 0,
+    };
     renderDialog({ files: [file, secondFile], onSelectFile });
 
     const sidebar = screen.getByRole("complementary", {
@@ -279,12 +285,19 @@ describe("DiffFileDialog", () => {
     expect(within(sidebar).getByText("Files changed (2)")).toBeTruthy();
     expect(
       within(sidebar)
-        .getByRole("button", { name: "web/src/a.ts" })
+        .getByRole("button", { name: /web\/src\/a\.ts/ })
         .getAttribute("aria-current"),
     ).toBe("true");
+    expect(
+      within(sidebar).getByLabelText("File status: modified"),
+    ).toBeTruthy();
+    expect(within(sidebar).getByText("+1")).toBeTruthy();
+    expect(within(sidebar).getByText("−1")).toBeTruthy();
+    expect(within(sidebar).getByLabelText("File status: added")).toBeTruthy();
+    expect(within(sidebar).getByText("+4")).toBeTruthy();
 
     fireEvent.click(
-      within(sidebar).getByRole("button", { name: "core/nested/b.ts" }),
+      within(sidebar).getByRole("button", { name: /core\/nested\/b\.ts/ }),
     );
     expect(onSelectFile).toHaveBeenCalledWith("core/nested/b.ts");
     expect(within(sidebar).queryByText("core")).toBeNull();
@@ -300,13 +313,60 @@ describe("DiffFileDialog", () => {
     const separator = screen.getByRole("separator", {
       name: "Resize changed files sidebar",
     });
-    expect((sidebar as HTMLElement).style.width).toBe("256px");
+    expect((sidebar as HTMLElement).style.width).toBe("336px");
 
-    fireEvent.pointerDown(separator, { button: 0, clientX: 256 });
-    fireEvent.pointerMove(document, { clientX: 360 });
-    expect((sidebar as HTMLElement).style.width).toBe("360px");
-    expect(separator.getAttribute("aria-valuenow")).toBe("360");
+    fireEvent.pointerDown(separator, { button: 0, clientX: 336 });
+    fireEvent.pointerMove(document, { clientX: 400 });
+    expect((sidebar as HTMLElement).style.width).toBe("400px");
+    expect(separator.getAttribute("aria-valuenow")).toBe("400");
     fireEvent.pointerUp(document);
+  });
+
+  it("toggles and combines include and exclude glob filters", () => {
+    const files = [
+      file,
+      { ...file, filename: "web/src/a.test.ts" },
+      { ...file, filename: "core/b.ts" },
+      { ...file, filename: "README.md" },
+      { ...file, filename: "a.test.ts" },
+    ];
+    renderDialog({ files });
+    const sidebar = screen.getByRole("complementary", {
+      name: "Changed files",
+    });
+
+    expect(within(sidebar).queryByLabelText("Include files")).toBeNull();
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: "Toggle file filters" }),
+    );
+    expect(within(sidebar).getByLabelText("Include files")).toBeTruthy();
+
+    fireEvent.change(within(sidebar).getByLabelText("Include files"), {
+      target: { value: "web/**" },
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Exclude files"), {
+      target: { value: "**/*.test.ts" },
+    });
+
+    expect(within(sidebar).getByText("Files changed (1 of 5)")).toBeTruthy();
+    expect(within(sidebar).getByText("web/src/a.ts")).toBeTruthy();
+    expect(within(sidebar).queryByText("web/src/a.test.ts")).toBeNull();
+    expect(within(sidebar).queryByText("a.test.ts")).toBeNull();
+    expect(within(sidebar).queryByText("core/b.ts")).toBeNull();
+
+    fireEvent.change(within(sidebar).getByLabelText("Include files"), {
+      target: { value: "" },
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Exclude files"), {
+      target: { value: "" },
+    });
+    expect(within(sidebar).getByText("Files changed (5)")).toBeTruthy();
+    expect(within(sidebar).getByText("README.md")).toBeTruthy();
+
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: "Toggle file filters" }),
+    );
+    expect(within(sidebar).queryByLabelText("Include files")).toBeNull();
   });
 
   it("keeps the standard mode while navigating between files", () => {
@@ -452,6 +512,7 @@ describe("DiffFileDialog", () => {
             button.getAttribute("aria-label") ?? button.textContent?.trim(),
         ),
     ).toEqual([
+      "Toggle file filters",
       "README.md",
       "Copy file path: README.md",
       "Diff",

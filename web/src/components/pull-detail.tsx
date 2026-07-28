@@ -19,6 +19,7 @@ import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
 import { DetailHeaderTitle } from "@/components/detail-title";
 import { DiffStat } from "@/components/diff-stat";
+import { FileStatusBadge } from "@/components/file-status-badge";
 import { GithubPrStatusSection } from "@/components/github-pr-status";
 import { Markdown } from "@/components/markdown";
 import { PullCommitsSection } from "@/components/pull-commits-section";
@@ -717,9 +718,7 @@ function FileSummaryRow({
       >
         <span className="min-w-0">
           <span className="block truncate font-medium">{file.filename}</span>
-          <span className="text-[11px] text-muted-foreground">
-            {file.status}
-          </span>
+          <FileStatusBadge status={file.status} className="mt-0.5" />
         </span>
         <DiffStat
           additions={file.additions}
