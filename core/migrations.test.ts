@@ -47,6 +47,12 @@ beforeAll(async () => {
       author TEXT NOT NULL, event TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
     );
+    CREATE TABLE acceptance_criteria (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id INTEGER NOT NULL REFERENCES issues(id),
+      ordinal INTEGER NOT NULL, text TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL
+    );
     CREATE TABLE events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       repo_id INTEGER REFERENCES repos(id), type TEXT NOT NULL,
@@ -67,6 +73,11 @@ beforeAll(async () => {
       VALUES (1, 'me/proj', 'proj', 'me', '/tmp/proj', 't0');
     INSERT INTO issues (id, repo_id, number, kind, state, title, author, created_at, updated_at)
       VALUES (10, 1, 7, 'pull', 'closed', 'impl', 'bot', 't1', 't1');
+    INSERT INTO issues (id, repo_id, number, kind, state, title, author, created_at, updated_at)
+      VALUES (11, 1, 8, 'issue', 'open', 'rubric', 'bot', 't1', 't1');
+    INSERT INTO acceptance_criteria (id, issue_id, ordinal, text, created_at)
+      VALUES (31, 11, 2, 'created first', 't1'),
+             (32, 11, 1, 'created second', 't2');
     INSERT INTO agent_sessions (id, agent, external_session, name, created_at, updated_at)
       VALUES ('sess-1', 'lh-dev', 'sess-1', 'dev', 't1', 't1');
     INSERT INTO pulls (issue_id, head_ref, base_ref, session_id)
@@ -126,6 +137,14 @@ test("the one-time data migrations converged instead of running on every boot", 
       .query("SELECT last_id FROM notification_cursors WHERE scope = 'events'")
       .get(),
   ).toEqual({ last_id: 1 });
+  expect(
+    D.db
+      .query("SELECT id, number, ordinal FROM acceptance_criteria ORDER BY id")
+      .all(),
+  ).toEqual([
+    { id: 31, number: 1, ordinal: 2 },
+    { id: 32, number: 2, ordinal: 1 },
+  ]);
 });
 
 // Columns whose migrated shape legitimately differs from the fresh schema. SQLite cannot add a

@@ -13,12 +13,16 @@ import { actorFor, ensureWritable, issueOr404, repoOr404 } from "./shared.ts";
 // every surface that shows grades — the review wire and the workflow run summary — so the join
 // lives in one place.
 export function reviewAcResultsJSON(reviewId: number): ReviewAcResultWire[] {
-  return S.listReviewAcResults(reviewId).map((r) => ({
-    criterion_id: r.criterion_id,
-    text: S.getAcceptanceCriterion(r.criterion_id)?.text ?? "",
-    verdict: r.verdict === "pass" ? "pass" : "fail",
-    note: r.note,
-  }));
+  return S.listReviewAcResults(reviewId).map((r) => {
+    const criterion = S.getAcceptanceCriterion(r.criterion_id);
+    return {
+      criterion_id: r.criterion_id,
+      number: criterion?.number ?? 0,
+      text: criterion?.text ?? "",
+      verdict: r.verdict === "pass" ? "pass" : "fail",
+      note: r.note,
+    };
+  });
 }
 
 // The running workflow run for this PR, if any. Unlike `latestWorkflowRunReview` (which stays
@@ -44,12 +48,16 @@ function runningWorkflowRunForPull(
 // not cover exactly the enabled criteria. `undefined` means no structured grading (holistic).
 function validateAcResults(
   prRow: S.IssueRow,
-  input: { criterion_id: number; verdict: string; note?: string }[] | undefined,
+  input:
+    | { criterion_id: number | string; verdict: string; note?: string }[]
+    | undefined,
 ): { criterionId: number; verdict: string; note: string }[] {
   if (input === undefined) return [];
   if (!Array.isArray(input))
     throw new ServiceError(422, "ac-results must be an array");
   const pull = S.getPull(prRow.id);
+  const linkedIssue =
+    pull?.linked_issue_id != null ? S.getIssueById(pull.linked_issue_id) : null;
   const enabledIds = new Set(
     pull?.linked_issue_id != null
       ? S.listAcceptanceCriteria(pull.linked_issue_id)
@@ -59,12 +67,44 @@ function validateAcResults(
   );
   const seen = new Set<number>();
   const results = input.map((r) => {
-    const criterionId = r?.criterion_id;
-    if (!Number.isInteger(criterionId))
+    const criterionRef = r?.criterion_id;
+    let criterionId: number;
+    if (typeof criterionRef === "number" && Number.isInteger(criterionRef)) {
+      criterionId = criterionRef;
+    } else if (
+      typeof criterionRef === "string" &&
+      /^([1-9]\d*)-([1-9]\d*)$/.test(criterionRef)
+    ) {
+      const [, issueNumber, criterionNumber] = criterionRef.match(
+        /^([1-9]\d*)-([1-9]\d*)$/,
+      )!;
+      const referencedIssue = S.getIssue(prRow.repo_id, Number(issueNumber));
+      if (!referencedIssue) {
+        throw new ServiceError(404, `issue #${issueNumber} not found`);
+      }
+      if (!linkedIssue || linkedIssue.id !== referencedIssue.id) {
+        throw new ServiceError(
+          422,
+          `issue #${issueNumber} is not the issue linked to this pull request`,
+        );
+      }
+      const criterion = S.getAcceptanceCriterionByNumber(
+        linkedIssue.id,
+        Number(criterionNumber),
+      );
+      if (!criterion) {
+        throw new ServiceError(
+          404,
+          `acceptance criterion ${criterionRef} not found`,
+        );
+      }
+      criterionId = criterion.id;
+    } else {
       throw new ServiceError(
         422,
-        "each ac-result requires an integer criterion_id",
+        "each ac-result requires criterion_id as a stable integer id or <issue-number>-<ac-number>",
       );
+    }
     if (r.verdict !== "pass" && r.verdict !== "fail")
       throw new ServiceError(
         422,
@@ -134,7 +174,11 @@ export const reviews = {
       model?: string;
       headSha?: string;
       comments?: { path: string; line?: number; side?: string; body: string }[];
-      acResults?: { criterion_id: number; verdict: string; note?: string }[];
+      acResults?: {
+        criterion_id: number | string;
+        verdict: string;
+        note?: string;
+      }[];
     },
     sessionId?: string | null,
   ) {

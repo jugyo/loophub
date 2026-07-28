@@ -63,7 +63,7 @@ function reviewEvents() {
 async function newPullForRubric(
   title: string,
   criteria: string[],
-): Promise<{ prNumber: number; acIds: number[] }> {
+): Promise<{ prNumber: number; issueNumber: number; acIds: number[] }> {
   const issue = (await svc.issues.create("me/reviews", {
     title: `issue ${title}`,
     acceptance_criteria: criteria,
@@ -84,7 +84,7 @@ async function newPullForRubric(
   const acIds = (
     svc.issues.acList("me/reviews", issue.number) as { id: number }[]
   ).map((c) => c.id);
-  return { prNumber: pull.number, acIds };
+  return { prNumber: pull.number, issueNumber: issue.number, acIds };
 }
 
 beforeAll(async () => {
@@ -260,6 +260,41 @@ test("--ac-results records a grade per enabled criterion on the review row (#189
     [acIds[0], "pass", ""],
     [acIds[1], "fail", "missing X"],
   ]);
+});
+
+test("qualified issue-local AC references resolve without replacing stable ids", async () => {
+  const { prNumber, issueNumber, acIds } = await newPullForRubric(
+    "grade-qualified",
+    ["alpha", "beta"],
+  );
+  const review = await svc.reviews.create("me/reviews", prNumber, {
+    event: "PASS",
+    body: "all met",
+    acResults: [
+      { criterion_id: `${issueNumber}-1`, verdict: "pass" },
+      { criterion_id: `${issueNumber}-2`, verdict: "pass" },
+    ],
+  });
+  expect(S.listReviewAcResults(review.id).map((r) => r.criterion_id)).toEqual(
+    acIds,
+  );
+});
+
+test("qualified AC references reject a different issue and a missing number", async () => {
+  const { prNumber, issueNumber } = await newPullForRubric(
+    "grade-qualified-errors",
+    ["only"],
+  );
+  await expect(
+    svc.reviews.create("me/reviews", prNumber, {
+      acResults: [{ criterion_id: `${issueNumber + 999}-1`, verdict: "pass" }],
+    }),
+  ).rejects.toThrow(/issue #\d+ not found/);
+  await expect(
+    svc.reviews.create("me/reviews", prNumber, {
+      acResults: [{ criterion_id: `${issueNumber}-2`, verdict: "pass" }],
+    }),
+  ).rejects.toThrow(/not found/);
 });
 
 test("a PASS contradicted by a failing grade is soft-warned, not rejected (#1896)", async () => {

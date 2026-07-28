@@ -129,18 +129,42 @@ function linkIssueToCurrentPane(
   });
 }
 
-// Resolve a criterion by its stable id and confirm it belongs to an issue in this repo. Authoring
-// addresses a criterion by id (its identity), so the repo scope is enforced here, not by the caller.
+// Resolve a criterion by its stable id or, with issue context, `ac-<number>`, then enforce both
+// repository and issue scope here rather than relying on each caller to repeat those guards.
 function acceptanceCriterionInRepoOr404(
   repo: S.Repo,
-  criterionId: number,
+  criterionRef: number | string,
+  issueNumber?: number,
 ): S.AcceptanceCriterionRow {
-  const criterion = S.getAcceptanceCriterion(criterionId);
+  let criterion: S.AcceptanceCriterionRow | null = null;
+  if (typeof criterionRef === "number" && Number.isInteger(criterionRef)) {
+    criterion = S.getAcceptanceCriterion(criterionRef);
+  } else if (
+    issueNumber != null &&
+    typeof criterionRef === "string" &&
+    /^ac-[1-9]\d*$/.test(criterionRef)
+  ) {
+    const issue = issueOr404(repo, issueNumber);
+    criterion = S.getAcceptanceCriterionByNumber(
+      issue.id,
+      Number(criterionRef.slice(3)),
+    );
+  } else {
+    throw new ServiceError(
+      422,
+      "acceptance criterion reference must be a stable id or ac-<number> with an issue",
+    );
+  }
   const issue = criterion ? S.getIssueById(criterion.issue_id) : null;
-  if (!criterion || !issue || issue.repo_id !== repo.id) {
+  if (
+    !criterion ||
+    !issue ||
+    issue.repo_id !== repo.id ||
+    (issueNumber != null && issue.number !== issueNumber)
+  ) {
     throw new ServiceError(
       404,
-      `acceptance criterion #${criterionId} not found`,
+      `acceptance criterion ${criterionRef} not found`,
     );
   }
   return criterion;
@@ -449,10 +473,19 @@ export const issues = {
     return acceptanceCriterionDetailJSON(created);
   },
 
-  acSetEnabled(name: string, criterionId: number, enabled: boolean) {
+  acSetEnabled(
+    name: string,
+    criterionRef: number | string,
+    enabled: boolean,
+    issueNumber?: number,
+  ) {
     const r = repoOr404(name);
     ensureWritable(r);
-    const criterion = acceptanceCriterionInRepoOr404(r, criterionId);
+    const criterion = acceptanceCriterionInRepoOr404(
+      r,
+      criterionRef,
+      issueNumber,
+    );
     S.setAcceptanceCriterionEnabled(criterion.id, enabled);
     S.touchIssue(criterion.issue_id);
     return acceptanceCriterionDetailJSON(
@@ -463,10 +496,13 @@ export const issues = {
   // Reorder rewrites `ordinal`; ids stay fixed so future grades stay attached. `orderedIds` must be
   // a permutation of this issue's criterion ids (all of them, once each) — a partial or unknown id
   // is a visible error rather than a silent ordinal gap.
-  acReorder(name: string, number: number, orderedIds: number[]) {
+  acReorder(name: string, number: number, orderedRefs: (number | string)[]) {
     const r = repoOr404(name);
     ensureWritable(r);
     const row = issueOr404(r, number);
+    const orderedIds = orderedRefs.map(
+      (ref) => acceptanceCriterionInRepoOr404(r, ref, number).id,
+    );
     const existingIds = S.listAcceptanceCriteria(row.id).map((c) => c.id);
     const existingSet = new Set(existingIds);
     const orderedSet = new Set(orderedIds);

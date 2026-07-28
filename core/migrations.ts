@@ -677,6 +677,29 @@ export const MIGRATIONS: Migration[] = [
       ON diff_feedback_messages(thread_id, created_at, id);
   `,
   ),
+  {
+    id: "049-number-acceptance-criteria",
+    run(db) {
+      addColumnIfMissing(
+        db,
+        "acceptance_criteria",
+        "number",
+        "INTEGER NOT NULL DEFAULT 0",
+      );
+      db.exec(`
+        UPDATE acceptance_criteria
+        SET number = (
+          SELECT COUNT(*)
+          FROM acceptance_criteria AS earlier
+          WHERE earlier.issue_id = acceptance_criteria.issue_id
+            AND earlier.id <= acceptance_criteria.id
+        )
+        WHERE number = 0;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_acceptance_criteria_issue_number
+          ON acceptance_criteria(issue_id, number);
+      `);
+    },
+  },
 ];
 
 const LEDGER_SCHEMA = `

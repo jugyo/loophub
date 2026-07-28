@@ -342,10 +342,12 @@ export interface IssueWire {
   acceptance_criteria?: AcceptanceCriterionWire[];
 }
 
-// The rubric-delivery shape carried on issue view: identity (`id`), display position (`ordinal`),
-// and text. Only enabled criteria reach the wire here, so no `enabled` field is needed.
+// The rubric-delivery shape carried on issue view: stable identity (`id`), stable issue-local
+// `number`, mutable display position (`ordinal`), and text. Only enabled criteria reach the wire
+// here, so no `enabled` field is needed.
 export interface AcceptanceCriterionWire {
   id: number;
+  number: number;
   ordinal: number;
   text: string;
 }
@@ -427,7 +429,12 @@ export function diffFeedbackMessageJSON(
 export function acceptanceCriterionJSON(
   row: S.AcceptanceCriterionRow,
 ): AcceptanceCriterionWire {
-  return { id: row.id, ordinal: row.ordinal, text: row.text };
+  return {
+    id: row.id,
+    number: row.number,
+    ordinal: row.ordinal,
+    text: row.text,
+  };
 }
 
 export function acceptanceCriterionDetailJSON(
@@ -435,6 +442,7 @@ export function acceptanceCriterionDetailJSON(
 ): AcceptanceCriterionDetailWire {
   return {
     id: row.id,
+    number: row.number,
     ordinal: row.ordinal,
     text: row.text,
     enabled: row.enabled === 1,
@@ -949,6 +957,7 @@ export function commentJSON(m: S.CommentRow): CommentWire {
 // `acceptance_criteria` for the rubric text. Empty for a holistic review (no structured grading).
 export interface ReviewAcResultWire {
   criterion_id: number;
+  number: number;
   text: string;
   verdict: "pass" | "fail";
   note: string;

@@ -532,15 +532,16 @@ test("issues.create seeds structured acceptance criteria and issues.get returns 
   }) as any;
 
   const detail = (await svc.issues.get("me/proj", issue.number)) as any;
-  // Blank entries are dropped; the wire carries only { id, ordinal, text } in order.
+  // Blank entries are dropped; the wire carries stable identity and issue-local number.
   expect(detail.acceptance_criteria).toHaveLength(2);
   expect(detail.acceptance_criteria.map((c: any) => c.text)).toEqual([
     "first",
     "second",
   ]);
   const [c0] = detail.acceptance_criteria;
-  expect(Object.keys(c0).sort()).toEqual(["id", "ordinal", "text"]);
+  expect(Object.keys(c0).sort()).toEqual(["id", "number", "ordinal", "text"]);
   expect(c0.id).toBeGreaterThan(0);
+  expect(detail.acceptance_criteria.map((c: any) => c.number)).toEqual([1, 2]);
 });
 
 test("issues.get omits disabled acceptance criteria from the rubric (#1894)", async () => {
@@ -573,12 +574,48 @@ test("issues.ac add appends with a fresh id at the end and can be re-enabled (#1
 
   expect(b.text).toBe("beta");
   expect(b.id).not.toBe(a.id);
+  expect([a.number, b.number]).toEqual([1, 2]);
   expect(b.ordinal).toBeGreaterThan(a.ordinal);
 
   svc.issues.acSetEnabled("me/proj", a.id, false);
   const reenabled = svc.issues.acSetEnabled("me/proj", a.id, true) as any;
   expect(reenabled.id).toBe(a.id);
   expect(reenabled.enabled).toBe(true);
+});
+
+test("AC numbers remain stable across disable, re-enable, reorder, and append", () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "stable numbers",
+    acceptance_criteria: ["one", "two"],
+  }) as any;
+  const [one, two] = svc.issues.acList("me/proj", issue.number) as any[];
+
+  svc.issues.acSetEnabled("me/proj", "ac-1", false, issue.number);
+  svc.issues.acSetEnabled("me/proj", "ac-1", true, issue.number);
+  const reordered = svc.issues.acReorder("me/proj", issue.number, [
+    "ac-2",
+    "ac-1",
+  ]) as any[];
+  const three = svc.issues.acAdd("me/proj", issue.number, "three") as any;
+
+  expect(reordered.map((c) => [c.id, c.number])).toEqual([
+    [two.id, 2],
+    [one.id, 1],
+  ]);
+  expect(three.number).toBe(3);
+});
+
+test("issue-scoped AC references reject malformed and missing numbers", () => {
+  const issue = svc.issues.create("me/proj", {
+    title: "strict refs",
+    acceptance_criteria: ["one"],
+  }) as any;
+  expect(() =>
+    svc.issues.acSetEnabled("me/proj", "ac-0", false, issue.number),
+  ).toThrow(/must be a stable id or ac-<number>/);
+  expect(() =>
+    svc.issues.acSetEnabled("me/proj", "ac-2", false, issue.number),
+  ).toThrow(/not found/);
 });
 
 test("issues.acAdd rejects blank text", () => {

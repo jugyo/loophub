@@ -496,7 +496,12 @@ function ReviewAcGrades({ review }: { review: PullReview }) {
             />
           )}
           <span className="flex min-w-0 flex-col gap-0.5 break-words">
-            <span>{result.text}</span>
+            <span>
+              <span className="mr-2 font-mono text-xs text-muted-foreground">
+                AC {result.number}
+              </span>
+              {result.text}
+            </span>
             {result.note ? (
               <span className="text-xs text-muted-foreground">
                 {result.note}

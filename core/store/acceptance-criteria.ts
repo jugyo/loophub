@@ -3,32 +3,38 @@ import { db, now } from "../db.ts";
 export interface AcceptanceCriterionRow {
   id: number;
   issue_id: number;
+  number: number;
   ordinal: number;
   text: string;
   enabled: number; // 1 = enabled, 0 = disabled
   created_at: string;
 }
 
-// Append a criterion at the end (max ordinal + 1), enabled. The `id` is the stable identity a
-// future grade (review_ac_results.criterion_id) references, so it is never reused or reordered.
+// Append a criterion at the end, enabled. `ordinal` is the mutable display position; `number` and
+// the grade-FK `id` are both monotonic identities and are never reused or reordered.
 export function addAcceptanceCriterion(
   issueId: number,
   text: string,
 ): AcceptanceCriterionRow {
-  const next = (
-    db
-      .query(
-        `SELECT COALESCE(MAX(ordinal), 0) + 1 AS ordinal
+  const next = db
+    .query(
+      `SELECT COALESCE(MAX(ordinal), 0) + 1 AS ordinal,
+                COALESCE(MAX(number), 0) + 1 AS number
          FROM acceptance_criteria WHERE issue_id = ?`,
-      )
-      .get(issueId) as { ordinal: number }
-  ).ordinal;
+    )
+    .get(issueId) as { ordinal: number; number: number };
   return db
     .query(
-      `INSERT INTO acceptance_criteria (issue_id, ordinal, text, enabled, created_at)
-       VALUES (?, ?, ?, 1, ?) RETURNING *`,
+      `INSERT INTO acceptance_criteria (issue_id, number, ordinal, text, enabled, created_at)
+       VALUES (?, ?, ?, ?, 1, ?) RETURNING *`,
     )
-    .get(issueId, next, text, now()) as AcceptanceCriterionRow;
+    .get(
+      issueId,
+      next.number,
+      next.ordinal,
+      text,
+      now(),
+    ) as AcceptanceCriterionRow;
 }
 
 // All criteria for an issue in display order (ordinal, then id as a stable tiebreaker). Includes
@@ -50,6 +56,17 @@ export function getAcceptanceCriterion(
   return db
     .query(`SELECT * FROM acceptance_criteria WHERE id = ?`)
     .get(id) as AcceptanceCriterionRow | null;
+}
+
+export function getAcceptanceCriterionByNumber(
+  issueId: number,
+  number: number,
+): AcceptanceCriterionRow | null {
+  return db
+    .query(
+      `SELECT * FROM acceptance_criteria WHERE issue_id = ? AND number = ?`,
+    )
+    .get(issueId, number) as AcceptanceCriterionRow | null;
 }
 
 // Criteria are never deleted — identity (id) and past grades must survive. An unwanted criterion is

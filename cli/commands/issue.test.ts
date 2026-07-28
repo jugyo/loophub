@@ -184,3 +184,42 @@ test("lh issue label reports the resulting labels and the no-op add", () => {
     expect.arrayContaining(["bug", "ui", "docs"]),
   );
 });
+
+test("lh issue ac shows and accepts issue-local references", () => {
+  const number = createIssue("AC refs");
+  const added = lh([
+    "issue",
+    "ac",
+    "add",
+    String(number),
+    "--repo",
+    "me/proj",
+    "--text",
+    "first",
+  ]);
+  expect(added.exitCode, added.stderr).toBe(0);
+  expect(added.stdout).toContain("ac-1");
+
+  const disabled = lh([
+    "issue",
+    "ac",
+    "disable",
+    String(number),
+    "ac-1",
+    "--repo",
+    "me/proj",
+  ]);
+  expect(disabled.exitCode, disabled.stderr).toBe(0);
+  expect(disabled.stdout).toContain("ac-1");
+
+  const listed = lh([
+    "issue",
+    "ac",
+    "list",
+    String(number),
+    "--repo",
+    "me/proj",
+  ]);
+  expect(listed.exitCode, listed.stderr).toBe(0);
+  expect(listed.stdout).toMatch(/ac-1\t#\d+\t1\tdisabled\tfirst/);
+});

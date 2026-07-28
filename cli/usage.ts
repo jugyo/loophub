@@ -68,7 +68,7 @@ export function usage(): void {
     lh pr review 3 --event request_changes --body "please fix" --comments review.json
     lh pr review 3 --event pass --body "no issues found" --commit <head sha>
     lh pr review 3 --comments '[{"path":"a.txt","line":2,"body":"typo"}]'   # inline JSON or a file path
-    lh pr review 3 --event pass --body "all criteria met" --ac-results '[{"criterion_id":12,"verdict":"pass","note":""}]'
+    lh pr review 3 --event pass --body "all criteria met" --ac-results '[{"criterion_id":"1-1","verdict":"pass","note":""}]'
     lh pr feedback create 3 --base-sha <sha> --head-sha <sha> --path a.txt --side RIGHT --start-line 2 --end-line 2 --kind question --body "why?"
     lh pr feedback list 3 --status all --json
     lh pr feedback reply 12 --pr 3 --request-message 20 --body "fixed"

@@ -584,8 +584,8 @@ describe("IssueDetail", () => {
     const withCriteria: Issue = {
       ...issue,
       acceptance_criteria: [
-        { id: 11, ordinal: 1, text: "AC is shown read-only" },
-        { id: 12, ordinal: 2, text: "grades join to the AC text" },
+        { id: 11, number: 1, ordinal: 1, text: "AC is shown read-only" },
+        { id: 12, number: 2, ordinal: 2, text: "grades join to the AC text" },
       ],
     };
     renderDetail(() => withCriteria);
@@ -595,8 +595,8 @@ describe("IssueDetail", () => {
     ) as HTMLElement;
     const items = within(block).getAllByRole("listitem");
     expect(items.map((li) => li.textContent)).toEqual([
-      "AC is shown read-only",
-      "grades join to the AC text",
+      "AC 1AC is shown read-only",
+      "AC 2grades join to the AC text",
     ]);
     expect(within(block).queryByRole("button")).toBeNull();
     expect(within(block).queryByRole("checkbox")).toBeNull();

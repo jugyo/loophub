@@ -170,18 +170,6 @@ test("lh pr review soft-warns a pass contradicted by a failing grade", () => {
   ]);
   expect(created.exitCode, created.stderr).toBe(0);
   const number = JSON.parse(created.stdout).number;
-  const criterionId = JSON.parse(
-    lh([
-      "issue",
-      "ac",
-      "list",
-      String(issueNumber),
-      "--repo",
-      "me/proj",
-      "--json",
-    ]).stdout,
-  )[0].id;
-
   const review = lh([
     "pr",
     "review",
@@ -194,7 +182,11 @@ test("lh pr review soft-warns a pass contradicted by a failing grade", () => {
     "lgtm",
     "--ac-results",
     JSON.stringify([
-      { criterion_id: criterionId, verdict: "fail", note: "missing alpha" },
+      {
+        criterion_id: `${issueNumber}-1`,
+        verdict: "fail",
+        note: "missing alpha",
+      },
     ]),
   ]);
   expect(review.exitCode, review.stderr).toBe(0);

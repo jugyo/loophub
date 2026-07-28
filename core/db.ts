@@ -158,14 +158,15 @@ CREATE TABLE IF NOT EXISTS issues (
   UNIQUE (repo_id, number)
 );
 
--- Structured acceptance criteria (#1894). identity is the stable id (grade FK target in a later
--- slice), never the position: reordering rewrites ordinal and text edits keep id, so past grades
--- stay attached. Criteria are never deleted — an unwanted one is disabled (enabled = 0), leaving
--- the row and its future grades intact. The markdown "## Acceptance criteria" section is not
--- parsed; this table is the only source.
+-- Structured acceptance criteria (#1894). id is the repository-wide stable identity used by
+-- grade FKs; number is the stable, 1-based human reference within an issue; and ordinal is only
+-- the mutable display position. Criteria are never deleted — an unwanted one is disabled
+-- (enabled = 0), leaving the row and its future grades intact. The markdown "## Acceptance
+-- criteria" section is not parsed; this table is the only source.
 CREATE TABLE IF NOT EXISTS acceptance_criteria (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   issue_id    INTEGER NOT NULL REFERENCES issues(id),
+  number      INTEGER NOT NULL DEFAULT 0,
   ordinal     INTEGER NOT NULL,
   text        TEXT NOT NULL,
   enabled     INTEGER NOT NULL DEFAULT 1,

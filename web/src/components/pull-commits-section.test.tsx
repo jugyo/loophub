@@ -196,18 +196,21 @@ describe("PullCommitsSection", () => {
         ac_results: [
           {
             criterion_id: 11,
+            number: 1,
             text: "AC is shown read-only",
             verdict: "pass",
             note: "checklist renders without controls",
           },
           {
             criterion_id: 12,
+            number: 2,
             text: "grades join to the AC text",
             verdict: "fail",
             note: "note is missing on one grade",
           },
           {
             criterion_id: 13,
+            number: 3,
             text: "no own freshness",
             verdict: "pass",
             note: "",
@@ -231,6 +234,9 @@ describe("PullCommitsSection", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Reviews for aaaaaaa: Latest change",
     });
+    expect(within(dialog).getByText("AC 1")).toBeTruthy();
+    expect(within(dialog).getByText("AC 2")).toBeTruthy();
+    expect(within(dialog).getByText("AC 3")).toBeTruthy();
     expect(within(dialog).getByText("AC is shown read-only")).toBeTruthy();
     expect(
       within(dialog).getByText("checklist renders without controls"),
