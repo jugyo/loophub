@@ -515,6 +515,15 @@ describe("reconcileWorkflow", () => {
       },
     ],
     [
+      { kind: "diff_feedback", threadId: 73, commentId: 108 },
+      {
+        action: "deliver",
+        delivery_reason: "diff_feedback",
+        thread_id: 73,
+        comment_id: 108,
+      },
+    ],
+    [
       { kind: "human_instruction" },
       {
         action: "deliver",
@@ -686,6 +695,25 @@ describe("workflowActionPlan", () => {
       plan({ action: "cost_hold", reason: "cost", event_id: 11 }).commands[0]
         ?.args,
     ).toContain("11");
+  });
+
+  test("delivers a diff comment as fixed text the parent does not write", () => {
+    const diffFeedback = plan({
+      action: "deliver",
+      reason: "new comment",
+      delivery_reason: "diff_feedback",
+      thread_id: 73,
+      comment_id: 108,
+    });
+    expect(diffFeedback).toMatchObject({
+      boundary: "mechanical",
+      after: "watch",
+    });
+    expect(diffFeedback.commands).toHaveLength(1);
+    expect(diffFeedback.commands[0]?.input).toBeUndefined();
+    expect(diffFeedback.commands[0]?.args).toContain(
+      "orchestrator: address diff feedback thread #73 comment #108",
+    );
   });
 
   test("makes parent and human judgement boundaries explicit", () => {

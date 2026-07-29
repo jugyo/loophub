@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { linesForAnchor, parsePatchWithCoordinates } from "./diff-anchor.ts";
+import {
+  linesAroundAnchor,
+  linesForAnchor,
+  parsePatchWithCoordinates,
+} from "./diff-anchor.ts";
 
 describe("parsePatchWithCoordinates", () => {
   const lines = parsePatchWithCoordinates(
@@ -38,5 +42,29 @@ describe("parsePatchWithCoordinates", () => {
     expect(parsePatchWithCoordinates("@@ -1 +1 @@\n-old\n+new\n")).toHaveLength(
       3,
     );
+  });
+});
+
+describe("linesAroundAnchor", () => {
+  const lines = parsePatchWithCoordinates(
+    "@@ -2,3 +2,4 @@\n context\n-removed\n+added\n+another\n tail",
+  );
+
+  test("widens the anchored lines by the requested radius", () => {
+    expect(
+      linesAroundAnchor(lines, { side: "RIGHT", startLine: 3, endLine: 3 }, 1),
+    ).toEqual(lines.slice(2, 5));
+  });
+
+  test("clamps the window to the patch it was read from", () => {
+    expect(
+      linesAroundAnchor(lines, { side: "RIGHT", startLine: 2, endLine: 2 }, 5),
+    ).toEqual(lines);
+  });
+
+  test("reports an anchor that no longer resolves as unavailable", () => {
+    expect(
+      linesAroundAnchor(lines, { side: "RIGHT", startLine: 9, endLine: 9 }, 3),
+    ).toBeNull();
   });
 });

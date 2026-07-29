@@ -285,7 +285,12 @@ Execute は `lh workflow turn done`（payload なし）でターン完了を宣�
 `workflow_run.escalated` event として
 記録するが、escalate 自体は run lifecycle を変更しない。Verify が review を登録すると
 `workflow_run.review_submitted`、GitHub PR feedback が同期されると `workflow_run.github_event` が記録
-される。usage sweep が run の累積コスト上限越えを検知すると `workflow_run.cost_exceeded` が記録される。
+される。PR diff にコメントが投稿されると `pull_request.diff_feedback_created` /
+`pull_request.diff_feedback_replied` が記録され、その PR に running run があれば
+`workflow_run.diff_feedback` として投影される（run 自身の parent / child が書いたコメントは投影しない）。
+親はこの wake で `orchestrator: address diff feedback thread #<t> comment #<c>` を Execute へ配送し、
+Execute は `lh pr feedback pending <pr> --run <run>` で未対応の会話と anchor 周辺の diff を読む。
+1 コメントにつき run event は 1 件、wake は 1 回なので配送も 1 回である。usage sweep が run の累積コスト上限越えを検知すると `workflow_run.cost_exceeded` が記録される。
 累計 cost が現在の累計上限を超えていて run が human hold されていない間は、同じ run・累計上限に対して
 再送間隔ごとに最大 1 回まで再送され続ける（既定 5 分、env `LOOPHUB_COST_REEMIT_MS` で調整し、0 は毎
 sweep 再送）。生存している親は再送間隔より早く hold を確立するため通常は再送されず、親が wake 後・

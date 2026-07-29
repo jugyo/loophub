@@ -45,6 +45,23 @@ export function selectDiffFeedbackThreads(
   });
 }
 
+/**
+ * The threads still waiting on `responders`, i.e. whose newest message none of them wrote.
+ *
+ * The responding party is the workflow run, not one child session: a run launches a fresh Execute
+ * per turn, so a thread answered by an earlier child must not resurface as pending for the next
+ * one. Threads without messages cannot exist (creating one writes the first comment), but an empty
+ * one would read as unanswered, which is the safe direction.
+ */
+export function selectUnansweredDiffFeedbackThreads<
+  T extends Pick<DiffFeedbackThreadWire, "messages">,
+>(threads: T[], responders: ReadonlySet<string>): T[] {
+  return threads.filter((thread) => {
+    const newest = thread.messages.at(-1);
+    return !newest || !responders.has(newest.author);
+  });
+}
+
 export function countDiffFeedbackMessagesByFile(
   threads: DiffFeedbackThreadWire[],
   files: DiffFileIdentity[],

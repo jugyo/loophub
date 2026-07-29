@@ -574,6 +574,17 @@ function workflowWakeObservation(
       "requiresChanges is only valid for GitHub feedback",
     );
   }
+  if (event.type === "workflow_run.diff_feedback") {
+    const threadId = payload.thread_id;
+    const commentId = payload.comment_id;
+    if (typeof threadId !== "number" || typeof commentId !== "number") {
+      throw new ServiceError(
+        422,
+        `workflow event #${eventId} has no diff feedback comment`,
+      );
+    }
+    return { kind: "diff_feedback", threadId, commentId };
+  }
   if (event.type === "workflow_run.cost_limit_increased") {
     return { kind: "cost_limit_increased" };
   }

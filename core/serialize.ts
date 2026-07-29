@@ -412,6 +412,29 @@ export interface DiffFeedbackListWire {
   comment_counts: Record<string, number>;
 }
 
+/**
+ * One diff line around a thread's anchor. Same coordinates as `PullDiffWire`, plus which lines the
+ * anchor itself selected, so a reader without the diff on screen can tell them apart.
+ */
+export interface DiffFeedbackContextLineWire {
+  kind: "hunk" | "context" | "addition" | "deletion" | "meta";
+  text: string;
+  left_line: number | null;
+  right_line: number | null;
+  anchored: boolean;
+}
+
+/** A thread plus the diff context an agent needs to act on it without rendering the whole file. */
+export interface DiffFeedbackThreadDetailWire extends DiffFeedbackThreadWire {
+  /** Null when the anchor no longer resolves on the current diff (`freshness: "unavailable"`). */
+  context: DiffFeedbackContextLineWire[] | null;
+}
+
+export interface DiffFeedbackPendingWire {
+  run: number;
+  threads: DiffFeedbackThreadDetailWire[];
+}
+
 export function diffFeedbackMessageJSON(
   row: S.DiffFeedbackMessageRow,
 ): DiffFeedbackMessageWire {
@@ -1767,6 +1790,18 @@ const WORKFLOW_RUN_HISTORY_EVENTS: Record<
     },
     significance: ({ reviewVerdict }) =>
       reviewVerdict === "PASS" ? "notable" : "routine",
+  },
+  // A human pointing at a line of the diff is new input the run did not plan for — a deviation from
+  // the flow rather than the parent narrating its own bookkeeping, so notable by the principle above.
+  "workflow_run.diff_feedback": {
+    label: "Diff comment received",
+    description: ({ payload }) => {
+      const threadId = payloadNumber(payload, "thread_id");
+      return threadId !== null
+        ? `A comment landed on diff conversation #${threadId}. The parent hands it to Execute.`
+        : "A comment landed on the PR diff. The parent hands it to Execute.";
+    },
+    significance: "notable",
   },
   "workflow_run.github_event": {
     label: "GitHub feedback received",

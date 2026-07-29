@@ -598,10 +598,18 @@ test("Execute treats additional work notes as Issue/PR requests and completes vi
   expect(execute).toContain("Ambiguous but in scope");
   expect(execute).toContain("Running it without a commit is valid only");
   expect(execute).toMatch(/You do not need\s+to rewrite the Issue body/u);
-  expect(execute.split("\n").length).toBeLessThanOrEqual(60);
+  expect(execute).toContain(
+    "Diff feedback (`orchestrator: address diff feedback thread #<t> comment #<c>`)",
+  );
+  expect(execute).toContain("lh pr feedback pending <pr> --run <run> --json");
+  // One line of budget for the diff feedback class (#2045); the contract stays a page long.
+  expect(execute.split("\n").length).toBeLessThanOrEqual(61);
 
   const executeJa = workflowContractText("execute", "ja");
   expect(executeJa).toContain("Rework（`orchestrator: address review #<id>`）");
+  expect(executeJa).toContain(
+    "Diff feedback（`orchestrator: address diff feedback thread #<t> comment #<c>`）",
+  );
   expect(executeJa).toContain("追加作業");
   expect(executeJa).toContain("質問だけ、または人間の判断待ち");
   expect(executeJa).toContain("確認のみ、またはドメイン変更不要");

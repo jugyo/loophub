@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   countDiffFeedbackMessagesByFile,
   selectDiffFeedbackThreads,
+  selectUnansweredDiffFeedbackThreads,
 } from "./diff-feedback-selection.ts";
 import type { DiffFeedbackThreadWire } from "./serialize.ts";
 
@@ -58,6 +59,42 @@ describe("selectDiffFeedbackThreads", () => {
         { orphaned: true },
       ).map(({ id }) => id),
     ).toEqual([2]);
+  });
+});
+
+describe("selectUnansweredDiffFeedbackThreads", () => {
+  function withMessages(id: number, authors: string[]): DiffFeedbackThreadWire {
+    const value = thread(id, "a.ts");
+    value.messages = authors.map((author, index) => ({
+      id: id * 10 + index,
+      thread_id: id,
+      author,
+      body: "Comment",
+      created_at: `2026-07-28T00:0${index}:00Z`,
+    }));
+    return value;
+  }
+
+  it("keeps the threads whose newest message no responder wrote", () => {
+    expect(
+      selectUnansweredDiffFeedbackThreads(
+        [
+          withMessages(1, ["me"]),
+          withMessages(2, ["me", "executor #1"]),
+          withMessages(3, ["me", "executor #1", "me"]),
+        ],
+        new Set(["executor #1", "executor #2"]),
+      ).map(({ id }) => id),
+    ).toEqual([1, 3]);
+  });
+
+  it("treats a thread answered by an earlier turn's child as answered", () => {
+    expect(
+      selectUnansweredDiffFeedbackThreads(
+        [withMessages(1, ["me", "executor #1"])],
+        new Set(["executor #1", "executor #2"]),
+      ),
+    ).toEqual([]);
   });
 });
 

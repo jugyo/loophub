@@ -83,3 +83,20 @@ export function linesForAnchor(
     ? selected
     : null;
 }
+
+/**
+ * The anchored lines widened by `radius` neighbouring patch lines on each side, so a reader that
+ * cannot see the diff itself still gets the code the anchor points at. Null when the anchor does
+ * not resolve on this patch, which is the same "unavailable" fact `linesForAnchor` reports.
+ */
+export function linesAroundAnchor(
+  lines: DiffLine[],
+  anchor: DiffAnchorRange,
+  radius: number,
+): DiffLine[] | null {
+  const anchored = linesForAnchor(lines, anchor);
+  if (!anchored) return null;
+  const first = lines.indexOf(anchored[0]);
+  const last = lines.indexOf(anchored[anchored.length - 1]);
+  return lines.slice(Math.max(0, first - radius), last + radius + 1);
+}

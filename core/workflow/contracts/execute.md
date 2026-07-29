@@ -23,6 +23,9 @@ parent; treat an identical launch note the same way.
 
 - **Rework (`orchestrator: address review #<id>`)** — read the specified review yourself and resolve every
   finding. This is a review response, not a free-form extension of the issue.
+- **Diff feedback (`orchestrator: address diff feedback thread #<t> comment #<c>`)** — read the
+  unanswered conversations and their diff context with `lh pr feedback pending <pr> --run <run> --json`,
+  reply to each with `lh pr feedback reply <t> --pr <pr> --body <text>`, and make the change they ask for.
 - **Additional work** — when a non-rework instruction is ordinary product or engineering work on
   the Issue / PR, make the smallest implementation against the same Issue and PR. You do not need
   to rewrite the Issue body. Update the PR body or comments when useful to the next Verify or a human.

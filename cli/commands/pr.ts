@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import type { DiffFeedbackThreadDetailWire } from "../../core/serialize.ts";
 import { flags, rest, sub } from "../args.ts";
 import {
   fail,
@@ -22,14 +23,37 @@ function readJsonArg(value: string): string {
     : readFileSync(value, "utf8");
 }
 
+// A diff feedback conversation as text: where it points, the diff around it, then the exchange.
+// `>` marks the lines the anchor selected, so the anchored code stands out from its context.
+function feedbackThreadText(thread: DiffFeedbackThreadDetailWire): string {
+  const anchor = thread.anchor;
+  const context = (thread.context ?? [])
+    .map((line) => `${line.anchored ? ">" : " "} ${line.text}`)
+    .join("\n");
+  return [
+    `#${thread.id} ${thread.freshness}`,
+    `${anchor.path}:${anchor.start_line}-${anchor.end_line} ${anchor.side}`,
+    ...(context ? ["", context] : []),
+    "",
+    thread.messages
+      .map((message) => `@${message.author}: ${message.body}`)
+      .join("\n"),
+  ].join("\n");
+}
+
 export async function run(): Promise<void> {
   const s = await svc();
   const repo = await resolveRepo();
   if (sub === "feedback") {
     const [action, target] = rest;
     const number = Number(
-      flags.pr ?? (action === "create" || action === "list" ? target : 0),
+      flags.pr ??
+        (action === "create" || action === "list" || action === "pending"
+          ? target
+          : 0),
     );
+    const radius =
+      flags.context === undefined ? undefined : Number(flags.context);
     if (action === "list") {
       const result = await runOp(() => s.diffFeedback.list(repo, number));
       out(result);
@@ -42,12 +66,21 @@ export async function run(): Promise<void> {
     } else if (action === "view") {
       if (!flags.pr) fail("--pr is required");
       const thread = await runOp(() =>
-        s.diffFeedback.get(repo, Number(flags.pr), Number(target)),
+        s.diffFeedback.get(repo, Number(flags.pr), Number(target), radius),
       );
       out(thread);
+      if (!flags.json) console.log(feedbackThreadText(thread));
+    } else if (action === "pending") {
+      if (!flags.run) fail("--run is required");
+      const result = await runOp(() =>
+        s.diffFeedback.pending(repo, number, Number(flags.run), radius),
+      );
+      out(result);
       if (!flags.json)
         console.log(
-          `#${thread.id} ${thread.freshness}\n${thread.anchor.path}:${thread.anchor.start_line}-${thread.anchor.end_line} ${thread.anchor.side}\n\n${thread.messages.map((message) => `@${message.author}: ${message.body}`).join("\n")}`,
+          result.threads.length === 0
+            ? `no unanswered feedback conversations for run #${result.run}`
+            : result.threads.map(feedbackThreadText).join("\n\n"),
         );
     } else if (action === "create") {
       const result = await runOp(async () =>

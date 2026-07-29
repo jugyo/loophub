@@ -36,6 +36,7 @@ export type WorkflowWakeInput =
   | { kind: "execute_escalation"; reason: string }
   | { kind: "github_reference"; eventId: number; references: readonly string[] }
   | { kind: "github_feedback" }
+  | { kind: "diff_feedback"; threadId: number; commentId: number }
   | { kind: "out_of_band_review"; reviewId: number }
   | { kind: "cost_limit_increased" }
   | { kind: "human_instruction" }
@@ -65,6 +66,15 @@ export type WorkflowNextAction =
       reason: string;
       delivery_reason: "out_of_band_review";
       review_id: number;
+    }
+  | {
+      // A diff comment names its own subject, so the delivery text is fixed like rework's: the
+      // parent hands over the ids and Execute reads the comment itself.
+      action: "deliver";
+      reason: string;
+      delivery_reason: "diff_feedback";
+      thread_id: number;
+      comment_id: number;
     }
   | {
       action: "deliver";
@@ -181,6 +191,16 @@ export function workflowActionPlan(
         ),
       ]);
     case "deliver": {
+      if (action.delivery_reason === "diff_feedback") {
+        return watch([
+          command(
+            "deliver",
+            ...scoped,
+            "--text",
+            `orchestrator: address diff feedback thread #${action.thread_id} comment #${action.comment_id}`,
+          ),
+        ]);
+      }
       const deliver = command("deliver", ...scoped);
       deliver.input = {
         argument: "--text",
@@ -389,6 +409,20 @@ export function reconcileWorkflow(
       reason:
         "Parent evaluation found GitHub feedback that requires Execute work.",
       delivery_reason: "github_feedback",
+    };
+  }
+
+  // One diff comment produces one run event, and `next --watch` spends a wake exactly once, so the
+  // comment is handed to Execute once. Nothing here re-scans open threads: an undelivered comment
+  // is visible on the PR and a human can post it again, which is cheaper than a redelivery rule
+  // that also has to decide when a thread stops being new work.
+  if (input.wake?.kind === "diff_feedback") {
+    return {
+      action: "deliver",
+      reason: `Diff feedback conversation #${input.wake.threadId} has a new comment for Execute.`,
+      delivery_reason: "diff_feedback",
+      thread_id: input.wake.threadId,
+      comment_id: input.wake.commentId,
     };
   }
 

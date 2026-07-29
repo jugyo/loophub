@@ -148,6 +148,17 @@ export interface WorkflowEventPayloadMap {
   "workflow_run.closed": WorkflowRunScoped &
     WorkflowRunDelivery &
     WorkflowRunProjectionSource & { pr_number: number };
+  /**
+   * A diff feedback comment landed on the run's PR (#2045). Only the ids travel: the comment, its
+   * anchor and its body stay canonical in the DB, which Execute reads back with `lh pr feedback`.
+   */
+  "workflow_run.diff_feedback": WorkflowRunScoped &
+    WorkflowRunDelivery &
+    WorkflowRunProjectionSource & {
+      pr_number: number;
+      thread_id: number;
+      comment_id: number;
+    };
   "workflow_run.github_event": WorkflowRunScoped &
     WorkflowRunDelivery &
     WorkflowRunProjectionSource & {
