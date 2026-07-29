@@ -320,6 +320,21 @@ describe("DiffFileDialog", () => {
     expect(unifiedComposerRow?.previousElementSibling?.textContent).toContain(
       "new two",
     );
+    const unifiedComposerCell = screen
+      .getByLabelText("Diff comment")
+      .closest("td");
+    expect(unifiedComposerCell?.firstElementChild?.classList).toContain(
+      "sticky",
+    );
+    expect(unifiedComposerCell?.firstElementChild?.classList).toContain(
+      "left-0",
+    );
+    expect(unifiedComposerCell?.firstElementChild?.classList).toContain(
+      "w-[100cqw]",
+    );
+    expect(
+      unifiedComposerRow?.closest("table")?.parentElement?.classList,
+    ).toContain("[container-type:inline-size]");
 
     fireEvent.change(screen.getByLabelText("Diff comment"), {
       target: { value: "Please keep these together" },

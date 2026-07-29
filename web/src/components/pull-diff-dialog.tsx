@@ -875,7 +875,7 @@ function UnifiedDiff({
   threadContent,
 }: DiffRenderProps) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto [container-type:inline-size]">
       <table className="w-full border-collapse font-mono text-xs leading-5">
         <tbody>
           {lines.map((line, index) => {
@@ -944,7 +944,11 @@ function UnifiedDiff({
                 (selectionEndsAt(selection, "LEFT", line) ||
                   selectionEndsAt(selection, "RIGHT", line)) ? (
                   <tr data-diff-comment-row>
-                    <td colSpan={3}>{selectionContent}</td>
+                    <td colSpan={3}>
+                      <div className="sticky left-0 w-[100cqw]">
+                        {selectionContent}
+                      </div>
+                    </td>
                   </tr>
                 ) : null}
                 {ending.map((thread) => (
