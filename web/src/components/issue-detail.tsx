@@ -310,9 +310,6 @@ function AcceptanceCriteria({ issue }: { issue: Issue }) {
           </li>
         ))}
       </ul>
-      <p className="text-xs text-muted-foreground">
-        Read-only — edit these with <code>lh issue ac</code>.
-      </p>
     </div>
   );
 }

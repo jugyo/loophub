@@ -598,6 +598,9 @@ describe("IssueDetail", () => {
     expect(within(block).queryByRole("button")).toBeNull();
     expect(within(block).queryByRole("checkbox")).toBeNull();
     expect(within(block).queryByRole("textbox")).toBeNull();
+    expect(
+      within(block).queryByText("Read-only — edit these with lh issue ac."),
+    ).toBeNull();
     // Same box as the issue body, and ahead of the Close action.
     const box = block.parentElement as HTMLElement;
     expect(box.textContent).toContain("Render title, body, labels.");
