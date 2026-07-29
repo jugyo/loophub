@@ -77,14 +77,14 @@ export function pullHerdrAgents(
   return group?.agents.filter((agent) => agent.pull === pull) ?? [];
 }
 
-// Sum costs of displayed agent rows. Matches UsageTotalsWire / related-sessions: any null or
-// missing cost makes the aggregate null so formatCost shows "n/a".
+// Sum costs of displayed agent rows, treating a missing cost as 0 so the known part stays visible.
+// Only when no row has a cost is the aggregate null, so formatCost shows "n/a".
 function agentsCostTotal(agents: HerdrAgent[]): number | null {
-  let total = 0;
+  let total: number | null = null;
   for (const agent of agents) {
     const cost = agent.session?.usage?.cost_usd;
-    if (cost == null || !Number.isFinite(cost)) return null;
-    total += cost;
+    if (cost == null || !Number.isFinite(cost)) continue;
+    total = (total ?? 0) + cost;
   }
   return total;
 }

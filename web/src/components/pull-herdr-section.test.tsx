@@ -154,9 +154,9 @@ describe("PullHerdrSection", () => {
     expect(screen.getByText("executor #7-1")).toBeTruthy();
     expect(screen.getByText("verifier #7-2")).toBeTruthy();
     expect(screen.queryByText("dev #99")).toBeNull();
-    expect(screen.getByText("$1.25")).toBeTruthy();
-    // Two agent rows with unknown cost, plus the Total footer (any null → n/a).
-    expect(screen.getAllByText("n/a")).toHaveLength(3);
+    // Two agent rows with unknown cost; the Total footer counts them as 0 and shows $1.25.
+    expect(screen.getAllByText("$1.25")).toHaveLength(2);
+    expect(screen.getAllByText("n/a")).toHaveLength(2);
     expect(screen.getByText("executor #7-1").closest("li")?.dataset.depth).toBe(
       "1",
     );
@@ -209,6 +209,43 @@ describe("PullHerdrSection", () => {
     const total = screen.getByRole("listitem", { name: "Total cost" });
     expect(within(total).getByText("Total")).toBeTruthy();
     expect(within(total).getByText("$2.00")).toBeTruthy();
+  });
+
+  it("totals the known costs when some rows have no cost", () => {
+    herdrSessions.value = running;
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+
+    const total = screen.getByRole("listitem", { name: "Total cost" });
+    expect(within(total).getByText("$1.25")).toBeTruthy();
+  });
+
+  it("shows n/a as the total when no row has a cost", () => {
+    herdrSessions.value = {
+      ...running,
+      repos: [
+        {
+          ...running.repos[0],
+          agents: [
+            {
+              ...running.repos[0].agents[0],
+              session: {
+                ...running.repos[0].agents[0].session!,
+                usage: {
+                  ...running.repos[0].agents[0].session!.usage!,
+                  cost_usd: null,
+                },
+              },
+            },
+            running.repos[0].agents[1],
+            running.repos[0].agents[2],
+          ],
+        },
+      ],
+    };
+    render(<PullHerdrSection owner="me" repo="proj" pull={42} />);
+
+    const total = screen.getByRole("listitem", { name: "Total cost" });
+    expect(within(total).getByText("n/a")).toBeTruthy();
   });
 
   it("matches the linked PR bot effects for working, blocked, and inactive agents", () => {
