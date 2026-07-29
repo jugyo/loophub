@@ -220,9 +220,9 @@
    styles. Keep it after the unlayered base defaults so the equal-specificity
    custom properties win by source order. Layout owns the reading measure.
 
-   The preview spans its pane so wide code and tables can use the available
-   space. Other direct children retain the narrower reading measure. The pane
-   padding in MarkdownPreviewPane remains the outer gutter for both widths. */
+   The preview spans its pane so wide tables can use the available space.
+   Other direct children retain the narrower reading measure. The pane padding
+   in MarkdownPreviewPane remains the outer gutter for both widths. */
 .typeset-diff-preview {
   --typeset-font-body: ui-serif, Georgia, Cambria, "Times New Roman", Times,
     serif;
@@ -241,24 +241,24 @@
   width: 100%;
 }
 
-.typeset-diff-preview > :where(:not(pre, table)) {
+.typeset-diff-preview > :where(:not(table, :has(table))) {
   margin-inline: auto;
   max-width: 46rem;
 }
 
-.typeset-diff-preview > :where(pre, table, :has(pre, table)) {
+.typeset-diff-preview > :where(table, :has(table)) {
   margin-inline: auto;
   max-width: 100%;
 }
 
-/* A composite block expands so its nested pre/table can use the wide track,
-   but prose sharing that block keeps the normal reading measure. */
+/* A composite block expands so its nested table can use the wide track, but
+   prose sharing that block keeps the normal reading measure. */
 .typeset-diff-preview
-  > :where(:has(pre, table))
+  > :where(:has(table))
   :where(p, h1, h2, h3, h4, h5, h6),
 .typeset-diff-preview
-  > :where(ul, ol):has(pre, table)
-  > li:not(:has(pre, table)) {
+  > :where(ul, ol):has(table)
+  > li:not(:has(table)) {
   margin-inline: auto;
   max-width: 46rem;
 }

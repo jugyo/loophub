@@ -593,14 +593,22 @@ describe("DiffFileDialog", () => {
     });
     const wideRule = rules.find(
       (rule) =>
-        rule.selector.includes(":has(pre, table)") && rule.maxWidth === "100%",
+        rule.selector.includes(":where(table, :has(table))") &&
+        rule.maxWidth === "100%",
+    );
+    const readingMeasureRule = rules.find(
+      (rule) =>
+        rule.selector.includes(":not(table, :has(table))") &&
+        rule.maxWidth === "46rem",
     );
     const mixedContentRule = rules.find(
       (rule) =>
-        rule.selector.includes("li:not(:has(pre, table))") &&
+        rule.selector.includes("li:not(:has(table))") &&
         rule.maxWidth === "46rem",
     );
     expect(wideRule).not.toBeUndefined();
+    expect(wideRule?.selector).not.toContain(":has(pre");
+    expect(readingMeasureRule).not.toBeUndefined();
     expect(mixedContentRule).not.toBeUndefined();
     expect(mixedContentRule?.selector).toContain(
       ":where(p, h1, h2, h3, h4, h5, h6)",
