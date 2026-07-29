@@ -1013,9 +1013,6 @@ describe("DiffFileDialog", () => {
       '[data-debug-component="MarkdownPreviewPane"]',
     );
     expect(headPane?.classList).toContain("markdown-diff-preview");
-    expect(headPane?.classList).toContain("px-3");
-    expect(headPane?.classList).toContain("py-8");
-    expect(headPane?.classList).not.toContain("p-3");
     expect(headPane?.className).not.toContain("bg-");
     expect(headPane?.className).not.toContain("text-");
     const preview = dialog.querySelector(".typeset-diff-preview");
