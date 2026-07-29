@@ -451,6 +451,43 @@ describe("PullCommitsSection", () => {
     expect(within(rows[1]).getByText("Pushed")).toBeTruthy();
   });
 
+  // Commits are newest first, so only the topmost pushed row is labeled: the ones below it are
+  // pushed too, and repeating the badge there says nothing new (#2039).
+  it("marks only the latest pushed commit when several commits are pushed", () => {
+    renderSection({
+      commits: [
+        { ...commits![0], pushed_to_github: false },
+        { ...commits![1], pushed_to_github: true },
+        {
+          sha: "cccccccccccccccccccccccccccccccccccccccc",
+          author: "Carol",
+          date: "2026-06-16T12:00:00Z",
+          subject: "Oldest change",
+          pushed_to_github: true,
+        },
+      ],
+      showGithubPushState: true,
+    });
+
+    const rows = screen.getAllByRole("listitem");
+    expect(screen.getAllByText("Pushed")).toHaveLength(1);
+    expect(within(rows[0]).queryByText("Pushed")).toBeNull();
+    expect(within(rows[1]).getByText("Pushed")).toBeTruthy();
+    expect(within(rows[2]).queryByText("Pushed")).toBeNull();
+  });
+
+  it("shows no push badge when nothing is pushed yet", () => {
+    renderSection({
+      commits: commits!.map((commit) => ({
+        ...commit,
+        pushed_to_github: false,
+      })),
+      showGithubPushState: true,
+    });
+
+    expect(screen.queryByText("Pushed")).toBeNull();
+  });
+
   it("does not show GitHub push state when the PR has no linked GitHub PR", () => {
     renderSection({
       commits: commits!.map((commit) => ({

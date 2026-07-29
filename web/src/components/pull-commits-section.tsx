@@ -49,6 +49,12 @@ export function PullCommitsSection({
   const [selectedCommit, setSelectedCommit] = useState<PullCommit | null>(null);
   const [selectedReviewGroup, setSelectedReviewGroup] =
     useState<SelectedReviewGroup | null>(null);
+  // Commits are newest first, so the topmost pushed one marks how far the GitHub branch reaches:
+  // everything below it is pushed as well, and repeating the badge on those rows says nothing new
+  // (#2039).
+  const latestPushedSha = showGithubPushState
+    ? (commits.find((commit) => commit.pushed_to_github)?.sha ?? null)
+    : null;
   const commentsByReview = new Map<number, PullLineComment[]>();
   for (const comment of lineComments) {
     if (comment.pull_request_review_id == null) continue;
@@ -117,7 +123,7 @@ export function PullCommitsSection({
                       }
                     />
                   ) : null}
-                  {showGithubPushState && commit.pushed_to_github ? (
+                  {commit.sha === latestPushedSha ? (
                     <Badge
                       tone="unknown"
                       title="Pushed to GitHub"
