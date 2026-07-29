@@ -46,6 +46,24 @@ function setPanGeometry({
 }
 
 describe("ImageLightbox", () => {
+  it("portals the overlay out of a nested preview container", () => {
+    render(
+      <div data-testid="preview-container">
+        <ImageLightbox
+          src="https://example.com/pic.png"
+          alt="a pic"
+          onClose={vi.fn()}
+        />
+      </div>,
+    );
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.parentElement).toBe(document.body);
+    expect(screen.getByTestId("preview-container").contains(dialog)).toBe(
+      false,
+    );
+  });
+
   it("does not close when the image itself is clicked", () => {
     const onClose = vi.fn();
     render(

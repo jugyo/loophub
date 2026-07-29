@@ -11,10 +11,12 @@
 // inside a React onWheel handler is silently ignored and the page behind the dialog would still
 // scroll. Escape is handled as a React onKeyDown on the focused dialog element rather than a
 // document-level listener, so it doesn't also trigger an ancestor's own document Escape listener
-// when nested inside another modal that listens on document.
+// when nested inside another modal that listens on document. The overlay is portaled to the
+// document body so nested Markdown previews cannot constrain it with their overflow or layout.
 
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 
 const MIN_SCALE = 1;
@@ -154,7 +156,7 @@ export function Lightbox({
     };
   }, [dragStart, scale]);
 
-  return (
+  return createPortal(
     <div
       ref={dialogRef}
       data-debug-component="Lightbox"
@@ -218,6 +220,7 @@ export function Lightbox({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

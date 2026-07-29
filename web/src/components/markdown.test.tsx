@@ -6,7 +6,7 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -219,13 +219,13 @@ describe("Markdown image lightbox", () => {
     const { container } = render(
       <Markdown>{"![alt text](https://example.com/pic.png)"}</Markdown>,
     );
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
 
     const img = container.querySelector(".markdown-body img");
     expect(img?.getAttribute("src")).toBe("https://example.com/pic.png");
     fireEvent.click(img as Element);
 
-    const dialog = container.querySelector('[role="dialog"]');
+    const dialog = screen.queryByRole("dialog");
     expect(dialog).not.toBeNull();
     expect(dialog?.querySelector("img")?.getAttribute("src")).toBe(
       "https://example.com/pic.png",
@@ -237,18 +237,16 @@ describe("Markdown image lightbox", () => {
       <Markdown>{"![alt text](https://example.com/pic.png)"}</Markdown>,
     );
     fireEvent.click(container.querySelector(".markdown-body img") as Element);
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(screen.queryByRole("dialog")).not.toBeNull();
 
-    fireEvent.click(container.querySelector('[role="dialog"]') as Element);
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(screen.queryByRole("dialog")).toBeNull();
 
     fireEvent.click(container.querySelector(".markdown-body img") as Element);
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(screen.queryByRole("dialog")).not.toBeNull();
 
-    fireEvent.keyDown(container.querySelector('[role="dialog"]') as Element, {
-      key: "Escape",
-    });
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("opens the lightbox via keyboard (Enter/Space) as well as click", () => {
@@ -257,7 +255,7 @@ describe("Markdown image lightbox", () => {
     );
     const img = container.querySelector(".markdown-body img") as Element;
     fireEvent.keyDown(img, { key: "Enter" });
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(screen.queryByRole("dialog")).not.toBeNull();
   });
 
   it("preserves the title attribute on embedded images", () => {
