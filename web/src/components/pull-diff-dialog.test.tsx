@@ -641,7 +641,7 @@ describe("DiffFileDialog", () => {
     expect(screen.getByLabelText("Diff comment")).toBeTruthy();
   });
 
-  it("renders one thread after its range in both modes and operates on it", async () => {
+  it("renders and operates on one thread with the standard composer layout", async () => {
     const reply = vi.fn(() => ({}));
     const patch = "@@ -1 +1,2 @@\n-old\n+new one\n+new two";
     const view = renderDialog({
@@ -699,6 +699,23 @@ describe("DiffFileDialog", () => {
     expect(
       screen.getByLabelText("Old line 1").hasAttribute("data-thread-anchor"),
     ).toBe(false);
+
+    await addComment("New line 1");
+    const commentInput = screen.getByLabelText("Diff comment");
+    const replyInput = screen.getByLabelText("Reply to thread 1");
+    const commentActions = screen.getByRole("button", {
+      name: "Comment",
+    }).parentElement;
+    const replyActions = screen.getByRole("button", {
+      name: "Reply",
+    }).parentElement;
+    expect(commentInput.className).toContain("w-full");
+    expect(replyInput.className).toContain("w-full");
+    expect(commentActions?.className).toContain("mt-2 flex justify-end gap-2");
+    expect(replyActions?.className).toContain("mt-2 flex justify-end gap-2");
+    expect(commentActions?.previousElementSibling).toBe(commentInput);
+    expect(replyActions?.previousElementSibling).toBe(replyInput);
+
     fireEvent.change(screen.getByLabelText("Reply to thread 1"), {
       target: { value: "Updated now" },
     });

@@ -1527,25 +1527,27 @@ function ThreadCard({
           </div>
         ))}
       </div>
-      <div className="mt-2 flex items-end gap-2">
+      <div className="mt-2">
         <textarea
           aria-label={`Reply to thread ${thread.id}`}
           value={replyBody}
           onChange={(event) => setReplyBody(event.target.value)}
-          className="min-h-16 flex-1 rounded-md border bg-background p-2 text-sm"
+          className="min-h-16 w-full rounded-md border bg-background p-2 text-sm"
           placeholder="Reply…"
         />
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={!replyBody.trim() || busy}
-          onClick={() => {
-            onReply(replyBody.trim());
-            setReplyBody("");
-          }}
-        >
-          Reply
-        </Button>
+        <div className="mt-2 flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!replyBody.trim() || busy}
+            onClick={() => {
+              onReply(replyBody.trim());
+              setReplyBody("");
+            }}
+          >
+            Reply
+          </Button>
+        </div>
       </div>
     </article>
   );
