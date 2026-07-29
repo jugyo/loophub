@@ -2,7 +2,7 @@
 // GitHub (#629) — renders null until then, so it never implies an export that hasn't happened.
 // Shared by the issue-list linked-PR sub-row (dashboard-rows.tsx) and the issue-detail linked-PR
 // row (issue-detail.tsx) so both render an identical badge. Styled like the neighbouring `PR #N`
-// pill (badgeVariants), not the large "View PR on GitHub" button in pull-detail.tsx; opens the
+// pill (badgeVariants), not the PR-detail sidebar's GitHub PR section heading link; opens the
 // GitHub PR in a new tab.
 
 import { Github } from "lucide-react";

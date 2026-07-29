@@ -1,7 +1,18 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { GithubPrStatus } from "@/api/types";
+import type { GithubPrStatus, GithubPull } from "@/api/types";
 import { GithubPrStatusSection } from "./github-pr-status";
+
+const PULL: GithubPull = {
+  number: 42,
+  url: "https://github.com/me/proj/pull/42",
+  branch: "feature/x",
+  created_by: "impl-bot",
+  created_at: "2026-06-19T00:00:00Z",
+  github_merged: false,
+  github_merged_at: null,
+  pushed_sha: null,
+};
 
 const BASE: GithubPrStatus = {
   state: "open",
@@ -19,6 +30,7 @@ describe("GithubPrStatusSection", () => {
   it("shows successful checks as a green Passed badge", () => {
     const { getByText, queryByText } = render(
       <GithubPrStatusSection
+        githubPull={PULL}
         status={{ ...BASE, checks: "success" }}
         isLoading={false}
       />,
@@ -33,7 +45,11 @@ describe("GithubPrStatusSection", () => {
 
   it("renders the badges, distinctly-labeled counts, and freshness for a linked GitHub PR (#850)", () => {
     const { container } = render(
-      <GithubPrStatusSection status={BASE} isLoading={false} />,
+      <GithubPrStatusSection
+        githubPull={PULL}
+        status={BASE}
+        isLoading={false}
+      />,
     );
     const text = container.textContent ?? "";
     expect(text).toContain("GitHub PR");
@@ -47,9 +63,38 @@ describe("GithubPrStatusSection", () => {
     expect(text).toContain("synced");
   });
 
+  it("links the heading to the GitHub PR in a new tab, labeled with its number (#2035)", () => {
+    const { getByRole } = render(
+      <GithubPrStatusSection
+        githubPull={PULL}
+        status={BASE}
+        isLoading={false}
+      />,
+    );
+
+    const link = getByRole("link", { name: /GitHub PR #42/ });
+    expect(link.getAttribute("href")).toBe(PULL.url);
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("keeps the heading link while the status is still loading (#2035)", () => {
+    const { getByRole } = render(
+      <GithubPrStatusSection
+        githubPull={PULL}
+        status={undefined}
+        isLoading={true}
+      />,
+    );
+    expect(
+      getByRole("link", { name: /GitHub PR #42/ }).getAttribute("href"),
+    ).toBe(PULL.url);
+  });
+
   it("shows Merged for a GitHub-merged PR and hides the checks/mergeable rows when unknown/none (#850)", () => {
     const { container } = render(
       <GithubPrStatusSection
+        githubPull={PULL}
         status={{
           ...BASE,
           state: "merged",
@@ -71,14 +116,22 @@ describe("GithubPrStatusSection", () => {
 
   it("renders a loading state while fetching (#850)", () => {
     const { container } = render(
-      <GithubPrStatusSection status={undefined} isLoading={true} />,
+      <GithubPrStatusSection
+        githubPull={PULL}
+        status={undefined}
+        isLoading={true}
+      />,
     );
     expect(container.textContent ?? "").toContain("Loading GitHub status…");
   });
 
   it("renders a fetch-failed state when there is no status to show (#850)", () => {
     const { container } = render(
-      <GithubPrStatusSection status={undefined} isLoading={false} />,
+      <GithubPrStatusSection
+        githubPull={PULL}
+        status={undefined}
+        isLoading={false}
+      />,
     );
     expect(container.textContent ?? "").toContain(
       "Failed to load GitHub status.",
@@ -89,7 +142,11 @@ describe("GithubPrStatusSection", () => {
     // React Query keeps `data` on a failed refetch; isLoading is false with data present. The panel
     // must stay on the data branch, not flip to the error box.
     const { container } = render(
-      <GithubPrStatusSection status={BASE} isLoading={false} />,
+      <GithubPrStatusSection
+        githubPull={PULL}
+        status={BASE}
+        isLoading={false}
+      />,
     );
     const text = container.textContent ?? "";
     expect(text).toContain("Open");

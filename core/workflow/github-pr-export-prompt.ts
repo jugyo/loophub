@@ -24,24 +24,24 @@ function render(
 
 手順:
 
-1. \`lh pr view ${n} --repo ${repo} --json\` で LoopHub PR を読みます。\`github_pull\` が既に非 null なら、その GitHub PR の URL/番号を報告して**停止**します（二重作成防止。UI は既に「View PR on GitHub」を表示しています）。生成の文脈として \`title\` / \`body\` / \`linked_issue\` を、モードは \`merge_mode\`（\`github_pr\` を想定）を確認します。
+1. \`lh pr view ${n} --repo ${repo} --json\` で LoopHub PR を読みます。\`github_pull\` が既に非 null なら、その GitHub PR の URL/番号を報告して**停止**します（二重作成防止。UI は既にサイドバーの GitHub PR セクションにその GitHub PR へのリンクを表示しています）。生成の文脈として \`title\` / \`body\` / \`linked_issue\` を、モードは \`merge_mode\`（\`github_pr\` を想定）を確認します。
 2. \`gh auth status\` で GitHub CLI が認証済みか確認します。未認証なら停止し、\`gh auth login\` の実行をユーザーに依頼します。
 3. 変更内容を反映した短い content-based の branch 名を選びます（\`type/slug\` 形式、小文字・ハイフン・ASCII）。内部の \`loophub/issue-<n>\` branch は使いません。
 4. GitHub PR の title と body を書きます。**title と body は、対象の PR / 変更内容で使われている言語をリスペクトして記述してください（英語に固定しない）**。言語は linked issue → 人が書いた PR title/body → 変更内容 の順で判断します。repo に PR テンプレート（\`.github/PULL_REQUEST_TEMPLATE.md\` など）があればそのセクションを実際の内容で埋めます。LoopHub の定型文・\`Closes #<n>\`・Evidence ブロックは含めません。
 5. \`lh pr create-github-pr ${n} --repo ${repo} --branch "<branch>" --title "<title>" --body -\` を実行します（body は heredoc で stdin から渡します）。このコマンドが branch の push・Draft PR の open・LoopHub への記録を atomic に行います。\`git push\` / \`gh pr create\` / \`lh pr record-github-pr\` を手動実行したり worktree へ \`cd\` したりしないでください。
-6. 作成後、\`lh pr view ${n} --repo ${repo} --json\` を GET して \`github_pull\` が非 null（number + url）になったことを確認します。これが PR 詳細のボタンを「Create PR on GitHub」から「View PR on GitHub」へ切り替える条件です。
+6. 作成後、\`lh pr view ${n} --repo ${repo} --json\` を GET して \`github_pull\` が非 null（number + url）になったことを確認します。これが PR 詳細から「Create PR on GitHub」ボタンを消し、サイドバーに GitHub PR へのリンク付き見出しを出す条件です。
 7. GitHub PR の URL と番号（Draft）、push した branch 名を報告して**停止**します。GitHub PR のマージ・レビュー・ready 化は行いません。`;
   }
   return `Create LoopHub PR #${n} (repo: ${repo}) as a GitHub Draft PR, record it back into LoopHub, then stop. Do not merge or review the GitHub PR, and do not chain to other skills.
 
 Steps:
 
-1. Read the LoopHub PR with \`lh pr view ${n} --repo ${repo} --json\`. If \`github_pull\` is already non-null, report that GitHub PR's URL/number and **stop** (double-create guard — the UI already shows "View PR on GitHub"). Use \`title\` / \`body\` / \`linked_issue\` as generation context and check \`merge_mode\` (expected \`github_pr\`).
+1. Read the LoopHub PR with \`lh pr view ${n} --repo ${repo} --json\`. If \`github_pull\` is already non-null, report that GitHub PR's URL/number and **stop** (double-create guard — the UI's sidebar GitHub PR section already links to that GitHub PR). Use \`title\` / \`body\` / \`linked_issue\` as generation context and check \`merge_mode\` (expected \`github_pr\`).
 2. Confirm the GitHub CLI is authenticated with \`gh auth status\`. If it is not, stop and ask the user to run \`gh auth login\`.
 3. Choose a short, content-based branch name reflecting the change (\`type/slug\`, lowercase, hyphenated, ASCII). Do not use the internal \`loophub/issue-<n>\` branch.
 4. Write the GitHub PR title and body. **Write the title and body in the language used by the target PR / change — do not fix them to English.** Resolve the language in this order: linked issue → human-authored PR title/body → the change itself. If the repo has a PR template (e.g. \`.github/PULL_REQUEST_TEMPLATE.md\`), fill its sections with real content. Do not include LoopHub boilerplate, a \`Closes #<n>\` line, or an Evidence block.
 5. Run \`lh pr create-github-pr ${n} --repo ${repo} --branch "<branch>" --title "<title>" --body -\` (pipe the body in via stdin with a heredoc). This command pushes the branch, opens the Draft PR, and records it back into LoopHub atomically. Do not hand-run \`git push\` / \`gh pr create\` / \`lh pr record-github-pr\`, and do not \`cd\` into the worktree.
-6. After creation, GET the PR again with \`lh pr view ${n} --repo ${repo} --json\` and confirm \`github_pull\` is now non-null (number + url). That is what flips the PR detail button from "Create PR on GitHub" to "View PR on GitHub".
+6. After creation, GET the PR again with \`lh pr view ${n} --repo ${repo} --json\` and confirm \`github_pull\` is now non-null (number + url). That is what removes the PR detail's "Create PR on GitHub" button and gives the sidebar's GitHub PR section a heading that links to the GitHub PR.
 7. Report the GitHub PR URL and number (Draft) and the pushed branch name, then **stop**. Do not merge, review, or mark the GitHub PR ready.`;
 }
 

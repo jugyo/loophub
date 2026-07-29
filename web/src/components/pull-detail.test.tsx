@@ -1545,15 +1545,16 @@ describe("PullDetail — GitHub export action (#406)", () => {
     expect(opts.prompt).not.toContain("/lh-create-github-pr");
   });
 
-  it("swaps to a View PR on GitHub link once exported (double-create guard)", async () => {
+  it("drops the Create action once exported and links to GitHub from the sidebar section (#2035)", async () => {
     renderDetailWithPull({
       merge_mode: "github_pr",
       github_pull: linkedGithubPull(null),
     });
-    const link = await screen.findByRole("link", {
-      name: /View PR on GitHub/i,
-    });
+    // The only route to the GitHub PR is the sidebar's GitHub PR heading — the action row has no
+    // "View PR on GitHub" button anymore.
+    const link = await screen.findByRole("link", { name: /GitHub PR #7/ });
     expect(link.getAttribute("href")).toBe("https://github.com/me/proj/pull/7");
+    expect(screen.queryByText(/View PR on GitHub/i)).toBeNull();
     expect(
       screen.queryByRole("button", { name: /Create PR on GitHub/i }),
     ).toBeNull();

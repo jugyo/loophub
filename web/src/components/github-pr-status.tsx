@@ -2,14 +2,15 @@
 // a linked GitHub PR (github_pull); the GitHub-side status (review / checks / comment counts /
 // merged) is fetched on demand via `pulls/githubStatus` and cached server-side. Compact by design so
 // it sits alongside the other sidebar sections (work duration, sessions, handoff) without crowding
-// them — a badge row plus a few small labeled rows and a freshness footnote.
+// them — a badge row plus a few small labeled rows and a freshness footnote. The heading is the
+// section's link out to the GitHub PR (#2035), so the GitHub route lives where the status is read.
 //
 // Loading / error states mirror the sibling sidebar sections (e.g. WorkDuration): a spinner while
 // fetching and a destructive box on failure. The "not linked" state is handled by the caller — the
 // section is not rendered at all when github_pull is absent.
 
-import { Loader2 } from "lucide-react";
-import type { GithubPrStatus } from "@/api/types";
+import { ExternalLink, Github, Loader2 } from "lucide-react";
+import type { GithubPrStatus, GithubPull } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeTone } from "@/lib/badges";
 import { relativeTime } from "@/lib/time";
@@ -71,9 +72,14 @@ function StatusRow({
 }
 
 export function GithubPrStatusSection({
+  githubPull,
   status,
   isLoading,
 }: {
+  // The linked GitHub PR itself (#2035): the heading doubles as the single link out to GitHub, so
+  // the PR-detail action row doesn't need a separate "View PR on GitHub" button. Non-null because
+  // the caller only renders the section for a linked PR.
+  githubPull: GithubPull;
   status: GithubPrStatus | undefined;
   isLoading: boolean;
   // isError is intentionally not a prop: the section only renders for a linked GitHub PR (an enabled
@@ -85,7 +91,19 @@ export function GithubPrStatusSection({
       data-debug-component="GithubPrStatusSection"
       className="flex flex-col gap-3"
     >
-      <h2 className="text-lg font-semibold">GitHub PR</h2>
+      <h2 className="text-lg font-semibold">
+        <a
+          href={githubPull.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`GitHub PR #${githubPull.number}`}
+          className="inline-flex items-center gap-1.5 hover:underline"
+        >
+          <Github className="size-4" />
+          GitHub PR #{githubPull.number}
+          <ExternalLink className="size-3.5 text-muted-foreground" />
+        </a>
+      </h2>
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading GitHub status…

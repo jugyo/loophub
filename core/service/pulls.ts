@@ -337,8 +337,9 @@ export const pulls = {
     const row = issueOr404(r, number, "pull");
     const { url, branch } = input;
     // Require an absolute http(s) URL on a GitHub host. The model is GitHub-specific and the UI
-    // renders it as a GitHub-branded "View PR on GitHub" link, so accepting an arbitrary host would
-    // let a caller plant a misleading link. The scheme check also keeps javascript:/data: out.
+    // renders it as a GitHub-branded link (the PR-detail sidebar's GitHub PR heading), so accepting
+    // an arbitrary host would let a caller plant a misleading link. The scheme check also keeps
+    // javascript:/data: out.
     const trimmedUrl = typeof url === "string" ? url.trim() : "";
     if (!/^https?:\/\/\S+$/.test(trimmedUrl) || !isGithubRemoteUrl(trimmedUrl))
       throw new ServiceError(

@@ -7,13 +7,7 @@
 // via <Markdown>.
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  ExternalLink,
-  Github,
-  Loader2,
-  UploadCloud,
-} from "lucide-react";
+import { ChevronDown, Github, Loader2, UploadCloud } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PullFile, PullLineComment, PullRequest } from "@/api/types";
 import { CopyButton } from "@/components/copy-button";
@@ -179,6 +173,7 @@ export function PullDetail({
             loading/error live in the section. */}
         {pull.github_pull ? (
           <GithubPrStatusSection
+            githubPull={pull.github_pull}
             status={githubStatusQuery.data}
             isLoading={githubStatusQuery.isLoading}
           />
@@ -380,7 +375,7 @@ function PullHeader({
           </Button>
         ) : null}
         {/* #406: the repo's effective merge mode picks exactly one write action — the internal Merge
-            control, or the GitHub export (Create / View PR on GitHub). The two are mutually
+            control, or the GitHub export (Create PR on GitHub / push). The two are mutually
             exclusive, so a merged PR shows neither extra control beyond Close/Reopen above. */}
         {pull.merge_mode === "github_pr" ? (
           <GithubPrAction owner={owner} repo={repo} pull={pull} />
@@ -444,11 +439,12 @@ function WorktreeSection({ value }: { value: string | null }) {
 }
 
 // #406: GitHub-export write action for a PR whose repo is in 'github_pr' mode. Once the PR has been
-// exported (github_pull present) the button becomes a "View PR on GitHub" link — this is the
-// double-create guard: the Create action disappears so a second export can't be dispatched. Until
-// then, "Create PR on GitHub" injects the full export instructions into a launched agent (#1892,
-// same prompt-injection approach as New issue), which generates a branch/title/description in the
-// target PR's language and opens the GitHub Draft PR via `lh pr create-github-pr`.
+// exported (github_pull present) the Create action disappears and only the push controls remain —
+// this is the double-create guard, so a second export can't be dispatched. The route to the GitHub
+// PR itself lives in the sidebar's GitHub PR section heading (#2035), not here. Until exported,
+// "Create PR on GitHub" injects the full export instructions into a launched agent (#1892, same
+// prompt-injection approach as New issue), which generates a branch/title/description in the target
+// PR's language and opens the GitHub Draft PR via `lh pr create-github-pr`.
 function GithubPrAction({
   owner,
   repo,
@@ -491,61 +487,48 @@ function GithubPrAction({
       !!pull.head.sha &&
       pull.head.sha !== gh.pushed_sha;
     return (
-      <>
-        <a
-          href={gh.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={`GitHub PR #${gh.number}`}
-          className="inline-flex h-9 items-center gap-1.5 rounded-md border bg-background px-3 text-sm font-medium hover:bg-muted"
+      <div className="inline-flex">
+        <Button
+          variant="secondary"
+          className="rounded-r-none"
+          disabled={!hasUnpushedChanges || pushChanges.isPending}
+          title={
+            hasUnpushedChanges
+              ? `Push local changes to the GitHub PR branch (${gh.branch})`
+              : "No local changes to push to GitHub"
+          }
+          onClick={() => push(false)}
         >
-          <Github className="size-4" />
-          View PR on GitHub
-          <ExternalLink className="size-3.5 text-muted-foreground" />
-        </a>
-        <div className="inline-flex">
-          <Button
-            variant="secondary"
-            className="rounded-r-none"
-            disabled={!hasUnpushedChanges || pushChanges.isPending}
-            title={
-              hasUnpushedChanges
-                ? `Push local changes to the GitHub PR branch (${gh.branch})`
-                : "No local changes to push to GitHub"
-            }
-            onClick={() => push(false)}
-          >
-            {pushChanges.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
+          {pushChanges.isPending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <UploadCloud className="size-4" />
+          )}
+          {pushChanges.isPending ? "Pushing…" : "Push to GitHub"}
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="secondary"
+              aria-label="Push options"
+              title="Push options"
+              className="rounded-l-none border-l px-2"
+              disabled={!hasUnpushedChanges || pushChanges.isPending}
+            >
+              <ChevronDown className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              title={`Force-push the head to the GitHub PR branch (${gh.branch}) with --force-with-lease, for a head rewritten by rebase or amend`}
+              onSelect={() => push(true)}
+            >
               <UploadCloud className="size-4" />
-            )}
-            {pushChanges.isPending ? "Pushing…" : "Push to GitHub"}
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="secondary"
-                aria-label="Push options"
-                title="Push options"
-                className="rounded-l-none border-l px-2"
-                disabled={!hasUnpushedChanges || pushChanges.isPending}
-              >
-                <ChevronDown className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                title={`Force-push the head to the GitHub PR branch (${gh.branch}) with --force-with-lease, for a head rewritten by rebase or amend`}
-                onSelect={() => push(true)}
-              >
-                <UploadCloud className="size-4" />
-                Force push to GitHub
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </>
+              Force push to GitHub
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     );
   }
   // A merged or closed loophub PR is past the point of exporting, so offer Create only while open.
