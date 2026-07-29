@@ -196,7 +196,7 @@ describe("AppTopbar", () => {
     ).toBeTruthy();
   });
 
-  it("opens the Cmd+K repository picker from the repository control", async () => {
+  it("opens the repository picker from the repository control", async () => {
     reposData.value = [
       makeRepo("me/zulu", 1),
       makeRepo("me/alpha", 2, { favorite: true }),
@@ -207,8 +207,7 @@ describe("AppTopbar", () => {
       name: "Repository: me/zulu",
     });
     expect(trigger.textContent).toContain("me/zulu");
-    expect(trigger.textContent).toContain("K");
-    expect(trigger.textContent).not.toContain("Cmd");
+    expect(trigger.textContent).not.toContain("K");
     expect(trigger.getAttribute("aria-label")).toBe("Repository: me/zulu");
     expect(trigger.getAttribute("title")).toBe("Switch repository");
 

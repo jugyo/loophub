@@ -15,7 +15,6 @@ import {
   TerminalLaunchErrorDialog,
 } from "@/components/terminal-controller";
 import { ToastProvider, ToastViewport } from "@/components/toast";
-import { useIssueKeyboardNavigation } from "@/lib/use-issue-keyboard-navigation";
 import { useScrollToTop } from "@/lib/use-scroll-to-top";
 
 export function AppLayout() {
@@ -23,7 +22,6 @@ export function AppLayout() {
   const mainRef = useRef<HTMLElement>(null);
   const [repoSwitcherRequest, setRepoSwitcherRequest] = useState(0);
   useScrollToTop(mainRef);
-  useIssueKeyboardNavigation(mainRef);
   return (
     // TerminalControllerProvider wraps the content so New Issue / Build / Resume buttons can
     // launch a Herdr session via useTerminalLauncher() and surface its launch feedback / error

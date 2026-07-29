@@ -9,10 +9,6 @@ import {
 } from "react";
 import type { Repo } from "@/api/types";
 import { disabledIconButtonStateClasses } from "@/components/ui/button";
-import {
-  isEditableShortcutTarget,
-  isShortcutOverlayActive,
-} from "@/lib/keyboard-shortcuts";
 import { compareSidebarRepos } from "@/lib/repo-sort";
 import { cn } from "@/lib/utils";
 import { useRepos, useSetRepoFavorite } from "@/queries/repos";
@@ -46,25 +42,6 @@ export function RepoSwitcher({ openRequest = 0 }: { openRequest?: number }) {
     return repos.filter((repo) => repo.full_name.toLowerCase().includes(query));
   }, [filter, repos]);
   const activeRepo = filteredRepos[activeIndex];
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (
-        event.defaultPrevented ||
-        event.key.toLowerCase() !== "k" ||
-        !(event.metaKey || event.ctrlKey) ||
-        isEditableShortcutTarget(event.target) ||
-        isShortcutOverlayActive(event.target)
-      ) {
-        return;
-      }
-      event.preventDefault();
-      setOpen(true);
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
 
   useEffect(() => {
     if (openRequest > 0) setOpen(true);

@@ -312,24 +312,13 @@ describe("IssueDetail", () => {
     expect(commentsSection?.textContent).toContain("Looks good.");
   });
 
-  it("returns to the repo top with u unless a modal dialog is open", async () => {
+  it("does not navigate with the removed u shortcut", async () => {
     const { router } = renderDetail();
 
     expect(await screen.findByText("ui2: issue detail")).toBeTruthy();
-    const dialog = document.createElement("div");
-    dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-modal", "true");
-    document.body.appendChild(dialog);
-
     fireEvent.keyDown(window, { key: "u" });
+
     expect(router.state.location.pathname).toBe("/");
-
-    dialog.remove();
-    fireEvent.keyDown(window, { key: "u" });
-
-    await waitFor(() =>
-      expect(router.state.location.pathname).toBe("/r/me/proj"),
-    );
   });
 
   it("omits working from a linked PR row while Herdr is working", async () => {

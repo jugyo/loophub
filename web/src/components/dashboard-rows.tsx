@@ -343,13 +343,8 @@ export function IssueRow({
   return (
     <div
       data-debug-component="IssueRow"
-      data-issue-row
-      // Stable identity so keyboard selection can be restored when the list
-      // re-appears after opening an issue and navigating back (#869).
-      data-issue-key={`${owner}/${repo}#${issue.number}`}
-      tabIndex={-1}
       aria-label={`Issue #${issue.number}: ${issue.title}`}
-      className="group flex flex-col gap-1 px-3 py-2 text-sm focus:bg-accent focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring"
+      className="group flex flex-col gap-1 px-3 py-2 text-sm"
     >
       {issue.target_branch ? (
         <div className="flex justify-start">
@@ -359,7 +354,6 @@ export function IssueRow({
       <div className="flex items-center gap-2">
         <RepoChip label={repoLabel} owner={owner} repo={repo} />
         <Link
-          data-issue-row-link
           to="/r/$owner/$repo/issues/$number"
           params={{ owner, repo, number: String(issue.number) }}
           className="shrink-0 text-muted-foreground hover:underline"

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { BarChart3, Bot, Command, Loader2, Settings } from "lucide-react";
+import { BarChart3, Bot, Loader2, Settings } from "lucide-react";
 import { useMemo } from "react";
 import { ComponentDebugToggle } from "@/components/component-debug-overlay";
 import { Logo } from "@/components/logo";
@@ -70,16 +70,12 @@ export function AppTopbar({
                     ? "Failed to load repositories"
                     : "Select repository")}
             </span>
-            <span className="ml-2 inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-              {isLoading ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <>
-                  <Command className="size-3.5" aria-hidden="true" />
-                  <span className="hidden sm:inline">K</span>
-                </>
-              )}
-            </span>
+            {isLoading ? (
+              <Loader2
+                className="ml-2 size-4 shrink-0 animate-spin text-muted-foreground"
+                aria-hidden="true"
+              />
+            ) : null}
           </Button>
         </div>
 

@@ -68,11 +68,11 @@ function makeRepo(overrides: Partial<Repo>): Repo {
   };
 }
 
-function renderInRouter() {
+function renderInRouter(openRequest = 1) {
   const rootRoute = createRootRoute({
     component: () => (
       <>
-        <RepoSwitcher />
+        <RepoSwitcher openRequest={openRequest} />
         <span>ready</span>
         <Outlet />
       </>
@@ -97,7 +97,17 @@ function renderInRouter() {
 }
 
 describe("RepoSwitcher", () => {
-  it("opens with Cmd+K and ignores vim keys for selection movement", async () => {
+  it("does not open with Cmd/Ctrl+K", async () => {
+    renderInRouter(0);
+    await screen.findByText("ready");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("ignores vim keys for selection movement", async () => {
     reposData.value = [
       makeRepo({ id: 1, name: "alpha", full_name: "me/alpha" }),
       makeRepo({ id: 2, name: "beta", full_name: "me/beta" }),
@@ -105,7 +115,6 @@ describe("RepoSwitcher", () => {
     const router = renderInRouter();
     await screen.findByText("ready");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
     const dialog = await screen.findByRole("dialog", {
       name: "Switch repository",
     });
@@ -126,7 +135,6 @@ describe("RepoSwitcher", () => {
     const router = renderInRouter();
     await screen.findByText("ready");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
     const dialog = await screen.findByRole("dialog", {
       name: "Switch repository",
     });
@@ -154,7 +162,6 @@ describe("RepoSwitcher", () => {
     const router = renderInRouter();
     await screen.findByText("ready");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
     const filter = await screen.findByRole("searchbox", {
       name: "Filter repositories",
     });
@@ -162,17 +169,6 @@ describe("RepoSwitcher", () => {
     fireEvent.keyDown(filter, { key: "Enter", isComposing: true });
 
     expect(router.state.location.pathname).toBe("/");
-  });
-
-  it("does not open from Cmd+K inside a text input", () => {
-    renderInRouter();
-    render(<input aria-label="name" />);
-    const input = screen.getByLabelText("name");
-    input.focus();
-
-    fireEvent.keyDown(input, { key: "k", metaKey: true });
-
-    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("filters repository candidates by keyword", async () => {
@@ -184,7 +180,6 @@ describe("RepoSwitcher", () => {
     renderInRouter();
     await screen.findByText("ready");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
     const filter = await screen.findByRole("searchbox", {
       name: "Filter repositories",
     });
@@ -203,8 +198,6 @@ describe("RepoSwitcher", () => {
     renderInRouter();
     await screen.findByText("ready");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-
     expect(
       await screen.findByRole("button", { name: "me/alpha" }),
     ).toBeTruthy();
@@ -215,31 +208,11 @@ describe("RepoSwitcher", () => {
     expect(screen.queryByRole("option")).toBeNull();
   });
 
-  it("does not open over an existing modal dialog", () => {
-    renderInRouter();
-    const dialog = document.createElement("div");
-    dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-modal", "true");
-    const button = document.createElement("button");
-    button.textContent = "Existing dialog action";
-    dialog.appendChild(button);
-    document.body.appendChild(dialog);
-    button.focus();
-
-    fireEvent.keyDown(button, { key: "k", metaKey: true });
-
-    expect(
-      screen.queryByRole("dialog", { name: "Switch repository" }),
-    ).toBeNull();
-    dialog.remove();
-  });
-
   it("keeps keyboard navigation inert when no repositories are available", async () => {
     reposData.value = [];
     const router = renderInRouter();
     await screen.findByText("ready");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
     const dialog = await screen.findByRole("dialog", {
       name: "Switch repository",
     });
@@ -258,8 +231,6 @@ describe("RepoSwitcher", () => {
     renderInRouter();
     await screen.findByText("ready");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-
     expect(await screen.findByText("me/alpha")).toBeTruthy();
     expect(screen.queryByText("Failed to load repositories.")).toBeNull();
   });
@@ -277,7 +248,6 @@ describe("RepoSwitcher", () => {
     renderInRouter();
     await screen.findByText("ready");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
     const dialog = await screen.findByRole("dialog", {
       name: "Switch repository",
     });
@@ -303,8 +273,6 @@ describe("RepoSwitcher", () => {
     ];
     renderInRouter();
     await screen.findByText("ready");
-
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
 
     const addFavoriteButton = await screen.findByRole("button", {
       name: "Add to favorites: me/alpha",
@@ -338,8 +306,6 @@ describe("RepoSwitcher", () => {
     favoriteMutations.pending.add("me/beta");
     renderInRouter();
     await screen.findByText("ready");
-
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
 
     const addFavoriteButton = await screen.findByRole("button", {
       name: "Add to favorites: me/alpha",
@@ -376,7 +342,6 @@ describe("RepoSwitcher", () => {
     const router = renderInRouter();
     await screen.findByText("ready");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
     const favoriteButton = await screen.findByRole("button", {
       name: "Add to favorites: me/alpha",
     });
@@ -395,7 +360,6 @@ describe("RepoSwitcher", () => {
     const router = renderInRouter();
     await screen.findByText("ready");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
     const closeButton = await screen.findByRole("button", {
       name: "Close repository switcher",
     });

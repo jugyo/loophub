@@ -5,7 +5,7 @@
 
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Loader2, Square, Workflow } from "lucide-react";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import { type RefObject, useRef, useState } from "react";
 import type { Issue, IssueComment } from "@/api/types";
 import {
   DetailHeaderTitle,
@@ -26,11 +26,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { issueBadges, issueCanStartWork, stateBadge } from "@/lib/badges";
-import {
-  hasPlainShortcutModifiers,
-  isEditableShortcutTarget,
-  isShortcutOverlayActive,
-} from "@/lib/keyboard-shortcuts";
 import { usePageTitle } from "@/lib/page-title";
 import { relativeTime } from "@/lib/time";
 import { useFixedLoading } from "@/lib/use-fixed-loading";
@@ -52,29 +47,9 @@ export function IssueDetail({
   repo: string;
   number: number;
 }) {
-  const navigate = useNavigate();
   const issueQuery = useIssue(owner, repo, number);
   const commentsQuery = useIssueComments(owner, repo, number);
   const titleRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (
-        event.defaultPrevented ||
-        event.key !== "u" ||
-        hasPlainShortcutModifiers(event) ||
-        isEditableShortcutTarget(event.target) ||
-        isShortcutOverlayActive(event.target)
-      ) {
-        return;
-      }
-      event.preventDefault();
-      navigate({ to: "/r/$owner/$repo", params: { owner, repo } });
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigate, owner, repo]);
 
   if (issueQuery.isLoading) {
     return (

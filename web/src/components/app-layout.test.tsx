@@ -53,9 +53,6 @@ vi.mock("@/components/toast", () => ({
   ToastViewport: () => null,
 }));
 vi.mock("@/lib/use-scroll-to-top", () => ({ useScrollToTop: vi.fn() }));
-vi.mock("@/lib/use-issue-keyboard-navigation", () => ({
-  useIssueKeyboardNavigation: vi.fn(),
-}));
 
 afterEach(cleanup);
 

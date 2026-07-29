@@ -254,9 +254,9 @@ describe("IssueRow", () => {
         issue={makeIssue({ target_branch: "feature/foo" })}
       />,
     );
-    const row = await screen.findByLabelText("Issue #1: Example issue");
+    await screen.findByLabelText("Issue #1: Example issue");
     const workspace = screen.getByText("workspace:feature/foo");
-    const title = row.querySelector("[data-issue-row-link]");
+    const title = screen.getByRole("link", { name: "#1" });
 
     expect(workspace.getAttribute("title")).toBe("Workspace: feature/foo");
     expect(workspace.className).toContain("rounded-md");
