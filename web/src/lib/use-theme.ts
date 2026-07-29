@@ -1,11 +1,13 @@
 // React binding for the theme module. Theme classes are already on <html>
 // (set by the inline FOUC guard); this hook tracks and updates the selection.
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  applyTheme,
   getThemeDefinition,
   setTheme as persistTheme,
   resolveInitialTheme,
+  subscribeStoredTheme,
   type Theme,
 } from "@/lib/theme";
 
@@ -20,6 +22,17 @@ export function useTheme(): {
     setThemeState(next);
     persistTheme(next);
   }, []);
+
+  // Another tab switched the theme: apply it here too so every open tab of the
+  // same origin stays in sync without a reload.
+  useEffect(
+    () =>
+      subscribeStoredTheme((next) => {
+        setThemeState(next);
+        applyTheme(next);
+      }),
+    [],
+  );
 
   const toggle = useCallback(() => {
     setThemeState((prev) => {

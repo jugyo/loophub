@@ -5,6 +5,7 @@ import {
   getThemeDefinition,
   resolveInitialTheme,
   setTheme,
+  subscribeStoredTheme,
   THEME_APPEARANCE_STORAGE_KEY,
   THEME_STORAGE_KEY,
   THEME_TOKEN_KEYS,
@@ -237,6 +238,42 @@ describe("setTheme", () => {
     document.documentElement.classList.add("dark");
     expect(() => setTheme("light")).not.toThrow();
     expect(document.documentElement.classList.contains("dark")).toBe(false);
+  });
+});
+
+describe("subscribeStoredTheme", () => {
+  function emitStorage(key: string | null, newValue: string | null) {
+    window.dispatchEvent(new StorageEvent("storage", { key, newValue }));
+  }
+
+  it("reports theme changes made by another tab", () => {
+    const onChange = vi.fn();
+    const unsubscribe = subscribeStoredTheme(onChange);
+
+    emitStorage(THEME_STORAGE_KEY, "midnight");
+    expect(onChange).toHaveBeenCalledWith("midnight");
+
+    unsubscribe();
+  });
+
+  it("ignores other keys and invalid values", () => {
+    const onChange = vi.fn();
+    const unsubscribe = subscribeStoredTheme(onChange);
+
+    emitStorage(THEME_APPEARANCE_STORAGE_KEY, "dark");
+    emitStorage(THEME_STORAGE_KEY, "neon");
+    emitStorage(null, null);
+    expect(onChange).not.toHaveBeenCalled();
+
+    unsubscribe();
+  });
+
+  it("stops reporting once unsubscribed", () => {
+    const onChange = vi.fn();
+    subscribeStoredTheme(onChange)();
+
+    emitStorage(THEME_STORAGE_KEY, "forest");
+    expect(onChange).not.toHaveBeenCalled();
   });
 });
 

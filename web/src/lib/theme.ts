@@ -349,6 +349,24 @@ export function applyTheme(theme: Theme): void {
   }
 }
 
+/**
+ * Watch for theme changes persisted by other tabs on the same origin.
+ * `storage` only fires in tabs other than the one that wrote the value, so the
+ * writing tab keeps using its own setTheme path. Returns an unsubscribe.
+ */
+export function subscribeStoredTheme(
+  onChange: (theme: Theme) => void,
+): () => void {
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key !== THEME_STORAGE_KEY) return;
+    if (!isTheme(event.newValue)) return;
+    onChange(event.newValue);
+  };
+
+  window.addEventListener("storage", handleStorage);
+  return () => window.removeEventListener("storage", handleStorage);
+}
+
 /** Persist and apply the user's chosen theme. */
 export function setTheme(theme: Theme): void {
   const definition = getThemeDefinition(theme);
